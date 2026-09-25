@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "view": {
+    "scrollY": 0,
+    "width": 1024,
+    "scale": 1
+  },
+  "pages": [
+    {
+      "id": "p1",
+      "kind": "ink",
+      "geometry": {
+        "width": 1024,
+        "height": 1448
+      },
+      "backdrop": {
+        "kind": "blank"
+      },
+      "strokes": [],
+      "images": []
+    }
+  ]
+}

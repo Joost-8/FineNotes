@@ -1,0 +1,5229 @@
+/* GoodObsidian — view, page and toolbar styles.
+ *
+ * Rule from contracts/design-brief.md, enforced throughout this file:
+ * **every chrome colour is an Obsidian CSS variable.** The plugin should look
+ * like it shipped with Obsidian and inherit whatever theme is running. The
+ * literal colours below are all things that are not chrome: the page
+ * presentation (desk, paper, and the marks drawn over a page or a picture,
+ * which must read on any content), the colour picker's own palette and
+ * colour model, and the debug HUD.
+ *
+ * Paper is NOT chrome. Pages are painted on canvas in src/canvas/backdrop.ts,
+ * paper-white by default with a per-notebook dark override, and never themed.
+ *
+ * The `--gob-*` tokens below are the single source of truth for this plugin's
+ * radii, elevation, touch sizing and its few colours of its own. Use a token,
+ * never a new literal; the UI gallery (scripts/ui-gallery) renders every
+ * screen with them.
+ */
+
+/* ----------------------------------------------------------------- tokens */
+
+/* On `body`, so the sheets and dialogs attached there get them too, and on
+ * the theme classes, so a part forced into the other theme (the selection
+ * bar is `theme-dark`) resolves them in that theme. Every name is prefixed,
+ * and every colour is built on Obsidian's own variables.
+ *
+ * The look is version C of the 2026-09-25 redesign ("GoodNotes layout,
+ * Notability look", from the UI gallery's Claude Design project): GoodNotes'
+ * positions, neutral slate surfaces with hairlines, grey line icons, and the
+ * accent only on what is active or selected. */
+body,
+.theme-light,
+.theme-dark {
+  /* Touch targets: >= 44 pt, a finger-and-pencil surface. The compact size
+     is for controls that sit over the page (the options pill), as small as
+     GoodNotes' own and still a comfortable Pencil tap. */
+  --gob-touch: 44px;
+  --gob-touch-compact: 36px;
+  --gob-gap: 4px;
+
+  /* Radii.
+     s: small things on the page and in lists (text boxes, table cells,
+        paper previews, thumbnails, embeds)
+     m: controls (buttons, rows, fields, groups inside a panel)
+     l: panels and grouped lists
+     pill: chips, toasts and segmented controls. Circles use 50%.
+     The named ones below are the version's own sizes for one component each.
+     A shape inside another takes the outer radius less the gap between. */
+  --gob-radius-s: 5px;
+  --gob-radius-m: 10px;
+  --gob-radius-l: 14px;
+  --gob-radius-pill: 999px;
+  --gob-tool-radius: 10px;
+  --gob-well-radius: 9px;
+  --gob-card-radius: 14px;
+  --gob-pop-radius: 14px;
+  --gob-options-radius: 16px;
+  --gob-dialog-radius: 18px;
+
+  /* Elevation, lowest first. */
+  --gob-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.2); /* a control raised off its track */
+  --gob-shadow-paper: 0 1px 4px rgba(0, 0, 0, 0.25); /* a page lying on a surface */
+  --gob-shadow-mark: 0 1px 4px rgba(0, 0, 0, 0.4); /* a mark that must read on any content */
+  --gob-shadow-float:
+    0 1px 2px rgba(0, 0, 0, 0.1), 0 6px 20px rgba(0, 0, 0, 0.14); /* chrome floating over the page */
+  --gob-shadow-sheet:
+    0 2px 6px rgba(0, 0, 0, 0.12), 0 18px 48px rgba(0, 0, 0, 0.24); /* a sheet over everything */
+
+  /* Surfaces and lines. */
+  --gob-bar-bg: var(--background-secondary);
+  --gob-bar-border: 1px solid var(--background-modifier-border);
+  --gob-card-bg: var(--background-primary);
+  --gob-pill-bg: var(--background-primary);
+  --gob-pop-bg: var(--background-primary);
+  --gob-sheet-bg: var(--background-primary);
+  --gob-group-bg: var(--background-secondary);
+  --gob-side-bg: var(--background-secondary);
+  /* A segmented control's chosen segment, raised off its track (a dark
+     theme's is set below). */
+  --gob-seg-active-bg: var(--background-primary);
+  --gob-line: var(--background-modifier-border);
+  --gob-hairline: 1px solid var(--background-modifier-border);
+  --gob-ring-hairline: 0 0 0 1px var(--background-modifier-border);
+  /* Wells: a tint of the text colour, as Obsidian's own hover is. */
+  --gob-well: rgba(var(--mono-rgb-100), 0.07);
+  --gob-well-strong: rgba(var(--mono-rgb-100), 0.12);
+
+  /* Icons. */
+  --gob-icon: var(--icon-color, var(--text-muted));
+  --gob-icon-size: 22px;
+  --gob-icon-stroke: 1.6px;
+
+  /* What is active or selected: the only places the accent appears. */
+  --gob-accent-tint: hsla(var(--interactive-accent-hsl), 0.18);
+  --gob-active-bg: var(--gob-accent-tint);
+  --gob-active-fg: var(--interactive-accent);
+  --gob-active-press: hsla(var(--interactive-accent-hsl), 0.28);
+  --gob-size-active-bg: var(--gob-well-strong);
+  --gob-size-active-ring: inset 0 0 0 1.5px var(--interactive-accent);
+  --gob-size-active-fg: var(--text-normal);
+  --gob-swatch-ring: inset 0 0 0 2px var(--interactive-accent);
+  --gob-ring-active: inset 0 0 0 2px var(--interactive-accent);
+  --gob-ring-disc: inset 0 0 0 1px rgba(0, 0, 0, 0.18); /* so a white disc shows on white */
+  /* A press on an accent-filled control (upgraded below where supported). */
+  --gob-on-accent-press: rgba(255, 255, 255, 0.24);
+
+  /* The bar and the pill. */
+  --gob-bar-h: 57px;
+  --gob-pill-pad: 4px;
+  --gob-pill-gap: 8px;
+
+  /* Frost, used only inside the @supports blocks that can draw it. */
+  --gob-frost: color-mix(in srgb, var(--background-primary) 78%, transparent);
+  --gob-frost-side: color-mix(in srgb, var(--background-secondary) 80%, transparent);
+  --gob-blur: blur(24px) saturate(1.7);
+
+  /* Motion (GoodNotes, measured). */
+  --gob-ease-out: cubic-bezier(0.25, 0.8, 0.3, 1);
+  --gob-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --gob-t-slide: 0.25s;
+  --gob-t-grow: 0.2s;
+  --gob-t-fade: 0.16s;
+  --gob-t-press: 0.35s;
+
+  /* The page presentation, not chrome. The desk mirrors LIGHT_PAPER.desk in
+     src/canvas/backdrop.ts and only covers the first frame (the backdrop
+     canvas paints it); the paper colour fills thumbnails before they paint;
+     marks (handles, the crop frame, badges) sit over a page or a picture;
+     the ribbon's outline sits on paper. */
+  --gob-desk: #3b3e45;
+  --gob-paper: #ffffff;
+  --gob-mark: #ffffff;
+  --gob-bookmark: var(--color-red);
+  --gob-ribbon-outline: rgba(40, 44, 52, 0.42);
+}
+
+/* Where the browser can mix colours, tints follow the variables exactly:
+   themes may set --interactive-accent without its hsl parts, and a light
+   accent makes the text on it dark. Only inside @supports: a `var()` in a
+   `color-mix()` the browser cannot parse leaves no colour at all. */
+@supports (color: color-mix(in srgb, red 50%, transparent)) {
+  body,
+  .theme-light,
+  .theme-dark {
+    --gob-accent-tint: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    --gob-active-press: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+    --gob-on-accent-press: color-mix(in srgb, var(--text-on-accent) 24%, transparent);
+  }
+}
+
+/* In a dark theme the chosen segment must be lighter than its track, as
+   iPadOS draws it: --background-primary is darker than the track there (a
+   black hole), and Obsidian's button and hover surfaces are the track's own
+   shade on mobile. */
+.theme-dark {
+  --gob-seg-active-bg: var(--color-base-35);
+}
+
+.goodobsidian-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* --------------------------------------------------- toolbar, tier 1 */
+
+/* A full-width bar in GoodNotes' place, painted as the theme's secondary
+   surface with a hairline under it. GoodNotes tints it a saturated blue; a
+   neutral bar keeps the accent for what is active, and sits quietly in any
+   theme. */
+.goodobsidian-toolbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--gob-bar-bg);
+  color: var(--gob-icon);
+  /* Chrome, not canvas: no gesture here may reach the drawing surface. */
+  touch-action: pan-x;
+  user-select: none;
+  -webkit-user-select: none;
+  box-sizing: border-box;
+  min-height: var(--gob-bar-h);
+  border-bottom: var(--gob-bar-border);
+}
+
+.goodobsidian-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-bar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gob-gap);
+  flex: 0 0 auto;
+}
+
+/* Left: pages, search and AI, then undo and redo after a hairline. The
+   writing tools are centred on the bar, and the document's actions (add
+   page, share, ⋯, settings) sit right. */
+.goodobsidian-bar-group.is-centre {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--gob-line);
+}
+
+.goodobsidian-bar-group.is-tools {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin-left: auto;
+}
+
+/* Too narrow to centre the tools clear of both sides (toolbar.ts measures
+   the groups, not the window): they follow the left groups instead. */
+.goodobsidian-toolbar.is-crowded .goodobsidian-bar-group.is-tools {
+  position: static;
+  margin: 0 auto;
+  transform: none;
+}
+
+.goodobsidian-toolbar.is-crowded .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin-left: 0;
+}
+
+.goodobsidian-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--gob-tool-radius);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-icon);
+  cursor: pointer;
+}
+
+/* On the iPad Obsidian pads every plain <button> 20 px a side
+   (`.is-tablet button:not(.clickable-icon)`, specificity 0,2,1), which made
+   each tool 60 px wide. A rule as specific, and later, wins; so does any
+   `.goodobsidian-… button.goodobsidian-…` rule that sets padding below. */
+.goodobsidian-toolbar button:not(.clickable-icon) {
+  padding: 0 6px;
+}
+
+.goodobsidian-toolbar button:hover:not(:disabled) {
+  background: var(--gob-well);
+}
+
+/* The active tool: an accent-tinted square, the one accent on the bar. */
+.goodobsidian-toolbar button.is-active,
+.goodobsidian-toolbar button.is-active:hover:not(:disabled) {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+  --gob-press: var(--gob-active-press);
+}
+
+.goodobsidian-toolbar button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.goodobsidian-toolbar button .svg-icon {
+  width: var(--gob-icon-size);
+  height: var(--gob-icon-size);
+  stroke-width: var(--gob-icon-stroke);
+}
+
+.goodobsidian-toolbar .goodobsidian-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--gob-line);
+}
+
+/* --------------------------------------------------- toolbar, tier 2 */
+
+/* The active tool's options: a floating rounded pill directly below the bar.
+   Its contents change with the tool; its position does not. */
+.goodobsidian-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--gob-pill-pad);
+  /* Border-box, so the width it glides between tools (toolbar.ts,
+     morphPill) is the box it measured. */
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-options-radius);
+  background: var(--gob-pill-bg);
+  box-shadow: var(--gob-shadow-float);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  /* It slides away and back (.is-collapsed below); it never fades. */
+  animation: none;
+}
+
+.goodobsidian-options:empty {
+  display: none;
+}
+
+/* A second tap on the selected tool tucks its controls away but leaves the
+   tool selected, so a writer can return to a completely clear page at once. */
+.goodobsidian-options.is-collapsed {
+  display: none;
+}
+
+.goodobsidian-options::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-options.is-floating {
+  position: absolute;
+  z-index: 19;
+  top: 0;
+  left: 0;
+  translate: 0 0;
+  transition:
+    translate var(--gob-t-slide) var(--gob-ease-out),
+    visibility 0s;
+}
+
+.goodobsidian-options.is-floating.is-collapsed {
+  display: flex;
+  translate: 0 calc(-100% - var(--gob-pill-gap) - 2px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    translate var(--gob-t-slide) var(--gob-ease-out),
+    visibility 0s linear var(--gob-t-slide);
+}
+
+/* The pill's controls are compact, after GoodNotes: it sits over the page and
+   must not read as a second tool bar. 36 px is still a comfortable Pencil tap. */
+.goodobsidian-options button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+/* Obsidian's iPad button padding again (see the tool bar above). */
+.goodobsidian-options button:not(.clickable-icon) {
+  padding: 0 4px;
+}
+
+.goodobsidian-options button:hover:not(:disabled) {
+  background: var(--gob-well);
+}
+
+.goodobsidian-options button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.goodobsidian-options .goodobsidian-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 24px;
+  margin: 0 6px;
+  background: var(--gob-line);
+}
+
+/* A pen type: the nib is tinted with the live ink colour, and the active one
+   sits in a filled well with a chevron, as in the reference screenshot. */
+.goodobsidian-options button.goodobsidian-pentype {
+  align-items: flex-end;
+  min-width: 34px;
+  padding: 0 2px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-options .goodobsidian-pentype.is-active {
+  background: var(--gob-accent-tint);
+  color: var(--text-normal);
+  transform: translateY(-3px);
+}
+
+/* A stroke width, drawn as a literal stroke; the active one is boxed. */
+.goodobsidian-options .goodobsidian-width {
+  min-width: 34px;
+  color: var(--text-normal);
+}
+
+/* Stroke widths and eraser sizes: the chosen one per version token. */
+
+.goodobsidian-options .goodobsidian-width.is-active,
+.goodobsidian-options .goodobsidian-erasersize.is-active {
+  background: var(--gob-size-active-bg);
+  box-shadow: var(--gob-size-active-ring);
+  color: var(--gob-size-active-fg);
+}
+
+.goodobsidian-options .goodobsidian-chevron {
+  min-width: 20px;
+  color: var(--gob-icon);
+}
+
+.goodobsidian-options .goodobsidian-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-options .goodobsidian-tool.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-options button.goodobsidian-text-button {
+  padding: 0 12px;
+  font-size: var(--font-ui-small);
+}
+
+/* Eraser: "Standard ▾" mode picker, then three footprint sizes. */
+.goodobsidian-options button.goodobsidian-erasermode {
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
+
+/* Eraser mode button and shape colour: wells, like the text drops. */
+
+.goodobsidian-options button.goodobsidian-erasermode,
+.goodobsidian-options .goodobsidian-shape-color.clickable-icon {
+  border-radius: var(--gob-well-radius);
+  background: var(--gob-well);
+}
+
+.goodobsidian-erasermode-icon,
+.goodobsidian-erasermode-caret {
+  display: inline-flex;
+}
+
+.goodobsidian-erasermode-caret {
+  color: var(--text-muted);
+}
+
+.goodobsidian-erasermode-caret svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-options .goodobsidian-erasersize {
+  color: var(--text-normal);
+}
+
+/* Shape tool: auto-shape, then the presets, each drawn as its outline. The
+   active one sits in a filled well, as in the GoodNotes reference.
+   `clickable-icon` keeps Obsidian's iPad button padding off them; these rules
+   then restore the colour and opacity that class would otherwise dim. */
+.goodobsidian-options .goodobsidian-shape {
+  min-width: 40px;
+  padding: 0 6px;
+  color: var(--text-normal);
+  opacity: 1;
+}
+
+.goodobsidian-options .goodobsidian-shape svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* The active shape (and auto-shape) as the chosen stroke width: a neutral
+   well ringed in the accent. A well alone is not enough: Obsidian's
+   `--background-modifier-active-hover` was near-invisible on the dark mobile
+   pill (an iPad recording showed no visible selection at all). */
+.goodobsidian-options .goodobsidian-shape.is-active {
+  background: var(--gob-size-active-bg);
+  box-shadow: var(--gob-size-active-ring);
+  color: var(--text-normal);
+}
+
+/* The eraser's footprint on the page while erasing, so its size is legible. */
+.goodobsidian-eraser-cursor {
+  position: absolute;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  background: rgba(127, 127, 127, 0.12);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-eraser-cursor.is-hidden {
+  display: none;
+}
+
+.goodobsidian-icon-fallback {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------- popovers */
+
+.goodobsidian-popover {
+  position: absolute;
+  z-index: 30;
+  transform: translateX(-50%);
+  max-width: min(320px, calc(100vw - 24px));
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+}
+
+/* Menus and popovers fade in over 0.16 s. */
+
+.goodobsidian-popover,
+.goodobsidian-addpage,
+.goodobsidian-more,
+.goodobsidian-selection-bar {
+  animation: goodobsidian-fade-in var(--gob-t-fade) ease-out;
+}
+
+.goodobsidian-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.goodobsidian-popover-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-popover button {
+  min-height: var(--gob-touch-compact);
+  border-radius: var(--gob-radius-m);
+  cursor: pointer;
+}
+
+.goodobsidian-popover button.goodobsidian-tool {
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.goodobsidian-popover button.goodobsidian-tool:hover,
+.goodobsidian-popover .goodobsidian-width:hover {
+  background: var(--gob-well);
+}
+
+.goodobsidian-popover button.goodobsidian-wide {
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.goodobsidian-popover button.goodobsidian-wide.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-swatch {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--background-modifier-border);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.goodobsidian-swatch.is-active {
+  border-color: var(--text-normal);
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.goodobsidian-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gob-gap);
+}
+
+/* Stroke widths inside the "more widths" popover: same literal-stroke glyph
+   as the pill, so the two read as one control. */
+.goodobsidian-popover button.goodobsidian-width {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.goodobsidian-popover .goodobsidian-width.is-active {
+  box-shadow: var(--gob-size-active-ring);
+  background: var(--gob-size-active-bg);
+}
+
+/* ----------------------------------------------------------- page surface */
+
+/* The paginated surface: a viewport-clipped stack. The canvases are pinned to
+   the visible viewport; a transparent scroll overlay on top owns scrolling and
+   pointer input. The page floats on a dark neutral desk (painted on the
+   backdrop canvas; the CSS colour here only covers the first frame). */
+.goodobsidian-surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--gob-desk);
+}
+
+/* The row under the tool bar: page sidebar (when open) beside the surface. */
+.goodobsidian-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------- page sidebar */
+
+/* GoodNotes' thumbnail panel: a two-column grid of pages docked left of the
+   page, which slides over rather than squeezing the page on a narrow pane. */
+.goodobsidian-pagesidebar {
+  flex: 0 0 auto;
+  width: 300px;
+  max-width: 45%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--gob-line);
+  background: var(--gob-side-bg);
+  /* Chrome, not canvas: vertical scrolling only, never a drawing gesture. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-pagesidebar.is-hidden {
+  display: none;
+}
+
+/* Above the page while the page glides beside the sliding panel (the
+   surface is transformed then, and would otherwise paint over it). */
+.goodobsidian-pagesidebar {
+  position: relative;
+  z-index: 2;
+}
+
+/* Sliding out: already out of the layout, so the page widens under it. */
+.goodobsidian-pagesidebar.is-closing {
+  position: absolute;
+  z-index: 15;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* Pages | Audio, GoodNotes' segmented switch at the top of the panel. It
+   stays put while the thumbnails scroll under it. */
+/* Header (title · ✕) and the Pages | Audio switch, after GoodNotes' sidebar.
+   They stay put while the thumbnails scroll under them. */
+.goodobsidian-pagesidebar-top {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  padding-bottom: 10px;
+  background: var(--gob-side-bg);
+}
+
+.goodobsidian-pagesidebar-head {
+  position: relative;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  grid-template-columns: var(--gob-touch) 1fr var(--gob-touch);
+  padding: 0 8px;
+}
+
+.goodobsidian-pagesidebar-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  grid-column: 2;
+  text-align: center;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.clickable-icon {
+  position: relative;
+  top: auto;
+  right: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  transform: none;
+  color: var(--gob-icon);
+  border-radius: 50%;
+  grid-column: 3;
+}
+
+.goodobsidian-pagesidebar-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 4px 16px 0;
+  padding: 3px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-tab.clickable-icon {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-tab.clickable-icon.is-active {
+  background: var(--gob-seg-active-bg);
+  box-shadow: var(--gob-shadow-raised);
+  color: var(--text-normal);
+}
+
+/* Each of these sets its own `display`, which outranks the shared .is-hidden. */
+.goodobsidian-pagesidebar-pages.is-hidden,
+.goodobsidian-pagesidebar-grid.is-hidden,
+.goodobsidian-pagesidebar-audio.is-hidden,
+.goodobsidian-pagesidebar-empty.is-hidden,
+.goodobsidian-thumb.is-hidden,
+.goodobsidian-thumb-add.is-hidden,
+.goodobsidian-thumb-ribbon.is-hidden {
+  display: none;
+}
+
+.goodobsidian-pagesidebar-audio {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100% - 100px);
+}
+
+/* "All pages ⌄" / "Bookmarks only ⌄": GoodNotes' filter chip, over the grid. */
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-filter.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin: 12px 20px 0;
+  padding: 0 12px 0 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-accent-tint);
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  opacity: 1;
+  font-weight: var(--font-medium, 500);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-filter.clickable-icon.is-filtered {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pagesidebar-filter-caret {
+  display: inline-flex;
+}
+
+.goodobsidian-pagesidebar-filter-caret svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-pagesidebar-empty {
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+.goodobsidian-pagesidebar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  padding: 16px 20px 32px;
+  align-items: start;
+}
+
+.goodobsidian-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.goodobsidian-thumb-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-s);
+  background: transparent;
+  box-shadow: var(--gob-shadow-paper);
+  cursor: pointer;
+  overflow: hidden;
+  /* A 2 px ring outside the page, so selecting never shifts the layout. */
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+  outline-width: 2.5px;
+  transition: outline-color 0.15s ease-out;
+}
+
+.goodobsidian-thumb-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+}
+
+/* The ribbon at each page's top right, as in GoodNotes: an outline, filled
+   in the theme's red (which reads on paper in every theme) when the page is
+   bookmarked. A tap on it toggles the bookmark (page-sidebar.ts); the padding
+   is its target, as large as the corner allows inside the clipped frame. */
+.goodobsidian-thumb-ribbon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  padding: 0 8px 12px 8px;
+  color: var(--gob-bookmark);
+  cursor: pointer;
+}
+
+.goodobsidian-thumb-ribbon svg {
+  width: 18px;
+  height: 22px;
+  fill: currentColor;
+  stroke: rgba(0, 0, 0, 0.25);
+  stroke-width: 1;
+}
+
+.goodobsidian-thumb-ribbon.is-outline svg {
+  fill: none;
+  stroke: var(--gob-ribbon-outline);
+  stroke-width: 1.6;
+}
+
+.goodobsidian-thumb.is-current .goodobsidian-thumb-frame {
+  outline-color: var(--interactive-accent);
+}
+
+.goodobsidian-thumb-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding-left: 2px;
+}
+
+.goodobsidian-thumb-number {
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+}
+
+.goodobsidian-thumb.is-current .goodobsidian-thumb-number {
+  color: var(--text-normal);
+  font-weight: var(--font-normal, 400);
+}
+
+.goodobsidian-thumb-more {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-icon);
+  cursor: pointer;
+}
+
+.goodobsidian-thumb-more svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-thumb-more:hover {
+  background: var(--gob-well);
+  color: var(--text-normal);
+}
+
+/* "+ Add page": a tile the size and shape of a page, closing the grid. */
+.goodobsidian-thumb-add {
+  display: flex;
+  white-space: normal;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-s);
+  /* A raised tile on the panel, as in GoodNotes: lighter than its ground. */
+  background: var(--gob-well);
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-medium);
+  cursor: pointer;
+}
+
+.goodobsidian-thumb-add:hover {
+  background: var(--background-modifier-hover);
+}
+
+.goodobsidian-thumb-add-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+/* On a phone-width pane the panel overlays the page instead of halving it. */
+@media (max-width: 600px) {
+  .goodobsidian-pagesidebar {
+    position: absolute;
+    z-index: 15;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 85%);
+    max-width: none;
+    box-shadow: var(--gob-shadow-float);
+  }
+}
+
+.goodobsidian-canvas {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  pointer-events: none;
+}
+
+.goodobsidian-canvas-backdrop {
+  z-index: 0;
+}
+
+.goodobsidian-canvas-dry {
+  z-index: 1;
+}
+
+.goodobsidian-canvas-wet {
+  z-index: 2;
+}
+
+/* Transparent overlay that receives pen/touch input. touch-action is none so
+   iOS WebKit never hijacks a pen drag as a scroll (which cuts strokes short).
+   Nothing here scrolls natively: ink-surface.ts moves the paper by a
+   transform, with its own momentum and rubber-banding. */
+.goodobsidian-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 3;
+  touch-action: none;
+  /* No long-press callout on the page. This alone does not stop iOS from
+     cancelling a held pen — ink-surface.ts cancels touchstart for that. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The paper is the text boxes' frame: sized to the scaled page stack and
+   moved by the surface's scroll transform, never by the DOM. */
+.goodobsidian-paper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* Typed text lives in the same scaled page coordinate system as ink. The
+   transparent paper spacer normally ignores input, so text boxes opt back in
+   without turning the rest of it into browser chrome. */
+.goodobsidian-textboxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A text box is ink-like: the paper shows through unless its style gives it
+   a fill (set inline, 0.5). The frame and its two handles appear only while
+   it is being edited or dragged. */
+.goodobsidian-page-textbox {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed transparent;
+  border-radius: var(--gob-radius-s);
+  background: transparent;
+  pointer-events: auto;
+}
+
+.goodobsidian-page-textbox:focus-within,
+.goodobsidian-page-textbox.is-dragging,
+.goodobsidian-page-textbox.is-held {
+  border-color: var(--interactive-accent);
+}
+
+/* Beat Obsidian's global textarea rules (fill, border, focus ring) in every
+   state, so the box never turns into a dark theme-coloured block. */
+.goodobsidian-page-textbox .goodobsidian-page-textbox-input,
+.goodobsidian-page-textbox .goodobsidian-page-textbox-input:hover,
+.goodobsidian-page-textbox .goodobsidian-page-textbox-input:focus,
+.goodobsidian-page-textbox .goodobsidian-page-textbox-input:active {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1.7em;
+  margin: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-text);
+  font-weight: var(--font-normal);
+  line-height: 1.35;
+  touch-action: manipulation;
+  /* The view shrinks the field with a transform (its font stays >= 16px so
+     iPadOS does not zoom into it); shrink from the frame's top-left corner. */
+  transform-origin: 0 0;
+}
+
+/* While a page text box is being edited on mobile, let the on-screen keyboard
+   cover the lower part of the page instead of shrinking Obsidian's window.
+   On iPad, Obsidian's `max-height: calc(100vh - var(--keyboard-height))` cap
+   left the page zero pixels tall — a black screen until the keyboard closed.
+   The surface keeps the text box above the keyboard itself. The New notebook
+   dialog lifts it too while its title is typed, or the notebook it creates
+   opens inside the squeezed window. */
+body.is-mobile.goodobsidian-text-editing .app-container,
+body.is-mobile.goodobsidian-dialog-typing .app-container {
+  max-height: none;
+}
+
+.goodobsidian-page-textbox.has-fixed-height .goodobsidian-page-textbox-input {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.goodobsidian-textbox-draft {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--interactive-accent);
+  border-radius: var(--gob-radius-s);
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Finger-sized hit areas with a small visible dot, per Apple's 44 pt rule. */
+.goodobsidian-page-textbox-handle {
+  position: absolute;
+  display: none;
+  width: 32px;
+  height: 32px;
+  touch-action: none;
+  z-index: 1;
+}
+
+.goodobsidian-page-textbox-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: var(--gob-mark);
+  transform: translate(-50%, -50%);
+}
+
+/* Also on a box a tap beside it kept ("held"): typing stopped, the keyboard
+   is down, but it can be moved or resized straight away, as in GoodNotes. */
+.goodobsidian-page-textbox:focus-within .goodobsidian-page-textbox-handle,
+.goodobsidian-page-textbox.is-dragging .goodobsidian-page-textbox-handle,
+.goodobsidian-page-textbox.is-held .goodobsidian-page-textbox-handle {
+  display: block;
+}
+
+.goodobsidian-page-textbox-handle.is-move {
+  top: -16px;
+  left: -16px;
+  cursor: move;
+}
+
+.goodobsidian-page-textbox-handle.is-resize {
+  right: -16px;
+  bottom: -16px;
+  cursor: nwse-resize;
+}
+
+/* The wet (live stroke) canvas between strokes; the renderer sets the class. */
+.goodobsidian-wet-hidden {
+  visibility: hidden;
+}
+
+/* "3 / 18" — bottom centre, out of the way of both the pill and the palm. */
+.goodobsidian-pageindicator {
+  position: absolute;
+  z-index: 10;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/*
+ * The counter, the zoom readout and the scroll thumbs show only while the
+ * page moves, as in GoodNotes: they come back at once (no transition on the
+ * way in) and fade out 0.5 s ease-out once the surface marks them idle
+ * (research/goodnotes-smoothness §2). Opacity only, so the compositor does it.
+ */
+.goodobsidian-pageindicator.is-idle,
+.goodobsidian-zoomreadout.is-idle {
+  opacity: 0;
+  transition: opacity 0.5s ease-out;
+}
+
+.goodobsidian-pageindicator,
+.goodobsidian-zoomreadout {
+  padding: 6px 14px;
+  border: 1px solid var(--gob-line);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium, 500);
+  box-shadow: var(--gob-shadow-float);
+}
+
+/* "68%": bottom right, clear of the counter. A readout; it takes no presses. */
+.goodobsidian-zoomreadout {
+  position: absolute;
+  z-index: 10;
+  right: 12px;
+  bottom: 12px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* A thin thumb on the right edge (and the bottom one when zoomed in wide). */
+.goodobsidian-scrollthumb {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  border-radius: var(--gob-radius-pill);
+  background: rgba(128, 128, 128, 0.55);
+  pointer-events: none;
+}
+
+.goodobsidian-scrollthumb.is-vertical {
+  left: auto;
+  right: 3px;
+  width: 4px;
+}
+
+.goodobsidian-scrollthumb.is-horizontal {
+  top: auto;
+  bottom: 3px;
+  height: 4px;
+}
+
+.goodobsidian-scrollthumb.is-idle {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.is-hidden {
+  display: none;
+}
+
+/* The input debug overlay (its command, or the setting). A diagnostic, so
+   its colours are fixed rather than themed: light blue on a dark veil reads
+   over any paper. */
+.goodobsidian-hud {
+  position: absolute;
+  inset: 8px auto auto 8px;
+  z-index: 5;
+  max-width: 70%;
+  padding: 6px 8px;
+  border-radius: var(--gob-radius-s);
+  background-color: rgb(0 0 0 / 0.6);
+  color: rgb(102 204 255);
+  font: 11px/1.35 var(--font-monospace, monospace);
+  white-space: pre;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------- text layer */
+
+/* The note's searchable text, under the page: a small label over a
+   textarea the user can drag taller, up to under a third of the screen. */
+.goodobsidian-textpanel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  border-top: var(--gob-hairline);
+  background-color: var(--background-secondary);
+}
+
+.goodobsidian-textpanel-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-textpanel-input {
+  width: 100%;
+  min-height: 96px;
+  max-height: 30vh;
+  resize: vertical;
+  font-size: var(--font-ui-small);
+  font-family: var(--font-text);
+}
+
+/* ---------------------------------------------------------- settings tab */
+
+.goodobsidian-support {
+  margin-top: 1em;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+/* A note between settings rows: muted text on the secondary surface, marked
+   by an accent bar down its left edge, with a bold title line. */
+.goodobsidian-callout {
+  margin-bottom: 1em;
+  padding: 12px 14px;
+  border-left: 4px solid var(--interactive-accent);
+  border-radius: var(--gob-radius-l);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-callout-title {
+  margin-bottom: 4px;
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+
+/* A settings row the tab fills itself, edge to edge (a callout, the footer):
+   none of a normal row's layout, divider or padding. */
+.setting-item.goodobsidian-plain-row {
+  display: block;
+  padding: 0;
+  border-top: none;
+}
+
+/* The endpoint URL row: its field goes under the name, full width, so a long
+   URL stays readable on a phone. */
+.goodobsidian-wide-text {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.goodobsidian-wide-text .setting-item-info {
+  margin-right: 0;
+}
+
+.goodobsidian-wide-text .setting-item-control {
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.goodobsidian-wide-text .setting-item-control input {
+  width: 100%;
+}
+
+/* ------------------------------------------- tier-2 swatch sizing (late) */
+
+/* A colour swatch must be a >= 44pt target without looking like a 44px blob:
+   the button is full size, `background-clip: content-box` paints only the
+   inner disc, and the active ring is drawn on the target's own edge. */
+.goodobsidian-options button.goodobsidian-swatch {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  min-width: var(--gob-touch-compact);
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background-clip: content-box;
+}
+
+.goodobsidian-options .goodobsidian-swatch.is-active {
+  box-shadow: var(--gob-swatch-ring);
+}
+
+/* The chosen colour wears a small ▾: tapping it again opens the picker on
+   it, as in GoodNotes. Dark or white, whichever reads on the colour. */
+.goodobsidian-swatch {
+  position: relative;
+}
+
+.goodobsidian-swatch-mark {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--gob-swatch-mark, #1a1a1a);
+  pointer-events: none;
+}
+
+.goodobsidian-swatch.is-active .goodobsidian-swatch-mark {
+  display: flex;
+}
+
+/* ------------------------------------------------------ press feedback */
+
+/* GoodNotes: a pressed button's background square shrinks to 0.833 over
+   0.3 s and springs back on release, its tint arriving in 0.15 s. The square
+   is a layer under the icon; `data-pressed` is set from pointer events
+   (toolbar.ts), since iPadOS applies `:active` unreliably. */
+.goodobsidian-toolbar button,
+.goodobsidian-options button {
+  position: relative;
+  isolation: isolate;
+  --gob-press: var(--background-modifier-active-hover);
+}
+
+.goodobsidian-toolbar button {
+  --gob-press: var(--gob-well-strong);
+}
+
+.goodobsidian-options .goodobsidian-tool.is-active {
+  --gob-press: var(--gob-on-accent-press);
+}
+
+.goodobsidian-toolbar button::after,
+.goodobsidian-options button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--gob-press);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform var(--gob-t-press) var(--gob-spring);
+}
+
+.goodobsidian-toolbar button[data-pressed]::after,
+.goodobsidian-options button[data-pressed]::after {
+  opacity: 1;
+  transform: scale(0.83);
+  transition:
+    opacity 0.15s ease,
+    transform 0.12s ease-out;
+}
+
+/* A swatch is its own disc: it shrinks itself instead of growing a square. */
+.goodobsidian-options .goodobsidian-swatch::after,
+.goodobsidian-options .goodobsidian-color-more::after {
+  display: none;
+}
+
+.goodobsidian-options .goodobsidian-swatch,
+.goodobsidian-options .goodobsidian-color-more {
+  transition: transform 0.3s ease;
+}
+
+.goodobsidian-options .goodobsidian-swatch[data-pressed],
+.goodobsidian-options .goodobsidian-color-more[data-pressed] {
+  transform: scale(0.88);
+}
+
+/* Menus and popovers fade in over GoodNotes' 0.16 s. An element leaving
+   `display: none` restarts its animation, so the pill fades back in too. */
+@keyframes goodobsidian-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes goodobsidian-grow {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.goodobsidian-popover,
+.goodobsidian-addpage,
+.goodobsidian-selection-bar,
+.goodobsidian-selection-menu {
+  animation: goodobsidian-fade-in 0.16s ease-out;
+}
+
+/* Lasso: action bar and its menu keep Obsidian's dark palette (theme-dark
+   on them), restyled as the version's cards. */
+
+.goodobsidian-selection-bar,
+.goodobsidian-selection-menu {
+  --gob-sel-bg: var(--color-base-10);
+  --gob-sel-line: var(--color-base-30);
+  --gob-sel-icon: var(--color-base-70);
+  --gob-sel-well: var(--color-base-25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-popover,
+  .goodobsidian-addpage,
+  .goodobsidian-options,
+  .goodobsidian-selection-bar,
+  .goodobsidian-selection-menu {
+    animation: none;
+  }
+
+  .goodobsidian-toolbar button::after,
+  .goodobsidian-options button::after,
+  .goodobsidian-options .goodobsidian-swatch,
+  .goodobsidian-options .goodobsidian-color-more {
+    transition: none;
+  }
+}
+
+.goodobsidian-swatch-mark svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3px;
+}
+
+/* ---------------------------------------------- stroke width popover */
+
+.goodobsidian-width-popover {
+  min-width: 240px;
+}
+
+.goodobsidian-width-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goodobsidian-width-head .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-width-readout {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-popover button.goodobsidian-width-reset.clickable-icon {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0;
+}
+
+/* A slider whose track widens from thin to thick, as the stroke does. The
+   wedge is its own layer under a transparent track: a clip on the input
+   would clip the thumb too. */
+.goodobsidian-width-slider {
+  position: relative;
+  height: var(--gob-touch);
+  margin: 4px 0 8px;
+}
+
+.goodobsidian-width-wedge {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  right: 11px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: var(--text-faint);
+  clip-path: polygon(0 44%, 100% 0, 100% 100%, 0 56%);
+  pointer-events: none;
+}
+
+.goodobsidian-popover input[type="range"].goodobsidian-width-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: none;
+}
+
+.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+  border: none;
+}
+
+.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: calc((var(--gob-touch) - 22px) / 2);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-raised);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ------------------------------------------------ add page + templates */
+
+/* GoodNotes' "Add Page" sheet. It is attached to <body>, so no view can clip
+   it. */
+.goodobsidian-addpage {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* In a short window the sheet scrolls as a whole; no row may be squashed. */
+.goodobsidian-addpage > * {
+  flex-shrink: 0;
+}
+
+.goodobsidian-addpage-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  text-align: center;
+}
+
+.goodobsidian-addpage-heading {
+  margin-top: 4px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-addpage-hint {
+  margin-top: -6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.goodobsidian-addpage-cards {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 2px;
+  scrollbar-width: none;
+}
+
+.goodobsidian-addpage-cards::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-addpage-divider {
+  height: 1px;
+  margin: 2px -18px;
+  background: var(--gob-line);
+}
+
+.goodobsidian-addpage-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  height: auto;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  cursor: pointer;
+  min-height: var(--gob-touch);
+}
+
+.goodobsidian-addpage-row:hover {
+  background: var(--gob-well);
+}
+
+.goodobsidian-addpage-row-icon {
+  display: inline-flex;
+  color: var(--gob-icon);
+}
+
+/* A segmented control: Before | After | Last page, portrait | landscape. */
+.goodobsidian-segmented {
+  display: flex;
+  padding: 3px;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well);
+}
+
+.goodobsidian-segmented button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.goodobsidian-segmented button.is-active {
+  background: var(--gob-seg-active-bg);
+  color: var(--text-normal);
+  font-weight: var(--font-semibold, 600);
+  box-shadow: var(--gob-shadow-raised);
+}
+
+.goodobsidian-segmented button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-segmented.is-icons {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-segmented.is-icons button {
+  flex: 0 0 auto;
+  width: 48px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A template: its paper preview over its name. */
+.goodobsidian-template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+  gap: 4px;
+  width: 92px;
+  height: auto;
+  /* Obsidian's buttons never wrap; a template name must. */
+  white-space: normal;
+  padding: 6px 4px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.goodobsidian-template-card:hover {
+  background: var(--gob-well);
+}
+
+.goodobsidian-template-preview {
+  display: block;
+  width: 64px;
+  height: auto;
+  border-radius: var(--gob-radius-s);
+  box-shadow: var(--gob-shadow-paper);
+}
+
+.goodobsidian-template-name {
+  width: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+  text-align: center;
+  line-height: 1.25;
+}
+
+.goodobsidian-template-sub {
+  width: 100%;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.25;
+}
+
+/* The full picker. */
+.modal.goodobsidian-templates-modal {
+  width: min(720px, 94vw);
+  max-width: none;
+}
+
+.goodobsidian-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.goodobsidian-templates-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.goodobsidian-templates-sections {
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-templates-section summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 6px;
+  list-style: none;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  cursor: pointer;
+}
+
+/* Our own chevron replaces the tiny native disclosure triangle. */
+.goodobsidian-templates-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.goodobsidian-templates-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  transition: transform 120ms ease;
+}
+
+.goodobsidian-templates-chevron svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.5px;
+}
+
+.goodobsidian-templates-section:not([open]) .goodobsidian-templates-chevron {
+  transform: rotate(-90deg);
+}
+
+.goodobsidian-templates-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px 2px 10px;
+}
+
+.goodobsidian-template-card.is-large {
+  width: 120px;
+  padding: 8px 6px;
+  border: 2px solid transparent;
+}
+
+.goodobsidian-template-card.is-large .goodobsidian-template-preview {
+  width: 96px;
+}
+
+.goodobsidian-template-card.is-large .goodobsidian-template-name {
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.goodobsidian-template-card.is-selected {
+  border-color: var(--interactive-accent);
+}
+
+.goodobsidian-template-card.is-selected .goodobsidian-template-name {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-template-card.is-selected .goodobsidian-template-preview {
+  box-shadow:
+    var(--gob-shadow-paper),
+    0 0 0 2px var(--gob-pop-bg),
+    0 0 0 4px var(--interactive-accent);
+}
+
+.goodobsidian-templates-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* ------------------------- new notebook dialog, covers, change cover (0.5) */
+
+/* GoodNotes' "Create notebook" sheet. Obsidian's `.modal` is the scroller
+   (`overflow: auto`); our header is sticky inside it, so Create never scrolls
+   away. With the on-screen keyboard up the sheet shrinks by
+   `--keyboard-height` (Obsidian sets it on :root; CLAUDE.md: never trust
+   `visualViewport` for this) and, while the title has focus on mobile, moves
+   to the top of the screen so nothing it needs sits under the keyboard. */
+.modal.goodobsidian-newnb-modal {
+  width: min(720px, 94vw);
+  max-width: none;
+  max-height: min(88vh, calc(100vh - var(--keyboard-height, 0px) - 32px));
+  padding: 0;
+}
+
+/* Dialogs (new notebook, note settings, export, search, AI) and settings. */
+
+/* Every centred dialog of the plugin (`goodobsidian-dialog`): a hairline,
+   the version's radius and the sheet shadow. Not on a phone, where Obsidian
+   draws a dialog as a sheet from the bottom edge (square bottom corners);
+   not the full-screen scan and inline-ink sheets, nor Obsidian's prompts. */
+body:not(.is-phone) .modal.goodobsidian-dialog {
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-dialog-radius);
+  box-shadow: var(--gob-shadow-sheet);
+}
+
+/* Cancel and Create live in our own header. (The dialog also removes the ✕
+   from the DOM: on the iPad this rule alone did not hide it.) */
+.goodobsidian-newnb-modal .modal-header,
+.goodobsidian-newnb-modal .modal-title,
+.modal-container .modal.goodobsidian-newnb-modal > .modal-close-button {
+  display: none;
+}
+
+.is-mobile .modal-container.goodobsidian-newnb-container.is-typing {
+  align-items: flex-start;
+  padding-top: max(12px, var(--safe-area-inset-top, 0px));
+}
+
+.goodobsidian-newnb-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--modal-background, var(--background-primary));
+  border-bottom-color: var(--gob-line);
+}
+
+.goodobsidian-newnb-header > button {
+  height: 40px;
+}
+
+.goodobsidian-newnb-header > button:first-child {
+  justify-self: start;
+}
+
+.goodobsidian-newnb-header > button:last-child {
+  justify-self: end;
+}
+
+.goodobsidian-newnb-heading {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold, 600);
+  text-align: center;
+}
+
+.goodobsidian-newnb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+}
+
+/* iPadOS zooms the page into any focused field under 16px: none here is. */
+.goodobsidian-newnb input.goodobsidian-newnb-title {
+  width: 100%;
+  height: 48px;
+  font-size: max(18px, var(--font-ui-large));
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-newnb select.dropdown {
+  min-height: var(--gob-touch);
+  font-size: max(16px, var(--font-ui-small));
+}
+
+.goodobsidian-segmented.goodobsidian-newnb-type button {
+  height: var(--gob-touch);
+  font-size: max(15px, var(--font-ui-medium));
+}
+
+.goodobsidian-newnb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-newnb-section-title {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-muted);
+}
+
+.goodobsidian-newnb .goodobsidian-templates-controls {
+  justify-content: flex-start;
+  padding-bottom: 4px;
+  border-bottom: none;
+}
+
+/* In the dialog the templates scroll with the sheet, not in a box of their own. */
+.goodobsidian-templates-sections.is-inline {
+  max-height: none;
+  overflow: visible;
+}
+
+.goodobsidian-newnb .goodobsidian-template-card.is-large {
+  width: 96px;
+}
+
+.goodobsidian-newnb .goodobsidian-template-card.is-large .goodobsidian-template-preview {
+  width: 72px;
+}
+
+.goodobsidian-newnb-folder {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  white-space: normal;
+  cursor: pointer;
+}
+
+.goodobsidian-newnb-folder.clickable-icon,
+.goodobsidian-newnb-own-folder {
+  border-radius: var(--gob-radius-l);
+  background: var(--gob-group-bg);
+}
+
+.goodobsidian-newnb-folder-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-newnb-folder-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+/* "Create a folder for it": a settings-style row, the whole of it a target. */
+.goodobsidian-newnb-own-folder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--gob-touch);
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-medium);
+  cursor: pointer;
+}
+
+.goodobsidian-newnb-own-folder-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.goodobsidian-newnb-own-folder-desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* The cover picker: designs, previewed in the chosen colour, then colours. */
+.goodobsidian-coverpicker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goodobsidian-coverpicker-designs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+}
+
+.goodobsidian-coverpicker .goodobsidian-template-card {
+  border: 2px solid transparent;
+}
+
+/* "No cover": an empty page outline where the others show a cover. */
+.goodobsidian-template-preview.goodobsidian-cover-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--background-modifier-border);
+  box-shadow: none;
+  color: var(--text-faint);
+}
+
+.goodobsidian-coverpicker-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.goodobsidian-coverpicker-colors.is-disabled {
+  opacity: 0.4;
+}
+
+/* A 44 px target around a 30 px dot; the selected one is ringed in the
+   accent colour, which reads on light and dark themes alike. */
+.goodobsidian-cover-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.goodobsidian-cover-swatch.is-selected {
+  border-color: var(--interactive-accent);
+}
+
+.goodobsidian-cover-swatch.is-selected .goodobsidian-cover-swatch-dot {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--interactive-accent);
+}
+
+.goodobsidian-cover-swatch:disabled {
+  cursor: default;
+}
+
+.goodobsidian-cover-swatch-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: var(--gob-ring-hairline);
+}
+
+/* "Change cover", hung from a cover thumbnail's "…" button. */
+.goodobsidian-coverpopover .goodobsidian-coverpicker-designs {
+  justify-content: space-between;
+}
+
+.goodobsidian-coverpopover .goodobsidian-template-card {
+  width: 72px;
+}
+
+.goodobsidian-coverpopover .goodobsidian-template-preview {
+  width: 56px;
+}
+
+.goodobsidian-coverpopover .goodobsidian-template-card.is-selected .goodobsidian-template-name {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-coverpopover .goodobsidian-coverpicker-colors {
+  display: grid;
+  grid-template-columns: repeat(4, var(--gob-touch));
+  justify-content: space-between;
+}
+
+/* ------------------------------------------------------ text tool (0.5) */
+
+/* The Text tool's options pill, after the GoodNotes 6 screenshot Joost
+   supplied: colour · size · font · B I · alignment · line spacing · lists |
+   box fill · pin. Joost asked for it smaller (2026-09-22): 36 px controls, an
+   icon-only pin. Every control carries `clickable-icon` (Obsidian pads plain
+   buttons 20 px on iPad); these rules restore the colour and opacity that
+   class would otherwise dim. */
+.goodobsidian-options .goodobsidian-text-control.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0 6px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  opacity: 1;
+  white-space: nowrap;
+}
+
+.goodobsidian-options .goodobsidian-text-control svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-options .goodobsidian-text-control.clickable-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-color {
+  padding: 0 4px;
+}
+
+/* The colour control: the text colour as a disc, ringed so white shows. */
+.goodobsidian-text-disc {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--background-modifier-border);
+}
+
+/* Size and font read as dropdowns: a filled well holding the value. */
+.goodobsidian-options .goodobsidian-text-control.is-drop {
+  background: var(--gob-well-strong);
+  font-size: var(--font-ui-small);
+  padding: 0 8px 0 10px;
+  border-radius: var(--gob-well-radius);
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-size {
+  min-width: 52px;
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-text-drop-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-font .goodobsidian-text-drop-label {
+  max-width: 5.5em;
+}
+
+.goodobsidian-options .goodobsidian-text-control .goodobsidian-text-caret {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.goodobsidian-options .goodobsidian-text-control .goodobsidian-text-caret svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* "B I": lit in the accent while any of bold, italic, underline or
+   strikethrough is on. */
+.goodobsidian-options .goodobsidian-text-control.is-format {
+  gap: 1px;
+  font-size: 16px;
+}
+
+.goodobsidian-text-b {
+  font-weight: 800;
+}
+
+.goodobsidian-text-i {
+  font-family: Georgia, serif;
+  font-style: italic;
+}
+
+/* Drag to size and Pin Text tool: icon toggles, filled with the accent while on. */
+.goodobsidian-options .goodobsidian-text-control.is-pin,
+.goodobsidian-options .goodobsidian-text-control.is-drag-size {
+  background: var(--gob-well);
+  border-radius: var(--gob-well-radius);
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-pin.is-active,
+.goodobsidian-options .goodobsidian-text-control.is-drag-size.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-pin.is-active,
+.goodobsidian-options .goodobsidian-text-control.is-drag-size.is-active,
+.goodobsidian-options .goodobsidian-text-control.is-format.is-on {
+  color: var(--interactive-accent);
+  background: var(--gob-accent-tint);
+}
+
+.goodobsidian-options .goodobsidian-text-control.is-pin {
+  gap: 6px;
+  padding: 0 12px;
+}
+
+/* Delete text box: red, so it reads as destructive before it is tapped. */
+.goodobsidian-options .goodobsidian-text-control.is-delete:not(:disabled) {
+  color: var(--text-error);
+}
+
+.goodobsidian-text-pin-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-options .goodobsidian-text-control .goodobsidian-text-pin-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-text-pin-label {
+  font-size: var(--font-ui-small);
+}
+
+/* A narrow pane (Toolbar.fitTextPill): narrower dropdowns. Anything still
+   too wide scrolls inside the pill rather than off-screen. */
+.goodobsidian-options.is-compact .goodobsidian-text-control.clickable-icon {
+  padding: 0 4px;
+}
+
+.goodobsidian-options.is-compact .goodobsidian-text-control.is-size {
+  min-width: 44px;
+}
+
+.goodobsidian-options.is-compact .goodobsidian-text-control.is-font .goodobsidian-text-drop-label {
+  max-width: 3.2em;
+}
+
+.goodobsidian-options.is-compact .goodobsidian-text-pin-label {
+  display: none;
+}
+
+/* A text popover is fitted between its button and the on-screen keyboard
+   (Toolbar.keepPopoverAboveKeyboard): what does not fit scrolls inside it. */
+.goodobsidian-popover.is-text-sheet {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The text popovers: sizes in a grid, fonts in their own face, B I U S and
+   the alignments as a row of toggles, fills as swatches. */
+.goodobsidian-text-popover .goodobsidian-text-option.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  opacity: 1;
+  font-size: var(--font-ui-medium);
+  white-space: normal;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.clickable-icon.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-wide {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-size {
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option svg {
+  width: 22px;
+  height: 22px;
+}
+
+.goodobsidian-text-grid {
+  display: grid;
+  grid-template-columns: repeat(5, var(--gob-touch));
+  gap: 4px;
+}
+
+.goodobsidian-text-row {
+  display: flex;
+  gap: 4px;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-bold {
+  font-weight: 800;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-italic {
+  font-family: Georgia, serif;
+  font-style: italic;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-underline {
+  text-decoration: underline;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-strike {
+  text-decoration: line-through;
+}
+
+/* Colour and fill swatches: full 44 px targets painting a smaller disc, as
+   in the pen pill. The colour is the swatch's own inline background. */
+.goodobsidian-text-popover .goodobsidian-swatch.clickable-icon,
+.goodobsidian-text-popover .goodobsidian-text-option.is-fill.clickable-icon {
+  width: var(--gob-touch);
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background-clip: content-box;
+  opacity: 1;
+}
+
+.goodobsidian-text-popover .goodobsidian-swatch.clickable-icon {
+  box-shadow:
+    inset 0 0 0 7px var(--background-primary),
+    inset 0 0 0 8.5px var(--background-modifier-border);
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option.is-fill.clickable-icon.is-active {
+  background-color: transparent;
+  box-shadow: var(--gob-ring-active);
+  color: var(--text-normal);
+}
+
+.goodobsidian-text-popover .goodobsidian-swatch.clickable-icon.is-active {
+  box-shadow:
+    inset 0 0 0 2px var(--interactive-accent),
+    inset 0 0 0 7px var(--background-primary);
+}
+
+/* A page text box's frame is an outline, not a border, so it takes no width
+   from the text: the textarea then wraps at exactly the width that
+   src/canvas/text-layout.ts (and so every thumbnail) assumes. */
+.goodobsidian-page-textbox {
+  border: none;
+  outline: 1px dashed transparent;
+  outline-offset: -1px;
+}
+
+.goodobsidian-page-textbox:focus-within,
+.goodobsidian-page-textbox.is-dragging,
+.goodobsidian-page-textbox.is-held {
+  outline-color: var(--interactive-accent);
+}
+
+/* The Text tool's hint, a pill above the page indicator as in GoodNotes. */
+.goodobsidian-text-hint {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 2px 2px 2px 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+}
+
+.goodobsidian-text-hint.is-hidden {
+  display: none;
+}
+
+.goodobsidian-text-hint-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.goodobsidian-text-hint-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-text-hint .goodobsidian-text-hint-close.clickable-icon {
+  flex: 0 0 auto;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* "Part of this stroke is outside the page", with Undo. GoodNotes' toast
+   rises from below with a slight overshoot: 0.35 s, measured. */
+.goodobsidian-offpage {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 2px 2px 2px 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+  animation: goodobsidian-toast-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+.goodobsidian-offpage.is-hidden {
+  display: none;
+}
+
+.goodobsidian-offpage,
+.goodobsidian-text-hint,
+.goodobsidian-rec-pill {
+  border: 1px solid var(--gob-line);
+  box-shadow: var(--gob-shadow-float);
+}
+
+@keyframes goodobsidian-toast-in {
+  from {
+    opacity: 0.5;
+    transform: translate(-50%, 200%) scale(0.6);
+  }
+}
+
+.goodobsidian-offpage-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-orange);
+}
+
+.goodobsidian-offpage-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-offpage .goodobsidian-offpage-undo.clickable-icon {
+  flex: 0 0 auto;
+  height: var(--gob-touch);
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--interactive-accent);
+  font-weight: var(--font-semibold, 600);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-offpage {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------ images on the page (0.5) */
+
+/* The selected image's chrome: a frame turned with the image, square corner
+   handles, round mid-edge handles and a rotate knob below the bottom edge
+   (see "A selected picture, as GoodNotes" below, which draws the handles);
+   its action bar is the selection's own (see "The lasso and its selection"
+   below). All of it is sized in screen px, so it stays usable at any zoom;
+   the handle size and the knob's offset arrive as custom properties from the
+   constants the surface's hit-testing uses (src/canvas/image-geometry.ts), so
+   what is drawn and what answers a tap cannot drift apart. The image itself
+   is canvas. */
+.goodobsidian-image-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-image-frame {
+  position: absolute;
+  box-sizing: border-box;
+  transform-origin: 50% 50%;
+  box-shadow: 0 0 0 1.5px var(--interactive-accent);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The Insert image menu borrows the Add Page sheet's look; its rows are full
+   44 px touch targets. */
+
+.goodobsidian-imagemenu .goodobsidian-addpage-title {
+  margin-bottom: 4px;
+}
+
+.goodobsidian-imagemenu .goodobsidian-imagemenu-row {
+  height: var(--gob-touch);
+}
+
+/* Image menu rows, AI menu rows: as Add Page's. */
+
+.goodobsidian-imagemenu .goodobsidian-imagemenu-row,
+.goodobsidian-aimenu .goodobsidian-aimenu-row {
+  min-height: var(--gob-touch);
+  border-radius: var(--gob-radius-m);
+}
+
+/* The hidden file input behind Photos / Take photo. Moved off screen rather
+   than `display: none`, which older iOS refused to open a picker for. */
+.goodobsidian-file-input {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ------------------------------------------ AI with your own key (0.5) */
+
+/* The AI menu reuses the Add Page sheet (`.goodobsidian-addpage`); these rules
+   only make its rows two-line and finger-sized. */
+.goodobsidian-aimenu .goodobsidian-aimenu-row {
+  height: auto;
+  padding: 6px;
+  text-align: left;
+  white-space: normal;
+}
+
+.goodobsidian-aimenu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goodobsidian-aimenu-reason {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.goodobsidian-aimenu .goodobsidian-aimenu-row:disabled {
+  cursor: default;
+  background: transparent;
+}
+
+.goodobsidian-aimenu .goodobsidian-aimenu-row:disabled .goodobsidian-aimenu-label,
+.goodobsidian-aimenu .goodobsidian-aimenu-row:disabled .goodobsidian-addpage-row-icon {
+  color: var(--text-faint);
+}
+
+/* Settings: a key's status next to Add / Replace / Remove. */
+.goodobsidian-key-status {
+  margin-right: 8px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.goodobsidian-key-status.is-set {
+  color: var(--text-success, var(--text-normal));
+}
+
+.goodobsidian-key-where {
+  margin-top: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* 16px or iPadOS zooms the page into the field when it takes focus. */
+.goodobsidian-key-input,
+.goodobsidian-ask-input {
+  width: 100%;
+  font-size: 16px;
+}
+
+/* Ask AI, Generate image and Export as PDF. */
+.goodobsidian-ask-modal,
+.goodobsidian-genimage-modal {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.goodobsidian-export-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.goodobsidian-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.goodobsidian-ask .goodobsidian-segmented button {
+  min-height: var(--gob-touch);
+}
+
+.goodobsidian-ask-note,
+.goodobsidian-ask-status {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.goodobsidian-ask-status.is-error {
+  color: var(--text-error);
+}
+
+.goodobsidian-ask-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.goodobsidian-ask-thread:empty {
+  display: none;
+}
+
+.goodobsidian-ask-question {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--gob-radius-l);
+  background: var(--background-secondary);
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-ask-answer {
+  padding: 4px 2px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-ask-answer.is-pending {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.goodobsidian-ask-answer.is-error {
+  color: var(--text-error);
+}
+
+.goodobsidian-ask-markdown > :first-child {
+  margin-top: 0;
+}
+
+.goodobsidian-ask-answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.goodobsidian-ask-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-ask-input {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.goodobsidian-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.goodobsidian-ask-actions button {
+  min-height: var(--gob-touch);
+}
+
+/* ------------------------------------------------ Shape tool: table picker (0.5) */
+
+/* The Table button shows its size ("3 × 4") beside the glyph, so the choice
+   it remembers is visible before the picker is opened again. */
+.goodobsidian-options .goodobsidian-shape.is-table {
+  gap: 4px;
+  padding: 0 8px 0 6px;
+}
+
+.goodobsidian-shape-caption {
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* The rows × columns picker: 8 × 8 cells a fingertip can hit (44 px on an
+   iPad, shrinking to 28 px on a narrow pane). The cells up to the chosen
+   size fill with the accent. Wider than other popovers to fit the grid. */
+.goodobsidian-popover.is-table-picker {
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.goodobsidian-table-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(28px, var(--gob-touch)));
+  gap: 4px;
+}
+
+.goodobsidian-popover button.goodobsidian-table-cell {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 28px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: 1.5px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-s);
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+}
+
+.goodobsidian-popover button.goodobsidian-table-cell.is-picked {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-popover-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------ the lasso and its selection (0.5) */
+
+/* With the lasso, a text box is something to select, not to type in: taps
+   and loops pass through it to the page, where the lasso reads them. */
+.goodobsidian-surface.is-lasso .goodobsidian-page-textbox {
+  pointer-events: none;
+}
+
+/* The lasso's options live in a popover hanging from its tier-1 button, as in
+   GoodNotes; the chevron on the button says so. */
+/* The caret sits in the button's right margin, out of the flow, so the lasso
+   itself stays centred like every other tool icon. */
+/* GoodNotes: the selected tool widens and a ▾ fades in, and only then, since
+   only then does a tap open its menu. The icon moves left to make room. */
+.goodobsidian-toolbar button.has-caret {
+  position: relative;
+  transition:
+    min-width 0.3s ease,
+    padding 0.3s ease;
+}
+
+.goodobsidian-toolbar button.has-caret.is-active {
+  min-width: 58px;
+  padding-right: 18px;
+}
+
+.goodobsidian-tool-caret {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.goodobsidian-toolbar button.has-caret.is-active .goodobsidian-tool-caret {
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-toolbar button.has-caret,
+  .goodobsidian-tool-caret {
+    transition: none;
+  }
+}
+
+.goodobsidian-tool-caret svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* A popover that points at its button. The arrow follows the button when
+   the popover slides sideways to stay on screen (--gob-popover-arrow). */
+.goodobsidian-popover.has-arrow::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: calc(50% + var(--gob-popover-arrow, 0px));
+  width: 12px;
+  height: 12px;
+  border-top: var(--gob-hairline);
+  border-left: var(--gob-hairline);
+  background: var(--gob-pop-bg);
+  transform: translateX(-50%) rotate(45deg);
+  border-color: var(--gob-line);
+}
+
+.goodobsidian-popover.is-lasso-popover {
+  width: min(320px, calc(100vw - 24px));
+}
+
+.goodobsidian-popover-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  text-align: center;
+  color: var(--text-normal);
+}
+
+/* Lasso type: two large cards side by side; the picked one is filled. */
+.goodobsidian-lasso-types {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.goodobsidian-popover button.goodobsidian-lasso-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 88px;
+  padding: 10px 6px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-popover button.goodobsidian-lasso-type.is-active {
+  background: var(--background-modifier-hover);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.goodobsidian-popover button.goodobsidian-lasso-type.is-active svg {
+  color: var(--interactive-accent);
+}
+
+/* A list of switch rows, iOS-style: the whole 44 px row is the control. */
+.goodobsidian-switch-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-popover button.goodobsidian-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  text-align: left;
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-popover button.goodobsidian-switch-row + button.goodobsidian-switch-row {
+  border-top: var(--gob-hairline);
+}
+
+.goodobsidian-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-modifier-border-hover);
+  transition: background-color 0.15s ease;
+}
+
+.goodobsidian-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: var(--toggle-thumb-color, white);
+  box-shadow: var(--gob-shadow-raised);
+  transition: transform 0.15s ease;
+}
+
+.goodobsidian-switch-row.is-on .goodobsidian-switch {
+  background: var(--color-green);
+}
+
+.goodobsidian-switch-row.is-on .goodobsidian-switch-thumb {
+  transform: translateX(20px);
+}
+
+/* The eraser's "what it erases" control reads as set when it filters. */
+.goodobsidian-options .goodobsidian-eraserfilter.is-filtered {
+  color: var(--interactive-accent);
+}
+
+/* The selection's chrome sits over the page, in the paper's scaled space. */
+.goodobsidian-selection-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A dashed frame round everything selected. A press inside it drags the lot,
+   with the Pencil or a finger. */
+.goodobsidian-selection-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--interactive-accent);
+  border-radius: var(--gob-radius-s);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A freehand lasso's selection is drawn by its own rounded loop, as in
+   GoodNotes; the (now invisible) frame still takes the drags. The loop may
+   reach past the frame, so the SVG does not clip. */
+.goodobsidian-selection-frame.has-outline {
+  border-color: transparent;
+}
+
+.goodobsidian-selection-outline {
+  position: absolute;
+  top: -1.5px;
+  left: -1.5px;
+  display: none;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.goodobsidian-selection-frame.has-outline .goodobsidian-selection-outline {
+  display: block;
+}
+
+.goodobsidian-selection-outline path {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 4;
+  stroke-linejoin: round;
+}
+
+/* The action bar and its "…" menu, after GoodNotes: dark in every theme.
+   Both carry Obsidian's own `theme-dark` class, which re-declares the
+   --color-base-* palette (and --color-red) on them, so these are Obsidian's
+   variables in their dark flavour whatever the app theme is. */
+.goodobsidian-selection-bar {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-sel-bg);
+  color: var(--color-base-100);
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: auto;
+  touch-action: none;
+  white-space: nowrap;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 1px solid var(--gob-sel-line);
+}
+
+/* The pill's own `display: flex` would otherwise outrank the shared rule. */
+.goodobsidian-selection-bar.is-hidden {
+  display: none;
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-tool-radius);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon:hover:not(:disabled),
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-active {
+  background: var(--gob-sel-well);
+  color: var(--color-base-100);
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.mod-warning {
+  color: var(--color-red);
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.goodobsidian-selection-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 26px;
+  margin: 0 4px;
+  background: var(--color-base-35);
+}
+
+.goodobsidian-selection-menu {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 240px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 6px;
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-sel-bg);
+  color: var(--color-base-100);
+  box-shadow: var(--gob-shadow-sheet);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 1px solid var(--gob-sel-line);
+  transform-origin: top left;
+  animation: goodobsidian-grow var(--gob-t-grow) var(--gob-ease-out);
+}
+
+/* The strip across the top: icon over label (GoodNotes' Cut · Front · Back). */
+.goodobsidian-selection-tiles {
+  display: flex;
+  gap: 4px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--font-ui-smaller);
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-row.clickable-icon,
+.goodobsidian-selection-menu .goodobsidian-selection-row.is-static {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--font-ui-medium);
+  text-align: left;
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-row.is-static {
+  min-height: 36px;
+  cursor: default;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon:hover:not(:disabled),
+.goodobsidian-selection-menu .goodobsidian-selection-row.clickable-icon:hover:not(:disabled) {
+  background: var(--color-base-25);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-row.clickable-icon:hover:not(:disabled),
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon:hover:not(:disabled) {
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-selection-menu .clickable-icon.mod-warning {
+  color: var(--color-red);
+}
+
+.goodobsidian-selection-menu .clickable-icon.mod-warning .goodobsidian-selection-row-icon {
+  color: inherit;
+}
+
+.goodobsidian-selection-menu .clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-selection-row-icon,
+.goodobsidian-selection-tile-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-selection-row-icon svg,
+.goodobsidian-selection-tile-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-selection-row-icon {
+  color: var(--gob-sel-icon);
+}
+
+.goodobsidian-selection-menu-divider {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 4px 10px;
+  background: var(--gob-sel-line);
+}
+
+/* Colour: a row of discs, each in a 44 px target. */
+.goodobsidian-selection-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 4px 4px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-swatch.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+}
+
+.goodobsidian-selection-swatch-disc {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--color-base-40);
+}
+
+.goodobsidian-selection-swatch.is-active .goodobsidian-selection-swatch-disc {
+  box-shadow:
+    0 0 0 2px var(--color-base-10),
+    0 0 0 4px var(--color-base-100);
+}
+
+/* ------------------------------------------ audio recording (0.5) */
+
+/* The mic while a recording runs: red, so it reads as "live", not as a tool. */
+.goodobsidian-toolbar button.is-recording,
+.goodobsidian-toolbar button.is-recording:hover:not(:disabled) {
+  background: var(--color-red);
+  color: var(--text-on-accent);
+}
+
+/* Buttons over the page (the recording pill, the player): full 44 px
+   targets. `clickable-icon` opts them out of Obsidian's iPad padding; these
+   rules give them back a size and a look of their own. */
+.goodobsidian-view .goodobsidian-audio-button.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.goodobsidian-view .goodobsidian-audio-button.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+.goodobsidian-audio-button-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-audio-button-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* "● 03:12  Stop": top right, under the options pill and clear of a
+   resting palm, which on a Stop button would end a lecture by accident. */
+.goodobsidian-rec-pill {
+  position: absolute;
+  z-index: 14;
+  top: calc(var(--gob-touch) + 20px);
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 2px 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-rec-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-red);
+  animation: goodobsidian-rec-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes goodobsidian-rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-rec-dot {
+    animation: none;
+  }
+}
+
+.goodobsidian-rec-time {
+  min-width: 3.2em;
+  color: var(--color-red);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-view .goodobsidian-rec-pill .goodobsidian-rec-stop.clickable-icon {
+  color: var(--color-red);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-view .goodobsidian-rec-pill .goodobsidian-rec-discard.clickable-icon {
+  color: var(--text-muted);
+}
+
+.goodobsidian-rec-stop .goodobsidian-audio-button-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* The player: over the bottom of the page, above the page indicator. */
+.goodobsidian-player {
+  position: absolute;
+  z-index: 14;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: min(560px, calc(100% - 24px));
+  padding: 4px 6px 6px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-card-bg);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--text-normal);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-player-hint {
+  padding: 2px 10px 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-player-hint.is-message {
+  color: var(--text-normal);
+}
+
+.goodobsidian-player-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.goodobsidian-player-middle {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.goodobsidian-player-title {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Obsidian's thin slider in a fingertip-tall target: the padding takes the
+   taps, and the track (the input's own background) is painted in the content
+   box only. The type selector is needed to outrank Obsidian's
+   `input[type='range']`, which otherwise sets the height to the track's 6 px. */
+input[type="range"].goodobsidian-player-scrubber {
+  box-sizing: content-box;
+  width: 100%;
+  height: var(--slider-track-height, 6px);
+  margin: 0;
+  padding: calc((var(--gob-touch-compact) - var(--slider-track-height, 6px)) / 2) 0;
+  background-clip: content-box;
+  accent-color: var(--interactive-accent);
+  touch-action: auto;
+}
+
+.goodobsidian-player-time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-player-audio {
+  display: none;
+}
+
+/* The recordings, in the page sidebar's Audio tab (as GoodNotes has them):
+   a list, and a Record button kept at the foot of the panel. */
+.goodobsidian-recordings {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+
+.goodobsidian-recordings-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-recordings-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goodobsidian-recordings-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-primary);
+}
+
+.goodobsidian-recordings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.goodobsidian-recordings
+  .goodobsidian-recordings-head
+  .goodobsidian-recordings-action.clickable-icon {
+  min-width: var(--gob-touch-compact);
+  min-height: var(--gob-touch-compact);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.goodobsidian-recordings-label {
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-recordings-missing {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-recordings-empty {
+  padding: 24px 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+.goodobsidian-recordings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-action.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--gob-touch);
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-action.clickable-icon:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.goodobsidian-recordings-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 24px;
+  background: var(--background-secondary);
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-record.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: var(--gob-radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  opacity: 1;
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-record.clickable-icon.is-recording {
+  background: var(--color-red);
+  color: var(--text-on-accent);
+}
+
+/* -------------------------------- a selected picture, as GoodNotes (0.5) */
+
+/* Replaces the images block's corner dots and its knob above the picture
+   (edited in place there). After Joost's GoodNotes screenshots: a 44 px hit
+   area centred on each handle — a white square at each corner (resize, the
+   aspect kept) and a filled round one mid-edge (stretch one way). */
+.goodobsidian-image-handle {
+  position: absolute;
+  z-index: 1;
+  width: var(--gob-image-handle, 44px);
+  height: var(--gob-image-handle, 44px);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-image-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-image-handle::after,
+.goodobsidian-crop-handle::after {
+  box-shadow: var(--gob-shadow-mark);
+}
+
+.goodobsidian-image-handle.is-corner::after {
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 2px;
+  background: var(--gob-mark);
+}
+
+.goodobsidian-image-handle.is-edge::after {
+  border: 1.5px solid var(--gob-mark);
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+
+.goodobsidian-image-handle.is-nw,
+.goodobsidian-crop-handle.is-nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.goodobsidian-image-handle.is-ne,
+.goodobsidian-crop-handle.is-ne {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.goodobsidian-image-handle.is-se,
+.goodobsidian-crop-handle.is-se {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+
+.goodobsidian-image-handle.is-sw,
+.goodobsidian-crop-handle.is-sw {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+
+.goodobsidian-image-handle.is-n,
+.goodobsidian-crop-handle.is-n {
+  left: 50%;
+  top: 0;
+  cursor: ns-resize;
+}
+
+.goodobsidian-image-handle.is-s,
+.goodobsidian-crop-handle.is-s {
+  left: 50%;
+  top: 100%;
+  cursor: ns-resize;
+}
+
+.goodobsidian-image-handle.is-e,
+.goodobsidian-crop-handle.is-e {
+  left: 100%;
+  top: 50%;
+  cursor: ew-resize;
+}
+
+.goodobsidian-image-handle.is-w,
+.goodobsidian-crop-handle.is-w {
+  left: 0;
+  top: 50%;
+  cursor: ew-resize;
+}
+
+/* On an edge too short for them, the edge handles step aside (the surface
+   sets these by the same rule its hit test uses: edgeHandlesFit). */
+.goodobsidian-image-frame.no-ns .goodobsidian-image-handle.is-n,
+.goodobsidian-image-frame.no-ns .goodobsidian-image-handle.is-s,
+.goodobsidian-image-frame.no-ew .goodobsidian-image-handle.is-e,
+.goodobsidian-image-frame.no-ew .goodobsidian-image-handle.is-w,
+.goodobsidian-crop-frame.no-ns .goodobsidian-crop-handle.is-n,
+.goodobsidian-crop-frame.no-ns .goodobsidian-crop-handle.is-s,
+.goodobsidian-crop-frame.no-ew .goodobsidian-crop-handle.is-e,
+.goodobsidian-crop-frame.no-ew .goodobsidian-crop-handle.is-w {
+  display: none;
+}
+
+/* The rotate knob hangs below the bottom edge on a stem: a white disc with
+   circling arrows, its 44 px target centred on the disc. It turns with the
+   picture, so after a half turn it hangs above. */
+.goodobsidian-image-rotate {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + var(--gob-image-rotate-offset, 44px));
+  width: var(--gob-image-handle, 44px);
+  height: var(--gob-image-handle, 44px);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+}
+
+/* The stem, from the knob's centre up to the bottom edge. */
+.goodobsidian-image-rotate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 1.5px;
+  height: var(--gob-image-rotate-offset, 44px);
+  background: var(--interactive-accent);
+  transform: translateX(-50%);
+}
+
+.goodobsidian-image-rotate-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--gob-image-knob, 28px);
+  height: var(--gob-image-knob, 28px);
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: var(--gob-mark);
+  color: var(--interactive-accent);
+  transform: translate(-50%, -50%);
+  box-shadow: var(--gob-shadow-mark);
+}
+
+.goodobsidian-image-rotate-knob svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Crop mode. The canvas draws the whole picture, veiled outside the crop;
+   this box lies over it, turned with it, and takes every press on it. The
+   crop frame inside is white, with bracket corners and short bars mid-edge,
+   as a photo editor draws one — each on a 44 px target. */
+.goodobsidian-crop-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-crop-picture {
+  position: absolute;
+  box-sizing: border-box;
+  transform-origin: 50% 50%;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-crop-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--gob-mark);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+  cursor: move;
+}
+
+.goodobsidian-crop-handle {
+  position: absolute;
+  width: var(--gob-image-handle, 44px);
+  height: var(--gob-image-handle, 44px);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-crop-handle::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  border: 0 solid var(--gob-mark);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+}
+
+/* A corner is an L of two thick bars, lying along the frame's own edges. */
+.goodobsidian-crop-handle.is-corner::after {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-crop-handle.is-nw::after {
+  left: calc(50% - 2px);
+  top: calc(50% - 2px);
+  border-top-width: 4px;
+  border-left-width: 4px;
+}
+
+.goodobsidian-crop-handle.is-ne::after {
+  right: calc(50% - 2px);
+  top: calc(50% - 2px);
+  border-top-width: 4px;
+  border-right-width: 4px;
+}
+
+.goodobsidian-crop-handle.is-se::after {
+  right: calc(50% - 2px);
+  bottom: calc(50% - 2px);
+  border-bottom-width: 4px;
+  border-right-width: 4px;
+}
+
+.goodobsidian-crop-handle.is-sw::after {
+  left: calc(50% - 2px);
+  bottom: calc(50% - 2px);
+  border-bottom-width: 4px;
+  border-left-width: 4px;
+}
+
+/* An edge is a short thick bar across its middle. */
+.goodobsidian-crop-handle.is-edge::after {
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  background: var(--gob-mark);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-crop-handle.is-n::after,
+.goodobsidian-crop-handle.is-s::after {
+  width: 24px;
+  height: 4px;
+}
+
+.goodobsidian-crop-handle.is-e::after,
+.goodobsidian-crop-handle.is-w::after {
+  width: 4px;
+  height: 24px;
+}
+
+/* A lock on each locked picture, shown only with the lasso. It takes no
+   presses: a tap-and-hold on the picture reaches the page and offers Unlock. */
+.goodobsidian-lock-badges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-lock-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--gob-mark);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-lock-badges.is-hidden,
+.goodobsidian-lock-badge.is-hidden {
+  display: none;
+}
+
+.goodobsidian-lock-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* A bar button that says what it does: crop mode's Cancel · Reset · Done, a
+   tap-and-hold's Paste or Unlock. Still a 44 px target. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.has-label {
+  gap: 6px;
+  width: auto;
+  min-width: var(--gob-touch);
+  padding: 0 12px;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-selection-button-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ------------------------------------------------ scan a document (0.5) */
+
+/* The scan sheet: photo with corner handles, live preview, and a bar of
+   controls. Full screen on mobile; the photo beside the preview in landscape
+   and above it in portrait. */
+.modal.goodobsidian-scan-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(96vw, 1200px);
+  max-width: none;
+  height: 88vh;
+  max-height: 88vh;
+}
+
+.is-mobile .modal.goodobsidian-scan-modal {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+}
+
+.modal.goodobsidian-scan-modal .modal-content.goodobsidian-scan {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goodobsidian-scan-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+@media (orientation: portrait) {
+  .goodobsidian-scan-main {
+    flex-direction: column;
+  }
+}
+
+.goodobsidian-scan-stage,
+.goodobsidian-scan-result {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.goodobsidian-scan-stage {
+  flex: 3 1 0;
+  /* The handles are dragged with a finger or the Pencil: no scrolling, no
+     zoom, no text selection or callout under them. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.goodobsidian-scan-result {
+  flex: 2 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+}
+
+.goodobsidian-scan-photo {
+  position: absolute;
+  display: none;
+}
+
+.goodobsidian-scan-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  pointer-events: none;
+}
+
+.goodobsidian-scan-stage.has-photo .goodobsidian-scan-photo,
+.goodobsidian-scan-stage.has-photo .goodobsidian-scan-overlay {
+  display: block;
+}
+
+/* Everything outside the page is dimmed. */
+.goodobsidian-scan-mask {
+  fill: rgba(0, 0, 0, 0.35);
+  fill-rule: evenodd;
+}
+
+.goodobsidian-scan-outline {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+.goodobsidian-scan-outline.is-invalid {
+  stroke: var(--text-error);
+  stroke-dasharray: 8 6;
+}
+
+/* A corner handle: a 44 px target around a visible ring. */
+.goodobsidian-scan-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  margin: calc(var(--gob-touch) / -2) 0 0 calc(var(--gob-touch) / -2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+}
+
+.goodobsidian-scan-stage.has-photo .goodobsidian-scan-handle {
+  display: flex;
+}
+
+.goodobsidian-scan-handle-dot {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: var(--gob-shadow-mark);
+  pointer-events: none;
+}
+
+.goodobsidian-scan-handle.is-dragging {
+  cursor: grabbing;
+}
+
+.goodobsidian-scan-handle.is-dragging .goodobsidian-scan-handle-dot {
+  width: 14px;
+  height: 14px;
+  background: transparent;
+}
+
+/* The magnifier over the corner being dragged, with a crosshair on the corner. */
+.goodobsidian-scan-loupe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 3px solid var(--interactive-accent);
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.goodobsidian-scan-loupe.is-hidden {
+  display: none;
+}
+
+.goodobsidian-scan-loupe canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.goodobsidian-scan-loupe::before,
+.goodobsidian-scan-loupe::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-scan-loupe::before {
+  width: 22px;
+  height: 2px;
+  margin: -1px 0 0 -11px;
+}
+
+.goodobsidian-scan-loupe::after {
+  width: 2px;
+  height: 22px;
+  margin: -11px 0 0 -1px;
+}
+
+/* Before there is a photo: what to do, and the buttons to do it. */
+.goodobsidian-scan-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.goodobsidian-scan-empty.is-hidden {
+  display: none;
+}
+
+.goodobsidian-scan-empty-icon .svg-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-faint);
+}
+
+.goodobsidian-scan-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.goodobsidian-scan-status {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-float);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  z-index: 3;
+}
+
+.goodobsidian-scan-status.is-hidden {
+  display: none;
+}
+
+.goodobsidian-scan-status.is-error {
+  color: var(--text-error);
+}
+
+/* The preview: the straightened page, fitted to its frame. */
+.goodobsidian-scan-preview-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.goodobsidian-scan-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(var(--gob-shadow-paper));
+}
+
+.goodobsidian-scan-caption {
+  flex: 0 0 auto;
+  min-height: 1.4em;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.goodobsidian-scan-caption.is-error {
+  color: var(--text-error);
+}
+
+/* The bar: Retake, Rotate, the filters, then Next page and Add. */
+.goodobsidian-scan-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.goodobsidian-scan-spacer {
+  flex: 1 1 0;
+}
+
+.goodobsidian-scan button.goodobsidian-scan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--gob-touch);
+  padding: 0 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.goodobsidian-scan button.goodobsidian-scan-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.goodobsidian-scan-button-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-scan button.goodobsidian-scan-primary {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-scan button.goodobsidian-scan-primary:hover:not(:disabled) {
+  background: var(--interactive-accent-hover);
+}
+
+.goodobsidian-scan-filters {
+  flex: 0 1 auto;
+}
+
+.goodobsidian-scan .goodobsidian-scan-filters button {
+  min-height: var(--gob-touch);
+  height: auto;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.goodobsidian-scan.is-busy .goodobsidian-scan-stage {
+  pointer-events: none;
+}
+
+/* --------------------------------------------------- note settings (gear) */
+
+.goodobsidian-note-settings-intro {
+  margin-bottom: var(--size-4-3);
+}
+
+.goodobsidian-note-settings-path {
+  width: 14em;
+  max-width: 100%;
+}
+
+/* While a folder is typed with the on-screen keyboard up, the dialog rises
+   just far enough to keep the field and its matches above the keyboard
+   (DialogKeyboard.update, src/view/dialog-keyboard.ts). `translate`, not
+   `transform`, so Obsidian's own modal animation is left alone. */
+.goodobsidian-keyboard-lift {
+  translate: 0 calc(-1 * var(--goodobsidian-dialog-lift, 0px));
+  transition: translate 0.18s ease-out;
+}
+
+/* The folders matching what is typed, in the dialog under the field — not
+   Obsidian's floating list, which placed itself over the toolbar when the
+   keyboard hid the field. */
+.goodobsidian-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -4px 0 8px;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-folder-list.is-hidden {
+  display: none;
+}
+
+.goodobsidian-folder-list .goodobsidian-folder-item.clickable-icon {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-s);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  opacity: 1;
+}
+
+.goodobsidian-folder-list .goodobsidian-folder-item.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ------------------------------------------ the ⋯ panel, as GoodNotes' */
+
+/* GoodNotes' "More" sheet: grouped rows on cards, attached to <body>. */
+.goodobsidian-more {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 12px 14px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-sheet-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-more-title {
+  padding: 2px 0 8px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  text-align: center;
+}
+
+.goodobsidian-more-heading {
+  padding: 10px 4px 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-more-group {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--gob-radius-l);
+  background: var(--gob-group-bg);
+  overflow: hidden;
+}
+
+.goodobsidian-more-pagehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-more-thumb {
+  width: 34px;
+  height: auto;
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+  box-shadow: var(--gob-ring-hairline);
+}
+
+.goodobsidian-more .goodobsidian-more-row.clickable-icon,
+.goodobsidian-more .goodobsidian-more-row.is-goto {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal, 400);
+  text-align: left;
+  white-space: normal;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.goodobsidian-more .goodobsidian-more-row.clickable-icon {
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-more .goodobsidian-more-row + .goodobsidian-more-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.goodobsidian-more .goodobsidian-more-row + .goodobsidian-more-row,
+.goodobsidian-more-pagehead {
+  border: none;
+}
+
+.goodobsidian-more .goodobsidian-more-row + .goodobsidian-more-row,
+.goodobsidian-more .goodobsidian-more-pagehead + .goodobsidian-more-row {
+  background-image: linear-gradient(var(--gob-line), var(--gob-line));
+  background-size: calc(100% - 44px) 1px;
+  background-position: right top;
+  background-repeat: no-repeat;
+}
+
+.goodobsidian-more .goodobsidian-more-row.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+  background-color: var(--gob-well);
+}
+
+.goodobsidian-more .goodobsidian-more-row.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-more-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--gob-icon);
+}
+
+.goodobsidian-more-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-more-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-more .goodobsidian-more-row.is-danger {
+  color: var(--text-error);
+}
+
+.goodobsidian-more .goodobsidian-more-row.is-danger .goodobsidian-more-icon {
+  color: var(--text-error);
+}
+
+.goodobsidian-more .goodobsidian-more-row.is-bookmarked .goodobsidian-more-icon {
+  color: var(--gob-bookmark);
+}
+
+/* 16 px: iPadOS zooms the page to any field focused below that. */
+.goodobsidian-view .goodobsidian-more input.goodobsidian-more-goto,
+body .goodobsidian-more input.goodobsidian-more-goto {
+  flex: 0 0 84px;
+  width: 84px;
+  min-width: 0;
+  max-width: 84px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 16px;
+  text-align: right;
+}
+
+body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------- pull past the last page to add one */
+
+/* GoodNotes' ring in the strip of desk a stretch past the last page reveals:
+   below it when pages run down, right of it when they run across. Chrome:
+   never takes a pointer. `--gob-pull-inset` is half the revealed strip. */
+.goodobsidian-pull-add {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: var(--gob-pull-inset, 0px);
+  transform: translate(-50%, 50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.goodobsidian-pull-add.is-row {
+  left: auto;
+  bottom: auto;
+  top: 50%;
+  right: var(--gob-pull-inset, 0px);
+  transform: translate(50%, -50%);
+  max-width: 96px;
+}
+
+.goodobsidian-pull-add.is-hidden {
+  display: none;
+}
+
+.goodobsidian-pull-add-ring {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.goodobsidian-pull-add-ring svg {
+  display: block;
+}
+
+.goodobsidian-pull-add-track {
+  fill: none;
+  stroke: var(--background-modifier-border);
+  stroke-width: 3;
+}
+
+.goodobsidian-pull-add-progress {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.goodobsidian-pull-add-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.goodobsidian-pull-add-icon svg,
+.goodobsidian-pull-add-arrow svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-pull-add-arrow {
+  color: var(--interactive-accent);
+  display: flex;
+}
+
+/* Armed: letting go adds the page. */
+.goodobsidian-pull-add.is-armed .goodobsidian-pull-add-ring {
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pull-add.is-armed .goodobsidian-pull-add-label {
+  color: var(--text-normal);
+}
+
+/* ------------------------------------------------------- export as PDF */
+
+/* Three labels that read as sentences, not one-word toggles: let them wrap
+   on a narrow iPad split view rather than truncate. */
+.goodobsidian-export-scope button {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Choose pages: Select all, None and the typed range, above the grid. */
+.goodobsidian-export-choose {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Its own `display` outranks the shared `.is-hidden` (ledger). */
+.goodobsidian-export-choose.is-hidden,
+.goodobsidian-export-grid.is-hidden,
+.goodobsidian-export-single.is-hidden {
+  display: none;
+}
+
+.goodobsidian-export-choose button {
+  min-height: var(--gob-touch-compact);
+  padding: 0 12px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+/* Not `goodobsidian-ask-input`: that is the Ask AI textarea, 88 px tall.
+   16px or iPadOS zooms the page into the field when it takes focus. */
+.goodobsidian-export-choose .goodobsidian-export-range {
+  flex: 1 1 160px;
+  min-width: 0;
+  height: var(--gob-touch-compact);
+  font-size: 16px;
+}
+
+/* Every page, scrollable: the page sidebar's thumbnails, as many per row as fit. */
+.goodobsidian-export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 16px 14px;
+  align-items: start;
+  max-height: min(52vh, 520px);
+  padding: 12px 10px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+}
+
+/* The frame keeps the page's shape (aspect-ratio, set per page) while its
+   canvas is freed off screen, so the grid never shifts as it scrolls. */
+.goodobsidian-export-grid .goodobsidian-thumb-canvas,
+.goodobsidian-export-single .goodobsidian-thumb-canvas {
+  height: 100%;
+}
+
+.goodobsidian-export-grid .goodobsidian-thumb-number {
+  text-align: center;
+}
+
+.goodobsidian-export-tile.is-selected .goodobsidian-thumb-frame {
+  outline-color: var(--interactive-accent);
+}
+
+/* Here the ring means "exported"; the page being read shows in its number only. */
+.goodobsidian-export-tile.is-current:not(.is-selected) .goodobsidian-thumb-frame {
+  outline-color: transparent;
+}
+
+/* A tick at the corner of each exported page; under Choose pages the others
+   show an empty circle, so it is clear a tap ticks them. */
+.goodobsidian-export-check {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--gob-mark);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--gob-mark);
+  box-shadow: var(--gob-shadow-mark);
+  pointer-events: none;
+}
+
+.goodobsidian-export-check-icon {
+  display: none;
+}
+
+.goodobsidian-export-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+/* Under Choose pages a ticked page shows its place in the PDF instead. */
+.goodobsidian-export-order {
+  font-size: 12px;
+  font-weight: var(--font-bold, 700);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.goodobsidian-export-grid:not(.is-choosing)
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check-icon {
+  display: flex;
+}
+
+.goodobsidian-export-grid.is-choosing .goodobsidian-export-check,
+.goodobsidian-export-tile.is-selected .goodobsidian-export-check {
+  display: flex;
+}
+
+.goodobsidian-export-tile.is-selected .goodobsidian-export-check {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+}
+
+/* Two-digit places need a little more room than the circle. */
+.goodobsidian-export-grid.is-choosing
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check {
+  width: auto;
+  min-width: 22px;
+  padding: 0 4px;
+  border-radius: var(--gob-radius-pill);
+}
+
+/* This page: the page being read, large. */
+.goodobsidian-export-single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-export-single .goodobsidian-thumb-frame {
+  width: min(260px, 100%);
+  cursor: default;
+}
+
+/* While exporting, the choice is fixed. */
+.goodobsidian-ask.is-busy .goodobsidian-export-grid,
+.goodobsidian-ask.is-busy .goodobsidian-export-choose {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.goodobsidian-ask-note.is-error {
+  color: var(--text-error);
+}
+
+.goodobsidian-export-done {
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ------------------------------------------------ search this notebook */
+
+.goodobsidian-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goodobsidian-search-page {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-search-count,
+.goodobsidian-search-kind {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+}
+
+.goodobsidian-search-snippet {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-search-kind {
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ------------------------------------------------------- colour picker */
+
+/* Every colour choice: common colours, recent custom ones, and a colour of
+   one's own picked by hue and shade (src/view/color-picker.ts). */
+
+.goodobsidian-popover.is-color-popover {
+  width: 340px;
+  max-width: calc(100vw - 24px);
+}
+
+.goodobsidian-color-picker .is-hidden,
+.goodobsidian-color-custom-toggle.is-hidden,
+.goodobsidian-color-mixer.is-hidden {
+  display: none;
+}
+
+.goodobsidian-color-picker.is-custom {
+  padding: 16px 18px 18px;
+  gap: 14px;
+}
+
+/* While the custom colour shows, a host's own label ("Colour", "Box fill")
+   gives way to its title. */
+.goodobsidian-color-picker.is-custom > .goodobsidian-popover-label {
+  display: none;
+}
+
+.goodobsidian-color-grid {
+  display: grid;
+  grid-template-columns: repeat(7, var(--gob-touch-compact));
+  gap: 2px;
+}
+
+.goodobsidian-color-swatch.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  min-height: var(--gob-touch-compact);
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.goodobsidian-color-disc {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  /* Ringed, so white shows on a white popover. */
+  box-shadow: var(--gob-ring-disc);
+}
+
+.goodobsidian-color-swatch.is-active .goodobsidian-color-disc {
+  box-shadow:
+    0 0 0 2px var(--gob-pop-bg),
+    0 0 0 4px var(--interactive-accent);
+}
+
+/* "None": a white disc struck through in red. */
+.goodobsidian-color-swatch.is-none .goodobsidian-color-disc {
+  background: linear-gradient(
+    to top right,
+    #ffffff calc(50% - 1.5px),
+    #e03131 calc(50% - 1.5px),
+    #e03131 calc(50% + 1.5px),
+    #ffffff calc(50% + 1.5px)
+  );
+}
+
+.goodobsidian-color-custom-toggle.clickable-icon {
+  justify-content: center;
+  width: 100%;
+  font-size: var(--font-ui-small);
+  color: var(--text-accent);
+}
+
+/* The custom colour, as Notability's: a title with the way back, the
+   saturation-by-brightness square, the hue slider, then the hex value beside
+   a button filled with the colour. Scoped to the mixer, not the popover: the
+   lasso menu shows it too. */
+.goodobsidian-color-mixer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.goodobsidian-color-mixer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: var(--gob-touch);
+}
+
+.goodobsidian-color-mixer-head .goodobsidian-popover-title {
+  font-size: var(--font-ui-large);
+  text-align: left;
+}
+
+/* Back to the common colours: four dots, colour values like the swatches. */
+.goodobsidian-color-mixer button.goodobsidian-color-presets.clickable-icon {
+  display: grid;
+  grid-template-columns: repeat(2, 12px);
+  place-content: center;
+  gap: 5px;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  margin-right: -10px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+}
+
+.goodobsidian-color-presets-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* Saturation across, brightness down. The white, black and hue are the
+   colour model, not chrome, like the colour wheel's literals. */
+.goodobsidian-color-sv {
+  position: relative;
+  height: 180px;
+  border-radius: var(--gob-radius-m);
+  background:
+    linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+    linear-gradient(to right, #fff, hsl(var(--gob-hue, 0), 100%, 50%));
+  box-shadow: var(--gob-ring-disc);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.goodobsidian-color-sv-handle {
+  position: absolute;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--gob-mark);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* The hue: a thin rainbow in a fingertip-tall row, with a white thumb
+   holding the hue itself. The track is inset by half the thumb, so the
+   thumb stays inside the row at either end; its hit area is the whole row. */
+.goodobsidian-color-channel.is-hue {
+  display: flex;
+  align-items: center;
+  height: var(--gob-touch);
+}
+
+.goodobsidian-color-track.goodobsidian-color-hue {
+  position: relative;
+  flex: 1 1 auto;
+  height: 10px;
+  margin: 0 17px;
+  border-radius: var(--gob-radius-pill);
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.goodobsidian-color-track.goodobsidian-color-hue::before {
+  content: "";
+  position: absolute;
+  inset: calc((10px - var(--gob-touch)) / 2) -17px;
+}
+
+.goodobsidian-color-thumb {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--gob-mark);
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.goodobsidian-color-thumb-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+/* The hex value: shown, never typed (a field would take focus from a text
+   box being styled; see color-picker.ts). */
+.goodobsidian-color-mixer-foot {
+  display: flex;
+  gap: 12px;
+}
+
+.goodobsidian-color-hexfield {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 16px;
+}
+
+.goodobsidian-color-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-normal);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* "Use this colour": the colour itself under a "+" that reads on it (its
+   colour is set from the swatch, dark or white). */
+.goodobsidian-color-mixer button.goodobsidian-color-use.clickable-icon {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 0 0 132px;
+  align-items: center;
+  justify-content: flex-end;
+  height: 48px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+}
+
+.goodobsidian-color-use .goodobsidian-color-preview {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: var(--gob-ring-disc);
+}
+
+.goodobsidian-color-use .svg-icon {
+  width: 28px;
+  height: 28px;
+}
+
+/* The lasso menu's "custom colour" swatch: a colour wheel. */
+:root {
+  --gob-color-wheel: conic-gradient(
+    #e03131,
+    #f08c00,
+    #fcc419,
+    #2f9e44,
+    #1971c2,
+    #7950f2,
+    #e64980,
+    #e03131
+  );
+}
+
+.goodobsidian-color-more {
+  background: var(--gob-color-wheel);
+  border-radius: 50%;
+}
+
+/* "More colours" in the pen pill: a dashed ring holding a "+", as GoodNotes'
+   add-colour button, the size of the swatches beside it. Compound, to
+   outrank the pill's own button rules. */
+.goodobsidian-options .goodobsidian-color-more.clickable-icon {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  min-width: var(--gob-touch-compact);
+  padding: 6px;
+  border-radius: 50%;
+  background: none;
+  color: var(--gob-icon);
+}
+
+.goodobsidian-options .goodobsidian-color-more.clickable-icon::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1.5px dashed currentColor;
+  border-radius: 50%;
+}
+
+.goodobsidian-options .goodobsidian-color-more .svg-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.25px;
+}
+
+/* The shape pill's colour: a disc of the shapes' colour and a caret. */
+.goodobsidian-options .goodobsidian-shape-color.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--gob-touch-compact);
+  padding: 0 6px;
+  color: var(--text-normal);
+}
+
+.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ------------------------------------------ pen gestures (pen type menu) */
+
+/* The pen type menu's second page: GoodNotes' Pen Gestures. */
+.goodobsidian-popover.is-pen-gestures {
+  width: min(320px, calc(100vw - 24px));
+}
+
+.goodobsidian-popover-divider {
+  height: 0;
+  margin: 2px 0;
+  border-top: var(--gob-hairline);
+  border-top-color: var(--gob-line);
+}
+
+.goodobsidian-popover button.goodobsidian-popover-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px;
+  color: var(--text-normal);
+}
+
+.goodobsidian-popover-link-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+
+/* A title with a back arrow before it, the title centred over the page. */
+.goodobsidian-popover-head {
+  display: grid;
+  grid-template-columns: var(--gob-touch) 1fr var(--gob-touch);
+  align-items: center;
+}
+
+.goodobsidian-popover-head .goodobsidian-popover-title {
+  grid-column: 2;
+}
+
+.goodobsidian-popover button.goodobsidian-popover-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  color: var(--text-normal);
+}
+
+/* "Erase shapes and highlighter" waits on "Scribble to erase". */
+.goodobsidian-popover button.goodobsidian-switch-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------ hit areas */
+
+/* A control drawn smaller than a fingertip still takes one: an invisible
+   layer centred on it grows its target to --gob-touch. Only for controls
+   with that much room round them, or neighbours would share taps. */
+.goodobsidian-thumb-more::before,
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.clickable-icon::before,
+.goodobsidian-recordings
+  .goodobsidian-recordings-head
+  .goodobsidian-recordings-action.clickable-icon::before {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc((100% - var(--gob-touch)) / 2));
+}
+
+.goodobsidian-thumb-more,
+.goodobsidian-recordings
+  .goodobsidian-recordings-head
+  .goodobsidian-recordings-action.clickable-icon {
+  position: relative;
+}
+
+/* ------------------------------------------------------- frosted chrome */
+
+/*
+ * Frosted small controls, after GoodNotes (research/goodnotes-smoothness
+ * §12): the page shows through, blurred. Only small things get it, since
+ * the blur is redone every frame the canvas under it changes; the options
+ * pill stays opaque. Both features are required together: a `color-mix()`
+ * holding a `var()` that the browser cannot parse leaves no background at
+ * all, rather than the opaque one above.
+ */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) and
+  (background: color-mix(in srgb, red 50%, transparent)) {
+  .goodobsidian-pageindicator,
+  .goodobsidian-zoomreadout,
+  .goodobsidian-offpage,
+  .goodobsidian-text-hint {
+    background: var(--gob-frost);
+    -webkit-backdrop-filter: var(--gob-blur);
+    backdrop-filter: var(--gob-blur);
+  }
+
+  .goodobsidian-pageindicator,
+  .goodobsidian-zoomreadout {
+    opacity: 1;
+  }
+
+  /* A popover holds controls to read at a glance: more paper, same blur. */
+  .goodobsidian-popover {
+    background: var(--gob-pop-bg);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    backdrop-filter: blur(20px) saturate(1.6);
+  }
+
+  .goodobsidian-pagesidebar-top {
+    background: var(--gob-frost-side);
+    -webkit-backdrop-filter: var(--gob-blur);
+    backdrop-filter: var(--gob-blur);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-options.is-floating,
+  .goodobsidian-options.is-floating.is-collapsed,
+  .goodobsidian-options,
+  .goodobsidian-options > *,
+  .goodobsidian-thumb-frame,
+  .goodobsidian-toolbar button::after,
+  .goodobsidian-options button::after {
+    transition: none !important;
+  }
+  .goodobsidian-selection-menu,
+  .goodobsidian-popover,
+  .goodobsidian-addpage,
+  .goodobsidian-more,
+  .goodobsidian-selection-bar {
+    animation: none !important;
+  }
+}

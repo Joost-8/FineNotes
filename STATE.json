@@ -1,0 +1,20 @@
+{
+  "project": "FineNotes (formerly GoodObsidian)",
+  "stack": "TypeScript + esbuild, Obsidian plugin API, canvas 2D, perfect-freehand (MIT)",
+  "phase": "implementing",
+  "tasks_completed": 32,
+  "tasks_total": 47,
+  "run_command": "npm run build, then copy main.js/manifest.json/styles.css into <vault>/.obsidian/plugins/finenotes/",
+  "test_command": "npm test",
+  "next_steps": [
+    "Joost: install 0.5.0 via BRAT and run the on-device checks in the release summary (text bar + keyboard, pictures, lasso, scanning, audio incl. the ~30 s truncation bug and screen lock, AI with a key)",
+    "Joost: draw and save real stars, Apple Notes arrows (60-400 px) and plain lines so the new recogniser thresholds can be tuned on real Pencil ink",
+    "Follow-ups: persist the table size; seek lead-time setting; chunk long recordings for transcription (25 min cap); relink renamed pictures; retune the barb arrow on real ink",
+    "Format wave (tasks 30-36): notebook folder layout, per-page files, lazy loading",
+    "Squash git history only at the Community Plugins submission (RELEASE.md)"
+  ],
+  "blockers": [
+    "No Obsidian runtime or iPad in this environment: every 0.5 UI behaviour is unverified beyond lint, typecheck, 1742 tests, build and a Node load check"
+  ],
+  "last_session": "2026-09-22 0.5 wave: 9 agents in 3 waves (images, text bar, shapes/tables, notebook creation/covers, AI, lasso, audio, scanning, GoodNotes picture UI); all merged green; released 0.5.0"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "finenotes",
+  "name": "FineNotes",
+  "version": "1.0.0",
+  "minAppVersion": "1.13.0",
+  "description": "Handwrite with Apple Pencil in real, paginated notebooks: paper templates, shapes that snap, PDFs and pictures, all kept as plain files in your own vault.",
+  "author": "Joost",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,857 @@
+{
+  "commit": "4d194c3",
+  "build": [
+    {
+      "name": "empty+empty",
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "empty+small",
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "whitespace-only+empty",
+      "body": " \n\t \n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "whitespace-only+small",
+      "body": " \n\t \n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "heading+empty",
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "heading+small",
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "trailing-newlines+empty",
+      "body": "# T\n\n\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "trailing-newlines+small",
+      "body": "# T\n\n\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "trailing-spaces-tabs+empty",
+      "body": "# T  \t\n \t",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "trailing-spaces-tabs+small",
+      "body": "# T  \t\n \t",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "trailing-nbsp-and-bom+empty",
+      "body": "# T ﻿",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "trailing-nbsp-and-bom+small",
+      "body": "# T ﻿",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "only-bom+empty",
+      "body": "﻿",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "only-bom+small",
+      "body": "﻿",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "frontmatter+empty",
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "frontmatter+small",
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "frontmatter-bom+empty",
+      "body": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "frontmatter-bom+small",
+      "body": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "frontmatter-crlf+empty",
+      "body": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\r\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "frontmatter-crlf+small",
+      "body": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\r\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys+empty",
+      "body": "---\ninkedmark: true\ninkedmark-version: 2\ntags: [a]\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys+small",
+      "body": "---\ninkedmark: true\ninkedmark-version: 2\ntags: [a]\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys-no-space+empty",
+      "body": "---\ninkedmark:true\ninkedmark-version:3\n---\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys-no-space+small",
+      "body": "---\ninkedmark:true\ninkedmark-version:3\n---\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys-bom+empty",
+      "body": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys-bom+small",
+      "body": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys-crlf+empty",
+      "body": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys-crlf+small",
+      "body": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys-not-at-start+empty",
+      "body": "# x\n---\ninkedmark: true\n---\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# x\n---\ninkedmark: true\n---\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys-not-at-start+small",
+      "body": "# x\n---\ninkedmark: true\n---\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# x\n---\ninkedmark: true\n---\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-keys-in-prose+empty",
+      "body": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-keys-in-prose+small",
+      "body": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-lookalike-keys+empty",
+      "body": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-lookalike-keys+small",
+      "body": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "legacy-unterminated+empty",
+      "body": "---\ninkedmark: true\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "---\ninkedmark: true\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "legacy-unterminated+small",
+      "body": "---\ninkedmark: true\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "---\ninkedmark: true\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "text-layer+empty",
+      "body": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "text-layer+small",
+      "body": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    },
+    {
+      "name": "block-lookalike-in-prose+empty",
+      "body": "Some %%goodobsidian text %% here",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}",
+      "file": "Some %%goodobsidian text %% here\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n"
+    },
+    {
+      "name": "block-lookalike-in-prose+small",
+      "body": "Some %%goodobsidian text %% here",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}",
+      "file": "Some %%goodobsidian text %% here\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n"
+    }
+  ],
+  "parse": [
+    {
+      "name": "block-at-end",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-only",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-no-final-newline",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-blank-lines-around",
+      "markdown": "# T\n\n\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n\nafter",
+      "fallbackWidth": null,
+      "body": "# T\nafter",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-indented",
+      "markdown": "# T\n  \t%%goodobsidian \t\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n \t%% \t\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-in-middle",
+      "markdown": "a\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\nb",
+      "fallbackWidth": null,
+      "body": "ab",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-no-blank-line-before",
+      "markdown": "text\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "text",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-at-very-start-after-newlines",
+      "markdown": "\n\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\ntail",
+      "fallbackWidth": null,
+      "body": "tail",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-crlf",
+      "markdown": "# T\r\n\r\n%%goodobsidian\r\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\r\n%%\r\n",
+      "fallbackWidth": null,
+      "body": "# T\r\n\r\n%%goodobsidian\r\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\r\n%%\r\n",
+      "doc": null
+    },
+    {
+      "name": "block-crlf-payload-line",
+      "markdown": "# T\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\r\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-legacy-label",
+      "markdown": "# T\n\n%%inkedmark\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "two-blocks-legacy-first",
+      "markdown": "%%inkedmark\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\nmid\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "mid\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "two-blocks-current-first",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\nmid\n%%inkedmark\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "mid\n%%inkedmark\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "label-with-space",
+      "markdown": "%% goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "%% goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "doc": null
+    },
+    {
+      "name": "label-with-suffix",
+      "markdown": "%%goodobsidianx\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "%%goodobsidianx\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "doc": null
+    },
+    {
+      "name": "label-uppercase",
+      "markdown": "%%GoodObsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "%%GoodObsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "doc": null
+    },
+    {
+      "name": "block-empty-payload",
+      "markdown": "# T\n%%goodobsidian\n\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": null
+    },
+    {
+      "name": "block-unreadable",
+      "markdown": "# Title\n\n%%goodobsidian\nv2:@@@garbage@@@\n%%\n",
+      "fallbackWidth": null,
+      "body": "# Title",
+      "doc": null
+    },
+    {
+      "name": "block-wrapped-payload",
+      "markdown": "# T\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzp\nErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eS\nC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC\n7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vA\nPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpC\nj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5\nnnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxO\nZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqW\njSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-unclosed",
+      "markdown": "# T\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n",
+      "fallbackWidth": null,
+      "body": "# T\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n",
+      "doc": null
+    },
+    {
+      "name": "block-closing-followed-by-text",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%% trailing\nmore",
+      "fallbackWidth": null,
+      "body": "trailing\nmore",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-payload-padded",
+      "markdown": "%%goodobsidian\n  v2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==  \n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-closing-percent-in-payload-line",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ== %%\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": null
+    },
+    {
+      "name": "no-block",
+      "markdown": "# Just markdown\n\nNo ink here.",
+      "fallbackWidth": null,
+      "body": "# Just markdown\n\nNo ink here.",
+      "doc": null
+    },
+    {
+      "name": "empty-string",
+      "markdown": "",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": null
+    },
+    {
+      "name": "percent-in-prose",
+      "markdown": "50%% off\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "50%% off",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "block-default-width",
+      "markdown": "%%goodobsidian\nv2:q1YqSExPLVayiq6uja0FAA==\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "block-fallback-width-700",
+      "markdown": "%%goodobsidian\nv2:q1YqSExPLVayiq6uja0FAA==\n%%\n",
+      "fallbackWidth": 700,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":700,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":700,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "legacy-note",
+      "markdown": "---\ninkedmark: true\ninkedmark-version: 2\n---\n\n# Title\n\n<!--inkedmark-text-->\nx\n<!--/inkedmark-text-->\n\n%%inkedmark\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ninkedmark: true\ninkedmark-version: 2\n---\n\n# Title\n\n<!--inkedmark-text-->\nx\n<!--/inkedmark-text-->",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:empty+empty",
+      "markdown": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:empty+small",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:whitespace-only+empty",
+      "markdown": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:whitespace-only+small",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:heading+empty",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:heading+small",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:trailing-newlines+empty",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:trailing-newlines+small",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:trailing-spaces-tabs+empty",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:trailing-spaces-tabs+small",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:trailing-nbsp-and-bom+empty",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:trailing-nbsp-and-bom+small",
+      "markdown": "# T\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:only-bom+empty",
+      "markdown": "%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:only-bom+small",
+      "markdown": "%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:frontmatter+empty",
+      "markdown": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:frontmatter+small",
+      "markdown": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:frontmatter-bom+empty",
+      "markdown": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:frontmatter-bom+small",
+      "markdown": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "﻿---\ngoodobsidian: true\ngoodobsidian-version: 2\n---\n\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:frontmatter-crlf+empty",
+      "markdown": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:frontmatter-crlf+small",
+      "markdown": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\r\ngoodobsidian: true\r\n---\r\n\r\n# Notes",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys+empty",
+      "markdown": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys+small",
+      "markdown": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian: true\ngoodobsidian-version: 2\ntags: [a]\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys-no-space+empty",
+      "markdown": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys-no-space+small",
+      "markdown": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ngoodobsidian:true\ngoodobsidian-version:3\n---\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys-bom+empty",
+      "markdown": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys-bom+small",
+      "markdown": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "﻿---\ninkedmark: true\ninkedmark-version: 2\n---\n\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys-crlf+empty",
+      "markdown": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys-crlf+small",
+      "markdown": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\r\ninkedmark: true\r\ninkedmark-version: 2\r\n---\r\nBody",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys-not-at-start+empty",
+      "markdown": "# x\n---\ninkedmark: true\n---\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# x\n---\ninkedmark: true\n---",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys-not-at-start+small",
+      "markdown": "# x\n---\ninkedmark: true\n---\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# x\n---\ninkedmark: true\n---",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-keys-in-prose+empty",
+      "markdown": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-keys-in-prose+small",
+      "markdown": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ntags: [a]\n---\ninkedmark: true\ninkedmark-version: 2",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-lookalike-keys+empty",
+      "markdown": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-lookalike-keys+small",
+      "markdown": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ninkedmark-versionx: 3\n inkedmark: true\nnote: inkedmark: x\n---",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:legacy-unterminated+empty",
+      "markdown": "---\ninkedmark: true\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ninkedmark: true",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:legacy-unterminated+small",
+      "markdown": "---\ninkedmark: true\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "---\ninkedmark: true",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:text-layer+empty",
+      "markdown": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:text-layer+small",
+      "markdown": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "# T\n\nProse.\n\n<!--goodobsidian-text-->\nrecognised\n<!--/goodobsidian-text-->",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    },
+    {
+      "name": "built:block-lookalike-in-prose+empty",
+      "markdown": "Some %%goodobsidian text %% here\n\n%%goodobsidian\nv2:VY1BCoMwFETvMussVFyULHuLUlxE/egn0UgS1CLevT/ULtzNY4Y3B1YKkf0MXSmsTBv0gdgF79wLulDYuE8jdFlUtZLCOBI4FRYzUIR+H+AeGksJBctzzjxbgYH8RCl8svAmGYmHMQnV9UNErelsH/ySd5egdUYU0vF0vTQKifb09PsfYwre/uBszi8=\n%%\n",
+      "fallbackWidth": null,
+      "body": "Some %%goodobsidian text %% here",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[],\"images\":[],\"textBoxes\":[]}]}"
+    },
+    {
+      "name": "built:block-lookalike-in-prose+small",
+      "markdown": "Some %%goodobsidian text %% here\n\n%%goodobsidian\nv2:VZDBTsMwDIbfxVwDakILI0degRNCO4Q2tFGzpErCVqj67vtdTdomX/Lb/j/HXuhoU3YxkFaCjs6eSC+U2xS9/yRdCTq5rgykZaVqgYLxFmIVNJneZtJfC7mONE2SBI0u8NuFEaK38WBL+mPgHWSwrh8KVF3vAPo27dilOHHfBZB+ve0eYbKEBne4H+V41GQYSOZpCj3kDJwgzMIWWOEZH0e5rta9oGLn8h7nW0RhBDzN5nnZPKqCiXtRHxzqbfQxQTxIw4HMTwzlw/3jAkoxOZcUx1tuZu7V9/YqW4VM3jwYVmL0fCwbeIXCTqmqWjSNFFLt9ivHGQ==\n%%\n",
+      "fallbackWidth": null,
+      "body": "Some %%goodobsidian text %% here",
+      "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"ruled-wide\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1971c2\",\"size\":5,\"tool\":\"pen\",\"pts\":[12.04,5.51,0.5019607843137255]}],\"images\":[{\"id\":\"i1\",\"path\":\"a.png\",\"x\":1,\"y\":2,\"w\":30,\"h\":40}],\"textBoxes\":[{\"id\":\"t1\",\"x\":5,\"y\":6,\"w\":200,\"text\":\"hi\",\"color\":\"#1a1a1a\",\"fontSize\":22}]}]}"
+    }
+  ],
+  "split": [
+    {
+      "body": "",
+      "frontmatter": "",
+      "prose": ""
+    },
+    {
+      "body": "# T",
+      "frontmatter": "",
+      "prose": "# T"
+    },
+    {
+      "body": "---\na: 1\n---\n# T",
+      "frontmatter": "---\na: 1\n---\n",
+      "prose": "# T"
+    },
+    {
+      "body": "---\na: 1\n---",
+      "frontmatter": "---\na: 1\n---",
+      "prose": ""
+    },
+    {
+      "body": "---\na: 1\n---\n",
+      "frontmatter": "---\na: 1\n---\n",
+      "prose": ""
+    },
+    {
+      "body": "---\na: 1\n---\n\n\nprose",
+      "frontmatter": "---\na: 1\n---\n",
+      "prose": "\n\nprose"
+    },
+    {
+      "body": "﻿---\na: 1\n---\nx",
+      "frontmatter": "﻿---\na: 1\n---\n",
+      "prose": "x"
+    },
+    {
+      "body": "﻿﻿---\na: 1\n---\nx",
+      "frontmatter": "",
+      "prose": "﻿﻿---\na: 1\n---\nx"
+    },
+    {
+      "body": "---\r\na: 1\r\n---\r\nx",
+      "frontmatter": "---\r\na: 1\r\n---\r\n",
+      "prose": "x"
+    },
+    {
+      "body": "---\r\na: 1\n---\rx",
+      "frontmatter": "---\r\na: 1\n---\r",
+      "prose": "x"
+    },
+    {
+      "body": "---\na: 1\r\n---\r\rx",
+      "frontmatter": "---\na: 1\r\n---\r",
+      "prose": "\rx"
+    },
+    {
+      "body": "---\n---\nx",
+      "frontmatter": "",
+      "prose": "---\n---\nx"
+    },
+    {
+      "body": "---\n\n---\nx",
+      "frontmatter": "---\n\n---\n",
+      "prose": "x"
+    },
+    {
+      "body": "---\na\n----\nb",
+      "frontmatter": "---\na\n---",
+      "prose": "-\nb"
+    },
+    {
+      "body": "---\na: 1\n---abc\nrest",
+      "frontmatter": "---\na: 1\n---",
+      "prose": "abc\nrest"
+    },
+    {
+      "body": "---\nunterminated",
+      "frontmatter": "",
+      "prose": "---\nunterminated"
+    },
+    {
+      "body": " ---\na\n---\n",
+      "frontmatter": "",
+      "prose": " ---\na\n---\n"
+    },
+    {
+      "body": "x\n---\na\n---\n",
+      "frontmatter": "",
+      "prose": "x\n---\na\n---\n"
+    },
+    {
+      "body": "---a\nb\n---\n",
+      "frontmatter": "",
+      "prose": "---a\nb\n---\n"
+    },
+    {
+      "body": "---\na\n---\n---\nb\n---\n",
+      "frontmatter": "---\na\n---\n",
+      "prose": "---\nb\n---\n"
+    },
+    {
+      "body": "---\ra\n---\n",
+      "frontmatter": "",
+      "prose": "---\ra\n---\n"
+    },
+    {
+      "body": "---\n\r\n---\n",
+      "frontmatter": "---\n\r\n---\n",
+      "prose": ""
+    },
+    {
+      "body": "---\r\r\na\n---\n",
+      "frontmatter": "",
+      "prose": "---\r\r\na\n---\n"
+    },
+    {
+      "body": "---\na\n\r---\n",
+      "frontmatter": "",
+      "prose": "---\na\n\r---\n"
+    },
+    {
+      "body": "---\ngoodobsidian: true\ntags: [a]\n---\n\n# Title\n\nProse.",
+      "frontmatter": "---\ngoodobsidian: true\ntags: [a]\n---\n",
+      "prose": "\n# Title\n\nProse."
+    }
+  ]
+}

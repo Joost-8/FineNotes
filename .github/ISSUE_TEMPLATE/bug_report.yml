@@ -1,0 +1,59 @@
+name: Bug report
+description: Something does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The more exactly you describe what happened, the faster it can be fixed.
+        For a security problem, do not open an issue: use **Security → Report a vulnerability** instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "I wrote a word with the Pencil, lifted it, and the stroke disappeared. I expected it to stay."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a notebook with ruled paper
+        2. Zoom in to 200%
+        3. Write quickly…
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - iPad with Apple Pencil
+        - iPad without a Pencil
+        - iPhone
+        - Android
+        - Desktop (Windows)
+        - Desktop (macOS)
+        - Desktop (Linux)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin version (Settings → Community plugins), Obsidian version (Settings → About), and your iPadOS/OS version.
+      placeholder: "Plugin 1.0.0, Obsidian 1.13.8, iPadOS 26.1"
+    validations:
+      required: true
+  - type: textarea
+    id: recording
+    attributes:
+      label: Screen recording or screenshots
+      description: |
+        For anything to do with writing, erasing, scrolling or zooming on an iPad, a screen recording helps most — ideally with the command **Show or hide the input debug overlay** switched on, so the recording shows what the plugin saw. Drag files into this box.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Other plugins that might interfere, your sync setup, whether it happens every time.

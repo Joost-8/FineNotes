@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output (release artifacts are attached to GitHub Releases, not committed)
+main.js
+main.js.map
+*.js.map
+
+# Plugin runtime data
+data.json
+
+# Test / coverage
+coverage/
+
+# Local dev deploy target (machine-specific vault path), incl. parked
+# variants like .deploy-target.off
+.deploy-target*
+
+# Local agent workspace (session plans can contain private infra details)
+.claude/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+.proj
+
+# UI gallery: Obsidian's own CSS/icons extracted from the local app (not ours
+# to publish) and generated snapshots
+scripts/ui-gallery/.cache/
+scripts/ui-gallery/out/
+scripts/ui-gallery/pulled/
