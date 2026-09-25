@@ -585,9 +585,9 @@ One class may implement both, and `VaultBackdropRenderer` does.
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
   backdrop failed to resolve.
-- Whether Obsidian's bundled pdf.js is reachable or a copy must be bundled is
-  still open; `research/FEASIBILITY.md` answers it. Either way this interface
-  does not change — that is why it exists.
+- The plugin uses the pdf.js that Obsidian bundles (`loadPdfJs()`). Were a
+  copy ever needed instead, this interface would not change — that is why it
+  exists.
 
 ---
 
@@ -661,8 +661,8 @@ stroke on a page.
 4. **Toolbar slots exist already**: `onInsertImage`, `onAi`, `onRecord` (tier-1
    buttons that render disabled until a host supplies them) and
    `Toolbar.setRecording(active)`.
-5. **Every custom `<button>` carries `clickable-icon`** (CLAUDE.md: Obsidian
-   pads plain buttons 20 px on iPad).
+5. **Every custom `<button>` carries `clickable-icon`** (Obsidian pads plain
+   buttons 20 px on iPad).
 6. **Any new pure module is added to `vitest.config.mts`'s coverage list.**
 7. Run all five CI gates — `lint`, **`lint:review`**, `typecheck`, `test`,
    `build` — plus `format:check` on the files you touched.

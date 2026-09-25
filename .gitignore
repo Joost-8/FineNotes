@@ -32,3 +32,20 @@ coverage/
 scripts/ui-gallery/.cache/
 scripts/ui-gallery/out/
 scripts/ui-gallery/pulled/
+
+# The maintainer's working notes, research and design tools. Kept on disk for
+# local work (and Claude Code sessions), never published.
+/AGENTS.md
+/CLAUDE.md
+/TASKS.md
+/PLAN.md
+/LOG.md
+/STATE.json
+/QA.md
+/INKEDMARK_REWRITE.md
+/TRANSCRIPT_SERVER_PLAN.md
+/research/
+/design-system/
+/contracts/design-brief.md
+/contracts/goodnotes-reference.md
+/scripts/ui-gallery/

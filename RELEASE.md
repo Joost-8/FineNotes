@@ -6,7 +6,8 @@ Releases are automated. A few steps are manual by nature. There is no website
 
 Releases go to **`Joost-8/FineNotes`**. Pass `-R Joost-8/FineNotes` to `gh`
 release commands, or run `gh repo set-default Joost-8/FineNotes` once per
-clone. See CLAUDE.md: `gh` prefers a remote named `upstream`.
+clone: when a clone has a remote named `upstream`, a bare `gh` command talks to
+that repository instead.
 
 ## Cut a release (automated)
 
@@ -55,8 +56,8 @@ FineNotes 1.0.0 (2026-09-26) is the root commit of this repository.
 - **Why it starts fresh:** Obsidian's community directory does not list a fork
   of a listed plugin. FineNotes took the route the policy names: it inherits no
   code. Every line InkedMark's author still had was rewritten or removed before
-  1.0.0. `INKEDMARK_REWRITE.md` records the method, the keep list and the
-  `git blame` result.
+  1.0.0. The method, the keep list of one-way lines and the
+  `git blame` result are kept with the private history.
 - **Why the name changed:** the directory also bans "obsidian" in a plugin's id
   and name, so GoodObsidian (id `goodobsidian`) became FineNotes (id
   `finenotes`). Settings saved under the old id carry over once.
@@ -100,7 +101,8 @@ is wanted, write a new one.
 
 ## Manual steps (not automatable)
 
-- **On-device QA.** Run `QA.md` on the iPad before a release that changes
+- **On-device QA.** Go through the on-device checklist on the iPad before a
+  release that changes
   input, rendering, layout or gestures. Check the open issues too:
   `gh issue list -R Joost-8/FineNotes`.
 - **Screenshots and social preview.** The README and the directory listing
