@@ -1,7 +1,6 @@
 # FineNotes
 
-Handwrite with Apple Pencil in real, paginated notebooks: paper templates,
-shapes that snap, PDFs and pictures, all kept as plain files in your own vault.
+Handwriting notebooks for Apple Pencil and iPad, inspired by Goodnotes: real pages, paper templates, shapes that snap, PDF annotation and pictures, all kept as plain files in your vault.
 
 Most handwriting plugins for Obsidian give you an infinite canvas. FineNotes
 gives you **pages**, as Goodnotes does. A page has a fixed size, so ink stays
@@ -162,13 +161,14 @@ bar: tap it again to open its menu.
 ### Writing and erasing
 
 - **Pen type:** tap the nib at the start of the pen options. **Fountain pen**
-  and **Brush pen** respond to pressure; **Ball pen** draws an even line.
+  and **Brush pen** respond to pressure; **Ball pen** draws an even line;
+  **Highlighter** draws a wide, see-through stroke.
 - **Width:** three widths, and a ⌄ for a slider in millimetres.
 - **Colour:** three quick colours. Tap the colour in use again to change it,
   or tap **+** for more. **Custom colour…** mixes any colour: pick the shade
   in the square and the hue on the slider, then tap the round swatch.
-- **Highlighter:** press **H** on a keyboard, or make it the **Default tool**
-  in Settings → FineNotes.
+- **Highlighter:** choose **Highlighter** as the pen type, or press **H** on a
+  keyboard. Choose a pen type again to go back to writing.
 - **Eraser:** **Standard** rubs out only what it passes over; **Whole stroke**
   removes every stroke it touches. It has three sizes, and **All ink** can be
   changed to **Erase highlighter only** or **Erase pen only**. Pictures and

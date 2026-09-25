@@ -136,8 +136,12 @@ export const PEN_TYPES: readonly PenTypeSpec[] = [
   { id: "highlighter", label: "Highlighter", tool: "highlighter", pressure: false, sizeScale: 4 },
 ];
 
-/** The intentionally small, day-to-day pen menu: fountain, ball and brush. */
-const PRIMARY_PEN_TYPES = PEN_TYPES.slice(0, 3);
+/**
+ * The pen-type menu: every pen type, the highlighter included. The toolbar
+ * has no highlighter button of its own (the pen button stands for both, as in
+ * GoodNotes), so this menu is the only way to it without a keyboard.
+ */
+export const PEN_MENU_TYPES: readonly PenTypeSpec[] = PEN_TYPES;
 /** Keep the main pill short; the colour picker still exposes any custom colour. */
 const QUICK_COLORS = 3;
 
@@ -1516,7 +1520,7 @@ export class Toolbar {
     });
     iconOrText(reset, "rotate-ccw", "Reset");
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
-    slider.createDiv({ cls: "goodobsidian-width-wedge" });
+    slider.append(widthWedge());
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
@@ -1647,7 +1651,7 @@ export class Toolbar {
 
   private renderPenTypes(body: HTMLElement, openGestures: () => void): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
-    for (const spec of PRIMARY_PEN_TYPES) {
+    for (const spec of PEN_MENU_TYPES) {
       const button = body.createEl("button", { cls: "goodobsidian-wide", text: spec.label });
       button.toggleClass("is-active", spec.id === this.activePenType().id);
       button.addEventListener("click", () => {
@@ -1995,6 +1999,23 @@ function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K, pressed = false)
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * The width slider's wedge, thin at the left and full height at the right. An
+ * SVG polygon stretched over its box, rather than a CSS clip-path, which the
+ * plugin review flags as only partly supported.
+ */
+function widthWedge(): SVGElement {
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
+  svg.classList.add("goodobsidian-width-wedge");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  const shape = activeDocument.createElementNS(SVG_NS, "polygon");
+  shape.setAttribute("points", "0,44 100,0 100,100 0,56");
+  svg.append(shape);
+  return svg;
+}
 
 /** A pen-type swatch: a nib silhouette tinted with the current ink colour. */
 function penGlyph(spec: PenTypeSpec, color: string): SVGElement {

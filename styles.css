@@ -1537,11 +1537,11 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   position: absolute;
   top: 50%;
   left: 11px;
-  right: 11px;
+  /* An absolutely positioned SVG ignores `right`, so the width is explicit. */
+  width: calc(100% - 22px);
   height: 14px;
   transform: translateY(-50%);
-  background: var(--text-faint);
-  clip-path: polygon(0 44%, 100% 0, 100% 100%, 0 56%);
+  fill: var(--text-faint);
   pointer-events: none;
 }
 
@@ -5209,21 +5209,22 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
   }
 }
 
+/* Reduced motion. `body:not(#fn-reduce-motion)` matches every body but weighs
+   as an id, so these rules outrank every component rule in this file (which
+   uses no ids) without the important flag. */
 @media (prefers-reduced-motion: reduce) {
-  .goodobsidian-options.is-floating,
-  .goodobsidian-options.is-floating.is-collapsed,
-  .goodobsidian-options,
-  .goodobsidian-options > *,
-  .goodobsidian-thumb-frame,
-  .goodobsidian-toolbar button::after,
-  .goodobsidian-options button::after {
-    transition: none !important;
+  body:not(#fn-reduce-motion) .goodobsidian-options,
+  body:not(#fn-reduce-motion) .goodobsidian-options > *,
+  body:not(#fn-reduce-motion) .goodobsidian-thumb-frame,
+  body:not(#fn-reduce-motion) .goodobsidian-toolbar button::after,
+  body:not(#fn-reduce-motion) .goodobsidian-options button::after {
+    transition: none;
   }
-  .goodobsidian-selection-menu,
-  .goodobsidian-popover,
-  .goodobsidian-addpage,
-  .goodobsidian-more,
-  .goodobsidian-selection-bar {
-    animation: none !important;
+  body:not(#fn-reduce-motion) .goodobsidian-selection-menu,
+  body:not(#fn-reduce-motion) .goodobsidian-popover,
+  body:not(#fn-reduce-motion) .goodobsidian-addpage,
+  body:not(#fn-reduce-motion) .goodobsidian-more,
+  body:not(#fn-reduce-motion) .goodobsidian-selection-bar {
+    animation: none;
   }
 }

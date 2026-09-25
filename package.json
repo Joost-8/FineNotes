@@ -1,7 +1,7 @@
 {
   "name": "finenotes",
   "version": "1.0.0",
-  "description": "Handwrite with Apple Pencil in real, paginated notebooks: paper templates, shapes that snap, PDFs and pictures, all kept as plain files in your own vault.",
+  "description": "Handwriting notebooks for Apple Pencil and iPad, inspired by Goodnotes: real pages, paper templates, shapes that snap, PDF annotation and pictures, all kept as plain files in your vault.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

@@ -3,7 +3,7 @@
   "name": "FineNotes",
   "version": "1.0.0",
   "minAppVersion": "1.13.0",
-  "description": "Handwrite with Apple Pencil in real, paginated notebooks: paper templates, shapes that snap, PDFs and pictures, all kept as plain files in your own vault.",
+  "description": "Handwriting notebooks for Apple Pencil and iPad, inspired by Goodnotes: real pages, paper templates, shapes that snap, PDF annotation and pictures, all kept as plain files in your vault.",
   "author": "Joost",
   "isDesktopOnly": false
 }

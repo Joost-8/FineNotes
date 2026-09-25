@@ -6,6 +6,22 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [1.0.1] - 2026-09-26
+
+### Fixed
+
+- **The highlighter is back in the pen menu.** Tap the nib at the start of the
+  pen options and choose **Highlighter**. Since 0.1.2 the menu offered only
+  the three pens, so without a keyboard (press **H**) there was no way to it.
+
+### Changed
+
+- **The README explains how to use FineNotes**, tool by tool, and the plugin's
+  description now says what people search for: handwriting, Goodnotes, iPad.
+- **Two stylesheet details the plugin review flagged:** the width slider's
+  wedge is drawn as a small SVG instead of with a clip path, and the
+  reduced-motion rules no longer need `!important`. Nothing looks different.
+
 ## [1.0.0] - 2026-09-26
 
 The first public release, as FineNotes.
