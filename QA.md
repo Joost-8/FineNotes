@@ -51,7 +51,8 @@ iPad. Run this section with the HUD on, and record the screen.
 - [ ] Lasso: tap, loop, drag, delete. Text tool: first and second tap beside
       a box.
 - [ ] A hardware keyboard: - Cmd+Z and Cmd+Shift+Z; - p / h / e / v / s / t; - Delete and Backspace on a selection; - Escape; - PageUp / PageDown and the arrow keys.
-- [ ] Pinch zoom with the spring back, a fling, and the zoom buttons.
+- [ ] Pinch zoom with the spring back, a fling, and the Zoom in / Zoom out
+      commands.
       Relayout on rotation and when the sidebar opens.
 - [ ] Clear page.
 
@@ -91,7 +92,7 @@ survive, and the transcript lands in its block.
 - [ ] Google: this confirms Gemini accepts `role: "user"`.
 - [ ] OpenRouter, connected with the Connect button: approve in Safari, come
       back, and the key and vendor are set. This proves PKCE end to end.
-- [ ] Your own endpoint (Ollama). With **Transcribe automatically** on and
+- [ ] Your own endpoint (Ollama). With **Recognize automatically** on and
       only this endpoint agreed to, a page is transcribed after 30 s idle.
 
 ## P0 — Ink capture regression (the whole premise)
