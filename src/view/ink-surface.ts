@@ -50,6 +50,7 @@ import {
   type ImagePainter,
   Renderer,
   type StrokeStyle,
+  penFor,
 } from "../canvas/renderer";
 import {
   type BoxFrame,
@@ -126,6 +127,7 @@ import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
 import { prefersReducedMotion } from "./motion";
 import { StrokeBuilder, type StrokeBuilderOptions } from "../ink/stroke-builder";
+import { InkTracer } from "../ink/freehand";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -447,8 +449,8 @@ export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
 interface PenGesture {
   /** The pen went down at page point `at`; `sample` is the same point in layout space. */
   down(box: PageBox, at: Pt, sample: PointerSample): void;
-  /** It moved: every coalesced sample since the last event (layout space), and the predicted ones. */
-  move(box: PageBox, samples: PointerSample[], predicted: PointerSample[]): void;
+  /** It moved: every coalesced sample since the last event (layout space). */
+  move(box: PageBox, samples: PointerSample[]): void;
   /** It lifted at `sample` (layout space). */
   up(box: PageBox, sample: PointerSample): void;
   /**
@@ -917,12 +919,16 @@ export class InkSurface {
    * A new stroke assumes it until its own first reading comes in.
    */
   private penPressure: number | null = null;
-  /**
-   * The frame the stroke in progress is next drawn in (`scheduleWet`), and
-   * the predicted samples drawn ahead of its pen.
-   */
+  /** The frame the stroke in progress is next drawn in (`scheduleWet`). */
   private wetFrame = 0;
-  private pendingPredicted: PointerSample[] = [];
+  /**
+   * The stroke in progress, traced as it grows: the tracer settles each
+   * point's geometry once, and each frame draws that plus the unsettled
+   * tail. `wetRevision` is the builder's, so a rewrite of kept points (the
+   * first pressure reading) traces the stroke afresh.
+   */
+  private wetTracer: InkTracer | null = null;
+  private wetRevision = -1;
   /** A pane with no size yet is laid out again on the next frames, a bounded number of times. */
   private readonly sizeWait = new SizeWait();
 
@@ -1573,6 +1579,12 @@ export class InkSurface {
    * Show or hide the diagnostics HUD. Showing it starts its event log and
    * totals from zero, so a recording begins clean.
    */
+  /** Widen ink with pressure, or not: every stroke is traced again at the next frame. */
+  setPressure(enabled: boolean): void {
+    this.toolState.pressureEnabled = enabled;
+    this.requestFrame();
+  }
+
   setDebug(enabled: boolean): void {
     this.debug = enabled;
     this.hudEl.toggleClass("is-hidden", !enabled);
@@ -2800,9 +2812,9 @@ export class InkSurface {
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
     onStart: (sample) => this.penDown(sample),
-    onMove: (coalesced, predicted) => {
+    onMove: (coalesced) => {
       const box = this.activePage;
-      if (box) this.gestureOf(this.toolState.tool).move(box, coalesced, predicted);
+      if (box) this.gestureOf(this.toolState.tool).move(box, coalesced);
     },
     onEnd: (sample) => {
       if (this.finishTextDismiss()) return;
@@ -3061,7 +3073,7 @@ export class InkSurface {
   /** The pen, the highlighter and the Shape tool: ink, shapes, and the pen's gestures. */
   private readonly inkGesture: PenGesture = {
     down: (box, at, sample) => this.inkDown(box, at, sample),
-    move: (box, samples, predicted) => this.inkMove(box, samples, predicted),
+    move: (box, samples) => this.inkMove(box, samples),
     up: (box, sample) => this.inkUp(box, sample),
     cancel: (box) => this.inkCancel(box),
   };
@@ -3084,7 +3096,7 @@ export class InkSurface {
     this.renderer?.clearWet();
   }
 
-  private inkMove(box: PageBox, samples: PointerSample[], predicted: PointerSample[]): void {
+  private inkMove(box: PageBox, samples: PointerSample[]): void {
     const last = samples[samples.length - 1];
     if (this.shapeDrag) {
       if (last) {
@@ -3125,7 +3137,6 @@ export class InkSurface {
       builder.add({ ...sample, ...local });
       this.trackHold(local);
     }
-    this.pendingPredicted = predicted.map((s) => ({ ...s, ...this.toPage(box, s) }));
     this.scheduleWet();
   }
 
@@ -3234,7 +3245,6 @@ export class InkSurface {
       from: { x: anchor.x, y: anchor.y },
       pts: result.pts,
     };
-    this.pendingPredicted = [];
     this.scheduleWet();
   }
 
@@ -3466,13 +3476,19 @@ export class InkSurface {
       this.renderer?.renderWet(box.index, this.snap.pts, { ...this.currentStyle(), shape: true });
       return;
     }
-    // Drawn a little ahead of the pen: the samples the platform predicts
-    // come next. They are never kept.
-    const pts = builder.points();
-    for (const guess of this.pendingPredicted) {
-      pts.push(guess.x, guess.y, builder.peekPressure(guess.pressure));
+    const style = this.currentStyle();
+    const pts = builder.view;
+    let tracer = this.wetTracer;
+    if (!tracer || builder.revision !== this.wetRevision) {
+      tracer = new InkTracer(penFor(style));
+      this.wetTracer = tracer;
+      this.wetRevision = builder.revision;
     }
-    this.renderer?.renderWet(box.index, pts, this.currentStyle());
+    // Only the points kept since the last frame: what is traced stays.
+    for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
+      tracer.push(pts[i], pts[i + 1], pts[i + 2]);
+    }
+    this.renderer?.renderWetRuns(box.index, tracer.runs(), style);
   }
 
   /**
@@ -3485,7 +3501,7 @@ export class InkSurface {
     const builder = this.builder;
     this.builder = null;
     this.snap = null;
-    this.pendingPredicted = [];
+    this.wetTracer = null;
     this.stopHold();
     this.renderer?.clearWet();
     return builder;

@@ -3,10 +3,10 @@
  *
  * A pen or a mouse draws; `palm-rejection.ts` has the rules for who does
  * what. A stroke's moves carry every sample the hardware took since the last
- * event (`getCoalescedEvents`, which the Pencil fills at up to 240 Hz) and,
- * where WebKit offers them, a few predicted ones for the wet ink to run ahead
- * of the pen. All of them are mapped into the surface's space by the function
- * the surface passes in; nothing here knows the layout.
+ * event (`getCoalescedEvents`, which the Pencil fills at up to 240 Hz),
+ * mapped into the surface's space by the function the surface passes in;
+ * nothing here knows the layout. WebKit's predicted samples are not passed
+ * on: drawn, they made the ink swing (see `ink/freehand.ts`).
  *
  * Fingers scroll and zoom, through `FingerGesture`. The page has
  * `touch-action: none` because on iOS a Pencil drag over anything the browser
@@ -52,8 +52,8 @@ export interface PointerDebugRecord {
 
 export interface PointerControllerCallbacks {
   onStart(sample: PointerSample): void;
-  /** The samples since the last move, then the browser's guesses ahead of the pen (never kept). */
-  onMove(coalesced: PointerSample[], predicted: PointerSample[]): void;
+  /** The samples since the last move. */
+  onMove(coalesced: PointerSample[]): void;
   onEnd(sample: PointerSample): void;
   onCancel(): void;
   /** A finger gesture began, or was re-anchored, at this client point. */
@@ -162,9 +162,8 @@ export class PointerController {
     const taken = event.getCoalescedEvents?.() ?? [];
     // Where the browser has no coalesced list, the event is the one sample.
     const samples = taken.length > 0 ? taken.map((e) => this.sample(e)) : [this.sample(event)];
-    const predicted = (event.getPredictedEvents?.() ?? []).map((e) => this.sample(e));
     this.debug("move", event, samples.length);
-    this.listener.onMove(samples, predicted);
+    this.listener.onMove(samples);
   }
 
   private released(event: PointerEvent, cancelled: boolean): void {

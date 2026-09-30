@@ -31,7 +31,6 @@ export type ToolId = "pen" | "highlighter" | "eraser" | "select";
 
 export interface GoodObsidianSettings {
   // What an ink note starts with. Tool state the toolbar remembers is further down.
-  pressureEnabled: boolean;
   /** Draw a rough shape, hold the pen still at the end, and it snaps clean. */
   drawAndHold: boolean;
   defaultTool: ToolId;
@@ -124,12 +123,17 @@ export interface GoodObsidianSettings {
   shapeColor: string;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
+  /**
+   * Advanced: the pressure pens (Fountain, Brush) widen with pen pressure.
+   * Off, every pen draws one width. It replaced `pressureEnabled`
+   * (2026-09-30), which was on by default and is dropped on load.
+   */
+  pressureWidth: boolean;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
 // change the shared defaults.
 export const DEFAULT_SETTINGS: GoodObsidianSettings = {
-  pressureEnabled: true,
   drawAndHold: true,
   defaultTool: "pen",
   customColors: [],
@@ -170,6 +174,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
   recentColors: [],
+  pressureWidth: false,
 };
 
 // --- Paper width -------------------------------------------------------------
@@ -261,5 +266,10 @@ export function storeShownValue(settings: GoodObsidianSettings, key: string, sho
  * rows), so the tab is rebuilt after they change.
  */
 export function changesTabLayout(key: string): boolean {
-  return key === "recognitionProviderId" || key === "llmVendor" || key === "imageVendor";
+  return (
+    key === "recognitionProviderId" ||
+    key === "llmVendor" ||
+    key === "imageVendor" ||
+    key === "pressureWidth"
+  );
 }

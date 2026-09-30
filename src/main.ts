@@ -303,6 +303,10 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const loaded = this.settings as unknown as Record<string, unknown>;
     delete loaded.experimentalTrocr;
+    // "Pressure sensitivity", on by default until 2026-09-30: pressure is
+    // now the advanced `pressureWidth`, off by default, and the old choice is
+    // not carried over.
+    delete loaded.pressureEnabled;
     delete loaded.trocrModel;
     // Settings found under the old id are written to this id's folder at
     // once, so the carry-over happens exactly one time.
@@ -733,6 +737,13 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setDebug(enabled);
     if (announce) new Notice(`FineNotes: input debug overlay ${enabled ? "shown" : "hidden"}.`);
+  }
+
+  /** Pressure-sensitive pens, on or off, in every open notebook (the setting). */
+  async setPressureWidth(enabled: boolean): Promise<void> {
+    this.settings.pressureWidth = enabled;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.setPressureWidth(enabled);
   }
 
   /** Every notebook view open in the workspace. */

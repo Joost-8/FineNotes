@@ -22,7 +22,7 @@ import {
   transformShape,
 } from "../../src/ink/shape-geometry";
 import { recognizeShape } from "../../src/ink/shape-recognizer";
-import { centrelinePath, inkPath, penOptions } from "../../src/ink/freehand";
+import { SvgPath, centrelinePath, inkRuns, penOptions, traceRun } from "../../src/ink/freehand";
 
 function xy(pts: number[]): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = [];
@@ -280,12 +280,18 @@ describe("shape rendering", () => {
   // Regressions: five far-apart vertices through perfect-freehand's
   // streamline came out as a lopsided quad well inside the true box; with
   // streamline off, its corner handling still notched or bevelled every
-  // corner, plain to see at 5x zoom. A shape is now its exact centreline.
+  // corner, plain to see at 5x zoom. A shape is its exact centreline, never
+  // smoothed as handwriting is.
   it("draws a snapped rectangle through its exact corners, stroked at the pen's width", () => {
     const rect = presetGeometry("rect", { x: 0, y: 0 }, { x: 200, y: 120 }, 0.5);
-    const ink = inkPath(rect, penOptions(3, false), true, true)!;
-    expect(ink.stroke).toBe(3);
-    expect(ink.d).toBe("M 0.00 0.00 L 200.00 0.00 L 200.00 120.00 L 0.00 120.00 L 0.00 0.00 Z");
+    const runs = inkRuns(rect, penOptions(3, true), true);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].width).toBe(3);
+    const svg = new SvgPath();
+    traceRun(svg, runs[0]);
+    expect(svg.toString()).toBe(
+      "M 0.00 0.00 L 200.00 0.00 L 200.00 120.00 L 0.00 120.00 L 0.00 0.00 Z",
+    );
   });
 
   it("leaves an open shape open, and draws a lone point as a dot", () => {
@@ -294,11 +300,17 @@ describe("shape rendering", () => {
     expect(centrelinePath([])).toBe("");
   });
 
-  it("still outlines handwriting, filled", () => {
-    const ink = inkPath([0, 0, 0.5, 10, 2, 0.5, 20, 0, 0.5], penOptions(3, true))!;
-    expect(ink.stroke).toBeNull();
-    expect(ink.d.startsWith("M")).toBe(true);
-    expect(ink.d).toContain("Q");
-    expect(inkPath([], penOptions(3, true))).toBeNull();
+  it("smooths handwriting instead: the curve rounds a vertex it does not pass through", () => {
+    const [run] = inkRuns([0, 0, 0.5, 10, 2, 0.5, 20, 0, 0.5], penOptions(3, true));
+    const points: string[] = [];
+    for (let i = 0; i < run.pts.length; i += 2) points.push(`${run.pts[i]},${run.pts[i + 1]}`);
+    expect(points[0]).toBe("0,0");
+    expect(points.at(-1)).toBe("20,0");
+    expect(points).not.toContain("10,2");
+    // The quadratic peaks at y = 1.5, halfway between the midpoints' 1 and the vertex's 2.
+    const peak = Math.max(...run.pts.filter((_, i) => i % 2 === 1));
+    expect(peak).toBeGreaterThan(1.4);
+    expect(peak).toBeLessThanOrEqual(1.5);
+    expect(inkRuns([], penOptions(3, true))).toEqual([]);
   });
 });

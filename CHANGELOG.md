@@ -8,16 +8,27 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Writing is smooth and steady, as in Goodnotes.** Ink used to bend into
+  new curves after it was drawn: the end of every stroke was redrawn on each
+  frame, and the pen's predicted path, which the iPad guesses wrong at every
+  turn, drew hooks and needles that vanished a moment later. Strokes are now
+  drawn by a new ink engine that only ever adds to the line, and nothing is
+  drawn ahead of the pen. In screen recordings, FineNotes redrew 38% of the
+  ink it drew and Goodnotes 1.5%; on test handwriting the new engine redraws
+  1.7%.
+- **Pressure is now an advanced setting, off by default.** Every pen draws an
+  even line, the width you choose. Turn on **Pressure-sensitive pens** in the
+  settings for Fountain and Brush pens that widen as you press. Notes written
+  with pressure are drawn at the pen's full width while it is off, so they may
+  look a little bolder; pick a smaller width if you prefer.
+
 ### Fixed
 
-- **Strokes no longer start with a blob.** At a light Pencil touch every
-  stroke began as a round dot about twice the line's width for a frame, and a
-  smaller ball rode on the tip while writing. The ink ahead of the pen is now
-  drawn at the pen's own pressure.
-- **Dots are as wide as the line.** An i-dot, a full stop or a short
-  apostrophe was drawn up to twice as wide as the stroke around it; now it
-  matches, as in Goodnotes. Dots in existing notes are redrawn at the right
-  size too.
+- **Strokes no longer start with a blob, and dots are as wide as the line.**
+  At a light Pencil touch every stroke began as a round dot about twice the
+  line's width, and an i-dot or full stop stayed that fat.
 - **Resting your hand on the page no longer scrolls it.** A touch that lands
   just after the Pencil was on (or hovering over) the page is taken for your
   palm and ignored, as is one wider than a fingertip. If your hand does start

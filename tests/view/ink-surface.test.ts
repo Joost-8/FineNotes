@@ -13,6 +13,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
+import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/freehand";
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
 import { History } from "../../src/model/history";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
@@ -859,38 +860,60 @@ describe("layout", () => {
   });
 });
 
-// --- The wet stroke's pressure (2026-09-30) ----------------------------------------
+// --- The wet stroke (2026-09-30) ---------------------------------------------------
 
 describe("the wet stroke", () => {
-  function wet(pressure: boolean, predicted: Array<{ x: number; y: number; pressure: number }>) {
-    const drawn: number[][] = [];
+  /** A surface in the middle of a stroke, and every set of runs it hands the renderer. */
+  function writing(pressure: boolean) {
+    const drawn: InkRun[][] = [];
     const builder = new StrokeBuilder({ minDistance: 1, pressureEnabled: pressure });
-    builder.add({ x: 0, y: 0, pressure: 0.2 });
-    builder.add({ x: 5, y: 0, pressure: 0.24 });
     const surface = surfaceWith({
       wetFrame: 7,
+      wetTracer: null,
+      wetRevision: -1,
       builder,
       activePage: { index: 0 },
       snap: null,
-      pendingPredicted: predicted,
-      renderer: { renderWet: (_page: number, pts: number[]) => drawn.push(pts) },
-      currentStyle: () => ({}),
+      renderer: { renderWetRuns: (_page: number, runs: InkRun[]) => drawn.push(runs) },
+      currentStyle: () => ({ color: "#000", size: 3, tool: "pen", usePressure: pressure }),
     });
-    run(surface, "drawWet");
-    return drawn;
+    const frame = (): InkRun[] => {
+      run(surface, "drawWet");
+      return drawn[drawn.length - 1];
+    };
+    return { builder, surface, frame };
   }
 
-  it("draws the platform's guesses at the pen's last pressure when they carry none", () => {
-    const drawn = wet(true, [
-      { x: 8, y: 0, pressure: 0 },
-      { x: 11, y: 0, pressure: 0.3 },
-    ]);
-    expect(drawn).toEqual([[0, 0, 0.2, 5, 0, 0.24, 8, 0, 0.24, 11, 0, 0.3]]);
+  it("draws what the pen kept, and nothing ahead of it", () => {
+    const { builder, frame } = writing(false);
+    builder.add({ x: 0, y: 0, pressure: 0.5 });
+    builder.add({ x: 5, y: 0, pressure: 0.5 });
+    // Straight to the pen's last point: the half segment still waits for the next.
+    expect(frame()).toEqual([{ width: 3, pts: [0, 0, 2.5, 0, 5, 0] }]);
   });
 
-  it("draws them at the fallback with pressure off, as the stroke is", () => {
-    const drawn = wet(false, [{ x: 8, y: 0, pressure: 0.9 }]);
-    expect(drawn[0].filter((_, i) => i % 3 === 2)).toEqual([0.5, 0.5, 0.5]);
+  it("traces each kept point once, and a finished stroke looks as it did wet", () => {
+    const { builder, surface, frame } = writing(true);
+    const pts = [0, 0, 0.3, 4, 1, 0.35, 8, 3, 0.45, 12, 2, 0.4, 16, 5, 0.3];
+    for (let i = 0; i < pts.length; i += 3) {
+      builder.add({ x: pts[i], y: pts[i + 1], pressure: pts[i + 2] });
+      frame();
+    }
+    const tracer = surface.wetTracer as InkTracer;
+    expect(tracer.length).toBe(5);
+    expect(frame()).toEqual(inkRuns(builder.points(), penOptions(3, true)));
+  });
+
+  it("traces the stroke afresh when the first pressure reading rewrites its start", () => {
+    const { builder, surface, frame } = writing(true);
+    builder.add({ x: 0, y: 0, pressure: 0 }); // no reading yet: the fallback
+    frame();
+    const first = surface.wetTracer;
+    builder.add({ x: 5, y: 0, pressure: 0.2 }); // fills in the point before it
+    const runs = frame();
+    expect(surface.wetTracer).not.toBe(first);
+    expect(runs).toEqual(inkRuns(builder.points(), penOptions(3, true)));
+    expect(runs[0].width).toBeCloseTo(2 * 3 * (0.5 - 0.6 * 0.3), 9);
   });
 });
 

@@ -566,7 +566,7 @@ describe("loading settings", () => {
   it("lays saved values over the defaults, one level deep", async () => {
     await load({ defaultSize: 8, lassoFilter: { ink: false }, futureSetting: 42 });
     expect(plugin.settings.defaultSize).toBe(8);
-    expect(plugin.settings.pressureEnabled).toBe(DEFAULT_SETTINGS.pressureEnabled);
+    expect(plugin.settings.pressureWidth).toBe(DEFAULT_SETTINGS.pressureWidth);
     expect(plugin.settings.lassoFilter).toEqual({ ink: false });
     expect((plugin.settings as unknown as Record<string, unknown>).futureSetting).toBe(42);
   });
@@ -614,6 +614,15 @@ describe("loading settings", () => {
     expect("trocrModel" in loaded).toBe(false);
     await plugin.saveSettings();
     expect(registered.saved.at(-1)).not.toHaveProperty("trocrModel");
+  });
+
+  it("drops the old pressure setting: pressure is the advanced pressureWidth now, off (2026-09-30)", async () => {
+    await load({ pressureEnabled: true, lastSeenVersion: VERSION });
+    const loaded = plugin.settings as unknown as Record<string, unknown>;
+    expect("pressureEnabled" in loaded).toBe(false);
+    expect(plugin.settings.pressureWidth).toBe(false);
+    await plugin.saveSettings();
+    expect(registered.saved.at(-1)).not.toHaveProperty("pressureEnabled");
   });
 
   it("keeps the cloud AI provider", async () => {

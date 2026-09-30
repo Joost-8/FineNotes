@@ -113,7 +113,7 @@ import { paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { eraserFilterOf } from "../ink/stroke-eraser";
 import { type PageAction, PageSidebar, type PageSidebarRenderOptions } from "./page-sidebar";
-import { Toolbar, type ToolbarState } from "./toolbar";
+import { Toolbar, type ToolbarState, penTypeFor } from "./toolbar";
 import { PANEL_SLIDE_MS } from "./motion";
 import {
   type LastPages,
@@ -151,7 +151,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     tool: s.defaultTool,
     color: s.defaultColor,
     size: s.defaultSize,
-    pressureEnabled: s.pressureEnabled,
+    // A notebook opens with the Fountain pen, a pressure pen.
+    pressureEnabled: s.pressureWidth,
     shapeSnapEnabled: s.drawAndHold,
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
@@ -389,6 +390,12 @@ export class InkView extends TextFileView {
   setDebug(enabled: boolean): void {
     this.showHud = enabled;
     this.surface?.setDebug(enabled);
+  }
+
+  /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
+  setPressureWidth(enabled: boolean): void {
+    this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
+    this.updateSidebarRendering();
   }
 
   /** The recent strokes and the recogniser's verdicts on them, as JSON, for bug reports. */
@@ -824,6 +831,7 @@ export class InkView extends TextFileView {
         onColorChange: ignore,
         onSizeChange: ignore,
         onPressureToggle: () => this.updateSidebarRendering(),
+        pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
         onRedo: () => this.surface?.redo(),
         onClear: () => this.clearPage(),

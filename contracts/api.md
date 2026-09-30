@@ -347,9 +347,10 @@ The renderer depends on these layouts; they are contract, not implementation.
 
 A shape's `pts` are sparse on purpose. The renderer draws a shape as its
 exact centreline, stroked at the stroke's `size` with round joins and caps —
-never through perfect-freehand, whose streamline on sparse vertices cut every
-corner (a 200 x 120 rect rendered as ~165 x 99) and whose corner handling
-notched them even with streamline off (plain to see at 5x zoom).
+never smoothed as handwriting is: perfect-freehand, which drew handwriting
+until 2026-09-30, cut every corner of sparse vertices (a 200 x 120 rect
+rendered as ~165 x 99), and the midpoint curve that draws handwriting now
+would round them too.
 
 **Erased pieces keep `shape`.** The standard eraser cuts a shape (or a
 table's lines) into pieces that keep the original `shape` kind, so they are

@@ -83,6 +83,11 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.debugHud = on;
       return Promise.resolve();
     }),
+    setPressureWidth: vi.fn((on: boolean) => {
+      calls.push(`pressureWidth:${on}`);
+      settings.pressureWidth = on;
+      return Promise.resolve();
+    }),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
     startOpenRouterConnect: vi.fn(() => {
       calls.push("startConnect");
@@ -203,9 +208,10 @@ describe("the rows", () => {
     const label = VENDORS.anthropic.label;
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
-      ["", "Pressure sensitivity", "toggle:pressureEnabled"],
       ["", "Draw and hold to make shapes", "toggle:drawAndHold"],
       ["", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
+      ["", "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
+      ["", "(block)", "render"],
       ["", "Paper width", "render"],
       ["", "(block)", "render"],
       ["", "Default folder for new notebooks", "render"],
@@ -256,9 +262,15 @@ describe("the rows", () => {
     );
     const label = VENDORS.anthropic.label;
     expect(aliases).toEqual({
-      "Pressure sensitivity": ["stylus", "Apple Pencil"],
       "Draw and hold to make shapes": ["shape recognition", "straighten", "snap"],
       "Desynchronized canvas": ["latency", "glitch", "artifacts"],
+      "Pressure-sensitive pens (advanced)": [
+        "pressure sensitivity",
+        "stylus",
+        "Apple Pencil",
+        "fountain pen",
+        "brush pen",
+      ],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
       "Default ink color": ["pen color"],
@@ -332,12 +344,20 @@ describe("which rows show", () => {
     return all.map((r, i) => (shown(r.def) ? r.def.name || `(block ${i})` : "")).filter(Boolean);
   }
 
+  it("warns about pressure only while it is on", () => {
+    const off = visibleNames(makePlugin());
+    const on = visibleNames(makePlugin({ pressureWidth: true }));
+    const toggle = "Pressure-sensitive pens (advanced)";
+    expect(off[off.indexOf(toggle) + 1]).toBe("Paper width");
+    expect(on[on.indexOf(toggle) + 1]).toBe("(block 4)");
+  });
+
   it("by default: no iPad tip, Manual recognition, Claude, keys in the keychain", () => {
     const label = VENDORS.anthropic.label;
     expect(visibleNames(makePlugin())).toEqual([
-      "Pressure sensitivity",
       "Draw and hold to make shapes",
       "Desynchronized canvas",
+      "Pressure-sensitive pens (advanced)",
       "Paper width",
       "Default folder for new notebooks",
       "Default ink color",
@@ -350,9 +370,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 23)",
+      "(block 24)",
       "Input debug overlay",
-      "(block 27)",
+      "(block 28)",
     ]);
   });
 
@@ -458,7 +478,7 @@ describe("control values", () => {
     expect(tab.getControlValue("customColors")).toBe("#ff8800, #0ca");
     expect(tab.getControlValue("defaultColor")).toBe("#223344");
     expect(tab.getControlValue("defaultTool")).toBe("eraser");
-    expect(tab.getControlValue("pressureEnabled")).toBe(true);
+    expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
   it("stores what a control sets in data.json's units", async () => {
@@ -512,6 +532,13 @@ describe("control values", () => {
     await makeTab(plugin).tab.setControlValue("debugHud", true);
     expect(plugin.setDebugHud).toHaveBeenCalledWith(true);
     expect(plugin.calls).toEqual(["debugHud:true"]);
+  });
+
+  it("hands pressure to the plugin, which redraws open notebooks, and shows the warning", async () => {
+    const plugin = makePlugin();
+    await makeTab(plugin).tab.setControlValue("pressureWidth", true);
+    expect(plugin.setPressureWidth).toHaveBeenCalledWith(true);
+    expect(plugin.calls).toEqual(["pressureWidth:true", "update"]);
   });
 });
 

@@ -55,9 +55,18 @@ function fakeCanvas(log: Call[]): FakeCanvas {
   };
 }
 
-/** Every fill of a stroke outline, as the stub `Path2D` records its SVG path. */
+/** The stub `Path2D`: it records the polyline a stroke's run traces into it. */
 class FakePath2D {
-  constructor(readonly d: string) {}
+  d = "";
+  moveTo(x: number, y: number): void {
+    this.d += `M ${x} ${y} `;
+  }
+  lineTo(x: number, y: number): void {
+    this.d += `L ${x} ${y} `;
+  }
+  closePath(): void {
+    this.d += "Z ";
+  }
 }
 
 const LAYOUT: DocumentLayout = {
@@ -139,12 +148,13 @@ describe("renderSelectionDraft", () => {
     const moves = wetLog.filter(([name]) => name === "translate");
     expect(moves).toContainEqual(["translate", 30, -5]);
     expect(painted).toEqual(["i1"]);
-    expect(names.filter((name) => name === "fill")).toHaveLength(2);
+    // Ink is stroked: one line per stroke (one width each, pressure or not).
+    expect(names.filter((name) => name === "stroke")).toHaveLength(2);
     const offset = wetLog.findIndex(([name, x]) => name === "translate" && x === 30);
     // drawPlacedImage moves to the picture's centre, (5, 5), to paint it.
     const picture = wetLog.findIndex(([name, x]) => name === "translate" && x === 5);
     expect(offset).toBeLessThan(picture);
-    expect(picture).toBeLessThan(names.indexOf("fill"));
+    expect(picture).toBeLessThan(names.indexOf("stroke"));
   });
 });
 
@@ -184,7 +194,8 @@ describe("hidden strokes", () => {
     return d;
   }
 
-  const fills = (): number => tileLog.filter(([name]) => name === "fill").length;
+  // Ink is stroked, a line per stroke here (each is one width).
+  const fills = (): number => tileLog.filter(([name]) => name === "stroke").length;
 
   it("leaves dragged strokes out of the tiles until they are shown again", () => {
     const { renderer } = setup();

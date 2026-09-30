@@ -12,7 +12,7 @@ import {
   eraserTakes,
 } from "../../src/ink/stroke-eraser";
 import type { Stroke } from "../../src/model/document";
-import { inkPath, penOptions } from "../../src/ink/freehand";
+import { SvgPath, inkRuns, penOptions, traceRun } from "../../src/ink/freehand";
 import { presetGeometry } from "../../src/ink/shape-geometry";
 
 /** A horizontal line from x0 to x1 at y, as a two-point (snapped) polyline. */
@@ -164,11 +164,17 @@ describe("eraseCircleFromStroke", () => {
     expect(pieces.length).toBeGreaterThan(0);
     // Drawn as shapes are — the exact centreline, stroked — so the path runs
     // through each of those corners; drawn as handwriting it rounded them.
-    const paths = pieces.map((piece) =>
-      inkPath(piece.pts, penOptions(3, false), true, piece.shape !== undefined),
+    const runs = pieces.flatMap((piece) =>
+      inkRuns(piece.pts, penOptions(3, false), piece.shape !== undefined),
     );
-    for (const ink of paths) expect(ink?.stroke).toBe(3);
-    const d = paths.map((ink) => ink?.d ?? "").join(" ");
+    for (const run of runs) expect(run.width).toBe(3);
+    const d = runs
+      .map((run) => {
+        const svg = new SvgPath();
+        traceRun(svg, run);
+        return svg.toString();
+      })
+      .join(" ");
     for (const corner of ["0.00 120.00", "200.00 120.00", "200.00 0.00"]) {
       expect(d).toContain(`L ${corner}`);
     }

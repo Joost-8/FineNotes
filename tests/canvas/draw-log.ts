@@ -72,9 +72,25 @@ function hash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
-/** The `Path2D` stand-in: it only remembers its SVG data. */
+/** The `Path2D` stand-in: it records what is traced into it as SVG data. */
 export class LoggedPath2D {
-  constructor(readonly d: string) {}
+  d: string;
+
+  constructor(init?: string | LoggedPath2D) {
+    this.d = typeof init === "string" ? init : (init?.d ?? "");
+  }
+
+  moveTo(x: number, y: number): void {
+    this.d += `${this.d ? " " : ""}M ${num(x)} ${num(y)}`;
+  }
+
+  lineTo(x: number, y: number): void {
+    this.d += ` L ${num(x)} ${num(y)}`;
+  }
+
+  closePath(): void {
+    this.d += " Z";
+  }
 }
 
 export class DrawLog {

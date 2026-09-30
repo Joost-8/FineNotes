@@ -7,7 +7,7 @@
  * add bytes, not legibility. It needs a canvas, and nothing from Obsidian.
  */
 
-import { inkPath, penOptions } from "../ink/freehand";
+import { inkRuns, penOptions } from "../ink/freehand";
 import { paintInk } from "../canvas/renderer";
 import { type Bounds, type Stroke, strokeBounds } from "../model/document";
 
@@ -62,12 +62,12 @@ function frameAround(strokes: readonly Stroke[], maxEdge: number, pad: number): 
 }
 
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
-  const ink = inkPath(stroke.pts, penOptions(stroke.size, true), true, stroke.shape !== undefined);
-  if (!ink) return;
+  const runs = inkRuns(stroke.pts, penOptions(stroke.size, true), stroke.shape !== undefined);
+  if (runs.length === 0) return;
   const style = stroke.tool === "highlighter" ? HIGHLIGHTER_INK : PEN_INK;
   ctx.globalAlpha = style.alpha;
   ctx.fillStyle = style.color;
-  paintInk(ctx, ink);
+  paintInk(ctx, runs);
 }
 
 /** The strokes as a PNG for a vision model, or null when there is no ink to draw. */

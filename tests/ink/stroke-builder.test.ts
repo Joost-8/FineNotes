@@ -101,22 +101,7 @@ describe("StrokeBuilder: a pressure of 0 is no reading (2026-09-24)", () => {
   });
 });
 
-describe("StrokeBuilder: pressure for what the wet layer draws (2026-09-30)", () => {
-  it("draws a guess without a reading at the last real pressure, and keeps nothing", () => {
-    const pen = new StrokeBuilder({ minDistance: 1, fallbackPressure: 0.5 });
-    expect(pen.peekPressure(0)).toBe(0.5);
-    pen.add({ x: 0, y: 0, pressure: 0.22 });
-    expect(pen.peekPressure(0)).toBe(0.22);
-    expect(pen.peekPressure(0.3)).toBe(0.3);
-    expect(pen.peekPressure(4)).toBe(1);
-    // A peeked reading is not remembered.
-    expect(pen.peekPressure(0)).toBe(0.22);
-    expect(pen.length).toBe(1);
-    expect(
-      new StrokeBuilder({ pressureEnabled: false, fallbackPressure: 0.5 }).peekPressure(0.3),
-    ).toBe(0.5);
-  });
-
+describe("StrokeBuilder: the pressure a stroke starts at, and rewrites (2026-09-30)", () => {
   it("reports the median reading, or null when the pen read none", () => {
     const pen = new StrokeBuilder({ minDistance: 1 });
     expect(pen.typicalPressure()).toBeNull();
@@ -132,5 +117,21 @@ describe("StrokeBuilder: pressure for what the wet layer draws (2026-09-30)", ()
     const off = new StrokeBuilder({ pressureEnabled: false });
     off.add({ x: 0, y: 0, pressure: 0.4 });
     expect(off.typicalPressure()).toBeNull();
+  });
+
+  it("counts the rewrite when the first reading fills in the points before it", () => {
+    const pen = new StrokeBuilder({ minDistance: 1 });
+    pen.add({ x: 0, y: 0, pressure: 0 });
+    expect(pen.revision).toBe(0);
+    pen.add({ x: 5, y: 0, pressure: 0.3 });
+    expect(pen.revision).toBe(1);
+    expect(pen.view).toEqual([0, 0, 0.3, 5, 0, 0.3]);
+    // Later readings rewrite nothing.
+    pen.add({ x: 10, y: 0, pressure: 0.4 });
+    expect(pen.revision).toBe(1);
+    // A first reading on the very first sample has nothing before it.
+    const fresh = new StrokeBuilder({ minDistance: 1 });
+    fresh.add({ x: 0, y: 0, pressure: 0.5 });
+    expect(fresh.revision).toBe(0);
   });
 });

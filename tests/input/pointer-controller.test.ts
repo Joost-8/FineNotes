@@ -129,8 +129,7 @@ class Rig {
         this.samples.push(s);
         log.push(`start ${show(s)}`);
       },
-      onMove: (c, p) =>
-        log.push(`move [${c.map(show).join(" | ")}] predicted [${p.map(show).join(" | ")}]`),
+      onMove: (c) => log.push(`move [${c.map(show).join(" | ")}]`),
       onEnd: (s) => {
         this.samples.push(s);
         log.push(`end ${show(s)}`);
@@ -233,12 +232,12 @@ describe("a drawing pointer", () => {
     });
     expect(rig.take()).toEqual([
       "debug move pen#1 p=0.6 c=3 t=6",
-      "move [1012,2022 p=0.51 tilt=0,0 | 1020,2030 p=0.55 tilt=0,0 | 1030,2040 p=0.6 tilt=0,0]" +
-        " predicted [1040,2050 p=0.6 tilt=0,0 | 1050,2060 p=0.6 tilt=0,0]",
+      // The predicted samples are left out: drawn, they made the ink swing.
+      "move [1012,2022 p=0.51 tilt=0,0 | 1020,2030 p=0.55 tilt=0,0 | 1030,2040 p=0.6 tilt=0,0]",
     ]);
     expect(move.prevented).toBe(true);
 
-    // The pen-up's own sample ends the stroke; nothing predicted comes back.
+    // The pen-up's own sample ends the stroke.
     const up = rig.pen("pointerup", 1, { x: 31, y: 41, t: 7, pressure: 0 });
     expect(rig.take()).toEqual(["debug up pen#1 p=0 c=0 t=7", "end 1031,2041 p=0 tilt=0,0"]);
     expect(up.prevented).toBe(true);
@@ -287,9 +286,9 @@ describe("a drawing pointer", () => {
     rig.pen("pointermove", 1, { x: 7, y: 8, t: 2, coalesced: [], predicted: [] });
     expect(rig.take()).toEqual([
       "debug move pen#1 p=0.5 c=1 t=1",
-      "move [1005,2006 p=0.5 tilt=0,0] predicted []",
+      "move [1005,2006 p=0.5 tilt=0,0]",
       "debug move pen#1 p=0.5 c=1 t=2",
-      "move [1007,2008 p=0.5 tilt=0,0] predicted []",
+      "move [1007,2008 p=0.5 tilt=0,0]",
     ]);
   });
 
@@ -300,7 +299,7 @@ describe("a drawing pointer", () => {
     rig.pen("pointermove", 1, { x: 99, y: 99, coalesced: [{ x: 1, y: 1 }] });
     expect(rig.take()).toEqual([
       "debug move pen#1 p=0.5 c=1 t=0",
-      "move [1001,2001 p=0.5 tilt=0,0] predicted []",
+      "move [1001,2001 p=0.5 tilt=0,0]",
     ]);
   });
 
@@ -354,7 +353,7 @@ describe("a new pen-down while a stroke is still open", () => {
     rig.pen("pointerup", 2, { x: 20, y: 0, t: 7 });
     expect(rig.take()).toEqual([
       "debug move pen#2 p=0.5 c=1 t=6",
-      "move [1020,2000 p=0.5 tilt=0,0] predicted []",
+      "move [1020,2000 p=0.5 tilt=0,0]",
       "debug up pen#2 p=0.5 c=0 t=7",
       "end 1020,2000 p=0.5 tilt=0,0",
     ]);
@@ -647,7 +646,7 @@ describe("a listener without the optional callbacks", () => {
       "start 1000,2000 p=0.5 tilt=0,0",
       "cancel",
       "start 1000,2000 p=0.5 tilt=0,0",
-      "move [1001,2001 p=0.5 tilt=0,0] predicted []",
+      "move [1001,2001 p=0.5 tilt=0,0]",
       "cancel",
     ]);
   });

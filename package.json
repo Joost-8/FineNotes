@@ -20,8 +20,7 @@
     "obsidian",
     "obsidian-plugin",
     "handwriting",
-    "ink",
-    "perfect-freehand"
+    "ink"
   ],
   "author": "Joost",
   "repository": {
@@ -30,8 +29,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "fflate": "0.8.3",
-    "perfect-freehand": "^1.2.2"
+    "fflate": "0.8.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

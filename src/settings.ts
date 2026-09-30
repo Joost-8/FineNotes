@@ -87,6 +87,13 @@ const CALLOUTS = {
       "“tailscale serve” or a Cloudflare Tunnel (SELF_HOSTING.md shows how). And on an " +
       "iPad, “localhost” is the iPad itself, not your server.",
   },
+  pressure: {
+    title: "Writing is less smooth with pressure on",
+    detail:
+      "A line whose width changes is drawn as short pieces of one width each: slower to " +
+      "draw on a full page, and close up the pieces can show. Switch it off if writing " +
+      "feels less fluid.",
+  },
   noKeychain: {
     title: "API keys are stored in this vault's plugin data",
     detail:
@@ -98,7 +105,9 @@ const CALLOUTS = {
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
 
 const DESC = {
-  pressure: "Let pen pressure change how wide a stroke is. Only a pen or stylus reports it.",
+  pressure:
+    "Advanced. The Fountain and Brush pens get wider the harder you press. Off, every pen " +
+    "draws one even width, which is the smoothest to write with.",
   drawAndHold:
     "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
   desynchronized:
@@ -272,6 +281,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       await this.plugin.setDebugHud(value as boolean);
       return;
     }
+    if (key === "pressureWidth") {
+      // Saved by the plugin, which redraws every open notebook's ink.
+      await this.plugin.setPressureWidth(value as boolean);
+      this.update();
+      return;
+    }
     if (key === "llmVendor") {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
@@ -289,7 +304,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const widths = Object.fromEntries(SIZES.map((size) => [String(size), String(size)]));
     return [
       callout(CALLOUTS.scribble, Platform.isIosApp && Platform.isTablet),
-      toggle("pressureEnabled", "Pressure sensitivity", DESC.pressure, ["stylus", "Apple Pencil"]),
       toggle("drawAndHold", "Draw and hold to make shapes", DESC.drawAndHold, [
         "shape recognition",
         "straighten",
@@ -300,6 +314,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "glitch",
         "artifacts",
       ]),
+      toggle("pressureWidth", "Pressure-sensitive pens (advanced)", DESC.pressure, [
+        "pressure sensitivity",
+        "stylus",
+        "Apple Pencil",
+        "fountain pen",
+        "brush pen",
+      ]),
+      callout(CALLOUTS.pressure, () => this.plugin.settings.pressureWidth),
       drawnRow("Paper width", DESC.paperWidth, (s) => this.drawPaperWidth(s), [
         "canvas size",
         "page width",

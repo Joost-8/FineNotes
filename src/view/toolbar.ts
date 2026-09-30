@@ -295,6 +295,8 @@ export interface ToolbarCallbacks {
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
   onPressureToggle: (enabled: boolean) => void;
+  /** Whether pressure pens may widen with pressure (the advanced setting); off when absent. */
+  pressureAllowed?: () => boolean;
   onUndo: () => void;
   onRedo: () => void;
   onClear: () => void;
@@ -1461,8 +1463,9 @@ export class Toolbar {
       this.state.tool = spec.tool;
       this.callbacks.onToolChange(spec.tool);
     }
-    this.state.pressureEnabled = spec.pressure;
-    this.callbacks.onPressureToggle(spec.pressure);
+    const pressure = spec.pressure && this.callbacks.pressureAllowed?.() === true;
+    this.state.pressureEnabled = pressure;
+    this.callbacks.onPressureToggle(pressure);
     this.callbacks.onPenTypeChange?.(spec);
     this.buildOptions();
     this.syncActive();

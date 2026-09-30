@@ -54,8 +54,9 @@ Hope you guys enjoy this and give me some
 
 **Writing**
 
-- Pressure-sensitive pen and highlighter, in any colour, with widths in
-  millimetres.
+- Pen and highlighter in any colour, with widths in millimetres. Ink is laid
+  down as the pen moves and never redrawn, as in Goodnotes; pens can respond
+  to pressure (an advanced setting).
 - An eraser that rubs out only what it passes over, or one that removes whole
   strokes. Either can be set to erase only pen ink or only highlighter.
 - Pen gestures, as in Goodnotes:
@@ -160,9 +161,11 @@ bar: tap it again to open its menu.
 
 ### Writing and erasing
 
-- **Pen type:** tap the nib at the start of the pen options. **Fountain pen**
-  and **Brush pen** respond to pressure; **Ball pen** draws an even line;
-  **Highlighter** draws a wide, see-through stroke.
+- **Pen type:** tap the nib at the start of the pen options. **Ball pen** and
+  **Fountain pen** draw an even line and **Brush pen** a thicker one;
+  **Highlighter** draws a wide, see-through stroke. With **Pressure-sensitive
+  pens** on (Settings, advanced), the Fountain and Brush pens get wider the
+  harder you press.
 - **Width:** three widths, and a ⌄ for a slider in millimetres.
 - **Colour:** three quick colours. Tap the colour in use again to change it,
   or tap **+** for more. **Custom colour…** mixes any colour: pick the shade
@@ -407,15 +410,17 @@ when the window changes width. An infinite canvas has no such anchor.
 - The Pencil writes; one finger scrolls, two pinch, and a palm is ignored.
 - FineNotes reads the extra samples the iPad gathers between frames, so fast
   handwriting stays smooth.
-- It draws the samples the iPad predicts, so the line keeps up with the pen
-  tip.
+- It does not draw the samples the iPad predicts: they guess wrong at every
+  turn, and the ink would swing.
 - iPadOS wants a still pen for itself (long press, Scribble), so FineNotes claims
   those touches first. A still pen that iPadOS cancels counts as the hold it
   was, which is what lets draw-and-hold snap shapes.
 
-**Ink.** Pressure-sensitive strokes are outlined with
-[perfect-freehand](https://github.com/steveruiz/perfect-freehand). Shapes are
-drawn as exact lines, so their corners stay sharp.
+**Ink.** Handwriting is smoothed by a curve through the midpoints between the
+pen's samples and drawn as a line with round ends, by the canvas itself. It
+only ever grows: what is on the page never changes shape while the pen goes
+on. With pressure on, a line is drawn in short runs of one width each. Shapes
+are drawn as exact lines, so their corners stay sharp.
 
 Shape recognition is geometry, not machine learning: it fits lines, polygons,
 circles, ellipses and stars. It was tuned on real Apple Pencil strokes traced
@@ -452,7 +457,7 @@ own service, and the key for your own server never goes anywhere else.
 | Folder             | What it holds                                                                                            |
 | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `src/model/`       | The notebook, its commands and the file format. Pure TypeScript: no DOM, no Obsidian.                    |
-| `src/ink/`         | Stroke building, outlines, shape recognition and pen gestures. Pure.                                     |
+| `src/ink/`         | Stroke building, the ink tracer, shape recognition and pen gestures. Pure.                               |
 | `src/input/`       | Pointer handling, palm rejection, pinch and pan.                                                         |
 | `src/canvas/`      | Rendering, tiles, page layout, scroll physics, paper rulings and scanning geometry.                      |
 | `src/view/`        | Everything Obsidian-facing: the notebook view, toolbar, sidebar and dialogs.                             |
@@ -474,9 +479,6 @@ build.
 
 ## Credits
 
-- Strokes are drawn with
-  [perfect-freehand](https://github.com/steveruiz/perfect-freehand) by Steve
-  Ruiz (MIT).
 - Notes are compressed with [fflate](https://github.com/101arrowz/fflate)
   (MIT).
 - PDFs are rendered with the PDF.js that Obsidian ships.

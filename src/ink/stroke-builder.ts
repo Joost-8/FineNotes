@@ -2,8 +2,8 @@
  * Turns the samples of one pen-down into the points a stroke stores — the
  * flat `[x, y, p, …]` buffer of the file format. It keeps a sample only once
  * the pen has moved far enough from the last one kept, and decides what
- * pressure each point stores. Pure: no DOM. The pointer events (coalesced
- * and predicted samples) are unpacked in `input/pointer-controller.ts`.
+ * pressure each point stores. Pure: no DOM. The pointer events (their
+ * coalesced samples) are unpacked in `input/pointer-controller.ts`.
  */
 
 import { FALLBACK_PRESSURE, MIN_SAMPLE_DISTANCE } from "../constants";
@@ -61,6 +61,8 @@ export class StrokeBuilder {
   private readonly flat: number[] = [];
   /** The pen's last real pressure reading; NaN until the first arrives. */
   private lastReading = Number.NaN;
+  /** Counts the times points already kept were rewritten (see {@link revision}). */
+  private rewrites = 0;
 
   constructor(overrides: Partial<StrokeBuilderOptions> = {}) {
     this.options = { ...DEFAULTS, ...overrides };
@@ -90,19 +92,18 @@ export class StrokeBuilder {
     return [...this.flat];
   }
 
+  /** The kept points, flat, without a copy: read them now, keep nothing. */
+  get view(): readonly number[] {
+    return this.flat;
+  }
+
   /**
-   * The pressure to draw a sample with that is never kept: one of the
-   * platform's guesses ahead of the pen. The same rule as a kept sample —
-   * a missing reading takes the last real one — without remembering it.
-   * WebKit's guesses carry no pressure, and drawn at the 0.5 fallback they
-   * put a ball twice the line's width on the moving tip of every light
-   * stroke (Joost's recording against GoodNotes, 2026-09-30).
+   * Changes whenever points already kept are rewritten: the pen's first
+   * pressure reading fills in the points before it. Whatever was drawn from
+   * the old values must be drawn again.
    */
-  peekPressure(raw: number): number {
-    const { pressureEnabled, fallbackPressure } = this.options;
-    if (!pressureEnabled) return fallbackPressure;
-    if (raw > 0) return Math.min(raw, 1);
-    return Number.isNaN(this.lastReading) ? fallbackPressure : this.lastReading;
+  get revision(): number {
+    return this.rewrites;
   }
 
   /**
@@ -147,8 +148,9 @@ export class StrokeBuilder {
     if (!pressureEnabled) return fallbackPressure;
     if (!(raw > 0)) return Number.isNaN(this.lastReading) ? fallbackPressure : this.lastReading;
     const reading = Math.min(raw, 1);
-    if (Number.isNaN(this.lastReading)) {
+    if (Number.isNaN(this.lastReading) && this.flat.length > 0) {
       for (let p = 2; p < this.flat.length; p += POINT_STRIDE) this.flat[p] = reading;
+      this.rewrites++;
     }
     this.lastReading = reading;
     return reading;

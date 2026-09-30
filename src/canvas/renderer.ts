@@ -19,9 +19,9 @@
  * - **wet**: the in-progress stroke, drawn synchronously per input sample for
  *   the lowest perceptible latency — and an image while it is being dragged.
  *
- * Stroke outlines are expensive (perfect-freehand), so each stroke's `Path2D`
- * is cached against a fingerprint of its points: a moved or re-pointed stroke
- * re-outlines, an untouched one never does again.
+ * Tracing a stroke (`ink/freehand.ts`) is work, so each stroke's runs and
+ * their `Path2D`s are cached against a fingerprint of its points: a moved or
+ * re-pointed stroke is traced again, an untouched one never is.
  *
  * ## The coordinate contract
  *
@@ -36,7 +36,7 @@
 
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { LIGHT_PAPER, type PaperTheme } from "./backdrop";
-import { type InkPath, inkPath, penOptions } from "../ink/freehand";
+import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
 import {
   type Backdrop,
   type Bounds,
@@ -162,21 +162,30 @@ export function paperColorOf(page: Page, theme: PaperTheme): string {
 }
 
 /**
- * Paint an {@link InkPath} in the context's current `fillStyle`: filled for
- * handwriting, stroked with round joins for a shape. `path` is the cached
- * `Path2D` of `ink.d`, when there is one.
+ * Paint a stroke's runs (`inkRuns`) in the context's current `fillStyle`:
+ * each one a line of its own width, round at the caps and the joins, drawn
+ * by the canvas's stroke so a line that crosses itself is still one shape.
+ * `paths` are the runs' cached `Path2D`s, when there are any.
  */
-export function paintInk(ctx: CanvasRenderingContext2D, ink: InkPath, path?: Path2D): void {
-  const p = path ?? new Path2D(ink.d);
-  if (ink.stroke === null) {
-    ctx.fill(p);
-    return;
-  }
+export function paintInk(
+  ctx: CanvasRenderingContext2D,
+  runs: readonly InkRun[],
+  paths?: readonly Path2D[],
+): void {
   ctx.strokeStyle = ctx.fillStyle;
-  ctx.lineWidth = ink.stroke;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.stroke(p);
+  runs.forEach((run, i) => {
+    ctx.lineWidth = run.width;
+    ctx.stroke(paths?.[i] ?? pathOf(run));
+  });
+}
+
+/** A run's polyline as a `Path2D`. */
+export function pathOf(run: InkRun): Path2D {
+  const path = new Path2D();
+  traceRun(path, run);
+  return path;
 }
 
 /** What the diagnostic HUD shows about the cache. */
@@ -230,9 +239,9 @@ interface Preview {
 
 interface PathEntry {
   fingerprint: string;
-  path: Path2D | null;
-  /** How `path` is painted (filled outline or stroked centreline). */
-  ink: InkPath | null;
+  /** The stroke's runs, and a `Path2D` for each. */
+  runs: InkRun[];
+  paths: Path2D[];
   /** Centreline bounds padded by the nib, so an overlap test is enough. */
   bounds: Bounds | null;
 }
@@ -271,6 +280,11 @@ function selectionLine(ctx: CanvasRenderingContext2D, scale: number): void {
 /** Highlighter ink keeps one width: pressure never thins it. */
 function pressureFor(tool: Tool, usePressure: boolean): boolean {
   return tool !== "highlighter" && usePressure;
+}
+
+/** The pen a stroke of this style is traced with. */
+export function penFor(style: { size: number; tool: Tool; usePressure: boolean }): PenOptions {
+  return penOptions(style.size, pressureFor(style.tool, style.usePressure));
 }
 
 /** Give the backing store back now; iOS holds canvas memory until then. */
@@ -934,12 +948,12 @@ export class Renderer {
     usePressure: boolean,
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
-    if (!entry.path || !entry.bounds || !overlaps(entry.bounds, region)) return;
-    fillPath(ctx, entry.path, stroke, this.highlighterAlpha, entry.ink);
+    if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) return;
+    paintStroke(ctx, entry, stroke, this.highlighterAlpha);
   }
 
   /**
-   * The stroke's outline as a `Path2D`, outlined once. The fingerprint is
+   * The stroke's runs and their `Path2D`s, traced once. The fingerprint is
    * the point count and both end points, which changes under every edit the
    * commands make (a translation moves every point; an erase re-points).
    */
@@ -950,19 +964,17 @@ export class Renderer {
     const fingerprint = `${pressure ? 1 : 0}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
     if (cached && cached.fingerprint === fingerprint) return cached;
-    let path: Path2D | null = null;
-    let ink: InkPath | null = null;
+    let runs: InkRun[] = [];
     let bounds: Bounds | null = null;
     if (n >= 3) {
-      ink = inkPath(pts, penOptions(stroke.size, pressure), true, stroke.shape !== undefined);
-      if (ink) path = new Path2D(ink.d);
+      runs = inkRuns(pts, penOptions(stroke.size, pressure), stroke.shape !== undefined);
       const b = strokeBounds(stroke);
       if (b) {
         const pad = stroke.size;
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
-    const entry: PathEntry = { fingerprint, path, ink, bounds };
+    const entry: PathEntry = { fingerprint, runs, paths: runs.map(pathOf), bounds };
     this.paths.set(stroke, entry);
     return entry;
   }
@@ -1030,8 +1042,7 @@ export class Renderer {
       }
     }
     for (const stroke of strokes) {
-      const entry = this.pathEntry(stroke, usePressure);
-      if (entry.path) fillPath(ctx, entry.path, stroke, this.highlighterAlpha, entry.ink);
+      paintStroke(ctx, this.pathEntry(stroke, usePressure), stroke, this.highlighterAlpha);
     }
     ctx.restore();
     this.setWetVisible(true);
@@ -1048,7 +1059,7 @@ export class Renderer {
     const box = this.layout.boxes[pageIndex];
     if (!box) return;
     const entry = this.pathEntry(stroke, usePressure);
-    if (!entry.path || !entry.bounds) return;
+    if (entry.runs.length === 0 || !entry.bounds) return;
     for (const tile of this.tiles.values()) {
       if (tile.pageId !== box.id || tile.level !== this.level) continue;
       const tr = tile.rect;
@@ -1066,7 +1077,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      fillPath(ctx, entry.path, stroke, this.highlighterAlpha, entry.ink);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha);
       ctx.restore();
     }
     const preview = this.previews.peek(box.id);
@@ -1077,7 +1088,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      fillPath(ctx, entry.path, stroke, this.highlighterAlpha, entry.ink);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha);
       ctx.restore();
     }
   }
@@ -1145,7 +1156,23 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
-    for (const pts of strokes) fillStroke(ctx, pts, style, false, this.highlighterAlpha);
+    for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha);
+    ctx.restore();
+    this.setWetVisible(true);
+  }
+
+  /**
+   * Draw the handwriting being written, already traced into `runs` (page
+   * space), on the wet layer, painted as a stored stroke of `style` is.
+   */
+  renderWetRuns(pageIndex: number, runs: readonly InkRun[], style: StrokeStyle): void {
+    const box = this.layout.boxes[pageIndex];
+    const ctx = this.wet.ctx;
+    this.wipe(ctx);
+    if (!box) return;
+    this.toLayoutSpace(ctx);
+    this.enterPage(ctx, box);
+    paintStroke(ctx, { runs }, style, this.highlighterAlpha);
     ctx.restore();
     this.setWetVisible(true);
   }
@@ -1164,16 +1191,15 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
 }
 
 /**
- * Paint a stroke whose path is already built, in whatever space `ctx` is
- * in: `ink` says whether to fill or stroke `path`, and without it the path
- * is filled.
+ * Paint a stroke's runs in its colour, in whatever space `ctx` is in; a
+ * highlighter translucent and multiplied. A highlighter keeps one width, so
+ * it is always one run: its overlaps are never painted twice.
  */
-function fillPath(
+function paintStroke(
   ctx: CanvasRenderingContext2D,
-  path: Path2D,
+  ink: { runs: readonly InkRun[]; paths?: readonly Path2D[] },
   style: { color: string; tool: Tool },
   highlighterAlpha: number,
-  ink: InkPath | null = null,
 ): void {
   const highlighter = style.tool === "highlighter";
   ctx.save();
@@ -1185,25 +1211,19 @@ function fillPath(
   // painted exactly as stored. It is never remapped to suit the app theme —
   // that is how a note written on one device stays legible on another.
   ctx.fillStyle = style.color;
-  if (ink) paintInk(ctx, ink, path);
-  else ctx.fill(path);
+  paintInk(ctx, ink.runs, ink.paths);
   ctx.restore();
 }
 
-/**
- * Build one stroke's path from its points and paint it, in whatever space
- * `ctx` is in. `finished` is false for a stroke the pen is still drawing.
- */
+/** Trace one stroke from its points and paint it, in whatever space `ctx` is in. */
 function fillStroke(
   ctx: CanvasRenderingContext2D,
   points: number[],
   style: StrokeStyle,
-  finished: boolean,
   highlighterAlpha: number,
 ): void {
-  const pen = penOptions(style.size, pressureFor(style.tool, style.usePressure));
-  const ink = inkPath(points, pen, finished, style.shape === true);
-  if (ink) fillPath(ctx, new Path2D(ink.d), style, highlighterAlpha, ink);
+  const runs = inkRuns(points, penFor(style), style.shape === true);
+  paintStroke(ctx, { runs }, style, highlighterAlpha);
 }
 
 export interface ThumbnailOptions {
@@ -1257,7 +1277,7 @@ export function renderPageThumbnail(
 
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
-    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), true, alpha);
+    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha);
   }
   ctx.restore();
 }

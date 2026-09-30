@@ -1,25 +1,25 @@
 /**
- * Golden output of the perfect-freehand wrapper for real ink: the outline
- * polygon and the SVG path data built from it, for strokes from Joost's
- * notes at the pen sizes and pressure settings the plugin uses, finished and
- * still wet. Both are hashed at full precision; one pen setting per stroke
- * keeps its path data verbatim, so a change can be read as well as caught.
+ * Golden output of the ink tracer for real ink: every stroke's runs (their
+ * widths and a hash of their polylines) for strokes from Joost's notes, at
+ * the pen sizes and pressure settings the plugin uses. One setting per
+ * stroke is kept verbatim, as SVG path data, so a change can be read as well
+ * as caught.
  *
- * The path data is what every note is painted with, so this file is the
- * guard on "the rewrite looks the same": it was generated before
- * `src/ink/freehand.ts` was rewritten (2026-09-25) and must not change. A
- * perfect-freehand upgrade that moves the ink shows up here first.
+ * The runs are what every note is painted with, so this file guards the
+ * look of all ink: a change here redraws every stroke ever written. It was
+ * generated when the tracer replaced perfect-freehand (2026-09-30).
  */
 
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  type InkRun,
+  SvgPath,
   centrelinePath,
-  inkPath,
-  outlineToSvgPath,
+  inkRuns,
   penOptions,
-  strokeOutline,
-  toInputPoints,
+  radiusAt,
+  traceRun,
 } from "../../src/ink/freehand";
 import mouse from "./fixtures/real-mouse-triangles.json";
 import squiggles from "./fixtures/real-handwriting-squiggles.json";
@@ -59,79 +59,66 @@ function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
+function svgOf(runs: readonly InkRun[]): string {
+  return runs
+    .map((run) => {
+      const svg = new SvgPath();
+      traceRun(svg, run);
+      return `${run.width.toFixed(3)}: ${svg.toString()}`;
+    })
+    .join("\n    ");
+}
+
 function golden(): string {
   const lines: string[] = [];
   for (const sample of SAMPLES) {
     for (const size of [2, 3, 12]) {
       for (const pressure of [true, false]) {
-        for (const complete of [true, false]) {
-          const options = penOptions(size, pressure);
-          const outline = strokeOutline(sample.pts, options, complete);
-          const d = outlineToSvgPath(outline);
-          lines.push(
-            `${sample.name} size=${size} pressure=${pressure} complete=${complete} ` +
-              `outline=${outline.length}#${digest(outline)} path=${d.length}#${digest(d)}`,
-          );
-          // One setting in full, so a change can be read as well as detected.
-          if (size === 3 && pressure && complete) lines.push(`  ${d}`);
-        }
+        const runs = inkRuns(sample.pts, penOptions(size, pressure));
+        const points = runs.reduce((sum, run) => sum + run.pts.length / 2, 0);
+        const widths = runs.map((run) => run.width.toFixed(2));
+        const shown = widths.length > 6 ? [...widths.slice(0, 6), "…"] : widths;
+        lines.push(
+          `${sample.name} size=${size} pressure=${pressure} runs=${runs.length} ` +
+            `points=${points} widths=${shown.join(",")} #${digest(runs)}`,
+        );
+        // One setting in full, so a change can be read as well as detected.
+        if (size === 3 && pressure) lines.push(`    ${svgOf(runs)}`);
       }
     }
     lines.push(
-      `${sample.name} as a shape: ${inkPath(sample.pts, penOptions(3, true), true, true)?.d}`,
+      `${sample.name} as a shape: ${svgOf(inkRuns(sample.pts, penOptions(3, true), true))}`,
     );
   }
   return `${lines.join("\n")}\n`;
 }
 
-describe("freehand output for real ink", () => {
-  it("matches the golden outlines and path data", async () => {
-    await expect(golden()).toMatchFileSnapshot("./golden/freehand-paths.txt");
+describe("the ink tracer on real ink", () => {
+  it("matches the golden runs", async () => {
+    await expect(golden()).toMatchFileSnapshot("./golden/freehand-runs.txt");
   });
 
-  it("uses the plugin's pen tuning: thinning 0.6 with pressure, smoothing and streamline 0.5", () => {
-    expect(penOptions(4, true)).toEqual({
-      size: 4,
-      thinning: 0.6,
-      smoothing: 0.5,
-      streamline: 0.5,
-      simulatePressure: false,
-    });
-    expect(penOptions(7, false)).toEqual({
-      size: 7,
-      thinning: 0,
-      smoothing: 0.5,
-      streamline: 0.5,
-      simulatePressure: true,
-    });
+  it("uses the plugin's pen tuning: thinning 0.6 with pressure, one width without", () => {
+    expect(penOptions(4, true)).toEqual({ size: 4, thinning: 0.6 });
+    expect(penOptions(7, false)).toEqual({ size: 7, thinning: 0 });
   });
 
-  it("hands perfect-freehand whole points only, as [x, y, pressure]", () => {
-    expect(toInputPoints([1, 2, 0.3, 4, 5, 0.6, 7, 8])).toEqual([
-      [1, 2, 0.3],
-      [4, 5, 0.6],
-    ]);
-    expect(toInputPoints([])).toEqual([]);
-  });
-
-  it("gives no path data for an outline of fewer than two points", () => {
-    expect(outlineToSvgPath([])).toBe("");
-    expect(outlineToSvgPath([[3, 4]])).toBe("");
-  });
-
-  it("builds path data from quadratic curves through the outline's edge midpoints", () => {
-    expect(
-      outlineToSvgPath([
-        [0, 0],
-        [10, 0],
-        [10, 10],
-      ]),
-    ).toBe("M 0.00 0.00 Q 0.00 0.00 5.00 0.00 10.00 0.00 10.00 5.00 10.00 10.00 5.00 5.00 Z");
+  it("widens a line from 0.4 of the nib at no pressure to 1.6 at full", () => {
+    const pen = penOptions(10, true);
+    expect(2 * radiusAt(0, pen)).toBeCloseTo(4, 9);
+    expect(2 * radiusAt(0.5, pen)).toBeCloseTo(10, 9);
+    expect(2 * radiusAt(1, pen)).toBeCloseTo(16, 9);
+    // Out of range and unreadable pressures are clamped, or read as 0.5.
+    expect(radiusAt(7, pen)).toBeCloseTo(8, 9);
+    expect(radiusAt(Number.NaN, pen)).toBeCloseTo(5, 9);
+    // Without pressure, the nib whatever the reading.
+    expect(2 * radiusAt(0.1, penOptions(10, false))).toBe(10);
   });
 
   it("draws nothing for fewer than one whole point", () => {
-    expect(inkPath([], penOptions(3, true))).toBeNull();
-    expect(inkPath([1, 2], penOptions(3, true))).toBeNull();
+    expect(inkRuns([], penOptions(3, true))).toEqual([]);
+    expect(inkRuns([1, 2], penOptions(3, true))).toEqual([]);
+    expect(inkRuns([], penOptions(3, true), true)).toEqual([]);
     expect(centrelinePath([])).toBe("");
   });
 });

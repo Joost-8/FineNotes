@@ -28,7 +28,6 @@ import {
  * it went; vaults that have it keep it, as they keep any key (below).
  */
 const FRESH_INSTALL = {
-  pressureEnabled: true,
   drawAndHold: true,
   defaultTool: "pen",
   customColors: [],
@@ -69,6 +68,7 @@ const FRESH_INSTALL = {
   penGestures: { scribbleErase: true, scribbleErasesAll: false, circleLasso: true },
   shapeColor: "#000000",
   recentColors: [],
+  pressureWidth: false,
 };
 
 /**
@@ -76,7 +76,6 @@ const FRESH_INSTALL = {
  * plaintext keys still there, and keys this build no longer knows.
  */
 const USED_VAULT = {
-  pressureEnabled: false,
   drawAndHold: false,
   defaultTool: "highlighter",
   customColors: ["#ff8800", "#0ca"],
@@ -118,6 +117,7 @@ const USED_VAULT = {
   penGestures: { scribbleErase: false, scribbleErasesAll: true, circleLasso: false },
   shapeColor: "#0066ff",
   recentColors: ["#123456", "#abcdef"],
+  pressureWidth: true,
   experimentalFutureFlag: 7,
 };
 
@@ -148,7 +148,7 @@ describe("data.json", () => {
   });
 
   it("gives a file from before a key existed that key's default", () => {
-    const old = { pressureEnabled: false, defaultColor: "#333333", paperWidth: 900 };
+    const old = { drawAndHold: false, defaultColor: "#333333", paperWidth: 900 };
     const written = loadAndSave(old) as Record<string, unknown>;
     expect(written).toEqual({ ...FRESH_INSTALL, ...old });
   });
@@ -230,14 +230,15 @@ describe("control values", () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
     storeShownValue(settings, "defaultTool", "eraser");
     expect(shownValue(settings, "defaultTool")).toBe("eraser");
-    expect(shownValue(settings, "pressureEnabled")).toBe(true);
+    expect(shownValue(settings, "pressureWidth")).toBe(false);
     expect(shownValue(settings, "toString")).toBe(Object.prototype.toString);
     storeShownValue(settings, "constructor", "x");
     expect(shownValue(settings, "constructor")).toBe("x");
   });
 
   it("rebuilds the tab only for the keys that add or remove rows", () => {
-    for (const key of ["recognitionProviderId", "llmVendor", "imageVendor"]) {
+    // pressureWidth shows or hides its warning.
+    for (const key of ["recognitionProviderId", "llmVendor", "imageVendor", "pressureWidth"]) {
       expect(changesTabLayout(key)).toBe(true);
     }
     for (const key of ["llmModel", "llmBaseUrl", "debugHud", "paperWidth", "defaultTool"]) {

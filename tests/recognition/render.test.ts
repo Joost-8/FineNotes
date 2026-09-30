@@ -1,8 +1,8 @@
 /**
  * `renderStrokesForRecognition` on a recording fake canvas: the size of the
  * picture, where the ink lands in it, and the colours each tool is painted
- * in. What the pixels look like is perfect-freehand's business and is not
- * checked here.
+ * in. What the lines look like is the ink tracer's business
+ * (tests/ink/ink-tracer.test.ts) and is not checked here.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,7 +73,9 @@ beforeEach(() => {
   vi.stubGlobal(
     "Path2D",
     class {
-      constructor(readonly d: string) {}
+      moveTo(): void {}
+      lineTo(): void {}
+      closePath(): void {}
     },
   );
 });
@@ -140,10 +142,10 @@ describe("renderStrokesForRecognition", () => {
       stroke([0, 50, 0.5, 50, 0, 0.5], { tool: "highlighter", color: "#ffff00" }),
       stroke([0, 0, 0.5, 50, 0, 0.5]),
     ]);
-    expect(ops.filter((op) => op.startsWith("fill "))).toEqual([
-      "fill #111111 alpha=1",
-      "fill #888888 alpha=0.25",
-      "fill #111111 alpha=1",
+    expect(ops.filter((op) => op.startsWith("stroke "))).toEqual([
+      "stroke #111111 alpha=1 width=4 round/round",
+      "stroke #888888 alpha=0.25 width=4 round/round",
+      "stroke #111111 alpha=1 width=4 round/round",
     ]);
   });
 
