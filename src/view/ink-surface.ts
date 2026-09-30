@@ -963,7 +963,6 @@ export class InkSurface {
     cancel: 0,
     touchStarts: 0,
     stylusTouches: 0,
-    palm: 0,
     palmUndo: 0,
   };
   private diagHold = { fired: false, verdict: "" };
@@ -2933,12 +2932,6 @@ export class InkSurface {
       this.requestFrame();
     },
     onDebug: (record) => this.onPointerEvent(record),
-    onPalm: (reason, contact) => {
-      this.diagSums.palm++;
-      if (!this.debug) return;
-      this.hud.mark(`palm:${reason}${contact > 1 ? `·${Math.round(contact)}` : ""}`);
-      this.scheduleHud();
-    },
   };
 
   /**

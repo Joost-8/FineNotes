@@ -29,12 +29,11 @@ extracted from the matching section of this file by `release.yml`.
 - **Strokes no longer start with a blob, and dots are as wide as the line.**
   At a light Pencil touch every stroke began as a round dot about twice the
   line's width, and an i-dot or full stop stayed that fat.
-- **Resting your hand on the page no longer scrolls it.** A touch that lands
-  just after the Pencil was on (or hovering over) the page is taken for your
-  palm and ignored, as is one wider than a fingertip. If your hand does start
-  a scroll before the pen touches down, the page goes back where it was the
-  moment the pen lands. Scrolling with a finger works as before once the pen
-  has been away for a moment.
+- **A resting hand no longer leaves the page moved.** If your palm touches
+  down before the Pencil and nudges the page, the page goes back where it
+  was the moment the pen lands. Fingers scroll and pinch exactly as before:
+  an earlier beta ignored touches just after the pen, which left pinches
+  and swipes dead now and then, and that is gone.
 
 ## [1.0.1] - 2026-09-26
 

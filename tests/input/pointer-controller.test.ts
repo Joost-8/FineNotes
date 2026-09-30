@@ -17,7 +17,6 @@ import {
   type PointerDebugRecord,
   type PointerSample,
 } from "../../src/input/pointer-controller";
-import { PEN_GRACE_MS } from "../../src/input/palm-rejection";
 
 type Listener = (event: unknown) => void;
 
@@ -148,7 +147,6 @@ class Rig {
             onPinchStart: (x, y) => log.push(`pinchStart ${x},${y}`),
             onPinch: (i) => log.push(`pinch x${i.scaleFactor} at ${i.centerX},${i.centerY}`),
             onPinchEnd: () => log.push("pinchEnd"),
-            onPalm: (reason, contact) => log.push(`palm ${reason} ${contact}`),
             onDebug: (r) => {
               this.records.push(r);
               log.push(
@@ -312,12 +310,10 @@ describe("a drawing pointer", () => {
     expect(rig.take()).toEqual(["debug cancel pen#1 p=0 c=0 t=3", "cancel"]);
     expect(cancel.prevented).toBe(false);
     expect(rig.captured).toEqual([]);
-    // A late pointerup for it is nothing, and fingers work again once the
-    // pen has been gone a moment.
+    // A late pointerup for it is nothing, and fingers work again.
     rig.pen("pointerup", 1, { x: 5, y: 5, t: 4 });
-    const later = 4 + PEN_GRACE_MS;
-    rig.finger("pointerdown", 10, 100, 100, later);
-    expect(rig.take()).toEqual([`panStart 100,100 t=${later}`]);
+    rig.finger("pointerdown", 10, 100, 100, 5);
+    expect(rig.take()).toEqual(["panStart 100,100 t=5"]);
   });
 
   it("ignores a hovering pen, and a pen that is not the one drawing", () => {
@@ -391,7 +387,7 @@ describe("a new pen-down while a stroke is still open", () => {
     rig.take();
     rig.finger("pointerdown", 10, 100, 100, 1);
     rig.finger("pointermove", 10, 120, 100, 2);
-    expect(rig.take()).toEqual(["palm stroke 1"]);
+    expect(rig.take()).toEqual([]);
   });
 });
 
@@ -574,7 +570,7 @@ describe("pen and fingers together", () => {
     rig.finger("pointermove", 20, 310, 305, 3);
     rig.finger("pointerdown", 21, 320, 320, 4);
     rig.finger("pointercancel", 21, 320, 320, 5);
-    expect(rig.take()).toEqual(["palm stroke 1", "palm stroke 1"]);
+    expect(rig.take()).toEqual([]);
     expect(palm.prevented).toBe(false);
     expect(rig.captured).toEqual([1]);
     rig.pen("pointerup", 1, { x: 9, y: 9, t: 6 });
@@ -583,48 +579,26 @@ describe("pen and fingers together", () => {
     rig.finger("pointermove", 20, 315, 310, 7);
     rig.finger("pointerup", 20, 315, 310, 8);
     expect(rig.take()).toEqual([]);
-    // A new finger soon after the lift is the hand coming down again; one
-    // after the pen has been gone a moment scrolls.
+    // A new finger after the lift scrolls again, at once: a touch left out
+    // stays out until it lifts, and that made pinches die (2026-09-30).
     rig.finger("pointerdown", 22, 0, 0, 9);
-    expect(rig.take()).toEqual(["palm pen 1"]);
-    const later = 6 + PEN_GRACE_MS;
-    rig.finger("pointerdown", 23, 0, 0, later);
-    expect(rig.take()).toEqual([`panStart 0,0 t=${later}`]);
+    expect(rig.take()).toEqual(["panStart 0,0 t=9"]);
   });
 
-  it("fingers scroll again once the pen has been gone a moment", () => {
+  it("fingers scroll again once the pen lifts", () => {
     const rig = new Rig();
     rig.pen("pointerdown", 1, { x: 0, y: 0 });
     rig.pen("pointerup", 1, { x: 0, y: 0 });
     rig.take();
-    rig.finger("pointerdown", 10, 1, 2, PEN_GRACE_MS);
-    expect(rig.take()).toEqual([`panStart 1,2 t=${PEN_GRACE_MS}`]);
+    rig.finger("pointerdown", 10, 1, 2, 3);
+    expect(rig.take()).toEqual(["panStart 1,2 t=3"]);
   });
 
-  it("a hovering pen keeps the hand's touches out, as a writing one does (2026-09-30)", () => {
+  it("a hovering pen and a wide contact do not keep a finger out", () => {
     const rig = new Rig();
     rig.pen("pointermove", 1, { x: 0, y: 0, t: 1000 });
-    rig.finger("pointerdown", 10, 1, 2, 1000 + PEN_GRACE_MS - 1);
-    expect(rig.take()).toEqual(["palm pen 1"]);
-    expect(rig.captured).toEqual([]);
-    // It stays out after the grace, as any finger the gesture did not take.
-    rig.finger("pointermove", 10, 50, 2, 1000 + PEN_GRACE_MS + 10);
-    expect(rig.take()).toEqual([]);
-  });
-
-  it("a mouse moving does not keep fingers out: only the pen does", () => {
-    const rig = new Rig();
-    rig.fire("pointermove", 1, "mouse", { x: 0, y: 0, t: 1000 });
-    rig.finger("pointerdown", 10, 1, 2, 1001);
+    rig.fire("pointerdown", 10, "touch", { x: 1, y: 2, t: 1001, width: 30, height: 120 });
     expect(rig.take()).toEqual(["panStart 1,2 t=1001"]);
-  });
-
-  it("a touch wider than a fingertip is the palm, pen or no pen", () => {
-    const rig = new Rig();
-    rig.fire("pointerdown", 10, "touch", { x: 1, y: 2, t: 5, width: 30, height: 120 });
-    expect(rig.take()).toEqual(["palm contact 120"]);
-    rig.fire("pointerdown", 11, "touch", { x: 1, y: 2, t: 6, width: 40, height: 44 });
-    expect(rig.take()).toEqual(["panStart 1,2 t=6"]);
   });
 });
 
