@@ -13,6 +13,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
+import { StrokeBuilder } from "../../src/ink/stroke-builder";
 import { History } from "../../src/model/history";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
@@ -855,5 +856,129 @@ describe("layout", () => {
       run(p.surface, "layout");
       expect(p.resized).toEqual([[800, 600, expected]]);
     }
+  });
+});
+
+// --- The wet stroke's pressure (2026-09-30) ----------------------------------------
+
+describe("the wet stroke", () => {
+  function wet(pressure: boolean, predicted: Array<{ x: number; y: number; pressure: number }>) {
+    const drawn: number[][] = [];
+    const builder = new StrokeBuilder({ minDistance: 1, pressureEnabled: pressure });
+    builder.add({ x: 0, y: 0, pressure: 0.2 });
+    builder.add({ x: 5, y: 0, pressure: 0.24 });
+    const surface = surfaceWith({
+      wetFrame: 7,
+      builder,
+      activePage: { index: 0 },
+      snap: null,
+      pendingPredicted: predicted,
+      renderer: { renderWet: (_page: number, pts: number[]) => drawn.push(pts) },
+      currentStyle: () => ({}),
+    });
+    run(surface, "drawWet");
+    return drawn;
+  }
+
+  it("draws the platform's guesses at the pen's last pressure when they carry none", () => {
+    const drawn = wet(true, [
+      { x: 8, y: 0, pressure: 0 },
+      { x: 11, y: 0, pressure: 0.3 },
+    ]);
+    expect(drawn).toEqual([[0, 0, 0.2, 5, 0, 0.24, 8, 0, 0.24, 11, 0, 0.3]]);
+  });
+
+  it("draws them at the fallback with pressure off, as the stroke is", () => {
+    const drawn = wet(false, [{ x: 8, y: 0, pressure: 0.9 }]);
+    expect(drawn[0].filter((_, i) => i % 3 === 2)).toEqual([0.5, 0.5, 0.5]);
+  });
+});
+
+describe("a stroke's first pressure", () => {
+  function opts(pressureEnabled: boolean, penPressure: number | null): Record<string, unknown> {
+    const surface = surfaceWith({
+      penPressure,
+      toolState: { pressureEnabled },
+      atFitZoom: (v: number) => v,
+    });
+    return run(surface, "builderOpts");
+  }
+
+  it("is the last stroke's median until the pen reads its own", () => {
+    expect(opts(true, 0.23).fallbackPressure).toBe(0.23);
+    expect(opts(true, null).fallbackPressure).toBe(0.5);
+    expect(opts(false, 0.23).fallbackPressure).toBe(0.5);
+  });
+});
+
+// --- The palm's scroll, undone when the pen lands (2026-09-30) --------------------
+
+describe("undoPalm", () => {
+  function scene(undo: State | null, at: { x: number; y: number }, zoom = 1) {
+    const calls: string[] = [];
+    let position = { ...at };
+    const surface = surfaceWith({
+      palmUndo: undo,
+      userZoom: zoom,
+      zoomAnim: { from: 1, to: 2 },
+      debug: false,
+      diagSums: { palmUndo: 0 },
+      scroller: {
+        get position() {
+          return position;
+        },
+        setPosition: (x: number, y: number) => {
+          position = { x, y };
+          calls.push(`setPosition ${x},${y}`);
+        },
+      },
+      applyZoom: (z: number, cx: number, cy: number) => calls.push(`applyZoom ${z} at ${cx},${cy}`),
+      syncViewport: () => calls.push("syncViewport"),
+    });
+    return { surface, calls, position: () => position };
+  }
+
+  it("puts the page back where it was when the touch landed", () => {
+    const s = scene(
+      { t: performance.now(), x: 0, y: 400, zoom: 1, cx: 5, cy: 6 },
+      { x: 0, y: 460 },
+    );
+    run(s.surface, "undoPalm");
+    expect(s.calls).toEqual(["setPosition 0,400", "syncViewport"]);
+    expect(s.surface.palmUndo).toBeNull();
+    expect(s.surface.zoomAnim).toBeNull();
+    expect((s.surface.diagSums as { palmUndo: number }).palmUndo).toBe(1);
+  });
+
+  it("undoes a palm's pinch too", () => {
+    const s = scene(
+      { t: performance.now(), x: 0, y: 400, zoom: 1, cx: 5, cy: 6 },
+      { x: 0, y: 400 },
+      1.3,
+    );
+    run(s.surface, "undoPalm");
+    expect(s.calls).toEqual(["applyZoom 1 at 5,6", "setPosition 0,400", "syncViewport"]);
+  });
+
+  it("leaves a long, far scroll alone: that finger was scrolling", () => {
+    const s = scene(
+      { t: performance.now() - 5000, x: 0, y: 0, zoom: 1, cx: 0, cy: 0 },
+      { x: 0, y: 900 },
+    );
+    run(s.surface, "undoPalm");
+    expect(s.calls).toEqual([]);
+    expect(s.surface.palmUndo).toBeNull();
+  });
+
+  it("does nothing when the page never moved, or there was no gesture", () => {
+    const still = scene(
+      { t: performance.now(), x: 0, y: 10, zoom: 1, cx: 0, cy: 0 },
+      { x: 0, y: 10 },
+    );
+    run(still.surface, "undoPalm");
+    expect(still.calls).toEqual([]);
+    const none = scene(null, { x: 0, y: 10 });
+    run(none.surface, "undoPalm");
+    expect(none.calls).toEqual([]);
   });
 });

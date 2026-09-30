@@ -100,3 +100,37 @@ describe("StrokeBuilder: a pressure of 0 is no reading (2026-09-24)", () => {
     expect(pressures(b)).toEqual([FALLBACK_PRESSURE, FALLBACK_PRESSURE]);
   });
 });
+
+describe("StrokeBuilder: pressure for what the wet layer draws (2026-09-30)", () => {
+  it("draws a guess without a reading at the last real pressure, and keeps nothing", () => {
+    const pen = new StrokeBuilder({ minDistance: 1, fallbackPressure: 0.5 });
+    expect(pen.peekPressure(0)).toBe(0.5);
+    pen.add({ x: 0, y: 0, pressure: 0.22 });
+    expect(pen.peekPressure(0)).toBe(0.22);
+    expect(pen.peekPressure(0.3)).toBe(0.3);
+    expect(pen.peekPressure(4)).toBe(1);
+    // A peeked reading is not remembered.
+    expect(pen.peekPressure(0)).toBe(0.22);
+    expect(pen.length).toBe(1);
+    expect(
+      new StrokeBuilder({ pressureEnabled: false, fallbackPressure: 0.5 }).peekPressure(0.3),
+    ).toBe(0.5);
+  });
+
+  it("reports the median reading, or null when the pen read none", () => {
+    const pen = new StrokeBuilder({ minDistance: 1 });
+    expect(pen.typicalPressure()).toBeNull();
+    pen.add({ x: 0, y: 0, pressure: 0 });
+    expect(pen.typicalPressure()).toBeNull();
+    pen.add({ x: 5, y: 0, pressure: 0.2 });
+    pen.add({ x: 10, y: 0, pressure: 0.6 });
+    pen.add({ x: 15, y: 0, pressure: 0.3 });
+    // 0.2 (backfilled), 0.2, 0.6, 0.3
+    expect(pen.typicalPressure()).toBeCloseTo(0.25, 9);
+    pen.addFinal({ x: 15, y: 1, pressure: 0.4 });
+    expect(pen.typicalPressure()).toBe(0.3);
+    const off = new StrokeBuilder({ pressureEnabled: false });
+    off.add({ x: 0, y: 0, pressure: 0.4 });
+    expect(off.typicalPressure()).toBeNull();
+  });
+});

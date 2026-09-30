@@ -6,6 +6,25 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Strokes no longer start with a blob.** At a light Pencil touch every
+  stroke began as a round dot about twice the line's width for a frame, and a
+  smaller ball rode on the tip while writing. The ink ahead of the pen is now
+  drawn at the pen's own pressure.
+- **Dots are as wide as the line.** An i-dot, a full stop or a short
+  apostrophe was drawn up to twice as wide as the stroke around it; now it
+  matches, as in Goodnotes. Dots in existing notes are redrawn at the right
+  size too.
+- **Resting your hand on the page no longer scrolls it.** A touch that lands
+  just after the Pencil was on (or hovering over) the page is taken for your
+  palm and ignored, as is one wider than a fingertip. If your hand does start
+  a scroll before the pen touches down, the page goes back where it was the
+  moment the pen lands. Scrolling with a finger works as before once the pen
+  has been away for a moment.
+
 ## [1.0.1] - 2026-09-26
 
 ### Fixed

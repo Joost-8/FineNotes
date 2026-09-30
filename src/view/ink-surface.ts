@@ -125,7 +125,7 @@ import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physic
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
 import { prefersReducedMotion } from "./motion";
-import { StrokeBuilder, type StrokeBuilderOptions, mapPressure } from "../ink/stroke-builder";
+import { StrokeBuilder, type StrokeBuilderOptions } from "../ink/stroke-builder";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -229,6 +229,7 @@ import {
   type PointerDebugRecord,
   type PointerSample,
 } from "../input/pointer-controller";
+import { undoesPalm } from "../input/palm-rejection";
 import {
   type ActiveTool,
   type ToolbarState,
@@ -731,6 +732,15 @@ export class InkSurface {
   private wheelSnapTimer = 0;
   /** A finger is dragging the page (touchmove must then not reach Obsidian). */
   private touchPanning = false;
+  /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
+  private palmUndo: {
+    t: number;
+    x: number;
+    y: number;
+    zoom: number;
+    cx: number;
+    cy: number;
+  } | null = null;
   /** Which way the pages run; read from the document on every layout. */
   private direction: ScrollDirection = "vertical";
   /** The page a finger swipe started on: a row of pages turns at most one page per swipe. */
@@ -903,6 +913,11 @@ export class InkSurface {
   } | null = null;
 
   /**
+   * The median pressure the pen read on the last stroke; null before any.
+   * A new stroke assumes it until its own first reading comes in.
+   */
+  private penPressure: number | null = null;
+  /**
    * The frame the stroke in progress is next drawn in (`scheduleWet`), and
    * the predicted samples drawn ahead of its pen.
    */
@@ -936,7 +951,15 @@ export class InkSurface {
     moves: 0,
     samples: 0,
   };
-  private readonly diagSums = { down: 0, up: 0, cancel: 0, touchStarts: 0, stylusTouches: 0 };
+  private readonly diagSums = {
+    down: 0,
+    up: 0,
+    cancel: 0,
+    touchStarts: 0,
+    stylusTouches: 0,
+    palm: 0,
+    palmUndo: 0,
+  };
   private diagHold = { fired: false, verdict: "" };
   private readonly createdAt = now();
 
@@ -2749,7 +2772,12 @@ export class InkSurface {
       // and small handwriting lost most of its samples.
       minDistance: this.atFitZoom(MIN_SAMPLE_DISTANCE),
       pressureEnabled: this.toolState.pressureEnabled,
-      fallbackPressure: FALLBACK_PRESSURE,
+      // Until a stroke's first reading arrives it is drawn at the pen's
+      // pressure on the last stroke, not at 0.5: a light hand (~0.25) saw
+      // every stroke start as a blob for a frame.
+      fallbackPressure: this.toolState.pressureEnabled
+        ? (this.penPressure ?? FALLBACK_PRESSURE)
+        : FALLBACK_PRESSURE,
     };
   }
 
@@ -2801,7 +2829,11 @@ export class InkSurface {
           this.startPress(() => this.fingerHeld(x, y));
         }
       }
-      if (!this.touchPanning) this.swipeFromPage = this.pageIndex;
+      if (!this.touchPanning) {
+        this.swipeFromPage = this.pageIndex;
+        const at = this.scroller.position;
+        this.palmUndo = { t: now(), x: at.x, y: at.y, zoom: this.userZoom, cx: x, cy: y };
+      }
       this.touchPanning = true;
       window.clearTimeout(this.wheelSnapTimer);
       this.scroller.dragStart(x, y, t);
@@ -2828,6 +2860,7 @@ export class InkSurface {
         (this.direction !== "horizontal" || this.turnsPages) &&
         pullAddProgress(this.pullOverscroll()) >= 1;
       this.touchPanning = false;
+      this.palmUndo = null;
       this.pullAdd.hide();
       this.scroller.dragEnd(t);
       if (pulled) {
@@ -2838,6 +2871,7 @@ export class InkSurface {
       this.requestFrame();
       if (tap && t - tap.t <= FINGER_TAP_MS) this.onFingerTap(tap.x, tap.y);
     },
+    // Only a landing pen voids a finger gesture.
     onPanCancel: () => {
       this.fingerTap = null;
       this.stopPress();
@@ -2845,6 +2879,7 @@ export class InkSurface {
       this.pullAdd.hide();
       this.pinch = null;
       this.scroller.cancel();
+      this.undoPalm();
       this.requestFrame();
     },
     onPinchStart: (centerX, centerY) => {
@@ -2886,7 +2921,34 @@ export class InkSurface {
       this.requestFrame();
     },
     onDebug: (record) => this.onPointerEvent(record),
+    onPalm: (reason, contact) => {
+      this.diagSums.palm++;
+      if (!this.debug) return;
+      this.hud.mark(`palm:${reason}${contact > 1 ? `·${Math.round(contact)}` : ""}`);
+      this.scheduleHud();
+    },
   };
+
+  /**
+   * A pen landed on a finger gesture: the touch was most likely the writing
+   * hand coming down first, so the page goes back to where it was when the
+   * touch landed, zoom and all (`undoesPalm`).
+   */
+  private undoPalm(): void {
+    const undo = this.palmUndo;
+    this.palmUndo = null;
+    if (!undo) return;
+    const at = this.scroller.position;
+    const moved = Math.hypot(at.x - undo.x, at.y - undo.y);
+    const zoomed = this.userZoom !== undo.zoom;
+    if ((!zoomed && moved < 0.5) || !undoesPalm(now() - undo.t, moved)) return;
+    this.zoomAnim = null;
+    if (zoomed) this.applyZoom(undo.zoom, undo.cx, undo.cy);
+    this.scroller.setPosition(undo.x, undo.y);
+    this.syncViewport();
+    this.diagSums.palmUndo++;
+    if (this.debug) this.hud.mark("palm:undo");
+  }
 
   /**
    * The pen touched the page. What every tool has in common happens here —
@@ -3391,10 +3453,10 @@ export class InkSurface {
    */
   private scheduleWet(): void {
     if (this.wetFrame !== 0 || !this.builder) return;
-    this.wetFrame = window.requestAnimationFrame(this.drawWet);
+    this.wetFrame = window.requestAnimationFrame(() => this.drawWet());
   }
 
-  private readonly drawWet = (): void => {
+  private drawWet(): void {
     this.wetFrame = 0;
     const box = this.activePage;
     const builder = this.builder;
@@ -3407,12 +3469,11 @@ export class InkSurface {
     // Drawn a little ahead of the pen: the samples the platform predicts
     // come next. They are never kept.
     const pts = builder.points();
-    const options = this.builderOpts();
     for (const guess of this.pendingPredicted) {
-      pts.push(guess.x, guess.y, mapPressure(guess.pressure, options));
+      pts.push(guess.x, guess.y, builder.peekPressure(guess.pressure));
     }
     this.renderer?.renderWet(box.index, pts, this.currentStyle());
-  };
+  }
 
   /**
    * Stop drawing the stroke in progress: no frame pending, no hold timer,
@@ -3540,6 +3601,7 @@ export class InkSurface {
     if (!builder) return;
 
     if (final && !snap) builder.addFinal(final);
+    this.penPressure = builder.typicalPressure() ?? this.penPressure;
     // One sample is a dot, and a dot is ink; only a stroke with none is dropped.
     if (builder.length === 0) return;
 

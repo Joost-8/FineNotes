@@ -41,7 +41,11 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          awk -v tag="$TAG" '
+          # A beta (a tag with a "-", such as 1.0.2-beta.1) has no section of
+          # its own: it ships what [Unreleased] lists.
+          section="$TAG"
+          case "$TAG" in *-*) section="Unreleased" ;; esac
+          awk -v tag="$section" '
             $0 ~ "^## \\[" tag "\\]" { found = 1; next }
             found && /^## \[/ { exit }
             found { print }
@@ -56,7 +60,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
+          # A beta is a pre-release: never marked Latest on GitHub, installed
+          # only by someone who picks it in BRAT. Obsidian's own updater reads
+          # manifest.json on main, which a beta never touches.
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" $prerelease \
             --title "$TAG" \
             --notes-file release-notes.md \
             main.js manifest.json styles.css

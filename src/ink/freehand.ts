@@ -71,8 +71,9 @@ export interface InkPath {
  * stroke of its centreline: its pressure is constant, so perfect-freehand's
  * outline was the same width and added only its corner handling — a notch
  * or a bevel at every sharp corner, sub-pixel at fit zoom and plain to see
- * at 5x (Joost's recording, 2026-09-24). Handwriting keeps the outline.
- * `null` when there is nothing to draw.
+ * at 5x (Joost's recording, 2026-09-24). Handwriting keeps the outline,
+ * except a dot (see {@link isDot}), which is its centreline stroked as wide
+ * as the line would be. `null` when there is nothing to draw.
  */
 export function inkPath(
   pts: number[],
@@ -81,12 +82,53 @@ export function inkPath(
   shape = false,
 ): InkPath | null {
   if (pts.length < POINT_STRIDE) return null;
-  if (shape) {
+  if (shape || isDot(pts)) {
     const d = centrelinePath(pts);
-    return d ? { d, stroke: pen.size } : null;
+    return d ? { d, stroke: shape ? pen.size : 2 * lineRadius(pts, pen) } : null;
   }
   const d = outlineToSvgPath(strokeOutline(pts, pen, finished));
   return d ? { d, stroke: null } : null;
+}
+
+/**
+ * A handwritten stroke whose path is shorter than this (page px) is a dot.
+ * perfect-freehand draws a stroke that short as a round blob that ignores
+ * pressure, up to twice as wide as the same pen's line at a light touch and
+ * more for a thin nib: every i-dot, full stop and apostrophe, and the first
+ * frame of every stroke on the wet layer (Joost's recording against
+ * GoodNotes, 2026-09-30). Measured over nibs 1-24 and sample spacings
+ * 0.28-2.5 px, the blob lasts up to 3.0 px whatever the nib; past that the
+ * outline is the line's own width.
+ */
+export const DOT_LENGTH = 3.2;
+
+/** Whether a handwritten stroke is a dot (see {@link DOT_LENGTH}). */
+export function isDot(pts: readonly number[]): boolean {
+  let length = 0;
+  for (let i = POINT_STRIDE; i + 1 < pts.length; i += POINT_STRIDE) {
+    length += Math.hypot(pts[i] - pts[i - POINT_STRIDE], pts[i + 1] - pts[i + 1 - POINT_STRIDE]);
+    if (length >= DOT_LENGTH) return false;
+  }
+  return true;
+}
+
+/**
+ * Half the width perfect-freehand gives a line at the stroke's mean
+ * pressure: its `getStrokeRadius` with the default linear easing. Without
+ * thinning (pressure off) that is half the nib, whatever the pressure.
+ */
+export function lineRadius(pts: readonly number[], pen: FreehandOptions): number {
+  let sum = 0;
+  let count = 0;
+  for (let i = 2; i < pts.length; i += POINT_STRIDE) {
+    const p = pts[i];
+    if (Number.isFinite(p)) {
+      sum += Math.min(1, Math.max(0, p));
+      count++;
+    }
+  }
+  const pressure = count > 0 ? sum / count : 0.5;
+  return pen.size * (0.5 - pen.thinning * (0.5 - pressure));
 }
 
 /**

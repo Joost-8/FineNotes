@@ -89,7 +89,7 @@ el5 fillRect -512,-512 208,-512 208,388 -512,388 {fillStyle=#ffffff}
 el5 painter ruled-narrow 800x1000 weight=1 at 0.9,0,0,0.9,-512,-512
 el5 strokeRect -511.5,-511.5 207.5,-511.5 207.5,387.5 -511.5,387.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
 el5 fill nonzero path2d#2f241c3b51da at 0.9,0,0,0.9,-512,-512 {fillStyle=#ffd400 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111 globalAlpha=0.4 globalCompositeOperation=multiply}
-el5 fill nonzero path2d#ccdcfa9a8811 at 0.9,0,0,0.9,-512,-512 {fillStyle=#1a1a1a strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
+el5 stroke path2d#a228a6d7abd0 at 0.9,0,0,0.9,-512,-512 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
 dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
 dry clip nonzero [R(24,-108 744,-108 744,792 24,792)] {imageSmoothingEnabled=false}
 dry strokeRect 268.8,406.8 517.2,406.8 517.2,565.2 268.8,565.2 {strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineDash=[13.3333,8.8889] imageSmoothingEnabled=false}
@@ -142,7 +142,7 @@ el10 fill nonzero path2d#962a84b82989 at 1,0,0,1,0,0 {fillStyle=#c0392b strokeSt
 el10 fill nonzero path2d#17ff81ed8135 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(16, 24, 40, 0.16)}
 el10 fill nonzero path2d#2f241c3b51da at 1,0,0,1,0,0 {fillStyle=#ffd400 strokeStyle=rgba(16, 24, 40, 0.16) globalAlpha=0.4 globalCompositeOperation=multiply}
 el10 stroke path2d#ff3a9c70bd2b at 1,0,0,1,0,0 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-el10 fill nonzero path2d#ccdcfa9a8811 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(16, 24, 40, 0.16)}
+el10 stroke path2d#a228a6d7abd0 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
 el10 fill nonzero path2d#8739bd086c69 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(16, 24, 40, 0.16)}
 el10 fill nonzero path2d#db5e83ba3b2f at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(16, 24, 40, 0.16)}
 el11.width = 800
@@ -714,7 +714,7 @@ el39 fill nonzero path2d#962a84b82989 at 1,0,0,1,0,0 {fillStyle=#c0392b strokeSt
 el39 fill nonzero path2d#17ff81ed8135 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(0, 0, 0, 0.55)}
 el39 fill nonzero path2d#2f241c3b51da at 1,0,0,1,0,0 {fillStyle=#ffd400 strokeStyle=rgba(0, 0, 0, 0.55) globalAlpha=0.25 globalCompositeOperation=multiply}
 el39 stroke path2d#ff3a9c70bd2b at 1,0,0,1,0,0 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-el39 fill nonzero path2d#ccdcfa9a8811 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(0, 0, 0, 0.55)}
+el39 stroke path2d#a228a6d7abd0 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
 el39 fill nonzero path2d#8739bd086c69 at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(0, 0, 0, 0.55)}
 el39 fill nonzero path2d#db5e83ba3b2f at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=rgba(0, 0, 0, 0.55)}
 el39 fill nonzero path2d#1a7f42f662c5 at 1,0,0,1,0,0 {fillStyle=#16a34a strokeStyle=rgba(0, 0, 0, 0.55)}
@@ -756,7 +756,7 @@ thumb1 fill nonzero path2d#962a84b82989 at 0.3,0,0,0.3,0,0 {fillStyle=#c0392b}
 thumb1 fill nonzero path2d#17ff81ed8135 at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a}
 thumb1 fill nonzero path2d#2f241c3b51da at 0.3,0,0,0.3,0,0 {fillStyle=#ffd400 globalAlpha=0.4 globalCompositeOperation=multiply}
 thumb1 stroke path2d#ff3a9c70bd2b at 0.3,0,0,0.3,0,0 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-thumb1 fill nonzero path2d#ccdcfa9a8811 at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a}
+thumb1 stroke path2d#a228a6d7abd0 at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
 thumb1 fill nonzero path2d#8739bd086c69 at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a}
 thumb1 fill nonzero path2d#db5e83ba3b2f at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a}
 thumb1 fill nonzero path2d#1a7f42f662c5 at 0.3,0,0,0.3,0,0 {fillStyle=#16a34a}

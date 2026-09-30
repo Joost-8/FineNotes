@@ -25,9 +25,9 @@
  */
 
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
-import { roleOf } from "./palm-rejection";
+import { type PalmReason, classify } from "./palm-rejection";
 
-export type { PinchInfo };
+export type { PalmReason, PinchInfo };
 
 export interface PointerSample {
   x: number;
@@ -71,6 +71,8 @@ export interface PointerControllerCallbacks {
   onPinchEnd?(): void;
   /** Each event of the drawing pointer as it arrived, for the debug HUD. */
   onDebug?(record: PointerDebugRecord): void;
+  /** A touch was taken for the palm and left out; `contact` is its size in CSS px (0 if unknown). */
+  onPalm?(reason: PalmReason, contact: number): void;
 }
 
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
@@ -79,6 +81,8 @@ type Phase = (typeof PHASES)[number];
 export class PointerController {
   /** The pointer drawing the open stroke; null between strokes. */
   private stroke: number | null = null;
+  /** When the pen was last down, moving, hovering or lifting (event time, ms). */
+  private penSeenAt = Number.NEGATIVE_INFINITY;
   private readonly fingers: FingerGesture;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
@@ -89,10 +93,10 @@ export class PointerController {
   ) {
     this.fingers = new FingerGesture(listener);
     this.handlers = {
-      pointerdown: (event) => this.pressed(event),
-      pointermove: (event) => this.moved(event),
-      pointerup: (event) => this.released(event, false),
-      pointercancel: (event) => this.released(event, true),
+      pointerdown: (event) => this.pressed(this.seen(event)),
+      pointermove: (event) => this.moved(this.seen(event)),
+      pointerup: (event) => this.released(this.seen(event), false),
+      pointercancel: (event) => this.released(this.seen(event), true),
     };
   }
 
@@ -109,14 +113,28 @@ export class PointerController {
     return this.fingers.active;
   }
 
+  /** Note when the pen was last seen, hovering included; the palm rules ask. */
+  private seen(event: PointerEvent): PointerEvent {
+    if (event.pointerType === "pen") this.penSeenAt = event.timeStamp;
+    return event;
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
-    const role = roleOf(event.pointerType, this.stroke !== null);
+    // Where the browser does not measure contact, width and height are 1.
+    const contact = Math.max(event.width || 0, event.height || 0);
+    const { role, reason } = classify(event.pointerType, {
+      strokeOpen: this.stroke !== null,
+      sincePen: timeStamp - this.penSeenAt,
+      contact,
+    });
     if (role === "draw") {
       this.beginStroke(event);
     } else if (role === "finger" && this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
       // Capture, so a fast swipe that leaves the pane still scrolls it.
       this.element.setPointerCapture(pointerId);
+    } else if (reason) {
+      this.listener.onPalm?.(reason, contact);
     }
   }
 

@@ -90,6 +90,36 @@ export class StrokeBuilder {
     return [...this.flat];
   }
 
+  /**
+   * The pressure to draw a sample with that is never kept: one of the
+   * platform's guesses ahead of the pen. The same rule as a kept sample —
+   * a missing reading takes the last real one — without remembering it.
+   * WebKit's guesses carry no pressure, and drawn at the 0.5 fallback they
+   * put a ball twice the line's width on the moving tip of every light
+   * stroke (Joost's recording against GoodNotes, 2026-09-30).
+   */
+  peekPressure(raw: number): number {
+    const { pressureEnabled, fallbackPressure } = this.options;
+    if (!pressureEnabled) return fallbackPressure;
+    if (raw > 0) return Math.min(raw, 1);
+    return Number.isNaN(this.lastReading) ? fallbackPressure : this.lastReading;
+  }
+
+  /**
+   * The median pressure the pen actually read over the stroke, or null if
+   * it read none (or pressure is off): what the next stroke assumes until
+   * its own first reading comes in.
+   */
+  typicalPressure(): number | null {
+    if (!this.options.pressureEnabled || Number.isNaN(this.lastReading)) return null;
+    const readings: number[] = [];
+    for (let p = 2; p < this.flat.length; p += POINT_STRIDE) readings.push(this.flat[p]);
+    if (readings.length === 0) return null;
+    readings.sort((a, b) => a - b);
+    const mid = readings.length >> 1;
+    return readings.length % 2 === 1 ? readings[mid] : (readings[mid - 1] + readings[mid]) / 2;
+  }
+
   private offer(sample: InputSample, final: boolean): boolean {
     // Read the pressure first, even for a sample about to be dropped: the
     // pen's first real reading still fills in the points before it.

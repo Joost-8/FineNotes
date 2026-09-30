@@ -46,6 +46,27 @@ that repository instead.
 > `minAppVersion` (now 1.13.0) lives in `manifest.json`. Raise it there before
 > releasing if you start using a newer Obsidian API.
 
+## A beta to test on the iPad
+
+A beta reaches only whoever installs it by hand in BRAT; Obsidian's updater
+never offers it, because it reads `manifest.json` on `main` and a beta never
+touches `main`.
+
+1. Branch off `main` (`git switch -c beta`), commit the work there, and run
+   the gates.
+2. `npm version 1.0.2-beta.1` (the next version, a dash, `beta.N`). The dash is
+   what makes `release.yml` publish a **pre-release**, never marked Latest, with
+   the `[Unreleased]` section of `CHANGELOG.md` as its notes.
+3. `git push origin beta && git push origin 1.0.2-beta.1`: the branch and
+   that one tag, never `main`.
+4. On the iPad: BRAT → Add beta plugin → `Joost-8/FineNotes` → pick the beta
+   version. It replaces the installed FineNotes; notes and settings stay.
+5. When it is good: merge `beta` into `main` and cut the real release above
+   (`npm version 1.0.2` overwrites the beta's version; its line in
+   `versions.json` is harmless). BRAT and the directory both move to it.
+   Until then, never push `main` with the beta's `manifest.json`: that would
+   update every user.
+
 ## History
 
 FineNotes 1.0.0 (2026-09-26) is the root commit of this repository.
