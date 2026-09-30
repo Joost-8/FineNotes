@@ -6,7 +6,7 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
-## [Unreleased]
+## [1.0.2] - 2026-09-30
 
 ### Changed
 
@@ -31,9 +31,7 @@ extracted from the matching section of this file by `release.yml`.
   line's width, and an i-dot or full stop stayed that fat.
 - **A resting hand no longer leaves the page moved.** If your palm touches
   down before the Pencil and nudges the page, the page goes back where it
-  was the moment the pen lands. Fingers scroll and pinch exactly as before:
-  an earlier beta ignored touches just after the pen, which left pinches
-  and swipes dead now and then, and that is gone.
+  was the moment the pen lands. Fingers scroll and pinch exactly as before.
 
 ## [1.0.1] - 2026-09-26
 
