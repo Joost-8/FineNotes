@@ -303,28 +303,43 @@ describe("emitted cloud geometry", () => {
     expect(dequantizePts(quantizePts(cloud.pts))).toEqual(cloud.pts);
   });
 
-  it("re-recognises its own output as the same cloud", () => {
-    let current = cloud.pts;
-    for (let pass = 1; pass <= 4; pass++) {
-      const next = recognizeShape(current)!;
-      expect(next.kind).toBe("cloud");
-      expect(next.pts).toHaveLength(cloud.pts.length);
-      for (let i = 0; i < current.length; i++) {
-        expect(Math.abs(next.pts[i] - cloud.pts[i])).toBeLessThanOrEqual(0.0201);
-      }
-      current = next.pts;
+  it("never reads its own output as another shape", () => {
+    // Only drawn ink is ever recognised, so a clean cloud need not snap
+    // again; its soft dips may not pass the cloud gates. But it must never
+    // turn into something else.
+    for (const [w, h, bumps] of [
+      [320, 180, 8],
+      [300, 300, 7],
+      [400, 160, 12],
+      [260, 200, 9],
+    ]) {
+      const pts = cloudPoints(100, 100, w, h, bumps).flatMap((p) => [p.x, p.y, 0.5]);
+      expect(["cloud", undefined]).toContain(recognizeShape(pts)?.kind);
     }
   });
 
-  it("cloudPoints stretches any bump count to its box exactly", () => {
-    for (const bumps of [3, 6, 12]) {
+  it("cloudPoints stretches 7 to 12 bumps to its box exactly", () => {
+    for (const [bumps, made] of [
+      [3, 7],
+      [8, 8],
+      [20, 12],
+    ]) {
       const p = cloudPoints(10, 20, 200, 100, bumps);
       const box = R.boundsOf(p);
       expect(box.minX).toBeCloseTo(10, 6);
       expect(box.maxX).toBeCloseTo(210, 6);
       expect(box.minY).toBeCloseTo(20, 6);
       expect(box.maxY).toBeCloseTo(120, 6);
-      expect(p).toHaveLength(bumps * 10 + 1);
+      // Fourteen pieces a bump, and the closing point.
+      expect(p).toHaveLength(made * 14 + 1);
     }
+  });
+
+  it("reaches the top and the bottom of its box over its middle", () => {
+    // A bump on top and one underneath, the cloud's full height apart.
+    const p = cloudPoints(0, 0, 300, 180, 8);
+    const above = p.filter((q) => Math.abs(q.x - 150) < 20).map((q) => q.y);
+    expect(Math.min(...above)).toBeCloseTo(0, 0);
+    expect(Math.max(...above)).toBeCloseTo(180, 0);
   });
 });

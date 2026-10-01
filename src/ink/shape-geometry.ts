@@ -178,20 +178,31 @@ function wrapAngle(a: number): number {
 }
 
 /**
- * A cloud's bump: its bulge over the chord between two cusps. Over 0.5 a
- * bump is more than half a circle, the puffy cloud people draw; at 0.4 an
- * emitted cloud dipped too little to read as one again (and looked flat).
+ * Relative widths of a cloud's bumps, going round from the top. Even bumps
+ * evenly round an ellipse read as a flower (Joost, 2026-10-01); a cloud's
+ * bumps differ.
  */
-const CLOUD_BULGE = 0.7;
-/** Straight pieces per bump of a cloud. */
-const CLOUD_ARC_SEGMENTS = 10;
+const CLOUD_WIDTHS = [1.0, 1.35, 0.85, 1.2, 0.9, 1.25, 0.8, 1.1, 1.3, 0.9, 1.15, 0.95];
+/**
+ * A bump's bulge over the chord between its two dips: rounder on top, flatter
+ * underneath, as a cloud is. Both under a half circle (0.5 is one), so the
+ * dips stay soft instead of pinched.
+ */
+const CLOUD_TOP_BULGE = 0.55;
+const CLOUD_BOTTOM_BULGE = 0.35;
+/** Bumps a cloud gets: fewer than 7 looks lumpy rather than cloudy. */
+const CLOUD_MIN_BUMPS = 7;
+const CLOUD_MAX_BUMPS = 12;
+/** Straight pieces per bump. */
+const CLOUD_ARC_SEGMENTS = 14;
 
 /**
- * A cloud filling the box (`x0`, `y0`, `w` × `h`): `bumps` round bumps, each
- * an arc between two cusps that sit evenly round an ellipse, stretched so
- * the outline touches all four sides. Starts at the cusp nearest `start`
- * (radians round the centre, as `atan2` reads the box squashed to a circle)
- * and turns in `direction` (+1 or -1). The closing point is repeated.
+ * A cloud filling the box (`x0`, `y0`, `w` × `h`), with bumps on every side:
+ * `bumps` arcs (clamped to 7–12) of uneven width between dips that sit round
+ * an ellipse, the widest and roundest on top. Stretched so the outline
+ * touches all four sides. It begins at the dip nearest `from` (the pen-down
+ * point; the top when absent) and goes round in `direction` (+1 or -1, the
+ * way `atan2` angles grow). The closing point is repeated.
  */
 export function cloudPoints(
   x0: number,
@@ -199,17 +210,20 @@ export function cloudPoints(
   w: number,
   h: number,
   bumps: number,
-  start = -Math.PI / 2,
+  from: Pt | null = null,
   direction = 1,
 ): Pt[] {
-  const n = Math.max(3, Math.round(bumps));
-  const step = (2 * Math.PI) / n;
-  // The cusp nearest `start`, so the outline begins near where the pen did.
-  const first = Math.round(start / step) * step;
+  const n = Math.min(CLOUD_MAX_BUMPS, Math.max(CLOUD_MIN_BUMPS, Math.round(bumps)));
+  const widths = Array.from({ length: n }, (_, i) => CLOUD_WIDTHS[i % CLOUD_WIDTHS.length]);
+  const total = widths.reduce((s, v) => s + v, 0);
+  // Laid out on an ellipse of the box's proportions; the first bump centred on top.
+  const a = h > 0 ? Math.min(3, Math.max(1, w / h)) / 2 : 0.5;
+  const b = 0.5;
   const cusps: Pt[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = first + direction * step * i;
-    cusps.push({ x: Math.cos(a), y: Math.sin(a) });
+  let at = -Math.PI / 2 - (widths[0] / total) * Math.PI;
+  for (const width of widths) {
+    cusps.push({ x: a * Math.cos(at), y: b * Math.sin(at) });
+    at += (width / total) * 2 * Math.PI;
   }
   const unit: Pt[] = [];
   for (let i = 0; i < n; i++) {
@@ -221,21 +235,22 @@ export function cloudPoints(
     const ml = Math.hypot(mx, my) || 1;
     const nx = mx / ml;
     const ny = my / ml;
-    // The arc through both cusps whose apex is `bulge` outside the chord.
-    const sagitta = CLOUD_BULGE * chord;
+    // +1 at the top of the cloud (y grows downward), -1 at the bottom.
+    const up = Math.max(-1, Math.min(1, -my / b));
+    const bulge = CLOUD_BOTTOM_BULGE + ((CLOUD_TOP_BULGE - CLOUD_BOTTOM_BULGE) * (up + 1)) / 2;
+    // The arc through both dips whose apex stands `bulge` × chord outside it.
+    const sagitta = bulge * chord;
     const radius = (chord * chord) / 4 / (2 * sagitta) + sagitta / 2;
     const cx = mx + nx * (sagitta - radius);
     const cy = my + ny * (sagitta - radius);
     const a0 = Math.atan2(p.y - cy, p.x - cx);
-    // From one cusp to the next by way of the apex: the long way round the
-    // circle, since a bump is more than half of it.
     const sweep0 = wrapAngle(Math.atan2(q.y - cy, q.x - cx) - a0);
     const toApex = wrapAngle(Math.atan2(ny, nx) - a0);
     const viaApex = Math.sign(toApex) === Math.sign(sweep0) && Math.abs(toApex) < Math.abs(sweep0);
     const sweep = viaApex ? sweep0 : sweep0 - Math.sign(sweep0) * 2 * Math.PI;
     for (let k = 0; k < CLOUD_ARC_SEGMENTS; k++) {
-      const a = a0 + (sweep * k) / CLOUD_ARC_SEGMENTS;
-      unit.push({ x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) });
+      const t = a0 + (sweep * k) / CLOUD_ARC_SEGMENTS;
+      unit.push({ x: cx + radius * Math.cos(t), y: cy + radius * Math.sin(t) });
     }
   }
   let minX = Infinity;
@@ -248,12 +263,27 @@ export function cloudPoints(
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  const out = unit.map((p) => ({
+  let ring = unit.map((p) => ({
     x: x0 + ((p.x - minX) / (maxX - minX)) * w,
     y: y0 + ((p.y - minY) / (maxY - minY)) * h,
   }));
-  out.push({ ...out[0] });
-  return out;
+  // The layout goes round the way atan2 angles grow; turn it the pen's way.
+  if (direction < 0) ring = [ring[0], ...ring.slice(1).reverse()];
+  // Begin at the dip nearest the pen-down point.
+  if (from) {
+    let start = 0;
+    let nearest = Infinity;
+    for (let k = 0; k < ring.length; k += CLOUD_ARC_SEGMENTS) {
+      const d = Math.hypot(ring[k].x - from.x, ring[k].y - from.y);
+      if (d < nearest) {
+        nearest = d;
+        start = k;
+      }
+    }
+    ring = ring.slice(start).concat(ring.slice(0, start));
+  }
+  ring.push({ ...ring[0] });
+  return ring;
 }
 
 /**

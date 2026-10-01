@@ -1854,8 +1854,6 @@ const CLOUD_MAX_MEDIAN_DENT = 0.13;
 /** Cloud: the median bump top may turn at most this much across {@link CLOUD_TOP_WINDOW} of the perimeter. */
 const CLOUD_MAX_TOP_TURN_DEG = 80;
 const CLOUD_TOP_WINDOW = 0.008;
-/** Cloud: bumps emitted, at most (a cloud drawn with more gets this many). */
-const CLOUD_MAX_BUMPS = 12;
 /** Cloud: how sure a loop that passes every gate is; the gates are the test. */
 const CLOUD_CONFIDENCE = 0.85;
 
@@ -1927,8 +1925,8 @@ function hullDents(points: readonly Pt[], diag: number): Array<{ depth: number; 
 /**
  * A cloud: a closed loop of round bumps that dips in between them, at least
  * six times. Emitted as a clean cloud filling the box it was drawn in, with
- * as many bumps as it was drawn with (up to {@link CLOUD_MAX_BUMPS}),
- * starting near the pen-down point and going round the way the pen did.
+ * as many bumps as it was drawn with (7 to 12, `cloudPoints`), starting
+ * near the pen-down point and going round the way the pen did.
  */
 function cloudCandidate(points: readonly Pt[], pressure: number, diag: number): ShapeResult | null {
   const dents = hullDents(points, diag).filter((d) => d.depth >= CLOUD_DENT_MIN);
@@ -1944,13 +1942,8 @@ function cloudCandidate(points: readonly Pt[], pressure: number, diag: number): 
   const w = box.maxX - box.minX;
   const h = box.maxY - box.minY;
   if (!(w > 0 && h > 0)) return null;
-  const cx = (box.minX + box.maxX) / 2;
-  const cy = (box.minY + box.maxY) / 2;
-  const origin = points[0];
-  const start = Math.atan2((origin.y - cy) / h, (origin.x - cx) / w);
   const direction = signedArea(points) >= 0 ? 1 : -1;
-  const bumps = Math.min(CLOUD_MAX_BUMPS, dents.length);
-  const ring = cloudPoints(box.minX, box.minY, w, h, bumps, start, direction);
+  const ring = cloudPoints(box.minX, box.minY, w, h, dents.length, points[0], direction);
   return { kind: "cloud", pts: flatten(ring, pressure), confidence: CLOUD_CONFIDENCE };
 }
 

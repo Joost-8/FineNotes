@@ -697,9 +697,10 @@ Reconciled with the merged code on 2026-09-22, from the agents' reports.
   cross), and by the Shape-tool preset. Before 2026-10-01 a drawn pentagram
   was emitted as a 6-point pentagram (five tips in drawing order, plus the
   closing point); strokes stored that way stay valid.
-- `cloud` (2026-10-01): a closed outline of round bumps meeting in cusps,
-  ten points per bump plus the closing point, filling the box the cloud
-  was drawn in; as many bumps as were drawn (6–12). Read by hold-to-snap
+- `cloud` (2026-10-01): a closed outline of round bumps on every side,
+  uneven in width, rounder on top and flatter underneath, meeting in soft
+  dips; fourteen points per bump plus the closing point, filling the box
+  the cloud was drawn in; as many bumps as were drawn, 7–12. Read by hold-to-snap
   only (no Shape-tool preset). A reader that does not know the kind draws
   it as ordinary ink.
 - **The Apple Notes arrow** (Joost, 2026-09-22): a line, then back along it

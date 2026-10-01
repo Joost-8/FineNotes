@@ -11,8 +11,8 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Clouds.** Draw a bumpy cloud in one stroke and hold the Pencil still: it
-  snaps to a clean, puffy cloud the same size, with as many bumps as you
-  drew.
+  snaps to a clean cloud the same size, with bumps all the way round, the
+  biggest on top.
 
 ### Changed
 
