@@ -232,6 +232,7 @@ import {
   type PointerSample,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
+import { REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import {
   type ActiveTool,
   type ToolbarState,
@@ -919,6 +920,22 @@ export class InkSurface {
    * A new stroke assumes it until its own first reading comes in.
    */
   private penPressure: number | null = null;
+  /**
+   * The ink stroke the pen last lifted from, while a quick pen-down nearby
+   * could still carry it on (`input/pen-rejoin.ts`): when and where it
+   * lifted, the builder that holds its points, and the step that added it.
+   */
+  private lastLift: {
+    t: number;
+    boxIndex: number;
+    pageId: string;
+    x: number;
+    y: number;
+    builder: StrokeBuilder;
+    stroke: Stroke;
+    command: Command;
+    penDownAt: number | null;
+  } | null = null;
   /** The frame the stroke in progress is next drawn in (`scheduleWet`). */
   private wetFrame = 0;
   /**
@@ -964,6 +981,7 @@ export class InkSurface {
     touchStarts: 0,
     stylusTouches: 0,
     palmUndo: 0,
+    rejoins: 0,
   };
   private diagHold = { fired: false, verdict: "" };
   private readonly createdAt = now();
@@ -3079,7 +3097,8 @@ export class InkSurface {
       this.showShapeDraft(box);
       return;
     }
-    const builder = new StrokeBuilder(this.builderOpts());
+    const resumed = this.resumeLifted(box, at);
+    const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
     this.builder = builder;
     this.snap = null;
@@ -3087,6 +3106,46 @@ export class InkSurface {
     this.restartHold(at);
     this.watchCircleHold(box, at);
     this.renderer?.clearWet();
+    // A carried-on stroke is drawn wet at once: its committed ink has just
+    // been taken back, and the dry layer drops it on the next frame.
+    if (resumed) this.drawWet();
+  }
+
+  /**
+   * The pen came down again so soon, and so close to where it lifted, that
+   * it never left the glass (`input/pen-rejoin.ts`): take the stroke it
+   * lifted from back off the page and return its builder, to go on with.
+   * Null for a new stroke.
+   */
+  private resumeLifted(box: PageBox, at: Pt): StrokeBuilder | null {
+    const lift = this.lastLift;
+    this.lastLift = null;
+    if (!lift || lift.boxIndex !== box.index) return null;
+    const page = this.pageAt(box.index);
+    if (!page || page.id !== lift.pageId) return null;
+    const style = this.currentStyle();
+    const { stroke } = lift;
+    if (style.color !== stroke.color || style.size !== stroke.size || style.tool !== stroke.tool) {
+      return null;
+    }
+    const distance = Math.hypot(at.x - lift.x, at.y - lift.y);
+    if (!rejoinsStroke(now() - lift.t, distance, this.atFitZoom(REJOIN_PX))) return null;
+    if (!this.history.withdraw(this.doc, lift.command)) return null;
+    this.strokeIndex.remove(stroke.id, page.id);
+    const drawn = selectionBounds([stroke], [], []);
+    if (drawn) this.renderer?.invalidateRegion(box.index, drawn);
+    if (this.circleLoop?.command === lift.command) this.circleLoop = null;
+    if (this.offPageCommand === lift.command) this.hideOffPage();
+    // The stroke keeps the time its first piece went down.
+    this.penDownAt = lift.penDownAt;
+    this.renderDry();
+    this.changed();
+    this.diagSums.rejoins++;
+    if (this.debug) {
+      this.hud.mark("rejoin");
+      this.scheduleHud();
+    }
+    return lift.builder;
   }
 
   private inkMove(box: PageBox, samples: PointerSample[]): void {
@@ -3225,9 +3284,9 @@ export class InkSurface {
     const builder = this.builder;
     const anchor = this.holdAnchor;
     if (!builder || !anchor || this.snap) return;
-    const result = recognizeAtZoom(builder.points(), this.userZoom);
-    this.diagHold = { fired: true, verdict: verdictOf(builder.points()) };
-    this.hudVerdict("hold", builder.points(), result);
+    const result = recognizeAtZoom(builder.points(), this.userZoom, { held: true });
+    this.diagHold = { fired: true, verdict: verdictOf(builder.points(), true) };
+    this.hudVerdict("hold", builder.points(), result, true);
     if (!result) return;
     const pivot = shapePivot(result.kind, result.pts);
     if (!pivot) return;
@@ -3295,7 +3354,7 @@ export class InkSurface {
       holdFired: this.diagHold.fired,
       holdVerdict: this.diagHold.verdict,
       held,
-      liftVerdict: verdictOf(pts),
+      liftVerdict: verdictOf(pts, held),
       committed,
       pts: pts.map((v) => Math.round(v * 10) / 10),
     });
@@ -3356,9 +3415,10 @@ export class InkSurface {
     where: string,
     pts: number[],
     accepted: { kind: ShapeKind; confidence?: number } | null,
+    held = false,
   ): void {
     if (!this.debug) return;
-    const best = accepted ?? recognizeAtZoom(pts, this.userZoom, { minConfidence: 0 });
+    const best = accepted ?? recognizeAtZoom(pts, this.userZoom, { minConfidence: 0, held });
     const score = best?.confidence === undefined ? "" : best.confidence.toFixed(2);
     const label = best ? `${best.kind}${accepted ? "" : "✗"}${score}` : "∅";
     this.hudLastVerdict = `${where}→${label} n=${Math.floor(pts.length / 3)}`;
@@ -3636,8 +3696,11 @@ export class InkSurface {
         (this.toolState.tool === "pen" || this.toolState.tool === "highlighter"));
     let shape: { kind: ShapeKind; pts: number[] } | null = snap;
     if (!shape && (heldLongEnough || snapOnLift)) {
-      shape = recognizeAtZoom(builder.points(), this.userZoom);
-      this.hudVerdict(cancelledWhileHeld ? "cx-hold" : "lift", builder.points(), shape);
+      // Held, the pen rested where the stroke ends; snapped on lift, it may
+      // have trailed a tail as it left the glass.
+      const held = heldLongEnough;
+      shape = recognizeAtZoom(builder.points(), this.userZoom, { held });
+      this.hudVerdict(cancelledWhileHeld ? "cx-hold" : "lift", builder.points(), shape, held);
     } else if (!shape && this.debug) {
       this.hud.mark(final ? "lift·nohold" : "cx·nohold");
       this.scheduleHud();
@@ -3662,6 +3725,23 @@ export class InkSurface {
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
     this.noteOffPage(box, stroke, command);
+    // A stroke the pen was held on ended on purpose; any other may be a
+    // flicker of the Pencil's contact, which the next pen-down carries on.
+    if (!snap && !heldLongEnough) {
+      const end = builder.length - 1;
+      const raw = builder.view;
+      this.lastLift = {
+        t: now(),
+        boxIndex: box.index,
+        pageId: page.id,
+        x: raw[end * 3],
+        y: raw[end * 3 + 1],
+        builder,
+        stroke,
+        command,
+        penDownAt: this.penDownAt,
+      };
+    }
   }
 
   /**
@@ -6082,8 +6162,8 @@ export class InkSurface {
 }
 
 /** The recogniser's full verdict on a stroke, one line, for the diagnostics. */
-function verdictOf(pts: number[]): string {
-  const e = explainShape(pts);
+function verdictOf(pts: number[], held: boolean): string {
+  const e = explainShape(pts, { held });
   const scored = e.candidates.map((c) => `${c.kind}:${c.confidence.toFixed(2)}`).join(" ");
   return `${e.closed ? "closed" : "open"} n=${e.n} diag=${Math.round(e.diag)} gap=${Math.round(e.gap)} [${scored}]`;
 }

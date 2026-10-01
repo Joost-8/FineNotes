@@ -47,6 +47,7 @@ export default defineConfig({
         "src/canvas/page-detect.ts",
         "src/canvas/scan-filters.ts",
         "src/input/palm-rejection.ts",
+        "src/input/pen-rejoin.ts",
         "src/input/finger-gesture.ts",
         "src/recognition/text-layer.ts",
         "src/recognition/registry.ts",

@@ -59,6 +59,12 @@ export interface RecognizeOptions {
    * tested.
    */
   polygons?: boolean;
+  /**
+   * The pen is resting where the stroke ends: a hold, not a lift. A held
+   * stroke has no lift tail, so a short way back along a line is the arrow
+   * gesture and nothing else ({@link RETRACE_HELD_MIN_PX}).
+   */
+  held?: boolean;
 }
 
 // --- Tuning ---------------------------------------------------------------
@@ -251,6 +257,16 @@ const ARROW_EMIT_MAX_DEG = 45;
  * see it. So the floor is absolute and sits above that.
  */
 const RETRACE_MIN_PX = 40;
+/**
+ * ...unless the pen is held at the end of the retrace ({@link RecognizeOptions.held}).
+ * A lift tail only exists once the pen lifts, so a hold cannot contain one,
+ * and the floor above refused every short arrow Joost drew: traced out of
+ * his recording (2026-10-01), arrows on 52-136 px lines came back 18-44 px,
+ * 25-44 % of the line, within 3-13° of it. The ones under 40 px stayed
+ * freehand, became a line, or a triangle. This floor only stands above the
+ * pen settling as it stops.
+ */
+const RETRACE_HELD_MIN_PX = 12;
 /** ...and at least this fraction of the shaft, so a long line's flick is not one either. */
 const RETRACE_MIN_FRACTION = 0.12;
 /** ...and at most this: out and all the way back is a doubled line (adversarial), not an arrow. */
@@ -1410,7 +1426,11 @@ function arrowCandidate(points: readonly Pt[], pressure: number, diag: number): 
  * it was drawn along. Nobody drew the head, so it is emitted at a default
  * size ({@link arrowPoints}).
  */
-function retraceArrowCandidate(points: readonly Pt[], pressure: number): ShapeResult | null {
+function retraceArrowCandidate(
+  points: readonly Pt[],
+  pressure: number,
+  held: boolean,
+): ShapeResult | null {
   const n = points.length;
   if (n < 4) return null;
   // The turn is the farthest point from pen-down — the first sample to reach
@@ -1443,9 +1463,18 @@ function retraceArrowCandidate(points: readonly Pt[], pressure: number): ShapeRe
   const vx = end.x - shaft.b.x;
   const vy = end.y - shaft.b.y;
   const along = -(vx * ux + vy * uy);
-  if (along < Math.max(RETRACE_MIN_PX, RETRACE_MIN_FRACTION * shaft.span)) return null;
+  const floor = held ? RETRACE_HELD_MIN_PX : RETRACE_MIN_PX;
+  if (along < Math.max(floor, RETRACE_MIN_FRACTION * shaft.span)) return null;
   if (along > RETRACE_MAX_FRACTION * shaft.span) return null;
-  if (angleBetweenDeg(vx, vy, -ux, -uy) > RETRACE_MAX_ANGLE_DEG) return null;
+  // Which way the retrace runs is its own line's direction, not the way from
+  // the turn to its end: the pen steps a px or two aside as it turns, and on
+  // a short retrace (Joost's are 18-44 px) that step alone tilted the second
+  // reading by 5°, refusing arrows drawn 13° off the line.
+  const backFit = fitLine(back);
+  if (!backFit || backFit.span === 0) return null;
+  const bx = backFit.b.x - backFit.a.x;
+  const by = backFit.b.y - backFit.a.y;
+  if (angleBetweenDeg(bx, by, -ux, -uy) > RETRACE_MAX_ANGLE_DEG) return null;
   if (detourOf(back, dist(back[0], end)) > RETRACE_MAX_DETOUR) return null;
 
   const detourScore = clamp01(1 - (detour - 1) / (LINE_MAX_DETOUR - 1));
@@ -2008,7 +2037,7 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
   // cuts a short retrace off as a lift hook. When the retrace is there, the
   // stroke is that arrow and nothing else — the line it was drawn along would
   // otherwise outscore it from the cleaned points.
-  const retrace = retraceArrowCandidate(points, pressure);
+  const retrace = retraceArrowCandidate(points, pressure, opts?.held === true);
   const candidates: Array<ShapeResult | null> = retrace
     ? [retrace]
     : closed

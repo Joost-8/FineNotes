@@ -6,6 +6,20 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Short arrows snap.** Drawing a line, going back a little way along it and
+  holding now makes an arrow on short lines too. Before, the way back had to
+  be at least 40 px, so short arrows stayed as ink, became a plain line, or
+  became a thin triangle.
+- **Strokes no longer break apart when the Pencil's contact flickers.** Now
+  and then the iPad reports a light Pencil as lifting and landing again
+  within a few milliseconds. Each flicker started a new stroke, so letters
+  got gaps and dots, and a line got a step in it. A pen that lands again that
+  quickly, where it lifted, now carries on the same stroke.
+
 ## [1.0.2] - 2026-09-30
 
 ### Changed

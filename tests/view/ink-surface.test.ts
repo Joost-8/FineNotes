@@ -934,6 +934,82 @@ describe("a stroke's first pressure", () => {
   });
 });
 
+// --- A Pencil whose contact flickered (2026-10-01) ---------------------------------
+
+describe("resumeLifted", () => {
+  /** A page with one stroke just committed, lifted at (40, 10) a moment ago. */
+  function lifted(liftedMsAgo = 10, style: Partial<Stroke> = {}) {
+    const w = ink(documentOf(page("p1", [line("s1", 10, 110, 100)])));
+    const builder = new StrokeBuilder({ minDistance: 1, pressureEnabled: false });
+    builder.add({ x: 10, y: 10, pressure: 0 });
+    builder.addFinal({ x: 40, y: 10, pressure: 0 });
+    const stroke: Stroke = { ...line("s2", 10, 40, 10), ...style };
+    const command = run(w.surface, "commitStroke", boxOf(w.doc, 0), w.doc.pages[0], stroke);
+    Object.assign(w.surface, {
+      lastLift: {
+        t: performance.now() - liftedMsAgo,
+        boxIndex: 0,
+        pageId: "p1",
+        x: 40,
+        y: 10,
+        builder,
+        stroke,
+        command,
+        penDownAt: 1234,
+      },
+      penDownAt: 9999,
+      circleLoop: null,
+      offPageCommand: null,
+      debug: false,
+      diagSums: { rejoins: 0 },
+      userZoom: 1,
+      atFitZoom: (v: number) => v,
+      currentStyle: () => ({ color: "#000000", size: 2, tool: "pen" }),
+    });
+    const resume = (x: number, y: number): StrokeBuilder | null =>
+      run(w.surface, "resumeLifted", boxOf(w.doc, 0), { x, y });
+    return { w, builder, resume };
+  }
+
+  it("takes the piece back off the page and hands on its points", () => {
+    const { w, builder, resume } = lifted();
+    expect(resume(41, 11)).toBe(builder);
+    expect(ids(w.doc.pages[0])).toEqual(["s1"]);
+    expect(w.strokeAt(0, 25, 10)).toBeNull();
+    // As if the piece had never been a step of its own: undo reaches past it.
+    expect(w.history.canRedo()).toBe(false);
+    // The whole stroke keeps the time its first piece went down.
+    expect(w.surface.penDownAt).toBe(1234);
+    expect((w.surface.diagSums as { rejoins: number }).rejoins).toBe(1);
+    expect(w.surface.lastLift).toBeNull();
+  });
+
+  it("leaves a stroke alone when the pen was off the glass for longer", () => {
+    const { w, resume } = lifted(200);
+    expect(resume(40, 10)).toBeNull();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2"]);
+  });
+
+  it("leaves a stroke alone when the pen lands away from where it lifted", () => {
+    const { w, resume } = lifted();
+    expect(resume(80, 10)).toBeNull();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2"]);
+  });
+
+  it("leaves a stroke alone when the pen changed in between", () => {
+    const { w, resume } = lifted(10, { color: "#ff0000" });
+    expect(resume(40, 10)).toBeNull();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2"]);
+  });
+
+  it("leaves a stroke alone once anything else was done after it", () => {
+    const { w, resume } = lifted();
+    w.commit(0, line("s3", 10, 110, 300));
+    expect(resume(40, 10)).toBeNull();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2", "s3"]);
+  });
+});
+
 // --- The palm's scroll, undone when the pen lands (2026-09-30) --------------------
 
 describe("undoPalm", () => {

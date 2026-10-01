@@ -594,6 +594,120 @@ describe("a retraced line becomes an arrow", () => {
   });
 });
 
+describe("a short arrow drawn and held becomes an arrow", () => {
+  // Traced out of Joost's recording (2026-10-01): lines of 52-110 px, back
+  // 25-43 % of the line (18-37 px) within 3-13° of it, then held. Under the
+  // 40 px floor they stayed freehand, became a line, or a triangle.
+  const MEASURED: Array<[number, number, number]> = [
+    [52, 0.43, 13],
+    [61, 0.42, 13],
+    [67, 0.31, 7],
+    [72, 0.25, 10],
+    [83, 0.29, 4],
+    [89, 0.38, 3],
+    [110, 0.33, 13],
+  ];
+  const cases: Array<[string, number[], number]> = [];
+  let seed = 3000;
+  for (const [len, fraction, dev] of MEASURED) {
+    for (const deg of DIRECTIONS) {
+      for (const side of [1, -1]) {
+        const hook: [number, number] = [6 + (seed % 3) * 2, deg + 150 + (seed % 5) * 20];
+        const pts = retracedLine(
+          ORIGIN,
+          len,
+          deg,
+          { hook, retrace: [fraction, side * dev, 2] },
+          seed++,
+        );
+        cases.push([
+          `${len} px at ${deg}°, back ${Math.round(fraction * 100)}% (${side * dev}° off)`,
+          pts,
+          fraction * len,
+        ]);
+      }
+    }
+  }
+
+  it.each(cases)("snaps %s", (_name, pts) => {
+    expect(recognizeShape(pts, { held: true })?.kind).toBe("arrow");
+  });
+
+  it("still asks 40 px of a stroke that is read on lift, where a tail may be a retrace", () => {
+    for (const [name, pts, back] of cases) {
+      if (back < 38) expect(recognizeShape(pts)?.kind, name).not.toBe("arrow");
+    }
+  });
+
+  it("a line held after the pen settles back a few px stays a line", () => {
+    let seed = 4000;
+    for (const len of LENGTHS) {
+      for (const deg of DIRECTIONS) {
+        for (const settle of [2, 5, 8]) {
+          for (const tailDeg of [180, 170, 160]) {
+            const pts = retracedLine(ORIGIN, len, deg, { tail: [settle, tailDeg] }, seed++);
+            const kind = recognizeShape(pts, { held: true })?.kind;
+            expect(kind, `${len} px at ${deg}°, ${settle} px back at ${tailDeg}°`).toBe("line");
+          }
+        }
+      }
+    }
+  });
+
+  it("the real Pencil line, held, is a line", () => {
+    const line = (
+      JSON.parse(readFileSync("tests/ink/fixtures/real-pencil-ipad.json", "utf8")) as {
+        strokes: Array<{ id: number; expect: string; points: number[][] }>;
+      }
+    ).strokes.find((s) => s.expect === "line")!;
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const drawn = tremor(
+        resample(
+          line.points.map(([x, y]) => ({ x, y })),
+          1.4,
+        ),
+        rng(seed),
+        {
+          amplitude: 1.1,
+        },
+      );
+      const pts: number[] = [];
+      for (const p of drawn) pts.push(p.x, p.y, 0.5);
+      expect(recognizeShape(pts, { held: true })?.kind).toBe("line");
+    }
+  });
+
+  it("every arrow traced out of Joost's recording snaps, from any rebuilt stream", () => {
+    const { strokes } = JSON.parse(
+      readFileSync("tests/ink/fixtures/real-pencil-arrows-ipad.json", "utf8"),
+    ) as { strokes: Array<{ id: string; points: number[][] }> };
+    expect(strokes).toHaveLength(9);
+    for (const stroke of strokes) {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const base = stroke.points.map(([x, y]) => ({ x, y }));
+        const drawn = tremor(resample(base, 1.4), rng(seed), { amplitude: 1.1 });
+        const pts: number[] = [];
+        for (const p of drawn) pts.push(p.x, p.y, 0.5);
+        expect(recognizeShape(pts, { held: true })?.kind, `${stroke.id} seed ${seed}`).toBe(
+          "arrow",
+        );
+      }
+    }
+  });
+
+  it("the one-barb arrow, the V, the L and the checkmark stay refused when held", () => {
+    const refused = [
+      inkFrom(arrowOutline({ x: 120, y: 300 }, { x: 460, y: 300 }, 0.22, 28, 1), 21),
+      inkFrom(polyline(100, 100, 200, 300, 300, 100), 1),
+      inkFrom(polyline(100, 100, 100, 300, 300, 300), 2),
+      inkFrom(polyline(100, 220, 160, 300, 320, 100), 27),
+    ];
+    for (const pts of refused) {
+      expect(recognizeShape(pts, { minConfidence: 0, held: true })).toBeNull();
+    }
+  });
+});
+
 describe("a plain line stays a line", () => {
   it("never turns a line with a real-style lift tail into an arrow, in any direction", () => {
     // A tail that happens to reverse along the line reads as a retrace
