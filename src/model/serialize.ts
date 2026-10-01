@@ -30,7 +30,7 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
-import { deflateToBase64, inflateFromBase64 } from "./compress";
+import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import {
   type AttachmentFolders,
   type Backdrop,
@@ -226,6 +226,50 @@ function storeDocument(doc: InkDocument): StoredDocument {
 /** The document as a `v<n>:<base64>` payload, always at the current schema version. */
 export function encodeDocument(doc: InkDocument): string {
   return `v${SCHEMA_VERSION}:${deflateToBase64(JSON.stringify(storeDocument(doc)))}`;
+}
+
+/**
+ * Encodes one note's document again and again, as a view saves it, at the
+ * quicker {@link SAVE_LEVEL}. A document that has not changed since it was
+ * read or last encoded gets the very same payload back, so a note opened and
+ * closed untouched is not rewritten (the payload on disk was likely made at
+ * another level), and sync sees no change.
+ */
+export class DocumentEncoder {
+  /** The JSON the payload last read or written holds, and that payload. */
+  private known: { json: string; payload: string } | null = null;
+  /** Whether the last encode handed back the known payload. */
+  reused = false;
+
+  /** The document as a `v<n>:<base64>` payload. */
+  encode(doc: InkDocument): string {
+    const json = JSON.stringify(storeDocument(doc));
+    this.reused = this.known !== null && this.known.json === json;
+    if (this.known && this.reused) return this.known.payload;
+    const payload = `v${SCHEMA_VERSION}:${deflateToBase64(json, SAVE_LEVEL)}`;
+    this.known = { json, payload };
+    return payload;
+  }
+
+  /**
+   * `payload` was just read and decoded to `doc`. It is reused for as long
+   * as the document stays the same — but only if it holds exactly what
+   * `doc` would be written as: a note an older version wrote, or one the
+   * loader repaired, is written afresh at the first save.
+   */
+  remember(doc: InkDocument, payload: string): void {
+    this.known = null;
+    const prefix = `v${SCHEMA_VERSION}:`;
+    if (!payload.startsWith(prefix)) return;
+    let stored: string;
+    try {
+      stored = inflateFromBase64(payload.slice(prefix.length));
+    } catch {
+      return;
+    }
+    const json = JSON.stringify(storeDocument(doc));
+    if (json === stored) this.known = { json, payload };
+  }
 }
 
 // --- Reading: small guards ------------------------------------------------------
@@ -625,6 +669,8 @@ export interface ParsedInkFile {
   body: string;
   /** The notebook, or `null` when the note has no block or its block cannot be read. */
   doc: InkDocument | null;
+  /** The block's payload as it was read, when there is a block. */
+  payload?: string;
 }
 
 // Matches the `%%goodobsidian … %%` block — or the `%%inkedmark … %%` block a
@@ -674,15 +720,16 @@ export function parseInkFile(markdown: string, fallbackWidth = DEFAULT_PAPER_WID
   } catch {
     doc = null;
   }
-  return { body: before + after, doc };
+  return { body: before + after, doc, payload: block[1] };
 }
 
 /**
  * Put a note together: the body as it was (only the pre-0.2.0 frontmatter keys
  * renamed, trailing whitespace trimmed), a blank line, then the data block.
  */
-export function buildInkFile(body: string, doc: InkDocument): string {
+export function buildInkFile(body: string, doc: InkDocument, encoder?: DocumentEncoder): string {
   const text = migrateFrontmatter(body).trimEnd();
-  const block = `%%${BLOCK_LABEL}\n${encodeDocument(doc)}\n%%\n`;
+  const payload = encoder ? encoder.encode(doc) : encodeDocument(doc);
+  const block = `%%${BLOCK_LABEL}\n${payload}\n%%\n`;
   return text.length > 0 ? `${text}\n\n${block}` : block;
 }

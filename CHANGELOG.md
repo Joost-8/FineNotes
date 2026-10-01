@@ -19,6 +19,23 @@ extracted from the matching section of this file by `release.yml`.
   within a few milliseconds. Each flicker started a new stroke, so letters
   got gaps and dots, and a line got a step in it. A pen that lands again that
   quickly, where it lifted, now carries on the same stroke.
+- **Writing in a notebook with a long PDF no longer slows down and skips.**
+  With the page sidebar open, a PDF notebook kept redrawing its pages and
+  thumbnails over and over, even when nobody touched it, and the pen
+  stuttered. It now draws each PDF page once, at the size it is shown.
+  ([#1](https://github.com/Joost-8/FineNotes/issues/1))
+- **No more stutter while you write in a big notebook.** The notebook used to
+  be saved every two seconds while you were writing, and saving a big
+  notebook takes a moment. It now waits until the pen has been off the page
+  for a second, and each save is about twice as fast. Nothing goes unsaved:
+  closing the note, switching apps or 20 seconds of non-stop writing still
+  saves at once.
+- **Smoother writing on iPads with iPadOS 17 or older.** Before iPadOS 18.2,
+  the iPad reports the Pencil only once per screen refresh, and any moment
+  the app was busy turned into a straight line in the ink. Besides removing
+  those busy moments, FineNotes now fills in a smooth curve between the
+  Pencil's positions on these iPads. Newer iPads, which report every
+  position, draw exactly as before.
 
 ## [1.0.2] - 2026-09-30
 

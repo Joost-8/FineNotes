@@ -24,13 +24,22 @@ export interface StrokeBuilderOptions {
   pressureEnabled: boolean;
   /** The pressure stored when there is no reading to go by. */
   fallbackPressure: number;
+  /**
+   * The input is sparse: fill in points between the samples kept, along a
+   * curve through them, about `minDistance` apart ({@link StrokeBuilder}).
+   */
+  densify?: boolean;
 }
 
 const DEFAULTS: StrokeBuilderOptions = {
   minDistance: MIN_SAMPLE_DISTANCE,
   pressureEnabled: true,
   fallbackPressure: FALLBACK_PRESSURE,
+  densify: false,
 };
+
+/** At most this many points are filled in between two samples. */
+const MAX_FILL = 64;
 
 /**
  * The pressure to store for one raw reading, taken on its own: the reading,
@@ -59,6 +68,13 @@ export class StrokeBuilder {
   private readonly options: StrokeBuilderOptions;
   /** The points kept so far, flat. */
   private readonly flat: number[] = [];
+  /**
+   * Densifying: the two samples kept before the newest, `[x, y, p]`, and the
+   * newest, which waits for the one after it to fix the curve's way into it.
+   */
+  private before: number[] | null = null;
+  private last: number[] | null = null;
+  private waiting: number[] | null = null;
   /** The pen's last real pressure reading; NaN until the first arrives. */
   private lastReading = Number.NaN;
   /** Counts the times points already kept were rewritten (see {@link revision}). */
@@ -78,18 +94,42 @@ export class StrokeBuilder {
     return this.offer(last, true);
   }
 
-  /** How many points have been kept. */
+  /** How many points have been kept (a sample still waiting counts as one). */
   get length(): number {
-    return this.flat.length / POINT_STRIDE;
+    return this.flat.length / POINT_STRIDE + (this.waiting ? 1 : 0);
+  }
+
+  /**
+   * Densifying: the newest sample, `[x, y, p]`, not yet in {@link view}
+   * because the curve into it depends on the next. Draw a straight line to
+   * it meanwhile. Null when nothing waits.
+   */
+  get pending(): readonly number[] | null {
+    return this.waiting;
+  }
+
+  /** Put the sample still waiting into the points, as the stroke's end. */
+  settle(): void {
+    const tip = this.waiting;
+    if (!tip || !this.last) return;
+    fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, this.flat);
+    this.before = this.last;
+    this.last = tip;
+    this.waiting = null;
   }
 
   get isEmpty(): boolean {
     return this.flat.length === 0;
   }
 
-  /** The kept points, flat, as a copy the caller may keep. */
+  /** The kept points, flat, as a copy the caller may keep; one still waiting is the end. */
   points(): number[] {
-    return [...this.flat];
+    const out = [...this.flat];
+    const tip = this.waiting;
+    if (tip && this.last) {
+      fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, out);
+    }
+    return out;
   }
 
   /** The kept points, flat, without a copy: read them now, keep nothing. */
@@ -127,12 +167,31 @@ export class StrokeBuilder {
     const pressure = this.pressureFor(sample.pressure);
     const n = this.flat.length;
     if (n > 0 && !final) {
-      const dx = sample.x - this.flat[n - POINT_STRIDE];
-      const dy = sample.y - this.flat[n - POINT_STRIDE + 1];
+      const from = this.waiting ?? this.last;
+      const dx = sample.x - (from ? from[0] : this.flat[n - POINT_STRIDE]);
+      const dy = sample.y - (from ? from[1] : this.flat[n - POINT_STRIDE + 1]);
       const min = this.options.minDistance;
       if (dx * dx + dy * dy < min * min) return false;
     }
-    this.flat.push(sample.x, sample.y, pressure);
+    if (!this.options.densify) {
+      this.flat.push(sample.x, sample.y, pressure);
+      return true;
+    }
+    const next = [sample.x, sample.y, pressure];
+    if (!this.last) {
+      this.flat.push(sample.x, sample.y, pressure);
+      this.last = next;
+    } else if (!this.waiting) {
+      this.waiting = next;
+    } else {
+      // The sample after it fixes the curve into the one waiting: fill that in.
+      const minDistance = this.options.minDistance;
+      fillCurve(this.before ?? this.last, this.last, this.waiting, next, minDistance, this.flat);
+      this.before = this.last;
+      this.last = this.waiting;
+      this.waiting = next;
+    }
+    if (final) this.settle();
     return true;
   }
 
@@ -150,9 +209,54 @@ export class StrokeBuilder {
     const reading = Math.min(raw, 1);
     if (Number.isNaN(this.lastReading) && this.flat.length > 0) {
       for (let p = 2; p < this.flat.length; p += POINT_STRIDE) this.flat[p] = reading;
+      for (const kept of [this.before, this.last, this.waiting]) if (kept) kept[2] = reading;
       this.rewrites++;
     }
     this.lastReading = reading;
     return reading;
   }
+}
+
+/**
+ * Append the points of the centripetal Catmull-Rom curve from `b` to `c`
+ * (`[x, y, p]` each), shaped by `a` before and `d` after, about `spacing`
+ * apart and ending exactly on `c`; pressure runs straight from `b` to `c`.
+ *
+ * Where WebKit has no `getCoalescedEvents` (iPadOS before 18.2), a pen
+ * arrives once a frame: at 60 Hz a quick letter is a few samples 5-15 px
+ * apart, and the ink tracer's midpoint curves cut its corners and show its
+ * jitter. Filling the samples in along a curve through them gives the
+ * tracer what a Pencil reports at 240 Hz (FineNotes#1). Centripetal, because
+ * that form never loops or overshoots between two samples. The points are
+ * stored, so the stroke looks the same on every device.
+ */
+export function fillCurve(
+  a: readonly number[],
+  b: readonly number[],
+  c: readonly number[],
+  d: readonly number[],
+  spacing: number,
+  out: number[],
+): void {
+  const span = Math.hypot(c[0] - b[0], c[1] - b[1]);
+  const n = Math.min(MAX_FILL, Math.max(1, Math.ceil(span / Math.max(spacing, 1e-6))));
+  // A missing neighbour (at the stroke's ends) is the mirror of the far point.
+  const p0 = Math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-6 ? a : [2 * b[0] - c[0], 2 * b[1] - c[1]];
+  const p3 = Math.hypot(d[0] - c[0], d[1] - c[1]) > 1e-6 ? d : [2 * c[0] - b[0], 2 * c[1] - b[1]];
+  const t1 = Math.sqrt(Math.hypot(b[0] - p0[0], b[1] - p0[1]));
+  const t2 = t1 + Math.sqrt(span);
+  const t3 = t2 + Math.sqrt(Math.hypot(p3[0] - c[0], p3[1] - c[1]));
+  for (let i = 1; i < n && span > 1e-6; i++) {
+    const t = t1 + ((t2 - t1) * i) / n;
+    const at = (k: number): number => {
+      const a1 = ((t1 - t) / t1) * p0[k] + (t / t1) * b[k];
+      const a2 = ((t2 - t) / (t2 - t1)) * b[k] + ((t - t1) / (t2 - t1)) * c[k];
+      const a3 = ((t3 - t) / (t3 - t2)) * c[k] + ((t - t2) / (t3 - t2)) * p3[k];
+      const b1 = ((t2 - t) / t2) * a1 + (t / t2) * a2;
+      const b2 = ((t3 - t) / (t3 - t1)) * a2 + ((t - t1) / (t3 - t1)) * a3;
+      return ((t2 - t) / (t2 - t1)) * b1 + ((t - t1) / (t2 - t1)) * b2;
+    };
+    out.push(at(0), at(1), b[2] + ((c[2] - b[2]) * i) / n);
+  }
+  out.push(c[0], c[1], c[2]);
 }

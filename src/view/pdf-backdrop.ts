@@ -20,14 +20,27 @@
  */
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
+import { ByteLru } from "../canvas/tile-grid";
 import { errorMessage } from "../util/errors";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
  *  and ~53 MB per page — several of those will evict an iPad's web view. */
 const MAX_RASTER_EDGE = 2400;
 
-/** How many rasterised pages to keep. Small: pages are large bitmaps. */
-const MAX_CACHE_ENTRIES = 8;
+/**
+ * Rasterised pages kept at once, in bytes. It used to be a count of eight
+ * pages, and the page sidebar's dozen thumbnails plus the page in view asked
+ * for more than eight: each raster that landed evicted another one still on
+ * screen, whose repaint asked for it again, for as long as the sidebar stayed
+ * open — 40 renders a second and every tile redrawn each time, on a laptop
+ * (2026-10-01, FineNotes#1). A raster drawn within {@link RECENT_USE_MS} is
+ * not evicted to meet this; the hard budget holds regardless.
+ */
+const SOFT_BUDGET = 48 * 1024 * 1024;
+const HARD_BUDGET = 96 * 1024 * 1024;
+const RECENT_USE_MS = 1500;
+/** What a miss is counted as: little, but not nothing, so misses cannot pile up. */
+const MISS_BYTES = 1024;
 
 /** Scale quantisation step. Continuous zoom must not mint a bitmap per frame. */
 const SCALE_STEP = 0.25;
@@ -99,13 +112,31 @@ export function rasterKey(path: string, page: number, dprScale: number): string 
  * {@link onReady} so the caller can repaint. {@link resolve} is the awaiting
  * form, for one-shot draws (export, thumbnails).
  */
-export class PdfBackdropCache {
-  /** Called after a background rasterisation lands (success or miss). */
-  onReady: (() => void) | null = null;
+interface Cached {
+  key: string;
+  entry: PdfEntry;
+  /** When a paint last drew it (ms, `performance.now()`). */
+  lastUsed: number;
+}
 
-  private readonly entries = new Map<string, PdfEntry>();
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+export class PdfBackdropCache {
+  /**
+   * Called after a background rasterisation of `page` of `path` lands
+   * (success or miss). Repaint only what shows that page: repainting
+   * everything is what kept the eviction loop above going.
+   */
+  onReady: ((path: string, page: number) => void) | null = null;
+
+  private readonly entries = new ByteLru<Cached>(HARD_BUDGET, (cached) => release(cached.entry));
   private readonly inflight = new Map<string, Promise<PdfEntry>>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
+  /** Requests made while held, started on {@link setHeld}(false). */
+  private readonly deferred = new Map<string, { path: string; page: number; dprScale: number }>();
+  private held = false;
   private lib: Promise<PdfJsLike> | null = null;
   private destroyed = false;
 
@@ -113,25 +144,43 @@ export class PdfBackdropCache {
 
   /** Synchronous lookup. `null` means "not rasterised yet" — never blocks. */
   peek(path: string, page: number, dprScale: number): PdfEntry | null {
-    const key = rasterKey(path, page, dprScale);
-    const hit = this.entries.get(key);
+    const hit = this.entries.get(rasterKey(path, page, dprScale));
     if (!hit) return null;
-    // Refresh LRU position.
-    this.entries.delete(key);
-    this.entries.set(key, hit);
-    return hit;
+    hit.lastUsed = now();
+    return hit.entry;
   }
 
-  /** Start rasterising if it is not cached or already in flight. */
+  /**
+   * Start rasterising if it is not cached or already in flight. While held
+   * (the pen is writing), it waits: pdf.js paints on the main thread, and a
+   * page landing mid-stroke stalls the ink.
+   */
   request(path: string, page: number, dprScale: number): void {
+    if (this.held) {
+      const key = rasterKey(path, page, dprScale);
+      if (!this.entries.has(key) && !this.inflight.has(key)) {
+        this.deferred.set(key, { path, page, dprScale });
+      }
+      return;
+    }
     void this.resolve(path, page, dprScale);
+  }
+
+  /** Hold background rasterisation (true), or let it go on with what waited (false). */
+  setHeld(held: boolean): void {
+    if (this.held === held) return;
+    this.held = held;
+    if (held) return;
+    const waiting = [...this.deferred.values()];
+    this.deferred.clear();
+    for (const { path, page, dprScale } of waiting) void this.resolve(path, page, dprScale);
   }
 
   /** Cached entry, rasterising first if necessary. Never rejects. */
   resolve(path: string, page: number, dprScale: number): Promise<PdfEntry> {
     const key = rasterKey(path, page, dprScale);
-    const cached = this.entries.get(key);
-    if (cached) return Promise.resolve(cached);
+    const cached = this.entries.peek(key);
+    if (cached) return Promise.resolve(cached.entry);
     if (this.destroyed) return Promise.resolve({ ok: false, reason: "Cache closed" });
 
     const existing = this.inflight.get(key);
@@ -140,7 +189,7 @@ export class PdfBackdropCache {
     const work = this.rasterise(path, page, dprScale)
       .catch((error: unknown): PdfEntry => ({ ok: false, reason: errorMessage(error) }))
       .then((entry) => {
-        this.store(key, entry);
+        this.store(key, entry, path, page);
         return entry;
       });
     this.inflight.set(key, work);
@@ -150,6 +199,7 @@ export class PdfBackdropCache {
   /** Drop every cached bitmap and close every open document. */
   clear(): void {
     this.entries.clear();
+    this.deferred.clear();
     for (const promise of this.documents.values()) {
       void promise.then((doc) => doc?.destroy()).catch(() => undefined);
     }
@@ -162,16 +212,33 @@ export class PdfBackdropCache {
     this.clear();
   }
 
-  private store(key: string, entry: PdfEntry): void {
+  /** Bytes held by rasters (for tests and diagnostics). */
+  get bytes(): number {
+    return this.entries.bytes;
+  }
+
+  private store(key: string, entry: PdfEntry, path: string, page: number): void {
     this.inflight.delete(key);
-    if (this.destroyed) return;
-    this.entries.set(key, entry);
-    while (this.entries.size > MAX_CACHE_ENTRIES) {
-      const oldest = this.entries.keys().next();
-      if (oldest.done) break;
-      this.entries.delete(oldest.value);
+    if (this.destroyed) {
+      release(entry);
+      return;
     }
-    this.onReady?.();
+    this.entries.set(key, { key, entry, lastUsed: now() }, bytesOf(entry));
+    this.trim();
+    this.onReady?.(path, page);
+  }
+
+  /**
+   * Evict least-recently drawn rasters down to the soft budget, stopping at
+   * the first one drawn within {@link RECENT_USE_MS}: the LRU is in order of
+   * use, so everything after it is recent too.
+   */
+  private trim(): void {
+    const cutoff = now() - RECENT_USE_MS;
+    for (const cached of [...this.entries.values()]) {
+      if (this.entries.bytes <= SOFT_BUDGET || cached.lastUsed > cutoff) return;
+      this.entries.delete(cached.key);
+    }
   }
 
   private pdfjs(): Promise<PdfJsLike> {
@@ -228,4 +295,16 @@ export class PdfBackdropCache {
     pdfPage.cleanup?.();
     return { ok: true, canvas };
   }
+}
+
+/** What an entry costs the cache: its raster's pixels, or a token amount for a miss. */
+function bytesOf(entry: PdfEntry): number {
+  return entry.ok ? Math.max(MISS_BYTES, entry.canvas.width * entry.canvas.height * 4) : MISS_BYTES;
+}
+
+/** Give a dropped raster's memory back now; iOS holds canvas memory until then. */
+function release(entry: PdfEntry): void {
+  if (!entry.ok) return;
+  entry.canvas.width = 0;
+  entry.canvas.height = 0;
 }

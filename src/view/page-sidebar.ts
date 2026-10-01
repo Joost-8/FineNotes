@@ -79,6 +79,16 @@ const FILTER_LABELS: Record<PageFilter, string> = {
 
 /** Thumbnail width in CSS px; the height follows each page's own aspect ratio. */
 const THUMB_WIDTH = 120;
+
+/**
+ * The scale a PDF backdrop is rasterised at for a thumbnail, in the units of
+ * `InkSurface.deviceScale` (device px per page px, for a page about 1024 page
+ * px wide), doubled to stay sharp. Asking for the page view's own scale here
+ * made a dozen thumbnails each want a page-sized raster (FineNotes#1).
+ */
+export function thumbnailRasterScale(dpr: number): number {
+  return (THUMB_WIDTH * dpr * 2) / 1024;
+}
 /** Quiet time after an edit before thumbnails repaint. */
 const REFRESH_DEBOUNCE_MS = 350;
 
@@ -360,6 +370,18 @@ export class PageSidebar {
     const pages = this.doc?.pages ?? [];
     this.thumbs.forEach((view, index) => {
       if (pages[index]?.images.some((image) => image.path === path)) view.painted = "";
+    });
+    if (this.open) this.schedulePaint();
+  }
+
+  /** Repaint the thumbnails of pages backed by page `pdfPage` of the PDF at `path` (it just rasterised). */
+  invalidatePdfPage(path: string, pdfPage: number): void {
+    const pages = this.doc?.pages ?? [];
+    this.thumbs.forEach((view, index) => {
+      const backdrop = pages[index]?.backdrop;
+      if (backdrop?.kind === "pdf" && backdrop.path === path && backdrop.page === pdfPage) {
+        view.painted = "";
+      }
     });
     if (this.open) this.schedulePaint();
   }

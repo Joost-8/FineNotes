@@ -274,7 +274,7 @@ describe("the note file", () => {
 
   it("keeps the body and drops a block it cannot read", () => {
     const parsed = parseInkFile("# Title\n\n%%goodobsidian\nv2:@@@garbage@@@\n%%\n");
-    expect(parsed).toEqual({ body: "# Title", doc: null });
+    expect(parsed).toEqual({ body: "# Title", doc: null, payload: "v2:@@@garbage@@@" });
   });
 
   it("reads a note written before 0.2.0 and saves it under the current label", () => {

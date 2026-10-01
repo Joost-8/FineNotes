@@ -50,6 +50,19 @@ export interface PointerDebugRecord {
   timeStamp: number;
 }
 
+/**
+ * Whether this browser hands over the samples a pointer took between two
+ * events (`getCoalescedEvents`; WebKit from iOS 18.2). Without them a pen
+ * arrives once a frame, and a stroke is filled in between its samples
+ * (`StrokeBuilderOptions.densify`).
+ */
+export function deliversCoalescedSamples(): boolean {
+  return (
+    typeof PointerEvent !== "undefined" &&
+    typeof PointerEvent.prototype.getCoalescedEvents === "function"
+  );
+}
+
 export interface PointerControllerCallbacks {
   onStart(sample: PointerSample): void;
   /** The samples since the last move. */

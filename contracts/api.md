@@ -580,8 +580,13 @@ One class may implement both, and `VaultBackdropRenderer` does.
   iPad. Cache key: `${path}:${page}:${devicePixelRatio * scale}`, where the
   scale term is **quantised to 0.25 steps before the key is built**.
   Pinch-zoom produces a continuum of scales, so an unquantised key mints a
-  new bitmap on every frame of a zoom gesture. Bound the cache regardless:
-  8 bitmaps, LRU, and cap the raster's long edge at 2400 device px.
+  new bitmap on every frame of a zoom gesture. Bound the cache regardless,
+  by bytes (48 MB, never evicting a raster drawn in the last 1.5 s; 96 MB
+  hard), and cap the raster's long edge at 2400 device px. A raster that
+  lands repaints only the pages that show it, and thumbnails ask for
+  thumbnail-sized rasters: an 8-bitmap cache with a repaint-everything
+  callback looped for as long as the page sidebar was open (FineNotes#1).
+  Rasterising waits while the pen writes.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a

@@ -63,6 +63,19 @@ function openView(bytesOnDisk: number | null = 100, settings: Record<string, unk
   return view;
 }
 
+/**
+ * Two notes that read back the same: the same body and notebook. A view
+ * compresses a fresh notebook at its quicker save level, so only what it
+ * decodes to is pinned; a note saved unchanged is pinned byte for byte by
+ * "saves the note rebuilt from what it read".
+ */
+function expectSameNote(actual: string, expected: string): void {
+  const a = parseInkFile(actual, 1024);
+  const b = parseInkFile(expected, 1024);
+  expect(a.body).toBe(b.body);
+  expect(a.doc).toEqual(b.doc);
+}
+
 function inside(view: View): Inside {
   return view as unknown as Inside;
 }
@@ -103,7 +116,8 @@ describe("a clean load", () => {
   it("gives a note without an ink block a fresh notebook", () => {
     const view = openView();
     view.setViewData("---\ngoodobsidian: true\n---\nJust prose.\n", true);
-    expect(view.getViewData()).toBe(
+    expectSameNote(
+      view.getViewData(),
       buildInkFile("---\ngoodobsidian: true\n---\nJust prose.\n", emptyDocument(1024)),
     );
     expect(notices).toEqual([]);
@@ -112,20 +126,20 @@ describe("a clean load", () => {
   it("uses the paper width setting for that fresh notebook", () => {
     const view = openView(100, { paperWidth: 800 });
     view.setViewData("Just prose.\n", true);
-    expect(view.getViewData()).toBe(buildInkFile("Just prose.\n", emptyDocument(800)));
+    expectSameNote(view.getViewData(), buildInkFile("Just prose.\n", emptyDocument(800)));
   });
 
   it("treats an empty read of an empty file as an empty note", () => {
     const view = openView(0);
     view.setViewData("", true);
-    expect(view.getViewData()).toBe(buildInkFile("", emptyDocument(1024)));
+    expectSameNote(view.getViewData(), buildInkFile("", emptyDocument(1024)));
     expect(notices).toEqual([]);
   });
 
   it("treats an empty read as empty when there is no file to compare", () => {
     const view = openView(null);
     view.setViewData("", true);
-    expect(view.getViewData()).toBe(buildInkFile("", emptyDocument(1024)));
+    expectSameNote(view.getViewData(), buildInkFile("", emptyDocument(1024)));
   });
 });
 
@@ -196,7 +210,7 @@ describe("a load that cannot be trusted", () => {
     view.clear();
     expect(view.getViewData()).toBe("");
     view.setViewData("Prose.\n", true);
-    expect(view.getViewData()).toBe(buildInkFile("Prose.\n", emptyDocument(1024)));
+    expectSameNote(view.getViewData(), buildInkFile("Prose.\n", emptyDocument(1024)));
   });
 
   it("does not mistake a marker-free note for a broken one", () => {
@@ -219,7 +233,7 @@ describe("clear()", () => {
     const view = openView();
     view.setViewData(notebookFile(), true);
     view.clear();
-    expect(view.getViewData()).toBe(buildInkFile("", emptyDocument(1024)));
+    expectSameNote(view.getViewData(), buildInkFile("", emptyDocument(1024)));
   });
 });
 
@@ -339,5 +353,96 @@ describe("clearing a page", () => {
     const saved = parseInkFile(view.getViewData(), 1024);
     expect(readTextSection(saved.body)).toBeNull();
     expect(saved.body.trim()).toBe("Prose only.");
+  });
+});
+
+describe("saving while the pen writes", () => {
+  // FineNotes#1: a save mid-stroke stalls the main thread, and on iPadOS 17
+  // the pen's movement during the stall is drawn as a straight line.
+  let clock = 0;
+  let saves = 0;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clock = 0;
+    saves = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const proto = Object.getPrototypeOf(InkView.prototype) as { save: () => Promise<void> };
+    vi.spyOn(proto, "save").mockImplementation(() => {
+      saves++;
+      return Promise.resolve();
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function pen(view: View): (down: boolean) => void {
+    return (down) => (view as unknown as { penActivity(d: boolean): void }).penActivity(down);
+  }
+
+  it("saves at once when the pen is not writing", async () => {
+    const view = openView();
+    await view.save();
+    expect(saves).toBe(1);
+  });
+
+  it("puts a save off until the pen has been up a second", async () => {
+    const view = openView();
+    const set = pen(view);
+    set(true);
+    await view.save();
+    expect(saves).toBe(0);
+    clock = 500;
+    set(false);
+    await view.save();
+    expect(saves).toBe(0);
+    clock = 1500;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saves).toBe(1);
+  });
+
+  it("does not make the waiting save if the pen comes back down in time", async () => {
+    const view = openView();
+    const set = pen(view);
+    set(true);
+    await view.save();
+    clock = 100;
+    set(false);
+    await vi.advanceTimersByTimeAsync(400);
+    clock = 500;
+    set(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(saves).toBe(0);
+  });
+
+  it("makes a long-waiting save at a lift, between strokes", async () => {
+    const view = openView();
+    const set = pen(view);
+    set(true);
+    await view.save();
+    clock = 25_000;
+    set(false);
+    await Promise.resolve();
+    expect(saves).toBe(1);
+  });
+
+  it("lets go if the pen's lift never arrives", async () => {
+    const view = openView();
+    pen(view)(true);
+    await view.save();
+    expect(saves).toBe(0);
+    clock = 20_000;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(saves).toBe(1);
+  });
+
+  it("never holds a save that clears the view", async () => {
+    const view = openView();
+    pen(view)(true);
+    await view.save(true);
+    expect(saves).toBe(1);
   });
 });

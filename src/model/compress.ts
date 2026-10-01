@@ -1,6 +1,7 @@
 /**
  * The byte layer under every note: text as UTF-8, packed with raw DEFLATE
- * (fflate at its default level), written as standard base64.
+ * (fflate at its default level, or {@link SAVE_LEVEL} for a view's saves),
+ * written as standard base64.
  *
  * A note saved without changes has to come out byte for byte the same, so
  * this wrapper adds nothing of its own: the output is exactly what fflate and
@@ -17,9 +18,18 @@ import { Inflate, deflateSync, strFromU8, strToU8 } from "fflate";
  */
 export const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
 
-/** Text to base64 of its DEFLATEd UTF-8. */
-export function deflateToBase64(text: string): string {
-  const packed = deflateSync(strToU8(text));
+/**
+ * The level a view's saves compress at. fflate's default (6) spent most of a
+ * save compressing: 121 ms for three written pages on a laptop, and a save
+ * mid-stroke on an older iPad lost the ink drawn meanwhile (FineNotes#1).
+ * Level 1 takes 48 ms and makes the payload 4.5% larger; every level decodes
+ * the same.
+ */
+export const SAVE_LEVEL = 1;
+
+/** Text to base64 of its DEFLATEd UTF-8, at fflate's default level unless `level` says. */
+export function deflateToBase64(text: string, level?: 1): string {
+  const packed = deflateSync(strToU8(text), level === undefined ? undefined : { level });
   // `btoa` wants one character per byte; fflate's latin1 mode builds that
   // string in slices, so a large note never overflows the argument limit.
   return btoa(strFromU8(packed, true));

@@ -32,7 +32,7 @@ import {
   type TextBoxElement,
   emptyDocument,
 } from "../model/document";
-import { buildInkFile, parseInkFile } from "../model/serialize";
+import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
 import type { RecognitionProvider } from "../recognition/provider";
 import { MANUAL_PROVIDER_ID } from "../recognition/manual";
 import { readTextSection, writeTextSection } from "../recognition/text-layer";
@@ -59,6 +59,7 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { WriteHold } from "./write-hold";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import { measureImage, prepareImageBytes, saveImageAttachment } from "./image-import";
@@ -112,7 +113,12 @@ import { CoverPopover } from "./cover-picker";
 import { paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { eraserFilterOf } from "../ink/stroke-eraser";
-import { type PageAction, PageSidebar, type PageSidebarRenderOptions } from "./page-sidebar";
+import {
+  type PageAction,
+  PageSidebar,
+  type PageSidebarRenderOptions,
+  thumbnailRasterScale,
+} from "./page-sidebar";
 import { Toolbar, type ToolbarState, penTypeFor } from "./toolbar";
 import { PANEL_SLIDE_MS } from "./motion";
 import {
@@ -205,6 +211,13 @@ export class InkView extends TextFileView {
   /** The file whose data `setViewData` last loaded; `null` after `clear`. */
   private loadedPath: string | null = null;
   private backdrops: VaultBackdropRenderer | null = null;
+  /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
+  private thumbBackdrops: VaultBackdropRenderer | null = null;
+  /** Compresses saves quickly, and hands back what was read while nothing changed. */
+  private readonly encoder = new DocumentEncoder();
+  /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
+  private readonly writeHold = new WriteHold();
+  private quietTimer = 0;
   private images: VaultImageCache | null = null;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
   /** Recording, replay and audio transcription (0.5); see note-audio.ts. */
@@ -259,12 +272,12 @@ export class InkView extends TextFileView {
 
   /** What Obsidian writes to the file: the note rebuilt, unless its load was held. */
   getViewData(): string {
-    return this.guard.contents(() => buildInkFile(this.noteBody, this.doc));
+    return this.guard.contents(() => buildInkFile(this.noteBody, this.doc, this.encoder));
   }
 
   /** Obsidian read the file (on open, or because it changed on disk). */
   setViewData(data: string, _clear: boolean): void {
-    const { body, doc } = parseInkFile(data, this.settings.paperWidth);
+    const { body, doc, payload } = parseInkFile(data, this.settings.paperWidth);
     const held = this.guard.admit({
       text: data,
       bytesOnDisk: this.file?.stat.size ?? 0,
@@ -273,6 +286,7 @@ export class InkView extends TextFileView {
     if (held) new Notice(HELD_LOAD_NOTICE, 10000);
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
+    if (doc && payload !== undefined && !held) this.encoder.remember(doc, payload);
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -322,8 +336,51 @@ export class InkView extends TextFileView {
    * running recording so it joins *this* note, and save that.
    */
   override async onUnloadFile(file: TFile): Promise<void> {
-    if (await this.audio?.finishForUnload()) await this.save();
+    if (await this.audio?.finishForUnload()) await this.saveNow();
     await super.onUnloadFile(file);
+  }
+
+  /**
+   * Obsidian's save, put off while the pen is writing: it rebuilds the whole
+   * note on the main thread, and a stall mid-stroke is ink lost on iPadOS
+   * before 18.2 (write-hold.ts). `clear` (the note is closing; Obsidian
+   * then clears the view) never waits. A save put off is made once the pen
+   * has been up a moment.
+   */
+  override async save(clear?: boolean): Promise<void> {
+    if (!clear && this.writeHold.holdSave(performance.now())) return;
+    await this.saveNow(clear);
+  }
+
+  /** Save at once, whatever the pen is doing. */
+  private async saveNow(clear?: boolean): Promise<void> {
+    this.writeHold.saved();
+    await super.save(clear);
+  }
+
+  /** The pen touched the page or left it: hold, or let go of, what would stall it. */
+  private penActivity(down: boolean): void {
+    window.clearTimeout(this.quietTimer);
+    this.quietTimer = 0;
+    const t = performance.now();
+    if (down) {
+      this.writeHold.penDown(t);
+      this.pdfCache?.setHeld(true);
+      // Should the lift never arrive, let go anyway.
+      this.quietTimer = window.setTimeout(() => this.penQuiet(), this.writeHold.quietIn(t));
+      return;
+    }
+    this.writeHold.penUp(t);
+    // Waited too long: made now, in the gap between two strokes.
+    if (this.writeHold.overdue(t)) void this.saveNow();
+    this.quietTimer = window.setTimeout(() => this.penQuiet(), this.writeHold.quietIn(t));
+  }
+
+  /** The pen has been up a moment: rasterise what waited, and make the save that did. */
+  private penQuiet(): void {
+    this.quietTimer = 0;
+    this.pdfCache?.setHeld(false);
+    if (this.writeHold.savePending) void this.saveNow();
   }
 
   override async onClose(): Promise<void> {
@@ -331,6 +388,8 @@ export class InkView extends TextFileView {
     this.audio?.destroy();
     this.audio = null;
     window.clearTimeout(this.transcribeTimer);
+    window.clearTimeout(this.quietTimer);
+    this.quietTimer = 0;
     this.surface?.destroy();
     this.surface = null;
     this.toolbar?.destroy();
@@ -351,6 +410,7 @@ export class InkView extends TextFileView {
     this.pdfCache?.destroy();
     this.pdfCache = null;
     this.backdrops = null;
+    this.thumbBackdrops = null;
     this.images?.destroy();
     this.images = null;
     this.textPanel = null;
@@ -864,6 +924,8 @@ export class InkView extends TextFileView {
 
     this.pdfCache = new PdfBackdropCache(this.app);
     this.backdrops = new VaultBackdropRenderer(this.pdfCache);
+    this.thumbBackdrops = new VaultBackdropRenderer(this.pdfCache);
+    this.thumbBackdrops.setDeviceScale(thumbnailRasterScale(window.devicePixelRatio || 1));
     this.images = new VaultImageCache(this.app);
 
     const body = root.createDiv({ cls: "goodobsidian-body" });
@@ -878,7 +940,7 @@ export class InkView extends TextFileView {
           if (this.sidebar?.isOpen) this.toggleSidebar();
         },
       },
-      this.sidebarRendering(this.backdrops),
+      this.sidebarRendering(this.thumbBackdrops),
     );
     this.sidebar.setDocument(this.doc);
 
@@ -905,6 +967,7 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
+        onPen: (down) => this.penActivity(down),
         isLocked: () => this.isProtected(),
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
@@ -944,8 +1007,10 @@ export class InkView extends TextFileView {
     this.registerDomEvent(document, "visibilitychange", () => {
       if (document.visibilityState !== "hidden") return;
       this.audio?.onHidden();
-      // iPadOS may end the app from the background: keep the page now.
+      // iPadOS may end the app from the background: keep the page now, and
+      // a save the pen put off.
       this.recordLastPage();
+      if (this.writeHold.savePending) void this.saveNow();
     });
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => this.lastPageFileMoved(oldPath, file.path)),
@@ -953,9 +1018,10 @@ export class InkView extends TextFileView {
     this.registerEvent(
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
     );
-    this.pdfCache.onReady = () => {
-      this.surface?.repaint();
-      this.sidebar?.invalidate();
+    // Only what shows the page that landed is redrawn (FineNotes#1).
+    this.pdfCache.onReady = (path, page) => {
+      this.surface?.pdfPageReady(path, page);
+      this.sidebar?.invalidatePdfPage(path, page);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
@@ -1335,7 +1401,9 @@ export class InkView extends TextFileView {
   }
 
   private updateSidebarRendering(): void {
-    if (this.backdrops) this.sidebar?.setRenderOptions(this.sidebarRendering(this.backdrops));
+    if (this.thumbBackdrops) {
+      this.sidebar?.setRenderOptions(this.sidebarRendering(this.thumbBackdrops));
+    }
   }
 
   /**

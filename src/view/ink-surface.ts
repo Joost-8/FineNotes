@@ -230,6 +230,7 @@ import {
   type PointerControllerCallbacks,
   type PointerDebugRecord,
   type PointerSample,
+  deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
 import { REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
@@ -382,6 +383,11 @@ export interface InkSurfaceCallbacks {
   onChange: () => void;
   /** Something the host may display changed (stroke count, zoom, current page). */
   onStatus?: () => void;
+  /**
+   * The pen (or mouse) touched the page (true) or left it (false): the host
+   * puts off work that would stall the ink until it has been up a moment.
+   */
+  onPen?: (down: boolean) => void;
   /**
    * Asked before every edit: true refuses it, for a note that must not be
    * written (the host says why).
@@ -920,6 +926,8 @@ export class InkSurface {
    * A new stroke assumes it until its own first reading comes in.
    */
   private penPressure: number | null = null;
+  /** Whether the browser hands over every pen sample, or one per frame. */
+  private readonly coalescedInput = deliversCoalescedSamples();
   /**
    * The ink stroke the pen last lifted from, while a quick pen-down nearby
    * could still carry it on (`input/pen-rejoin.ts`): when and where it
@@ -2747,6 +2755,24 @@ export class InkSurface {
     if (shown) this.requestFrame();
   }
 
+  /**
+   * Page `pdfPage` of the PDF at `path` finished rasterising, or turned out
+   * missing: re-rasterise the pages that show it, and nothing else. Every
+   * other page's tiles are still right.
+   */
+  pdfPageReady(path: string, pdfPage: number): void {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    let shown = false;
+    for (const page of this.doc.pages) {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) continue;
+      renderer.invalidatePage(page.id);
+      shown = true;
+    }
+    if (shown) this.requestFrame();
+  }
+
   /** The part of page `index` that is on screen, in page space; `null` when none is. */
   visibleRegion(index: number): Bounds | null {
     const box = this.pageLayout.boxes[index];
@@ -2807,6 +2833,9 @@ export class InkSurface {
       fallbackPressure: this.toolState.pressureEnabled
         ? (this.penPressure ?? FALLBACK_PRESSURE)
         : FALLBACK_PRESSURE,
+      // One sample a frame (iPadOS before 18.2): fill the stroke in between
+      // them. Where every sample arrives, the stroke is stored as it is.
+      densify: !this.coalescedInput,
     };
   }
 
@@ -2828,17 +2857,22 @@ export class InkSurface {
   }
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
-    onStart: (sample) => this.penDown(sample),
+    onStart: (sample) => {
+      this.callbacks.onPen?.(true);
+      this.penDown(sample);
+    },
     onMove: (coalesced) => {
       const box = this.activePage;
       if (box) this.gestureOf(this.toolState.tool).move(box, coalesced);
     },
     onEnd: (sample) => {
+      this.callbacks.onPen?.(false);
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
       if (box) this.gestureOf(this.toolState.tool).up(box, sample);
     },
     onCancel: () => {
+      this.callbacks.onPen?.(false);
       if (this.finishTextDismiss()) return;
       this.gestureOf(this.toolState.tool).cancel(this.activePage);
     },
@@ -3541,7 +3575,13 @@ export class InkSurface {
     for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
       tracer.push(pts[i], pts[i + 1], pts[i + 2]);
     }
-    this.renderer?.renderWetRuns(box.index, tracer.runs(), style);
+    const runs = tracer.runs();
+    // A sample waiting for the next to fix the curve into it (one sample a
+    // frame, `densify`): a straight line to it until then. The open run is
+    // the tracer's copy, so this changes nothing kept.
+    const tip = builder.pending;
+    if (tip && runs.length > 0) runs[runs.length - 1].pts.push(tip[0], tip[1]);
+    this.renderer?.renderWetRuns(box.index, runs, style);
   }
 
   /**
@@ -3670,6 +3710,8 @@ export class InkSurface {
     if (!builder) return;
 
     if (final && !snap) builder.addFinal(final);
+    // A cancel has no last sample: the one still waiting is where the stroke ends.
+    builder.settle();
     this.penPressure = builder.typicalPressure() ?? this.penPressure;
     // One sample is a dot, and a dot is ink; only a stroke with none is dropped.
     if (builder.length === 0) return;
