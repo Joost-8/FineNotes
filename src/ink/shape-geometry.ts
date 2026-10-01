@@ -169,6 +169,93 @@ export function pentagramPoints(
   return out;
 }
 
+/** An angle folded into (−π, π]. */
+function wrapAngle(a: number): number {
+  let v = a;
+  while (v > Math.PI) v -= 2 * Math.PI;
+  while (v <= -Math.PI) v += 2 * Math.PI;
+  return v;
+}
+
+/**
+ * A cloud's bump: its bulge over the chord between two cusps. Over 0.5 a
+ * bump is more than half a circle, the puffy cloud people draw; at 0.4 an
+ * emitted cloud dipped too little to read as one again (and looked flat).
+ */
+const CLOUD_BULGE = 0.7;
+/** Straight pieces per bump of a cloud. */
+const CLOUD_ARC_SEGMENTS = 10;
+
+/**
+ * A cloud filling the box (`x0`, `y0`, `w` × `h`): `bumps` round bumps, each
+ * an arc between two cusps that sit evenly round an ellipse, stretched so
+ * the outline touches all four sides. Starts at the cusp nearest `start`
+ * (radians round the centre, as `atan2` reads the box squashed to a circle)
+ * and turns in `direction` (+1 or -1). The closing point is repeated.
+ */
+export function cloudPoints(
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  bumps: number,
+  start = -Math.PI / 2,
+  direction = 1,
+): Pt[] {
+  const n = Math.max(3, Math.round(bumps));
+  const step = (2 * Math.PI) / n;
+  // The cusp nearest `start`, so the outline begins near where the pen did.
+  const first = Math.round(start / step) * step;
+  const cusps: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = first + direction * step * i;
+    cusps.push({ x: Math.cos(a), y: Math.sin(a) });
+  }
+  const unit: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = cusps[i];
+    const q = cusps[(i + 1) % n];
+    const chord = Math.hypot(q.x - p.x, q.y - p.y);
+    const mx = (p.x + q.x) / 2;
+    const my = (p.y + q.y) / 2;
+    const ml = Math.hypot(mx, my) || 1;
+    const nx = mx / ml;
+    const ny = my / ml;
+    // The arc through both cusps whose apex is `bulge` outside the chord.
+    const sagitta = CLOUD_BULGE * chord;
+    const radius = (chord * chord) / 4 / (2 * sagitta) + sagitta / 2;
+    const cx = mx + nx * (sagitta - radius);
+    const cy = my + ny * (sagitta - radius);
+    const a0 = Math.atan2(p.y - cy, p.x - cx);
+    // From one cusp to the next by way of the apex: the long way round the
+    // circle, since a bump is more than half of it.
+    const sweep0 = wrapAngle(Math.atan2(q.y - cy, q.x - cx) - a0);
+    const toApex = wrapAngle(Math.atan2(ny, nx) - a0);
+    const viaApex = Math.sign(toApex) === Math.sign(sweep0) && Math.abs(toApex) < Math.abs(sweep0);
+    const sweep = viaApex ? sweep0 : sweep0 - Math.sign(sweep0) * 2 * Math.PI;
+    for (let k = 0; k < CLOUD_ARC_SEGMENTS; k++) {
+      const a = a0 + (sweep * k) / CLOUD_ARC_SEGMENTS;
+      unit.push({ x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) });
+    }
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of unit) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const out = unit.map((p) => ({
+    x: x0 + ((p.x - minX) / (maxX - minX)) * w,
+    y: y0 + ((p.y - minY) / (maxY - minY)) * h,
+  }));
+  out.push({ ...out[0] });
+  return out;
+}
+
 /**
  * A clean arrow from `tail` to `tip` in contracts/api.md §2's layout — shaft,
  * then the V retraced through the tip: `[tail, tip, tip, barb, tip, barb]`.

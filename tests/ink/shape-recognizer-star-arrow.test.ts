@@ -448,20 +448,26 @@ describe("emitted star geometry", () => {
     expect(tipAngles.some((a) => Math.abs(a + 90) < 5)).toBe(false);
   });
 
-  it("a drawn pentagram comes back as a clean pentagram, not an outline", () => {
-    // The inner pentagon is ink the user drew; emitting the outline would
-    // erase it. Five tips plus the closing point, each step across the star.
+  it("a drawn pentagram comes back as the star outline it stands for", () => {
+    // Joost, 2026-10-01: a star drawn in one stroke means the star, not its
+    // crossing lines. Ten vertices plus the closing point, stepping 36°, the
+    // notches where the pentagram's lines cross (0.38 of the tip radius).
     expect(pentagram.kind).toBe("star");
-    expect(pentagram.pts).toHaveLength(6 * 3);
+    expect(pentagram.pts).toHaveLength(11 * 3);
     const p = xy(pentagram.pts);
-    const c = centreOf(p.slice(0, 5));
-    for (let i = 0; i < 5; i++) {
+    const c = centreOf(p.slice(0, 10));
+    const radii = p.slice(0, 10).map((q) => Math.hypot(q.x - c.x, q.y - c.y));
+    const outer = Math.max(...radii);
+    for (let i = 0; i < 10; i++) {
       const a = Math.atan2(p[i].y - c.y, p[i].x - c.x);
       const b = Math.atan2(p[i + 1].y - c.y, p[i + 1].x - c.x);
       let step = Math.abs(((b - a) * 180) / Math.PI);
       if (step > 180) step = 360 - step;
-      expect(step).toBeCloseTo(144, 0);
+      expect(step).toBeCloseTo(36, 0);
     }
+    const inner = radii.filter((r) => r < outer * 0.7);
+    expect(inner).toHaveLength(5);
+    for (const r of inner) expect(r / outer).toBeCloseTo(0.38, 2);
   });
 
   it("starts at the vertex nearest pen-down and keeps the drawn winding", () => {

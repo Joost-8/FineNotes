@@ -30,7 +30,9 @@ import { FALLBACK_PRESSURE, SNAP_CLOSE_TOLERANCE, SNAP_MIN_CONFIDENCE } from "..
 import { POINT_STRIDE, type ShapeKind } from "../model/document";
 import {
   ELLIPSE_SEGMENTS,
+  STAR_INNER_RATIO,
   arrowPoints,
+  cloudPoints,
   ellipsePoints,
   pentagramPoints,
   starPoints,
@@ -326,8 +328,16 @@ const STAR_MIN_TIP_SHARPNESS_DEG = 60;
 const STAR_TIP_WINDOW_FRACTION = 0.03;
 /** Pentagram: each tip turns 144° when regular; hand-drawn ones 137–150°, a pentagon's corners 72°. */
 const PENTAGRAM_MIN_TURN_DEG = 105;
-/** Star: RMS distance to the fitted regular star over its tip radius. Stars 0.010–0.048; four times that. */
-const STAR_MAX_ERR = 0.2;
+/**
+ * Star: RMS distance to the fitted regular star over its tip radius, at
+ * which confidence reaches 0. Synthetic stars measured 0.010–0.048, but the
+ * first real ones (Joost's recording, 2026-10-01) 0.060–0.088: a hand's
+ * pentagram is not regular. At 0.2 they scored 0.56–0.70 and only one of
+ * five cleared the 0.65 snap; at 0.35, 0.75–0.83. What keeps other shapes
+ * out is the structure (five sharp same-way turns stepping 144° round the
+ * centre, straight edges), not this.
+ */
+const STAR_MAX_ERR = 0.35;
 /** Star: within this of level (a tip straight up or straight down), level it. */
 const STAR_AXIS_SNAP_DEG = 8;
 /** Star: grid a kept tilt is rounded to, so re-fitting the output does not jitter. */
@@ -1691,6 +1701,29 @@ function fitStarOutline(
 }
 
 /**
+ * The corners of `found` that turn as sharply as a pentagram's tips, with the
+ * gentle bends between them dropped. A real pentagram's line bent once,
+ * 23° (Joost's recording), and RDP kept the bend at every tolerance: six
+ * corners, so it was never tried as a pentagram. An outline star's tips pass
+ * this too, but five tips step 72° round the centre, not 144°, and
+ * {@link fitPentagram} refuses them.
+ */
+function sharpCorners(found: readonly Pt[]): Pt[] {
+  const n = found.length;
+  return found.filter(
+    (c, i) =>
+      Math.abs(signedTurnDeg(found[(i - 1 + n) % n], c, found[(i + 1) % n])) >=
+      PENTAGRAM_MIN_TURN_DEG,
+  );
+}
+
+/** {@link fitPentagram} on the sharp corners, when exactly five of them are (see {@link sharpCorners}). */
+function fitBentPentagram(points: readonly Pt[], found: readonly Pt[]): StarFit | null {
+  const sharp = sharpCorners(found);
+  return sharp.length === STAR_PENTAGRAM_CORNERS ? fitPentagram(points, sharp) : null;
+}
+
+/**
  * Five corners, each turning sharply the same way, going round the centre
  * twice: the one-stroke pentagram. A pentagon turns 72° at each corner and
  * goes round once.
@@ -1718,11 +1751,10 @@ function fitPentagram(points: readonly Pt[], found: readonly Pt[]): StarFit | nu
  * tips — centred, sized and turned like the drawing, and levelled when it is
  * within {@link STAR_AXIS_SNAP_DEG} of a tip pointing straight up or down.
  *
- * A drawn pentagram is emitted as a clean **pentagram**, not as the outline:
- * its inner pentagon is ink the user drew, and a snap that erased it would
- * change the drawing rather than tidy it (GoodNotes emits a clean version of
- * what was drawn). Both are kind `"star"`; contracts/api.md §2 lists the two
- * layouts.
+ * A drawn pentagram becomes the classic star **outline**, its notches where
+ * the pentagram's lines cross: the star a hand draws in one stroke, the way
+ * it is meant (Joost, 2026-10-01; it used to be a clean pentagram). The
+ * outline is kind `"star"` in contracts/api.md §2's layout.
  */
 function starCandidate(drawn: readonly Pt[], pressure: number, diag: number): ShapeResult | null {
   const origin = drawn[0];
@@ -1742,11 +1774,17 @@ function starCandidate(drawn: readonly Pt[], pressure: number, diag: number): Sh
         ? fitStarOutline(points, found, perimeter)
         : found.length === STAR_PENTAGRAM_CORNERS
           ? fitPentagram(points, found)
-          : null;
+          : found.length < STAR_OUTLINE_CORNERS
+            ? fitBentPentagram(points, found)
+            : null;
     if (fit && (!best || fit.err < best.err)) best = fit;
   }
   if (!best) return null;
   const confidence = clamp01(1 - best.err / STAR_MAX_ERR);
+  // A pentagram becomes the outline it stands for: the same tips, notches
+  // where its lines cross.
+  // Rounded as a fitted ratio is, so the outline re-reads as itself.
+  const ratio = Math.round((best.pentagram ? STAR_INNER_RATIO : best.ratio) * 100) / 100;
 
   // Beautify: level a star drawn a few degrees off, else keep its tilt on a
   // grid so that re-fitting our own output lands on the same angle.
@@ -1758,12 +1796,11 @@ function starCandidate(drawn: readonly Pt[], pressure: number, diag: number): Sh
       : Math.round(best.phase / DEG / STAR_PHASE_STEP_DEG) * STAR_PHASE_STEP_DEG * DEG;
 
   // Begin at the vertex nearest pen-down and turn the way the pen turned.
-  const slots = best.pentagram ? 5 : 10;
   let start = 0;
   let nearest = Infinity;
-  for (let k = 0; k < slots; k++) {
-    const radius = best.pentagram || k % 2 === 0 ? best.outer : best.ratio * best.outer;
-    const angle = phase + (k * 2 * Math.PI) / slots;
+  for (let k = 0; k < STAR_OUTLINE_CORNERS; k++) {
+    const radius = k % 2 === 0 ? best.outer : ratio * best.outer;
+    const angle = phase + (k * 2 * Math.PI) / STAR_OUTLINE_CORNERS;
     const d = Math.hypot(
       best.cx + radius * Math.cos(angle) - origin.x,
       best.cy + radius * Math.sin(angle) - origin.y,
@@ -1773,18 +1810,148 @@ function starCandidate(drawn: readonly Pt[], pressure: number, diag: number): Sh
       start = k;
     }
   }
-  const ring = best.pentagram
-    ? pentagramPoints(best.cx, best.cy, best.outer, phase, start, best.direction)
-    : starPoints(
-        best.cx,
-        best.cy,
-        best.outer,
-        (Math.round(best.ratio * 100) / 100) * best.outer,
-        phase,
-        start,
-        best.direction,
-      );
+  const ring = starPoints(
+    best.cx,
+    best.cy,
+    best.outer,
+    ratio * best.outer,
+    phase,
+    start,
+    best.direction,
+  );
   return { kind: "star", pts: flatten(ring, pressure), confidence };
+}
+
+// --- Cloud ------------------------------------------------------------------
+
+// Cloud (2026-10-01). Measured on Joost's three real clouds (traced out of his
+// recording, tests/ink/fixtures/real-pencil-stars-clouds-ipad.json) against
+// every real closed stroke in the fixtures and the synthetic adversaries:
+// how deep the ink dips inside its own convex hull between bumps. Clouds dip
+// 6–7 times by 3 % of the diagonal or more, 5–7 of them by 5 %; real circles,
+// rects and triangles 0–2 times; a lumpy quad twice by 5 %; five-point stars,
+// pentagrams and a five-petal flower exactly 5 times. Stars with more points
+// dip as often, so what tells them apart is the top of each bump: round on a
+// cloud, a sharp tip on a star. Measured across 0.8 % of the perimeter
+// (short enough that a round bump reads its curvature, not its whole turn),
+// the median top turns 38–64° on the real clouds and 92–154° on every star:
+// real pentagrams, outlines, 4- to 8-point stars and heptagrams.
+
+/** Cloud: a sample this far inside the hull (of the diagonal) is in a dent. */
+const CLOUD_DENT_FLOOR = 0.012;
+/** Cloud: a dent counts when its deepest sample is this far in. */
+const CLOUD_DENT_MIN = 0.03;
+/** Cloud: at least this many dents (five is a star, a flower, a lumpy quad's most). */
+const CLOUD_MIN_DENTS = 6;
+/** Cloud: and at least this many of them this deep. */
+const CLOUD_DEEP_DENT = 0.05;
+const CLOUD_MIN_DEEP_DENTS = 4;
+/**
+ * Cloud: the median dent no deeper than this. A backstop: real stars dip
+ * 17–23 %, clouds 7 %; a six-point star (11 %) is kept out by its tips.
+ */
+const CLOUD_MAX_MEDIAN_DENT = 0.13;
+/** Cloud: the median bump top may turn at most this much across {@link CLOUD_TOP_WINDOW} of the perimeter. */
+const CLOUD_MAX_TOP_TURN_DEG = 80;
+const CLOUD_TOP_WINDOW = 0.008;
+/** Cloud: bumps emitted, at most (a cloud drawn with more gets this many). */
+const CLOUD_MAX_BUMPS = 12;
+/** Cloud: how sure a loop that passes every gate is; the gates are the test. */
+const CLOUD_CONFIDENCE = 0.85;
+
+/** The middle value (the upper one of an even count). */
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+/** The convex hull, counter-clockwise (Andrew's monotone chain). */
+function convexHull(points: readonly Pt[]): Pt[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Pt, a: Pt, b: Pt): number =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: readonly Pt[]): Pt[] => {
+    const out: Pt[] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return half(sorted).concat(half([...sorted].reverse()));
+}
+
+/**
+ * The dents of a closed loop: going round it once, each run of samples
+ * farther than {@link CLOUD_DENT_FLOOR} inside the convex hull, as the depth
+ * of its deepest sample over the diagonal, with the index of the sample
+ * closest to the hull just before it: the top of the bump (or the star's
+ * tip) the dent comes after.
+ */
+function hullDents(points: readonly Pt[], diag: number): Array<{ depth: number; top: number }> {
+  const hull = convexHull(points);
+  if (hull.length < 3 || !(diag > 0)) return [];
+  const depth = points.map((p) => {
+    let d = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      d = Math.min(d, distToSegment(p, hull[i], hull[(i + 1) % hull.length]));
+    }
+    return d / diag;
+  });
+  // Start on the hull, so no dent straddles the seam.
+  const n = depth.length;
+  let first = 0;
+  for (let i = 1; i < n; i++) if (depth[i] < depth[first]) first = i;
+  const dents: Array<{ depth: number; top: number }> = [];
+  let deepest = 0;
+  let top = first;
+  for (let k = 1; k <= n; k++) {
+    const i = (first + k) % n;
+    const d = depth[i];
+    if (d > CLOUD_DENT_FLOOR) {
+      deepest = Math.max(deepest, d);
+    } else {
+      if (deepest > 0) {
+        dents.push({ depth: deepest, top });
+        deepest = 0;
+        top = i;
+      }
+      if (d < depth[top]) top = i;
+    }
+  }
+  if (deepest > 0) dents.push({ depth: deepest, top });
+  return dents;
+}
+
+/**
+ * A cloud: a closed loop of round bumps that dips in between them, at least
+ * six times. Emitted as a clean cloud filling the box it was drawn in, with
+ * as many bumps as it was drawn with (up to {@link CLOUD_MAX_BUMPS}),
+ * starting near the pen-down point and going round the way the pen did.
+ */
+function cloudCandidate(points: readonly Pt[], pressure: number, diag: number): ShapeResult | null {
+  const dents = hullDents(points, diag).filter((d) => d.depth >= CLOUD_DENT_MIN);
+  if (dents.length < CLOUD_MIN_DENTS) return null;
+  if (dents.filter((d) => d.depth >= CLOUD_DEEP_DENT).length < CLOUD_MIN_DEEP_DENTS) return null;
+  if (median(dents.map((d) => d.depth)) > CLOUD_MAX_MEDIAN_DENT) return null;
+  // Round bumps, not a star's tips: the top before each dent.
+  const window = CLOUD_TOP_WINDOW * pathLength(points);
+  const tops = dents.map((d) => sharpnessAt(points, d.top, window));
+  if (median(tops) > CLOUD_MAX_TOP_TURN_DEG) return null;
+
+  const box = boundsOf(points);
+  const w = box.maxX - box.minX;
+  const h = box.maxY - box.minY;
+  if (!(w > 0 && h > 0)) return null;
+  const cx = (box.minX + box.maxX) / 2;
+  const cy = (box.minY + box.maxY) / 2;
+  const origin = points[0];
+  const start = Math.atan2((origin.y - cy) / h, (origin.x - cx) / w);
+  const direction = signedArea(points) >= 0 ? 1 : -1;
+  const bumps = Math.min(CLOUD_MAX_BUMPS, dents.length);
+  const ring = cloudPoints(box.minX, box.minY, w, h, bumps, start, direction);
+  return { kind: "cloud", pts: flatten(ring, pressure), confidence: CLOUD_CONFIDENCE };
 }
 
 // --- Real-ink cleanup -------------------------------------------------------
@@ -1926,7 +2093,16 @@ function closedCandidates(
   // Stars are on by default: Joost asked for them (2026-09-22). No other
   // fitter produces a candidate for one, and the star fitter produces none
   // for anything in the adversarial suite or the real Pencil fixtures.
-  return [circle, ellipse, rect, polygon, starCandidate(points, pressure, diag)];
+  // A cloud's bumps keep the round fitters out, and its dents a rect's
+  // corners; it competes with whatever is left.
+  return [
+    circle,
+    ellipse,
+    rect,
+    polygon,
+    starCandidate(points, pressure, diag),
+    cloudCandidate(points, pressure, diag),
+  ];
 }
 
 /**
@@ -2095,6 +2271,7 @@ export const recognizerInternals = {
   totalTurnDeg,
   starCorners,
   mergeSplitCorners,
+  hullDents,
   edgeDeviation,
   fivefoldPhase,
 };

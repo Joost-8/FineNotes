@@ -642,6 +642,7 @@ ignore them.
 | `TextBoxElement.fit?: true`                                                   | the width follows the text (GoodNotes' default): the editor keeps `w` as wide as the widest line, up to the page edge, and stores it, so every reader wraps as the editor did. Only `true` is stored; a resize drops it. A fitted `w` may be under 80 |
 | File names                                                                    | `Title.notebook.md` (a notebook) and `Title.page.md` (`single`), 0.6.3 on; `.ink.md` before that, still read, never written (`INK_FILE_SUFFIXES`, `inkFileSuffix`). Not the §1b per-page layout                                                       |
 | `ShapeKind` `"star"`                                                          | a snapped star; its `pts` are the closed outline                                                                                                                                                                                                      |
+| `ShapeKind` `"cloud"`                                                         | a snapped cloud; its `pts` are the closed outline (2026-10-01)                                                                                                                                                                                        |
 | `Ruling` `"title-date"`                                                       | ruled paper with a printed Title / Date header                                                                                                                                                                                                        |
 | `Ruling` `"cover-plain" \| "cover-label" \| "cover-band" \| "cover-linen"`    | notebook covers, drawn procedurally; colour = `paperColor`. `isCoverRuling()`; never offered as paper (`COVER_TEMPLATES`)                                                                                                                             |
 | `Page.epoch?: number`                                                         | wall-clock ms that the page's stroke `t0` values count from; `epoch + t0` = when a stroke began                                                                                                                                                       |
@@ -690,10 +691,17 @@ Reconciled with the merged code on 2026-09-22, from the agents' reports.
 - `ImageElement.crop?` (fractions of the source; absent = whole picture;
   invalid ones dropped, never clamped) and `locked?` (only `true`) —
   added for the GoodNotes image selection.
-- `star` has two emitted layouts: an **outline** of 11 points (ten
-  vertices alternating tip / notch, plus the closing point; the Shape-tool
-  preset uses it) and a drawn **pentagram** of 6 points (five tips in
-  drawing order, plus the closing point).
+- `star` is emitted as an **outline** of 11 points (ten vertices
+  alternating tip / notch, plus the closing point), whether it was drawn as
+  an outline or as a one-stroke pentagram (whose notches go where its lines
+  cross), and by the Shape-tool preset. Before 2026-10-01 a drawn pentagram
+  was emitted as a 6-point pentagram (five tips in drawing order, plus the
+  closing point); strokes stored that way stay valid.
+- `cloud` (2026-10-01): a closed outline of round bumps meeting in cusps,
+  ten points per bump plus the closing point, filling the box the cloud
+  was drawn in; as many bumps as were drawn (6–12). Read by hold-to-snap
+  only (no Shape-tool preset). A reader that does not know the kind draws
+  it as ordinary ink.
 - **The Apple Notes arrow** (Joost, 2026-09-22): a line, then back along it
   at least 40 px and 12–60 % of the shaft, within 20° of straight back,
   then hold. It emits the existing 6-point arrow. It rules out arrows under

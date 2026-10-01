@@ -34,7 +34,8 @@ export type ShapeKind =
   | "diamond"
   | "roundrect"
   | "polygon"
-  | "star";
+  | "star"
+  | "cloud";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -47,6 +48,7 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "roundrect",
   "polygon",
   "star",
+  "cloud",
 ];
 
 export interface Stroke {

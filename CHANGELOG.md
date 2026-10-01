@@ -8,6 +8,19 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Clouds.** Draw a bumpy cloud in one stroke and hold the Pencil still: it
+  snaps to a clean, puffy cloud the same size, with as many bumps as you
+  drew.
+
+### Changed
+
+- **A star drawn in one stroke becomes a star outline.** Draw a star the
+  quick way, with its lines crossing, and hold: it snaps to the star shape,
+  without the lines inside. Hand-drawn stars also snap far more reliably:
+  before, only the neatest ones did.
+
 ### Fixed
 
 - **Short arrows snap.** Drawing a line, going back a little way along it and

@@ -68,8 +68,8 @@ Hope you guys enjoy this and give me some
 **Shapes**
 
 - Draw a shape and hold the pen still: it snaps to a clean line, arrow,
-  rectangle, circle, ellipse, triangle or star. Keep holding to move and resize
-  it.
+  rectangle, circle, ellipse, triangle, star or cloud. Keep holding to move and
+  resize it.
 - Or switch on auto shape, and a stroke that is plainly a shape snaps as you
   lift the Pencil.
 - A Shape tool with connectors, and tables up to 8 × 8.
@@ -179,11 +179,12 @@ bar: tap it again to open its menu.
 
 ### Shapes and pen gestures
 
-- **Draw and hold:** draw a line, arrow, rectangle, circle, ellipse, triangle
-  or star in one stroke and hold the Pencil still. It snaps to a clean shape;
-  keep the pen down and move it to resize and turn the shape. For an arrow,
-  draw the head in the same stroke, or go back a little way along the line,
-  then hold. The setting **Draw and hold to make shapes** turns this off.
+- **Draw and hold:** draw a line, arrow, rectangle, circle, ellipse, triangle,
+  star or cloud in one stroke and hold the Pencil still. It snaps to a clean
+  shape; keep the pen down and move it to resize and turn the shape. A star
+  drawn the quick way, with its lines crossing, becomes a star outline. For
+  an arrow, draw the head in the same stroke, or go back a little way along
+  the line, then hold. The setting **Draw and hold to make shapes** turns this off.
 - **Auto shape**, the last button in the pen options: a stroke that is
   plainly a shape snaps as you lift.
 - **Pen gestures**, at the foot of the pen menu, both on at first:
@@ -423,7 +424,7 @@ on. With pressure on, a line is drawn in short runs of one width each. Shapes
 are drawn as exact lines, so their corners stay sharp.
 
 Shape recognition is geometry, not machine learning: it fits lines, polygons,
-circles, ellipses and stars. It was tuned on real Apple Pencil strokes traced
+circles, ellipses, stars and clouds. It was tuned on real Apple Pencil strokes traced
 from screen recordings, so it accepts the hooks and overshoots a real hand
 makes.
 
