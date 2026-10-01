@@ -43,6 +43,40 @@ To try your build in a vault:
 CI runs lint, the review lint, the type check, the tests and the build on every
 push. A pull request needs all of them green.
 
+## Android
+
+FineNotes is one plugin for every platform: the same `main.js` runs on the
+iPad, on Android and on the desktop. There is no separate Android build. What
+differs is the browser engine under Obsidian:
+
+- **iPad:** WebKit. Much of the input code works around it:
+  - cancelling `touchstart` and `touchmove` for the stylus, so iPadOS's long
+    press and Scribble do not take the stroke;
+  - reading the keyboard's height from Obsidian's `--keyboard-height`;
+  - falling back when `getCoalescedEvents` is missing (before iPadOS 18.2).
+- **Android:** Chromium (Android System WebView). Pen pressure, hover, palm
+  rejection, the keyboard and the stylus button may all behave differently.
+
+Rules for Android work:
+
+- **Do not break the iPad to fix Android.** Put behaviour that is truly
+  Android-only behind `Platform.isAndroidApp`. If the fix is a decision (which
+  touches to ignore, what a reading means), put it in a pure module with tests,
+  like the rest of `src/input/` and `src/ink/`.
+- **Debug on the device.** Unlike the iPad, Android can be inspected live:
+  1. Switch on USB debugging in the tablet's developer options.
+  2. Connect it by USB.
+  3. Open `chrome://inspect` in a desktop Chrome.
+  4. Pick Obsidian's page. You get the console, breakpoints and the DOM.
+- **Use the plugin's own diagnostics.** **Show or hide the input debug
+  overlay** shows what the plugin sees while you write. **Copy shape
+  diagnostics** copies the recent strokes as JSON, with the platform and
+  whether coalesced and predicted pointer events exist.
+- **Try a build on the tablet.** Point `.deploy-target` at the plugin folder
+  of a vault that syncs to the tablet, then reload Obsidian there.
+- **Say which device and stylus you tested with** in the pull request. A
+  Samsung S Pen, a USI pen and a finger are three different inputs.
+
 ## House rules
 
 - **Pure logic lives in pure modules.**
