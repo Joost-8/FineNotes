@@ -151,16 +151,17 @@ export default class GoodObsidianPlugin extends Plugin {
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.scanDocument(),
       }),
     );
-    // Apple's own scanner, one tap away: Files → Scan Documents saves a PDF,
-    // and this adds its pages after the current one.
-    this.register(
-      registerImageMenuEntry({
-        id: "scan-pdf",
-        icon: "file-text",
-        label: "Scanned PDF from Files",
-        order: 45,
-        isAvailable: () => !this.app.workspace.getActiveViewOfType(InkView)?.isSinglePage,
-        run: () => this.app.workspace.getActiveViewOfType(InkView)?.scanPdf(),
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || file.extension.toLowerCase() !== "pdf") return;
+        const view = this.app.workspace.getActiveViewOfType(InkView);
+        if (!view) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Import PDF into notebook")
+            .setIcon("file-text")
+            .onClick(() => void view.importVaultPdf(file.path)),
+        );
       }),
     );
     this.routeInkNotes();
@@ -207,6 +208,10 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.notebookCommand("scan-document", "Scan document into this notebook", (view) =>
       view.scanDocument(),
+    );
+    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf());
+    this.notebookCommand("import-vault-pdf", "Import PDF from vault…", (view) =>
+      view.importPdf(true),
     );
     this.notebookCommand("search-notebook", "Search this notebook…", (view) => view.openSearch());
     this.notebookCommand("copy-page-link", "Copy link to current page", (view) =>

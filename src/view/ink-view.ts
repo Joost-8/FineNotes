@@ -59,10 +59,17 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { measurePdfPages } from "./pdf-pages";
+import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
-import { measureImage, prepareImageBytes, saveImageAttachment } from "./image-import";
+import {
+  measureImage,
+  pickImageFile,
+  prepareImageBytes,
+  saveImageAttachment,
+} from "./image-import";
 import { copyPictureToSystemClipboard } from "./picture-clipboard";
 import {
   ImageMenuPopover,
@@ -911,6 +918,7 @@ export class InkView extends TextFileView {
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
+        onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         // Inside the tap: the microphone is only granted from a user gesture.
         onRecord: () => this.audio?.toggleRecording(),
@@ -1019,9 +1027,9 @@ export class InkView extends TextFileView {
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
     );
     // Only what shows the page that landed is redrawn (FineNotes#1).
-    this.pdfCache.onReady = (path, page) => {
-      this.surface?.pdfPageReady(path, page);
-      this.sidebar?.invalidatePdfPage(path, page);
+    this.pdfCache.onReady = (path, page, area) => {
+      this.surface?.pdfPageReady(path, page, area);
+      if (!area?.region) this.sidebar?.invalidatePdfPage(path, page);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
@@ -1271,6 +1279,11 @@ export class InkView extends TextFileView {
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
     const sources = {
+      readPdf: async (path: string) => {
+        const file = this.app.vault.getFileByPath(path);
+        if (!file) throw new Error(`Missing PDF source — ${path}`);
+        return this.app.vault.readBinary(file);
+      },
       pdf: this.pdfCache,
       images: this.images,
       paper: paperTheme(false),
@@ -1654,7 +1667,7 @@ export class InkView extends TextFileView {
    * it. Entries come from `imageMenuEntries()`, so a feature that registered
    * one (see image-menu.ts) appears here without this view knowing of it.
    */
-  private openImageMenu(anchor: HTMLElement): void {
+  private openImageMenu(anchor: HTMLElement, pdf = false): void {
     const open = this.imageMenu;
     this.imageMenu = null;
     if (open?.popover.isOpen) {
@@ -1662,7 +1675,23 @@ export class InkView extends TextFileView {
       if (open.anchor === anchor) return;
     }
     if (this.isProtected() || !this.file) return;
-    const popover = new ImageMenuPopover(anchor, imageMenuEntries(), this.imageMenuContext());
+    const entries = pdf
+      ? [
+          { id: "files", icon: "file-text", label: "From files", run: () => this.importPdf() },
+          {
+            id: "vault",
+            icon: "folder-open",
+            label: "From vault",
+            run: () => this.importPdf(true),
+          },
+        ]
+      : imageMenuEntries();
+    const popover = new ImageMenuPopover(
+      anchor,
+      entries,
+      this.imageMenuContext(),
+      pdf ? "Insert PDF" : "Insert image",
+    );
     this.imageMenu = { popover, anchor };
   }
 
@@ -1789,6 +1818,62 @@ export class InkView extends TextFileView {
     return image;
   }
 
+  /** Import an unchanged PDF attachment or reference an existing vault PDF. */
+  importPdf(fromVault = false): void {
+    if (this.isProtected() || !this.file || !this.surface) return;
+    if (this.isSinglePage) {
+      new Notice("Convert this single page to a notebook before importing a PDF.");
+      return;
+    }
+    if (fromVault) {
+      new VaultPdfSuggestModal(this.app, (file) => void this.importVaultPdf(file.path)).open();
+    } else {
+      void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
+        if (file) void this.importPdfFile(file);
+      });
+    }
+  }
+
+  async importVaultPdf(path: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path);
+  }
+
+  private async importPdfFile(file: File): Promise<void> {
+    await this.preparePdfImport(() => file.arrayBuffer(), file.name);
+  }
+
+  private async preparePdfImport(
+    read: () => Promise<ArrayBuffer>,
+    name: string,
+    savedPath?: string,
+  ): Promise<void> {
+    const note = this.file;
+    const surface = this.surface;
+    if (!note || !surface || this.isProtected()) return;
+    if (this.isSinglePage) {
+      new Notice("Convert this single page to a notebook before importing a PDF.");
+      return;
+    }
+    const progress = new Notice("FineNotes: reading PDF pages…", 0);
+    try {
+      const bytes = await read();
+      const pages = await measurePdfPages(bytes);
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      const item: ScanItem = { kind: "pdf", bytes, name, savedPath, pages: [] };
+      new PdfImportModal(this.app, name, pages.length, async (indices) => {
+        if (this.file !== note || this.surface !== surface || this.isProtected()) return false;
+        item.pages = indices.map((page) => ({ ...pages[page], page }));
+        return this.insertScans([item], "Import PDF");
+      }).open();
+    } catch (error) {
+      new Notice(`FineNotes: couldn't import PDF — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
+    }
+  }
+
   // --- Scanning -------------------------------------------------------------
 
   /**
@@ -1809,25 +1894,6 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * "Scanned PDF from Files": the scan sheet with a PDF picker, for a
-   * document scanned with the Files app's own "Scan Documents". A single
-   * page cannot take a PDF's pages, so it says so instead.
-   */
-  scanPdf(): void {
-    if (this.isProtected() || !this.file || !this.surface) return;
-    if (this.isSinglePage) {
-      new Notice("A PDF adds pages, and this is a single page. Convert it to a notebook first.");
-      return;
-    }
-    const sheet = new ScanSheet(this.app, {
-      multiPage: true,
-      insert: (scans) => this.insertScans(scans),
-    });
-    sheet.open();
-    sheet.pickPdf();
-  }
-
-  /**
    * Save finished scans as attachments of this note and put them in as
    * **one** undo step: new pages after the one in view — a photo scan as a
    * page holding its picture, a PDF as PDF-backed pages, one per PDF page
@@ -1839,9 +1905,10 @@ export class InkView extends TextFileView {
    * A file saved before a later one failed keeps its path, so trying Add
    * again does not save it twice.
    */
-  private async insertScans(items: ScanItem[]): Promise<boolean> {
+  private async insertScans(items: ScanItem[], label?: string): Promise<boolean> {
     const note = this.file;
     if (!note || !this.surface || this.isProtected()) return false;
+    const originalSurface = this.surface;
     const now = new Date();
     const photos = items.filter((item) => item.kind === "image").length;
     const saved: SavedItem[] = [];
@@ -1872,8 +1939,9 @@ export class InkView extends TextFileView {
     }
     // Read the surface again: the view may have closed while the files saved.
     const surface = this.surface;
-    if (!surface || this.isProtected()) return false;
-    const insert = buildScanInsert(surface.document, surface.currentPage, saved);
+    if (!surface || surface !== originalSurface || this.file !== note || this.isProtected())
+      return false;
+    const insert = buildScanInsert(surface.document, surface.currentPage, saved, label);
     const first = insert?.placed[0];
     if (!insert || !first) {
       if (this.isSinglePage) {

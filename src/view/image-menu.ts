@@ -174,11 +174,12 @@ export class ImageMenuPopover {
     private readonly anchor: HTMLElement,
     entries: readonly ImageMenuEntry[],
     private readonly context: ImageMenuContext,
+    title = "Insert image",
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
     this.el.setAttribute("role", "menu");
-    this.el.setAttribute("aria-label", "Insert image");
-    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Insert image" });
+    this.el.setAttribute("aria-label", title);
+    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: title });
     for (const entry of entries) this.addRow(entry);
     this.place();
     this.installDismiss();

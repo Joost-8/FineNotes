@@ -1,3 +1,4 @@
+import type { PdfRenderArea } from "../canvas/pdf-raster";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -2757,19 +2758,26 @@ export class InkSurface {
 
   /**
    * Page `pdfPage` of the PDF at `path` finished rasterising, or turned out
-   * missing: re-rasterise the pages that show it, and nothing else. Every
-   * other page's tiles are still right.
+   * missing: invalidate its region, or the whole page for a preview.
+   * Other pages and regions keep their cached ink tiles.
    */
-  pdfPageReady(path: string, pdfPage: number): void {
+  pdfPageReady(path: string, pdfPage: number, area?: PdfRenderArea): void {
     const renderer = this.renderer;
     if (!renderer) return;
     let shown = false;
-    for (const page of this.doc.pages) {
+    this.doc.pages.forEach((page, index) => {
       const backdrop = page.backdrop;
-      if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) continue;
-      renderer.invalidatePage(page.id);
+      if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) return;
+      if (
+        area &&
+        (area.geometry.width !== page.geometry.width ||
+          area.geometry.height !== page.geometry.height)
+      )
+        return;
+      if (area?.region) renderer.invalidateRegion(index, area.region);
+      else renderer.invalidatePage(page.id);
       shown = true;
-    }
+    });
     if (shown) this.requestFrame();
   }
 

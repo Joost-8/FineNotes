@@ -267,6 +267,13 @@ afterEach(() => {
 // --- What onload registers ----------------------------------------------------------
 
 describe("registration", () => {
+  it("keeps PDF choices out of the image menu while retaining photo scanning", async () => {
+    await load();
+    const { imageMenuEntries } = await import("../../src/view/image-menu");
+    const entries = imageMenuEntries();
+    expect(entries.map((entry) => entry.id)).toContain("scan");
+    expect(entries.some((entry) => /pdf/i.test(entry.id + entry.label))).toBe(false);
+  });
   it("keeps every command id users may have bound a hotkey to", async () => {
     await load();
     expect(registered.commands.map((c) => c.id).sort()).toEqual(
@@ -278,6 +285,8 @@ describe("registration", () => {
         "create-notebook-with-last-settings",
         "export-pdf",
         "fit-reset-view",
+        "import-pdf",
+        "import-vault-pdf",
         "recognize-handwriting",
         "scan-document",
         "search-notebook",

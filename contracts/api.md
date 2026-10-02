@@ -575,18 +575,20 @@ export interface BackdropPainter {
 One class may implement both, and `VaultBackdropRenderer` does.
 
 - **Synthetic backdrops** draw procedurally — cheap, redraw freely.
-- **PDF backdrops** must be rasterized once per (path, page, scale) and
-  **cached**; re-rasterizing per frame will destroy scroll performance on an
-  iPad. Cache key: `${path}:${page}:${devicePixelRatio * scale}`, where the
-  scale term is **quantised to 0.25 steps before the key is built**.
-  Pinch-zoom produces a continuum of scales, so an unquantised key mints a
-  new bitmap on every frame of a zoom gesture. Bound the cache regardless,
-  by bytes (48 MB, never evicting a raster drawn in the last 1.5 s; 96 MB
-  hard), and cap the raster's long edge at 2400 device px. A raster that
-  lands repaints only the pages that show it, and thumbnails ask for
-  thumbnail-sized rasters: an 8-bitmap cache with a repaint-everything
-  callback looped for as long as the page sidebar was open (FineNotes#1).
-  Rasterising waits while the pen writes.
+- **PDF backdrops** render from the original PDF through Obsidian's PDF.js.
+  Notebook tiles pass their page-space region and settled device scale to the
+  backdrop painter. Only that region is rasterized at its display resolution:
+  a high zoom never stretches a capped whole-page image. Source PDF points are
+  converted to notebook page pixels using the contained page geometry, with
+  PDF rotation/cropping supplied by the PDF.js viewport. Region cache keys
+  include source path/page, page geometry, page-space region and the renderer's
+  settled scale (stable to 1e-4). Pinch frames reuse the settled tiles.
+  Full-page previews/thumbnails use a scale quantized to 0.25 steps and are
+  bounded to 2400 pixels per edge and approximately 4 MP. Screen patches are
+  normally 512 × 512 device pixels, regardless of zoom. The shared byte cache
+  keeps its 48 MB soft / 96 MB hard budgets and recent-use policy; rendering
+  waits while the pen writes. A patch landing invalidates only that page region;
+  full previews can invalidate the matching page and its sidebar thumbnail.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
@@ -836,3 +838,30 @@ enclosed, and the same pen then drags the selection until it lifts (one
 - **v2 (2026-09-20)** — nine paper rulings from the GoodNotes reference
   screenshots, paper colour as its own axis, orientation as a geometry swap.
 - **v1 (2026-09-20)** — initial contract: pages, backdrops, images, shapes.
+
+## PDF import and export (2026-10-02)
+
+PDF import reuses the existing `PdfBackdrop` contract: `path` refers to an
+unchanged vault attachment, and `page` is the original zero-based source page
+index, including when pages are imported out of order or only a subset is
+selected. No new field is persisted; existing readers and golden files remain
+compatible. `SavedPdf.pages` can carry an optional source `page` index while
+building an insertion command; it is transient, not a wire-format change.
+
+The PDF toolbar button offers **From files** and **From vault**, using the
+existing image-menu popover. The image menu and photo scan sheet no longer
+offer PDF import. The file picker and vault picker use the same
+page selection dialog. Existing vault PDFs are referenced, not copied. Import
+adds pages after the current page as one undoable command; single-page documents
+must first be converted to notebooks. Like other attachments, an imported PDF
+remains in the vault after undo.
+
+Export uses original PDF page content clipped to the visible crop box, with
+page rotation applied and contained in notebook geometry. Notebook annotations
+are painted by the existing renderer onto transparent lossless PNG overlays.
+Contiguous highlighter strokes have separate layers using PDF multiply blending;
+images, text boxes and other strokes retain their original paint order.
+Original source text/vector graphics remain PDF content. Normal pages keep their
+existing JPEG export. Source files are read-only; missing, invalid or encrypted
+sources fail export clearly. Exported notebook text boxes and ink retain the
+existing plugin's rendered appearance; they are not editable PDF annotations.
