@@ -131,7 +131,12 @@ Hope you guys enjoy this and give me some
 ## Getting started
 
 1. Open a new notebook, with the notebook button in the left ribbon or the
-   command **New notebook or page…**. Choose a cover, a paper and a size.
+   command **New notebook or page…**. You can also right-click a folder in the
+   file explorer and choose **New notebook**. Turn this entry off with
+   **Show New notebook in right-click menu** in FineNotes settings.
+   The file explorer’s top bar also has a **New notebook** button, controlled
+   by **Show New notebook in file explorer bar**. The right-click entry starts enabled; the top-bar button starts disabled.
+   Choose a cover, a paper and a size.
 2. Write. The toolbar at the top has:
    - on the left: pages, search, AI, and undo/redo;
    - in the middle: the writing tools;

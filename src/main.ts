@@ -1,3 +1,4 @@
+import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
@@ -7,6 +8,7 @@ import {
   Plugin,
   type RequestUrlResponse,
   TFile,
+  TFolder,
   type ViewState,
   WorkspaceLeaf,
   normalizePath,
@@ -89,6 +91,17 @@ export interface RecognitionTarget {
 type OpenRouterOutcome = { key: string } | { problem: string };
 
 export default class GoodObsidianPlugin extends Plugin {
+  private readonly explorerNotebookButton = new FileExplorerNotebookButton(() =>
+    this.openNewNotebookDialog(),
+  );
+
+  private syncExplorerNotebookButton(): void {
+    this.explorerNotebookButton.sync(
+      this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view.containerEl),
+      this.settings.showNewNotebookInExplorer,
+    );
+  }
+
   override settings!: GoodObsidianSettings;
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
   readonly providers = createProviderRegistry();
@@ -152,7 +165,19 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.registerEvent(
-      this.app.workspace.on("file-menu", (menu, file) => {
+      this.app.workspace.on("file-menu", (menu, file, source) => {
+        if (source === "file-explorer-context-menu" && this.settings.showNewNotebookInContextMenu) {
+          const folder = file instanceof TFolder ? file : file.parent;
+          menu.addItem((item) =>
+            item
+              .setTitle("New notebook")
+              .setIcon(ICON_NEW_NOTEBOOK)
+              .setSection("action-primary")
+              .onClick(() =>
+                this.openNewNotebookDialog(folder && !folder.isRoot() ? folder.path : ""),
+              ),
+          );
+        }
         if (!(file instanceof TFile) || file.extension.toLowerCase() !== "pdf") return;
         const view = this.app.workspace.getActiveViewOfType(InkView);
         if (!view) return;
@@ -166,6 +191,11 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.routeInkNotes();
 
+    this.register(() => this.explorerNotebookButton.destroy());
+    this.registerEvent(
+      this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
+    );
+    this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
     this.addRibbonIcon(ICON_NEW_NOTEBOOK, "New notebook", () => this.openNewNotebookDialog());
     this.addCommands();
 
@@ -342,6 +372,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    this.syncExplorerNotebookButton();
   }
 
   // --- API keys and AI configuration -----------------------------------------
@@ -875,10 +906,10 @@ export default class GoodObsidianPlugin extends Plugin {
   // --- New notebook ---------------------------------------------------------
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
-  openNewNotebookDialog(): void {
+  openNewNotebookDialog(folder?: string): void {
     new NewNotebookModal(this.app, {
       choices: parseNotebookChoices(this.settings.lastNotebookChoices),
-      folder: this.newNotebookFolder(),
+      folder: folder ?? this.newNotebookFolder(),
       onCreate: ({ title, choices, folder }) => {
         this.settings.lastNotebookChoices = { ...choices };
         void this.saveSettings();

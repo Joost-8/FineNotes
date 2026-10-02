@@ -55,6 +55,10 @@ export interface GoodObsidianSettings {
   // The "New notebook" dialog (0.5).
   /** Where new notebooks and pages go; empty for the folder of the open note. */
   newNotebookFolder: string;
+  /** Show New notebook in the file explorer context menu. */
+  showNewNotebookInContextMenu: boolean;
+  /** Show New notebook beside the file explorer creation buttons. */
+  showNewNotebookInExplorer: boolean;
   /**
    * The dialog's last choices (type, cover, paper, size, orientation). May
    * hold anything, so it is only read through `parseNotebookChoices`.
@@ -175,6 +179,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   shapeColor: DEFAULT_SHAPE_COLOR,
   recentColors: [],
   pressureWidth: false,
+  showNewNotebookInContextMenu: true,
+  showNewNotebookInExplorer: false,
 };
 
 // --- Paper width -------------------------------------------------------------

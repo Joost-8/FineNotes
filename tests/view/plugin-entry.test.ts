@@ -16,6 +16,7 @@ import {
   MarkdownView,
   Platform,
   TFile,
+  TFolder,
   WorkspaceLeaf,
   notices,
   resetFakes,
@@ -108,7 +109,7 @@ interface FakeApp {
   workspace: {
     leaves: WorkspaceLeaf[];
     active: unknown;
-    trigger(name: string): void;
+    trigger(name: string, ...args: unknown[]): void;
     fireLayoutReady(): void;
   };
   addFile(path: string, frontmatter?: Record<string, unknown>): TFile;
@@ -118,18 +119,18 @@ interface FakeApp {
 function fakeApp(keychain = true): FakeApp & Record<string, unknown> {
   const files = new Map<string, TFile>();
   const frontmatter = new Map<string, Record<string, unknown>>();
-  const handlers = new Map<string, (() => void)[]>();
+  const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
   const workspace = {
     leaves: [] as WorkspaceLeaf[],
     active: null as unknown,
-    on(name: string, callback: () => void) {
+    on(name: string, callback: (...args: unknown[]) => void) {
       handlers.set(name, [...(handlers.get(name) ?? []), callback]);
       return { name };
     },
-    trigger(name: string) {
-      for (const callback of handlers.get(name) ?? []) callback();
+    trigger(name: string, ...args: unknown[]) {
+      for (const callback of handlers.get(name) ?? []) callback(...args);
     },
     onLayoutReady(callback: () => void) {
       ready.push(callback);
@@ -262,6 +263,97 @@ beforeEach(() => {
 afterEach(() => {
   registered?.unload();
   vi.unstubAllGlobals();
+});
+
+describe("New notebook explorer bar integration", () => {
+  it("refreshes on layout ready, layout changes and settings saves, and cleans up on unload", async () => {
+    const { FileExplorerNotebookButton } =
+      await import("../../src/view/file-explorer-notebook-button");
+    const sync = vi.spyOn(FileExplorerNotebookButton.prototype, "sync");
+    const destroy = vi.spyOn(FileExplorerNotebookButton.prototype, "destroy");
+    try {
+      await load();
+      sync.mockClear();
+      app.workspace.fireLayoutReady();
+      expect(sync).toHaveBeenCalledWith([], false);
+      sync.mockClear();
+      app.workspace.trigger("layout-change");
+      expect(sync).toHaveBeenCalledWith([], false);
+      plugin.settings.showNewNotebookInExplorer = true;
+      await plugin.saveSettings();
+      expect(sync).toHaveBeenLastCalledWith([], true);
+      registered.unload();
+      expect(destroy).toHaveBeenCalled();
+    } finally {
+      sync.mockRestore();
+      destroy.mockRestore();
+    }
+  });
+});
+
+describe("New notebook context menu", () => {
+  function menuFor(file: TFile | TFolder, source = "file-explorer-context-menu") {
+    const items: Array<{ title: string; icon: string; section: string; click: () => void }> = [];
+    const menu = {
+      addItem(build: (item: unknown) => void) {
+        const row = { title: "", icon: "", section: "", click: () => {} };
+        const item = {
+          setTitle(value: string) {
+            row.title = value;
+            return item;
+          },
+          setIcon(value: string) {
+            row.icon = value;
+            return item;
+          },
+          setSection(value: string) {
+            row.section = value;
+            return item;
+          },
+          onClick(value: () => void) {
+            row.click = value;
+            return item;
+          },
+        };
+        build(item);
+        items.push(row);
+      },
+    };
+    app.workspace.trigger("file-menu", menu, file, source);
+    return items;
+  }
+  it.each(["School", "/", ""])("offers the existing dialog in folder %s", async (path) => {
+    await load({ newNotebookFolder: "Default" });
+    const open = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => {});
+    const items = menuFor(new TFolder(path));
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      title: "New notebook",
+      icon: "notebook-pen",
+      section: "action-primary",
+    });
+    items[0].click();
+    expect(open).toHaveBeenCalledWith(path === "/" ? "" : path);
+  });
+  it("uses the selected file's parent folder", async () => {
+    await load();
+    const open = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => {});
+    const file = new TFile("School/Lecture.md");
+    file.parent = new TFolder("School");
+    menuFor(file)[0].click();
+    expect(open).toHaveBeenCalledWith("School");
+  });
+  it("honours an opt-out immediately and keeps other file menus unchanged", async () => {
+    await load({ showNewNotebookInContextMenu: false });
+    const folder = new TFolder("School");
+    expect(menuFor(folder)).toHaveLength(0);
+    plugin.settings.showNewNotebookInContextMenu = true;
+    expect(menuFor(folder)).toHaveLength(1);
+    expect(menuFor(folder, "link-context-menu")).toHaveLength(0);
+    expect(menuFor(folder, "file-explorer")).toHaveLength(0);
+    plugin.settings.showNewNotebookInContextMenu = false;
+    expect(menuFor(folder)).toHaveLength(0);
+  });
 });
 
 // --- What onload registers ----------------------------------------------------------

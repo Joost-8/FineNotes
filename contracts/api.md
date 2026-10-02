@@ -865,3 +865,16 @@ Original source text/vector graphics remain PDF content. Normal pages keep their
 existing JPEG export. Source files are read-only; missing, invalid or encrypted
 sources fail export clearly. Exported notebook text boxes and ink retain the
 existing plugin's rendered appearance; they are not editable PDF annotations.
+
+## Notebook creation context menu
+
+`data.json` adds `showNewNotebookInContextMenu` and `showNewNotebookInExplorer`,
+defaulting to `true` and `false` respectively; loading older
+settings supplies that default and preserves an explicit `false`. The file
+explorer's **New notebook** action opens the existing creation dialog in the
+selected folder, or a selected file's parent. Selecting the vault root uses
+the root rather than the configured default folder. Other creation actions
+retain the configured default, as does the file explorer top-bar button.
+The toggles operate independently and apply without a restart; explorer buttons
+are reconciled on layout changes and removed on plugin unload. This does not
+change the note format.
