@@ -850,11 +850,17 @@ building an insertion command; it is transient, not a wire-format change.
 
 The PDF toolbar button offers **From files** and **From vault**, using the
 existing image-menu popover. The image menu and photo scan sheet no longer
-offer PDF import. The file picker and vault picker use the same
+offer PDF import. The file picker, vault picker and external-file drop use the same
 page selection dialog. Existing vault PDFs are referenced, not copied. Import
 adds pages after the current page as one undoable command; single-page documents
 must first be converted to notebooks. Like other attachments, an imported PDF
 remains in the vault after undo.
+
+Picture drops reuse `insertImageBytes` for external files and
+`insertImageFromVault` for existing vault pictures. Supported extensions use
+the existing image classifier; external image MIME types match the file picker.
+Multiple external pictures are processed sequentially, and imports stop when
+the originating notebook changes. Unsupported files are left to Obsidian.
 
 Export uses original PDF page content clipped to the visible crop box, with
 page rotation applied and contained in notebook geometry. Notebook annotations

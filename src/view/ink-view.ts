@@ -59,6 +59,7 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
@@ -77,7 +78,7 @@ import {
   type InsertImageOptions,
   imageMenuEntries,
 } from "./image-menu";
-import { isImagePath, mimeForExtension } from "../canvas/image-raster";
+import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, placeImageBox } from "../model/images";
 import type { ImageElement } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -1079,6 +1080,17 @@ export class InkView extends TextFileView {
       this.surface?.handlePaste(e);
     });
 
+    this.registerDomEvent(root, "dragover", (event) => {
+      const types = event.dataTransfer?.types ?? [];
+      if (
+        types.includes("Files") ||
+        types.includes("text/plain") ||
+        types.includes("text/uri-list")
+      )
+        event.preventDefault();
+    });
+    this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
+
     // First layout pass: the pill has no measured size until the view is in
     // the document, so its restored position can only be applied after a frame.
     window.requestAnimationFrame(() => this.toolbar?.applyPosition());
@@ -1730,7 +1742,8 @@ export class InkView extends TextFileView {
   ): Promise<ImageElement | null> {
     if (this.isProtected()) return null;
     const note = this.file;
-    if (!note || !this.surface) return null;
+    const surface = this.surface;
+    if (!note || !surface) return null;
     const progress = new Notice("FineNotes: adding the picture…", 0);
     try {
       const prepared = await prepareImageBytes(bytes, mime);
@@ -1741,6 +1754,7 @@ export class InkView extends TextFileView {
         note.path,
         this.attachmentFolder("images"),
       );
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return null;
       return this.placeImage(file.path, prepared.width, prepared.height, options);
     } catch (error) {
       const message = errorMessage(error);
@@ -1778,10 +1792,13 @@ export class InkView extends TextFileView {
   ): Promise<ImageElement | null> {
     if (this.isProtected()) return null;
     const file = this.app.vault.getFileByPath(path);
-    if (!file || !this.surface) return null;
+    const note = this.file;
+    const surface = this.surface;
+    if (!file || !surface) return null;
     try {
       const bytes = await this.app.vault.readBinary(file);
       const size = await measureImage(bytes, mimeForExtension(file.extension) ?? "");
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return null;
       return this.placeImage(file.path, size.width, size.height, options);
     } catch (error) {
       const message = errorMessage(error);
@@ -1838,6 +1855,49 @@ export class InkView extends TextFileView {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return;
     await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path);
+  }
+
+  private async handleFileDrop(event: DragEvent): Promise<void> {
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+    const isPdf = (file: File) =>
+      normalizeMime(file.type) === "application/pdf" || /\.pdf$/i.test(file.name);
+    const files = Array.from(transfer.files).filter(
+      (file) =>
+        isPdf(file) || isImagePath(file.name) || normalizeMime(file.type).startsWith("image/"),
+    );
+    const path = vaultPathFromDrop(
+      transfer.getData("text/plain") || transfer.getData("text/uri-list"),
+    );
+    const resolved =
+      path &&
+      (this.app.vault.getFileByPath(path) ??
+        this.app.metadataCache.getFirstLinkpathDest(path, this.file?.path ?? ""));
+    const vaultFile =
+      resolved && (/\.pdf$/i.test(resolved.path) || isImagePath(resolved.path)) ? resolved : null;
+    if (!files.length && !vaultFile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (vaultFile) {
+      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path);
+      else await this.insertImageFromVault(vaultFile.path);
+      return;
+    }
+    const note = this.file;
+    const surface = this.surface;
+    for (const file of files) {
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      if (isPdf(file)) await this.importPdfFile(file);
+      else {
+        try {
+          const bytes = await file.arrayBuffer();
+          if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+          await this.insertImageBytes(bytes, file.type, file.name);
+        } catch (error) {
+          new Notice(`FineNotes: couldn't read ${file.name} — ${errorMessage(error)}`, 8000);
+        }
+      }
+    }
   }
 
   private async importPdfFile(file: File): Promise<void> {
