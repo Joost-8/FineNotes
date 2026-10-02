@@ -6,6 +6,17 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Smoother writing on older iPads.** Before iPadOS 26.2, the iPad rounds
+  the Pencil's position to a whole screen pixel before Obsidian sees it, so
+  lines came out wobbly and loops lumpy. FineNotes now smooths the Pencil's
+  path when its positions arrive rounded, as 1.0.1 did. iPads that report
+  exact positions draw exactly as before.
+  ([#1](https://github.com/Joost-8/FineNotes/issues/1))
+
 ## [1.0.3] - 2026-10-01
 
 ### Added

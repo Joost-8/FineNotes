@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  isWholePixel,
   PointerController,
   type PointerControllerCallbacks,
   type PointerDebugRecord,
@@ -255,9 +256,70 @@ describe("a drawing pointer", () => {
         pressure: 0.25,
         coalesced: 0,
         timeStamp: 3,
+        wholePixel: true,
       },
-      { type: "move", pointerType: "pen", pointerId: 7, pressure: 0.5, coalesced: 1, timeStamp: 4 },
+      {
+        type: "move",
+        pointerType: "pen",
+        pointerId: 7,
+        pressure: 0.5,
+        coalesced: 1,
+        timeStamp: 4,
+        wholePixel: true,
+      },
     ]);
+  });
+
+  describe("a pen whose positions arrive rounded (WebKit before iPadOS 26.2)", () => {
+    it("is rounded from its first pen-down while every position is whole px", () => {
+      const rig = new Rig();
+      rig.pen("pointerdown", 1, { x: 10, y: 20 });
+      expect(rig.controller.strokeRounded).toBe(true);
+      rig.pen("pointermove", 1, {
+        x: 12,
+        y: 21,
+        coalesced: [
+          { x: 11, y: 20 },
+          { x: 12, y: 21 },
+        ],
+      });
+      rig.pen("pointerup", 1, { x: 12, y: 21 });
+      rig.pen("pointerdown", 2, { x: 40, y: 50 });
+      expect(rig.controller.strokeRounded).toBe(true);
+    });
+
+    it("is precise from the pen-down that first has a fraction, and stays so", () => {
+      const rig = new Rig();
+      rig.pen("pointerdown", 1, { x: 10.37, y: 20 });
+      expect(rig.controller.strokeRounded).toBe(false);
+      rig.pen("pointerup", 1, { x: 11, y: 21 });
+      rig.pen("pointerdown", 2, { x: 40, y: 50 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("keeps a stroke's decision when a fraction turns up mid-stroke; the next stroke is precise", () => {
+      const rig = new Rig();
+      rig.pen("pointerdown", 1, { x: 10, y: 20 });
+      rig.pen("pointermove", 1, { x: 12, y: 21, coalesced: [{ x: 11.5, y: 20.25 }] });
+      expect(rig.controller.strokeRounded).toBe(true);
+      rig.pen("pointerup", 1, { x: 12, y: 21 });
+      rig.pen("pointerdown", 2, { x: 40, y: 50 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("never counts a mouse, which reports whole px on the desktop", () => {
+      const rig = new Rig();
+      rig.fire("pointerdown", 1, "mouse", { x: 10, y: 20 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("marks each HUD record whole px or not", () => {
+      const rig = new Rig();
+      rig.pen("pointerdown", 1, { x: 10, y: 20.5 });
+      expect(rig.records.map((r) => r.wholePixel)).toEqual([false]);
+      expect(isWholePixel({ clientX: 3, clientY: -4 })).toBe(true);
+      expect(isWholePixel({ clientX: 3, clientY: 4.01 })).toBe(false);
+    });
   });
 
   it("is any pointer that is not a finger: a mouse, or an unknown type", () => {

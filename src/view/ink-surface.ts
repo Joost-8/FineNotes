@@ -928,6 +928,8 @@ export class InkSurface {
   private penPressure: number | null = null;
   /** Whether the browser hands over every pen sample, or one per frame. */
   private readonly coalescedInput = deliversCoalescedSamples();
+  /** The pointer input, once attached: whether the pen's positions arrive rounded. */
+  private pointerInput: PointerController | null = null;
   /**
    * The ink stroke the pen last lifted from, while a quick pen-down nearby
    * could still carry it on (`input/pen-rejoin.ts`): when and where it
@@ -1165,6 +1167,7 @@ export class InkSurface {
       this.pointerCallbacks,
     );
     input.attach();
+    this.pointerInput = input;
     this.disposers.push(() => input.detach());
 
     // iOS WebKit runs its own long-press recogniser on the raw *touch* stream,
@@ -2836,6 +2839,9 @@ export class InkSurface {
       // One sample a frame (iPadOS before 18.2): fill the stroke in between
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
+      // A pen whose positions arrive as whole screen px (WebKit before
+      // iPadOS 26.2) is smoothed; one that reports fractions is kept exact.
+      smooth: this.pointerInput?.strokeRounded ?? false,
     };
   }
 
@@ -3414,6 +3420,7 @@ export class InkSurface {
         devicePixelRatio: window.devicePixelRatio,
         coalescedEvents: proto !== null && "getCoalescedEvents" in proto,
         predictedEvents: proto !== null && "getPredictedEvents" in proto,
+        roundedPen: this.pointerInput?.strokeRounded ?? null,
         scale: Math.round(this.scale * 1000) / 1000,
         tool: this.toolState.tool,
         drawAndHold: this.toolState.shapeSnapEnabled !== false,
