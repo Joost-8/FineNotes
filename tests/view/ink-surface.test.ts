@@ -50,6 +50,107 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("wheel zoom", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function wheelPane(zoom = 2) {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const applyZoom = vi.fn((next: number) => {
+      surface.userZoom = next;
+    });
+    const scrollBy = vi.fn();
+    const frame = vi.fn();
+    const surface = surfaceWith({
+      userZoom: zoom,
+      minZoom: 0.8,
+      cssH: 800,
+      wheelZoomTimer: 0,
+      direction: "vertical",
+      applyZoom,
+      scroller: { bounds: { maxY: 200 }, scrollBy },
+      flashChrome: vi.fn(),
+      requestFrame: frame,
+    });
+    function wheel(flags: Partial<WheelEvent> = {}) {
+      const event = {
+        deltaX: 0,
+        deltaY: -120,
+        deltaMode: 0,
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        clientX: 417,
+        clientY: 287,
+        preventDefault: vi.fn(),
+        ...flags,
+      };
+      run(surface, "onWheel", event);
+      return event;
+    }
+    return { surface, applyZoom, scrollBy, frame, wheel };
+  }
+
+  it.each([0, 1, 2])(
+    "normalizes delta mode %s before bounding zoom, anchored to the pointer",
+    (mode) => {
+      const p = wheelPane();
+      const event = p.wheel({ deltaMode: mode, deltaY: mode === 0 ? -120 : -3 });
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+      expect(p.applyZoom).toHaveBeenLastCalledWith(2 * 1.15, 417, 287);
+      expect(p.scrollBy).not.toHaveBeenCalled();
+      p.wheel({ deltaMode: mode, deltaY: mode === 0 ? 120 : 3 });
+      expect(p.surface.userZoom).toBeCloseTo(2, 12);
+    },
+  );
+
+  it("uses the same gentle step for Cmd and preserves small trackpad deltas", () => {
+    const p = wheelPane();
+    p.wheel({ ctrlKey: false, metaKey: true });
+    expect(p.surface.userZoom).toBeCloseTo(2 * 1.15, 12);
+    p.wheel({ deltaY: -2.5 });
+    expect(p.surface.userZoom).toBeCloseTo(2 * 1.15 * Math.exp(0.025), 12);
+  });
+
+  it("retains the existing minimum and maximum through many wheel steps", () => {
+    const p = wheelPane(0.8);
+    p.wheel();
+    expect(p.surface.userZoom).toBeCloseTo(0.8 * 1.15, 12);
+    for (let i = 0; i < 50; i++) p.wheel();
+    expect(p.surface.userZoom).toBe(8);
+    p.wheel({ deltaY: 120 });
+    expect(p.surface.userZoom).toBeCloseTo(8 / 1.15, 12);
+    for (let i = 0; i < 50; i++) p.wheel({ deltaY: 120 });
+    expect(p.surface.userZoom).toBe(0.8);
+  });
+
+  it("waits until 160 ms after the last wheel event before settling detail", () => {
+    const p = wheelPane();
+    p.wheel();
+    vi.advanceTimersByTime(100);
+    p.wheel();
+    vi.advanceTimersByTime(159);
+    expect(p.frame).not.toHaveBeenCalled();
+    expect(p.surface.wheelZoomTimer).not.toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(p.frame).toHaveBeenCalledOnce();
+    expect(p.surface.wheelZoomTimer).toBe(0);
+  });
+
+  it.each([0, 1, 2])("leaves ordinary scrolling unchanged for delta mode %s", (mode) => {
+    const p = wheelPane();
+    p.wheel({ ctrlKey: false, deltaMode: mode, deltaX: 2, deltaY: 3 });
+    const unit = mode === 0 ? 1 : mode === 1 ? 16 : 800;
+    expect(p.scrollBy).toHaveBeenCalledWith(2 * unit, 3 * unit);
+    expect(p.applyZoom).not.toHaveBeenCalled();
+  });
+});
+
 // --- Documents -------------------------------------------------------------------
 
 /** A straight stroke from (x0, y) to (x1, y), three samples. */

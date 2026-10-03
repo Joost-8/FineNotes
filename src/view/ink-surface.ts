@@ -122,7 +122,13 @@ import {
 } from "../canvas/page-layout";
 import { strokeHitByPoint } from "../canvas/hit-test";
 import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/stroke-eraser";
-import { MAX_SCALE, anchorScrollDelta, fitPageZoom, nextZoomFloor } from "../canvas/zoom";
+import {
+  MAX_SCALE,
+  anchorScrollDelta,
+  fitPageZoom,
+  nextZoomFloor,
+  wheelZoomFactor,
+} from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
@@ -2156,7 +2162,7 @@ export class InkSurface {
     event.preventDefault();
     const unit = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? this.cssH : 1;
     if (event.ctrlKey || event.metaKey) {
-      const factor = Math.exp(-event.deltaY * unit * 0.01);
+      const factor = wheelZoomFactor(event.deltaY * unit);
       this.applyZoom(this.clampZoom(this.userZoom * factor), event.clientX, event.clientY);
       window.clearTimeout(this.wheelZoomTimer);
       this.wheelZoomTimer = window.setTimeout(() => {

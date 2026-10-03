@@ -1,6 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { PAGE_MARGIN_Y } from "../../src/canvas/page-layout";
-import { MIN_SCALE, anchorScrollDelta, fitPageZoom, nextZoomFloor } from "../../src/canvas/zoom";
+import {
+  MIN_SCALE,
+  anchorScrollDelta,
+  fitPageZoom,
+  nextZoomFloor,
+  wheelZoomFactor,
+} from "../../src/canvas/zoom";
+
+describe("wheelZoomFactor", () => {
+  it.each([48, 100, 120, 800, Number.MAX_VALUE])(
+    "bounds coarse wheel delta %s to a gentle reciprocal step",
+    (delta) => {
+      expect(wheelZoomFactor(-delta)).toBeCloseTo(1.15, 12);
+      expect(wheelZoomFactor(delta)).toBeCloseTo(1 / 1.15, 12);
+      expect(wheelZoomFactor(delta) * wheelZoomFactor(-delta)).toBeCloseTo(1, 12);
+    },
+  );
+
+  it.each([-10, -2.5, -0.1, 0, 0.1, 2.5, 10])(
+    "preserves the existing response for small trackpad delta %s",
+    (delta) => expect(wheelZoomFactor(delta)).toBe(Math.exp(-delta * 0.01)),
+  );
+
+  it.each([NaN, Infinity, -Infinity])("ignores non-finite delta %s", (delta) => {
+    expect(wheelZoomFactor(delta)).toBe(1);
+  });
+});
 
 describe("anchorScrollDelta keeps the point under the fingers still", () => {
   it("scrolls by the anchor's drift in layout px, times the new scale", () => {
