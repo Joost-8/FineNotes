@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActiveTool } from "../../src/view/toolbar";
-import { selectedTool, toolAfterUse, type ToolUse } from "../../src/view/tool-return";
+import { REJOIN_MS, REJOIN_PX } from "../../src/input/pen-rejoin";
+import { continuesUse, selectedTool, toolAfterUse, type ToolUse } from "../../src/view/tool-return";
 
 const tools: ActiveTool[] = ["pen", "highlighter", "eraser", "select", "text", "shape"];
 describe("optional tool return", () => {
@@ -20,5 +21,15 @@ describe("optional tool return", () => {
         (use === "selection" && tool === "select");
       expect(toolAfterUse(tool, use, true)).toBe(done ? "pen" : tool);
     }
+  });
+  it("waits for a pen-down that lands soon and close to the lift, and only that", () => {
+    const lift = { t: 1000, x: 200, y: 300 };
+    expect(continuesUse(lift, 1020, 202, 301, REJOIN_PX)).toBe(true);
+    expect(continuesUse(lift, 1000 + REJOIN_MS, 200 + REJOIN_PX, 300, REJOIN_PX)).toBe(true);
+    expect(continuesUse(lift, 1001 + REJOIN_MS, 200, 300, REJOIN_PX)).toBe(false);
+    expect(continuesUse(lift, 1020, 200 + REJOIN_PX + 1, 300, REJOIN_PX)).toBe(false);
+    // A clock that ran backwards, or a cancel with no position, never continues.
+    expect(continuesUse(lift, 990, 200, 300, REJOIN_PX)).toBe(false);
+    expect(continuesUse({ t: 1000, x: NaN, y: NaN }, 1010, 200, 300, REJOIN_PX)).toBe(false);
   });
 });

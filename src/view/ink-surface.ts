@@ -1,4 +1,3 @@
-import { selectedTool, toolAfterUse, type ToolUse } from "./tool-return";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -234,7 +233,7 @@ import {
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
-import { REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
+import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import {
   type ActiveTool,
   type ToolbarState,
@@ -252,6 +251,13 @@ import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
 import { type KeyAction, keyOutcome } from "./surface-keys";
+import {
+  type ToolLift,
+  type ToolUse,
+  continuesUse,
+  selectedTool,
+  toolAfterUse,
+} from "./tool-return";
 import { PointerHud } from "./pointer-hud";
 import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
@@ -949,6 +955,15 @@ export class InkSurface {
     command: Command;
     penDownAt: number | null;
   } | null = null;
+  /** Where the pen was last seen (layout space), for a cancel, which has no position. */
+  private penAt: Pt | null = null;
+  /**
+   * An eraser stroke or shape that lifted with "Return after one use" on:
+   * the switch waits out the rejoin window (`input/pen-rejoin.ts`), since a
+   * flicker of the Pencil's contact also arrives as a lift. A pen-down that
+   * carries the use on cancels it; any other makes it happen at once.
+   */
+  private pendingReturn: (ToolLift & { timer: number }) | null = null;
   /** The frame the stroke in progress is next drawn in (`scheduleWet`). */
   private wetFrame = 0;
   /**
@@ -1285,6 +1300,7 @@ export class InkSurface {
    */
   destroy(): void {
     window.clearTimeout(this.wheelSnapTimer);
+    this.cancelPendingReturn();
     this.hideOffPage();
     for (const frame of [
       this.frameReq,
@@ -1591,6 +1607,8 @@ export class InkSurface {
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
     if (tool !== "select") this.selectionToolUsed = false;
+    // A tool picked by hand overrides a return still waiting to happen.
+    this.cancelPendingReturn();
     this.toolSeen = tool;
     this.toolState.tool = tool;
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
@@ -1618,6 +1636,36 @@ export class InkSurface {
     this.callbacks.onToolChange?.(tool);
   }
 
+  /**
+   * An eraser stroke or shape lifted at `at`: return after the rejoin
+   * window, unless the next pen-down carries the use on (`pendingReturn`).
+   */
+  private deferToolUse(at: Pt | null): void {
+    this.cancelPendingReturn();
+    const enabled = this.callbacks.returnToPenAfterUse?.() === true;
+    if (toolAfterUse(this.toolState.tool, "gesture", enabled) === this.toolState.tool) return;
+    const timer = window.setTimeout(() => {
+      this.pendingReturn = null;
+      this.completeToolUse("gesture");
+    }, REJOIN_MS);
+    this.pendingReturn = { t: now(), x: at?.x ?? NaN, y: at?.y ?? NaN, timer };
+  }
+
+  /** A pen-down at `at` (layout space): the waiting return is cancelled or made now. */
+  private settlePendingReturn(at: Pt): void {
+    const pending = this.pendingReturn;
+    if (!pending) return;
+    this.cancelPendingReturn();
+    if (continuesUse(pending, now(), at.x, at.y, this.atFitZoom(REJOIN_PX))) return;
+    this.completeToolUse("gesture");
+  }
+
+  private cancelPendingReturn(): void {
+    if (!this.pendingReturn) return;
+    window.clearTimeout(this.pendingReturn.timer);
+    this.pendingReturn = null;
+  }
+
   /** The selection frame handles inside presses; a page press ends a used lasso. */
   private dismissUsedSelection(): boolean {
     if (
@@ -1626,6 +1674,12 @@ export class InkSurface {
       this.callbacks.returnToPenAfterUse?.() !== true
     )
       return false;
+    // Gone by other means (Delete, Cut, Undo): nothing is on screen to
+    // dismiss, so this press is the lasso's again, as the toolbar shows.
+    if (!this.liveSelection() && !this.liveImageSelection()) {
+      this.selectionToolUsed = false;
+      return false;
+    }
     this.activePage = null;
     this.completeToolUse("selection");
     return true;
@@ -2898,6 +2952,7 @@ export class InkSurface {
       this.penDown(sample);
     },
     onMove: (coalesced) => {
+      this.penAt = coalesced[coalesced.length - 1] ?? this.penAt;
       const box = this.activePage;
       if (box) this.gestureOf(this.toolState.tool).move(box, coalesced);
     },
@@ -3049,6 +3104,8 @@ export class InkSurface {
    * finding the page — and then the tool in use takes the gesture over.
    */
   private penDown(sample: PointerSample): void {
+    this.penAt = sample;
+    this.settlePendingReturn(sample);
     if (this.callbacks.isLocked?.()) return;
     if (this.dismissUsedSelection()) return;
     // Whatever this gesture commits is timestamped with its pen-down.
@@ -3101,7 +3158,7 @@ export class InkSurface {
       // WebKit can cancel an ordinary lift; shapes keep their committed ink.
       if (!box || tool !== "shape") return;
     }
-    this.completeToolUse("gesture");
+    this.deferToolUse(sample ?? this.penAt);
   }
 
   /** How the tool in use handles the pen (see {@link PenGesture}). */
