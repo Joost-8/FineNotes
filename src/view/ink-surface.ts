@@ -1885,7 +1885,7 @@ export class InkSurface {
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
     this.viewport = { scrollY: y / scale, scale, width: this.pageLayout.width };
-    this.renderer.setViewport(this.viewport, this.offsetX);
+    this.renderer.setViewport(this.viewport, this.offsetX, this.userZoom);
     this.updatePageIndicator();
   }
 
@@ -2683,6 +2683,7 @@ export class InkSurface {
       null,
       this.erasePieces,
       budgetMs,
+      this.zoomTransient,
     );
   }
 

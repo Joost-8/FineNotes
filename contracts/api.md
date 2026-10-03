@@ -576,19 +576,19 @@ One class may implement both, and `VaultBackdropRenderer` does.
 
 - **Synthetic backdrops** draw procedurally — cheap, redraw freely.
 - **PDF backdrops** render from the original PDF through Obsidian's PDF.js.
-  Notebook tiles pass their page-space region and settled device scale to the
-  backdrop painter. Only that region is rasterized at its display resolution:
-  a high zoom never stretches a capped whole-page image. Source PDF points are
-  converted to notebook page pixels using the contained page geometry, with
-  PDF rotation/cropping supplied by the PDF.js viewport. Region cache keys
-  include source path/page, page geometry, page-space region and the renderer's
-  settled scale (stable to 1e-4). Pinch frames reuse the settled tiles.
-  Full-page previews/thumbnails use a scale quantized to 0.25 steps and are
-  bounded to 2400 pixels per edge and approximately 4 MP. Screen patches are
-  normally 512 × 512 device pixels, regardless of zoom. The shared byte cache
-  keeps its 48 MB soft / 96 MB hard budgets and recent-use policy; rendering
-  waits while the pen writes. A patch landing invalidates only that page region;
-  full previews can invalidate the matching page and its sidebar thumbnail.
+  Up to 2.5× zoom, ink tiles and their previews share one whole-page raster.
+  Above that zoom, one clipped visible patch per page is shared across tiles,
+  with the page image as fallback. Source PDF points are contained in the
+  notebook page geometry; PDF.js handles source rotation and cropping.
+  Region keys include source path/page, page geometry, visible region and
+  settled scale (stable to 1e-4). Pinch frames retain their full-page scale
+  and request no new detail. Full-page/patch rasters are bounded to 2400 px
+  per edge and approximately 4 MP. The cache retains its 48 MB soft / 96 MB
+  hard budgets and recent-use policy. At most two PDF renders run at once.
+  Offscreen detail work is cancelled and its canvas evicted; stale work
+  triggers no repaint or cached miss. Writing holds background starts;
+  explicit awaited draws remain available. Patch completion invalidates only
+  the matching region; full pages can invalidate the matching sidebar thumbnail.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
@@ -884,3 +884,9 @@ retain the configured default, as does the file explorer top-bar button.
 The toggles operate independently and apply without a restart; explorer buttons
 are reconciled on layout changes and removed on plugin unload. This does not
 change the note format.
+
+## PDF viewport detail
+
+At zoom up to 2.5×, notebook ink tiles and their previews share a cached whole-page PDF image. Above that threshold, the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
+
+Replacing the viewport cancels obsolete queued/active detail requests, evicts their canvases, and prevents stale completion callbacks or cached failure placeholders. Ordinary page and sidebar rasters retain their existing byte budgets. Mid-pinch frames retain the previous full-page resolution and start no new detail work. Writing holds background starts; explicitly awaited export/thumbnail requests remain available. Clear/unload cancels pending work.

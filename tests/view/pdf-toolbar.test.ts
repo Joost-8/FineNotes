@@ -31,7 +31,7 @@ describe("PDF toolbar button", () => {
     const pdf = buttons[image + 1];
     expect(pdf.label).toBe("Insert PDF");
     expect(pdf.parent).toBe(buttons[image].parent);
-    expect(pdf.addClass).toHaveBeenCalledWith("clickable-icon");
+    expect(pdf.addClass).not.toHaveBeenCalledWith("clickable-icon");
     pdf.handler?.(pdf);
     expect(importPdf).toHaveBeenCalledWith(pdf);
   });

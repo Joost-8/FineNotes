@@ -16,17 +16,28 @@ function context() {
   } as unknown as CanvasRenderingContext2D;
 }
 describe("PDF backdrop display", () => {
-  it("uses the settled tile resolution even above the old scale limit, and draws at page coordinates", () => {
+  it("shares one visible patch across tiles above 2.5x, over a whole-page fallback", () => {
     const canvas = { width: 512, height: 512 };
+    const base = { width: 600, height: 800 };
     const cache = {
-      peek: vi.fn(() => ({ ok: true, canvas, box: { x: 128, y: 256, w: 64, h: 64 } })),
+      setVisibleRegions: vi.fn(),
+      peek: vi.fn((_path, _page, _scale, area) =>
+        area.region
+          ? { ok: true, canvas, box: { x: 128, y: 256, w: 64, h: 64 } }
+          : { ok: true, canvas: base },
+      ),
     };
     const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
-    painter.setDeviceScale(1);
     const ctx = context();
     const region = { minX: 128, minY: 256, maxX: 192, maxY: 320 };
-    painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region });
+    painter.prepare([{ backdrop, geometry, region }], 8, 4, false);
+    for (let i = 0; i < 30; i++)
+      painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region });
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([
+      { path: backdrop.path, page: backdrop.page, dprScale: 8, area: { geometry, region } },
+    ]);
     expect(cache.peek).toHaveBeenCalledWith(backdrop.path, backdrop.page, 8, { geometry, region });
+    expect(ctx.drawImage).toHaveBeenCalledWith(base, 0, 0, 1200, 1600);
     expect(ctx.drawImage).toHaveBeenCalledWith(canvas, 128, 256, 64, 64);
   });
   it("warms exactly the same resolution key a thumbnail paints with", async () => {
@@ -42,15 +53,36 @@ describe("PDF backdrop display", () => {
     painter.paint(context(), backdrop, geometry, 1, { deviceScale: 0.7 });
     expect(cache.resolve.mock.calls[0]).toEqual(cache.peek.mock.calls[0]);
   });
-  it("requests only the missing tile region without blocking the paint", () => {
-    const cache = { peek: vi.fn(() => null), request: vi.fn() };
+  it("uses one whole-page key at ordinary zoom and no tile regions", () => {
+    const cache = { peek: vi.fn(() => null), request: vi.fn(), setVisibleRegions: vi.fn() };
     const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
     const region = { minX: 0, minY: 0, maxX: 64, maxY: 64 };
-    painter.paint(context(), backdrop, geometry, 1, { deviceScale: 8, region });
-    expect(cache.request).toHaveBeenCalledWith(backdrop.path, backdrop.page, 8, {
-      geometry,
-      region,
-    });
+    painter.prepare([{ backdrop, geometry, region }], 2, 2.5, false);
+    for (let i = 0; i < 30; i++)
+      painter.paint(context(), backdrop, geometry, 1, {
+        deviceScale: 2,
+        region: { ...region, minX: i },
+      });
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([]);
+    expect(cache.request).toHaveBeenCalledWith(backdrop.path, backdrop.page, 2, { geometry });
+    expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
+  });
+  it("does not mint page or region rasters during pinch zoom, and never requests detail for thumbnails", () => {
+    const cache = { peek: vi.fn(() => null), request: vi.fn(), setVisibleRegions: vi.fn() };
+    const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+    const region = { minX: 10, minY: 10, maxX: 100, maxY: 100 };
+    painter.prepare([{ backdrop, geometry, region }], 2, 1, false);
+    for (let zoom = 1; zoom < 6; zoom += 0.2) {
+      painter.prepare([{ backdrop, geometry, region }], 2, zoom, true);
+      painter.paint(context(), backdrop, geometry, 1, { deviceScale: 2, region });
+    }
+    expect(cache.setVisibleRegions.mock.calls.every(([areas]) => areas.length === 0)).toBe(true);
+    expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
+    painter.prepare([{ backdrop, geometry, region }], 8, 4, false);
+    cache.peek.mockClear();
+    painter.paint(context(), backdrop, geometry, 1, { deviceScale: 0.5 });
+    expect(cache.peek).toHaveBeenCalledOnce();
+    expect(cache.peek).toHaveBeenCalledWith(backdrop.path, backdrop.page, 4, { geometry });
   });
   it("invalidates only matching PDF page regions when a tile lands", () => {
     const first = { ...blankPage("p1", geometry), backdrop };

@@ -3,7 +3,7 @@ import type { Bounds, PageGeometry } from "../model/document";
 
 export interface PdfRenderArea {
   geometry: PageGeometry;
-  /** Absent for a whole-page thumbnail; supplied by settled notebook tiles. */
+  /** Absent for a whole-page thumbnail; supplied for the visible area of a settled, deeply zoomed page. */
   region?: Bounds;
 }
 
@@ -15,7 +15,7 @@ export interface PdfRasterPlan {
   box: { x: number; y: number; w: number; h: number };
 }
 
-/** Thumbnails stay bounded; screen tiles never allocate a whole zoomed PDF page. */
+/** Thumbnails and visible patches stay bounded; never allocate a whole zoomed PDF page. */
 const MAX_PATCH_EDGE = 2400;
 const MAX_PATCH_PIXELS = 4_000_000;
 
@@ -70,4 +70,35 @@ export function pdfAreaKey(area: PdfRenderArea): string {
     geometry.height,
     ...(region ? [region.minX, region.minY, region.maxX, region.maxY] : []),
   ]);
+}
+
+/** Whole-page rasters are sufficient at ordinary zoom, independent of device pixel ratio. */
+export const PDF_DETAIL_ZOOM = 2.5;
+
+/** The clipped, visible area only; gutters and invalid viewports request nothing. */
+export function visiblePdfArea(
+  geometry: PageGeometry,
+  visible: Bounds,
+  zoom: number,
+): PdfRenderArea | null {
+  if (
+    !Number.isFinite(zoom) ||
+    zoom <= PDF_DETAIL_ZOOM ||
+    ![
+      geometry.width,
+      geometry.height,
+      visible.minX,
+      visible.minY,
+      visible.maxX,
+      visible.maxY,
+    ].every(Number.isFinite)
+  )
+    return null;
+  const region = {
+    minX: Math.max(0, visible.minX),
+    minY: Math.max(0, visible.minY),
+    maxX: Math.min(geometry.width, visible.maxX),
+    maxY: Math.min(geometry.height, visible.maxY),
+  };
+  return region.maxX > region.minX && region.maxY > region.minY ? { geometry, region } : null;
 }

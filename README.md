@@ -272,6 +272,8 @@ picture, such as a worksheet you write on; hold the lasso on it and tap
 - **A single page** cannot take more pages until you choose **Convert to
   notebook** in its ⌄ menu in the sidebar.
 
+PDF display uses one cached image per page at ordinary zoom. Above 2.5× zoom, it sharpens only the visible portion, with at most two PDF renders in flight. Old visible-area renders are cancelled and their canvases released when you scroll away; ink and the sidebar keep their existing rendering paths.
+
 ### Search, links and export
 
 - **Search this notebook** finds typed text and transcribed handwriting.

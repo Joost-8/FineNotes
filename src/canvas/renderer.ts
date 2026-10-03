@@ -103,6 +103,13 @@ export interface PageSelection {
  * contracts/api.md §4 specifies. `VaultBackdropRenderer` implements both.
  */
 export interface BackdropPainter {
+  /** Called once per screen paint, never once per ink tile or sidebar thumbnail. */
+  prepare?: (
+    visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
+    deviceScale: number,
+    zoom: number,
+    transient: boolean,
+  ) => void;
   /** `weight` thickens synthetic rules for a small thumbnail (default 1). */
   paint(
     ctx: CanvasRenderingContext2D,
@@ -317,6 +324,7 @@ export class Renderer {
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
   private screen = { width: 0, height: 0, dpr: 1 };
   /** The view, in layout space; see {@link setViewport}. */
+  private pdfZoom = 1;
   private view: ViewportState = { scrollY: 0, scale: 1, width: 0 };
   /** How far right of the canvases' left edge the layout's origin sits, in CSS px. */
   private originX = 0;
@@ -390,7 +398,8 @@ export class Renderer {
    * and the layout's origin sits `originX` CSS px right of the canvases'
    * left edge (negative once the view has scrolled past it sideways).
    */
-  setViewport(view: ViewportState, originX = 0): void {
+  setViewport(view: ViewportState, originX = 0, pdfZoom = 1): void {
+    this.pdfZoom = pdfZoom;
     this.view = view;
     this.originX = originX;
   }
@@ -686,6 +695,7 @@ export class Renderer {
     selection?: PageSelection | null,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
     budgetMs = Infinity,
+    detailTransient = false,
   ): boolean {
     const ctx = this.dry.ctx;
     this.wipe(ctx);
@@ -703,7 +713,27 @@ export class Renderer {
     const deadline = budgetMs === Infinity ? Infinity : now() + budgetMs;
     let complete = true;
 
-    for (const box of this.boxesOnScreen(doc.pages.length)) {
+    const visibleBoxes = this.boxesOnScreen(doc.pages.length);
+    this.painter?.prepare?.(
+      visibleBoxes.map((box) => {
+        const page = doc.pages[box.index];
+        const r = this.pageDeviceRect(box);
+        return {
+          backdrop: page.backdrop,
+          geometry: page.geometry,
+          region: {
+            minX: -r.x / k,
+            minY: -r.y / k,
+            maxX: (this.dry.canvas.width - r.x) / k,
+            maxY: (this.dry.canvas.height - r.y) / k,
+          },
+        };
+      }),
+      level,
+      this.pdfZoom,
+      transient || detailTransient,
+    );
+    for (const box of visibleBoxes) {
       const page = doc.pages[box.index];
       const r = this.pageDeviceRect(box);
       const ox = exact ? Math.round(r.x) : r.x;

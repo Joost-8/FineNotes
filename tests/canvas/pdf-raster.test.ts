@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pdfAreaKey, planPdfRaster } from "../../src/canvas/pdf-raster";
+import { pdfAreaKey, planPdfRaster, visiblePdfArea } from "../../src/canvas/pdf-raster";
 
 const source = { width: 600, height: 800 };
 const geometry = { width: 1024, height: 4096 / 3 };
@@ -61,5 +61,22 @@ describe("PDF display raster planning", () => {
     expect(() =>
       planPdfRaster(source, 1, { geometry, region: { minX: 0, minY: 0, maxX: 0, maxY: 0 } }),
     ).toThrow();
+  });
+});
+
+describe("visible PDF detail policy", () => {
+  const visible = { minX: -10, minY: 100, maxX: 200, maxY: 2000 };
+  it("uses whole pages through 2.5x and clips the actual visible region above it", () => {
+    for (const zoom of [0, 1, 2, 2.5, NaN, Infinity])
+      expect(visiblePdfArea(geometry, visible, zoom)).toBeNull();
+    expect(visiblePdfArea(geometry, visible, 2.501)).toEqual({
+      geometry,
+      region: { minX: 0, minY: 100, maxX: 200, maxY: geometry.height },
+    });
+  });
+  it("does not render gutters, inverted bounds, empty or invalid viewports", () => {
+    expect(visiblePdfArea(geometry, { minX: 2000, minY: 0, maxX: 3000, maxY: 100 }, 4)).toBeNull();
+    expect(visiblePdfArea(geometry, { minX: 0, minY: 100, maxX: 100, maxY: 0 }, 4)).toBeNull();
+    expect(visiblePdfArea(geometry, { ...visible, maxX: Infinity }, 4)).toBeNull();
   });
 });
