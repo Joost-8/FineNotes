@@ -151,6 +151,32 @@ export class PdfBackdropCache {
   }
 
   /**
+   * The page at whatever scale is cached, for drawing while the asked-for
+   * scale is still being rasterised: the smallest scale at or above
+   * `dprScale`, else the largest below it. A zoom changes the scale, and
+   * without this the page showed as blank paper until pdf.js caught up —
+   * a second or more on an iPad. Misses (`ok: false`) are never returned.
+   */
+  peekNearest(path: string, page: number, dprScale: number): PdfEntry | null {
+    // rasterKey without its scale.
+    const prefix = `${path}:${page}:`;
+    let above: { scale: number; cached: Cached } | null = null;
+    let below: { scale: number; cached: Cached } | null = null;
+    for (const cached of this.entries.values()) {
+      if (!cached.entry.ok || !cached.key.startsWith(prefix)) continue;
+      const scale = Number(cached.key.slice(prefix.length));
+      if (!Number.isFinite(scale)) continue;
+      if (scale >= dprScale) {
+        if (!above || scale < above.scale) above = { scale, cached };
+      } else if (!below || scale > below.scale) below = { scale, cached };
+    }
+    const best = above ?? below;
+    if (!best) return null;
+    best.cached.lastUsed = now();
+    return best.cached.entry;
+  }
+
+  /**
    * Start rasterising if it is not cached or already in flight. While held
    * (the pen is writing), it waits: pdf.js paints on the main thread, and a
    * page landing mid-stroke stalls the ink.

@@ -42,6 +42,7 @@ vi.mock("obsidian", async () => ({
 }));
 
 const { PdfBackdropCache } = await import("../../src/view/pdf-backdrop");
+const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
 
 const globals = globalThis as Record<string, unknown>;
 let clock = 0;
@@ -178,6 +179,33 @@ describe("PdfBackdropCache", () => {
     expect(await none.resolve("gone.pdf", 0, 1)).toMatchObject({ ok: false });
   });
 
+  it("finds the page at the nearest cached scale, the next one up first", async () => {
+    const c = cache();
+    for (const scale of [0.5, 1.5, 3]) c.request("a.pdf", 1, scale);
+    c.request("a.pdf", 10, 1);
+    c.request("b.pdf", 1, 1);
+    await settle();
+    const width = (scale: number) => {
+      const entry = c.peekNearest("a.pdf", 1, scale);
+      return entry?.ok ? entry.canvas.width : null;
+    };
+    // 1.5 rather than 0.5, never blurrier when it can help it; and not the
+    // exact-scale rasters of page 10 or of another file.
+    expect(width(1)).toBe(900);
+    expect(width(2)).toBe(1800);
+    expect(width(4)).toBe(1800); // nothing above: the largest below
+    expect(width(0.25)).toBe(300);
+    expect(c.peekNearest("a.pdf", 2, 1)).toBeNull();
+  });
+
+  it("never offers a miss as the nearest page", async () => {
+    const c = cache();
+    c.request("a.pdf", 99, 1); // past the last page: cached as a miss
+    await settle();
+    expect(c.peek("a.pdf", 99, 1)?.ok).toBe(false);
+    expect(c.peekNearest("a.pdf", 99, 2)).toBeNull();
+  });
+
   it("drops everything on clear, and answers nothing once destroyed", async () => {
     const c = cache();
     c.request("a.pdf", 0, 1);
@@ -192,5 +220,48 @@ describe("PdfBackdropCache", () => {
     expect(pdf.renders).toBe(1);
     c.destroy();
     expect(await c.resolve("a.pdf", 0, 1)).toMatchObject({ ok: false });
+  });
+});
+
+describe("VaultBackdropRenderer", () => {
+  const geometry = { width: 1200, height: 1600 };
+  const backdrop = { kind: "pdf" as const, path: "a.pdf", page: 0 };
+  function context(): { ctx: CanvasRenderingContext2D; drawn: number[]; filled: number } {
+    const drawn: number[] = [];
+    const log = { ctx: null as unknown as CanvasRenderingContext2D, drawn, filled: 0 };
+    log.ctx = {
+      save: () => undefined,
+      restore: () => undefined,
+      fillRect: () => log.filled++,
+      drawImage: (canvas: FakeCanvas) => drawn.push(canvas.width),
+    } as unknown as CanvasRenderingContext2D;
+    return log;
+  }
+
+  it("draws the page at the old scale while a zoom's new scale rasterises", async () => {
+    const c = cache();
+    const painter = new VaultBackdropRenderer(c);
+    painter.setDeviceScale(1);
+    painter.paint(context().ctx, backdrop, geometry);
+    await settle();
+    // Zoomed in: the 1x raster stands in (not blank paper), and 2x is asked for.
+    painter.setDeviceScale(2);
+    const zoomed = context();
+    painter.paint(zoomed.ctx, backdrop, geometry);
+    expect(zoomed.drawn).toEqual([600]);
+    await settle();
+    expect(c.peek("a.pdf", 0, 2)?.ok).toBe(true);
+    const settled = context();
+    painter.paint(settled.ctx, backdrop, geometry);
+    expect(settled.drawn).toEqual([1200]);
+  });
+
+  it("draws plain paper when the page was never rasterised", () => {
+    const painter = new VaultBackdropRenderer(cache());
+    painter.setDeviceScale(1);
+    const first = context();
+    painter.paint(first.ctx, backdrop, geometry);
+    expect(first.drawn).toEqual([]);
+    expect(first.filled).toBe(1);
   });
 });

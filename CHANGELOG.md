@@ -36,6 +36,10 @@ Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
 
 ### Fixed
 
+- **PDF pages no longer go blank while zooming.** After a zoom, a PDF page
+  showed as empty white paper until it was drawn again at the new size,
+  which takes a second or more on an iPad. It now keeps showing the page as
+  it was until the sharper version is ready.
 - **Smoother writing on older iPads.** Before iPadOS 26.2, the iPad rounds
   the Pencil's position to a whole screen pixel before Obsidian sees it, so
   lines came out wobbly and loops lumpy. FineNotes now smooths the Pencil's

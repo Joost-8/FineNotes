@@ -60,8 +60,12 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     }
     const entry = this.pdf.peek(backdrop.path, backdrop.page, this.scale);
     if (!entry) {
-      // Not rasterised yet: plain paper now, repaint when the bitmap arrives.
-      fillPaper(ctx, geometry, this.theme);
+      // Not rasterised at this scale yet: the page at another scale if one is
+      // cached (a zoom just changed it), else plain paper; repaint when the
+      // bitmap arrives.
+      const stand = this.pdf.peekNearest(backdrop.path, backdrop.page, this.scale);
+      if (stand) this.paintEntry(ctx, stand, geometry);
+      else fillPaper(ctx, geometry, this.theme);
       this.pdf.request(backdrop.path, backdrop.page, this.scale);
       return;
     }
