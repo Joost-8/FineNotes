@@ -21,7 +21,13 @@ import {
   fillPaper,
 } from "../canvas/backdrop";
 import type { BackdropPainter } from "../canvas/renderer";
-import type { Backdrop, PageGeometry } from "../model/document";
+import {
+  PDF_DETAIL_ZOOM,
+  pdfAreaKey,
+  visiblePdfArea,
+  type PdfRenderArea,
+} from "../canvas/pdf-raster";
+import type { Bounds, Backdrop, PageGeometry } from "../model/document";
 import { type PdfBackdropCache, type PdfEntry, quantiseScale } from "./pdf-backdrop";
 
 export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter {
@@ -30,6 +36,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
 
   /** `devicePixelRatio * viewScale`, quantised. Part of the PDF cache key. */
   private scale = 1;
+  private pageScale: number | null = null;
+  private readonly details = new Map<string, { scale: number; area: PdfRenderArea }>();
 
   /**
    * @param pdf PDF raster cache, or `null` where there is no vault to read from
@@ -43,12 +51,44 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     this.scale = quantiseScale(deviceScale);
   }
 
+  /** One request per visible page, shared by every ink tile. */
+  prepare(
+    visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
+    deviceScale: number,
+    zoom: number,
+    transient: boolean,
+  ): void {
+    if (!transient || this.pageScale === null)
+      this.pageScale = quantiseScale(
+        deviceScale * Math.min(1, PDF_DETAIL_ZOOM / Math.max(1, zoom)),
+      );
+    this.details.clear();
+    const requests: Array<{ path: string; page: number; dprScale: number; area: PdfRenderArea }> =
+      [];
+    for (const { backdrop, geometry, region } of visible) {
+      if (backdrop.kind !== "pdf" || transient) continue;
+      const area = visiblePdfArea(geometry, region, zoom);
+      if (!area) continue;
+      this.details.set(this.detailKey(backdrop.path, backdrop.page, geometry), {
+        scale: deviceScale,
+        area,
+      });
+      requests.push({ path: backdrop.path, page: backdrop.page, dprScale: deviceScale, area });
+    }
+    this.pdf?.setVisibleRegions(requests);
+  }
+
+  private detailKey(path: string, page: number, geometry: PageGeometry): string {
+    return JSON.stringify([path, page, pdfAreaKey({ geometry })]);
+  }
+
   /** Synchronous paint for the scroll path. Never blocks. */
   paint(
     ctx: CanvasRenderingContext2D,
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight = 1,
+    target?: { deviceScale: number; region?: Bounds },
   ): void {
     if (backdrop.kind !== "pdf") {
       drawSynthetic(ctx, backdrop, geometry, this.theme, weight);
@@ -58,14 +98,26 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
-    const entry = this.pdf.peek(backdrop.path, backdrop.page, this.scale);
-    if (!entry) {
-      // Not rasterised yet: plain paper now, repaint when the bitmap arrives.
+    const scale = this.pageScale ?? quantiseScale(target?.deviceScale ?? this.scale);
+    const area = { geometry };
+    const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
+    if (entry) this.paintEntry(ctx, entry, geometry);
+    else {
       fillPaper(ctx, geometry, this.theme);
-      this.pdf.request(backdrop.path, backdrop.page, this.scale);
-      return;
+      this.pdf.request(backdrop.path, backdrop.page, scale, area);
     }
-    this.paintEntry(ctx, entry, geometry);
+    // Previews/exports never pick up viewport detail. Ink tiles reuse one patch.
+    const detail = target?.region
+      ? this.details.get(this.detailKey(backdrop.path, backdrop.page, geometry))
+      : undefined;
+    if (detail) {
+      const patch = this.pdf.peek(backdrop.path, backdrop.page, detail.scale, detail.area);
+      if (patch?.ok) {
+        // Do not repaint the whole paper: the full-page fallback must remain around the patch.
+        const { box, canvas } = patch;
+        if (box && canvas.width && canvas.height) ctx.drawImage(canvas, box.x, box.y, box.w, box.h);
+      }
+    }
   }
 
   /** The contract's asynchronous form: waits for the raster. */
@@ -82,7 +134,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
-    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale);
+    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, { geometry });
     this.paintEntry(ctx, entry, geometry);
   }
 
@@ -95,6 +147,11 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     fillPaper(ctx, geometry, this.theme);
     const { canvas } = entry;
     if (canvas.width === 0 || canvas.height === 0) return;
+    if (entry.box) {
+      const { x, y, w, h } = entry.box;
+      ctx.drawImage(canvas, x, y, w, h);
+      return;
+    }
     // Contain: a PDF page whose aspect differs from the notebook's page size is
     // centred rather than stretched — stretched slides read as a rendering bug.
     const k = Math.min(geometry.width / canvas.width, geometry.height / canvas.height);
