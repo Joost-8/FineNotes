@@ -343,6 +343,41 @@ export function decodeBucket(devicePx: number): number {
   return DECODE_BUCKETS[DECODE_BUCKETS.length - 1];
 }
 
+/** SVGs keep one vector source (bucket 0); raster images keep bounded pixel buckets. */
+export function imageDecodeBucket(path: string, devicePx: number): number {
+  return mimeForExtension(extensionOf(path)) === "image/svg+xml" ? 0 : decodeBucket(devicePx);
+}
+
+/**
+ * The largest SVG drawn from its vectors on screen. A vector source is drawn
+ * whole into every tile, preview and thumbnail it touches, at every zoom
+ * step, so its cost repeats per tile. Measured per tile in the browser
+ * harness (2026-10-03, laptop, software canvas): a 33 KB plot 0.9 ms, the
+ * same as a bitmap; 150 KB 2.0 ms; 1.5 MB 14-19 ms, against 0.9 ms as a
+ * bitmap. An iPad is several times slower. Above this, an SVG draws from the
+ * bitmap buckets every other picture uses, as it did before vectors.
+ */
+export const VECTOR_SVG_MAX_BYTES = 64 * 1024;
+
+/** An applied filter (by attribute or CSS) re-runs per tile too, at any size. */
+const SVG_FILTER_USE = /filter\s*[:=]\s*["']?\s*url\(/i;
+
+/** Whether an SVG is cheap enough to draw from its vectors on screen (see {@link VECTOR_SVG_MAX_BYTES}). */
+export function drawsSvgAsVector(bytes: ArrayBuffer): boolean {
+  if (bytes.byteLength > VECTOR_SVG_MAX_BYTES) return false;
+  return !SVG_FILTER_USE.test(new TextDecoder().decode(bytes));
+}
+
+/**
+ * Bytes to charge the decode cache for an SVG drawn from vectors. The
+ * browser's own cost cannot be read from script; this is an estimate: the
+ * parsed document at ~16x its text, plus one bitmap at its intrinsic size,
+ * which the engine may keep to redraw it.
+ */
+export function vectorSvgCost(byteLength: number, width: number, height: number): number {
+  return byteLength * 16 + Math.max(1, width) * Math.max(1, height) * 4;
+}
+
 /**
  * Which cached decode to draw for a wanted bucket, and whether the wanted one
  * still needs decoding. The exact bucket, or a larger one that is not wildly
@@ -354,6 +389,10 @@ export function chooseCachedBucket(
   available: Iterable<number>,
   wanted: number,
 ): { use: number | null; decode: boolean } {
+  if (wanted === 0) {
+    const present = [...available].includes(0);
+    return { use: present ? 0 : null, decode: !present };
+  }
   let larger = Infinity;
   let smaller = -Infinity;
   for (const bucket of available) {
