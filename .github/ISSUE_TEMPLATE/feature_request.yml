@@ -1,0 +1,39 @@
+name: Feature request
+description: An idea for something FineNotes should do.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Say what you are trying to do, not only the button you would add: there may be a simpler way to get there.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      placeholder: "I annotate lecture slides and want to jump between my own notes and the slides quickly."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you picture it working. If another app (GoodNotes, Notability, …) does it well, say which and how.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Where would you use it?
+      multiple: true
+      options:
+        - iPad
+        - iPhone
+        - Android
+        - Desktop
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Sketches, screenshots, or links to similar features.

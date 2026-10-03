@@ -21,6 +21,7 @@ interface Pending {
 }
 
 const pending: Pending[] = [];
+const vectors: Array<{ resolve: (loaded: unknown) => void; reject: (error: Error) => void }> = [];
 
 vi.mock("../../src/view/image-import", () => ({
   decodeToCanvas: vi.fn(
@@ -33,6 +34,7 @@ vi.mock("../../src/view/image-import", () => ({
         });
       }),
   ),
+  loadImage: vi.fn(() => new Promise((resolve, reject) => vectors.push({ resolve, reject }))),
   releaseCanvas: vi.fn((canvas: FakeCanvas) => {
     canvas.width = 0;
     canvas.height = 0;
@@ -79,6 +81,7 @@ async function land(): Promise<FakeCanvas> {
 
 beforeEach(() => {
   pending.length = 0;
+  vectors.length = 0;
 });
 
 describe("VaultImageCache", () => {
@@ -290,5 +293,194 @@ describe("VaultImageCache", () => {
       cache.destroy();
       await expect(ready).resolves.toBeUndefined();
     });
+  });
+});
+
+describe("SVG vector sources", () => {
+  async function landVector(width = 16, height = 12) {
+    await flush();
+    const source = { width, height };
+    const release = vi.fn();
+    const job = vectors.shift();
+    if (!job) throw new Error("no SVG pending");
+    job.resolve({ img: source, width, height, release });
+    await flush();
+    return { source, release };
+  }
+  it("evicts SVG sources under the existing hard cache budget", async () => {
+    const app = fakeApp({ "a.svg": "svg", "b.svg": "svg" });
+    const cache = new VaultImageCache(app);
+    // Charged as one 4500 x 4000 bitmap each (72 MB): two exceed the 128 MB cap.
+    const firstReady = cache.prepare([image("a.svg")], 1);
+    const first = await landVector(4500, 4000);
+    await firstReady;
+    const secondReady = cache.prepare([image("b.svg")], 1);
+    const second = await landVector(4500, 4000);
+    await secondReady;
+    expect(first.release).toHaveBeenCalledOnce();
+    expect(second.release).not.toHaveBeenCalled();
+    cache.destroy();
+    expect(second.release).toHaveBeenCalledOnce();
+  });
+  it("draws the original SVG source at any zoom, without a pixel canvas or another decode", async () => {
+    const cache = new VaultImageCache(fakeApp({ "figure.svg": "svg" }));
+    const ready = cache.prepare([image("figure.svg")], 1);
+    const { source, release } = await landVector();
+    await ready;
+    for (const scale of [0.25, 2, 12, 100]) {
+      const { ctx, draws } = ctxWithDraws();
+      cache.paintImage(asCanvasContext(ctx), image("figure.svg"), scale);
+      expect(draws).toEqual([source]);
+      await cache.prepare([image("figure.svg")], scale);
+    }
+    expect(pending).toHaveLength(0);
+    expect(vectors).toHaveLength(0);
+    expect(release).not.toHaveBeenCalled();
+    cache.destroy();
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("shares the source between repeated and cropped placements", async () => {
+    const cache = new VaultImageCache(fakeApp({ "figure.SVG": "SVG" }));
+    const first = image("figure.SVG");
+    const second = { ...first, id: "i2", w: 300, h: 225, crop: { x: 0.5, y: 0, w: 0.5, h: 1 } };
+    cache.paintImage(asCanvasContext(fakeContext()), first, 1);
+    cache.paintImage(asCanvasContext(fakeContext()), second, 12);
+    await flush();
+    expect(vectors).toHaveLength(1);
+    const { source } = await landVector();
+    const ctx = fakeContext();
+    const calls: unknown[][] = [];
+    Object.assign(ctx, { drawImage: (...args: unknown[]) => calls.push(args) });
+    cache.paintImage(asCanvasContext(ctx), second, 12);
+    // The whole picture at twice the box's width, shifted so its right half
+    // fills the box, clipped to it: never a source rectangle, which an SVG
+    // without an intrinsic size would read in the browser's 300 x 150.
+    expect(calls).toEqual([[source, -300, 0, 600, 225]]);
+    expect(ctx.ops.map((op) => op.op)).toEqual(["save", "beginPath", "rect", "clip", "restore"]);
+    cache.destroy();
+  });
+  it("releases sources on file changes and drops a stale in-flight source", async () => {
+    const cache = new VaultImageCache(fakeApp({ "figure.svg": "svg" }));
+    cache.paintImage(asCanvasContext(fakeContext()), image("figure.svg"), 1);
+    const first = await landVector();
+    expect(cache.forget("figure.svg")).toBe(true);
+    expect(first.release).toHaveBeenCalledOnce();
+    cache.paintImage(asCanvasContext(fakeContext()), image("figure.svg"), 12);
+    await flush();
+    cache.forget("figure.svg");
+    const stale = await landVector();
+    expect(stale.release).toHaveBeenCalledOnce();
+    cache.destroy();
+  });
+  it("resolves pending SVG preparation on unload and releases a late source", async () => {
+    const cache = new VaultImageCache(fakeApp({ "figure.svg": "svg" }));
+    const ready = cache.prepare([image("figure.svg")], 12);
+    await flush();
+    cache.destroy();
+    await ready;
+    const late = await landVector();
+    expect(late.release).toHaveBeenCalledOnce();
+  });
+  it("marks malformed SVGs as missing and allows retry after a file change", async () => {
+    const cache = new VaultImageCache(fakeApp({ "figure.svg": "svg" }));
+    const ready = cache.prepare([image("figure.svg")], 12);
+    await flush();
+    vectors.shift()?.reject(new Error("Invalid SVG"));
+    await ready;
+    const { ctx, draws } = ctxWithDraws();
+    cache.paintImage(asCanvasContext(ctx), image("figure.svg"), 12);
+    expect(draws).toHaveLength(0);
+    expect(ctx.ops.some((op) => op.op === "strokeRect")).toBe(true);
+    cache.forget("figure.svg");
+    const retry = cache.prepare([image("figure.svg")], 12);
+    await landVector();
+    await retry;
+    cache.destroy();
+  });
+
+  it("charges a vector source more than its text: parsed document and one bitmap", async () => {
+    const cache = new VaultImageCache(fakeApp({ "icon.svg": "svg" }));
+    const ready = cache.prepare([image("icon.svg")], 1);
+    await landVector(24, 24);
+    await ready;
+    // 8 bytes of text x 16, plus 24 x 24 x 4.
+    expect((cache as unknown as { bitmaps: { bytes: number } }).bitmaps.bytes).toBe(8 * 16 + 2304);
+    cache.destroy();
+  });
+});
+
+describe("SVGs too heavy to draw from vectors", () => {
+  function appWith(text: string): App {
+    const bytes = new TextEncoder().encode(text);
+    return {
+      vault: {
+        getFileByPath: (path: string) => ({ path, extension: "svg" }),
+        readBinary: () => Promise.resolve(bytes.buffer.slice(0)),
+      },
+    } as unknown as App;
+  }
+  const big = `<svg xmlns="http://www.w3.org/2000/svg"><path d="${"L1 2 ".repeat(14000)}"/></svg>`;
+  const filtered =
+    '<svg xmlns="http://www.w3.org/2000/svg"><filter id="b"/><circle filter="url(#b)"/></svg>';
+
+  it.each([
+    ["over 64 KB", big],
+    ["with an applied filter", filtered],
+  ])("draws an SVG %s from bitmap buckets, sized as a vector", async (_label, text) => {
+    const cache = new VaultImageCache(appWith(text));
+    const ready = cache.prepare([image("plot.svg")], 1.5);
+    await flush();
+    // The first decode reads the file, finds it heavy and loads no vector source.
+    expect(vectors).toHaveLength(0);
+    const canvas = await land();
+    await ready;
+    // 600 page px at 1.5 wants 900 px: the 1024 bucket, at the SVG's 4:3.
+    expect(canvas).toEqual({ width: 1024, height: 768 });
+    const { ctx, draws } = ctxWithDraws();
+    cache.paintImage(asCanvasContext(ctx), image("plot.svg"), 1.5);
+    expect(draws).toEqual([canvas]);
+    // Zoomed in, it asks for a larger bitmap, never for the vectors.
+    cache.paintImage(asCanvasContext(ctx), image("plot.svg"), 3);
+    expect(await land()).toEqual({ width: 2048, height: 1536 });
+    expect(vectors).toHaveLength(0);
+    cache.destroy();
+  });
+
+  it("keeps a filter that is only defined, never applied, as vectors", async () => {
+    const unused = '<svg xmlns="http://www.w3.org/2000/svg"><defs><filter id="b"/></defs></svg>';
+    const cache = new VaultImageCache(appWith(unused));
+    const ready = cache.prepare([image("art.svg")], 1);
+    const { source } = await (async () => {
+      await flush();
+      const job = vectors.shift();
+      if (!job) throw new Error("no SVG pending");
+      const loaded = { img: { width: 16, height: 12 }, width: 16, height: 12, release: vi.fn() };
+      job.resolve(loaded);
+      await flush();
+      return { source: loaded.img };
+    })();
+    await ready;
+    const { ctx, draws } = ctxWithDraws();
+    cache.paintImage(asCanvasContext(ctx), image("art.svg"), 4);
+    expect(draws).toEqual([source]);
+    expect(pending).toHaveLength(0);
+    cache.destroy();
+  });
+
+  it("decides again when the file changes", async () => {
+    let text = big;
+    const app = appWith(big);
+    app.vault.readBinary = () => Promise.resolve(new TextEncoder().encode(text).buffer);
+    const cache = new VaultImageCache(app);
+    const first = cache.prepare([image("plot.svg")], 1);
+    await land();
+    await first;
+    text = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    cache.forget("plot.svg");
+    cache.paintImage(asCanvasContext(fakeContext()), image("plot.svg"), 1);
+    await flush();
+    expect(vectors).toHaveLength(1);
+    expect(pending).toHaveLength(0);
+    cache.destroy();
   });
 });

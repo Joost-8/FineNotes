@@ -46,12 +46,12 @@ export interface PreparedImage {
 /** Size assumed for a picture that reports none (an SVG with only a viewBox). */
 const FALLBACK_SIZE = 1024;
 
-interface LoadedImage {
+export interface LoadedImage {
   img: HTMLImageElement;
   width: number;
   height: number;
   /** Drop the blob URL. Call once the image has been drawn. */
-  release(): void;
+  release(this: void): void;
 }
 
 /** Give a canvas's backing store back now; iOS holds canvas memory until then. */
@@ -68,7 +68,7 @@ export function imageMimeOf(bytes: ArrayBuffer, label: string): string {
   );
 }
 
-async function loadImage(bytes: ArrayBuffer, mime: string): Promise<LoadedImage> {
+export async function loadImage(bytes: ArrayBuffer, mime: string): Promise<LoadedImage> {
   const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
   // Obsidian's global createEl makes a detached element, which is all a
   // decode target needs (the plugin-review lint rejects document.createElement).

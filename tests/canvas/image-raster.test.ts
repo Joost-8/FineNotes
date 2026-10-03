@@ -8,6 +8,10 @@ import {
   bucketSize,
   chooseCachedBucket,
   decodeBucket,
+  imageDecodeBucket,
+  drawsSvgAsVector,
+  VECTOR_SVG_MAX_BYTES,
+  vectorSvgCost,
   drawImagePlaceholder,
   extensionForMime,
   extensionOf,
@@ -341,5 +345,41 @@ describe("drawImagePlaceholder", () => {
     const empty = fakeContext();
     drawImagePlaceholder(asCanvasContext(empty), 0, 40, true, 1);
     expect(empty.ops).toEqual([]);
+  });
+});
+
+describe("SVG source buckets", () => {
+  it("keeps SVG sources independent of zoom and intrinsic pixel dimensions", () => {
+    for (const pixels of [0, 100, 4096, 100000, Infinity]) {
+      expect(imageDecodeBucket("Diagrams/figure.SVG", pixels)).toBe(0);
+      expect(chooseCachedBucket([0], imageDecodeBucket("figure.svg", pixels))).toEqual({
+        use: 0,
+        decode: false,
+      });
+    }
+    expect(chooseCachedBucket([], 0)).toEqual({ use: null, decode: true });
+    expect(chooseCachedBucket([128, 2048], 0)).toEqual({ use: null, decode: true });
+  });
+  it("retains pixel buckets for raster pictures", () => {
+    expect(imageDecodeBucket("photo.png", 600)).toBe(1024);
+    expect(imageDecodeBucket("svg-folder/photo.jpg", 10000)).toBe(2048);
+  });
+});
+
+describe("drawsSvgAsVector", () => {
+  const svg = (text: string): ArrayBuffer => new TextEncoder().encode(text).buffer as ArrayBuffer;
+  it("keeps small SVGs as vectors and sends large ones to bitmaps", () => {
+    expect(drawsSvgAsVector(svg('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe(true);
+    expect(drawsSvgAsVector(new ArrayBuffer(VECTOR_SVG_MAX_BYTES))).toBe(true);
+    expect(drawsSvgAsVector(new ArrayBuffer(VECTOR_SVG_MAX_BYTES + 1))).toBe(false);
+  });
+  it("sends SVGs that apply a filter to bitmaps, by attribute or CSS, but not an unused one", () => {
+    expect(drawsSvgAsVector(svg('<svg><circle filter="url(#blur)"/></svg>'))).toBe(false);
+    expect(drawsSvgAsVector(svg("<svg><style>.a { filter: url('#b') }</style></svg>"))).toBe(false);
+    expect(drawsSvgAsVector(svg('<svg><defs><filter id="b"/></defs><circle/></svg>'))).toBe(true);
+  });
+  it("charges the text sixteen times over plus one intrinsic bitmap", () => {
+    expect(vectorSvgCost(1000, 24, 24)).toBe(16000 + 2304);
+    expect(vectorSvgCost(0, 0, 0)).toBe(4);
   });
 });
