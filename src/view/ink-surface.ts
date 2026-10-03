@@ -255,6 +255,7 @@ import {
   type ToolLift,
   type ToolUse,
   continuesUse,
+  drawingToolOf,
   selectedTool,
   toolAfterUse,
 } from "./tool-return";
@@ -698,6 +699,8 @@ export class InkSurface {
   private toolSeen: ActiveTool;
   /** The tool in use before Text, which an unpinned Text tool returns to. */
   private toolBeforeText: ActiveTool | null = null;
+  /** The pen or highlighter last in use, which the return-to-pen settings go back to. */
+  private drawingTool: ActiveTool = "pen";
   /** A Text-tool gesture made while a box was being edited: it only ends the edit. */
   private textDismiss = false;
   /** A Text-tool press beside a held box: its lift lets go of the box (see `finishTextDismiss`). */
@@ -1031,6 +1034,7 @@ export class InkSurface {
     this.paperIsDark = options.darkPaper === true;
     this.paper = paperTheme(this.paperIsDark);
     this.toolSeen = toolState.tool;
+    this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
@@ -1607,6 +1611,7 @@ export class InkSurface {
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
     if (tool !== "select") this.selectionToolUsed = false;
+    this.drawingTool = drawingToolOf(this.drawingTool, tool);
     // A tool picked by hand overrides a return still waiting to happen.
     this.cancelPendingReturn();
     this.toolSeen = tool;
@@ -1630,6 +1635,7 @@ export class InkSurface {
       this.toolState.tool,
       use,
       this.callbacks.returnToPenAfterUse?.() === true,
+      this.drawingTool,
     );
     if (tool === this.toolState.tool) return;
     this.setTool(tool);
@@ -1732,6 +1738,7 @@ export class InkSurface {
         this.toolState.tool,
         action.tool,
         this.callbacks.returnToPenOnReselect?.() === true,
+        this.drawingTool,
       );
       this.setTool(tool);
       this.callbacks.onToolChange?.(tool);

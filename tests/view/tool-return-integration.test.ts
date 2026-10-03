@@ -235,6 +235,53 @@ describe("secondary tool integration", () => {
       else expect(s.barButton).not.toHaveBeenCalled();
     }
   });
+  it("hands back to the highlighter it was picked from, by use, key and toolbar", () => {
+    // Use once: highlighter -> eraser -> one stroke -> highlighter (with its pen type intact).
+    const s = surface("highlighter");
+    run(s, "setTool", "highlighter");
+    s.toolState.tool = "eraser";
+    run(s, "setTool", "eraser");
+    run(s, "completeToolUse", "gesture");
+    expect(s.toolState.tool).toBe("highlighter");
+    // Text, use once on: back to the highlighter too, as an unpinned Text tool always did.
+    s.toolState.tool = "text";
+    run(s, "setTool", "text");
+    run(s, "handBackFromText");
+    expect(s.toolState.tool).toBe("highlighter");
+    // The key for the active tool, pressed again.
+    Object.assign(s, {
+      cropping: null,
+      actionBar: { isMenuOpen: false },
+      liveImageSelection: () => null,
+      liveSelection: () => null,
+      direction: "vertical",
+      scroller: { bounds: { maxY: 1 } },
+    });
+    s.toolState.tool = "shape";
+    run(s, "setTool", "shape");
+    run(s, "handleKeyDown", { key: "s", target: null, preventDefault: vi.fn() });
+    expect(s.toolState.tool).toBe("highlighter");
+    // The toolbar learns the drawing tool from the shared state it is given.
+    const bar: Fake = Object.assign(Object.create(Toolbar.prototype), {
+      state: { tool: "highlighter" },
+      drawingTool: "pen",
+      optionsVisible: true,
+      callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
+      toggleLassoPopover: vi.fn(),
+      closePopover: vi.fn(),
+      showOptions: vi.fn(),
+      buildOptions: vi.fn(),
+      syncActive: vi.fn(),
+    });
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.state.tool).toBe("eraser");
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.state.tool).toBe("highlighter");
+    run(bar, "setState", { tool: "pen" });
+    run(bar, "setState", { tool: "shape" });
+    run(bar, "tapTool", "shape", {});
+    expect(bar.state.tool).toBe("pen");
+  });
   it("reads settings live, including both switches independently", () => {
     const s = surface("eraser", false);
     run(s, "completeToolUse", "gesture");

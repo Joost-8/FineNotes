@@ -129,9 +129,9 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
-  /** Selecting an active secondary tool again returns to the pen. */
+  /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
-  /** Finish one secondary-tool use, then return to the pen. */
+  /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
   returnToPenAfterUse: boolean;
 }
 

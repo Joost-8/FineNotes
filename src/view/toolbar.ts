@@ -57,7 +57,7 @@
  *   "3 / 18" readout are chrome-level, because discrete pages are the fix.
  */
 
-import { selectedTool } from "./tool-return";
+import { drawingToolOf, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE } from "../constants";
 import {
@@ -425,6 +425,9 @@ export class Toolbar {
    * are the preset pen widths; `state` is kept and updated as the user picks,
    * and every pick is also reported through `callbacks`.
    */
+  /** The pen or highlighter last in use, which "select again" goes back to. */
+  private drawingTool: ActiveTool = "pen";
+
   constructor(
     private readonly host: HTMLElement,
     palette: readonly string[],
@@ -640,7 +643,13 @@ export class Toolbar {
    */
   private tapTool(tool: ActiveTool, button: HTMLElement): void {
     const current = this.state.tool;
-    tool = selectedTool(current, tool, this.callbacks.returnToPenOnReselect?.() === true);
+    this.drawingTool = drawingToolOf(this.drawingTool, current);
+    tool = selectedTool(
+      current,
+      tool,
+      this.callbacks.returnToPenOnReselect?.() === true,
+      this.drawingTool,
+    );
     if (tool === "select" && current === "select") {
       this.toggleLassoPopover(button);
       return;
@@ -1973,6 +1982,7 @@ export class Toolbar {
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
   setState(next: ToolbarState): void {
+    this.drawingTool = drawingToolOf(this.drawingTool, next.tool);
     this.state = next;
     this.buildOptions();
     this.syncActive();

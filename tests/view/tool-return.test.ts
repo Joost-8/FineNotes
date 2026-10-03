@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ActiveTool } from "../../src/view/toolbar";
 import { REJOIN_MS, REJOIN_PX } from "../../src/input/pen-rejoin";
-import { continuesUse, selectedTool, toolAfterUse, type ToolUse } from "../../src/view/tool-return";
+import {
+  continuesUse,
+  drawingToolOf,
+  selectedTool,
+  toolAfterUse,
+  type ToolUse,
+} from "../../src/view/tool-return";
 
 const tools: ActiveTool[] = ["pen", "highlighter", "eraser", "select", "text", "shape"];
 describe("optional tool return", () => {
@@ -31,5 +37,19 @@ describe("optional tool return", () => {
     // A clock that ran backwards, or a cancel with no position, never continues.
     expect(continuesUse(lift, 990, 200, 300, REJOIN_PX)).toBe(false);
     expect(continuesUse({ t: 1000, x: NaN, y: NaN }, 1010, 200, 300, REJOIN_PX)).toBe(false);
+  });
+  it("goes back to the highlighter when that was the drawing tool before", () => {
+    expect(drawingToolOf("pen", "highlighter")).toBe("highlighter");
+    expect(drawingToolOf("highlighter", "eraser")).toBe("highlighter");
+    expect(drawingToolOf("highlighter", "pen")).toBe("pen");
+    // Only a pen or the highlighter is ever gone back to.
+    expect(drawingToolOf("eraser", "text")).toBe("pen");
+    expect(selectedTool("eraser", "eraser", true, "highlighter")).toBe("highlighter");
+    expect(selectedTool("eraser", "eraser", false, "highlighter")).toBe("eraser");
+    expect(selectedTool("eraser", "shape", true, "highlighter")).toBe("shape");
+    expect(toolAfterUse("shape", "gesture", true, "highlighter")).toBe("highlighter");
+    expect(toolAfterUse("text", "text", true, "highlighter")).toBe("highlighter");
+    expect(toolAfterUse("select", "selection", true, "select")).toBe("pen");
+    expect(toolAfterUse("pen", "gesture", true, "highlighter")).toBe("pen");
   });
 });
