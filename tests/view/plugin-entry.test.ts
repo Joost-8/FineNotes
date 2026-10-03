@@ -384,6 +384,7 @@ describe("registration", () => {
         "search-notebook",
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
+        "test-pdf-rendering", // beta only, removed before 1.0.4
         "toggle-text-layer",
         "view-changelog",
         "zoom-in",

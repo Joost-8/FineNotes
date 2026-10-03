@@ -94,6 +94,11 @@ interface PdfPageLike {
   }): {
     promise: Promise<void>;
     cancel?: () => void;
+    /**
+     * pdf.js renders in ~15 ms slices; when set, it is handed each next
+     * slice to run when it likes (`RenderTask.onContinue`).
+     */
+    onContinue?: ((next: () => void) => void) | null;
   };
   cleanup?: () => void;
 }
@@ -215,6 +220,12 @@ export class PdfBackdropCache {
     { path: string; page: number; dprScale: number; area?: PdfRenderArea }
   >();
   private held = false;
+  /**
+   * The next slices of renders that were already running when the pen came
+   * down. Holding only new work let a running render keep landing 15 ms
+   * slices mid-stroke; these wait for the lift too.
+   */
+  private readonly paused: Array<() => void> = [];
   private lib: Promise<PdfJsLike> | null = null;
   private destroyed = false;
 
@@ -378,6 +389,7 @@ export class PdfBackdropCache {
     if (this.held === held) return;
     this.held = held;
     if (held) return;
+    for (const next of this.paused.splice(0)) next();
     const waiting = [...this.deferred.values()];
     this.deferred.clear();
     for (const { path, page, dprScale, area } of waiting)
@@ -466,6 +478,8 @@ export class PdfBackdropCache {
   clear(): void {
     for (const job of [...this.work.values()]) this.cancel(job);
     this.queue.length = 0;
+    // Cancelled above; a cancelled render ignores its next slice anyway.
+    this.paused.length = 0;
     this.entries.clear();
     this.deferred.clear();
     for (const promise of this.documents.values()) {
@@ -595,6 +609,10 @@ export class PdfBackdropCache {
         ...(plan ? { transform: plan.transform } : {}),
       });
       if (job) job.cancelRender = render.cancel ? () => render.cancel?.() : undefined;
+      render.onContinue = (next) => {
+        if (this.held) this.paused.push(next);
+        else next();
+      };
       await render.promise;
       return { ok: true, canvas, ...(plan ? { box: plan.box } : {}) };
     } catch (error) {

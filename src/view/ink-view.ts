@@ -59,6 +59,8 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { runPdfProbe } from "./pdf-probe";
+import { probeReportMarkdown } from "./pdf-probe-report";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
@@ -1848,6 +1850,41 @@ export class InkView extends TextFileView {
       void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
         if (file) void this.importPdfFile(file);
       });
+    }
+  }
+
+  /**
+   * The PDF rendering test (beta only): times the PDF behind the page in view
+   * with each engine and writes the result to a note, which it opens.
+   */
+  async testPdfRendering(): Promise<void> {
+    const surface = this.surface;
+    const backdrop = surface?.document.pages[surface.currentPage]?.backdrop;
+    if (backdrop?.kind !== "pdf") {
+      new Notice("FineNotes: go to a page with a PDF background, then run the test again.");
+      return;
+    }
+    const file = this.app.vault.getFileByPath(backdrop.path);
+    if (!file) {
+      new Notice(`FineNotes: ${backdrop.path} is missing.`);
+      return;
+    }
+    const progress = new Notice("FineNotes PDF test: starting…", 0);
+    try {
+      const bytes = await this.app.vault.readBinary(file);
+      const result = await runPdfProbe(bytes, file.name, (phase) =>
+        progress.setMessage(`FineNotes PDF test: ${phase}…`),
+      );
+      const stamp = result.when.slice(0, 16).replace("T", " ").replace(":", ".");
+      const note = await this.app.vault.create(
+        normalizePath(`FineNotes PDF test ${stamp}.md`),
+        probeReportMarkdown(result),
+      );
+      await this.app.workspace.getLeaf("tab").openFile(note);
+    } catch (error) {
+      new Notice(`FineNotes PDF test failed — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
     }
   }
 

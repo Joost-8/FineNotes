@@ -20,7 +20,11 @@ const pdf = {
   active: 0,
   peak: 0,
   blocked: false,
-  tasks: [] as Array<{ finish: () => void; cancel: ReturnType<typeof vi.fn> }>,
+  tasks: [] as Array<{
+    finish: () => void;
+    cancel: ReturnType<typeof vi.fn>;
+    task: { onContinue?: ((next: () => void) => void) | null };
+  }>,
   pages: 40,
   calls: [] as Array<{ viewport: { width: number; height: number }; transform?: number[] }>,
 };
@@ -55,9 +59,10 @@ vi.mock("obsidian", async () => ({
                   pdf.active--;
                 });
                 const cancel = vi.fn(() => reject(new Error("cancelled")));
-                pdf.tasks.push({ finish, cancel });
+                const task = { promise: done, cancel, onContinue: null };
+                pdf.tasks.push({ finish, cancel, task });
                 if (!pdf.blocked) finish();
-                return { promise: done, cancel };
+                return task;
               },
             }),
           destroy: () => Promise.resolve(),
@@ -553,6 +558,42 @@ describe("detail kept for small moves and going back", () => {
     clock += 10;
     c.peek("s.pdf", 0, 8, area(0)); // drawn again: now the newest
     expect(boxes()).toEqual([200, 400, 0]);
+    c.destroy();
+  });
+});
+
+describe("a render already running when the pen comes down", () => {
+  it("runs its next slice only after the lift", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    void c.resolve("a.pdf", 0, 1);
+    await settle();
+    const { task } = pdf.tasks[0];
+    // pdf.js hands over each next slice; with the pen up it runs at once.
+    const first = vi.fn();
+    task.onContinue?.(first);
+    expect(first).toHaveBeenCalledOnce();
+    c.setHeld(true);
+    const second = vi.fn();
+    task.onContinue?.(second);
+    expect(second).not.toHaveBeenCalled();
+    c.setHeld(false);
+    expect(second).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+
+  it("drops held slices on clear (their renders are cancelled)", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    void c.resolve("a.pdf", 0, 1);
+    await settle();
+    c.setHeld(true);
+    const next = vi.fn();
+    pdf.tasks[0].task.onContinue?.(next);
+    c.clear();
+    c.setHeld(false);
+    expect(next).not.toHaveBeenCalled();
+    expect(pdf.tasks[0].cancel).toHaveBeenCalled();
     c.destroy();
   });
 });

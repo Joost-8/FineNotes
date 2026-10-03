@@ -41,6 +41,10 @@ Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
 
 ### Fixed
 
+- **Writing over a PDF stays smooth while a page is being drawn.** Drawing
+  a PDF page already paused for the pen, but only if it had not started yet;
+  one already under way kept interrupting the ink. It now waits until you
+  lift the pen.
 - **PDF pages no longer go blank while zooming.** After a zoom, a PDF page
   showed as empty white paper until it was drawn again at the new size,
   which takes a second or more on an iPad. It now keeps showing the page as
