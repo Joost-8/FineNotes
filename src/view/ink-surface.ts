@@ -255,6 +255,7 @@ import { type KeyAction, keyOutcome } from "./surface-keys";
 import { PointerHud } from "./pointer-hud";
 import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
+import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -740,6 +741,10 @@ export class InkSurface {
   private wheelZoomTimer = 0;
   /** A wheel or trackpad scroll across a row of pages settles on a page when it stops. */
   private wheelSnapTimer = 0;
+  /** Whether the view is still moving; zoomed-in PDF detail waits until it rests. */
+  private readonly viewRest = new ViewRest();
+  /** One more frame once the view has rested, to render the PDF detail it held back. */
+  private detailRestTimer = 0;
   /** A finger is dragging the page (touchmove must then not reach Obsidian). */
   private touchPanning = false;
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
@@ -1284,6 +1289,7 @@ export class InkSurface {
    */
   destroy(): void {
     window.clearTimeout(this.wheelSnapTimer);
+    window.clearTimeout(this.detailRestTimer);
     this.hideOffPage();
     for (const frame of [
       this.frameReq,
@@ -2014,6 +2020,7 @@ export class InkSurface {
     const zooming = this.stepZoomAnim(t);
     const moving = scrolling || zooming;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    this.noteViewMotion(busy);
     this.syncViewport();
     this.syncPullAdd();
     if (busy) this.flashChrome();
@@ -2035,6 +2042,22 @@ export class InkSurface {
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
   private get zoomTransient(): boolean {
     return this.pinch !== null || this.zoomAnim !== null || this.wheelZoomTimer !== 0;
+  }
+
+  /** Whether the view moved within `REST_MS`: PDF detail waits until it rests. */
+  private get viewMoving(): boolean {
+    return this.zoomTransient || this.viewRest.moving(now());
+  }
+
+  /** Record this frame's view; once it stops, one more frame renders the held-back detail. */
+  private noteViewMotion(busy: boolean): void {
+    const { x, y } = this.scroller.position;
+    if (!this.viewRest.note({ x, y, zoom: this.userZoom }, busy, now())) return;
+    window.clearTimeout(this.detailRestTimer);
+    this.detailRestTimer = window.setTimeout(() => {
+      this.detailRestTimer = 0;
+      this.requestFrame();
+    }, REST_MS + 16);
   }
 
   /** The zoom came to rest: rasterise at the live scale from now on. */
@@ -2686,7 +2709,7 @@ export class InkSurface {
       null,
       this.erasePieces,
       budgetMs,
-      this.zoomTransient,
+      this.viewMoving,
     );
   }
 

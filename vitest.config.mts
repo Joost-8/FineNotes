@@ -44,6 +44,7 @@ export default defineConfig({
         "src/view/pointer-hud.ts",
         "src/view/surface-size.ts",
         "src/view/write-hold.ts",
+        "src/view/view-rest.ts",
         "src/canvas/scan-raster.ts",
         "src/canvas/homography.ts",
         "src/canvas/page-detect.ts",
