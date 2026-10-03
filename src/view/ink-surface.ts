@@ -1,3 +1,4 @@
+import { bindScrollThumb } from "./scroll-thumb-drag";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -1033,7 +1034,7 @@ export class InkSurface {
     // touch on a text box, which that guard lets through.)
     this.surfaceEl.dataset.ignoreSwipe = "true";
     this.indicatorEl = this.surfaceEl.createDiv({ cls: "goodobsidian-pageindicator is-idle" });
-    // A readout, not a control: a button there would sit under a resting palm
+    // The zoom readout: a button there would sit under a resting palm
     // the moment a two-finger zoom gives way to writing.
     this.zoomReadoutEl = this.surfaceEl.createDiv({ cls: "goodobsidian-zoomreadout is-idle" });
     this.zoomReadoutEl.setAttribute("aria-hidden", "true");
@@ -1043,6 +1044,38 @@ export class InkSurface {
     this.thumbXEl = this.surfaceEl.createDiv({
       cls: "goodobsidian-scrollthumb is-horizontal is-idle",
     });
+    for (const [element, vertical] of [
+      [this.thumbYEl, true],
+      [this.thumbXEl, false],
+    ] as const) {
+      this.disposers.push(
+        bindScrollThumb(
+          element,
+          vertical,
+          () => {
+            const bounds = this.scroller.bounds;
+            const viewport = vertical ? this.cssH : this.cssW;
+            return {
+              position: vertical ? this.scroller.position.y : this.scroller.position.x,
+              minimum: vertical ? bounds.minY : bounds.minX,
+              maximum: vertical ? bounds.maxY : bounds.maxX,
+              viewport,
+              track: viewport - 2 * THUMB_INSET,
+            };
+          },
+          (position) => {
+            const current = this.scroller.position;
+            this.scroller.setPosition(
+              vertical ? current.x : position,
+              vertical ? position : current.y,
+            );
+            this.requestFrame();
+          },
+          () => this.flashChrome(false),
+        ),
+      );
+    }
+
     this.pullAdd = new PullAddIndicator(this.surfaceEl);
     // The Text tool's hint, a pill at the bottom of the surface as in GoodNotes.
     this.textHintEl = this.surfaceEl.createDiv({ cls: "goodobsidian-text-hint is-hidden" });
@@ -1218,8 +1251,10 @@ export class InkSurface {
     // Wheel and trackpad: scroll, or zoom with Ctrl/Cmd (a trackpad pinch
     // arrives as a Ctrl+wheel). Momentum on a trackpad is the OS's own.
     const onWheel = (event: WheelEvent): void => this.onWheel(event);
-    this.scrollEl.addEventListener("wheel", onWheel, { passive: false });
-    this.disposers.push(() => this.scrollEl.removeEventListener("wheel", onWheel));
+    for (const element of [this.scrollEl, this.thumbYEl, this.thumbXEl]) {
+      element.addEventListener("wheel", onWheel, { passive: false });
+      this.disposers.push(() => element.removeEventListener("wheel", onWheel));
+    }
 
     // Neither the surface nor the scroll overlay scrolls natively (the page
     // moves by a transform), but a browser may still scroll an overflow:hidden
@@ -1624,7 +1659,7 @@ export class InkSurface {
    * field are the field's; which key does what is `keyOutcome`'s table.
    */
   handleKeyDown(event: KeyboardEvent): boolean {
-    if (isEditable(event.target)) return false;
+    if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
     const outcome = keyOutcome(event, {
       cropping: this.cropping !== null,
       editingText: () => this.editingTextView() !== null,

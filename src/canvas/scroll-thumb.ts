@@ -51,3 +51,19 @@ export function scrollThumb(
   const progress = Math.min(1, Math.max(0, position / range));
   return { offset: (track - length) * progress, length };
 }
+
+/** Translate a pointer drag into a bounded scroll offset, accounting for the minimum thumb size. */
+export function thumbDragPosition(
+  position: number,
+  delta: number,
+  viewport: number,
+  content: number,
+  track: number,
+): number {
+  if (![position, delta, viewport, content, track].every(Number.isFinite)) return 0;
+  const range = Math.max(0, content - viewport);
+  const start = Math.max(0, Math.min(range, position));
+  const thumb = scrollThumb(start, viewport, content, track);
+  if (!thumb || track <= thumb.length) return start;
+  return Math.max(0, Math.min(range, start + (delta * range) / (track - thumb.length)));
+}
