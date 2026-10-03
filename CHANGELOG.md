@@ -6,7 +6,7 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
-## [Unreleased]
+## [1.1.0] - 2026-10-03
 
 ### Added
 
@@ -38,7 +38,9 @@ extracted from the matching section of this file by `release.yml`.
   crisp instead of going soft until you stop. Where background drawing is
   not available, FineNotes draws as before.
 
-Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
+Thanks to [@Suzkapu](https://github.com/Suzkapu) for Insert PDF, drag and
+drop, New notebook from the file explorer and the PDF export, and for the
+zoomed-in PDF rendering the background tiles grew out of
 ([#5](https://github.com/Joost-8/FineNotes/pull/5)).
 
 ### Fixed
