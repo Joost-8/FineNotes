@@ -29,7 +29,11 @@
   },
   "license": "MIT",
   "dependencies": {
-    "fflate": "0.8.3"
+    "dompurify": "3.4.16",
+    "fflate": "0.8.3",
+    "jspdf": "4.2.1",
+    "pdf-lib": "1.17.1",
+    "svg2pdf.js": "2.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

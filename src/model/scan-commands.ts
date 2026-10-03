@@ -44,7 +44,8 @@ export interface SavedScan {
 export interface SavedPdf {
   kind: "pdf";
   path: string;
-  pages: ReadonlyArray<{ width: number; height: number }>;
+  /** Optional source page indices permit selected/out-of-order imports. */
+  pages: ReadonlyArray<{ width: number; height: number; page?: number }>;
 }
 
 export type SavedItem = SavedScan | SavedPdf;
@@ -75,19 +76,6 @@ export function scanFileName(now: Date, index = 0, count = 1): string {
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-` +
     `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   return count > 1 ? `Scan ${stamp} p${index + 1}` : `Scan ${stamp}`;
-}
-
-/**
- * Whether a picked file is a PDF: its first bytes say `%PDF-` (the header
- * may sit anywhere in the first KB), or failing that its type or name does.
- */
-export function looksLikePdf(head: Uint8Array, mime: string, name: string): boolean {
-  const magic = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
-  const end = Math.min(head.length, 1024) - magic.length;
-  for (let i = 0; i <= end; i++) {
-    if (magic.every((byte, k) => head[i + k] === byte)) return true;
-  }
-  return mime.toLowerCase() === "application/pdf" || /\.pdf$/i.test(name);
 }
 
 /**
@@ -170,6 +158,7 @@ export function buildScanInsert(
   doc: InkDocument,
   currentIndex: number,
   items: readonly SavedItem[],
+  label?: string,
 ): ScanInsert | null {
   const current = doc.pages[currentIndex];
   if (!current) return null;
@@ -204,7 +193,7 @@ export function buildScanInsert(
         const added = addPage(pdfPageGeometry(current.geometry, size), {
           kind: "pdf",
           path: item.path,
-          page,
+          page: size.page ?? page,
         });
         placed.push({ pageId: added.id, pageIndex: at - 1 });
       });
@@ -223,6 +212,10 @@ export function buildScanInsert(
 
   if (parts.length === 0) return null;
   const count = single ? placed.length : pages.length - doc.pages.length;
-  const label = count === 1 ? "Scan document" : `Scan ${count} pages`;
-  return { command: new CompositeCommand(label, parts), placed, addedPages: !single };
+  const defaultLabel = count === 1 ? "Scan document" : `Scan ${count} pages`;
+  return {
+    command: new CompositeCommand(label ?? defaultLabel, parts),
+    placed,
+    addedPages: !single,
+  };
 }

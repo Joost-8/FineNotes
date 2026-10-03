@@ -215,6 +215,8 @@ describe("the rows", () => {
       ["", "Paper width", "render"],
       ["", "(block)", "render"],
       ["", "Default folder for new notebooks", "render"],
+      ["", "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
+      ["", "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       ["", "Default ink color", "color:defaultColor"],
       ["", "Default tool", "dropdown:defaultTool"],
       ["", "Default stroke size", "dropdown:defaultSize"],
@@ -273,6 +275,8 @@ describe("the rows", () => {
       ],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
+      "Show New notebook in right-click menu": ["context menu", "file explorer", "new notebook"],
+      "Show New notebook in file explorer bar": ["toolbar", "file explorer", "new notebook"],
       "Default ink color": ["pen color"],
       "Default tool": [],
       "Default stroke size": ["pen size", "line width"],
@@ -360,6 +364,8 @@ describe("which rows show", () => {
       "Pressure-sensitive pens (advanced)",
       "Paper width",
       "Default folder for new notebooks",
+      "Show New notebook in right-click menu",
+      "Show New notebook in file explorer bar",
       "Default ink color",
       "Default tool",
       "Default stroke size",
@@ -370,9 +376,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 24)",
+      "(block 26)",
       "Input debug overlay",
-      "(block 28)",
+      "(block 30)",
     ]);
   });
 
@@ -480,6 +486,18 @@ describe("control values", () => {
     expect(tab.getControlValue("defaultTool")).toBe("eraser");
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
+
+  it.each(["showNewNotebookInContextMenu", "showNewNotebookInExplorer"] as const)(
+    "saves %s without requiring a restart",
+    async (key) => {
+      const plugin = makePlugin();
+      const { tab } = makeTab(plugin);
+      expect(plugin.settings[key]).toBe(key === "showNewNotebookInContextMenu");
+      await tab.setControlValue(key, !plugin.settings[key]);
+      expect(plugin.settings[key]).toBe(key === "showNewNotebookInExplorer");
+      expect(plugin.saveSettings).toHaveBeenCalledOnce();
+    },
+  );
 
   it("stores what a control sets in data.json's units", async () => {
     const plugin = makePlugin();

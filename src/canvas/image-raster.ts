@@ -343,6 +343,11 @@ export function decodeBucket(devicePx: number): number {
   return DECODE_BUCKETS[DECODE_BUCKETS.length - 1];
 }
 
+/** SVGs keep one vector source (bucket 0); raster images keep bounded pixel buckets. */
+export function imageDecodeBucket(path: string, devicePx: number): number {
+  return mimeForExtension(extensionOf(path)) === "image/svg+xml" ? 0 : decodeBucket(devicePx);
+}
+
 /**
  * Which cached decode to draw for a wanted bucket, and whether the wanted one
  * still needs decoding. The exact bucket, or a larger one that is not wildly
@@ -354,6 +359,10 @@ export function chooseCachedBucket(
   available: Iterable<number>,
   wanted: number,
 ): { use: number | null; decode: boolean } {
+  if (wanted === 0) {
+    const present = [...available].includes(0);
+    return { use: present ? 0 : null, decode: !present };
+  }
   let larger = Infinity;
   let smaller = -Infinity;
   for (const bucket of available) {

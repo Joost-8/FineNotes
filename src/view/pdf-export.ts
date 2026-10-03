@@ -1,5 +1,7 @@
 /**
- * Export pages as a PDF: each page is rasterised through the painter the
+ * Export pages as a PDF. PDF backdrops retain their original text/vector
+ * content with transparent annotation overlays; SVG pictures are vector PDF layers.
+ * Pages without either vector source use the painter the
  * sidebar thumbnails use — paper and ruling, PDF slide, pictures, text boxes
  * and ink, exactly as the reader sees them — encoded as JPEG, and wrapped by
  * the dependency-free writer in `src/export/pdf-writer.ts`.
@@ -11,6 +13,10 @@
  * DOM (canvas) but no Obsidian imports.
  */
 
+import { imageDecodeBucket } from "../canvas/image-raster";
+import { renderSvgPdf } from "./svg-export";
+import { annotationLayers } from "../export/annotation-layers";
+import { type PdfAnnotation, PdfComposer } from "../export/pdf-composer";
 import type { PaperTheme } from "../canvas/backdrop";
 import { renderPageThumbnail } from "../canvas/renderer";
 import {
@@ -29,6 +35,10 @@ import type { PdfBackdropCache } from "./pdf-backdrop";
 const JPEG_QUALITY = 0.9;
 
 export interface PdfExportSources {
+  /** Read the original SVG bytes without modifying the source. */
+  readSvg?: (path: string) => Promise<ArrayBuffer>;
+  /** Read the original PDF bytes without modifying the source. */
+  readPdf?: (path: string) => Promise<ArrayBuffer>;
   /** PDF backdrops' raster cache, shared with the view; `null` paints them as missing. */
   pdf: PdfBackdropCache | null;
   /** Placed pictures; `null` leaves them out. */
@@ -53,14 +63,44 @@ export async function exportPagesToPdf(
   options: PdfExportOptions,
 ): Promise<Uint8Array> {
   const out: PdfImagePage[] = [];
+  const svgSources = new Map<string, Promise<Uint8Array>>();
+  const hasPdf = pages.some((page) => page.backdrop.kind === "pdf");
+  if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
+  const hasSvg = pages.some((page) =>
+    page.images.some((image) => imageDecodeBucket(image.path, 1) === 0),
+  );
+  if (hasSvg && !sources.readSvg) throw new Error("SVG source reader unavailable");
+  const composer =
+    hasPdf || hasSvg
+      ? await PdfComposer.create(
+          options.title,
+          sources.readPdf ?? (() => Promise.reject(new Error("PDF source reader unavailable"))),
+        )
+      : null;
   for (const [i, page] of pages.entries()) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);
     // Let the dialog paint its progress before the next page blocks the thread.
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    out.push(await renderPageJpeg(page, sources));
+    if (composer && page.backdrop.kind === "pdf") {
+      await composer.addPdf(page, () => renderAnnotationLayers(page, sources, options, svgSources));
+    } else {
+      const vector = page.images.some((image) => imageDecodeBucket(image.path, 1) === 0);
+      const rendered = await renderPageJpeg(
+        vector ? { ...page, images: [], textBoxes: [], strokes: [] } : page,
+        sources,
+      );
+      if (composer)
+        await composer.addImage(
+          rendered,
+          vector ? () => renderAnnotationLayers(page, sources, options, svgSources) : undefined,
+        );
+      else out.push(rendered);
+    }
   }
+  if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
   options.onProgress?.(pages.length, pages.length);
+  if (composer) return composer.save();
   return buildImagePdf(out, { title: options.title, created: new Date() });
 }
 
@@ -166,4 +206,55 @@ function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Uint8Array> {
       JPEG_QUALITY,
     );
   });
+}
+
+/** Transparent ink/text/pictures only; source PDF content is composed separately. */
+async function renderAnnotationPng(page: Page, sources: PdfExportSources): Promise<Uint8Array> {
+  const scale = exportPixelScale(page.geometry.width, page.geometry.height);
+  if (!scale) throw new Error("A page has no size");
+  if (sources.images) await sources.images.prepare(page.images, scale);
+  const canvas = createEl("canvas");
+  try {
+    renderPageThumbnail(canvas, page, { paint: () => undefined }, page.geometry.width * scale, 1, {
+      transparent: true,
+      usePressure: sources.usePressure,
+      highlighterAlpha: sources.highlighterAlpha,
+      ...(sources.images ? { images: sources.images } : {}),
+    });
+    return await new Promise<Uint8Array>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("PDF annotations could not be encoded"));
+          return;
+        }
+        blob.arrayBuffer().then((bytes) => resolve(new Uint8Array(bytes)), reject);
+      }, "image/png");
+    });
+  } finally {
+    releaseCanvas(canvas);
+  }
+}
+
+/** Encode and release one layer at a time, preserving highlighter blending and stroke order. */
+async function* renderAnnotationLayers(
+  page: Page,
+  sources: PdfExportSources,
+  options: PdfExportOptions,
+  svgSources: Map<string, Promise<Uint8Array>>,
+): AsyncGenerator<PdfAnnotation> {
+  for (const layer of annotationLayers(page)) {
+    if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const image = layer.page.images[0];
+    if (image && imageDecodeBucket(image.path, 1) === 0) {
+      let converted = svgSources.get(image.path);
+      if (!converted) {
+        converted = sources.readSvg!(image.path).then((bytes) => renderSvgPdf(bytes, image.path));
+        svgSources.set(image.path, converted);
+      }
+      yield { pdf: await converted, key: image.path, image };
+    } else {
+      yield { png: await renderAnnotationPng(layer.page, sources), multiply: layer.multiply };
+    }
+  }
 }

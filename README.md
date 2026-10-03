@@ -131,7 +131,12 @@ Hope you guys enjoy this and give me some
 ## Getting started
 
 1. Open a new notebook, with the notebook button in the left ribbon or the
-   command **New notebook or page…**. Choose a cover, a paper and a size.
+   command **New notebook or page…**. You can also right-click a folder in the
+   file explorer and choose **New notebook**. Turn this entry off with
+   **Show New notebook in right-click menu** in FineNotes settings.
+   The file explorer’s top bar also has a **New notebook** button, controlled
+   by **Show New notebook in file explorer bar**. The right-click entry starts enabled; the top-bar button starts disabled.
+   Choose a cover, a paper and a size.
 2. Write. The toolbar at the top has:
    - on the left: pages, search, AI, and undo/redo;
    - in the middle: the writing tools;
@@ -226,9 +231,22 @@ chosen after a box is done. While you type, the red bin deletes the box.
 - **Scan document:** photograph a sheet of paper, drag the corners onto it if
   needed, choose **Colour**, **Greyscale** or **Black & white**, and tap **Add
   page**. **Next page** scans several at once.
-- **Scanned PDF from Files:** any PDF, such as lecture slides. Each of its
-  pages becomes a page you can write on, after the current one. Notebooks
-  only.
+- **Insert PDF** (beside **Insert image** on the toolbar): choose **From files**
+  or **From vault**, then **All pages** or **Selected pages** and a
+  range such as `1-3, 5` (or `5, 3-1` to change the order).
+- **From vault** in the PDF menu reuses an existing PDF without making a copy.
+  You can also use **Import PDF into notebook** in its file menu while a notebook
+  is active.
+- Drop a PDF file onto the notebook to open the same page selection dialog.
+  Imported pages follow the current page and undo together. The source PDF
+  remains unchanged; writing and text boxes sit above its page backdrop.
+  Convert a single page to a notebook before importing PDF pages. PDF pages
+  are rendered directly from their source at the settled zoom, in small
+  display-sized regions, so zooming does not enlarge a compressed page image.
+- Drop pictures from your computer or the vault onto the notebook to insert
+  them like **Insert image**. PNG, JPEG, GIF, WebP, BMP and SVG are supported;
+  other image formats depend on your device, just like the image file picker.
+  Existing vault pictures are reused without making a copy.
 - **Generate with AI**, once an image service is set up.
 
 A new picture is selected: drag its corners to resize it and the knob below
@@ -263,7 +281,17 @@ picture, such as a worksheet you write on; hold the lasso on it and tap
 - **Export as PDF:** all pages, **This page**, or **Choose pages** (tap them in
   the order you want, or type `1-3, 5`), then **Export**. The PDF goes into
   the **PDF exports** folder, or else next to the notebook. Then **Open** or
-  **Share…** it.
+  **Share…** it. PDF-backed pages retain their original PDF text and vector
+  detail, with notebook handwriting, pictures and text boxes as a transparent
+  overlay. Imported SVGs stay sharp when zoomed and retain vector paths and
+  text in PDF exports, including cropped and rotated placements. Other pictures,
+  notebook text and handwriting use the existing raster overlays. Ordinary pages
+  without SVGs use the existing image-based export.
+  SVG filters, HTML (`foreignObject`) and animations are unsupported by vector
+  export and produce an error. SVG text uses the converter's standard PDF fonts;
+  custom fonts may look different.
+  A missing, corrupt or password-protected PDF source stops the export with
+  an error instead of silently replacing its content.
 
 ### Audio
 

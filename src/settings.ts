@@ -333,6 +333,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         (s) => this.drawNotebookFolder(s),
         ["folder", "location", "new notebook", "new page"],
       ),
+      toggle(
+        "showNewNotebookInContextMenu",
+        "Show New notebook in right-click menu",
+        "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
+        ["context menu", "file explorer", "new notebook"],
+      ),
+      toggle(
+        "showNewNotebookInExplorer",
+        "Show New notebook in file explorer bar",
+        "Add a New notebook button beside New note and New folder in the file explorer.",
+        ["toolbar", "file explorer", "new notebook"],
+      ),
       controlRow("Default ink color", DESC.inkColor, { type: "color", key: "defaultColor" }, [
         "pen color",
       ]),
