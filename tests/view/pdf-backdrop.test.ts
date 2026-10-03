@@ -310,8 +310,9 @@ describe("bounded PDF work and viewport cancellation", () => {
     expect(ready.mock.calls[0][1]).toBe(3);
     for (const r of old) expect(c.peek(r.path, r.page, r.dprScale, r.area)).toBeNull();
     expect(c.bytes).toBe(1024 * 1024 * 4);
+    // Scrolled away, the finished patch is kept for going back to it.
     c.setVisibleRegions([]);
-    expect(c.bytes).toBe(0);
+    expect(c.bytes).toBe(1024 * 1024 * 4);
     c.destroy();
   });
   it("drops held areas that scrolled away before they could render", async () => {
@@ -326,13 +327,14 @@ describe("bounded PDF work and viewport cancellation", () => {
     expect(c.peek("slides.pdf", 1, 8, request(1).area)?.ok).toBe(true);
     c.destroy();
   });
-  it("deduplicates shared detail and frees its old raster after repeated scrolls", async () => {
+  it("deduplicates shared detail and keeps only the two most recent old rasters", async () => {
     const c = cache();
     for (let x = 0; x < 100; x++) {
       const r = request(0, x);
       c.setVisibleRegions([r, r]);
       await settle();
-      expect(c.bytes).toBe(4 * 1024 * 1024);
+      // The one in view, and at most two it scrolled past.
+      expect(c.bytes).toBe(Math.min(x + 1, 3) * 4 * 1024 * 1024);
     }
     expect(pdf.renders).toBe(100);
     expect(pdf.peak).toBeLessThanOrEqual(2);
@@ -398,16 +400,20 @@ describe("63-page deck at DPR 2", () => {
       for (let tile = 0; tile < 32; tile++)
         painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region: visible });
       await settle();
-      expect(c.bytes).toBeLessThan(fullPageBytes + 16 * 1024 * 1024);
+      // The page image plus one 9 MP patch (36 MB) with its margin.
+      expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
     }
-    expect(pdf.renders - before).toBe(32);
+    // The 25% margin covers the next 29 one-pixel moves: one detail render.
+    expect(pdf.renders - before).toBe(3);
     expect(pdf.peak).toBeLessThanOrEqual(2);
     const renders = pdf.renders;
     for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
     await settle();
     expect(pdf.renders).toBe(renders);
+    // Scrolled off the page: its patch stays, as one of the recent ones.
     painter.prepare([], 8, 4, false);
-    expect(c.bytes).toBe(fullPageBytes);
+    expect(c.bytes).toBeGreaterThan(fullPageBytes);
+    expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
     c.destroy();
   });
 });
@@ -487,5 +493,66 @@ describe("the page while a zoom's new scale renders", () => {
     painter.setDeviceScale(1);
     painter.paint(ctx, { kind: "pdf", path: "a.pdf", page: 0 }, geometry);
     expect(drawn).toBe(0);
+  });
+});
+
+describe("detail kept for small moves and going back", () => {
+  const geometry = { width: 1200, height: 1600 };
+  // Small patches (2.5 MB at 8x), so the memory budget never evicts them here.
+  const at = (minX: number, maxX = minX + 100) => ({ minX, minY: 0, maxX, maxY: 100 });
+  const area = (minX: number, maxX?: number) => ({ geometry, region: at(minX, maxX) });
+
+  it("knows when a cached or in-flight patch covers the view", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    c.setVisibleRegions([{ path: "s.pdf", page: 0, dprScale: 8, area: area(0, 150) }]);
+    await settle();
+    // In flight already counts: no second render for the same view.
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(20, 120))).toBe(true);
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(60, 160))).toBe(false);
+    expect(c.detailCovers("s.pdf", 1, 8, geometry, at(20, 120))).toBe(false);
+    expect(c.detailCovers("s.pdf", 0, 4, geometry, at(20, 120))).toBe(false); // another level
+    pdf.tasks[0].finish();
+    await settle();
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(20, 120))).toBe(true);
+    c.destroy();
+  });
+
+  it("does not cancel a render that still covers what is shown", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    const wide = { path: "s.pdf", page: 0, dprScale: 8, area: area(0, 150) };
+    c.setVisibleRegions([wide]);
+    await settle();
+    // Moved a little: nothing new asked for, the running render still meets the view.
+    c.setVisibleRegions(
+      [],
+      [{ path: "s.pdf", page: 0, dprScale: 8, geometry, region: at(10, 110) }],
+    );
+    expect(pdf.tasks[0].cancel).not.toHaveBeenCalled();
+    // Moved far: it no longer meets anything shown.
+    c.setVisibleRegions(
+      [],
+      [{ path: "s.pdf", page: 0, dprScale: 8, geometry, region: at(300, 400) }],
+    );
+    expect(pdf.tasks[0].cancel).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+
+  it("hands back a page's patches at one level, least recently drawn first", async () => {
+    const c = cache();
+    for (const x of [0, 200, 400]) {
+      c.setVisibleRegions([{ path: "s.pdf", page: 0, dprScale: 8, area: area(x) }]);
+      await settle();
+      clock += 10;
+    }
+    await c.resolve("s.pdf", 0, 4, area(0)); // another level
+    await c.resolve("s.pdf", 1, 8, area(0)); // another page
+    const boxes = () => c.detailPatches("s.pdf", 0, 8, geometry).map((p) => p.box.x);
+    expect(boxes()).toEqual([0, 200, 400]);
+    clock += 10;
+    c.peek("s.pdf", 0, 8, area(0)); // drawn again: now the newest
+    expect(boxes()).toEqual([200, 400, 0]);
+    c.destroy();
   });
 });

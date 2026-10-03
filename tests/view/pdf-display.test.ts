@@ -16,16 +16,15 @@ function context() {
   } as unknown as CanvasRenderingContext2D;
 }
 describe("PDF backdrop display", () => {
-  it("shares one visible patch across tiles above 2.5x, over a whole-page fallback", () => {
+  it("asks for the visible area plus its margin once above 2.5x, and draws cached patches over the page", () => {
     const canvas = { width: 512, height: 512 };
     const base = { width: 600, height: 800 };
+    const patch = { ok: true, canvas, box: { x: 112, y: 240, w: 96, h: 96 } };
     const cache = {
       setVisibleRegions: vi.fn(),
-      peek: vi.fn((_path, _page, _scale, area) =>
-        area.region
-          ? { ok: true, canvas, box: { x: 128, y: 256, w: 64, h: 64 } }
-          : { ok: true, canvas: base },
-      ),
+      detailCovers: vi.fn(() => false),
+      detailPatches: vi.fn(() => [patch]),
+      peek: vi.fn(() => ({ ok: true, canvas: base })),
     };
     const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
     const ctx = context();
@@ -33,12 +32,74 @@ describe("PDF backdrop display", () => {
     painter.prepare([{ backdrop, geometry, region }], 8, 4, false);
     for (let i = 0; i < 30; i++)
       painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region });
-    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([
-      { path: backdrop.path, page: backdrop.page, dprScale: 8, area: { geometry, region } },
-    ]);
-    expect(cache.peek).toHaveBeenCalledWith(backdrop.path, backdrop.page, 8, { geometry, region });
+    // 25% of the 64 px view on each side.
+    const margin = { minX: 112, minY: 240, maxX: 208, maxY: 336 };
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
+      [
+        {
+          path: backdrop.path,
+          page: backdrop.page,
+          dprScale: 8,
+          area: { geometry, region: margin },
+        },
+      ],
+      [{ path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region }],
+    );
+    expect(cache.detailPatches).toHaveBeenCalledWith(backdrop.path, backdrop.page, 8, geometry);
     expect(ctx.drawImage).toHaveBeenCalledWith(base, 0, 0, 1200, 1600);
-    expect(ctx.drawImage).toHaveBeenCalledWith(canvas, 128, 256, 64, 64);
+    expect(ctx.drawImage).toHaveBeenCalledWith(canvas, 112, 240, 96, 96);
+  });
+  it("asks for nothing new when a cached patch already covers the view", () => {
+    const cache = {
+      setVisibleRegions: vi.fn(),
+      detailCovers: vi.fn(() => true),
+      detailPatches: vi.fn(() => []),
+      peek: vi.fn(() => null),
+    };
+    const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+    const region = { minX: 128, minY: 256, maxX: 192, maxY: 320 };
+    painter.prepare([{ backdrop, geometry, region }], 8, 4, false);
+    expect(cache.detailCovers).toHaveBeenCalledWith(
+      backdrop.path,
+      backdrop.page,
+      8,
+      geometry,
+      region,
+    );
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
+      [],
+      [{ path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region }],
+    );
+  });
+  it("draws only the cached patches that meet a tile", () => {
+    const near = { ok: true, canvas: { width: 8, height: 8 }, box: { x: 0, y: 0, w: 64, h: 64 } };
+    const far = {
+      ok: true,
+      canvas: { width: 8, height: 8 },
+      box: { x: 900, y: 900, w: 64, h: 64 },
+    };
+    const cache = {
+      setVisibleRegions: vi.fn(),
+      detailCovers: vi.fn(() => true),
+      detailPatches: vi.fn(() => [near, far]),
+      peek: vi.fn(() => ({ ok: true, canvas: { width: 600, height: 800 } })),
+    };
+    const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+    painter.prepare(
+      [{ backdrop, geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } }],
+      8,
+      4,
+      false,
+    );
+    // A tile drawn while the view moves (prepare transient) still uses them.
+    painter.prepare([], 8, 4, true);
+    const ctx = context();
+    painter.paint(ctx, backdrop, geometry, 1, {
+      deviceScale: 8,
+      region: { minX: 10, minY: 10, maxX: 40, maxY: 40 },
+    });
+    expect(ctx.drawImage).toHaveBeenCalledWith(near.canvas, 0, 0, 64, 64);
+    expect(ctx.drawImage).not.toHaveBeenCalledWith(far.canvas, 900, 900, 64, 64);
   });
   it("warms exactly the same resolution key a thumbnail paints with", async () => {
     const entry = {
@@ -68,7 +129,7 @@ describe("PDF backdrop display", () => {
         deviceScale: 2,
         region: { ...region, minX: i },
       });
-    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([]);
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([], []);
     expect(cache.request).toHaveBeenCalledWith(backdrop.path, backdrop.page, 2, { geometry });
     expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
   });
@@ -78,6 +139,8 @@ describe("PDF backdrop display", () => {
       peekNearest: vi.fn(() => null),
       request: vi.fn(),
       setVisibleRegions: vi.fn(),
+      detailCovers: vi.fn(() => false),
+      detailPatches: vi.fn(() => []),
     };
     const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
     const region = { minX: 10, minY: 10, maxX: 100, maxY: 100 };

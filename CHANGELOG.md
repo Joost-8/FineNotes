@@ -32,7 +32,9 @@ extracted from the matching section of this file by `release.yml`.
   your writing on top. Other pages export as before.
 - **Sharper PDFs.** PDF pages are drawn at the screen's full resolution, and
   zoomed in past 2.5x the part on screen is drawn again in full detail once
-  you stop moving, so small print stays crisp and panning stays smooth.
+  you stop moving, so small print stays crisp and panning stays smooth. A
+  margin around the screen is drawn too, and the last few sharp areas are
+  kept, so small moves and going back stay sharp.
 
 Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
 ([#5](https://github.com/Joost-8/FineNotes/pull/5)).

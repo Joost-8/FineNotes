@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { pdfAreaKey, planPdfRaster, visiblePdfArea } from "../../src/canvas/pdf-raster";
+import {
+  DETAIL_MARGIN,
+  boundsCover,
+  boundsMeet,
+  detailPdfArea,
+  pdfAreaKey,
+  planPdfRaster,
+  visiblePdfArea,
+} from "../../src/canvas/pdf-raster";
 
 const source = { width: 600, height: 800 };
 const geometry = { width: 1024, height: 4096 / 3 };
@@ -78,5 +86,62 @@ describe("visible PDF detail policy", () => {
     expect(visiblePdfArea(geometry, { minX: 2000, minY: 0, maxX: 3000, maxY: 100 }, 4)).toBeNull();
     expect(visiblePdfArea(geometry, { minX: 0, minY: 100, maxX: 100, maxY: 0 }, 4)).toBeNull();
     expect(visiblePdfArea(geometry, { ...visible, maxX: Infinity }, 4)).toBeNull();
+  });
+});
+
+describe("detail margin and coverage", () => {
+  const geometry = { width: 1000, height: 1400 };
+
+  it("grows the visible area by DETAIL_MARGIN on each side, kept on the page", () => {
+    const visible = { minX: 400, minY: 400, maxX: 600, maxY: 800 };
+    expect(detailPdfArea(geometry, visible, 4)?.region).toEqual({
+      minX: 400 - 200 * DETAIL_MARGIN,
+      minY: 400 - 400 * DETAIL_MARGIN,
+      maxX: 600 + 200 * DETAIL_MARGIN,
+      maxY: 800 + 400 * DETAIL_MARGIN,
+    });
+    const corner = detailPdfArea(geometry, { minX: -50, minY: -50, maxX: 150, maxY: 150 }, 4);
+    expect(corner?.region).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 150 + 150 * DETAIL_MARGIN,
+      maxY: 150 + 150 * DETAIL_MARGIN,
+    });
+  });
+
+  it("asks for no detail at or below 2.5x, or off the page", () => {
+    expect(detailPdfArea(geometry, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 2.5)).toBeNull();
+    expect(detailPdfArea(geometry, { minX: 2000, minY: 0, maxX: 2100, maxY: 100 }, 4)).toBeNull();
+  });
+
+  it("keeps a margin patch at full resolution on an iPad-sized screen", () => {
+    // 2360 x 1640 device px at 6.4 px per page px, plus the margin.
+    const w = 2360 / 6.4;
+    const h = 1640 / 6.4;
+    const area = detailPdfArea(
+      geometry,
+      { minX: 300, minY: 300, maxX: 300 + w, maxY: 300 + h },
+      4.8,
+    );
+    const plan = planPdfRaster({ width: 600, height: 840 }, 6.4, area as NonNullable<typeof area>);
+    expect(plan.width * plan.height).toBeLessThanOrEqual(9_000_000);
+    expect(plan.sourceScale / (1000 / 600)).toBeCloseTo(6.4);
+  });
+
+  it("caps a huge patch at 9 MP and 4096 px a side", () => {
+    const plan = planPdfRaster({ width: 600, height: 840 }, 40, {
+      geometry,
+      region: { minX: 0, minY: 0, maxX: 1000, maxY: 1400 },
+    });
+    expect(plan.width * plan.height).toBeLessThanOrEqual(9_000_000 * 1.01);
+    expect(Math.max(plan.width, plan.height)).toBeLessThanOrEqual(4096);
+  });
+
+  it("tells covering from meeting", () => {
+    const outer = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    expect(boundsCover(outer, { minX: 10, minY: 10, maxX: 100, maxY: 90 })).toBe(true);
+    expect(boundsCover(outer, { minX: 10, minY: 10, maxX: 101, maxY: 90 })).toBe(false);
+    expect(boundsMeet(outer, { minX: 99, minY: 99, maxX: 200, maxY: 200 })).toBe(true);
+    expect(boundsMeet(outer, { minX: 100, minY: 0, maxX: 200, maxY: 100 })).toBe(false);
   });
 });

@@ -20,7 +20,14 @@
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
 import { ByteLru, quantiseLevel } from "../canvas/tile-grid";
-import { type PdfRenderArea, pdfAreaKey, planPdfRaster } from "../canvas/pdf-raster";
+import {
+  type PdfRenderArea,
+  boundsCover,
+  boundsMeet,
+  pdfAreaKey,
+  planPdfRaster,
+} from "../canvas/pdf-raster";
+import type { Bounds, PageGeometry } from "../model/document";
 import { errorMessage } from "../util/errors";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
@@ -39,6 +46,11 @@ const MAX_RASTER_EDGE = 2400;
 const SOFT_BUDGET = 48 * 1024 * 1024;
 const HARD_BUDGET = 96 * 1024 * 1024;
 const RECENT_USE_MS = 1500;
+/**
+ * Detail patches kept after the view moves on, besides the ones in view:
+ * going back to what was just read is then sharp at once. Each is up to ~36 MB.
+ */
+const KEEP_DETAIL = 2;
 /** What a miss is counted as: little, but not nothing, so misses cannot pile up. */
 const MISS_BYTES = 1024;
 
@@ -131,6 +143,37 @@ interface Cached {
   /** When a paint last drew it (ms, `performance.now()`). */
   lastUsed: number;
   detail: boolean;
+  path: string;
+  page: number;
+  /** `quantiseLevel` of the scale it was asked for, as in its key. */
+  level: number;
+  area?: PdfRenderArea;
+}
+
+/** What is on screen of one PDF page at a detail level (see `setVisibleRegions`). */
+export interface PdfShownArea {
+  path: string;
+  page: number;
+  dprScale: number;
+  geometry: PageGeometry;
+  region: Bounds;
+}
+
+function sameDetail(
+  item: { path: string; page: number; area?: PdfRenderArea },
+  level: number,
+  itemLevel: number,
+  shown: { path: string; page: number; geometry: PageGeometry },
+): boolean {
+  const region = item.area?.region;
+  return (
+    region !== undefined &&
+    item.path === shown.path &&
+    item.page === shown.page &&
+    itemLevel === level &&
+    item.area?.geometry.width === shown.geometry.width &&
+    item.area?.geometry.height === shown.geometry.height
+  );
 }
 
 export interface PdfRasterRequest {
@@ -232,23 +275,102 @@ export class PdfBackdropCache {
     void this.resolve(path, page, dprScale, area, true);
   }
 
-  /** Replace viewport detail atomically; stale work never caches or triggers repaints. */
-  setVisibleRegions(requests: PdfRasterRequest[]): void {
+  /**
+   * Replace viewport detail atomically; stale work never caches or triggers
+   * repaints. `shown` is what is on screen: work and patches that still meet
+   * it are kept even if not asked for again (a patch's margin may already
+   * cover the view), and so are the `KEEP_DETAIL` most recently drawn others.
+   */
+  setVisibleRegions(requests: PdfRasterRequest[], shown: PdfShownArea[] = []): void {
     if (this.destroyed) return;
     const wanted = new Set(
       requests.map(({ path, page, dprScale, area }) => rasterKey(path, page, dprScale, area)),
     );
+    const useful = (
+      key: string,
+      item: { path: string; page: number; area?: PdfRenderArea },
+      level: number,
+    ): boolean =>
+      wanted.has(key) ||
+      shown.some(
+        (view) =>
+          sameDetail(item, quantiseLevel(view.dprScale), level, view) &&
+          boundsMeet(item.area?.region as Bounds, view.region),
+      );
     for (const job of [...this.work.values()]) {
-      if (job.area?.region && !wanted.has(job.key)) this.cancel(job);
+      if (job.area?.region && !useful(job.key, job, quantiseLevel(job.dprScale))) this.cancel(job);
     }
     for (const [key, request] of this.deferred) {
-      if (request.area?.region && !wanted.has(key)) this.deferred.delete(key);
+      if (request.area?.region && !useful(key, request, quantiseLevel(request.dprScale))) {
+        this.deferred.delete(key);
+      }
     }
-    this.entries.deleteWhere((cached) => cached.detail && !wanted.has(cached.key));
+    const spare = new Set(
+      [...this.entries.values()]
+        .filter((cached) => cached.detail && !useful(cached.key, cached, cached.level))
+        .sort((a, b) => b.lastUsed - a.lastUsed)
+        .slice(0, KEEP_DETAIL)
+        .map((cached) => cached.key),
+    );
+    this.entries.deleteWhere(
+      (cached) =>
+        cached.detail && !useful(cached.key, cached, cached.level) && !spare.has(cached.key),
+    );
     // Submit the latest visible regions before starting anything queued by a cancelled job.
     for (const request of requests)
       this.request(request.path, request.page, request.dprScale, request.area);
     this.drain();
+  }
+
+  /**
+   * Cached detail patches of a page at the level of `dprScale`, least
+   * recently drawn first (draw them in this order: the newest ends on top).
+   * Reading them counts as drawing them.
+   */
+  detailPatches(
+    path: string,
+    page: number,
+    dprScale: number,
+    geometry: PageGeometry,
+  ): Array<PdfRaster & { box: NonNullable<PdfRaster["box"]> }> {
+    const level = quantiseLevel(dprScale);
+    const found = [...this.entries.values()]
+      .filter(
+        (cached) =>
+          cached.entry.ok &&
+          cached.entry.box !== undefined &&
+          sameDetail(cached, level, cached.level, { path, page, geometry }),
+      )
+      .sort((a, b) => a.lastUsed - b.lastUsed);
+    const t = now();
+    for (const cached of found) cached.lastUsed = t;
+    return found.map(
+      (cached) => cached.entry as PdfRaster & { box: NonNullable<PdfRaster["box"]> },
+    );
+  }
+
+  /** Whether a cached or in-flight detail patch at this level already covers `region`. */
+  detailCovers(
+    path: string,
+    page: number,
+    dprScale: number,
+    geometry: PageGeometry,
+    region: Bounds,
+  ): boolean {
+    const level = quantiseLevel(dprScale);
+    const shown = { path, page, geometry };
+    const covers = (item: { path: string; page: number; area?: PdfRenderArea }, at: number) =>
+      sameDetail(item, level, at, shown) && boundsCover(item.area?.region as Bounds, region);
+    for (const cached of this.entries.values()) {
+      if (cached.entry.ok && covers(cached, cached.level)) return true;
+    }
+    for (const job of this.work.values()) {
+      if (!job.cancelled && covers(job, quantiseLevel(job.dprScale))) return true;
+    }
+    for (const request of this.deferred.values()) {
+      if (covers(request, quantiseLevel(request.dprScale))) return true;
+    }
+    return false;
   }
 
   /** Hold background rasterisation (true), or let it go on with what waited (false). */
@@ -332,7 +454,7 @@ export class PdfBackdropCache {
         .then((entry) => {
           this.running.delete(job);
           if (job.cancelled || this.destroyed) release(entry);
-          else this.store(job.key, entry, job.path, job.page, job.area);
+          else this.store(job.key, entry, job.path, job.page, job.area, job.dprScale);
           if (this.work.get(job.key) === job) this.work.delete(job.key);
           job.finish(entry);
           this.drain();
@@ -368,14 +490,25 @@ export class PdfBackdropCache {
     entry: PdfEntry,
     path: string,
     page: number,
-    area?: PdfRenderArea,
+    area: PdfRenderArea | undefined,
+    dprScale: number,
   ): void {
     this.inflight.delete(key);
     if (this.destroyed) {
       release(entry);
       return;
     }
-    this.entries.set(key, { key, entry, lastUsed: now(), detail: !!area?.region }, bytesOf(entry));
+    const cached: Cached = {
+      key,
+      entry,
+      lastUsed: now(),
+      detail: !!area?.region,
+      path,
+      page,
+      level: quantiseLevel(dprScale),
+      ...(area ? { area } : {}),
+    };
+    this.entries.set(key, cached, bytesOf(entry));
     this.trim();
     if (area) this.onReady?.(path, page, area);
     else this.onReady?.(path, page);
