@@ -283,7 +283,13 @@ picture, such as a worksheet you write on; hold the lasso on it and tap
   the **PDF exports** folder, or else next to the notebook. Then **Open** or
   **Share…** it. PDF-backed pages retain their original PDF text and vector
   detail, with notebook handwriting, pictures and text boxes as a transparent
-  overlay. Ordinary notebook pages use the existing image-based export.
+  overlay. Imported SVGs stay sharp when zoomed and retain vector paths and
+  text in PDF exports, including cropped and rotated placements. Other pictures,
+  notebook text and handwriting use the existing raster overlays. Ordinary pages
+  without SVGs use the existing image-based export.
+  SVG filters, HTML (`foreignObject`) and animations are unsupported by vector
+  export and produce an error. SVG text uses the converter's standard PDF fonts;
+  custom fonts may look different.
   A missing, corrupt or password-protected PDF source stops the export with
   an error instead of silently replacing its content.
 

@@ -53,3 +53,33 @@ describe("PDF annotation layers", () => {
     expect([...annotationLayers(page)].map((layer) => layer.multiply)).toEqual([true]);
   });
 });
+
+describe("SVG layering", () => {
+  it.each([true, false])("keeps mixed image order and optional text (%s)", (text) => {
+    const page = blankPage();
+    page.images = ["a.png", "b.SVG", "c.jpg"].map((path, i) => ({
+      id: String(i),
+      path,
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    }));
+    if (text)
+      page.textBoxes.push({ id: "t", x: 0, y: 0, w: 10, text: "top", color: "#000", fontSize: 12 });
+    page.strokes.push(stroke("ink", "highlighter"));
+    const before = JSON.stringify(page);
+    const layers = [...annotationLayers(page)];
+    expect(layers.slice(0, 3).map((l) => l.page.images[0].path)).toEqual([
+      "a.png",
+      "b.SVG",
+      "c.jpg",
+    ]);
+    expect(
+      layers.slice(0, 3).every((l) => l.page.textBoxes.length === 0 && l.page.strokes.length === 0),
+    ).toBe(true);
+    expect(layers.at(-1)!.multiply).toBe(true);
+    expect(layers).toHaveLength(text ? 5 : 4);
+    expect(JSON.stringify(page)).toBe(before);
+  });
+});

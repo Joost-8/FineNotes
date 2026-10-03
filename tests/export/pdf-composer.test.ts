@@ -166,3 +166,83 @@ describe("PDF composition", () => {
     await expect(composer.addPdf(notebookPage(), overlay)).rejects.toThrow(/encrypted/);
   });
 });
+
+describe("vector overlays", () => {
+  it("embeds PDF drawing/text operators above raster paper and below ink", async () => {
+    const composer = await PdfComposer.create("SVG", () => source());
+    await composer.addImage(
+      {
+        jpeg: new Uint8Array(readFileSync(new URL("./fixtures/white.jpg", import.meta.url))),
+        pixelWidth: 8,
+        pixelHeight: 8,
+        widthPt: 400,
+        heightPt: 600,
+      },
+      async function* () {
+        yield { pdf: new Uint8Array(await source()) };
+        yield { png, multiply: true };
+      },
+    );
+    const result = await PDFDocument.load(await composer.save());
+    expect(streams(result).join("\n")).toContain(" Tj");
+    const contents = streams(result).find((s) => s.includes("/EmbeddedPdfPage"))!;
+    expect(contents.indexOf("/Image")).toBeLessThan(contents.indexOf("/EmbeddedPdfPage"));
+    expect(contents.lastIndexOf("/Image")).toBeGreaterThan(contents.indexOf("/EmbeddedPdfPage"));
+  });
+});
+
+describe("shared SVG placement", () => {
+  it.each([0, Math.PI / 2, -Math.PI / 3])(
+    "shares vector content while independently clipping and rotating placements (%s)",
+    async (rotation) => {
+      const composer = await PdfComposer.create("Shared", () => source());
+      const pdf = new Uint8Array(await source());
+      const image = {
+        id: "i",
+        path: "art.svg",
+        x: 20,
+        y: 30,
+        w: 200,
+        h: 160,
+        rotation,
+        crop: { x: 0.1, y: 0.2, w: 0.7, h: 0.6 },
+      };
+      for (let i = 0; i < 2; i++)
+        await composer.addPdf(notebookPage(), async function* () {
+          yield { pdf, key: image.path, image };
+          yield { pdf, key: image.path, image: { ...image, id: "i2", x: 250, crop: undefined } };
+        });
+      const result = await PDFDocument.load(await composer.save());
+      const forms = result.context
+        .enumerateIndirectObjects()
+        .filter(
+          ([, o]) =>
+            o instanceof PDFRawStream && o.dict.get(PDFName.of("Subtype")) === PDFName.of("Form"),
+        );
+      // One original backdrop and one shared SVG form, irrespective of placement count.
+      expect(forms).toHaveLength(2);
+      for (const page of result.getPages()) {
+        const contents = page.node.Contents() as PDFArray;
+        const stream = result.context.lookup(contents.asArray()[0]) as PDFRawStream;
+        const content = Buffer.from(decodePDFRawStream(stream).decode()).toString("latin1");
+        expect(content.match(/\nW\n/g)).toHaveLength(2);
+        expect(content.match(/\nDo\n/g)).toBeNull();
+        expect(content.match(/ Do\n/g)).toHaveLength(3);
+        if (!rotation) {
+          expect(content).toContain(
+            `${20 * POINTS_PER_PAGE_PX} ${(1400 - 30) * POINTS_PER_PAGE_PX} m`,
+          );
+          const translations = [...content.matchAll(/1 0 0 1 (-?[\d.]+) (-?[\d.]+) cm/g)].map(
+            (match) => Number(match[1]),
+          );
+          expect(
+            translations.some(
+              (x) => Math.abs(x - (20 - (200 * 0.1) / 0.7) * POINTS_PER_PAGE_PX) < 1e-9,
+            ),
+          ).toBe(true);
+        }
+      }
+      expect(streams(result).join("\n")).toContain(" Tj");
+    },
+  );
+});

@@ -1290,12 +1290,14 @@ export class InkView extends TextFileView {
       const dir = chosen === undefined ? note.parent : this.app.vault.getFolderByPath(chosen);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
+    const readSource = async (path: string) => {
+      const file = this.app.vault.getFileByPath(path);
+      if (!file) throw new Error(`Missing export source — ${path}`);
+      return this.app.vault.readBinary(file);
+    };
     const sources = {
-      readPdf: async (path: string) => {
-        const file = this.app.vault.getFileByPath(path);
-        if (!file) throw new Error(`Missing PDF source — ${path}`);
-        return this.app.vault.readBinary(file);
-      },
+      readPdf: readSource,
+      readSvg: readSource,
       pdf: this.pdfCache,
       images: this.images,
       paper: paperTheme(false),

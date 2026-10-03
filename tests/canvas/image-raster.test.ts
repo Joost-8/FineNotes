@@ -8,6 +8,7 @@ import {
   bucketSize,
   chooseCachedBucket,
   decodeBucket,
+  imageDecodeBucket,
   drawImagePlaceholder,
   extensionForMime,
   extensionOf,
@@ -341,5 +342,23 @@ describe("drawImagePlaceholder", () => {
     const empty = fakeContext();
     drawImagePlaceholder(asCanvasContext(empty), 0, 40, true, 1);
     expect(empty.ops).toEqual([]);
+  });
+});
+
+describe("SVG source buckets", () => {
+  it("keeps SVG sources independent of zoom and intrinsic pixel dimensions", () => {
+    for (const pixels of [0, 100, 4096, 100000, Infinity]) {
+      expect(imageDecodeBucket("Diagrams/figure.SVG", pixels)).toBe(0);
+      expect(chooseCachedBucket([0], imageDecodeBucket("figure.svg", pixels))).toEqual({
+        use: 0,
+        decode: false,
+      });
+    }
+    expect(chooseCachedBucket([], 0)).toEqual({ use: null, decode: true });
+    expect(chooseCachedBucket([128, 2048], 0)).toEqual({ use: null, decode: true });
+  });
+  it("retains pixel buckets for raster pictures", () => {
+    expect(imageDecodeBucket("photo.png", 600)).toBe(1024);
+    expect(imageDecodeBucket("svg-folder/photo.jpg", 10000)).toBe(2048);
   });
 });

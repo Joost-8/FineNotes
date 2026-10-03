@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { blankPage, type Stroke } from "../../src/model/document";
 import { LIGHT_PAPER } from "../../src/canvas/backdrop";
 
+vi.mock("../../src/view/svg-export", () => ({ renderSvgPdf: vi.fn() }));
 vi.mock("obsidian", () => import("./fake-obsidian"));
 vi.mock("../../src/canvas/renderer", () => ({
   renderPageThumbnail: vi.fn((canvas: HTMLCanvasElement) => {
@@ -133,5 +134,75 @@ describe("existing PDF export integration", () => {
     await expect(
       exportPagesToPdf([blankPage("p1")], sources, { title: "Stop", cancelled: () => cancelled }),
     ).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("SVG export integration", () => {
+  it.each([true, false])("keeps SVG vector layers on PDF/ordinary pages (%s)", async (backdrop) => {
+    const { renderSvgPdf } = await import("../../src/view/svg-export");
+    const page = backdrop ? pdfPage() : blankPage();
+    page.images = ["photo.png", "art.SVG", "top.jpg"].map((path, i) => ({
+      id: String(i),
+      path,
+      x: 10,
+      y: 10,
+      w: 100,
+      h: 100,
+    }));
+    const converted = new Uint8Array(await source());
+    vi.mocked(renderSvgPdf).mockResolvedValue(converted);
+    const original = new ArrayBuffer(10);
+    const readSvg = vi.fn(async () => original);
+    const output = await exportPagesToPdf(
+      [page],
+      { ...sources, readPdf: source, readSvg },
+      { title: "Vectors" },
+    );
+    expect((await PDFDocument.load(output)).getPageCount()).toBe(1);
+    expect(readSvg).toHaveBeenCalledExactlyOnceWith("art.SVG");
+    expect(renderSvgPdf).toHaveBeenCalledWith(original, "art.SVG");
+    const painted = vi
+      .mocked(renderPageThumbnail)
+      .mock.calls.map((c) => c[1].images.map((i) => i.path));
+    expect(painted).toEqual(
+      backdrop ? [["photo.png"], ["top.jpg"]] : [[], ["photo.png"], ["top.jpg"]],
+    );
+  });
+  it("converts and reads each SVG source once across repeated placements and pages", async () => {
+    const { renderSvgPdf } = await import("../../src/view/svg-export");
+    vi.mocked(renderSvgPdf).mockResolvedValue(new Uint8Array(await source()));
+    const page = blankPage();
+    page.images = [0, 1].map((i) => ({
+      id: String(i),
+      path: "art.svg",
+      x: i * 20,
+      y: 0,
+      w: 10,
+      h: 10,
+    }));
+    const readSvg = vi.fn(async () => new ArrayBuffer(10));
+    await exportPagesToPdf(
+      [page, { ...page, id: "p2" }],
+      { ...sources, readSvg },
+      { title: "Shared" },
+    );
+    expect(readSvg).toHaveBeenCalledOnce();
+    expect(renderSvgPdf).toHaveBeenCalledOnce();
+  });
+  it("fails clearly without SVG source access or when conversion fails", async () => {
+    const page = blankPage();
+    page.images.push({ id: "i", path: "art.svg", x: 0, y: 0, w: 10, h: 10 });
+    await expect(exportPagesToPdf([page], sources, { title: "SVG" })).rejects.toThrow(
+      "SVG source reader unavailable",
+    );
+    const { renderSvgPdf } = await import("../../src/view/svg-export");
+    vi.mocked(renderSvgPdf).mockRejectedValue(new Error("Unsupported SVG"));
+    await expect(
+      exportPagesToPdf(
+        [page],
+        { ...sources, readSvg: async () => new ArrayBuffer(0) },
+        { title: "SVG" },
+      ),
+    ).rejects.toThrow("Unsupported SVG");
   });
 });
