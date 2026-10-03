@@ -6,6 +6,17 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **The page sidebar works while zoomed in.** In a notebook whose pages run
+  sideways, tapping another page in the sidebar while zoomed in only moved
+  around the page you were on. It now goes to that page, at the same zoom.
+- **The lasso's colour menu fits on screen.** With the custom colour picker
+  open, the menu ran off the bottom of the screen and its last controls
+  could not be reached. It now stays on screen and scrolls.
+
 ## [1.1.0] - 2026-10-03
 
 ### Added
