@@ -69,6 +69,8 @@ const FRESH_INSTALL = {
   shapeColor: "#000000",
   recentColors: [],
   pressureWidth: false,
+  showNewNotebookInContextMenu: true,
+  showNewNotebookInExplorer: false,
 };
 
 /**
@@ -89,6 +91,8 @@ const USED_VAULT = {
   highlighterAlpha: 0.55,
   paperWidth: 1400,
   newNotebookFolder: "School/Notebooks",
+  showNewNotebookInContextMenu: false,
+  showNewNotebookInExplorer: false,
   lastNotebookChoices: { type: "notebook", cover: "plain", paper: "dotted", size: "a4" },
   recognitionProviderId: "llm-byok",
   twoFileStorage: true,
@@ -122,11 +126,20 @@ const USED_VAULT = {
 };
 
 /** What `main.ts` does on load, then what `saveData` writes. */
-function loadAndSave(saved: unknown): unknown {
+function loadAndSave(saved: unknown): Record<string, unknown> {
   return JSON.parse(JSON.stringify(Object.assign({}, DEFAULT_SETTINGS, saved)));
 }
 
 describe("data.json", () => {
+  it("enables the notebook context menu for older settings and preserves an opt-out", () => {
+    expect(loadAndSave({}).showNewNotebookInContextMenu).toBe(true);
+    expect(loadAndSave({}).showNewNotebookInExplorer).toBe(false);
+    expect(loadAndSave({ showNewNotebookInExplorer: false }).showNewNotebookInExplorer).toBe(false);
+    expect(loadAndSave({ showNewNotebookInExplorer: true }).showNewNotebookInExplorer).toBe(true);
+    expect(loadAndSave({ showNewNotebookInContextMenu: false }).showNewNotebookInContextMenu).toBe(
+      false,
+    );
+  });
   it("a fresh install writes exactly these keys and values, in this order", () => {
     expect(Object.keys(DEFAULT_SETTINGS)).toEqual(Object.keys(FRESH_INSTALL));
     expect(JSON.parse(JSON.stringify(DEFAULT_SETTINGS))).toEqual(FRESH_INSTALL);

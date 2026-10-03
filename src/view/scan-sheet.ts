@@ -17,19 +17,12 @@
  * exactly the spot it is placing. On release both are redone from the full
  * working photo.
  *
- * A PDF can be picked too (from the photo picker, never the camera): the
- * iPad Files app's own "Scan Documents" makes one, better than anything a
- * web page can do, and its pages are added as they are — PDF-backed pages,
- * after any photo scans already kept. Not on a single page, which can take
- * no pages; there the picker offers pictures only.
- *
  * Sized for the iPad in both orientations: full screen on mobile, the photo
  * beside the preview in landscape and above it in portrait. Every control is
  * at least 44 px and works with a Pencil or a finger.
  */
 
 import { type App, Modal, Notice, Platform, setIcon } from "obsidian";
-import { looksLikePdf } from "../model/scan-commands";
 import {
   type Quad,
   isUsableQuad,
@@ -47,14 +40,13 @@ import {
   rotateRgba90,
 } from "../canvas/scan-raster";
 import { pickImageFile, releaseCanvas } from "./image-import";
-import { measurePdfPages } from "./pdf-pages";
-import { type PdfScan, type ScanItem, decodePhoto, encodeScan, paint } from "./scan-io";
+import { type EncodedScan, decodePhoto, encodeScan, paint } from "./scan-io";
 import { errorMessage } from "../util/errors";
 
 export interface ScanSheetHost {
   /**
-   * Scans become new pages, and a PDF may be picked. False for a single
-   * page: its scan goes onto that page, and PDFs are not offered.
+   * Scans become new pages. False for a single page: its scan goes onto
+   * that page.
    */
   multiPage: boolean;
   /**
@@ -62,7 +54,7 @@ export interface ScanSheetHost {
    * true once they are in; false or a rejection leaves the sheet open with
    * the scans kept, so Add can be tried again.
    */
-  insert: (items: ScanItem[]) => Promise<boolean>;
+  insert: (items: EncodedScan[]) => Promise<boolean>;
 }
 
 /** Long side of the photo copy the preview is straightened from while a corner moves, px. */
@@ -105,8 +97,8 @@ export class ScanSheet extends Modal {
   private corners: Point[] = [];
   private detected = false;
   private filter: ScanFilter = lastFilter;
-  /** Finished scans and picked PDFs waiting for Add, in order (photos may still be encoding). */
-  private readonly kept: Array<Promise<ScanItem>> = [];
+  /** Finished scans waiting for Add, in order (photos may still be encoding). */
+  private readonly kept: Array<Promise<EncodedScan>> = [];
   /** How many notebook pages `kept` will make. */
   private keptPages = 0;
   /** Camera (true) or photo library, for Retake and Next page. */
@@ -191,33 +183,11 @@ export class ScanSheet extends Modal {
     }
   }
 
-  /**
-   * Open the camera (`capture`) or the photo picker, which in a notebook
-   * also takes a PDF. Call it synchronously inside a tap: iPadOS opens a
-   * picker only for a `click()` made during a user gesture. A cancelled pick
-   * leaves the sheet as it was — with its own Take photo and Choose buttons
-   * when there is no photo yet, the way to a PDF after the camera was
-   * dismissed.
-   */
+  /** Open the camera or photo picker synchronously inside the user's tap. */
   pickPhoto(capture: boolean): void {
     if (this.busy || this.closed) return;
     this.capture = capture;
-    const accept = capture || !this.host.multiPage ? "image/*" : "image/*,application/pdf";
-    void pickImageFile(this.contentEl, capture, accept).then((file) => {
-      if (file && !this.closed) void this.load(file);
-    });
-  }
-
-  /**
-   * Pick a PDF straight away — what the Files app's "Scan Documents" saves.
-   * Apple's own scanner does edges, perspective and many pages better than a
-   * web page can, so this is the one-tap route to it. Same gesture rule as
-   * {@link pickPhoto}.
-   */
-  pickPdf(): void {
-    if (this.busy || this.closed) return;
-    this.capture = false;
-    void pickImageFile(this.contentEl, false, "application/pdf").then((file) => {
+    void pickImageFile(this.contentEl, capture).then((file) => {
       if (file && !this.closed) void this.load(file);
     });
   }
@@ -267,9 +237,7 @@ export class ScanSheet extends Modal {
     const actions = this.emptyEl.createDiv({ cls: "goodobsidian-scan-empty-actions" });
     if (Platform.isMobile) this.button(actions, "camera", "Take photo", () => this.pickPhoto(true));
     const choose = Platform.isMobile ? "Choose photo" : "Choose picture";
-    this.button(actions, "image", this.host.multiPage ? `${choose} or PDF` : choose, () =>
-      this.pickPhoto(false),
-    );
+    this.button(actions, "image", choose, () => this.pickPhoto(false));
     this.statusEl = stage.createDiv({ cls: "goodobsidian-scan-status is-hidden" });
   }
 
@@ -333,11 +301,6 @@ export class ScanSheet extends Modal {
       }
       return;
     }
-    const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 1024));
-    if (looksLikePdf(head, file.type, file.name)) {
-      await this.loadPdf(bytes, file.name, token);
-      return;
-    }
     this.setStatus("Reading the photo…");
     try {
       const photo = await decodePhoto(bytes, file.type);
@@ -348,43 +311,6 @@ export class ScanSheet extends Modal {
       if (token !== this.loadToken || this.closed) return;
       this.setStatus("Couldn't read that picture. Try another one.", true);
     }
-  }
-
-  /**
-   * A picked PDF: its pages go in as they are. With nothing kept it is added
-   * at once — the Files-app route is one pick; otherwise it joins the kept
-   * scans and Add puts them all in, in order. A photo on screen is replaced,
-   * as any pick through Replace replaces it.
-   */
-  private async loadPdf(bytes: ArrayBuffer, name: string, token: number): Promise<void> {
-    if (!this.host.multiPage) {
-      this.setStatus(
-        "A PDF adds pages, and this is a single page. Convert it to a notebook first.",
-        true,
-      );
-      return;
-    }
-    this.setStatus("Reading the PDF…");
-    let pages: PdfScan["pages"];
-    try {
-      pages = await measurePdfPages(bytes);
-    } catch {
-      if (token === this.loadToken && !this.closed) {
-        this.setStatus("Couldn't read that PDF. Try another one.", true);
-      }
-      return;
-    }
-    if (token !== this.loadToken || this.closed) return;
-    this.setStatus("");
-    const pdf: PdfScan = { kind: "pdf", bytes, name, pages };
-    this.kept.push(Promise.resolve(pdf));
-    this.keptPages += pages.length;
-    if (this.photo) this.clearPhoto();
-    if (this.kept.length === 1) {
-      await this.finish();
-      return;
-    }
-    this.refresh();
   }
 
   private setPhoto(photo: RgbaImage): void {
@@ -726,9 +652,7 @@ export class ScanSheet extends Modal {
     this.emptyText.setText(
       ready > 0
         ? `${ready} page${ready === 1 ? "" : "s"} ready. Take the next photo, or add ${ready === 1 ? "it" : "them"}.`
-        : this.host.multiPage
-          ? "Take a photo of a page, or choose one — or a PDF made with Scan Documents in the Files app, whose pages are added as they are."
-          : "Take a photo of a page, or choose one.",
+        : "Take a photo of a page, or choose one.",
     );
     this.retakeButton.disabled = this.busy || !has;
     this.rotateButton.disabled = this.busy || !has;

@@ -169,6 +169,13 @@ export class WorkspaceLeaf {
   }
 }
 
+export class TFolder {
+  constructor(readonly path: string) {}
+  isRoot(): boolean {
+    return this.path === "/" || this.path === "";
+  }
+}
+
 export class TFile {
   readonly name: string;
   readonly basename: string;

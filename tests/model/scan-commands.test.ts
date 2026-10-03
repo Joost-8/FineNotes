@@ -3,7 +3,6 @@ import { type InkDocument, blankPage, emptyDocument } from "../../src/model/docu
 import {
   SCAN_MARGIN,
   buildScanInsert,
-  looksLikePdf,
   pdfPageGeometry,
   scanBackdrop,
   scanFileName,
@@ -31,21 +30,6 @@ describe("scanFileName", () => {
     const at = new Date(2026, 8, 22, 9, 5, 7);
     expect(scanFileName(at)).toBe("Scan 20260922-090507");
     expect(scanFileName(at, 1, 3)).toBe("Scan 20260922-090507 p2");
-  });
-});
-
-describe("looksLikePdf", () => {
-  const bytes = (text: string): Uint8Array => Uint8Array.from(text, (c) => c.charCodeAt(0));
-
-  it("reads the %PDF- header, even after leading junk", () => {
-    expect(looksLikePdf(bytes("%PDF-1.7\n%âãÏÓ"), "", "")).toBe(true);
-    expect(looksLikePdf(bytes("\n\n  %PDF-1.4"), "", "scan")).toBe(true);
-  });
-
-  it("falls back on the type or the name, and says no to a picture", () => {
-    expect(looksLikePdf(new Uint8Array(0), "application/PDF", "")).toBe(true);
-    expect(looksLikePdf(new Uint8Array(0), "", "Scanned Document.pdf")).toBe(true);
-    expect(looksLikePdf(bytes("\xff\xd8\xff\xe0JFIF"), "image/jpeg", "IMG_0001.JPG")).toBe(false);
   });
 });
 
@@ -207,6 +191,33 @@ describe("buildScanInsert", () => {
     expect(insert.command.label).toBe("Scan 2 pages");
     insert.command.invert(doc);
     expect(snapshot(doc)).toBe(before);
+  });
+
+  it("imports selected source pages in range order and restores exact bytes on undo/redo", () => {
+    const doc = notebook();
+    const before = snapshot(doc);
+    const insert = buildScanInsert(doc, 1, [
+      {
+        kind: "pdf",
+        path: "Lecture.pdf",
+        pages: [
+          { width: 842, height: 595, page: 4 },
+          { width: 595, height: 842, page: 0 },
+          { width: 612, height: 792, page: 2 },
+        ],
+      },
+    ])!;
+    insert.command.apply(doc);
+    expect(doc.pages.slice(2, 5).map((page) => page.backdrop)).toEqual([
+      { kind: "pdf", path: "Lecture.pdf", page: 4 },
+      { kind: "pdf", path: "Lecture.pdf", page: 0 },
+      { kind: "pdf", path: "Lecture.pdf", page: 2 },
+    ]);
+    const after = snapshot(doc);
+    insert.command.invert(doc);
+    expect(snapshot(doc)).toBe(before);
+    insert.command.apply(doc);
+    expect(snapshot(doc)).toBe(after);
   });
 
   it("keeps photo scans and PDF pages in the order they were scanned", () => {

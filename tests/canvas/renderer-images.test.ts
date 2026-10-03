@@ -89,6 +89,20 @@ describe("renderPageThumbnail", () => {
     expect(scale).toBeCloseTo((128 / page.geometry.width) * 2);
   });
 
+  it("paints annotations on a transparent canvas without covering the PDF source", () => {
+    const log: Call[] = [];
+    const ctx = recorder(log);
+    const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const page = { ...blankPage("p1"), images: [img()] };
+    renderPageThumbnail(canvas, page, { paint: () => log.push(["backdrop"]) }, 128, 1, {
+      usePressure: false,
+      transparent: true,
+      images: painterInto(log),
+    });
+    expect(log.some(([name]) => name === "fillRect" || name === "backdrop")).toBe(false);
+    expect(log.some(([name]) => name === "paintImage")).toBe(true);
+  });
+
   it("leaves images out without a painter", () => {
     const log: Call[] = [];
     const ctx = recorder(log);

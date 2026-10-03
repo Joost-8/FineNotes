@@ -57,19 +57,18 @@ export interface EncodedScan extends PreparedImage {
 }
 
 /**
- * A PDF picked in the scan sheet (the Files app's own Scan Documents makes
- * these), with its page sizes, ready to save as it is.
+ * An imported PDF with its selected page sizes, ready to save unchanged.
  */
 export interface PdfScan {
   kind: "pdf";
   bytes: ArrayBuffer;
   /** The picked file's name, for the attachment's. */
   name: string;
-  pages: Array<{ width: number; height: number }>;
+  pages: Array<{ width: number; height: number; page?: number }>;
   savedPath?: string;
 }
 
-/** Anything the sheet hands the host to add, in order. */
+/** Photo scans or imported PDF pages handed to the shared insertion path. */
 export type ScanItem = EncodedScan | PdfScan;
 
 function context(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
