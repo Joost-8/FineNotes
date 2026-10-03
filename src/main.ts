@@ -243,10 +243,6 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("import-vault-pdf", "Import PDF from vault…", (view) =>
       view.importPdf(true),
     );
-    // Beta only: measures PDF rendering engines on this device (research/PDF_RENDERING.md).
-    this.notebookCommand("test-pdf-rendering", "Test PDF rendering (beta)", (view) =>
-      view.testPdfRendering(),
-    );
     this.notebookCommand("search-notebook", "Search this notebook…", (view) => view.openSearch());
     this.notebookCommand("copy-page-link", "Copy link to current page", (view) =>
       view.copyPageLink(),
