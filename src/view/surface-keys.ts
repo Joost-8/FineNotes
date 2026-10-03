@@ -92,7 +92,17 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
   const cancelling = (action: KeyAction): KeyOutcome => ({ action, preventDefault: true });
   const passing = (action: KeyAction): KeyOutcome => ({ action, preventDefault: false });
 
-  if (command && key.toLowerCase() === "z") return cancelling(chord.shiftKey ? "redo" : "undo");
+  if (command && !chord.altKey && key.toLowerCase() === "z")
+    return cancelling(chord.shiftKey ? "redo" : "undo");
+
+  if (
+    chord.ctrlKey &&
+    !chord.metaKey &&
+    !chord.altKey &&
+    !chord.shiftKey &&
+    key.toLowerCase() === "y"
+  )
+    return cancelling("redo");
 
   if (scene.cropping) {
     if (key === "Enter") return cancelling("keep-crop");
