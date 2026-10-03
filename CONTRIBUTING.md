@@ -109,6 +109,12 @@ Rules for Android work:
   rewritten so that it inherits none of its code. Do not copy code in from
   InkedMark, or from any project whose licence is not compatible with MIT.
 
+## Who is working on what
+
+An issue with an assignee is being worked on. Before starting on one, check
+that nobody is assigned to it, and say so in the issue (or open a draft pull
+request) so two people do not build the same thing.
+
 ## Pull requests
 
 - Keep each pull request to one change, with tests for the logic.
