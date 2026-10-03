@@ -1263,6 +1263,14 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   transition: none;
 }
 
+/* On a tablet the thumbs are a readout, not a control: a palm rests on the
+   edge of the page and the Pencil starts strokes there, and both belong to
+   the page (palm rejection, the stylus touch guards). */
+body.is-mobile .goodobsidian-scrollthumb {
+  pointer-events: none;
+  cursor: auto;
+}
+
 .is-hidden {
   display: none;
 }

@@ -15,6 +15,7 @@ export function bindScrollThumb(
   read: () => ScrollThumbState,
   scroll: (position: number) => void,
   activity: () => void,
+  release?: () => void,
 ): () => void {
   let drag: { id: number; coordinate: number; position: number } | null = null;
   const coordinate = (event: PointerEvent): number => (vertical ? event.clientY : event.clientX);
@@ -24,7 +25,9 @@ export function bindScrollThumb(
     drag = null;
     element.classList.remove("is-dragging");
     if (element.hasPointerCapture(id)) element.releasePointerCapture(id);
-    if (notify) activity();
+    if (!notify) return;
+    activity();
+    release?.();
   };
   const down = (event: PointerEvent): void => {
     if (drag || event.button !== 0 || !event.isPrimary) return;

@@ -67,10 +67,12 @@ function setup(noWindow = false) {
 describe("notebook keyboard routing", () => {
   it("claims body and notebook keys in the view scope, preserving browser defaults", () => {
     const s = setup();
-    for (const target of [s.doc.body, s.inside, s.host, s.doc])
-      expect(s.fire(target).stopPropagation).toHaveBeenCalledOnce();
+    for (const target of [s.doc.body, s.inside, s.host, s.doc]) {
+      const fired = s.fire(target);
+      expect(fired.result).toBe(true);
+      expect(fired.stopPropagation).not.toHaveBeenCalled();
+    }
     expect(s.handle).toHaveBeenCalledTimes(4);
-    expect(s.fire().result).toBe(true);
   });
   it("leaves other panes, inactive notebooks, modals, composing and claimed keys alone", () => {
     const s = setup();
@@ -88,6 +90,42 @@ describe("notebook keyboard routing", () => {
     const s = setup();
     s.handle.mockReturnValue(false);
     expect(s.fire(s.inside).stopPropagation).not.toHaveBeenCalled();
+  });
+  it("lets a claimed Escape go on to a popover's own keydown listener, handled once", () => {
+    // Obsidian's keymap (app.js `onKeyEvent`) runs the scope from a window
+    // keydown listener in the capture phase, and only stops the event when a
+    // handler returns false. A popover (image menu, AI menu, more panel,
+    // template picker) closes on Escape from a bubbling listener on the
+    // document. Dispatch in that order: window capture, then document bubble.
+    const s = setup();
+    const popoverClose = vi.fn();
+    const dispatch = (key: string) => {
+      let stopped = false;
+      const event = {
+        target: s.inside,
+        key,
+        ctrlKey: false,
+        defaultPrevented: false,
+        isComposing: false,
+        stopPropagation: () => {
+          stopped = true;
+        },
+        preventDefault() {
+          this.defaultPrevented = true;
+        },
+      };
+      // Window, capture phase: Obsidian's keymap.
+      const result: unknown = s.scope.callback(event as unknown as KeyboardEvent);
+      if (result === false) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      // Document, bubbling phase: the popover.
+      if (!stopped && event.key === "Escape") popoverClose();
+    };
+    dispatch("Escape");
+    expect(s.handle).toHaveBeenCalledOnce();
+    expect(popoverClose).toHaveBeenCalledOnce();
   });
   it("uses the element's own document if no window is available", () => {
     const s = setup(true);

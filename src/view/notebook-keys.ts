@@ -22,9 +22,12 @@ export function notebookKeyScope(
     )
       return;
     if (!handle(event)) return;
-    event.stopPropagation();
     // A defined result stops the parent scope. Unlike false, true leaves the
-    // browser default intact when needed (notably the native paste event).
+    // browser default intact when needed (notably the native paste event),
+    // and lets the key go on through the page: Obsidian's keymap listens on
+    // the window in the capture phase, so stopping it here would keep it from
+    // the popovers that close on Escape from their own keydown listeners
+    // (image menu, AI menu, more panel, template picker, toolbar).
     return true;
   });
   return scope;

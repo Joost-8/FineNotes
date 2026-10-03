@@ -1034,7 +1034,7 @@ export class InkSurface {
     // touch on a text box, which that guard lets through.)
     this.surfaceEl.dataset.ignoreSwipe = "true";
     this.indicatorEl = this.surfaceEl.createDiv({ cls: "goodobsidian-pageindicator is-idle" });
-    // The zoom readout: a button there would sit under a resting palm
+    // A readout, not a control: a button there would sit under a resting palm
     // the moment a two-finger zoom gives way to writing.
     this.zoomReadoutEl = this.surfaceEl.createDiv({ cls: "goodobsidian-zoomreadout is-idle" });
     this.zoomReadoutEl.setAttribute("aria-hidden", "true");
@@ -1044,6 +1044,11 @@ export class InkSurface {
     this.thumbXEl = this.surfaceEl.createDiv({
       cls: "goodobsidian-scrollthumb is-horizontal is-idle",
     });
+    // On a computer the thumbs can be dragged (any pointer: a mouse, a
+    // graphics tablet's pen). On a tablet they stay a readout like the zoom
+    // readout above, for the same reason: the stylesheet turns their pointer
+    // events off under `is-mobile`, so a palm or a Pencil stroke at the edge
+    // of the page reaches the page and its palm rejection.
     for (const [element, vertical] of [
       [this.thumbYEl, true],
       [this.thumbXEl, false],
@@ -1072,6 +1077,16 @@ export class InkSurface {
             this.requestFrame();
           },
           () => this.flashChrome(false),
+          // A row turned page by page settles on a page, as the wheel does.
+          // The snap goes at most one page from `pageIndex`, which a frame
+          // sets, and a thumb crosses several pages a frame: bring it up to
+          // date first.
+          () => {
+            if (!vertical && this.turnsPages && this.isScrollIdle) {
+              this.syncViewport();
+              this.snapToPage(0, this.pageIndex);
+            }
+          },
         ),
       );
     }

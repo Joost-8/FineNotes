@@ -28,6 +28,7 @@ function setup(vertical = true) {
     track: 500,
   };
   const activity = vi.fn();
+  const release = vi.fn();
   const scroll = vi.fn((position: number) => {
     state.position = position;
   });
@@ -37,6 +38,7 @@ function setup(vertical = true) {
     () => state,
     scroll,
     activity,
+    release,
   );
   const fire = (name: string, flags = {}) => {
     const e = {
@@ -52,7 +54,7 @@ function setup(vertical = true) {
     handlers.get(name)?.(e as unknown as PointerEvent);
     return e;
   };
-  return { state, activity, scroll, dispose, fire, classes, captures, handlers };
+  return { state, activity, release, scroll, dispose, fire, classes, captures, handlers };
 }
 describe("scroll thumb pointer lifecycle", () => {
   it.each([true, false])(
@@ -69,7 +71,9 @@ describe("scroll thumb pointer lifecycle", () => {
       expect(move.preventDefault).toHaveBeenCalledOnce();
       s.fire("pointermove", vertical ? { clientY: 10000 } : { clientX: 10000 });
       expect(s.state.position).toBe(800);
+      expect(s.release).not.toHaveBeenCalled();
       s.fire("pointerup");
+      expect(s.release).toHaveBeenCalledOnce();
       expect(s.captures.size).toBe(0);
       expect(s.classes.size).toBe(0);
     },
@@ -79,6 +83,7 @@ describe("scroll thumb pointer lifecycle", () => {
     s.fire("pointerdown");
     if (event === "lostpointercapture") s.captures.clear();
     s.fire(event);
+    expect(s.release).toHaveBeenCalledOnce();
     expect(s.classes.size).toBe(0);
     expect(s.captures.size).toBe(0);
     const calls = s.scroll.mock.calls.length;
@@ -114,6 +119,7 @@ describe("scroll thumb pointer lifecycle", () => {
     const calls = s.activity.mock.calls.length;
     s.dispose();
     expect(s.activity).toHaveBeenCalledTimes(calls);
+    expect(s.release).not.toHaveBeenCalled();
     expect(s.handlers.size).toBe(0);
     expect(s.captures.size).toBe(0);
     expect(s.classes.size).toBe(0);
