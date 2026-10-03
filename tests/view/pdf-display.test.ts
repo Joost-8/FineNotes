@@ -174,4 +174,62 @@ describe("PDF backdrop display", () => {
     expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, area.region);
     expect(renderer.invalidatePage).not.toHaveBeenCalled();
   });
+  describe("with the PDF worker", () => {
+    const tileCache = () => ({
+      usesWorker: true,
+      setVisibleRegions: vi.fn(),
+      detailCovers: vi.fn(() => false),
+      detailPatches: vi.fn(() => []),
+      peek: vi.fn(() => null),
+    });
+    // At 8 device px per page px a tile is 64 page px: this view is tiles 2-3 by 4-5.
+    const view = { minX: 140, minY: 270, maxX: 250, maxY: 380 };
+
+    it("asks for the grid tiles on screen, nearest the middle first, even while moving", () => {
+      const cache = tileCache();
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      painter.prepare([{ backdrop, geometry, region: view }], 8, 4, false, true);
+      const [requests, shown] = cache.setVisibleRegions.mock.calls[0];
+      expect(shown).toEqual([
+        { path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region: view },
+      ]);
+      const regions = requests.map((r: { area: { region: unknown } }) => r.area.region);
+      expect(regions).toHaveLength(4);
+      // The middle of the view is x 195, y 325: tile 3,5 (192-256, 320-384) is nearest.
+      expect(regions[0]).toEqual({ minX: 192, minY: 320, maxX: 256, maxY: 384 });
+      expect(requests.every((r: { dprScale: number }) => r.dprScale === 8)).toBe(true);
+      expect(cache.detailCovers).not.toHaveBeenCalled();
+    });
+
+    it("reaches one column ahead the way the view moves", () => {
+      const cache = tileCache();
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      painter.prepare([{ backdrop, geometry, region: view }], 8, 4, false, true);
+      const right = { ...view, minX: view.minX + 10, maxX: view.maxX + 10 };
+      painter.prepare([{ backdrop, geometry, region: right }], 8, 4, false, true);
+      const requests = cache.setVisibleRegions.mock.calls[1][0];
+      expect(
+        requests.some((r: { area: { region: { minX: number } } }) => r.area.region.minX === 256),
+      ).toBe(true);
+    });
+
+    it("asks for nothing mid-zoom, nor at or below 2.5x", () => {
+      const cache = tileCache();
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      painter.prepare([{ backdrop, geometry, region: view }], 8, 4, true, true);
+      expect(cache.setVisibleRegions).not.toHaveBeenCalled();
+      painter.prepare([{ backdrop, geometry, region: view }], 5, 2.5, false, false);
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([], []);
+    });
+
+    it("without the worker, still waits until the view rests", () => {
+      const cache = { ...tileCache(), usesWorker: false };
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      painter.prepare([{ backdrop, geometry, region: view }], 8, 4, false, true);
+      expect(cache.setVisibleRegions).not.toHaveBeenCalled();
+      painter.prepare([{ backdrop, geometry, region: view }], 8, 4, false, false);
+      expect(cache.setVisibleRegions).toHaveBeenCalledOnce();
+      expect(cache.detailCovers).toHaveBeenCalledOnce();
+    });
+  });
 });

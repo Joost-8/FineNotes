@@ -73,6 +73,7 @@ vi.mock("obsidian", async () => ({
 
 const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
 const { PdfBackdropCache } = await import("../../src/view/pdf-backdrop");
+const { PdfRenderCancelled } = await import("../../src/view/pdf-worker");
 
 const globals = globalThis as Record<string, unknown>;
 let clock = 0;
@@ -332,14 +333,14 @@ describe("bounded PDF work and viewport cancellation", () => {
     expect(c.peek("slides.pdf", 1, 8, request(1).area)?.ok).toBe(true);
     c.destroy();
   });
-  it("deduplicates shared detail and keeps only the two most recent old rasters", async () => {
+  it("deduplicates shared detail and keeps old rasters up to 32 MB", async () => {
     const c = cache();
     for (let x = 0; x < 100; x++) {
       const r = request(0, x);
       c.setVisibleRegions([r, r]);
       await settle();
-      // The one in view, and at most two it scrolled past.
-      expect(c.bytes).toBe(Math.min(x + 1, 3) * 4 * 1024 * 1024);
+      // The one in view, and at most 32 MB (eight) of those it scrolled past.
+      expect(c.bytes).toBe(Math.min(x + 1, 9) * 4 * 1024 * 1024);
     }
     expect(pdf.renders).toBe(100);
     expect(pdf.peak).toBeLessThanOrEqual(2);
@@ -594,6 +595,113 @@ describe("a render already running when the pen comes down", () => {
     c.setHeld(false);
     expect(next).not.toHaveBeenCalled();
     expect(pdf.tasks[0].cancel).toHaveBeenCalled();
+    c.destroy();
+  });
+});
+
+describe("rendering in the PDF worker", () => {
+  const geometry = { width: 1200, height: 1600 };
+  function fakeWorker() {
+    const bitmaps: Array<{ width: number; height: number; close: ReturnType<typeof vi.fn> }> = [];
+    const worker = {
+      alive: true,
+      open: vi.fn(async () => 12),
+      close: vi.fn(),
+      pageSize: vi.fn(async () => ({ width: 600, height: 800 })),
+      render: vi.fn((_path: string, _page: number, plan: { width: number; height: number }) => {
+        const bitmap = { width: plan.width, height: plan.height, close: vi.fn() };
+        bitmaps.push(bitmap);
+        return { promise: Promise.resolve(bitmap), cancel: vi.fn() };
+      }),
+    };
+    return { worker, bitmaps };
+  }
+  const asWorker = (w: object) =>
+    w as unknown as Parameters<InstanceType<typeof PdfBackdropCache>["setWorker"]>[0];
+
+  it("draws tiles and pages there, not on this thread, asking a page's size once", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    expect(c.usesWorker).toBe(true);
+    const tile = { geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } };
+    const entry = await c.resolve("a.pdf", 2, 8, tile);
+    expect(entry.ok && [entry.canvas.width, entry.canvas.height, entry.box]).toEqual([
+      512,
+      512,
+      { x: 0, y: 0, w: 64, h: 64 },
+    ]);
+    const page = await c.resolve("a.pdf", 2, 0.5);
+    expect(page.ok && [page.canvas.width, page.canvas.height]).toEqual([300, 400]);
+    expect(worker.open).toHaveBeenCalledOnce();
+    expect(worker.pageSize).toHaveBeenCalledOnce();
+    expect(worker.render.mock.calls[0][2]).toMatchObject({ width: 512, height: 512 });
+    expect(pdf.renders).toBe(0);
+    c.destroy();
+  });
+
+  it("frees a worker bitmap when it leaves the cache, and closes what it opened there", async () => {
+    const c = cache();
+    const { worker, bitmaps } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    await c.resolve("a.pdf", 0, 1);
+    c.clear();
+    await settle();
+    expect(bitmaps[0].close).toHaveBeenCalled();
+    expect(worker.close).toHaveBeenCalledWith("a.pdf");
+    c.destroy();
+  });
+
+  it("reports a missing file, or a page past the end, as a miss", async () => {
+    const app = { vault: { getFileByPath: () => null, readBinary: vi.fn() } };
+    const c = new PdfBackdropCache(app as never);
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    expect(await c.resolve("gone.pdf", 0, 1)).toMatchObject({ ok: false });
+    const d = cache();
+    d.setWorker(asWorker(worker));
+    expect(await d.resolve("a.pdf", 12, 1)).toMatchObject({ ok: false });
+    expect(worker.render).not.toHaveBeenCalled();
+    c.destroy();
+    d.destroy();
+  });
+
+  it("cancels a tile in the worker when it scrolls away", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    let reject!: (error: Error) => void;
+    const cancel = vi.fn(() => reject(new PdfRenderCancelled()));
+    worker.render.mockImplementationOnce(() => ({
+      promise: new Promise((_, fail) => {
+        reject = fail;
+      }),
+      cancel,
+    }));
+    c.setWorker(asWorker(worker));
+    const tile = { geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } };
+    c.setVisibleRegions([{ path: "a.pdf", page: 0, dprScale: 8, area: tile }]);
+    await settle();
+    c.setVisibleRegions([]);
+    await settle();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(c.peek("a.pdf", 0, 8, tile)).toBeNull();
+    c.destroy();
+  });
+
+  it("falls back to this thread for good when the worker dies", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    worker.render.mockImplementationOnce(() => {
+      worker.alive = false;
+      return { promise: Promise.reject(new Error("worker died")), cancel: vi.fn() };
+    });
+    c.setWorker(asWorker(worker));
+    const entry = await c.resolve("a.pdf", 0, 1);
+    expect(entry.ok).toBe(true);
+    expect(pdf.renders).toBe(1);
+    expect(c.usesWorker).toBe(false);
+    await c.resolve("a.pdf", 1, 1);
+    expect(worker.render).toHaveBeenCalledOnce();
     c.destroy();
   });
 });

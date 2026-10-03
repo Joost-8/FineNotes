@@ -21,6 +21,7 @@ import {
   fillPaper,
 } from "../canvas/backdrop";
 import type { BackdropPainter } from "../canvas/renderer";
+import { tilesFor } from "../canvas/pdf-tiles";
 import {
   PDF_DETAIL_ZOOM,
   boundsMeet,
@@ -48,6 +49,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
    * `PDF_DETAIL_ZOOM`, as of the last settled frame; `null` below it.
    */
   private detailScale: number | null = null;
+  /** Each PDF page's view centre at the last prepare, for the way the view moves. */
+  private centres = new Map<string, { x: number; y: number }>();
 
   /**
    * @param pdf PDF raster cache, or `null` where there is no vault to read from
@@ -62,37 +65,66 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   }
 
   /**
-   * One request per visible page, shared by every ink tile. While the view
-   * moves (`transient`) nothing is asked for: the tiles draw what is cached.
-   * Once it rests, each page in view gets one detail patch, unless a cached
-   * patch's margin already covers the view.
+   * What PDF detail to ask for, once per screen paint (never per ink tile).
+   *
+   * - With the PDF worker running (`usesWorker`): the grid tiles on screen,
+   *   then one row or column ahead the way the view moves, nearest the middle
+   *   first — also while it moves, since rendering them costs this thread
+   *   nothing. Tiles already cached or in flight are not asked for twice.
+   * - Without it (pdf.js on this thread): nothing while the view moves; once
+   *   it rests, one patch of the view plus a margin, unless a cached one
+   *   already covers it.
+   *
+   * Mid-zoom (`transient`) nothing is asked for: the level is not settled.
    */
   prepare(
     visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
     deviceScale: number,
     zoom: number,
     transient: boolean,
+    moving = false,
   ): void {
     if (!transient || this.pageScale === null)
       this.pageScale = quantiseScale(
         deviceScale * Math.min(1, PDF_DETAIL_ZOOM / Math.max(1, zoom)),
       );
-    if (transient) return;
+    if (transient || !this.pdf) return;
+    const tiles = this.pdf.usesWorker;
+    if (moving && !tiles) return;
     this.detailScale = zoom > PDF_DETAIL_ZOOM ? deviceScale : null;
     const requests: Array<{ path: string; page: number; dprScale: number; area: PdfRenderArea }> =
       [];
     const shown: PdfShownArea[] = [];
+    const centres = new Map<string, { x: number; y: number }>();
     for (const { backdrop, geometry, region } of visible) {
-      if (backdrop.kind !== "pdf" || !this.pdf) continue;
+      if (backdrop.kind !== "pdf") continue;
       const view = visiblePdfArea(geometry, region, zoom)?.region;
       if (!view) continue;
       const { path, page } = backdrop;
       shown.push({ path, page, dprScale: deviceScale, geometry, region: view });
+      if (tiles) {
+        // Which way the view moves, from where the page sat last frame.
+        const key = `${page}:${path}`;
+        const centre = { x: (view.minX + view.maxX) / 2, y: (view.minY + view.maxY) / 2 };
+        const last = this.centres.get(key);
+        centres.set(key, centre);
+        const ahead = last ? { x: centre.x - last.x, y: centre.y - last.y } : { x: 0, y: 0 };
+        for (const tile of tilesFor(geometry, view, deviceScale, 0, ahead)) {
+          requests.push({
+            path,
+            page,
+            dprScale: deviceScale,
+            area: { geometry, region: tile.region },
+          });
+        }
+        continue;
+      }
       if (this.pdf.detailCovers(path, page, deviceScale, geometry, view)) continue;
       const area = detailPdfArea(geometry, region, zoom);
       if (area) requests.push({ path, page, dprScale: deviceScale, area });
     }
-    this.pdf?.setVisibleRegions(requests, shown);
+    this.centres = centres;
+    this.pdf.setVisibleRegions(requests, shown);
   }
 
   /** Synchronous paint for the scroll path. Never blocks. */

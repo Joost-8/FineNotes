@@ -108,7 +108,10 @@ export interface BackdropPainter {
     visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
     deviceScale: number,
     zoom: number,
+    /** The zoom is mid-change: the level is not settled. */
     transient: boolean,
+    /** The view is moving (or rested less than `REST_MS` ago). */
+    moving?: boolean,
   ) => void;
   /** `weight` thickens synthetic rules for a small thumbnail (default 1). */
   paint(
@@ -731,7 +734,8 @@ export class Renderer {
       }),
       level,
       this.pdfZoom,
-      transient || detailTransient,
+      transient,
+      detailTransient,
     );
     for (const box of visibleBoxes) {
       const page = doc.pages[box.index];

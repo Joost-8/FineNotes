@@ -15,6 +15,7 @@
 
 import { Platform, apiVersion, loadPdfJs } from "obsidian";
 import { errorMessage } from "../util/errors";
+import { pdfJsBase } from "./pdf-worker";
 import {
   type AppleRun,
   type EngineRun,
@@ -143,19 +144,6 @@ async function runMain(
   }
   const totalMs = performance.now() - start;
   return { edgePx: EDGE_PX, pageMs, totalMs, lateness: lateness(beat.stop(), TICK_MS) };
-}
-
-/**
- * Where Obsidian serves its pdf.js from: the URL `loadPdfJs` actually loaded,
- * else its known place in the app bundle (not a public API, hence the test).
- */
-function pdfJsBase(): string {
-  const loaded = performance
-    .getEntriesByType("resource")
-    .map((entry) => entry.name)
-    .find((name) => /\/pdf(\.min)?\.mjs(\?|$)/.test(name));
-  if (loaded) return loaded.slice(0, loaded.lastIndexOf("/") + 1);
-  return `${window.location.origin}/lib/pdfjs/`;
 }
 
 /**

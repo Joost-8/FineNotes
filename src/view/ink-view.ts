@@ -60,6 +60,7 @@ import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../rec
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { runPdfProbe } from "./pdf-probe";
+import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { probeReportMarkdown } from "./pdf-probe-report";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
@@ -206,6 +207,8 @@ export class InkView extends TextFileView {
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
   private transcription: { cancelled: boolean } | null = null;
   private pdfCache: PdfBackdropCache | null = null;
+  /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
+  private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
   private lastSearch = "";
   /** A link's `#Page N`, until the pages it names have loaded. */
@@ -419,6 +422,10 @@ export class InkView extends TextFileView {
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
+    if (this.pdfWorkerHeld) {
+      this.pdfWorkerHeld = false;
+      releasePdfWorker();
+    }
     this.backdrops = null;
     this.thumbBackdrops = null;
     this.images?.destroy();
@@ -933,7 +940,19 @@ export class InkView extends TextFileView {
       { defaultSize: this.settings.defaultSize },
     );
 
-    this.pdfCache = new PdfBackdropCache(this.app);
+    const pdfCache = new PdfBackdropCache(this.app);
+    this.pdfCache = pdfCache;
+    // PDF pages render in the shared background worker once it is up (and
+    // on this thread until then, or for good if it cannot start here).
+    if (!this.pdfWorkerHeld) {
+      this.pdfWorkerHeld = true;
+      void acquirePdfWorker().then((worker) => {
+        if (worker && this.pdfCache === pdfCache) {
+          pdfCache.setWorker(worker);
+          this.surface?.refreshPdfDetail();
+        }
+      });
+    }
     this.backdrops = new VaultBackdropRenderer(this.pdfCache);
     this.thumbBackdrops = new VaultBackdropRenderer(this.pdfCache);
     this.thumbBackdrops.setDeviceScale(thumbnailRasterScale(window.devicePixelRatio || 1));

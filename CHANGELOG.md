@@ -30,11 +30,13 @@ extracted from the matching section of this file by `release.yml`.
 - **Exported PDFs keep the original PDF.** Pages with a PDF background now
   export with the PDF's own text and graphics, sharp and selectable, with
   your writing on top. Other pages export as before.
-- **Sharper PDFs.** PDF pages are drawn at the screen's full resolution, and
-  zoomed in past 2.5x the part on screen is drawn again in full detail once
-  you stop moving, so small print stays crisp and panning stays smooth. A
-  margin around the screen is drawn too, and the last few sharp areas are
-  kept, so small moves and going back stay sharp.
+- **Sharp PDFs while you move.** PDF pages are now drawn in the background,
+  away from the pen and the scrolling, so writing and panning stay smooth
+  while a page is being drawn. Zoomed in past 2.5x, the page is drawn sharp
+  in small tiles that fill in while you pan, nearest the middle of the screen
+  first and a little ahead of where you are going, so small print stays
+  crisp instead of going soft until you stop. Where background drawing is
+  not available, FineNotes draws as before.
 
 Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
 ([#5](https://github.com/Joost-8/FineNotes/pull/5)).

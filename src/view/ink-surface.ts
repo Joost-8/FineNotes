@@ -2788,6 +2788,11 @@ export class InkSurface {
    * missing: invalidate its region, or the whole page for a preview.
    * Other pages and regions keep their cached ink tiles.
    */
+  /** PDF rendering changed how it works (the worker came up): paint once to ask again. */
+  refreshPdfDetail(): void {
+    this.requestFrame();
+  }
+
   pdfPageReady(path: string, pdfPage: number, area?: PdfRenderArea): void {
     const renderer = this.renderer;
     if (!renderer) return;

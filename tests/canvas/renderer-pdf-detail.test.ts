@@ -37,10 +37,13 @@ describe("renderer visible PDF request boundary", () => {
       8,
       4,
       false,
+      false,
     );
     expect(rasterTile.mock.calls.length).toBeGreaterThan(1);
     prepare.mockClear();
     renderer.renderDocument(doc, false, undefined, null, undefined, Infinity, true);
-    expect(prepare.mock.calls[0][3]).toBe(true);
+    // Moving is passed on as such, not as a zoom in progress.
+    expect(prepare.mock.calls[0][3]).toBe(false);
+    expect(prepare.mock.calls[0][4]).toBe(true);
   });
 });
