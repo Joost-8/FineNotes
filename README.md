@@ -301,6 +301,8 @@ To transcribe as you go, set **Handwriting recognition** to **Cloud AI** and
 switch on **Recognize automatically**: the page you are on is transcribed
 about 30 seconds after you stop writing.
 
+Two optional settings return secondary tools to the pen: **Select active tool again to return to pen** and **Return to pen after one use**. Both are off by default and apply to eraser, lasso, text and shapes. A single use finishes an eraser stroke or shape, finishes text editing (overriding Pin Text tool), or ends a lasso session when you click outside the selection. Moving, scaling or other selection actions keep the lasso active until that outside click.
+
 ### Keyboard shortcuts
 
 | Keys                         | What they do                                  |

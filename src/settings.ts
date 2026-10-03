@@ -309,6 +309,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "straighten",
         "snap",
       ]),
+      toggle(
+        "returnToPenOnReselect",
+        "Select active tool again to return to pen",
+        "Select the active eraser, lasso, text or shape tool again to return to the pen.",
+        ["tool", "eraser", "lasso", "text", "shape"],
+      ),
+      toggle(
+        "returnToPenAfterUse",
+        "Return to pen after one use",
+        "Return after an eraser stroke, shape or finished text editing (even if Text is pinned). Lasso returns when you click outside its selection.",
+        ["tool", "eraser", "lasso", "text", "shape"],
+      ),
       toggle("desynchronizedCanvas", "Desynchronized canvas", DESC.desynchronized, [
         "latency",
         "glitch",

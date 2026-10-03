@@ -57,6 +57,7 @@
  *   "3 / 18" readout are chrome-level, because discrete pages are the fix.
  */
 
+import { selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE } from "../constants";
 import {
@@ -292,6 +293,7 @@ export interface ToolbarCallbacks {
   // config — and it is right to: a host that wrote these as methods on a
   // class would lose `this` the moment we read one. A callback is a value.
   onToolChange: (tool: ActiveTool) => void;
+  returnToPenOnReselect?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
   onPressureToggle: (enabled: boolean) => void;
@@ -638,6 +640,7 @@ export class Toolbar {
    */
   private tapTool(tool: ActiveTool, button: HTMLElement): void {
     const current = this.state.tool;
+    tool = selectedTool(current, tool, this.callbacks.returnToPenOnReselect?.() === true);
     if (tool === "select" && current === "select") {
       this.toggleLassoPopover(button);
       return;
@@ -1021,7 +1024,11 @@ export class Toolbar {
    * button says so), and an empty pill hides itself.
    */
   private buildSelectOptions(): void {
-    // Deliberately empty.
+    // Repeated selection may now return to Pen, so keep the lasso settings reachable.
+    if (this.callbacks.returnToPenOnReselect?.() === true)
+      this.barButton(this.optionsEl, "settings-2", "Lasso options", (button) =>
+        this.toggleLassoPopover(button),
+      );
   }
 
   /**

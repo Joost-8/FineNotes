@@ -209,6 +209,8 @@ describe("the rows", () => {
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
       ["", "Draw and hold to make shapes", "toggle:drawAndHold"],
+      ["", "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
+      ["", "Return to pen after one use", "toggle:returnToPenAfterUse"],
       ["", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       ["", "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
       ["", "(block)", "render"],
@@ -263,6 +265,8 @@ describe("the rows", () => {
     const label = VENDORS.anthropic.label;
     expect(aliases).toEqual({
       "Draw and hold to make shapes": ["shape recognition", "straighten", "snap"],
+      "Select active tool again to return to pen": ["tool", "eraser", "lasso", "text", "shape"],
+      "Return to pen after one use": ["tool", "eraser", "lasso", "text", "shape"],
       "Desynchronized canvas": ["latency", "glitch", "artifacts"],
       "Pressure-sensitive pens (advanced)": [
         "pressure sensitivity",
@@ -349,13 +353,15 @@ describe("which rows show", () => {
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens (advanced)";
     expect(off[off.indexOf(toggle) + 1]).toBe("Paper width");
-    expect(on[on.indexOf(toggle) + 1]).toBe("(block 4)");
+    expect(on[on.indexOf(toggle) + 1]).toBe("(block 6)");
   });
 
   it("by default: no iPad tip, Manual recognition, Claude, keys in the keychain", () => {
     const label = VENDORS.anthropic.label;
     expect(visibleNames(makePlugin())).toEqual([
       "Draw and hold to make shapes",
+      "Select active tool again to return to pen",
+      "Return to pen after one use",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
       "Paper width",
@@ -370,9 +376,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 24)",
+      "(block 26)",
       "Input debug overlay",
-      "(block 28)",
+      "(block 30)",
     ]);
   });
 
@@ -480,6 +486,21 @@ describe("control values", () => {
     expect(tab.getControlValue("defaultTool")).toBe("eraser");
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
+
+  it.each(["returnToPenOnReselect", "returnToPenAfterUse"] as const)(
+    "persists %s independently, disabled by default",
+    async (key) => {
+      const plugin = makePlugin();
+      const { tab } = makeTab(plugin);
+      expect(plugin.settings[key]).toBe(false);
+      await tab.setControlValue(key, true);
+      expect(plugin.settings[key]).toBe(true);
+      const other =
+        key === "returnToPenOnReselect" ? "returnToPenAfterUse" : "returnToPenOnReselect";
+      expect(plugin.settings[other]).toBe(false);
+      expect(plugin.saveSettings).toHaveBeenCalledOnce();
+    },
+  );
 
   it("stores what a control sets in data.json's units", async () => {
     const plugin = makePlugin();
