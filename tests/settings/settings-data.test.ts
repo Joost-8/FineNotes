@@ -69,6 +69,8 @@ const FRESH_INSTALL = {
   shapeColor: "#000000",
   recentColors: [],
   pressureWidth: false,
+  returnToPenOnReselect: false,
+  returnToPenAfterUse: false,
 };
 
 /**
@@ -89,6 +91,8 @@ const USED_VAULT = {
   highlighterAlpha: 0.55,
   paperWidth: 1400,
   newNotebookFolder: "School/Notebooks",
+  returnToPenOnReselect: true,
+  returnToPenAfterUse: true,
   lastNotebookChoices: { type: "notebook", cover: "plain", paper: "dotted", size: "a4" },
   recognitionProviderId: "llm-byok",
   twoFileStorage: true,
