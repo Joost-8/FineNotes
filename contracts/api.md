@@ -575,20 +575,21 @@ export interface BackdropPainter {
 One class may implement both, and `VaultBackdropRenderer` does.
 
 - **Synthetic backdrops** draw procedurally — cheap, redraw freely.
-- **PDF backdrops** render from the original PDF through Obsidian's PDF.js.
-  Notebook tiles pass their page-space region and settled device scale to the
-  backdrop painter. Only that region is rasterized at its display resolution:
-  a high zoom never stretches a capped whole-page image. Source PDF points are
-  converted to notebook page pixels using the contained page geometry, with
-  PDF rotation/cropping supplied by the PDF.js viewport. Region cache keys
-  include source path/page, page geometry, page-space region and the renderer's
-  settled scale (stable to 1e-4). Pinch frames reuse the settled tiles.
-  Full-page previews/thumbnails use a scale quantized to 0.25 steps and are
-  bounded to 2400 pixels per edge and approximately 4 MP. Screen patches are
-  normally 512 × 512 device pixels, regardless of zoom. The shared byte cache
-  keeps its 48 MB soft / 96 MB hard budgets and recent-use policy; rendering
-  waits while the pen writes. A patch landing invalidates only that page region;
-  full previews can invalidate the matching page and its sidebar thumbnail.
+- **PDF backdrops** must be rasterized once per (path, page, scale) and
+  **cached**; re-rasterizing per frame will destroy scroll performance on an
+  iPad. Cache key: `${path}:${page}:${devicePixelRatio * scale}`, where the
+  scale term is **quantised to 0.25 steps before the key is built**.
+  Pinch-zoom produces a continuum of scales, so an unquantised key mints a
+  new bitmap on every frame of a zoom gesture. Bound the cache regardless,
+  by bytes (48 MB, never evicting a raster drawn in the last 1.5 s; 96 MB
+  hard), and cap the raster's long edge at 2400 device px. A raster that
+  lands repaints only the pages that show it, and thumbnails ask for
+  thumbnail-sized rasters: an 8-bitmap cache with a repaint-everything
+  callback looped for as long as the page sidebar was open (FineNotes#1).
+  Rasterising waits while the pen writes. Rendering each 512 px tile from
+  the PDF separately was measured (PR #5, `scripts/ui-gallery/pdf-harness`)
+  at 15-30x the renders and a full 96 MB cache after each zoom, for no
+  gain below ~2.5x zoom; sharper zoom needs a cheaper design first.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a

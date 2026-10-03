@@ -21,7 +21,7 @@ import {
   fillPaper,
 } from "../canvas/backdrop";
 import type { BackdropPainter } from "../canvas/renderer";
-import type { Bounds, Backdrop, PageGeometry } from "../model/document";
+import type { Backdrop, PageGeometry } from "../model/document";
 import { type PdfBackdropCache, type PdfEntry, quantiseScale } from "./pdf-backdrop";
 
 export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter {
@@ -49,7 +49,6 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight = 1,
-    target?: { deviceScale: number; region?: Bounds },
   ): void {
     if (backdrop.kind !== "pdf") {
       drawSynthetic(ctx, backdrop, geometry, this.theme, weight);
@@ -59,15 +58,11 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
-    const scale = target?.region
-      ? target.deviceScale
-      : quantiseScale(target?.deviceScale ?? this.scale);
-    const area = { geometry, ...(target?.region ? { region: target.region } : {}) };
-    const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
+    const entry = this.pdf.peek(backdrop.path, backdrop.page, this.scale);
     if (!entry) {
       // Not rasterised yet: plain paper now, repaint when the bitmap arrives.
       fillPaper(ctx, geometry, this.theme);
-      this.pdf.request(backdrop.path, backdrop.page, scale, area);
+      this.pdf.request(backdrop.path, backdrop.page, this.scale);
       return;
     }
     this.paintEntry(ctx, entry, geometry);
@@ -87,7 +82,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
-    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, { geometry });
+    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale);
     this.paintEntry(ctx, entry, geometry);
   }
 
@@ -100,11 +95,6 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     fillPaper(ctx, geometry, this.theme);
     const { canvas } = entry;
     if (canvas.width === 0 || canvas.height === 0) return;
-    if (entry.box) {
-      const { x, y, w, h } = entry.box;
-      ctx.drawImage(canvas, x, y, w, h);
-      return;
-    }
     // Contain: a PDF page whose aspect differs from the notebook's page size is
     // centred rather than stretched — stretched slides read as a rendering bug.
     const k = Math.min(geometry.width / canvas.width, geometry.height / canvas.height);

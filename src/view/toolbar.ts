@@ -541,7 +541,7 @@ export class Toolbar {
     this.addToolButton(tools, "text", "type", "Text box (T)");
     this.addToolButton(tools, "shape", "shapes", "Shapes (S)");
     this.barButton(tools, "image", "Insert image", cb.onInsertImage);
-    this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf).addClass("clickable-icon");
+    this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf);
     // The note's recordings live in the page sidebar's Audio tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = this.barButton(tools, "mic", "Record audio", cb.onRecord);

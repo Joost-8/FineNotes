@@ -8,6 +8,32 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Insert PDF.** A new toolbar button beside Insert image: pick a PDF from
+  your files or from the vault, then import all its pages or a range such as
+  `1-3, 5` (in the order you type it). The pages go in after the current
+  one, with the PDF as their background, and one undo takes them all out.
+  A PDF already in the vault is used as it is, not copied. This replaces
+  "Scanned PDF from Files": a PDF from the Files app's Scan Documents goes
+  in through Insert PDF now.
+- **Drag and drop.** Drop pictures or a PDF onto a notebook, from your
+  computer or from Obsidian's file list. Pictures are placed like Insert
+  image; a PDF opens the page choice.
+- **New notebook from the file explorer.** Right-click (long-press on the
+  iPad) a folder and choose New notebook to create one there. An optional
+  New notebook button beside New note and New folder can be turned on in
+  settings.
+
+### Changed
+
+- **Exported PDFs keep the original PDF.** Pages with a PDF background now
+  export with the PDF's own text and graphics, sharp and selectable, with
+  your writing on top. Other pages export as before.
+
+Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
+([#5](https://github.com/Joost-8/FineNotes/pull/5)).
+
 ### Fixed
 
 - **Smoother writing on older iPads.** Before iPadOS 26.2, the iPad rounds

@@ -15,11 +15,7 @@ interface FakeCanvas {
 }
 
 /** Each test's pdf.js: pages of 600 x 800 pt, counting renders. */
-const pdf = {
-  renders: 0,
-  pages: 40,
-  calls: [] as Array<{ viewport: { width: number; height: number }; transform?: number[] }>,
-};
+const pdf = { renders: 0, pages: 40 };
 
 vi.mock("obsidian", async () => ({
   ...(await import("./fake-obsidian")),
@@ -34,11 +30,7 @@ vi.mock("obsidian", async () => ({
                 width: 600 * scale,
                 height: 800 * scale,
               }),
-              render: (params: {
-                viewport: { width: number; height: number };
-                transform?: number[];
-              }) => {
-                pdf.calls.push(params);
+              render: () => {
                 pdf.renders++;
                 return { promise: Promise.resolve() };
               },
@@ -56,7 +48,6 @@ let clock = 0;
 
 beforeEach(() => {
   pdf.renders = 0;
-  pdf.calls.length = 0;
   clock = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
   globals.createEl = (): FakeCanvas => ({ width: 0, height: 0, getContext: () => ({}) });
@@ -84,41 +75,6 @@ async function settle(): Promise<void> {
 }
 
 describe("PdfBackdropCache", () => {
-  it("renders and caches individual zoomed PDF regions at display resolution", async () => {
-    const c = cache();
-    const area = {
-      geometry: { width: 1200, height: 1600 },
-      region: { minX: 256, minY: 128, maxX: 320, maxY: 192 },
-    };
-    const landed = vi.fn();
-    c.onReady = landed;
-    const entry = await c.resolve("a.pdf", 0, 8, area);
-    expect(entry.ok && [entry.canvas.width, entry.canvas.height]).toEqual([512, 512]);
-    expect(entry.ok && entry.box).toEqual({ x: 256, y: 128, w: 64, h: 64 });
-    expect(pdf.calls[0].viewport).toEqual({ width: 9600, height: 12800 });
-    expect(pdf.calls[0].transform).toEqual([1, 0, 0, 1, -2048, -1024]);
-    expect(landed).toHaveBeenCalledWith("a.pdf", 0, area);
-    expect(await c.resolve("a.pdf", 0, 8, area)).toBe(entry);
-    expect(pdf.renders).toBe(1);
-    expect(c.peek("a.pdf", 0, 8, { ...area, region: { ...area.region, minX: 0 } })).toBeNull();
-  });
-
-  it("holds PDF region requests while writing and preserves their geometry on release", async () => {
-    const c = cache();
-    const area = {
-      geometry: { width: 1200, height: 1600 },
-      region: { minX: 0, minY: 0, maxX: 64, maxY: 64 },
-    };
-    c.setHeld(true);
-    c.request("a.pdf", 0, 8, area);
-    await settle();
-    expect(pdf.renders).toBe(0);
-    c.setHeld(false);
-    await settle();
-    expect(c.peek("a.pdf", 0, 8, area)?.ok).toBe(true);
-    expect(pdf.calls[0].viewport.width).toBe(9600);
-  });
-
   it("says which page landed", async () => {
     const c = cache();
     const landed: Array<[string, number]> = [];

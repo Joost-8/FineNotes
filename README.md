@@ -240,9 +240,7 @@ chosen after a box is done. While you type, the red bin deletes the box.
 - Drop a PDF file onto the notebook to open the same page selection dialog.
   Imported pages follow the current page and undo together. The source PDF
   remains unchanged; writing and text boxes sit above its page backdrop.
-  Convert a single page to a notebook before importing PDF pages. PDF pages
-  are rendered directly from their source at the settled zoom, in small
-  display-sized regions, so zooming does not enlarge a compressed page image.
+  Convert a single page to a notebook before importing PDF pages.
 - Drop pictures from your computer or the vault onto the notebook to insert
   them like **Insert image**. PNG, JPEG, GIF, WebP, BMP and SVG are supported;
   other image formats depend on your device, just like the image file picker.

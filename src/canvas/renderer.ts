@@ -109,7 +109,6 @@ export interface BackdropPainter {
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight?: number,
-    target?: { deviceScale: number; region?: Bounds },
   ): void;
 }
 
@@ -898,10 +897,7 @@ export class Renderer {
     ctx.fillRect(0, 0, box.width, box.height);
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
-    this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level), {
-      deviceScale: level,
-      ...(Number.isFinite(region.minX) ? { region } : {}),
-    });
+    this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level));
     this.paintImages(ctx, page, region, level);
     // Inset by half a device pixel so the hairline lies inside the clip.
     const hair = 1 / level;
@@ -1277,9 +1273,7 @@ export function renderPageThumbnail(
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
   if (!options.transparent) {
-    painter.paint(ctx, page.backdrop, page.geometry, Math.max(1, (0.5 * width) / cssWidth), {
-      deviceScale: k,
-    });
+    painter.paint(ctx, page.backdrop, page.geometry, Math.max(1, (0.5 * width) / cssWidth));
   }
   if (options.images) {
     for (const image of page.images) drawPlacedImage(ctx, image, options.images, k);
