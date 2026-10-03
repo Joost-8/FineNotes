@@ -8,10 +8,9 @@
  *
  * Three hard requirements from contracts/api.md §4, all implemented here:
  *
- * 1. **Rasterise once per `(path, page, scale)` and cache.** Re-rasterising per
- *    frame destroys iPad scroll performance. The cache key is
- *    `` `${path}:${page}:${dpr * scale}` ``, with the scale quantised (see
- *    {@link quantiseScale}) so a pinch-zoom cannot mint a new bitmap per frame.
+ * 1. **One whole-page raster at ordinary zoom; visible detail above 2.5x.**
+ *    Detail requests are shared across ink tiles, limited to two renders in
+ *    flight, and cancelled/evicted when their visible area changes.
  * 2. **The source PDF is opened read-only and never written.** The only vault
  *    call in this file is `vault.readBinary`.
  * 3. **A failed backdrop never costs the user their ink.** Every failure path
@@ -20,7 +19,8 @@
  */
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
-import { ByteLru } from "../canvas/tile-grid";
+import { ByteLru, quantiseLevel } from "../canvas/tile-grid";
+import { type PdfRenderArea, pdfAreaKey, planPdfRaster } from "../canvas/pdf-raster";
 import { errorMessage } from "../util/errors";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
@@ -51,6 +51,8 @@ const MAX_SCALE = 4;
 export interface PdfRaster {
   ok: true;
   canvas: HTMLCanvasElement;
+  /** Page-space destination of a PDF patch; absent on legacy whole-page rasters. */
+  box?: { x: number; y: number; w: number; h: number };
 }
 
 /** A backdrop that could not be resolved. Cached so a missing file is not
@@ -73,8 +75,13 @@ interface PdfViewportLike {
 
 interface PdfPageLike {
   getViewport(params: { scale: number }): PdfViewportLike;
-  render(params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewportLike }): {
+  render(params: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: PdfViewportLike;
+    transform?: number[];
+  }): {
     promise: Promise<void>;
+    cancel?: () => void;
   };
   cleanup?: () => void;
 }
@@ -99,8 +106,14 @@ export function quantiseScale(scale: number): number {
 }
 
 /** The cache key mandated by contracts/api.md §4. */
-export function rasterKey(path: string, page: number, dprScale: number): string {
-  return `${path}:${page}:${dprScale}`;
+export function rasterKey(
+  path: string,
+  page: number,
+  dprScale: number,
+  area?: PdfRenderArea,
+): string {
+  const base = `${path}:${page}:${area ? quantiseLevel(dprScale) : dprScale}`;
+  return area ? `${base}:${pdfAreaKey(area)}` : base;
 }
 
 /**
@@ -117,7 +130,23 @@ interface Cached {
   entry: PdfEntry;
   /** When a paint last drew it (ms, `performance.now()`). */
   lastUsed: number;
+  detail: boolean;
 }
+
+export interface PdfRasterRequest {
+  path: string;
+  page: number;
+  dprScale: number;
+  area?: PdfRenderArea;
+}
+interface RasterWork extends PdfRasterRequest {
+  key: string;
+  cancelled: boolean;
+  background: boolean;
+  cancelRender?: () => void;
+  finish: (entry: PdfEntry) => void;
+}
+const MAX_INFLIGHT = 2;
 
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -129,13 +158,19 @@ export class PdfBackdropCache {
    * (success or miss). Repaint only what shows that page: repainting
    * everything is what kept the eviction loop above going.
    */
-  onReady: ((path: string, page: number) => void) | null = null;
+  onReady: ((path: string, page: number, area?: PdfRenderArea) => void) | null = null;
 
   private readonly entries = new ByteLru<Cached>(HARD_BUDGET, (cached) => release(cached.entry));
   private readonly inflight = new Map<string, Promise<PdfEntry>>();
+  private readonly queue: RasterWork[] = [];
+  private readonly running = new Set<RasterWork>();
+  private readonly work = new Map<string, RasterWork>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
   /** Requests made while held, started on {@link setHeld}(false). */
-  private readonly deferred = new Map<string, { path: string; page: number; dprScale: number }>();
+  private readonly deferred = new Map<
+    string,
+    { path: string; page: number; dprScale: number; area?: PdfRenderArea }
+  >();
   private held = false;
   private lib: Promise<PdfJsLike> | null = null;
   private destroyed = false;
@@ -143,29 +178,33 @@ export class PdfBackdropCache {
   constructor(private readonly app: App) {}
 
   /** Synchronous lookup. `null` means "not rasterised yet" — never blocks. */
-  peek(path: string, page: number, dprScale: number): PdfEntry | null {
-    const hit = this.entries.get(rasterKey(path, page, dprScale));
+  peek(path: string, page: number, dprScale: number, area?: PdfRenderArea): PdfEntry | null {
+    const hit = this.entries.get(rasterKey(path, page, dprScale, area));
     if (!hit) return null;
     hit.lastUsed = now();
     return hit.entry;
   }
 
   /**
-   * The page at whatever scale is cached, for drawing while the asked-for
-   * scale is still being rasterised: the smallest scale at or above
+   * The same page and area at whatever scale is cached, for drawing while the
+   * asked-for scale is still being rasterised: the smallest scale at or above
    * `dprScale`, else the largest below it. A zoom changes the scale, and
-   * without this the page showed as blank paper until pdf.js caught up —
-   * a second or more on an iPad. Misses (`ok: false`) are never returned.
+   * without this the page showed as blank paper until pdf.js caught up — a
+   * second or more on an iPad. Misses (`ok: false`) are never returned.
    */
-  peekNearest(path: string, page: number, dprScale: number): PdfEntry | null {
-    // rasterKey without its scale.
+  peekNearest(path: string, page: number, dprScale: number, area?: PdfRenderArea): PdfEntry | null {
+    // rasterKey around its scale.
     const prefix = `${path}:${page}:`;
+    const suffix = area ? `:${pdfAreaKey(area)}` : "";
     let above: { scale: number; cached: Cached } | null = null;
     let below: { scale: number; cached: Cached } | null = null;
     for (const cached of this.entries.values()) {
-      if (!cached.entry.ok || !cached.key.startsWith(prefix)) continue;
-      const scale = Number(cached.key.slice(prefix.length));
-      if (!Number.isFinite(scale)) continue;
+      const { key } = cached;
+      if (!cached.entry.ok || !key.startsWith(prefix) || !key.endsWith(suffix)) continue;
+      const middle = key.slice(prefix.length, key.length - suffix.length);
+      // Another area's key has more after the scale, and is no number.
+      if (!/^\d+(\.\d+)?$/.test(middle)) continue;
+      const scale = Number(middle);
       if (scale >= dprScale) {
         if (!above || scale < above.scale) above = { scale, cached };
       } else if (!below || scale > below.scale) below = { scale, cached };
@@ -181,15 +220,35 @@ export class PdfBackdropCache {
    * (the pen is writing), it waits: pdf.js paints on the main thread, and a
    * page landing mid-stroke stalls the ink.
    */
-  request(path: string, page: number, dprScale: number): void {
+  request(path: string, page: number, dprScale: number, area?: PdfRenderArea): void {
+    if (this.destroyed) return;
     if (this.held) {
-      const key = rasterKey(path, page, dprScale);
+      const key = rasterKey(path, page, dprScale, area);
       if (!this.entries.has(key) && !this.inflight.has(key)) {
-        this.deferred.set(key, { path, page, dprScale });
+        this.deferred.set(key, { path, page, dprScale, area });
       }
       return;
     }
-    void this.resolve(path, page, dprScale);
+    void this.resolve(path, page, dprScale, area, true);
+  }
+
+  /** Replace viewport detail atomically; stale work never caches or triggers repaints. */
+  setVisibleRegions(requests: PdfRasterRequest[]): void {
+    if (this.destroyed) return;
+    const wanted = new Set(
+      requests.map(({ path, page, dprScale, area }) => rasterKey(path, page, dprScale, area)),
+    );
+    for (const job of [...this.work.values()]) {
+      if (job.area?.region && !wanted.has(job.key)) this.cancel(job);
+    }
+    for (const [key, request] of this.deferred) {
+      if (request.area?.region && !wanted.has(key)) this.deferred.delete(key);
+    }
+    this.entries.deleteWhere((cached) => cached.detail && !wanted.has(cached.key));
+    // Submit the latest visible regions before starting anything queued by a cancelled job.
+    for (const request of requests)
+      this.request(request.path, request.page, request.dprScale, request.area);
+    this.drain();
   }
 
   /** Hold background rasterisation (true), or let it go on with what waited (false). */
@@ -199,31 +258,92 @@ export class PdfBackdropCache {
     if (held) return;
     const waiting = [...this.deferred.values()];
     this.deferred.clear();
-    for (const { path, page, dprScale } of waiting) void this.resolve(path, page, dprScale);
+    for (const { path, page, dprScale, area } of waiting)
+      void this.resolve(path, page, dprScale, area, true);
+    this.drain();
   }
 
   /** Cached entry, rasterising first if necessary. Never rejects. */
-  resolve(path: string, page: number, dprScale: number): Promise<PdfEntry> {
-    const key = rasterKey(path, page, dprScale);
+  resolve(
+    path: string,
+    page: number,
+    dprScale: number,
+    area?: PdfRenderArea,
+    background = false,
+  ): Promise<PdfEntry> {
+    const key = rasterKey(path, page, dprScale, area);
     const cached = this.entries.peek(key);
     if (cached) return Promise.resolve(cached.entry);
     if (this.destroyed) return Promise.resolve({ ok: false, reason: "Cache closed" });
 
     const existing = this.inflight.get(key);
-    if (existing) return existing;
+    if (existing) {
+      const pending = this.work.get(key);
+      if (pending && !background) pending.background = false;
+      this.drain();
+      return existing;
+    }
 
-    const work = this.rasterise(path, page, dprScale)
-      .catch((error: unknown): PdfEntry => ({ ok: false, reason: errorMessage(error) }))
-      .then((entry) => {
-        this.store(key, entry, path, page);
-        return entry;
-      });
-    this.inflight.set(key, work);
-    return work;
+    let finish!: (entry: PdfEntry) => void;
+    const result = new Promise<PdfEntry>((resolve) => {
+      finish = resolve;
+    });
+    const job: RasterWork = {
+      key,
+      path,
+      page,
+      dprScale,
+      area,
+      cancelled: false,
+      background,
+      finish,
+    };
+    this.inflight.set(key, result);
+    this.work.set(key, job);
+    // Screen detail takes priority over queued sidebar thumbnails.
+    if (area?.region) this.queue.unshift(job);
+    else this.queue.push(job);
+    this.drain();
+    return result;
+  }
+
+  private cancel(job: RasterWork): void {
+    job.cancelled = true;
+    const queued = this.queue.indexOf(job);
+    if (queued !== -1) this.queue.splice(queued, 1);
+    job.cancelRender?.();
+    if (this.work.get(job.key) === job) {
+      this.work.delete(job.key);
+      this.inflight.delete(job.key);
+    }
+    job.finish({ ok: false, reason: "PDF render superseded" });
+  }
+
+  private drain(): void {
+    if (this.destroyed) return;
+    while (this.running.size < MAX_INFLIGHT && this.queue.length) {
+      const index = this.queue.findIndex((job) => !this.held || !job.background);
+      if (index === -1) return;
+      const [job] = this.queue.splice(index, 1);
+      if (job.cancelled) continue;
+      this.running.add(job);
+      void this.rasterise(job.path, job.page, job.dprScale, job.area, job)
+        .catch((error: unknown): PdfEntry => ({ ok: false, reason: errorMessage(error) }))
+        .then((entry) => {
+          this.running.delete(job);
+          if (job.cancelled || this.destroyed) release(entry);
+          else this.store(job.key, entry, job.path, job.page, job.area);
+          if (this.work.get(job.key) === job) this.work.delete(job.key);
+          job.finish(entry);
+          this.drain();
+        });
+    }
   }
 
   /** Drop every cached bitmap and close every open document. */
   clear(): void {
+    for (const job of [...this.work.values()]) this.cancel(job);
+    this.queue.length = 0;
     this.entries.clear();
     this.deferred.clear();
     for (const promise of this.documents.values()) {
@@ -243,15 +363,22 @@ export class PdfBackdropCache {
     return this.entries.bytes;
   }
 
-  private store(key: string, entry: PdfEntry, path: string, page: number): void {
+  private store(
+    key: string,
+    entry: PdfEntry,
+    path: string,
+    page: number,
+    area?: PdfRenderArea,
+  ): void {
     this.inflight.delete(key);
     if (this.destroyed) {
       release(entry);
       return;
     }
-    this.entries.set(key, { key, entry, lastUsed: now() }, bytesOf(entry));
+    this.entries.set(key, { key, entry, lastUsed: now(), detail: !!area?.region }, bytesOf(entry));
     this.trim();
-    this.onReady?.(path, page);
+    if (area) this.onReady?.(path, page, area);
+    else this.onReady?.(path, page);
   }
 
   /**
@@ -295,31 +422,54 @@ export class PdfBackdropCache {
     return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
   }
 
-  private async rasterise(path: string, page: number, dprScale: number): Promise<PdfEntry> {
+  private async rasterise(
+    path: string,
+    page: number,
+    dprScale: number,
+    area?: PdfRenderArea,
+    job?: RasterWork,
+  ): Promise<PdfEntry> {
     const doc = await this.document(path);
+    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
     if (!doc) return { ok: false, reason: `Missing PDF — ${path}` };
     if (!Number.isInteger(page) || page < 0 || page >= doc.numPages) {
       return { ok: false, reason: `Page ${page + 1} is outside ${path} (${doc.numPages} pages)` };
     }
 
     const pdfPage = await doc.getPage(page + 1);
+    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
     const base = pdfPage.getViewport({ scale: 1 });
+    const plan = area ? planPdfRaster(base, quantiseLevel(dprScale), area) : null;
     const cap = MAX_RASTER_EDGE / Math.max(1, base.width, base.height);
-    const viewport = pdfPage.getViewport({ scale: Math.min(Math.max(0.05, dprScale), cap) });
+    const viewport = pdfPage.getViewport({
+      scale: plan?.sourceScale ?? Math.min(Math.max(0.05, dprScale), cap),
+    });
 
     // Obsidian's global createEl, not document.createElement: the
     // plugin-review lint requires it. The global form returns a *detached*
     // element, which is what an offscreen raster target must be — Node's
     // createEl would append the canvas into the DOM.
     const canvas = createEl("canvas");
-    canvas.width = Math.max(1, Math.round(viewport.width));
-    canvas.height = Math.max(1, Math.round(viewport.height));
+    canvas.width = plan?.width ?? Math.max(1, Math.round(viewport.width));
+    canvas.height = plan?.height ?? Math.max(1, Math.round(viewport.height));
     const ctx = canvas.getContext("2d");
     if (!ctx) return { ok: false, reason: "Canvas unavailable for PDF rasterisation" };
 
-    await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-    pdfPage.cleanup?.();
-    return { ok: true, canvas };
+    try {
+      const render = pdfPage.render({
+        canvasContext: ctx,
+        viewport,
+        ...(plan ? { transform: plan.transform } : {}),
+      });
+      if (job) job.cancelRender = render.cancel ? () => render.cancel?.() : undefined;
+      await render.promise;
+      return { ok: true, canvas, ...(plan ? { box: plan.box } : {}) };
+    } catch (error) {
+      canvas.width = canvas.height = 0;
+      throw error;
+    } finally {
+      pdfPage.cleanup?.();
+    }
   }
 }
 

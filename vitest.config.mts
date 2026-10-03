@@ -31,6 +31,7 @@ export default defineConfig({
         "src/canvas/image-geometry.ts",
         "src/canvas/image-crop.ts",
         "src/canvas/image-raster.ts",
+        "src/canvas/pdf-raster.ts",
         "src/canvas/text-layout.ts",
         "src/canvas/lasso.ts",
         "src/view/selection-bar-model.ts",

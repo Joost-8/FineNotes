@@ -30,6 +30,9 @@ extracted from the matching section of this file by `release.yml`.
 - **Exported PDFs keep the original PDF.** Pages with a PDF background now
   export with the PDF's own text and graphics, sharp and selectable, with
   your writing on top. Other pages export as before.
+- **Sharper PDFs.** PDF pages are drawn at the screen's full resolution, and
+  zoomed in past 2.5x the part on screen is drawn again in full detail, so
+  small print stays crisp.
 
 Thanks to [@Suzkapu](https://github.com/Suzkapu) for all of the above
 ([#5](https://github.com/Joost-8/FineNotes/pull/5)).

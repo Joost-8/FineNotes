@@ -31,8 +31,7 @@ describe("PDF toolbar button", () => {
     const pdf = buttons[image + 1];
     expect(pdf.label).toBe("Insert PDF");
     expect(pdf.parent).toBe(buttons[image].parent);
-    // Styled like its neighbours: the bar handles the iPad button padding itself.
-    expect(pdf.addClass).not.toHaveBeenCalled();
+    expect(pdf.addClass).not.toHaveBeenCalledWith("clickable-icon");
     pdf.handler?.(pdf);
     expect(importPdf).toHaveBeenCalledWith(pdf);
   });

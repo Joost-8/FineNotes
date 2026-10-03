@@ -1028,9 +1028,9 @@ export class InkView extends TextFileView {
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
     );
     // Only what shows the page that landed is redrawn (FineNotes#1).
-    this.pdfCache.onReady = (path, page) => {
-      this.surface?.pdfPageReady(path, page);
-      this.sidebar?.invalidatePdfPage(path, page);
+    this.pdfCache.onReady = (path, page, area) => {
+      this.surface?.pdfPageReady(path, page, area);
+      if (!area?.region) this.sidebar?.invalidatePdfPage(path, page);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);

@@ -240,7 +240,9 @@ chosen after a box is done. While you type, the red bin deletes the box.
 - Drop a PDF file onto the notebook to open the same page selection dialog.
   Imported pages follow the current page and undo together. The source PDF
   remains unchanged; writing and text boxes sit above its page backdrop.
-  Convert a single page to a notebook before importing PDF pages.
+  Convert a single page to a notebook before importing PDF pages. PDF pages
+  are rendered directly from their source at the settled zoom, in small
+  display-sized regions, so zooming does not enlarge a compressed page image.
 - Drop pictures from your computer or the vault onto the notebook to insert
   them like **Insert image**. PNG, JPEG, GIF, WebP, BMP and SVG are supported;
   other image formats depend on your device, just like the image file picker.
@@ -269,6 +271,8 @@ picture, such as a worksheet you write on; hold the lasso on it and tap
   **Images**, **Recordings** and **PDF exports**.
 - **A single page** cannot take more pages until you choose **Convert to
   notebook** in its ⌄ menu in the sidebar.
+
+PDF display uses one cached image per page at ordinary zoom. Above 2.5× zoom, it sharpens only the visible portion, with at most two PDF renders in flight. Old visible-area renders are cancelled and their canvases released when you scroll away; ink and the sidebar keep their existing rendering paths.
 
 ### Search, links and export
 
