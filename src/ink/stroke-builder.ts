@@ -17,6 +17,14 @@ export interface InputSample {
   pressure: number;
 }
 
+/**
+ * How the pen's positions are smoothed before they are kept: `"off"` keeps
+ * them as they are; `"centred"`, for a pen whose positions arrive rounded to
+ * whole screen px, places each one from the samples on both sides of it
+ * ({@link CENTRED_HALF}).
+ */
+export type Smoothing = "off" | "centred";
+
 export interface StrokeBuilderOptions {
   /** A sample closer than this to the last point kept is dropped (page px). */
   minDistance: number;
@@ -29,12 +37,8 @@ export interface StrokeBuilderOptions {
    * curve through them, about `minDistance` apart ({@link StrokeBuilder}).
    */
   densify?: boolean;
-  /**
-   * The positions are rounded (whole screen px): each sample follows the pen
-   * only {@link ROUNDED_FOLLOW} of the way, before anything else sees it
-   * ({@link StrokeBuilder}).
-   */
-  smooth?: boolean;
+  /** How the positions are smoothed first; `"off"` by default. */
+  smoothing?: Smoothing;
 }
 
 const DEFAULTS: StrokeBuilderOptions = {
@@ -42,24 +46,39 @@ const DEFAULTS: StrokeBuilderOptions = {
   pressureEnabled: true,
   fallbackPressure: FALLBACK_PRESSURE,
   densify: false,
-  smooth: false,
+  smoothing: "off",
 };
 
 /** At most this many points are filled in between two samples. */
 const MAX_FILL = 64;
 
 /**
- * With `smooth`, how far each sample moves from the last smoothed point
- * towards where the pen reported. WebKit before iPadOS 26.2 rounds every
- * position to a whole screen px, and at 60 Hz a pen's samples are only ~4 px
- * apart, so each step's direction is off by several degrees and a stroke
- * drawn through them wobbles (FineNotes#1, read from the reporter's
- * notebook). 1.0.1 drew every stroke through perfect-freehand's streamline
- * 0.5, which moves a point 0.15 + 0.85 × 0.5 of the way: the reporter's
- * "how it used to look". Here it is a filter on the input, so a smoothed
- * point is final once made and the ink still only grows.
+ * With `"centred"`, how many samples on each side of a sample place it.
+ * WebKit before iPadOS 26.2 rounds every pen position to a whole screen px
+ * (FineNotes#1, read from the reporter's notebook). His iPad sent the Pencil
+ * ~120 times a second and he wrote at a median 264 screen px a second, so
+ * samples were ~2 px apart and half a px of rounding swung each step's
+ * direction by up to ~15°. A filter that only looks back (1.1.0 used
+ * perfect-freehand's streamline, ~1 sample) cannot steady that. A quadratic
+ * Savitzky-Golay window of 2 × 3 + 1 samples keeps a curve's shape and
+ * averages the rounding out; it drew his strokes smoother than 1.0.1 did,
+ * and he confirmed it on the iPad (1.2.1-beta.1). The price is the newest 3
+ * samples (~25 ms there), which stay provisional ({@link StrokeBuilder.tail})
+ * until the samples after them arrive.
  */
-export const ROUNDED_FOLLOW = 0.575;
+export const CENTRED_HALF = 3;
+
+/**
+ * Quadratic Savitzky-Golay weights by half window: 0 (the sample itself), 1,
+ * 2 and 3. A sample near either end of the stroke uses the widest window
+ * that fits, so the stroke starts and ends exactly where the pen did.
+ */
+const CENTRED_WEIGHTS: readonly (readonly number[])[] = [
+  [1],
+  [1, 1, 1],
+  [-3, 12, 17, 12, -3],
+  [-2, 3, 6, 7, 6, 3, -2],
+];
 
 /**
  * The pressure to store for one raw reading, taken on its own: the reading,
@@ -83,6 +102,11 @@ export function mapPressure(reading: number, settings: StrokeBuilderOptions): nu
  * width: invisible at fit zoom, a blob at 5x (Joost's recording,
  * 2026-09-24). So a missing reading takes the pressure next to it: the
  * last one read, or, before any, the first one that arrives.
+ *
+ * Points in {@link view} never move once there (except for that first
+ * pressure reading, see {@link revision}). What is still provisional — the
+ * sample `densify` waits on, the samples `"centred"` smoothing waits on — is
+ * {@link tail}: draw it as straight lines until it settles.
  */
 export class StrokeBuilder {
   private readonly options: StrokeBuilderOptions;
@@ -95,8 +119,10 @@ export class StrokeBuilder {
   private before: number[] | null = null;
   private last: number[] | null = null;
   private waiting: number[] | null = null;
-  /** With `smooth`: where the smoothed pen is, `[x, y]`; null before the first sample. */
-  private trail: [number, number] | null = null;
+  /** With `"centred"`: the samples kept, `[x, y, p]`, as the pen reported them. */
+  private held: number[][] = [];
+  /** With `"centred"`: how many of {@link held} have been smoothed and passed on. */
+  private passed = 0;
   /** The pen's last real pressure reading; NaN until the first arrives. */
   private lastReading = Number.NaN;
   /** Counts the times points already kept were rewritten (see {@link revision}). */
@@ -116,42 +142,48 @@ export class StrokeBuilder {
     return this.offer(last, true);
   }
 
-  /** How many points have been kept (a sample still waiting counts as one). */
+  /** How many points have been kept (a sample still provisional counts as one). */
   get length(): number {
-    return this.flat.length / POINT_STRIDE + (this.waiting ? 1 : 0);
+    return (
+      this.flat.length / POINT_STRIDE + (this.waiting ? 1 : 0) + (this.held.length - this.passed)
+    );
   }
 
   /**
    * Densifying: the newest sample, `[x, y, p]`, not yet in {@link view}
-   * because the curve into it depends on the next. Draw a straight line to
-   * it meanwhile. Null when nothing waits.
+   * because the curve into it depends on the next. Null when nothing waits.
    */
   get pending(): readonly number[] | null {
     return this.waiting;
   }
 
-  /** Put the sample still waiting into the points, as the stroke's end. */
+  /**
+   * Everything kept but not yet in {@link view}, in order, `[x, y, p]` each:
+   * the sample `densify` waits on, then the samples `"centred"` smoothing
+   * waits on. Draw straight lines through them meanwhile; empty when nothing
+   * is provisional.
+   */
+  get tail(): readonly (readonly number[])[] {
+    const out: (readonly number[])[] = this.waiting ? [this.waiting] : [];
+    for (let i = this.passed; i < this.held.length; i++) out.push(this.held[i]);
+    return out;
+  }
+
+  /** Put everything still provisional into the points, as the stroke's end. */
   settle(): void {
-    const tip = this.waiting;
-    if (!tip || !this.last) return;
-    fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, this.flat);
-    this.before = this.last;
-    this.last = tip;
-    this.waiting = null;
+    this.flushHeld();
+    this.settleWaiting();
   }
 
   get isEmpty(): boolean {
     return this.flat.length === 0;
   }
 
-  /** The kept points, flat, as a copy the caller may keep; one still waiting is the end. */
+  /** The kept points, flat, as a copy the caller may keep; whatever is provisional is the end. */
   points(): number[] {
-    const out = [...this.flat];
-    const tip = this.waiting;
-    if (tip && this.last) {
-      fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, out);
-    }
-    return out;
+    const settled = this.copy();
+    settled.settle();
+    return settled.flat;
   }
 
   /** The kept points, flat, without a copy: read them now, keep nothing. */
@@ -183,11 +215,11 @@ export class StrokeBuilder {
     return readings.length % 2 === 1 ? readings[mid] : (readings[mid - 1] + readings[mid]) / 2;
   }
 
-  private offer(raw: InputSample, final: boolean): boolean {
+  private offer(sample: InputSample, final: boolean): boolean {
     // Read the pressure first, even for a sample about to be dropped: the
     // pen's first real reading still fills in the points before it.
-    const pressure = this.pressureFor(raw.pressure);
-    const sample = this.follow(raw, final);
+    const pressure = this.pressureFor(sample.pressure);
+    if (this.options.smoothing === "centred") return this.offerCentred(sample, pressure, final);
     const n = this.flat.length;
     if (n > 0 && !final) {
       const from = this.waiting ?? this.last;
@@ -196,13 +228,20 @@ export class StrokeBuilder {
       const min = this.options.minDistance;
       if (dx * dx + dy * dy < min * min) return false;
     }
+    this.take(sample.x, sample.y, pressure);
+    if (final) this.settleWaiting();
+    return true;
+  }
+
+  /** Keep one point: straight into the points, or through `densify`'s curve. */
+  private take(x: number, y: number, pressure: number): void {
     if (!this.options.densify) {
-      this.flat.push(sample.x, sample.y, pressure);
-      return true;
+      this.flat.push(x, y, pressure);
+      return;
     }
-    const next = [sample.x, sample.y, pressure];
+    const next = [x, y, pressure];
     if (!this.last) {
-      this.flat.push(sample.x, sample.y, pressure);
+      this.flat.push(x, y, pressure);
       this.last = next;
     } else if (!this.waiting) {
       this.waiting = next;
@@ -214,26 +253,82 @@ export class StrokeBuilder {
       this.last = this.waiting;
       this.waiting = next;
     }
-    if (final) this.settle();
-    return true;
+  }
+
+  /** Put the sample `densify` waits on into the points, as the stroke's end. */
+  private settleWaiting(): void {
+    const tip = this.waiting;
+    if (!tip || !this.last) return;
+    fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, this.flat);
+    this.before = this.last;
+    this.last = tip;
+    this.waiting = null;
   }
 
   /**
-   * With `smooth`, the sample moved {@link ROUNDED_FOLLOW} of the way from the
-   * last smoothed point; every sample counts, dropped or kept. The first
-   * sample and the pen-up are taken as they are: the stroke starts and ends
-   * where the pen touched and lifted.
+   * `"centred"`: hold the sample (if it is far enough from the last one
+   * held), then pass on every held sample whose window is now complete. The
+   * first sample passes at once, unsmoothed; the pen-up ends the stroke.
    */
-  private follow(sample: InputSample, final: boolean): InputSample {
-    if (!this.options.smooth) return sample;
-    const trail = this.trail;
-    if (!trail || final) {
-      this.trail = [sample.x, sample.y];
-      return sample;
+  private offerCentred(raw: InputSample, pressure: number, final: boolean): boolean {
+    const held = this.held;
+    const prev = held[held.length - 1];
+    if (prev && !final) {
+      const min = this.options.minDistance;
+      const dx = raw.x - prev[0];
+      const dy = raw.y - prev[1];
+      if (dx * dx + dy * dy < min * min) return false;
     }
-    trail[0] += (sample.x - trail[0]) * ROUNDED_FOLLOW;
-    trail[1] += (sample.y - trail[1]) * ROUNDED_FOLLOW;
-    return { x: trail[0], y: trail[1], pressure: sample.pressure };
+    held.push([raw.x, raw.y, pressure]);
+    if (final) {
+      this.settle();
+      return true;
+    }
+    while (this.passed < held.length) {
+      const reach = Math.min(CENTRED_HALF, this.passed);
+      if (this.passed + reach >= held.length) break;
+      this.passOn(this.passed, reach);
+      this.passed++;
+    }
+    return true;
+  }
+
+  /** `"centred"`: pass on every held sample, each with the widest window that fits. */
+  private flushHeld(): void {
+    const n = this.held.length;
+    for (; this.passed < n; this.passed++) {
+      const i = this.passed;
+      this.passOn(i, Math.min(CENTRED_HALF, i, n - 1 - i));
+    }
+  }
+
+  /** The held sample `i`, placed from the `reach` samples on each side of it. */
+  private passOn(i: number, reach: number): void {
+    const weights = CENTRED_WEIGHTS[reach];
+    let x = 0;
+    let y = 0;
+    let sum = 0;
+    for (let j = 0; j < weights.length; j++) {
+      const s = this.held[i - reach + j];
+      x += weights[j] * s[0];
+      y += weights[j] * s[1];
+      sum += weights[j];
+    }
+    this.take(x / sum, y / sum, this.held[i][2]);
+  }
+
+  /** A builder in the same state, for settling without touching this one. */
+  private copy(): StrokeBuilder {
+    const copy = new StrokeBuilder(this.options);
+    for (const v of this.flat) copy.flat.push(v);
+    copy.before = this.before && [...this.before];
+    copy.last = this.last && [...this.last];
+    copy.waiting = this.waiting && [...this.waiting];
+    copy.held = this.held.map((s) => [...s]);
+    copy.passed = this.passed;
+    copy.lastReading = this.lastReading;
+    copy.rewrites = this.rewrites;
+    return copy;
   }
 
   /**
@@ -248,9 +343,10 @@ export class StrokeBuilder {
     if (!pressureEnabled) return fallbackPressure;
     if (!(raw > 0)) return Number.isNaN(this.lastReading) ? fallbackPressure : this.lastReading;
     const reading = Math.min(raw, 1);
-    if (Number.isNaN(this.lastReading) && this.flat.length > 0) {
+    if (Number.isNaN(this.lastReading) && (this.flat.length > 0 || this.held.length > 0)) {
       for (let p = 2; p < this.flat.length; p += POINT_STRIDE) this.flat[p] = reading;
       for (const kept of [this.before, this.last, this.waiting]) if (kept) kept[2] = reading;
+      for (const kept of this.held) kept[2] = reading;
       this.rewrites++;
     }
     this.lastReading = reading;

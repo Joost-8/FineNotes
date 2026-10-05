@@ -6,6 +6,18 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Changed
+
+- **Smoother writing on iPads that round the Pencil's position.** Before
+  iPadOS 26.2, an iPad reports the Pencil's position in whole pixels, which
+  made lines wobble and loops lumpy. FineNotes now places each point of a
+  line using the points on both sides of it, so loops come out round and
+  lines straight; the last few millimeters of a line settle a moment after
+  you draw them. iPads that report exact positions draw exactly as before.
+  ([#1](https://github.com/Joost-8/FineNotes/issues/1))
+
 ## [1.4.0] - 2026-10-06
 
 ### Added

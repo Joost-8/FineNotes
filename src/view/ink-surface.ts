@@ -136,7 +136,7 @@ import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physic
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
 import { prefersReducedMotion } from "./motion";
-import { StrokeBuilder, type StrokeBuilderOptions } from "../ink/stroke-builder";
+import { type Smoothing, StrokeBuilder, type StrokeBuilderOptions } from "../ink/stroke-builder";
 import { InkTracer } from "../ink/freehand";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
@@ -3076,6 +3076,10 @@ export class InkSurface {
 
   /** Settings for a new stroke's sampling, from the pen as it is now. */
   private builderOpts(): StrokeBuilderOptions {
+    // A pen whose positions arrive as whole screen px (WebKit before iPadOS
+    // 26.2) is smoothed; one that reports fractions is kept exact.
+    const rounded = this.pointerInput?.strokeRounded ?? false;
+    const smoothing: Smoothing = rounded ? "centred" : "off";
     return {
       // On screen, not on the page: at 5x zoom 1.4 page px is 7 screen px,
       // and small handwriting lost most of its samples.
@@ -3090,9 +3094,7 @@ export class InkSurface {
       // One sample a frame (iPadOS before 18.2): fill the stroke in between
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
-      // A pen whose positions arrive as whole screen px (WebKit before
-      // iPadOS 26.2) is smoothed; one that reports fractions is kept exact.
-      smooth: this.pointerInput?.strokeRounded ?? false,
+      smoothing,
     };
   }
 
@@ -3856,11 +3858,12 @@ export class InkSurface {
       tracer.push(pts[i], pts[i + 1], pts[i + 2]);
     }
     const runs = tracer.runs();
-    // A sample waiting for the next to fix the curve into it (one sample a
-    // frame, `densify`): a straight line to it until then. The open run is
-    // the tracer's copy, so this changes nothing kept.
-    const tip = builder.pending;
-    if (tip && runs.length > 0) runs[runs.length - 1].pts.push(tip[0], tip[1]);
+    // Samples still provisional (`densify` waits for the next to fix the
+    // curve; centred smoothing for the next few): straight lines through
+    // them until they settle. The open run is the tracer's copy, so this
+    // changes nothing kept.
+    const open = runs[runs.length - 1];
+    if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
     this.renderer?.renderWetRuns(box.index, runs, style);
   }
 
