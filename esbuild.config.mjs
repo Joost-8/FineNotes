@@ -1,4 +1,5 @@
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { builtinModules } from "node:module";
 import { copyArtifacts, resolveDeployDir } from "./scripts/deploy-target.mjs";
@@ -6,6 +7,8 @@ import { copyArtifacts, resolveDeployDir } from "./scripts/deploy-target.mjs";
 const banner = `/*
 GoodObsidian — bundled plugin output. Do not edit directly.
 Source: https://github.com/Joost-8/GoodObsidian
+
+${readFileSync(new URL("./THIRD_PARTY_NOTICES.txt", import.meta.url), "utf8")}
 */`;
 
 const production = process.argv[2] === "production";

@@ -318,6 +318,8 @@ export interface ToolbarCallbacks {
   // --- 0.5 (contracts/api.md v7).
   /** Open the image menu (Photos, camera, files, vault, scan, AI); `anchor` is the button. */
   onInsertImage?: (anchor: HTMLElement) => void;
+  /** Import whole or selected PDF pages. */
+  onInsertPdf?: (anchor: HTMLElement) => void;
   /** Open the AI menu (transcribe, ask, generate an image); `anchor` is the button. */
   onAi?: (anchor: HTMLElement) => void;
   /** Start or stop an audio recording, or open its controls; `anchor` is the button. */
@@ -544,6 +546,7 @@ export class Toolbar {
     this.addToolButton(tools, "text", "type", "Text box (T)");
     this.addToolButton(tools, "shape", "shapes", "Shapes (S)");
     this.barButton(tools, "image", "Insert image", cb.onInsertImage);
+    this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf);
     // The note's recordings live in the page sidebar's Audio tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = this.barButton(tools, "mic", "Record audio", cb.onRecord);

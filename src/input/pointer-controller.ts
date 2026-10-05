@@ -48,6 +48,20 @@ export interface PointerDebugRecord {
   coalesced: number;
   /** The event's `timeStamp` (ms), for measuring the gaps between events. */
   timeStamp: number;
+  /** Its position is whole CSS px on both axes ({@link isWholePixel}). */
+  wholePixel: boolean;
+}
+
+/**
+ * Whether a pointer position is whole CSS px on both axes. WebKit before
+ * Safari 26.2 (iPadOS 26.2) rounds every pointer and touch position to whole
+ * px, so a Pencil's samples are each up to half a px off, and a stroke drawn
+ * through them wobbles (FineNotes#1: every raw sample of the reporter's
+ * notebook sat exactly on the screen-px grid). A pen that reports a position
+ * with a fraction is not rounding.
+ */
+export function isWholePixel(position: { clientX: number; clientY: number }): boolean {
+  return Number.isInteger(position.clientX) && Number.isInteger(position.clientY);
 }
 
 /**
@@ -92,6 +106,10 @@ type Phase = (typeof PHASES)[number];
 export class PointerController {
   /** The pointer drawing the open stroke; null between strokes. */
   private stroke: number | null = null;
+  /** A pen has reported a position with a fraction: this device does not round. */
+  private penIsPrecise = false;
+  /** See {@link strokeRounded}. */
+  private rounded = false;
   private readonly fingers: FingerGesture;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
@@ -122,6 +140,16 @@ export class PointerController {
     return this.fingers.active;
   }
 
+  /**
+   * The stroke under way is a pen's, and this device's pen positions arrive
+   * rounded to whole px: no pen event so far, its pen-down included, had a
+   * fraction. Decided at the pen-down and kept for the stroke. A mouse is
+   * never counted (desktop mice report whole px and need nothing smoothed).
+   */
+  get strokeRounded(): boolean {
+    return this.rounded;
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     const role = roleOf(event.pointerType, this.stroke !== null);
@@ -144,6 +172,9 @@ export class PointerController {
     this.stroke = event.pointerId;
     this.element.setPointerCapture(event.pointerId);
     event.preventDefault();
+    const pen = event.pointerType === "pen";
+    if (pen) this.notePen(event);
+    this.rounded = pen && !this.penIsPrecise;
     this.debug("down", event, 0);
     this.listener.onStart(this.sample(event));
   }
@@ -157,6 +188,8 @@ export class PointerController {
     const taken = event.getCoalescedEvents?.() ?? [];
     // Where the browser has no coalesced list, the event is the one sample.
     const samples = taken.length > 0 ? taken.map((e) => this.sample(e)) : [this.sample(event)];
+    if (event.pointerType === "pen")
+      for (const e of taken.length > 0 ? taken : [event]) this.notePen(e);
     this.debug("move", event, samples.length);
     this.listener.onMove(samples);
   }
@@ -186,9 +219,23 @@ export class PointerController {
     return { x: at.x, y: at.y, pressure, tiltX, tiltY };
   }
 
+  /** One position with a fraction is enough: this device's pen does not round. */
+  private notePen(position: { clientX: number; clientY: number }): void {
+    if (!this.penIsPrecise && !isWholePixel(position)) this.penIsPrecise = true;
+  }
+
   private debug(type: PointerDebugType, event: PointerEvent, coalesced: number): void {
     const { pointerType, pointerId, pressure, timeStamp } = event;
-    this.listener.onDebug?.({ type, pointerType, pointerId, pressure, coalesced, timeStamp });
+    const wholePixel = isWholePixel(event);
+    this.listener.onDebug?.({
+      type,
+      pointerType,
+      pointerId,
+      pressure,
+      coalesced,
+      timeStamp,
+      wholePixel,
+    });
   }
 
   /**

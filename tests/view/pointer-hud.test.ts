@@ -94,4 +94,12 @@ describe("PointerHud", () => {
   it("shows no pointer before any event", () => {
     expect(new PointerHud().pointer()).toBe("- p=0.00");
   });
+
+  it("says whether the latest position was whole px (rounded input) or not", () => {
+    const hud = new PointerHud();
+    hud.record(event({ type: "down", pressure: 0.25, wholePixel: true }));
+    expect(hud.pointer()).toBe("pen p=0.25 xy=int");
+    hud.record(event({ pressure: 0.25, wholePixel: false }));
+    expect(hud.pointer()).toBe("pen p=0.25 xy=frac");
+  });
 });

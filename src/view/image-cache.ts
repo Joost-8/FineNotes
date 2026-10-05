@@ -13,8 +13,12 @@
  * - **Quantised keys.** A picture is decoded at a power-of-two resolution
  *   (`decodeBucket`) that suits how large it is on screen, never at the
  *   continuous `size × devicePixelRatio × zoom` a pinch sweeps through, and
- *   never larger than its own pixels. The same file placed twice shares its
- *   decodes: the key is the path.
+ *   never larger than its own pixels. A small SVG instead keeps its decoded
+ *   vector source (bucket 0) and draws directly into each tile at every
+ *   scale; a large or filtered one draws from buckets like any picture,
+ *   because a vector source is redrawn whole for every tile it touches
+ *   (`drawsSvgAsVector`). The same file placed twice shares its decodes:
+ *   the key is the path.
  * - **Bounded.** A byte budget with LRU eviction. Evicting a decode never
  *   loses anything: the tiles it was drawn into keep their pixels, and a
  *   later tile simply decodes it again. The budget is soft over a hard cap:
@@ -30,24 +34,28 @@
 
 import type { App } from "obsidian";
 import { LIGHT_PAPER } from "../canvas/backdrop";
-import { cropSourceRect, pictureLongSide } from "../canvas/image-crop";
+import { cropOf, cropSourceRect, pictureLongSide } from "../canvas/image-crop";
 import {
   bucketSize,
   chooseCachedBucket,
   decodeBucket,
+  drawsSvgAsVector,
+  imageDecodeBucket,
   drawImagePlaceholder,
   mimeForExtension,
+  vectorSvgCost,
 } from "../canvas/image-raster";
 import type { ImagePainter } from "../canvas/renderer";
 import { ByteLru } from "../canvas/tile-grid";
 import type { ImageElement } from "../model/document";
-import { decodeToCanvas, releaseCanvas } from "./image-import";
+import { decodeToCanvas, loadImage, releaseCanvas } from "./image-import";
 import { errorMessage } from "../util/errors";
 
 /**
- * Decoded pictures kept at once. A 2048 px photo is ~12 MB decoded, a 1024 px
- * one ~3 MB; the tiles hold what is on screen anyway, so this only has to
- * cover the pictures being re-rasterised in the meantime.
+ * Decoded pictures kept at once (an SVG source is charged `vectorSvgCost`).
+ * A 2048 px photo is ~12 MB decoded, a 1024 px one ~3 MB; the tiles hold
+ * what is on screen anyway, so this only has to cover the pictures being
+ * re-rasterised in the meantime.
  */
 const SOFT_BUDGET = 48 * 1024 * 1024;
 /** Never exceeded, recent use or not. */
@@ -59,7 +67,10 @@ const MAX_CONCURRENT_DECODES = 2;
 interface Decoded {
   path: string;
   bucket: number;
-  canvas: HTMLCanvasElement;
+  source: HTMLCanvasElement | HTMLImageElement;
+  width: number;
+  height: number;
+  release: () => void;
   /** When a paint last drew it (ms, `performance.now()`). */
   lastUsed: number;
 }
@@ -91,6 +102,8 @@ export class VaultImageCache implements ImagePainter {
   private readonly misses = new Map<string, string>();
   /** path -> the largest bucket being decoded for it. */
   private readonly inflight = new Map<string, number>();
+  /** SVGs too large or filtered to draw from vectors: they use bitmap buckets. */
+  private readonly rasterSvgs = new Set<string>();
   /** path -> bumped by {@link forget}, so a decode of an older file is dropped. */
   private readonly generations = new Map<string, number>();
   private readonly queue: DecodeJob[] = [];
@@ -114,19 +127,32 @@ export class VaultImageCache implements ImagePainter {
     }
     // A crop enlarges what is shown of the picture, so the decode must cover
     // the whole picture at that enlargement, not just the element's box.
-    const wanted = decodeBucket(pictureLongSide(image) * deviceScale);
+    const wanted = this.wantedBucket(image, deviceScale);
     const choice = chooseCachedBucket(this.buckets.get(image.path) ?? [], wanted);
     const entry = choice.use === null ? undefined : this.bitmaps.get(keyOf(image.path, choice.use));
     if (entry) {
       entry.lastUsed = now();
-      if (image.crop) {
-        const { canvas } = entry;
-        const src = cropSourceRect(image.crop, canvas.width, canvas.height);
+      if (image.crop && entry.bucket === 0) {
+        // A vector source is drawn whole, scaled so the crop fills the box,
+        // and clipped to it. drawImage's source rectangle is in the image's
+        // natural size, which an SVG with only a viewBox does not have (the
+        // browser substitutes 300 x 150), so it would cut the wrong part.
+        const crop = cropOf(image);
+        const fullW = image.w / crop.w;
+        const fullH = image.h / crop.h;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, image.w, image.h);
+        ctx.clip();
+        ctx.drawImage(entry.source, 0 - crop.x * fullW, 0 - crop.y * fullH, fullW, fullH);
+        ctx.restore();
+      } else if (image.crop) {
+        const src = cropSourceRect(image.crop, entry.width, entry.height);
         if (src.sw > 0 && src.sh > 0) {
-          ctx.drawImage(canvas, src.sx, src.sy, src.sw, src.sh, 0, 0, image.w, image.h);
+          ctx.drawImage(entry.source, src.sx, src.sy, src.sw, src.sh, 0, 0, image.w, image.h);
         }
       } else {
-        ctx.drawImage(entry.canvas, 0, 0, image.w, image.h);
+        ctx.drawImage(entry.source, 0, 0, image.w, image.h);
       }
     } else {
       drawImagePlaceholder(ctx, image.w, image.h, false, px, this.marker);
@@ -146,7 +172,7 @@ export class VaultImageCache implements ImagePainter {
       // for first, and only then is the size asked for queued.
       for (let round = 0; round < 3 && !this.destroyed; round++) {
         if (this.misses.has(image.path)) break;
-        const wanted = decodeBucket(pictureLongSide(image) * deviceScale);
+        const wanted = this.wantedBucket(image, deviceScale);
         const choice = chooseCachedBucket(this.buckets.get(image.path) ?? [], wanted);
         if (choice.use !== null && !choice.decode) break;
         const landed = new Promise<void>((resolve) => {
@@ -173,6 +199,7 @@ export class VaultImageCache implements ImagePainter {
     this.buckets.delete(path);
     this.misses.delete(path);
     this.inflight.delete(path);
+    this.rasterSvgs.delete(path);
     // A decode of the old file will be dropped; waiters ask again.
     this.settle(path);
     return known;
@@ -186,7 +213,19 @@ export class VaultImageCache implements ImagePainter {
     this.buckets.clear();
     this.misses.clear();
     this.inflight.clear();
+    this.rasterSvgs.clear();
     for (const path of [...this.waiters.keys()]) this.settle(path);
+  }
+
+  /**
+   * The bucket to draw `image` from at `deviceScale`. An SVG asks for its
+   * vector source (0) until its first decode finds it too heavy for that.
+   */
+  private wantedBucket(image: ImageElement, deviceScale: number): number {
+    const devicePx = pictureLongSide(image) * deviceScale;
+    return this.rasterSvgs.has(image.path)
+      ? decodeBucket(devicePx)
+      : imageDecodeBucket(image.path, devicePx);
   }
 
   /** Wake every {@link prepare} waiting on `path`; they re-check what is cached. */
@@ -212,7 +251,7 @@ export class VaultImageCache implements ImagePainter {
   }
 
   private evicted(entry: Decoded): void {
-    releaseCanvas(entry.canvas);
+    entry.release();
     const set = this.buckets.get(entry.path);
     if (!set) return;
     set.delete(entry.bucket);
@@ -221,7 +260,7 @@ export class VaultImageCache implements ImagePainter {
 
   private request(path: string, bucket: number): void {
     if (this.destroyed) return;
-    if ((this.inflight.get(path) ?? 0) >= bucket) return;
+    if (this.inflight.has(path) && this.inflight.get(path)! >= bucket) return;
     this.inflight.set(path, bucket);
     this.queue.push({ path, bucket, generation: this.generations.get(path) ?? 0 });
     this.pump();
@@ -241,20 +280,50 @@ export class VaultImageCache implements ImagePainter {
   }
 
   private async decode(job: DecodeJob): Promise<void> {
-    let canvas: HTMLCanvasElement | null = null;
+    let decoded: Decoded | null = null;
+    let byteCost = 0;
     let miss: string | null = null;
+    /** The vector source turned out too heavy: no entry and no miss; the next paint asks for a bitmap. */
+    let toRaster = false;
     try {
       const file = this.app.vault.getFileByPath(job.path);
       if (!file) {
         miss = `Missing image — ${job.path}`;
       } else {
         const mime = mimeForExtension(file.extension) ?? "";
-        const vector = mime === "image/svg+xml";
         const bytes = await this.app.vault.readBinary(file);
-        const decoded = await decodeToCanvas(bytes, mime, (w, h) =>
-          bucketSize(w, h, job.bucket, vector),
-        );
-        canvas = decoded.canvas;
+        const svg = mime === "image/svg+xml";
+        if (svg && job.bucket === 0 && !drawsSvgAsVector(bytes)) {
+          toRaster = true;
+        } else if (svg && job.bucket === 0) {
+          const loaded = await loadImage(bytes, mime);
+          decoded = {
+            path: job.path,
+            bucket: job.bucket,
+            source: loaded.img,
+            width: loaded.width,
+            height: loaded.height,
+            release: loaded.release,
+            lastUsed: now(),
+          };
+          // Keep the vector source, never a whole enlarged SVG bitmap.
+          byteCost = vectorSvgCost(bytes.byteLength, loaded.width, loaded.height);
+        } else {
+          // A vector file is drawn at the bucket's size, larger than its nominal one if need be.
+          const { canvas } = await decodeToCanvas(bytes, mime, (w, h) =>
+            bucketSize(w, h, job.bucket, svg),
+          );
+          decoded = {
+            path: job.path,
+            bucket: job.bucket,
+            source: canvas,
+            width: canvas.width,
+            height: canvas.height,
+            release: () => releaseCanvas(canvas),
+            lastUsed: now(),
+          };
+          byteCost = canvas.width * canvas.height * 4;
+        }
       }
     } catch (error) {
       miss = errorMessage(error);
@@ -262,17 +331,14 @@ export class VaultImageCache implements ImagePainter {
 
     const stale = this.destroyed || job.generation !== (this.generations.get(job.path) ?? 0);
     if (stale) {
-      if (canvas) releaseCanvas(canvas);
+      decoded?.release();
       this.settle(job.path);
       return;
     }
+    if (toRaster) this.rasterSvgs.add(job.path);
     if (this.inflight.get(job.path) === job.bucket) this.inflight.delete(job.path);
-    if (canvas) {
-      this.bitmaps.set(
-        keyOf(job.path, job.bucket),
-        { path: job.path, bucket: job.bucket, canvas, lastUsed: now() },
-        canvas.width * canvas.height * 4,
-      );
+    if (decoded) {
+      this.bitmaps.set(keyOf(job.path, job.bucket), decoded, byteCost);
       let set = this.buckets.get(job.path);
       if (!set) {
         set = new Set();
@@ -280,7 +346,7 @@ export class VaultImageCache implements ImagePainter {
       }
       set.add(job.bucket);
       this.trim();
-    } else {
+    } else if (!toRaster) {
       this.misses.set(job.path, miss ?? "The picture could not be read");
     }
     this.onReady?.(job.path);

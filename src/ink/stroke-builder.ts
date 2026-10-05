@@ -29,6 +29,12 @@ export interface StrokeBuilderOptions {
    * curve through them, about `minDistance` apart ({@link StrokeBuilder}).
    */
   densify?: boolean;
+  /**
+   * The positions are rounded (whole screen px): each sample follows the pen
+   * only {@link ROUNDED_FOLLOW} of the way, before anything else sees it
+   * ({@link StrokeBuilder}).
+   */
+  smooth?: boolean;
 }
 
 const DEFAULTS: StrokeBuilderOptions = {
@@ -36,10 +42,24 @@ const DEFAULTS: StrokeBuilderOptions = {
   pressureEnabled: true,
   fallbackPressure: FALLBACK_PRESSURE,
   densify: false,
+  smooth: false,
 };
 
 /** At most this many points are filled in between two samples. */
 const MAX_FILL = 64;
+
+/**
+ * With `smooth`, how far each sample moves from the last smoothed point
+ * towards where the pen reported. WebKit before iPadOS 26.2 rounds every
+ * position to a whole screen px, and at 60 Hz a pen's samples are only ~4 px
+ * apart, so each step's direction is off by several degrees and a stroke
+ * drawn through them wobbles (FineNotes#1, read from the reporter's
+ * notebook). 1.0.1 drew every stroke through perfect-freehand's streamline
+ * 0.5, which moves a point 0.15 + 0.85 × 0.5 of the way: the reporter's
+ * "how it used to look". Here it is a filter on the input, so a smoothed
+ * point is final once made and the ink still only grows.
+ */
+export const ROUNDED_FOLLOW = 0.575;
 
 /**
  * The pressure to store for one raw reading, taken on its own: the reading,
@@ -75,6 +95,8 @@ export class StrokeBuilder {
   private before: number[] | null = null;
   private last: number[] | null = null;
   private waiting: number[] | null = null;
+  /** With `smooth`: where the smoothed pen is, `[x, y]`; null before the first sample. */
+  private trail: [number, number] | null = null;
   /** The pen's last real pressure reading; NaN until the first arrives. */
   private lastReading = Number.NaN;
   /** Counts the times points already kept were rewritten (see {@link revision}). */
@@ -161,10 +183,11 @@ export class StrokeBuilder {
     return readings.length % 2 === 1 ? readings[mid] : (readings[mid - 1] + readings[mid]) / 2;
   }
 
-  private offer(sample: InputSample, final: boolean): boolean {
+  private offer(raw: InputSample, final: boolean): boolean {
     // Read the pressure first, even for a sample about to be dropped: the
     // pen's first real reading still fills in the points before it.
-    const pressure = this.pressureFor(sample.pressure);
+    const pressure = this.pressureFor(raw.pressure);
+    const sample = this.follow(raw, final);
     const n = this.flat.length;
     if (n > 0 && !final) {
       const from = this.waiting ?? this.last;
@@ -193,6 +216,24 @@ export class StrokeBuilder {
     }
     if (final) this.settle();
     return true;
+  }
+
+  /**
+   * With `smooth`, the sample moved {@link ROUNDED_FOLLOW} of the way from the
+   * last smoothed point; every sample counts, dropped or kept. The first
+   * sample and the pen-up are taken as they are: the stroke starts and ends
+   * where the pen touched and lifted.
+   */
+  private follow(sample: InputSample, final: boolean): InputSample {
+    if (!this.options.smooth) return sample;
+    const trail = this.trail;
+    if (!trail || final) {
+      this.trail = [sample.x, sample.y];
+      return sample;
+    }
+    trail[0] += (sample.x - trail[0]) * ROUNDED_FOLLOW;
+    trail[1] += (sample.y - trail[1]) * ROUNDED_FOLLOW;
+    return { x: trail[0], y: trail[1], pressure: sample.pressure };
   }
 
   /**

@@ -1,3 +1,4 @@
+import type { PdfRenderArea } from "../canvas/pdf-raster";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -262,6 +263,7 @@ import {
 import { PointerHud } from "./pointer-hud";
 import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
+import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -751,6 +753,10 @@ export class InkSurface {
   private wheelZoomTimer = 0;
   /** A wheel or trackpad scroll across a row of pages settles on a page when it stops. */
   private wheelSnapTimer = 0;
+  /** Whether the view is still moving; zoomed-in PDF detail waits until it rests. */
+  private readonly viewRest = new ViewRest();
+  /** One more frame once the view has rested, to render the PDF detail it held back. */
+  private detailRestTimer = 0;
   /** A finger is dragging the page (touchmove must then not reach Obsidian). */
   private touchPanning = false;
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
@@ -942,6 +948,8 @@ export class InkSurface {
   private penPressure: number | null = null;
   /** Whether the browser hands over every pen sample, or one per frame. */
   private readonly coalescedInput = deliversCoalescedSamples();
+  /** The pointer input, once attached: whether the pen's positions arrive rounded. */
+  private pointerInput: PointerController | null = null;
   /**
    * The ink stroke the pen last lifted from, while a quick pen-down nearby
    * could still carry it on (`input/pen-rejoin.ts`): when and where it
@@ -1189,6 +1197,7 @@ export class InkSurface {
       this.pointerCallbacks,
     );
     input.attach();
+    this.pointerInput = input;
     this.disposers.push(() => input.detach());
 
     // iOS WebKit runs its own long-press recogniser on the raw *touch* stream,
@@ -1305,6 +1314,7 @@ export class InkSurface {
   destroy(): void {
     window.clearTimeout(this.wheelSnapTimer);
     this.cancelPendingReturn();
+    window.clearTimeout(this.detailRestTimer);
     this.hideOffPage();
     for (const frame of [
       this.frameReq,
@@ -1981,7 +1991,7 @@ export class InkSurface {
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
     this.viewport = { scrollY: y / scale, scale, width: this.pageLayout.width };
-    this.renderer.setViewport(this.viewport, this.offsetX);
+    this.renderer.setViewport(this.viewport, this.offsetX, this.userZoom);
     this.updatePageIndicator();
   }
 
@@ -2107,6 +2117,7 @@ export class InkSurface {
     const zooming = this.stepZoomAnim(t);
     const moving = scrolling || zooming;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    this.noteViewMotion(busy);
     this.syncViewport();
     this.syncPullAdd();
     if (busy) this.flashChrome();
@@ -2128,6 +2139,22 @@ export class InkSurface {
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
   private get zoomTransient(): boolean {
     return this.pinch !== null || this.zoomAnim !== null || this.wheelZoomTimer !== 0;
+  }
+
+  /** Whether the view moved within `REST_MS`: PDF detail waits until it rests. */
+  private get viewMoving(): boolean {
+    return this.zoomTransient || this.viewRest.moving(now());
+  }
+
+  /** Record this frame's view; once it stops, one more frame renders the held-back detail. */
+  private noteViewMotion(busy: boolean): void {
+    const { x, y } = this.scroller.position;
+    if (!this.viewRest.note({ x, y, zoom: this.userZoom }, busy, now())) return;
+    window.clearTimeout(this.detailRestTimer);
+    this.detailRestTimer = window.setTimeout(() => {
+      this.detailRestTimer = 0;
+      this.requestFrame();
+    }, REST_MS + 16);
   }
 
   /** The zoom came to rest: rasterise at the live scale from now on. */
@@ -2779,6 +2806,7 @@ export class InkSurface {
       null,
       this.erasePieces,
       budgetMs,
+      this.viewMoving,
     );
   }
 
@@ -2854,19 +2882,31 @@ export class InkSurface {
 
   /**
    * Page `pdfPage` of the PDF at `path` finished rasterising, or turned out
-   * missing: re-rasterise the pages that show it, and nothing else. Every
-   * other page's tiles are still right.
+   * missing: invalidate its region, or the whole page for a preview.
+   * Other pages and regions keep their cached ink tiles.
    */
-  pdfPageReady(path: string, pdfPage: number): void {
+  /** PDF rendering changed how it works (the worker came up): paint once to ask again. */
+  refreshPdfDetail(): void {
+    this.requestFrame();
+  }
+
+  pdfPageReady(path: string, pdfPage: number, area?: PdfRenderArea): void {
     const renderer = this.renderer;
     if (!renderer) return;
     let shown = false;
-    for (const page of this.doc.pages) {
+    this.doc.pages.forEach((page, index) => {
       const backdrop = page.backdrop;
-      if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) continue;
-      renderer.invalidatePage(page.id);
+      if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) return;
+      if (
+        area &&
+        (area.geometry.width !== page.geometry.width ||
+          area.geometry.height !== page.geometry.height)
+      )
+        return;
+      if (area?.region) renderer.invalidateRegion(index, area.region);
+      else renderer.invalidatePage(page.id);
       shown = true;
-    }
+    });
     if (shown) this.requestFrame();
   }
 
@@ -2933,6 +2973,9 @@ export class InkSurface {
       // One sample a frame (iPadOS before 18.2): fill the stroke in between
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
+      // A pen whose positions arrive as whole screen px (WebKit before
+      // iPadOS 26.2) is smoothed; one that reports fractions is kept exact.
+      smooth: this.pointerInput?.strokeRounded ?? false,
     };
   }
 
@@ -3530,6 +3573,7 @@ export class InkSurface {
         devicePixelRatio: window.devicePixelRatio,
         coalescedEvents: proto !== null && "getCoalescedEvents" in proto,
         predictedEvents: proto !== null && "getPredictedEvents" in proto,
+        roundedPen: this.pointerInput?.strokeRounded ?? null,
         scale: Math.round(this.scale * 1000) / 1000,
         tool: this.toolState.tool,
         drawAndHold: this.toolState.shapeSnapEnabled !== false,
