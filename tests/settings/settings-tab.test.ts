@@ -382,9 +382,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 26)",
+      "(block 28)",
       "Input debug overlay",
-      "(block 30)",
+      "(block 32)",
     ]);
   });
 
