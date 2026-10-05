@@ -6,7 +6,34 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-05
+
+### Added
+
+- **Keyboard shortcuts work after writing.** Writing moved the keyboard's
+  focus off the notebook, so Ctrl/Cmd+Z and the other shortcuts stopped
+  working until you clicked the page. They now work whenever the notebook
+  is the active tab, and Ctrl+Y also redoes. Text fields keep their own
+  shortcuts.
+- **Drag the scroll indicators.** On a computer, the scroll indicators at
+  the right and bottom edge can be dragged to scroll directly. On a tablet
+  they stay a readout, so a hand resting on the edge of the page never
+  grabs them.
+- **Return to the pen.** Two optional settings, both off by default, for
+  the eraser, lasso, text and shape tools: picking the active tool again
+  goes back to the pen or highlighter you used before, and "Return to pen
+  after one use" goes back after one eraser stroke, one shape, one text
+  edit, or once you are done with a lasso selection (a click outside it, or
+  deleting or cutting it).
+
+### Changed
+
+- **Gentler mouse-wheel zoom.** One notch of a stepped mouse wheel with
+  Ctrl/Cmd held zoomed by more than 3x, so two notches went from the
+  smallest zoom to the largest. Each notch is now at most 15%, and a notch
+  back undoes it exactly. Trackpad pinching is unchanged.
+- **Small SVG pictures stay sharp.** An SVG under 64 KB is drawn from its
+  vectors, so it stays sharp at any zoom.
 
 ### Fixed
 
@@ -16,6 +43,10 @@ extracted from the matching section of this file by `release.yml`.
 - **The lasso's colour menu fits on screen.** With the custom colour picker
   open, the menu ran off the bottom of the screen and its last controls
   could not be reached. It now stays on screen and scrolls.
+
+Thanks to [@Suzkapu](https://github.com/Suzkapu) for the keyboard
+shortcuts, the scroll indicators, the return-to-pen settings, the wheel
+zoom and the SVG drawing.
 
 ## [1.1.0] - 2026-10-03
 
