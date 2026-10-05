@@ -6,6 +6,60 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [1.1.0] - 2026-10-03
+
+### Added
+
+- **Insert PDF.** A new toolbar button beside Insert image: pick a PDF from
+  your files or from the vault, then import all its pages or a range such as
+  `1-3, 5` (in the order you type it). The pages go in after the current
+  one, with the PDF as their background, and one undo takes them all out.
+  A PDF already in the vault is used as it is, not copied. This replaces
+  "Scanned PDF from Files": a PDF from the Files app's Scan Documents goes
+  in through Insert PDF now.
+- **Drag and drop.** Drop pictures or a PDF onto a notebook, from your
+  computer or from Obsidian's file list. Pictures are placed like Insert
+  image; a PDF opens the page choice.
+- **New notebook from the file explorer.** Right-click (long-press on the
+  iPad) a folder and choose New notebook to create one there. An optional
+  New notebook button beside New note and New folder can be turned on in
+  settings.
+
+### Changed
+
+- **Exported PDFs keep the original PDF.** Pages with a PDF background now
+  export with the PDF's own text and graphics, sharp and selectable, with
+  your writing on top. Other pages export as before.
+- **Sharp PDFs while you move.** PDF pages are now drawn in the background,
+  away from the pen and the scrolling, so writing and panning stay smooth
+  while a page is being drawn. Zoomed in past 2.5x, the page is drawn sharp
+  in small tiles that fill in while you pan, nearest the middle of the screen
+  first and a little ahead of where you are going, so small print stays
+  crisp instead of going soft until you stop. Where background drawing is
+  not available, FineNotes draws as before.
+
+Thanks to [@Suzkapu](https://github.com/Suzkapu) for Insert PDF, drag and
+drop, New notebook from the file explorer and the PDF export, and for the
+zoomed-in PDF rendering the background tiles grew out of
+([#5](https://github.com/Joost-8/FineNotes/pull/5)).
+
+### Fixed
+
+- **Writing over a PDF stays smooth while a page is being drawn.** Drawing
+  a PDF page already paused for the pen, but only if it had not started yet;
+  one already under way kept interrupting the ink. It now waits until you
+  lift the pen.
+- **PDF pages no longer go blank while zooming.** After a zoom, a PDF page
+  showed as empty white paper until it was drawn again at the new size,
+  which takes a second or more on an iPad. It now keeps showing the page as
+  it was until the sharper version is ready.
+- **Smoother writing on older iPads.** Before iPadOS 26.2, the iPad rounds
+  the Pencil's position to a whole screen pixel before Obsidian sees it, so
+  lines came out wobbly and loops lumpy. FineNotes now smooths the Pencil's
+  path when its positions arrive rounded, as 1.0.1 did. iPads that report
+  exact positions draw exactly as before.
+  ([#1](https://github.com/Joost-8/FineNotes/issues/1))
+
 ## [1.0.3] - 2026-10-01
 
 ### Added

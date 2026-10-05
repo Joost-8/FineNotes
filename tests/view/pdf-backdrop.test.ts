@@ -15,7 +15,19 @@ interface FakeCanvas {
 }
 
 /** Each test's pdf.js: pages of 600 x 800 pt, counting renders. */
-const pdf = { renders: 0, pages: 40 };
+const pdf = {
+  renders: 0,
+  active: 0,
+  peak: 0,
+  blocked: false,
+  tasks: [] as Array<{
+    finish: () => void;
+    cancel: ReturnType<typeof vi.fn>;
+    task: { onContinue?: ((next: () => void) => void) | null };
+  }>,
+  pages: 40,
+  calls: [] as Array<{ viewport: { width: number; height: number }; transform?: number[] }>,
+};
 
 vi.mock("obsidian", async () => ({
   ...(await import("./fake-obsidian")),
@@ -30,9 +42,27 @@ vi.mock("obsidian", async () => ({
                 width: 600 * scale,
                 height: 800 * scale,
               }),
-              render: () => {
+              render: (params: {
+                viewport: { width: number; height: number };
+                transform?: number[];
+              }) => {
+                pdf.calls.push(params);
                 pdf.renders++;
-                return { promise: Promise.resolve() };
+                pdf.active++;
+                pdf.peak = Math.max(pdf.peak, pdf.active);
+                let finish!: () => void, reject!: (error: Error) => void;
+                const promise = new Promise<void>((resolve, fail) => {
+                  finish = resolve;
+                  reject = fail;
+                });
+                const done = promise.finally(() => {
+                  pdf.active--;
+                });
+                const cancel = vi.fn(() => reject(new Error("cancelled")));
+                const task = { promise: done, cancel, onContinue: null };
+                pdf.tasks.push({ finish, cancel, task });
+                if (!pdf.blocked) finish();
+                return task;
               },
             }),
           destroy: () => Promise.resolve(),
@@ -41,13 +71,20 @@ vi.mock("obsidian", async () => ({
     }),
 }));
 
+const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
 const { PdfBackdropCache } = await import("../../src/view/pdf-backdrop");
+const { PdfRenderCancelled } = await import("../../src/view/pdf-worker");
 
 const globals = globalThis as Record<string, unknown>;
 let clock = 0;
 
 beforeEach(() => {
   pdf.renders = 0;
+  pdf.active = pdf.peak = 0;
+  pdf.blocked = false;
+  pdf.tasks.length = 0;
+  pdf.pages = 40;
+  pdf.calls.length = 0;
   clock = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
   globals.createEl = (): FakeCanvas => ({ width: 0, height: 0, getContext: () => ({}) });
@@ -75,6 +112,41 @@ async function settle(): Promise<void> {
 }
 
 describe("PdfBackdropCache", () => {
+  it("renders and caches individual zoomed PDF regions at display resolution", async () => {
+    const c = cache();
+    const area = {
+      geometry: { width: 1200, height: 1600 },
+      region: { minX: 256, minY: 128, maxX: 320, maxY: 192 },
+    };
+    const landed = vi.fn();
+    c.onReady = landed;
+    const entry = await c.resolve("a.pdf", 0, 8, area);
+    expect(entry.ok && [entry.canvas.width, entry.canvas.height]).toEqual([512, 512]);
+    expect(entry.ok && entry.box).toEqual({ x: 256, y: 128, w: 64, h: 64 });
+    expect(pdf.calls[0].viewport).toEqual({ width: 9600, height: 12800 });
+    expect(pdf.calls[0].transform).toEqual([1, 0, 0, 1, -2048, -1024]);
+    expect(landed).toHaveBeenCalledWith("a.pdf", 0, area);
+    expect(await c.resolve("a.pdf", 0, 8, area)).toBe(entry);
+    expect(pdf.renders).toBe(1);
+    expect(c.peek("a.pdf", 0, 8, { ...area, region: { ...area.region, minX: 0 } })).toBeNull();
+  });
+
+  it("holds PDF region requests while writing and preserves their geometry on release", async () => {
+    const c = cache();
+    const area = {
+      geometry: { width: 1200, height: 1600 },
+      region: { minX: 0, minY: 0, maxX: 64, maxY: 64 },
+    };
+    c.setHeld(true);
+    c.request("a.pdf", 0, 8, area);
+    await settle();
+    expect(pdf.renders).toBe(0);
+    c.setHeld(false);
+    await settle();
+    expect(c.peek("a.pdf", 0, 8, area)?.ok).toBe(true);
+    expect(pdf.calls[0].viewport.width).toBe(9600);
+  });
+
   it("says which page landed", async () => {
     const c = cache();
     const landed: Array<[string, number]> = [];
@@ -115,6 +187,10 @@ describe("PdfBackdropCache", () => {
     await settle();
     expect(pdf.renders).toBe(visible.length);
     pdf.renders = 0;
+    pdf.active = pdf.peak = 0;
+    pdf.blocked = false;
+    pdf.tasks.length = 0;
+    pdf.pages = 40;
     paint();
     await settle();
     expect(pdf.renders).toBe(0);
@@ -192,5 +268,440 @@ describe("PdfBackdropCache", () => {
     expect(pdf.renders).toBe(1);
     c.destroy();
     expect(await c.resolve("a.pdf", 0, 1)).toMatchObject({ ok: false });
+  });
+});
+
+describe("bounded PDF work and viewport cancellation", () => {
+  const geometry = { width: 1200, height: 1600 };
+  const request = (page: number, x = 0) => ({
+    path: "slides.pdf",
+    page,
+    dprScale: 8,
+    area: { geometry, region: { minX: x, minY: 0, maxX: x + 128, maxY: 128 } },
+  });
+  it("limits all PDF renders to two in flight, even with 63 pages queued", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    pdf.blocked = true;
+    const waiting = Array.from({ length: 63 }, (_, page) => c.resolve("slides.pdf", page, 0.25));
+    await settle();
+    expect(pdf.renders).toBe(2);
+    expect(pdf.peak).toBe(2);
+    for (let i = 0; i < 63; i += 2) {
+      pdf.tasks.slice(i, i + 2).forEach((task) => task.finish());
+      await settle();
+    }
+    expect((await Promise.all(waiting)).every((entry) => entry.ok)).toBe(true);
+    expect(pdf.renders).toBe(63);
+    expect(pdf.peak).toBe(2);
+    c.destroy();
+  });
+  it("cancels obsolete active and queued patches without caching misses or repainting", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    const ready = vi.fn();
+    c.onReady = ready;
+    const old = [request(0), request(1), request(2)];
+    c.setVisibleRegions(old);
+    await settle();
+    expect(pdf.renders).toBe(2);
+    c.setVisibleRegions([request(3)]);
+    await settle();
+    expect(pdf.tasks.slice(0, 2).every((task) => task.cancel.mock.calls.length === 1)).toBe(true);
+    expect(pdf.renders).toBe(3);
+    expect(pdf.peak).toBeLessThanOrEqual(2);
+    pdf.tasks[2].finish();
+    await settle();
+    expect(ready).toHaveBeenCalledOnce();
+    expect(ready.mock.calls[0][1]).toBe(3);
+    for (const r of old) expect(c.peek(r.path, r.page, r.dprScale, r.area)).toBeNull();
+    expect(c.bytes).toBe(1024 * 1024 * 4);
+    // Scrolled away, the finished patch is kept for going back to it.
+    c.setVisibleRegions([]);
+    expect(c.bytes).toBe(1024 * 1024 * 4);
+    c.destroy();
+  });
+  it("drops held areas that scrolled away before they could render", async () => {
+    const c = cache();
+    c.setHeld(true);
+    c.setVisibleRegions([request(0)]);
+    c.setVisibleRegions([request(1)]);
+    c.setHeld(false);
+    await settle();
+    expect(pdf.renders).toBe(1);
+    expect(c.peek("slides.pdf", 0, 8, request(0).area)).toBeNull();
+    expect(c.peek("slides.pdf", 1, 8, request(1).area)?.ok).toBe(true);
+    c.destroy();
+  });
+  it("deduplicates shared detail and keeps old rasters up to 32 MB", async () => {
+    const c = cache();
+    for (let x = 0; x < 100; x++) {
+      const r = request(0, x);
+      c.setVisibleRegions([r, r]);
+      await settle();
+      // The one in view, and at most 32 MB (eight) of those it scrolled past.
+      expect(c.bytes).toBe(Math.min(x + 1, 9) * 4 * 1024 * 1024);
+    }
+    expect(pdf.renders).toBe(100);
+    expect(pdf.peak).toBeLessThanOrEqual(2);
+    c.destroy();
+    expect(c.bytes).toBe(0);
+  });
+  it("clear/destroy cancels work and prevents stale rasters from re-entering the cache", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    const ready = vi.fn();
+    c.onReady = ready;
+    c.setVisibleRegions([request(0)]);
+    await settle();
+    c.clear();
+    await settle();
+    expect(pdf.tasks[0].cancel).toHaveBeenCalledOnce();
+    expect(c.bytes).toBe(0);
+    expect(ready).not.toHaveBeenCalled();
+    c.setVisibleRegions([request(1)]);
+    await settle();
+    c.destroy();
+    await settle();
+    expect(pdf.tasks[1].cancel).toHaveBeenCalledOnce();
+    expect(c.bytes).toBe(0);
+  });
+});
+
+describe("63-page deck at DPR 2", () => {
+  it("ordinary zoom shares one page image across all tiles/previews with a stable sidebar", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    const painter = new VaultBackdropRenderer(c);
+    const geometry = { width: 1200, height: 1600 };
+    const backdrop = { kind: "pdf" as const, path: "slides.pdf", page: 0 };
+    const region = { minX: 0, minY: 0, maxX: 400, maxY: 400 };
+    const ctx = {
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
+    await settle();
+    const before = pdf.renders;
+    for (const zoom of [1, 2, 2.5]) {
+      painter.prepare([{ backdrop, geometry, region }], 2 * zoom, zoom, false);
+      for (let tile = 0; tile < 64; tile++)
+        painter.paint(ctx, backdrop, geometry, 1, {
+          deviceScale: 2 * zoom,
+          region: { ...region, minX: tile },
+        });
+      // The main-page preview reuses the same source image, not another render.
+      painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 0.5 });
+      await settle();
+    }
+    expect(pdf.renders - before).toBe(2);
+    expect(pdf.calls.every((call) => !call.transform || call.transform[4] === 0)).toBe(true);
+    const fullPageBytes = c.bytes;
+    expect(fullPageBytes).toBeLessThan(48 * 1024 * 1024);
+    for (let x = 0; x < 30; x++) {
+      const visible = { minX: x, minY: 100, maxX: x + 200, maxY: 400 };
+      painter.prepare([{ backdrop, geometry, region: visible }], 8, 4, false);
+      for (let tile = 0; tile < 32; tile++)
+        painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region: visible });
+      await settle();
+      // The page image plus one 9 MP patch (36 MB) with its margin.
+      expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
+    }
+    // The 25% margin covers the next 29 one-pixel moves: one detail render.
+    expect(pdf.renders - before).toBe(3);
+    expect(pdf.peak).toBeLessThanOrEqual(2);
+    const renders = pdf.renders;
+    for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
+    await settle();
+    expect(pdf.renders).toBe(renders);
+    // Scrolled off the page: its patch stays, as one of the recent ones.
+    painter.prepare([], 8, 4, false);
+    expect(c.bytes).toBeGreaterThan(fullPageBytes);
+    expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
+    c.destroy();
+  });
+});
+
+// Joost's iPad recording of 1.0.4-beta.2: after a zoom, slides went blank
+// white until pdf.js finished the new scale.
+describe("the page while a zoom's new scale renders", () => {
+  const geometry = { width: 300, height: 400 };
+  const full = { geometry };
+
+  it("finds the nearest cached scale of the same page and area, the next one up first", async () => {
+    const c = cache();
+    const at = async (scale: number) => {
+      await c.resolve("a.pdf", 1, scale, full);
+      return c.peek("a.pdf", 1, scale, full);
+    };
+    const half = await at(0.5);
+    const oneHalf = await at(1.5);
+    const three = await at(3);
+    await c.resolve("a.pdf", 10, 1, full);
+    await c.resolve("b.pdf", 1, 1, full);
+    await c.resolve("a.pdf", 1, 1, { geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } });
+    // Not page 10's, another file's or a detail patch's exact-scale raster.
+    expect(c.peekNearest("a.pdf", 1, 1, full)).toBe(oneHalf);
+    expect(c.peekNearest("a.pdf", 1, 2, full)).toBe(three);
+    expect(c.peekNearest("a.pdf", 1, 4, full)).toBe(three); // nothing above: largest below
+    expect(c.peekNearest("a.pdf", 1, 0.25, full)).toBe(half);
+    expect(c.peekNearest("a.pdf", 2, 1, full)).toBeNull();
+    c.destroy();
+  });
+
+  it("never offers a miss", async () => {
+    const c = cache();
+    await c.resolve("a.pdf", 99, 1, full); // past the last page
+    expect(c.peek("a.pdf", 99, 1, full)?.ok).toBe(false);
+    expect(c.peekNearest("a.pdf", 99, 2, full)).toBeNull();
+    c.destroy();
+  });
+
+  it("draws the old scale instead of blank paper, then the new one once it lands", async () => {
+    const c = cache();
+    const painter = new VaultBackdropRenderer(c);
+    const backdrop = { kind: "pdf" as const, path: "a.pdf", page: 0 };
+    const paint = () => {
+      const drawn: unknown[] = [];
+      const ctx = {
+        save: () => undefined,
+        restore: () => undefined,
+        fillRect: () => undefined,
+        drawImage: (canvas: unknown) => drawn.push(canvas),
+      } as unknown as CanvasRenderingContext2D;
+      painter.paint(ctx, backdrop, geometry);
+      return drawn;
+    };
+    painter.setDeviceScale(1);
+    paint();
+    await settle();
+    const before = c.peek("a.pdf", 0, 1, full);
+    painter.setDeviceScale(2);
+    expect(paint()).toEqual([before && before.ok && before.canvas]);
+    await settle();
+    const after = c.peek("a.pdf", 0, 2, full);
+    expect(after?.ok).toBe(true);
+    expect(paint()).toEqual([after && after.ok && after.canvas]);
+    c.destroy();
+  });
+
+  it("draws plain paper when the page was never rasterised", () => {
+    const painter = new VaultBackdropRenderer(cache());
+    let drawn = 0;
+    const ctx = {
+      save: () => undefined,
+      restore: () => undefined,
+      fillRect: () => undefined,
+      drawImage: () => drawn++,
+    } as unknown as CanvasRenderingContext2D;
+    painter.setDeviceScale(1);
+    painter.paint(ctx, { kind: "pdf", path: "a.pdf", page: 0 }, geometry);
+    expect(drawn).toBe(0);
+  });
+});
+
+describe("detail kept for small moves and going back", () => {
+  const geometry = { width: 1200, height: 1600 };
+  // Small patches (2.5 MB at 8x), so the memory budget never evicts them here.
+  const at = (minX: number, maxX = minX + 100) => ({ minX, minY: 0, maxX, maxY: 100 });
+  const area = (minX: number, maxX?: number) => ({ geometry, region: at(minX, maxX) });
+
+  it("knows when a cached or in-flight patch covers the view", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    c.setVisibleRegions([{ path: "s.pdf", page: 0, dprScale: 8, area: area(0, 150) }]);
+    await settle();
+    // In flight already counts: no second render for the same view.
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(20, 120))).toBe(true);
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(60, 160))).toBe(false);
+    expect(c.detailCovers("s.pdf", 1, 8, geometry, at(20, 120))).toBe(false);
+    expect(c.detailCovers("s.pdf", 0, 4, geometry, at(20, 120))).toBe(false); // another level
+    pdf.tasks[0].finish();
+    await settle();
+    expect(c.detailCovers("s.pdf", 0, 8, geometry, at(20, 120))).toBe(true);
+    c.destroy();
+  });
+
+  it("does not cancel a render that still covers what is shown", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    const wide = { path: "s.pdf", page: 0, dprScale: 8, area: area(0, 150) };
+    c.setVisibleRegions([wide]);
+    await settle();
+    // Moved a little: nothing new asked for, the running render still meets the view.
+    c.setVisibleRegions(
+      [],
+      [{ path: "s.pdf", page: 0, dprScale: 8, geometry, region: at(10, 110) }],
+    );
+    expect(pdf.tasks[0].cancel).not.toHaveBeenCalled();
+    // Moved far: it no longer meets anything shown.
+    c.setVisibleRegions(
+      [],
+      [{ path: "s.pdf", page: 0, dprScale: 8, geometry, region: at(300, 400) }],
+    );
+    expect(pdf.tasks[0].cancel).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+
+  it("hands back a page's patches at one level, least recently drawn first", async () => {
+    const c = cache();
+    for (const x of [0, 200, 400]) {
+      c.setVisibleRegions([{ path: "s.pdf", page: 0, dprScale: 8, area: area(x) }]);
+      await settle();
+      clock += 10;
+    }
+    await c.resolve("s.pdf", 0, 4, area(0)); // another level
+    await c.resolve("s.pdf", 1, 8, area(0)); // another page
+    const boxes = () => c.detailPatches("s.pdf", 0, 8, geometry).map((p) => p.box.x);
+    expect(boxes()).toEqual([0, 200, 400]);
+    clock += 10;
+    c.peek("s.pdf", 0, 8, area(0)); // drawn again: now the newest
+    expect(boxes()).toEqual([200, 400, 0]);
+    c.destroy();
+  });
+});
+
+describe("a render already running when the pen comes down", () => {
+  it("runs its next slice only after the lift", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    void c.resolve("a.pdf", 0, 1);
+    await settle();
+    const { task } = pdf.tasks[0];
+    // pdf.js hands over each next slice; with the pen up it runs at once.
+    const first = vi.fn();
+    task.onContinue?.(first);
+    expect(first).toHaveBeenCalledOnce();
+    c.setHeld(true);
+    const second = vi.fn();
+    task.onContinue?.(second);
+    expect(second).not.toHaveBeenCalled();
+    c.setHeld(false);
+    expect(second).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+
+  it("drops held slices on clear (their renders are cancelled)", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    void c.resolve("a.pdf", 0, 1);
+    await settle();
+    c.setHeld(true);
+    const next = vi.fn();
+    pdf.tasks[0].task.onContinue?.(next);
+    c.clear();
+    c.setHeld(false);
+    expect(next).not.toHaveBeenCalled();
+    expect(pdf.tasks[0].cancel).toHaveBeenCalled();
+    c.destroy();
+  });
+});
+
+describe("rendering in the PDF worker", () => {
+  const geometry = { width: 1200, height: 1600 };
+  function fakeWorker() {
+    const bitmaps: Array<{ width: number; height: number; close: ReturnType<typeof vi.fn> }> = [];
+    const worker = {
+      alive: true,
+      open: vi.fn(async () => 12),
+      close: vi.fn(),
+      pageSize: vi.fn(async () => ({ width: 600, height: 800 })),
+      render: vi.fn((_path: string, _page: number, plan: { width: number; height: number }) => {
+        const bitmap = { width: plan.width, height: plan.height, close: vi.fn() };
+        bitmaps.push(bitmap);
+        return { promise: Promise.resolve(bitmap), cancel: vi.fn() };
+      }),
+    };
+    return { worker, bitmaps };
+  }
+  const asWorker = (w: object) =>
+    w as unknown as Parameters<InstanceType<typeof PdfBackdropCache>["setWorker"]>[0];
+
+  it("draws tiles and pages there, not on this thread, asking a page's size once", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    expect(c.usesWorker).toBe(true);
+    const tile = { geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } };
+    const entry = await c.resolve("a.pdf", 2, 8, tile);
+    expect(entry.ok && [entry.canvas.width, entry.canvas.height, entry.box]).toEqual([
+      512,
+      512,
+      { x: 0, y: 0, w: 64, h: 64 },
+    ]);
+    const page = await c.resolve("a.pdf", 2, 0.5);
+    expect(page.ok && [page.canvas.width, page.canvas.height]).toEqual([300, 400]);
+    expect(worker.open).toHaveBeenCalledOnce();
+    expect(worker.pageSize).toHaveBeenCalledOnce();
+    expect(worker.render.mock.calls[0][2]).toMatchObject({ width: 512, height: 512 });
+    expect(pdf.renders).toBe(0);
+    c.destroy();
+  });
+
+  it("frees a worker bitmap when it leaves the cache, and closes what it opened there", async () => {
+    const c = cache();
+    const { worker, bitmaps } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    await c.resolve("a.pdf", 0, 1);
+    c.clear();
+    await settle();
+    expect(bitmaps[0].close).toHaveBeenCalled();
+    expect(worker.close).toHaveBeenCalledWith("a.pdf");
+    c.destroy();
+  });
+
+  it("reports a missing file, or a page past the end, as a miss", async () => {
+    const app = { vault: { getFileByPath: () => null, readBinary: vi.fn() } };
+    const c = new PdfBackdropCache(app as never);
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    expect(await c.resolve("gone.pdf", 0, 1)).toMatchObject({ ok: false });
+    const d = cache();
+    d.setWorker(asWorker(worker));
+    expect(await d.resolve("a.pdf", 12, 1)).toMatchObject({ ok: false });
+    expect(worker.render).not.toHaveBeenCalled();
+    c.destroy();
+    d.destroy();
+  });
+
+  it("cancels a tile in the worker when it scrolls away", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    let reject!: (error: Error) => void;
+    const cancel = vi.fn(() => reject(new PdfRenderCancelled()));
+    worker.render.mockImplementationOnce(() => ({
+      promise: new Promise((_, fail) => {
+        reject = fail;
+      }),
+      cancel,
+    }));
+    c.setWorker(asWorker(worker));
+    const tile = { geometry, region: { minX: 0, minY: 0, maxX: 64, maxY: 64 } };
+    c.setVisibleRegions([{ path: "a.pdf", page: 0, dprScale: 8, area: tile }]);
+    await settle();
+    c.setVisibleRegions([]);
+    await settle();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(c.peek("a.pdf", 0, 8, tile)).toBeNull();
+    c.destroy();
+  });
+
+  it("falls back to this thread for good when the worker dies", async () => {
+    const c = cache();
+    const { worker } = fakeWorker();
+    worker.render.mockImplementationOnce(() => {
+      worker.alive = false;
+      return { promise: Promise.reject(new Error("worker died")), cancel: vi.fn() };
+    });
+    c.setWorker(asWorker(worker));
+    const entry = await c.resolve("a.pdf", 0, 1);
+    expect(entry.ok).toBe(true);
+    expect(pdf.renders).toBe(1);
+    expect(c.usesWorker).toBe(false);
+    await c.resolve("a.pdf", 1, 1);
+    expect(worker.render).toHaveBeenCalledOnce();
+    c.destroy();
   });
 });

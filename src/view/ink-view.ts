@@ -60,10 +60,19 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
+import { vaultPathFromDrop } from "../model/file-drop";
+import { measurePdfPages } from "./pdf-pages";
+import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
-import { measureImage, prepareImageBytes, saveImageAttachment } from "./image-import";
+import {
+  measureImage,
+  pickImageFile,
+  prepareImageBytes,
+  saveImageAttachment,
+} from "./image-import";
 import { copyPictureToSystemClipboard } from "./picture-clipboard";
 import {
   ImageMenuPopover,
@@ -71,7 +80,7 @@ import {
   type InsertImageOptions,
   imageMenuEntries,
 } from "./image-menu";
-import { isImagePath, mimeForExtension } from "../canvas/image-raster";
+import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, placeImageBox } from "../model/images";
 import type { ImageElement } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -197,6 +206,8 @@ export class InkView extends TextFileView {
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
   private transcription: { cancelled: boolean } | null = null;
   private pdfCache: PdfBackdropCache | null = null;
+  /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
+  private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
   private lastSearch = "";
   /** A link's `#Page N`, until the pages it names have loaded. */
@@ -410,6 +421,10 @@ export class InkView extends TextFileView {
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
+    if (this.pdfWorkerHeld) {
+      this.pdfWorkerHeld = false;
+      releasePdfWorker();
+    }
     this.backdrops = null;
     this.thumbBackdrops = null;
     this.images?.destroy();
@@ -912,6 +927,7 @@ export class InkView extends TextFileView {
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
+        onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         // Inside the tap: the microphone is only granted from a user gesture.
         onRecord: () => this.audio?.toggleRecording(),
@@ -923,7 +939,19 @@ export class InkView extends TextFileView {
       { defaultSize: this.settings.defaultSize },
     );
 
-    this.pdfCache = new PdfBackdropCache(this.app);
+    const pdfCache = new PdfBackdropCache(this.app);
+    this.pdfCache = pdfCache;
+    // PDF pages render in the shared background worker once it is up (and
+    // on this thread until then, or for good if it cannot start here).
+    if (!this.pdfWorkerHeld) {
+      this.pdfWorkerHeld = true;
+      void acquirePdfWorker().then((worker) => {
+        if (worker && this.pdfCache === pdfCache) {
+          pdfCache.setWorker(worker);
+          this.surface?.refreshPdfDetail();
+        }
+      });
+    }
     this.backdrops = new VaultBackdropRenderer(this.pdfCache);
     this.thumbBackdrops = new VaultBackdropRenderer(this.pdfCache);
     this.thumbBackdrops.setDeviceScale(thumbnailRasterScale(window.devicePixelRatio || 1));
@@ -1020,9 +1048,9 @@ export class InkView extends TextFileView {
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
     );
     // Only what shows the page that landed is redrawn (FineNotes#1).
-    this.pdfCache.onReady = (path, page) => {
-      this.surface?.pdfPageReady(path, page);
-      this.sidebar?.invalidatePdfPage(path, page);
+    this.pdfCache.onReady = (path, page, area) => {
+      this.surface?.pdfPageReady(path, page, area);
+      if (!area?.region) this.sidebar?.invalidatePdfPage(path, page);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
@@ -1076,6 +1104,17 @@ export class InkView extends TextFileView {
       if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
       this.surface?.handlePaste(e);
     });
+
+    this.registerDomEvent(root, "dragover", (event) => {
+      const types = event.dataTransfer?.types ?? [];
+      if (
+        types.includes("Files") ||
+        types.includes("text/plain") ||
+        types.includes("text/uri-list")
+      )
+        event.preventDefault();
+    });
+    this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
 
     // First layout pass: the pill has no measured size until the view is in
     // the document, so its restored position can only be applied after a frame.
@@ -1277,6 +1316,11 @@ export class InkView extends TextFileView {
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
     const sources = {
+      readPdf: async (path: string) => {
+        const file = this.app.vault.getFileByPath(path);
+        if (!file) throw new Error(`Missing PDF source — ${path}`);
+        return this.app.vault.readBinary(file);
+      },
       pdf: this.pdfCache,
       images: this.images,
       paper: paperTheme(false),
@@ -1660,7 +1704,7 @@ export class InkView extends TextFileView {
    * it. Entries come from `imageMenuEntries()`, so a feature that registered
    * one (see image-menu.ts) appears here without this view knowing of it.
    */
-  private openImageMenu(anchor: HTMLElement): void {
+  private openImageMenu(anchor: HTMLElement, pdf = false): void {
     const open = this.imageMenu;
     this.imageMenu = null;
     if (open?.popover.isOpen) {
@@ -1668,7 +1712,23 @@ export class InkView extends TextFileView {
       if (open.anchor === anchor) return;
     }
     if (this.isProtected() || !this.file) return;
-    const popover = new ImageMenuPopover(anchor, imageMenuEntries(), this.imageMenuContext());
+    const entries = pdf
+      ? [
+          { id: "files", icon: "file-text", label: "From files", run: () => this.importPdf() },
+          {
+            id: "vault",
+            icon: "folder-open",
+            label: "From vault",
+            run: () => this.importPdf(true),
+          },
+        ]
+      : imageMenuEntries();
+    const popover = new ImageMenuPopover(
+      anchor,
+      entries,
+      this.imageMenuContext(),
+      pdf ? "Insert PDF" : "Insert image",
+    );
     this.imageMenu = { popover, anchor };
   }
 
@@ -1707,7 +1767,8 @@ export class InkView extends TextFileView {
   ): Promise<ImageElement | null> {
     if (this.isProtected()) return null;
     const note = this.file;
-    if (!note || !this.surface) return null;
+    const surface = this.surface;
+    if (!note || !surface) return null;
     const progress = new Notice("FineNotes: adding the picture…", 0);
     try {
       const prepared = await prepareImageBytes(bytes, mime);
@@ -1718,6 +1779,7 @@ export class InkView extends TextFileView {
         note.path,
         this.attachmentFolder("images"),
       );
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return null;
       return this.placeImage(file.path, prepared.width, prepared.height, options);
     } catch (error) {
       const message = errorMessage(error);
@@ -1755,10 +1817,13 @@ export class InkView extends TextFileView {
   ): Promise<ImageElement | null> {
     if (this.isProtected()) return null;
     const file = this.app.vault.getFileByPath(path);
-    if (!file || !this.surface) return null;
+    const note = this.file;
+    const surface = this.surface;
+    if (!file || !surface) return null;
     try {
       const bytes = await this.app.vault.readBinary(file);
       const size = await measureImage(bytes, mimeForExtension(file.extension) ?? "");
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return null;
       return this.placeImage(file.path, size.width, size.height, options);
     } catch (error) {
       const message = errorMessage(error);
@@ -1795,6 +1860,105 @@ export class InkView extends TextFileView {
     return image;
   }
 
+  /** Import an unchanged PDF attachment or reference an existing vault PDF. */
+  importPdf(fromVault = false): void {
+    if (this.isProtected() || !this.file || !this.surface) return;
+    if (this.isSinglePage) {
+      new Notice("Convert this single page to a notebook before importing a PDF.");
+      return;
+    }
+    if (fromVault) {
+      new VaultPdfSuggestModal(this.app, (file) => void this.importVaultPdf(file.path)).open();
+    } else {
+      void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
+        if (file) void this.importPdfFile(file);
+      });
+    }
+  }
+
+  async importVaultPdf(path: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path);
+  }
+
+  private async handleFileDrop(event: DragEvent): Promise<void> {
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+    const isPdf = (file: File) =>
+      normalizeMime(file.type) === "application/pdf" || /\.pdf$/i.test(file.name);
+    const files = Array.from(transfer.files).filter(
+      (file) =>
+        isPdf(file) || isImagePath(file.name) || normalizeMime(file.type).startsWith("image/"),
+    );
+    const path = vaultPathFromDrop(
+      transfer.getData("text/plain") || transfer.getData("text/uri-list"),
+    );
+    const resolved =
+      path &&
+      (this.app.vault.getFileByPath(path) ??
+        this.app.metadataCache.getFirstLinkpathDest(path, this.file?.path ?? ""));
+    const vaultFile =
+      resolved && (/\.pdf$/i.test(resolved.path) || isImagePath(resolved.path)) ? resolved : null;
+    if (!files.length && !vaultFile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (vaultFile) {
+      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path);
+      else await this.insertImageFromVault(vaultFile.path);
+      return;
+    }
+    const note = this.file;
+    const surface = this.surface;
+    for (const file of files) {
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      if (isPdf(file)) await this.importPdfFile(file);
+      else {
+        try {
+          const bytes = await file.arrayBuffer();
+          if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+          await this.insertImageBytes(bytes, file.type, file.name);
+        } catch (error) {
+          new Notice(`FineNotes: couldn't read ${file.name} — ${errorMessage(error)}`, 8000);
+        }
+      }
+    }
+  }
+
+  private async importPdfFile(file: File): Promise<void> {
+    await this.preparePdfImport(() => file.arrayBuffer(), file.name);
+  }
+
+  private async preparePdfImport(
+    read: () => Promise<ArrayBuffer>,
+    name: string,
+    savedPath?: string,
+  ): Promise<void> {
+    const note = this.file;
+    const surface = this.surface;
+    if (!note || !surface || this.isProtected()) return;
+    if (this.isSinglePage) {
+      new Notice("Convert this single page to a notebook before importing a PDF.");
+      return;
+    }
+    const progress = new Notice("FineNotes: reading PDF pages…", 0);
+    try {
+      const bytes = await read();
+      const pages = await measurePdfPages(bytes);
+      if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      const item: ScanItem = { kind: "pdf", bytes, name, savedPath, pages: [] };
+      new PdfImportModal(this.app, name, pages.length, async (indices) => {
+        if (this.file !== note || this.surface !== surface || this.isProtected()) return false;
+        item.pages = indices.map((page) => ({ ...pages[page], page }));
+        return this.insertScans([item], "Import PDF");
+      }).open();
+    } catch (error) {
+      new Notice(`FineNotes: couldn't import PDF — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
+    }
+  }
+
   // --- Scanning -------------------------------------------------------------
 
   /**
@@ -1815,25 +1979,6 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * "Scanned PDF from Files": the scan sheet with a PDF picker, for a
-   * document scanned with the Files app's own "Scan Documents". A single
-   * page cannot take a PDF's pages, so it says so instead.
-   */
-  scanPdf(): void {
-    if (this.isProtected() || !this.file || !this.surface) return;
-    if (this.isSinglePage) {
-      new Notice("A PDF adds pages, and this is a single page. Convert it to a notebook first.");
-      return;
-    }
-    const sheet = new ScanSheet(this.app, {
-      multiPage: true,
-      insert: (scans) => this.insertScans(scans),
-    });
-    sheet.open();
-    sheet.pickPdf();
-  }
-
-  /**
    * Save finished scans as attachments of this note and put them in as
    * **one** undo step: new pages after the one in view — a photo scan as a
    * page holding its picture, a PDF as PDF-backed pages, one per PDF page
@@ -1845,9 +1990,10 @@ export class InkView extends TextFileView {
    * A file saved before a later one failed keeps its path, so trying Add
    * again does not save it twice.
    */
-  private async insertScans(items: ScanItem[]): Promise<boolean> {
+  private async insertScans(items: ScanItem[], label?: string): Promise<boolean> {
     const note = this.file;
     if (!note || !this.surface || this.isProtected()) return false;
+    const originalSurface = this.surface;
     const now = new Date();
     const photos = items.filter((item) => item.kind === "image").length;
     const saved: SavedItem[] = [];
@@ -1878,8 +2024,9 @@ export class InkView extends TextFileView {
     }
     // Read the surface again: the view may have closed while the files saved.
     const surface = this.surface;
-    if (!surface || this.isProtected()) return false;
-    const insert = buildScanInsert(surface.document, surface.currentPage, saved);
+    if (!surface || surface !== originalSurface || this.file !== note || this.isProtected())
+      return false;
+    const insert = buildScanInsert(surface.document, surface.currentPage, saved, label);
     const first = insert?.placed[0];
     if (!insert || !first) {
       if (this.isSinglePage) {

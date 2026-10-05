@@ -20,6 +20,7 @@ export default tseslint.config(
       "scripts/ui-gallery/.cache/**",
       "scripts/ui-gallery/out/**",
       "scripts/ui-gallery/pulled/**",
+      "scripts/ui-gallery/pdf-harness/out/**",
       "*.config.ts",
       "*.config.mts",
     ],
