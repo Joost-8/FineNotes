@@ -1215,26 +1215,60 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   z-index: 10;
   top: 0;
   left: 0;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+
+.goodobsidian-scrollthumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   border-radius: var(--gob-radius-pill);
   background: rgba(128, 128, 128, 0.55);
-  pointer-events: none;
 }
 
 .goodobsidian-scrollthumb.is-vertical {
   left: auto;
-  right: 3px;
-  width: 4px;
+  right: 0;
+  width: 12px;
+}
+
+.goodobsidian-scrollthumb.is-vertical::after {
+  left: 4px;
+  right: 4px;
 }
 
 .goodobsidian-scrollthumb.is-horizontal {
   top: auto;
-  bottom: 3px;
-  height: 4px;
+  bottom: 0;
+  height: 12px;
+}
+
+.goodobsidian-scrollthumb.is-horizontal::after {
+  top: 4px;
+  bottom: 4px;
 }
 
 .goodobsidian-scrollthumb.is-idle {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.3s ease-out;
+}
+
+.goodobsidian-scrollthumb.is-dragging {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: grabbing;
+  transition: none;
+}
+
+/* On a tablet the thumbs are a readout, not a control: a palm rests on the
+   edge of the page and the Pencil starts strokes there, and both belong to
+   the page (palm rejection, the stylus touch guards). */
+body.is-mobile .goodobsidian-scrollthumb {
+  pointer-events: none;
+  cursor: auto;
 }
 
 .is-hidden {

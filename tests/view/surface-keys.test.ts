@@ -55,6 +55,7 @@ describe("keyOutcome", () => {
     expect(keyOutcome(chord("Delete"), crop)).toEqual(quiet("none"));
     expect(keyOutcome(chord("Backspace"), crop)).toEqual(quiet("none"));
     expect(keyOutcome(chord("Enter"), scene())).toBeNull();
+    expect(keyOutcome(chord("p"), crop)).toEqual(quiet({ tool: "pen" }));
   });
 
   it("offers Cmd/Ctrl + a key to the clipboard unless Alt, Shift or a text box is in the way", () => {
@@ -140,5 +141,31 @@ describe("keyOutcome", () => {
     for (const key of ["x", "Tab", "1", "ArrowLeft", "constructor", "toString", "__proto__"]) {
       expect(keyOutcome(chord(key), scene())).toBeNull();
     }
+  });
+});
+
+describe("desktop modifier compatibility", () => {
+  it.each(["Linux", "Windows", "macOS"])(
+    "resolves history and clipboard shortcuts on %s",
+    (platform) => {
+      const modifier = platform === "macOS" ? { metaKey: true } : { ctrlKey: true };
+      expect(keyOutcome(chord("z", modifier), scene())).toEqual(loud("undo"));
+      expect(keyOutcome(chord("Z", { ...modifier, shiftKey: true }), scene())).toEqual(
+        loud("redo"),
+      );
+      for (const key of ["c", "x", "v"])
+        expect(keyOutcome(chord(key, modifier), scene({ clipboard: true }))).toEqual(quiet("none"));
+    },
+  );
+  it("accepts Ctrl+Y redo and leaves modified host/AltGraph chords alone", () => {
+    expect(keyOutcome(chord("y", { ctrlKey: true }), scene())).toEqual(loud("redo"));
+    for (const mods of [
+      { ctrlKey: true, altKey: true },
+      { ctrlKey: true, shiftKey: true },
+      { metaKey: true },
+    ])
+      expect(keyOutcome(chord("y", mods), scene())).toBeNull();
+    expect(keyOutcome(chord("z", { ctrlKey: true, altKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("z", { metaKey: true, altKey: true }), scene())).toBeNull();
   });
 });

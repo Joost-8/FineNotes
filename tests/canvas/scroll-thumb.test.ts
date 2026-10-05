@@ -1,3 +1,4 @@
+import { thumbDragPosition } from "../../src/canvas/scroll-thumb";
 import { describe, expect, it } from "vitest";
 import { MIN_SQUASHED_LENGTH, MIN_THUMB_LENGTH, scrollThumb } from "../../src/canvas/scroll-thumb";
 
@@ -50,5 +51,28 @@ describe("scrollThumb", () => {
   it("keeps a sliver however far it is stretched", () => {
     const thumb = scrollThumb(-5000, 800, 4000, 800);
     expect(thumb).toEqual({ offset: 0, length: MIN_SQUASHED_LENGTH });
+  });
+});
+
+describe("thumb dragging", () => {
+  it("maps pointer travel to the full scroll range and clamps both ends", () => {
+    expect(thumbDragPosition(0, 300, 600, 6000, 600)).toBeCloseTo(3000);
+    expect(thumbDragPosition(3000, -300, 600, 6000, 600)).toBeCloseTo(0);
+    expect(thumbDragPosition(0, 10000, 600, 6000, 600)).toBe(5400);
+    expect(thumbDragPosition(100, -10000, 600, 6000, 600)).toBe(0);
+  });
+  it("uses the minimum thumb size and normalizes overscroll", () => {
+    expect(thumbDragPosition(-200, 50, 100, 10000, 100)).toBeCloseTo((50 * 9900) / 64);
+    expect(thumbDragPosition(10000, -50, 100, 10000, 100)).toBeCloseTo(9900 - (50 * 9900) / 64);
+  });
+  it("does nothing for fitted content or a track with no thumb travel", () => {
+    expect(thumbDragPosition(0, 50, 100, 100, 100)).toBe(0);
+    expect(thumbDragPosition(10, 50, 100, 1000, 20)).toBe(10);
+    expect(thumbDragPosition(10, 50, 100, 1000, 0)).toBe(10);
+  });
+  it.each([0, 1, 2, 3, 4])("rejects invalid input %s", (index) => {
+    const values = [0, 50, 100, 1000, 100];
+    values[index] = Infinity;
+    expect(thumbDragPosition(...(values as [number, number, number, number, number]))).toBe(0);
   });
 });

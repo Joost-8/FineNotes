@@ -310,6 +310,7 @@ describe("handleKeyDown", () => {
   it("undoes with Cmd+Z or Ctrl+Z and redoes with Shift added", () => {
     expect(press("z", { meta: true })).toEqual({ ...TAKEN, calls: ["undo"] });
     expect(press("z", { ctrl: true })).toEqual({ ...TAKEN, calls: ["undo"] });
+    expect(press("y", { ctrl: true })).toEqual({ ...TAKEN, calls: ["redo"] });
     expect(press("Z", { meta: true, shift: true })).toEqual({ ...TAKEN, calls: ["redo"] });
     expect(press("Z", { ctrl: true, shift: true })).toEqual({ ...TAKEN, calls: ["redo"] });
   });

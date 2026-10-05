@@ -338,6 +338,10 @@ about 30 seconds after you stop writing.
 | Page Up, Page Down           | Previous or next page                         |
 | ↑, ↓                         | Scroll                                        |
 
+Ctrl+Y also redoes. Shortcuts act on the active notebook; text fields keep their
+normal editing shortcuts. On a computer, drag the right or bottom scroll
+indicator to scroll directly.
+
 On a computer, Ctrl/Cmd with the scroll wheel (or a trackpad pinch) zooms.
 
 ### Commands

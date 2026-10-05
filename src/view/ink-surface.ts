@@ -1,3 +1,4 @@
+import { bindScrollThumb } from "./scroll-thumb-drag";
 import type { PdfRenderArea } from "../canvas/pdf-raster";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
@@ -1057,6 +1058,53 @@ export class InkSurface {
     this.thumbXEl = this.surfaceEl.createDiv({
       cls: "goodobsidian-scrollthumb is-horizontal is-idle",
     });
+    // On a computer the thumbs can be dragged (any pointer: a mouse, a
+    // graphics tablet's pen). On a tablet they stay a readout like the zoom
+    // readout above, for the same reason: the stylesheet turns their pointer
+    // events off under `is-mobile`, so a palm or a Pencil stroke at the edge
+    // of the page reaches the page and its palm rejection.
+    for (const [element, vertical] of [
+      [this.thumbYEl, true],
+      [this.thumbXEl, false],
+    ] as const) {
+      this.disposers.push(
+        bindScrollThumb(
+          element,
+          vertical,
+          () => {
+            const bounds = this.scroller.bounds;
+            const viewport = vertical ? this.cssH : this.cssW;
+            return {
+              position: vertical ? this.scroller.position.y : this.scroller.position.x,
+              minimum: vertical ? bounds.minY : bounds.minX,
+              maximum: vertical ? bounds.maxY : bounds.maxX,
+              viewport,
+              track: viewport - 2 * THUMB_INSET,
+            };
+          },
+          (position) => {
+            const current = this.scroller.position;
+            this.scroller.setPosition(
+              vertical ? current.x : position,
+              vertical ? position : current.y,
+            );
+            this.requestFrame();
+          },
+          () => this.flashChrome(false),
+          // A row turned page by page settles on a page, as the wheel does.
+          // The snap goes at most one page from `pageIndex`, which a frame
+          // sets, and a thumb crosses several pages a frame: bring it up to
+          // date first.
+          () => {
+            if (!vertical && this.turnsPages && this.isScrollIdle) {
+              this.syncViewport();
+              this.snapToPage(0, this.pageIndex);
+            }
+          },
+        ),
+      );
+    }
+
     this.pullAdd = new PullAddIndicator(this.surfaceEl);
     // The Text tool's hint, a pill at the bottom of the surface as in GoodNotes.
     this.textHintEl = this.surfaceEl.createDiv({ cls: "goodobsidian-text-hint is-hidden" });
@@ -1233,8 +1281,10 @@ export class InkSurface {
     // Wheel and trackpad: scroll, or zoom with Ctrl/Cmd (a trackpad pinch
     // arrives as a Ctrl+wheel). Momentum on a trackpad is the OS's own.
     const onWheel = (event: WheelEvent): void => this.onWheel(event);
-    this.scrollEl.addEventListener("wheel", onWheel, { passive: false });
-    this.disposers.push(() => this.scrollEl.removeEventListener("wheel", onWheel));
+    for (const element of [this.scrollEl, this.thumbYEl, this.thumbXEl]) {
+      element.addEventListener("wheel", onWheel, { passive: false });
+      this.disposers.push(() => element.removeEventListener("wheel", onWheel));
+    }
 
     // Neither the surface nor the scroll overlay scrolls natively (the page
     // moves by a transform), but a browser may still scroll an overflow:hidden
@@ -1640,7 +1690,7 @@ export class InkSurface {
    * field are the field's; which key does what is `keyOutcome`'s table.
    */
   handleKeyDown(event: KeyboardEvent): boolean {
-    if (isEditable(event.target)) return false;
+    if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
     const outcome = keyOutcome(event, {
       cropping: this.cropping !== null,
       editingText: () => this.editingTextView() !== null,

@@ -16,6 +16,7 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { notebookKeyScope } from "./notebook-keys";
 import {
   Notice,
   Platform,
@@ -1090,7 +1091,12 @@ export class InkView extends TextFileView {
     // the options pill's size follows the theme's metrics.
     this.registerEvent(this.app.workspace.on("css-change", () => this.relayout()));
     // Keyboard shortcuts on the page (undo, delete a selection, and so on).
-    this.registerDomEvent(root, "keydown", (event) => this.surface?.handleKeyDown(event));
+    this.scope = notebookKeyScope(
+      root,
+      this.app.scope,
+      () => this.app.workspace.getActiveViewOfType(InkView) === this,
+      (event) => this.surface?.handleKeyDown(event) ?? false,
+    );
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.

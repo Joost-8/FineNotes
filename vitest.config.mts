@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      // Pure modules that the layered architecture exists to keep testable.
+      // Pure modules plus the notebook input adapters covered by lifecycle tests.
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
@@ -42,6 +42,8 @@ export default defineConfig({
         "src/view/id-sequence.ts",
         "src/view/stroke-index.ts",
         "src/view/surface-keys.ts",
+        "src/view/notebook-keys.ts",
+        "src/view/scroll-thumb-drag.ts",
         "src/view/pointer-hud.ts",
         "src/view/surface-size.ts",
         "src/view/write-hold.ts",
@@ -79,6 +81,13 @@ export default defineConfig({
         functions: 80,
         statements: 80,
         branches: 70,
+        "src/{canvas/scroll-thumb,view/surface-keys,view/notebook-keys,view/scroll-thumb-drag}.ts":
+          {
+            lines: 100,
+            functions: 100,
+            statements: 100,
+            branches: 100,
+          },
       },
     },
   },
