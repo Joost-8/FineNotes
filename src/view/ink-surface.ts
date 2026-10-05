@@ -1284,6 +1284,12 @@ export class InkSurface {
         }
       }
       if (onTextBox(event.target)) return;
+      // The lasso's menu scrolls by itself when it is taller than the view
+      // (the custom colour picker): a finger there must not be cancelled.
+      if (onSelectionMenu(event.target)) {
+        event.stopPropagation();
+        return;
+      }
       event.stopPropagation();
       if (event.type === "touchmove" && this.touchPanning && event.cancelable) {
         event.preventDefault();
@@ -1629,6 +1635,21 @@ export class InkSurface {
   goToPage(index: number, animate = false): void {
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const row = this.direction === "horizontal";
+    if (row && !this.turnsPages && clamped !== this.pageIndex) {
+      // Zoomed in, a row is held to the page being read (`ensurePaperSize`),
+      // so a glide to another page stopped at this one's edge. Move the hold
+      // to the new page and land on its top-left corner, at the same zoom.
+      this.pageIndex = clamped;
+      this.ensurePaperSize();
+      const range = rowPageScrollRange(this.pageLayout, clamped, this.scale, this.cssW);
+      this.scroller.setPosition(range.min, 0);
+      this.syncViewport();
+      this.callbacks.onPageChange?.(clamped, this.doc.pages.length);
+      this.reportStatus();
+      this.flashChrome();
+      this.requestFrame();
+      return;
+    }
     const x = row ? this.rowX(clamped) : this.scroller.position.x;
     const y = row ? 0 : scrollTopForPage(this.pageLayout, clamped) * this.scale;
     if (animate) this.scroller.glideTo(x, y, now());
@@ -6457,6 +6478,10 @@ function now(): number {
 /** Whether an event's target is a page text box, or inside one. */
 function onTextBox(target: EventTarget | null): boolean {
   return (target as Element | null)?.closest(".goodobsidian-page-textbox") != null;
+}
+
+function onSelectionMenu(target: EventTarget | null): boolean {
+  return (target as Element | null)?.closest(".goodobsidian-selection-menu") != null;
 }
 
 /** Whether an event's target takes typing of its own: a field, or anything editable. */

@@ -3197,7 +3197,14 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--color-base-100);
   box-shadow: var(--gob-shadow-sheet);
   pointer-events: auto;
-  touch-action: none;
+  /* Taller than the room for it (max-height set in code), it scrolls; the
+     colour picker's square and slider keep touch-action: none of their own. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Room for a desktop scrollbar, which would otherwise clip the right edge. */
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;

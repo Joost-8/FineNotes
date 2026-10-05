@@ -43,6 +43,8 @@ const BAR_GAP_PX = 12;
 const EDGE_MARGIN_PX = 8;
 /** Space between the "…" button and the menu, px. */
 const MENU_GAP_PX = 6;
+/** The menu's height cap never goes below this, however little room is left. */
+const MENU_MIN_HEIGHT_PX = 160;
 
 export interface ShowOptions {
   /** Room to keep free above the selection (a handle drawn there), px. */
@@ -296,6 +298,10 @@ export class SelectionActionBar {
     onTap(plus, () => {
       mixer.toggleClass("is-hidden", !mixer.hasClass("is-hidden"));
       this.placeMenu();
+      // Opened at the bottom of a menu that may now scroll: show all of it.
+      if (!mixer.hasClass("is-hidden") && this.menuEl) {
+        this.menuEl.scrollTop = this.menuEl.scrollHeight;
+      }
     });
   }
 
@@ -314,6 +320,11 @@ export class SelectionActionBar {
       maxY: this.el.offsetTop + this.el.offsetHeight,
     };
     const visible = this.visible ?? anchor;
+    // Never taller than the room beside the bar (the custom colour picker
+    // made it run off the screen): past that it scrolls.
+    const below = visible.maxY - EDGE_MARGIN_PX - (anchor.maxY + MENU_GAP_PX);
+    const above = anchor.minY - MENU_GAP_PX - (visible.minY + EDGE_MARGIN_PX);
+    menu.setCssStyles({ maxHeight: `${Math.round(Math.max(MENU_MIN_HEIGHT_PX, below, above))}px` });
     const at = placeFloating(anchor, { w: menu.offsetWidth, h: menu.offsetHeight }, visible, {
       gap: MENU_GAP_PX,
       margin: EDGE_MARGIN_PX,
