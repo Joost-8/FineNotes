@@ -421,15 +421,14 @@ export class Toolbar {
   /** The button under a pointer that is down on a bar, drawn pressed. */
   private pressed: HTMLElement | null = null;
   private palette: string[];
+  /** The pen or highlighter last in use, which "select again" goes back to. */
+  private drawingTool: ActiveTool = "pen";
 
   /**
    * Both tiers are appended to `host`, the view's content element. `widths`
    * are the preset pen widths; `state` is kept and updated as the user picks,
    * and every pick is also reported through `callbacks`.
    */
-  /** The pen or highlighter last in use, which "select again" goes back to. */
-  private drawingTool: ActiveTool = "pen";
-
   constructor(
     private readonly host: HTMLElement,
     palette: readonly string[],

@@ -148,6 +148,30 @@ describe("secondary tool integration", () => {
     expect(run(image, "dismissUsedSelection")).toBe(true);
     expect(image.toolState.tool).toBe("pen");
   });
+  it("returns when Delete or Cut takes the lasso's selection away", () => {
+    // With nothing left on screen there is no outside click to wait for.
+    for (const take of ["selectionTakenAway", "deleteSelectedImage"]) {
+      const s = surface("select");
+      Object.assign(s, {
+        liveImageSelection: () => ({ pageId: "p", image: { id: "i" } }),
+        applyCommand: vi.fn(),
+      });
+      run(s, take);
+      expect(s.toolState.tool).toBe("pen");
+      expect(s.selectionToolUsed).toBe(false);
+      expect(s.callbacks.onToolChange).toHaveBeenCalledWith("pen");
+    }
+    // A selection the lasso did not make (a picture tapped with the pen), or
+    // the setting off: the tool stays.
+    const unused = surface("select");
+    unused.selectionToolUsed = false;
+    run(unused, "selectionTakenAway");
+    expect(unused.toolState.tool).toBe("select");
+    const off = surface("select", false);
+    run(off, "selectionTakenAway");
+    expect(off.toolState.tool).toBe("select");
+    expect(off.callbacks.onToolChange).not.toHaveBeenCalled();
+  });
   it("keeps unused and disabled lassos and does not start ink on the outside click", () => {
     const s = surface("select");
     s.selectionToolUsed = false;

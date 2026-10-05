@@ -1682,6 +1682,16 @@ export class InkSurface {
     this.pendingReturn = null;
   }
 
+  /**
+   * Delete or Cut took away what a lasso use selected: that finishes the use
+   * as an outside click would, since nothing is left to click outside of.
+   */
+  private selectionTakenAway(): void {
+    if (!this.selectionToolUsed || this.toolState.tool !== "select") return;
+    this.selectionToolUsed = false;
+    this.completeToolUse("selection");
+  }
+
   /** The selection frame handles inside presses; a page press ends a used lasso. */
   private dismissUsedSelection(): boolean {
     if (
@@ -5128,16 +5138,16 @@ export class InkSurface {
   /** Delete everything selected, as one undo step. */
   private deleteSelection(): void {
     if (this.callbacks.isLocked?.()) return;
-    this.removeSelection("Delete selection");
+    if (this.removeSelection("Delete selection")) this.selectionTakenAway();
   }
 
   /**
    * Take the lasso selection off its page as one undo step. A locked picture
    * is never taken: it cannot be selected, and this makes sure.
    */
-  private removeSelection(label: string): void {
+  private removeSelection(label: string): boolean {
     const sel = this.liveSelection();
-    if (!sel) return;
+    if (!sel) return false;
     const box = this.boxForPage(sel.pageId);
     const bounds = this.groupBounds(sel);
     const elements: PageElements = {
@@ -5152,6 +5162,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.changed();
+    return true;
   }
 
   // --- Cut, Copy and Paste (0.5) ---------------------------------------------
@@ -5200,7 +5211,7 @@ export class InkSurface {
   private cutSelection(): void {
     if (this.callbacks.isLocked?.() || !this.copySelection()) return;
     if (this.liveSelection()) {
-      this.removeSelection("Cut");
+      if (this.removeSelection("Cut")) this.selectionTakenAway();
       return;
     }
     const sel = this.liveImageSelection();
@@ -5208,6 +5219,7 @@ export class InkSurface {
     this.applyCommand(
       new RemoveElements(sel.pageId, { strokes: [], images: [sel.image], textBoxes: [] }, "Cut"),
     );
+    this.selectionTakenAway();
   }
 
   /**
@@ -5827,6 +5839,7 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return false;
     this.applyCommand(new RemoveImage(sel.pageId, sel.image.id));
+    this.selectionTakenAway();
     return true;
   }
 
