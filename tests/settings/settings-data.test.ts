@@ -69,6 +69,8 @@ const FRESH_INSTALL = {
   shapeColor: "#000000",
   recentColors: [],
   pressureWidth: false,
+  returnToPenOnReselect: false,
+  returnToPenAfterUse: false,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
 };
@@ -91,6 +93,8 @@ const USED_VAULT = {
   highlighterAlpha: 0.55,
   paperWidth: 1400,
   newNotebookFolder: "School/Notebooks",
+  returnToPenOnReselect: true,
+  returnToPenAfterUse: true,
   showNewNotebookInContextMenu: false,
   showNewNotebookInExplorer: false,
   lastNotebookChoices: { type: "notebook", cover: "plain", paper: "dotted", size: "a4" },

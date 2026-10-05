@@ -57,6 +57,7 @@
  *   "3 / 18" readout are chrome-level, because discrete pages are the fix.
  */
 
+import { drawingToolOf, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE } from "../constants";
 import {
@@ -292,6 +293,7 @@ export interface ToolbarCallbacks {
   // config — and it is right to: a host that wrote these as methods on a
   // class would lose `this` the moment we read one. A callback is a value.
   onToolChange: (tool: ActiveTool) => void;
+  returnToPenOnReselect?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
   onPressureToggle: (enabled: boolean) => void;
@@ -419,6 +421,8 @@ export class Toolbar {
   /** The button under a pointer that is down on a bar, drawn pressed. */
   private pressed: HTMLElement | null = null;
   private palette: string[];
+  /** The pen or highlighter last in use, which "select again" goes back to. */
+  private drawingTool: ActiveTool = "pen";
 
   /**
    * Both tiers are appended to `host`, the view's content element. `widths`
@@ -641,6 +645,13 @@ export class Toolbar {
    */
   private tapTool(tool: ActiveTool, button: HTMLElement): void {
     const current = this.state.tool;
+    this.drawingTool = drawingToolOf(this.drawingTool, current);
+    tool = selectedTool(
+      current,
+      tool,
+      this.callbacks.returnToPenOnReselect?.() === true,
+      this.drawingTool,
+    );
     if (tool === "select" && current === "select") {
       this.toggleLassoPopover(button);
       return;
@@ -1024,7 +1035,11 @@ export class Toolbar {
    * button says so), and an empty pill hides itself.
    */
   private buildSelectOptions(): void {
-    // Deliberately empty.
+    // Repeated selection may now return to Pen, so keep the lasso settings reachable.
+    if (this.callbacks.returnToPenOnReselect?.() === true)
+      this.barButton(this.optionsEl, "settings-2", "Lasso options", (button) =>
+        this.toggleLassoPopover(button),
+      );
   }
 
   /**
@@ -1969,6 +1984,7 @@ export class Toolbar {
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
   setState(next: ToolbarState): void {
+    this.drawingTool = drawingToolOf(this.drawingTool, next.tool);
     this.state = next;
     this.buildOptions();
     this.syncActive();

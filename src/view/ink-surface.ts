@@ -241,7 +241,7 @@ import {
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
-import { REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
+import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import {
   type ActiveTool,
   type ToolbarState,
@@ -259,6 +259,14 @@ import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
 import { type KeyAction, keyOutcome } from "./surface-keys";
+import {
+  type ToolLift,
+  type ToolUse,
+  continuesUse,
+  drawingToolOf,
+  selectedTool,
+  toolAfterUse,
+} from "./tool-return";
 import { PointerHud } from "./pointer-hud";
 import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
@@ -406,6 +414,8 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
+  returnToPenOnReselect?: () => boolean;
+  returnToPenAfterUse?: () => boolean;
   /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
@@ -698,6 +708,8 @@ export class InkSurface {
   private toolSeen: ActiveTool;
   /** The tool in use before Text, which an unpinned Text tool returns to. */
   private toolBeforeText: ActiveTool | null = null;
+  /** The pen or highlighter last in use, which the return-to-pen settings go back to. */
+  private drawingTool: ActiveTool = "pen";
   /** A Text-tool gesture made while a box was being edited: it only ends the edit. */
   private textDismiss = false;
   /** A Text-tool press beside a held box: its lift lets go of the box (see `finishTextDismiss`). */
@@ -851,6 +863,8 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /** A lasso has selected content; return only when its outside click dismisses it. */
+  private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
   private groupDrag: GroupDrag | null = null;
   private readonly selectionUiEl: HTMLElement;
@@ -959,6 +973,15 @@ export class InkSurface {
     command: Command;
     penDownAt: number | null;
   } | null = null;
+  /** Where the pen was last seen (layout space), for a cancel, which has no position. */
+  private penAt: Pt | null = null;
+  /**
+   * An eraser stroke or shape that lifted with "Return after one use" on:
+   * the switch waits out the rejoin window (`input/pen-rejoin.ts`), since a
+   * flicker of the Pencil's contact also arrives as a lift. A pen-down that
+   * carries the use on cancels it; any other makes it happen at once.
+   */
+  private pendingReturn: (ToolLift & { timer: number }) | null = null;
   /** The frame the stroke in progress is next drawn in (`scheduleWet`). */
   private wetFrame = 0;
   /**
@@ -1026,6 +1049,7 @@ export class InkSurface {
     this.paperIsDark = options.darkPaper === true;
     this.paper = paperTheme(this.paperIsDark);
     this.toolSeen = toolState.tool;
+    this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
@@ -1345,6 +1369,7 @@ export class InkSurface {
    */
   destroy(): void {
     window.clearTimeout(this.wheelSnapTimer);
+    this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
     this.hideOffPage();
     for (const frame of [
@@ -1651,6 +1676,10 @@ export class InkSurface {
     // The toolbar shares `toolState` and has already written the new tool
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
+    if (tool !== "select") this.selectionToolUsed = false;
+    this.drawingTool = drawingToolOf(this.drawingTool, tool);
+    // A tool picked by hand overrides a return still waiting to happen.
+    this.cancelPendingReturn();
     this.toolSeen = tool;
     this.toolState.tool = tool;
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
@@ -1664,6 +1693,78 @@ export class InkSurface {
       // tool is no longer Text, finishing it switches nothing back.
       this.blurTextBox();
     }
+  }
+
+  /** Called only after a complete tool operation, never during pointer movement. */
+  private completeToolUse(use: ToolUse): void {
+    const tool = toolAfterUse(
+      this.toolState.tool,
+      use,
+      this.callbacks.returnToPenAfterUse?.() === true,
+      this.drawingTool,
+    );
+    if (tool === this.toolState.tool) return;
+    this.setTool(tool);
+    this.callbacks.onToolChange?.(tool);
+  }
+
+  /**
+   * An eraser stroke or shape lifted at `at`: return after the rejoin
+   * window, unless the next pen-down carries the use on (`pendingReturn`).
+   */
+  private deferToolUse(at: Pt | null): void {
+    this.cancelPendingReturn();
+    const enabled = this.callbacks.returnToPenAfterUse?.() === true;
+    if (toolAfterUse(this.toolState.tool, "gesture", enabled) === this.toolState.tool) return;
+    const timer = window.setTimeout(() => {
+      this.pendingReturn = null;
+      this.completeToolUse("gesture");
+    }, REJOIN_MS);
+    this.pendingReturn = { t: now(), x: at?.x ?? NaN, y: at?.y ?? NaN, timer };
+  }
+
+  /** A pen-down at `at` (layout space): the waiting return is cancelled or made now. */
+  private settlePendingReturn(at: Pt): void {
+    const pending = this.pendingReturn;
+    if (!pending) return;
+    this.cancelPendingReturn();
+    if (continuesUse(pending, now(), at.x, at.y, this.atFitZoom(REJOIN_PX))) return;
+    this.completeToolUse("gesture");
+  }
+
+  private cancelPendingReturn(): void {
+    if (!this.pendingReturn) return;
+    window.clearTimeout(this.pendingReturn.timer);
+    this.pendingReturn = null;
+  }
+
+  /**
+   * Delete or Cut took away what a lasso use selected: that finishes the use
+   * as an outside click would, since nothing is left to click outside of.
+   */
+  private selectionTakenAway(): void {
+    if (!this.selectionToolUsed || this.toolState.tool !== "select") return;
+    this.selectionToolUsed = false;
+    this.completeToolUse("selection");
+  }
+
+  /** The selection frame handles inside presses; a page press ends a used lasso. */
+  private dismissUsedSelection(): boolean {
+    if (
+      !this.selectionToolUsed ||
+      this.toolState.tool !== "select" ||
+      this.callbacks.returnToPenAfterUse?.() !== true
+    )
+      return false;
+    // Gone by other means (Delete, Cut, Undo): nothing is on screen to
+    // dismiss, so this press is the lasso's again, as the toolbar shows.
+    if (!this.liveSelection() && !this.liveImageSelection()) {
+      this.selectionToolUsed = false;
+      return false;
+    }
+    this.activePage = null;
+    this.completeToolUse("selection");
+    return true;
   }
 
   /**
@@ -1709,8 +1810,14 @@ export class InkSurface {
 
   private runKeyAction(action: KeyAction): void {
     if (typeof action === "object") {
-      this.setTool(action.tool);
-      this.callbacks.onToolChange?.(action.tool);
+      const tool = selectedTool(
+        this.toolState.tool,
+        action.tool,
+        this.callbacks.returnToPenOnReselect?.() === true,
+        this.drawingTool,
+      );
+      this.setTool(tool);
+      this.callbacks.onToolChange?.(tool);
       return;
     }
     switch (action) {
@@ -2961,6 +3068,7 @@ export class InkSurface {
       this.penDown(sample);
     },
     onMove: (coalesced) => {
+      this.penAt = coalesced[coalesced.length - 1] ?? this.penAt;
       const box = this.activePage;
       if (box) this.gestureOf(this.toolState.tool).move(box, coalesced);
     },
@@ -2968,12 +3076,12 @@ export class InkSurface {
       this.callbacks.onPen?.(false);
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
-      if (box) this.gestureOf(this.toolState.tool).up(box, sample);
+      this.finishToolGesture(box, sample);
     },
     onCancel: () => {
       this.callbacks.onPen?.(false);
       if (this.finishTextDismiss()) return;
-      this.gestureOf(this.toolState.tool).cancel(this.activePage);
+      this.finishToolGesture(this.activePage, null);
     },
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
@@ -3112,7 +3220,10 @@ export class InkSurface {
    * finding the page — and then the tool in use takes the gesture over.
    */
   private penDown(sample: PointerSample): void {
+    this.penAt = sample;
+    this.settlePendingReturn(sample);
     if (this.callbacks.isLocked?.()) return;
+    if (this.dismissUsedSelection()) return;
     // Whatever this gesture commits is timestamped with its pen-down.
     this.penDownAt = this.clock();
     // A press beside a picture being cropped finishes the crop, keeping it.
@@ -3149,6 +3260,21 @@ export class InkSurface {
       this.blurTextBox();
     }
     this.gestureOf(this.toolState.tool).down(box, local, sample);
+  }
+
+  /** Complete the tool before switching; cancelled erasing is rolled back. */
+  private finishToolGesture(box: PageBox | null, sample: PointerSample | null): void {
+    const tool = this.toolState.tool;
+    const gesture = this.gestureOf(tool);
+    if (sample) {
+      if (!box) return;
+      gesture.up(box, sample);
+    } else {
+      gesture.cancel(box);
+      // WebKit can cancel an ordinary lift; shapes keep their committed ink.
+      if (!box || tool !== "shape") return;
+    }
+    this.deferToolUse(sample ?? this.penAt);
   }
 
   /** How the tool in use handles the pen (see {@link PenGesture}). */
@@ -4645,6 +4771,7 @@ export class InkSurface {
     const { strokes, textBoxes } = elements;
     const images = elements.images.filter((image) => image.locked !== true);
     if (isEmptySelection({ strokes, images, textBoxes })) return;
+    if (this.toolState.tool === "select") this.selectionToolUsed = true;
     if (strokes.length === 0 && textBoxes.length === 0 && images.length === 1) {
       this.setImageSelection(pageId, images[0]);
       return;
@@ -5067,16 +5194,16 @@ export class InkSurface {
   /** Delete everything selected, as one undo step. */
   private deleteSelection(): void {
     if (this.callbacks.isLocked?.()) return;
-    this.removeSelection("Delete selection");
+    if (this.removeSelection("Delete selection")) this.selectionTakenAway();
   }
 
   /**
    * Take the lasso selection off its page as one undo step. A locked picture
    * is never taken: it cannot be selected, and this makes sure.
    */
-  private removeSelection(label: string): void {
+  private removeSelection(label: string): boolean {
     const sel = this.liveSelection();
-    if (!sel) return;
+    if (!sel) return false;
     const box = this.boxForPage(sel.pageId);
     const bounds = this.groupBounds(sel);
     const elements: PageElements = {
@@ -5091,6 +5218,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.changed();
+    return true;
   }
 
   // --- Cut, Copy and Paste (0.5) ---------------------------------------------
@@ -5139,7 +5267,7 @@ export class InkSurface {
   private cutSelection(): void {
     if (this.callbacks.isLocked?.() || !this.copySelection()) return;
     if (this.liveSelection()) {
-      this.removeSelection("Cut");
+      if (this.removeSelection("Cut")) this.selectionTakenAway();
       return;
     }
     const sel = this.liveImageSelection();
@@ -5147,6 +5275,7 @@ export class InkSurface {
     this.applyCommand(
       new RemoveElements(sel.pageId, { strokes: [], images: [sel.image], textBoxes: [] }, "Cut"),
     );
+    this.selectionTakenAway();
   }
 
   /**
@@ -5710,6 +5839,7 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
+    if (this.dismissUsedSelection()) return;
     // A tap beside a picture being cropped finishes the crop, as a pen's does.
     if (this.cropping) {
       this.endCrop(true);
@@ -5765,6 +5895,7 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return false;
     this.applyCommand(new RemoveImage(sel.pageId, sel.image.id));
+    this.selectionTakenAway();
     return true;
   }
 
@@ -5790,6 +5921,7 @@ export class InkSurface {
     this.clearSelection();
     this.cancelImageDrag();
     this.imageSel = { pageId, image };
+    if (this.toolState.tool === "select") this.selectionToolUsed = true;
     this.syncImageOverlay();
   }
 
@@ -6138,8 +6270,12 @@ export class InkSurface {
 
   /** An unpinned Text tool hands back the tool used before it (GoodNotes' default). */
   private handBackFromText(): void {
-    if (this.toolState.tool !== "text" || this.toolState.textPinned === true) return;
-    if (this.editingTextView()) return;
+    if (this.toolState.tool !== "text" || this.editingTextView()) return;
+    if (this.callbacks.returnToPenAfterUse?.() === true) {
+      this.completeToolUse("text");
+      return;
+    }
+    if (this.toolState.textPinned === true) return;
     const back =
       this.toolBeforeText && this.toolBeforeText !== "text" ? this.toolBeforeText : "pen";
     this.setTool(back);
@@ -6228,8 +6364,12 @@ export class InkSurface {
     if (this.heldText === view) {
       // Kept by a tap beside it: the tool waits for the tap that lets go —
       // unless the box was empty and has just gone.
-      if (this.liveTextBox(view.pageId, view.id)) return;
-      this.heldText = null;
+      if (this.liveTextBox(view.pageId, view.id)) {
+        if (this.callbacks.returnToPenAfterUse?.() !== true) return;
+        this.releaseHeldText();
+      } else {
+        this.heldText = null;
+      }
     }
     this.handBackFromText();
   }

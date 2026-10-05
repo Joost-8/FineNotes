@@ -133,6 +133,10 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
+  /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
+  returnToPenOnReselect: boolean;
+  /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
+  returnToPenAfterUse: boolean;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -179,6 +183,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   shapeColor: DEFAULT_SHAPE_COLOR,
   recentColors: [],
   pressureWidth: false,
+  returnToPenOnReselect: false,
+  returnToPenAfterUse: false,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
 };

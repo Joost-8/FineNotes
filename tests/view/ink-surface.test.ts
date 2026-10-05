@@ -261,6 +261,7 @@ function press(
       calls.push(args.length > 0 ? `${name}(${args.map(String).join(",")})` : name);
     };
   const surface = surfaceWith({
+    toolState: { tool: "pen" },
     cropping: scene.cropping ? {} : null,
     pressMenu: scene.pressMenu ? {} : null,
     direction: scene.row ? "horizontal" : "vertical",

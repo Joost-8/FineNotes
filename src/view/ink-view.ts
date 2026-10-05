@@ -898,6 +898,7 @@ export class InkView extends TextFileView {
       SIZES,
       this.toolState,
       {
+        returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         onToolChange: (tool) => {
           this.surface?.setTool(tool);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
@@ -998,6 +999,8 @@ export class InkView extends TextFileView {
         onStatus: () => this.matchPdfResolution(),
         onPen: (down) => this.penActivity(down),
         isLocked: () => this.isProtected(),
+        returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
+        returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
