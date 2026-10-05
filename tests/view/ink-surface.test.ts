@@ -1037,6 +1037,36 @@ describe("a stroke's first pressure", () => {
   });
 });
 
+describe("smoothing a pen whose positions arrive rounded (FineNotes#1)", () => {
+  function opts(rounded: boolean, classic: boolean, coalesced: boolean): Record<string, unknown> {
+    const surface = surfaceWith({
+      penPressure: null,
+      toolState: { pressureEnabled: false },
+      atFitZoom: (v: number) => v,
+      pointerInput: { strokeRounded: rounded },
+      coalescedInput: coalesced,
+      callbacks: { classicSmoothing: () => classic },
+    });
+    return run(surface, "builderOpts");
+  }
+
+  it("smooths from both sides by default, and keeps densify where samples are sparse", () => {
+    expect(opts(true, false, false)).toMatchObject({ smoothing: "centred", densify: true });
+    expect(opts(true, false, true)).toMatchObject({ smoothing: "centred", densify: false });
+  });
+
+  it("smooths as 1.0.1 did with the classic setting, without densify", () => {
+    expect(opts(true, true, false)).toMatchObject({ smoothing: "follow", densify: false });
+  });
+
+  it("leaves a pen with exact positions alone, whatever the setting", () => {
+    for (const classic of [false, true]) {
+      expect(opts(false, classic, false)).toMatchObject({ smoothing: "off", densify: true });
+      expect(opts(false, classic, true)).toMatchObject({ smoothing: "off", densify: false });
+    }
+  });
+});
+
 // --- A Pencil whose contact flickered (2026-10-01) ---------------------------------
 
 describe("resumeLifted", () => {

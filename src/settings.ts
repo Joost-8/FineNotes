@@ -108,6 +108,11 @@ const DESC = {
   pressure:
     "Advanced. The Fountain and Brush pens get wider the harder you press. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
+  classicSmoothing:
+    "Advanced. For iPads that report the Pencil's position in whole pixels, which makes " +
+    "lines wobble. FineNotes smooths each point using the points on both sides of it, so " +
+    "the last few millimeters of a line settle a moment after you draw them. On, it " +
+    "smooths as version 1.0.1 did, using only the points before. Other iPads are not affected.",
   drawAndHold:
     "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
   desynchronized:
@@ -334,6 +339,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "brush pen",
       ]),
       callout(CALLOUTS.pressure, () => this.plugin.settings.pressureWidth),
+      toggle("classicSmoothing", "Classic pencil smoothing (advanced)", DESC.classicSmoothing, [
+        "smoothing",
+        "smooth",
+        "wobbly",
+        "Apple Pencil",
+        "handwriting",
+      ]),
       drawnRow("Paper width", DESC.paperWidth, (s) => this.drawPaperWidth(s), [
         "canvas size",
         "page width",

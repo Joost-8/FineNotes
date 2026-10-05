@@ -133,6 +133,12 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
+  /**
+   * Advanced, for a Pencil whose positions arrive rounded to whole pixels
+   * (WebKit before iPadOS 26.2): smooth as 1.0.1 did, from the samples
+   * before each one, instead of from both sides of it (FineNotes#1).
+   */
+  classicSmoothing: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
@@ -183,6 +189,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   shapeColor: DEFAULT_SHAPE_COLOR,
   recentColors: [],
   pressureWidth: false,
+  classicSmoothing: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   showNewNotebookInContextMenu: true,

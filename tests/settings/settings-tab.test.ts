@@ -214,6 +214,7 @@ describe("the rows", () => {
       ["", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       ["", "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
       ["", "(block)", "render"],
+      ["", "Classic pencil smoothing (advanced)", "toggle:classicSmoothing"],
       ["", "Paper width", "render"],
       ["", "(block)", "render"],
       ["", "Default folder for new notebooks", "render"],
@@ -276,6 +277,13 @@ describe("the rows", () => {
         "Apple Pencil",
         "fountain pen",
         "brush pen",
+      ],
+      "Classic pencil smoothing (advanced)": [
+        "smoothing",
+        "smooth",
+        "wobbly",
+        "Apple Pencil",
+        "handwriting",
       ],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
@@ -356,7 +364,7 @@ describe("which rows show", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens (advanced)";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Paper width");
+    expect(off[off.indexOf(toggle) + 1]).toBe("Classic pencil smoothing (advanced)");
     expect(on[on.indexOf(toggle) + 1]).toBe("(block 6)");
   });
 
@@ -368,6 +376,7 @@ describe("which rows show", () => {
       "Return to pen after one use",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
+      "Classic pencil smoothing (advanced)",
       "Paper width",
       "Default folder for new notebooks",
       "Show New notebook in right-click menu",
@@ -382,9 +391,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 28)",
+      "(block 29)",
       "Input debug overlay",
-      "(block 32)",
+      "(block 33)",
     ]);
   });
 

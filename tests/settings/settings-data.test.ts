@@ -69,6 +69,7 @@ const FRESH_INSTALL = {
   shapeColor: "#000000",
   recentColors: [],
   pressureWidth: false,
+  classicSmoothing: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   showNewNotebookInContextMenu: true,
@@ -126,6 +127,7 @@ const USED_VAULT = {
   shapeColor: "#0066ff",
   recentColors: ["#123456", "#abcdef"],
   pressureWidth: true,
+  classicSmoothing: true,
   experimentalFutureFlag: 7,
 };
 

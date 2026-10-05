@@ -1001,6 +1001,7 @@ export class InkView extends TextFileView {
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
+        classicSmoothing: () => this.settings.classicSmoothing === true,
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
