@@ -18,6 +18,21 @@ export const MIN_SCALE = 0.1;
 /** The closest a pinch can zoom in, relative to fit-to-width. */
 export const MAX_SCALE = 8;
 
+/** A coarse mouse-wheel event changes zoom by at most 15%, in either direction. */
+const WHEEL_ZOOM_LOG_STEP = Math.log(1.15);
+
+/**
+ * Wheel zoom from a delta already converted to CSS px. A detented wheel can
+ * report 120 px in one event: the trackpad's exponential response would
+ * multiply zoom by 3.32. Bound that jump without changing small trackpad
+ * deltas. Opposite deltas are reciprocal, so reversing a step undoes it.
+ */
+export function wheelZoomFactor(deltaPx: number): number {
+  if (!Number.isFinite(deltaPx)) return 1;
+  const exponent = Math.max(-WHEEL_ZOOM_LOG_STEP, Math.min(WHEEL_ZOOM_LOG_STEP, -deltaPx * 0.01));
+  return Math.exp(exponent);
+}
+
 /**
  * The user zoom at which a page `pageHeight` layout px tall, shown at
  * `baseScale` CSS px per layout px, fits in a pane `paneHeight` CSS px tall

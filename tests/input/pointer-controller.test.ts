@@ -507,6 +507,27 @@ describe("fingers", () => {
     ]);
   });
 
+  it("keeps large touch pinch steps proportional, independent of the wheel zoom cap", () => {
+    const rig = new Rig();
+    rig.finger("pointerdown", 10, 0, 0, 1);
+    rig.finger("pointerdown", 11, 120, 0, 2);
+    rig.take();
+    // The same 120 px distance as a coarse wheel delta is a finger spread,
+    // not a wheel event: doubling it must still produce a full 2x pinch.
+    rig.finger("pointermove", 11, 240, 0, 3);
+    rig.finger("pointermove", 11, 120, 0, 4);
+    rig.finger("pointerup", 11, 120, 0, 5);
+    expect(rig.take()).toEqual([
+      "pinch x2 at 120,0",
+      "panMove 120,0 t=3",
+      "pinch x0.5 at 60,0",
+      "panMove 60,0 t=4",
+      "pinchEnd",
+      "panStart 0,0 t=5",
+    ]);
+    expect(rig.captured).toEqual([10]);
+  });
+
   it("the pair lifting in the other order pans from the finger that stays", () => {
     const rig = new Rig();
     rig.finger("pointerdown", 10, 0, 0, 1);
