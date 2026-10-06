@@ -1,0 +1,29 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1080" height="1080"><rect width="1024" height="1024" fill="#1d1c24"/><g transform="translate(512 512) scale(1.0) translate(-625 -625)"><!-- Notebook: page, purple back cover, ruled lines, ink -->
+  <g transform="translate(632 610) rotate(-11)">
+    <rect x="-262" y="-246" width="432" height="548" rx="58" fill="#8d80e6"/>
+    <rect x="-216" y="-274" width="432" height="548" rx="58" fill="#2b2939" stroke="#e4e0f5" stroke-width="40"/>
+    <g stroke="#b3a7f7" stroke-width="30" stroke-linecap="round" fill="none">
+      <line x1="-150" y1="-190" x2="112" y2="-190"/>
+      <line x1="-150" y1="-122" x2="96" y2="-122"/>
+      <line x1="-150" y1="-54" x2="52" y2="-54"/>
+    </g>
+    <path d="M-150 196 C-112 160 -52 136 -48 160 C-44 182 -96 206 -60 206 C-20 206 16 180 41 146"
+          stroke="#5cc8ff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+
+  <!-- Pencil: tip at the end of the ink stroke, body pointing up and right -->
+  <g transform="translate(700 745) rotate(-56.8)">
+    <!-- body -->
+    <path d="M58 -30 H468 A30 30 0 0 1 468 30 H58 Z" fill="#f6f5fb"/>
+    <!-- shaded side -->
+    <path d="M58 6 H498 A30 30 0 0 1 468 30 H58 Z" fill="#cfcae6"/>
+    <!-- cone -->
+    <path d="M0 0 L58 -30 V30 Z" fill="#f6f5fb"/>
+    <path d="M0 0 L58 6 V30 Z" fill="#cfcae6"/>
+    <!-- graphite tip -->
+    <path d="M0 0 L26 -13.5 V13.5 Z" fill="#9b93c9"/>
+    <!-- band -->
+    <rect x="418" y="-30" width="20" height="60" fill="#7d73b5"/>
+  </g>
+</g></svg>
+
