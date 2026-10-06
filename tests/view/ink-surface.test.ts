@@ -286,6 +286,7 @@ function press(
     previousPage: record("previousPage"),
     scrollStep: record("scrollStep"),
     setTool: record("setTool"),
+    setHand: record("setHand"),
   });
   let prevented = false;
   const event = {
@@ -365,9 +366,34 @@ describe("handleKeyDown", () => {
   });
 
   it("passes keys it has no use for", () => {
-    for (const key of ["x", "Tab", "Enter", " ", "1", "ArrowLeft", "Escape", "Delete"]) {
+    for (const key of ["x", "Tab", "Enter", "1", "ArrowLeft", "Escape", "Delete"]) {
       expect(press(key)).toEqual(PASSED);
     }
+  });
+
+  it("holds the hand with space, except on a button or in a text box (FineNotes#7)", () => {
+    expect(press(" ")).toEqual({ ...TAKEN, calls: ["setHand(true)"] });
+    expect(press(" ", {}, { editingText: true })).toEqual(PASSED);
+    const button = { closest: (selector: string) => (selector.includes("button") ? {} : null) };
+    expect(press(" ", {}, {}, button)).toEqual(PASSED);
+  });
+
+  it("lets go of the hand when space comes up, and only then", () => {
+    const classes = new Set<string>();
+    const scrollEl = {
+      toggleClass: (name: string, on: boolean) => (on ? classes.add(name) : classes.delete(name)),
+      addClass: (name: string) => classes.add(name),
+      removeClass: (name: string) => classes.delete(name),
+    };
+    const surface = surfaceWith({ handHeld: false, scrollEl });
+    run(surface, "setHand", true);
+    expect(classes.has("is-hand")).toBe(true);
+    run(surface, "handleKeyUp", { key: "x" });
+    expect(surface.handHeld).toBe(true);
+    classes.add("is-hand-dragging");
+    run(surface, "handleKeyUp", { key: " " });
+    expect(surface.handHeld).toBe(false);
+    expect([...classes]).toEqual([]);
   });
 
   it("in crop mode: Enter keeps the crop, Escape drops it, Delete does nothing", () => {

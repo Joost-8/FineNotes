@@ -1145,6 +1145,10 @@ export class InkView extends TextFileView {
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.
+    // Space lets go of the hand wherever the key-up lands, and when the
+    // window loses focus, which keeps the key-up from arriving at all.
+    this.registerDomEvent(document, "keyup", (e) => this.surface?.handleKeyUp(e));
+    this.registerDomEvent(window, "blur", () => this.surface?.setHand(false));
     this.registerDomEvent(document, "paste", (e) => {
       if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
       this.surface?.handlePaste(e);

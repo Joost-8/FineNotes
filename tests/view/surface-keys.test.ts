@@ -144,6 +144,18 @@ describe("keyOutcome", () => {
   });
 });
 
+describe("space: the hand (FineNotes#7)", () => {
+  it("holds the hand with a bare space", () => {
+    expect(keyOutcome(chord(" "), scene())).toEqual(loud("hand"));
+  });
+
+  it("leaves space to a text box being edited, and to chords", () => {
+    expect(keyOutcome(chord(" "), scene({ editingText: true }))).toBeNull();
+    expect(keyOutcome(chord(" ", { ctrlKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord(" ", { altKey: true }), scene())).toBeNull();
+  });
+});
+
 describe("desktop modifier compatibility", () => {
   it.each(["Linux", "Windows", "macOS"])(
     "resolves history and clipboard shortcuts on %s",

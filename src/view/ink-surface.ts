@@ -45,8 +45,10 @@ import {
   HOLD_RADIUS,
   MIN_SAMPLE_DISTANCE,
   PALETTE,
+  SIZES,
   SNAP_CLOSE_TOLERANCE,
 } from "../constants";
+import { chosenWidth } from "../model/pen-widths";
 import {
   type BackdropPainter,
   type ImagePainter,
@@ -766,6 +768,8 @@ export class InkSurface {
   private detailRestTimer = 0;
   /** A finger is dragging the page (touchmove must then not reach Obsidian). */
   private touchPanning = false;
+  /** Space is held: pen and mouse pan (FineNotes#7). */
+  private handHeld = false;
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
   private palmUndo: {
     t: number;
@@ -1249,6 +1253,7 @@ export class InkSurface {
       this.scrollEl,
       (clientX, clientY) => this.toLayout(clientX, clientY),
       this.pointerCallbacks,
+      () => this.handHeld,
     );
     input.attach();
     this.pointerInput = input;
@@ -1813,6 +1818,8 @@ export class InkSurface {
    */
   handleKeyDown(event: KeyboardEvent): boolean {
     if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
+    // Space on a focused toolbar button presses the button.
+    if (event.key === " " && isButtonLike(event.target)) return false;
     const outcome = keyOutcome(event, {
       cropping: this.cropping !== null,
       editingText: () => this.editingTextView() !== null,
@@ -1829,6 +1836,23 @@ export class InkSurface {
     return true;
   }
 
+  /** A key let go anywhere: space ends the hand (FineNotes#7). */
+  handleKeyUp(event: KeyboardEvent): void {
+    if (event.key === " ") this.setHand(false);
+  }
+
+  /**
+   * Space held or let go. While held, a pen or mouse coming down on the page
+   * moves it instead of drawing; the window losing focus lets go too, since
+   * the key-up then goes elsewhere.
+   */
+  setHand(held: boolean): void {
+    if (this.handHeld === held) return;
+    this.handHeld = held;
+    this.scrollEl.toggleClass("is-hand", held);
+    if (!held) this.scrollEl.removeClass("is-hand-dragging");
+  }
+
   private runKeyAction(action: KeyAction): void {
     if (typeof action === "object") {
       const tool = selectedTool(
@@ -1842,6 +1866,8 @@ export class InkSurface {
       return;
     }
     switch (action) {
+      case "hand":
+        return this.setHand(true);
       case "undo":
         return this.undo();
       case "redo":
@@ -3025,7 +3051,11 @@ export class InkSurface {
     // A shape is drawn at the chosen width: a highlighter or brush nib would
     // make an outline four times too fat.
     if (this.toolState.tool === "shape") return Math.max(0.5, this.toolState.size);
-    return Math.max(0.5, this.toolState.size * penTypeFor(this.toolState).sizeScale);
+    const spec = penTypeFor(this.toolState);
+    // Pen and highlighter share one width, and only the pens go below the
+    // thinnest preset (FineNotes#7).
+    const floor = spec.tool === "highlighter" ? Math.min(...SIZES) : 0;
+    return Math.max(0.5, chosenWidth(this.toolState.size, floor) * spec.sizeScale);
   }
 
   /**
@@ -3114,8 +3144,10 @@ export class InkSurface {
       // Only the first finger can be a tap; a re-anchor keeps what it had. A
       // touch that stops a fling is only that, as on iOS. With the lasso, a
       // finger held still is a tap-and-hold, as the Pencil's is.
+      // A pan with space held is never a tap (FineNotes#7).
+      if (this.handHeld) this.scrollEl.addClass("is-hand-dragging");
       if (!this.touchPanning) {
-        this.fingerTap = this.scroller.isAnimating ? null : { x, y, t };
+        this.fingerTap = this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
         if (this.fingerTap && this.toolState.tool === "select" && !this.lasso) {
           this.startPress(() => this.fingerHeld(x, y));
         }
@@ -3152,6 +3184,7 @@ export class InkSurface {
         pullAddProgress(this.pullOverscroll()) >= 1;
       this.touchPanning = false;
       this.palmUndo = null;
+      this.scrollEl.removeClass("is-hand-dragging");
       this.pullAdd.hide();
       this.scroller.dragEnd(t);
       if (pulled) {
@@ -6485,6 +6518,13 @@ function onSelectionMenu(target: EventTarget | null): boolean {
 }
 
 /** Whether an event's target takes typing of its own: a field, or anything editable. */
+/** A control space presses (a toolbar or menu button). */
+function isButtonLike(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== "function") return false;
+  return el.closest("button, [role='button'], a[href]") !== null;
+}
+
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== "string") return false;

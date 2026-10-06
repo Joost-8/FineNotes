@@ -1263,6 +1263,21 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   transition: none;
 }
 
+/* Space held: the pen and the mouse move the page (FineNotes#7). */
+.goodobsidian-scroll.is-hand,
+.goodobsidian-scroll.is-hand * {
+  cursor: grab;
+}
+
+.goodobsidian-scroll.is-hand-dragging,
+.goodobsidian-scroll.is-hand-dragging * {
+  cursor: grabbing;
+}
+
+.goodobsidian-scroll.is-hand .goodobsidian-eraser-cursor {
+  display: none;
+}
+
 /* On a tablet the thumbs are a readout, not a control: a palm rests on the
    edge of the page and the Pencil starts strokes there, and both belong to
    the page (palm rejection, the stylus touch guards). */
