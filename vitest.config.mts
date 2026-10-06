@@ -21,6 +21,7 @@ export default defineConfig({
         "src/ink/scribble.ts",
         "src/ink/pen-gestures.ts",
         "src/canvas/backdrop.ts",
+        "src/canvas/cover-patterns.ts",
         "src/canvas/page-layout.ts",
         "src/canvas/hit-test.ts",
         "src/canvas/spatial-index.ts",

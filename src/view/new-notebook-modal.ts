@@ -4,7 +4,7 @@
  *   [Cancel]        New notebook        [Create]    (sticky: never scrolls away)
  *   Title ______________________________            (focused on open)
  *   ( Notebook | Single page )
- *   Cover   No cover · Plain · Label · Spine · Linen, then eight colours
+ *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
  *   Folder  Lectures/Analysis  ›
  *           Create a folder for it (Images, Recordings)   [ toggle ]

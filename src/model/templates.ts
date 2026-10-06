@@ -49,17 +49,40 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
       { ruling: "legal", name: "Legal" },
       { ruling: "single-column", name: "Single Column" },
       { ruling: "single-column-mix", name: "Single Column Mix" },
+      { ruling: "two-column", name: "Two Column" },
       { ruling: "three-column", name: "Three Column" },
+      { ruling: "margin-left", name: "Wide Margin Left" },
+      { ruling: "margin-right", name: "Wide Margin Right" },
       { ruling: "title-date", name: "Title & Date" },
+    ],
+  },
+  {
+    title: "Grids",
+    templates: [
+      { ruling: "graph", name: "Graph Paper" },
+      { ruling: "isometric", name: "Isometric Grid" },
+      { ruling: "isometric-dots", name: "Isometric Dots" },
+      { ruling: "hexagon", name: "Hexagon Grid" },
     ],
   },
   {
     title: "Planner",
     templates: [
       { ruling: "todos", name: "Todos" },
+      { ruling: "daily-planner", name: "Daily Planner" },
       { ruling: "weekly-planner", name: "Weekly Planner" },
+      { ruling: "weekly-grid", name: "Weekly Grid" },
       { ruling: "monthly-planner", name: "Monthly Planner" },
+      { ruling: "habit-tracker", name: "Habit Tracker" },
+      { ruling: "meeting-notes", name: "Meeting Notes" },
       { ruling: "accounting", name: "Accounting" },
+    ],
+  },
+  {
+    title: "Study & creative",
+    templates: [
+      { ruling: "handwriting", name: "Handwriting Practice" },
+      { ruling: "storyboard", name: "Storyboard" },
     ],
   },
   {
@@ -67,17 +90,48 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
     templates: [
       { ruling: "music", name: "Music Paper" },
       { ruling: "guitar-tab", name: "Guitar Tablature" },
+      { ruling: "music-tab", name: "Score & Tab" },
     ],
   },
 ];
 
-/** Cover designs. Covers are pages but not paper, so the paper picker never offers them. */
-export const COVER_TEMPLATES: readonly TemplateEntry[] = [
-  { ruling: "cover-plain", name: "Plain cover" },
-  { ruling: "cover-label", name: "Label cover" },
-  { ruling: "cover-band", name: "Spine cover" },
-  { ruling: "cover-linen", name: "Linen cover" },
+/**
+ * Cover designs, in the cover picker's groups. Covers are pages but not
+ * paper, so the paper picker never offers them. "Classic" covers carry the
+ * title on the cloth (or the label); every "Patterns" cover sets it on a
+ * plate, since no title reads on a pattern.
+ */
+export const COVER_SECTIONS: readonly TemplateSection[] = [
+  {
+    title: "Classic",
+    templates: [
+      { ruling: "cover-plain", name: "Plain cover" },
+      { ruling: "cover-label", name: "Label cover" },
+      { ruling: "cover-band", name: "Spine cover" },
+      { ruling: "cover-linen", name: "Linen cover" },
+      { ruling: "cover-strap", name: "Strap cover" },
+      { ruling: "cover-bound", name: "Bound cover" },
+      { ruling: "cover-frame", name: "Frame cover" },
+      { ruling: "cover-fade", name: "Fade cover" },
+    ],
+  },
+  {
+    title: "Patterns",
+    templates: [
+      { ruling: "cover-polka", name: "Polka cover" },
+      { ruling: "cover-stripes", name: "Stripes cover" },
+      { ruling: "cover-graph", name: "Graph cover" },
+      { ruling: "cover-waves", name: "Waves cover" },
+      { ruling: "cover-chevron", name: "Chevron cover" },
+      { ruling: "cover-mosaic", name: "Mosaic cover" },
+      { ruling: "cover-terrazzo", name: "Terrazzo cover" },
+      { ruling: "cover-composition", name: "Composition cover" },
+    ],
+  },
 ];
+
+/** Every cover design, in picker order. */
+export const COVER_TEMPLATES: readonly TemplateEntry[] = COVER_SECTIONS.flatMap((s) => s.templates);
 
 export interface CoverColor {
   id: string;
@@ -88,8 +142,9 @@ export interface CoverColor {
 
 /**
  * The cover colours the "New notebook" dialog and "Change cover" offer, each
- * with every design. Four deep and four light, so the derived title ink is
- * exercised both ways (see `coverPalette` in `cover.ts`).
+ * with every design. Deep and light in equal numbers, so the derived title
+ * ink is exercised both ways (see `coverPalette` in `cover.ts`). Ids are
+ * stored in settings: never rename one, only add.
  */
 export const COVER_COLORS: readonly CoverColor[] = [
   { id: "navy", label: "Navy", color: "#1f3a5f" },
@@ -100,6 +155,14 @@ export const COVER_COLORS: readonly CoverColor[] = [
   { id: "mustard", label: "Mustard", color: "#d9a93a" },
   { id: "sage", label: "Sage", color: "#9db59a" },
   { id: "sky", label: "Sky", color: "#8fb8de" },
+  { id: "ink", label: "Ink", color: "#1d1e22" },
+  { id: "plum", label: "Plum", color: "#5a3a5f" },
+  { id: "teal", label: "Teal", color: "#236b70" },
+  { id: "olive", label: "Olive", color: "#6b6a32" },
+  { id: "kraft", label: "Kraft", color: "#b59a74" },
+  { id: "blush", label: "Blush", color: "#e7b6ae" },
+  { id: "lavender", label: "Lavender", color: "#b8aad8" },
+  { id: "ivory", label: "Ivory", color: "#ece6d6" },
 ];
 
 /** The backdrop of a cover in one of {@link COVER_COLORS}. An unknown id gets the first colour. */

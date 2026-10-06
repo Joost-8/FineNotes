@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   TITLE_MIN_CONTRAST,
   contrastRatio,
+  coverHasPlate,
   coverLayout,
   coverPalette,
   coverTitleBox,
@@ -103,11 +104,13 @@ describe("coverPalette", () => {
     }
   });
 
-  it("makes the label lighter and the band darker than the cloth", () => {
+  it("makes the label lighter and the band darker than the cloth (lighter on near-black)", () => {
     for (const { id, color } of COVER_COLORS) {
       const p = coverPalette(color);
-      expect(relativeLuminance(p.label), id).toBeGreaterThan(relativeLuminance(p.base));
-      expect(relativeLuminance(p.band), id).toBeLessThan(relativeLuminance(p.base));
+      const base = relativeLuminance(p.base);
+      expect(relativeLuminance(p.label), id).toBeGreaterThan(base);
+      if (base < 0.02) expect(relativeLuminance(p.band), id).toBeGreaterThan(base);
+      else expect(relativeLuminance(p.band), id).toBeLessThan(base);
     }
   });
 
@@ -162,13 +165,27 @@ describe("coverLayout", () => {
     }
   });
 
-  it("only the band design has a band, only the label design a plate", () => {
-    expect(coverLayout("cover-band", A4).band).toBeGreaterThan(0);
-    expect(coverLayout("cover-label", A4).plate).not.toBeNull();
-    for (const kind of ["cover-plain", "cover-linen"] as const) {
-      expect(coverLayout(kind, A4).band).toBe(0);
-      expect(coverLayout(kind, A4).plate).toBeNull();
+  it("gives a band only to spine designs, and a plate only to the label and the patterns", () => {
+    const banded = ["cover-band", "cover-bound", "cover-composition"];
+    for (const kind of COVER_RULINGS) {
+      const layout = coverLayout(kind, A4);
+      expect(layout.band > 0, kind).toBe(banded.includes(kind));
+      expect(layout.plate !== null, kind).toBe(coverHasPlate(kind));
+      expect(layout.strap !== null, kind).toBe(kind === "cover-strap");
     }
+    for (const kind of ["cover-plain", "cover-linen", "cover-frame", "cover-fade"] as const) {
+      expect(coverHasPlate(kind)).toBe(false);
+    }
+  });
+
+  it("centres a plate in the cloth right of a spine band", () => {
+    const { band, plate } = coverLayout("cover-composition", A4);
+    expect(plate).not.toBeNull();
+    if (!plate) return;
+    expect(plate.x - band).toBeCloseTo(1024 - (plate.x + plate.w));
+    // Without a band the plate keeps the label design's place: 60% wide, centred.
+    const label = coverLayout("cover-label", A4).plate;
+    expect(label?.w).toBeCloseTo(1024 * 0.6);
   });
 
   it("puts the title at the same height on every design, so a change never makes it jump", () => {
@@ -214,10 +231,12 @@ describe("the cover title", () => {
     );
   });
 
-  it("uses the plate's ink on the label design and the cloth's elsewhere", () => {
+  it("uses the plate's ink on a plated design and the cloth's elsewhere", () => {
     const p = coverPalette("#d9a93a");
     expect(coverTitleColor({ kind: "cover-label", paperColor: "#d9a93a" })).toBe(p.labelTitle);
+    expect(coverTitleColor({ kind: "cover-polka", paperColor: "#d9a93a" })).toBe(p.labelTitle);
     expect(coverTitleColor({ kind: "cover-linen", paperColor: "#d9a93a" })).toBe(p.title);
+    expect(coverTitleColor({ kind: "cover-fade", paperColor: "#d9a93a" })).toBe(p.title);
   });
 
   it("frames the same font size identically wherever the title line is", () => {

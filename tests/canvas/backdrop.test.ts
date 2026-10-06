@@ -34,7 +34,7 @@ import {
   segments,
   verticalXs,
 } from "./fake-canvas";
-import { COVER_RULINGS } from "../../src/model/document";
+import { COVER_RULINGS, isCoverRuling } from "../../src/model/document";
 import { coverLayout, coverPalette } from "../../src/model/cover";
 import { COVER_COLORS } from "../../src/model/templates";
 
@@ -137,10 +137,10 @@ describe("resolveSpacing", () => {
   });
 });
 
-describe("the ruling table covers the seventeen papers, four covers and two aliases", () => {
+describe("the ruling table covers the thirty-one papers, sixteen covers and two aliases", () => {
   it("has an entry for every Ruling the model allows", () => {
     expect(Object.keys(RULINGS).sort()).toEqual([...MODEL_RULINGS].sort());
-    expect(MODEL_RULINGS).toHaveLength(23);
+    expect(MODEL_RULINGS).toHaveLength(49);
   });
 
   it("the aliases draw the same thing as what they alias", () => {
@@ -246,7 +246,8 @@ describe("each ruling draws what contracts/api.md §1 specifies", () => {
   });
 
   it("never draws a rule at y=0 or past the bottom edge", () => {
-    for (const kind of MODEL_RULINGS) {
+    // Paper only: a cover's shapes may meet the page edge (a corner, a stripe).
+    for (const kind of MODEL_RULINGS.filter((k) => !isCoverRuling(k))) {
       const ctx = draw({ kind }, { width: 300, height: 300 });
       for (const y of horizontalYs(ctx.ops)) {
         expect(y, kind).toBeGreaterThan(0);
@@ -560,7 +561,10 @@ describe("covers", () => {
         ).toBe(false);
         // Nothing is stroked in the paper theme's rule colour.
         expect(strokes(ctx.ops), kind).not.toContain(LIGHT_PAPER.rule);
-        if (kind !== "cover-linen") expect(fullWidthRules(ctx.ops, 1024), kind).toEqual([]);
+        // Only the woven and squared textures run threads edge to edge.
+        if (kind !== "cover-linen" && kind !== "cover-graph") {
+          expect(fullWidthRules(ctx.ops, 1024), kind).toEqual([]);
+        }
         expect(ctx.depth, kind).toBe(0);
       }
     }

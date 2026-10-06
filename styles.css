@@ -2107,6 +2107,19 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 10px;
 }
 
+.goodobsidian-coverpicker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goodobsidian-coverpicker-heading {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  padding: 0 2px;
+}
+
 .goodobsidian-coverpicker-designs {
   display: flex;
   gap: 8px;
@@ -2176,11 +2189,8 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
 }
 
 /* "Change cover", hung from a cover thumbnail's "…" button. */
-.goodobsidian-coverpopover .goodobsidian-coverpicker-designs {
-  justify-content: space-between;
-}
-
 .goodobsidian-coverpopover .goodobsidian-template-card {
+  flex: none;
   width: 72px;
 }
 
@@ -2192,10 +2202,12 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--interactive-accent);
 }
 
+/* Eight 44 px swatches a row: the popover is sized for exactly that. */
 .goodobsidian-coverpopover .goodobsidian-coverpicker-colors {
   display: grid;
-  grid-template-columns: repeat(4, var(--gob-touch));
+  grid-template-columns: repeat(8, var(--gob-touch));
   justify-content: space-between;
+  gap: 0;
 }
 
 /* ------------------------------------------------------ text tool (0.5) */

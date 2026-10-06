@@ -2,7 +2,7 @@
  * Choosing a notebook cover: a design (or none) and a colour, each design
  * previewed with the real painter in the chosen colour.
  *
- * - {@link CoverPicker} — the design row and colour row, shared by the "New
+ * - {@link CoverPicker} — the design rows (classic, patterns) and the colours, shared by the "New
  *   notebook" dialog and the popover below.
  * - {@link CoverPopover} — a cover page's "Change cover", hung from its
  *   thumbnail's "…" button. Every tap applies at once, so the page itself is
@@ -19,7 +19,7 @@ import {
   isCoverRuling,
 } from "../model/document";
 import type { CoverChoice } from "../model/new-notebook";
-import { COVER_COLORS, COVER_TEMPLATES } from "../model/templates";
+import { COVER_COLORS, COVER_SECTIONS } from "../model/templates";
 import { installPopoverDismiss, paintTemplatePreview, placePopover } from "./template-picker";
 
 export interface CoverPickerOptions {
@@ -60,37 +60,41 @@ export class CoverPicker {
     this.geometry = options.geometry;
     this.el = parent.createDiv({ cls: "goodobsidian-coverpicker" });
 
-    const row = this.el.createDiv({ cls: "goodobsidian-coverpicker-designs" });
     const large = options.allowNone ? " is-large" : "";
-    if (options.allowNone) {
-      // Every button here carries `clickable-icon` (CLAUDE.md: Obsidian pads
-      // plain buttons 20 px on iPad, and fills them).
-      const root = row.createEl("button", {
-        cls: `goodobsidian-template-card${large} clickable-icon`,
-      });
-      const preview = root.createDiv({
-        cls: "goodobsidian-template-preview goodobsidian-cover-none",
-      });
-      setIcon(preview, "ban");
-      root.createDiv({ cls: "goodobsidian-template-name", text: "No cover" });
-      root.setAttribute("aria-label", "No cover");
-      root.addEventListener("click", () => this.pick("none", this.paperColor));
-      this.designs.set("none", { root, canvas: null, preview });
-    }
-    for (const template of COVER_TEMPLATES) {
-      const design = template.ruling as CoverRuling;
-      const root = row.createEl("button", {
-        cls: `goodobsidian-template-card${large} clickable-icon`,
-      });
-      const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
-      root.createDiv({
-        cls: "goodobsidian-template-name",
-        text: template.name.replace(/ cover$/, ""),
-      });
-      root.setAttribute("aria-label", template.name);
-      root.addEventListener("click", () => this.pick(design, this.paperColor));
-      this.designs.set(design, { root, canvas, preview: canvas });
-    }
+    COVER_SECTIONS.forEach((section, index) => {
+      const group = this.el.createDiv({ cls: "goodobsidian-coverpicker-group" });
+      group.createDiv({ cls: "goodobsidian-coverpicker-heading", text: section.title });
+      const row = group.createDiv({ cls: "goodobsidian-coverpicker-designs" });
+      if (index === 0 && options.allowNone) {
+        // Every button here carries `clickable-icon` (CLAUDE.md: Obsidian pads
+        // plain buttons 20 px on iPad, and fills them).
+        const root = row.createEl("button", {
+          cls: `goodobsidian-template-card${large} clickable-icon`,
+        });
+        const preview = root.createDiv({
+          cls: "goodobsidian-template-preview goodobsidian-cover-none",
+        });
+        setIcon(preview, "ban");
+        root.createDiv({ cls: "goodobsidian-template-name", text: "No cover" });
+        root.setAttribute("aria-label", "No cover");
+        root.addEventListener("click", () => this.pick("none", this.paperColor));
+        this.designs.set("none", { root, canvas: null, preview });
+      }
+      for (const template of section.templates) {
+        const design = template.ruling as CoverRuling;
+        const root = row.createEl("button", {
+          cls: `goodobsidian-template-card${large} clickable-icon`,
+        });
+        const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
+        root.createDiv({
+          cls: "goodobsidian-template-name",
+          text: template.name.replace(/ cover$/, ""),
+        });
+        root.setAttribute("aria-label", template.name);
+        root.addEventListener("click", () => this.pick(design, this.paperColor));
+        this.designs.set(design, { root, canvas, preview: canvas });
+      }
+    });
 
     this.colorRow = this.el.createDiv({ cls: "goodobsidian-coverpicker-colors" });
     this.colorRow.setAttribute("role", "group");
@@ -172,7 +176,8 @@ export interface CoverPopoverOptions {
   onPick: (backdrop: SyntheticBackdrop) => void;
 }
 
-const POPOVER_WIDTH = 360;
+/** Eight 44 px colour swatches a row, plus the popover's padding. */
+const POPOVER_WIDTH = 392;
 const PREVIEW_WIDTH = 56;
 
 export class CoverPopover {

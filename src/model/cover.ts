@@ -5,7 +5,7 @@
  *
  * A cover stores nothing but its design (the ruling) and `paperColor`. Every
  * other colour on it — the label plate, the spine band, the stitching, the
- * linen threads, the vignette and the title ink — is derived here, so a cover
+ * linen threads, the patterns, the vignette and the title ink — is derived here, so a cover
  * can never carry a label that has drifted out of step with its cloth, and
  * the painter (`src/canvas/backdrop.ts`) and the notebook builder agree on
  * one layout. Pure: no DOM, no Obsidian.
@@ -160,6 +160,14 @@ export interface CoverPalette {
   title: string;
   /** Title ink on the label plate. */
   labelTitle: string;
+  /** A pattern's figure: clearly off the cloth, lighter on dark cloth, darker on light. */
+  motif: string;
+  /** A pattern's second, quieter figure. */
+  motifSoft: string;
+  /** Composition flecks: near white on dark cloth, deep on light. */
+  fleck: string;
+  /** A tooled line (the frame design's border): well off the cloth either way. */
+  trim: string;
 }
 
 /** Below this luminance there is no darker to go: the band turns lighter. */
@@ -183,6 +191,10 @@ export function coverPalette(paperColor: string | undefined): CoverPalette {
     threadDark: darken(base, 0.12),
     title: readableOn(base),
     labelTitle: readableOn(label, base),
+    motif: dark ? lighten(base, 0.3) : darken(base, 0.22),
+    motifSoft: dark ? lighten(base, 0.15) : darken(base, 0.11),
+    fleck: dark ? lighten(base, 0.82) : darken(base, 0.62),
+    trim: dark ? lighten(base, 0.5) : darken(base, 0.42),
   };
 }
 
@@ -196,42 +208,81 @@ export interface CoverRect {
 }
 
 export interface CoverLayout {
-  /** Width of the spine band down the left edge (`cover-band`); 0 elsewhere. */
+  /** Width of the spine band down the left edge (spine, bound, composition); 0 elsewhere. */
   band: number;
-  /** The label plate (`cover-label`); `null` elsewhere. `r` is its corner radius. */
+  /** The label plate (label and every pattern); `null` elsewhere. `r` is its corner radius. */
   plate: (CoverRect & { r: number }) | null;
+  /** The strap's left edge and width (`cover-strap`); `null` elsewhere. */
+  strap: { x: number; w: number } | null;
   /** Where the title sits: its horizontal span and the vertical centre of its first line. */
   title: { x: number; w: number; cy: number };
 }
 
+/** Designs whose texture would swallow a title, so they set it on a plate. */
+const PLATED: ReadonlySet<CoverRuling> = new Set<CoverRuling>([
+  "cover-label",
+  "cover-polka",
+  "cover-stripes",
+  "cover-graph",
+  "cover-waves",
+  "cover-chevron",
+  "cover-mosaic",
+  "cover-terrazzo",
+  "cover-composition",
+]);
+
+/** Designs with a spine band down the left edge. */
+const BANDED: ReadonlySet<CoverRuling> = new Set<CoverRuling>([
+  "cover-band",
+  "cover-bound",
+  "cover-composition",
+]);
+
+/** Whether a design sets its title on a label plate rather than on the cloth. */
+export function coverHasPlate(kind: CoverRuling): boolean {
+  return PLATED.has(kind);
+}
+
 /**
- * Where a design puts its plate, band and title, in page px. Every size is a
- * fraction of the page, so a cover works at A6 and at A3, in either
- * orientation. The title sits at the same height on every design — the label
- * plate's centre — so changing the design never makes it jump.
+ * Where a design puts its plate, band, strap and title, in page px. Every
+ * size is a fraction of the page, so a cover works at A6 and at A3, in
+ * either orientation. The title sits at the same height on every design —
+ * the label plate's centre — so changing the design never makes it jump.
  */
 export function coverLayout(kind: CoverRuling, geometry: PageGeometry): CoverLayout {
   const { width, height } = geometry;
   const short = Math.min(width, height);
-  const plateW = width * 0.6;
+  const band = BANDED.has(kind) ? Math.round(short * 0.12) : 0;
+  const free = width - band;
+  const plateW = Math.min(width * 0.6, free * 0.7);
   const plateH = Math.min(short * 0.2, height * 0.22);
-  const plateX = (width - plateW) / 2;
+  const plateX = band + (free - plateW) / 2;
   const plateY = height * 0.2;
   const cy = plateY + plateH / 2;
-  if (kind === "cover-label") {
+  if (PLATED.has(kind)) {
     return {
-      band: 0,
+      band,
       plate: { x: plateX, y: plateY, w: plateW, h: plateH, r: plateH * 0.12 },
+      strap: null,
       title: { x: plateX + plateW * 0.06, w: plateW * 0.88, cy },
     };
   }
-  if (kind === "cover-band") {
-    const band = Math.round(short * 0.12);
-    const free = width - band;
-    const w = free * 0.72;
-    return { band, plate: null, title: { x: band + (free - w) / 2, w, cy } };
+  if (kind === "cover-strap") {
+    const w = Math.round(short * 0.06);
+    const x = Math.round(width * 0.82);
+    const left = width * 0.08;
+    return {
+      band,
+      plate: null,
+      strap: { x, w },
+      title: { x: left, w: x - width * 0.05 - left, cy },
+    };
   }
-  return { band: 0, plate: null, title: { x: width * 0.14, w: width * 0.72, cy } };
+  if (band > 0) {
+    const w = free * 0.72;
+    return { band, plate: null, strap: null, title: { x: band + (free - w) / 2, w, cy } };
+  }
+  return { band, plate: null, strap: null, title: { x: width * 0.14, w: width * 0.72, cy } };
 }
 
 // --- The title --------------------------------------------------------------
@@ -273,10 +324,11 @@ export function coverTitleFrame(
   };
 }
 
-/** The title ink a cover backdrop calls for: on the plate for `cover-label`, else on the cloth. */
+/** The title ink a cover backdrop calls for: on the plate where the design has one, else on the cloth. */
 export function coverTitleColor(backdrop: SyntheticBackdrop): string {
   const palette = coverPalette(backdrop.paperColor);
-  return backdrop.kind === "cover-label" ? palette.labelTitle : palette.title;
+  const plated = PLATED.has(backdrop.kind as CoverRuling);
+  return plated ? palette.labelTitle : palette.title;
 }
 
 /**
