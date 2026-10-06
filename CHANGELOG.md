@@ -6,6 +6,19 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **Finer pens.** The stroke width slider now goes down to 0.20 mm for
+  the pens and the Shape tool, in 0.05 mm steps below the thinnest preset.
+  The highlighter still starts at 0.41 mm. Very fine lines look grey on a
+  low-resolution screen until you zoom in.
+- **Hold space to move the page.** On a computer, or an iPad with a
+  keyboard: while you hold the spacebar, the pen and the mouse move the
+  page instead of writing. A stroke you are already drawing finishes first,
+  and space still types a space in a text box.
+
 ## [1.3.0] - 2026-10-06
 
 ### Added

@@ -121,6 +121,8 @@ class Rig {
   readonly records: PointerDebugRecord[] = [];
   readonly samples: PointerSample[] = [];
   readonly controller: PointerController;
+  /** Space held down (FineNotes#7). */
+  readonly hand = { held: false };
 
   constructor(only?: "required") {
     const log = this.log;
@@ -159,6 +161,7 @@ class Rig {
       this.el as unknown as HTMLElement,
       toSurface,
       callbacks,
+      () => this.hand.held,
     );
     this.controller.attach();
   }
@@ -706,5 +709,51 @@ describe("a listener without the optional callbacks", () => {
       "move [1001,2001 p=0.5 tilt=0,0]",
       "cancel",
     ]);
+  });
+});
+
+describe("space held: the hand (FineNotes#7)", () => {
+  it("a pen coming down pans like a finger, and draws nothing", () => {
+    const rig = new Rig();
+    rig.hand.held = true;
+    const down = rig.pen("pointerdown", 1, { x: 10, y: 20, t: 1 });
+    rig.pen("pointermove", 1, { x: 15, y: 60, t: 2 });
+    rig.pen("pointerup", 1, { x: 15, y: 60, t: 3 });
+    expect(rig.take()).toEqual(["panStart 10,20 t=1", "panMove 15,60 t=2", "panEnd t=3"]);
+    expect(down.prevented).toBe(true);
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("so does a mouse", () => {
+    const rig = new Rig();
+    rig.hand.held = true;
+    rig.fire("pointerdown", 1, "mouse", { x: 0, y: 0, t: 1 });
+    expect(rig.captured).toEqual([1]);
+    rig.fire("pointerup", 1, "mouse", { x: 0, y: 30, t: 2 });
+    expect(rig.take()).toEqual(["panStart 0,0 t=1", "panEnd t=2"]);
+  });
+
+  it("leaves a stroke already under way to finish", () => {
+    const rig = new Rig();
+    rig.pen("pointerdown", 1, { x: 10, y: 20 });
+    rig.hand.held = true;
+    rig.pen("pointermove", 1, { x: 12, y: 22 });
+    rig.pen("pointerup", 1, { x: 12, y: 22 });
+    expect(rig.take().filter((line) => !line.startsWith("debug"))).toEqual([
+      "start 1010,2020 p=0.5 tilt=0,0",
+      "move [1012,2022 p=0.5 tilt=0,0]",
+      "end 1012,2022 p=0.5 tilt=0,0",
+    ]);
+  });
+
+  it("draws again once space is let go", () => {
+    const rig = new Rig();
+    rig.hand.held = true;
+    rig.pen("pointerdown", 1, { x: 1, y: 1, t: 1 });
+    rig.pen("pointerup", 1, { x: 1, y: 1, t: 2 });
+    rig.hand.held = false;
+    rig.take();
+    rig.pen("pointerdown", 2, { x: 5, y: 5 });
+    expect(rig.take()).toContain("start 1005,2005 p=0.5 tilt=0,0");
   });
 });

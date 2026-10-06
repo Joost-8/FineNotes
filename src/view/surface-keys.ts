@@ -63,6 +63,7 @@ export type KeyAction =
   | "previous-page"
   | "scroll-down"
   | "scroll-up"
+  | "hand"
   | { tool: ActiveTool };
 
 export interface KeyOutcome {
@@ -127,6 +128,10 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
     if (scene.rowFitsPane()) return cancelling(down ? "next-page" : "previous-page");
     return cancelling(down ? "scroll-down" : "scroll-up");
   }
+
+  // Space held down: pen and mouse move the page instead of drawing
+  // (FineNotes#7). Not while typing, where it is a space.
+  if (bare && key === " " && !scene.editingText()) return cancelling("hand");
 
   const tool = bare ? TOOL_KEYS.get(key.toLowerCase()) : undefined;
   return tool ? passing({ tool }) : null;

@@ -90,6 +90,7 @@ import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
 import { DEFAULT_SHAPE_COLOR, contrastMark, pushRecentColor, sameColor } from "../model/colors";
 import { formatMm } from "../model/units";
+import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
 import {
   DEFAULT_TABLE_SIZE,
@@ -1547,15 +1548,22 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Stroke width" },
     });
-    range.min = String(Math.min(...this.widths));
-    range.max = String(Math.max(...this.widths));
-    range.step = "0.5";
+    // Stops, not widths: the pens' fine end steps in 0.05 mm, the rest in
+    // half px (FineNotes#7). The highlighter keeps the thinnest preset.
+    const highlighter =
+      this.state.tool !== "shape" && penTypeFor(this.state).tool === "highlighter";
+    const floor = highlighter ? Math.min(...this.widths) : 0;
+    const stops = widthStops(this.widths, !highlighter);
+    range.min = "0";
+    range.max = String(stops.length - 1);
+    range.step = "1";
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
     const presets = new Map<number, HTMLElement>();
     // The readout, the thumb and the presets always show the live width.
     const show = (): void => {
-      readout.setText(formatMm(this.state.size));
-      range.value = String(this.state.size);
+      const width = chosenWidth(this.state.size, floor);
+      readout.setText(formatMm(width));
+      range.value = String(nearestStop(stops, width));
       markChosen(presets, this.state.size);
     };
     const pick = (width: number): void => {
@@ -1576,7 +1584,7 @@ export class Toolbar {
       presets.set(width, preset);
     }
     // Live while dragging; the pill's widths follow once the thumb is let go.
-    range.addEventListener("input", () => pick(Number(range.value)));
+    range.addEventListener("input", () => pick(stops[Number(range.value)] ?? this.state.size));
     range.addEventListener("change", settle);
     reset.addEventListener("click", () => {
       pick(this.options.defaultSize ?? this.widths[Math.floor(this.widths.length / 2)]);

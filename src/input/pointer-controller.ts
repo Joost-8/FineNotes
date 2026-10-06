@@ -117,6 +117,8 @@ export class PointerController {
     private readonly element: HTMLElement,
     private readonly toLocal: (clientX: number, clientY: number) => { x: number; y: number },
     private readonly listener: PointerControllerCallbacks,
+    /** Space is held: a pen or mouse coming down pans like a finger (FineNotes#7). */
+    private readonly handHeld: () => boolean = () => false,
   ) {
     this.fingers = new FingerGesture(listener);
     this.handlers = {
@@ -153,7 +155,13 @@ export class PointerController {
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     const role = roleOf(event.pointerType, this.stroke !== null);
-    if (role === "draw") {
+    if (role === "draw" && this.stroke === null && this.handHeld()) {
+      // A stroke already under way is left to finish; only a new one pans.
+      event.preventDefault();
+      if (this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
+        this.element.setPointerCapture(pointerId);
+      }
+    } else if (role === "draw") {
       this.beginStroke(event);
     } else if (role === "finger" && this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
       // Capture, so a fast swipe that leaves the pane still scrolls it.
