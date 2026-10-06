@@ -149,6 +149,7 @@ function fakeApp(keychain = true): FakeApp & Record<string, unknown> {
   return {
     workspace,
     vault: {
+      on: (name: string) => ({ name }),
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
     },
@@ -374,6 +375,7 @@ describe("registration", () => {
         "copy-page-link",
         "copy-shape-diagnostics",
         "create-handwriting-note",
+        "create-notebook-from-pdf",
         "create-notebook-with-last-settings",
         "export-pdf",
         "fit-reset-view",

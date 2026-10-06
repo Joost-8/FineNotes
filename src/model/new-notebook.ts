@@ -18,6 +18,7 @@ import {
   SINGLE_PAGE_FILE_SUFFIX,
 } from "../constants";
 import { coverTitleBox } from "./cover";
+import { pdfPageGeometry } from "./scan-commands";
 import {
   type AttachmentFolders,
   type CoverRuling,
@@ -362,5 +363,35 @@ export function buildNewDocument(
     return doc;
   }
   doc.pages.push(page("p1", geometry, paper));
+  return doc;
+}
+
+/**
+ * A new notebook whose pages are a vault PDF's pages, in order (#14: "open a
+ * copy as notebook"). The PDF is only pointed at, never copied or changed;
+ * the ink lives in the notebook. The chosen size sets how wide a page is
+ * (as when importing into a notebook); cover and paper give way to the PDF.
+ * No pages (an empty PDF) leaves the ordinary new notebook.
+ */
+export function buildPdfNotebook(
+  choices: NotebookChoices,
+  title: string,
+  attachments: AttachmentFolders | undefined,
+  path: string,
+  sizes: ReadonlyArray<{ width: number; height: number }>,
+): InkDocument {
+  const doc = buildNewDocument({ ...choices, type: "notebook" }, title, attachments);
+  if (sizes.length === 0) return doc;
+  const base = sizeGeometry(choices.size, choices.landscape);
+  doc.pages = sizes.map((size, index) => ({
+    id: `p${index + 1}`,
+    kind: "ink",
+    geometry: pdfPageGeometry(base, size),
+    backdrop: { kind: "pdf", path, page: index },
+    strokes: [],
+    images: [],
+    textBoxes: [],
+  }));
+  doc.view.width = doc.pages[0].geometry.width;
   return doc;
 }
