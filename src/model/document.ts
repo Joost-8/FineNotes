@@ -299,6 +299,12 @@ export interface Page {
    * bookmarked pages only. Stored only as `true`; absent means not.
    */
   bookmarked?: true;
+  /**
+   * The page's line in the notebook's contents (the sidebar's Contents tab),
+   * which starts a section there. Trimmed, one line, at most
+   * `MAX_PAGE_TITLE_LENGTH`; absent means the page is not listed.
+   */
+  title?: string;
 }
 
 /** An audio recording made while the note was open (0.5). */

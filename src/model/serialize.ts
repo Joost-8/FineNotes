@@ -30,6 +30,7 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
+import { normalizePageTitle } from "./contents";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import {
   type AttachmentFolders,
@@ -140,6 +141,7 @@ interface StoredPage {
   backdrop: Backdrop;
   epoch?: number;
   bookmarked?: boolean;
+  title?: string;
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   strokes: StoredStroke[];
@@ -196,6 +198,7 @@ function storePage(page: Page): StoredPage {
     backdrop: page.backdrop,
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
+    title: normalizePageTitle(page.title),
     images: page.images,
     textBoxes: page.textBoxes,
     strokes: page.strokes.map(storeStroke),
@@ -275,6 +278,12 @@ export class DocumentEncoder {
 // --- Reading: small guards ------------------------------------------------------
 
 /** Anything with fields to read. Arrays pass too; their named fields are simply absent. */
+/** A page's contents title, spread into the page only when there is one. */
+function titleOf(raw: unknown): { title?: string } {
+  const title = normalizePageTitle(raw);
+  return title === undefined ? {} : { title };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -527,6 +536,7 @@ function normalizePage(raw: unknown, index: number, fallbackWidth: number): Page
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
+    ...titleOf(page.title),
   };
 }
 

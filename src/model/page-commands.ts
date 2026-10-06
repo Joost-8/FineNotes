@@ -380,6 +380,8 @@ export function duplicatePageAfter(
   copy.id = nextPageId(doc);
   // A bookmark marks that page, not its content: the copy starts without one.
   delete copy.bookmarked;
+  // Nor does its line in the contents: the original still starts that section.
+  delete copy.title;
   for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
   for (const image of copy.images) image.id = `i${++imageSeq}`;

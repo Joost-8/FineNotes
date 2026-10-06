@@ -102,6 +102,7 @@ import {
   insertIndexFor,
   pageFromTemplate,
 } from "../model/page-commands";
+import { SetPageTitle } from "../model/contents";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
@@ -117,6 +118,7 @@ import { exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
 import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { MorePanel } from "./more-panel";
+import { ContentsTitleModal } from "./contents-title-modal";
 import { sanitizeTextStyle } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
@@ -1538,6 +1540,19 @@ export class InkView extends TextFileView {
       case "bookmark":
         surface.applyCommand(new SetPageBookmark(page, page.bookmarked !== true));
         break;
+      case "contents":
+        // By identity: the page may move or go while the dialog is open.
+        new ContentsTitleModal(this.app, index, page.title, (title) => {
+          if (this.isProtected() || this.surface !== surface) return;
+          if (!surface.document.pages.includes(page)) return;
+          surface.applyCommand(new SetPageTitle(page, title));
+          this.requestSave();
+        }).open();
+        return;
+      case "contents-remove":
+        if (page.title === undefined) return;
+        surface.applyCommand(new SetPageTitle(page, null));
+        break;
       case "duplicate": {
         if (this.refuseSinglePage()) return;
         const copy = duplicatePageAfter(doc, index);
@@ -1618,6 +1633,7 @@ export class InkView extends TextFileView {
         index,
         total: doc.pages.length,
         bookmarked: page.bookmarked === true,
+        titled: page.title !== undefined,
         cover: page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind),
         single: this.isSinglePage,
         clearable: page.strokes.length > 0,
@@ -1625,6 +1641,7 @@ export class InkView extends TextFileView {
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
         toggleBookmark: (at) => act("bookmark", at),
+        editTitle: (at) => act("contents", at),
         copyLink: (at) => act("copy-link", at),
         duplicate: (at) => act("duplicate", at),
         // A cover opens its picker on ⋯ itself: the row it was chosen from is gone.

@@ -6,6 +6,7 @@
  *   More
  *   ┌ Page 3                      [thumb] ┐
  *   │ Bookmark page / Remove bookmark     │
+ *   │ Add to contents / Rename in contents│
  *   │ Copy link to page                   │
  *   │ Duplicate page                      │
  *   │ Change template (or cover)          │
@@ -31,6 +32,8 @@ export interface MorePanelPage {
   index: number;
   total: number;
   bookmarked: boolean;
+  /** Listed in the notebook's contents (it has a title). */
+  titled: boolean;
   /** A cover page changes cover, not template. */
   cover: boolean;
   /** A single page cannot be duplicated or deleted. */
@@ -43,6 +46,8 @@ export interface MorePanelActions {
   // Properties holding functions, not methods (CLAUDE.md: a callback is a value).
   paintThumbnail: (canvas: HTMLCanvasElement, index: number, cssWidth: number) => void;
   toggleBookmark: (index: number) => void;
+  /** Add the page to the contents, or rename its entry. */
+  editTitle: (index: number) => void;
   copyLink: (index: number) => void;
   duplicate: (index: number) => void;
   changeTemplate: (index: number, anchor: HTMLElement) => void;
@@ -110,6 +115,11 @@ export class MorePanel {
       text: page.bookmarked ? "Remove bookmark" : "Bookmark page",
       cls: page.bookmarked ? "is-bookmarked" : "",
       run: () => actions.toggleBookmark(page.index),
+    });
+    this.row(card, {
+      icon: page.titled ? "pencil" : "list-plus",
+      text: page.titled ? "Rename in contents" : "Add to contents",
+      run: () => actions.editTitle(page.index),
     });
     this.row(card, {
       icon: "link",
