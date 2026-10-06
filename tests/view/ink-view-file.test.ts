@@ -49,6 +49,12 @@ function fakePlugin(settings: Record<string, unknown> = {}) {
     runRecognition: vi.fn(() => Promise.resolve()),
     activeProvider: () => ({ id: "llm-byok", requiresNetwork: true }),
     maybeShowScribbleNotice: () => Promise.resolve(),
+    // Files moved while the note was closed (#14): `moves` is what the log knows.
+    moves: {} as Record<string, string>,
+    fileMoves: {
+      log: () => Object.entries(plugin.moves).map(([from, to]) => ({ from, to })),
+      relink: (path: string) => plugin.moves[path],
+    },
   };
 }
 
@@ -140,6 +146,40 @@ describe("a clean load", () => {
     const view = openView(null);
     view.setViewData("", true);
     expectSameNote(view.getViewData(), buildInkFile("", emptyDocument(1024)));
+  });
+});
+
+describe("files that moved while the note was closed (#14)", () => {
+  function noteWithPdf(path: string): string {
+    const doc = emptyDocument(1024);
+    const page = blankPage("p2");
+    page.backdrop = { kind: "pdf", path, page: 0 };
+    doc.pages.push(page);
+    return buildInkFile("# Physics", doc);
+  }
+  const pdfOf = (text: string) => parseInkFile(text, 1024).doc?.pages[1].backdrop;
+
+  it("are relinked on load, and the note is saved", () => {
+    const view = openView();
+    plugin.moves["Lecture.pdf"] = "Courses/Lecture.pdf";
+    const saves = inside(view).saveRequests;
+    view.setViewData(noteWithPdf("Lecture.pdf"), true);
+    expect(pdfOf(view.getViewData())).toEqual({
+      kind: "pdf",
+      path: "Courses/Lecture.pdf",
+      page: 0,
+    });
+    expect(inside(view).saveRequests).toBeGreaterThan(saves);
+  });
+
+  it("leave a note alone when nothing it points at moved", () => {
+    const view = openView();
+    plugin.moves["Other.pdf"] = "Courses/Other.pdf";
+    const saves = inside(view).saveRequests;
+    const text = noteWithPdf("Lecture.pdf");
+    view.setViewData(text, true);
+    expect(view.getViewData()).toBe(text);
+    expect(inside(view).saveRequests).toBe(saves);
   });
 });
 

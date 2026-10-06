@@ -528,6 +528,37 @@ export class PdfBackdropCache {
     this.documents.clear();
   }
 
+  /**
+   * The file at `path` changed (created, replaced, deleted, moved away):
+   * drop what was read from it, a cached "missing" included, so the next
+   * paint reads it afresh. Whether anything was dropped.
+   */
+  forget(path: string): boolean {
+    let dropped = this.entries.deleteWhere((cached) => cached.path === path) > 0;
+    const doc = this.documents.get(path);
+    if (doc) {
+      this.documents.delete(path);
+      void doc.then((opened) => opened?.destroy()).catch(() => undefined);
+      dropped = true;
+    }
+    const open = this.workerDocs.get(path);
+    if (open) {
+      this.workerDocs.delete(path);
+      const worker = this.worker;
+      void open.then(
+        (pages) => {
+          if (pages !== null) worker?.close(path);
+        },
+        () => undefined,
+      );
+      dropped = true;
+    }
+    for (const key of [...this.workerSizes.keys()]) {
+      if (key.startsWith(`${path}:`)) this.workerSizes.delete(key);
+    }
+    return dropped;
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.onReady = null;

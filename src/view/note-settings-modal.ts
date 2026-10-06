@@ -50,8 +50,8 @@ const ROWS: ReadonlyArray<{
 }> = [
   {
     kind: "images",
-    name: "Images",
-    desc: "Inserted, pasted, scanned and generated pictures.",
+    name: "Images and PDFs",
+    desc: "Inserted, pasted, scanned and generated pictures, and imported PDFs.",
     empty: "Obsidian's default",
     reset: "Use Obsidian's default",
   },
@@ -106,7 +106,7 @@ export class NoteSettingsModal extends Modal {
       cls: "setting-item-description goodobsidian-note-settings-intro",
       text:
         `Choose a folder for this ${this.host.single ? "page" : "notebook"}'s new ` +
-        "files. Empty: pictures and recordings follow Obsidian's attachment " +
+        "files. Empty: pictures, PDFs and recordings follow Obsidian's attachment " +
         "setting, and exports go next to the note. Files already saved stay " +
         "where they are.",
     });

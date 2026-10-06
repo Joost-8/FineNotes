@@ -6,6 +6,32 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **New notebook from a PDF.** A PDF's menu in the file explorer has "New
+  notebook from PDF": a notebook next to it, one page per page of the PDF,
+  to write on. The PDF itself is never changed. Also a command, "New
+  notebook from a PDF in the vault…".
+
+### Fixed
+
+- **Notebooks follow the PDFs, pictures and recordings you move.** Moving
+  or renaming an imported PDF (or the folder it is in) left its pages blank
+  as "Missing PDF source". Notebooks now point at the new place: open ones
+  at once, closed ones are updated in the background, so the fix reaches
+  your other devices too. Files moved before this update, or outside
+  Obsidian, are not followed. A PDF that comes back to its old place, or
+  syncs in late, now shows without reopening the notebook.
+
+### Changed
+
+- **Imported PDFs go to the notebook's image folder.** The notebook
+  settings row is now called "Images and PDFs", which is where imported
+  PDFs were already saved. Left empty, they follow Obsidian's "Default
+  location for new attachments".
+
 ## [1.2.0] - 2026-10-05
 
 ### Added

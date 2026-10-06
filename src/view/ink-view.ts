@@ -106,6 +106,7 @@ import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../mod
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
 import { SetAttachmentFolder, attachmentFolder } from "../model/attachment-folders";
+import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
 import { NoteSettingsModal } from "./note-settings-modal";
 import { ExportPdfModal } from "./export-modal";
@@ -299,6 +300,8 @@ export class InkView extends TextFileView {
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
     if (doc && payload !== undefined && !held) this.encoder.remember(doc, payload);
+    // Files it points at that moved while it was closed (#14).
+    if (doc && !held && this.relinkDoc() > 0) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -308,6 +311,28 @@ export class InkView extends TextFileView {
     // it: it stops, and joins the document now shown.
     this.audio?.documentReplaced();
     this.applyPendingPage();
+  }
+
+  /** Relink this note's paths from the plugin's log of moved files; how many changed. */
+  private relinkDoc(): number {
+    if (this.guard.locked) return 0;
+    const log = this.plugin.fileMoves.log();
+    if (log.length === 0) return 0;
+    return relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+  }
+
+  /**
+   * Files this note points at were moved or renamed (#14): point at their
+   * new places, repaint, and save. Also after undo and redo, which can bring
+   * back a page background or picture recorded before the move.
+   */
+  relinkMovedFiles(): void {
+    if (this.relinkDoc() === 0) return;
+    this.sidebar?.setDocument(this.doc);
+    this.sidebar?.invalidate();
+    this.surface?.repaint();
+    this.audio?.syncChrome();
+    this.requestSave();
   }
 
   /** Hand the current notebook to everything that shows it. */
@@ -994,6 +1019,7 @@ export class InkView extends TextFileView {
           this.audio?.syncChrome();
           this.scheduleAutoTranscription();
           this.requestSave();
+          this.relinkMovedFiles();
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
@@ -1076,6 +1102,22 @@ export class InkView extends TextFileView {
       this.app.vault.on("rename", (file, oldPath) => {
         imageFileChanged(oldPath);
         imageFileChanged(file.path);
+      }),
+    );
+    // Likewise a PDF: one moved back, or synced in, is read again instead
+    // of staying "missing".
+    const pdfFileChanged = (path: string): void => {
+      if (!/\.pdf$/i.test(path) || !this.pdfCache?.forget(path)) return;
+      this.surface?.repaint();
+      this.sidebar?.invalidate();
+    };
+    this.registerEvent(this.app.vault.on("create", (file) => pdfFileChanged(file.path)));
+    this.registerEvent(this.app.vault.on("modify", (file) => pdfFileChanged(file.path)));
+    this.registerEvent(this.app.vault.on("delete", (file) => pdfFileChanged(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        pdfFileChanged(oldPath);
+        pdfFileChanged(file.path);
       }),
     );
 

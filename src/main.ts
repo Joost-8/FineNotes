@@ -58,6 +58,7 @@ import type { LassoFilter, LassoMode } from "./canvas/lasso";
 import {
   type NotebookChoices,
   buildNewDocument,
+  buildPdfNotebook,
   cleanTitle,
   joinVaultPath,
   newNoteBody,
@@ -68,6 +69,10 @@ import {
   targetFolder,
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
+import { FileMoveTracker } from "./view/file-moves";
+import { measurePdfPages } from "./view/pdf-pages";
+import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
+import type { AttachmentFolders, InkDocument } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import type { TextStyle } from "./model/text-style";
@@ -124,6 +129,17 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
 
+  /** Notes keep pointing at the PDFs, pictures and recordings that move (#14). */
+  readonly fileMoves = new FileMoveTracker(this.app, {
+    isInkFile: (file) => file instanceof TFile && this.isInkFile(file),
+    openNotePaths: () =>
+      new Set(this.openNotebooks().flatMap((view) => (view.file ? [view.file.path] : []))),
+    relinkOpen: () => {
+      for (const view of this.openNotebooks()) view.relinkMovedFiles();
+    },
+    paperWidth: () => this.settings.paperWidth,
+  });
+
   /** The transcription engine chosen in the settings; Manual when it is gone. */
   activeProvider(): RecognitionProvider {
     return resolveProvider(this.providers, this.settings.recognitionProviderId);
@@ -179,6 +195,12 @@ export default class GoodObsidianPlugin extends Plugin {
           );
         }
         if (!(file instanceof TFile) || file.extension.toLowerCase() !== "pdf") return;
+        menu.addItem((item) =>
+          item
+            .setTitle("New notebook from PDF")
+            .setIcon(ICON_NEW_NOTEBOOK)
+            .onClick(() => void this.createNotebookFromPdf(file)),
+        );
         const view = this.app.workspace.getActiveViewOfType(InkView);
         if (!view) return;
         menu.addItem((item) =>
@@ -190,6 +212,10 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.routeInkNotes();
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => this.fileMoves.renamed(file, oldPath)),
+    );
+    this.register(() => this.fileMoves.destroy());
 
     this.register(() => this.explorerNotebookButton.destroy());
     this.registerEvent(
@@ -228,6 +254,13 @@ export default class GoodObsidianPlugin extends Plugin {
       name: "Create notebook with last settings",
       callback: () =>
         void this.createNotebook("", parseNotebookChoices(this.settings.lastNotebookChoices)),
+    });
+
+    this.addCommand({
+      id: "create-notebook-from-pdf",
+      name: "New notebook from a PDF in the vault…",
+      callback: () =>
+        new VaultPdfSuggestModal(this.app, (file) => void this.createNotebookFromPdf(file)).open(),
     });
 
     this.notebookCommand(
@@ -933,7 +966,15 @@ export default class GoodObsidianPlugin extends Plugin {
    * where its pictures and recordings then go. `folder` undefined means the
    * default one.
    */
-  async createNotebook(title: string, choices: NotebookChoices, folder?: string): Promise<void> {
+  async createNotebook(
+    title: string,
+    choices: NotebookChoices,
+    folder?: string,
+    build: (heading: string, attachments?: AttachmentFolders) => InkDocument = (
+      heading,
+      attachments,
+    ) => buildNewDocument(choices, heading, attachments),
+  ): Promise<void> {
     const dir = normalizeFolder(folder ?? this.newNotebookFolder());
     try {
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
@@ -946,7 +987,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const heading = cleanTitle(title) || stripInkSuffix(name);
       const content = buildInkFile(
         newNoteBody(heading, new Date().toISOString()),
-        buildNewDocument(choices, heading, paths.attachments),
+        build(heading, paths.attachments),
       );
       const file = await this.app.vault.create(
         normalizePath(joinVaultPath(paths.folder, name)),
@@ -959,5 +1000,35 @@ export default class GoodObsidianPlugin extends Plugin {
     } catch (error) {
       new Notice(`FineNotes: could not create the notebook — ${errorMessage(error)}`, 8000);
     }
+  }
+
+  /**
+   * A new notebook beside `pdf` whose pages are the PDF's pages (#14), with
+   * the last notebook choices for size and folder layout. The PDF is only
+   * read: it stays where it is, and the notebook follows it if it moves.
+   */
+  async createNotebookFromPdf(pdf: TFile): Promise<void> {
+    const progress = new Notice("FineNotes: reading PDF pages…", 0);
+    let sizes: Array<{ width: number; height: number }>;
+    try {
+      sizes = await measurePdfPages(await this.app.vault.readBinary(pdf));
+    } catch (error) {
+      new Notice(`FineNotes: couldn't read the PDF — ${errorMessage(error)}`, 8000);
+      return;
+    } finally {
+      progress.hide();
+    }
+    if (sizes.length === 0) {
+      new Notice("FineNotes: that PDF has no pages.");
+      return;
+    }
+    const choices: NotebookChoices = {
+      ...parseNotebookChoices(this.settings.lastNotebookChoices),
+      type: "notebook",
+    };
+    const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
+    await this.createNotebook(pdf.basename, choices, folder, (heading, attachments) =>
+      buildPdfNotebook(choices, heading, attachments, pdf.path, sizes),
+    );
   }
 }
