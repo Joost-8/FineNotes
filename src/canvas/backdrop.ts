@@ -38,18 +38,13 @@ import type {
 } from "../model/document";
 import {
   type CoverPaint,
-  boundCorners,
-  chevron,
-  composition,
-  fade,
-  frame,
-  graph,
-  mosaic,
-  polka,
-  strap,
-  stripes,
-  terrazzo,
-  waves,
+  accentStripe,
+  bookSpine,
+  contourLines,
+  duotoneSplit,
+  glassLabel,
+  orb,
+  softGradient,
 } from "./cover-patterns";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
@@ -870,65 +865,52 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
   "cover-label": { spacing: 40, draw: coverPainter("cover-label") },
   "cover-band": { spacing: 40, draw: coverPainter("cover-band") },
   "cover-linen": { spacing: 40, draw: coverPainter("cover-linen") },
-  "cover-strap": { spacing: 40, draw: coverPainter("cover-strap") },
-  "cover-bound": { spacing: 40, draw: coverPainter("cover-bound") },
-  "cover-frame": { spacing: 40, draw: coverPainter("cover-frame") },
-  "cover-fade": { spacing: 40, draw: coverPainter("cover-fade") },
-  "cover-polka": { spacing: 40, draw: coverPainter("cover-polka") },
-  "cover-stripes": { spacing: 40, draw: coverPainter("cover-stripes") },
-  "cover-graph": { spacing: 40, draw: coverPainter("cover-graph") },
-  "cover-waves": { spacing: 40, draw: coverPainter("cover-waves") },
-  "cover-chevron": { spacing: 40, draw: coverPainter("cover-chevron") },
-  "cover-mosaic": { spacing: 40, draw: coverPainter("cover-mosaic") },
-  "cover-terrazzo": { spacing: 40, draw: coverPainter("cover-terrazzo") },
-  "cover-composition": { spacing: 40, draw: coverPainter("cover-composition") },
+  "cover-gradient": { spacing: 40, draw: currentCoverPainter("cover-gradient", softGradient) },
+  "cover-orb": { spacing: 40, draw: currentCoverPainter("cover-orb", orb) },
+  "cover-split": { spacing: 40, draw: currentCoverPainter("cover-split", duotoneSplit) },
+  "cover-contour": { spacing: 40, draw: currentCoverPainter("cover-contour", contourLines) },
+  "cover-glass": { spacing: 40, draw: currentCoverPainter("cover-glass", glassLabel) },
+  // Big type is plain cloth here: its letter is a text box (`coverMonogramBox`).
+  "cover-monogram": { spacing: 40, draw: currentCoverPainter("cover-monogram", () => undefined) },
+  "cover-accent": { spacing: 40, draw: currentCoverPainter("cover-accent", accentStripe) },
 };
 
 /**
- * What fills a cover's cloth before the vignette: a texture or pattern, in
- * the cover's own palette (`cover-patterns.ts`). Designs without one are
- * plain cloth.
- */
-const COVER_TEXTURES: Partial<
-  Record<CoverRuling, (ctx: CanvasRenderingContext2D, c: CoverPaint) => void>
-> = {
-  "cover-polka": polka,
-  "cover-stripes": stripes,
-  "cover-graph": graph,
-  "cover-waves": waves,
-  "cover-chevron": chevron,
-  "cover-mosaic": mosaic,
-  "cover-terrazzo": terrazzo,
-  "cover-composition": composition,
-};
-
-/** Trims drawn over the vignette, under the band and plate. */
-const COVER_TRIMS: Partial<
-  Record<CoverRuling, (ctx: CanvasRenderingContext2D, c: CoverPaint) => void>
-> = {
-  "cover-strap": strap,
-  "cover-bound": boundCorners,
-  "cover-frame": frame,
-  "cover-fade": fade,
-};
-
-/**
- * One cover design. The cloth is already filled with `paperColor`. Drawn in
- * page space and deterministic, because tiles repaint a page piecemeal and a
+ * A classic cover design (no longer offered; kept so older notebooks open as
+ * they were). The cloth is already filled with `paperColor`. Drawn in page
+ * space and deterministic, because tiles repaint a page piecemeal and a
  * random texture would show seams between them.
  */
 function coverPainter(kind: CoverRuling): RulingPainter {
   return (ctx, c) => {
     const palette = coverPalette(c.paper);
     const layout = coverLayout(kind, c.geometry);
-    const paint: CoverPaint = { geometry: c.geometry, palette, layout, weight: c.weight };
     if (kind === "cover-linen") weave(ctx, c, palette);
-    COVER_TEXTURES[kind]?.(ctx, paint);
     vignette(ctx, c, palette);
     if (kind === "cover-plain") insetEdge(ctx, c, palette);
-    COVER_TRIMS[kind]?.(ctx, paint);
     if (layout.band > 0) spine(ctx, c, palette, layout.band);
     if (layout.plate) labelPlate(ctx, c, palette, layout.plate);
+    return "painted";
+  };
+}
+
+/**
+ * One of the designs the picker offers (`cover-patterns.ts`): the design over
+ * the cloth, then the narrow book spine. No vignette: these are flat by intent.
+ */
+function currentCoverPainter(
+  kind: CoverRuling,
+  design: (ctx: CanvasRenderingContext2D, c: CoverPaint) => void,
+): RulingPainter {
+  return (ctx, c) => {
+    const paint: CoverPaint = {
+      geometry: c.geometry,
+      palette: coverPalette(c.paper),
+      layout: coverLayout(kind, c.geometry),
+      weight: c.weight,
+    };
+    design(ctx, paint);
+    bookSpine(ctx, paint);
     return "painted";
   };
 }

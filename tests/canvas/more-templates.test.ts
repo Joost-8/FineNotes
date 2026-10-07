@@ -8,8 +8,14 @@
 
 import { describe, expect, it } from "vitest";
 import { LIGHT_PAPER, drawSynthetic, isometricPoints } from "../../src/canvas/backdrop";
-import { cellHash, clipPolygon } from "../../src/canvas/cover-patterns";
-import { coverHasPlate, coverLayout, coverPalette, isDarkColor } from "../../src/model/cover";
+import { cellHash, clipPolygon, clipSegment } from "../../src/canvas/cover-patterns";
+import {
+  coverHasPlate,
+  coverLayout,
+  coverPalette,
+  isClassicCover,
+  isDarkColor,
+} from "../../src/model/cover";
 import {
   COVER_RULINGS,
   type CoverRuling,
@@ -216,16 +222,30 @@ describe("score & tab", () => {
 });
 
 describe("cover catalogue", () => {
-  it("offers sixteen designs in two groups, every one a cover ruling", () => {
-    expect(COVER_SECTIONS.map((s) => s.title)).toEqual(["Classic", "Patterns"]);
-    expect(COVER_TEMPLATES.map((t) => t.ruling)).toEqual([...COVER_RULINGS]);
+  it("offers the seven current designs in one group, every one a cover ruling", () => {
+    expect(COVER_SECTIONS.map((s) => s.title)).toEqual(["Covers"]);
+    expect(COVER_TEMPLATES.map((t) => t.ruling)).toEqual([
+      "cover-gradient",
+      "cover-orb",
+      "cover-split",
+      "cover-contour",
+      "cover-glass",
+      "cover-monogram",
+      "cover-accent",
+    ]);
+    for (const t of COVER_TEMPLATES) expect(COVER_RULINGS).toContain(t.ruling);
   });
 
-  it("sets every pattern's title on a plate, and no classic design but the label's", () => {
-    const [classic, patterns] = COVER_SECTIONS;
-    for (const t of patterns.templates) expect(coverHasPlate(t.ruling as CoverRuling)).toBe(true);
-    const plated = classic.templates.filter((t) => coverHasPlate(t.ruling as CoverRuling));
-    expect(plated.map((t) => t.ruling)).toEqual(["cover-label"]);
+  it("no longer offers the classic designs, but still knows them, so old notebooks open", () => {
+    const offered = new Set(COVER_TEMPLATES.map((t) => t.ruling));
+    const classic = COVER_RULINGS.filter(isClassicCover);
+    expect(classic).toEqual(["cover-plain", "cover-label", "cover-band", "cover-linen"]);
+    for (const kind of classic) expect(offered.has(kind)).toBe(false);
+    expect(COVER_RULINGS.filter((k) => !isClassicCover(k))).toEqual([...offered]);
+  });
+
+  it("sets only the label's and the glass design's title on a plate", () => {
+    expect(COVER_RULINGS.filter((k) => coverHasPlate(k))).toEqual(["cover-label", "cover-glass"]);
   });
 
   it("offers sixteen colours, deep and light in equal numbers", () => {
@@ -237,6 +257,7 @@ describe("cover catalogue", () => {
 
 describe("cover designs", () => {
   const navy = COVER_COLORS[0].color;
+  const current = COVER_TEMPLATES.map((t) => t.ruling as CoverRuling);
 
   it("repaint identically, at the page and in a preview, so tiles never show seams", () => {
     for (const kind of COVER_RULINGS) {
@@ -251,7 +272,7 @@ describe("cover designs", () => {
   it("stay inside the page in every orientation, colour and preview weight", () => {
     for (const kind of COVER_RULINGS) {
       for (const g of [A4, LANDSCAPE, { width: 300, height: 420 }]) {
-        for (const { color } of [COVER_COLORS[0], COVER_COLORS[13]]) {
+        for (const { color } of COVER_COLORS) {
           const ctx = draw({ kind, paperColor: color }, g, 9);
           for (const op of ctx.ops) {
             if (op.op !== "moveTo" && op.op !== "lineTo") continue;
@@ -266,66 +287,98 @@ describe("cover designs", () => {
     }
   });
 
-  it("paint a visible pattern: every pattern fills in its motif colours", () => {
+  it("every current design draws the book spine down the left edge", () => {
+    for (const kind of current) {
+      const palette = coverPalette(navy);
+      const ctx = draw({ kind, paperColor: navy });
+      expect(ctx.ops, kind).toContainEqual({
+        op: "fillRect",
+        x: 0,
+        y: 0,
+        w: 1024 * 0.033,
+        h: 1448,
+        fillStyle: palette.spine,
+      });
+    }
+  });
+
+  it("current designs are flat: no vignette", () => {
+    for (const kind of ["cover-orb", "cover-split", "cover-contour", "cover-accent"] as const) {
+      const gradients = draw({ kind, paperColor: navy }).ops.filter(
+        (o) => o.op === "gradient",
+      ) as Array<{
+        stops: Array<{ color: string }>;
+      }>;
+      for (const g of gradients) expect(g.stops.at(-1)?.color, kind).not.toMatch(/, 0\.32\)$/);
+    }
+  });
+
+  it("soft gradient: one diagonal gradient from the light to the deep tone", () => {
     const palette = coverPalette(navy);
-    const motifs = new Set([palette.motif, palette.motifSoft, palette.fleck]);
-    for (const t of COVER_SECTIONS[1].templates) {
-      const ops = draw({ kind: t.ruling, paperColor: navy }).ops;
-      const painted = ops.filter(
-        (o) =>
-          (o.op === "fill" && motifs.has(o.fillStyle)) ||
-          (o.op === "stroke" && motifs.has(o.strokeStyle)),
-      );
-      expect(painted.length, t.ruling).toBeGreaterThan(0);
-      // And a lot of it: a pattern that draws a handful of shapes is a bug.
-      const shapes = ops.filter((o) => o.op === "arc" || o.op === "closePath" || o.op === "lineTo");
-      expect(shapes.length, t.ruling).toBeGreaterThan(50);
-    }
-  });
-
-  it("strap: a band down the cloth near the right edge, where the layout says", () => {
-    const strap = coverLayout("cover-strap", A4).strap;
-    expect(strap).not.toBeNull();
-    if (!strap) return;
-    const ctx = draw({ kind: "cover-strap", paperColor: navy });
-    expect(ctx.ops).toContainEqual({
-      op: "fillRect",
-      x: strap.x,
-      y: 0,
-      w: strap.w,
-      h: 1448,
-      fillStyle: coverPalette(navy).band,
-    });
-    const { title } = coverLayout("cover-strap", A4);
-    expect(title.x + title.w).toBeLessThan(strap.x);
-  });
-
-  it("bound and composition carry a spine band; bound adds two corner pieces", () => {
-    for (const kind of ["cover-bound", "cover-composition"] as const) {
-      expect(coverLayout(kind, A4).band, kind).toBeGreaterThan(0);
-    }
-    const ctx = draw({ kind: "cover-bound", paperColor: navy });
-    const fills = ctx.ops.filter((o) => o.op === "fill" && o.fillStyle === coverPalette(navy).band);
-    expect(fills).toHaveLength(1);
-    expect(ctx.ops.filter((o) => o.op === "closePath")).toHaveLength(2);
-  });
-
-  it("frame: two nested rectangles in the trim colour", () => {
-    const ctx = draw({ kind: "cover-frame", paperColor: COVER_COLORS[12].color });
-    const [outer, inner] = rects(ctx.ops);
-    expect(inner.x).toBeGreaterThan(outer.x);
-    expect(inner.w).toBeLessThan(outer.w);
-    const trim = coverPalette(COVER_COLORS[12].color).trim;
-    expect(ctx.ops.filter((o) => o.op === "stroke" && o.strokeStyle === trim)).toHaveLength(2);
-  });
-
-  it("fade: a linear gradient, clear at the top, darkest at the bottom", () => {
-    const ctx = draw({ kind: "cover-fade", paperColor: navy });
-    const gradient = ctx.ops.find((o) => o.op === "gradient" && o.kind === "linear") as {
+    const ctx = draw({ kind: "cover-gradient", paperColor: navy });
+    const gradient = ctx.ops.find((o) => o.op === "gradient") as {
+      kind: string;
       stops: Array<{ at: number; color: string }>;
     };
-    expect(gradient.stops[0].color).toMatch(/, 0\)$/);
-    expect(gradient.stops.at(-1)?.color).toMatch(/, 0\.75\)$/);
+    expect(gradient.kind).toBe("linear");
+    expect(gradient.stops.map((s) => s.color)).toEqual([palette.sheenLight, palette.sheenDark]);
+  });
+
+  it("orb: one circle, filled with a radial gradient", () => {
+    const ctx = draw({ kind: "cover-orb", paperColor: navy });
+    expect(ctx.ops.filter((o) => o.op === "arc")).toHaveLength(1);
+    expect(ctx.ops.some((o) => o.op === "gradient" && o.kind === "radial")).toBe(true);
+  });
+
+  it("duotone split: the lower part in the split tone, below a diagonal", () => {
+    const palette = coverPalette(navy);
+    const ctx = draw({ kind: "cover-split", paperColor: navy });
+    expect(ctx.ops).toContainEqual({ op: "fill", fillStyle: palette.splitLower });
+    const { title } = coverLayout("cover-split", A4);
+    expect(title.cy / 1448).toBeCloseTo(0.585);
+  });
+
+  it("contour lines: many short segments in the contour tint, clipped to the page", () => {
+    const palette = coverPalette(navy);
+    const ctx = draw({ kind: "cover-contour", paperColor: navy });
+    expect(ctx.ops.filter((o) => o.op === "lineTo").length).toBeGreaterThan(300);
+    expect(ctx.ops).toContainEqual(
+      expect.objectContaining({ op: "stroke", strokeStyle: palette.contour }),
+    );
+  });
+
+  it("glass label: soft blobs and a translucent plate where the title sits", () => {
+    const palette = coverPalette(navy);
+    const ctx = draw({ kind: "cover-glass", paperColor: navy });
+    expect(ctx.ops.filter((o) => o.op === "gradient" && o.kind === "radial")).toHaveLength(3);
+    expect(ctx.ops).toContainEqual({ op: "fill", fillStyle: palette.glassPlate });
+    const { plate, title } = coverLayout("cover-glass", A4);
+    expect(plate).not.toBeNull();
+    if (!plate) return;
+    expect(title.cy).toBeCloseTo(plate.y + plate.h / 2);
+  });
+
+  it("big type paints only the cloth and spine: its letter is a text box", () => {
+    const ctx = draw({ kind: "cover-monogram", paperColor: navy });
+    expect(ctx.ops.filter((o) => o.op === "fill" || o.op === "stroke")).toEqual([]);
+  });
+
+  it("accent stripe: one rounded bar and a five-by-five dot grid", () => {
+    const palette = coverPalette(navy);
+    const ctx = draw({ kind: "cover-accent", paperColor: navy });
+    expect(ctx.ops.filter((o) => o.op === "arc")).toHaveLength(25);
+    expect(ctx.ops).toContainEqual({ op: "fill", fillStyle: palette.accent });
+    expect(ctx.ops).toContainEqual({ op: "fill", fillStyle: palette.accentDot });
+  });
+
+  it("shapes still show on the palest and the deepest cloth", () => {
+    for (const id of ["ivory", "ink"]) {
+      const base = COVER_COLORS.find((c) => c.id === id)?.color ?? "";
+      const p = coverPalette(base);
+      for (const tone of [p.orbCore, p.contour, p.monogram, p.accentDot, p.splitLower]) {
+        expect(tone.toLowerCase(), `${id}: ${tone}`).not.toBe(base.toLowerCase());
+      }
+    }
   });
 });
 
@@ -388,5 +441,19 @@ describe("cover pattern helpers", () => {
       expect(y).toBeGreaterThanOrEqual(0);
       expect(y).toBeLessThanOrEqual(100);
     }
+  });
+});
+
+describe("clipSegment", () => {
+  it("keeps a segment inside, drops one outside, and cuts one across an edge", () => {
+    expect(clipSegment([10, 10], [20, 20], 100, 100)).toEqual([
+      [10, 10],
+      [20, 20],
+    ]);
+    expect(clipSegment([-30, -30], [-10, -5], 100, 100)).toBeNull();
+    expect(clipSegment([-10, 50], [50, 50], 100, 100)).toEqual([
+      [0, 50],
+      [50, 50],
+    ]);
   });
 });

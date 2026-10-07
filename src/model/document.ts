@@ -128,40 +128,32 @@ export type Ruling =
  * procedurally. Its colour is the backdrop's `paperColor`.
  */
 export type CoverRuling =
+  // Classic designs: no longer offered, still drawn so older notebooks open as they were.
   | "cover-plain"
   | "cover-label"
   | "cover-band"
   | "cover-linen"
-  | "cover-strap"
-  | "cover-bound"
-  | "cover-frame"
-  | "cover-fade"
-  | "cover-polka"
-  | "cover-stripes"
-  | "cover-graph"
-  | "cover-waves"
-  | "cover-chevron"
-  | "cover-mosaic"
-  | "cover-terrazzo"
-  | "cover-composition";
+  // The designs the picker offers since 2026-10-07.
+  | "cover-gradient"
+  | "cover-orb"
+  | "cover-split"
+  | "cover-contour"
+  | "cover-glass"
+  | "cover-monogram"
+  | "cover-accent";
 
 export const COVER_RULINGS: readonly CoverRuling[] = [
   "cover-plain",
   "cover-label",
   "cover-band",
   "cover-linen",
-  "cover-strap",
-  "cover-bound",
-  "cover-frame",
-  "cover-fade",
-  "cover-polka",
-  "cover-stripes",
-  "cover-graph",
-  "cover-waves",
-  "cover-chevron",
-  "cover-mosaic",
-  "cover-terrazzo",
-  "cover-composition",
+  "cover-gradient",
+  "cover-orb",
+  "cover-split",
+  "cover-contour",
+  "cover-glass",
+  "cover-monogram",
+  "cover-accent",
 ];
 
 /** Whether a ruling draws a cover rather than writing paper. */

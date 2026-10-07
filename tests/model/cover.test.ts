@@ -9,12 +9,15 @@ import {
   contrastRatio,
   coverHasPlate,
   coverLayout,
+  coverMonogramBox,
+  coverMonogramColor,
   coverPalette,
   coverTitleBox,
   coverTitleColor,
   coverTitleFontSize,
   coverTitleFrame,
   darken,
+  isClassicCover,
   isDarkColor,
   lighten,
   mixColors,
@@ -152,45 +155,56 @@ describe("coverLayout", () => {
         expect(title.x, kind).toBeGreaterThanOrEqual(layout.band);
         expect(title.x + title.w, kind).toBeLessThanOrEqual(g.width);
         expect(title.cy, kind).toBeGreaterThan(0);
-        expect(title.cy, kind).toBeLessThan(g.height / 2);
+        expect(title.cy, kind).toBeLessThan(g.height * 0.9);
         if (layout.plate) {
           expect(layout.plate.x).toBeGreaterThan(0);
           expect(layout.plate.x + layout.plate.w).toBeLessThan(g.width);
-          expect(layout.plate.y + layout.plate.h).toBeLessThan(g.height / 2);
+          expect(layout.plate.y + layout.plate.h).toBeLessThan(g.height);
           // The title sits inside the plate.
           expect(title.x).toBeGreaterThan(layout.plate.x);
           expect(title.x + title.w).toBeLessThan(layout.plate.x + layout.plate.w);
+          expect(title.cy).toBeGreaterThan(layout.plate.y);
+          expect(title.cy).toBeLessThan(layout.plate.y + layout.plate.h);
         }
       }
     }
   });
 
-  it("gives a band only to spine designs, and a plate only to the label and the patterns", () => {
-    const banded = ["cover-band", "cover-bound", "cover-composition"];
+  it("gives a band only to the spine design, and a plate only to the label and glass designs", () => {
     for (const kind of COVER_RULINGS) {
       const layout = coverLayout(kind, A4);
-      expect(layout.band > 0, kind).toBe(banded.includes(kind));
+      expect(layout.band > 0, kind).toBe(kind === "cover-band");
       expect(layout.plate !== null, kind).toBe(coverHasPlate(kind));
-      expect(layout.strap !== null, kind).toBe(kind === "cover-strap");
-    }
-    for (const kind of ["cover-plain", "cover-linen", "cover-frame", "cover-fade"] as const) {
-      expect(coverHasPlate(kind)).toBe(false);
     }
   });
 
-  it("centres a plate in the cloth right of a spine band", () => {
-    const { band, plate } = coverLayout("cover-composition", A4);
-    expect(plate).not.toBeNull();
-    if (!plate) return;
-    expect(plate.x - band).toBeCloseTo(1024 - (plate.x + plate.w));
-    // Without a band the plate keeps the label design's place: 60% wide, centred.
+  it("keeps the label plate's place: 60% wide, centred", () => {
     const label = coverLayout("cover-label", A4).plate;
     expect(label?.w).toBeCloseTo(1024 * 0.6);
+    expect(label ? label.x + label.w / 2 : 0).toBeCloseTo(512);
   });
 
-  it("puts the title at the same height on every design, so a change never makes it jump", () => {
-    const heights = COVER_RULINGS.map((kind) => coverLayout(kind, A4).title.cy);
+  it("puts the title at the same height on every classic design, so a change never makes it jump", () => {
+    const heights = COVER_RULINGS.filter(isClassicCover).map((k) => coverLayout(k, A4).title.cy);
     expect(new Set(heights).size).toBe(1);
+  });
+
+  it("sets the current designs' title bottom left, clear of the spine; on the seam; on the glass", () => {
+    for (const kind of [
+      "cover-gradient",
+      "cover-orb",
+      "cover-contour",
+      "cover-monogram",
+      "cover-accent",
+    ] as const) {
+      const { title, titleStyle } = coverLayout(kind, A4);
+      expect(title.cy / 1448, kind).toBeCloseTo(0.835);
+      expect(title.x, kind).toBeGreaterThan(1024 * 0.036);
+      expect(titleStyle, kind).toEqual({ font: "sans", align: "left" });
+    }
+    expect(coverLayout("cover-split", A4).titleStyle.align).toBe("left");
+    expect(coverLayout("cover-glass", A4).titleStyle).toEqual({ font: "sans", align: "center" });
+    expect(coverLayout("cover-label", A4).titleStyle).toEqual({ font: "serif", align: "center" });
   });
 
   it("centres the band design's title in the cloth right of the band", () => {
@@ -231,16 +245,42 @@ describe("the cover title", () => {
     );
   });
 
-  it("uses the plate's ink on a plated design and the cloth's elsewhere", () => {
+  it("is bold sans, set left, on the current designs", () => {
+    const box = coverTitleBox("cover-gradient", A4, "#1f3a5f", "Biology", "t1");
+    expect(box).toMatchObject({ font: "sans", bold: true, align: "left" });
+    expect(box.color).toBe(coverPalette("#1f3a5f").title);
+  });
+
+  it("uses the label plate's ink on the label design and the cloth's elsewhere", () => {
     const p = coverPalette("#d9a93a");
     expect(coverTitleColor({ kind: "cover-label", paperColor: "#d9a93a" })).toBe(p.labelTitle);
-    expect(coverTitleColor({ kind: "cover-polka", paperColor: "#d9a93a" })).toBe(p.labelTitle);
+    // The glass plate is translucent: the cloth's ink reads through it.
+    expect(coverTitleColor({ kind: "cover-glass", paperColor: "#d9a93a" })).toBe(p.title);
     expect(coverTitleColor({ kind: "cover-linen", paperColor: "#d9a93a" })).toBe(p.title);
-    expect(coverTitleColor({ kind: "cover-fade", paperColor: "#d9a93a" })).toBe(p.title);
+    expect(coverTitleColor({ kind: "cover-orb", paperColor: "#d9a93a" })).toBe(p.title);
   });
 
   it("frames the same font size identically wherever the title line is", () => {
     const frame = coverTitleFrame("cover-plain", A4, 40);
     expect(frame.y).toBe(Math.round(coverLayout("cover-plain", A4).title.cy - 25));
+  });
+});
+
+describe("the big-type letter", () => {
+  it("is the title's first letter, upper case, large, behind the title, in the monogram tint", () => {
+    const box = coverMonogramBox("cover-monogram", A4, "#1f3a5f", "biology", "t0");
+    expect(box).toMatchObject({
+      id: "t0",
+      text: "B",
+      font: "sans",
+      bold: true,
+      color: coverMonogramColor({ kind: "cover-monogram", paperColor: "#1f3a5f" }),
+    });
+    expect(box?.fontSize).toBeGreaterThan(800);
+  });
+
+  it("exists only on the big-type design, and only for a title with a letter", () => {
+    expect(coverMonogramBox("cover-gradient", A4, "#1f3a5f", "Biology", "t0")).toBeNull();
+    expect(coverMonogramBox("cover-monogram", A4, "#1f3a5f", "   ", "t0")).toBeNull();
   });
 });

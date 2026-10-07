@@ -97,41 +97,35 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
 
 /**
  * Cover designs, in the cover picker's groups. Covers are pages but not
- * paper, so the paper picker never offers them. "Classic" covers carry the
- * title on the cloth (or the label); every "Patterns" cover sets it on a
- * plate, since no title reads on a pattern.
+ * paper, so the paper picker never offers them. The classic designs (plain,
+ * label, spine, linen) are no longer offered but still drawn, so older
+ * notebooks open as they were ({@link CLASSIC_COVER_NAMES}).
  */
 export const COVER_SECTIONS: readonly TemplateSection[] = [
   {
-    title: "Classic",
+    title: "Covers",
     templates: [
-      { ruling: "cover-plain", name: "Plain cover" },
-      { ruling: "cover-label", name: "Label cover" },
-      { ruling: "cover-band", name: "Spine cover" },
-      { ruling: "cover-linen", name: "Linen cover" },
-      { ruling: "cover-strap", name: "Strap cover" },
-      { ruling: "cover-bound", name: "Bound cover" },
-      { ruling: "cover-frame", name: "Frame cover" },
-      { ruling: "cover-fade", name: "Fade cover" },
-    ],
-  },
-  {
-    title: "Patterns",
-    templates: [
-      { ruling: "cover-polka", name: "Polka cover" },
-      { ruling: "cover-stripes", name: "Stripes cover" },
-      { ruling: "cover-graph", name: "Graph cover" },
-      { ruling: "cover-waves", name: "Waves cover" },
-      { ruling: "cover-chevron", name: "Chevron cover" },
-      { ruling: "cover-mosaic", name: "Mosaic cover" },
-      { ruling: "cover-terrazzo", name: "Terrazzo cover" },
-      { ruling: "cover-composition", name: "Composition cover" },
+      { ruling: "cover-gradient", name: "Soft gradient" },
+      { ruling: "cover-orb", name: "Orb" },
+      { ruling: "cover-split", name: "Duotone split" },
+      { ruling: "cover-contour", name: "Contour lines" },
+      { ruling: "cover-glass", name: "Glass label" },
+      { ruling: "cover-monogram", name: "Big type" },
+      { ruling: "cover-accent", name: "Accent stripe" },
     ],
   },
 ];
 
-/** Every cover design, in picker order. */
+/** Every cover design the picker offers, in picker order. */
 export const COVER_TEMPLATES: readonly TemplateEntry[] = COVER_SECTIONS.flatMap((s) => s.templates);
+
+/** Names of the classic designs, which notebooks made before 2026-10-07 may still carry. */
+export const CLASSIC_COVER_NAMES: readonly TemplateEntry[] = [
+  { ruling: "cover-plain", name: "Plain cover" },
+  { ruling: "cover-label", name: "Label cover" },
+  { ruling: "cover-band", name: "Spine cover" },
+  { ruling: "cover-linen", name: "Linen cover" },
+];
 
 export interface CoverColor {
   id: string;
@@ -198,6 +192,7 @@ export function paperTemplateFor(pages: readonly Page[], index: number): Backdro
 const RULING_NAMES: ReadonlyMap<Ruling, string> = new Map([
   ...TEMPLATE_SECTIONS.flatMap((s) => s.templates.map((t) => [t.ruling, t.name] as const)),
   ...COVER_TEMPLATES.map((t) => [t.ruling, t.name] as const),
+  ...CLASSIC_COVER_NAMES.map((t) => [t.ruling, t.name] as const),
   ["lined", "Ruled Wide"],
   ["grid", "Squared Paper"],
 ]);

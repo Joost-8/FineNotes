@@ -63,7 +63,10 @@ export class CoverPicker {
     const large = options.allowNone ? " is-large" : "";
     COVER_SECTIONS.forEach((section, index) => {
       const group = this.el.createDiv({ cls: "goodobsidian-coverpicker-group" });
-      group.createDiv({ cls: "goodobsidian-coverpicker-heading", text: section.title });
+      // A lone group needs no heading: the dialog's own "Cover" says it.
+      if (COVER_SECTIONS.length > 1) {
+        group.createDiv({ cls: "goodobsidian-coverpicker-heading", text: section.title });
+      }
       const row = group.createDiv({ cls: "goodobsidian-coverpicker-designs" });
       if (index === 0 && options.allowNone) {
         // Every button here carries `clickable-icon` (CLAUDE.md: Obsidian pads

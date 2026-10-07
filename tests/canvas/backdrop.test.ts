@@ -35,7 +35,7 @@ import {
   verticalXs,
 } from "./fake-canvas";
 import { COVER_RULINGS, isCoverRuling } from "../../src/model/document";
-import { coverLayout, coverPalette } from "../../src/model/cover";
+import { coverLayout, coverPalette, isClassicCover } from "../../src/model/cover";
 import { COVER_COLORS } from "../../src/model/templates";
 
 const A4: PageGeometry = { width: 1024, height: 1448 };
@@ -137,10 +137,10 @@ describe("resolveSpacing", () => {
   });
 });
 
-describe("the ruling table covers the thirty-one papers, sixteen covers and two aliases", () => {
+describe("the ruling table covers the thirty-one papers, eleven covers and two aliases", () => {
   it("has an entry for every Ruling the model allows", () => {
     expect(Object.keys(RULINGS).sort()).toEqual([...MODEL_RULINGS].sort());
-    expect(MODEL_RULINGS).toHaveLength(49);
+    expect(MODEL_RULINGS).toHaveLength(44);
   });
 
   it("the aliases draw the same thing as what they alias", () => {
@@ -561,8 +561,8 @@ describe("covers", () => {
         ).toBe(false);
         // Nothing is stroked in the paper theme's rule colour.
         expect(strokes(ctx.ops), kind).not.toContain(LIGHT_PAPER.rule);
-        // Only the woven and squared textures run threads edge to edge.
-        if (kind !== "cover-linen" && kind !== "cover-graph") {
+        // Only the woven texture runs threads edge to edge.
+        if (kind !== "cover-linen") {
           expect(fullWidthRules(ctx.ops, 1024), kind).toEqual([]);
         }
         expect(ctx.depth, kind).toBe(0);
@@ -580,8 +580,8 @@ describe("covers", () => {
     }
   });
 
-  it("darken toward the edges with a radial vignette from clear to the shade", () => {
-    for (const kind of COVER_RULINGS) {
+  it("classic designs darken toward the edges with a radial vignette from clear to the shade", () => {
+    for (const kind of COVER_RULINGS.filter(isClassicCover)) {
       const ctx = draw({ kind, paperColor: navy });
       const gradient = ctx.ops.find((o) => o.op === "gradient") as {
         kind: string;

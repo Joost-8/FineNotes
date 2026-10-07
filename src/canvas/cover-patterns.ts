@@ -1,20 +1,23 @@
 /**
- * The textures and trims of the newer cover designs (contracts/api.md §6):
- * patterns that fill the cloth (polka, stripes, graph, waves, chevron,
- * mosaic, terrazzo, composition) and the trims of the classic ones (strap,
- * bound corners, frame, fade).
+ * The cover designs the picker offers (contracts/api.md §6): soft gradient,
+ * orb, duotone split, contour lines, glass label, big type and accent stripe.
+ * Each paints over the cloth already filled with the cover colour, then
+ * draws a narrow book spine down the left edge.
  *
  * Three rules every painter here keeps:
  *
- * - **Deterministic.** Tiles repaint a page piecemeal, so anything irregular
- *   comes from a fixed hash of a cell's index, never `Math.random`; a
- *   repaint draws exactly what the last one did, with no seams.
- * - **Inside the page.** Shapes that cross an edge are clipped here
- *   ({@link clipPolygon}), not left to a canvas clip, so a path never names a
- *   point off the page.
- * - **Sized by the page.** Every size is a fraction of the page's short side,
- *   so a pattern reads the same at A6 and A3 and still shows in a 56 px
+ * - **Deterministic.** Tiles repaint a page piecemeal, so nothing here is
+ *   random; a repaint draws exactly what the last one did, with no seams.
+ * - **Inside the page.** Lines are clipped here ({@link clipSegment}), not left
+ *   to a canvas clip, so a path never names a point off the page. Soft shapes
+ *   are radial gradients filling the page rectangle, never a blur filter,
+ *   which WebKit's canvas does not support.
+ * - **Sized by the page.** Every position and size is a fraction of the page,
+ *   so a design reads the same at A6 and A3 and still shows in a 56 px
  *   thumbnail. Colours come only from the cover's palette.
+ *
+ * The title is not painted: it is a text box placed by `coverTitleBox`
+ * (`src/model/cover.ts`), and so is the big letter of the big-type design.
  *
  * Pure: no DOM, no Obsidian.
  */
@@ -76,16 +79,52 @@ function atY(a: Point, b: Point, y: number): Point {
   return [a[0] + (b[0] - a[0]) * t, y];
 }
 
-/** Add one polygon, clipped to the page, to the current path. */
-function polygon(ctx: CanvasRenderingContext2D, g: PageGeometry, points: readonly Point[]): void {
-  const clipped = clipPolygon(points, g.width, g.height);
-  if (clipped.length < 3) return;
-  ctx.moveTo(clipped[0][0], clipped[0][1]);
-  for (let i = 1; i < clipped.length; i++) ctx.lineTo(clipped[i][0], clipped[i][1]);
-  ctx.closePath();
+/**
+ * Liang–Barsky: the part of segment `a`–`b` inside the page rectangle, or
+ * `null` when none of it is.
+ */
+export function clipSegment(
+  a: Point,
+  b: Point,
+  width: number,
+  height: number,
+): [Point, Point] | null {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  let t0 = 0;
+  let t1 = 1;
+  const checks: Array<[number, number]> = [
+    [-dx, a[0]],
+    [dx, width - a[0]],
+    [-dy, a[1]],
+    [dy, height - a[1]],
+  ];
+  for (const [p, q] of checks) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+  // Clamped: a cut lands on the edge, not 1e-16 past it.
+  const at = (t: number): Point => [
+    Math.min(width, Math.max(0, a[0] + dx * t)),
+    Math.min(height, Math.max(0, a[1] + dy * t)),
+  ];
+  return [at(t0), at(t1)];
 }
 
-/** A fixed hash of a cell, in [0, 1). Never `Math.random`: see the module note. */
+/**
+ * A fixed hash of a cell, in [0, 1). Never `Math.random`: see the module note.
+ * Kept for future textures; the current designs need no irregularity.
+ */
 export function cellHash(i: number, j: number, seed: number): number {
   let h = Math.imul(i ^ Math.imul(j, 0x27d4eb2f) ^ seed, 0x9e3779b1) >>> 0;
   h ^= h >>> 15;
@@ -101,322 +140,191 @@ function shortSide(g: PageGeometry): number {
   return Math.min(g.width, g.height);
 }
 
-function fillPath(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
+/** Begin a new path holding one rounded rectangle. `arcTo`, not `roundRect`: iPadOS 15 lacks it. */
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const k = Math.max(0, Math.min(radius, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+}
+
+/**
+ * A soft round glow: a radial gradient from `color` at its centre to clear at
+ * `radius`, filling the page. It stands in for a blurred circle.
+ */
+function glow(
+  ctx: CanvasRenderingContext2D,
+  g: PageGeometry,
+  cx: number,
+  cy: number,
+  radius: number,
+  color: string,
+): void {
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  gradient.addColorStop(0, withAlpha(color, 1));
+  gradient.addColorStop(0.55, withAlpha(color, 0.75));
+  gradient.addColorStop(1, withAlpha(color, 0));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, g.width, g.height);
+}
+
+// --- The spine every design shares --------------------------------------------
+
+/** A narrow darker strip down the left edge with a lighter line beside it: the book's spine. */
+export function bookSpine(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  const w = width * 0.033;
+  ctx.fillStyle = c.palette.spine;
+  ctx.fillRect(0, 0, w, height);
+  ctx.fillStyle = c.palette.spineEdge;
+  ctx.fillRect(w, 0, Math.max(width * 0.003, c.weight), height);
+}
+
+// --- Designs ------------------------------------------------------------------
+
+/** Soft gradient: two close tones of the cover colour, light at the top left. */
+export function softGradient(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, c.palette.sheenLight);
+  gradient.addColorStop(1, c.palette.sheenDark);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+/** Orb: one large soft circle, its middle catching the light, running off the top right. */
+export function orb(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  const r = shortSide(c.geometry) * 0.45;
+  const cx = width * 0.77;
+  const cy = height * 0.3;
+  const gradient = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+  gradient.addColorStop(0, withAlpha(c.palette.orbCore, 0.9));
+  gradient.addColorStop(1, withAlpha(c.palette.orbRim, 0.9));
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
   ctx.fill();
 }
 
-function strokePath(ctx: CanvasRenderingContext2D, color: string, width: number): void {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
+/** Duotone split: the lower part a shade off the cloth, along a gentle diagonal. */
+export function duotoneSplit(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  ctx.beginPath();
+  ctx.moveTo(0, height * 0.56);
+  ctx.lineTo(width, height * 0.44);
+  ctx.lineTo(width, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fillStyle = c.palette.splitLower;
+  ctx.fill();
+}
+
+/** One closed contour ring around (cx, cy), of size `r`, as a polyline. */
+function contourRing(cx: number, cy: number, r: number): Point[] {
+  // Two cubic Béziers, tilted like a hill seen from above.
+  const p0: Point = [cx - r * 1.3, cy + r * 0.15];
+  const c1: Point = [cx - r * 1.2, cy - r * 1.05];
+  const c2: Point = [cx + r * 1.25, cy - r * 0.95];
+  const p1: Point = [cx + r * 1.25, cy + r * 0.1];
+  // The second curve's first control mirrors c2 about p1 (an SVG "S").
+  const c3: Point = [2 * p1[0] - c2[0], 2 * p1[1] - c2[1]];
+  const c4: Point = [cx - r * 0.2, cy + r * 1.15];
+  const points: Point[] = [];
+  const steps = 48;
+  for (const [a, b, d, e] of [
+    [p0, c1, c2, p1],
+    [p1, c3, c4, p0],
+  ] as const) {
+    for (let i = points.length === 0 ? 0 : 1; i <= steps; i++) {
+      const t = i / steps;
+      const u = 1 - t;
+      points.push([
+        u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * d[0] + t * t * t * e[0],
+        u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * d[1] + t * t * t * e[1],
+      ]);
+    }
+  }
+  return points;
+}
+
+/** Contour lines: ten thin topographic rings in a tint of the cover colour. */
+export function contourLines(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  const unit = width / 1024;
+  const cx = width * 0.74;
+  const cy = height * 0.26;
+  ctx.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const ring = contourRing(cx, cy, (90 + k * 62) * unit);
+    let open = false;
+    for (let i = 1; i < ring.length; i++) {
+      const seg = clipSegment(ring[i - 1], ring[i], width, height);
+      if (!seg) {
+        open = false;
+        continue;
+      }
+      if (!open) ctx.moveTo(seg[0][0], seg[0][1]);
+      ctx.lineTo(seg[1][0], seg[1][1]);
+      // A segment cut short at an edge ends the run: the next one re-enters elsewhere.
+      open = seg[1][0] === ring[i][0] && seg[1][1] === ring[i][1];
+    }
+  }
+  ctx.strokeStyle = c.palette.contour;
+  ctx.lineWidth = Math.max(c.weight, shortSide(c.geometry) * 0.003);
   ctx.stroke();
 }
 
-// --- Patterns -----------------------------------------------------------------
-
-/** Polka: dots on a half-drop grid. */
-export function polka(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+/** Glass label: soft blobs of the cover colour behind a frosted plate for the title. */
+export function glassLabel(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
   const g = c.geometry;
+  const { width, height } = g;
   const s = shortSide(g);
-  const pitch = s * 0.075;
-  const r = s * 0.017;
+  ctx.fillStyle = c.palette.glassGround;
+  ctx.fillRect(0, 0, width, height);
+  glow(ctx, g, width * 0.25, height * 0.29, s * 0.32, c.palette.glassHigh);
+  glow(ctx, g, width * 0.8, height * 0.68, s * 0.38, c.palette.glassMid);
+  glow(ctx, g, width * 0.68, height * 0.21, s * 0.24, c.palette.glassLow);
+  const plate = c.layout.plate;
+  if (!plate) return;
+  roundedRect(ctx, plate.x, plate.y, plate.w, plate.h, plate.r);
+  ctx.fillStyle = c.palette.glassPlate;
+  ctx.fill();
+  ctx.strokeStyle = c.palette.glassEdge;
+  ctx.lineWidth = Math.max(c.weight, s * 0.003);
+  ctx.stroke();
+}
+
+/** Accent stripe: one short bright bar above the title and a small dot grid in the top corner. */
+export function accentStripe(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
+  const { width, height } = c.geometry;
+  const s = shortSide(c.geometry);
+  const barH = s * 0.0098;
+  roundedRect(ctx, width * 0.107, height * 0.746, width * 0.156, barH, barH / 2);
+  ctx.fillStyle = c.palette.accent;
+  ctx.fill();
+  const pitch = s * 0.041;
+  const r = s * 0.0059;
   ctx.beginPath();
-  let row = 0;
-  for (let y = pitch / 2; y + r <= g.height; y += pitch * 0.866, row++) {
-    const offset = row % 2 === 0 ? pitch / 2 : pitch;
-    for (let x = offset; x + r <= g.width; x += pitch) {
-      if (x - r < 0 || y - r < 0) continue;
+  for (let j = 0; j < 5; j++) {
+    for (let i = 0; i < 5; i++) {
+      const x = width * 0.723 + i * pitch;
+      const y = height * 0.104 + j * pitch;
       ctx.moveTo(x + r, y);
       ctx.arc(x, y, r, 0, Math.PI * 2);
     }
   }
-  fillPath(ctx, c.palette.motif);
-}
-
-/** Stripes: broad diagonal bands, rising to the right. */
-export function stripes(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const s = shortSide(g);
-  const pitch = s * 0.085;
-  const band = pitch * 0.38;
-  ctx.beginPath();
-  // Each band is a parallelogram between the lines x + y = k and k + band.
-  for (let k = 0; k < g.width + g.height; k += pitch) {
-    polygon(ctx, g, [
-      [k, 0],
-      [k + band, 0],
-      [k + band - g.height, g.height],
-      [k - g.height, g.height],
-    ]);
-  }
-  fillPath(ctx, c.palette.motifSoft);
-}
-
-/** Graph: a fine grid with every fourth line heavier, as on engineering paper. */
-export function graph(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const pitch = shortSide(g) * 0.028;
-  for (const major of [false, true]) {
-    ctx.beginPath();
-    let i = 1;
-    for (let x = pitch; x < g.width; x += pitch, i++) {
-      if ((i % 4 === 0) !== major) continue;
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, g.height);
-    }
-    i = 1;
-    for (let y = pitch; y < g.height; y += pitch, i++) {
-      if ((i % 4 === 0) !== major) continue;
-      ctx.moveTo(0, y);
-      ctx.lineTo(g.width, y);
-    }
-    const color = major ? c.palette.motif : c.palette.motifSoft;
-    strokePath(ctx, color, (major ? 1.6 : 1) * c.weight);
-  }
-}
-
-/** Waves: rows of gentle sine lines. */
-export function waves(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const s = shortSide(g);
-  const pitch = s * 0.05;
-  const amp = s * 0.011;
-  const length = s * 0.1;
-  const step = length / 10;
-  ctx.beginPath();
-  let row = 0;
-  for (let y = pitch / 2; y + amp <= g.height; y += pitch, row++) {
-    const phase = row % 2 === 0 ? 0 : Math.PI;
-    for (let x = 0; ; x = Math.min(g.width, x + step)) {
-      const py = y + amp * Math.sin((x / length) * Math.PI * 2 + phase);
-      if (x === 0) ctx.moveTo(x, py);
-      else ctx.lineTo(x, py);
-      if (x >= g.width) break;
-    }
-  }
-  strokePath(ctx, c.palette.motif, Math.max(c.weight, s * 0.004));
-}
-
-/** Chevron: bold zigzag rows. */
-export function chevron(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const s = shortSide(g);
-  const pitch = s * 0.08;
-  const half = s * 0.045;
-  const amp = s * 0.022;
-  ctx.beginPath();
-  // Vertex k of a row sits at x = k·half, alternately below and above the
-  // row's centre line; the last leg is cut where it meets the right edge.
-  const zig = (k: number): number => (k % 2 === 0 ? amp : -amp);
-  for (let y = pitch / 2; y + amp <= g.height; y += pitch) {
-    ctx.moveTo(0, y + zig(0));
-    for (let k = 1; ; k++) {
-      const x = k * half;
-      if (x >= g.width) {
-        const t = (g.width - (k - 1) * half) / half;
-        ctx.lineTo(g.width, y + zig(k - 1) + (zig(k) - zig(k - 1)) * t);
-        break;
-      }
-      ctx.lineTo(x, y + zig(k));
-    }
-  }
-  strokePath(ctx, c.palette.motifSoft, Math.max(c.weight, s * 0.016));
-}
-
-/** Mosaic: a grid of squares halved on the diagonal, each half one of three shades. */
-export function mosaic(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const cell = shortSide(g) * 0.09;
-  const groups: Array<{ color: string; shapes: Point[][] }> = [
-    { color: c.palette.motifSoft, shapes: [] },
-    { color: c.palette.motif, shapes: [] },
-  ];
-  for (let j = 0; j * cell < g.height; j++) {
-    for (let i = 0; i * cell < g.width; i++) {
-      const x = i * cell;
-      const y = j * cell;
-      const rising = cellHash(i, j, 0x3c) < 0.5;
-      const halves: Point[][] = rising
-        ? [
-            [
-              [x, y],
-              [x + cell, y],
-              [x, y + cell],
-            ],
-            [
-              [x + cell, y],
-              [x + cell, y + cell],
-              [x, y + cell],
-            ],
-          ]
-        : [
-            [
-              [x, y],
-              [x + cell, y],
-              [x + cell, y + cell],
-            ],
-            [
-              [x, y],
-              [x + cell, y + cell],
-              [x, y + cell],
-            ],
-          ];
-      halves.forEach((half, h) => {
-        // Half of the triangles stay cloth; the rest split between two shades.
-        const pick = cellHash(i * 2 + h, j, 0x91);
-        if (pick < 0.5) return;
-        groups[pick < 0.8 ? 0 : 1].shapes.push(half);
-      });
-    }
-  }
-  for (const group of groups) {
-    ctx.beginPath();
-    for (const shape of group.shapes) polygon(ctx, g, shape);
-    fillPath(ctx, group.color);
-  }
-}
-
-/** Irregular chips on a jittered grid, for terrazzo and the composition marble. */
-function chips(
-  ctx: CanvasRenderingContext2D,
-  c: CoverPaint,
-  pitch: number,
-  sizes: readonly [number, number],
-  shades: ReadonlyArray<{ color: string; share: number }>,
-  seed: number,
-): void {
-  const g = c.geometry;
-  const groups = shades.map((shade) => ({ ...shade, shapes: [] as Point[][] }));
-  for (let j = 0; j * pitch < g.height; j++) {
-    for (let i = 0; i * pitch < g.width; i++) {
-      const pick = cellHash(i, j, seed);
-      let acc = 0;
-      const group = groups.find((grp) => (acc += grp.share) > pick);
-      if (!group) continue;
-      const cx = (i + cellHash(i, j, seed + 1)) * pitch;
-      const cy = (j + cellHash(i, j, seed + 2)) * pitch;
-      const r = sizes[0] + (sizes[1] - sizes[0]) * cellHash(i, j, seed + 3);
-      const corners = 4 + Math.floor(cellHash(i, j, seed + 4) * 3);
-      const turn = cellHash(i, j, seed + 5) * Math.PI * 2;
-      const shape: Point[] = [];
-      for (let k = 0; k < corners; k++) {
-        const a = turn + (k / corners) * Math.PI * 2;
-        const rk = r * (0.55 + 0.45 * cellHash(i * 7 + k, j, seed + 6));
-        shape.push([cx + Math.cos(a) * rk, cy + Math.sin(a) * rk]);
-      }
-      group.shapes.push(shape);
-    }
-  }
-  for (const group of groups) {
-    ctx.beginPath();
-    for (const shape of group.shapes) polygon(ctx, g, shape);
-    fillPath(ctx, group.color);
-  }
-}
-
-/** Terrazzo: scattered stone chips in two shades, a few bright ones. */
-export function terrazzo(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const s = shortSide(c.geometry);
-  chips(
-    ctx,
-    c,
-    s * 0.06,
-    [s * 0.012, s * 0.032],
-    [
-      { color: c.palette.motifSoft, share: 0.35 },
-      { color: c.palette.motif, share: 0.35 },
-      { color: c.palette.fleck, share: 0.06 },
-    ],
-    0x5e,
-  );
-}
-
-/** Composition: the dense mottled flecks of a classic school exercise book. */
-export function composition(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const s = shortSide(c.geometry);
-  chips(
-    ctx,
-    c,
-    s * 0.029,
-    [s * 0.007, s * 0.021],
-    [
-      { color: c.palette.fleck, share: 0.55 },
-      { color: c.palette.motif, share: 0.25 },
-    ],
-    0x7d,
-  );
-}
-
-// --- Classic trims ------------------------------------------------------------
-
-/** Strap: an elastic closure band running top to bottom near the right edge. */
-export function strap(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const band = c.layout.strap;
-  if (!band) return;
-  const { height } = c.geometry;
-  ctx.fillStyle = c.palette.band;
-  ctx.fillRect(band.x, 0, band.w, height);
-  ctx.beginPath();
-  for (const x of [band.x, band.x + band.w]) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-  }
-  strokePath(ctx, c.palette.bandEdge, 1.5 * c.weight);
-  // The elastic's woven rib, faint down its middle.
-  ctx.beginPath();
-  ctx.moveTo(band.x + band.w / 2, 0);
-  ctx.lineTo(band.x + band.w / 2, height);
-  strokePath(ctx, c.palette.motifSoft, c.weight);
-}
-
-/** Bound: the outer corners protected by darker triangles, as on a quarter-bound book. */
-export function boundCorners(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const k = shortSide(g) * 0.17;
-  const corners: Point[][] = [
-    [
-      [g.width - k, 0],
-      [g.width, 0],
-      [g.width, k],
-    ],
-    [
-      [g.width, g.height - k],
-      [g.width, g.height],
-      [g.width - k, g.height],
-    ],
-  ];
-  ctx.beginPath();
-  for (const corner of corners) polygon(ctx, g, corner);
-  fillPath(ctx, c.palette.band);
-  ctx.beginPath();
-  ctx.moveTo(g.width - k, 0);
-  ctx.lineTo(g.width, k);
-  ctx.moveTo(g.width, g.height - k);
-  ctx.lineTo(g.width - k, g.height);
-  strokePath(ctx, c.palette.bandEdge, 2 * c.weight);
-}
-
-/** Frame: a double border set in from the edge. */
-export function frame(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const s = shortSide(g);
-  const outer = s * 0.05;
-  const inner = outer + s * 0.016;
-  ctx.beginPath();
-  ctx.rect(outer, outer, g.width - outer * 2, g.height - outer * 2);
-  strokePath(ctx, c.palette.trim, Math.max(2.5 * c.weight, s * 0.005));
-  ctx.beginPath();
-  ctx.rect(inner, inner, g.width - inner * 2, g.height - inner * 2);
-  strokePath(ctx, c.palette.trim, c.weight);
-}
-
-/** Fade: the cloth deepening toward the bottom, clear across the title. */
-export function fade(ctx: CanvasRenderingContext2D, c: CoverPaint): void {
-  const g = c.geometry;
-  const gradient = ctx.createLinearGradient(0, 0, 0, g.height);
-  gradient.addColorStop(0, withAlpha(c.palette.shade, 0));
-  gradient.addColorStop(0.35, withAlpha(c.palette.shade, 0));
-  gradient.addColorStop(1, withAlpha(c.palette.shade, 0.75));
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, g.width, g.height);
+  ctx.fillStyle = c.palette.accentDot;
+  ctx.fill();
 }

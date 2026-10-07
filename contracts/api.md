@@ -909,20 +909,42 @@ Replacing the viewport cancels obsolete queued/active detail requests, evicts th
 ## More papers and covers (2026-10-06)
 
 Fourteen papers (`two-column` … `music-tab`, specified in §1's ruling table)
-and twelve cover designs join `Ruling`. The covers are `cover-strap`,
-`cover-bound`, `cover-frame` and `cover-fade` ("Classic"), and
-`cover-polka`, `cover-stripes`, `cover-graph`, `cover-waves`,
-`cover-chevron`, `cover-mosaic`, `cover-terrazzo` and `cover-composition`
-("Patterns"); `COVER_SECTIONS` groups them for the picker. As before, a cover
-stores only its ruling and `paperColor`, and every colour it paints comes
-from `coverPalette` (new: `motif`, `motifSoft`, `fleck`, `trim`). Every
-pattern sets the title on a label plate (`coverHasPlate`); `cover-bound` and
-`cover-composition` have a spine band, `cover-strap` a strap whose area the
-title avoids. Pattern painters live in `src/canvas/cover-patterns.ts`, are
-deterministic (a fixed cell hash, never `Math.random`) and clip every shape
-to the page. Eight cover colours were added (`ink`, `plum`, `teal`, `olive`,
+join `Ruling`. Eight cover colours were added (`ink`, `plum`, `teal`, `olive`,
 `kraft`, `blush`, `lavender`, `ivory`); ids are stored in settings and are
-never renamed.
+never renamed. (Twelve cover designs were drafted alongside them and replaced
+before release by the current designs below.)
 
 Older builds load all of these as `blank`, as with the 2026-09-21 rulings.
 No migration; no change to the note format otherwise.
+
+## Current cover designs (2026-10-07)
+
+The cover picker (`COVER_SECTIONS`, one group, "Covers") offers seven
+designs: `cover-gradient` (Soft gradient), `cover-orb` (Orb), `cover-split`
+(Duotone split), `cover-contour` (Contour lines), `cover-glass` (Glass label),
+`cover-monogram` (Big type) and `cover-accent` (Accent stripe). Painters live
+in `src/canvas/cover-patterns.ts`: flat (no vignette), each with a narrow book
+spine down the left edge, deterministic, and clipped to the page; soft shapes
+are radial gradients, never a canvas blur filter (unsupported in WebKit). As
+before, a cover stores only its ruling and `paperColor`, and every colour it
+paints comes from `coverPalette` (new: `spine`, `spineEdge`, `sheenLight`,
+`sheenDark`, `orbCore`, `orbRim`, `splitLower`, `contour`, `glassGround`,
+`glassHigh`, `glassMid`, `glassLow`, `glassPlate`, `glassEdge`, `monogram`,
+`accent`, `accentDot`).
+
+The title stays a text box (`coverTitleBox`). `coverLayout` now also returns
+`titleStyle`: the classic designs' centred serif, or bold sans set left
+(centred on the glass plate) for the current ones; the title sits bottom
+left, on the split's seam, or on the glass plate. The glass plate is
+translucent, so its title takes the cloth's ink (`palette.title`), not the
+label's. Big type's oversized letter is a second text box
+(`coverMonogramBox`, id `t0`, behind the title) in `palette.monogram`, since a
+painter never sees the title; `RestyleCoverTitles` recolours it with the
+cloth and, for a title still where the old design put it, also takes the new
+design's font and alignment.
+
+The classic designs (`cover-plain`, `cover-label`, `cover-band`,
+`cover-linen`; `isClassicCover`) are no longer offered but still drawn, so
+notebooks made before keep their covers; a remembered classic choice in the
+"New notebook" settings reads as the default, `cover-gradient`. Older builds
+load the seven new designs as `blank`. No migration.
