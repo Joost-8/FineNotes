@@ -6,7 +6,16 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
-## [Unreleased]
+## [1.5.0] - 2026-10-07
+
+### Added
+
+- **A table of contents for notebooks.** Give a page a title with "Add to
+  contents" in the ⋯ panel or in a page thumbnail's menu. Titled pages are
+  listed in a new Contents tab of the page sidebar, between Pages and
+  Audio: tap an entry to go to its page, and the section you are reading is
+  marked as you scroll. Titles move and delete with their pages, undo brings
+  them back, and a duplicated page starts without one.
 
 ### Changed
 
