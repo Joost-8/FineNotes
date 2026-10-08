@@ -423,7 +423,8 @@ function decodeGoldens(): DecodeGoldens {
     ["backdrop-null", null],
     ["backdrop-string", "lined"],
     ["backdrop-kind-number", { kind: 5 }],
-    ["backdrop-unknown-ruling", { kind: "hexagon" }],
+    // "hexagon" until 2026-10-06, when it became a real ruling.
+    ["backdrop-unknown-ruling", { kind: "no-such-ruling" }],
     ["backdrop-toString", { kind: "toString" }],
     ["backdrop-constructor", { kind: "constructor" }],
     ["backdrop-proto", { kind: "__proto__" }],

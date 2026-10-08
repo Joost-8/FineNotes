@@ -17,7 +17,7 @@ import {
   SCHEMA_VERSION,
   SINGLE_PAGE_FILE_SUFFIX,
 } from "../constants";
-import { coverTitleBox } from "./cover";
+import { coverMonogramBox, coverTitleBox } from "./cover";
 import { pdfPageGeometry } from "./scan-commands";
 import {
   type AttachmentFolders,
@@ -27,12 +27,12 @@ import {
   type PageGeometry,
   type Ruling,
   type SyntheticBackdrop,
-  COVER_RULINGS,
   RULINGS,
   isCoverRuling,
 } from "./document";
 import {
   COVER_COLORS,
+  COVER_TEMPLATES,
   PAGE_SIZES,
   PAPER_COLORS,
   type PaperColorId,
@@ -68,7 +68,7 @@ export interface NotebookChoices {
 
 export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   type: "notebook",
-  cover: "cover-label",
+  cover: "cover-gradient",
   coverColor: COVER_COLORS[0].id,
   // Blank, as every note created before the dialog existed was.
   ruling: "blank",
@@ -89,7 +89,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
   const r = raw as Record<string, unknown>;
   if (r.type === "notebook" || r.type === "single") out.type = r.type;
-  if (r.cover === "none" || (COVER_RULINGS as readonly unknown[]).includes(r.cover)) {
+  // Only a design the picker still offers: a remembered classic one reads as the default.
+  if (r.cover === "none" || COVER_TEMPLATES.some((t) => t.ruling === r.cover)) {
     out.cover = r.cover as CoverChoice;
   }
   if (COVER_COLORS.some((c) => c.id === r.coverColor)) out.coverColor = r.coverColor as string;
@@ -356,9 +357,11 @@ export function buildNewDocument(
     const backdrop = coverBackdrop(choices.cover, choices.coverColor);
     const cover = page("p1", geometry, backdrop);
     const text = cleanTitle(title) || defaultTitle(choices.type);
-    cover.textBoxes.push(
-      coverTitleBox(choices.cover, geometry, backdrop.paperColor ?? "", text, "t1"),
-    );
+    const color = backdrop.paperColor ?? "";
+    // The big letter first, so the title is drawn over it.
+    const letter = coverMonogramBox(choices.cover, geometry, color, text, "t0");
+    if (letter) cover.textBoxes.push(letter);
+    cover.textBoxes.push(coverTitleBox(choices.cover, geometry, color, text, "t1"));
     doc.pages.push(cover, page("p2", geometry, paper));
     return doc;
   }

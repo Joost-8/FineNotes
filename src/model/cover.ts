@@ -5,13 +5,20 @@
  *
  * A cover stores nothing but its design (the ruling) and `paperColor`. Every
  * other colour on it — the label plate, the spine band, the stitching, the
- * linen threads, the vignette and the title ink — is derived here, so a cover
+ * linen threads, the patterns, the vignette and the title ink — is derived here, so a cover
  * can never carry a label that has drifted out of step with its cloth, and
  * the painter (`src/canvas/backdrop.ts`) and the notebook builder agree on
  * one layout. Pure: no DOM, no Obsidian.
  */
 
-import type { CoverRuling, PageGeometry, SyntheticBackdrop, TextBoxElement } from "./document";
+import type {
+  CoverRuling,
+  PageGeometry,
+  SyntheticBackdrop,
+  TextAlign,
+  TextBoxElement,
+  TextFont,
+} from "./document";
 
 // --- Colour -----------------------------------------------------------------
 
@@ -160,16 +167,56 @@ export interface CoverPalette {
   title: string;
   /** Title ink on the label plate. */
   labelTitle: string;
+  /** The narrow book spine every current design draws, and the lighter line beside it. */
+  spine: string;
+  spineEdge: string;
+  /** Soft gradient: its light (top left) and deep (bottom right) ends. */
+  sheenLight: string;
+  sheenDark: string;
+  /** Orb: the lit middle and the rim (painted at 90% alpha). */
+  orbCore: string;
+  orbRim: string;
+  /** Duotone split: the lower part. */
+  splitLower: string;
+  /** Contour lines. */
+  contour: string;
+  /** Glass label: the ground, three blob tints, the frosted plate and its edge (with alpha). */
+  glassGround: string;
+  glassHigh: string;
+  glassMid: string;
+  glassLow: string;
+  glassPlate: string;
+  glassEdge: string;
+  /** Big type: the oversized letter, a tint of the cloth. */
+  monogram: string;
+  /** Accent stripe: the bar and the dot grid. */
+  accent: string;
+  accentDot: string;
 }
 
 /** Below this luminance there is no darker to go: the band turns lighter. */
 const NEAR_BLACK = 0.02;
+
+/** Above this luminance a tint goes darker than the cloth instead of lighter. */
+const LIGHT_CLOTH = 0.33;
+
+/** Above this luminance (ivory, blush) a lighter shape barely shows: go darker. */
+const PALE_CLOTH = 0.6;
+
+/** Below this luminance (ink, charcoal) shapes need a little more lift to show. */
+const DEEP_CLOTH = 0.03;
 
 export function coverPalette(paperColor: string | undefined): CoverPalette {
   const base = toHexColor(parseHexColor(paperColor) ?? FALLBACK);
   const dark = isDarkColor(base);
   const label = lighten(base, dark ? 0.84 : 0.72);
   const band = relativeLuminance(base) < NEAR_BLACK ? lighten(base, 0.16) : darken(base, 0.3);
+  const lum = relativeLuminance(base);
+  const light = lum > LIGHT_CLOTH;
+  const pale = lum > PALE_CLOTH;
+  const deep = lum < DEEP_CLOTH;
+  /** A tint that reads on the cloth: deeper on light cloth, lighter on dark. */
+  const tint = (t: number): string => (light ? darken(base, t * 0.7) : lighten(base, t));
   return {
     base,
     shade: darken(base, 0.65),
@@ -183,6 +230,24 @@ export function coverPalette(paperColor: string | undefined): CoverPalette {
     threadDark: darken(base, 0.12),
     title: readableOn(base),
     labelTitle: readableOn(label, base),
+    spine: lum < NEAR_BLACK ? lighten(base, 0.12) : darken(base, 0.18),
+    spineEdge: lighten(base, 0.12),
+    sheenLight: lighten(base, pale ? 0.25 : deep ? 0.16 : 0.22),
+    sheenDark: darken(base, pale ? 0.14 : deep ? 0.05 : 0.28),
+    orbCore: pale ? darken(base, 0.1) : lighten(base, light ? 0.4 : deep ? 0.2 : 0.35),
+    orbRim: pale ? darken(base, 0.03) : lighten(base, light ? 0.1 : 0.07),
+    splitLower: light ? darken(base, 0.14) : deep ? lighten(base, 0.07) : darken(base, 0.16),
+    // The mock-up drew these at 60% opacity; mixing toward the cloth keeps the look opaque.
+    contour: mixColors(tint(deep ? 0.22 : 0.3), base, 0.4),
+    glassGround: darken(base, 0.08),
+    glassHigh: lighten(base, deep ? 0.28 : 0.32),
+    glassMid: lighten(base, deep ? 0.14 : 0.12),
+    glassLow: darken(base, pale ? 0.22 : 0.28),
+    glassPlate: withAlpha("#ffffff", light ? 0.38 : 0.16),
+    glassEdge: withAlpha("#ffffff", 0.35),
+    monogram: tint(deep ? 0.1 : 0.12),
+    accent: light ? darken(base, 0.55) : lighten(base, 0.7),
+    accentDot: tint(0.4),
   };
 }
 
@@ -198,40 +263,95 @@ export interface CoverRect {
 export interface CoverLayout {
   /** Width of the spine band down the left edge (`cover-band`); 0 elsewhere. */
   band: number;
-  /** The label plate (`cover-label`); `null` elsewhere. `r` is its corner radius. */
+  /** The label plate (`cover-label`, `cover-glass`); `null` elsewhere. `r` is its corner radius. */
   plate: (CoverRect & { r: number }) | null;
   /** Where the title sits: its horizontal span and the vertical centre of its first line. */
   title: { x: number; w: number; cy: number };
+  /** How the title is set: the classic designs' centred serif, or the current designs' sans. */
+  titleStyle: { font: TextFont; align: TextAlign };
 }
+
+/** The designs released before 2026-10-07. Still drawn, so older notebooks open as they were. */
+const CLASSIC: ReadonlySet<CoverRuling> = new Set<CoverRuling>([
+  "cover-plain",
+  "cover-label",
+  "cover-band",
+  "cover-linen",
+]);
+
+/** Whether a design is one of the classic (pre-2026-10-07) ones the picker no longer offers. */
+export function isClassicCover(kind: CoverRuling): boolean {
+  return CLASSIC.has(kind);
+}
+
+/** Designs that set the title on a plate rather than on the cloth. */
+const PLATED: ReadonlySet<CoverRuling> = new Set<CoverRuling>(["cover-label", "cover-glass"]);
+
+/** Whether a design sets its title on a label plate rather than on the cloth. */
+export function coverHasPlate(kind: CoverRuling): boolean {
+  return PLATED.has(kind);
+}
+
+const CLASSIC_TITLE = { font: "serif", align: "center" } as const;
+const SANS_LEFT = { font: "sans", align: "left" } as const;
+const SANS_CENTRE = { font: "sans", align: "center" } as const;
 
 /**
  * Where a design puts its plate, band and title, in page px. Every size is a
  * fraction of the page, so a cover works at A6 and at A3, in either
- * orientation. The title sits at the same height on every design — the label
- * plate's centre — so changing the design never makes it jump.
+ * orientation. The classic designs share one title line (the label plate's
+ * centre); the current ones set it bottom left, on the split's seam, or on
+ * the glass plate.
  */
 export function coverLayout(kind: CoverRuling, geometry: PageGeometry): CoverLayout {
   const { width, height } = geometry;
   const short = Math.min(width, height);
-  const plateW = width * 0.6;
+  if (!CLASSIC.has(kind)) {
+    // Clear of the 3.3% spine, the same left margin on every current design.
+    const left = width * 0.107;
+    const span = width * 0.78;
+    if (kind === "cover-glass") {
+      const plate = { x: width * 0.137, y: height * 0.36, w: width * 0.727, h: height * 0.228 };
+      return {
+        band: 0,
+        plate: { ...plate, r: short * 0.041 },
+        title: { x: plate.x + plate.w * 0.06, w: plate.w * 0.88, cy: plate.y + plate.h / 2 },
+        titleStyle: SANS_CENTRE,
+      };
+    }
+    const cy = kind === "cover-split" ? height * 0.585 : height * 0.835;
+    return { band: 0, plate: null, title: { x: left, w: span, cy }, titleStyle: SANS_LEFT };
+  }
+  const band = kind === "cover-band" ? Math.round(short * 0.12) : 0;
+  const free = width - band;
+  const plateW = Math.min(width * 0.6, free * 0.7);
   const plateH = Math.min(short * 0.2, height * 0.22);
-  const plateX = (width - plateW) / 2;
+  const plateX = band + (free - plateW) / 2;
   const plateY = height * 0.2;
   const cy = plateY + plateH / 2;
-  if (kind === "cover-label") {
+  if (PLATED.has(kind)) {
     return {
-      band: 0,
+      band,
       plate: { x: plateX, y: plateY, w: plateW, h: plateH, r: plateH * 0.12 },
       title: { x: plateX + plateW * 0.06, w: plateW * 0.88, cy },
+      titleStyle: CLASSIC_TITLE,
     };
   }
-  if (kind === "cover-band") {
-    const band = Math.round(short * 0.12);
-    const free = width - band;
+  if (band > 0) {
     const w = free * 0.72;
-    return { band, plate: null, title: { x: band + (free - w) / 2, w, cy } };
+    return {
+      band,
+      plate: null,
+      title: { x: band + (free - w) / 2, w, cy },
+      titleStyle: CLASSIC_TITLE,
+    };
   }
-  return { band: 0, plate: null, title: { x: width * 0.14, w: width * 0.72, cy } };
+  return {
+    band,
+    plate: null,
+    title: { x: width * 0.14, w: width * 0.72, cy },
+    titleStyle: CLASSIC_TITLE,
+  };
 }
 
 // --- The title --------------------------------------------------------------
@@ -273,17 +393,17 @@ export function coverTitleFrame(
   };
 }
 
-/** The title ink a cover backdrop calls for: on the plate for `cover-label`, else on the cloth. */
+/** The title ink a cover backdrop calls for: on the plate where the design has one, else on the cloth. */
 export function coverTitleColor(backdrop: SyntheticBackdrop): string {
   const palette = coverPalette(backdrop.paperColor);
+  // Only the label's plate is opaque; the glass plate lets the cloth through.
   return backdrop.kind === "cover-label" ? palette.labelTitle : palette.title;
 }
 
 /**
  * The notebook title as a text box on the cover, so it edits like any other
- * text: large bold serif, centred, in an ink chosen for contrast. Its style
- * fields render once the 0.5 text-style work lands; until then it is plain
- * text in the right place and colour.
+ * text: large and bold, in an ink chosen for contrast, set as the design asks
+ * (centred serif on the classic designs, sans on the current ones).
  */
 export function coverTitleBox(
   kind: CoverRuling,
@@ -292,16 +412,52 @@ export function coverTitleBox(
   title: string,
   id: string,
 ): TextBoxElement {
-  const area = coverLayout(kind, geometry).title;
-  const fontSize = coverTitleFontSize(title, area.w, geometry);
+  const layout = coverLayout(kind, geometry);
+  const fontSize = coverTitleFontSize(title, layout.title.w, geometry);
   return {
     id,
     ...coverTitleFrame(kind, geometry, fontSize),
     text: title,
     color: coverTitleColor({ kind, paperColor }),
     fontSize,
-    font: "serif",
+    font: layout.titleStyle.font,
     bold: true,
-    align: "center",
+    align: layout.titleStyle.align,
+  };
+}
+
+/** The big letter's ink on a big-type cover: a quiet tint of the cloth. */
+export function coverMonogramColor(backdrop: SyntheticBackdrop): string {
+  return coverPalette(backdrop.paperColor).monogram;
+}
+
+/**
+ * The big-type design's oversized first letter, as a text box behind the
+ * title (the painter cannot know the title, so the letter is text, and the
+ * user can change it like any other). `null` for every other design, or a
+ * title with no letter to show.
+ */
+export function coverMonogramBox(
+  kind: CoverRuling,
+  geometry: PageGeometry,
+  paperColor: string,
+  title: string,
+  id: string,
+): TextBoxElement | null {
+  if (kind !== "cover-monogram") return null;
+  const first = Array.from(title.trim())[0];
+  if (!first) return null;
+  const { width, height } = geometry;
+  return {
+    id,
+    x: Math.round(width * 0.02),
+    y: Math.round(height * 0.03),
+    w: Math.round(width * 0.96),
+    text: first.toLocaleUpperCase(),
+    color: coverMonogramColor({ kind, paperColor }),
+    fontSize: Math.round(Math.min(width, height * 0.75) * 0.9),
+    font: "sans",
+    bold: true,
+    align: "left",
   };
 }

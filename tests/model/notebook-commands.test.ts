@@ -88,6 +88,30 @@ describe("changeCover", () => {
     expect(snapshot(doc)).toBe(before);
   });
 
+  it("sets an untouched classic title as a current design asks, and undoes exactly", () => {
+    const doc = notebook();
+    const cover = doc.pages[0];
+    const title = cover.textBoxes[0];
+    expect({ font: title.font, align: title.align }).toEqual({ font: "serif", align: "center" });
+    const before = snapshot(doc);
+    const command = changeCover(cover, coverBackdrop("cover-gradient", "navy"));
+    command?.apply(doc);
+    expect({ font: title.font, align: title.align }).toEqual({ font: "sans", align: "left" });
+    command?.invert(doc);
+    expect(snapshot(doc)).toBe(before);
+  });
+
+  it("recolours a big-type letter with the cloth", () => {
+    const doc = buildNewDocument(
+      { ...DEFAULT_NOTEBOOK_CHOICES, cover: "cover-monogram", coverColor: "navy" },
+      "Analysis",
+    );
+    const cover = doc.pages[0];
+    const letter = cover.textBoxes[0];
+    changeCover(cover, coverBackdrop("cover-monogram", "mustard"))?.apply(doc);
+    expect(letter.color).toBe(coverPalette("#d9a93a").monogram);
+  });
+
   it("moves an untouched title to where the new design puts it", () => {
     const doc = notebook();
     const cover = doc.pages[0];

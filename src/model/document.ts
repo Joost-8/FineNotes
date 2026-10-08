@@ -105,6 +105,20 @@ export type Ruling =
   | "music"
   | "guitar-tab"
   | "title-date"
+  | "two-column"
+  | "margin-left"
+  | "margin-right"
+  | "handwriting"
+  | "storyboard"
+  | "meeting-notes"
+  | "graph"
+  | "isometric"
+  | "isometric-dots"
+  | "hexagon"
+  | "daily-planner"
+  | "habit-tracker"
+  | "weekly-grid"
+  | "music-tab"
   | CoverRuling
   | "lined"
   | "grid";
@@ -113,13 +127,33 @@ export type Ruling =
  * A notebook cover is a page like any other (GoodNotes does the same), drawn
  * procedurally. Its colour is the backdrop's `paperColor`.
  */
-export type CoverRuling = "cover-plain" | "cover-label" | "cover-band" | "cover-linen";
+export type CoverRuling =
+  // Classic designs: no longer offered, still drawn so older notebooks open as they were.
+  | "cover-plain"
+  | "cover-label"
+  | "cover-band"
+  | "cover-linen"
+  // The designs the picker offers since 2026-10-07.
+  | "cover-gradient"
+  | "cover-orb"
+  | "cover-split"
+  | "cover-contour"
+  | "cover-glass"
+  | "cover-monogram"
+  | "cover-accent";
 
 export const COVER_RULINGS: readonly CoverRuling[] = [
   "cover-plain",
   "cover-label",
   "cover-band",
   "cover-linen",
+  "cover-gradient",
+  "cover-orb",
+  "cover-split",
+  "cover-contour",
+  "cover-glass",
+  "cover-monogram",
+  "cover-accent",
 ];
 
 /** Whether a ruling draws a cover rather than writing paper. */
@@ -146,6 +180,20 @@ export const RULINGS: readonly Ruling[] = [
   "music",
   "guitar-tab",
   "title-date",
+  "two-column",
+  "margin-left",
+  "margin-right",
+  "handwriting",
+  "storyboard",
+  "meeting-notes",
+  "graph",
+  "isometric",
+  "isometric-dots",
+  "hexagon",
+  "daily-planner",
+  "habit-tracker",
+  "weekly-grid",
+  "music-tab",
   ...COVER_RULINGS,
   "lined",
   "grid",

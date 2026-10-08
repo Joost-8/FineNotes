@@ -795,7 +795,7 @@
     },
     {
       "name": "backdrop-unknown-ruling",
-      "payload": "v2:LU1BCsQgEPtLznPQsqf5ybLswa3SDoqKSrsg/XsVSg5JCEk6DleqpAheCIe4E9xR15JCeIMV4RTbdrBWy4tGYIIb5iJks7kK/nSIBSNrELzEqSX6YX5m9bakPAefYHd/s42vUa+tJP8M5DZZkSKt1PeauAE=",
+      "payload": "v2:LYxBCsMgFETvMusf0NCVNymlC6uSfBQVNclCcvcqhFnMDA9ex+lK5RShVsLJ7oLqqKakEN5QgnCxbTuUFOuLBtDBjXMTst5chfp0sIVCliB4jnNz9OP8tPG2pDyFD4hpqYfZl3IEjhuGpbaS/OPJbbYgQVKI7z3zBw==",
       "fallbackWidth": null,
       "doc": "{\"version\":2,\"view\":{\"scrollY\":0,\"width\":1024,\"scale\":1},\"pages\":[{\"id\":\"p1\",\"kind\":\"ink\",\"geometry\":{\"width\":1024,\"height\":1448},\"backdrop\":{\"kind\":\"blank\"},\"strokes\":[{\"id\":\"s1\",\"color\":\"#1a1a1a\",\"size\":3,\"tool\":\"pen\",\"pts\":[0,0,0.39215686274509803]}],\"images\":[],\"textBoxes\":[]}]}",
       "reencoded": "v2:VY7BCoMwDIbfJbv2UJ2H0ePeYgwPVYMGqyltUTfx3ZeCg41c+iXNl3+HBUMknsGUChbCFcwOsQ3s3AOMVrBSlwYwhS4rJQPrUOBQ4G2PEcxzB+rAgC9AwUhzftM8CvTIE6bwysI/yYDUD0moqm4iamw7doF9/ncKGmdFITOaziu1goRbuvP2xZgCj78JYk7QsuMgcClsLulEekviq+wzuxwUZ+n6lDe10qrQuj5yfQA="

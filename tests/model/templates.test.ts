@@ -33,6 +33,7 @@ import {
   templateBackdrop,
   templateName,
 } from "../../src/model/templates";
+import { isClassicCover } from "../../src/model/cover";
 
 describe("the catalogue", () => {
   it("offers every paper ruling except the two legacy aliases, once each", () => {
@@ -44,7 +45,11 @@ describe("the catalogue", () => {
   });
 
   it("offers every cover design in the cover list and never as paper", () => {
-    expect(COVER_TEMPLATES.map((t) => t.ruling).sort()).toEqual([...COVER_RULINGS].sort());
+    // Every cover design but the classic ones, which only older notebooks carry.
+    expect(COVER_TEMPLATES.map((t) => t.ruling).sort()).toEqual(
+      COVER_RULINGS.filter((k) => !isClassicCover(k)).sort(),
+    );
+    for (const t of COVER_TEMPLATES) expect(isCoverRuling(t.ruling)).toBe(true);
   });
 
   it("names every ruling, aliases included", () => {

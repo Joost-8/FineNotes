@@ -149,8 +149,23 @@ default 1024×1448 geometry.
 | `accounting`           | 32px ledger rules under a header band, with date / description / debit / credit / balance columns      |
 | `music`                | five-line staves, 12px line pitch, separated by 7 pitches, closed by bar lines                         |
 | `guitar-tab`           | six-line staves, 14px line pitch, each marked T-A-B at the left                                        |
+| `two-column`           | two equal ruled columns separated by one vertical rule                                                 |
+| `margin-left`          | ruled-wide with a blank column 30% wide at the left, closed by a vertical rule                         |
+| `margin-right`         | the same, blank column at the right                                                                    |
+| `handwriting`          | groups of three lines 22px apart (solid, dashed waist, solid baseline), groups 4.4 pitches apart       |
+| `storyboard`           | two columns of 16:9 frames, each with two caption rules 32px apart under it                            |
+| `meeting-notes`        | Meeting / Date / Attendees header, ruled notes, action items with checkboxes in the bottom 30%         |
+| `graph`                | 24px square grid, every fifth line twice as heavy                                                      |
+| `isometric`            | vertical lines and lines at ±30°, a triangular lattice of side 32px                                    |
+| `isometric-dots`       | dots at the points of the same lattice                                                                 |
+| `hexagon`              | flat-topped hexagons of side 24px                                                                      |
+| `daily-planner`        | Date line; 6:00–21:00 hourly schedule on the left; priorities, to-dos and notes on the right           |
+| `habit-tracker`        | Month line; a habit-name column and 31 numbered day columns, rows every 36px                           |
+| `weekly-grid`          | Week-of line; a 2 × 4 grid of MON–SUN and NOTES boxes, each ruled every 32px                           |
+| `music-tab`            | systems of a five-line staff over a six-line T-A-B staff, 12px pitch, joined at the left               |
 
-Added 2026-09-21 for the template picker. A build older than that loads these as
+Added 2026-09-21 for the template picker (the second group, from `two-column`
+on, 2026-10-06). A build older than that loads these as
 `blank` (the unknown-ruling fallback in `serialize.ts`) and would save them back
 as `blank`, so the page keeps its ink but loses its paper there.
 
@@ -891,3 +906,46 @@ change the note format.
 At zoom up to 2.5×, notebook ink tiles and their previews share a cached whole-page PDF image. Above that threshold, the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
 
 Replacing the viewport cancels obsolete queued/active detail requests, evicts their canvases, and prevents stale completion callbacks or cached failure placeholders. Ordinary page and sidebar rasters retain their existing byte budgets. Mid-pinch frames retain the previous full-page resolution and start no new detail work. Writing holds background starts; explicitly awaited export/thumbnail requests remain available. Clear/unload cancels pending work.
+
+## More papers and covers (2026-10-06)
+
+Fourteen papers (`two-column` … `music-tab`, specified in §1's ruling table)
+join `Ruling`. Eight cover colours were added (`ink`, `plum`, `teal`, `olive`,
+`kraft`, `blush`, `lavender`, `ivory`); ids are stored in settings and are
+never renamed. (Twelve cover designs were drafted alongside them and replaced
+before release by the current designs below.)
+
+Older builds load all of these as `blank`, as with the 2026-09-21 rulings.
+No migration; no change to the note format otherwise.
+
+## Current cover designs (2026-10-07)
+
+The cover picker (`COVER_SECTIONS`, one group, "Covers") offers seven
+designs: `cover-gradient` (Soft gradient), `cover-orb` (Orb), `cover-split`
+(Duotone split), `cover-contour` (Contour lines), `cover-glass` (Glass label),
+`cover-monogram` (Big type) and `cover-accent` (Accent stripe). Painters live
+in `src/canvas/cover-patterns.ts`: flat (no vignette), each with a narrow book
+spine down the left edge, deterministic, and clipped to the page; soft shapes
+are radial gradients, never a canvas blur filter (unsupported in WebKit). As
+before, a cover stores only its ruling and `paperColor`, and every colour it
+paints comes from `coverPalette` (new: `spine`, `spineEdge`, `sheenLight`,
+`sheenDark`, `orbCore`, `orbRim`, `splitLower`, `contour`, `glassGround`,
+`glassHigh`, `glassMid`, `glassLow`, `glassPlate`, `glassEdge`, `monogram`,
+`accent`, `accentDot`).
+
+The title stays a text box (`coverTitleBox`). `coverLayout` now also returns
+`titleStyle`: the classic designs' centred serif, or bold sans set left
+(centred on the glass plate) for the current ones; the title sits bottom
+left, on the split's seam, or on the glass plate. The glass plate is
+translucent, so its title takes the cloth's ink (`palette.title`), not the
+label's. Big type's oversized letter is a second text box
+(`coverMonogramBox`, id `t0`, behind the title) in `palette.monogram`, since a
+painter never sees the title; `RestyleCoverTitles` recolours it with the
+cloth and, for a title still where the old design put it, also takes the new
+design's font and alignment.
+
+The classic designs (`cover-plain`, `cover-label`, `cover-band`,
+`cover-linen`; `isClassicCover`) are no longer offered but still drawn, so
+notebooks made before keep their covers; a remembered classic choice in the
+"New notebook" settings reads as the default, `cover-gradient`. Older builds
+load the seven new designs as `blank`. No migration.

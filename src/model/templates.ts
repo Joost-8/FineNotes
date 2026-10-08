@@ -49,17 +49,40 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
       { ruling: "legal", name: "Legal" },
       { ruling: "single-column", name: "Single Column" },
       { ruling: "single-column-mix", name: "Single Column Mix" },
+      { ruling: "two-column", name: "Two Column" },
       { ruling: "three-column", name: "Three Column" },
+      { ruling: "margin-left", name: "Wide Margin Left" },
+      { ruling: "margin-right", name: "Wide Margin Right" },
       { ruling: "title-date", name: "Title & Date" },
+    ],
+  },
+  {
+    title: "Grids",
+    templates: [
+      { ruling: "graph", name: "Graph Paper" },
+      { ruling: "isometric", name: "Isometric Grid" },
+      { ruling: "isometric-dots", name: "Isometric Dots" },
+      { ruling: "hexagon", name: "Hexagon Grid" },
     ],
   },
   {
     title: "Planner",
     templates: [
       { ruling: "todos", name: "Todos" },
+      { ruling: "daily-planner", name: "Daily Planner" },
       { ruling: "weekly-planner", name: "Weekly Planner" },
+      { ruling: "weekly-grid", name: "Weekly Grid" },
       { ruling: "monthly-planner", name: "Monthly Planner" },
+      { ruling: "habit-tracker", name: "Habit Tracker" },
+      { ruling: "meeting-notes", name: "Meeting Notes" },
       { ruling: "accounting", name: "Accounting" },
+    ],
+  },
+  {
+    title: "Study & creative",
+    templates: [
+      { ruling: "handwriting", name: "Handwriting Practice" },
+      { ruling: "storyboard", name: "Storyboard" },
     ],
   },
   {
@@ -67,12 +90,37 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
     templates: [
       { ruling: "music", name: "Music Paper" },
       { ruling: "guitar-tab", name: "Guitar Tablature" },
+      { ruling: "music-tab", name: "Score & Tab" },
     ],
   },
 ];
 
-/** Cover designs. Covers are pages but not paper, so the paper picker never offers them. */
-export const COVER_TEMPLATES: readonly TemplateEntry[] = [
+/**
+ * Cover designs, in the cover picker's groups. Covers are pages but not
+ * paper, so the paper picker never offers them. The classic designs (plain,
+ * label, spine, linen) are no longer offered but still drawn, so older
+ * notebooks open as they were ({@link CLASSIC_COVER_NAMES}).
+ */
+export const COVER_SECTIONS: readonly TemplateSection[] = [
+  {
+    title: "Covers",
+    templates: [
+      { ruling: "cover-gradient", name: "Soft gradient" },
+      { ruling: "cover-orb", name: "Orb" },
+      { ruling: "cover-split", name: "Duotone split" },
+      { ruling: "cover-contour", name: "Contour lines" },
+      { ruling: "cover-glass", name: "Glass label" },
+      { ruling: "cover-monogram", name: "Big type" },
+      { ruling: "cover-accent", name: "Accent stripe" },
+    ],
+  },
+];
+
+/** Every cover design the picker offers, in picker order. */
+export const COVER_TEMPLATES: readonly TemplateEntry[] = COVER_SECTIONS.flatMap((s) => s.templates);
+
+/** Names of the classic designs, which notebooks made before 2026-10-07 may still carry. */
+export const CLASSIC_COVER_NAMES: readonly TemplateEntry[] = [
   { ruling: "cover-plain", name: "Plain cover" },
   { ruling: "cover-label", name: "Label cover" },
   { ruling: "cover-band", name: "Spine cover" },
@@ -88,8 +136,9 @@ export interface CoverColor {
 
 /**
  * The cover colours the "New notebook" dialog and "Change cover" offer, each
- * with every design. Four deep and four light, so the derived title ink is
- * exercised both ways (see `coverPalette` in `cover.ts`).
+ * with every design. Deep and light in equal numbers, so the derived title
+ * ink is exercised both ways (see `coverPalette` in `cover.ts`). Ids are
+ * stored in settings: never rename one, only add.
  */
 export const COVER_COLORS: readonly CoverColor[] = [
   { id: "navy", label: "Navy", color: "#1f3a5f" },
@@ -100,6 +149,14 @@ export const COVER_COLORS: readonly CoverColor[] = [
   { id: "mustard", label: "Mustard", color: "#d9a93a" },
   { id: "sage", label: "Sage", color: "#9db59a" },
   { id: "sky", label: "Sky", color: "#8fb8de" },
+  { id: "ink", label: "Ink", color: "#1d1e22" },
+  { id: "plum", label: "Plum", color: "#5a3a5f" },
+  { id: "teal", label: "Teal", color: "#236b70" },
+  { id: "olive", label: "Olive", color: "#6b6a32" },
+  { id: "kraft", label: "Kraft", color: "#b59a74" },
+  { id: "blush", label: "Blush", color: "#e7b6ae" },
+  { id: "lavender", label: "Lavender", color: "#b8aad8" },
+  { id: "ivory", label: "Ivory", color: "#ece6d6" },
 ];
 
 /** The backdrop of a cover in one of {@link COVER_COLORS}. An unknown id gets the first colour. */
@@ -135,6 +192,7 @@ export function paperTemplateFor(pages: readonly Page[], index: number): Backdro
 const RULING_NAMES: ReadonlyMap<Ruling, string> = new Map([
   ...TEMPLATE_SECTIONS.flatMap((s) => s.templates.map((t) => [t.ruling, t.name] as const)),
   ...COVER_TEMPLATES.map((t) => [t.ruling, t.name] as const),
+  ...CLASSIC_COVER_NAMES.map((t) => [t.ruling, t.name] as const),
   ["lined", "Ruled Wide"],
   ["grid", "Squared Paper"],
 ]);

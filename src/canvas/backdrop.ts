@@ -36,6 +36,16 @@ import type {
   Ruling,
   SyntheticBackdrop,
 } from "../model/document";
+import {
+  type CoverPaint,
+  accentStripe,
+  bookSpine,
+  contourLines,
+  duotoneSplit,
+  glassLabel,
+  orb,
+  softGradient,
+} from "./cover-patterns";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
  *  these are the *paper*, which is deliberately theme-independent. */
@@ -462,17 +472,413 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
     },
   },
 
+  // --- More writing papers, grids, planners and music (2026-10-06). -------
+  // Generic layouts found in every paper shop, drawn from scratch. Sizes are
+  // fractions of the page, or multiples of the pitch, as above.
+
+  "two-column": {
+    spacing: 40,
+    draw: (ctx, c) => {
+      const half = c.geometry.width / 2;
+      horizontalRules(ctx, c, 0, half);
+      horizontalRules(ctx, c, half, c.geometry.width);
+      columnRule(ctx, c, half);
+    },
+  },
+
+  "margin-left": {
+    spacing: 40,
+    draw: (ctx, c) => {
+      // A wide blank column for sketches and keywords, ruled notes beside it.
+      const x = c.geometry.width * 0.3;
+      horizontalRules(ctx, c, x, c.geometry.width);
+      columnRule(ctx, c, x);
+    },
+  },
+
+  "margin-right": {
+    spacing: 40,
+    draw: (ctx, c) => {
+      const x = c.geometry.width * 0.7;
+      horizontalRules(ctx, c, 0, x);
+      columnRule(ctx, c, x);
+    },
+  },
+
+  handwriting: {
+    spacing: 22,
+    draw: (ctx, c) => {
+      // Practice lines: a solid top line, a dashed waist, a solid baseline,
+      // each group a pitch apart (the pitch is the x-height), then a gap.
+      const { width, height } = c.geometry;
+      const margin = width * 0.05;
+      const tops: number[] = [];
+      for (let y = c.spacing * 2; y + c.spacing * 2 < height - c.spacing; y += c.spacing * 4.4) {
+        tops.push(y);
+        hLine(ctx, margin, width - margin, y);
+        hLine(ctx, margin, width - margin, y + c.spacing * 2);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for (const y of tops) hLine(ctx, margin, width - margin, y + c.spacing);
+      const dash = Math.max(4, c.spacing * 0.3);
+      ctx.setLineDash([dash, dash * 0.8]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return "painted";
+    },
+  },
+
+  storyboard: {
+    spacing: 32,
+    draw: (ctx, c) => {
+      // Two columns of 16:9 frames, each with two caption rules under it.
+      const { width, height } = c.geometry;
+      const margin = width * 0.06;
+      const gap = width * 0.05;
+      const frameW = (width - margin * 2 - gap) / 2;
+      const frameH = (frameW * 9) / 16;
+      const rowH = frameH + c.spacing * 3;
+      const rows = Math.floor((height - margin * 2) / rowH);
+      const top = (height - rows * rowH) / 2;
+      for (let r = 0; r < rows; r++) {
+        const y = top + r * rowH;
+        for (const x of [margin, margin + frameW + gap]) {
+          ctx.rect(crisp(x), crisp(y), Math.round(frameW), Math.round(frameH));
+          hLine(ctx, x, x + frameW, y + frameH + c.spacing);
+          hLine(ctx, x, x + frameW, y + frameH + c.spacing * 2);
+        }
+      }
+    },
+  },
+
+  "meeting-notes": {
+    spacing: 40,
+    draw: (ctx, c) => {
+      // A header (Meeting, Date, Attendees), ruled notes, and action items
+      // with checkboxes in the bottom third.
+      const { width, height } = c.geometry;
+      const margin = width * 0.06;
+      const size = Math.max(10, Math.min(20, c.spacing * 0.5));
+      const dateX = width * 0.66;
+      const first = c.spacing * 1.6;
+      const second = first + c.spacing * 1.2;
+      const header = second + c.spacing * 0.8;
+      const actions = Math.max(header + c.spacing * 3, height * 0.7);
+      hLine(ctx, margin + size * 4.8, dateX - size, first);
+      hLine(ctx, dateX + size * 2.9, width - margin, first);
+      hLine(ctx, margin + size * 6, width - margin, second);
+      for (let y = header + c.spacing * 1.5; y < actions - c.spacing / 2; y += c.spacing) {
+        hLine(ctx, margin, width - margin, y);
+      }
+      const box = Math.max(6, c.spacing * 0.42);
+      for (let y = actions + c.spacing * 1.5; y < height - margin; y += c.spacing) {
+        checkboxRow(ctx, margin, width - margin, y, c.spacing, box);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      hLine(ctx, 0, width, header);
+      hLine(ctx, 0, width, actions);
+      ctx.lineWidth = RULE_WIDTH * c.weight * 2;
+      ctx.stroke();
+      const lift = size + 5;
+      paintLabels(
+        ctx,
+        c,
+        [
+          { text: "Meeting", x: margin, y: first - lift },
+          { text: "Date", x: dateX, y: first - lift },
+          { text: "Attendees", x: margin, y: second - lift },
+          { text: "Notes", x: margin, y: header + size * 0.6 },
+          { text: "Action items", x: margin, y: actions + size * 0.6 },
+        ],
+        size,
+        "left",
+      );
+      return "painted";
+    },
+  },
+
+  graph: {
+    spacing: 24,
+    draw: (ctx, c) => {
+      // Engineering paper: a fine grid, every fifth line heavier.
+      const { width, height } = c.geometry;
+      for (const major of [false, true]) {
+        ctx.beginPath();
+        let i = 1;
+        for (let x = c.spacing; x < width; x += c.spacing, i++) {
+          if ((i % 5 === 0) === major) vLine(ctx, x, 0, height);
+        }
+        i = 1;
+        for (let y = c.spacing; y < height; y += c.spacing, i++) {
+          if ((i % 5 === 0) === major) hLine(ctx, 0, width, y);
+        }
+        ctx.lineWidth = RULE_WIDTH * c.weight * (major ? 2 : 1);
+        ctx.stroke();
+      }
+      return "painted";
+    },
+  },
+
+  isometric: {
+    spacing: 32,
+    draw: (ctx, c) => {
+      // A triangular lattice: vertical lines and lines at ±30°, meeting at
+      // the same points (`isometricPoints`).
+      const { width, height } = c.geometry;
+      const dx = (c.spacing * Math.sqrt(3)) / 2;
+      const rise = width / Math.sqrt(3);
+      for (let x = dx; x < width; x += dx) vLine(ctx, x, 0, height);
+      // Both families start on a multiple of the pitch, so they cross the
+      // vertical lines exactly at the lattice points.
+      for (let b = -Math.ceil(rise / c.spacing) * c.spacing; b < height; b += c.spacing) {
+        clippedLine(ctx, c.geometry, 0, b, width, b + rise);
+      }
+      for (let b = c.spacing; b < height + rise; b += c.spacing) {
+        clippedLine(ctx, c.geometry, 0, b, width, b - rise);
+      }
+    },
+  },
+
+  "isometric-dots": {
+    spacing: 32,
+    draw: (ctx, c) => {
+      const r = DOT_RADIUS * c.weight;
+      for (const [x, y] of isometricPoints(c.geometry, c.spacing)) {
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      return "painted";
+    },
+  },
+
+  hexagon: {
+    spacing: 24,
+    draw: (ctx, c) => {
+      // Flat-topped hexagons of side `spacing`, odd columns dropped half a
+      // row. Each hexagon draws only its three lower edges; the upper three
+      // belong to the neighbours above, so starting a row above the page
+      // closes every cell and draws each edge once.
+      const { width, height } = c.geometry;
+      const a = c.spacing;
+      const h = Math.sqrt(3) * a;
+      for (let col = 0; col * 1.5 * a < width + a; col++) {
+        const cx = col * 1.5 * a;
+        for (let cy = (col % 2 === 0 ? 0 : h / 2) - h; cy < height + h; cy += h) {
+          for (let k = 0; k < 3; k++) {
+            const a0 = (k * Math.PI) / 3;
+            const a1 = ((k + 1) * Math.PI) / 3;
+            clippedLine(
+              ctx,
+              c.geometry,
+              cx + a * Math.cos(a0),
+              cy + a * Math.sin(a0),
+              cx + a * Math.cos(a1),
+              cy + a * Math.sin(a1),
+            );
+          }
+        }
+      }
+    },
+  },
+
+  "daily-planner": {
+    spacing: 40,
+    draw: (ctx, c) => {
+      // Date at the top; an hourly schedule on the left; priorities, a
+      // to-do list and notes on the right.
+      const { width, height } = c.geometry;
+      const margin = width * 0.06;
+      const size = Math.max(9, Math.min(18, c.spacing * 0.45));
+      const header = c.spacing * 2.4;
+      const top = header + c.spacing * 0.6;
+      const bottom = height - margin;
+      const split = width * 0.56;
+      const right = width * 0.6;
+      hLine(ctx, margin + size * 2.9, split, c.spacing * 1.6);
+      // The schedule: 6:00 to 21:00, one row an hour.
+      const hours = 16;
+      const rowH = (bottom - top) / hours;
+      const labelW = size * 3.4;
+      for (let i = 0; i <= hours; i++) hLine(ctx, margin, split, top + i * rowH);
+      vLine(ctx, margin + labelW, top, bottom);
+      // The right column, each part only as long as the page allows.
+      const box = Math.max(6, c.spacing * 0.42);
+      const labels: Array<{ text: string; x: number; y: number }> = [];
+      let y = top;
+      const part = (text: string, rows: number, boxes: boolean): void => {
+        if (y + c.spacing > bottom) return;
+        labels.push({ text, x: right, y: y + 2 });
+        y += c.spacing * 0.6;
+        for (let i = 0; i < rows && y + c.spacing <= bottom; i++) {
+          y += c.spacing;
+          if (boxes) checkboxRow(ctx, right, width - margin, y, c.spacing, box);
+          else hLine(ctx, right, width - margin, y);
+        }
+        y += c.spacing * 0.6;
+      };
+      part("Priorities", 3, true);
+      part("To do", 8, true);
+      part("Notes", Number.POSITIVE_INFINITY, false);
+      ctx.stroke();
+      ctx.beginPath();
+      hLine(ctx, 0, width, header);
+      ctx.lineWidth = RULE_WIDTH * c.weight * 2;
+      ctx.stroke();
+      paintLabels(
+        ctx,
+        c,
+        [{ text: "Date", x: margin, y: c.spacing * 1.6 - size - 5 }, ...labels],
+        size,
+        "left",
+      );
+      const hourSize = Math.min(size, rowH * 0.45);
+      const hourLabels = Array.from({ length: hours }, (_, i) => ({
+        text: `${6 + i}:00`,
+        x: margin + 4,
+        y: top + i * rowH + 4,
+      }));
+      paintLabels(ctx, c, hourLabels, hourSize, "left");
+      return "painted";
+    },
+  },
+
+  "habit-tracker": {
+    spacing: 36,
+    draw: (ctx, c) => {
+      // A row per habit, a column per day of the month.
+      const { width, height } = c.geometry;
+      const margin = width * 0.05;
+      const size = Math.max(9, Math.min(18, c.spacing * 0.45));
+      const top = c.spacing * 2.6;
+      const head = c.spacing;
+      const bottom = height - margin;
+      const nameW = (width - margin * 2) * 0.28;
+      const dayW = (width - margin * 2 - nameW) / 31;
+      hLine(ctx, margin + size * 3.6, width * 0.6, c.spacing * 1.6);
+      let last = top + head;
+      hLine(ctx, margin, width - margin, top);
+      for (let y = top + head; y <= bottom; y += c.spacing) {
+        hLine(ctx, margin, width - margin, y);
+        last = y;
+      }
+      vLine(ctx, margin, top, last);
+      for (let d = 0; d <= 31; d++) vLine(ctx, margin + nameW + d * dayW, top, last);
+      ctx.stroke();
+      paintLabels(
+        ctx,
+        c,
+        [
+          { text: "Month", x: margin, y: c.spacing * 1.6 - size - 5 },
+          { text: "Habits", x: margin + 6, y: top + (head - size) / 2 },
+        ],
+        size,
+        "left",
+      );
+      const daySize = Math.max(6, Math.min(size, dayW * 0.5));
+      const days = Array.from({ length: 31 }, (_, d) => ({
+        text: String(d + 1),
+        x: margin + nameW + d * dayW + dayW / 2,
+        y: top + (head - daySize) / 2,
+      }));
+      paintLabels(ctx, c, days, daySize, "center");
+      return "painted";
+    },
+  },
+
+  "weekly-grid": {
+    spacing: 32,
+    draw: (ctx, c) => {
+      // Eight boxes, two across: the seven days and a box for notes, each
+      // lightly ruled under its label.
+      const { width, height } = c.geometry;
+      const margin = width * 0.05;
+      const size = Math.max(9, Math.min(18, c.spacing * 0.5));
+      const top = c.spacing * 2.4;
+      const bottom = height - margin;
+      const colW = (width - margin * 2) / 2;
+      const rowH = (bottom - top) / 4;
+      hLine(ctx, margin + size * 4.6, width * 0.6, c.spacing * 1.6);
+      for (let r = 0; r <= 4; r++) hLine(ctx, margin, width - margin, top + r * rowH);
+      for (let col = 0; col <= 2; col++) vLine(ctx, margin + col * colW, top, bottom);
+      for (let r = 0; r < 4; r++) {
+        for (let col = 0; col < 2; col++) {
+          const x0 = margin + col * colW;
+          const y0 = top + r * rowH;
+          for (let y = y0 + c.spacing * 1.6; y < y0 + rowH - c.spacing * 0.4; y += c.spacing) {
+            hLine(ctx, x0 + colW * 0.04, x0 + colW * 0.96, y);
+          }
+        }
+      }
+      ctx.stroke();
+      const names = [...WEEKDAYS, "NOTES"];
+      const labels = names.map((text, i) => ({
+        text,
+        x: margin + (i % 2) * colW + 10,
+        y: top + Math.floor(i / 2) * rowH + 10,
+      }));
+      labels.push({ text: "Week of", x: margin, y: c.spacing * 1.6 - size - 5 });
+      paintLabels(ctx, c, labels, size, "left");
+      return "painted";
+    },
+  },
+
+  "music-tab": {
+    spacing: 12,
+    draw: (ctx, c) => {
+      // Systems of a five-line staff over a six-line tab, joined at the left.
+      const { width, height } = c.geometry;
+      const margin = width * 0.06;
+      const staff = c.spacing * 4;
+      const tab = c.spacing * 5;
+      const inner = c.spacing * 2.5;
+      const system = staff + inner + tab;
+      const tabTops: number[] = [];
+      for (let y = margin * 1.5; y + system < height - margin; y += system + c.spacing * 6) {
+        for (let i = 0; i < 5; i++) hLine(ctx, margin, width - margin, y + i * c.spacing);
+        const t = y + staff + inner;
+        for (let i = 0; i < 6; i++) hLine(ctx, margin, width - margin, t + i * c.spacing);
+        vLine(ctx, margin, y, t + tab);
+        vLine(ctx, width - margin, y, y + staff);
+        vLine(ctx, width - margin, t, t + tab);
+        tabTops.push(t);
+      }
+      ctx.stroke();
+      const size = Math.max(8, c.spacing * 1.2);
+      const labels = tabTops.flatMap((y) =>
+        ["T", "A", "B"].map((text, i) => ({
+          text,
+          x: margin + size,
+          y: y + c.spacing * (1 + i * 1.3),
+        })),
+      );
+      paintLabels(ctx, c, labels, size, "center");
+      return "painted";
+    },
+  },
+
   // --- Covers (contracts/api.md §6). Pages, but not paper: no ruling, and
   // every colour derived from the backdrop's paperColor (`coverPalette`).
   "cover-plain": { spacing: 40, draw: coverPainter("cover-plain") },
   "cover-label": { spacing: 40, draw: coverPainter("cover-label") },
   "cover-band": { spacing: 40, draw: coverPainter("cover-band") },
   "cover-linen": { spacing: 40, draw: coverPainter("cover-linen") },
+  "cover-gradient": { spacing: 40, draw: currentCoverPainter("cover-gradient", softGradient) },
+  "cover-orb": { spacing: 40, draw: currentCoverPainter("cover-orb", orb) },
+  "cover-split": { spacing: 40, draw: currentCoverPainter("cover-split", duotoneSplit) },
+  "cover-contour": { spacing: 40, draw: currentCoverPainter("cover-contour", contourLines) },
+  "cover-glass": { spacing: 40, draw: currentCoverPainter("cover-glass", glassLabel) },
+  // Big type is plain cloth here: its letter is a text box (`coverMonogramBox`).
+  "cover-monogram": { spacing: 40, draw: currentCoverPainter("cover-monogram", () => undefined) },
+  "cover-accent": { spacing: 40, draw: currentCoverPainter("cover-accent", accentStripe) },
 };
 
 /**
- * One cover design. The cloth is already filled with `paperColor`. Drawn in
- * page space and deterministic, because tiles repaint a page piecemeal and a
+ * A classic cover design (no longer offered; kept so older notebooks open as
+ * they were). The cloth is already filled with `paperColor`. Drawn in page
+ * space and deterministic, because tiles repaint a page piecemeal and a
  * random texture would show seams between them.
  */
 function coverPainter(kind: CoverRuling): RulingPainter {
@@ -482,8 +888,29 @@ function coverPainter(kind: CoverRuling): RulingPainter {
     if (kind === "cover-linen") weave(ctx, c, palette);
     vignette(ctx, c, palette);
     if (kind === "cover-plain") insetEdge(ctx, c, palette);
-    if (kind === "cover-band") spine(ctx, c, palette, layout.band);
+    if (layout.band > 0) spine(ctx, c, palette, layout.band);
     if (layout.plate) labelPlate(ctx, c, palette, layout.plate);
+    return "painted";
+  };
+}
+
+/**
+ * One of the designs the picker offers (`cover-patterns.ts`): the design over
+ * the cloth, then the narrow book spine. No vignette: these are flat by intent.
+ */
+function currentCoverPainter(
+  kind: CoverRuling,
+  design: (ctx: CanvasRenderingContext2D, c: CoverPaint) => void,
+): RulingPainter {
+  return (ctx, c) => {
+    const paint: CoverPaint = {
+      geometry: c.geometry,
+      palette: coverPalette(c.paper),
+      layout: coverLayout(kind, c.geometry),
+      weight: c.weight,
+    };
+    design(ctx, paint);
+    bookSpine(ctx, paint);
     return "painted";
   };
 }
@@ -615,6 +1042,81 @@ function threadShade(i: number, seed: number): number {
 }
 
 const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+/**
+ * One ruled row with a checkbox: the rule at `y`, and a box of side `box`
+ * centred in the row above it, at the left.
+ */
+function checkboxRow(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  x1: number,
+  y: number,
+  spacing: number,
+  box: number,
+): void {
+  hLine(ctx, x0, x1, y);
+  ctx.rect(crisp(x0 + 4), crisp(y - spacing / 2 - box / 2), box, box);
+}
+
+/**
+ * The segment from (x0, y0) to (x1, y1), cut to the page (Liang–Barsky), or
+ * nothing when it misses the page. Slanted rules are clipped here rather
+ * than by a canvas clip, so no path point lies off the page.
+ */
+function clippedLine(
+  ctx: CanvasRenderingContext2D,
+  g: PageGeometry,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  let t0 = 0;
+  let t1 = 1;
+  const edges: Array<[number, number]> = [
+    [-dx, x0],
+    [dx, g.width - x0],
+    [-dy, y0],
+    [dy, g.height - y0],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return;
+  }
+  // Clamped as well: the division above can land a hair outside the page.
+  const x = (t: number): number => Math.max(0, Math.min(g.width, x0 + dx * t));
+  const y = (t: number): number => Math.max(0, Math.min(g.height, y0 + dy * t));
+  const [ax, ay, bx, by] = [x(t0), y(t0), x(t1), y(t1)];
+  // A segment lying along the page edge would draw half a rule: skip it.
+  const onEdge = (u: number, v: number, max: number): boolean => u === v && (u <= 0 || u >= max);
+  if (onEdge(ay, by, g.height) || onEdge(ax, bx, g.width)) return;
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+}
+
+/**
+ * The points of an isometric lattice of side `spacing` inside the page:
+ * columns `spacing·√3/2` apart, odd columns dropped half a pitch.
+ */
+export function isometricPoints(g: PageGeometry, spacing: number): Array<[number, number]> {
+  const dx = (spacing * Math.sqrt(3)) / 2;
+  const points: Array<[number, number]> = [];
+  for (let k = 1; k * dx < g.width; k++) {
+    for (let y = k % 2 === 0 ? spacing : spacing / 2; y < g.height; y += spacing) {
+      points.push([k * dx, y]);
+    }
+  }
+  return points;
+}
 
 /** One full-pixel horizontal rule from `x0` to `x1`. */
 function hLine(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number): void {

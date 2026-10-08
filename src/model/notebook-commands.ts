@@ -5,7 +5,7 @@
  */
 
 import { type Command, SetBackdrop } from "./commands";
-import { coverTitleColor, coverTitleFrame } from "./cover";
+import { coverLayout, coverMonogramColor, coverTitleColor, coverTitleFrame } from "./cover";
 import {
   type InkDocument,
   type Page,
@@ -74,10 +74,14 @@ export class RestyleCoverTitles implements Command {
     if (!isCoverRuling(this.from.kind) || !isCoverRuling(this.to.kind)) return;
     const oldInk = coverTitleColor(this.from).toLowerCase();
     const newInk = coverTitleColor(this.to);
+    // A big-type letter is a tint of the cloth: it follows the cloth too.
+    const oldLetter = coverMonogramColor(this.from).toLowerCase();
+    const newLetter = coverMonogramColor(this.to);
     for (const box of this.page.textBoxes) {
       const before = styleOf(box);
       const after = { ...before };
       if (box.color.toLowerCase() === oldInk) after.color = newInk;
+      else if (box.color.toLowerCase() === oldLetter) after.color = newLetter;
       const auto = coverTitleFrame(this.from.kind, this.page.geometry, box.fontSize);
       if (
         Math.abs(box.x - auto.x) <= FRAME_TOLERANCE &&
@@ -85,6 +89,13 @@ export class RestyleCoverTitles implements Command {
         Math.abs(box.w - auto.w) <= FRAME_TOLERANCE
       ) {
         Object.assign(after, coverTitleFrame(this.to.kind, this.page.geometry, box.fontSize));
+        // Still set as the old design set it: take the new design's font and alignment too.
+        const was = coverLayout(this.from.kind, this.page.geometry).titleStyle;
+        if (box.font === was.font && box.align === was.align) {
+          const next = coverLayout(this.to.kind, this.page.geometry).titleStyle;
+          after.font = next.font;
+          after.align = next.align;
+        }
       }
       if (sameStyle(before, after)) continue;
       setStyle(box, after);
@@ -106,14 +117,23 @@ interface TitleStyle {
   x: number;
   y: number;
   w: number;
+  font: TextBoxElement["font"];
+  align: TextBoxElement["align"];
 }
 
 function styleOf(box: TextBoxElement): TitleStyle {
-  return { color: box.color, x: box.x, y: box.y, w: box.w };
+  return { color: box.color, x: box.x, y: box.y, w: box.w, font: box.font, align: box.align };
 }
 
 function sameStyle(a: TitleStyle, b: TitleStyle): boolean {
-  return a.color === b.color && a.x === b.x && a.y === b.y && a.w === b.w;
+  return (
+    a.color === b.color &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.w === b.w &&
+    a.font === b.font &&
+    a.align === b.align
+  );
 }
 
 function setStyle(box: TextBoxElement, style: TitleStyle): void {
@@ -121,6 +141,11 @@ function setStyle(box: TextBoxElement, style: TitleStyle): void {
   box.x = style.x;
   box.y = style.y;
   box.w = style.w;
+  // Absent stays absent: an undo must not leave `font: undefined` on a box that had none.
+  if (style.font === undefined) delete box.font;
+  else box.font = style.font;
+  if (style.align === undefined) delete box.align;
+  else box.align = style.align;
 }
 
 /**
