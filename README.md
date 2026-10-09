@@ -1,6 +1,6 @@
 # FineNotes
 
-Handwriting notebooks for Apple Pencil and iPad, inspired by Goodnotes: real pages, paper templates, shapes that snap, PDF annotation and pictures, all kept as plain files in your vault.
+Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Android tablet pens, and pen tablets on Windows, macOS or Linux. Real pages, paper templates, snapping shapes, PDF annotation and pictures, kept as plain files in your vault.
 
 Most handwriting plugins for Obsidian give you an infinite canvas. FineNotes
 gives you **pages**, as Goodnotes does. A page has a fixed size, so ink stays
@@ -110,9 +110,12 @@ Hope you guys enjoy this and give me some
 ## Requirements
 
 - Obsidian **1.13** or later.
-- It is built for the iPad with an Apple Pencil. It also works with a mouse, a
-  trackpad or a pen on the desktop, and on a phone.
-- Android has not been tested.
+- A stylus: an Apple Pencil on the iPad, the pen of an Android tablet (such as
+  an S Pen), or a pen tablet or pen screen on Windows, macOS or Linux. It also
+  works with a mouse, a trackpad or a finger, and on a phone.
+- It is tested most on the iPad. Android and Linux have had less testing so
+  far, so please [report](https://github.com/Joost-8/FineNotes/issues) anything
+  that does not work there.
 
 ## Install
 
