@@ -91,6 +91,12 @@ import { renderColorPicker } from "./color-picker";
 import { DEFAULT_SHAPE_COLOR, contrastMark, pushRecentColor, sameColor } from "../model/colors";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
+import {
+  clampEraserSize,
+  eraserGlyphRadius,
+  eraserStops,
+  quickEraserSizes,
+} from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
 import {
   DEFAULT_TABLE_SIZE,
@@ -694,7 +700,9 @@ export class Toolbar {
       // own popover the tool (a keyboard shortcut can switch it underneath).
       if (this.popoverKind?.startsWith("text-")) this.closePopover();
       if (this.popoverKind === "lasso" && this.state.tool !== "select") this.closePopover();
-      if (this.popoverKind === "eraser-filter" && this.state.tool !== "eraser") this.closePopover();
+      if (this.popoverKind?.startsWith("eraser-") && this.state.tool !== "eraser") {
+        this.closePopover();
+      }
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -878,18 +886,20 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Sizes, drawn as eraser footprints of increasing diameter.
-    for (const size of ERASER_SIZES) {
+    // Sizes, drawn as eraser footprints of increasing diameter: the presets,
+    // with a size set on the slider in place of the nearest one. The chevron
+    // opens the slider, as the pen's widths do.
+    for (const size of quickEraserSizes(eraserSizeFor(this.state))) {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
       button.append(eraserSizeGlyph(size));
-      button.setAttribute("aria-label", `Eraser size ${size}`);
+      button.setAttribute("aria-label", `Eraser size ${formatMm(size)}`);
       button.addEventListener("click", () => {
-        this.state.eraserSize = size;
-        this.callbacks.onEraserChange?.(eraserModeFor(this.state), size);
+        this.setEraserSize(size);
         this.syncActive();
       });
       this.eraserSizeButtons.set(size, button);
     }
+    this.chevron("Eraser size", (anchor) => this.toggleEraserSizeList(anchor));
 
     // What it erases: GoodNotes' "Erase highlighter only", and "pen only".
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -1599,6 +1609,85 @@ export class Toolbar {
     this.callbacks.onSizeChange(width);
   }
 
+  /**
+   * The eraser's size: a readout, a reset, a slider from a fine tip to a wide
+   * band, and the presets, laid out like the pen's "Stroke width".
+   */
+  private toggleEraserSizeList(anchor: HTMLElement): void {
+    if (this.popoverKind === "eraser-size") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("eraser-size", anchor);
+    body.addClass("goodobsidian-width-popover");
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Eraser size" });
+    const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
+    const reset = head.createEl("button", {
+      cls: "goodobsidian-width-reset clickable-icon",
+      attr: { "aria-label": "Reset eraser size", title: "Reset eraser size" },
+    });
+    iconOrText(reset, "rotate-ccw", "Reset");
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    slider.append(widthWedge());
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": "Eraser size" },
+    });
+    const stops = eraserStops();
+    range.min = "0";
+    range.max = String(stops.length - 1);
+    range.step = "1";
+    const row = body.createDiv({ cls: "goodobsidian-sizes" });
+    const presets = new Map<number, HTMLElement>();
+    // The readout, the thumb and the presets always show the live size.
+    const show = (): void => {
+      const size = eraserSizeFor(this.state);
+      readout.setText(formatMm(size));
+      range.value = String(nearestStop(stops, size));
+      markChosen(presets, size);
+    };
+    const pick = (size: number): void => {
+      this.setEraserSize(size);
+      show();
+    };
+    // The pill's quick sizes are rebuilt around a new size once it is chosen.
+    const settle = (): void => {
+      this.buildOptions();
+      this.syncActive();
+    };
+    for (const size of ERASER_SIZES) {
+      const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
+      preset.append(eraserSizeGlyph(size));
+      preset.setAttribute("aria-label", `Eraser size ${formatMm(size)}`);
+      preset.setAttribute("title", formatMm(size));
+      preset.addEventListener("click", () => {
+        pick(size);
+        this.closePopover();
+        settle();
+      });
+      presets.set(size, preset);
+    }
+    // Live while dragging; the pill follows once the thumb is let go.
+    range.addEventListener("input", () =>
+      pick(stops[Number(range.value)] ?? eraserSizeFor(this.state)),
+    );
+    range.addEventListener("change", settle);
+    reset.addEventListener("click", () => {
+      pick(DEFAULT_ERASER_SIZE);
+      settle();
+    });
+    show();
+  }
+
+  /** A new eraser size, from a quick size, a preset, the slider or a reset. */
+  private setEraserSize(size: number): void {
+    const clamped = clampEraserSize(size);
+    this.state.eraserSize = clamped;
+    this.callbacks.onEraserChange?.(eraserModeFor(this.state), clamped);
+  }
+
   private toggleEraserModeList(anchor: HTMLElement): void {
     if (this.popoverKind === "eraser-mode") {
       this.closePopover();
@@ -2159,11 +2248,10 @@ function eraserSizeGlyph(size: number): SVGElement {
   svg.setAttribute("width", "28");
   svg.setAttribute("height", "28");
   svg.setAttribute("aria-hidden", "true");
-  const largest = ERASER_SIZES[ERASER_SIZES.length - 1];
   const circle = activeDocument.createElementNS(SVG_NS, "circle");
   circle.setAttribute("cx", "14");
   circle.setAttribute("cy", "14");
-  circle.setAttribute("r", String(Math.max(3, (12 * size) / largest)));
+  circle.setAttribute("r", eraserGlyphRadius(size).toFixed(2));
   circle.setAttribute("fill", "none");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");

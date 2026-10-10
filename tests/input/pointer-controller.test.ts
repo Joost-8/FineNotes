@@ -150,6 +150,7 @@ class Rig {
             onPinchStart: (x, y) => log.push(`pinchStart ${x},${y}`),
             onPinch: (i) => log.push(`pinch x${i.scaleFactor} at ${i.centerX},${i.centerY}`),
             onPinchEnd: () => log.push("pinchEnd"),
+            onFingerDoubleTap: (fingers) => log.push(`doubleTap ${fingers}`),
             onDebug: (r) => {
               this.records.push(r);
               log.push(
@@ -755,5 +756,57 @@ describe("space held: the hand (FineNotes#7)", () => {
     rig.take();
     rig.pen("pointerdown", 2, { x: 5, y: 5 });
     expect(rig.take()).toContain("start 1005,2005 p=0.5 tilt=0,0");
+  });
+});
+
+describe("finger double taps", () => {
+  /** Fingers `ids` land together about (200, 300) at `t`, and lift 100 ms later. */
+  function tap(rig: Rig, ids: number[], t: number): void {
+    ids.forEach((id, i) => rig.finger("pointerdown", id, 200 + i * 60, 300, t + i * 5));
+    ids.forEach((id, i) => rig.finger("pointerup", id, 200 + i * 60, 300, t + 100 + i * 5));
+  }
+  const taps = (rig: Rig): string[] => rig.take().filter((line) => line.startsWith("doubleTap"));
+
+  it("reports a two-finger double tap", () => {
+    const rig = new Rig();
+    tap(rig, [1, 2], 1000);
+    tap(rig, [3, 4], 1250);
+    expect(taps(rig)).toEqual(["doubleTap 2"]);
+  });
+
+  it("reports a three-finger double tap, though the scroll gesture takes only two", () => {
+    const rig = new Rig();
+    tap(rig, [1, 2, 3], 1000);
+    tap(rig, [4, 5, 6], 1250);
+    expect(taps(rig)).toEqual(["doubleTap 3"]);
+    // The third finger was never captured, so releasing it threw nothing.
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("is voided by a pen landing in between", () => {
+    const rig = new Rig();
+    tap(rig, [1, 2], 1000);
+    rig.pen("pointerdown", 9, { x: 50, y: 50, t: 1150 });
+    rig.pen("pointerup", 9, { x: 50, y: 50, t: 1160 });
+    tap(rig, [3, 4], 1250);
+    expect(taps(rig)).toEqual([]);
+  });
+
+  it("counts a finger the browser cancels at once as lifted (Android system gestures)", () => {
+    const rig = new Rig();
+    tap(rig, [1, 2], 1000);
+    rig.finger("pointerdown", 3, 200, 300, 1250);
+    rig.finger("pointerdown", 4, 260, 300, 1255);
+    rig.finger("pointercancel", 3, 200, 300, 1300);
+    rig.finger("pointerup", 4, 260, 300, 1305);
+    expect(taps(rig)).toEqual(["doubleTap 2"]);
+  });
+
+  it("ignores a touch while a stroke is open (the writing hand)", () => {
+    const rig = new Rig();
+    rig.pen("pointerdown", 9, { x: 50, y: 50, t: 990 });
+    tap(rig, [1, 2], 1000);
+    tap(rig, [3, 4], 1250);
+    expect(taps(rig)).toEqual([]);
   });
 });

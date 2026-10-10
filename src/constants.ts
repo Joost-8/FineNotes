@@ -150,9 +150,10 @@ export const MIN_SAMPLE_DISTANCE = 1.4;
 export const DEFAULT_HIGHLIGHTER_ALPHA = 0.4;
 
 /**
- * Eraser diameters in page px: small, medium, large. Page space rather than
- * screen space, so zooming in erases finer detail — as on paper, and as in
- * GoodNotes.
+ * The eraser's preset diameters, page px at fit-to-page zoom: small, medium,
+ * large. The surface scales the eraser for the zoom (`InkSurface.atFitZoom`),
+ * so it covers the same screen area at any zoom. The slider's range is in
+ * `model/eraser-sizes.ts`.
  */
 export const ERASER_SIZES = [10, 24, 48] as const;
 

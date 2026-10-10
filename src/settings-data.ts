@@ -137,6 +137,8 @@ export interface GoodObsidianSettings {
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
   returnToPenAfterUse: boolean;
+  /** Double-tap with two fingers to undo, with three to redo. */
+  fingerTapUndo: boolean;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -185,6 +187,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   pressureWidth: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
+  fingerTapUndo: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
 };

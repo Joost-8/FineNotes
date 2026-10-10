@@ -321,6 +321,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "Return to your previous pen or highlighter after an eraser stroke, shape or finished text editing (even if Text is pinned). Lasso returns when you click outside its selection, or delete or cut it.",
         ["tool", "eraser", "lasso", "text", "shape"],
       ),
+      toggle(
+        "fingerTapUndo",
+        "Double-tap with fingers to undo and redo",
+        "Double-tap the page with two fingers to undo, or with three fingers to redo.",
+        ["undo", "redo", "gesture", "fingers", "tap"],
+      ),
       toggle("desynchronizedCanvas", "Desynchronized canvas", DESC.desynchronized, [
         "latency",
         "glitch",

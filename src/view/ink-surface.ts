@@ -318,6 +318,8 @@ const THUMB_HOLD_MS = 1000;
 const COUNTER_HOLD_MS = 1800;
 /** The zoom readout, a beat after the counter. */
 const ZOOM_READOUT_HOLD_MS = 2000;
+/** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
+const READOUT_WORD_HOLD_MS = 900;
 /** Gap between a scroll thumb and the edges of the surface, CSS px. */
 const THUMB_INSET = 4;
 
@@ -418,6 +420,8 @@ export interface InkSurfaceCallbacks {
   onToolChange?: (tool: ActiveTool) => void;
   returnToPenOnReselect?: () => boolean;
   returnToPenAfterUse?: () => boolean;
+  /** Whether a two-finger double tap undoes and a three-finger one redoes. */
+  fingerTapUndo?: () => boolean;
   /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
@@ -3246,8 +3250,46 @@ export class InkSurface {
       }
       this.requestFrame();
     },
+    onFingerDoubleTap: (fingers) => this.fingerDoubleTap(fingers),
+    // With the debug overlay on, every touch of two or more fingers says what
+    // it counted as, so a gesture that does nothing on a device can be read.
+    onFingerTapReport: (r) => {
+      if (!this.debug) return;
+      const cx = r.cancelled ? " cx" : "";
+      this.hud.mark(`tap${r.fingers}:${r.outcome}${cx} ${Math.round(r.ms)}ms`);
+      this.flashReadout(
+        `${r.fingers} fingers · ${Math.round(r.ms)} ms · ${r.outcome}${r.cancelled ? " (cancelled)" : ""}`,
+      );
+    },
     onDebug: (record) => this.onPointerEvent(record),
   };
+
+  /**
+   * Two fingers double-tapped: undo; three: redo (GoodNotes' gestures). The
+   * result shows briefly in the readout pill, as a zoom's percentage does.
+   */
+  private fingerDoubleTap(fingers: number): void {
+    if (this.callbacks.fingerTapUndo?.() === false) return;
+    if (this.callbacks.isLocked?.() === true) return;
+    const redo = fingers >= 3;
+    const can = redo ? this.history.canRedo() : this.history.canUndo();
+    if (can) {
+      if (redo) this.redo();
+      else this.undo();
+    }
+    this.flashReadout(
+      can ? (redo ? "Redo" : "Undo") : redo ? "Nothing to redo" : "Nothing to undo",
+    );
+  }
+
+  /** Show a word in the readout pill, faded on the zoom readout's clock. */
+  private flashReadout(text: string): void {
+    this.zoomReadoutEl.setText(text);
+    this.zoomReadoutEl.removeClass("is-idle");
+    this.chromeUntil.zoom = now() + READOUT_WORD_HOLD_MS;
+    if (!this.chromeTimer)
+      this.chromeTimer = window.setTimeout(this.fadeChrome, READOUT_WORD_HOLD_MS);
+  }
 
   /**
    * A pen landed on a finger gesture: the touch was most likely the writing

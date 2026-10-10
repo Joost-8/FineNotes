@@ -211,6 +211,7 @@ describe("the rows", () => {
       ["", "Draw and hold to make shapes", "toggle:drawAndHold"],
       ["", "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
       ["", "Return to pen after one use", "toggle:returnToPenAfterUse"],
+      ["", "Double-tap with fingers to undo and redo", "toggle:fingerTapUndo"],
       ["", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       ["", "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
       ["", "(block)", "render"],
@@ -269,6 +270,7 @@ describe("the rows", () => {
       "Draw and hold to make shapes": ["shape recognition", "straighten", "snap"],
       "Select active tool again to return to pen": ["tool", "eraser", "lasso", "text", "shape"],
       "Return to pen after one use": ["tool", "eraser", "lasso", "text", "shape"],
+      "Double-tap with fingers to undo and redo": ["undo", "redo", "gesture", "fingers", "tap"],
       "Desynchronized canvas": ["latency", "glitch", "artifacts"],
       "Pressure-sensitive pens (advanced)": [
         "pressure sensitivity",
@@ -357,7 +359,7 @@ describe("which rows show", () => {
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens (advanced)";
     expect(off[off.indexOf(toggle) + 1]).toBe("Paper width");
-    expect(on[on.indexOf(toggle) + 1]).toBe("(block 6)");
+    expect(on[on.indexOf(toggle) + 1]).toBe("(block 7)");
   });
 
   it("by default: no iPad tip, Manual recognition, Claude, keys in the keychain", () => {
@@ -366,6 +368,7 @@ describe("which rows show", () => {
       "Draw and hold to make shapes",
       "Select active tool again to return to pen",
       "Return to pen after one use",
+      "Double-tap with fingers to undo and redo",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
       "Paper width",
@@ -382,9 +385,9 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 28)",
+      "(block 29)",
       "Input debug overlay",
-      "(block 32)",
+      "(block 33)",
     ]);
   });
 

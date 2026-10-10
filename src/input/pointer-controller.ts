@@ -25,6 +25,7 @@
  */
 
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
+import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
 
 export type { PinchInfo };
@@ -96,6 +97,10 @@ export interface PointerControllerCallbacks {
   onPinch?(info: PinchInfo): void;
   /** Fewer than two fingers remain. */
   onPinchEnd?(): void;
+  /** A double tap with two or three fingers (`multi-finger-tap.ts`). */
+  onFingerDoubleTap?(fingers: number): void;
+  /** Every touch of two or more fingers and what it counted as, for the debug HUD. */
+  onFingerTapReport?(report: TapReport): void;
   /** Each event of the drawing pointer as it arrived, for the debug HUD. */
   onDebug?(record: PointerDebugRecord): void;
 }
@@ -111,6 +116,8 @@ export class PointerController {
   /** See {@link strokeRounded}. */
   private rounded = false;
   private readonly fingers: FingerGesture;
+  /** Watches every finger, the third included, for undo and redo taps. */
+  private readonly taps: MultiFingerTap;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
   constructor(
@@ -121,6 +128,10 @@ export class PointerController {
     private readonly handHeld: () => boolean = () => false,
   ) {
     this.fingers = new FingerGesture(listener);
+    this.taps = new MultiFingerTap(
+      (fingers) => listener.onFingerDoubleTap?.(fingers),
+      (report) => listener.onFingerTapReport?.(report),
+    );
     this.handlers = {
       pointerdown: (event) => this.pressed(event),
       pointermove: (event) => this.moved(event),
@@ -163,14 +174,20 @@ export class PointerController {
       }
     } else if (role === "draw") {
       this.beginStroke(event);
-    } else if (role === "finger" && this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
-      // Capture, so a fast swipe that leaves the pane still scrolls it.
-      this.element.setPointerCapture(pointerId);
+    } else if (role === "finger") {
+      // Every finger counts towards a tap, also one the scroll gesture leaves out.
+      this.taps.down(pointerId, clientX, clientY, timeStamp);
+      if (this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
+        // Capture, so a fast swipe that leaves the pane still scrolls it.
+        this.element.setPointerCapture(pointerId);
+      }
     }
   }
 
   private beginStroke(event: PointerEvent): void {
     for (const finger of this.fingers.cancel()) this.releaseCapture(finger);
+    // A pen on the page means the fingers were the writing hand, not a tap.
+    this.taps.penDown();
     if (this.stroke !== null) {
       // The last stroke's pointerup never came (see the top of the file).
       this.releaseCapture(this.stroke);
@@ -189,6 +206,7 @@ export class PointerController {
 
   private moved(event: PointerEvent): void {
     if (event.pointerId !== this.stroke) {
+      this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
       return;
     }
@@ -205,6 +223,9 @@ export class PointerController {
   private released(event: PointerEvent, cancelled: boolean): void {
     const id = event.pointerId;
     if (id !== this.stroke) {
+      // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
+      if (cancelled) this.taps.cancel(id, event.timeStamp);
+      else this.taps.up(id, event.timeStamp);
       if (this.fingers.lift(id, event.timeStamp)) this.releaseCapture(id);
       return;
     }

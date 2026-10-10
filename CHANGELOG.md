@@ -6,6 +6,21 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **Any eraser size, from a fine tip to a wide band.** The chevron next to
+  the eraser's three sizes opens an "Eraser size" slider, laid out like the
+  pen's stroke width: drag for any size from 0.8 mm to 24.6 mm, tap a
+  preset, or reset to the default. A size set on the slider takes the place
+  of the nearest of the three quick sizes in the toolbar.
+- **Double-tap with two fingers to undo, with three to redo.** "Undo" or
+  "Redo" shows briefly where the zoom level appears. A scroll, a pinch or a
+  single tap does nothing, and a pen touching the page in between cancels
+  the gesture. Switch it off under "Double-tap with fingers to undo and
+  redo" in the settings.
+
 ## [1.5.0] - 2026-10-07
 
 ### Added
