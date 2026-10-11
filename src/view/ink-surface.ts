@@ -465,7 +465,7 @@ export interface InkSurfaceCallbacks {
    * adds a section to page `index` at `at` (page px, the heading's left and
    * middle).
    */
-  onAddSection?: (index: number, at: { x: number; y: number }) => void;
+  onAddSection?: (index: number, at: { x: number; y: number }, strokeIds: string[]) => void;
   /**
    * "Link to…" on a lasso selection of ink: the host asks where to, and
    * applies `linkStrokes` for these stroke ids on page `index`. `current`
@@ -5573,7 +5573,11 @@ export class InkSurface {
         run: () => {
           const at = { x: heading.minX, y: (heading.minY + heading.maxY) / 2 };
           this.clearSelection();
-          add(index, at);
+          add(
+            index,
+            at,
+            sel.strokes.map((stroke) => stroke.id),
+          );
         },
       });
     }

@@ -1050,7 +1050,7 @@ export class InkView extends TextFileView {
           this.scheduleLastPage();
         },
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
-        onAddSection: (index, at) => this.addSection(index, at),
+        onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onOpenLink: (target) => this.openInkLink(target),
         onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
@@ -1538,7 +1538,7 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page || this.isProtected()) return;
-    new LinkSuggestModal(this.app, {
+    const picker = new LinkSuggestModal(this.app, {
       notes: this.linkableNotes(),
       current,
       choose: (target) => {
@@ -1551,7 +1551,14 @@ export class InkView extends TextFileView {
         surface.applyCommand(new CompositeCommand(label, commands));
         this.requestSave();
       },
-    }).open();
+    });
+    picker.open();
+    // New links start from what the ink says, read on this device.
+    if (current === null) {
+      void this.readSelectedInk(page, strokeIds).then((text) => {
+        if (text) picker.suggest(text);
+      });
+    }
   }
 
   /** The vault's notes for the link picker, most recently changed first. */
@@ -1582,11 +1589,11 @@ export class InkView extends TextFileView {
    * "Add to contents" on a lasso selection: ask for the heading's title and
    * list it under its page's title in the contents (FineNotes#20).
    */
-  private addSection(index: number, at: { x: number; y: number }): void {
+  private addSection(index: number, at: { x: number; y: number }, strokeIds: string[]): void {
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page || this.isProtected()) return;
-    new ContentsTitleModal(
+    const modal = new ContentsTitleModal(
       this.app,
       index,
       undefined,
@@ -1599,7 +1606,29 @@ export class InkView extends TextFileView {
         this.requestSave();
       },
       true,
-    ).open();
+    );
+    modal.open();
+    // The heading's ink, read on this device, fills the title once it is read.
+    void this.readSelectedInk(page, strokeIds).then((text) => {
+      if (text) modal.suggest(text);
+    });
+  }
+
+  /**
+   * What lassoed ink says, read on this device; "" when on-device reading is
+   * off, there is no ink, or it cannot be read. Never throws: a suggestion
+   * that does not come is no error.
+   */
+  private async readSelectedInk(page: Page, strokeIds: readonly string[]): Promise<string> {
+    if (this.settings.handwritingOnDevice === false || strokeIds.length === 0) return "";
+    const ids = new Set(strokeIds);
+    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
+    if (strokes.length === 0) return "";
+    try {
+      return await this.plugin.handwriting.readInk(strokes);
+    } catch {
+      return "";
+    }
   }
 
   /** Rename or remove a section, from its menu in the Contents tab. */

@@ -972,7 +972,7 @@ describe("Add to contents on a selection", () => {
       doc,
       palette: [],
       toolState: {},
-      callbacks: { onAddSection: (index: number, at: unknown) => added.push([index, at]) },
+      callbacks: { onAddSection: (...args: unknown[]) => added.push(args) },
       groupBounds: () => ({ minX: 100, minY: 105, maxX: 300, maxY: 125 }),
       pasteAction: () => ({ id: "paste", icon: "", label: "Paste", group: "edit" }),
       clearSelection: () => cleared++,
@@ -981,7 +981,7 @@ describe("Add to contents on a selection", () => {
     const actions = run<Array<{ id: string; run?: () => void }>>(surface, "groupActions", sel);
     const add = actions.find((a) => a.id === "contents");
     add?.run?.();
-    expect(added).toEqual([[1, { x: 100, y: 115 }]]);
+    expect(added).toEqual([[1, { x: 100, y: 115 }, ["h"]]]);
     expect(cleared).toBe(1);
   });
 

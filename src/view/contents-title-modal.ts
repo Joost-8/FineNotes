@@ -21,6 +21,9 @@ import { DialogKeyboard } from "./dialog-keyboard";
 
 export class ContentsTitleModal extends Modal {
   private readonly keyboard: DialogKeyboard;
+  /** The title field, once open; and whether the user has typed in it. */
+  private field: HTMLInputElement | null = null;
+  private typed = false;
 
   constructor(
     app: App,
@@ -64,12 +67,17 @@ export class ContentsTitleModal extends Modal {
       },
     });
     field.value = this.current ?? "";
+    this.field = field;
     const count = row.createDiv({ cls: "goodobsidian-contents-count" });
     const updateCount = (): void => {
       count.setText(`${field.value.length}/${MAX_PAGE_TITLE_LENGTH}`);
     };
+    this.updateCount = updateCount;
     updateCount();
-    field.addEventListener("input", updateCount);
+    field.addEventListener("input", () => {
+      this.typed = true;
+      updateCount();
+    });
     this.keyboard.watch(field, row);
 
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
@@ -95,7 +103,24 @@ export class ContentsTitleModal extends Modal {
     field.select();
   }
 
+  private updateCount: () => void = () => {};
+
+  /**
+   * A title read from the heading's ink, which arrives after the dialog
+   * opens: it fills the field, selected so typing replaces it, unless the
+   * user has typed already or the dialog is renaming.
+   */
+  suggest(title: string): void {
+    const field = this.field;
+    const text = normalizePageTitle(title);
+    if (!field || this.typed || this.current !== undefined || text === undefined) return;
+    field.value = text.slice(0, MAX_PAGE_TITLE_LENGTH);
+    this.updateCount();
+    field.select();
+  }
+
   override onClose(): void {
+    this.field = null;
     this.keyboard.end();
     this.contentEl.empty();
   }

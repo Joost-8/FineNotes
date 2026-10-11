@@ -68,6 +68,19 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
     this.keyboard.end();
   }
 
+  /**
+   * Where the ink seems to lead, read from it after the list opens: typed
+   * into the field, selected so typing replaces it, unless something is
+   * typed there already.
+   */
+  suggest(text: string): void {
+    const query = text.trim();
+    if (query === "" || this.inputEl.value.trim() !== "") return;
+    this.inputEl.value = query;
+    this.inputEl.dispatchEvent(new Event("input"));
+    this.inputEl.select();
+  }
+
   getSuggestions(query: string): PickerItem[] {
     const choices: PickerItem[] = linkChoices(query, this.host.notes);
     const current = this.host.current;
