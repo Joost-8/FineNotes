@@ -8,6 +8,7 @@ import { writingLines } from "../../src/canvas/backdrop";
 import {
   type SpaceLayout,
   planInsertSpace,
+  spaceHandles,
   spaceStrip,
   spaceTargetAt,
 } from "../../src/canvas/insert-space";
@@ -75,6 +76,22 @@ describe("spaceTargetAt", () => {
     expect(spaceTargetAt(columns, A4.width, 520, 112)).toEqual({ block: 1, line: 2 });
     expect(spaceTargetAt(columns, A4.width, 500, 112)).toBeNull();
     expect(spaceTargetAt(columns, A4.width, 10, 112)).toEqual({ block: 0, line: 2 });
+  });
+
+  it("has a mark level with each line, where a press starts on that line", () => {
+    for (const blocks of [ruled, columns, legal]) {
+      const marks = spaceHandles(blocks, A4.width);
+      expect(marks).toHaveLength(blocks.length);
+      marks.forEach((mark, block) => {
+        expect(mark.lines).toBe(blocks[block].baselines.length);
+        for (const line of [0, 1, mark.lines - 1]) {
+          // The middle of the line's cell, where the mark is drawn.
+          const y = mark.top + (line + 0.5) * mark.pitch;
+          expect(spaceTargetAt(blocks, A4.width, mark.x, y)).toEqual({ block, line });
+        }
+      });
+    }
+    expect(spaceHandles([], A4.width)).toEqual([]);
   });
 });
 

@@ -89,18 +89,57 @@ export function spaceTargetAt(
   x: number,
   y: number,
 ): SpaceTarget | null {
-  const strip = width * MARGIN_SHARE;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
-    // A block with another block just left of it starts its strip at its
-    // own edge; otherwise the whole margin to the page's edge is its own.
-    const neighbour = blocks.some((o) => o !== b && Math.abs(o.x1 - b.x0) < 1);
-    const left = neighbour ? b.x0 : 0;
-    if (x < left || x >= b.x0 + strip) continue;
+    const { left, right } = marginStrip(blocks, b, width);
+    if (x < left || x >= right) continue;
     const ref = lineAt([b], b.x0, y);
     if (ref) return { block: i, line: ref.line };
   }
   return null;
+}
+
+/**
+ * A block's strip in the margin, where a press starts an insert: a block
+ * with another block just left of it starts its strip at its own edge;
+ * otherwise the whole margin to the page's edge is its own.
+ */
+function marginStrip(
+  blocks: readonly LineBlock[],
+  block: LineBlock,
+  width: number,
+): { left: number; right: number } {
+  const neighbour = blocks.some((o) => o !== block && Math.abs(o.x1 - block.x0) < 1);
+  return { left: neighbour ? block.x0 : 0, right: block.x0 + width * MARGIN_SHARE };
+}
+
+/** Where a block's insert-space markers go: one per line, down the middle of its margin strip. */
+export interface SpaceHandles {
+  /** The strip's middle, page px. */
+  x: number;
+  /** The rule above the first line; one pitch per line from there. */
+  top: number;
+  pitch: number;
+  lines: number;
+}
+
+/**
+ * The markers that show where a press starts an insert: a column in each
+ * block's margin strip, one level with each line (between its rule and the
+ * rule above), so they line up with the paper.
+ */
+export function spaceHandles(blocks: readonly LineBlock[], width: number): SpaceHandles[] {
+  return blocks
+    .filter((b) => b.baselines.length > 0)
+    .map((b) => {
+      const { left, right } = marginStrip(blocks, b, width);
+      return {
+        x: (left + right) / 2,
+        top: ruleBand(b, 0).top,
+        pitch: b.pitch,
+        lines: b.baselines.length,
+      };
+    });
 }
 
 type Element =

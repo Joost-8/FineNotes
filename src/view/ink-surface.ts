@@ -118,6 +118,7 @@ import {
   type SpacePlan,
   type SpaceTarget,
   planInsertSpace,
+  spaceHandles,
   spaceStrip,
   spaceTargetAt,
 } from "../canvas/insert-space";
@@ -973,6 +974,9 @@ export class InkSurface {
   /** A lock badge on each locked picture, shown only while the lasso is the tool. */
   private readonly lockBadgesEl: HTMLElement;
   private readonly lockBadges: HTMLElement[] = [];
+  /** The by-line lasso's insert-space markers: a column per block of lines per page. */
+  private readonly spaceHandlesEl: HTMLElement;
+  private readonly spaceHandleEls: HTMLElement[] = [];
   /** A ribbon in the margin beside each section in the contents. */
   private readonly sectionRibbonsEl: HTMLElement;
   private readonly sectionRibbons: HTMLElement[] = [];
@@ -1259,6 +1263,12 @@ export class InkSurface {
     // A ribbon beside each heading listed in the contents. Takes no presses either.
     this.sectionRibbonsEl = this.paperEl.createDiv({
       cls: "goodobsidian-section-ribbons is-hidden",
+    });
+    // With the by-line lasso, a mark beside each line where a press and a
+    // drag inserts space. Drawn over the ink, so writing in the margin
+    // cannot hide it; it takes no presses (the margin under it does).
+    this.spaceHandlesEl = this.paperEl.createDiv({
+      cls: "goodobsidian-space-handles is-hidden",
     });
 
     // The selected image's chrome, above the text boxes, after GoodNotes:
@@ -1667,6 +1677,8 @@ export class InkSurface {
     this.reportStatus();
     // Ink moved or went: the underlines and ribbons follow it.
     this.syncSectionRibbons();
+    // A page's template may have changed: its lines, and their markers.
+    this.syncSpaceHandles();
     this.callbacks.onChange();
   }
 
@@ -1818,6 +1830,7 @@ export class InkSurface {
     if (tool !== "select") this.dropSelection();
     // Locked pictures wear a badge only while the lasso could select them.
     this.syncLockBadges();
+    this.syncSpaceHandles();
     if (tool !== "text") {
       this.releaseHeldText();
       this.hideTextHint();
@@ -2457,6 +2470,7 @@ export class InkSurface {
     this.syncSelectionOverlay();
     this.syncLockBadges();
     this.syncSectionRibbons();
+    this.syncSpaceHandles();
     this.flashChrome(true);
     this.requestFrame();
     this.reportStatus();
@@ -2569,6 +2583,7 @@ export class InkSurface {
     this.syncSelectionOverlay();
     this.syncLockBadges();
     this.syncSectionRibbons();
+    this.syncSpaceHandles();
   }
 
   /** Keep typed page elements aligned with the canvas across pan and zoom. */
@@ -5972,6 +5987,48 @@ export class InkSurface {
    * tool that would otherwise pick it up — so a lock can be found without
    * cluttering the page the rest of the time. The badges take no presses.
    */
+  /**
+   * The by-line lasso's markers: while it is the lasso type, a column of
+   * them in the margin of every block of lines, one level with each line.
+   */
+  private syncSpaceHandles(): void {
+    // Not built yet (the first change can come from the constructor's load).
+    if (!this.spaceHandlesEl || !this.pageLayout) return;
+    let used = 0;
+    if (this.toolState.tool === "select" && lassoModeFor(this.toolState) === "lines") {
+      const scale = this.unitScale;
+      for (const box of this.pageLayout.boxes) {
+        const page = this.pageAt(box.index);
+        if (!page) continue;
+        const lines = writingLines(page.backdrop, page.geometry);
+        for (const column of spaceHandles(lines, page.geometry.width)) {
+          let el = this.spaceHandleEls[used];
+          if (!el) {
+            el = this.spaceHandlesEl.createDiv({ cls: "goodobsidian-space-handle" });
+            this.spaceHandleEls.push(el);
+          }
+          el.removeClass("is-hidden");
+          el.setCssStyles({
+            left: `${(box.x + column.x) * scale}px`,
+            top: `${(box.y + column.top) * scale}px`,
+            height: `${column.lines * column.pitch * scale}px`,
+          });
+          el.setCssProps({ "--gob-space-pitch": `${column.pitch * scale}px` });
+          used++;
+        }
+      }
+    }
+    for (let i = used; i < this.spaceHandleEls.length; i++) {
+      this.spaceHandleEls[i].addClass("is-hidden");
+    }
+    this.spaceHandlesEl.toggleClass("is-hidden", used === 0);
+  }
+
+  /** The lasso's type changed (the toolbar wrote it into the tool state): its page marks follow. */
+  refreshLassoChrome(): void {
+    this.syncSpaceHandles();
+  }
+
   /** One ribbon at the page's left edge for each section, level with its heading. */
   private syncSectionRibbons(): void {
     // Not built yet (the first change can come from the constructor's load).

@@ -4216,6 +4216,39 @@ input[type="range"].goodobsidian-player-scrubber {
   fill: currentColor;
 }
 
+/*
+ * The by-line lasso's insert-space marks: a small up-and-down arrow in the
+ * margin, one level with each line, repeated down the column at the line
+ * pitch (--gob-space-pitch, screen px). Over the ink, taking no presses.
+ */
+.goodobsidian-space-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-space-handles.is-hidden,
+.goodobsidian-space-handle.is-hidden {
+  display: none;
+}
+
+.goodobsidian-space-handle {
+  position: absolute;
+  width: 14px;
+  transform: translateX(-50%);
+  background-color: var(--interactive-accent);
+  opacity: 0.6;
+  --gob-space-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath d='M2.5 6.5 6 3l3.5 3.5M2.5 11.5 6 15l3.5-3.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-image: var(--gob-space-mark);
+  mask-image: var(--gob-space-mark);
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+  -webkit-mask-position: center top;
+  mask-position: center top;
+  -webkit-mask-size: 14px var(--gob-space-pitch, 40px);
+  mask-size: 14px var(--gob-space-pitch, 40px);
+}
+
 /* An underline under linked ink, in the accent colour: the ink keeps its own. */
 .goodobsidian-link-mark {
   position: absolute;

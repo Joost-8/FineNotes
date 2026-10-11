@@ -1090,7 +1090,10 @@ export class InkView extends TextFileView {
         onPenTypeChange: () => this.toolbar?.syncActive(),
         onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
-        onLassoChange: (mode, filter) => this.plugin.saveLasso(mode, filter),
+        onLassoChange: (mode, filter) => {
+          this.surface?.refreshLassoChrome();
+          this.plugin.saveLasso(mode, filter);
+        },
         onToggleThumbnails: () => this.toggleSidebar(),
         onTextStyle: (patch) => this.surface?.applyTextStyle(patch),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
