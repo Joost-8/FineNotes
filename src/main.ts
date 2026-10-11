@@ -706,6 +706,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember the pen row's picked colours, for every notebook. */
+  savePenColors(colors: readonly string[]): void {
+    this.settings.penColors = [...colors];
+    void this.saveSettings();
+  }
+
   /** Remember the lasso's type and what it picks up, for the next session. */
   saveLasso(mode: LassoMode, filter: LassoFilter): void {
     this.settings.lassoMode = mode;

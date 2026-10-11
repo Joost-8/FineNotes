@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   COMMON_COLORS,
   MAX_RECENT_COLORS,
+  PEN_ROW_SIZE,
+  penColorRow,
+  pickPenColor,
+  reservedPenColors,
   hexToRgb,
   parseHexColor,
   pushRecentColor,
@@ -140,5 +144,77 @@ describe("hsv", () => {
     expect(rgbToHex(hsvToRgb({ h: 0, s: Number.NaN, v: 1 }))).toBe("#ffffff");
     expect(rgbToHex(hsvToRgb({ h: 0, s: 1, v: Number.POSITIVE_INFINITY }))).toBe("#000000");
     expect(rgbToHsv({ r: Number.NaN, g: 0, b: 0 })).toEqual({ h: 0, s: 0, v: 0 });
+  });
+});
+
+describe("the pen's colour row", () => {
+  const fill = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"];
+
+  it("has five swatches: the settings' colours first, then the palette", () => {
+    expect(PEN_ROW_SIZE).toBe(5);
+    expect(penColorRow(["#1a1a1a"], undefined, fill)).toEqual([
+      "#1a1a1a",
+      "#e03131",
+      "#1971c2",
+      "#2f9e44",
+      "#f08c00",
+    ]);
+    const reserved = reservedPenColors(["#1A1A1A", "#ff8800", "nope", "#ff8800"]);
+    expect(reserved).toEqual(["#1a1a1a", "#ff8800"]);
+    expect(penColorRow(reserved, undefined, fill)).toEqual([
+      "#1a1a1a",
+      "#ff8800",
+      "#e03131",
+      "#1971c2",
+      "#2f9e44",
+    ]);
+  });
+
+  it("reserves at most four, so a pick always has a slot", () => {
+    const reserved = reservedPenColors(["#111111", "#222222", "#333333", "#444444", "#555555"]);
+    expect(reserved).toHaveLength(4);
+    const row = penColorRow(reserved, undefined, fill);
+    expect(row).toEqual([...reserved, "#1a1a1a"]);
+    expect(pickPenColor(row, 4, "#abcdef")).toEqual(["#abcdef"]);
+  });
+
+  it("keeps a picked colour, and moves nothing for one already there", () => {
+    const reserved = ["#1a1a1a"];
+    let row = penColorRow(reserved, undefined, fill);
+    const picked = pickPenColor(row, 1, "#ABCDEF");
+    expect(picked).toEqual(["#abcdef", "#e03131", "#1971c2", "#2f9e44"]);
+    row = penColorRow(reserved, picked, fill);
+    // Going back to black, then to the pick: both stay where they are.
+    expect(pickPenColor(row, 1, "#1a1a1a")).toEqual(picked);
+    expect(pickPenColor(row, 1, "#abcdef")).toEqual(picked);
+    expect(pickPenColor(row, 1, "#e03131")).toEqual(picked);
+    expect(pickPenColor(row, 1, "not a colour")).toEqual(picked);
+  });
+
+  it("puts a colour picked from a swatch in that swatch's place, but never a reserved one's", () => {
+    const row = penColorRow(["#1a1a1a"], undefined, fill);
+    expect(pickPenColor(row, 1, "#abcdef", "#1971c2")).toEqual([
+      "#e03131",
+      "#abcdef",
+      "#2f9e44",
+      "#f08c00",
+    ]);
+    expect(pickPenColor(row, 1, "#abcdef", "#1a1a1a")).toEqual([
+      "#abcdef",
+      "#e03131",
+      "#1971c2",
+      "#2f9e44",
+    ]);
+  });
+
+  it("reads back a stored row however it was damaged", () => {
+    expect(penColorRow([], ["#abcdef", 7, "#ABCDEF", "x"], fill)).toEqual([
+      "#abcdef",
+      "#1a1a1a",
+      "#e03131",
+      "#1971c2",
+      "#2f9e44",
+    ]);
+    expect(penColorRow([], "nope" as never, fill)).toHaveLength(5);
   });
 });

@@ -206,6 +206,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     recentColors: recentColorsOf(s.recentColors),
+    penColors: Array.isArray(s.penColors) ? [...s.penColors] : undefined,
   };
 }
 
@@ -1098,6 +1099,7 @@ export class InkView extends TextFileView {
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
         onShapeColorChange: (color) => this.plugin.saveShapeColor(color),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
+        onPenColors: (colors) => this.plugin.savePenColors(colors),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
@@ -1110,7 +1112,10 @@ export class InkView extends TextFileView {
         onSearch: () => void this.openSearch(),
         onMore: (anchor) => this.toggleMorePanel(anchor),
       },
-      { defaultSize: this.settings.defaultSize },
+      {
+        defaultSize: this.settings.defaultSize,
+        reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
+      },
     );
 
     const pdfCache = new PdfBackdropCache(this.app);

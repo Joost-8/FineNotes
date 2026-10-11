@@ -158,6 +158,71 @@ export function pushRecentColor(recent: readonly string[], color: string): strin
   return [hex, ...kept].slice(0, MAX_RECENT_COLORS);
 }
 
+/** Swatches in the pen's colour row. */
+export const PEN_ROW_SIZE = 5;
+
+/** Readable colours as `#rrggbb`, each once, in order; anything else dropped. */
+function uniqueColors(colors: readonly unknown[]): string[] {
+  const out: string[] = [];
+  for (const item of colors) {
+    const hex = typeof item === "string" ? parseHexColor(item) : null;
+    if (hex && !out.includes(hex)) out.push(hex);
+  }
+  return out;
+}
+
+/**
+ * The colours the settings define keep their own slots at the front of the
+ * pen's row: the default ink colour, then the custom palette colours. At most
+ * one less than the row, so a picked colour always has a slot to go to.
+ */
+export function reservedPenColors(defined: readonly unknown[]): string[] {
+  return uniqueColors(defined).slice(0, PEN_ROW_SIZE - 1);
+}
+
+/**
+ * The pen's row: the reserved colours, then the ones the user picked, topped
+ * up from `fill` (the built-in palette) to {@link PEN_ROW_SIZE} swatches.
+ */
+export function penColorRow(
+  reserved: readonly string[],
+  picked: readonly unknown[] | undefined,
+  fill: readonly string[],
+): string[] {
+  const row = reservedPenColors(reserved);
+  const stored: readonly unknown[] = Array.isArray(picked) ? picked : [];
+  for (const color of uniqueColors([...stored, ...fill])) {
+    if (row.length === PEN_ROW_SIZE) break;
+    if (!row.includes(color)) row.push(color);
+  }
+  return row;
+}
+
+/**
+ * The picked slots of `row` (its first `reservedCount` are reserved) once
+ * `color` is chosen. A colour already in the row changes nothing, so a pick
+ * stays where it is. `replace` is the swatch whose picker chose it: a picked
+ * slot is changed in place, as GoodNotes edits the swatch it opened from.
+ * Otherwise the new colour goes first among the picked ones and the last
+ * one makes way.
+ */
+export function pickPenColor(
+  row: readonly string[],
+  reservedCount: number,
+  color: string,
+  replace?: string,
+): string[] {
+  const free = row.slice(reservedCount);
+  const hex = parseHexColor(color);
+  if (!hex || row.includes(hex)) return free;
+  const at = replace ? free.indexOf(parseHexColor(replace) ?? "") : -1;
+  if (at >= 0) {
+    free[at] = hex;
+    return free;
+  }
+  return [hex, ...free].slice(0, Math.max(1, PEN_ROW_SIZE - reservedCount));
+}
+
 /** Stored recent colours, cleaned: readable, unique, at most {@link MAX_RECENT_COLORS}. */
 export function recentColorsOf(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];

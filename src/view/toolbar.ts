@@ -88,7 +88,15 @@ import {
 import type { ListKind } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
-import { DEFAULT_SHAPE_COLOR, contrastMark, pushRecentColor, sameColor } from "../model/colors";
+import {
+  DEFAULT_SHAPE_COLOR,
+  contrastMark,
+  penColorRow,
+  pickPenColor,
+  pushRecentColor,
+  reservedPenColors,
+  sameColor,
+} from "../model/colors";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import {
@@ -150,9 +158,6 @@ export const PEN_TYPES: readonly PenTypeSpec[] = [
  * GoodNotes), so this menu is the only way to it without a keyboard.
  */
 export const PEN_MENU_TYPES: readonly PenTypeSpec[] = PEN_TYPES;
-/** Keep the main pill short; the colour picker still exposes any custom colour. */
-const QUICK_COLORS = 3;
-
 /** The pen type a toolbar state implies. Used by the surface to size strokes. */
 export function penTypeFor(state: ToolbarState): PenTypeSpec {
   const id = state.penType ?? (state.tool === "highlighter" ? "highlighter" : "fountain");
@@ -270,6 +275,8 @@ export interface ToolbarState {
   shapeColor?: string;
   /** Custom colours picked lately, newest first, for every colour picker. */
   recentColors?: string[];
+  /** The pen row's picked slots, after the reserved ones. `undefined`: the built-in palette. */
+  penColors?: string[];
   /** The Shape tool's mode. `undefined` counts as "auto". */
   shapeMode?: ShapeMode;
   /** The Table tool's size. `undefined` counts as the last one picked. */
@@ -360,11 +367,18 @@ export interface ToolbarCallbacks {
   onShapeColorChange?: (color: string) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
+  /** The pen row's picked slots changed. Hosts persist them. */
+  onPenColors?: (colors: string[]) => void;
 }
 
 export interface ToolbarOptions {
   /** The pen width the width popover's reset returns to; default the middle preset. */
   defaultSize?: number;
+  /**
+   * Colours the settings define (the default ink, the custom palette): each
+   * keeps a slot at the front of the pen's colour row.
+   */
+  reservedColors?: readonly string[];
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -759,14 +773,15 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Three quick colours, then every colour in the picker.
+    // Five colours, then every colour in the picker.
     for (const color of this.quickColors()) {
       const swatch = this.swatchButton(this.optionsEl, color, () => {
         // GoodNotes: a tap on the colour already chosen opens the picker on
-        // it (the ▾ in the swatch says so); any other colour is just picked.
+        // it (the ▾ in the swatch says so), and what it picks takes that
+        // swatch's place; any other colour is just picked.
         if (sameColor(color, this.state.color)) {
           this.toggleColorPopover("pen-color", swatch, this.state.color, (picked) =>
-            this.setPenColor(picked),
+            this.setPenColor(picked, color),
           );
         } else this.setPenColor(color);
       });
@@ -804,7 +819,19 @@ export class Toolbar {
     });
   }
 
-  private setPenColor(color: string): void {
+  /**
+   * Write with `color`, and keep it in the row: a colour not there yet takes
+   * the slot of `replace` (the swatch its picker opened from) or the first
+   * picked slot, and stays until another pick needs the room.
+   */
+  private setPenColor(color: string, replace?: string): void {
+    const reserved = this.reservedColors();
+    const picked = pickPenColor(this.quickColors(), reserved.length, color, replace);
+    const before = this.state.penColors;
+    if (!before || picked.join() !== before.join()) {
+      this.state.penColors = picked;
+      this.callbacks.onPenColors?.(picked);
+    }
     this.state.color = color;
     this.callbacks.onColorChange(color);
     this.buildOptions();
@@ -1517,16 +1544,21 @@ export class Toolbar {
     return quick;
   }
 
-  /** Black, red and blue are the uncluttered default; preserve a live custom ink. */
+  /** The settings' own colours, which keep their slots in the pen's row. */
+  private reservedColors(): string[] {
+    return reservedPenColors(this.options.reservedColors ?? []);
+  }
+
+  /**
+   * The pen's colour row: the reserved colours, then the picked ones, topped
+   * up from the palette (white left out: it is for dark paper, in the picker).
+   * A live colour chosen elsewhere shows in the first picked slot.
+   */
   private quickColors(): string[] {
-    const quick = this.palette
-      .filter((color) => color.toLowerCase() !== "#ffffff")
-      .slice(0, QUICK_COLORS);
-    if (quick.length === 0) quick.push(this.state.color);
-    else if (!quick.includes(this.state.color) && this.state.color.toLowerCase() !== "#ffffff") {
-      quick[quick.length - 1] = this.state.color;
-    }
-    return quick;
+    const reserved = this.reservedColors();
+    const fill = this.palette.filter((color) => color.toLowerCase() !== "#ffffff");
+    const row = penColorRow(reserved, this.state.penColors, fill);
+    return [...reserved, ...pickPenColor(row, reserved.length, this.state.color)];
   }
 
   private chevron(label: string, onClick: (button: HTMLButtonElement) => void): HTMLButtonElement {

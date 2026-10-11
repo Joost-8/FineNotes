@@ -128,6 +128,8 @@ export interface GoodObsidianSettings {
   shapeColor: string;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
+  /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
+  penColors?: string[];
   /**
    * Advanced: the pressure pens (Fountain, Brush) widen with pen pressure.
    * Off, every pen draws one width. It replaced `pressureEnabled`
