@@ -473,3 +473,27 @@ describe("KineticScroller: page glide", () => {
     expect(s.glideTarget).toBeNull();
   });
 });
+
+describe("room below the content for the keyboard (2026-10-12)", () => {
+  it("lets a page that fits the screen be lifted by the keyboard's height, then settles back", () => {
+    const s = new KineticScroller();
+    // A cover at fit zoom: no taller than the view, so nowhere to scroll.
+    const fits = {
+      contentWidth: 700,
+      contentHeight: 800,
+      viewportWidth: 1180,
+      viewportHeight: 820,
+    };
+    s.setExtent(fits);
+    s.setPosition(0, 300);
+    expect(s.position.y).toBe(0);
+    // A text box is typed in with a 400 px keyboard up.
+    s.setExtent({ ...fits, trailY: 400 });
+    s.setPosition(0, 300);
+    expect(s.position.y).toBe(300);
+    expect(s.bounds.maxY).toBe(380);
+    // Editing ends: the room goes, and the page comes back into range.
+    s.setExtent(fits);
+    expect(s.position.y).toBe(0);
+  });
+});

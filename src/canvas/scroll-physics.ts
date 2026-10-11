@@ -152,6 +152,12 @@ export interface ScrollExtent {
    * content still stretches and springs back.
    */
   rangeX?: { min: number; max: number };
+  /**
+   * Extra room to scroll past the content's bottom edge, px: the on-screen
+   * keyboard's height while a text box is edited, so a box low on a page
+   * that fits the screen (a cover) can still be lifted above it.
+   */
+  trailY?: number;
 }
 
 export type AxisLock = "undecided" | "x" | "y" | "free";
@@ -263,7 +269,10 @@ export class KineticScroller {
       this.minX = range.min;
       this.maxX = Math.max(range.min, range.max);
     }
-    this.maxY = Math.max(0, extent.contentHeight - extent.viewportHeight);
+    this.maxY = Math.max(
+      0,
+      extent.contentHeight - extent.viewportHeight + Math.max(0, extent.trailY ?? 0),
+    );
     this.bounceX =
       extent.alwaysBounceX === true ||
       extent.contentWidth + lead + trail > extent.viewportWidth + 0.5;

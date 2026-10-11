@@ -2207,6 +2207,9 @@ export class InkSurface {
       // Even a one-page row stretches sideways, so it can be pulled to add a page.
       alwaysBounceX: row,
       rangeX,
+      // While a box is typed in, room to lift it above the keyboard: a page
+      // that fits the screen (a cover, a single page) has none of its own.
+      trailY: this.editingTextView() ? keyboardHeight() : 0,
     });
   }
 
@@ -3101,6 +3104,8 @@ export class InkSurface {
       const boxRect = input.getBoundingClientRect();
       const lineBottom = Math.min(boxRect.bottom, boxRect.top + 64);
       if (lineBottom > visibleBottom - 16) {
+        // The keyboard's height is known now: let the scroll range reach past it.
+        this.ensurePaperSize();
         top += lineBottom - visibleBottom + 16;
         this.scroller.setPosition(snapshot.left, top);
         top = this.scroller.position.y;
