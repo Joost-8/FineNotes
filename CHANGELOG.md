@@ -63,6 +63,22 @@ extracted from the matching section of this file by `release.yml`.
   box. When you are not typing in it, each link shows as its text in the
   accent colour, underlined, and a tap opens it; with the Text tool, a tap
   edits the box instead. They are listed for backlinks too.
+- **Handwriting read on your device.** FineNotes now includes its own
+  handwriting model (the FineNotes handwriting model 1.0, Apache 2.0) and
+  reads your ink on the device, offline; nothing leaves it.
+  - **Search finds your handwriting.** A few seconds after you stop
+    writing, the page is read and its text goes into the notebook's text
+    layer, so notebook search and Obsidian's search find it. A transcription
+    is never replaced; transcribing still redoes pages read on the device.
+  - **Titles and links from ink.** "Add to contents" and "Link to…" fill in
+    the lassoed heading or word as read, ready to accept or retype.
+  - **Handwritten `[[links]]`.** Write `[[Note]]` by hand and it gets a
+    dashed underline; tap it with a finger to link it, with the name filled
+    in.
+  - "Show this page read on this device" shows a page as read, line by
+    line. Switch reading off under "Read handwriting on this device", or
+    give a model file of your own (one tuned to your handwriting) under
+    "Handwriting model file".
 
 ## [1.5.0] - 2026-10-07
 

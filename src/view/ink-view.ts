@@ -117,7 +117,10 @@ import {
 import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
 import { externalUrl, isExternalTarget, linkStrokes, linkTargets } from "../model/links";
 import { LinkSuggestModal } from "./link-modal";
-import { readingText } from "./handwriting";
+import { inkForReading, readingText } from "./handwriting";
+import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
+import { lineStrokes, segmentPage } from "../recognition/hwr/lines";
+import type { PageReading } from "../recognition/hwr/recognizer";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
@@ -957,8 +960,10 @@ export class InkView extends TextFileView {
     }
     this.deviceBusy = true;
     let text = "";
+    let reading: PageReading | null = null;
     try {
-      text = readingText(await this.plugin.handwriting.readPage(step.page.strokes));
+      reading = await this.plugin.handwriting.readPage(step.page.strokes);
+      text = readingText(reading);
     } catch {
       // Unreadable now (the model failed to load): try again after the next edit.
       this.deviceBusy = false;
@@ -976,7 +981,48 @@ export class InkView extends TextFileView {
     if (!entry || entry.device) {
       this.writeTranscripts([{ page: step.page, text, hash: step.hash, device: true }]);
     }
+    if (reading) await this.offerHandwrittenLinks(step.page, reading);
     this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
+  }
+
+  /**
+   * Look for `[[links]]` written by hand on a page just read: each line with
+   * a bracket in it is read again word by word, and the links found are
+   * offered on the page (`handwritten-links.ts`).
+   */
+  private async offerHandwrittenLinks(page: Page, reading: PageReading): Promise<void> {
+    const surface = this.surface;
+    if (!surface) return;
+    const bracketed = reading.lines.filter(
+      (line) => line.text.includes("[") || line.greedy.includes("["),
+    );
+    const found: HandwrittenLink[] = [];
+    if (bracketed.length > 0) {
+      const lines = segmentPage(inkForReading(page.strokes)).lines;
+      for (const read of bracketed) {
+        const ids = new Set(read.strokeIds);
+        const line = lines.find((l) => lineStrokes(l).some((s) => ids.has(s.id)));
+        if (!line) continue;
+        const groups = line.words.map((word) => word.strokes);
+        try {
+          const words = await this.plugin.handwriting.readGroups(groups);
+          found.push(
+            ...findHandwrittenLinks(
+              words.map((w, i) => ({
+                text: w.text,
+                greedy: w.greedy,
+                strokeIds: groups[i].map((s) => s.id),
+              })),
+            ),
+          );
+        } catch {
+          return;
+        }
+      }
+    }
+    if (this.surface === surface && this.doc.pages.includes(page)) {
+      surface.setLinkSuggestions(page.id, found);
+    }
   }
 
   private scheduleAutoTranscription(): void {
@@ -1145,6 +1191,7 @@ export class InkView extends TextFileView {
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onOpenLink: (target) => this.openInkLink(target),
+        onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
         onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
@@ -1626,7 +1673,12 @@ export class InkView extends TextFileView {
    * "Link to…" on lassoed ink: pick a note, a heading or a web address, and
    * link those strokes to it as one undo step; or remove their link.
    */
-  private linkInk(index: number, strokeIds: string[], current: string | null): void {
+  private linkInk(
+    index: number,
+    strokeIds: string[],
+    current: string | null,
+    suggestion?: string,
+  ): void {
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page || this.isProtected()) return;
@@ -1645,8 +1697,10 @@ export class InkView extends TextFileView {
       },
     });
     picker.open();
-    // New links start from what the ink says, read on this device.
-    if (current === null) {
+    // A handwritten [[link]] starts from its name; other new links from what
+    // the ink says, read on this device.
+    if (suggestion) picker.suggest(suggestion);
+    else if (current === null) {
       void this.readSelectedInk(page, strokeIds).then((text) => {
         if (text) picker.suggest(text);
       });

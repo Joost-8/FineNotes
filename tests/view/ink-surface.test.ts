@@ -1009,13 +1009,16 @@ describe("handwritten links", () => {
     const asked: unknown[] = [];
     const opened: string[] = [];
     const applied: Array<{ apply(d: InkDocument): void }> = [];
+    const offered: unknown[] = [];
     const surface = surfaceWith({
       doc,
       baseScale: 1,
       userZoom: 1,
+      linkSuggestions: new Map(),
       callbacks: {
         onLinkStrokes: (...args: unknown[]) => asked.push(args),
         onOpenLink: (target: string) => opened.push(target),
+        onSuggestedLink: (...args: unknown[]) => offered.push(args),
       },
       clearSelection: () => {},
       applyCommand: (c: { apply(d: InkDocument): void }) => {
@@ -1035,7 +1038,7 @@ describe("handwritten links", () => {
         },
         0,
       );
-    return { p, doc, surface, asked, opened, applied, actions };
+    return { p, doc, surface, asked, opened, applied, offered, actions };
   }
 
   it("offers Link to… for unlinked ink", () => {
@@ -1074,6 +1077,21 @@ describe("handwritten links", () => {
     expect(tap(350, 115)).toBe(false);
     expect(tap(150, 300)).toBe(false);
     expect(l.opened).toEqual(["Signals#FIR", "Signals#FIR"]);
+  });
+
+  it("a finger tap on a [[link]] written by hand offers to link it; linked ink is no longer offered", () => {
+    const l = linked();
+    run(l.surface, "setLinkSuggestions", "p1", [
+      { target: "Systems", strokeIds: ["rest"] },
+      { target: "Signals", strokeIds: ["fir"] }, // already linked: not offered
+    ]);
+    const tap = (x: number, y: number) => run<boolean>(l.surface, "openLinkAt", l.p, { x, y }, 6);
+    expect(tap(350, 115)).toBe(true);
+    expect(l.offered).toEqual([[0, ["rest"], "Systems"]]);
+    expect(tap(150, 115)).toBe(true); // the real link opens, as before
+    expect(l.opened).toEqual(["Signals#FIR"]);
+    run(l.surface, "setLinkSuggestions", "p1", []);
+    expect(tap(350, 115)).toBe(false);
   });
 });
 

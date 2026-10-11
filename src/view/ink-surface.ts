@@ -224,6 +224,7 @@ import {
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
 import { textSegments } from "../model/text-links";
+import type { HandwrittenLink } from "../recognition/handwritten-links";
 import {
   type Command,
   type ImageTransform,
@@ -474,6 +475,11 @@ export interface InkSurfaceCallbacks {
   onLinkStrokes?: (index: number, strokeIds: string[], current: string | null) => void;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
+  /**
+   * A finger tapped a `[[link]]` written by hand and found on the device:
+   * the host offers to link those strokes to `target`.
+   */
+  onSuggestedLink?: (index: number, strokeIds: string[], target: string) => void;
   /**
    * The user asked for a new page after `afterIndex`.
    *
@@ -972,6 +978,8 @@ export class InkSurface {
   private readonly sectionRibbons: HTMLElement[] = [];
   /** An underline under each piece of linked ink. */
   private readonly linkMarks: HTMLElement[] = [];
+  /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
+  private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
   private pressMenu: PressMenu | null = null;
   private pressTimer = 0;
@@ -6004,8 +6012,12 @@ export class InkSurface {
     const scale = this.unitScale;
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
-      if (!page?.links) continue;
-      for (const link of page.links) {
+      if (!page) continue;
+      const marks = [
+        ...(page.links ?? []).map((link) => ({ link, suggested: false })),
+        ...this.suggestionsOn(page).map((link) => ({ link, suggested: true })),
+      ];
+      for (const { link, suggested } of marks) {
         const bounds = this.linkBounds(page, link.strokes);
         if (!bounds) continue;
         let mark = this.linkMarks[used];
@@ -6014,6 +6026,7 @@ export class InkSurface {
           this.linkMarks.push(mark);
         }
         mark.removeClass("is-hidden");
+        mark.toggleClass("is-suggested", suggested);
         mark.setAttribute("aria-label", link.target);
         mark.setCssStyles({
           left: `${(box.x + bounds.minX) * scale}px`,
@@ -6025,6 +6038,27 @@ export class InkSurface {
     }
     for (let i = used; i < this.linkMarks.length; i++) this.linkMarks[i].addClass("is-hidden");
     return used;
+  }
+
+  /**
+   * Offer `[[links]]` written by hand on a page, as found on the device: a
+   * dashed underline each, and a finger tap asks to link them. Replaces the
+   * page's earlier suggestions.
+   */
+  setLinkSuggestions(pageId: string, found: readonly HandwrittenLink[]): void {
+    if (found.length > 0) this.linkSuggestions.set(pageId, found);
+    else this.linkSuggestions.delete(pageId);
+    this.syncSectionRibbons();
+  }
+
+  /** A page's suggestions, less any whose ink has since been linked or erased. */
+  private suggestionsOn(page: Page): { strokes: string[]; target: string }[] {
+    const found = this.linkSuggestions.get(page.id);
+    if (!found) return [];
+    const linked = new Set((page.links ?? []).flatMap((link) => link.strokes));
+    return found
+      .filter((s) => !s.strokeIds.some((id) => linked.has(id)))
+      .map((s) => ({ strokes: s.strokeIds, target: s.target }));
   }
 
   /** The bounds of a link's ink that is still on the page, or null when none is. */
@@ -6052,16 +6086,27 @@ export class InkSurface {
    * any. `tolerance` is page px, around the ink and down to its underline.
    */
   private openLinkAt(page: Page, p: Pt, tolerance: number): boolean {
+    const below = (LINK_UNDERLINE_GAP_PX + 4) / this.unitScale;
+    const hit = (strokes: readonly string[]): boolean => {
+      const b = this.linkBounds(page, strokes);
+      if (!b) return false;
+      if (p.x < b.minX - tolerance || p.x > b.maxX + tolerance) return false;
+      return p.y >= b.minY - tolerance && p.y <= b.maxY + below + tolerance;
+    };
     const open = this.callbacks.onOpenLink;
-    if (!open || !page.links) return false;
-    for (const link of page.links) {
-      const b = this.linkBounds(page, link.strokes);
-      if (!b) continue;
-      const below = (LINK_UNDERLINE_GAP_PX + 4) / this.unitScale;
-      if (p.x < b.minX - tolerance || p.x > b.maxX + tolerance) continue;
-      if (p.y < b.minY - tolerance || p.y > b.maxY + below + tolerance) continue;
-      open(link.target);
-      return true;
+    for (const link of page.links ?? []) {
+      if (open && hit(link.strokes)) {
+        open(link.target);
+        return true;
+      }
+    }
+    const offer = this.callbacks.onSuggestedLink;
+    const index = this.doc.pages.indexOf(page);
+    for (const suggestion of this.suggestionsOn(page)) {
+      if (offer && index >= 0 && hit(suggestion.strokes)) {
+        offer(index, suggestion.strokes, suggestion.target);
+        return true;
+      }
     }
     return false;
   }

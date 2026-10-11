@@ -13,7 +13,7 @@ import type { Stroke } from "../model/document";
 import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { PageInk } from "../recognition/hwr/lines";
 import type { HwrModelInfo } from "../recognition/hwr/protocol";
-import type { PageReading } from "../recognition/hwr/recognizer";
+import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
 
 /** Where the model comes from: the bundled one, or a file in the vault. */
 export interface ModelSource {
@@ -95,6 +95,22 @@ export class HandwritingReader {
     if (!client) throw new Error("the recogniser stopped");
     try {
       return await client.readPage(inkForReading(strokes), true);
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
+  }
+
+  /** Read groups of strokes, each as one line (words, for the bracket test). */
+  async readGroups(groups: readonly (readonly PageInk[])[]): Promise<LineReading[]> {
+    await this.model();
+    const client = this.client;
+    if (!client) throw new Error("the recogniser stopped");
+    try {
+      return await client.readLines(
+        groups.map((group) => [...group]),
+        true,
+      );
     } catch (error) {
       this.dispose();
       throw error;
