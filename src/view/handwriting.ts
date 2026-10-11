@@ -28,18 +28,25 @@ async function bundledModel(): Promise<ArrayBuffer> {
   return bytes.slice().buffer;
 }
 
-/** The strokes the recogniser reads: pens and shapes, not highlighter. */
+/** The strokes the recogniser reads: pen ink, not highlighter, snapped shapes or tables. */
 export function inkForReading(strokes: readonly Stroke[]): PageInk[] {
   return strokes
-    .filter((s) => s.tool !== "highlighter")
+    .filter((s) => s.tool !== "highlighter" && !s.shape)
     .map((s) => ({ id: s.id, tool: s.tool, shape: s.shape ?? null, t0: s.t0 ?? null, pts: s.pts }));
 }
 
-/** A reading's lines as text, one line each. */
+/** Two letters or digits in a row: what tells writing from a drawing read as text. */
+const WRITING = /[\p{L}\p{N}]{2}/u;
+
+/**
+ * A reading's lines as text, one line each. A line without two letters or
+ * digits in a row is left out: that is a drawing read as text ("J-0-0"),
+ * not writing, and it would only clutter search.
+ */
 export function readingText(reading: PageReading): string {
   return reading.lines
     .map((line) => line.text.trim())
-    .filter((text) => text !== "")
+    .filter((text) => WRITING.test(text))
     .join("\n");
 }
 

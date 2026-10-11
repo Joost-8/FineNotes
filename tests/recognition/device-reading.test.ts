@@ -99,3 +99,11 @@ describe("nextDeviceStep", () => {
     expect(next).toMatchObject({ kind: "read", key: "p1", hash: "h-p1-1" });
   });
 });
+
+describe("drawings", () => {
+  it("a page with only snapped shapes has nothing to read", () => {
+    const page = blankPage("p9");
+    page.strokes = [{ ...ink("box"), shape: "rect" }];
+    expect(hasReadableInk(page)).toBe(false);
+  });
+});
