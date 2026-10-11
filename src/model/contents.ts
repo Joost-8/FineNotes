@@ -9,7 +9,7 @@
  */
 
 import type { Command } from "./commands";
-import type { InkDocument, Page } from "./document";
+import type { InkDocument, Page, PageSection } from "./document";
 
 /** Longest title kept, in UTF-16 units; longer ones are cut on save and load. */
 export const MAX_PAGE_TITLE_LENGTH = 80;
@@ -31,29 +31,42 @@ export function normalizePageTitle(raw: unknown): string | undefined {
   return title.length > 0 ? title : undefined;
 }
 
-/** One line of the contents: a titled page, by its index in the page list. */
+/**
+ * One line of the contents: a titled page, by its index in the page list,
+ * or a section inside a page, which also carries the section.
+ */
 export interface ContentsEntry {
   index: number;
   title: string;
+  section?: PageSection;
 }
 
-/** The contents, in page order. */
+/** The contents, in page order: each page's title, then its sections top to bottom. */
 export function contentsEntries(doc: InkDocument): ContentsEntry[] {
   const out: ContentsEntry[] = [];
   doc.pages.forEach((page, index) => {
     if (page.title !== undefined) out.push({ index, title: page.title });
+    for (const section of page.sections ?? []) out.push({ index, title: section.title, section });
   });
   return out;
 }
 
 /**
- * Which entry the page being read falls under: the last one starting at or
- * before it, or -1 when it comes before the first entry.
+ * Which entry the reader is under: the last one starting at or before page
+ * `page`, and on that page at or above `y` (page px; a page title starts at
+ * its top), or -1 when it comes before the first entry. Without `y`, every
+ * entry on the page counts as reached.
  */
-export function currentContentsEntry(entries: readonly ContentsEntry[], page: number): number {
+export function currentContentsEntry(
+  entries: readonly ContentsEntry[],
+  page: number,
+  y = Infinity,
+): number {
   let found = -1;
   for (let i = 0; i < entries.length; i++) {
-    if (entries[i].index > page) break;
+    const entry = entries[i];
+    if (entry.index > page) break;
+    if (entry.index === page && (entry.section?.y ?? -Infinity) > y) break;
     found = i;
   }
   return found;
@@ -99,4 +112,92 @@ export class SetPageTitle implements Command {
 function setTitle(page: Page, title: string | undefined): void {
   if (title === undefined) delete page.title;
   else page.title = title;
+}
+
+// --- Sections: headings inside a page (FineNotes#20) --------------------------
+
+/** The next free section id in the notebook: `c<N>`. */
+export function nextSectionId(doc: InkDocument): string {
+  let max = 0;
+  for (const page of doc.pages) {
+    for (const section of page.sections ?? []) {
+      const m = /^c(\d+)$/.exec(section.id);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+  }
+  return `c${max + 1}`;
+}
+
+/**
+ * Add, move, rename or (with `null`) remove one section of a page, by id.
+ * The page's sections stay in order top to bottom. One undo step, which
+ * puts back exactly the list the page had.
+ */
+export class SetSection implements Command {
+  readonly label: string;
+  private previous: { sections: PageSection[] | undefined } | null = null;
+
+  constructor(
+    private readonly page: Page,
+    private readonly id: string,
+    private readonly value: Omit<PageSection, "id"> | null,
+  ) {
+    const exists = page.sections?.some((s) => s.id === id) === true;
+    if (value === null) this.label = "Remove from contents";
+    else this.label = exists ? "Change contents" : "Add to contents";
+  }
+
+  get pageId(): string {
+    return this.page.id;
+  }
+
+  apply(doc: InkDocument): void {
+    if (!doc.pages.includes(this.page)) return;
+    const before = this.page.sections;
+    this.previous = { sections: before };
+    const rest = (before ?? []).filter((s) => s.id !== this.id);
+    const value = this.value;
+    const title = value ? normalizePageTitle(value.title) : undefined;
+    const keep =
+      value !== null && title !== undefined && Number.isFinite(value.x) && Number.isFinite(value.y);
+    const next = keep
+      ? sortSections([...rest, { id: this.id, x: value.x, y: value.y, title }])
+      : rest;
+    if (next.length > 0) this.page.sections = next;
+    else delete this.page.sections;
+  }
+
+  invert(doc: InkDocument): void {
+    if (this.previous === null || !doc.pages.includes(this.page)) return;
+    const { sections } = this.previous;
+    if (sections === undefined) delete this.page.sections;
+    else this.page.sections = sections;
+    this.previous = null;
+  }
+}
+
+/** Sections top to bottom, then left to right. */
+export function sortSections(sections: PageSection[]): PageSection[] {
+  return sections.sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/**
+ * A page's sections as stored, or none: each needs an id, a finite point
+ * and a title that survives `normalizePageTitle`, and an id already seen in
+ * the notebook is dropped. Top to bottom.
+ */
+export function normalizeSections(raw: unknown, seen: Set<string>): PageSection[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PageSection[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const { id, x, y, title } = item as Record<string, unknown>;
+    const name = normalizePageTitle(title);
+    if (typeof id !== "string" || id === "" || seen.has(id) || name === undefined) continue;
+    if (typeof x !== "number" || !Number.isFinite(x)) continue;
+    if (typeof y !== "number" || !Number.isFinite(y)) continue;
+    seen.add(id);
+    out.push({ id, x, y, title: name });
+  }
+  return sortSections(out);
 }

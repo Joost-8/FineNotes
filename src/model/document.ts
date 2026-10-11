@@ -353,6 +353,28 @@ export interface Page {
    * `MAX_PAGE_TITLE_LENGTH`; absent means the page is not listed.
    */
   title?: string;
+  /**
+   * Headings inside the page that are listed in the contents under it, top
+   * to bottom (FineNotes#20). Absent when there are none.
+   */
+  sections?: PageSection[];
+}
+
+/**
+ * A heading inside a page, listed in the notebook's contents: a title at a
+ * point in page px, where the heading's ink was when it was added. The
+ * contents goes to that point, and a ribbon marks it in the margin. Insert
+ * space moves it with its line.
+ */
+export interface PageSection {
+  /** `c<N>`, unique in the notebook. */
+  id: string;
+  /** The left of the heading. */
+  x: number;
+  /** The middle of the heading, top to bottom: the line it is on. */
+  y: number;
+  /** As a page title is: one line, trimmed, at most `MAX_PAGE_TITLE_LENGTH`. */
+  title: string;
 }
 
 /** An audio recording made while the note was open (0.5). */

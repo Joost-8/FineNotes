@@ -30,7 +30,7 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
-import { normalizePageTitle } from "./contents";
+import { normalizePageTitle, normalizeSections } from "./contents";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import {
   type AttachmentFolders,
@@ -38,6 +38,7 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type PageSection,
   type PageGeometry,
   type Recording,
   type Ruling,
@@ -142,6 +143,7 @@ interface StoredPage {
   epoch?: number;
   bookmarked?: boolean;
   title?: string;
+  sections?: PageSection[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   strokes: StoredStroke[];
@@ -199,6 +201,7 @@ function storePage(page: Page): StoredPage {
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
     title: normalizePageTitle(page.title),
+    sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     images: page.images,
     textBoxes: page.textBoxes,
     strokes: page.strokes.map(storeStroke),
@@ -509,7 +512,12 @@ function maxNumericId(raw: readonly unknown[], prefix: string): number {
   return max;
 }
 
-function normalizePage(raw: unknown, index: number, fallbackWidth: number): Page {
+function normalizePage(
+  raw: unknown,
+  index: number,
+  fallbackWidth: number,
+  seenSections: Set<string> = new Set(),
+): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
   const imagesRaw = Array.isArray(page.images) ? page.images : [];
@@ -537,7 +545,14 @@ function normalizePage(raw: unknown, index: number, fallbackWidth: number): Page
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
     ...titleOf(page.title),
+    ...sectionsOf(page.sections, seenSections),
   };
+}
+
+/** A page's sections, spread into the page only when it has any. */
+function sectionsOf(raw: unknown, seen: Set<string>): { sections?: PageSection[] } {
+  const sections = normalizeSections(raw, seen);
+  return sections.length > 0 ? { sections } : {};
 }
 
 /**
@@ -581,7 +596,8 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
 
   let pages: Page[];
   if (Array.isArray(raw.pages)) {
-    pages = raw.pages.map((p, i) => normalizePage(p, i, view.width));
+    const seenSections = new Set<string>();
+    pages = raw.pages.map((p, i) => normalizePage(p, i, view.width, seenSections));
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
   } else {

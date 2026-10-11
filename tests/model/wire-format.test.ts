@@ -111,6 +111,8 @@ describe("what a save writes", () => {
     doc.recordings = [{ id: "r1", path: "a.m4a", start: 1_790_000_000_000, duration: 5 }];
     doc.pages[0].epoch = 1_790_000_000_000;
     doc.pages[0].bookmarked = true;
+    doc.pages[0].title = "Week 1";
+    doc.pages[0].sections = [{ id: "c1", x: 60, y: 200, title: "Fourier" }];
     const disk = onDisk(encodeDocument(doc));
     expect(Object.keys(disk)).toEqual(["version", "view", "meta", "recordings", "pages"]);
     const page = (disk.pages as Array<Record<string, unknown>>)[0];
@@ -121,6 +123,8 @@ describe("what a save writes", () => {
       "backdrop",
       "epoch",
       "bookmarked",
+      "title",
+      "sections",
       "images",
       "textBoxes",
       "strokes",

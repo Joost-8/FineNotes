@@ -382,6 +382,7 @@ export function duplicatePageAfter(
   delete copy.bookmarked;
   // Nor does its line in the contents: the original still starts that section.
   delete copy.title;
+  delete copy.sections;
   for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
   for (const image of copy.images) image.id = `i${++imageSeq}`;
