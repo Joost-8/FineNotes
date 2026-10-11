@@ -11,11 +11,13 @@ import {
   externalUrl,
   isExternalTarget,
   linkStrokes,
+  isLinked,
   linkTargets,
   linksOf,
   nextLinkId,
   normalizeLinkTarget,
   normalizeLinks,
+  withLinkedStrokes,
 } from "../../src/model/links";
 import { ReplaceStrokesOnPage } from "../../src/model/erase-commands";
 import { duplicatePageAfter } from "../../src/model/page-commands";
@@ -189,5 +191,27 @@ describe("loading, saving, erasing and duplicating", () => {
     const d = doc();
     apply(d, linkStrokes(d, d.pages[0], ["s1"], "A"));
     expect(duplicatePageAfter(d, 0)?.page.links).toBeUndefined();
+  });
+});
+
+describe("a linked word is one thing", () => {
+  it("withLinkedStrokes adds every stroke linked with the given ones", () => {
+    const d = doc();
+    apply(d, linkStrokes(d, d.pages[0], ["s1", "s2"], "A"));
+    expect([...withLinkedStrokes(d.pages[0], ["s2"])].sort()).toEqual(["s1", "s2"]);
+    expect([...withLinkedStrokes(d.pages[0], ["s3"])]).toEqual(["s3"]);
+    expect(isLinked(d.pages[0], "s1")).toBe(true);
+    expect(isLinked(d.pages[0], "s3")).toBe(false);
+    expect(isLinked(d.pages[1], "s4")).toBe(false);
+  });
+
+  it("an erased link's target leaves the list until undo brings its ink back", () => {
+    const d = doc();
+    apply(d, linkStrokes(d, d.pages[0], ["s1"], "A"));
+    const [s1] = d.pages[0].strokes;
+    d.pages[0].strokes = d.pages[0].strokes.slice(1);
+    expect(linkTargets(d)).toEqual([]);
+    d.pages[0].strokes.unshift(s1);
+    expect(linkTargets(d)).toEqual(["A"]);
   });
 });

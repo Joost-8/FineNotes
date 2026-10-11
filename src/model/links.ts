@@ -129,11 +129,18 @@ export function linksOf(page: Page, strokeIds: readonly string[]): InkLink[] {
   return (page.links ?? []).filter((link) => link.strokes.some((id) => ids.has(id)));
 }
 
-/** Every link target in the notebook, once each, in page order. */
+/**
+ * Every link target in the notebook, once each, in page order: only links
+ * that still hold ink on their page. An erased link keeps its record until
+ * the notebook is next opened, so an undo brings it back whole.
+ */
 export function linkTargets(doc: InkDocument): string[] {
   const out: string[] = [];
   for (const page of doc.pages) {
-    for (const link of page.links ?? []) {
+    if (!page.links) continue;
+    const present = new Set(page.strokes.map((s) => s.id));
+    for (const link of page.links) {
+      if (!link.strokes.some((id) => present.has(id))) continue;
       if (!out.includes(link.target)) out.push(link.target);
     }
   }
@@ -173,4 +180,21 @@ export function normalizeLinks(
     out.push({ id, strokes: held, target: to });
   }
   return out;
+}
+
+/**
+ * These strokes and every stroke linked with any of them: a linked word is
+ * one thing to the eraser, which takes all of it or none of it.
+ */
+export function withLinkedStrokes(page: Page, strokeIds: Iterable<string>): Set<string> {
+  const out = new Set(strokeIds);
+  for (const link of page.links ?? []) {
+    if (link.strokes.some((id) => out.has(id))) for (const id of link.strokes) out.add(id);
+  }
+  return out;
+}
+
+/** Whether a stroke is in one of its page's links. */
+export function isLinked(page: Page, strokeId: string): boolean {
+  return (page.links ?? []).some((link) => link.strokes.includes(strokeId));
 }

@@ -823,7 +823,7 @@ describe("ruled erase", () => {
     const start = (x: number, y: number): void =>
       run(w.surface, "startRuledErase", doc.pages[0], { x, y }, "all");
     const dab = (x: number, y: number): boolean =>
-      run<boolean>(w.surface, "eraseRuledAt", w.surface.eraseRuled, { x, y }, 4);
+      run<boolean>(w.surface, "eraseRuledAt", doc.pages[0], w.surface.eraseRuled, { x, y }, 4);
     return { ...w, flashes, start, dab };
   }
 
@@ -1074,6 +1074,45 @@ describe("handwritten links", () => {
     expect(tap(350, 115)).toBe(false);
     expect(tap(150, 300)).toBe(false);
     expect(l.opened).toEqual(["Signals#FIR", "Signals#FIR"]);
+  });
+});
+
+describe("erasing a linked word", () => {
+  function linkedInk() {
+    const doc = twoPages();
+    doc.pages[0].links = [{ id: "l1", strokes: ["s1", "s2"], target: "Signals" }];
+    return ink(doc);
+  }
+
+  it("whole-stroke mode takes every stroke of the link", () => {
+    const w = linkedInk();
+    expect(w.dab(0, 50, 11)).toBe(true);
+    expect([...w.marked()].sort()).toEqual(["s1", "s2"]);
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["s3"]);
+    w.undo();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("standard mode never cuts it: touching it takes all of it", () => {
+    const w = linkedInk();
+    expect(w.cut(0, 60, 10)).toBe(true);
+    expect(w.pieces().size).toBe(0);
+    expect([...w.marked()].sort()).toEqual(["s1", "s2"]);
+    expect(w.cut(0, 60, 50)).toBe(false); // nowhere near any ink
+  });
+
+  it("a pass that cuts plain ink and takes a linked word is one undo step", () => {
+    const w = linkedInk();
+    w.cut(0, 60, 200); // the highlighter, not linked: cut
+    w.cut(0, 60, 10); // the link: taken whole
+    expect([...w.pieces().keys()]).toEqual(["s3"]);
+    w.lift(0);
+    expect(ids(w.doc.pages[0]).filter((id) => ["s1", "s2"].includes(id))).toEqual([]);
+    expect(w.history.canUndo()).toBe(true);
+    w.undo();
+    expect(ids(w.doc.pages[0])).toEqual(["s1", "s2", "s3"]);
+    expect(w.history.canUndo()).toBe(false);
   });
 });
 

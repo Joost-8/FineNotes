@@ -222,7 +222,7 @@ import {
   SetTextBoxFrame,
   type TextBoxFrame,
 } from "../model/page-commands";
-import { linkStrokes, linksOf } from "../model/links";
+import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
 import {
   type Command,
   type ImageTransform,
@@ -4437,7 +4437,7 @@ export class InkSurface {
       const t = i / steps;
       const at = { x: last.x + (sample.x - last.x) * t, y: last.y + (sample.y - last.y) * t };
       const hit = ruled
-        ? this.eraseRuledAt(ruled, at, radius)
+        ? this.eraseRuledAt(page, ruled, at, radius)
         : whole
           ? this.eraseWholeAt(page, at, radius, filter)
           : this.erasePartialAt(page, at, radius, filter);
@@ -4464,13 +4464,28 @@ export class InkSurface {
    * Ruled mode: whole strokes on the line under the eraser, as far along it
    * as the pass goes (`ruled-ink.ts`), marked to go when the pen lifts.
    */
-  private eraseRuledAt(ruled: RuledEraser, at: Pt, radius: number): boolean {
-    const taken = ruled.dab(at, radius);
-    for (const id of taken) {
-      this.eraseIds.add(id);
-      this.eraseDirty.add(id);
+  private eraseRuledAt(page: Page, ruled: RuledEraser, at: Pt, radius: number): boolean {
+    let marked = false;
+    for (const id of ruled.dab(at, radius)) marked = this.markWhole(page, id) || marked;
+    return marked;
+  }
+
+  /**
+   * Mark a stroke to go whole when the eraser lifts, with every stroke
+   * linked with it: a linked word is erased all at once, never in part.
+   * Returns whether anything was newly marked.
+   */
+  private markWhole(page: Page, id: string): boolean {
+    let marked = false;
+    for (const each of withLinkedStrokes(page, [id])) {
+      if (this.eraseIds.has(each)) continue;
+      this.eraseIds.add(each);
+      this.eraseDirty.add(each);
+      // Cut pieces of it, from earlier in the pass, go with it.
+      this.erasePieces.delete(each);
+      marked = true;
     }
-    return taken.length > 0;
+    return marked;
   }
 
   /**
@@ -4483,9 +4498,7 @@ export class InkSurface {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || this.eraseIds.has(id) || !eraserTakes(stroke, filter)) continue;
       if (!strokeHitByPoint(stroke, at.x, at.y, radius)) continue;
-      this.eraseIds.add(id);
-      this.eraseDirty.add(id);
-      marked = true;
+      marked = this.markWhole(page, id) || marked;
     }
     return marked;
   }
@@ -4508,7 +4521,15 @@ export class InkSurface {
     let changed = false;
     for (const id of candidates) {
       const original = this.strokeIndex.get(id);
-      if (!original || !eraserTakes(original, filter)) continue;
+      if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
+      // A linked word is never cut: touching it takes all of it.
+      if (isLinked(page, id)) {
+        const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
+          strokeHitByPoint(piece, sample.x, sample.y, radius + piece.size / 2),
+        );
+        if (touches && this.markWhole(page, id)) changed = true;
+        continue;
+      }
       let touched = false;
       const survivors: Stroke[] = [];
       for (const piece of this.erasePieces.get(id) ?? [original]) {
@@ -4539,37 +4560,37 @@ export class InkSurface {
     const pieces = this.erasePieces;
     this.eraseReset();
     this.activePage = null;
-    if (pieces.size > 0) this.commitCuts(box, pieces);
-    else if (marked.size > 0) this.commitRemovals(marked);
+    // The cut strokes are replaced by what is left of them, and the marked
+    // ones (whole strokes, linked words) leave their pages: one step for all.
+    const steps = [...this.cutSteps(box, pieces), ...this.removalSteps(marked)];
+    if (steps.length === 0) {
+      // The preview is gone, and the page it drew over comes back as it was.
+      if (pieces.size > 0) this.renderDry();
+      return;
+    }
+    this.history.push(
+      this.doc,
+      steps.length === 1 ? steps[0] : new CompositeCommand("Erase", steps),
+    );
+    this.strokeIndex.rebuild(this.doc.pages);
+    this.inkChanged();
   }
 
-  /** Standard mode's commit: each stroke the eraser cut is replaced by what is left of it. */
-  private commitCuts(box: PageBox | null, pieces: ReadonlyMap<string, Stroke[]>): void {
+  /** The cut strokes, each replaced by what is left of it. */
+  private cutSteps(box: PageBox | null, pieces: ReadonlyMap<string, Stroke[]>): Command[] {
     const page = box ? this.pageAt(box.index) : null;
     const replacements: StrokeReplacement[] = [];
     for (const [id, survivors] of pieces) {
       const original = this.strokeIndex.get(id);
       if (original) replacements.push({ original, pieces: survivors });
     }
-    if (!page || replacements.length === 0) {
-      // The preview is gone, and the page it drew over comes back as it was.
-      this.renderDry();
-      return;
-    }
-    this.history.push(this.doc, new ReplaceStrokesOnPage(page.id, replacements));
-    this.strokeIndex.rebuild(this.doc.pages);
-    this.inkChanged();
+    return page && replacements.length > 0 ? [new ReplaceStrokesOnPage(page.id, replacements)] : [];
   }
 
-  /** Whole-stroke mode's commit: the marked strokes leave their pages, in one step for all pages. */
-  private commitRemovals(marked: ReadonlySet<string>): void {
+  /** The marked strokes, off their pages. */
+  private removalSteps(marked: ReadonlySet<string>): Command[] {
     const byPage = this.strokeIndex.byPage(marked);
-    if (byPage.size === 0) return;
-    const removals = [...byPage].map(([pageId, ids]) => new RemoveStrokesFromPage(pageId, ids));
-    const step = removals.length === 1 ? removals[0] : new CompositeCommand("Erase", removals);
-    this.history.push(this.doc, step);
-    for (const id of marked) this.strokeIndex.remove(id);
-    this.inkChanged();
+    return [...byPage].map(([pageId, ids]) => new RemoveStrokesFromPage(pageId, ids));
   }
 
   // --- Pen gestures: Scribble to erase and Circle to lasso --------------------
@@ -4621,6 +4642,8 @@ export class InkSurface {
       [],
       [],
     );
+    // A linked word goes whole, never in part.
+    for (const id of withLinkedStrokes(page, ids)) ids.add(id);
     this.history.push(this.doc, new RemoveStrokesFromPage(page.id, ids, "Scribble to erase"));
     for (const id of ids) this.strokeIndex.remove(id, page.id);
     if (erased) this.renderer?.invalidateRegion(box.index, erased);
