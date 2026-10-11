@@ -19,10 +19,70 @@
  * A section written before 0.5 has no page comments; it was a transcription of
  * page 1 (the old code only ever read `firstPage`), and is adopted as such.
  *
+ * The section ends with the notebook's handwritten links, when it has any
+ * (FineNotes#20), so Obsidian's backlinks and graph see them:
+ *
+ *     ### Links
+ *     <!--goodobsidian-links-->
+ *     - [[Signals#FIR filters]]
+ *     - <https://en.wikipedia.org/wiki/Finite_impulse_response>
+ *
+ * The list is rewritten from the notebook on every save; transcription
+ * writes leave it where it is, at the end.
+ *
  * No DOM, no Obsidian.
  */
 
 import type { Page } from "../model/document";
+import { externalUrl, isExternalTarget } from "../model/links";
+import { readTextSection, writeTextSection } from "./text-layer";
+
+/** The comment that opens the links list at the end of the section. */
+export const LINKS_MARKER = "<!--goodobsidian-links-->";
+const LINKS_HEADING = "### Links";
+
+/**
+ * A section split into what comes before its links list and the list
+ * itself (from its heading, or its marker, to the end; "" when there is none).
+ */
+export function splitLinkIndex(section: string): { rest: string; links: string } {
+  const lines = section.replace(/\r\n?/g, "\n").split("\n");
+  const at = lines.findIndex((line) => line.trim() === LINKS_MARKER);
+  if (at < 0) return { rest: section, links: "" };
+  const start = at > 0 && lines[at - 1].trim() === LINKS_HEADING ? at - 1 : at;
+  return {
+    rest: lines.slice(0, start).join("\n").trimEnd(),
+    links: lines.slice(start).join("\n").trim(),
+  };
+}
+
+/** The links list for these targets, or "" for none. */
+export function formatLinkIndex(targets: readonly string[]): string {
+  if (targets.length === 0) return "";
+  const items = targets.map((target) =>
+    isExternalTarget(target) ? `- <${externalUrl(target)}>` : `- [[${target}]]`,
+  );
+  return [LINKS_HEADING, LINKS_MARKER, ...items].join("\n");
+}
+
+/** A section with its links list replaced by one for these targets. */
+export function writeLinkIndex(section: string | null, targets: readonly string[]): string {
+  const rest = splitLinkIndex(section ?? "").rest.trim();
+  const links = formatLinkIndex(targets);
+  return [rest, links].filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * A note body with its links list brought up to date with the notebook's
+ * link targets: unchanged (the same string) when it already is, so a save
+ * of a notebook without links never adds an empty block.
+ */
+export function syncLinkIndex(body: string, targets: readonly string[]): string {
+  const section = readTextSection(body);
+  const current = splitLinkIndex(section ?? "").links;
+  if (current === formatLinkIndex(targets)) return body;
+  return writeTextSection(body, writeLinkIndex(section, targets));
+}
 
 export interface PageTranscript {
   /** Page key (see {@link pageKeys}). */
@@ -66,7 +126,9 @@ function decodeKey(raw: string): string {
 }
 
 /** Read the entries out of a managed section's inner text. */
-export function parsePageTranscripts(section: string | null): ParsedTranscripts {
+export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
+  // The links list at the end is no page's text.
+  const section = raw === null ? null : splitLinkIndex(raw).rest;
   if (!section || !section.trim()) return { preamble: "", entries: [], legacy: false };
   const lines = section.replace(/\r\n?/g, "\n").split("\n");
 
@@ -122,6 +184,7 @@ export function updatePageTranscripts(
   updates: readonly TranscriptUpdate[],
 ): string {
   const parsed = parsePageTranscripts(section);
+  const links = splitLinkIndex(section ?? "").links;
   const byKey = new Map<string, PageTranscript>();
   let preamble = parsed.preamble;
   if (parsed.legacy) {
@@ -150,6 +213,8 @@ export function updatePageTranscripts(
       `### Page ${index + 1}\n<!--goodobsidian-page ${encodeURIComponent(key)} ${entry.hash}-->\n${entry.text}`,
     );
   });
+  // The links list stays at the end; it is rewritten on save, not here.
+  if (links) blocks.push(links);
   return blocks.join("\n\n");
 }
 
