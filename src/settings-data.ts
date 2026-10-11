@@ -139,10 +139,11 @@ export interface GoodObsidianSettings {
   returnToPenAfterUse: boolean;
   /** Double-tap with two fingers to undo, with three to redo. */
   fingerTapUndo: boolean;
+  /** Read handwriting on this device: search, titles and links from ink. */
+  handwritingOnDevice: boolean;
   /**
-   * Dev builds only (`__FINENOTES_HWR__`): the vault path of a research
-   * handwriting model for the on-device recogniser. Not in the defaults, so a
-   * release never writes it; one written by a dev build is kept as is.
+   * The vault path of a handwriting model file to read with instead of the
+   * bundled one (a model tuned to one writer). Blank for the bundled model.
    */
   hwrModelPath?: string;
 }
@@ -194,6 +195,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,
+  handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
 };

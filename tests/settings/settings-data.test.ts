@@ -72,6 +72,7 @@ const FRESH_INSTALL = {
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,
+  handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
 };
@@ -97,6 +98,7 @@ const USED_VAULT = {
   returnToPenOnReselect: true,
   returnToPenAfterUse: true,
   fingerTapUndo: false,
+  handwritingOnDevice: false,
   showNewNotebookInContextMenu: false,
   showNewNotebookInExplorer: false,
   lastNotebookChoices: { type: "notebook", cover: "plain", paper: "dotted", size: "a4" },

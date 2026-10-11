@@ -1,0 +1,98 @@
+FineNotes handwriting recogniser (model "ship-big2")
+Copyright 2026 Joost (FineNotes)
+
+Licensed under the Apache License, Version 2.0 (see LICENSE). This NOTICE
+must travel with every copy of the model file.
+
+The model is a 5x128 bidirectional LSTM with a character language model. It
+was trained on the data below. No training sample is contained in the model
+file. Changes made to the data are listed per source.
+
+------------------------------------------------------------------------
+Handwriting (pen trajectories)
+------------------------------------------------------------------------
+
+BRUSH (Brown University)
+  A. Kotani, S. Tellex, J. Tompkin. "Generating Handwriting via Decoupled
+  Style Descriptors". ECCV 2020.
+  Used with the written permission of the authors (Prof. James Tompkin, on
+  behalf of all authors, 7 October 2026) to train this open-source
+  recogniser. Also used: synthetic lines spliced from BRUSH writers' ink.
+
+IAM On-Line Handwriting Database (IAM-OnDB)
+  M. Liwicki, H. Bunke. "IAM-OnDB - an On-Line English Sentence Database
+  Acquired from Handwritten Text on a Whiteboard". ICDAR 2005.
+  Used with the written permission of Prof. Marcus Liwicki, who collected
+  the database (9 October 2026), for an Apache 2.0 model. The copy used is
+  the one distributed with the DeepWriting dataset (E. Aksan, F. Pece,
+  O. Hilliges, CHI 2018), including its character segmentation of the
+  IAM-OnDB lines, which was used to splice synthetic lines; no part of
+  DeepWriting's own data was used. Also used: synthetic lines spliced from
+  IAM-OnDB writers' ink.
+
+UNIPEN (Train-R01/V07)
+  I. Guyon, L. Schomaker, R. Plamondon, M. Liberman, S. Janet. "UNIPEN
+  project of on-line data exchange and recognizer benchmarks". ICPR 1994.
+  Zenodo record 1195803.
+  Used under its conditions of use, which allow training recognisers for
+  commercial use and require the UNIPEN logo in the product documentation.
+  [UNIPEN LOGO]
+  No writer or donor identity is referenced. Also used: lines joined from
+  UNIPEN words, and lines of UNIPEN characters.
+
+PluColl - The UNIPEN/NICI/HP data collection of 1994
+  L. Schomaker. Zenodo record 7894283. Licence: CC BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/).
+  Changes: the 11 writers who are UNIPEN's "nic" contributor were left out;
+  word labels were relabelled to the case each word was written in, and
+  unreadable words were dropped (plucoll_audit.py); words were also joined
+  into lines.
+
+UJIpenchars2
+  F. Prat, M. J. Castro, D. Llorens, A. Marzal, J. M. Vilar. "The UJIpenchars
+  Database: a Pen-Based Database of Isolated Handwritten Characters"
+  (LREC 2008; version 2). UCI Machine Learning Repository, dataset 177.
+  Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Changes: isolated characters were spliced into synthetic lines.
+
+------------------------------------------------------------------------
+Text (for synthetic training lines and the language model)
+------------------------------------------------------------------------
+
+Common Voice sentence collector (Mozilla). CC0 1.0.
+
+arXiv metadata: titles and abstracts of computer science and mathematics
+  papers, harvested through arXiv's OAI-PMH interface. arXiv metadata is
+  released under CC0 1.0. Converted to plain ASCII and cut into short lines.
+
+Faker (https://github.com/joke2k/faker)
+  Copyright (c) 2012 Daniele Faraglia. MIT License.
+  Used to generate dates, times, phone numbers, addresses and similar lines.
+
+DeepMind Mathematics Dataset generator
+  (https://github.com/google-deepmind/mathematics_dataset)
+  Copyright 2018 DeepMind Technologies Limited. Apache License 2.0.
+  Used to generate maths questions and answers.
+
+GSM8K (https://github.com/openai/grade-school-math)
+  Copyright (c) 2021 OpenAI. MIT License.
+  Word problems and worked answers, with calculator annotations removed.
+
+FineNotes templates and the author's own typed notes.
+
+The MIT License text (Faker, GSM8K):
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the
+  "Software"), to deal in the Software without restriction, including
+  without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit
+  persons to whom the Software is furnished to do so, subject to the
+  following conditions: The above copyright notice and this permission
+  notice shall be included in all copies or substantial portions of the
+  Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+  NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+  OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+  USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,4 +1,3 @@
-/* global __FINENOTES_HWR__ -- set by esbuild.config.mjs (src/build.d.ts) */
 /**
  * The settings tab, built from Obsidian 1.13's setting definitions: Obsidian
  * draws the rows, searches them, and calls `getControlValue` /
@@ -393,6 +392,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
     const { settings } = this.plugin;
     return [
+      toggle(
+        "handwritingOnDevice",
+        "Read handwriting on this device",
+        "Reads your handwriting with a model built into FineNotes, on this device: notebook " +
+          "search and Obsidian's search find it, and a lassoed heading or word fills in its " +
+          "title or link. Nothing leaves the device.",
+        ["handwriting", "recognition", "search", "offline"],
+      ),
+      controlRow(
+        "Handwriting model file",
+        "Leave blank to use the model built into FineNotes. Or give the vault path of " +
+          "another model file, such as one tuned to your handwriting. It is read on this " +
+          "device only.",
+        { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
+        ["handwriting", "recognition", "model"],
+      ),
       dropdown("recognitionProviderId", "Handwriting recognition", DESC.recognition, providers, [
         "OCR",
         "handwriting to text",
@@ -493,18 +508,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "HUD",
         "troubleshooting",
       ]),
-      ...(typeof __FINENOTES_HWR__ !== "undefined" && __FINENOTES_HWR__
-        ? [
-            controlRow(
-              "On-device handwriting model (dev build)",
-              "Vault path of a research recogniser file (export_hwr.py). Once set, the command " +
-                '"Read this page\'s handwriting on this device" reads the page in view, on ' +
-                "this device. Research models are for your own testing only.",
-              { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
-              ["handwriting", "recognition", "experimental"],
-            ),
-          ]
-        : []),
       block((el) => {
         const footer = el.createDiv({ cls: "goodobsidian-support" });
         footer.appendText("Found a bug, or have a question? ");

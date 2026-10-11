@@ -14,12 +14,6 @@ ${readFileSync(new URL("./THIRD_PARTY_NOTICES.txt", import.meta.url), "utf8")}
 
 const production = process.argv[2] === "production";
 const deployDir = resolveDeployDir();
-// The on-device handwriting recogniser is a dev-only experiment: its models
-// are research-only and never ship. Watch builds include its command; a
-// production build only with FINENOTES_HWR=1 (a private build). Releases
-// carry none of its code (src/build.d.ts).
-const hwr = !production || process.env.FINENOTES_HWR === "1";
-
 // A stamp for the deploy log below, so each copy into the vault can be told
 // apart. It is not bundled: a release rebuilt from its tag stays
 // byte-identical, which the community-directory review checks.
@@ -76,7 +70,6 @@ const inlineWorker = {
 
 const context = await esbuild.context({
   banner: { js: banner },
-  define: { __FINENOTES_HWR__: JSON.stringify(hwr) },
   entryPoints: ["src/main.ts"],
   bundle: true,
   external: [
@@ -98,8 +91,9 @@ const context = await esbuild.context({
   ],
   format: "cjs",
   target: "es2020",
-  // CHANGELOG.md is bundled as text for the in-app "What's new" modal.
-  loader: { ".md": "text" },
+  // CHANGELOG.md is bundled as text for the in-app "What's new" modal; the
+  // handwriting model (models/, Apache 2.0) as bytes, so reading works offline.
+  loader: { ".md": "text", ".bin": "binary" },
   logLevel: "info",
   sourcemap: production ? false : "inline",
   treeShaking: true,

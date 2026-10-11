@@ -1,4 +1,3 @@
-/* global __FINENOTES_HWR__ -- set by esbuild.config.mjs (src/build.d.ts) */
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
@@ -76,7 +75,7 @@ import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
 import type { AttachmentFolders, InkDocument } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
-import type { HwrDevReader } from "./view/hwr-reader";
+import { HandwritingReader } from "./view/handwriting";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
@@ -131,8 +130,10 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
 
-  /** Dev builds: the on-device recogniser, started on first use. */
-  private hwrReader: HwrDevReader | null = null;
+  /** The on-device handwriting reader, started on first use. */
+  readonly handwriting = new HandwritingReader(this.app, () => ({
+    customPath: this.settings.hwrModelPath ?? "",
+  }));
 
   /** Notes keep pointing at the PDFs, pictures and recordings that move (#14). */
   readonly fileMoves = new FileMoveTracker(this.app, {
@@ -305,15 +306,12 @@ export default class GoodObsidianPlugin extends Plugin {
       "Transcribe this notebook's handwriting",
       (view) => this.runRecognition(view),
     );
-    if (typeof __FINENOTES_HWR__ !== "undefined" && __FINENOTES_HWR__) {
-      // Dev builds only, and only once a model file is set (settings).
-      this.notebookCommand(
-        "read-handwriting-on-device",
-        "Read this page's handwriting on this device (experimental)",
-        (view) => this.readOnDevice(view),
-        () => !!this.settings.hwrModelPath?.trim(),
-      );
-    }
+    this.notebookCommand(
+      "read-handwriting-on-device",
+      "Show this page read on this device",
+      (view) => this.readOnDevice(view),
+      () => this.settings.handwritingOnDevice !== false,
+    );
     this.notebookCommand("fit-reset-view", "Fit the page and go to the top", (view) =>
       view.resetView(),
     );
@@ -822,20 +820,10 @@ export default class GoodObsidianPlugin extends Plugin {
     if (announce) new Notice(`FineNotes: input debug overlay ${enabled ? "shown" : "hidden"}.`);
   }
 
-  /**
-   * Dev builds: read the page in view with the on-device recogniser, whose
-   * research-only model is read from the vault path in the settings.
-   */
+  /** Read the page in view on this device and show what it says, line by line. */
   private async readOnDevice(view: InkView): Promise<void> {
-    if (typeof __FINENOTES_HWR__ !== "undefined" && __FINENOTES_HWR__) {
-      const { HwrDevReader } = await import("./view/hwr-reader");
-      if (!this.hwrReader) {
-        const reader = new HwrDevReader(this.app);
-        this.hwrReader = reader;
-        this.register(() => reader.dispose());
-      }
-      await this.hwrReader.readCurrentPage(view, this.settings.hwrModelPath ?? "");
-    }
+    const { showPageReading } = await import("./view/hwr-reader");
+    await showPageReading(this.app, this.handwriting, view);
   }
 
   /** Pressure-sensitive pens, on or off, in every open notebook (the setting). */

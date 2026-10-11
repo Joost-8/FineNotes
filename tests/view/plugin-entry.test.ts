@@ -381,6 +381,7 @@ describe("registration", () => {
         "fit-reset-view",
         "import-pdf",
         "import-vault-pdf",
+        "read-handwriting-on-device",
         "recognize-handwriting",
         "scan-document",
         "search-notebook",
