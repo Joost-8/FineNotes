@@ -161,19 +161,24 @@ export function penTypeFor(state: ToolbarState): PenTypeSpec {
 
 /**
  * How the eraser removes ink. `standard` rubs out only what it passes over,
- * splitting strokes; `stroke` removes every stroke it touches, whole. The
- * names are GoodNotes' ("Standard" / "Erase entire stroke").
+ * splitting strokes; `stroke` removes every stroke it touches, whole (the
+ * names are GoodNotes': "Standard" / "Erase entire stroke"); `ruled`, on
+ * lined paper, takes whole words line by line with their commas and dots,
+ * and whole lines from the margin (Stylus Labs Write's ruled erase,
+ * FineNotes#20).
  */
-export type EraserMode = "standard" | "stroke";
+export type EraserMode = "standard" | "stroke" | "ruled";
 
 const ERASER_MODES: ReadonlyArray<{ id: EraserMode; label: string; icon: string }> = [
   { id: "standard", label: "Standard", icon: "eraser" },
   { id: "stroke", label: "Whole stroke", icon: "spline" },
+  { id: "ruled", label: "By line (lined paper)", icon: "align-justify" },
 ];
 
-/** The eraser mode a toolbar state implies. `undefined` counts as standard. */
+/** The eraser mode a toolbar state implies. Anything unknown counts as standard. */
 export function eraserModeFor(state: ToolbarState): EraserMode {
-  return state.eraserMode === "stroke" ? "stroke" : "standard";
+  const mode = state.eraserMode;
+  return mode === "stroke" || mode === "ruled" ? mode : "standard";
 }
 
 /** What the eraser may erase, as a toolbar state implies it. `undefined` counts as everything. */

@@ -103,7 +103,8 @@ import {
   sameCrop,
   uncroppedBox,
 } from "../canvas/image-crop";
-import { type PaperTheme, paperTheme } from "../canvas/backdrop";
+import { type PaperTheme, paperTheme, writingLines } from "../canvas/backdrop";
+import { RuledEraser } from "../canvas/ruled-ink";
 import type { ViewportState } from "../canvas/viewport";
 import {
   type DocumentLayout,
@@ -860,6 +861,8 @@ export class InkSurface {
    */
   private eraseDirty = new Set<string>();
   private erasePreview: { pageIndex: number; bounds: Bounds } | null = null;
+  /** The ruled eraser's pass, from its first dab; null in the other modes and on unlined pages. */
+  private eraseRuled: RuledEraser | null = null;
   /** The eraser's footprint, shown on the page while erasing. */
   private readonly eraserCursorEl: HTMLElement;
 
@@ -4290,6 +4293,7 @@ export class InkSurface {
     this.eraseIds = new Set();
     this.erasePieces = new Map();
     this.eraseLast = null;
+    this.eraseRuled = null;
     this.eraseDirty.clear();
     // Whatever the preview touched is drawn from the document again.
     const preview = this.erasePreview;
@@ -4330,10 +4334,13 @@ export class InkSurface {
     if (!page) return false;
     this.showEraserCursor(box, sample);
     const radius = this.eraserSize() / 2;
-    const whole = eraserModeFor(this.toolState) === "stroke";
+    const mode = eraserModeFor(this.toolState);
     // "Erase highlighter only" / "Erase pen only": a stroke it may not touch
     // is passed over, as if the eraser were not there.
     const filter = eraserFilterFor(this.toolState);
+    if (mode === "ruled" && this.eraseLast === null) this.startRuledErase(page, sample, filter);
+    const ruled = this.eraseRuled;
+    const whole = mode === "stroke";
 
     // Samples of a fast drag can land further apart than the eraser is wide.
     // Dab along the gap at half-radius steps so the swept path is solid.
@@ -4345,12 +4352,41 @@ export class InkSurface {
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const at = { x: last.x + (sample.x - last.x) * t, y: last.y + (sample.y - last.y) * t };
-      const hit = whole
-        ? this.eraseWholeAt(page, at, radius, filter)
-        : this.erasePartialAt(page, at, radius, filter);
+      const hit = ruled
+        ? this.eraseRuledAt(ruled, at, radius)
+        : whole
+          ? this.eraseWholeAt(page, at, radius, filter)
+          : this.erasePartialAt(page, at, radius, filter);
       if (hit) changed = true;
     }
     return changed;
+  }
+
+  /**
+   * The ruled eraser's first dab: read the page's lines and its ink once for
+   * the whole pass. A page without lines erases as the standard eraser does,
+   * and says so, so the mode never silently does nothing.
+   */
+  private startRuledErase(page: Page, start: Pt, filter: EraserFilter): void {
+    const blocks = writingLines(page.backdrop, page.geometry);
+    if (blocks.length === 0) {
+      this.flashReadout("No lines on this page: erasing normally");
+      return;
+    }
+    this.eraseRuled = new RuledEraser(blocks, page.strokes, start, page.geometry.width, filter);
+  }
+
+  /**
+   * Ruled mode: whole strokes on the line under the eraser, as far along it
+   * as the pass goes (`ruled-ink.ts`), marked to go when the pen lifts.
+   */
+  private eraseRuledAt(ruled: RuledEraser, at: Pt, radius: number): boolean {
+    const taken = ruled.dab(at, radius);
+    for (const id of taken) {
+      this.eraseIds.add(id);
+      this.eraseDirty.add(id);
+    }
+    return taken.length > 0;
   }
 
   /**

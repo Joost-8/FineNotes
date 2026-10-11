@@ -800,6 +800,60 @@ describe("whole-stroke erase", () => {
   });
 });
 
+describe("ruled erase", () => {
+  /** Page 1 ruled wide (rules at 40, 80, 120 …): "dolor," on line 2, "below" on line 3. */
+  function ruledInk(kind: "ruled-wide" | "blank" = "ruled-wide") {
+    const doc = documentOf(
+      page("p1", [
+        line("dolor", 100, 160, 115),
+        {
+          id: "comma",
+          color: "#000000",
+          size: 2,
+          tool: "pen",
+          pts: [163, 121, 0.5, 161, 133, 0.5],
+        },
+        line("below", 100, 160, 155),
+      ]),
+    );
+    doc.pages[0].backdrop = { kind };
+    const w = ink(doc);
+    const flashes: string[] = [];
+    Object.assign(w.surface, { eraseRuled: null, flashReadout: (t: string) => flashes.push(t) });
+    const start = (x: number, y: number): void =>
+      run(w.surface, "startRuledErase", doc.pages[0], { x, y }, "all");
+    const dab = (x: number, y: number): boolean =>
+      run<boolean>(w.surface, "eraseRuledAt", w.surface.eraseRuled, { x, y }, 4);
+    return { ...w, flashes, start, dab };
+  }
+
+  it("takes the word with its comma, and leaves the next line, in one undo step", () => {
+    const w = ruledInk();
+    w.start(100, 112);
+    for (const x of [100, 130, 160, 165]) w.dab(x, 112);
+    expect([...w.marked()].sort()).toEqual(["comma", "dolor"]);
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["below"]);
+    w.undo();
+    expect(ids(w.doc.pages[0])).toEqual(["dolor", "comma", "below"]);
+  });
+
+  it("on a page without lines, says so and leaves the pass to the standard eraser", () => {
+    const w = ruledInk("blank");
+    w.start(100, 112);
+    expect(w.surface.eraseRuled).toBeNull();
+    expect(w.flashes).toEqual(["No lines on this page: erasing normally"]);
+  });
+
+  it("forgets the pass when the eraser lifts", () => {
+    const w = ruledInk();
+    w.start(100, 112);
+    expect(w.surface.eraseRuled).not.toBeNull();
+    w.lift(0);
+    expect(w.surface.eraseRuled).toBeNull();
+  });
+});
+
 describe("partial erase", () => {
   it("cuts a stroke into pieces with fresh ids above every id in the document", () => {
     const w = ink(twoPages());

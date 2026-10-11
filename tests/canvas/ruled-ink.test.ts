@@ -1,0 +1,173 @@
+/**
+ * `src/canvas/ruled-ink.ts`: the ruled eraser's choices.
+ */
+
+import { describe, expect, it } from "vitest";
+import { writingLines } from "../../src/canvas/backdrop";
+import { RuledEraser, linedItems, marginEdge } from "../../src/canvas/ruled-ink";
+import type { PageGeometry, Stroke } from "../../src/model/document";
+
+const A4: PageGeometry = { width: 1024, height: 1448 };
+const RULED = writingLines({ kind: "ruled-wide" }, A4); // rules at 40, 80, 120, …
+const COLUMNS = writingLines({ kind: "two-column" }, A4);
+
+/** A stroke through the given points, at pressure 0.5. */
+function ink(id: string, points: Array<[number, number]>, tool: Stroke["tool"] = "pen"): Stroke {
+  return { id, color: "#000", size: 2, tool, pts: points.flatMap(([x, y]) => [x, y, 0.5]) };
+}
+
+/** A word on the rule at `base`, from x0 to x1: x-height writing just above it. */
+const word = (id: string, x0: number, x1: number, base: number): Stroke =>
+  ink(id, [
+    [x0, base - 2],
+    [(x0 + x1) / 2, base - 14],
+    [x1, base - 2],
+  ]);
+
+// Line 2 (rule at 120): "dolor, sit" with a comma and an i-dot.
+const DOLOR = word("dolor", 100, 160, 120);
+const COMMA = ink("comma", [
+  [163, 121],
+  [161, 133],
+]);
+const SIT = word("sit", 180, 220, 120);
+const DOT = ink("dot", [
+  [200, 89],
+  [201, 90],
+]);
+// Line 3 (rule at 160), with a descender reaching up into line 2's band? No:
+// a capital on line 3 whose top pokes into line 2's band.
+const CAPITAL = ink("capital", [
+  [120, 160],
+  [120, 124],
+  [140, 124],
+]);
+// A sketch on no line: a big loop across several lines.
+const SKETCH = ink("sketch", [
+  [600, 100],
+  [800, 100],
+  [800, 400],
+  [600, 400],
+  [600, 100],
+]);
+const PAGE = [DOLOR, COMMA, SIT, DOT, CAPITAL, SKETCH];
+
+describe("marginEdge", () => {
+  it("is where the lines start, or a thin strip on a page ruled to the edge", () => {
+    expect(marginEdge(RULED, A4.width)).toBeCloseTo(A4.width * 0.04);
+    expect(marginEdge(writingLines({ kind: "legal" }, A4), A4.width)).toBeCloseTo(
+      A4.width * 0.08 + 6,
+    );
+    expect(marginEdge([], A4.width)).toBeCloseTo(A4.width * 0.04);
+  });
+});
+
+describe("linedItems", () => {
+  it("puts the comma and the dot on their word's line, and the sketch on none", () => {
+    const lines = new Map(
+      linedItems(RULED, PAGE, (s) => {
+        const xs = s.pts.filter((_, i) => i % 3 === 0);
+        const ys = s.pts.filter((_, i) => i % 3 === 1);
+        return {
+          minX: Math.min(...xs),
+          maxX: Math.max(...xs),
+          minY: Math.min(...ys),
+          maxY: Math.max(...ys),
+        };
+      }).map((l) => [l.item.id, l.line]),
+    );
+    expect(lines.get("comma")).toEqual({ block: 0, line: 2 });
+    expect(lines.get("dot")).toEqual({ block: 0, line: 2 });
+    expect(lines.get("capital")).toEqual({ block: 0, line: 3 });
+    // The sketch's centre is at y=250, on line 6; it spans several lines but
+    // still has one. A sketch has no line only off every block.
+    expect(lines.get("sketch")).not.toBeNull();
+  });
+
+  it("skips items without bounds", () => {
+    expect(linedItems(RULED, [ink("empty", [])], () => null)).toEqual([]);
+  });
+});
+
+describe("RuledEraser", () => {
+  it("a pass along a line takes its words with their comma and dot", () => {
+    const eraser = new RuledEraser(RULED, PAGE, { x: 95, y: 112 }, A4.width);
+    expect(eraser.wholeLines).toBe(false);
+    const taken = [95, 120, 140, 160, 175, 200, 220].flatMap((x) => eraser.dab({ x, y: 112 }, 6));
+    expect(taken.sort()).toEqual(["comma", "dolor", "dot", "sit"]);
+  });
+
+  it("leaves the line below alone, even where its ink reaches up into the pass", () => {
+    const eraser = new RuledEraser(RULED, PAGE, { x: 120, y: 126 }, A4.width);
+    // y=126 is in line 2's band; the capital pokes up to 124 but sits on line 3.
+    expect(eraser.dab({ x: 130, y: 126 }, 6)).toEqual(["dolor"]);
+  });
+
+  it("takes only as far along the line as the pass reaches", () => {
+    const eraser = new RuledEraser(RULED, PAGE, { x: 100, y: 112 }, A4.width);
+    expect(eraser.dab({ x: 110, y: 112 }, 4)).toEqual(["dolor"]);
+    expect(eraser.dab({ x: 150, y: 112 }, 4)).toEqual([]);
+  });
+
+  it("takes each stroke once", () => {
+    const eraser = new RuledEraser(RULED, PAGE, { x: 120, y: 112 }, A4.width);
+    expect(eraser.dab({ x: 120, y: 112 }, 4)).toEqual(["dolor"]);
+    expect(eraser.dab({ x: 121, y: 112 }, 4)).toEqual([]);
+  });
+
+  it("erases a sketch spanning several lines only where it touches it", () => {
+    const tall = ink("tall", [
+      [700, 50],
+      [700, 700],
+    ]);
+    const eraser = new RuledEraser(RULED, [tall], { x: 300, y: 112 }, A4.width);
+    // Its line is somewhere mid-page; a dab on another line misses it unless it touches.
+    expect(eraser.dab({ x: 300, y: 112 }, 4)).toEqual([]);
+    const offPage = ink("off", [
+      [300, -80],
+      [320, -60],
+    ]);
+    const unlined = new RuledEraser(RULED, [offPage], { x: 300, y: 112 }, A4.width);
+    expect(unlined.dab({ x: 310, y: -70 }, 4)).toEqual(["off"]);
+    expect(unlined.dab({ x: 500, y: -70 }, 4)).toEqual([]);
+  });
+
+  it("a drawing over several lines is not taken for passing its line, only where touched", () => {
+    // SKETCH's centre is on line 6 (rule at 280); its box spans 100..400.
+    const eraser = new RuledEraser(RULED, PAGE, { x: 650, y: 270 }, A4.width);
+    expect(eraser.dab({ x: 700, y: 270 }, 4)).toEqual([]);
+    expect(eraser.dab({ x: 800, y: 270 }, 4)).toEqual(["sketch"]);
+  });
+
+  it("a pass from the margin erases whole lines, in every column", () => {
+    const left = word("left", 100, 300, 120);
+    const right = word("right", 600, 800, 120);
+    const below = word("below", 100, 300, 160);
+    const eraser = new RuledEraser(COLUMNS, [left, right, below], { x: 10, y: 112 }, A4.width);
+    expect(eraser.wholeLines).toBe(true);
+    expect(eraser.dab({ x: 10, y: 112 }, 4).sort()).toEqual(["left", "right"]);
+    expect(eraser.dab({ x: 10, y: 152 }, 4)).toEqual(["below"]);
+    expect(eraser.dab({ x: 10, y: -500 }, 4)).toEqual([]);
+  });
+
+  it("passes over strokes the filter keeps", () => {
+    const mark = ink(
+      "mark",
+      [
+        [100, 110],
+        [200, 110],
+      ],
+      "highlighter",
+    );
+    const pen = new RuledEraser(RULED, [DOLOR, mark], { x: 120, y: 112 }, A4.width, "pen");
+    expect(pen.dab({ x: 150, y: 112 }, 4)).toEqual(["dolor"]);
+    const marker = new RuledEraser(
+      RULED,
+      [DOLOR, mark],
+      { x: 120, y: 112 },
+      A4.width,
+      "highlighter",
+    );
+    expect(marker.dab({ x: 150, y: 112 }, 4)).toEqual(["mark"]);
+  });
+});
