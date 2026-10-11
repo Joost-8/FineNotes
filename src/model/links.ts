@@ -10,6 +10,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument, InkLink, Page } from "./document";
+import { textLinkTargets } from "./text-links";
 
 /** Longest target kept, in UTF-16 units. */
 export const MAX_LINK_TARGET_LENGTH = 2000;
@@ -130,18 +131,21 @@ export function linksOf(page: Page, strokeIds: readonly string[]): InkLink[] {
 }
 
 /**
- * Every link target in the notebook, once each, in page order: only links
- * that still hold ink on their page. An erased link keeps its record until
+ * Every link target in the notebook, once each, in page order: ink links
+ * that still hold ink on their page, and links typed in text boxes. An erased link keeps its record until
  * the notebook is next opened, so an undo brings it back whole.
  */
 export function linkTargets(doc: InkDocument): string[] {
   const out: string[] = [];
   for (const page of doc.pages) {
-    if (!page.links) continue;
     const present = new Set(page.strokes.map((s) => s.id));
-    for (const link of page.links) {
+    for (const link of page.links ?? []) {
       if (!link.strokes.some((id) => present.has(id))) continue;
       if (!out.includes(link.target)) out.push(link.target);
+    }
+    // Links typed in text boxes.
+    for (const box of page.textBoxes) {
+      for (const target of textLinkTargets(box.text)) if (!out.includes(target)) out.push(target);
     }
   }
   return out;

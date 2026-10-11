@@ -223,6 +223,7 @@ import {
   type TextBoxFrame,
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
+import { textSegments } from "../model/text-links";
 import {
   type Command,
   type ImageTransform,
@@ -537,6 +538,14 @@ interface PenGesture {
 interface TextBoxView {
   root: HTMLElement;
   input: HTMLTextAreaElement;
+  /**
+   * The text as shown while the box is not being edited, when it has links
+   * in it: each link as its shown text, in the accent colour, tappable. Laid
+   * over the textarea, which keeps the layout and is what gets edited.
+   */
+  shown: HTMLElement;
+  /** The text `shown` was last built from. */
+  shownText: string | null;
   pageId: string;
   id: string;
   /** Width + font size the auto-height was last measured at; skips needless reflow. */
@@ -1299,6 +1308,7 @@ export class InkSurface {
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
     // With the lasso, a text box is something to select, not to type in.
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
+    this.surfaceEl.toggleClass("is-text-tool", toolState.tool === "text");
 
     const renderer = new Renderer(
       backdropCanvas,
@@ -1796,6 +1806,7 @@ export class InkSurface {
     this.toolSeen = tool;
     this.toolState.tool = tool;
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
+    this.surfaceEl.toggleClass("is-text-tool", tool === "text");
     if (tool !== "select") this.dropSelection();
     // Locked pictures wear a badge only while the lasso could select them.
     this.syncLockBadges();
@@ -2568,6 +2579,7 @@ export class InkSurface {
         const { input, root } = view;
         if (document.activeElement !== input && input.value !== textBox.text)
           input.value = textBox.text;
+        this.renderShownText(view, textBox.text);
         const frame = this.frameDraft?.key === key ? this.frameDraft.frame : textBox;
         // A fitted box is as wide as its text, up to the page's edge. The
         // width is written back, so the file and the thumbnails wrap it
@@ -2610,7 +2622,7 @@ export class InkSurface {
         // thumbnails paint with, installed on iPadOS, macOS and Windows.
         // The padding scales with the page (text-layout.ts), so the box
         // wraps at the same words at every zoom, and where the thumbnail does.
-        input.setCssStyles({
+        const typeStyle = {
           fontSize: `${(fontPx / shrink).toFixed(2)}px`,
           fontFamily: fontFamilyOf(textBox),
           fontWeight: textBox.bold ? "700" : "400",
@@ -2625,9 +2637,14 @@ export class InkSurface {
             : `${((textBox.fontSize * lineHeight + 2 * TEXT_PAD_Y) * unit).toFixed(2)}px`,
           color: textBox.color,
           width: `${100 / shrink}%`,
-          height: fixedHeight ? `${100 / shrink}%` : input.style.height,
           transform: shrink < 1 ? `scale(${shrink})` : "",
+        };
+        input.setCssStyles({
+          ...typeStyle,
+          height: fixedHeight ? `${100 / shrink}%` : input.style.height,
         });
+        // The shown text lies exactly over the textarea, the frame's full height.
+        view.shown.setCssStyles({ ...typeStyle, height: `${100 / shrink}%` });
         view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}`;
         if (!fixedHeight) this.autoSize(view, heightModeChanged);
       }
@@ -2649,6 +2666,56 @@ export class InkSurface {
       if (this.heldText === view) this.heldText = null;
       view.root.remove();
     }
+  }
+
+  /**
+   * Build a box's shown text from its typed text: plain runs as text, links
+   * as their shown text in a span that opens them. A box with no links shows
+   * its textarea alone (`has-links` is off).
+   */
+  private renderShownText(view: TextBoxView, text: string): void {
+    if (view.shownText === text) return;
+    view.shownText = text;
+    view.shown.empty();
+    let links = 0;
+    for (const segment of textSegments(text)) {
+      const target = segment.target;
+      if (target === undefined) {
+        view.shown.appendText(segment.text);
+        continue;
+      }
+      links++;
+      const link = view.shown.createSpan({
+        cls: "goodobsidian-textbox-link",
+        text: segment.text,
+        attr: { "aria-label": target },
+      });
+      this.bindTextLink(link, target);
+    }
+    view.root.toggleClass("has-links", links > 0);
+  }
+
+  /**
+   * A link in a text box opens on a tap: pointer events, as for every control
+   * over the page (a Pencil tap synthesises no click). Taken before the box
+   * or the page sees the press, so it neither starts editing nor draws.
+   */
+  private bindTextLink(el: HTMLElement, target: string): void {
+    let pressed: number | null = null;
+    el.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      pressed = event.pointerId;
+    });
+    el.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (pressed !== event.pointerId) return;
+      pressed = null;
+      this.callbacks.onOpenLink?.(target);
+    });
+    el.addEventListener("pointercancel", () => {
+      pressed = null;
+    });
   }
 
   /** Grow an auto-height box to fit its text. Measures only when something changed. */
@@ -2710,10 +2777,13 @@ export class InkSurface {
       cls: "goodobsidian-page-textbox-handle is-resize",
       attr: { "aria-label": "Resize text box" },
     });
+    const shown = root.createDiv({ cls: "goodobsidian-page-textbox-view" });
     input.value = textBox.text;
     const view: TextBoxView = {
       root,
       input,
+      shown,
+      shownText: null,
       pageId,
       id: textBox.id,
       measuredAt: "",
@@ -2768,6 +2838,7 @@ export class InkSurface {
       const live = this.liveTextBox(pageId, textBox.id);
       if (!live) return;
       live.text = input.value;
+      this.renderShownText(view, live.text);
       // A fitted box widens with its text: a full sync sets the width first.
       // The height is measured after it either way: a new line adds height
       // without changing the width, which the sync's own measure keys on.

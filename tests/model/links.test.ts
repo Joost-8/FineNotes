@@ -215,3 +215,22 @@ describe("a linked word is one thing", () => {
     expect(linkTargets(d)).toEqual(["A"]);
   });
 });
+
+describe("links typed in text boxes", () => {
+  it("are listed for backlinks with the ink links", () => {
+    const d = doc();
+    apply(d, linkStrokes(d, d.pages[0], ["s1"], "A"));
+    d.pages[1].textBoxes = [
+      {
+        id: "t1",
+        x: 0,
+        y: 0,
+        w: 100,
+        text: "See [[B|bee]] and [[A]], www.c.org",
+        color: "#000",
+        fontSize: 16,
+      },
+    ];
+    expect(linkTargets(d)).toEqual(["A", "B", "www.c.org"]);
+  });
+});

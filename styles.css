@@ -1273,6 +1273,48 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   max-height: none;
 }
 
+/* A box with links in its text shows them, while it is not being edited,
+   through a copy of its text laid over the textarea (which goes see-through
+   and keeps the layout): links in the accent colour, underlined, tappable.
+   With the lasso or the Text tool they take no presses, so the box can be
+   selected or edited. */
+.goodobsidian-page-textbox-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-text);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.goodobsidian-page-textbox.has-links:not(:focus-within) .goodobsidian-page-textbox-view {
+  display: block;
+}
+
+.goodobsidian-page-textbox.has-links:not(:focus-within) .goodobsidian-page-textbox-input {
+  color: transparent !important;
+}
+
+.goodobsidian-textbox-link {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.goodobsidian-surface.is-lasso .goodobsidian-textbox-link,
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-link {
+  pointer-events: none;
+}
+
 .goodobsidian-page-textbox.has-fixed-height .goodobsidian-page-textbox-input {
   height: 100%;
   overflow-y: auto;

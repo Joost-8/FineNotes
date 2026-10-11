@@ -56,7 +56,13 @@ extracted from the matching section of this file by `release.yml`.
   "Change link" and "Remove link" are in its menu. The link moves with its
   ink, and erasing part of the ink keeps the rest linked. The notebook's
   links are listed at the end of its text, so Obsidian's backlinks and
-  graph show them.
+  graph show them. A linked word is erased whole by every eraser, never in
+  part.
+- **Links in text boxes.** Type `[[Note]]`, `[[Note#Heading]]`,
+  `[[Note|shown text]]`, `[label](https://…)` or a web address in a text
+  box. When you are not typing in it, each link shows as its text in the
+  accent colour, underlined, and a tap opens it; with the Text tool, a tap
+  edits the box instead. They are listed for backlinks too.
 
 ## [1.5.0] - 2026-10-07
 

@@ -53,6 +53,7 @@ import {
 import { imageBounds, rotationOf } from "./image-geometry";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import { baselineOffset, canvasFont, decorationMetrics, layoutTextBox } from "./text-layout";
+import { displayText } from "../model/text-links";
 import {
   ByteLru,
   TILE_SIZE,
@@ -1336,7 +1337,9 @@ export function renderPageThumbnail(
  * never `var(--…)`: canvas string properties do not resolve CSS variables.
  * Exported for its tests.
  */
-export function paintTextBox(ctx: CanvasRenderingContext2D, box: TextBoxElement): void {
+export function paintTextBox(ctx: CanvasRenderingContext2D, typed: TextBoxElement): void {
+  // Links in the text show as their text, brackets hidden, as on the page.
+  const box = { ...typed, text: displayText(typed.text) };
   if (!box.text && !box.fill) return;
   ctx.save();
   ctx.font = canvasFont(box, box.fontSize);
