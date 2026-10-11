@@ -7,3 +7,6 @@ versions.json
 manifest.json
 SPECIFICATION.md
 .claude/
+
+# Generated golden fixtures (research/handwriting-rig/export_port_fixtures.py).
+tests/recognition/fixtures/hwr-golden.json

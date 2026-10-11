@@ -1438,6 +1438,13 @@ export class InkView extends TextFileView {
     }).open();
   }
 
+  /** The page in view and its number (1-based), for tools that read its ink. */
+  currentPageInk(): { page: Page; number: number } | null {
+    const index = this.surface?.currentPage ?? 0;
+    const page = this.doc.pages[index];
+    return page ? { page, number: index + 1 } : null;
+  }
+
   // --- Single pages -----------------------------------------------------------
 
   /** Whether the open document is a single page rather than a notebook. */

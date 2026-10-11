@@ -1,3 +1,4 @@
+/* global __FINENOTES_HWR__ -- set by esbuild.config.mjs (src/build.d.ts) */
 /**
  * The settings tab, built from Obsidian 1.13's setting definitions: Obsidian
  * draws the rows, searches them, and calls `getControlValue` /
@@ -492,6 +493,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "HUD",
         "troubleshooting",
       ]),
+      ...(typeof __FINENOTES_HWR__ !== "undefined" && __FINENOTES_HWR__
+        ? [
+            controlRow(
+              "On-device handwriting model (dev build)",
+              "Vault path of a research recogniser file (export_hwr.py). Once set, the command " +
+                '"Read this page\'s handwriting on this device" reads the page in view, on ' +
+                "this device. Research models are for your own testing only.",
+              { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
+              ["handwriting", "recognition", "experimental"],
+            ),
+          ]
+        : []),
       block((el) => {
         const footer = el.createDiv({ cls: "goodobsidian-support" });
         footer.appendText("Found a bug, or have a question? ");

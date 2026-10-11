@@ -139,6 +139,12 @@ export interface GoodObsidianSettings {
   returnToPenAfterUse: boolean;
   /** Double-tap with two fingers to undo, with three to redo. */
   fingerTapUndo: boolean;
+  /**
+   * Dev builds only (`__FINENOTES_HWR__`): the vault path of a research
+   * handwriting model for the on-device recogniser. Not in the defaults, so a
+   * release never writes it; one written by a dev build is kept as is.
+   */
+  hwrModelPath?: string;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

@@ -1,5 +1,6 @@
 import esbuild from "esbuild";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import process from "node:process";
 import { builtinModules } from "node:module";
 import { copyArtifacts, resolveDeployDir } from "./scripts/deploy-target.mjs";
@@ -13,6 +14,11 @@ ${readFileSync(new URL("./THIRD_PARTY_NOTICES.txt", import.meta.url), "utf8")}
 
 const production = process.argv[2] === "production";
 const deployDir = resolveDeployDir();
+// The on-device handwriting recogniser is a dev-only experiment: its models
+// are research-only and never ship. Watch builds include its command; a
+// production build only with FINENOTES_HWR=1 (a private build). Releases
+// carry none of its code (src/build.d.ts).
+const hwr = !production || process.env.FINENOTES_HWR === "1";
 
 // A stamp for the deploy log below, so each copy into the vault can be told
 // apart. It is not bundled: a release rebuilt from its tag stays
@@ -38,8 +44,39 @@ const deployPlugin = {
   },
 };
 
+// `import source from "worker:./worker"` gives the module bundled on its own
+// as a string, to start as a Web Worker from a Blob URL (src/build.d.ts).
+const inlineWorker = {
+  name: "finenotes-inline-worker",
+  setup(build) {
+    build.onResolve({ filter: /^worker:/ }, (args) => ({
+      path: resolve(args.resolveDir, args.path.slice("worker:".length)),
+      namespace: "inline-worker",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "inline-worker" }, async (args) => {
+      const entry = /\.[cm]?[jt]s$/.test(args.path) ? args.path : `${args.path}.ts`;
+      const result = await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        write: false,
+        format: "iife",
+        target: "es2020",
+        minify: production,
+        metafile: true,
+        logLevel: "silent",
+      });
+      return {
+        contents: `export default ${JSON.stringify(result.outputFiles[0].text)};`,
+        loader: "js",
+        watchFiles: Object.keys(result.metafile.inputs).map((file) => resolve(file)),
+      };
+    });
+  },
+};
+
 const context = await esbuild.context({
   banner: { js: banner },
+  define: { __FINENOTES_HWR__: JSON.stringify(hwr) },
   entryPoints: ["src/main.ts"],
   bundle: true,
   external: [
@@ -68,7 +105,7 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   minify: production,
-  plugins: [deployPlugin],
+  plugins: [inlineWorker, deployPlugin],
 });
 
 if (production) {

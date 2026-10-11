@@ -1,0 +1,103 @@
+/**
+ * On-device handwriting recognition, end to end: a page's ink → lines →
+ * frames → network → text. Experimental and dev-only: the models are
+ * research-only and are read from the user's own vault (bundle.ts).
+ *
+ * PURE: no DOM, no Obsidian. The worker (worker.ts) runs it off the main
+ * thread; `now` is its clock, for the timings.
+ */
+
+import { forward } from "./blstm";
+import type { HwrBundle } from "./bundle";
+import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
+import { type InkStroke, lineFeatures } from "./features";
+import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
+
+export interface LineTimings {
+  /** Milliseconds for the frames, the network and the decoders. */
+  features: number;
+  network: number;
+  greedy: number;
+  beam: number;
+}
+
+export interface LineReading {
+  /** The letters as written (best path). */
+  greedy: string;
+  /** With the language model, when the bundle has one; else the greedy text. */
+  text: string;
+  /** Mean best-class probability over non-blank frames. */
+  confidence: number;
+  frames: number;
+  timings: LineTimings;
+}
+
+export interface PageLineReading extends LineReading {
+  strokeIds: string[];
+  box: Box;
+}
+
+export interface PageReading {
+  lines: PageLineReading[];
+  /** Milliseconds to find the lines. */
+  segment: number;
+  wordGap: number;
+}
+
+export interface ReadOptions {
+  /** Decode with the bundle's language model (default true, when it has one). */
+  useLm?: boolean;
+  /** Overrides the bundle's decoder settings. */
+  beam?: Partial<BeamOptions>;
+  /** A clock in milliseconds (`performance.now` in the worker). */
+  now?: () => number;
+}
+
+/** Read one line of strokes (any order: they are put in writing order). */
+export function readLine(
+  bundle: HwrBundle,
+  strokes: readonly InkStroke[],
+  options: ReadOptions = {},
+): LineReading {
+  const now = options.now ?? (() => 0);
+  const t0 = now();
+  const { features, frames } = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+  const t1 = now();
+  const logp = forward(bundle.net, features, frames);
+  const t2 = now();
+  const alphabet = bundle.meta.alphabet;
+  const greedy = greedyDecode(logp, frames, alphabet);
+  const t3 = now();
+  const lm = options.useLm === false ? null : bundle.lm;
+  const text = lm
+    ? beamDecode(logp, frames, alphabet, lm, { ...bundle.meta.decoder, ...options.beam })
+    : greedy.text;
+  const t4 = now();
+  return {
+    greedy: greedy.text,
+    text,
+    confidence: greedy.confidence,
+    frames,
+    timings: { features: t1 - t0, network: t2 - t1, greedy: t3 - t2, beam: t4 - t3 },
+  };
+}
+
+/** Find a page's lines and read each one. */
+export function readPage(
+  bundle: HwrBundle,
+  strokes: readonly PageInk[],
+  options: ReadOptions = {},
+): PageReading {
+  const now = options.now ?? (() => 0);
+  const t0 = now();
+  const { lines, wordGap } = segmentPage(strokes);
+  const segment = now() - t0;
+  return {
+    segment,
+    wordGap,
+    lines: lines.map((line) => {
+      const ink = lineStrokes(line);
+      return { ...readLine(bundle, ink, options), strokeIds: ink.map((s) => s.id), box: line.box };
+    }),
+  };
+}
