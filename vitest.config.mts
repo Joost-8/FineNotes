@@ -36,6 +36,7 @@ export default defineConfig({
         "src/canvas/pdf-tiles.ts",
         "src/canvas/text-layout.ts",
         "src/canvas/lasso.ts",
+        "src/canvas/writing-lines.ts",
         "src/view/selection-bar-model.ts",
         "src/view/view-routing.ts",
         "src/view/load-guard.ts",

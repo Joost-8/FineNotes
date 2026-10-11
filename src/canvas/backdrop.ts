@@ -46,6 +46,7 @@ import {
   orb,
   softGradient,
 } from "./cover-patterns";
+import { type LineBlock, evenBlock } from "./writing-lines";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
  *  these are the *paper*, which is deliberately theme-independent. */
@@ -1039,6 +1040,100 @@ function threadShade(i: number, seed: number): number {
   h ^= h >>> 15;
   h = Math.imul(h, 0x85ebca6b) >>> 0;
   return (h >>> 13) % 3;
+}
+
+/**
+ * **The lines to write on**, for the templates that have them
+ * (`writing-lines.ts`). Each entry repeats its painter's own arithmetic, and
+ * `writing-lines.test.ts` checks every line against a rule the painter
+ * actually draws, so a change to one without the other fails a test.
+ * A template missing here has no lines: the ruled tools are off on it.
+ */
+const WRITING_LINES: Partial<Record<Ruling, (g: PageGeometry, s: number) => LineBlock[]>> = {
+  "ruled-narrow": (g, s) => [evenBlock(0, g.width, s, s, g.height)],
+  "ruled-wide": (g, s) => [evenBlock(0, g.width, s, s, g.height)],
+  lined: (g, s) => [evenBlock(0, g.width, s, s, g.height)],
+  legal: (g, s) => [evenBlock(g.width * 0.08 + 6, g.width, s, s, g.height)],
+  cornell: (g, s) => {
+    // Cue column and notes above the summary rule; the summary band below it.
+    const all = evenBlock(0, g.width, s, s, g.height);
+    const summaryY = g.height * 0.8;
+    const above = all.baselines.filter((y) => y <= summaryY);
+    const below = all.baselines.filter((y) => y > summaryY);
+    const cueX = g.width * 0.25;
+    return [
+      { x0: 0, x1: cueX, pitch: s, baselines: above },
+      { x0: cueX, x1: g.width, pitch: s, baselines: [...above] },
+      { x0: 0, x1: g.width, pitch: s, baselines: below },
+    ];
+  },
+  "single-column": (g, s) => [evenBlock(g.width * 0.18, g.width * 0.82, s, s, g.height)],
+  "three-column": (g, s) => {
+    const colW = g.width / 3;
+    return [0, 1, 2].map((i) => evenBlock(i * colW, (i + 1) * colW, s, s, g.height));
+  },
+  "two-column": (g, s) => {
+    const half = g.width / 2;
+    return [evenBlock(0, half, s, s, g.height), evenBlock(half, g.width, s, s, g.height)];
+  },
+  "margin-left": (g, s) => [evenBlock(g.width * 0.3, g.width, s, s, g.height)],
+  "margin-right": (g, s) => [evenBlock(0, g.width * 0.7, s, s, g.height)],
+  "single-column-mix": (g, s) => {
+    const band = g.height * 0.16;
+    return [evenBlock(g.width * 0.18, g.width * 0.82, band + s, s, g.height)];
+  },
+  todos: (g, s) => {
+    const margin = g.width * 0.07;
+    const header = s * 2;
+    return [evenBlock(margin, g.width - margin, header + s, s, g.height - s / 2)];
+  },
+  "title-date": (g, s) => {
+    const margin = g.width * 0.06;
+    const size = Math.max(10, Math.min(22, s * 0.55));
+    const writeY = s * 2;
+    const dateX = g.width * 0.66;
+    return [
+      { x0: margin + size * 3.2, x1: dateX - size, pitch: s, baselines: [writeY] },
+      { x0: dateX + size * 2.9, x1: g.width - margin, pitch: s, baselines: [writeY] },
+      evenBlock(0, g.width, s * 3 + s, s, g.height),
+    ];
+  },
+  handwriting: (g, s) => {
+    // One line per practice group, on its baseline; a group is 4.4 pitches.
+    const margin = g.width * 0.05;
+    const baselines: number[] = [];
+    for (let y = s * 2; y + s * 2 < g.height - s; y += s * 4.4) baselines.push(y + s * 2);
+    return [{ x0: margin, x1: g.width - margin, pitch: s * 4.4, baselines }];
+  },
+  "meeting-notes": (g, s) => {
+    const margin = g.width * 0.06;
+    const size = Math.max(10, Math.min(20, s * 0.5));
+    const dateX = g.width * 0.66;
+    const first = s * 1.6;
+    const second = first + s * 1.2;
+    const header = second + s * 0.8;
+    const actions = Math.max(header + s * 3, g.height * 0.7);
+    return [
+      { x0: margin + size * 4.8, x1: dateX - size, pitch: s, baselines: [first] },
+      { x0: dateX + size * 2.9, x1: g.width - margin, pitch: s, baselines: [first] },
+      { x0: margin + size * 6, x1: g.width - margin, pitch: s, baselines: [second] },
+      evenBlock(margin, g.width - margin, header + s * 1.5, s, actions - s / 2),
+      evenBlock(margin, g.width - margin, actions + s * 1.5, s, g.height - margin),
+    ];
+  },
+};
+
+/**
+ * The lines a page with this backdrop is written on, or none: PDF pages,
+ * blank paper, grids, planners, music and covers have no lines.
+ */
+export function writingLines(backdrop: Backdrop, geometry: PageGeometry): LineBlock[] {
+  if (backdrop.kind === "pdf") return [];
+  if (!Object.prototype.hasOwnProperty.call(WRITING_LINES, backdrop.kind)) return [];
+  const plan = WRITING_LINES[backdrop.kind];
+  if (!plan) return [];
+  const blocks = plan(geometry, resolveSpacing(backdrop.spacing, backdrop.kind));
+  return blocks.filter((block) => block.baselines.length > 0);
 }
 
 const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
