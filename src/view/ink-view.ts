@@ -25,7 +25,16 @@ import {
   type WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
-import { AUTO_RECOGNIZE_IDLE_MS, ICON_INK_VIEW, PALETTE, SIZES, VIEW_TYPE_INK } from "../constants";
+import {
+  AUTO_RECOGNIZE_IDLE_MS,
+  DEVICE_READ_IDLE_MS,
+  DEVICE_READ_NEXT_MS,
+  DEVICE_READ_OPEN_MS,
+  ICON_INK_VIEW,
+  PALETTE,
+  SIZES,
+  VIEW_TYPE_INK,
+} from "../constants";
 import {
   type AttachmentKind,
   type InkDocument,
@@ -44,6 +53,7 @@ import {
   pageContentHash,
   pageKeys,
   transcriptHashes,
+  transcriptSources,
   syncLinkIndex,
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
@@ -107,6 +117,8 @@ import {
 import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
 import { externalUrl, isExternalTarget, linkStrokes, linkTargets } from "../model/links";
 import { LinkSuggestModal } from "./link-modal";
+import { readingText } from "./handwriting";
+import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
@@ -253,6 +265,14 @@ export class InkView extends TextFileView {
 
   /** The wait before an automatic transcription (see `scheduleAutoTranscription`). */
   private transcribeTimer = 0;
+  /** The next on-device reading for search and the text layer (`scheduleDeviceReading`). */
+  private deviceTimer = 0;
+  /** A page is being read on the device right now. */
+  private deviceBusy = false;
+  /** Pages read on the device this session, by key, at the hash they were read at. */
+  private readonly deviceRead = new Map<string, string>();
+  /** The pen is on the page. */
+  private penIsDown = false;
 
   /** Whether the input debug overlay is on. */
   private showHud: boolean;
@@ -322,6 +342,9 @@ export class InkView extends TextFileView {
     // it: it stops, and joins the document now shown.
     this.audio?.documentReplaced();
     this.applyPendingPage();
+    // Another notebook, or this one changed on disk: read what is unread.
+    this.deviceRead.clear();
+    this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
   }
 
   /** Relink this note's paths from the plugin's log of moved files; how many changed. */
@@ -408,6 +431,7 @@ export class InkView extends TextFileView {
 
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
   private penActivity(down: boolean): void {
+    this.penIsDown = down;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
     const t = performance.now();
@@ -436,6 +460,8 @@ export class InkView extends TextFileView {
     this.audio?.destroy();
     this.audio = null;
     window.clearTimeout(this.transcribeTimer);
+    window.clearTimeout(this.deviceTimer);
+    this.deviceTimer = 0;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
     this.surface?.destroy();
@@ -666,7 +692,9 @@ export class InkView extends TextFileView {
    * long run) or a ready key.
    */
   private writeTranscripts(
-    updates: ReadonlyArray<TranscriptUpdate | { page: Page; text: string; hash: string }>,
+    updates: ReadonlyArray<
+      TranscriptUpdate | { page: Page; text: string; hash: string; device?: boolean }
+    >,
   ): void {
     const keys = pageKeys(this.doc.pages);
     const resolved: TranscriptUpdate[] = [];
@@ -676,7 +704,10 @@ export class InkView extends TextFileView {
         continue;
       }
       const index = this.doc.pages.indexOf(update.page);
-      if (index >= 0) resolved.push({ key: keys[index], text: update.text, hash: update.hash });
+      if (index >= 0) {
+        const { text, hash, device } = update;
+        resolved.push({ key: keys[index], text, hash, ...(device ? { device } : {}) });
+      }
     }
     const section = updatePageTranscripts(readTextSection(this.noteBody), keys, resolved);
     this.noteBody = writeTextSection(this.noteBody, section);
@@ -888,6 +919,66 @@ export class InkView extends TextFileView {
    * whose ink has not changed since its last transcription costs nothing
    * (see `transcribe`).
    */
+  /**
+   * Read pages on this device for search and the text layer, a moment after
+   * writing stops (`device-reading.ts` picks the page): one page at a time,
+   * the page in view first, never while the pen is down, never replacing a
+   * transcription.
+   */
+  private scheduleDeviceReading(delay = DEVICE_READ_IDLE_MS): void {
+    window.clearTimeout(this.deviceTimer);
+    this.deviceTimer = 0;
+    if (this.settings.handwritingOnDevice === false || this.guard.locked) return;
+    this.deviceTimer = window.setTimeout(() => void this.readNextPageOnDevice(), delay);
+  }
+
+  private async readNextPageOnDevice(): Promise<void> {
+    this.deviceTimer = 0;
+    if (this.deviceBusy || !this.surface) return;
+    if (this.penIsDown) {
+      this.scheduleDeviceReading();
+      return;
+    }
+    const doc = this.doc;
+    const keys = pageKeys(doc.pages);
+    const step = nextDeviceStep({
+      pages: doc.pages,
+      keys,
+      entries: transcriptSources(readTextSection(this.noteBody)),
+      hashOf: pageContentHash,
+      read: this.deviceRead,
+      current: this.surface.currentPage,
+    });
+    if (!step) return;
+    if (step.kind === "clear") {
+      this.writeTranscripts([{ key: step.key, text: "", hash: "" }]);
+      this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
+      return;
+    }
+    this.deviceBusy = true;
+    let text = "";
+    try {
+      text = readingText(await this.plugin.handwriting.readPage(step.page.strokes));
+    } catch {
+      // Unreadable now (the model failed to load): try again after the next edit.
+      this.deviceBusy = false;
+      return;
+    }
+    this.deviceBusy = false;
+    // The page may have changed, moved or gone, or been transcribed, meanwhile.
+    if (this.doc !== doc || !doc.pages.includes(step.page)) return;
+    if (pageContentHash(step.page) !== step.hash) {
+      this.scheduleDeviceReading();
+      return;
+    }
+    this.deviceRead.set(step.key, step.hash);
+    const entry = transcriptSources(readTextSection(this.noteBody)).get(step.key);
+    if (!entry || entry.device) {
+      this.writeTranscripts([{ page: step.page, text, hash: step.hash, device: true }]);
+    }
+    this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
+  }
+
   private scheduleAutoTranscription(): void {
     window.clearTimeout(this.transcribeTimer);
     const { autoRecognize, llmVendor } = this.settings;
@@ -1031,6 +1122,7 @@ export class InkView extends TextFileView {
           // …and undo can take a recording off the note, or bring one back.
           this.audio?.syncChrome();
           this.scheduleAutoTranscription();
+          this.scheduleDeviceReading();
           this.requestSave();
           this.relinkMovedFiles();
         },

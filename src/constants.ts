@@ -163,6 +163,13 @@ export const DEFAULT_ERASER_SIZE = ERASER_SIZES[1];
 /** How long the ink must be left alone before automatic transcription runs. */
 export const AUTO_RECOGNIZE_IDLE_MS = 30_000;
 
+/** How long after writing stops a page is read on the device (search, text layer), ms. */
+export const DEVICE_READ_IDLE_MS = 4000;
+/** After opening a notebook, before reading what is still unread on the device, ms. */
+export const DEVICE_READ_OPEN_MS = 2500;
+/** Between one page read on the device and the next, ms. */
+export const DEVICE_READ_NEXT_MS = 300;
+
 /**
  * Icons, by the names of the Lucide icons Obsidian ships (checked against
  * the icon table in Obsidian's own `app.js`). The ink view's tab icon, and

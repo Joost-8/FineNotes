@@ -63,6 +63,7 @@ export default defineConfig({
         "src/input/finger-gesture.ts",
         "src/input/multi-finger-tap.ts",
         "src/recognition/text-layer.ts",
+        "src/recognition/device-reading.ts",
         "src/recognition/registry.ts",
         "src/recognition/manual.ts",
         "src/recognition/llm-request.ts",

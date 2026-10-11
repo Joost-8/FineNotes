@@ -14,7 +14,10 @@
  * The comment line carries the page's id and a hash of what was on the page
  * when it was transcribed, so "Transcribe whole notebook" can skip pages that
  * have not changed without a field in the model. Headings are renumbered on
- * every write, because pages move.
+ * every write, because pages move. A page read by the on-device recogniser
+ * says so (`<!--goodobsidian-page p2 1x9k3a device-->`): its text keeps the
+ * page searchable until a transcription replaces it, and transcribing does
+ * not skip it.
  *
  * A section written before 0.5 has no page comments; it was a transcription of
  * page 1 (the old code only ever read `firstPage`), and is adopted as such.
@@ -90,6 +93,8 @@ export interface PageTranscript {
   /** Content hash when transcribed; "" when unknown (adopted legacy text). */
   hash: string;
   text: string;
+  /** Read by the on-device recogniser, not transcribed. */
+  device?: true;
 }
 
 export interface ParsedTranscripts {
@@ -100,7 +105,7 @@ export interface ParsedTranscripts {
   legacy: boolean;
 }
 
-const MARKER_RE = /^<!--goodobsidian-page (\S+) ([0-9a-z]*)-->$/;
+const MARKER_RE = /^<!--goodobsidian-page (\S+) ([0-9a-z]*)( device)?-->$/;
 const HEADING_RE = /^#{1,6} Page \d+$/;
 
 /**
@@ -133,7 +138,13 @@ export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
   const lines = section.replace(/\r\n?/g, "\n").split("\n");
 
   // Each entry starts at its heading when one sits right above its comment.
-  const starts: Array<{ start: number; body: number; key: string; hash: string }> = [];
+  const starts: Array<{
+    start: number;
+    body: number;
+    key: string;
+    hash: string;
+    device: boolean;
+  }> = [];
   lines.forEach((line, i) => {
     const match = MARKER_RE.exec(line.trim());
     if (!match) return;
@@ -143,6 +154,7 @@ export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
       body: i + 1,
       key: decodeKey(match[1]),
       hash: match[2],
+      device: match[3] !== undefined,
     });
   });
   if (starts.length === 0) return { preamble: section.trim(), entries: [], legacy: true };
@@ -150,6 +162,7 @@ export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
   const entries = starts.map((s, n) => ({
     key: s.key,
     hash: s.hash,
+    ...(s.device ? { device: true as const } : {}),
     text: lines
       .slice(s.body, n + 1 < starts.length ? starts[n + 1].start : lines.length)
       .join("\n")
@@ -158,10 +171,26 @@ export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
   return { preamble: lines.slice(0, starts[0].start).join("\n").trim(), entries, legacy: false };
 }
 
-/** Hash each transcribed page was transcribed at, by key. */
+/**
+ * Hash each transcribed page was transcribed at, by key. Pages only read on
+ * the device are left out: to a transcription they are not done yet.
+ */
 export function transcriptHashes(section: string | null): Map<string, string> {
   const map = new Map<string, string>();
-  for (const entry of parsePageTranscripts(section).entries) map.set(entry.key, entry.hash);
+  for (const entry of parsePageTranscripts(section).entries) {
+    if (!entry.device) map.set(entry.key, entry.hash);
+  }
+  return map;
+}
+
+/** Every page entry's hash and whether it was read on the device, by key. */
+export function transcriptSources(
+  section: string | null,
+): Map<string, { hash: string; device: boolean }> {
+  const map = new Map<string, { hash: string; device: boolean }>();
+  for (const entry of parsePageTranscripts(section).entries) {
+    map.set(entry.key, { hash: entry.hash, device: entry.device === true });
+  }
   return map;
 }
 
@@ -170,6 +199,8 @@ export interface TranscriptUpdate {
   /** Blank removes the page's entry. */
   text: string;
   hash: string;
+  /** Read by the on-device recogniser. */
+  device?: boolean;
 }
 
 /**
@@ -201,7 +232,8 @@ export function updatePageTranscripts(
   }
   for (const update of updates) {
     const text = update.text.trim();
-    if (text) byKey.set(update.key, { key: update.key, hash: update.hash, text });
+    const device = update.device === true ? { device: true as const } : {};
+    if (text) byKey.set(update.key, { key: update.key, hash: update.hash, text, ...device });
     else byKey.delete(update.key);
   }
 
@@ -210,7 +242,7 @@ export function updatePageTranscripts(
     const entry = byKey.get(key);
     if (!entry || !entry.text) return;
     blocks.push(
-      `### Page ${index + 1}\n<!--goodobsidian-page ${encodeURIComponent(key)} ${entry.hash}-->\n${entry.text}`,
+      `### Page ${index + 1}\n<!--goodobsidian-page ${encodeURIComponent(key)} ${entry.hash}${entry.device ? " device" : ""}-->\n${entry.text}`,
     );
   });
   // The links list stays at the end; it is rewritten on save, not here.
