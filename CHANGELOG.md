@@ -49,6 +49,14 @@ extracted from the matching section of this file by `release.yml`.
   goes to that line. A page title's subheadings fold away under it with the
   chevron beside it, and the entry you are reading is marked as you scroll.
   Rename or remove one from its ⌄ menu. Insert space moves it with its line.
+- **Handwritten links.** Lasso some ink and choose "Link to…": pick a note,
+  a heading in it (type `Note#Heading`), or type a web address. The ink
+  keeps its colour and gets an underline. Tap it with a finger to open the
+  link; the pen keeps writing over it. With the ink selected, "Open link",
+  "Change link" and "Remove link" are in its menu. The link moves with its
+  ink, and erasing part of the ink keeps the rest linked. The notebook's
+  links are listed at the end of its text, so Obsidian's backlinks and
+  graph show them.
 
 ## [1.5.0] - 2026-10-07
 

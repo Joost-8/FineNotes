@@ -17,6 +17,7 @@
 
 import { AddPage } from "../model/commands";
 import { SetSection } from "../model/contents";
+import { SetLink } from "../model/links";
 import type { Command } from "../model/commands";
 import {
   type Bounds,
@@ -285,6 +286,18 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
       new TranslateElements(page.id, lists, 0, shift),
       new RemoveElements(page.id, lists, "Insert space"),
       new AddElements(next.id, lists, "Insert space"),
+    );
+  }
+  // A link goes with most of its ink; strokes it leaves behind lose it.
+  const carried = new Set(
+    spill.flatMap((s) => (s.placed.element.kind === "stroke" ? [s.placed.element.el.id] : [])),
+  );
+  for (const link of page.links ?? []) {
+    const moving = link.strokes.filter((id) => carried.has(id));
+    if (moving.length * 2 <= link.strokes.length) continue;
+    walk.moves.push(
+      new SetLink(page, link.id, null, "Insert space"),
+      new SetLink(next, link.id, { strokes: moving, target: link.target }, "Insert space"),
     );
   }
   // A section goes with its heading, keeping its place on the line.

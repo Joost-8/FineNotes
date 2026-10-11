@@ -222,6 +222,7 @@ import {
   SetTextBoxFrame,
   type TextBoxFrame,
 } from "../model/page-commands";
+import { linkStrokes, linksOf } from "../model/links";
 import {
   type Command,
   type ImageTransform,
@@ -335,6 +336,8 @@ const THUMB_HOLD_MS = 1000;
 const COUNTER_HOLD_MS = 1800;
 /** The zoom readout, a beat after the counter. */
 const ZOOM_READOUT_HOLD_MS = 2000;
+/** The gap between linked ink and its underline, screen px. */
+const LINK_UNDERLINE_GAP_PX = 3;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
 const SECTION_LEAD_PX = 96;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
@@ -462,6 +465,14 @@ export interface InkSurfaceCallbacks {
    * middle).
    */
   onAddSection?: (index: number, at: { x: number; y: number }) => void;
+  /**
+   * "Link to…" on a lasso selection of ink: the host asks where to, and
+   * applies `linkStrokes` for these stroke ids on page `index`. `current`
+   * is where the ink leads now, when all of it is in one link.
+   */
+  onLinkStrokes?: (index: number, strokeIds: string[], current: string | null) => void;
+  /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
+  onOpenLink?: (target: string) => void;
   /**
    * The user asked for a new page after `afterIndex`.
    *
@@ -950,6 +961,8 @@ export class InkSurface {
   /** A ribbon in the margin beside each section in the contents. */
   private readonly sectionRibbonsEl: HTMLElement;
   private readonly sectionRibbons: HTMLElement[] = [];
+  /** An underline under each piece of linked ink. */
+  private readonly linkMarks: HTMLElement[] = [];
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
   private pressMenu: PressMenu | null = null;
   private pressTimer = 0;
@@ -1634,6 +1647,8 @@ export class InkSurface {
   /** The document changed: the host refreshes its status and saves. */
   private changed(): void {
     this.reportStatus();
+    // Ink moved or went: the underlines and ribbons follow it.
+    this.syncSectionRibbons();
     this.callbacks.onChange();
   }
 
@@ -5453,6 +5468,7 @@ export class InkSurface {
     }
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    actions.push(...this.linkActions(sel, index));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -5477,6 +5493,55 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
+    return actions;
+  }
+
+  /**
+   * Link to… for selected ink; with ink that is in one link, Open link and
+   * Remove link as well.
+   */
+  private linkActions(sel: GroupSelection, index: number): SelectionAction[] {
+    const page = this.doc.pages[index];
+    const ask = this.callbacks.onLinkStrokes;
+    if (!page || !ask || sel.strokes.length === 0) return [];
+    const ids = sel.strokes.map((stroke) => stroke.id);
+    const links = linksOf(page, ids);
+    const one = links.length === 1 ? links[0] : null;
+    const actions: SelectionAction[] = [
+      {
+        id: "link",
+        icon: "link",
+        label: one ? "Change link" : "Link to…",
+        group: "link",
+        run: () => {
+          this.clearSelection();
+          ask(index, ids, one?.target ?? null);
+        },
+      },
+    ];
+    const open = this.callbacks.onOpenLink;
+    if (one && open) {
+      actions.push({
+        id: "open-link",
+        icon: "external-link",
+        label: "Open link",
+        group: "link",
+        bar: true,
+        run: () => open(one.target),
+      });
+    }
+    if (links.length > 0) {
+      actions.push({
+        id: "unlink",
+        icon: "unlink",
+        label: "Remove link",
+        group: "link",
+        run: () => {
+          const commands = linkStrokes(this.doc, page, ids, null);
+          if (commands.length > 0) this.applyCommand(new CompositeCommand("Remove link", commands));
+        },
+      });
+    }
     return actions;
   }
 
@@ -5803,6 +5868,8 @@ export class InkSurface {
    */
   /** One ribbon at the page's left edge for each section, level with its heading. */
   private syncSectionRibbons(): void {
+    // Not built yet (the first change can come from the constructor's load).
+    if (!this.sectionRibbonsEl || !this.pageLayout) return;
     let used = 0;
     const scale = this.unitScale;
     for (const box of this.pageLayout.boxes) {
@@ -5826,7 +5893,79 @@ export class InkSurface {
     for (let i = used; i < this.sectionRibbons.length; i++) {
       this.sectionRibbons[i].addClass("is-hidden");
     }
-    this.sectionRibbonsEl.toggleClass("is-hidden", used === 0);
+    const linked = this.syncLinkMarks();
+    this.sectionRibbonsEl.toggleClass("is-hidden", used === 0 && linked === 0);
+  }
+
+  /**
+   * An underline under each link's ink, in the accent colour: the ink keeps
+   * its own. Returns how many are shown.
+   */
+  private syncLinkMarks(): number {
+    let used = 0;
+    const scale = this.unitScale;
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      if (!page?.links) continue;
+      for (const link of page.links) {
+        const bounds = this.linkBounds(page, link.strokes);
+        if (!bounds) continue;
+        let mark = this.linkMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-link-mark" });
+          this.linkMarks.push(mark);
+        }
+        mark.removeClass("is-hidden");
+        mark.setAttribute("aria-label", link.target);
+        mark.setCssStyles({
+          left: `${(box.x + bounds.minX) * scale}px`,
+          top: `${(box.y + bounds.maxY) * scale + LINK_UNDERLINE_GAP_PX}px`,
+          width: `${Math.max(8, (bounds.maxX - bounds.minX) * scale)}px`,
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.linkMarks.length; i++) this.linkMarks[i].addClass("is-hidden");
+    return used;
+  }
+
+  /** The bounds of a link's ink that is still on the page, or null when none is. */
+  private linkBounds(page: Page, strokeIds: readonly string[]): Bounds | null {
+    const ids = new Set(strokeIds);
+    let out: Bounds | null = null;
+    for (const stroke of page.strokes) {
+      if (!ids.has(stroke.id)) continue;
+      const b = strokeBounds(stroke);
+      if (!b) continue;
+      out = out
+        ? {
+            minX: Math.min(out.minX, b.minX),
+            minY: Math.min(out.minY, b.minY),
+            maxX: Math.max(out.maxX, b.maxX),
+            maxY: Math.max(out.maxY, b.maxY),
+          }
+        : b;
+    }
+    return out;
+  }
+
+  /**
+   * A finger tapped page point `p`: open the link whose ink is there, if
+   * any. `tolerance` is page px, around the ink and down to its underline.
+   */
+  private openLinkAt(page: Page, p: Pt, tolerance: number): boolean {
+    const open = this.callbacks.onOpenLink;
+    if (!open || !page.links) return false;
+    for (const link of page.links) {
+      const b = this.linkBounds(page, link.strokes);
+      if (!b) continue;
+      const below = (LINK_UNDERLINE_GAP_PX + 4) / this.unitScale;
+      if (p.x < b.minX - tolerance || p.x > b.maxX + tolerance) continue;
+      if (p.y < b.minY - tolerance || p.y > b.maxY + below + tolerance) continue;
+      open(link.target);
+      return true;
+    }
+    return false;
   }
 
   private syncLockBadges(): void {
@@ -6244,6 +6383,12 @@ export class InkSurface {
     if (this.toolState.tool !== "select") this.deselectImage();
     const at = this.toLayout(clientX, clientY);
     const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    // A finger on linked ink opens the link; the pen keeps writing over it.
+    const tapped = box ? this.pageAt(box.index) : null;
+    if (box && tapped) {
+      const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+      if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
+    }
     if (box && this.offerStrokeTap(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX)) {
       this.clearSelection();
       return;

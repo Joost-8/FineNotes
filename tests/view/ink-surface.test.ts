@@ -1001,6 +1001,82 @@ describe("Add to contents on a selection", () => {
   });
 });
 
+describe("handwritten links", () => {
+  function linked() {
+    const p = page("p1", [line("fir", 100, 200, 115), line("rest", 300, 400, 115)]);
+    p.links = [{ id: "l1", strokes: ["fir"], target: "Signals#FIR" }];
+    const doc = documentOf(p);
+    const asked: unknown[] = [];
+    const opened: string[] = [];
+    const applied: Array<{ apply(d: InkDocument): void }> = [];
+    const surface = surfaceWith({
+      doc,
+      baseScale: 1,
+      userZoom: 1,
+      callbacks: {
+        onLinkStrokes: (...args: unknown[]) => asked.push(args),
+        onOpenLink: (target: string) => opened.push(target),
+      },
+      clearSelection: () => {},
+      applyCommand: (c: { apply(d: InkDocument): void }) => {
+        applied.push(c);
+        c.apply(doc);
+      },
+    });
+    const actions = (ids: string[]) =>
+      run<Array<{ id: string; label: string; run?: () => void }>>(
+        surface,
+        "linkActions",
+        {
+          pageId: "p1",
+          strokes: p.strokes.filter((s) => ids.includes(s.id)),
+          images: [],
+          textBoxes: [],
+        },
+        0,
+      );
+    return { p, doc, surface, asked, opened, applied, actions };
+  }
+
+  it("offers Link to… for unlinked ink", () => {
+    const l = linked();
+    const acts = l.actions(["rest"]);
+    expect(acts.map((a) => a.label)).toEqual(["Link to…"]);
+    acts[0].run?.();
+    expect(l.asked).toEqual([[0, ["rest"], null]]);
+  });
+
+  it("offers Change, Open and Remove for linked ink", () => {
+    const l = linked();
+    const acts = l.actions(["fir"]);
+    expect(acts.map((a) => a.label)).toEqual(["Change link", "Open link", "Remove link"]);
+    acts[0].run?.();
+    expect(l.asked).toEqual([[0, ["fir"], "Signals#FIR"]]);
+    acts[1].run?.();
+    expect(l.opened).toEqual(["Signals#FIR"]);
+    acts[2].run?.();
+    expect(l.p.links).toBeUndefined();
+  });
+
+  it("offers nothing without a host to ask, or without ink", () => {
+    const l = linked();
+    l.surface.callbacks = {};
+    expect(l.actions(["fir"])).toEqual([]);
+    const k = linked();
+    expect(k.actions([])).toEqual([]);
+  });
+
+  it("a finger tap on linked ink, or just under it, opens the link; elsewhere it does not", () => {
+    const l = linked();
+    const tap = (x: number, y: number) => run<boolean>(l.surface, "openLinkAt", l.p, { x, y }, 6);
+    expect(tap(150, 115)).toBe(true);
+    expect(tap(150, 125)).toBe(true); // the underline
+    expect(tap(350, 115)).toBe(false);
+    expect(tap(150, 300)).toBe(false);
+    expect(l.opened).toEqual(["Signals#FIR", "Signals#FIR"]);
+  });
+});
+
 describe("partial erase", () => {
   it("cuts a stroke into pieces with fresh ids above every id in the document", () => {
     const w = ink(twoPages());

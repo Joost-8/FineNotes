@@ -44,6 +44,7 @@ import {
   pageContentHash,
   pageKeys,
   transcriptHashes,
+  syncLinkIndex,
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
@@ -97,12 +98,16 @@ import {
   duplicatePageAfter,
   pageToInsertAfter,
   type InsertPosition,
+  CompositeCommand,
   SetPageBookmark,
   SetPageTemplate,
   insertIndexFor,
   pageFromTemplate,
 } from "../model/page-commands";
 import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
+import { externalUrl, isExternalTarget, linkStrokes, linkTargets } from "../model/links";
+import { LinkSuggestModal } from "./link-modal";
+import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
@@ -288,6 +293,9 @@ export class InkView extends TextFileView {
 
   /** What Obsidian writes to the file: the note rebuilt, unless its load was held. */
   getViewData(): string {
+    // The text block's links list follows the notebook's handwritten links,
+    // so backlinks and the graph see them (FineNotes#20).
+    this.noteBody = syncLinkIndex(this.noteBody, linkTargets(this.doc));
     return this.guard.contents(() => buildInkFile(this.noteBody, this.doc, this.encoder));
   }
 
@@ -1043,6 +1051,8 @@ export class InkView extends TextFileView {
         },
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at) => this.addSection(index, at),
+        onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
+        onOpenLink: (target) => this.openInkLink(target),
         onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
@@ -1511,6 +1521,54 @@ export class InkView extends TextFileView {
     if (this.thumbBackdrops) {
       this.sidebar?.setRenderOptions(this.sidebarRendering(this.thumbBackdrops));
     }
+  }
+
+  /**
+   * "Link to…" on lassoed ink: pick a note, a heading or a web address, and
+   * link those strokes to it as one undo step; or remove their link.
+   */
+  private linkInk(index: number, strokeIds: string[], current: string | null): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    new LinkSuggestModal(this.app, {
+      notes: this.linkableNotes(),
+      current,
+      choose: (target) => {
+        // By identity: the page may move or go while the list is open.
+        if (this.isProtected() || this.surface !== surface) return;
+        if (!surface.document.pages.includes(page)) return;
+        const commands = linkStrokes(surface.document, page, strokeIds, target);
+        if (commands.length === 0) return;
+        const label = target === null ? "Remove link" : "Link";
+        surface.applyCommand(new CompositeCommand(label, commands));
+        this.requestSave();
+      },
+    }).open();
+  }
+
+  /** The vault's notes for the link picker, most recently changed first. */
+  private linkableNotes(): LinkableNote[] {
+    const from = this.file?.path ?? "";
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => file.path !== from)
+      .sort((a, b) => b.stat.mtime - a.stat.mtime)
+      .map((file) => ({
+        path: file.path,
+        basename: file.basename,
+        linktext: this.app.metadataCache.fileToLinktext(file, from, true),
+        headings: (this.app.metadataCache.getFileCache(file)?.headings ?? []).map((h) => h.heading),
+      }));
+  }
+
+  /** Open where linked ink leads: a note or heading in a new tab, or a web address. */
+  private openInkLink(target: string): void {
+    if (isExternalTarget(target)) {
+      window.open(externalUrl(target));
+      return;
+    }
+    void this.app.workspace.openLinkText(target, this.file?.path ?? "", true);
   }
 
   /**

@@ -355,3 +355,26 @@ describe("sections move with their line", () => {
     expect(sectionLine(d, "marked")).toBe("0:3");
   });
 });
+
+describe("links move with their ink", () => {
+  it("a link goes to the next page with most of its ink, and back on undo", () => {
+    const p = page("p1", [word("a", LAST - 1), word("b", LAST), word("c", LAST, 300, 400)]);
+    p.links = [{ id: "l1", strokes: ["b", "c", "a"], target: "Signals" }];
+    const d = doc(p, page("p2", []));
+    const before = JSON.stringify(d);
+    const plan = apply(d, 0, LAST, 1);
+    expect(d.pages[0].links).toBeUndefined();
+    expect(d.pages[1].links).toEqual([{ id: "l1", strokes: ["b", "c"], target: "Signals" }]);
+    plan.command!.invert(d);
+    expect(JSON.stringify(d)).toBe(before);
+  });
+
+  it("a link stays when most of its ink stays", () => {
+    const p = page("p1", [word("a", LAST - 1), word("a2", LAST - 1, 300, 400), word("b", LAST)]);
+    p.links = [{ id: "l1", strokes: ["a", "a2", "b"], target: "Signals" }];
+    const d = doc(p, page("p2", []));
+    apply(d, 0, LAST, 1);
+    expect(d.pages[0].links).toEqual([{ id: "l1", strokes: ["a", "a2", "b"], target: "Signals" }]);
+    expect(d.pages[1].links).toBeUndefined();
+  });
+});

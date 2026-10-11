@@ -4174,6 +4174,49 @@ input[type="range"].goodobsidian-player-scrubber {
   fill: currentColor;
 }
 
+/* An underline under linked ink, in the accent colour: the ink keeps its own. */
+.goodobsidian-link-mark {
+  position: absolute;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--interactive-accent);
+  opacity: 0.8;
+}
+
+.goodobsidian-link-mark.is-hidden {
+  display: none;
+}
+
+/* The Link to… picker's rows: an icon, a title, and where it is. */
+.goodobsidian-link-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.goodobsidian-link-choice-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.goodobsidian-link-choice-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-link-choice-text {
+  min-width: 0;
+}
+
+.goodobsidian-link-choice-sub {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A bar button that says what it does: crop mode's Cancel · Reset · Done, a
    tap-and-hold's Paste or Unlock. Still a 44 px target. */
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.has-label {
