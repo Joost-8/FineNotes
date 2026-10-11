@@ -592,6 +592,13 @@ body,
   background: var(--interactive-accent);
 }
 
+/* The pen type menu: each pen's icon before its name. */
+.goodobsidian-popover button.goodobsidian-pen-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .goodobsidian-swatch {
   width: 32px;
   height: 32px;

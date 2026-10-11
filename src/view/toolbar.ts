@@ -88,6 +88,7 @@ import {
 import type { ListKind } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
+import { PEN_ICON_BOX, SWOOSH_HEIGHT, SWOOSH_WIDTH, penIconParts, swoosh } from "./pen-glyphs";
 import {
   DEFAULT_SHAPE_COLOR,
   contrastMark,
@@ -779,7 +780,7 @@ export class Toolbar {
 
     // Stroke widths, drawn as literal strokes of increasing weight.
     for (const width of this.quickWidths()) {
-      const button = widthButton(this.optionsEl, width, () => {
+      const button = widthButton(this.optionsEl, width, active.id, () => {
         this.setWidth(width);
         this.syncActive();
       });
@@ -1641,7 +1642,7 @@ export class Toolbar {
       this.syncActive();
     };
     for (const width of this.widths) {
-      const preset = widthButton(row, width, () => {
+      const preset = widthButton(row, width, this.activePenType().id, () => {
         pick(width);
         this.closePopover();
         settle();
@@ -1826,7 +1827,9 @@ export class Toolbar {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
     for (const spec of PEN_MENU_TYPES) {
       if (this.practice && spec.tool === "highlighter") continue;
-      const button = body.createEl("button", { cls: "goodobsidian-wide", text: spec.label });
+      const button = body.createEl("button", { cls: "goodobsidian-wide goodobsidian-pen-row" });
+      button.append(penGlyph(spec, this.state.color));
+      button.createSpan({ text: spec.label });
       button.toggleClass("is-active", spec.id === this.activePenType().id);
       button.addEventListener("click", () => {
         this.closePopover();
@@ -2211,22 +2214,24 @@ function widthWedge(): SVGElement {
 /** A pen-type swatch: a nib silhouette tinted with the current ink colour. */
 function penGlyph(spec: PenTypeSpec, color: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 34");
-  svg.setAttribute("width", "20");
-  svg.setAttribute("height", "28");
+  svg.setAttribute("viewBox", `0 0 ${PEN_ICON_BOX} ${PEN_ICON_BOX}`);
+  svg.setAttribute("width", "24");
+  svg.setAttribute("height", "24");
   svg.setAttribute("aria-hidden", "true");
-
-  const body = activeDocument.createElementNS(SVG_NS, "path");
-  const wide = spec.id === "highlighter";
-  body.setAttribute("d", wide ? "M5 4h14v18l-7 10-7-10z" : "M7 4h10v16l-5 12-5-12z");
-  body.setAttribute("fill", "currentColor");
-  body.setAttribute("opacity", "0.35");
-
-  const nib = activeDocument.createElementNS(SVG_NS, "path");
-  nib.setAttribute("d", wide ? "M5 22h14l-7 10z" : "M7 20h10l-5 12z");
-  nib.setAttribute("fill", color);
-
-  svg.append(body, nib);
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  // An outline of the pen, its tip in the ink it writes with (pen-glyphs.ts).
+  for (const part of penIconParts(spec.id)) {
+    const el = activeDocument.createElementNS(SVG_NS, part.tag);
+    for (const [key, value] of Object.entries(part.attrs)) el.setAttribute(key, value);
+    const paint = part.ink ? color : "currentColor";
+    if (part.fill) el.setAttribute("fill", paint);
+    if (part.fill || part.ink) el.setAttribute("stroke", paint);
+    svg.append(el);
+  }
   return svg;
 }
 
@@ -2340,29 +2345,44 @@ function eraserSizeGlyph(size: number): SVGElement {
  * A preset pen width, in the pill or in the widths popover: the stroke
  * itself, named in millimetres for screen readers and on hover.
  */
-function widthButton(parent: HTMLElement, width: number, onPick: () => void): HTMLButtonElement {
+function widthButton(
+  parent: HTMLElement,
+  width: number,
+  pen: string,
+  onPick: () => void,
+): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
-  button.append(widthGlyph(width));
+  button.append(widthGlyph(width, pen));
   button.setAttribute("aria-label", `Width ${formatMm(width)}`);
   button.setAttribute("title", formatMm(width));
   button.addEventListener("click", onPick);
   return button;
 }
 
-/** A stroke-width control drawn as a literal stroke of that weight. */
-function widthGlyph(size: number): SVGElement {
+/**
+ * A stroke-width control drawn as a stroke of that weight, in the pen's own
+ * character: tapered for the fountain pen, even for the ballpoint, lifting
+ * off for the brush, a flat band for the highlighter (pen-glyphs.ts).
+ */
+function widthGlyph(size: number, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 28 24");
-  svg.setAttribute("width", "28");
-  svg.setAttribute("height", "24");
+  svg.setAttribute("viewBox", `0 0 ${SWOOSH_WIDTH} ${SWOOSH_HEIGHT}`);
+  svg.setAttribute("width", String(SWOOSH_WIDTH));
+  svg.setAttribute("height", String(SWOOSH_HEIGHT));
   svg.setAttribute("aria-hidden", "true");
-  const line = activeDocument.createElementNS(SVG_NS, "path");
-  line.setAttribute("d", "M3 12h22");
-  line.setAttribute("stroke", "currentColor");
-  line.setAttribute("stroke-linecap", "round");
-  line.setAttribute("stroke-width", String(Math.max(1.5, Math.min(12, size))));
-  line.setAttribute("fill", "none");
-  svg.append(line);
+  const shape = swoosh(pen, size);
+  const path = activeDocument.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", shape.d);
+  if (shape.strokeWidth === undefined) {
+    path.setAttribute("fill", "currentColor");
+  } else {
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", String(shape.strokeWidth));
+    path.setAttribute("stroke-linecap", shape.cap ?? "round");
+  }
+  if (shape.opacity !== undefined) path.setAttribute("opacity", String(shape.opacity));
+  svg.append(path);
   return svg;
 }
 
