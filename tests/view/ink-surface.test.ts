@@ -884,6 +884,84 @@ describe("selecting by line", () => {
   });
 });
 
+describe("insert space from the margin", () => {
+  async function marginDrag(dy: number, inkAbove = false) {
+    const { writingLines } = await import("../../src/canvas/backdrop");
+    const p = page("p1", [
+      ...(inkAbove ? [line("above", 100, 160, 75)] : []),
+      line("at", 100, 160, 115),
+      line("below", 100, 160, 195),
+    ]);
+    p.backdrop = { kind: "ruled-wide" };
+    const doc = documentOf(p);
+    const applied: unknown[] = [];
+    const flashes: string[] = [];
+    const surface = surfaceWith({
+      doc,
+      pressTimer: 0,
+      renderer: null,
+      activePage: null,
+      pageAt: () => p,
+      textBoxFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      flashReadout: (t: string) => flashes.push(t),
+      applyCommand: (c: { apply(d: InkDocument): void }) => {
+        applied.push(c);
+        c.apply(doc);
+      },
+    });
+    surface.lasso = {
+      box: { index: 0 },
+      mode: "lines",
+      origin: { x: 10, y: 112 },
+      to: { x: 10, y: 112 + dy },
+      held: false,
+      lines: writingLines(p.backdrop, p.geometry),
+      space: { target: { block: 0, line: 2 }, count: 0, plan: null, text: "" },
+    };
+    run(surface, "dragSpace", surface.lasso, (surface.lasso as State).space);
+    run(surface, "selectEnd");
+    return { p, applied, flashes };
+  }
+
+  it("a drag of two lines moves the line and what is below it down by two", async () => {
+    const { p, applied, flashes } = await marginDrag(78);
+    expect(applied).toHaveLength(1);
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([195, 275]);
+    expect(flashes.at(-1)).toBe("Insert 2 lines");
+  });
+
+  it("a drag up closes the empty lines above, as many as there are", async () => {
+    const { p, applied, flashes } = await marginDrag(-120);
+    expect(applied).toHaveLength(1);
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([35, 115]);
+    expect(flashes.at(-1)).toBe("Remove 2 lines");
+  });
+
+  it("a drag up right under ink removes nothing, and says so", async () => {
+    const { applied, flashes } = await marginDrag(-40, true);
+    expect(applied).toHaveLength(0);
+    expect(flashes.at(-1)).toBe("No empty lines to remove here");
+  });
+
+  it("a drag that ends where it began does nothing", async () => {
+    const { applied } = await marginDrag(5);
+    expect(applied).toHaveLength(0);
+  });
+});
+
+describe("spaceReadout", () => {
+  it("says what the drag will do", async () => {
+    const { spaceReadout } = await import("../../src/view/ink-surface");
+    const plan = { command: null, moved: 1, spilled: 0, addedPages: 0 };
+    expect(spaceReadout({ ...plan, lines: 1 })).toBe("Insert 1 line");
+    expect(spaceReadout({ ...plan, lines: -3 })).toBe("Remove 3 lines");
+    expect(spaceReadout({ ...plan, lines: 2, spilled: 2, addedPages: 1 })).toBe(
+      "Insert 2 lines · some ink moves to the next page · adds a page",
+    );
+    expect(spaceReadout({ ...plan, lines: 2, spilled: 2, addedPages: 2 })).toContain("adds pages");
+  });
+});
+
 describe("partial erase", () => {
   it("cuts a stroke into pieces with fresh ids above every id in the document", () => {
     const w = ink(twoPages());

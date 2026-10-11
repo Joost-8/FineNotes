@@ -113,6 +113,14 @@ import {
   spanOutline,
 } from "../canvas/ruled-ink";
 import { type LineBlock, lineAt, lineOfBounds } from "../canvas/writing-lines";
+import {
+  type SpaceLayout,
+  type SpacePlan,
+  type SpaceTarget,
+  planInsertSpace,
+  spaceStrip,
+  spaceTargetAt,
+} from "../canvas/insert-space";
 import type { ViewportState } from "../canvas/viewport";
 import {
   type DocumentLayout,
@@ -676,6 +684,11 @@ interface LassoDraft {
   held: boolean;
   /** The page's lines, for a lasso selecting by line; empty otherwise. */
   lines: LineBlock[];
+  /**
+   * A by-line lasso that went down in the margin inserts space instead: the
+   * line it started from, and how many lines the drag has opened so far.
+   */
+  space: { target: SpaceTarget; count: number; plan: SpacePlan | null; text: string } | null;
 }
 
 /**
@@ -4697,12 +4710,23 @@ export class InkSurface {
     path.add(local);
     let mode = lassoModeFor(this.toolState);
     let lines: LineBlock[] = [];
+    let space: LassoDraft["space"] = null;
     if (mode === "lines") {
       // By line needs a line under the pen; elsewhere it drags a rectangle.
+      // From the margin next to a line, it inserts space instead.
       const page = this.pageAt(box.index);
       lines = page ? writingLines(page.backdrop, page.geometry) : [];
+      const target = page ? spaceTargetAt(lines, page.geometry.width, local.x, local.y) : null;
       if (lines.length === 0) this.flashReadout("No lines on this page: selecting a rectangle");
-      if (!lineAt(lines, local.x, local.y)) {
+      if (target) {
+        space = {
+          target,
+          count: 0,
+          plan: null,
+          text: "Drag down to insert lines, up to remove empty ones",
+        };
+        this.flashReadout(space.text);
+      } else if (!lineAt(lines, local.x, local.y)) {
         mode = "rect";
         lines = [];
       }
@@ -4715,6 +4739,7 @@ export class InkSurface {
       to: { x: local.x, y: local.y },
       held: false,
       lines,
+      space,
     };
     // Held still, the press opens the Paste / Unlock bar instead.
     this.startPress(() => this.lassoHeld());
@@ -4730,6 +4755,10 @@ export class InkSurface {
     if (moved > TAP_SLOP_PX) this.stopPress();
     if (lasso.mode === "freehand") for (const sample of samples) lasso.path.add(sample);
     lasso.to = { x: last.x, y: last.y };
+    if (lasso.space) {
+      this.dragSpace(lasso, lasso.space);
+      return;
+    }
     const loop = this.lassoLoop(lasso);
     // Drawn rounded off, as GoodNotes draws it; taken on the loop as drawn.
     this.renderer?.renderLasso(
@@ -4797,6 +4826,58 @@ export class InkSurface {
     return lasso.mode === "rect" ? rectLoop(lasso.origin, lasso.to, lasso.box) : lasso.path.points;
   }
 
+  /**
+   * An insert-space drag moved: whole lines from where it started, the strip
+   * they open (or close) drawn on the page, and what will happen in the
+   * readout, worked out again only when the count of lines changes.
+   */
+  private dragSpace(lasso: LassoDraft, space: NonNullable<LassoDraft["space"]>): void {
+    const block = lasso.lines[space.target.block];
+    const count = Math.round((lasso.to.y - lasso.origin.y) / block.pitch);
+    if (count === space.count) {
+      // Kept up while the pen is down, or the readout would fade mid-drag.
+      this.flashReadout(space.text);
+      return;
+    }
+    space.count = count;
+    space.plan =
+      count === 0
+        ? null
+        : planInsertSpace(this.doc, lasso.box.index, space.target, count, this.spaceLayout());
+    const plan = space.plan;
+    const lines = plan?.lines ?? 0;
+    if (lines === 0) {
+      this.renderer?.clearWet();
+      space.text = count < 0 ? "No empty lines to remove here" : "Drag down to insert lines";
+      this.flashReadout(space.text);
+      return;
+    }
+    const strip = spaceStrip(block, space.target, lines);
+    this.renderer?.renderLasso(lasso.box.index, [
+      strip.minX,
+      strip.minY,
+      strip.maxX,
+      strip.minY,
+      strip.maxX,
+      strip.maxY,
+      strip.minX,
+      strip.maxY,
+    ]);
+    space.text = spaceReadout(plan as SpacePlan);
+    this.flashReadout(space.text);
+  }
+
+  /** How the insert-space planner sees this surface's pages. */
+  private spaceLayout(): SpaceLayout {
+    return {
+      lines: (page) => writingLines(page.backdrop, page.geometry),
+      textBoxBounds: (page, textBox) => {
+        const f = this.textBoxFrameOf(page.id, textBox);
+        return { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
+      },
+    };
+  }
+
   /** A by-line lasso's span, from its pen-down to the pen. */
   private lassoSpan(lasso: LassoDraft): LineSpan | null {
     return lineSpan(lasso.lines, lasso.origin, lasso.to);
@@ -4811,6 +4892,17 @@ export class InkSurface {
     this.renderer?.clearWet();
     // A held press has opened its bar already; the lift only lets go.
     if (!lasso || lasso.held) return;
+    if (lasso.space) {
+      // Planned against the document as it is now: nothing else can have
+      // changed it while the pen was down, but plan again to be sure.
+      const { target, count } = lasso.space;
+      const plan =
+        count === 0
+          ? null
+          : planInsertSpace(this.doc, lasso.box.index, target, count, this.spaceLayout());
+      if (plan?.command) this.applyCommand(plan.command);
+      return;
+    }
     const poly = polygonOf(this.lassoLoop(lasso));
     const b = poly?.bounds;
     // A by-line span is a line tall from the start: only the pen's travel says it was drawn.
@@ -6744,4 +6836,15 @@ interface ScrollSnapshot {
   windowX: number;
   windowY: number;
   ancestors: Array<{ el: Element; top: number; left: number }>;
+}
+
+/** What an insert-space drag will do, for the readout while it is dragged. */
+export function spaceReadout(plan: SpacePlan): string {
+  const n = Math.abs(plan.lines);
+  const lines = `${n} ${n === 1 ? "line" : "lines"}`;
+  if (plan.lines < 0) return `Remove ${lines}`;
+  const parts = [`Insert ${lines}`];
+  if (plan.spilled > 0) parts.push("some ink moves to the next page");
+  if (plan.addedPages > 0) parts.push(plan.addedPages === 1 ? "adds a page" : "adds pages");
+  return parts.join(" · ");
 }
