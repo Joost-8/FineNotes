@@ -358,6 +358,22 @@ export interface Page {
    * to bottom (FineNotes#20). Absent when there are none.
    */
   sections?: PageSection[];
+  /** Ink on this page that links somewhere (FineNotes#20). Absent when there is none. */
+  links?: InkLink[];
+}
+
+/**
+ * Ink that links to a note, a heading, a notebook page or a web address:
+ * a set of strokes on the page, by id, and where they lead. `target` is
+ * Obsidian link text (`Signals#FIR filters`, `Physics.notebook#page=3`) or
+ * an address with a scheme (`https://…`). See `model/links.ts`.
+ */
+export interface InkLink {
+  /** `l<N>`, unique in the notebook. */
+  id: string;
+  /** The linked strokes' ids; each stroke is in one link at most. */
+  strokes: string[];
+  target: string;
 }
 
 /**

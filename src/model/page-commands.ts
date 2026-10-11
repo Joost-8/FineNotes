@@ -383,6 +383,8 @@ export function duplicatePageAfter(
   // Nor does its line in the contents: the original still starts that section.
   delete copy.title;
   delete copy.sections;
+  // Its strokes get new ids, so links to the old ones would hold nothing.
+  delete copy.links;
   for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
   for (const image of copy.images) image.id = `i${++imageSeq}`;

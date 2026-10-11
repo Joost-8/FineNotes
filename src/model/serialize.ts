@@ -31,6 +31,7 @@ import {
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
+import { normalizeLinks } from "./links";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import {
   type AttachmentFolders,
@@ -39,6 +40,7 @@ import {
   type InkDocument,
   type Page,
   type PageSection,
+  type InkLink,
   type PageGeometry,
   type Recording,
   type Ruling,
@@ -144,6 +146,7 @@ interface StoredPage {
   bookmarked?: boolean;
   title?: string;
   sections?: PageSection[];
+  links?: InkLink[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   strokes: StoredStroke[];
@@ -202,6 +205,7 @@ function storePage(page: Page): StoredPage {
     bookmarked: page.bookmarked === true ? true : undefined,
     title: normalizePageTitle(page.title),
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
+    links: page.links && page.links.length > 0 ? page.links : undefined,
     images: page.images,
     textBoxes: page.textBoxes,
     strokes: page.strokes.map(storeStroke),
@@ -517,6 +521,7 @@ function normalizePage(
   index: number,
   fallbackWidth: number,
   seenSections: Set<string> = new Set(),
+  seenLinks: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -533,12 +538,13 @@ function normalizePage(
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
     if (normalized) textBoxes.push(normalized);
   });
+  const strokes = readStrokes(page.strokes);
   return {
     id: typeof page.id === "string" ? page.id : `p${index + 1}`,
     kind: "ink",
     geometry: normalizeGeometry(page.geometry, fallbackWidth),
     backdrop: normalizeBackdrop(page.backdrop),
-    strokes: readStrokes(page.strokes),
+    strokes,
     images,
     textBoxes,
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
@@ -546,7 +552,18 @@ function normalizePage(
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
     ...titleOf(page.title),
     ...sectionsOf(page.sections, seenSections),
+    ...linksOf(page.links, strokes, seenLinks),
   };
+}
+
+/** A page's links, spread into the page only when any of them still holds ink there. */
+function linksOf(
+  raw: unknown,
+  strokes: readonly Stroke[],
+  seen: Set<string>,
+): { links?: InkLink[] } {
+  const links = normalizeLinks(raw, new Set(strokes.map((s) => s.id)), seen);
+  return links.length > 0 ? { links } : {};
 }
 
 /** A page's sections, spread into the page only when it has any. */
@@ -597,7 +614,8 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   let pages: Page[];
   if (Array.isArray(raw.pages)) {
     const seenSections = new Set<string>();
-    pages = raw.pages.map((p, i) => normalizePage(p, i, view.width, seenSections));
+    const seenLinks = new Set<string>();
+    pages = raw.pages.map((p, i) => normalizePage(p, i, view.width, seenSections, seenLinks));
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
   } else {
