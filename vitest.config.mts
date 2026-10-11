@@ -65,6 +65,7 @@ export default defineConfig({
         "src/recognition/text-layer.ts",
         "src/recognition/device-reading.ts",
         "src/recognition/hwr/train.ts",
+        "src/recognition/hwr/train-engine.ts",
         "src/recognition/registry.ts",
         "src/recognition/manual.ts",
         "src/recognition/llm-request.ts",

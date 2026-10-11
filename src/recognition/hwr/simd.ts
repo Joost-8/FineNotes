@@ -4,6 +4,10 @@
  * - `affine(w, n, x, b, out, rows)`: `out[r] = b[r] + Σ_j w[r·n + j] · x[j]`,
  *   four rows at a time (the input projections, the recurrent products and
  *   the output layer);
+ * - `axpy(dst, dstStride, src, srcStride, d, rows, n)`: for each row r,
+ *   `dst_r[j] += d[r] · src_r[j]`, the rows `stride` bytes apart (0: the
+ *   same row each time). Fine-tuning's backward pass is made of it
+ *   (train-engine.ts): weight gradients, and gradients through a matrix;
  * - `cell(z, c, h, out, H)`: one LSTM step's gates from the summed `z`
  *   (input, forget, cell, output blocks of H): updates the cell state `c`,
  *   writes the hidden state to `h` and to `out`. Sigmoid and tanh use
@@ -81,6 +85,7 @@ const I32X4_TRUNC_SAT_F32X4_S = simd(0xf8);
 const I32X4_ADD = simd(0xae);
 const I32X4_SHL = simd(0xab);
 const V128_STORE = simd(0x0b, 4, 0);
+const F32X4_SPLAT = simd(0x13);
 
 /** A v128 constant of four equal float32 (or int32) lanes. */
 function splat(value: number, int = false): number[] {
@@ -410,20 +415,107 @@ function cellBody(): number[] {
   return [...u32(body.length), ...body];
 }
 
-/** The module's bytes: imports `env.memory`, exports `affine` and `cell`. */
+// --- axpy(dst, dstStride, src, srcStride, d, rows, n) ------------------------------
+
+const [YD, YDS, YS, YSS, YDV, YROWS, YN] = [0, 1, 2, 3, 4, 5, 6];
+const [YR, YJ, YNB, YPD, YPS, YA] = [7, 8, 9, 10, 11, 12];
+
+/** `axpy(...)`, addresses and strides in bytes; n (floats) a multiple of 4. */
+function axpyBody(): number[] {
+  const cols = loop([
+    ...get(YJ),
+    ...get(YNB),
+    ...GE_U,
+    ...brIf(1),
+    ...get(YPD),
+    ...get(YJ),
+    ...ADD,
+    ...get(YPD),
+    ...get(YJ),
+    ...ADD,
+    ...V128_LOAD,
+    ...get(YPS),
+    ...get(YJ),
+    ...ADD,
+    ...V128_LOAD,
+    ...get(YA),
+    ...F32X4_MUL,
+    ...F32X4_ADD,
+    ...V128_STORE,
+    ...get(YJ),
+    ...i32c(16),
+    ...ADD,
+    ...set(YJ),
+    ...br(0),
+  ]);
+  const rows = loop([
+    ...get(YR),
+    ...get(YROWS),
+    ...GE_U,
+    ...brIf(1),
+    ...get(YDV),
+    ...get(YR),
+    ...i32c(2),
+    ...SHL,
+    ...ADD,
+    ...f32Load(0),
+    ...F32X4_SPLAT,
+    ...set(YA),
+    ...i32c(0),
+    ...set(YJ),
+    ...block(cols),
+    ...get(YPD),
+    ...get(YDS),
+    ...ADD,
+    ...set(YPD),
+    ...get(YPS),
+    ...get(YSS),
+    ...ADD,
+    ...set(YPS),
+    ...get(YR),
+    ...i32c(1),
+    ...ADD,
+    ...set(YR),
+    ...br(0),
+  ]);
+  const code = [
+    ...get(YN),
+    ...i32c(2),
+    ...SHL,
+    ...set(YNB),
+    ...i32c(0),
+    ...set(YR),
+    ...get(YD),
+    ...set(YPD),
+    ...get(YS),
+    ...set(YPS),
+    ...block(rows),
+    0x0b,
+  ];
+  const locals = vec([
+    [5, I32],
+    [1, V128],
+  ]);
+  const body = [...locals, ...code];
+  return [...u32(body.length), ...body];
+}
+
+/** The module's bytes: imports `env.memory`, exports `affine`, `cell` and `axpy`. */
 export function kernelModule(): Uint8Array<ArrayBuffer> {
   const i32s = (n: number): number[][] => new Array<number[]>(n).fill([I32]);
   const type = vec([
     [0x60, ...vec(i32s(6)), ...vec([])],
     [0x60, ...vec(i32s(5)), ...vec([])],
+    [0x60, ...vec(i32s(7)), ...vec([])],
   ]);
   const imports = vec([[...str("env"), ...str("memory"), 0x02, 0x00, ...u32(1)]]);
-  const functions = vec([u32(0), u32(1)]);
+  const functions = vec([u32(0), u32(1), u32(2)]);
   const exports = vec([
     [...str("affine"), 0x00, ...u32(0)],
     [...str("cell"), 0x00, ...u32(1)],
+    [...str("axpy"), 0x00, ...u32(2)],
   ]);
-  const code = vec([affineBody(), cellBody()]);
+  const code = vec([affineBody(), cellBody(), axpyBody()]);
   return new Uint8Array([
     0x00,
     0x61,
@@ -446,6 +538,15 @@ export interface SimdKernel {
   memory: WebAssembly.Memory;
   affine: (w: number, n: number, x: number, b: number, out: number, rows: number) => void;
   cell: (z: number, c: number, h: number, out: number, H: number) => void;
+  axpy: (
+    dst: number,
+    dstStride: number,
+    src: number,
+    srcStride: number,
+    d: number,
+    rows: number,
+    n: number,
+  ) => void;
 }
 
 /** The kernels with at least `bytes` of memory, or null without WebAssembly SIMD. */
@@ -457,7 +558,8 @@ export function simdKernel(bytes: number): SimdKernel | null {
     const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), { env: { memory } });
     const affine = instance.exports.affine as SimdKernel["affine"];
     const cell = instance.exports.cell as SimdKernel["cell"];
-    return { memory, affine, cell };
+    const axpy = instance.exports.axpy as SimdKernel["axpy"];
+    return { memory, affine, cell, axpy };
   } catch {
     return null;
   }
