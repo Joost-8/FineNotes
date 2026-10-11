@@ -20,6 +20,26 @@ extracted from the matching section of this file by `release.yml`.
   single tap does nothing, and a pen touching the page in between cancels
   the gesture. Switch it off under "Double-tap with fingers to undo and
   redo" in the settings.
+- **Tools for lined paper**, after Stylus Labs Write
+  ([#20](https://github.com/Joost-8/FineNotes/issues/20)). They work on
+  ruled, legal, Cornell, column, margin, to-do, title, handwriting and
+  meeting-notes pages; on other pages they fall back to the normal tool and
+  say so.
+  - **Erase by line**, a third eraser mode. A pass along a line erases
+    whole words as far as it goes, with their commas, full stops and i-dots,
+    and never touches the line above or below. A pass down the margin
+    erases whole lines. Drawings taller than two lines are only erased
+    where the eraser touches them.
+  - **Select by line**, a third lasso type. Drag from one word to another,
+    as you select text: the rest of the first line, every line in between,
+    and the last line up to the pen. Pictures and text boxes on those lines
+    come along.
+  - **Insert space.** With Select by line, drag down from the margin next
+    to a line: that line and everything below it in the column move down by
+    whole lines. Ink pushed past the bottom flows onto the next page, whose
+    ink moves down to make room; if the next page is ruled differently, or
+    there is none, a new page with the same paper is put in. Drag up to close
+    empty lines (it never closes over ink). One undo puts it all back.
 
 ## [1.5.0] - 2026-10-07
 
