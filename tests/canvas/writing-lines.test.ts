@@ -14,6 +14,7 @@ import {
   lineAt,
   lineBand,
   lineOfBounds,
+  ruleBand,
   sameLines,
 } from "../../src/canvas/writing-lines";
 import {
@@ -212,6 +213,38 @@ describe("which line ink sits on", () => {
 
   it("ink off every line stays off", () => {
     expect(assignLines(RULED, [box(100, -60, 104, -56)])).toEqual([null]);
+  });
+
+  // Joost's recording (2026-10-11): writing on the first line reached above
+  // its band, and the T's crossbar and the i's dots stayed behind when space
+  // was inserted.
+  it("the tops of first-line writing are on the first line", () => {
+    const stem = box(100, 12, 104, 40); // a T on the first rule, at 40
+    const bar = box(90, 4, 116, 8); // its crossbar, above the band (10..50)
+    const dot = box(130, 2, 133, 5); // an i's dot, higher still
+    expect(lineOfBounds(RULED, bar)).toEqual({ block: 0, line: 0 });
+    expect(assignLines(RULED, [stem, bar, dot])).toEqual([
+      { block: 0, line: 0 },
+      { block: 0, line: 0 },
+      { block: 0, line: 0 },
+    ]);
+  });
+
+  it("a crossbar in the band above follows the letter it crosses", () => {
+    const stem = box(100, 84, 104, 120); // a T on the rule at 120 (line 2)
+    const bar = box(90, 82, 116, 87); // wholly in line 1's band
+    expect(lineOfBounds(RULED, bar)).toEqual({ block: 0, line: 1 });
+    expect(assignLines(RULED, [stem, bar])[1]).toEqual({ block: 0, line: 2 });
+  });
+
+  it("a flat stroke touching nothing keeps its own line", () => {
+    const word = box(100, 104, 160, 120); // line 2
+    const dash = box(100, 84, 200, 86); // line 1, 18 px above the word
+    expect(assignLines(RULED, [word, dash])[1]).toEqual({ block: 0, line: 1 });
+  });
+
+  it("a highlight runs from rule to rule", () => {
+    expect(ruleBand(RULED[0], 2)).toEqual({ top: 80, bottom: 120 });
   });
 });
 

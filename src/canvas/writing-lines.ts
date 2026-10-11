@@ -47,6 +47,22 @@ export const DESCENDER_SHARE = 0.25;
 export const MARK_SHARE = 0.3;
 
 /**
+ * Ink flatter than {@link MARK_SHARE} of a pitch that touches writing (a
+ * t's crossbar, a dash, a strike-through, an underline) takes the line of
+ * the writing it touches, within this share of a pitch: a crossbar can sit
+ * wholly in the band above its letter.
+ */
+export const TOUCH_SHARE = 0.1;
+
+/**
+ * How far above its first line a block still holds ink, as a share of a
+ * pitch: the tops of capitals and the dots of i written on the first line
+ * reach above its band, and must not be left off every line (they stayed
+ * behind when space was inserted).
+ */
+export const ASCENDER_SHARE = 0.5;
+
+/**
  * Lines every `step` from `first` while below `until`, across `x0..x1`.
  * The loop is the painters' own (`y += step`), so baselines match the drawn
  * rules exactly.
@@ -71,13 +87,29 @@ export function lineBand(block: LineBlock, line: number): { top: number; bottom:
   return { top: base - block.pitch + shift, bottom: base + shift };
 }
 
-/** The block whose x-range holds `x` and whose bands hold `y`, or -1. */
+/**
+ * The band between a line's rule and the rule above it: what a highlight of
+ * the line covers, so it lines up with the paper.
+ */
+export function ruleBand(block: LineBlock, line: number): { top: number; bottom: number } {
+  const base = block.baselines[line];
+  return { top: base - block.pitch, bottom: base };
+}
+
+/**
+ * The block whose x-range holds `x` and whose bands hold `y`, or -1. Above a
+ * block's first line, up to {@link ASCENDER_SHARE} of a pitch, counts as the
+ * block when no other block holds the point.
+ */
 export function blockAt(blocks: readonly LineBlock[], x: number, y: number): number {
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i];
-    const n = b.baselines.length;
-    if (n === 0 || x < b.x0 || x > b.x1) continue;
-    if (y >= lineBand(b, 0).top && y <= lineBand(b, n - 1).bottom) return i;
+  for (const reach of [0, ASCENDER_SHARE]) {
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      const n = b.baselines.length;
+      if (n === 0 || x < b.x0 || x > b.x1) continue;
+      const top = lineBand(b, 0).top - reach * b.pitch;
+      if (y >= top && y <= lineBand(b, n - 1).bottom) return i;
+    }
   }
   return -1;
 }
@@ -124,26 +156,33 @@ function isMark(blocks: readonly LineBlock[], ref: LineRef, bounds: Bounds): boo
   return bounds.maxX - bounds.minX < limit && bounds.maxY - bounds.minY < limit;
 }
 
+/** Whether a box is flat (a crossbar, a dash): shorter than a mark, however wide. */
+function isFlat(blocks: readonly LineBlock[], ref: LineRef, bounds: Bounds): boolean {
+  return bounds.maxY - bounds.minY < blocks[ref.block].pitch * MARK_SHARE;
+}
+
 /**
  * The line of each piece of ink on a page, given all of them at once, so a
  * mark can follow its writing: an i's dot high above the x-height, a comma
  * hanging below the rule. A mark takes the line of the nearest piece that is
- * not a mark, in the same block and within a pitch of it; with none near, it
- * keeps its own.
+ * not flat, in the same block and within a pitch of it; with none near, it
+ * keeps its own. A flat piece (a crossbar, a dash) does the same with the
+ * writing it touches ({@link TOUCH_SHARE}).
  */
 export function assignLines(
   blocks: readonly LineBlock[],
   items: readonly Bounds[],
 ): (LineRef | null)[] {
   const refs = items.map((bounds) => lineOfBounds(blocks, bounds));
-  const marks = refs.map((ref, i) => ref !== null && isMark(blocks, ref, items[i]));
+  const flat = refs.map((ref, i) => ref !== null && isFlat(blocks, ref, items[i]));
   return refs.map((ref, i) => {
-    if (ref === null || !marks[i]) return ref;
-    const reach = blocks[ref.block].pitch;
+    if (ref === null || !flat[i]) return ref;
+    const pitch = blocks[ref.block].pitch;
+    const reach = isMark(blocks, ref, items[i]) ? pitch : pitch * TOUCH_SHARE;
     let nearest: LineRef | null = null;
     let nearestGap = Infinity;
     refs.forEach((other, j) => {
-      if (other === null || marks[j] || other.block !== ref.block) return;
+      if (other === null || flat[j] || other.block !== ref.block) return;
       const gap = boxGap(items[i], items[j]);
       if (gap <= reach && gap < nearestGap) {
         nearest = other;

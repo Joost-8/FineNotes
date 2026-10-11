@@ -275,18 +275,18 @@ describe("closing up", () => {
 
 describe("spaceStrip", () => {
   const block = writingLines(RULED, A4)[0];
-  it("runs down from the line's top for an insert, up for a close-up", () => {
+  it("runs down from the rule above the line for an insert, up for a close-up", () => {
     expect(spaceStrip(block, { block: 0, line: 2 }, 2)).toEqual({
       minX: 0,
       maxX: A4.width,
-      minY: 90,
-      maxY: 170,
+      minY: 80,
+      maxY: 160,
     });
     expect(spaceStrip(block, { block: 0, line: 2 }, -1)).toEqual({
       minX: 0,
       maxX: A4.width,
-      minY: 50,
-      maxY: 90,
+      minY: 40,
+      maxY: 80,
     });
   });
 });

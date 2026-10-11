@@ -42,6 +42,7 @@ import {
   type LineRef,
   lineAt,
   lineBand,
+  ruleBand,
   lineOfBounds,
   sameLines,
 } from "./writing-lines";
@@ -389,7 +390,7 @@ function closeUp(walk: Walk, pageIndex: number, target: SpaceTarget, count: numb
  * from the target line's top down `count` lines, or up for a close-up.
  */
 export function spaceStrip(block: LineBlock, target: SpaceTarget, count: number): Bounds {
-  const top = lineBand(block, target.line).top;
+  const top = ruleBand(block, target.line).top;
   const height = Math.abs(count) * block.pitch;
   return count >= 0
     ? { minX: block.x0, maxX: block.x1, minY: top, maxY: top + height }

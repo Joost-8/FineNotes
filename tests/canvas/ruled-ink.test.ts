@@ -234,11 +234,11 @@ describe("ruled selection", () => {
 
   it("outlines one line as a box, several as a staircase", () => {
     const one = lineSpan(RULED, { x: 100, y: 112 }, { x: 200, y: 112 })!;
-    expect(spanOutline(BLOCK, one)).toEqual([100, 90, 200, 90, 200, 130, 100, 130]);
+    expect(spanOutline(BLOCK, one)).toEqual([100, 80, 200, 80, 200, 120, 100, 120]);
     const three = lineSpan(RULED, { x: 300, y: 112 }, { x: 200, y: 190 })!;
     const loop = spanOutline(BLOCK, three);
     expect(loop).toHaveLength(16);
-    expect(loop.slice(0, 4)).toEqual([300, 90, A4.width, 90]);
-    expect(Math.max(...loop.filter((_, i) => i % 2 === 1))).toBe(210);
+    expect(loop.slice(0, 4)).toEqual([300, 80, A4.width, 80]);
+    expect(Math.max(...loop.filter((_, i) => i % 2 === 1))).toBe(200);
   });
 });

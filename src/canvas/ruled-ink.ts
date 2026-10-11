@@ -10,7 +10,14 @@
 import { type Bounds, type Stroke, strokeBounds } from "../model/document";
 import { type EraserFilter, eraserTakes } from "../ink/stroke-eraser";
 import { strokeHitByPoint } from "./hit-test";
-import { type LineBlock, type LineRef, assignLines, lineAt, lineBand } from "./writing-lines";
+import {
+  type LineBlock,
+  type LineRef,
+  assignLines,
+  lineAt,
+  lineBand,
+  ruleBand,
+} from "./writing-lines";
 
 /**
  * On a page whose lines run from the left edge, the strip that counts as
@@ -189,10 +196,11 @@ export function inLineSpan(span: LineSpan, ref: LineRef | null, bounds: Bounds):
  * its end mark.
  */
 export function spanOutline(block: LineBlock, span: LineSpan): number[] {
-  const top = lineBand(block, span.from.line).top;
-  const firstBottom = lineBand(block, span.from.line).bottom;
-  const lastTop = lineBand(block, span.to.line).top;
-  const bottom = lineBand(block, span.to.line).bottom;
+  // Rule to rule, as the paper shows the lines.
+  const top = ruleBand(block, span.from.line).top;
+  const firstBottom = ruleBand(block, span.from.line).bottom;
+  const lastTop = ruleBand(block, span.to.line).top;
+  const bottom = ruleBand(block, span.to.line).bottom;
   const { x0, x1 } = block;
   if (span.from.line === span.to.line) {
     return [span.from.x, top, span.to.x, top, span.to.x, bottom, span.from.x, bottom];
