@@ -31,13 +31,25 @@ Hope you guys enjoy this and give me some
 
 ## Features
 
+**Handwriting recognition on your device: Grape**
+
+- FineNotes reads your handwriting with its own model, Grape, on your
+  device and offline. Nothing leaves the device, and no account or key is
+  needed.
+- Notebook search and Obsidian's search find your handwriting; lassoed
+  headings and words fill in titles and links; a handwritten `[[Note]]`
+  becomes a link with a tap.
+- Grape learns your handwriting from a practice file you copy once, on the
+  device, and gets much better for it.
+
 **Notebooks and pages**
 
 - Notebooks with covers (plain, label, spine or linen, in eight colours), and
   single pages, from a New notebook dialog.
 - A page sidebar with thumbnails and bookmarks. Pages can be moved up and down,
   duplicated or deleted.
-- Search inside a notebook: typed text, and handwriting you have transcribed.
+- Search inside a notebook: typed text and handwriting.
+- A table of contents: page titles, and headings inside a page.
 - "Go to page", and links straight to a page: `[[Biology.notebook#Page 3]]`.
 - A notebook reopens on the page you left. Pull past the last page to add
   another.
@@ -59,6 +71,9 @@ Hope you guys enjoy this and give me some
   to pressure (an advanced setting).
 - An eraser that rubs out only what it passes over, or one that removes whole
   strokes. Either can be set to erase only pen ink or only highlighter.
+- Tools for lined paper, after Stylus Labs Write: erase by line, select by
+  line, and insert space between lines.
+- Handwritten links: lasso ink and link it to a note or a web address.
 - Pen gestures, as in Goodnotes:
   - scribble over something to erase it;
   - circle something and hold to select it.
@@ -102,7 +117,7 @@ Hope you guys enjoy this and give me some
 
 **AI, optional and with your own key**
 
-- Transcribe your handwriting into the note, so Obsidian can search it.
+- Transcribe your handwriting into the note with a cloud model.
 - Ask questions about a page or a whole notebook.
 - Generate a picture.
 - Transcribe a recording.
@@ -304,9 +319,33 @@ five seconds before you wrote it. **Transcribe** needs an OpenAI or Google
 key, or your own server; the transcript is a note of its own next to the
 audio.
 
+### Reading your handwriting (Grape)
+
+Grape, FineNotes' handwriting model, reads your ink on the device a few
+seconds after you stop writing: notebook search and Obsidian's search then
+find it. Nothing leaves the device. Switch it off under Settings → FineNotes
+→ Handwriting → **Read handwriting on this device**.
+
+To make it read your own handwriting much better:
+
+1. Tap the **AI** button, then **Teach it your handwriting…**. A practice
+   file opens, with a cover that explains what to do.
+2. Copy each grey line on the empty line below it, in your normal
+   handwriting. It takes about 8 minutes.
+3. Tap **AI** → **Learn my handwriting** (or Settings → Handwriting →
+   **Learn now**). It learns on the device in a few minutes, in the
+   background, and keeps the result only if it reads your writing better.
+
+Each of the three practice sets has different lines, and every set you
+write helps. **AI** → **Read this page** shows how Grape reads a page.
+
+Grape is a work in progress that still needs more training on real
+handwriting. It is open source (Apache 2.0) at
+[Joost-8/Grape](https://github.com/Joost-8/Grape).
+
 ### AI (optional)
 
-1. Open Settings → FineNotes → **AI with your own key**.
+1. Open Settings → FineNotes → **AI with your own key**, and tap **Show**.
 2. Choose an **AI service**: Anthropic (Claude), OpenAI (GPT), Google
    (Gemini), OpenRouter, or a **Custom endpoint** such as Ollama.
 3. Tap **Add key** and paste your API key. For OpenRouter you can tap
@@ -395,7 +434,8 @@ for you to type in.
 ## Privacy and network use
 
 FineNotes works fully offline. It sends nothing anywhere, and it has no
-telemetry, no ads and no account.
+telemetry, no ads and no account. Your handwriting is read by Grape on the
+device; practice files and what Grape learns from them stay in your vault.
 
 The network is only used by the optional AI features, and only after you:
 
@@ -515,6 +555,9 @@ build.
 
 - Notes are compressed with [fflate](https://github.com/101arrowz/fflate)
   (MIT).
+- Handwriting is read by [Grape](https://github.com/Joost-8/Grape)
+  (Apache 2.0), trained on BRUSH, IAM-OnDB, UNIPEN, PluColl and
+  UJIpenchars2; the attributions are in `THIRD_PARTY_NOTICES.txt`.
 - PDFs are rendered with the PDF.js that Obsidian ships.
 - FineNotes began as a fork of
   [InkedMark](https://github.com/pcrausaz/obsidian-inkedmark) by Pascal

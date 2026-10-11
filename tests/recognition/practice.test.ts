@@ -64,7 +64,7 @@ describe("the practice file", () => {
 
   it("has three different sets, each asking only for characters the model can write", () => {
     expect(PRACTICE_SETS).toHaveLength(3);
-    const alphabet = parseBundle(readFileSync("models/finenotes-hwr-1.0.bin")).meta.alphabet;
+    const alphabet = parseBundle(readFileSync("models/grape-1.0.bin")).meta.alphabet;
     const all = PRACTICE_SETS.flat();
     expect(new Set(all).size).toBe(all.length);
     for (const line of all) expect(encodeLabel(line, alphabet), line).not.toBeNull();

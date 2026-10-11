@@ -1,5 +1,5 @@
 /**
- * The handwriting model built into the plugin (`models/finenotes-hwr-1.0.bin`,
+ * The handwriting model built into the plugin (`models/grape-1.0.bin`,
  * Apache 2.0): it is the published file, byte for byte, the reader takes it,
  * and it reads a line of ink.
  */
@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { parseBundle } from "../../src/recognition/hwr/bundle";
 import { readLine } from "../../src/recognition/hwr/recognizer";
 
-const FILE = "models/finenotes-hwr-1.0.bin";
+const FILE = "models/grape-1.0.bin";
 const PUBLISHED_SHA256 = "87a9ddd56b6bcf01e66a027ff74f1b8ba9a58fe0d4b0077e6abb6455710d21f9";
 
 describe("the bundled handwriting model", () => {

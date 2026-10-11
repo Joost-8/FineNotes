@@ -8,18 +8,43 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-12
+
+Thank you for all the feedback and support. FineNotes has passed 500
+downloads and 100 installations, and this is its biggest update yet.
+
+### Grape: handwriting recognition on your device
+
+FineNotes now includes **Grape**, its own handwriting recognition model. It
+runs locally, on your iPad or computer, offline: your handwriting never
+leaves the device, and no account or API key is needed.
+
+- **Search finds your handwriting.** A few seconds after you stop writing,
+  the page is read and its text goes into the notebook's text layer, so
+  notebook search and Obsidian's search find it.
+- **Grape gets much better when it learns your handwriting.** Choose "Teach
+  it your handwriting" in the AI menu: FineNotes makes a practice file with
+  lines to copy (about 8 minutes), then learns from it on your device in a
+  few minutes, in the background. It keeps the result only if it reads your
+  own test lines better. On the developer's handwriting it went from 18 % to
+  6 % of characters wrong. There are three sets of practice lines, and each
+  set you write makes it better.
+- **Titles and links from your ink.** "Add to contents" and "Link to…" fill
+  in the lassoed heading or word as Grape reads it.
+- **Handwritten `[[links]]`.** Write `[[Note]]` by hand and it gets a dashed
+  underline; tap it with a finger to make it a link.
+- **The AI menu starts with it.** The sparkles button now opens on
+  "Handwriting · on this device": read this page, and learn your
+  handwriting.
+
+Grape is a work in progress. It still needs more training on more real
+handwriting, which is now what holds it back most. It is open source under
+the Apache License 2.0, and published on its own at
+[Joost-8/Grape](https://github.com/Joost-8/Grape). Because the model is built
+into the plugin, FineNotes is a larger download than before (about 6 MB).
+
 ### Added
 
-- **Any eraser size, from a fine tip to a wide band.** The chevron next to
-  the eraser's three sizes opens an "Eraser size" slider, laid out like the
-  pen's stroke width: drag for any size from 0.8 mm to 24.6 mm, tap a
-  preset, or reset to the default. A size set on the slider takes the place
-  of the nearest of the three quick sizes in the toolbar.
-- **Double-tap with two fingers to undo, with three to redo.** "Undo" or
-  "Redo" shows briefly where the zoom level appears. A scroll, a pinch or a
-  single tap does nothing, and a pen touching the page in between cancels
-  the gesture. Switch it off under "Double-tap with fingers to undo and
-  redo" in the settings.
 - **Tools for lined paper**, after Stylus Labs Write
   ([#20](https://github.com/Joost-8/FineNotes/issues/20)). They work on
   ruled, legal, Cornell, column, margin, to-do, title, handwriting and
@@ -28,64 +53,56 @@ extracted from the matching section of this file by `release.yml`.
   - **Erase by line**, a third eraser mode. A pass along a line erases
     whole words as far as it goes, with their commas, full stops and i-dots,
     and never touches the line above or below. A pass down the margin
-    erases whole lines. Drawings taller than two lines are only erased
-    where the eraser touches them.
+    erases whole lines.
   - **Select by line**, a third lasso type. Drag from one word to another,
     as you select text: the rest of the first line, every line in between,
-    and the last line up to the pen. Pictures and text boxes on those lines
-    come along.
-  - **Insert space.** With Select by line, drag down from the margin next
-    to a line: that line and everything below it in the column move down by
-    whole lines, pictures, text boxes, shapes and highlights included. A
-    drawing taller than two lines moves only when the space goes in above
-    its top, and locked pictures stay where they are. Ink pushed past the
-    bottom flows onto the next page, whose ink moves down to make room; if
-    the next page is ruled differently, or there is none, a new page with
-    the same paper is put in. Drag up to close empty lines (it never closes
-    over ink). One undo puts it all back.
+    and the last line up to the pen. The highlight runs from rule to rule.
+  - **Insert space.** With Select by line, a small up-and-down arrow sits
+    in the margin of every line. Drag one down to push that line and
+    everything below it down by whole lines (pictures, text boxes, shapes
+    and highlights included), or up to close empty lines. Ink pushed past
+    the bottom flows onto the next page, or onto a new page with the same
+    paper. One undo puts it all back.
 - **Headings inside a page, in the contents.** Lasso a heading and choose
-  "Add to contents" to list it in the Contents tab, under its page's title
-  as a subheading; a ribbon marks it at the page's left edge. Tapping it
-  goes to that line. A page title's subheadings fold away under it with the
-  chevron beside it, and the entry you are reading is marked as you scroll.
-  Rename or remove one from its ⌄ menu. Insert space moves it with its line.
-- **Handwritten links.** Lasso some ink and choose "Link to…": pick a note,
-  a heading in it (type `Note#Heading`), or type a web address. The ink
-  keeps its colour and gets an underline. Tap it with a finger to open the
-  link; the pen keeps writing over it. With the ink selected, "Open link",
-  "Change link" and "Remove link" are in its menu. The link moves with its
-  ink, and erasing part of the ink keeps the rest linked. The notebook's
-  links are listed at the end of its text, so Obsidian's backlinks and
-  graph show them. A linked word is erased whole by every eraser, never in
-  part.
-- **Links in text boxes.** Type `[[Note]]`, `[[Note#Heading]]`,
-  `[[Note|shown text]]`, `[label](https://…)` or a web address in a text
-  box. When you are not typing in it, each link shows as its text in the
-  accent colour, underlined, and a tap opens it; with the Text tool, a tap
-  edits the box instead. They are listed for backlinks too.
-- **Handwriting read on your device.** FineNotes now includes its own
-  handwriting model (the FineNotes handwriting model 1.0, Apache 2.0) and
-  reads your ink on the device, offline; nothing leaves it.
-  - **Search finds your handwriting.** A few seconds after you stop
-    writing, the page is read and its text goes into the notebook's text
-    layer, so notebook search and Obsidian's search find it. A transcription
-    is never replaced; transcribing still redoes pages read on the device.
-  - **Titles and links from ink.** "Add to contents" and "Link to…" fill in
-    the lassoed heading or word as read, ready to accept or retype.
-  - **Handwritten `[[links]]`.** Write `[[Note]]` by hand and it gets a
-    dashed underline; tap it with a finger to link it, with the name filled
-    in.
-  - **Learn your handwriting.** Settings → FineNotes → Handwriting → Learn
-    my handwriting: write the practice page (20 short lines to copy, about
-    8 minutes), then tap Learn now. FineNotes tunes its reader to your
-    writing on the device in about 3 minutes, with a progress bar, and keeps
-    the result only if it reads your own test lines better. On the
-    developer's handwriting it went from 18 % to 6 % of characters wrong.
-    "Use built-in model" goes back at any time.
-  - "Show this page read on this device" shows a page as read, line by
-    line. Switch reading off under "Read handwriting on this device", or
-    give a model file of your own (one tuned to your handwriting) under
-    "Handwriting model file".
+  "Add to contents" (in the selection's ⋯ menu) to list it in the Contents
+  tab, under its page's title; a ribbon marks it at the page's left edge.
+  Tap it to go to that line. Headings fold away under their page title.
+- **Handwritten links.** Lasso some ink and choose "Link to…": a note, a
+  heading in it, or a web address. The ink gets an underline; tap it with a
+  finger to open the link. Links show up in Obsidian's backlinks and graph.
+  A linked word is erased whole, never in part.
+- **Links in text boxes.** Type `[[Note]]`, `[[Note|shown text]]`,
+  `[label](https://…)` or a web address in a text box; when you are not
+  typing in it, each link shows underlined and opens on a tap.
+- **An icon for each pen.** The fountain pen, ballpoint, brush and
+  highlighter each have their own icon, with the tip in your ink colour,
+  and the width buttons are drawn as that pen writes: tapered for the
+  fountain pen, even for the ballpoint, lifting off for the brush, a flat
+  band for the highlighter.
+- **Five pen colours that stay.** The pen's colour row has five swatches,
+  and a colour you pick stays in it. The default ink colour and your own
+  colours from the settings keep their place at the front.
+- **Any eraser size**, from a fine tip to a wide band, with a slider next
+  to the eraser's three sizes. Thanks to
+  [@OskarRabenda](https://github.com/OskarRabenda).
+- **Double-tap with two fingers to undo, with three to redo.** Switch it off
+  under "Double-tap with fingers to undo and redo". Thanks to
+  [@OskarRabenda](https://github.com/OskarRabenda).
+
+### Changed
+
+- **Settings by theme**: writing and tools, pages and notebooks,
+  handwriting, AI with your own key, advanced, and support. The notebook's
+  settings (the gear in the toolbar) end with a button to all of
+  FineNotes' settings.
+- **The AI features that need an API key stay out of the way** until you
+  set one up: in the AI menu they fold into one row, and in the settings
+  into one "Set up an AI service" row.
+
+### Fixed
+
+- Typing in a text box low on a notebook's cover no longer hides it under
+  the iPad's keyboard: the page moves up, as on other pages.
 
 ## [1.5.0] - 2026-10-07
 

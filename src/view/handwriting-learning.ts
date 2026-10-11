@@ -233,7 +233,7 @@ export class HandwritingLearner {
         await bundledModel(),
         lines,
         LEARN_STEPS,
-        "finenotes-hwr-1.0, learned",
+        "grape-1.0, learned",
         (p: HwrProgress) => {
           if (this.current) this.current = { ...this.current, step: p.step, steps: p.steps };
           this.emit();

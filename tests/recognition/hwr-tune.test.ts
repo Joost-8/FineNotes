@@ -19,7 +19,7 @@ import {
   tune,
 } from "../../src/recognition/hwr/tune";
 
-const BYTES = new Uint8Array(readFileSync("models/finenotes-hwr-1.0.bin"));
+const BYTES = new Uint8Array(readFileSync("models/grape-1.0.bin"));
 const BASE = parseBundle(BYTES);
 
 /** A made-up line: a wave as long as its text. */

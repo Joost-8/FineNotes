@@ -28,7 +28,7 @@ export interface ModelSource {
 
 /** The bundled model's bytes (a fresh copy), read only when first needed. */
 export async function bundledModel(): Promise<ArrayBuffer> {
-  const { default: bytes } = await import("../../models/finenotes-hwr-1.0.bin");
+  const { default: bytes } = await import("../../models/grape-1.0.bin");
   // The worker takes the buffer it is given: hand it a copy.
   return bytes.slice().buffer;
 }

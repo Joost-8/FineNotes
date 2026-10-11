@@ -140,13 +140,14 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 
-FineNotes handwriting model 1.0 (models/finenotes-hwr-1.0.bin)
---------------------------------------------------------------
+Grape 1.0, the FineNotes handwriting model (models/grape-1.0.bin)
+-----------------------------------------------------------------
 
 Licensed under the Apache License, Version 2.0:
 https://www.apache.org/licenses/LICENSE-2.0
+https://github.com/Joost-8/Grape
 
-FineNotes handwriting recogniser (model "ship-big2")
+Grape 1.0, the FineNotes handwriting recogniser (model "ship-big2")
 Copyright 2026 Joost (FineNotes)
 
 Licensed under the Apache License, Version 2.0 (see LICENSE). This NOTICE
@@ -183,8 +184,8 @@ UNIPEN (Train-R01/V07)
   project of on-line data exchange and recognizer benchmarks". ICPR 1994.
   Zenodo record 1195803.
   Used under its conditions of use, which allow training recognisers for
-  commercial use and require the UNIPEN logo in the product documentation.
-  [UNIPEN LOGO]
+  commercial use; the Zenodo record is licensed CC BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/).
   No writer or donor identity is referenced. Also used: lines joined from
   UNIPEN words, and lines of UNIPEN characters.
 

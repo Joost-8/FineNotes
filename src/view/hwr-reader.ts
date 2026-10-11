@@ -36,6 +36,15 @@ export async function showPageReading(
   }
 }
 
+/**
+ * A model's name as people know it: the bundled model's file still carries
+ * its build name (its bytes are the published Grape 1.0), and a learned one
+ * is named after it.
+ */
+export function modelLabel(name: string): string {
+  return name.replace(/^(finenotes-hwr|grape)-1\.0/, "Grape 1.0");
+}
+
 /** The page's lines as read, with the letters as written where the LM changed them. */
 class HwrReadingModal extends Modal {
   private readonly statusEl: HTMLElement;
@@ -58,7 +67,7 @@ class HwrReadingModal extends Modal {
     const decode = reading.lines.reduce((ms, l) => ms + l.timings.greedy + l.timings.beam, 0);
     const frames = reading.lines.reduce((n, l) => n + l.frames, 0);
     this.status(
-      `${info.name} (${info.layers}×${info.hidden} BLSTM${info.lmContexts ? ", 6-gram LM" : ""}, ` +
+      `${modelLabel(info.name)} (${info.layers}×${info.hidden} BLSTM${info.lmContexts ? ", 6-gram LM" : ""}, ` +
         `${info.simd ? "WebAssembly SIMD" : "plain JavaScript"}; ` +
         `read on this device). ${reading.lines.length} lines, ${frames} frames ` +
         `in ${Math.round(totalMs)} ms: network ${Math.round(network)} ms, decoding ` +
