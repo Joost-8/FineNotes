@@ -880,7 +880,8 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Read the page in view on this device and show what it says, line by line. */
-  private async readOnDevice(view: InkView): Promise<void> {
+  /** Read the page in view on this device, and show what it says. */
+  async readOnDevice(view: InkView): Promise<void> {
     const { showPageReading } = await import("./view/hwr-reader");
     await showPageReading(this.app, this.handwriting, view);
   }

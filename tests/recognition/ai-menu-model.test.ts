@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type AiMenuContext,
   type AiSetup,
+  type DeviceReading,
+  aiKeyFolded,
   audioAvailability,
   buildAiMenu,
   imageAvailability,
@@ -86,7 +88,7 @@ describe("availability", () => {
 
 describe("buildAiMenu", () => {
   it("lists every entry in order, settings last below the divider", () => {
-    const items = buildAiMenu(context());
+    const items = buildAiMenu(context()).filter((i) => i.section !== "device");
     expect(items.map((i) => i.id)).toEqual([
       "transcribe-page",
       "transcribe-notebook",
@@ -144,7 +146,9 @@ describe("buildAiMenu", () => {
   it("offers 'Transcribe recording…' after the ink entries, only where recording exists", () => {
     expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-recording");
     const withAudio = setup({ vendor: "openai", keys: ["openai"] });
-    const ids = buildAiMenu(context({ setup: withAudio, recordings: 2 })).map((i) => i.id);
+    const ids = buildAiMenu(context({ setup: withAudio, recordings: 2 }))
+      .filter((i) => i.section !== "device")
+      .map((i) => i.id);
     expect(ids).toEqual([
       "transcribe-page",
       "transcribe-notebook",
@@ -174,5 +178,66 @@ describe("buildAiMenu", () => {
     )["transcribe-recording"];
     expect(none.enabled).toBe(false);
     expect(none.reason).toMatch(/^No recordings in this note yet/);
+  });
+});
+
+describe("the handwriting section, on this device", () => {
+  const device = (fields: Partial<DeviceReading> = {}): DeviceReading => ({
+    learned: false,
+    practiceFiles: 0,
+    learning: null,
+    ...fields,
+  });
+  const deviceIds = (ctx: AiMenuContext) =>
+    buildAiMenu(ctx)
+      .filter((i) => i.section === "device")
+      .map((i) => i.id);
+
+  it("comes first, and works without any key", () => {
+    const items = buildAiMenu(context({ setup: setup(), device: device() }));
+    expect(items[0]).toMatchObject({ id: "read-page-device", enabled: true, section: "device" });
+    expect(items[1]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
+  });
+
+  it("learns once there is a practice file, again once learned, and shows a run in progress", () => {
+    expect(deviceIds(context({ device: device({ practiceFiles: 1 }) }))).toEqual([
+      "read-page-device",
+      "learn",
+      "practice",
+    ]);
+    const again = byId(
+      buildAiMenu(context({ device: device({ practiceFiles: 2, learned: true }) })),
+    );
+    expect(again.learn.label).toBe("Learn my handwriting again");
+    expect(again.practice.label).toBe("Write another practice set");
+    const running = byId(
+      buildAiMenu(context({ device: device({ practiceFiles: 1, learning: 34.4 }) })),
+    );
+    expect(running.learn).toMatchObject({
+      label: "Learning your handwriting · 34 %",
+      enabled: false,
+    });
+    expect(running.practice).toBeUndefined();
+  });
+
+  it("says nothing is written on an empty page", () => {
+    const item = byId(buildAiMenu(context({ pageTranscribable: false, device: device() })));
+    expect(item["read-page-device"]).toMatchObject({
+      enabled: false,
+      reason: "Nothing written on this page yet",
+    });
+  });
+
+  it("points to the setting when the reader is off", () => {
+    expect(deviceIds(context())).toEqual(["device-settings"]);
+  });
+});
+
+describe("aiKeyFolded", () => {
+  it("folds the key section only when neither text nor images can run", () => {
+    expect(aiKeyFolded(setup())).toBe(true);
+    expect(aiKeyFolded(setup({ keys: ["anthropic"] }))).toBe(false);
+    // Images alone are enough to show it.
+    expect(aiKeyFolded(setup({ imageVendor: "openai", keys: ["openai"] }))).toBe(false);
   });
 });

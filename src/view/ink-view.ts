@@ -58,7 +58,8 @@ import {
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
-import { buildAiMenu } from "../recognition/ai-menu-model";
+import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
+import { practiceFiles, writePracticePage } from "./handwriting-learning";
 import {
   type AskScope,
   type ChatImage,
@@ -762,8 +763,26 @@ export class InkView extends TextFileView {
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
+      device: this.deviceReading(),
     });
-    this.aiMenu = new AiMenuPopover(anchor, items, (id) => this.aiActions()[id]?.());
+    const setup = this.plugin.aiSetup();
+    this.aiMenu = new AiMenuPopover(
+      anchor,
+      items,
+      (id) => this.aiActions()[id]?.(),
+      aiKeyFolded(setup),
+    );
+  }
+
+  /** The on-device reader's state for the AI menu; undefined when it is off. */
+  private deviceReading(): DeviceReading | undefined {
+    if (this.settings.handwritingOnDevice === false) return undefined;
+    const progress = this.plugin.learner.progress;
+    return {
+      learned: this.settings.handwritingModel !== undefined,
+      practiceFiles: practiceFiles(this.plugin.learningHost()).length,
+      learning: progress ? (100 * progress.step) / progress.steps : null,
+    };
   }
 
   /**
@@ -772,6 +791,10 @@ export class InkView extends TextFileView {
    */
   private aiActions(): Record<string, () => void> {
     return {
+      "read-page-device": () => void this.plugin.readOnDevice(this),
+      learn: () => void this.plugin.learner.start(),
+      practice: () => void writePracticePage(this.plugin.learningHost()),
+      "device-settings": () => this.plugin.openSettingsTab(),
       "transcribe-page": () => void this.transcribeFromMenu("page"),
       "transcribe-notebook": () => void this.transcribeFromMenu("notebook"),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),

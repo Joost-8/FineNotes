@@ -8,6 +8,11 @@
  * what each entry does is the host's `run(id)`. A disabled entry stays in the
  * list with its reason underneath, because a feature that silently vanishes is
  * harder to understand than one that says what it needs.
+ *
+ * Its two sections have headings: the handwriting reader on this device,
+ * then the features that need the user's own AI key. With `keyFolded`, the
+ * second is one row that opens it, so it stays out of the way of anyone who
+ * has no key.
  */
 
 import { setIcon } from "obsidian";
@@ -24,11 +29,12 @@ export class AiMenuPopover {
     private readonly anchor: HTMLElement,
     items: readonly AiMenuItem[],
     private readonly run: (id: string) => void,
+    keyFolded = false,
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", "AI");
-    this.build(items);
+    this.build(items, keyFolded);
     this.place();
     this.installDismiss();
   }
@@ -48,16 +54,57 @@ export class AiMenuPopover {
     this.el.remove();
   }
 
-  private build(items: readonly AiMenuItem[]): void {
+  private build(items: readonly AiMenuItem[], keyFolded: boolean): void {
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "AI" });
+    const device = items.filter((item) => item.section === "device");
+    const key = items.filter((item) => item.section !== "device");
+    if (device.length > 0) {
+      this.heading(this.el, "Handwriting · on this device");
+      this.rows(this.el, device);
+    }
+    if (key.length === 0) return;
+    if (!keyFolded) {
+      this.heading(this.el, "With your own AI key");
+      this.rows(this.el, key);
+      return;
+    }
+    // No key: one row, which opens the section in place.
+    const toggle = this.el.createEl("button", {
+      cls: "goodobsidian-addpage-row goodobsidian-aimenu-row goodobsidian-aimenu-fold clickable-icon",
+    });
+    toggle.setAttribute("aria-expanded", "false");
+    const chevron = toggle.createSpan({ cls: "goodobsidian-addpage-row-icon" });
+    setIcon(chevron, "chevron-right");
+    const text = toggle.createSpan({ cls: "goodobsidian-aimenu-text" });
+    text.createSpan({ cls: "goodobsidian-aimenu-label", text: "With your own AI key" });
+    text.createSpan({
+      cls: "goodobsidian-aimenu-reason",
+      text: "Transcribe, ask about pages and make images. Needs an API key.",
+    });
+    const body = this.el.createDiv({ cls: "goodobsidian-aimenu-folded is-hidden" });
+    this.rows(body, key);
+    toggle.addEventListener("click", () => {
+      const open = body.hasClass("is-hidden");
+      body.toggleClass("is-hidden", !open);
+      toggle.setAttribute("aria-expanded", String(open));
+      setIcon(chevron, open ? "chevron-down" : "chevron-right");
+      this.place();
+    });
+  }
+
+  private heading(parent: HTMLElement, text: string): void {
+    parent.createDiv({ cls: "goodobsidian-aimenu-heading", text });
+  }
+
+  private rows(parent: HTMLElement, items: readonly AiMenuItem[]): void {
     let dividerDrawn = false;
     for (const item of items) {
       if (item.footer && !dividerDrawn) {
-        this.el.createDiv({ cls: "goodobsidian-addpage-divider" });
+        parent.createDiv({ cls: "goodobsidian-addpage-divider" });
         dividerDrawn = true;
       }
       // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
-      const row = this.el.createEl("button", {
+      const row = parent.createEl("button", {
         cls: "goodobsidian-addpage-row goodobsidian-aimenu-row clickable-icon",
       });
       row.setAttribute("role", "menuitem");

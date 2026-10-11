@@ -27,7 +27,11 @@ import {
 import { SIZES } from "./constants";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
-import { type ImageVendorChoice, resolveImageVendor } from "./recognition/ai-menu-model";
+import {
+  type ImageVendorChoice,
+  aiKeyFolded,
+  resolveImageVendor,
+} from "./recognition/ai-menu-model";
 import {
   DEFAULT_IMAGE_MODELS,
   canGenerateImages,
@@ -262,6 +266,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * field's state: the stored width stays the last valid one.
    */
   private paperWidthRejected = false;
+  /** The AI group, opened by hand when no AI service is set up. */
+  private aiOpen = false;
 
   constructor(
     app: App,
@@ -430,10 +436,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ]);
   }
 
-  /** Reading handwriting: on this device, and with an AI service. */
+  /** Reading handwriting on this device, and learning the user's. */
   private handwritingGroup(): SettingDefinitionItem {
-    const providers: Record<string, string> = {};
-    for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
     const { settings } = this.plugin;
     return group("Handwriting", [
       toggle(
@@ -451,16 +455,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["handwriting", "practice", "fine-tune", "personal", "recognition"],
         () => settings.handwritingOnDevice !== false,
       ),
-      dropdown("recognitionProviderId", "Handwriting recognition", DESC.recognition, providers, [
-        "OCR",
-        "handwriting to text",
-      ]),
-      {
-        ...toggle("autoRecognize", "Recognize automatically", DESC.autoRecognize, [
-          "auto recognition",
-        ]),
-        visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
-      },
     ]);
   }
 
@@ -471,6 +465,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    */
   private aiGroup(): SettingDefinitionItem {
     const { settings } = this.plugin;
+    const providers: Record<string, string> = {};
+    for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
+    // Without a key the group is one row, opened on request, so it does not
+    // crowd the settings of anyone who reads handwriting on the device only.
+    const shown = (): boolean => this.aiOpen || !aiKeyFolded(this.plugin.aiSetup());
+    const fold = (item: SettingDefinition): SettingDefinition => {
+      const own = item.visible;
+      return {
+        ...item,
+        visible: () => shown() && (typeof own === "function" ? own() : own !== false),
+      };
+    };
     const vendor = settings.llmVendor;
     const custom = VENDORS[vendor].userEndpoint;
     const imageVendor = resolveImageVendor(settings.imageVendor, vendor);
@@ -480,7 +486,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       usingEndpoint() && endpointWarning(settings.llmBaseUrl) === warning;
     const imageModel = makesImages ? DEFAULT_IMAGE_MODELS[imageVendor] : "";
 
-    return group("AI with your own key", [
+    const rows: SettingDefinition[] = [
       dropdown("llmVendor", "AI service", DESC.aiService, VENDOR_LABELS, [
         "Anthropic",
         "Claude",
@@ -541,6 +547,27 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["image key"],
         makesImages && imageVendor !== vendor,
       ),
+      dropdown("recognitionProviderId", "Handwriting recognition", DESC.recognition, providers, [
+        "OCR",
+        "handwriting to text",
+      ]),
+      {
+        ...toggle("autoRecognize", "Recognize automatically", DESC.autoRecognize, [
+          "auto recognition",
+        ]),
+        visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
+      },
+    ];
+    return group("AI with your own key", [
+      drawnRow(
+        "Set up an AI service",
+        "Transcribe pages, ask about your notes and make pictures with an AI service you " +
+          "have a key for. Reading handwriting on this device needs none.",
+        (setting) => this.drawAiFold(setting),
+        ["API key", "AI", "transcribe"],
+        () => aiKeyFolded(this.plugin.aiSetup()),
+      ),
+      ...rows.map(fold),
     ]);
   }
 
@@ -629,6 +656,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         }),
       );
     }
+  }
+
+  /** Show or Hide: the AI group's rows, when no AI service is set up. */
+  private drawAiFold(setting: Setting): void {
+    setting.addButton((b) => {
+      b.setButtonText(this.aiOpen ? "Hide" : "Show");
+      b.onClick(() => {
+        this.aiOpen = !this.aiOpen;
+        b.setButtonText(this.aiOpen ? "Hide" : "Show");
+        this.refreshDomState();
+      });
+    });
   }
 
   private drawPaperWidth(setting: Setting): void {

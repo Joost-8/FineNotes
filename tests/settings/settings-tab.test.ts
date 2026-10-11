@@ -94,6 +94,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       return Promise.resolve();
     }),
     apiKeyFor: (slot: string) => keys[slot] ?? "",
+    aiSetup: () => ({
+      vendor: settings.llmVendor,
+      baseUrl: settings.llmBaseUrl,
+      imageVendor: settings.imageVendor,
+      hasKey: (slot: string) => (keys[slot] ?? "") !== "",
+    }),
     storeApiKey: vi.fn((slot: string, key: string) => {
       calls.push(`store:${slot}:${key}`);
       keys[slot] = key;
@@ -109,8 +115,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
 
 type Plugin = ReturnType<typeof makePlugin>;
 
-function makeTab(plugin: Plugin) {
+/** The tab, with its AI group opened (as Show does) unless `aiOpen` is false. */
+function makeTab(plugin: Plugin, aiOpen = true) {
   const tab = new GoodObsidianSettingTab({} as never, plugin as never);
+  (tab as unknown as { aiOpen: boolean }).aiOpen = aiOpen;
   const fake = tab as unknown as { updates: number; domRefreshes: number };
   const origUpdate = (tab as unknown as { update: () => void }).update.bind(tab);
   (tab as unknown as { update: () => void }).update = () => {
@@ -228,8 +236,7 @@ describe("the rows", () => {
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [HANDWRITING, "Read handwriting on this device", "toggle:handwritingOnDevice"],
       [HANDWRITING, "Learn my handwriting", "render"],
-      [HANDWRITING, "Handwriting recognition", "dropdown:recognitionProviderId"],
-      [HANDWRITING, "Recognize automatically", "toggle:autoRecognize"],
+      [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
       [AI, "(block)", "render"],
@@ -242,6 +249,8 @@ describe("the rows", () => {
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
       [AI, `${label} API key for images`, "render"],
+      [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
+      [AI, "Recognize automatically", "toggle:autoRecognize"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       [ADVANCED, "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
@@ -300,6 +309,7 @@ describe("the rows", () => {
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Handwriting recognition": ["OCR", "handwriting to text"],
       "Recognize automatically": ["auto recognition"],
+      "Set up an AI service": ["API key", "AI", "transcribe"],
       "AI service": ["Anthropic", "Claude", "OpenAI", "GPT", "Gemini", "OpenRouter", "Cloud AI"],
       "Endpoint URL": ["self-hosted", "local server"],
       "Connect OpenRouter": [],
@@ -358,8 +368,9 @@ describe("the rows", () => {
 // --- Visibility --------------------------------------------------------------
 
 describe("which rows show", () => {
-  function visibleNames(plugin: Plugin): string[] {
-    const { tab } = makeTab(plugin);
+  /** The rows shown; `aiOpen`: the AI group opened, as Show does when no key is set up. */
+  function visibleNames(plugin: Plugin, aiOpen = true): string[] {
+    const { tab } = makeTab(plugin, aiOpen);
     const all = rows(tab);
     return all.map((r, i) => (shown(r.def) ? r.def.name || `(block ${i})` : "")).filter(Boolean);
   }
@@ -372,9 +383,8 @@ describe("which rows show", () => {
     expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
-  it("by default: no iPad tip, Manual recognition, Claude, keys in the keychain", () => {
-    const label = VENDORS.anthropic.label;
-    expect(visibleNames(makePlugin())).toEqual([
+  it("by default: no iPad tip, and the AI group folded into one row", () => {
+    expect(visibleNames(makePlugin(), false)).toEqual([
       "Draw and hold to make shapes",
       "Select active tool again to return to pen",
       "Return to pen after one use",
@@ -390,18 +400,37 @@ describe("which rows show", () => {
       "Show New notebook in file explorer bar",
       "Read handwriting on this device",
       "Learn my handwriting",
-      "Handwriting recognition",
-      "AI service",
-      "AI model",
-      `${label} API key`,
-      "Image generation",
-      "(block 28)",
+      "Set up an AI service",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
       "Handwriting model file",
       "Input debug overlay",
-      "(block 36)",
+      "(block 37)",
     ]);
+  });
+
+  it("opens the AI group on Show: Manual recognition, Claude, keys in the keychain", () => {
+    const label = VENDORS.anthropic.label;
+    const names = visibleNames(makePlugin());
+    const from = names.indexOf("Set up an AI service");
+    expect(names.slice(from, names.indexOf("Desynchronized canvas"))).toEqual([
+      "Set up an AI service",
+      "AI service",
+      "AI model",
+      `${label} API key`,
+      "Image generation",
+      // Claude makes no pictures: the callout saying so.
+      "(block 27)",
+      "Handwriting recognition",
+    ]);
+  });
+
+  it("shows the AI group without asking once a key is set up", () => {
+    const plugin = makePlugin({}, { anthropic: "sk-test" });
+    const names = visibleNames(plugin, false);
+    expect(names).not.toContain("Set up an AI service");
+    expect(names).toContain("AI service");
+    expect(names).toContain("Handwriting recognition");
   });
 
   it("shows the Scribble tip on an iPad only", () => {

@@ -2932,6 +2932,18 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--text-muted);
 }
 
+/* The AI menu's two sections: the reader on this device, and the AI key's. */
+.goodobsidian-aimenu-heading {
+  padding: 8px 6px 2px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+}
+
+.goodobsidian-aimenu-folded.is-hidden {
+  display: none;
+}
+
 .goodobsidian-aimenu .goodobsidian-aimenu-row:disabled {
   cursor: default;
   background: transparent;
