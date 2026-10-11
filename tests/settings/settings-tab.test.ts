@@ -190,6 +190,10 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 
 const AI = "AI with your own key";
 const SUPPORT = "Support and diagnostics";
+const WRITING = "Writing and tools";
+const PAGES = "Pages and notebooks";
+const HANDWRITING = "Handwriting";
+const ADVANCED = "Advanced";
 
 beforeEach(() => {
   dialogs.keyModals.length = 0;
@@ -208,27 +212,23 @@ describe("the rows", () => {
     const label = VENDORS.anthropic.label;
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
-      ["", "Draw and hold to make shapes", "toggle:drawAndHold"],
-      ["", "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
-      ["", "Return to pen after one use", "toggle:returnToPenAfterUse"],
-      ["", "Double-tap with fingers to undo and redo", "toggle:fingerTapUndo"],
-      ["", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
-      ["", "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
-      ["", "(block)", "render"],
-      ["", "Paper width", "render"],
-      ["", "(block)", "render"],
-      ["", "Default folder for new notebooks", "render"],
-      ["", "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
-      ["", "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
-      ["", "Default ink color", "color:defaultColor"],
-      ["", "Default tool", "dropdown:defaultTool"],
-      ["", "Default stroke size", "dropdown:defaultSize"],
-      ["", "Highlighter opacity", "slider:highlighterAlpha"],
-      ["", "Custom colors", "text:customColors"],
-      ["", "Read handwriting on this device", "toggle:handwritingOnDevice"],
-      ["", "Handwriting model file", "text:hwrModelPath"],
-      ["", "Handwriting recognition", "dropdown:recognitionProviderId"],
-      ["", "Recognize automatically", "toggle:autoRecognize"],
+      [WRITING, "Draw and hold to make shapes", "toggle:drawAndHold"],
+      [WRITING, "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
+      [WRITING, "Return to pen after one use", "toggle:returnToPenAfterUse"],
+      [WRITING, "Double-tap with fingers to undo and redo", "toggle:fingerTapUndo"],
+      [WRITING, "Default tool", "dropdown:defaultTool"],
+      [WRITING, "Default stroke size", "dropdown:defaultSize"],
+      [WRITING, "Default ink color", "color:defaultColor"],
+      [WRITING, "Custom colors", "text:customColors"],
+      [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
+      [PAGES, "Paper width", "render"],
+      [PAGES, "(block)", "render"],
+      [PAGES, "Default folder for new notebooks", "render"],
+      [PAGES, "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
+      [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
+      [HANDWRITING, "Read handwriting on this device", "toggle:handwritingOnDevice"],
+      [HANDWRITING, "Handwriting recognition", "dropdown:recognitionProviderId"],
+      [HANDWRITING, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
       [AI, "(block)", "render"],
@@ -241,6 +241,10 @@ describe("the rows", () => {
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
       [AI, `${label} API key for images`, "render"],
+      [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
+      [ADVANCED, "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
+      [ADVANCED, "(block)", "render"],
+      [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
       [SUPPORT, "Input debug overlay", "toggle:debugHud"],
       [SUPPORT, "(block)", "render"],
     ]);
@@ -362,8 +366,8 @@ describe("which rows show", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens (advanced)";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Paper width");
-    expect(on[on.indexOf(toggle) + 1]).toBe("(block 7)");
+    expect(off[off.indexOf(toggle) + 1]).toBe("Handwriting model file");
+    expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
   it("by default: no iPad tip, Manual recognition, Claude, keys in the keychain", () => {
@@ -373,25 +377,25 @@ describe("which rows show", () => {
       "Select active tool again to return to pen",
       "Return to pen after one use",
       "Double-tap with fingers to undo and redo",
-      "Desynchronized canvas",
-      "Pressure-sensitive pens (advanced)",
+      "Default tool",
+      "Default stroke size",
+      "Default ink color",
+      "Custom colors",
+      "Highlighter opacity",
       "Paper width",
       "Default folder for new notebooks",
       "Show New notebook in right-click menu",
       "Show New notebook in file explorer bar",
-      "Default ink color",
-      "Default tool",
-      "Default stroke size",
-      "Highlighter opacity",
-      "Custom colors",
       "Read handwriting on this device",
-      "Handwriting model file",
       "Handwriting recognition",
       "AI service",
       "AI model",
       `${label} API key`,
       "Image generation",
-      "(block 31)",
+      "(block 27)",
+      "Desynchronized canvas",
+      "Pressure-sensitive pens (advanced)",
+      "Handwriting model file",
       "Input debug overlay",
       "(block 35)",
     ]);

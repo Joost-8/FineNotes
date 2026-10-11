@@ -1356,6 +1356,7 @@ export class InkView extends TextFileView {
       setFolder: (kind, folder) => apply(new SetAttachmentFolder(kind, folder)),
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      openPluginSettings: () => this.plugin.openSettingsTab(),
     }).open();
   }
 

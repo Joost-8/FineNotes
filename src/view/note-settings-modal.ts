@@ -38,6 +38,8 @@ export interface NoteSettingsHost {
   /** Which way the pages run now. */
   scrollDirection: () => ScrollDirection;
   setScrollDirection: (direction: ScrollDirection) => void;
+  /** Open FineNotes' own tab in Obsidian's settings. */
+  openPluginSettings: () => void;
 }
 
 /** A row per kind; `empty` is what an empty row does, `reset` its button's tooltip. */
@@ -112,6 +114,15 @@ export class NoteSettingsModal extends Modal {
     });
     const folders = this.host.folders();
     for (const row of ROWS) this.renderRow(contentEl, row, folders[row.kind]);
+    new Setting(contentEl)
+      .setName("All FineNotes settings")
+      .setDesc("Pens and tools, pages, handwriting, AI and more, for every notebook.")
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          this.close();
+          this.host.openPluginSettings();
+        }),
+      );
   }
 
   private renderScroll(parent: HTMLElement): void {

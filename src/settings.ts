@@ -267,7 +267,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    return [...this.writingRows(), ...this.recognitionRows(), this.aiGroup(), this.supportGroup()];
+    // By theme: writing, pages, reading handwriting, AI, then the switches
+    // few people need, and support.
+    return [
+      ...this.topRows(),
+      this.writingGroup(),
+      this.pagesGroup(),
+      this.handwritingGroup(),
+      this.aiGroup(),
+      this.advancedGroup(),
+      this.supportGroup(),
+    ];
   }
 
   override getControlValue(key: string): unknown {
@@ -299,11 +309,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   // --- Sections --------------------------------------------------------------
 
-  /** Pen, paper and the defaults an ink note opens with. */
-  private writingRows(): SettingDefinition[] {
+  /** The callout above every section: the iPad's Scribble, which loses strokes. */
+  private topRows(): SettingDefinition[] {
+    return [callout(CALLOUTS.scribble, Platform.isIosApp && Platform.isTablet)];
+  }
+
+  /** How the pen, the tools and the gestures behave, and what a new note starts with. */
+  private writingGroup(): SettingDefinitionItem {
     const widths = Object.fromEntries(SIZES.map((size) => [String(size), String(size)]));
-    return [
-      callout(CALLOUTS.scribble, Platform.isIosApp && Platform.isTablet),
+    return group("Writing and tools", [
       toggle("drawAndHold", "Draw and hold to make shapes", DESC.drawAndHold, [
         "shape recognition",
         "straighten",
@@ -327,19 +341,33 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "Double-tap the page with two fingers to undo, or with three fingers to redo.",
         ["undo", "redo", "gesture", "fingers", "tap"],
       ),
-      toggle("desynchronizedCanvas", "Desynchronized canvas", DESC.desynchronized, [
-        "latency",
-        "glitch",
-        "artifacts",
+      dropdown("defaultTool", "Default tool", DESC.tool, TOOL_NAMES),
+      dropdown("defaultSize", "Default stroke size", DESC.strokeSize, widths, [
+        "pen size",
+        "line width",
       ]),
-      toggle("pressureWidth", "Pressure-sensitive pens (advanced)", DESC.pressure, [
-        "pressure sensitivity",
-        "stylus",
-        "Apple Pencil",
-        "fountain pen",
-        "brush pen",
+      controlRow("Default ink color", DESC.inkColor, { type: "color", key: "defaultColor" }, [
+        "pen color",
       ]),
-      callout(CALLOUTS.pressure, () => this.plugin.settings.pressureWidth),
+      controlRow(
+        "Custom colors",
+        DESC.customColors,
+        { type: "text", key: "customColors", placeholder: "#ff8800, #00ccaa" },
+        ["palette"],
+      ),
+      controlRow(
+        "Highlighter opacity",
+        DESC.highlighter,
+        // In percent; data.json keeps 0–1 (settings-data.ts converts).
+        { type: "slider", key: "highlighterAlpha", min: 10, max: 100, step: 5 },
+        ["transparency", "alpha"],
+      ),
+    ]);
+  }
+
+  /** The paper, and where new notebooks go and how they are made. */
+  private pagesGroup(): SettingDefinitionItem {
+    return group("Pages and notebooks", [
       drawnRow("Paper width", DESC.paperWidth, (s) => this.drawPaperWidth(s), [
         "canvas size",
         "page width",
@@ -363,43 +391,25 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "Add a New notebook button beside New note and New folder in the file explorer.",
         ["toolbar", "file explorer", "new notebook"],
       ),
-      controlRow("Default ink color", DESC.inkColor, { type: "color", key: "defaultColor" }, [
-        "pen color",
-      ]),
-      dropdown("defaultTool", "Default tool", DESC.tool, TOOL_NAMES),
-      dropdown("defaultSize", "Default stroke size", DESC.strokeSize, widths, [
-        "pen size",
-        "line width",
-      ]),
-      controlRow(
-        "Highlighter opacity",
-        DESC.highlighter,
-        // In percent; data.json keeps 0–1 (settings-data.ts converts).
-        { type: "slider", key: "highlighterAlpha", min: 10, max: 100, step: 5 },
-        ["transparency", "alpha"],
-      ),
-      controlRow(
-        "Custom colors",
-        DESC.customColors,
-        { type: "text", key: "customColors", placeholder: "#ff8800, #00ccaa" },
-        ["palette"],
-      ),
-    ];
+    ]);
   }
 
-  private recognitionRows(): SettingDefinition[] {
-    const providers: Record<string, string> = {};
-    for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
-    const { settings } = this.plugin;
-    return [
-      toggle(
-        "handwritingOnDevice",
-        "Read handwriting on this device",
-        "Reads your handwriting with a model built into FineNotes, on this device: notebook " +
-          "search and Obsidian's search find it, and a lassoed heading or word fills in its " +
-          "title or link. Nothing leaves the device.",
-        ["handwriting", "recognition", "search", "offline"],
-      ),
+  /** Rendering and input switches most people never need. */
+  private advancedGroup(): SettingDefinitionItem {
+    return group("Advanced", [
+      toggle("desynchronizedCanvas", "Desynchronized canvas", DESC.desynchronized, [
+        "latency",
+        "glitch",
+        "artifacts",
+      ]),
+      toggle("pressureWidth", "Pressure-sensitive pens (advanced)", DESC.pressure, [
+        "pressure sensitivity",
+        "stylus",
+        "Apple Pencil",
+        "fountain pen",
+        "brush pen",
+      ]),
+      callout(CALLOUTS.pressure, () => this.plugin.settings.pressureWidth),
       controlRow(
         "Handwriting model file",
         "Leave blank to use the model built into FineNotes. Or give the vault path of " +
@@ -407,6 +417,23 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "device only.",
         { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
         ["handwriting", "recognition", "model"],
+      ),
+    ]);
+  }
+
+  /** Reading handwriting: on this device, and with an AI service. */
+  private handwritingGroup(): SettingDefinitionItem {
+    const providers: Record<string, string> = {};
+    for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
+    const { settings } = this.plugin;
+    return group("Handwriting", [
+      toggle(
+        "handwritingOnDevice",
+        "Read handwriting on this device",
+        "Reads your handwriting with a model built into FineNotes, on this device: notebook " +
+          "search and Obsidian's search find it, and a lassoed heading or word fills in its " +
+          "title or link. Nothing leaves the device.",
+        ["handwriting", "recognition", "search", "offline"],
       ),
       dropdown("recognitionProviderId", "Handwriting recognition", DESC.recognition, providers, [
         "OCR",
@@ -418,7 +445,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ]),
         visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
       },
-    ];
+    ]);
   }
 
   /**
