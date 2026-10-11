@@ -104,7 +104,15 @@ import {
   uncroppedBox,
 } from "../canvas/image-crop";
 import { type PaperTheme, paperTheme, writingLines } from "../canvas/backdrop";
-import { RuledEraser } from "../canvas/ruled-ink";
+import {
+  type LineSpan,
+  RuledEraser,
+  inLineSpan,
+  lineSpan,
+  linedItems,
+  spanOutline,
+} from "../canvas/ruled-ink";
+import { type LineBlock, lineAt, lineOfBounds } from "../canvas/writing-lines";
 import type { ViewportState } from "../canvas/viewport";
 import {
   type DocumentLayout,
@@ -666,6 +674,8 @@ interface LassoDraft {
   to: Pt;
   /** The pen was held still long enough to open the Paste / Unlock bar instead. */
   held: boolean;
+  /** The page's lines, for a lasso selecting by line; empty otherwise. */
+  lines: LineBlock[];
 }
 
 /**
@@ -4685,13 +4695,26 @@ export class InkSurface {
     this.deselectImage();
     const path = new LassoPath(box, LASSO_SPACING_PX / this.unitScale);
     path.add(local);
+    let mode = lassoModeFor(this.toolState);
+    let lines: LineBlock[] = [];
+    if (mode === "lines") {
+      // By line needs a line under the pen; elsewhere it drags a rectangle.
+      const page = this.pageAt(box.index);
+      lines = page ? writingLines(page.backdrop, page.geometry) : [];
+      if (lines.length === 0) this.flashReadout("No lines on this page: selecting a rectangle");
+      if (!lineAt(lines, local.x, local.y)) {
+        mode = "rect";
+        lines = [];
+      }
+    }
     this.lasso = {
       box,
-      mode: lassoModeFor(this.toolState),
+      mode,
       path,
       origin: { x: local.x, y: local.y },
       to: { x: local.x, y: local.y },
       held: false,
+      lines,
     };
     // Held still, the press opens the Paste / Unlock bar instead.
     this.startPress(() => this.lassoHeld());
@@ -4709,7 +4732,10 @@ export class InkSurface {
     lasso.to = { x: last.x, y: last.y };
     const loop = this.lassoLoop(lasso);
     // Drawn rounded off, as GoodNotes draws it; taken on the loop as drawn.
-    this.renderer?.renderLasso(lasso.box.index, lasso.mode === "rect" ? loop : smoothLoop(loop));
+    this.renderer?.renderLasso(
+      lasso.box.index,
+      lasso.mode === "freehand" ? smoothLoop(loop) : loop,
+    );
   }
 
   /** The lasso's pen stayed put long enough: open the tap-and-hold bar where it is. */
@@ -4764,7 +4790,16 @@ export class InkSurface {
   }
 
   private lassoLoop(lasso: LassoDraft): readonly number[] {
+    if (lasso.mode === "lines") {
+      const span = this.lassoSpan(lasso);
+      return span ? spanOutline(lasso.lines[span.block], span) : [];
+    }
     return lasso.mode === "rect" ? rectLoop(lasso.origin, lasso.to, lasso.box) : lasso.path.points;
+  }
+
+  /** A by-line lasso's span, from its pen-down to the pen. */
+  private lassoSpan(lasso: LassoDraft): LineSpan | null {
+    return lineSpan(lasso.lines, lasso.origin, lasso.to);
   }
 
   /** The pen lifted: a lasso too small to have been drawn was a tap. */
@@ -4778,15 +4813,59 @@ export class InkSurface {
     if (!lasso || lasso.held) return;
     const poly = polygonOf(this.lassoLoop(lasso));
     const b = poly?.bounds;
-    const extent = b ? Math.max(b.maxX - b.minX, b.maxY - b.minY) * this.unitScale : 0;
+    // A by-line span is a line tall from the start: only the pen's travel says it was drawn.
+    const extent =
+      lasso.mode === "lines"
+        ? Math.hypot(lasso.to.x - lasso.origin.x, lasso.to.y - lasso.origin.y) * this.unitScale
+        : b
+          ? Math.max(b.maxX - b.minX, b.maxY - b.minY) * this.unitScale
+          : 0;
     if (!poly || extent < TAP_SLOP_PX) {
       // With audio replay open, a tap on ink plays it instead of selecting it.
       if (this.offerStrokeTap(lasso.box, lasso.origin, PEN_TAP_TOLERANCE_PX)) this.dropSelection();
       else this.tapSelect(lasso.box, lasso.origin, PEN_TAP_TOLERANCE_PX);
       return;
     }
+    if (lasso.mode === "lines") {
+      const span = this.lassoSpan(lasso);
+      if (span) this.selectOnLines(lasso.box, lasso.lines, span);
+      this.keepOutline(this.lassoLoop(lasso));
+      return;
+    }
     this.selectInside(lasso.box, poly);
     if (lasso.mode !== "rect") this.keepOutline(smoothLoop(this.lassoLoop(lasso)));
+  }
+
+  /**
+   * Select what lies in a by-line span, as far as the lasso's switches
+   * allow: ink by the line it sits on (a comma or a dot with its word),
+   * pictures and text boxes by the line their frame sits on.
+   */
+  private selectOnLines(box: PageBox, blocks: readonly LineBlock[], span: LineSpan): void {
+    const page = this.pageAt(box.index);
+    if (!page) return;
+    const filter = lassoFilterFor(this.toolState);
+    const framed = (bounds: Bounds): boolean =>
+      inLineSpan(span, lineOfBounds(blocks, bounds), bounds);
+    const frameBounds = (f: { x: number; y: number; w: number; h: number }): Bounds => ({
+      minX: f.x,
+      minY: f.y,
+      maxX: f.x + f.w,
+      maxY: f.y + f.h,
+    });
+    this.select(page.id, {
+      strokes: linedItems(blocks, page.strokes, strokeBounds)
+        .filter((l) => lassoTakesStroke(l.item, filter) && inLineSpan(span, l.line, l.bounds))
+        .map((l) => l.item),
+      images: filter.images
+        ? page.images.filter((image) => image.locked !== true && framed(frameBounds(image)))
+        : [],
+      textBoxes: filter.textBoxes
+        ? page.textBoxes.filter((textBox) =>
+            framed(frameBounds(this.textBoxFrameOf(page.id, textBox))),
+          )
+        : [],
+    });
   }
 
   /** Draw the new selection by the loop that made it (page px), not by a box. */

@@ -4,7 +4,14 @@
 
 import { describe, expect, it } from "vitest";
 import { writingLines } from "../../src/canvas/backdrop";
-import { RuledEraser, linedItems, marginEdge } from "../../src/canvas/ruled-ink";
+import {
+  RuledEraser,
+  inLineSpan,
+  lineSpan,
+  linedItems,
+  marginEdge,
+  spanOutline,
+} from "../../src/canvas/ruled-ink";
 import type { PageGeometry, Stroke } from "../../src/model/document";
 
 const A4: PageGeometry = { width: 1024, height: 1448 };
@@ -169,5 +176,69 @@ describe("RuledEraser", () => {
       "highlighter",
     );
     expect(marker.dab({ x: 150, y: 112 }, 4)).toEqual(["mark"]);
+  });
+});
+
+describe("ruled selection", () => {
+  const BLOCK = RULED[0];
+
+  it("runs from the pen-down to the pen, ordered like text", () => {
+    expect(lineSpan(RULED, { x: 300, y: 112 }, { x: 200, y: 190 })).toEqual({
+      block: 0,
+      from: { line: 2, x: 300 },
+      to: { line: 4, x: 200 },
+    });
+    // Dragged backwards: the ends swap.
+    expect(lineSpan(RULED, { x: 200, y: 190 }, { x: 300, y: 112 })).toEqual({
+      block: 0,
+      from: { line: 2, x: 300 },
+      to: { line: 4, x: 200 },
+    });
+    expect(lineSpan(RULED, { x: 300, y: 112 }, { x: 100, y: 112 })?.from).toEqual({
+      line: 2,
+      x: 100,
+    });
+  });
+
+  it("holds the far end to the pen-down's block", () => {
+    const span = lineSpan(COLUMNS, { x: 100, y: 112 }, { x: 900, y: -400 });
+    expect(span).toEqual({ block: 0, from: { line: 0, x: 512 }, to: { line: 2, x: 100 } });
+  });
+
+  it("is nothing when the pen went down on no line", () => {
+    expect(lineSpan(RULED, { x: 100, y: -50 }, { x: 200, y: 200 })).toBeNull();
+  });
+
+  it("holds ink by its line and the x of its centre", () => {
+    const span = lineSpan(RULED, { x: 150, y: 112 }, { x: 200, y: 190 })!;
+    const at = (line: number, x0: number, x1: number) => ({
+      ref: { block: 0, line },
+      bounds: { minX: x0, maxX: x1, minY: 0, maxY: 0 },
+    });
+    const holds = (line: number, x0: number, x1: number): boolean => {
+      const { ref, bounds } = at(line, x0, x1);
+      return inLineSpan(span, ref, bounds);
+    };
+    expect(holds(2, 100, 140)).toBe(false); // before the start on the first line
+    expect(holds(2, 140, 200)).toBe(true); // centre past the start
+    expect(holds(3, 0, 40)).toBe(true); // a whole line in between
+    expect(holds(4, 150, 240)).toBe(true); // centre before the end
+    expect(holds(4, 200, 260)).toBe(false); // centre past the end
+    expect(holds(1, 300, 320)).toBe(false);
+    expect(holds(5, 0, 10)).toBe(false);
+    expect(inLineSpan(span, null, { minX: 0, maxX: 1, minY: 0, maxY: 0 })).toBe(false);
+    expect(inLineSpan(span, { block: 1, line: 3 }, { minX: 0, maxX: 1, minY: 0, maxY: 0 })).toBe(
+      false,
+    );
+  });
+
+  it("outlines one line as a box, several as a staircase", () => {
+    const one = lineSpan(RULED, { x: 100, y: 112 }, { x: 200, y: 112 })!;
+    expect(spanOutline(BLOCK, one)).toEqual([100, 90, 200, 90, 200, 130, 100, 130]);
+    const three = lineSpan(RULED, { x: 300, y: 112 }, { x: 200, y: 190 })!;
+    const loop = spanOutline(BLOCK, three);
+    expect(loop).toHaveLength(16);
+    expect(loop.slice(0, 4)).toEqual([300, 90, A4.width, 90]);
+    expect(Math.max(...loop.filter((_, i) => i % 2 === 1))).toBe(210);
   });
 });

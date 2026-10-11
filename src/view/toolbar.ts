@@ -205,6 +205,7 @@ export function lassoFilterFor(state: ToolbarState): LassoFilter {
 const LASSO_MODE_LABELS: Record<LassoMode, string> = {
   rect: "Rectangular",
   freehand: "Freehand",
+  lines: "By line",
 };
 
 /** GoodNotes' "What to include in the selection", less what this plugin does not have. */
@@ -2227,7 +2228,12 @@ function lassoGlyph(mode: LassoMode): SVGElement {
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("stroke-dasharray", "4 3.2");
   const shape = activeDocument.createElementNS(SVG_NS, mode === "rect" ? "rect" : "path");
-  if (mode === "rect") {
+  if (mode === "lines") {
+    // The staircase a text selection makes over three lines.
+    shape.setAttribute("d", "M14 7h13v12h-9v6H5V13h9z");
+    shape.setAttribute("fill", "currentColor");
+    shape.setAttribute("fill-opacity", "0.25");
+  } else if (mode === "rect") {
     for (const [key, value] of Object.entries({
       x: "5",
       y: "5",

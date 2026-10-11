@@ -27,14 +27,19 @@ export interface Pt {
   y: number;
 }
 
-/** GoodNotes' two lasso types: drawn freehand (the default), or dragged out as a rectangle. */
-export type LassoMode = "freehand" | "rect";
+/**
+ * GoodNotes' two lasso types, drawn freehand (the default) or dragged out as
+ * a rectangle, and `lines`: on lined paper, dragged from one word to another
+ * as text is selected (Stylus Labs Write's ruled selection, FineNotes#20).
+ */
+export type LassoMode = "freehand" | "rect" | "lines";
 
-export const LASSO_MODES: readonly LassoMode[] = ["freehand", "rect"];
+/** In reverse of the order the lasso popover shows them. */
+export const LASSO_MODES: readonly LassoMode[] = ["lines", "freehand", "rect"];
 
 /** A stored lasso mode, or the default when plugin data holds anything else. */
 export function lassoModeOf(raw: unknown): LassoMode {
-  return raw === "rect" ? "rect" : "freehand";
+  return raw === "rect" || raw === "lines" ? raw : "freehand";
 }
 
 /**

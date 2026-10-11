@@ -854,6 +854,36 @@ describe("ruled erase", () => {
   });
 });
 
+describe("selecting by line", () => {
+  it("takes ink by its line, commas with their words, and pictures and text boxes by their frames", async () => {
+    const { writingLines } = await import("../../src/canvas/backdrop");
+    const { lineSpan } = await import("../../src/canvas/ruled-ink");
+    const p = page("p1", [
+      line("before", 20, 80, 115), // line 2, left of the start
+      line("dolor", 100, 160, 115), // line 2
+      { id: "comma", color: "#000000", size: 2, tool: "pen", pts: [163, 121, 0.5, 161, 133, 0.5] },
+      line("whole", 20, 900, 155), // line 3
+      line("after", 300, 400, 195), // line 4, past the end
+    ]);
+    p.backdrop = { kind: "ruled-wide" };
+    p.images = [{ id: "i1", path: "a.png", x: 30, y: 168, w: 40, h: 30 }]; // line 4, centre 50
+    p.textBoxes = [{ id: "t1", x: 500, y: 92, w: 80, text: "x", color: "#000", fontSize: 16 }];
+    const blocks = writingLines(p.backdrop, p.geometry);
+    let picked: { strokes: Stroke[]; images: unknown[]; textBoxes: unknown[] } | null = null;
+    const surface = surfaceWith({
+      toolState: { tool: "select" },
+      pageAt: () => p,
+      textBoxFrameOf: () => ({ x: 500, y: 92, w: 80, h: 24 }),
+      select: (_id: string, els: typeof picked) => (picked = els),
+    });
+    const span = lineSpan(blocks, { x: 90, y: 112 }, { x: 250, y: 190 });
+    run(surface, "selectOnLines", { index: 0 }, blocks, span);
+    expect(picked!.strokes.map((s) => s.id)).toEqual(["dolor", "comma", "whole"]);
+    expect(picked!.images).toHaveLength(1);
+    expect(picked!.textBoxes).toHaveLength(1);
+  });
+});
+
 describe("partial erase", () => {
   it("cuts a stroke into pieces with fresh ids above every id in the document", () => {
     const w = ink(twoPages());

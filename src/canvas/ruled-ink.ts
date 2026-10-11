@@ -133,3 +133,86 @@ export class RuledEraser {
     return out;
   }
 }
+
+/** One end of a ruled selection: a line, and how far along it. */
+export interface LineMark {
+  line: number;
+  x: number;
+}
+
+/** A ruled selection: from one point to another in one block, as text is selected. */
+export interface LineSpan {
+  block: number;
+  from: LineMark;
+  to: LineMark;
+}
+
+/**
+ * The span from where the pen went down to where it is: the block under the
+ * pen-down (none, when it went down on no line), with the other end held to
+ * that block. Ordered top to bottom, then left to right.
+ */
+export function lineSpan(
+  blocks: readonly LineBlock[],
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): LineSpan | null {
+  const start = lineAt(blocks, a.x, a.y);
+  if (!start) return null;
+  const block = blocks[start.block];
+  const first = lineBand(block, 0).top;
+  const line = Math.min(
+    block.baselines.length - 1,
+    Math.max(0, Math.floor((b.y - first) / block.pitch)),
+  );
+  const x = Math.min(block.x1, Math.max(block.x0, b.x));
+  const p: LineMark = { line: start.line, x: a.x };
+  const q: LineMark = { line, x };
+  const forward = q.line > p.line || (q.line === p.line && q.x >= p.x);
+  return { block: start.block, from: forward ? p : q, to: forward ? q : p };
+}
+
+/** Whether ink on line `ref`, with these bounds, lies in the span: its centre, by line and x. */
+export function inLineSpan(span: LineSpan, ref: LineRef | null, bounds: Bounds): boolean {
+  if (!ref || ref.block !== span.block) return false;
+  if (ref.line < span.from.line || ref.line > span.to.line) return false;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  if (ref.line === span.from.line && cx < span.from.x) return false;
+  if (ref.line === span.to.line && cx > span.to.x) return false;
+  return true;
+}
+
+/**
+ * The outline of a span, as a closed loop of page points `[x, y, …]`: the
+ * staircase a text selection makes, from the first line's start mark to the
+ * block's right edge, down whole lines, and back along the last line to
+ * its end mark.
+ */
+export function spanOutline(block: LineBlock, span: LineSpan): number[] {
+  const top = lineBand(block, span.from.line).top;
+  const firstBottom = lineBand(block, span.from.line).bottom;
+  const lastTop = lineBand(block, span.to.line).top;
+  const bottom = lineBand(block, span.to.line).bottom;
+  const { x0, x1 } = block;
+  if (span.from.line === span.to.line) {
+    return [span.from.x, top, span.to.x, top, span.to.x, bottom, span.from.x, bottom];
+  }
+  return [
+    span.from.x,
+    top,
+    x1,
+    top,
+    x1,
+    lastTop,
+    span.to.x,
+    lastTop,
+    span.to.x,
+    bottom,
+    x0,
+    bottom,
+    x0,
+    firstBottom,
+    span.from.x,
+    firstBottom,
+  ];
+}

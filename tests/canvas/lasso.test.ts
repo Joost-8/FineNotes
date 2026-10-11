@@ -55,6 +55,7 @@ describe("lasso settings", () => {
   it("reads the mode, defaulting to freehand", () => {
     expect(lassoModeOf("rect")).toBe("rect");
     expect(lassoModeOf("freehand")).toBe("freehand");
+    expect(lassoModeOf("lines")).toBe("lines");
     expect(lassoModeOf(undefined)).toBe("freehand");
     expect(lassoModeOf("marquee")).toBe("freehand");
   });
