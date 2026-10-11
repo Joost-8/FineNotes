@@ -1,6 +1,7 @@
 /**
  * `src/view/handwriting-learning.ts`: where the learned model lives, what
- * the settings say about it, and the practice lines it learns from.
+ * the settings say about it, which practice set comes next, and the
+ * practice lines it learns from.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -8,9 +9,17 @@ import { DEFAULT_PAGE_GEOMETRY } from "../../src/model/document";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
-const { learnedModelPath, learnedSummary, readPracticeLines, MIN_PRACTICE_LINES, LEARN_STEPS } =
-  await import("../../src/view/handwriting-learning");
-const { buildPracticeNotebook, PRACTICE_LINES } = await import("../../src/recognition/practice");
+const {
+  learnedModelPath,
+  learnedSummary,
+  readPracticeLines,
+  nextPracticeSet,
+  practiceSetOf,
+  progressLabel,
+  MIN_PRACTICE_LINES,
+  LEARN_STEPS,
+} = await import("../../src/view/handwriting-learning");
+const { buildPracticeFile, PRACTICE_LINES } = await import("../../src/recognition/practice");
 
 describe("the learned model", () => {
   it("lives in the plugin's folder, with the one it replaced beside it", () => {
@@ -42,12 +51,45 @@ describe("the learned model", () => {
   });
 });
 
+describe("practice sets", () => {
+  it("reads a file's set from its name", () => {
+    expect(practiceSetOf("Handwriting practice 2.practice.md")).toBe(2);
+    expect(practiceSetOf("Handwriting practice 2 1.practice.md")).toBe(1);
+    expect(practiceSetOf("Handwriting practice.practice.md")).toBeNull();
+    expect(practiceSetOf("Handwriting practice 7.practice.md")).toBeNull();
+  });
+
+  it("writes the first set not written yet, then the one written least", () => {
+    expect(nextPracticeSet([])).toBe(1);
+    expect(nextPracticeSet([1])).toBe(2);
+    expect(nextPracticeSet([1, 2, null])).toBe(3);
+    expect(nextPracticeSet([1, 2, 3])).toBe(1);
+    expect(nextPracticeSet([1, 2, 3, 1])).toBe(2);
+  });
+});
+
+describe("progress", () => {
+  it("says how far along and how long is left", () => {
+    const started = 1_000_000;
+    expect(progressLabel({ step: 0, steps: 100, startedAt: started }, started + 500)).toBe(
+      "Learning · starting…",
+    );
+    // 25 steps in a minute: 75 to go is about three minutes.
+    expect(progressLabel({ step: 25, steps: 100, startedAt: started }, started + 60_000)).toBe(
+      "Learning · 25 % · about 3 min left",
+    );
+    expect(progressLabel({ step: 99, steps: 100, startedAt: started }, started + 99_000)).toBe(
+      "Learning · 99 % · about 1 min left",
+    );
+  });
+});
+
 describe("readPracticeLines", () => {
   it("reads the open notebook, unsaved ink included", async () => {
-    const doc = buildPracticeNotebook(DEFAULT_PAGE_GEOMETRY);
-    const prompt = doc.pages[0].textBoxes.find((b) => b.id === "practice-1")!;
-    const y = prompt.y + 1.6 * (prompt.h ?? 40);
-    doc.pages[0].strokes = [
+    const doc = buildPracticeFile(1, DEFAULT_PAGE_GEOMETRY);
+    // The first prompt is on rule 3; its copy goes on the line below.
+    const y = 40 * 3 + 20;
+    doc.pages[1].strokes = [
       {
         id: "s1",
         color: "#000",
@@ -58,7 +100,7 @@ describe("readPracticeLines", () => {
       },
     ];
     const host = { openNotebook: () => doc, app: {} } as never;
-    const lines = await readPracticeLines(host, "Handwriting practice.notebook.md");
+    const lines = await readPracticeLines(host, "Handwriting practice 1.practice.md");
     expect(lines).toEqual([
       { text: PRACTICE_LINES[0], strokes: [{ pts: [80, y - 8, 0.5, 300, y + 8, 0.5], t0: 12 }] },
     ]);

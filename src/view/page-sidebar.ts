@@ -178,6 +178,8 @@ export class PageSidebar {
   private open = false;
   /** A single page: no way to add, duplicate or reorder pages. */
   private single = false;
+  /** A practice file: its pages and their paper are fixed; they can only be cleared. */
+  private fixed = false;
   private refreshTimer = 0;
   private paintFrame = 0;
   /** The slide in or out, while it runs. */
@@ -429,8 +431,9 @@ export class PageSidebar {
    * actions — only "Convert to notebook". Follows the document, since one
    * leaf can show a single page and then a notebook.
    */
-  setSingle(single: boolean): void {
-    this.single = single;
+  setSingle(single: boolean, fixed = false): void {
+    this.single = single || fixed;
+    this.fixed = fixed;
     this.applyFilter();
   }
 
@@ -748,6 +751,14 @@ export class PageSidebar {
     const cover = !!backdrop && backdrop.kind !== "pdf" && isCoverRuling(backdrop.kind);
     const act = (action: PageAction) => () => this.callbacks.onPageAction(action, index, anchor);
     const menu = new Menu();
+    if (this.fixed) {
+      // A practice file: rubbing a page out is the one thing to do to it.
+      menu.addItem((item) =>
+        item.setTitle("Clear page").setIcon("x-circle").setWarning(true).onClick(act("clear")),
+      );
+      menu.showAtMouseEvent(event);
+      return;
+    }
     const marked = this.doc?.pages[index]?.bookmarked === true;
     menu.addItem((item) =>
       item

@@ -251,7 +251,16 @@ describe("a drawing pointer", () => {
     const rig = new Rig();
     rig.pen("pointerdown", 7, { x: 1, y: 2, t: 3, pressure: 0.25, tiltX: -5, tiltY: 6 });
     rig.pen("pointermove", 7, { x: 2, y: 3, t: 4, coalesced: [{ x: 2, y: 3 }] });
-    expect(rig.samples[0]).toEqual({ x: 1001, y: 2002, pressure: 0.25, tiltX: -5, tiltY: 6 });
+    expect(rig.samples[0]).toEqual({
+      x: 1001,
+      y: 2002,
+      pressure: 0.25,
+      tiltX: -5,
+      tiltY: 6,
+      // The event's time and pointer kind: a practice file records both.
+      t: 3,
+      pointerType: "pen",
+    });
     expect(rig.records).toEqual([
       {
         type: "down",

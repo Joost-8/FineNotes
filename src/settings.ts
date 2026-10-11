@@ -9,8 +9,9 @@
  */
 
 import {
-  learnHandwriting,
   learnedSummary,
+  practiceFiles,
+  progressLabel,
   resetLearnedModel,
   writePracticePage,
 } from "./view/handwriting-learning";
@@ -565,19 +566,60 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * what is typed to its range without a word, and the user should see why
    * 5000 did not take.
    */
-  /** The practice page, learning from it, and going back to the built-in model. */
+  /**
+   * Practice files, learning from them, and going back to the built-in
+   * model. While a run is on, Learn now shows its progress, filling up as
+   * a bar, and Stop ends it; closing the settings leaves it running.
+   */
   private drawLearning(setting: Setting): void {
     const host = this.plugin.learningHost();
+    const learner = this.plugin.learner;
+    const files = practiceFiles(host).length;
     setting.addButton((b) =>
-      b.setButtonText("Write practice page").onClick(() => void writePracticePage(host)),
+      b
+        .setButtonText(files > 0 ? "Write another practice set" : "Write practice page")
+        .onClick(() => void writePracticePage(host)),
     );
-    if (this.plugin.settings.practiceNotebookPath) {
-      setting.addButton((b) =>
-        b
-          .setButtonText("Learn now")
-          .setCta()
-          .onClick(() => void learnHandwriting(host)),
-      );
+    if (files > 0 || learner.progress) {
+      setting.addButton((learn) => {
+        learn.buttonEl.addClass("goodobsidian-learn-button");
+        learn.setCta().onClick(() => void learner.start());
+        const stop = setting.controlEl.createEl("button", {
+          text: "Stop",
+          cls: "goodobsidian-learn-stop",
+        });
+        const show = (): void => {
+          const progress = learner.progress;
+          learn.setDisabled(progress !== null);
+          learn.setButtonText(progress ? progressLabel(progress, Date.now()) : "Learn now");
+          learn.buttonEl.setCssProps({
+            "--gob-learn-progress": progress
+              ? `${Math.round((100 * progress.step) / progress.steps)}%`
+              : "0%",
+          });
+          learn.buttonEl.toggleClass("is-learning", progress !== null);
+          stop.toggleClass("is-hidden", progress === null);
+        };
+        stop.addEventListener("click", () => learner.stop());
+        let running = learner.progress !== null;
+        const unsubscribe = learner.subscribe(() => {
+          // The tab was closed or redrawn: this row is gone.
+          if (!learn.buttonEl.isConnected) {
+            unsubscribe();
+            return;
+          }
+          const now = learner.progress !== null;
+          // A run ended: the summary and the buttons change with it.
+          if (running && !now) {
+            unsubscribe();
+            this.update();
+            return;
+          }
+          running = now;
+          show();
+        });
+        show();
+      });
     }
     if (this.plugin.settings.handwritingModel) {
       setting.addButton((b) =>

@@ -33,6 +33,7 @@ import type {
   Backdrop,
   CoverRuling,
   PageGeometry,
+  PrintedText,
   Ruling,
   SyntheticBackdrop,
 } from "../model/document";
@@ -1332,6 +1333,29 @@ export function drawSynthetic(
 ): void {
   fillPaper(ctx, geometry, theme, backdrop.paperColor);
   drawSyntheticRules(ctx, backdrop, geometry, theme, weight);
+  if (backdrop.printed?.length) drawPrinted(ctx, backdrop.printed);
+}
+
+/** Printed text's colour when it names none: the grey of a printed prompt. */
+export const PRINTED_COLOR = "#7a7a7a";
+/**
+ * The printed text's typeface. A canvas font is a CSS shorthand that cannot
+ * read a CSS variable (ledger), so it names real families: the system's.
+ */
+const PRINTED_FONT =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+/** Text printed on the paper, one line each, from its baseline. */
+function drawPrinted(ctx: CanvasRenderingContext2D, lines: readonly PrintedText[]): void {
+  ctx.save();
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  for (const line of lines) {
+    ctx.font = `${line.bold ? "600 " : ""}${line.size}px ${PRINTED_FONT}`;
+    ctx.fillStyle = line.color ?? PRINTED_COLOR;
+    ctx.fillText(line.text, line.x, line.y);
+  }
+  ctx.restore();
 }
 
 /**

@@ -135,3 +135,26 @@ describe("StrokeBuilder: the pressure a stroke starts at, and rewrites (2026-09-
     expect(fresh.revision).toBe(0);
   });
 });
+
+describe("StrokeBuilder: recording a practice file's raw samples", () => {
+  it("keeps every sample as it came, with ms from the first", () => {
+    const b = new StrokeBuilder({ record: true, smoothing: "centred", densify: true });
+    b.add({ x: 10, y: 10, pressure: 0.3, t: 1000 });
+    // Too close to be kept as a point, but recorded all the same.
+    b.add({ x: 10.2, y: 10, pressure: 0.31, t: 1008 });
+    b.add({ x: 30, y: 12, pressure: 0, t: 1016 });
+    b.add({ x: 40, y: 14, pressure: 0.4 });
+    b.addFinal({ x: 50, y: 16, pressure: 0.2, t: 1030 });
+    expect(b.recorded()).toEqual([
+      10, 10, 0.3, 0, 10.2, 10, 0.31, 8, 30, 12, 0, 16,
+      // No time stamp: the one before it.
+      40, 14, 0.4, 16, 50, 16, 0.2, 30,
+    ]);
+  });
+
+  it("records nothing unless asked", () => {
+    const b = new StrokeBuilder();
+    b.add({ x: 10, y: 10, pressure: 0.3, t: 1000 });
+    expect(b.recorded()).toBeNull();
+  });
+});

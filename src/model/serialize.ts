@@ -43,6 +43,8 @@ import {
   type InkLink,
   type PageGeometry,
   type Recording,
+  type PracticeInfo,
+  type PrintedText,
   type Ruling,
   type ShapeKind,
   type Stroke,
@@ -52,6 +54,7 @@ import {
   type ViewState,
   POINT_STRIDE,
   RULINGS,
+  SAMPLE_STRIDE,
   SHAPE_KINDS,
   TEXT_ALIGNS,
   TEXT_FONTS,
@@ -135,6 +138,7 @@ interface StoredStroke {
   pts: number[];
   shape?: string;
   t0?: number;
+  samples?: number[];
 }
 
 interface StoredPage {
@@ -158,6 +162,7 @@ interface StoredMeta {
   single?: boolean;
   folders?: AttachmentFolders;
   scroll?: "horizontal";
+  practice?: PracticeInfo;
 }
 
 interface StoredDocument {
@@ -188,7 +193,45 @@ function storeStroke(stroke: Stroke): StoredStroke {
     // Absent means "unknown", which is not the same as 0 (ledger: clamping
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
+    samples: stroke.samples?.length ? quantizeSamples(stroke.samples) : undefined,
   };
+}
+
+/** Steps per unit a sample's pressure is stored in. */
+const SAMPLE_PRESSURE_STEPS = 1000;
+
+/**
+ * Raw samples as integers: x and y in hundredths of a page px, pressure in
+ * thousandths, time in whole ms. Only whole samples are kept.
+ */
+function quantizeSamples(samples: readonly number[]): number[] {
+  const usable = samples.length - (samples.length % SAMPLE_STRIDE);
+  const out: number[] = [];
+  for (let i = 0; i < usable; i += SAMPLE_STRIDE) {
+    out.push(
+      Math.round(finiteOrZero(samples[i]) * COORD_STEPS),
+      Math.round(finiteOrZero(samples[i + 1]) * COORD_STEPS),
+      Math.round(Math.min(1, Math.max(0, finiteOrZero(samples[i + 2]))) * SAMPLE_PRESSURE_STEPS),
+      Math.round(finiteOrZero(samples[i + 3])),
+    );
+  }
+  return out;
+}
+
+/** Stored samples back to page px; a bad value becomes 0, so the rest stay aligned. */
+function readSamples(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw) || raw.length < SAMPLE_STRIDE) return undefined;
+  const usable = raw.length - (raw.length % SAMPLE_STRIDE);
+  const out: number[] = [];
+  for (let i = 0; i < usable; i += SAMPLE_STRIDE) {
+    out.push(
+      finiteOrZero(raw[i]) / COORD_STEPS,
+      finiteOrZero(raw[i + 1]) / COORD_STEPS,
+      finiteOrZero(raw[i + 2]) / SAMPLE_PRESSURE_STEPS,
+      finiteOrZero(raw[i + 3]),
+    );
+  }
+  return out;
 }
 
 /**
@@ -219,6 +262,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     single: doc.single === true ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
+    practice: normalizePractice(doc.practice),
   };
   return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
@@ -348,7 +392,45 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   const shape = asShape(raw.shape);
   if (shape) stroke.shape = shape;
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
+  const samples = readSamples(raw.samples);
+  if (samples) stroke.samples = samples;
   return stroke;
+}
+
+/** A practice file's info, or undefined when there is none worth keeping. */
+function normalizePractice(raw: unknown): PracticeInfo | undefined {
+  if (!isRecord(raw)) return undefined;
+  const set = typeof raw.set === "number" && Number.isInteger(raw.set) && raw.set > 0 ? raw.set : 0;
+  if (!set) return undefined;
+  return {
+    format: typeof raw.format === "number" && raw.format > 0 ? Math.round(raw.format) : 1,
+    set,
+    ...(typeof raw.device === "string" && raw.device ? { device: raw.device } : {}),
+    ...(typeof raw.input === "string" && raw.input ? { input: raw.input } : {}),
+  };
+}
+
+/** Printed lines, each kept only when it has text and a place. */
+function normalizePrinted(raw: unknown): PrintedText[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PrintedText[] = [];
+  for (const item of raw) {
+    if (!isRecord(item) || typeof item.text !== "string") continue;
+    const x = num(item.x, Number.NaN);
+    const y = num(item.y, Number.NaN);
+    const size = num(item.size, Number.NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !(size > 0)) continue;
+    out.push({
+      x,
+      y,
+      text: item.text,
+      size,
+      ...(item.bold === true ? { bold: true } : {}),
+      ...(typeof item.color === "string" ? { color: item.color } : {}),
+      ...(typeof item.prompt === "string" && item.prompt ? { prompt: item.prompt } : {}),
+    });
+  }
+  return out;
 }
 
 function readStrokes(raw: unknown): Stroke[] {
@@ -387,11 +469,13 @@ function normalizeBackdrop(raw: unknown): Backdrop {
     return { kind: "blank" };
   }
   if (typeof b.kind === "string" && (RULINGS as readonly string[]).includes(b.kind)) {
+    const printed = normalizePrinted(b.printed);
     return {
       kind: b.kind as Ruling,
       ...(typeof b.spacing === "number" && b.spacing > 0 ? { spacing: b.spacing } : {}),
       ...(typeof b.color === "string" ? { color: b.color } : {}),
       ...(typeof b.paperColor === "string" ? { paperColor: b.paperColor } : {}),
+      ...(printed.length > 0 ? { printed } : {}),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.
@@ -642,6 +726,8 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
+  const practice = normalizePractice(meta.practice);
+  if (practice) doc.practice = practice;
   return doc;
 }
 

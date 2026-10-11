@@ -38,6 +38,8 @@ export interface MorePanelPage {
   cover: boolean;
   /** A single page cannot be duplicated or deleted. */
   single: boolean;
+  /** A practice file: its pages are fixed, so only going to a page and clearing one are offered. */
+  fixed?: boolean;
   /** Whether there is ink to clear. */
   clearable: boolean;
 }
@@ -110,6 +112,17 @@ export class MorePanel {
     const thumb = head.createEl("canvas", { cls: "goodobsidian-more-thumb" });
     actions.paintThumbnail(thumb, page.index, THUMB_WIDTH);
 
+    if (page.fixed) {
+      if (page.total > 1) this.goToRow(card);
+      this.row(card, {
+        icon: "x-circle",
+        text: "Clear page",
+        cls: "is-danger",
+        enabled: page.clearable,
+        run: () => actions.clear(page.index),
+      });
+      return;
+    }
     this.row(card, {
       icon: page.bookmarked ? "bookmark-minus" : "bookmark",
       text: page.bookmarked ? "Remove bookmark" : "Bookmark page",

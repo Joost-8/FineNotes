@@ -56,7 +56,6 @@ import type { EraserMode } from "./view/toolbar";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
 import {
-  DEFAULT_NOTEBOOK_CHOICES,
   type NotebookChoices,
   buildNewDocument,
   buildPdfNotebook,
@@ -68,6 +67,7 @@ import {
   parseNotebookChoices,
   stripInkSuffix,
   targetFolder,
+  uniqueFileName,
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
 import { FileMoveTracker } from "./view/file-moves";
@@ -78,12 +78,14 @@ import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { HandwritingReader } from "./view/handwriting";
 import {
+  HandwritingLearner,
   type LearningHost,
-  learnHandwriting,
   learnedModelPath,
   writePracticePage,
 } from "./view/handwriting-learning";
-import { isPracticeNotebook } from "./recognition/practice";
+import { buildPracticeFile } from "./recognition/practice";
+import { PRACTICE_FILE_SUFFIX } from "./constants";
+import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
@@ -144,6 +146,9 @@ export default class GoodObsidianPlugin extends Plugin {
     learnedPath: this.settings.handwritingModel ? learnedModelPath(this.pluginDir) : "",
   }));
 
+  /** Learning the user's handwriting, in the background; one run at a time. */
+  readonly learner = new HandwritingLearner(() => this.learningHost());
+
   /** This plugin's folder in the vault. */
   get pluginDir(): string {
     return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
@@ -156,13 +161,7 @@ export default class GoodObsidianPlugin extends Plugin {
       pluginDir: this.pluginDir,
       settings: this.settings,
       saveSettings: () => this.saveSettings(),
-      createNotebook: (title, build) =>
-        this.createNotebook(
-          title,
-          { ...DEFAULT_NOTEBOOK_CHOICES, cover: "none", ruling: "ruled-wide" },
-          undefined,
-          () => build(),
-        ),
+      createPracticeFile: (set) => this.createPracticeFile(set),
       reloadReader: () => this.handwriting.dispose(),
       openNotebook: (path) => {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_INK)) {
@@ -261,6 +260,11 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => this.fileMoves.renamed(file, oldPath)),
     );
     this.register(() => this.fileMoves.destroy());
+    // The reader's and the learner's workers end with the plugin.
+    this.register(() => {
+      this.learner.dispose();
+      this.handwriting.dispose();
+    });
 
     this.register(() => this.explorerNotebookButton.destroy());
     this.registerEvent(
@@ -347,15 +351,14 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.addCommand({
       id: "write-handwriting-practice",
-      name: "Write a handwriting practice page",
+      name: "Write a handwriting practice set",
       callback: () => void writePracticePage(this.learningHost()),
     });
-    this.notebookCommand(
-      "learn-handwriting",
-      "Learn my handwriting from this practice notebook",
-      (view) => learnHandwriting(this.learningHost(), view.file?.path),
-      (view) => isPracticeNotebook(view.document),
-    );
+    this.addCommand({
+      id: "learn-handwriting",
+      name: "Learn my handwriting from the practice files",
+      callback: () => void this.learner.start(),
+    });
     this.notebookCommand(
       "read-handwriting-on-device",
       "Show this page read on this device",
@@ -1074,6 +1077,34 @@ export default class GoodObsidianPlugin extends Plugin {
       return file;
     } catch (error) {
       new Notice(`FineNotes: could not create the notebook — ${errorMessage(error)}`, 8000);
+      return null;
+    }
+  }
+
+  /**
+   * Practice set `set` as a new `.practice.md` file in the new-notebook
+   * folder, opened at its cover.
+   */
+  async createPracticeFile(set: number): Promise<TFile | null> {
+    const dir = normalizeFolder(this.newNotebookFolder());
+    try {
+      if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
+      const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
+      const taken = new Set(parent?.children.map((child) => child.name) ?? []);
+      const base = `Handwriting practice ${set}`;
+      const name = uniqueFileName(base, PRACTICE_FILE_SUFFIX, taken);
+      const geometry = { ...DEFAULT_PAGE_GEOMETRY, width: this.settings.paperWidth };
+      const content = buildInkFile(
+        newNoteBody(stripInkSuffix(name), new Date().toISOString()),
+        buildPracticeFile(set, geometry),
+      );
+      const file = await this.app.vault.create(normalizePath(joinVaultPath(dir, name)), content);
+      const tab = this.app.workspace.getLeaf(false);
+      await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+      await this.app.workspace.revealLeaf(tab);
+      return file;
+    } catch (error) {
+      new Notice(`FineNotes: could not create the practice file — ${errorMessage(error)}`, 8000);
       return null;
     }
   }

@@ -210,6 +210,16 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
   };
 }
 
+/** What this device is, for a practice file's training data: "ipad", "android", "mac"… */
+function deviceKind(): string {
+  if (Platform.isIosApp) return Platform.isTablet ? "ipad" : "iphone";
+  if (Platform.isAndroidApp) return Platform.isTablet ? "android-tablet" : "android";
+  if (Platform.isMacOS) return "mac";
+  if (Platform.isWin) return "windows";
+  if (Platform.isLinux) return "linux";
+  return "unknown";
+}
+
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
   private doc: InkDocument;
@@ -1605,6 +1615,11 @@ export class InkView extends TextFileView {
     return this.doc.single === true;
   }
 
+  /** A handwriting practice file: kept to writing, its pages and paper fixed. */
+  get isPractice(): boolean {
+    return this.doc.practice !== undefined;
+  }
+
   /**
    * Make the chrome match the document: a single page shows no "Add page"
    * in the toolbar or the page panel. Called whenever the document is
@@ -1613,14 +1628,25 @@ export class InkView extends TextFileView {
    */
   private syncSingle(): void {
     const single = this.isSinglePage;
-    this.toolbar?.setAddPageVisible(!single);
+    const practice = this.isPractice;
+    this.toolbar?.setAddPageVisible(!single && !practice);
     // A single page takes no more pages, and a protected note takes no edits.
-    this.surface?.setPullToAddPage(!single && !this.guard.locked);
-    this.sidebar?.setSingle(single);
-    if (single) {
+    this.surface?.setPullToAddPage(!single && !practice && !this.guard.locked);
+    this.sidebar?.setSingle(single, practice);
+    // A practice file has the pen and the eraser, and nothing else.
+    this.toolbar?.setPractice(practice);
+    this.surface?.setPractice(practice ? deviceKind() : null);
+    if (single || practice) {
       this.addPagePopover?.popover.close();
       this.addPagePopover = null;
     }
+  }
+
+  /** A practice file says no to anything but writing; true when it did. */
+  private refusePractice(): boolean {
+    if (!this.isPractice) return false;
+    new Notice("A practice file is for copying its lines: pen and eraser only.");
+    return true;
   }
 
   /** "Convert to notebook": the single page becomes a notebook that takes more pages. Undoable. */
@@ -1637,6 +1663,10 @@ export class InkView extends TextFileView {
    * a single page, so this only speaks up if something reached one anyway.
    */
   private refuseSinglePage(): boolean {
+    if (this.isPractice) {
+      new Notice("A practice file keeps its pages as they are.");
+      return true;
+    }
     if (!this.isSinglePage) return false;
     new Notice("This is a single page. Convert it to a notebook to add pages.");
     return true;
@@ -1945,6 +1975,7 @@ export class InkView extends TextFileView {
         titled: page.title !== undefined,
         cover: page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind),
         single: this.isSinglePage,
+        fixed: this.isPractice,
         clearable: page.strokes.length > 0,
       },
       {
@@ -1998,7 +2029,7 @@ export class InkView extends TextFileView {
 
   /** The full template picker, to add a page or to change page `ref`'s template. */
   private openTemplatePicker(mode: "add" | "change", ref: number, position: InsertPosition): void {
-    if (this.isProtected()) return;
+    if (this.isProtected() || this.refusePractice()) return;
     if (mode === "add" && this.refuseSinglePage()) return;
     const page = this.doc.pages[ref];
     if (!page) return;
@@ -2237,7 +2268,7 @@ export class InkView extends TextFileView {
 
   /** Import an unchanged PDF attachment or reference an existing vault PDF. */
   importPdf(fromVault = false): void {
-    if (this.isProtected() || !this.file || !this.surface) return;
+    if (this.isProtected() || !this.file || !this.surface || this.refusePractice()) return;
     if (this.isSinglePage) {
       new Notice("Convert this single page to a notebook before importing a PDF.");
       return;
@@ -2259,7 +2290,8 @@ export class InkView extends TextFileView {
 
   private async handleFileDrop(event: DragEvent): Promise<void> {
     const transfer = event.dataTransfer;
-    if (!transfer) return;
+    // A practice file takes handwriting only.
+    if (!transfer || this.isPractice) return;
     const isPdf = (file: File) =>
       normalizeMime(file.type) === "application/pdf" || /\.pdf$/i.test(file.name);
     const files = Array.from(transfer.files).filter(
@@ -2344,7 +2376,7 @@ export class InkView extends TextFileView {
    * Take photo / Choose buttons are a fresh tap.
    */
   scanDocument(): void {
-    if (this.isProtected() || !this.file || !this.surface) return;
+    if (this.isProtected() || !this.file || !this.surface || this.refusePractice()) return;
     const sheet = new ScanSheet(this.app, {
       multiPage: !this.isSinglePage,
       insert: (scans) => this.insertScans(scans),

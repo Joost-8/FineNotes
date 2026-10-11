@@ -753,6 +753,11 @@ interface GroupDrag {
   lifted: boolean;
 }
 
+/** The tools a practice file has: writing and rubbing out. */
+function isPracticeTool(tool: ActiveTool): boolean {
+  return tool === "pen" || tool === "eraser";
+}
+
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
   private readonly scrollEl: HTMLElement;
@@ -883,6 +888,14 @@ export class InkSurface {
 
   /** The pen stroke being drawn, from pen-down to lift. */
   private builder: StrokeBuilder | null = null;
+  /**
+   * A practice file: only the pen and the eraser, no snapping, no pictures,
+   * and every stroke keeps its raw samples. `device` is what it is written
+   * on, recorded in the file with the kind of pointer.
+   */
+  private practice: { device: string } | null = null;
+  /** The kind of pointer the open stroke is drawn with. */
+  private strokeInput = "";
   /** Page the current gesture belongs to; a gesture never changes page. */
   private activePage: PageBox | null = null;
   /**
@@ -1815,7 +1828,21 @@ export class InkSurface {
     this.callbacks.onAddPageRequested?.(this.pageIndex);
   }
 
+  /**
+   * Keep this surface to writing (a practice file), or let it go back to
+   * everything. `device` names what it is written on, for the file.
+   */
+  setPractice(device: string | null): void {
+    this.practice = device === null ? null : { device };
+    if (this.practice && !isPracticeTool(this.toolState.tool)) {
+      this.setTool("pen");
+      this.callbacks.onToolChange?.("pen");
+    }
+  }
+
   setTool(tool: ActiveTool): void {
+    // A practice file has the pen and the eraser only.
+    if (this.practice && !isPracticeTool(tool)) tool = "pen";
     // The toolbar shares `toolState` and has already written the new tool
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
@@ -1980,6 +2007,7 @@ export class InkSurface {
         this.callbacks.returnToPenOnReselect?.() === true,
         this.drawingTool,
       );
+      if (this.practice && !isPracticeTool(tool)) return;
       this.setTool(tool);
       this.callbacks.onToolChange?.(tool);
       return;
@@ -3280,6 +3308,8 @@ export class InkSurface {
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
       smoothing,
+      // A practice file is training data: keep the pen's samples as they came.
+      record: this.practice !== null,
     };
   }
 
@@ -3638,6 +3668,7 @@ export class InkSurface {
     const resumed = this.resumeLifted(box, at);
     const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
+    this.strokeInput = sample.pointerType ?? "";
     this.builder = builder;
     this.snap = null;
     this.diagHold = { fired: false, verdict: "" };
@@ -3807,6 +3838,8 @@ export class InkSurface {
 
   /** The Shape tool always snaps on a hold; the pens only with the setting on. */
   private holdToSnapEnabled(): boolean {
+    // A practice file is handwriting only.
+    if (this.practice) return false;
     const tool = this.toolState.tool;
     if (tool === "shape") return true;
     return (tool === "pen" || tool === "highlighter") && this.toolState.shapeSnapEnabled !== false;
@@ -4241,6 +4274,7 @@ export class InkSurface {
     const snapOnLift =
       this.toolState.tool === "shape" ||
       (this.toolState.penAutoShape === true &&
+        !this.practice &&
         (this.toolState.tool === "pen" || this.toolState.tool === "highlighter"));
     let shape: { kind: ShapeKind; pts: number[] } | null = snap;
     if (!shape && (heldLongEnough || snapOnLift)) {
@@ -4262,6 +4296,7 @@ export class InkSurface {
 
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
     const { color, size, tool } = this.currentStyle();
+    const samples = builder.recorded();
     const stroke: Stroke = {
       id: this.strokeIds.next(),
       color,
@@ -4269,7 +4304,9 @@ export class InkSurface {
       tool,
       pts: shape ? shape.pts : builder.points(),
       ...(shape ? { shape: shape.kind } : {}),
+      ...(samples ? { samples } : {}),
     };
+    this.notePracticeInput();
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
     this.noteOffPage(box, stroke, command);
@@ -4753,7 +4790,7 @@ export class InkSurface {
    */
   private noteCircleLoop(page: Page, stroke: Stroke, command: Command): void {
     this.circleLoop = null;
-    if (!penGesturesOf(this.toolState.penGestures).circleLasso) return;
+    if (!penGesturesOf(this.toolState.penGestures).circleLasso || this.practice) return;
     if (this.toolState.tool !== "pen" || stroke.tool !== "pen") return;
     const loop = gestureLoopOf(stroke.pts, this.atFitZoom(SNAP_CLOSE_TOLERANCE));
     if (!loop) return;
@@ -4793,7 +4830,7 @@ export class InkSurface {
     const candidate = this.circleLoop;
     const page = this.pageAt(box.index);
     if (!candidate || !page || page.id !== candidate.pageId) return;
-    if (!penGesturesOf(this.toolState.penGestures).circleLasso) return;
+    if (!penGesturesOf(this.toolState.penGestures).circleLasso || this.practice) return;
     // Only while the loop is still the latest step: taking it back must undo nothing else.
     if (!this.history.isLatest(candidate.command)) {
       this.circleLoop = null;
@@ -5924,7 +5961,7 @@ export class InkSurface {
       event.preventDefault();
       return true;
     }
-    const onImage = this.imagesShown ? this.callbacks.onPasteImage : undefined;
+    const onImage = this.imagesShown && !this.practice ? this.callbacks.onPasteImage : undefined;
     const file = onImage ? imageFileOf(event.clipboardData) : null;
     const systemFirst =
       file !== null && (clipboard.leftSinceCopy || !clipboard.canPaste(this.imagesShown));
@@ -6022,6 +6059,17 @@ export class InkSurface {
       this.spaceHandleEls[i].addClass("is-hidden");
     }
     this.spaceHandlesEl.toggleClass("is-hidden", used === 0);
+  }
+
+  /**
+   * A practice file says what it was written on: the device, once, and the
+   * kind of pointer of the latest stroke (training leaves out mouse ink).
+   */
+  private notePracticeInput(): void {
+    const info = this.doc.practice;
+    if (!this.practice || !info) return;
+    info.device ??= this.practice.device;
+    if (this.strokeInput) info.input = this.strokeInput;
   }
 
   /** The lasso's type changed (the toolbar wrote it into the tool state): its page marks follow. */

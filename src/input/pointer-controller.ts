@@ -36,6 +36,10 @@ export interface PointerSample {
   pressure: number;
   tiltX: number;
   tiltY: number;
+  /** The event's time stamp, ms (the page's clock). */
+  t?: number;
+  /** "pen", "mouse" or "touch". */
+  pointerType?: string;
 }
 
 export type PointerDebugType = "down" | "move" | "up" | "cancel";
@@ -245,7 +249,15 @@ export class PointerController {
   private sample(event: PointerEvent): PointerSample {
     const at = this.toLocal(event.clientX, event.clientY);
     const { pressure, tiltX, tiltY } = event;
-    return { x: at.x, y: at.y, pressure, tiltX, tiltY };
+    return {
+      x: at.x,
+      y: at.y,
+      pressure,
+      tiltX,
+      tiltY,
+      t: event.timeStamp,
+      pointerType: event.pointerType,
+    };
   }
 
   /** One position with a fraction is enough: this device's pen does not round. */

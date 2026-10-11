@@ -5648,3 +5648,22 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
     animation: none;
   }
 }
+
+/*
+ * Settings → Handwriting → Learn now, while a run is on: the button fills
+ * from the left as it goes (--gob-learn-progress), and Stop shows beside it.
+ */
+button.goodobsidian-learn-button.is-learning {
+  background: linear-gradient(
+    to right,
+    hsla(var(--interactive-accent-hsl), 0.45) var(--gob-learn-progress, 0%),
+    var(--interactive-normal) var(--gob-learn-progress, 0%)
+  );
+  color: var(--text-normal);
+  cursor: default;
+  opacity: 1;
+}
+
+button.goodobsidian-learn-stop.is-hidden {
+  display: none;
+}

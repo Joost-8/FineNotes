@@ -74,7 +74,17 @@ export interface Stroke {
    * erasing and lasso need no special case. See contracts/api.md §2.
    */
   shape?: ShapeKind;
+  /**
+   * The pen's samples as it reported them, before any smoothing or filling
+   * in: x, y, pressure (0 when the device gave no reading), milliseconds
+   * since the stroke's first sample, and so on. Kept only in practice files,
+   * where the ink is training data for the handwriting reader.
+   */
+  samples?: number[];
 }
+
+/** Values per entry of {@link Stroke.samples}: x, y, pressure, time. */
+export const SAMPLE_STRIDE = 4;
 
 /** A page's intrinsic coordinate space, in CSS px. Never viewport-derived. */
 export interface PageGeometry {
@@ -211,6 +221,30 @@ export interface SyntheticBackdrop {
    * Paper" from "Yellow Paper". Default white.
    */
   paperColor?: string;
+  /**
+   * Text printed on the paper: the practice file's cover and its prompts.
+   * Part of the template, drawn with it, so it can be neither edited, moved
+   * nor erased, and it is never read as a link.
+   */
+  printed?: PrintedText[];
+}
+
+/** One line of text printed on the paper. */
+export interface PrintedText {
+  /** Where the line's text starts, and its baseline, page px. */
+  x: number;
+  y: number;
+  text: string;
+  /** Font size, page px. */
+  size: number;
+  bold?: boolean;
+  /** Hex; default a muted grey. */
+  color?: string;
+  /**
+   * Set on a practice prompt: its id. The writing line below it holds the
+   * user's copy of `text`, which is that line's label for training.
+   */
+  prompt?: string;
 }
 
 /** A page of a PDF in the vault. The source file is never modified. */
@@ -412,9 +446,26 @@ export interface ViewState {
   scale: number;
 }
 
+/**
+ * A handwriting practice file: what it is, so the view can keep it to
+ * writing, and so the file alone says how to read it as training data.
+ */
+export interface PracticeInfo {
+  /** The layout's version, for whoever reads the file as training data. */
+  format: number;
+  /** Which set of lines it has (1-based). */
+  set: number;
+  /** What it was written on, filled in at the first stroke: "ipad", "android", "desktop"… */
+  device?: string;
+  /** How: "pen", "mouse" or "touch", from the last stroke written. */
+  input?: string;
+}
+
 export interface InkDocument {
   version: number;
   view: ViewState;
+  /** Set on a handwriting practice file. */
+  practice?: PracticeInfo;
   /** Always at least one page. */
   pages: Page[];
   /**

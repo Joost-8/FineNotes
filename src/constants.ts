@@ -25,9 +25,12 @@ export const PREVIOUS_PLUGIN_ID = "goodobsidian";
 export const NOTEBOOK_FILE_SUFFIX = ".notebook.md";
 export const SINGLE_PAGE_FILE_SUFFIX = ".page.md";
 export const LEGACY_INK_FILE_SUFFIX = ".ink.md";
+/** A handwriting practice file: an ink note kept to writing, and training data. */
+export const PRACTICE_FILE_SUFFIX = ".practice.md";
 export const INK_FILE_SUFFIXES: readonly string[] = [
   NOTEBOOK_FILE_SUFFIX,
   SINGLE_PAGE_FILE_SUFFIX,
+  PRACTICE_FILE_SUFFIX,
   LEGACY_INK_FILE_SUFFIX,
 ];
 

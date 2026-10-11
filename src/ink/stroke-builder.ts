@@ -15,6 +15,8 @@ export interface InputSample {
   y: number;
   /** The pointer's pressure, 0..1. A 0 means the device gave no reading. */
   pressure: number;
+  /** When it was sampled, ms; needed only when the builder records samples. */
+  t?: number;
 }
 
 /**
@@ -39,6 +41,11 @@ export interface StrokeBuilderOptions {
   densify?: boolean;
   /** How the positions are smoothed first; `"off"` by default. */
   smoothing?: Smoothing;
+  /**
+   * Keep every sample offered as it came, with its time ({@link recorded}):
+   * a practice file's training data. Off by default.
+   */
+  record?: boolean;
 }
 
 const DEFAULTS: StrokeBuilderOptions = {
@@ -127,6 +134,8 @@ export class StrokeBuilder {
   private lastReading = Number.NaN;
   /** Counts the times points already kept were rewritten (see {@link revision}). */
   private rewrites = 0;
+  /** Recording: x, y, pressure, t of every sample offered, as offered. */
+  private readonly raw: number[] = [];
 
   constructor(overrides: Partial<StrokeBuilderOptions> = {}) {
     this.options = { ...DEFAULTS, ...overrides };
@@ -134,12 +143,37 @@ export class StrokeBuilder {
 
   /** Offer a sample; true if it was kept. */
   add(next: InputSample): boolean {
+    this.recordSample(next);
     return this.offer(next, false);
   }
 
   /** Keep the pen-up sample, however close it is to the last point. Always true. */
   addFinal(last: InputSample): boolean {
+    this.recordSample(last);
     return this.offer(last, true);
+  }
+
+  private recordSample(sample: InputSample): void {
+    if (!this.options.record) return;
+    this.raw.push(sample.x, sample.y, sample.pressure, sample.t ?? Number.NaN);
+  }
+
+  /**
+   * Recording: every sample offered, `[x, y, pressure, t, …]`, with t in ms
+   * from the first sample; a sample without a time stamp gets the one before
+   * it. Null when not recording or nothing came.
+   */
+  recorded(): number[] | null {
+    if (!this.options.record || this.raw.length === 0) return null;
+    const out = this.raw.slice();
+    const start = Number.isFinite(out[3]) ? out[3] : 0;
+    let previous = 0;
+    for (let i = 3; i < out.length; i += 4) {
+      const t = Number.isFinite(out[i]) ? Math.max(previous, out[i] - start) : previous;
+      out[i] = t;
+      previous = t;
+    }
+    return out;
   }
 
   /** How many points have been kept (a sample still provisional counts as one). */

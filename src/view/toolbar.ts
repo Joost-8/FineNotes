@@ -424,6 +424,10 @@ export class Toolbar {
   private recordButton: HTMLButtonElement | null = null;
   /** The add-page button. */
   private addPageButton: HTMLButtonElement | null = null;
+  /** Bar buttons a practice file hides: everything but the pen, the eraser and the page's own. */
+  private beyondWriting: HTMLElement[] = [];
+  /** A practice file: only what writing needs ({@link setPractice}). */
+  private practice = false;
   private undoButton: HTMLButtonElement | null = null;
   private redoButton: HTMLButtonElement | null = null;
   /** Width of a panel docked at the host's left edge; the pill stays clear of it. */
@@ -552,8 +556,13 @@ export class Toolbar {
       "Page thumbnails",
       cb.onToggleThumbnails,
     );
-    this.barButton(left, "search", "Search this notebook", cb.onSearch);
-    this.barButton(left, "sparkles", "AI", cb.onAi);
+    const beyond: HTMLElement[] = [];
+    this.beyondWriting = beyond;
+    const keep = (button: HTMLElement): void => {
+      beyond.push(button);
+    };
+    keep(this.barButton(left, "search", "Search this notebook", cb.onSearch));
+    keep(this.barButton(left, "sparkles", "AI", cb.onAi));
 
     const history = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-centre" });
     this.undoButton = this.barButton(history, "undo-2", "Undo (Cmd/Ctrl+Z)", () =>
@@ -566,16 +575,17 @@ export class Toolbar {
     // The writing tools, centred on the bar (styles.css), as GoodNotes has them.
     const tools = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-tools" });
     this.toolsGroup = tools;
-    this.addToolButton(tools, "select", "lasso", "Lasso select (V)");
+    keep(this.addToolButton(tools, "select", "lasso", "Lasso select (V)"));
     this.addToolButton(tools, "pen", "pen-tool", "Pen (P)");
     this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
-    this.addToolButton(tools, "text", "type", "Text box (T)");
-    this.addToolButton(tools, "shape", "shapes", "Shapes (S)");
-    this.barButton(tools, "image", "Insert image", cb.onInsertImage);
-    this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf);
+    keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
+    keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
+    keep(this.barButton(tools, "image", "Insert image", cb.onInsertImage));
+    keep(this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf));
     // The note's recordings live in the page sidebar's Audio tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = this.barButton(tools, "mic", "Record audio", cb.onRecord);
+    keep(this.recordButton);
 
     // The document's own actions, right: add a page, GoodNotes' share
     // button (export as PDF), its ⋯ sheet for the page being read
@@ -583,7 +593,7 @@ export class Toolbar {
     // the note's own settings.
     const doc = this.barEl.createDiv({ cls: "goodobsidian-bar-group goodobsidian-bar-doc" });
     this.addPageButton = this.barButton(doc, "plus", "Add page", cb.onAddPage);
-    this.barButton(doc, "share", "Export as PDF", cb.onShare);
+    keep(this.barButton(doc, "share", "Export as PDF", cb.onShare));
     this.barButton(doc, "more-horizontal", "More", cb.onMore);
     this.barButton(doc, "settings", "Notebook settings", cb.onSettings);
     this.watchCrowding();
@@ -653,7 +663,12 @@ export class Toolbar {
     return button;
   }
 
-  private addToolButton(parent: HTMLElement, tool: ActiveTool, icon: string, label: string): void {
+  private addToolButton(
+    parent: HTMLElement,
+    tool: ActiveTool,
+    icon: string,
+    label: string,
+  ): HTMLButtonElement {
     const button = this.barButton(parent, icon, label, () => this.tapTool(tool, button));
     if (tool === "select") {
       button.addClass("has-caret");
@@ -661,6 +676,7 @@ export class Toolbar {
       button.setAttribute("aria-haspopup", "dialog");
     }
     this.toolButtons.set(tool, button);
+    return button;
   }
 
   /**
@@ -801,6 +817,7 @@ export class Toolbar {
     );
 
     // Auto-shape: a stroke that is plainly a shape snaps to it on lift.
+    if (this.practice) return;
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const auto = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape goodobsidian-pen-autoshape clickable-icon",
@@ -1808,6 +1825,7 @@ export class Toolbar {
   private renderPenTypes(body: HTMLElement, openGestures: () => void): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
     for (const spec of PEN_MENU_TYPES) {
+      if (this.practice && spec.tool === "highlighter") continue;
       const button = body.createEl("button", { cls: "goodobsidian-wide", text: spec.label });
       button.toggleClass("is-active", spec.id === this.activePenType().id);
       button.addEventListener("click", () => {
@@ -1815,6 +1833,7 @@ export class Toolbar {
         this.choosePenType(spec);
       });
     }
+    if (this.practice) return;
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     const link = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
@@ -2099,6 +2118,21 @@ export class Toolbar {
    */
   setAddPageVisible(visible: boolean): void {
     this.addPageButton?.toggle(visible);
+  }
+
+  /**
+   * Keep the bars to writing (a practice file): the pen and the eraser,
+   * undo and redo, the page panel, ⋯ and the settings. The pen loses the
+   * highlighter, auto-shape and its gestures menu.
+   */
+  setPractice(on: boolean): void {
+    if (on === this.practice) return;
+    this.practice = on;
+    for (const button of this.beyondWriting) button.toggle(!on);
+    if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
+    this.closePopover();
+    this.buildOptions();
+    this.syncActive();
   }
 
   private activePenType(): PenTypeSpec {
