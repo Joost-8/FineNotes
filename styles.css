@@ -878,6 +878,54 @@ body,
   height: 18px;
 }
 
+/* A heading's fold toggle: the chevron turns to point right when folded. */
+.goodobsidian-pagesidebar .goodobsidian-contents-fold.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: var(--gob-touch);
+  margin-left: 4px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-contents-fold svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 120ms ease;
+}
+
+.goodobsidian-contents-fold.is-folded svg {
+  transform: rotate(-90deg);
+}
+
+/* Lines a heading without subheadings up with those that have a toggle. */
+.goodobsidian-contents-fold-space {
+  flex: 0 0 36px;
+}
+
+/* A section inside a page: a subheading, indented under its heading. */
+.goodobsidian-contents-row.is-sub {
+  padding-left: 40px;
+}
+
+.goodobsidian-contents-row.is-sub .goodobsidian-contents-title {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-contents-row.is-sub.is-current .goodobsidian-contents-title {
+  color: var(--text-accent);
+}
+
+/* Compound, so the row's own `display: flex` cannot outrank it. */
+.goodobsidian-contents-row.is-hidden {
+  display: none;
+}
+
 .goodobsidian-contents-empty {
   padding: 12px 8px 0;
   color: var(--text-muted);
@@ -4099,6 +4147,31 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-lock-badge svg {
   width: 14px;
   height: 14px;
+}
+
+/* A ribbon at a page's left edge beside each heading in the contents. Takes no presses. */
+.goodobsidian-section-ribbons {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-section-ribbon {
+  position: absolute;
+  display: flex;
+  color: var(--interactive-accent);
+  transform: translate(2px, -50%);
+}
+
+.goodobsidian-section-ribbons.is-hidden,
+.goodobsidian-section-ribbon.is-hidden {
+  display: none;
+}
+
+.goodobsidian-section-ribbon svg {
+  width: 16px;
+  height: 20px;
+  fill: currentColor;
 }
 
 /* A bar button that says what it does: crop mode's Cancel · Reset · Done, a

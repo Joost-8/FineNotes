@@ -962,6 +962,45 @@ describe("spaceReadout", () => {
   });
 });
 
+describe("Add to contents on a selection", () => {
+  it("offers the heading's left and middle to the host, and lets the selection go", () => {
+    const p = page("p1", [line("h", 100, 300, 115)]);
+    const doc = documentOf(blankPage("p0"), p);
+    const added: unknown[] = [];
+    let cleared = 0;
+    const surface = surfaceWith({
+      doc,
+      palette: [],
+      toolState: {},
+      callbacks: { onAddSection: (index: number, at: unknown) => added.push([index, at]) },
+      groupBounds: () => ({ minX: 100, minY: 105, maxX: 300, maxY: 125 }),
+      pasteAction: () => ({ id: "paste", icon: "", label: "Paste", group: "edit" }),
+      clearSelection: () => cleared++,
+    });
+    const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const actions = run<Array<{ id: string; run?: () => void }>>(surface, "groupActions", sel);
+    const add = actions.find((a) => a.id === "contents");
+    add?.run?.();
+    expect(added).toEqual([[1, { x: 100, y: 115 }]]);
+    expect(cleared).toBe(1);
+  });
+
+  it("is not offered when the host takes no sections", () => {
+    const p = page("p1", [line("h", 100, 300, 115)]);
+    const surface = surfaceWith({
+      doc: documentOf(p),
+      palette: [],
+      toolState: {},
+      callbacks: {},
+      groupBounds: () => ({ minX: 100, minY: 105, maxX: 300, maxY: 125 }),
+      pasteAction: () => ({ id: "paste", icon: "", label: "Paste", group: "edit" }),
+    });
+    const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const actions = run<Array<{ id: string }>>(surface, "groupActions", sel);
+    expect(actions.some((a) => a.id === "contents")).toBe(false);
+  });
+});
+
 describe("partial erase", () => {
   it("cuts a stroke into pieces with fresh ids above every id in the document", () => {
     const w = ink(twoPages());

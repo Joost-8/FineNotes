@@ -335,6 +335,8 @@ const THUMB_HOLD_MS = 1000;
 const COUNTER_HOLD_MS = 1800;
 /** The zoom readout, a beat after the counter. */
 const ZOOM_READOUT_HOLD_MS = 2000;
+/** How far below the top of the view a section lands when the contents goes to it, screen px. */
+const SECTION_LEAD_PX = 96;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
 const READOUT_WORD_HOLD_MS = 900;
 /** Gap between a scroll thumb and the edges of the surface, CSS px. */
@@ -449,6 +451,17 @@ export interface InkSurfaceCallbacks {
    * Hosts use it to keep the toolbar's page navigation in step.
    */
   onPageChange?: (index: number, total: number) => void;
+  /**
+   * Where the reader is as the page moves: page `index`, `y` page px down
+   * it (a third of the way down the view). Every frame of a scroll.
+   */
+  onReadingPoint?: (index: number, y: number) => void;
+  /**
+   * "Add to contents" on a lasso selection: the host asks for a title and
+   * adds a section to page `index` at `at` (page px, the heading's left and
+   * middle).
+   */
+  onAddSection?: (index: number, at: { x: number; y: number }) => void;
   /**
    * The user asked for a new page after `afterIndex`.
    *
@@ -934,6 +947,9 @@ export class InkSurface {
   /** A lock badge on each locked picture, shown only while the lasso is the tool. */
   private readonly lockBadgesEl: HTMLElement;
   private readonly lockBadges: HTMLElement[] = [];
+  /** A ribbon in the margin beside each section in the contents. */
+  private readonly sectionRibbonsEl: HTMLElement;
+  private readonly sectionRibbons: HTMLElement[] = [];
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
   private pressMenu: PressMenu | null = null;
   private pressTimer = 0;
@@ -1210,6 +1226,10 @@ export class InkSurface {
     // A lock badge on each locked picture, under the selection chrome. The
     // badges take no presses: a tap-and-hold on the picture reaches the page.
     this.lockBadgesEl = this.paperEl.createDiv({ cls: "goodobsidian-lock-badges is-hidden" });
+    // A ribbon beside each heading listed in the contents. Takes no presses either.
+    this.sectionRibbonsEl = this.paperEl.createDiv({
+      cls: "goodobsidian-section-ribbons is-hidden",
+    });
 
     // The selected image's chrome, above the text boxes, after GoodNotes:
     // square corner handles (resize, aspect kept), round handles mid-edge
@@ -1694,6 +1714,28 @@ export class InkSurface {
     this.requestFrame();
   }
 
+  /**
+   * Go to a point inside page `index` (page px): the page, scrolled so the
+   * point sits a little below the top of the view. A row of pages turns to
+   * the page and goes no further.
+   */
+  goToPagePoint(index: number, y: number, animate = false): void {
+    const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
+    const box = this.pageLayout.boxes[clamped];
+    if (this.direction === "horizontal" || !box) {
+      this.goToPage(clamped, animate);
+      return;
+    }
+    const lead = SECTION_LEAD_PX / this.scale;
+    const top = Math.max(0, box.y + Math.max(0, y) - lead) * this.scale;
+    const x = this.scroller.position.x;
+    if (animate) this.scroller.glideTo(x, top, now());
+    else this.scroller.setPosition(x, top);
+    this.syncViewport();
+    this.flashChrome();
+    this.requestFrame();
+  }
+
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
@@ -2150,6 +2192,8 @@ export class InkSurface {
       index = currentPageIndex(this.pageLayout, top, top + this.cssH / scale);
     }
     this.indicatorEl.setText(total > 0 ? `${index + 1} of ${total}` : "0 of 0");
+    const seen = this.visiblePageRect(index);
+    if (seen) this.callbacks.onReadingPoint?.(index, seen.y + seen.h / 3);
     this.indicatorEl.toggleClass("is-hidden", total === 0);
     if (index !== this.pageIndex) {
       this.pageIndex = index;
@@ -2378,6 +2422,7 @@ export class InkSurface {
     this.syncImageOverlay();
     this.syncSelectionOverlay();
     this.syncLockBadges();
+    this.syncSectionRibbons();
     this.flashChrome(true);
     this.requestFrame();
     this.reportStatus();
@@ -2489,6 +2534,7 @@ export class InkSurface {
     this.syncImageOverlay();
     this.syncSelectionOverlay();
     this.syncLockBadges();
+    this.syncSectionRibbons();
   }
 
   /** Keep typed page elements aligned with the canvas across pan and zoom. */
@@ -5405,6 +5451,22 @@ export class InkSurface {
         },
       });
     }
+    const heading = this.groupBounds(sel);
+    const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    if (heading && index >= 0 && this.callbacks.onAddSection) {
+      const add = this.callbacks.onAddSection;
+      actions.push({
+        id: "contents",
+        icon: "list-plus",
+        label: "Add to contents",
+        group: "contents",
+        run: () => {
+          const at = { x: heading.minX, y: (heading.minY + heading.maxY) / 2 };
+          this.clearSelection();
+          add(index, at);
+        },
+      });
+    }
     actions.push({
       id: "delete",
       icon: "trash-2",
@@ -5739,6 +5801,34 @@ export class InkSurface {
    * tool that would otherwise pick it up — so a lock can be found without
    * cluttering the page the rest of the time. The badges take no presses.
    */
+  /** One ribbon at the page's left edge for each section, level with its heading. */
+  private syncSectionRibbons(): void {
+    let used = 0;
+    const scale = this.unitScale;
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      for (const section of page?.sections ?? []) {
+        let ribbon = this.sectionRibbons[used];
+        if (!ribbon) {
+          ribbon = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-section-ribbon" });
+          iconInto(ribbon, "bookmark", "▾");
+          this.sectionRibbons.push(ribbon);
+        }
+        ribbon.removeClass("is-hidden");
+        ribbon.setAttribute("aria-label", section.title);
+        ribbon.setCssStyles({
+          left: `${box.x * scale}px`,
+          top: `${(box.y + section.y) * scale}px`,
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.sectionRibbons.length; i++) {
+      this.sectionRibbons[i].addClass("is-hidden");
+    }
+    this.sectionRibbonsEl.toggleClass("is-hidden", used === 0);
+  }
+
   private syncLockBadges(): void {
     let used = 0;
     if (this.toolState.tool === "select") {

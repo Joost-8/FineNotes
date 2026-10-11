@@ -43,6 +43,12 @@ extracted from the matching section of this file by `release.yml`.
     the next page is ruled differently, or there is none, a new page with
     the same paper is put in. Drag up to close empty lines (it never closes
     over ink). One undo puts it all back.
+- **Headings inside a page, in the contents.** Lasso a heading and choose
+  "Add to contents" to list it in the Contents tab, under its page's title
+  as a subheading; a ribbon marks it at the page's left edge. Tapping it
+  goes to that line. A page title's subheadings fold away under it with the
+  chevron beside it, and the entry you are reading is marked as you scroll.
+  Rename or remove one from its ⌄ menu. Insert space moves it with its line.
 
 ## [1.5.0] - 2026-10-07
 

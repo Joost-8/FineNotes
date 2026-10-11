@@ -9,8 +9,10 @@
  *                    [Cancel] [Add]
  *
  * The field starts empty for a new entry, with "Page N" as its placeholder,
- * so typing starts the title at once; an empty field adds "Page N". It only
- * hands back the title; the host applies it as an undoable command.
+ * so typing starts the title at once; an empty field adds "Page N". For a
+ * heading inside a page (a section), the note says where it is listed and
+ * the fallback is "Section on page N". It only hands back the title; the
+ * host applies it as an undoable command.
  */
 
 import { type App, Modal } from "obsidian";
@@ -27,6 +29,8 @@ export class ContentsTitleModal extends Modal {
     /** Its title now; `undefined` when it is not in the contents yet. */
     private readonly current: string | undefined,
     private readonly submit: (title: string) => void,
+    /** A heading inside the page, listed under its page's title, rather than the page itself. */
+    private readonly section = false,
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -34,14 +38,16 @@ export class ContentsTitleModal extends Modal {
 
   override onOpen(): void {
     const renaming = this.current !== undefined;
-    const fallback = `Page ${this.index + 1}`;
+    const fallback = this.section ? `Section on page ${this.index + 1}` : `Page ${this.index + 1}`;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
     this.titleEl.setText(renaming ? "Rename in contents" : "Add to contents");
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     body.createDiv({
       cls: "goodobsidian-ask-note",
-      text: "Listed in the Contents tab of the page sidebar, where it starts a section.",
+      text: this.section
+        ? "Listed in the Contents tab under its page's title, and marked by a ribbon in the margin."
+        : "Listed in the Contents tab of the page sidebar, where it starts a section.",
     });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
@@ -49,7 +55,9 @@ export class ContentsTitleModal extends Modal {
       type: "text",
       attr: {
         placeholder: fallback,
-        "aria-label": `Title for page ${this.index + 1}`,
+        "aria-label": this.section
+          ? `Title for a section on page ${this.index + 1}`
+          : `Title for page ${this.index + 1}`,
         maxlength: String(MAX_PAGE_TITLE_LENGTH),
         enterkeyhint: "done",
         autocomplete: "off",

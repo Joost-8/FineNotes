@@ -14,14 +14,17 @@
  *       .goodobsidian-pagesidebar-empty (no bookmarks yet)
  *     .goodobsidian-pagesidebar-contents
  *       .goodobsidian-contents-list
- *         .goodobsidian-contents-row × N  (title · page number · ⌄ menu)
+ *         .goodobsidian-contents-row × N  (› fold · title · page number · ⌄ menu)
+ *           .is-sub: a section inside a page, under its heading
  *       .goodobsidian-contents-empty
  *       .goodobsidian-contents-add  ("Add page N to contents")
  *     .goodobsidian-pagesidebar-audio (filled by the note's audio controller)
  *
  * The Contents tab is the notebook's table of contents: every page given a
- * title (model/contents.ts), in page order. Tapping one goes to its page,
- * and the section being read is marked as the reader scrolls.
+ * title (model/contents.ts), in page order, as a heading, with the sections
+ * after it (headings lassoed inside pages) as subheadings that fold away
+ * under it. Tapping one goes to its page, or to its line, and the entry
+ * being read is marked as the reader scrolls.
  *
  * Tapping a thumbnail scrolls the surface to that page; the page being read is
  * outlined in the accent colour and kept in view as the reader scrolls. Every
@@ -35,7 +38,13 @@
 
 import { Menu, setIcon } from "obsidian";
 import { bookmarkedPageIndexes } from "../model/page-commands";
-import { contentsEntries, currentContentsEntry } from "../model/contents";
+import {
+  type ContentsEntry,
+  contentsEntries,
+  contentsTree,
+  currentContentsEntry,
+} from "../model/contents";
+import type { PageSection } from "../model/document";
 import type { BackdropPainter, ImagePainter } from "../canvas/renderer";
 import { renderPageThumbnail } from "../canvas/renderer";
 import type { PaperTheme } from "../canvas/backdrop";
@@ -60,8 +69,20 @@ export type PageAction =
   | "contents"
   | "contents-remove";
 
+/** What a section's ⌄ menu can do. */
+export type SectionAction = "rename" | "remove";
+
 export interface PageSidebarCallbacks {
   onSelectPage: (index: number) => void;
+  /** A section in the Contents tab was tapped: go to its line on page `index`. */
+  onSelectSection?: (index: number, section: PageSection) => void;
+  /** Rename or remove a section, from its ⌄ menu. */
+  onSectionAction?: (
+    action: SectionAction,
+    index: number,
+    section: PageSection,
+    anchor: HTMLElement,
+  ) => void;
   /** `anchor` is the thumbnail's "…" button, for anything that opens a popover. */
   onPageAction: (action: PageAction, index: number, anchor: HTMLElement) => void;
   /** The "Add page" tile was tapped. */
@@ -136,8 +157,15 @@ export class PageSidebar {
   private readonly contentsEmpty: HTMLElement;
   private readonly contentsAdd: HTMLButtonElement;
   private readonly contentsAddLabel: HTMLElement;
-  /** Contents rows, and the page index each one goes to. */
-  private contentsRows: Array<{ row: HTMLElement; index: number }> = [];
+  /** The contents as last rendered, one row each, and the heading row each sub row is under. */
+  private contentsItems: ContentsEntry[] = [];
+  private contentsRows: Array<{ row: HTMLElement; heading: number }> = [];
+  /** Headings folded shut, by their page's id: kept while the view is open. */
+  private readonly folded = new Set<string>();
+  /** How far down the page being read the reader is, page px; Infinity when unknown. */
+  private currentY = Infinity;
+  /** The entry marked as being read, so a scroll only touches the rows when it changes. */
+  private currentEntry = -2;
   private readonly tabButtons = new Map<SidebarTab, HTMLButtonElement>();
   private tab: SidebarTab = "pages";
   private filter: PageFilter = "all";
@@ -433,6 +461,20 @@ export class PageSidebar {
     if (this.open) this.schedulePaint();
   }
 
+  /**
+   * Where the reader is, page `index` and `y` page px down it, as the page
+   * scrolls: marks the contents entry being read, without moving the panel.
+   */
+  setReadingPoint(index: number, y: number): void {
+    if (index !== this.current) {
+      this.currentY = y;
+      this.setCurrentPage(index);
+      return;
+    }
+    this.currentY = y;
+    this.syncCurrentEntry();
+  }
+
   /** Mark page `index` as the one being read. */
   setCurrentPage(index: number): void {
     if (index === this.current) return;
@@ -479,28 +521,97 @@ export class PageSidebar {
     this.schedulePaint();
   }
 
-  /** Rebuild the Contents tab from the page titles. A few rows: cheap. */
+  /**
+   * Rebuild the Contents tab: page titles as headings, sections as
+   * subheadings under them, folded as the reader left them. A few rows: cheap.
+   */
   private renderContents(): void {
     const entries = this.doc ? contentsEntries(this.doc) : [];
+    this.contentsItems = entries;
     this.contentsList.empty();
-    this.contentsRows = entries.map((entry) => {
-      const row = this.contentsList.createDiv({
-        cls: "goodobsidian-contents-row",
-        attr: { role: "listitem" },
+    const rows: Array<{ row: HTMLElement; heading: number }> = [];
+    for (const node of contentsTree(entries)) {
+      const pageId = this.doc?.pages[node.entry.index]?.id ?? "";
+      const folded = this.folded.has(pageId);
+      const heading = this.contentsRow(node.entry, node.children.length > 0 ? folded : null);
+      rows[node.at] = { row: heading, heading: node.at };
+      const subs = node.children.map((child) => {
+        const row = this.contentsRow(child.entry, null);
+        row.addClass("is-sub");
+        row.toggleClass("is-hidden", folded);
+        rows[child.at] = { row, heading: node.at };
+        return row;
       });
-      const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
-      go.createSpan({ cls: "goodobsidian-contents-title", text: entry.title });
-      go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
-      go.setAttribute("aria-label", `${entry.title}, page ${entry.index + 1}`);
-      go.addEventListener("click", () => this.callbacks.onSelectPage(entry.index));
-      const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
-      setIcon(more, "chevron-down");
-      more.setAttribute("aria-label", "Contents entry options");
-      more.addEventListener("click", (event) => this.showContentsMenu(entry.index, event, more));
-      return { row, index: entry.index };
-    });
+      const fold = heading.querySelector<HTMLElement>(".goodobsidian-contents-fold");
+      fold?.addEventListener("click", () => {
+        const shut = !this.folded.has(pageId);
+        if (shut) this.folded.add(pageId);
+        else this.folded.delete(pageId);
+        fold.toggleClass("is-folded", shut);
+        fold.setAttribute("aria-expanded", String(!shut));
+        for (const row of subs) row.toggleClass("is-hidden", shut);
+        this.currentEntry = -2;
+        this.syncCurrent();
+      });
+    }
+    this.contentsRows = rows;
+    this.currentEntry = -2;
     this.contentsEmpty.toggleClass("is-hidden", entries.length > 0);
     this.syncContentsAdd();
+  }
+
+  /**
+   * One row of the contents: a fold toggle when it heads subheadings
+   * (`folded` says how it is; null for none), the entry, and its ⌄ menu.
+   */
+  private contentsRow(entry: ContentsEntry, folded: boolean | null): HTMLElement {
+    const row = this.contentsList.createDiv({
+      cls: "goodobsidian-contents-row",
+      attr: { role: "listitem" },
+    });
+    if (folded !== null) {
+      const fold = row.createEl("button", {
+        cls: "goodobsidian-contents-fold clickable-icon",
+        attr: { "aria-label": "Show or hide its sections", "aria-expanded": String(!folded) },
+      });
+      fold.toggleClass("is-folded", folded);
+      setIcon(fold, "chevron-down");
+    } else if (!entry.section) {
+      row.createSpan({ cls: "goodobsidian-contents-fold-space" });
+    }
+    const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
+    go.createSpan({ cls: "goodobsidian-contents-title", text: entry.title });
+    go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
+    go.setAttribute("aria-label", `${entry.title}, page ${entry.index + 1}`);
+    const section = entry.section;
+    go.addEventListener("click", () => {
+      if (section) this.callbacks.onSelectSection?.(entry.index, section);
+      else this.callbacks.onSelectPage(entry.index);
+    });
+    const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
+    setIcon(more, "chevron-down");
+    more.setAttribute("aria-label", "Contents entry options");
+    more.addEventListener("click", (event) => {
+      if (section) this.showSectionMenu(entry.index, section, event, more);
+      else this.showContentsMenu(entry.index, event, more);
+    });
+    return row;
+  }
+
+  private showSectionMenu(
+    index: number,
+    section: PageSection,
+    event: MouseEvent,
+    anchor: HTMLElement,
+  ): void {
+    const act = (action: SectionAction) => () =>
+      this.callbacks.onSectionAction?.(action, index, section, anchor);
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle("Rename").setIcon("pencil").onClick(act("rename")));
+    menu.addItem((item) =>
+      item.setTitle("Remove from contents").setIcon("list-x").onClick(act("remove")),
+    );
+    menu.showAtMouseEvent(event);
   }
 
   /** "Add page N to contents", for the page being read, unless it is listed already. */
@@ -562,17 +673,27 @@ export class PageSidebar {
         .querySelector(".goodobsidian-thumb-frame")
         ?.setAttribute("aria-current", active ? "page" : "false");
     });
-    const at = currentContentsEntry(
-      this.contentsRows.map(({ index }) => ({ index, title: "" })),
-      this.current,
-    );
+    this.syncCurrentEntry();
+    this.syncContentsAdd();
+  }
+
+  /**
+   * Mark the entry being read: the last one at or above the reader. Under a
+   * folded heading, the heading is marked instead. Touches the rows only
+   * when it changes, since a scroll calls this every frame.
+   */
+  private syncCurrentEntry(): void {
+    const reading = currentContentsEntry(this.contentsItems, this.current, this.currentY);
+    const holder = this.contentsRows[reading];
+    const at = holder && holder.row.hasClass("is-hidden") ? holder.heading : reading;
+    if (at === this.currentEntry) return;
+    this.currentEntry = at;
     this.contentsRows.forEach(({ row }, i) => {
       row.toggleClass("is-current", i === at);
       row
         .querySelector(".goodobsidian-contents-entry")
         ?.setAttribute("aria-current", i === at ? "location" : "false");
     });
-    this.syncContentsAdd();
   }
 
   /** Keep the section being read in view in the Contents tab. */

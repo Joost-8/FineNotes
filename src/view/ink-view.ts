@@ -82,7 +82,7 @@ import {
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, placeImageBox } from "../model/images";
-import type { ImageElement } from "../model/document";
+import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
@@ -102,7 +102,7 @@ import {
   insertIndexFor,
   pageFromTemplate,
 } from "../model/page-commands";
-import { SetPageTitle } from "../model/contents";
+import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
@@ -131,6 +131,7 @@ import {
   PageSidebar,
   type PageSidebarRenderOptions,
   thumbnailRasterScale,
+  type SectionAction,
 } from "./page-sidebar";
 import { Toolbar, type ToolbarState, penTypeFor } from "./toolbar";
 import { PANEL_SLIDE_MS } from "./motion";
@@ -992,6 +993,8 @@ export class InkView extends TextFileView {
         // A tapped thumbnail glides to its page, as GoodNotes does.
         onSelectPage: (index) => this.surface?.goToPage(index, true),
         onPageAction: (action, index, anchor) => this.pageAction(action, index, anchor),
+        onSelectSection: (index, section) => this.surface?.goToPagePoint(index, section.y, true),
+        onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
         onAddPage: (anchor) => this.openAddPage(anchor, this.doc.pages.length - 1, "last"),
         onClose: () => {
           if (this.sidebar?.isOpen) this.toggleSidebar();
@@ -1038,6 +1041,8 @@ export class InkView extends TextFileView {
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
         },
+        onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
+        onAddSection: (index, at) => this.addSection(index, at),
         onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
@@ -1506,6 +1511,55 @@ export class InkView extends TextFileView {
     if (this.thumbBackdrops) {
       this.sidebar?.setRenderOptions(this.sidebarRendering(this.thumbBackdrops));
     }
+  }
+
+  /**
+   * "Add to contents" on a lasso selection: ask for the heading's title and
+   * list it under its page's title in the contents (FineNotes#20).
+   */
+  private addSection(index: number, at: { x: number; y: number }): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    new ContentsTitleModal(
+      this.app,
+      index,
+      undefined,
+      (title) => {
+        // By identity: the page may move or go while the dialog is open.
+        if (this.isProtected() || this.surface !== surface) return;
+        if (!surface.document.pages.includes(page)) return;
+        const id = nextSectionId(surface.document);
+        surface.applyCommand(new SetSection(page, id, { x: at.x, y: at.y, title }));
+        this.requestSave();
+      },
+      true,
+    ).open();
+  }
+
+  /** Rename or remove a section, from its menu in the Contents tab. */
+  private sectionAction(action: SectionAction, index: number, section: PageSection): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    if (action === "remove") {
+      surface.applyCommand(new SetSection(page, section.id, null));
+      this.requestSave();
+      return;
+    }
+    new ContentsTitleModal(
+      this.app,
+      index,
+      section.title,
+      (title) => {
+        if (this.isProtected() || this.surface !== surface) return;
+        const now = page.sections?.find((s) => s.id === section.id);
+        if (!surface.document.pages.includes(page) || !now) return;
+        surface.applyCommand(new SetSection(page, section.id, { x: now.x, y: now.y, title }));
+        this.requestSave();
+      },
+      true,
+    ).open();
   }
 
   /**

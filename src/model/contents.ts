@@ -201,3 +201,32 @@ export function normalizeSections(raw: unknown, seen: Set<string>): PageSection[
   }
   return sortSections(out);
 }
+
+/** One heading of the contents, with the entries it holds when it is folded open. */
+export interface ContentsNode {
+  /** Where the entry is in `contentsEntries`. */
+  at: number;
+  entry: ContentsEntry;
+  children: ContentsNode[];
+}
+
+/**
+ * The contents as headings and subheadings: a page's title is a heading,
+ * and every section after it, on its page and on the pages that follow up
+ * to the next titled page, is a subheading under it. A section with no
+ * titled page before it stands on its own.
+ */
+export function contentsTree(entries: readonly ContentsEntry[]): ContentsNode[] {
+  const roots: ContentsNode[] = [];
+  let heading: ContentsNode | null = null;
+  entries.forEach((entry, at) => {
+    const node: ContentsNode = { at, entry, children: [] };
+    if (entry.section && heading) {
+      heading.children.push(node);
+      return;
+    }
+    roots.push(node);
+    if (!entry.section) heading = node;
+  });
+  return roots;
+}

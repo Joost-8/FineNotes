@@ -8,6 +8,7 @@ import { blankPage, emptyDocument, type InkDocument } from "../../src/model/docu
 import {
   SetSection,
   contentsEntries,
+  contentsTree,
   currentContentsEntry,
   nextSectionId,
   normalizeSections,
@@ -152,5 +153,36 @@ describe("section ids and loading", () => {
     const copy = duplicatePageAfter(doc, 0);
     expect(copy?.page.sections).toBeUndefined();
     expect(doc.pages[0].sections).toHaveLength(1);
+  });
+});
+
+describe("contentsTree", () => {
+  it("puts sections under the last page title before them, until the next one", () => {
+    const doc = threePages();
+    new SetSection(doc.pages[0], "c0", at(100, "Preface")).apply(doc);
+    doc.pages[1].title = "Week 2";
+    new SetSection(doc.pages[1], "c1", at(200, "Fourier")).apply(doc);
+    new SetSection(doc.pages[2], "c2", at(100, "Sampling")).apply(doc);
+    doc.pages.push(blankPage("p4"));
+    doc.pages[3].title = "Week 3";
+    const tree = contentsTree(contentsEntries(doc));
+    expect(
+      tree.map((n) => [n.entry.title, n.at, n.children.map((c) => [c.entry.title, c.at])]),
+    ).toEqual([
+      ["Preface", 0, []],
+      [
+        "Week 2",
+        1,
+        [
+          ["Fourier", 2],
+          ["Sampling", 3],
+        ],
+      ],
+      ["Week 3", 4, []],
+    ]);
+  });
+
+  it("is empty for no entries", () => {
+    expect(contentsTree([])).toEqual([]);
   });
 });
