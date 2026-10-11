@@ -290,3 +290,68 @@ describe("spaceStrip", () => {
     });
   });
 });
+
+describe("sections move with their line", () => {
+  const section = (id: string, line: number, x = 100) => ({
+    id,
+    x,
+    y: 40 * (line + 1) - 8,
+    title: id,
+  });
+  const sectionLine = (d: InkDocument, id: string): string => {
+    for (const [i, p] of d.pages.entries()) {
+      const s = p.sections?.find((c) => c.id === id);
+      if (s) return `${i}:${Math.round((s.y + 8) / 40) - 1}`;
+    }
+    return "gone";
+  };
+
+  it("an insert above moves a section down; one above the insert stays", () => {
+    const p = page("p1", [word("w", 3)]);
+    p.sections = [section("above", 1), section("below", 3)];
+    const d = doc(p);
+    apply(d, 0, 2, 2);
+    expect(sectionLine(d, "above")).toBe("0:1");
+    expect(sectionLine(d, "below")).toBe("0:5");
+  });
+
+  it("a section alone is enough to move", () => {
+    const p = page("p1", []);
+    p.sections = [section("only", 4)];
+    const d = doc(p);
+    expect(apply(d, 0, 2, 1).command).not.toBeNull();
+    expect(sectionLine(d, "only")).toBe("0:5");
+  });
+
+  it("a section past the last line goes to the next page with its heading, and back on undo", () => {
+    const p = page("p1", [word("heading", LAST)]);
+    p.sections = [section("c1", LAST)];
+    const d = doc(p, page("p2", [word("top", 0)]));
+    const before = JSON.stringify(d);
+    const plan = apply(d, 0, LAST, 1);
+    expect(sectionLine(d, "c1")).toBe("1:0");
+    expect(where(d)).toEqual({ heading: "1:0", top: "1:1" });
+    expect(d.pages[0].sections).toBeUndefined();
+    plan.command!.invert(d);
+    expect(JSON.stringify(d)).toBe(before);
+  });
+
+  it("a section that starts in the margin goes with the lines beside it", () => {
+    const p = page("p1", []);
+    p.sections = [section("margin", 4, -5)];
+    const d = doc(p);
+    apply(d, 0, 2, 1);
+    expect(sectionLine(d, "margin")).toBe("0:5");
+  });
+
+  it("closing up moves sections up, and a section holds its own line open", () => {
+    const p = page("p1", [word("w", 5)]);
+    p.sections = [section("on", 5), section("marked", 3)];
+    const d = doc(p);
+    // Line 4 is empty; line 3 has only a section, which keeps it.
+    const plan = apply(d, 0, 5, -2);
+    expect(plan.lines).toBe(-1);
+    expect(sectionLine(d, "on")).toBe("0:4");
+    expect(sectionLine(d, "marked")).toBe("0:3");
+  });
+});

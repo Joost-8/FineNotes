@@ -16,12 +16,14 @@
  */
 
 import { AddPage } from "../model/commands";
+import { SetSection } from "../model/contents";
 import type { Command } from "../model/commands";
 import {
   type Bounds,
   type ImageElement,
   type InkDocument,
   type Page,
+  type PageSection,
   type Stroke,
   type TextBoxElement,
   strokeBounds,
@@ -222,7 +224,8 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
   const below = placedOn(page, blocks, walk.layout).filter(
     (p) => !p.pinned && p.line?.block === target.block && p.line.line >= target.line,
   );
-  if (below.length === 0) return;
+  const marks = sectionsFrom(page, blocks, target);
+  if (below.length === 0 && marks.length === 0) return;
   const stay: Placed[] = [];
   const spill: Array<{ placed: Placed; from: number; to: number }> = [];
   for (const placed of below) {
@@ -231,11 +234,17 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     if (to < n && placed.bounds.maxY + dy <= page.geometry.height) stay.push(placed);
     else spill.push({ placed, from, to: Math.max(0, to - n) });
   }
+  const spillMarks: Array<{ section: PageSection; from: number; to: number }> = [];
+  for (const { section, line } of marks) {
+    const to = line + count;
+    if (to < n) walk.moves.push(new SetSection(page, section.id, moved(section, dy)));
+    else spillMarks.push({ section, from: line, to: to - n });
+  }
   if (stay.length > 0) {
     walk.moves.push(new TranslateElements(page.id, listsOf(stay), 0, dy));
     walk.moved += stay.length;
   }
-  if (spill.length === 0) return;
+  if (spill.length === 0 && spillMarks.length === 0) return;
 
   // The page the spill lands on: the next one when it is ruled the same,
   // after its own ink has moved down out of the way; otherwise a new page.
@@ -247,7 +256,7 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     next.geometry.height === page.geometry.height &&
     sameLines(walk.layout.lines(next), blocks);
   if (matches) {
-    const room = Math.max(...spill.map((s) => s.to)) + 1;
+    const room = Math.max(...spill.map((s) => s.to), ...spillMarks.map((s) => s.to)) + 1;
     pushDown(walk, nextIndex, { block: target.block, line: 0 }, room);
   } else {
     next = {
@@ -278,8 +287,41 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
       new AddElements(next.id, lists, "Insert space"),
     );
   }
+  // A section goes with its heading, keeping its place on the line.
+  for (const { section, from, to } of spillMarks) {
+    const shift = block.baselines[to] - block.baselines[from];
+    walk.moves.push(
+      new SetSection(page, section.id, null),
+      new SetSection(next, section.id, moved(section, shift)),
+    );
+  }
   walk.moved += spill.length;
   walk.spilled += spill.length;
+}
+
+/** A page's sections on or below a line of one block, with their lines. */
+function sectionsFrom(
+  page: Page,
+  blocks: readonly LineBlock[],
+  target: SpaceTarget,
+): Array<{ section: PageSection; line: number }> {
+  const out: Array<{ section: PageSection; line: number }> = [];
+  for (const section of page.sections ?? []) {
+    // A heading that starts in the margin still belongs to the lines beside it.
+    const beside = lineAt([blocks[target.block]], blocks[target.block].x0, section.y);
+    const ref =
+      lineAt(blocks, section.x, section.y) ??
+      (beside ? { block: target.block, line: beside.line } : null);
+    if (ref && ref.block === target.block && ref.line >= target.line) {
+      out.push({ section, line: ref.line });
+    }
+  }
+  return out;
+}
+
+/** A section's value, moved down by `dy`. */
+function moved(section: PageSection, dy: number): Omit<PageSection, "id"> {
+  return { x: section.x, y: section.y + dy, title: section.title };
 }
 
 /**
@@ -309,13 +351,22 @@ function closeUp(walk: Walk, pageIndex: number, target: SpaceTarget, count: numb
       }
     }
   }
+  // A section marks its line too: closing over it would stack two headings.
+  for (const { line } of sectionsFrom(page, blocks, { block: target.block, line: 0 })) {
+    used.add(line);
+  }
   let empty = 0;
   while (empty < count && target.line - empty - 1 >= 0 && !used.has(target.line - empty - 1)) {
     empty++;
   }
   const below = inBlock.filter((p) => !p.pinned && (p.line as LineRef).line >= target.line);
-  if (empty === 0 || below.length === 0) return 0;
-  walk.moves.push(new TranslateElements(page.id, listsOf(below), 0, -empty * block.pitch));
+  const marks = sectionsFrom(page, blocks, target);
+  if (empty === 0 || (below.length === 0 && marks.length === 0)) return 0;
+  const dy = -empty * block.pitch;
+  if (below.length > 0) walk.moves.push(new TranslateElements(page.id, listsOf(below), 0, dy));
+  for (const { section } of marks) {
+    walk.moves.push(new SetSection(page, section.id, moved(section, dy)));
+  }
   walk.moved += below.length;
   return empty;
 }
