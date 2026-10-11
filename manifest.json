@@ -1,7 +1,7 @@
 {
   "id": "finenotes",
   "name": "FineNotes",
-  "version": "1.5.0",
+  "version": "1.6.0-beta.1",
   "minAppVersion": "1.13.0",
   "description": "Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Android tablet pens, and pen tablets on Windows, macOS or Linux. Real pages, paper templates, snapping shapes, PDF annotation and pictures, kept as plain files in your vault.",
   "author": "Joost",
