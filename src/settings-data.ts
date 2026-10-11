@@ -8,6 +8,7 @@
  * `tests/settings/settings-data.test.ts` pins all of it.
  */
 
+import type { LearnedModel } from "./view/handwriting-learning";
 import {
   DEFAULT_ERASER_SIZE,
   DEFAULT_HIGHLIGHTER_ALPHA,
@@ -146,6 +147,10 @@ export interface GoodObsidianSettings {
    * bundled one (a model tuned to one writer). Blank for the bundled model.
    */
   hwrModelPath?: string;
+  /** The model learned from the user's practice page, when there is one. */
+  handwritingModel?: LearnedModel;
+  /** Where the practice notebook was written. */
+  practiceNotebookPath?: string;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

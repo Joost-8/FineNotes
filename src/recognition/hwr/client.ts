@@ -11,20 +11,26 @@ import type { PageInk } from "./lines";
 import {
   HWR_TAG,
   type HwrModelInfo,
+  type HwrProgress,
   type HwrReply,
   type HwrRequest,
   type HwrResult,
+  type HwrTuned,
 } from "./protocol";
+import type { LabelledLine } from "./tune";
 import type { LineReading, PageReading } from "./recognizer";
 
 /** Parsing a file is fast; a page of 30 lines on a slow device is not. */
 const LOAD_TIMEOUT_MS = 30_000;
 const READ_TIMEOUT_MS = 180_000;
+/** A tuning run on a slow device: well past the minutes it should take. */
+const TUNE_TIMEOUT_MS = 60 * 60_000;
 
 interface Pending {
   resolve: (result: HwrResult) => void;
   reject: (error: Error) => void;
   timer: number;
+  onProgress?: (progress: HwrProgress) => void;
 }
 
 export class HwrWorkerClient {
@@ -42,6 +48,10 @@ export class HwrWorkerClient {
       if (!reply || reply[HWR_TAG] !== true) return;
       const waiting = this.pending.get(reply.id);
       if (!waiting) return;
+      if ("progress" in reply) {
+        waiting.onProgress?.(reply.progress);
+        return;
+      }
       this.pending.delete(reply.id);
       window.clearTimeout(waiting.timer);
       if (reply.ok) waiting.resolve(reply.result);
@@ -65,6 +75,7 @@ export class HwrWorkerClient {
     request: HwrRequest,
     timeoutMs: number,
     transfer: Transferable[] = [],
+    onProgress?: (progress: HwrProgress) => void,
   ): Promise<HwrResult> {
     if (this.failure) return Promise.reject(this.failure);
     const id = this.nextId++;
@@ -73,7 +84,7 @@ export class HwrWorkerClient {
         this.pending.delete(id);
         reject(new Error(`the recogniser did not answer within ${Math.round(timeoutMs / 1000)} s`));
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, onProgress });
       this.worker.postMessage({ [HWR_TAG]: true, id, ...request }, transfer);
     });
   }
@@ -97,6 +108,27 @@ export class HwrWorkerClient {
     const result = await this.send({ type: "lines", lines, useLm }, READ_TIMEOUT_MS);
     if (result.type !== "lines") throw new Error("unexpected reply");
     return result.readings;
+  }
+
+  /**
+   * Learn a writer's handwriting from `lines`, starting from the model in
+   * `bytes` (transferred). Null when there was nothing to learn from.
+   */
+  async tune(
+    bytes: ArrayBuffer,
+    lines: LabelledLine[],
+    steps: number,
+    name: string,
+    onProgress: (progress: HwrProgress) => void,
+  ): Promise<HwrTuned | null> {
+    const result = await this.send(
+      { type: "tune", bytes, lines, steps, name },
+      TUNE_TIMEOUT_MS,
+      [bytes],
+      onProgress,
+    );
+    if (result.type !== "tune") throw new Error("unexpected reply");
+    return result.tuned;
   }
 
   terminate(): void {

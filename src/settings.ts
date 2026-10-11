@@ -9,6 +9,12 @@
  */
 
 import {
+  learnHandwriting,
+  learnedSummary,
+  resetLearnedModel,
+  writePracticePage,
+} from "./view/handwriting-learning";
+import {
   type App,
   Platform,
   PluginSettingTab,
@@ -435,6 +441,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "title or link. Nothing leaves the device.",
         ["handwriting", "recognition", "search", "offline"],
       ),
+      drawnRow(
+        "Learn my handwriting",
+        learnedSummary(settings.handwritingModel),
+        (setting) => this.drawLearning(setting),
+        ["handwriting", "practice", "fine-tune", "personal", "recognition"],
+        () => settings.handwritingOnDevice !== false,
+      ),
       dropdown("recognitionProviderId", "Handwriting recognition", DESC.recognition, providers, [
         "OCR",
         "handwriting to text",
@@ -550,6 +563,30 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * what is typed to its range without a word, and the user should see why
    * 5000 did not take.
    */
+  /** The practice page, learning from it, and going back to the built-in model. */
+  private drawLearning(setting: Setting): void {
+    const host = this.plugin.learningHost();
+    setting.addButton((b) =>
+      b.setButtonText("Write practice page").onClick(() => void writePracticePage(host)),
+    );
+    if (this.plugin.settings.practiceNotebookPath) {
+      setting.addButton((b) =>
+        b
+          .setButtonText("Learn now")
+          .setCta()
+          .onClick(() => void learnHandwriting(host)),
+      );
+    }
+    if (this.plugin.settings.handwritingModel) {
+      setting.addButton((b) =>
+        b.setButtonText("Use built-in model").onClick(async () => {
+          await resetLearnedModel(host);
+          this.update();
+        }),
+      );
+    }
+  }
+
   private drawPaperWidth(setting: Setting): void {
     this.paperWidthRejected = false;
     setting.addText((text) => {

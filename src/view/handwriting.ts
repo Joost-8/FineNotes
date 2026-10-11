@@ -15,14 +15,19 @@ import type { PageInk } from "../recognition/hwr/lines";
 import type { HwrModelInfo } from "../recognition/hwr/protocol";
 import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
 
-/** Where the model comes from: the bundled one, or a file in the vault. */
+/**
+ * Where the model comes from: a file the user picked, else the model learned
+ * from their handwriting, else the one built in.
+ */
 export interface ModelSource {
-  /** A vault path; blank for the bundled model. */
+  /** A vault path the user set; blank for none. */
   customPath: string;
+  /** The learned model's vault path; blank when there is none. */
+  learnedPath: string;
 }
 
-/** The bundled model's bytes, read only when the reader first starts. */
-async function bundledModel(): Promise<ArrayBuffer> {
+/** The bundled model's bytes (a fresh copy), read only when first needed. */
+export async function bundledModel(): Promise<ArrayBuffer> {
   const { default: bytes } = await import("../../models/finenotes-hwr-1.0.bin");
   // The worker takes the buffer it is given: hand it a copy.
   return bytes.slice().buffer;
@@ -63,7 +68,14 @@ export class HandwritingReader {
 
   /** The model, loaded into the worker if it is not there yet (or its file changed). */
   async model(): Promise<HwrModelInfo> {
-    const path = this.source().customPath.trim();
+    const source = this.source();
+    const custom = source.customPath.trim();
+    let path = custom;
+    // The learned model, when there is one and its file is there.
+    if (!custom && source.learnedPath) {
+      const learned = await this.app.vault.adapter.stat(source.learnedPath);
+      if (learned?.type === "file") path = source.learnedPath;
+    }
     const file = path ? normalizePath(path) : "";
     let key = "bundled";
     if (file) {

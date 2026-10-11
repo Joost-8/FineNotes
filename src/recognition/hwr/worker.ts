@@ -12,6 +12,8 @@ import { simdAvailable } from "./blstm";
 import { type HwrBundle, parseBundle } from "./bundle";
 import { HWR_TAG, type HwrReply, type HwrRequest, type HwrResult } from "./protocol";
 import { readLine, readPage } from "./recognizer";
+import { writeBundle } from "./bundle-write";
+import { tune } from "./tune";
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<{ [HWR_TAG]: true; id: number } & HwrRequest>) => void) | null;
@@ -22,7 +24,7 @@ const scope = self as unknown as WorkerScope;
 let bundle: HwrBundle | null = null;
 const now = (): number => performance.now();
 
-function handle(request: HwrRequest): HwrResult {
+function handle(request: HwrRequest, id: number): HwrResult {
   if (request.type === "load") {
     const t0 = now();
     bundle = parseBundle(request.bytes);
@@ -40,6 +42,28 @@ function handle(request: HwrRequest): HwrResult {
         lmContexts: meta.lm?.nodes ?? 0,
         parseMs: now() - t0,
         simd,
+      },
+    };
+  }
+  if (request.type === "tune") {
+    const base = new Uint8Array(request.bytes);
+    const result = tune(base, request.lines, { steps: request.steps }, (step, loss) => {
+      scope.postMessage({ [HWR_TAG]: true, id, progress: { step, steps: request.steps, loss } });
+    });
+    if (!result) return { type: "tune", tuned: null };
+    const bytes = writeBundle(base, result.net, { name: request.name });
+    return {
+      type: "tune",
+      tuned: {
+        bytes: bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer,
+        before: result.before,
+        after: result.after,
+        better: result.better,
+        trained: result.trained,
+        heldOut: result.heldOut,
       },
     };
   }
@@ -62,7 +86,7 @@ scope.onmessage = (event) => {
   if (!message || message[HWR_TAG] !== true) return;
   let reply: HwrReply;
   try {
-    reply = { id: message.id, ok: true, result: handle(message) };
+    reply = { id: message.id, ok: true, result: handle(message, message.id) };
   } catch (error) {
     reply = {
       id: message.id,

@@ -75,6 +75,13 @@ extracted from the matching section of this file by `release.yml`.
   - **Handwritten `[[links]]`.** Write `[[Note]]` by hand and it gets a
     dashed underline; tap it with a finger to link it, with the name filled
     in.
+  - **Learn your handwriting.** Settings → FineNotes → Handwriting → Learn
+    my handwriting: write the practice page (20 short lines to copy, about
+    8 minutes), then tap Learn now. FineNotes tunes its reader to your
+    writing on the device in about 3 minutes, with a progress bar, and keeps
+    the result only if it reads your own test lines better. On the
+    developer's handwriting it went from 18 % to 6 % of characters wrong.
+    "Use built-in model" goes back at any time.
   - "Show this page read on this device" shows a page as read, line by
     line. Switch reading off under "Read handwriting on this device", or
     give a model file of your own (one tuned to your handwriting) under

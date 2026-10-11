@@ -1588,6 +1588,11 @@ export class InkView extends TextFileView {
   // --- Single pages -----------------------------------------------------------
 
   /** Whether the open document is a single page rather than a notebook. */
+  /** The notebook as it is now, unsaved changes included. */
+  get document(): InkDocument {
+    return this.doc;
+  }
+
   get isSinglePage(): boolean {
     return this.doc.single === true;
   }
