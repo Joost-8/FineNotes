@@ -33,7 +33,7 @@ import {
   RemoveElements,
   TranslateElements,
 } from "../model/selection-commands";
-import { MARGIN_SHARE, linedItems } from "./ruled-ink";
+import { DRAWING_PITCHES, MARGIN_SHARE, linedItems } from "./ruled-ink";
 import {
   type LineBlock,
   type LineRef,
@@ -107,30 +107,44 @@ type Element =
 interface Placed {
   element: Element;
   bounds: Bounds;
+  /** The line it moves with: where it sits, or for a drawing, where its top is. */
   line: LineRef | null;
+  /** A locked picture: it holds its lines, but never moves. */
+  pinned: boolean;
 }
 
-/** Every element on a page, with the line it sits on. */
+/**
+ * Every element on a page, with the line it moves with. Writing moves with
+ * the line it sits on. A drawing taller than {@link DRAWING_PITCHES} lines
+ * moves with the line its top is on, so space inserted above it moves it
+ * and space inserted inside it leaves it where it is; one whose top is
+ * above the block never moves.
+ */
 function placedOn(page: Page, blocks: readonly LineBlock[], layout: SpaceLayout): Placed[] {
-  const strokes = linedItems(blocks, page.strokes, strokeBounds).map((l): Placed => ({
-    element: { kind: "stroke", el: l.item },
-    bounds: l.bounds,
-    line: l.line,
-  }));
-  const framed = (element: Element, bounds: Bounds): Placed => ({
-    element,
-    bounds,
-    line: lineOfBounds(blocks, bounds),
-  });
+  const place = (element: Element, bounds: Bounds, sits: LineRef | null): Placed => {
+    let line = sits;
+    if (sits) {
+      const block = blocks[sits.block];
+      if (bounds.maxY - bounds.minY > block.pitch * DRAWING_PITCHES) {
+        const top = Math.floor((bounds.minY - lineBand(block, 0).top) / block.pitch);
+        line = top >= 0 ? { block: sits.block, line: top } : null;
+      }
+    }
+    const pinned = element.kind === "image" && element.el.locked === true;
+    return { element, bounds, line, pinned };
+  };
   return [
-    ...strokes,
-    ...page.images.map((el) =>
-      framed(
-        { kind: "image", el },
-        { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h },
-      ),
+    ...linedItems(blocks, page.strokes, strokeBounds).map((l) =>
+      place({ kind: "stroke", el: l.item }, l.bounds, l.line),
     ),
-    ...page.textBoxes.map((el) => framed({ kind: "textBox", el }, layout.textBoxBounds(page, el))),
+    ...page.images.map((el) => {
+      const bounds = { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h };
+      return place({ kind: "image", el }, bounds, lineOfBounds(blocks, bounds));
+    }),
+    ...page.textBoxes.map((el) => {
+      const bounds = layout.textBoxBounds(page, el);
+      return place({ kind: "textBox", el }, bounds, lineOfBounds(blocks, bounds));
+    }),
   ];
 }
 
@@ -206,7 +220,7 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
   const n = block.baselines.length;
   const dy = count * block.pitch;
   const below = placedOn(page, blocks, walk.layout).filter(
-    (p) => p.line?.block === target.block && p.line.line >= target.line,
+    (p) => !p.pinned && p.line?.block === target.block && p.line.line >= target.line,
   );
   if (below.length === 0) return;
   const stay: Placed[] = [];
@@ -299,7 +313,7 @@ function closeUp(walk: Walk, pageIndex: number, target: SpaceTarget, count: numb
   while (empty < count && target.line - empty - 1 >= 0 && !used.has(target.line - empty - 1)) {
     empty++;
   }
-  const below = inBlock.filter((p) => (p.line as LineRef).line >= target.line);
+  const below = inBlock.filter((p) => !p.pinned && (p.line as LineRef).line >= target.line);
   if (empty === 0 || below.length === 0) return 0;
   walk.moves.push(new TranslateElements(page.id, listsOf(below), 0, -empty * block.pitch));
   walk.moved += below.length;

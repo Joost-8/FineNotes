@@ -36,10 +36,13 @@ extracted from the matching section of this file by `release.yml`.
     come along.
   - **Insert space.** With Select by line, drag down from the margin next
     to a line: that line and everything below it in the column move down by
-    whole lines. Ink pushed past the bottom flows onto the next page, whose
-    ink moves down to make room; if the next page is ruled differently, or
-    there is none, a new page with the same paper is put in. Drag up to close
-    empty lines (it never closes over ink). One undo puts it all back.
+    whole lines, pictures, text boxes, shapes and highlights included. A
+    drawing taller than two lines moves only when the space goes in above
+    its top, and locked pictures stay where they are. Ink pushed past the
+    bottom flows onto the next page, whose ink moves down to make room; if
+    the next page is ruled differently, or there is none, a new page with
+    the same paper is put in. Drag up to close empty lines (it never closes
+    over ink). One undo puts it all back.
 
 ## [1.5.0] - 2026-10-07
 

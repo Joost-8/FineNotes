@@ -130,6 +130,56 @@ describe("inserting lines", () => {
   });
 });
 
+describe("drawings and locked pictures", () => {
+  /** A rectangle drawn around lines 2 to 5 (y 95 to 250), at the side. */
+  const box = (): Stroke => ({
+    id: "box",
+    color: "#000",
+    size: 2,
+    tool: "pen",
+    shape: "rect",
+    pts: [600, 95, 0.5, 900, 95, 0.5, 900, 250, 0.5, 600, 250, 0.5, 600, 95, 0.5],
+  });
+  const top = (d: InkDocument): number => d.pages[0].strokes.find((s) => s.id === "box")!.pts[1];
+
+  it("a drawing moves when space goes in above its top", () => {
+    const d = doc(page("p1", [box(), word("inside", 5, 650, 700)]));
+    apply(d, 0, 2, 1);
+    expect(top(d)).toBe(135);
+  });
+
+  it("a drawing stays when space goes in inside it, and the writing in it moves", () => {
+    const d = doc(page("p1", [box(), word("inside", 5, 650, 700)]));
+    apply(d, 0, 4, 1);
+    expect(top(d)).toBe(95);
+    expect(where(d).inside).toBe("0:6");
+  });
+
+  it("a drawing that starts above the lines never moves", () => {
+    const tall: Stroke = { ...box(), pts: [600, 5, 0.5, 900, 5, 0.5, 900, 200, 0.5] };
+    const d = doc(page("p1", [tall]));
+    expect(apply(d, 0, 0, 2).command).toBeNull();
+  });
+
+  it("a locked picture stays put while the writing around it moves", () => {
+    const p = page("p1", [word("at", 3)]);
+    p.images = [{ id: "i1", path: "a.png", x: 600, y: 130, w: 40, h: 30, locked: true }]; // line 3
+    const d = doc(p);
+    apply(d, 0, 2, 2);
+    expect(p.images[0].y).toBe(130);
+    expect(where(d).at).toBe("0:5");
+  });
+
+  it("closing up never closes the lines a locked picture covers", () => {
+    const p = page("p1", [word("at", 5)]);
+    p.images = [{ id: "i1", path: "a.png", x: 600, y: 130, w: 40, h: 30, locked: true }]; // line 3
+    const d = doc(p);
+    const plan = apply(d, 0, 5, -3);
+    expect(plan.lines).toBe(-1);
+    expect(where(d).at).toBe("0:4");
+  });
+});
+
 describe("spilling onto the next page", () => {
   it("carries ink past the last line to the next page's first lines, which make room", () => {
     const d = doc(
