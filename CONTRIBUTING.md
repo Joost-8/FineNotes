@@ -107,7 +107,8 @@ Rules for Android work:
   appears in CSS classes, note markers, the view type and Keychain ids.
 - **Only your own code.** FineNotes began as a fork of InkedMark and was
   rewritten so that it inherits none of its code. Do not copy code in from
-  InkedMark, or from any project whose licence is not compatible with MIT.
+  InkedMark, or from any project whose licence is not compatible with the
+  GPL 3.0.
 
 ## Who is working on what
 
@@ -120,6 +121,6 @@ request) so two people do not build the same thing.
 - Keep each pull request to one change, with tests for the logic.
 - Say how you tested it, and on which devices.
 - By contributing, you agree that your contribution is licensed under the
-  project's [MIT licence](LICENSE).
+  project's licence, the [GNU General Public License v3.0 or later](LICENSE).
 
 Releases are cut by the maintainer, following [RELEASE.md](RELEASE.md).

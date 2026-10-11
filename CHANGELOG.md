@@ -91,6 +91,9 @@ into the plugin, FineNotes is a larger download than before (about 6 MB).
 
 ### Changed
 
+- **FineNotes is now licensed under the GNU General Public License v3.0 or
+  later** (it was MIT). The bundled handwriting model, Grape, stays under the
+  Apache License 2.0.
 - **Settings by theme**: writing and tools, pages and notebooks,
   handwriting, AI with your own key, advanced, and support. The notebook's
   settings (the gear in the toolbar) end with a button to all of

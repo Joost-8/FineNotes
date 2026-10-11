@@ -587,4 +587,10 @@ helps more than anything else.
 
 ## License
 
-[MIT](LICENSE)
+FineNotes is licensed under the
+[GNU General Public License v3.0 or later](LICENSE).
+
+Versions before 2.0.0 were released under the MIT licence, and code
+contributed before 2.0.0 was contributed under it; its notice is kept in
+[LICENSE-MIT](LICENSE-MIT). The bundled handwriting model, Grape, is licensed
+separately under the Apache License 2.0 ([models/LICENSE](models/LICENSE)).

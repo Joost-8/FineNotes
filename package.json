@@ -27,7 +27,7 @@
     "type": "git",
     "url": "https://github.com/Joost-8/FineNotes.git"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "fflate": "0.8.3",
     "pdf-lib": "1.17.1"
