@@ -14,6 +14,10 @@ extracted from the matching section of this file by `release.yml`.
   away, pick the eraser, and the pen returns with its options still tucked
   away, whether you tap it or it comes back on its own after one use. Each
   tool remembers this for itself.
+- **Headings inside a page stay with their page.** In the Contents tab, a
+  page added to the contents folds away the headings inside it; headings
+  inside a page without a title are listed on their own. Neither nests under
+  the title of an earlier page any more.
 
 ### Fixed
 

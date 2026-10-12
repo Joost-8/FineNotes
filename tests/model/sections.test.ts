@@ -157,12 +157,15 @@ describe("section ids and loading", () => {
 });
 
 describe("contentsTree", () => {
-  it("puts sections under the last page title before them, until the next one", () => {
+  it("lists a titled page's headings under it, and the rest on their own", () => {
     const doc = threePages();
     new SetSection(doc.pages[0], "c0", at(100, "Preface")).apply(doc);
     doc.pages[1].title = "Week 2";
     new SetSection(doc.pages[1], "c1", at(200, "Fourier")).apply(doc);
+    // A page with no title: its headings are plain rows, nothing to fold,
+    // and they do not go under the title of the page before.
     new SetSection(doc.pages[2], "c2", at(100, "Sampling")).apply(doc);
+    new SetSection(doc.pages[2], "c3", at(500, "Aliasing")).apply(doc);
     doc.pages.push(blankPage("p4"));
     doc.pages[3].title = "Week 3";
     const tree = contentsTree(contentsEntries(doc));
@@ -170,19 +173,28 @@ describe("contentsTree", () => {
       tree.map((n) => [n.entry.title, n.at, n.children.map((c) => [c.entry.title, c.at])]),
     ).toEqual([
       ["Preface", 0, []],
-      [
-        "Week 2",
-        1,
-        [
-          ["Fourier", 2],
-          ["Sampling", 3],
-        ],
-      ],
-      ["Week 3", 4, []],
+      ["Week 2", 1, [["Fourier", 2]]],
+      ["Sampling", 3, []],
+      ["Aliasing", 4, []],
+      ["Week 3", 5, []],
     ]);
   });
 
   it("is empty for no entries", () => {
     expect(contentsTree([])).toEqual([]);
+  });
+});
+
+describe("sections and edits", () => {
+  it("keeps every field of a section when it is renamed or moved", () => {
+    const doc = threePages();
+    const page = doc.pages[0];
+    new SetSection(page, "c1", at(100, "Fourier")).apply(doc);
+    const now = page.sections?.[0];
+    if (!now) throw new Error("the section was not added");
+    // A field added to sections later must survive a rename.
+    const later = { ...now, y: 400, title: "Renamed", extra: true };
+    new SetSection(page, "c1", later).apply(doc);
+    expect(page.sections).toEqual([{ id: "c1", x: 60, y: 400, title: "Renamed", extra: true }]);
   });
 });

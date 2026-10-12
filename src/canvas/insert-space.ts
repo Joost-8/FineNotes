@@ -374,7 +374,8 @@ function sectionsFrom(
 
 /** A section's value, moved down by `dy`. */
 function moved(section: PageSection, dy: number): Omit<PageSection, "id"> {
-  return { x: section.x, y: section.y + dy, title: section.title };
+  // A full copy, so its level (and any later field) moves with it.
+  return { ...section, y: section.y + dy };
 }
 
 /**

@@ -15,16 +15,18 @@
  *     .goodobsidian-pagesidebar-contents
  *       .goodobsidian-contents-list
  *         .goodobsidian-contents-row × N  (› fold · title · page number · ⌄ menu)
- *           .is-sub: a section inside a page, under its heading
+ *           .is-section: a heading inside a page (smaller, muted)
+ *           .is-sub: one under its page's title, folding with it
  *       .goodobsidian-contents-empty
  *       .goodobsidian-contents-add  ("Add page N to contents")
  *     .goodobsidian-pagesidebar-audio (filled by the note's audio controller)
  *
  * The Contents tab is the notebook's table of contents: every page given a
- * title (model/contents.ts), in page order, as a heading, with the sections
- * after it (headings lassoed inside pages) as subheadings that fold away
- * under it. Tapping one goes to its page, or to its line, and the entry
- * being read is marked as the reader scrolls.
+ * title (model/contents.ts), in page order, as a heading, with the headings
+ * lassoed inside that page (sections) folding away under it; sections on a
+ * page without a title are listed on their own. Tapping one goes to its
+ * page, or to its line, and the entry being read is marked as the reader
+ * scrolls, each entry running on until the next.
  *
  * Tapping a thumbnail scrolls the surface to that page; the page being read is
  * outlined in the accent colour and kept in view as the reader scrolls. Every
@@ -525,8 +527,9 @@ export class PageSidebar {
   }
 
   /**
-   * Rebuild the Contents tab: page titles as headings, sections as
-   * subheadings under them, folded as the reader left them. A few rows: cheap.
+   * Rebuild the Contents tab: titled pages as headings, the headings inside
+   * each such page under it, folded as the reader left them. A few rows:
+   * cheap.
    */
   private renderContents(): void {
     const entries = this.doc ? contentsEntries(this.doc) : [];
@@ -539,8 +542,7 @@ export class PageSidebar {
       const heading = this.contentsRow(node.entry, node.children.length > 0 ? folded : null);
       rows[node.at] = { row: heading, heading: node.at };
       const subs = node.children.map((child) => {
-        const row = this.contentsRow(child.entry, null);
-        row.addClass("is-sub");
+        const row = this.contentsRow(child.entry, null, true);
         row.toggleClass("is-hidden", folded);
         rows[child.at] = { row, heading: node.at };
         return row;
@@ -564,22 +566,29 @@ export class PageSidebar {
   }
 
   /**
-   * One row of the contents: a fold toggle when it heads subheadings
-   * (`folded` says how it is; null for none), the entry, and its ⌄ menu.
+   * One row of the contents: a fold toggle when it heads its page's headings
+   * (`folded` says how it is; null for none), the entry, and its ⌄ menu. A
+   * `sub` row is listed under its page's title; a heading inside a page
+   * without one lines up with the page titles instead.
    */
-  private contentsRow(entry: ContentsEntry, folded: boolean | null): HTMLElement {
+  private contentsRow(entry: ContentsEntry, folded: boolean | null, sub = false): HTMLElement {
     const row = this.contentsList.createDiv({
       cls: "goodobsidian-contents-row",
       attr: { role: "listitem" },
     });
+    row.toggleClass("is-section", entry.section !== undefined);
+    row.toggleClass("is-sub", sub);
     if (folded !== null) {
       const fold = row.createEl("button", {
         cls: "goodobsidian-contents-fold clickable-icon",
-        attr: { "aria-label": "Show or hide its sections", "aria-expanded": String(!folded) },
+        attr: {
+          "aria-label": "Show or hide this page's headings",
+          "aria-expanded": String(!folded),
+        },
       });
       fold.toggleClass("is-folded", folded);
       setIcon(fold, "chevron-down");
-    } else if (!entry.section) {
+    } else if (!sub) {
       row.createSpan({ cls: "goodobsidian-contents-fold-space" });
     }
     const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });

@@ -914,17 +914,18 @@ body,
   flex: 0 0 36px;
 }
 
-/* A section inside a page: a subheading, indented under its heading. */
+/* A heading inside a page: smaller and muted, and indented under its page's
+   title when the page has one. */
 .goodobsidian-contents-row.is-sub {
   padding-left: 40px;
 }
 
-.goodobsidian-contents-row.is-sub .goodobsidian-contents-title {
+.goodobsidian-contents-row.is-section .goodobsidian-contents-title {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-contents-row.is-sub.is-current .goodobsidian-contents-title {
+.goodobsidian-contents-row.is-section.is-current .goodobsidian-contents-title {
   color: var(--text-accent);
 }
 

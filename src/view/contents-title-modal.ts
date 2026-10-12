@@ -32,7 +32,7 @@ export class ContentsTitleModal extends Modal {
     /** Its title now; `undefined` when it is not in the contents yet. */
     private readonly current: string | undefined,
     private readonly submit: (title: string) => void,
-    /** A heading inside the page, listed under its page's title, rather than the page itself. */
+    /** A heading inside the page, listed with its page's other headings, rather than the page itself. */
     private readonly section = false,
   ) {
     super(app);
@@ -49,7 +49,7 @@ export class ContentsTitleModal extends Modal {
     body.createDiv({
       cls: "goodobsidian-ask-note",
       text: this.section
-        ? "Listed in the Contents tab under its page's title, and marked by a ribbon in the margin."
+        ? "Listed in the Contents tab with its page, and marked by a ribbon in the margin."
         : "Listed in the Contents tab of the page sidebar, where it starts a section.",
     });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });

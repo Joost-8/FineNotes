@@ -1823,7 +1823,7 @@ export class InkView extends TextFileView {
 
   /**
    * "Add to contents" on a lasso selection: ask for the heading's title and
-   * list it under its page's title in the contents (FineNotes#20).
+   * list it in the contents with its page (FineNotes#20).
    */
   private addSection(index: number, at: { x: number; y: number }, strokeIds: string[]): void {
     const surface = this.surface;

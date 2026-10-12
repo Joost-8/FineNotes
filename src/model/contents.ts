@@ -160,9 +160,8 @@ export class SetSection implements Command {
     const title = value ? normalizePageTitle(value.title) : undefined;
     const keep =
       value !== null && title !== undefined && Number.isFinite(value.x) && Number.isFinite(value.y);
-    const next = keep
-      ? sortSections([...rest, { id: this.id, x: value.x, y: value.y, title }])
-      : rest;
+    // A full copy: a field added to sections later must not be dropped here.
+    const next = keep ? sortSections([...rest, { ...value, id: this.id, title }]) : rest;
     if (next.length > 0) this.page.sections = next;
     else delete this.page.sections;
   }
@@ -211,22 +210,24 @@ export interface ContentsNode {
 }
 
 /**
- * The contents as headings and subheadings: a page's title is a heading,
- * and every section after it, on its page and on the pages that follow up
- * to the next titled page, is a subheading under it. A section with no
- * titled page before it stands on its own.
+ * The contents as headings and the page's own headings under them: a page
+ * with a title is a heading, and the sections on that page are listed under
+ * it, to fold away with it. Sections on a page without a title stand on
+ * their own. Nothing nests across pages; the entry being read still runs on
+ * until the next one, across pages (`currentContentsEntry`).
  */
 export function contentsTree(entries: readonly ContentsEntry[]): ContentsNode[] {
   const roots: ContentsNode[] = [];
   let heading: ContentsNode | null = null;
   entries.forEach((entry, at) => {
     const node: ContentsNode = { at, entry, children: [] };
-    if (entry.section && heading) {
+    // A page's title comes first among its entries (contentsEntries).
+    if (entry.section && heading?.entry.index === entry.index) {
       heading.children.push(node);
       return;
     }
     roots.push(node);
-    if (!entry.section) heading = node;
+    heading = entry.section ? null : node;
   });
   return roots;
 }
