@@ -5,10 +5,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  PREVIEW_HIGHLIGHTER_OPACITY,
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
   glyphThickness,
   penIconParts,
+  sampleStroke,
   swoosh,
 } from "../../src/view/pen-glyphs";
 
@@ -88,5 +90,74 @@ describe("width glyphs", () => {
         }
       }
     }
+  });
+});
+
+describe("sampleStroke (the size preview)", () => {
+  const W = 240;
+  const H = 44;
+
+  it("draws the ballpoint as one even line at the real thickness", () => {
+    expect(sampleStroke("ball", 2.5, W, H)).toMatchObject({ strokeWidth: 2.5, cap: "round" });
+  });
+
+  it("draws the highlighter as a flat, translucent band at the real thickness", () => {
+    expect(sampleStroke("highlighter", 18, W, H)).toMatchObject({
+      strokeWidth: 18,
+      cap: "butt",
+      opacity: PREVIEW_HIGHLIGHTER_OPACITY,
+    });
+  });
+
+  it("draws the fountain pen and the brush as filled, tapered outlines", () => {
+    for (const pen of ["fountain", "brush"]) {
+      const shape = sampleStroke(pen, 6, W, H);
+      expect(shape.strokeWidth).toBeUndefined();
+      expect(shape.d.endsWith("Z")).toBe(true);
+    }
+  });
+
+  it("gives each pen a different shape at the same width", () => {
+    const shapes = ["fountain", "ball", "brush", "highlighter"].map((pen) =>
+      JSON.stringify(sampleStroke(pen, 4, W, H)),
+    );
+    expect(new Set(shapes).size).toBe(4);
+  });
+
+  it("is never fuller than the real thickness", () => {
+    for (const pen of ["fountain", "brush"]) {
+      const pts = points(sampleStroke(pen, 6, W, H).d);
+      // The outline's two sides, matched point for point, are at most 6 apart.
+      const half = pts.length / 2;
+      for (let i = 0; i < half; i++) {
+        const [x1, y1] = pts[i];
+        const [x2, y2] = pts[pts.length - 1 - i];
+        expect(Math.hypot(x2 - x1, y2 - y1)).toBeLessThanOrEqual(6.05);
+      }
+    }
+  });
+
+  it("keeps a stroke that fits inside the box", () => {
+    for (const pen of ["fountain", "brush"]) {
+      for (const [x, y] of points(sampleStroke(pen, 4, W, H).d)) {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(W);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThanOrEqual(H);
+      }
+    }
+  });
+
+  it("still draws a stroke thicker than the box, centred on it", () => {
+    const shape = sampleStroke("ball", 80, W, H);
+    expect(shape.strokeWidth).toBe(80);
+    const ys = points(shape.d).map(([, y]) => y);
+    expect(Math.min(...ys)).toBeLessThanOrEqual(H / 2 + 1);
+    expect(Math.max(...ys)).toBeGreaterThanOrEqual(H / 2 - 1);
+  });
+
+  it("draws a nonsense thickness as a hairline, not as nothing", () => {
+    expect(sampleStroke("ball", Number.NaN, W, H).strokeWidth).toBe(1);
+    expect(sampleStroke("ball", 0, W, H).strokeWidth).toBe(1);
   });
 });

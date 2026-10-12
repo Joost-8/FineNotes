@@ -45,10 +45,8 @@ import {
   HOLD_RADIUS,
   MIN_SAMPLE_DISTANCE,
   PALETTE,
-  SIZES,
   SNAP_CLOSE_TOLERANCE,
 } from "../constants";
-import { chosenWidth } from "../model/pen-widths";
 import {
   type BackdropPainter,
   type ImagePainter,
@@ -273,8 +271,8 @@ import {
   eraserSizeFor,
   lassoFilterFor,
   lassoModeFor,
-  penTypeFor,
   shapeModeFor,
+  strokeWidthFor,
   tableSizeFor,
 } from "./toolbar";
 import { SelectionActionBar } from "./selection-bar";
@@ -3260,20 +3258,19 @@ export class InkSurface {
     return this.toolState.color;
   }
 
-  /**
-   * Stroke width actually laid down. A pen type is a multiplier on the width
-   * the user picked (a highlighter is a fat nib, a brush a soft one), so the
-   * three width controls keep meaning the same thing across pen types.
-   */
+  /** Stroke width actually laid down (`strokeWidthFor`, which the width popover previews). */
   private strokeSize(): number {
-    // A shape is drawn at the chosen width: a highlighter or brush nib would
-    // make an outline four times too fat.
-    if (this.toolState.tool === "shape") return Math.max(0.5, this.toolState.size);
-    const spec = penTypeFor(this.toolState);
-    // Pen and highlighter share one width, and only the pens go below the
-    // thinnest preset (FineNotes#7).
-    const floor = spec.tool === "highlighter" ? Math.min(...SIZES) : 0;
-    return Math.max(0.5, chosenWidth(this.toolState.size, floor) * spec.sizeScale);
+    return strokeWidthFor(this.toolState);
+  }
+
+  /**
+   * How many screen px one page px of each size is right now, for the size
+   * previews in the width and eraser popovers. Pen width belongs to the page
+   * and grows with the zoom; the eraser is a screen size, set at fit-to-page
+   * zoom (`atFitZoom`).
+   */
+  sizePreviewScales(): { pen: number; eraser: number } {
+    return { pen: this.unitScale, eraser: this.unitScale / (this.userZoom || 1) };
   }
 
   /**

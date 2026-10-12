@@ -59,7 +59,7 @@
 
 import { drawingToolOf, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE } from "../constants";
+import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -88,7 +88,14 @@ import {
 import type { ListKind } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
-import { PEN_ICON_BOX, SWOOSH_HEIGHT, SWOOSH_WIDTH, penIconParts, swoosh } from "./pen-glyphs";
+import {
+  PEN_ICON_BOX,
+  SWOOSH_HEIGHT,
+  SWOOSH_WIDTH,
+  penIconParts,
+  sampleStroke,
+  swoosh,
+} from "./pen-glyphs";
 import {
   DEFAULT_SHAPE_COLOR,
   contrastMark,
@@ -100,6 +107,7 @@ import {
 } from "../model/colors";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
+import { syncRangeFill } from "./range-fill";
 import {
   clampEraserSize,
   eraserGlyphRadius,
@@ -163,6 +171,23 @@ export const PEN_MENU_TYPES: readonly PenTypeSpec[] = PEN_TYPES;
 export function penTypeFor(state: ToolbarState): PenTypeSpec {
   const id = state.penType ?? (state.tool === "highlighter" ? "highlighter" : "fountain");
   return PEN_TYPES.find((p) => p.id === id) ?? PEN_TYPES[0];
+}
+
+/**
+ * The stroke width actually laid down, page px. A pen type is a multiplier
+ * on the width the user picked (a highlighter is a fat nib, a brush a soft
+ * one), so the width controls keep meaning the same thing across pen types.
+ * The surface draws with this and the width popover previews it.
+ */
+export function strokeWidthFor(state: ToolbarState): number {
+  // A shape is drawn at the chosen width: a highlighter or brush nib would
+  // make an outline four times too fat.
+  if (state.tool === "shape") return Math.max(0.5, state.size);
+  const spec = penTypeFor(state);
+  // Pen and highlighter share one width, and only the pens go below the
+  // thinnest preset (FineNotes#7).
+  const floor = spec.tool === "highlighter" ? Math.min(...SIZES) : 0;
+  return Math.max(0.5, chosenWidth(state.size, floor) * spec.sizeScale);
 }
 
 /**
@@ -328,6 +353,11 @@ export interface ToolbarCallbacks {
   onPenTypeChange?: (spec: PenTypeSpec) => void;
   /** Eraser mode or size changed. Hosts persist it across sessions. */
   onEraserChange?: (mode: EraserMode, size: number) => void;
+  /**
+   * Screen px per page px for the size previews: the pen's at the zoom now,
+   * the eraser's at fit-to-page. Left out, a page px is drawn as a screen px.
+   */
+  sizePreviewScales?: () => { pen: number; eraser: number };
   /** "Erase highlighter only" / "Erase pen only" changed. Hosts persist it. */
   onEraserFilterChange?: (filter: EraserFilter) => void;
   /** The lasso's type, or what it picks up, changed. Hosts persist it. */
@@ -1608,7 +1638,6 @@ export class Toolbar {
     });
     iconOrText(reset, "rotate-ccw", "Reset");
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
-    slider.append(widthWedge());
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
@@ -1623,14 +1652,23 @@ export class Toolbar {
     range.min = "0";
     range.max = String(stops.length - 1);
     range.step = "1";
+    const preview = strokePreview(body);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
     const presets = new Map<number, HTMLElement>();
-    // The readout, the thumb and the presets always show the live width.
+    // The readout, the thumb, the preview and the presets always show the live width.
     const show = (): void => {
       const width = chosenWidth(this.state.size, floor);
       readout.setText(formatMm(width));
       range.value = String(nearestStop(stops, width));
+      syncRangeFill(range);
       markChosen(presets, this.state.size);
+      const color =
+        this.state.tool === "shape"
+          ? (this.state.shapeColor ?? DEFAULT_SHAPE_COLOR)
+          : this.state.color;
+      // A shape's outline is one even line, whatever pen is chosen.
+      const pen = this.state.tool === "shape" ? "ball" : this.activePenType().id;
+      preview(strokeWidthFor(this.state) * this.previewScales().pen, color, pen);
     };
     const pick = (width: number): void => {
       this.setWidth(width);
@@ -1659,6 +1697,14 @@ export class Toolbar {
     show();
   }
 
+  /** Screen px per page px for the size previews (1 : 1 without a host that knows). */
+  private previewScales(): { pen: number; eraser: number } {
+    const scales = this.callbacks.sizePreviewScales?.();
+    const ok = (n: number | undefined): number =>
+      n !== undefined && Number.isFinite(n) && n > 0 ? n : 1;
+    return { pen: ok(scales?.pen), eraser: ok(scales?.eraser) };
+  }
+
   /** A new pen width, from a preset, the slider or a reset. */
   private setWidth(width: number): void {
     this.state.size = width;
@@ -1685,7 +1731,6 @@ export class Toolbar {
     });
     iconOrText(reset, "rotate-ccw", "Reset");
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
-    slider.append(widthWedge());
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
@@ -1695,14 +1740,17 @@ export class Toolbar {
     range.min = "0";
     range.max = String(stops.length - 1);
     range.step = "1";
+    const preview = eraserPreview(body);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
     const presets = new Map<number, HTMLElement>();
-    // The readout, the thumb and the presets always show the live size.
+    // The readout, the thumb, the preview and the presets always show the live size.
     const show = (): void => {
       const size = eraserSizeFor(this.state);
       readout.setText(formatMm(size));
       range.value = String(nearestStop(stops, size));
+      syncRangeFill(range);
       markChosen(presets, size);
+      preview(size * this.previewScales().eraser);
     };
     const pick = (size: number): void => {
       this.setEraserSize(size);
@@ -2194,23 +2242,6 @@ function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K, pressed = false)
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/**
- * The width slider's wedge, thin at the left and full height at the right. An
- * SVG polygon stretched over its box, rather than a CSS clip-path, which the
- * plugin review flags as only partly supported.
- */
-function widthWedge(): SVGElement {
-  const svg = activeDocument.createElementNS(SVG_NS, "svg");
-  svg.classList.add("goodobsidian-width-wedge");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("aria-hidden", "true");
-  const shape = activeDocument.createElementNS(SVG_NS, "polygon");
-  shape.setAttribute("points", "0,44 100,0 100,100 0,56");
-  svg.append(shape);
-  return svg;
-}
-
 /** A pen-type swatch: a nib silhouette tinted with the current ink colour. */
 function penGlyph(spec: PenTypeSpec, color: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
@@ -2321,6 +2352,63 @@ function lassoGlyph(mode: LassoMode): SVGElement {
   }
   svg.append(shape);
   return svg;
+}
+
+/**
+ * A strip of paper under the width slider with a sample stroke on it in the
+ * pen's own character (`sampleStroke`, the width buttons' shapes drawn
+ * large), at the width it will be on the page now. The SVG has no viewBox,
+ * so its units are screen px. Returns the function that redraws it.
+ */
+function strokePreview(
+  parent: HTMLElement,
+): (screenWidth: number, color: string, pen: string) => void {
+  const strip = parent.createDiv({ cls: "goodobsidian-size-preview" });
+  strip.setAttribute("aria-hidden", "true");
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
+  svg.classList.add("goodobsidian-size-preview-stroke");
+  const path = activeDocument.createElementNS(SVG_NS, "path");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+  strip.append(svg);
+  return (screenWidth, color, pen) => {
+    // Measured each time: the popover is laid out by then. The fallback is
+    // the stylesheet's strip in a popover that has not been laid out yet.
+    const width = strip.clientWidth || 240;
+    const height = strip.clientHeight || 44;
+    const shape = sampleStroke(pen, screenWidth, width, height);
+    path.setAttribute("d", shape.d);
+    if (shape.strokeWidth === undefined) {
+      path.setAttribute("fill", color);
+      path.removeAttribute("stroke");
+      path.removeAttribute("stroke-width");
+    } else {
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", shape.strokeWidth.toFixed(2));
+      path.setAttribute("stroke-linecap", shape.cap ?? "round");
+    }
+    if (shape.opacity === undefined) path.removeAttribute("opacity");
+    else path.setAttribute("opacity", String(shape.opacity));
+    strip.toggleClass("is-highlighter", pen === "highlighter");
+    // White ink would vanish on white paper: show it on dark paper instead.
+    strip.toggleClass("is-light-ink", sameColor(color, "#ffffff"));
+  };
+}
+
+/**
+ * A strip of paper under the eraser slider with the eraser's footprint on
+ * it, at the size it erases on screen. A size larger than the strip is cut
+ * at its edges, which still reads as large. Returns the redraw function.
+ */
+function eraserPreview(parent: HTMLElement): (screenDiameter: number) => void {
+  const strip = parent.createDiv({ cls: "goodobsidian-size-preview" });
+  strip.setAttribute("aria-hidden", "true");
+  const ring = strip.createDiv({ cls: "goodobsidian-size-preview-eraser" });
+  return (screenDiameter) => {
+    const d = `${Math.max(2, screenDiameter).toFixed(1)}px`;
+    ring.setCssStyles({ width: d, height: d });
+  };
 }
 
 /** An eraser-size control: a hollow circle whose diameter grows with the size. */
