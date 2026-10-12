@@ -8,9 +8,14 @@
  *   length-prefixed protobuf record `{1: target id, <kind>: body}`. Kind 30/31
  *   names the notebook; kind 2 defines a paper template (its size, and a PDF
  *   in `attachments/`); kind 54 adds a page (its template, and a fractional
- *   order key); kind 56 gives a page another template; kind 57 deletes one.
+ *   order key). Kinds 56 and 57 set a flag on a page, `{3: {1: 1}}` for on
+ *   and `{3: {}}` for off, the latest event winning: 56 removes the page, 57
+ *   bookmarks it. Read from a real notebook (2026-10-12) whose bookmarked
+ *   page carried a 57 and whose removed page a 56; a page bookmarked and
+ *   un-bookmarked again carries a 57 with the flag off.
  * - `notes/<id>`: one page's content, as header/body record pairs. The id is
  *   the page's id plus one. A body `{7: …}` is a stroke, `{1: …}` a picture.
+ *   A header with `{3: 1}` marks its element deleted.
  * - `attachments/<id>`: paper PDFs and pictures, as they are.
  *
  * A stroke's points are Apple-LZ4 compressed, in a small typed layout
@@ -66,6 +71,7 @@ interface PageEntry {
   template?: string;
   order: string;
   deleted: boolean;
+  bookmarked: boolean;
   created: number;
 }
 
@@ -123,18 +129,18 @@ export function readGoodnotes(
           template: body.message(3)?.string(1),
           order: body.message(4)?.string(1) ?? "",
           deleted: false,
+          bookmarked: false,
           created: created++,
         });
         break;
       case 56: {
         const page = pages.get(id);
-        const template = body.string(4);
-        if (page && template) page.template = template;
+        if (page) page.deleted = flagOn(body);
         break;
       }
       case 57: {
         const page = pages.get(id);
-        if (page) page.deleted = true;
+        if (page) page.bookmarked = flagOn(body);
         break;
       }
     }
@@ -195,8 +201,12 @@ export function readGoodnotes(
       images: [],
       textBoxes: [],
     };
+    if (entry.bookmarked) page.bookmarked = true;
 
     const content = file(`notes/${layerId(entry.id)}`);
+    // Whether the last header marked its element removed (`{3: 1}`): a
+    // picture deleted in Goodnotes stays in the file with that mark.
+    let removed = false;
     for (const record of content ? splitDelimited(content) : []) {
       let outer: Message;
       try {
@@ -205,7 +215,11 @@ export function readGoodnotes(
         continue;
       }
       // Headers carry several fields; a body is one length-delimited field.
-      if (outer.fields.length !== 1 || outer.fields[0].wire !== 2) continue;
+      if (outer.fields.length !== 1 || outer.fields[0].wire !== 2) {
+        removed = (outer.int(3) ?? 0) !== 0;
+        continue;
+      }
+      if (removed) continue;
       const kind = outer.fields[0].field;
       const body = outer.message(kind);
       if (!body) continue;
@@ -368,6 +382,11 @@ function readImage(
   const path = attach(attachment);
   if (!path) return null;
   return { id, path, x: round2(x * k), y: round2(y * k), w: round2(w * k), h: round2(h * k) };
+}
+
+/** A page flag event's value: `{3: {1: 1}}` is on, anything else off. */
+function flagOn(body: Message): boolean {
+  return (body.message(3)?.int(1) ?? 0) !== 0;
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {

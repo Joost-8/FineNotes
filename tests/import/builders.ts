@@ -133,15 +133,22 @@ export interface GnImage {
   id: string;
   attachment: string;
   frame: [number, number, number, number];
+  /** Deleted in Goodnotes: still in the file, its header marked `{3: 1}`. */
+  removed?: boolean;
 }
 
 export interface GnPage {
   id: string;
   template: string;
   order: string;
+  /** Removed from the notebook (a 56 with the flag on). */
   deleted?: boolean;
-  /** A later change of paper, to a template id. */
-  retemplate?: string;
+  /** Bookmarked (a 57 with the flag on). */
+  bookmarked?: boolean;
+  /** Bookmarked once and the bookmark taken off again (a 57 with the flag off). */
+  unbookmarked?: boolean;
+  /** Removed and put back again (a 56 with the flag off). */
+  restored?: boolean;
   strokes?: GnStroke[];
   images?: GnImage[];
   /** Bodies of element kinds the importer does not know. */
@@ -251,39 +258,37 @@ export function goodnotesFiles(spec: {
       ]),
     );
   }
+  // A page flag: `{3: {1: 1, 2: clock}}` sets it, `{3: {2: clock}}` clears it.
+  const flag = (id: string, kind: number, on: boolean): Uint8Array =>
+    pb([
+      [1, { str: id }],
+      [
+        kind,
+        {
+          msg: [
+            [1, { str: doc }],
+            [2, { str: id }],
+            [
+              3,
+              {
+                msg: on
+                  ? [
+                      [1, { int: 1 }],
+                      [2, clock(1)],
+                    ]
+                  : [[2, clock(4)]],
+              },
+            ],
+            [4, { str: "030EAEC6-3B22-43F6-AEFE-3FCAAA554BAC" }],
+          ],
+        },
+      ],
+    ]);
   for (const p of spec.pages) {
-    if (p.retemplate) {
-      events.push(
-        pb([
-          [1, { str: p.id }],
-          [
-            56,
-            {
-              msg: [
-                [1, { str: doc }],
-                [3, { msg: [[1, { int: 1 }]] }],
-                [4, { str: p.retemplate }],
-              ],
-            },
-          ],
-        ]),
-      );
-    }
-    if (p.deleted)
-      events.push(
-        pb([
-          [1, { str: p.id }],
-          [
-            57,
-            {
-              msg: [
-                [1, { str: doc }],
-                [3, { msg: [[1, { int: 1 }]] }],
-              ],
-            },
-          ],
-        ]),
-      );
+    if (p.deleted || p.restored) events.push(flag(p.id, 56, true));
+    if (p.restored) events.push(flag(p.id, 56, false));
+    if (p.bookmarked || p.unbookmarked) events.push(flag(p.id, 57, true));
+    if (p.unbookmarked) events.push(flag(p.id, 57, false));
   }
   // An event of a kind the importer ignores, and a record that is not a message.
   events.push(
@@ -331,6 +336,7 @@ export function goodnotesFiles(spec: {
         pb([
           [1, { str: im.id }],
           [2, clock(2)],
+          ...(im.removed ? [[3, { int: 1 }] as PbField] : []),
           [4, { str: im.attachment }],
         ]),
       );

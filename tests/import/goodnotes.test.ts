@@ -143,9 +143,44 @@ describe("readGoodnotes", () => {
     ]);
   });
 
+  it("leaves out a picture deleted in Goodnotes, and its file", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          images: [
+            { id: "I1", attachment: "A-PNG", frame: [0, 0, 50, 50], removed: true },
+            { id: "I2", attachment: "A-PHOTO", frame: [10, 20, 300, 400] },
+          ],
+        },
+      ]),
+      "x",
+    );
+    expect(result.doc.pages[0].images.map((i) => i.path)).toEqual(["Biology - picture 2.jpg"]);
+    expect(result.attachments.map((x) => x.name)).toEqual([
+      "Biology - paper 1.pdf",
+      "Biology - picture 2.jpg",
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("keeps bookmarks, by the latest flag, and pages put back", () => {
+    const result = readGoodnotes(
+      notebook([
+        { id: PAGE_A, template: "T-RULED", order: "a", bookmarked: true },
+        { id: PAGE_B, template: "T-RULED", order: "b", unbookmarked: true },
+        { id: PAGE_C, template: "T-RULED", order: "c", restored: true, bookmarked: true },
+      ]),
+      "x",
+    );
+    expect(result.doc.pages.map((p) => p.bookmarked)).toEqual([true, undefined, true]);
+  });
+
   it("reports what it could not bring over", () => {
     const files = notebook([
-      { id: PAGE_A, template: "T-RULED", order: "a", retemplate: "T-BUILTIN", unknown: 2 },
+      { id: PAGE_A, template: "T-BUILTIN", order: "a", unknown: 2 },
       {
         id: PAGE_B,
         template: "T-RULED",
