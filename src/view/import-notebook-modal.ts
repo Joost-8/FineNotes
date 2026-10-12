@@ -121,7 +121,9 @@ export class ImportNotebookModal extends Modal {
       .setDesc(this.options.folder ? this.options.folder : "The vault's top folder");
 
     const help = el.createEl("details", { cls: "goodobsidian-import-help" });
-    help.createEl("summary", { text: "How do I export my notebooks?" });
+    const summary = help.createEl("summary");
+    setIcon(summary.createSpan({ cls: "goodobsidian-import-help-chevron" }), "chevron-right");
+    summary.createSpan({ text: "How do I export my notebooks?" });
     const steps = help.createEl("ul");
     steps.createEl("li", {
       text:
