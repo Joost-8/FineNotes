@@ -28,6 +28,7 @@ import {
   importHeading,
   isImportFileName,
   progressText,
+  withPageText,
 } from "../import/import-summary";
 import {
   cleanTitle,
@@ -40,7 +41,7 @@ import {
 import { buildInkFile } from "../model/serialize";
 import { errorMessage } from "../util/errors";
 import { saveImageAttachment } from "./image-import";
-import { measurePdfPages } from "./pdf-pages";
+import { measurePdfPages, rasterizePdfFirstPage } from "./pdf-pages";
 
 export interface ImportNotebookOptions {
   /** Where new notebooks go (vault-relative, "" for the root). */
@@ -168,6 +169,7 @@ export class ImportNotebookModal extends Modal {
           // Each notebook is saved, and its files let go, before the next is read.
           one = await importNotebooks(new Uint8Array(await picked.read()), picked.name, {
             measurePdf: (bytes) => measurePdfPages(ownBuffer(bytes)),
+            rasterizePdf: (bytes) => rasterizePdfFirstPage(bytes),
             onResult: async (result) => {
               written.push({ result, file: await this.save(result) });
             },
@@ -228,7 +230,12 @@ export class ImportNotebookModal extends Modal {
     relinkAttachments(result.doc, saved);
 
     const heading = cleanTitle(result.title) || stripInkSuffix(paths.fileName);
-    const content = buildInkFile(newNoteBody(heading, new Date().toISOString()), result.doc);
+    const body = withPageText(
+      newNoteBody(heading, new Date().toISOString()),
+      result.doc,
+      result.pageText,
+    );
+    const content = buildInkFile(body, result.doc);
     return vault.create(notePath, content);
   }
 

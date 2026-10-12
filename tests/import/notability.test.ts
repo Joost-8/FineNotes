@@ -203,12 +203,15 @@ describe("readNotability", () => {
       "x",
     );
     expect(result.warnings).toEqual([
-      "1 picture could not be found in the file.",
-      "1 sticky canvas could not be brought over yet.",
-      "1 sticker or GIF could not be brought over yet.",
-      "2 other items could not be brought over yet.",
-      "1 recording could not be brought over yet.",
-      "No handwriting was found in this note.",
+      "1 picture could not be found in the file (page 1).",
+      "1 sticky canvas came over as a coloured box with its lines and ink (page 1).",
+      "2 other items could not be brought over yet (page 1).",
+      "1 recording's length could not be read.",
+      "1 sticker or GIF could not be placed.",
+    ]);
+    // The recording came over all the same, its length unknown.
+    expect(result.doc.recordings).toEqual([
+      { id: "r1", path: "x - recording 1.bin", start: 0, duration: 0 },
     ]);
   });
 
@@ -375,6 +378,7 @@ describe("readNotability", () => {
     );
     const boxes = result.doc.pages[0].textBoxes;
     expect(boxes.map((b) => b.text)).toEqual(["Hello\nWorld", "Bye", "Box"]);
+    expect(result.warnings).toEqual([]);
     const [first, second, box] = boxes;
     expect(first).toMatchObject({ id: "t1", color: "#000000" });
     expect(first.y).toBeCloseTo(2 * 12 * 1.2 * K, 1);
@@ -471,5 +475,154 @@ describe("sampleCurve", () => {
     const xy = new Float32Array([0, 0, NaN, 1]);
     const out = sampleCurve(xy, 2, new Float32Array([-1, 2]), 1);
     expect(out).toEqual([{ x: 0, y: 0, frac: 1 }]);
+  });
+});
+
+describe("readNotability: what FineNotes cannot hold, approximated", () => {
+  it("keeps list and checklist markers in the typed text", () => {
+    const run = (from: number, length: number, other: Record<string, unknown> = {}) => ({
+      $class: "NSObject",
+      subRangeRangeKey: `{${from}, ${length}}`,
+      subRangeFontKey: { $class: "NSObject", NSFontSizeAttribute: 12 },
+      subRangeOtherAttributesKey: { $class: "NSObject", ...other },
+    });
+    const text = "Todo\nMilk\nEggs\n\nOne\nTwo\nDot\n";
+    const check = (checked: number) => ({
+      "indent-decoration-style": 3,
+      "checklist-checked": checked,
+      "indent-level": 0,
+    });
+    const result = readNotability(
+      note(
+        session(null, {
+          attributedString: {
+            $class: "NSObject",
+            stringKey: text,
+            subRangesKey: [
+              run(0, 5, { "checklist-checked": 0 }),
+              run(5, 5, check(0)),
+              run(10, 5, check(1)),
+              run(15, 1),
+              run(16, 4, { "indent-decoration-style": 2, "indent-decoration-number": 1 }),
+              run(20, 4, {
+                "indent-decoration-style": 2,
+                "indent-decoration-number": 2,
+                "indent-level": 1,
+              }),
+              run(24, 4, { "indent-decoration-style": 1 }),
+            ],
+          },
+        }),
+      ),
+      "x",
+    );
+    expect(result.doc.pages[0].textBoxes.map((b) => b.text)).toEqual([
+      "Todo\n☐ Milk\n☑ Eggs",
+      "1. One\n  2. Two\n• Dot",
+    ]);
+  });
+
+  it("shows an animated picture's original, and a sticky canvas as its paper, ruling and ink", () => {
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 10, 0, 10, 0]);
+    const id = "2116E375-4D92-4153-B466-31DE5CA45378";
+    const result = readNotability(
+      note(
+        session(null, {
+          mediaObjects: [
+            {
+              $class: "ImageMediaObject",
+              documentOrigin: "{10, 20}",
+              unscaledContentSize: "{100, 100}",
+              isFlippedHorizontal: true,
+              assetsIdKey: new TextEncoder().encode(id),
+              figure: {
+                $class: "Figure",
+                FigureCropRectKey: "{{0, 0}, {5, 5}}",
+                FigureBackgroundObjectKey: {
+                  $class: "ImageObject",
+                  kImageObjectSnapshotKey: {
+                    $class: "GLSnapshot",
+                    relativePath: "Images/still.png",
+                  },
+                },
+              },
+            },
+            {
+              $class: "CanvasMediaObject",
+              documentOrigin: "{30, 300}",
+              unscaledContentSize: "{240, 100}",
+              kCanvasMediaObjectPaperAttributes: {
+                $class: "GLModel.PaperAttributes",
+                paperIdentifier: "Color:#1749B3",
+                lineStyle2: "Lines:false:false:0.5",
+              },
+              paperStyleObject: {
+                $class: "GLModel.NBPaperStyle",
+                paperColor: { $class: "UIColor", UIRed: 1, UIGreen: 0, UIBlue: 0 },
+              },
+              inner: {
+                $class: "InkedSpatialHash",
+                curvesnumpoints: i32bytes([2]),
+                curvespoints: f32bytes([1, 2, 3, 4]),
+                curveswidth: f32bytes([1]),
+                curvescolors: new Uint8Array([0, 0, 0, 255]),
+              },
+            },
+          ],
+        }),
+        {
+          [`Lecture 3/Assets/${id}/media.gif`]: gif,
+          "Lecture 3/Images/still.png": PDF,
+        },
+      ),
+      "x",
+    );
+    const page = result.doc.pages[0];
+    expect(page.images.map((i) => [i.path, i.crop])).toEqual([["x - picture 1.gif", undefined]]);
+    const [paper] = page.textBoxes;
+    expect(paper).toMatchObject({ text: "", fill: "#ff000066" });
+    expect(paper.h).toBeCloseTo(100 * K, 1);
+    // Half-inch ruling: 574 / 8.5 × 0.5 ≈ 33.8 units apart, inside 100 units: two lines.
+    const lines = page.strokes.filter((s) => s.shape === "line");
+    expect(lines.length).toBe(2);
+    expect(lines[0].pts[1]).toBeCloseTo((300 + (WIDTH / 8.5) * 0.5) * K, 0);
+    expect(lines[0].color).toBe("#cc0000");
+    const ink = page.strokes.find((s) => s.shape === undefined)!;
+    expect(ink.pts[0]).toBeCloseTo((30 + 1) * K, 1);
+    expect(ink.pts[1]).toBeCloseTo((300 + 2) * K, 1);
+    expect(result.warnings).toEqual([
+      "1 flipped picture came over unflipped (page 1).",
+      "1 sticky canvas came over as a coloured box with its lines and ink (page 1).",
+    ]);
+  });
+
+  it("brings recordings over with their length", () => {
+    // An M4A with only a movie header: version 0, created 2026-01-01, 3.5 s at 1000 per second.
+    const created = Date.UTC(2026, 0, 1) / 1000 + 2082844800;
+    const mvhd = new Uint8Array(8 + 20);
+    const view = new DataView(mvhd.buffer);
+    view.setUint32(0, mvhd.length);
+    mvhd.set([0x6d, 0x76, 0x68, 0x64], 4);
+    view.setUint32(12, created);
+    view.setUint32(20, 1000);
+    view.setUint32(24, 3500);
+    const moov = new Uint8Array(8 + mvhd.length);
+    new DataView(moov.buffer).setUint32(0, moov.length);
+    moov.set([0x6d, 0x6f, 0x6f, 0x76], 4);
+    moov.set(mvhd, 8);
+    const ftyp = new Uint8Array([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+    const m4a = new Uint8Array([...ftyp, ...moov]);
+    const result = readNotability(
+      note(session(null), {
+        "Lecture 3/Recordings/a.m4a": m4a,
+        "Lecture 3/Recordings/library.plist": new Uint8Array([1]),
+      }),
+      "Talk",
+    );
+    expect(result.doc.recordings).toEqual([
+      { id: "r1", path: "Talk - recording 1.m4a", start: Date.UTC(2026, 0, 1), duration: 3500 },
+    ]);
+    expect(result.attachments.map((a) => a.mime)).toEqual(["audio/mp4"]);
+    expect(result.warnings).toEqual([]);
   });
 });

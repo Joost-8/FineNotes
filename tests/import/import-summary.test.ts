@@ -5,7 +5,10 @@ import {
   importHeading,
   isImportFileName,
   progressText,
+  withPageText,
 } from "../../src/import/import-summary";
+import { readTextSection } from "../../src/recognition/text-layer";
+import { parsePageTranscripts } from "../../src/recognition/page-transcripts";
 import { goodnotesFiles, JPEG, PDF, zip } from "./builders";
 
 const PAGE = (n: number): string => `${n}1111111-0000-0000-0000-00000000000A`;
@@ -61,5 +64,21 @@ describe("import summary", () => {
   it("shows progress", async () => {
     expect(progressText(0, 1, "Folder/Bio.goodnotes")).toBe("Importing Bio.goodnotes…");
     expect(progressText(1, 3, "Maths.note")).toBe("Importing 2 of 3: Maths.note…");
+  });
+});
+
+describe("withPageText", () => {
+  it("files another app's recognised text as each page's transcription, read on the device", async () => {
+    const { doc } = (await notebook(2, 0)).results[0];
+    const body = withPageText("# Bio\n", doc, ["", "What's up"]);
+    const parsed = parsePageTranscripts(readTextSection(body));
+    expect(parsed.entries).toMatchObject([{ key: "p2", text: "What's up", device: true }]);
+    expect(body.startsWith("# Bio\n")).toBe(true);
+  });
+
+  it("leaves the body alone when there is no text", async () => {
+    const { doc } = (await notebook(1, 0)).results[0];
+    expect(withPageText("# Bio\n", doc)).toBe("# Bio\n");
+    expect(withPageText("# Bio\n", doc, ["  "])).toBe("# Bio\n");
   });
 });

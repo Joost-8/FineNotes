@@ -5,14 +5,28 @@ import {
   isGoodnotes,
   layerId,
   penSamples,
+  goodnotesPageLink,
   readGoodnotes,
+  searchText,
   penPath,
   readTpl,
   readTplLayout,
 } from "../../src/import/goodnotes";
 import { PAGE_PX_PER_MM } from "../../src/model/units";
 import { parseInkFile, buildInkFile } from "../../src/model/serialize";
-import { goodnotesFiles, JPEG, PDF, PNG, tplStroke, tplStroke25, type GnPage } from "./builders";
+import {
+  bv4Raw,
+  delimited,
+  goodnotesFiles,
+  JPEG,
+  pb,
+  PDF,
+  PNG,
+  tplStroke,
+  tplStroke25,
+  type GnPage,
+  type PbField,
+} from "./builders";
 
 const LETTER: [number, number] = [834.24, 1078.825];
 const K = PAGE_PX_PER_MM / GOODNOTES_UNITS_PER_MM;
@@ -199,8 +213,8 @@ describe("readGoodnotes", () => {
     });
     expect(result.warnings).toEqual([
       "1 page uses a Goodnotes paper that is not in the file; the notebook's usual paper was used instead.",
-      "1 stroke could not be read.",
-      "3 other items could not be brought over yet.",
+      "1 stroke could not be read (page 2).",
+      "3 other items could not be brought over yet (pages 1, 2).",
     ]);
   });
 
@@ -459,7 +473,7 @@ describe("readGoodnotes: what real notebooks hold", () => {
     ]);
   });
 
-  it("brings text boxes over, and counts shapes, comments and PDF pictures it cannot yet", () => {
+  it("brings text boxes over, keeps PDF pictures for the import, and names the pages", () => {
     const result = readGoodnotes(
       notebook(
         [
@@ -508,11 +522,11 @@ describe("readGoodnotes: what real notebooks hold", () => {
     expect(grown.font).toBeUndefined();
     expect(grown.w).toBeCloseTo(51 * K, 1);
     expect(grown.fontSize).toBeCloseTo(Math.max(12, 24 * K), 1);
-    expect(result.doc.pages[0].images).toEqual([]);
+    // The PDF picture is kept as a picture: `importNotebooks` makes an image of it.
+    expect(result.doc.pages[0].images.map((i) => i.path)).toEqual(["Biology - picture 2.pdf"]);
+    // The empty boxes have no outline (neither a border nor a drawn shape): nothing to keep.
     expect(result.warnings).toEqual([
-      "2 shapes could not be brought over yet.",
-      "1 comment could not be brought over yet.",
-      "1 PDF placed as a picture could not be brought over yet.",
+      "1 comment came over as a text box with the author's name (page 1).",
     ]);
   });
 
@@ -565,5 +579,368 @@ describe("Goodnotes stroke layouts", () => {
     const open = tplStroke25([[1, 2]], 2);
     open[open.indexOf(0, 8) - 1] = "u".charCodeAt(0);
     expect(() => readTplLayout(open)).toThrow(GoodnotesError);
+  });
+});
+
+describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
+  const rgba = (r: number, g: number, b: number, a: number): PbField[] =>
+    [r, g, b, a].map((v, i): PbField => [i + 1, { f32: v }]);
+  /** A text box body (kind 21) with a shape, a border and a fill, and no text. */
+  const shapeBody = (spec: {
+    origin: [number, number];
+    size: [number, number];
+    shape?: PbField[];
+    border?: number;
+    fill?: [number, number, number, number];
+  }): Uint8Array =>
+    pb([
+      [
+        21,
+        {
+          msg: [
+            [1, { str: "SHAPE" }],
+            [
+              20,
+              {
+                msg: [
+                  [
+                    1,
+                    {
+                      msg: [
+                        [1, { f32: spec.origin[0] }],
+                        [2, { f32: spec.origin[1] }],
+                      ],
+                    },
+                  ],
+                ],
+              },
+            ],
+            [
+              21,
+              {
+                msg: [
+                  [
+                    2,
+                    {
+                      msg: [
+                        [1, { f32: spec.size[0] }],
+                        [2, { f32: spec.size[1] }],
+                      ],
+                    },
+                  ],
+                ],
+              },
+            ],
+            ...(spec.shape ? [[22, { msg: spec.shape }] as PbField] : []),
+            [30, { msg: [[1, { msg: [[1, { msg: rgba(...(spec.fill ?? [0, 0, 0, 0])) }]] }]] }],
+            [
+              31,
+              {
+                msg: [
+                  ...(spec.border ? [[1, { f32: spec.border }] as PbField] : []),
+                  [3, { msg: [[1, { msg: rgba(1, 0, 0, 1) }]] }],
+                ],
+              },
+            ],
+          ],
+        },
+      ],
+    ]);
+  const vertex = (x: number, y: number): PbField => [
+    1,
+    {
+      msg: [
+        [
+          1,
+          {
+            msg: [
+              [1, { f32: x }],
+              [2, { f32: y }],
+            ],
+          },
+        ],
+        [2, { int: 1 }],
+      ],
+    },
+  ];
+  const diamond: PbField[] = [
+    [
+      3,
+      {
+        msg: [
+          [
+            1,
+            {
+              msg: [
+                vertex(0.5, 0),
+                vertex(1, 0.5),
+                vertex(0.5, 1),
+                vertex(0, 0.5),
+                [2, { int: 1 }],
+              ],
+            },
+          ],
+        ],
+      },
+    ],
+  ];
+  function withNotes(records: Uint8Array[], extra: Record<string, Uint8Array> = {}) {
+    const files = notebook([{ id: PAGE_A, template: "T-RULED", order: "a" }]);
+    files.set(`notes/${layerId(PAGE_A)}`, delimited(records));
+    for (const [k, v] of Object.entries(extra)) files.set(k, v);
+    return readGoodnotes(files, "");
+  }
+
+  it("draws shapes as outlines, keeping a rectangle's fill as a filled box", () => {
+    const result = withNotes([
+      shapeBody({
+        origin: [100, 100],
+        size: [100, 120],
+        shape: diamond,
+        border: 6,
+        fill: [1, 0, 0, 0.1],
+      }),
+      shapeBody({
+        origin: [10, 10],
+        size: [200, 100],
+        shape: [[1, { msg: [[1, { f32: 80 }]] }]],
+        border: 3,
+      }),
+      shapeBody({ origin: [300, 300], size: [50, 40], border: 2, fill: [0, 0, 1, 1] }),
+      // A frame with neither a border nor a drawn shape: nothing to show.
+      shapeBody({ origin: [0, 0], size: [10, 10], shape: [[1, { str: "" }]] }),
+    ]);
+    const page = result.doc.pages[0];
+    expect(page.strokes.map((s) => [s.shape, s.color, s.pts.length / 3])).toEqual([
+      ["diamond", "#ff0000", 5],
+      ["roundrect", "#ff0000", 37],
+      ["rect", "#ff0000", 5],
+    ]);
+    const [d] = page.strokes;
+    expect(d.pts[0]).toBeCloseTo(150 * K, 1);
+    expect(d.pts[1]).toBeCloseTo(100 * K, 1);
+    expect(d.size).toBeCloseTo(6 * K, 1);
+    // The round rectangle's radius is capped at half its height: its top edge starts 50 in.
+    const r = page.strokes[1];
+    expect(r.pts[0]).toBeCloseTo((10 + 200 - 50) * K, 1);
+    expect(page.textBoxes).toEqual([
+      {
+        id: "t1",
+        x: Math.round(300 * K * 100) / 100,
+        y: Math.round(300 * K * 100) / 100,
+        w: Math.round(50 * K * 100) / 100,
+        h: Math.round(40 * K * 100) / 100,
+        text: "",
+        color: "#000000",
+        fontSize: 22,
+        fill: "#0000ff",
+      },
+    ]);
+    expect(result.warnings).toEqual([
+      "3 shapes came over as outlines (page 1).",
+      "1 shape's fill could not be kept, only the outline (page 1).",
+    ]);
+  });
+
+  it("writes links out after their words, naming the page of this notebook they lead to", () => {
+    const anchor = (id: string): string =>
+      `https://app.goodnotes.com/documents/?anchor=${encodeURIComponent(btoa(`page-${id}`))}#X`;
+    const runs: PbField[] = [
+      [1, { msg: [[1, { str: "See " }]] }],
+      [
+        1,
+        {
+          msg: [
+            [1, { str: "this" }],
+            [2, { msg: [[4, { str: anchor(PAGE_B) }]] }],
+          ],
+        },
+      ],
+      [
+        1,
+        {
+          msg: [
+            [1, { str: " page" }],
+            [2, { msg: [[4, { str: anchor(PAGE_B) }]] }],
+          ],
+        },
+      ],
+      [1, { msg: [[1, { str: " and " }]] }],
+      [
+        1,
+        {
+          msg: [
+            [1, { str: "that" }],
+            [2, { msg: [[4, { str: "https://example.org" }]] }],
+          ],
+        },
+      ],
+      [
+        1,
+        {
+          msg: [
+            [1, { str: " elsewhere" }],
+            [2, { msg: [[4, { str: anchor("NOT-HERE") }]] }],
+          ],
+        },
+      ],
+    ];
+    const box = pb([
+      [
+        21,
+        {
+          msg: [
+            [
+              20,
+              {
+                msg: [
+                  [
+                    1,
+                    {
+                      msg: [
+                        [1, { f32: 10 }],
+                        [2, { f32: 10 }],
+                      ],
+                    },
+                  ],
+                ],
+              },
+            ],
+            [32, { msg: [[1, { msg: [[2, { bytes: bv4Raw(pb(runs)) }]] }]] }],
+          ],
+        },
+      ],
+    ]);
+    const files = notebook([
+      { id: PAGE_A, template: "T-RULED", order: "a" },
+      { id: PAGE_B, template: "T-RULED", order: "b" },
+    ]);
+    files.set(`notes/${layerId(PAGE_A)}`, delimited([box]));
+    const result = readGoodnotes(files, "");
+    expect(result.doc.pages[0].textBoxes[0].text).toBe(
+      "See this page (→ page 2) and that (https://example.org) elsewhere (→ a page of another notebook)",
+    );
+    expect(result.warnings).toEqual([
+      "1 text box links somewhere; the link is written after its words (page 1).",
+    ]);
+    expect(goodnotesPageLink("https://example.org/?anchor=cGFnZS1Y")).toBeNull();
+    expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=%%%")).toBeNull();
+    expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=!!")).toBeNull();
+    expect(
+      goodnotesPageLink(`https://app.goodnotes.com/documents/?anchor=${btoa("note-1")}`),
+    ).toBeNull();
+  });
+
+  it("signs a comment with its author, in its colour and size", () => {
+    const comment = (text: string | null, author?: string): Uint8Array =>
+      pb([
+        [
+          20,
+          {
+            msg: [
+              [
+                20,
+                {
+                  msg: [
+                    [
+                      1,
+                      {
+                        msg: [
+                          [1, { f32: 50 }],
+                          [2, { f32: 60 }],
+                        ],
+                      },
+                    ],
+                  ],
+                },
+              ],
+              [
+                21,
+                {
+                  msg: [
+                    [
+                      2,
+                      {
+                        msg: [
+                          [1, { f32: 256 }],
+                          [2, { f32: 256 }],
+                        ],
+                      },
+                    ],
+                  ],
+                },
+              ],
+              [30, { msg: rgba(0.92, 0.85, 1, 1) }],
+              ...(text === null
+                ? []
+                : [
+                    [
+                      31,
+                      {
+                        msg: [
+                          [
+                            1,
+                            {
+                              msg: [
+                                [2, { bytes: bv4Raw(pb([[1, { msg: [[1, { str: text }]] }]])) }],
+                              ],
+                            },
+                          ],
+                        ],
+                      },
+                    ] as PbField,
+                  ]),
+              ...(author ? [[33, { str: author }] as PbField] : []),
+            ],
+          },
+        ],
+      ]);
+    const result = withNotes([
+      comment("Check this", "Jj doe"),
+      comment(null, "Jj doe"),
+      comment(null),
+    ]);
+    const [signed, bare, nobody] = result.doc.pages[0].textBoxes;
+    expect(signed).toMatchObject({ text: "Jj doe: Check this", fill: "#ebd9ff" });
+    expect(signed.x).toBeCloseTo(50 * K, 1);
+    expect(signed.h).toBeCloseTo(256 * K, 1);
+    expect(bare.text).toBe("Comment by Jj doe");
+    expect(nobody.text).toBe("Comment by someone");
+  });
+
+  it("keeps what Goodnotes' own recognition read, page by page", () => {
+    const group = (text: string): PbField => [
+      6,
+      {
+        msg: [
+          [3, { str: text }],
+          [3, { str: "alt" }],
+        ],
+      },
+    ];
+    const index = pb([
+      [3, { str: "typed" }],
+      group("What"),
+      group("'s"),
+      group(" "),
+      group("up"),
+      group("\n"),
+      group("  "),
+      group("\n"),
+      group("next"),
+    ]);
+    expect(searchText(index)).toBe("What's up\nnext");
+    expect(searchText(undefined)).toBe("");
+    expect(searchText(new Uint8Array([0xff]))).toBe("");
+
+    const files = notebook([
+      { id: PAGE_A, template: "T-RULED", order: "a" },
+      { id: PAGE_B, template: "T-RULED", order: "b" },
+    ]);
+    files.set(`search/${layerId(PAGE_B)}`, index);
+    expect(readGoodnotes(files, "").pageText).toEqual(["", "What's up\nnext"]);
+    expect(
+      readGoodnotes(notebook([{ id: PAGE_A, template: "T-RULED", order: "a" }]), "").pageText,
+    ).toBeUndefined();
   });
 });

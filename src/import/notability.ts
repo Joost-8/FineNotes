@@ -32,7 +32,14 @@
  * is `richText.attributedString`, flowing down from the top of the column.
  */
 
-import type { ImageElement, InkDocument, Page, Stroke, TextBoxElement } from "../model/document";
+import type {
+  ImageElement,
+  InkDocument,
+  Page,
+  Recording,
+  Stroke,
+  TextBoxElement,
+} from "../model/document";
 import { SCHEMA_VERSION } from "../constants";
 import { PAGE_SIZES } from "../model/templates";
 import { isDict, parseBinaryPlist, unarchive, type PlistValue } from "./bplist";
@@ -40,7 +47,9 @@ import {
   fontFor,
   hexColor,
   imageSize,
+  ImportTally,
   median,
+  mp4Info,
   packageRoot,
   plural,
   pressureForWidth,
@@ -81,6 +90,9 @@ const NOT_A_PDF_PAGE = 2 ** 31;
 
 /** Where a text box's text starts inside its frame, in document units (measured on one note). */
 const TEXT_BLOCK_INSET = { x: 20, y: 5 };
+
+/** A Letter page's width in inches: Notability's column is this wide. */
+const PAGE_INCHES = 8.5;
 
 /** The note's own typed text: its left margin, and line height per font size (document units). */
 const BODY_MARGIN = 15;
@@ -213,10 +225,12 @@ export function readNotability(
   // The note's own ink; text boxes and sticky canvases nest hashes of their own.
   const overlay = richText?.["Handwriting Overlay"];
   const own = isDict(overlay) && isDict(overlay.SpatialHash) ? overlay.SpatialHash : null;
+  // Searching for it elsewhere must not find a media object's own ink.
+  const outside = richText ? { ...richText, mediaObjects: [] } : tree;
   const hash =
     own && own.curvespoints instanceof Uint8Array
       ? own
-      : findDict(richText ?? tree, (d) => d.curvespoints instanceof Uint8Array);
+      : findDict(outside, (d) => d.curvespoints instanceof Uint8Array);
   for (const placed of hash ? readCurves(hash, k) : []) {
     strokes.push({ at: slotAt(placed.top / k), item: placed.stroke });
   }
@@ -225,7 +239,10 @@ export function readNotability(
     texts.push({ at: slotAt(block.y), item: { ...block.box } });
   }
 
-  const skipped = { canvases: 0, pictures: 0, other: 0 };
+  const tally = new ImportTally();
+  // Media objects are counted by the page they land on once the column is laid out.
+  const counted: Array<{ key: string; y: number }> = [];
+  const usedAssets = new Set<string>();
   let picN = 0;
   const media = richText && Array.isArray(richText.mediaObjects) ? richText.mediaObjects : [];
   for (const object of media) {
@@ -233,7 +250,7 @@ export function readNotability(
     const origin = parsePoint(object.documentOrigin);
     const size = parsePoint(object.unscaledContentSize);
     if (!origin || !size) {
-      skipped.other++;
+      tally.add("other");
       continue;
     }
     if (object.$class === "ImageMediaObject") {
@@ -245,10 +262,14 @@ export function readNotability(
         ? background.kImageObjectSnapshotKey
         : null;
       const relative = typeof snapshot?.relativePath === "string" ? snapshot.relativePath : "";
-      const bytes = relative ? files.get(root + relative) : undefined;
-      const path = relative ? attachFile(relative, "picture") : null;
+      // An animated picture keeps its original in `Assets/<id>/`; `Images/` holds a still.
+      const asset = assetFile(files, root, object.assetsIdKey);
+      if (asset) usedAssets.add(asset);
+      const source = asset ?? (relative ? root + relative : "");
+      const bytes = source ? files.get(source) : undefined;
+      const path = source ? attachFile(source.slice(root.length), "picture") : null;
       if (!path || !bytes || size[0] <= 0 || size[1] <= 0) {
-        skipped.pictures++;
+        counted.push({ key: "missing", y: origin[1] });
         continue;
       }
       picN++;
@@ -263,17 +284,54 @@ export function readNotability(
       if (Number.isFinite(degrees) && Math.abs(degrees) > 0.01) {
         image.rotation = round2((degrees * Math.PI) / 180);
       }
-      const crop = cropOf(figure?.FigureCropRectKey, bytes);
+      // The crop is in the still's pixels; the original is shown whole.
+      const crop = asset ? undefined : cropOf(figure?.FigureCropRectKey, bytes);
       if (crop) image.crop = crop;
+      if (object.isFlippedHorizontal === true || object.isFlippedVertical === true) {
+        counted.push({ key: "flipped", y: origin[1] });
+      }
       images.push({ at: slotAt(origin[1]), item: image });
     } else if (object.$class === "TextBlockMediaObject") {
       const box = textBlock(object, origin, size);
       if (box) texts.push({ at: slotAt(origin[1]), item: box });
     } else if (object.$class === "CanvasMediaObject") {
-      skipped.canvases++;
+      // A sticky canvas: its paper as a filled box, its ruling and its ink on top.
+      const canvas = stickyCanvas(object, origin, size, unitWidth);
+      texts.push({ at: slotAt(origin[1]), item: canvas.paper });
+      for (const line of canvas.lines) strokes.push({ at: slotAt(origin[1]), item: line });
+      const inner = findDict(object, (d) => d.curvespoints instanceof Uint8Array);
+      for (const placed of inner ? readCurves(inner, k) : []) {
+        const pts = placed.stroke.pts.slice();
+        for (let i = 0; i < pts.length; i += 3) {
+          pts[i] = round2(pts[i] + origin[0] * k);
+          pts[i + 1] = round2(pts[i + 1] + origin[1] * k);
+        }
+        strokes.push({ at: slotAt(origin[1]), item: { ...placed.stroke, pts } });
+      }
+      counted.push({ key: "canvases", y: origin[1] });
     } else {
-      skipped.other++;
+      counted.push({ key: "other", y: origin[1] });
     }
+  }
+
+  // Recordings: each audio file in `Recordings/`, with its length from the file.
+  const recordings: Recording[] = [];
+  for (const path of [...files.keys()].sort()) {
+    if (!path.startsWith(`${root}Recordings/`) || path.endsWith("/") || path.endsWith(".plist")) {
+      continue;
+    }
+    const bytes = files.get(path);
+    if (!bytes || bytes.length === 0) continue;
+    const info = mp4Info(bytes);
+    const attached = attachFile(path.slice(root.length), "recording");
+    if (!attached) continue;
+    if (!info) tally.add("recordingLength");
+    recordings.push({
+      id: `r${recordings.length + 1}`,
+      path: attached,
+      start: info?.created ?? 0,
+      duration: info?.duration ?? 0,
+    });
   }
 
   // --- Pages ----------------------------------------------------------------------
@@ -321,37 +379,44 @@ export function readNotability(
       x: round2(item.x * k),
       y: round2((item.y - slots[at].top) * k),
       w: round2(Math.max(8, item.w * k)),
+      ...(item.h === undefined ? {} : { h: round2(Math.max(24, item.h * k)) }),
       fontSize: round2(Math.max(12, item.fontSize * k)),
     });
   }
 
-  // --- What did not come over ---------------------------------------------------
-  const recordings = [...files.keys()].filter(
-    (f) => f.startsWith(`${root}Recordings/`) && !f.endsWith(".plist") && !f.endsWith("/"),
+  // --- What came over another way, or not at all ---------------------------------
+  for (const { key, y } of counted) tally.add(key, slotAt(y) + 1);
+  const unusedAssets = [...files.keys()].filter(
+    (f) => f.startsWith(`${root}Assets/`) && !f.endsWith("/") && !usedAssets.has(f),
   ).length;
-  const assets = [...files.keys()].filter(
-    (f) => f.startsWith(`${root}Assets/`) && !f.endsWith("/"),
-  ).length;
-  if (skipped.pictures > 0) {
-    warnings.push(`${plural(skipped.pictures, "picture")} could not be found in the file.`);
-  }
-  if (skipped.canvases > 0) {
+  const lines = [
+    tally.line("missing", (n) => `${plural(n, "picture")} could not be found in the file.`),
+    tally.line("flipped", (n) => `${plural(n, "flipped picture")} came over unflipped.`),
+    tally.line(
+      "canvases",
+      (n) =>
+        `${plural(n, "sticky canvas", "sticky canvases")} came over as a coloured box ` +
+        "with its lines and ink.",
+    ),
+    tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
+    tally.line(
+      "recordingLength",
+      (n) => `${plural(n, "recording's", "recordings'")} length could not be read.`,
+    ),
+  ];
+  for (const line of lines) if (line) warnings.push(line);
+  if (unusedAssets > 0) {
     warnings.push(
-      `${plural(skipped.canvases, "sticky canvas", "sticky canvases")} could not be brought over yet.`,
+      `${plural(unusedAssets, "sticker or GIF", "stickers or GIFs")} could not be placed.`,
     );
   }
-  if (assets > 0) {
-    warnings.push(
-      `${plural(assets, "sticker or GIF", "stickers or GIFs")} could not be brought over yet.`,
-    );
-  }
-  if (skipped.other > 0) {
-    warnings.push(`${plural(skipped.other, "other item")} could not be brought over yet.`);
-  }
-  if (recordings > 0) {
-    warnings.push(`${plural(recordings, "recording")} could not be brought over yet.`);
-  }
-  if (strokes.length === 0 && picN === 0 && texts.length === 0 && pdfNames.size === 0) {
+  if (
+    strokes.length === 0 &&
+    picN === 0 &&
+    texts.length === 0 &&
+    pdfNames.size === 0 &&
+    recordings.length === 0
+  ) {
     warnings.push("No handwriting was found in this note.");
   }
 
@@ -360,7 +425,108 @@ export function readNotability(
     view: { scrollY: 0, width: letter.width, scale: 1 },
     pages,
   };
+  if (recordings.length > 0) doc.recordings = recordings;
   return { source: "notability", title: name, doc, attachments, warnings };
+}
+
+/** The file an `assetsIdKey` (a UUID as bytes or text) names in `Assets/<id>/`, if any. */
+function assetFile(
+  files: ReadonlyMap<string, Uint8Array>,
+  root: string,
+  key: PlistValue | undefined,
+): string | undefined {
+  const id =
+    key instanceof Uint8Array
+      ? String.fromCharCode(...key)
+      : typeof key === "string"
+        ? key
+        : isDict(key) && key["NS.bytes"] instanceof Uint8Array
+          ? String.fromCharCode(...key["NS.bytes"])
+          : "";
+  if (!/^[0-9A-Fa-f-]{8,}$/.test(id)) return undefined;
+  const prefix = `${root}Assets/${id}/`;
+  return [...files.keys()].find((f) => f.startsWith(prefix) && !f.endsWith("/"));
+}
+
+/**
+ * A sticky canvas's paper (an empty text box filled with its colour, as
+ * tall as it) and its ruling (lines `Lines:…:<spacing in inches>`), in
+ * document units except the lines, which are strokes in page px.
+ */
+function stickyCanvas(
+  object: { [key: string]: PlistValue },
+  origin: [number, number],
+  size: [number, number],
+  unitWidth: number,
+): { paper: Omit<TextBoxElement, "id">; lines: Array<Omit<Stroke, "id">> } {
+  const style = isDict(object.paperStyleObject) ? object.paperStyleObject : null;
+  const attributes = isDict(object.kCanvasMediaObjectPaperAttributes)
+    ? object.kCanvasMediaObjectPaperAttributes
+    : null;
+  const identifier =
+    typeof attributes?.paperIdentifier === "string" ? attributes.paperIdentifier : "";
+  const hex = /^Color:(#[0-9a-f]{6})$/i.exec(identifier)?.[1]?.toLowerCase();
+  const colour = uiColor(style?.paperColor) ?? hex ?? "#fff3b0";
+  const paper: Omit<TextBoxElement, "id"> = {
+    x: origin[0],
+    y: origin[1],
+    w: size[0],
+    h: size[1],
+    text: "",
+    color: "#000000",
+    fontSize: 12,
+    // Text boxes sit above the ink: a see-through fill keeps the ruling and ink visible.
+    fill: `${colour}66`,
+  };
+  const ruling = typeof attributes?.lineStyle2 === "string" ? attributes.lineStyle2 : "";
+  const inches = Number(/^Lines:[^:]*:[^:]*:([\d.]+)$/.exec(ruling)?.[1]);
+  const lines: Array<Omit<Stroke, "id">> = [];
+  if (Number.isFinite(inches) && inches > 0) {
+    const k = PAGE_SIZE_LETTER_PX / unitWidth;
+    const spacing = (inches * unitWidth) / PAGE_INCHES;
+    const lineColour = shade(colour, 0.8);
+    for (let y = origin[1] + spacing; y < origin[1] + size[1] - 1; y += spacing) {
+      lines.push({
+        color: lineColour,
+        size: round2(Math.max(0.5, 0.5 * k)),
+        tool: "pen",
+        pts: [
+          round2(origin[0] * k),
+          round2(y * k),
+          0.5,
+          round2((origin[0] + size[0]) * k),
+          round2(y * k),
+          0.5,
+        ],
+        shape: "line",
+      });
+    }
+  }
+  return { paper, lines };
+}
+
+/** FineNotes' Letter page width in page px. */
+const PAGE_SIZE_LETTER_PX = PAGE_SIZES.find((s) => s.id === "letter")?.width ?? 1053;
+
+/** A `UIColor` archive's `#rrggbb`, or undefined when it does not have components. */
+function uiColor(raw: PlistValue | undefined): string | undefined {
+  if (!isDict(raw)) return undefined;
+  const part = (key: string): number | undefined => {
+    const v = raw[`${key}-Double`] ?? raw[key];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  const r = part("UIRed");
+  const g = part("UIGreen");
+  const b = part("UIBlue");
+  if (r !== undefined && g !== undefined && b !== undefined) return hexColor(r, g, b);
+  const white = part("UIWhite");
+  return white === undefined ? undefined : hexColor(white, white, white);
+}
+
+/** `#rrggbb` darkened (factor below 1) towards black. */
+function shade(hex: string, factor: number): string {
+  const v = (i: number): number => parseInt(hex.slice(i, i + 2), 16) / 255;
+  return hexColor(v(1) * factor, v(3) * factor, v(5) * factor);
 }
 
 interface LayoutEntry {
@@ -502,6 +668,26 @@ interface RunStyle {
   size: number;
   color: string;
   family?: string;
+  /** The marker a list line starts with ("☐ ", "☑ ", "1. ", "• "), indented by its level. */
+  marker?: string;
+}
+
+/**
+ * The marker for a line of a list: Notability's `indent-decoration-style`
+ * 3 is a checklist (`checklist-checked`), 2 a numbered list
+ * (`indent-decoration-number`), 1 bullets.
+ */
+function listMarker(other: { [key: string]: PlistValue }): string | undefined {
+  const style = other["indent-decoration-style"];
+  const level = typeof other["indent-level"] === "number" ? other["indent-level"] : 0;
+  const indent = "  ".repeat(Math.max(0, Math.min(6, level)));
+  if (style === 3) return `${indent}${other["checklist-checked"] === 1 ? "☑" : "☐"} `;
+  if (style === 2) {
+    const n = other["indent-decoration-number"];
+    return `${indent}${typeof n === "number" ? n : 1}. `;
+  }
+  if (style === 1) return `${indent}• `;
+  return undefined;
 }
 
 /** A Notability attributed string: its text and the style at any index. */
@@ -518,11 +704,11 @@ function attributed(store: PlistValue | undefined): {
     const size = typeof font.NSFontSizeAttribute === "number" ? font.NSFontSizeAttribute : 12;
     const family =
       typeof font.NSFontNameAttribute === "string" ? font.NSFontNameAttribute : undefined;
-    return {
-      from: range[0],
-      to: range[0] + range[1],
-      style: { size, color: rgbaColor(run.subRangeColorCrossPlatformKey), family },
-    };
+    const other = isDict(run.subRangeOtherAttributesKey) ? run.subRangeOtherAttributesKey : {};
+    const style: RunStyle = { size, color: rgbaColor(run.subRangeColorCrossPlatformKey), family };
+    const marker = listMarker(other);
+    if (marker) style.marker = marker;
+    return { from: range[0], to: range[0] + range[1], style };
   });
   const fallback: RunStyle = { size: 12, color: "#000000" };
   return {
@@ -535,7 +721,8 @@ function attributed(store: PlistValue | undefined): {
 /**
  * The note's own typed text as text boxes: each block of lines without an
  * empty one between them, at the height the lines above put it (document
- * units). List and checklist formatting is not carried over.
+ * units). A list line keeps its marker as text ("☐ ", "1. ", "• "), and
+ * an empty list item still counts as a line.
  */
 function bodyText(
   richText: { [key: string]: PlistValue } | null,
@@ -560,13 +747,14 @@ function bodyText(
     });
     block = null;
   };
-  for (const line of text.split("\n")) {
+  for (const raw of text.split("\n")) {
     const style = styleAt(index);
+    const line = style.marker ? `${style.marker}${raw.trim()}` : raw;
     if (line.trim() === "") flush();
     else if (block) block.lines.push(line);
     else block = { y, lines: [line], style };
     y += style.size * BODY_LINE_HEIGHT;
-    index += line.length + 1;
+    index += raw.length + 1;
   }
   flush();
   return out;

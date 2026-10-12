@@ -231,3 +231,55 @@ describe("importNotebooks, one notebook at a time", () => {
     ]);
   });
 });
+
+describe("importNotebooks: PDFs placed as pictures", () => {
+  const withPdfPicture = (): Uint8Array =>
+    zip(
+      goodnotesFiles({
+        templates: [{ id: "T", size: [834.24, 1078.825], attachment: "A" }],
+        pages: [
+          {
+            id: PAGE,
+            template: "T",
+            order: "a",
+            images: [{ id: "I", attachment: "SHEET", frame: [10, 20, 100, 50] }],
+          },
+        ],
+        attachments: { A: PDF, SHEET: PDF },
+      }),
+    );
+
+  it("turns one into an image of its first page", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const batch = await importNotebooks(withPdfPicture(), "Bio.goodnotes", {
+      rasterizePdf: () => Promise.resolve(png),
+    });
+    const [result] = batch.results;
+    expect(result.doc.pages[0].images.map((i) => i.path)).toEqual(["Bio - picture 2.png"]);
+    expect(result.attachments.map((a) => [a.name, a.mime])).toEqual([
+      ["Bio - paper 1.pdf", "application/pdf"],
+      ["Bio - picture 2.png", "image/png"],
+    ]);
+    expect(result.warnings).toEqual([
+      "1 PDF placed as a picture came over as an image of its first page (page 1).",
+    ]);
+  });
+
+  it("leaves a note where it was when no image can be made, and saves the PDF", async () => {
+    for (const options of [{}, { rasterizePdf: () => Promise.reject(new Error("no pdf.js")) }]) {
+      const [result] = (await importNotebooks(withPdfPicture(), "Bio.goodnotes", options)).results;
+      const page = result.doc.pages[0];
+      expect(page.images).toEqual([]);
+      expect(page.textBoxes).toMatchObject([
+        {
+          id: "t1",
+          text: "A PDF was placed here: Bio - picture 2.pdf, saved next to this notebook.",
+        },
+      ]);
+      expect(result.attachments.map((a) => a.name)).toContain("Bio - picture 2.pdf");
+      expect(result.warnings).toEqual([
+        "1 PDF placed as a picture could not be shown; a note on the page says where it was saved (page 1).",
+      ]);
+    }
+  });
+});

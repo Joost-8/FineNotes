@@ -15,7 +15,8 @@
 
 import { unzipSync } from "fflate";
 import { isGoodnotes, readGoodnotes } from "./goodnotes";
-import type { ImportResult } from "./import-types";
+import { plural, type ImportResult } from "./import-types";
+import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
 
 export type { ImportAttachment, ImportResult, ImportSource } from "./import-types";
@@ -46,6 +47,12 @@ export interface ImportOptions {
    * fails, a Notability note's PDF pages are taken for Letter.
    */
   measurePdf?: (bytes: Uint8Array) => Promise<readonly PdfPageSize[]>;
+  /**
+   * The first page of a PDF as a PNG (pdf.js, in the plugin), for a PDF
+   * placed on a page as a picture. Without it, or when it fails, a note on
+   * the page says where the PDF went, and the PDF is saved all the same.
+   */
+  rasterizePdf?: (bytes: Uint8Array) => Promise<Uint8Array>;
   /**
    * Called with each notebook as soon as it is converted; the next notebook
    * is read only after it settles. A rejection is reported as a failure of
@@ -194,6 +201,7 @@ async function convert(
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
+  await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {
       await options.onResult(result);
@@ -228,4 +236,93 @@ function baseName(fileName: string): string {
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Pictures that are PDFs (Goodnotes lets a PDF be placed like a photo) as
+ * images: the PDF's first page as a PNG beside it. When that cannot be made,
+ * the picture becomes a note on the page naming the PDF, which is saved with
+ * the notebook either way, so nothing is lost.
+ */
+async function picturesFromPdfs(
+  result: ImportResult,
+  rasterize: ImportOptions["rasterizePdf"],
+): Promise<void> {
+  const pdfs = new Map(
+    result.attachments.filter((a) => a.mime === "application/pdf").map((a) => [a.name, a]),
+  );
+  const pictures = result.doc.pages.flatMap((page, index) =>
+    page.images.filter((image) => pdfs.has(image.path)).map((image) => ({ page, index, image })),
+  );
+  if (pictures.length === 0) return;
+
+  const pngs = new Map<string, string | null>();
+  for (const name of new Set(pictures.map((p) => p.image.path))) {
+    const pdf = pdfs.get(name);
+    let png: string | null = null;
+    if (pdf && rasterize) {
+      try {
+        const bytes = await rasterize(pdf.bytes);
+        png = `${name.replace(/\.pdf$/i, "")}.png`;
+        result.attachments.push({ name: png, bytes, mime: "image/png" });
+      } catch {
+        png = null;
+      }
+    }
+    pngs.set(name, png);
+  }
+
+  let textN = Math.max(
+    0,
+    ...result.doc.pages.flatMap((page) =>
+      page.textBoxes.map((box) => Number(/^t(\d+)$/.exec(box.id)?.[1] ?? 0)),
+    ),
+  );
+  const shown = new Set<number>();
+  const noted = new Set<number>();
+  let shownCount = 0;
+  for (const { page, index, image } of pictures) {
+    const png = pngs.get(image.path);
+    if (png) {
+      image.path = png;
+      shown.add(index + 1);
+      shownCount++;
+      continue;
+    }
+    page.images = page.images.filter((other) => other !== image);
+    const note: TextBoxElement = {
+      id: `t${++textN}`,
+      x: image.x,
+      y: image.y,
+      w: Math.max(80, image.w),
+      h: Math.max(24, image.h),
+      text: `A PDF was placed here: ${image.path}, saved next to this notebook.`,
+      color: "#444444",
+      fontSize: 16,
+      fill: "#f2f2f2",
+    };
+    page.textBoxes.push(note);
+    noted.add(index + 1);
+  }
+  // A PDF now shown as a PNG, and not the paper of any page, need not be saved twice.
+  const papers = new Set(
+    result.doc.pages.map((page) => (page.backdrop.kind === "pdf" ? page.backdrop.path : "")),
+  );
+  result.attachments = result.attachments.filter((a) => !(pngs.get(a.name) && !papers.has(a.name)));
+  const pagesText = (pages: Set<number>): string =>
+    pages.size === 1
+      ? `page ${[...pages][0]}`
+      : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
+  if (shown.size > 0) {
+    result.warnings.push(
+      `${plural(shownCount, "PDF placed as a picture", "PDFs placed as pictures")} came over ` +
+        `as an image of its first page (${pagesText(shown)}).`,
+    );
+  }
+  if (noted.size > 0) {
+    result.warnings.push(
+      `${plural(pictures.length - shownCount, "PDF placed as a picture", "PDFs placed as pictures")} could not ` +
+        `be shown; a note on the page says where it was saved (${pagesText(noted)}).`,
+    );
+  }
 }
