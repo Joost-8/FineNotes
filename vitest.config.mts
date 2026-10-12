@@ -12,6 +12,7 @@ export default defineConfig({
         "src/changelog.ts",
         "src/settings-data.ts",
         "src/model/**/*.ts",
+        "src/import/**/*.ts",
         "src/ink/freehand.ts",
         "src/ink/stroke-builder.ts",
         "src/ink/shape-recognizer.ts",
