@@ -53,6 +53,12 @@ class HwrReadingModal extends Modal {
     super(app);
     this.titleEl.setText(`Page ${pageNumber}, read on this device`);
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-hwr");
+    this.contentEl.createDiv({
+      cls: "goodobsidian-beta-note",
+      text:
+        "Beta: reading handwriting is new in FineNotes and misreads some words. " +
+        "Check the text before you rely on it.",
+    });
     this.statusEl = this.contentEl.createDiv({
       cls: ["goodobsidian-hwr-meta", "setting-item-description"],
     });

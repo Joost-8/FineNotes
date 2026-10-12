@@ -18,6 +18,9 @@ extracted from the matching section of this file by `release.yml`.
   page added to the contents folds away the headings inside it; headings
   inside a page without a title are listed on their own. Neither nests under
   the title of an earlier page any more.
+- **Reading handwriting on the device is marked as a beta**, in Settings,
+  in the AI menu and above what it reads: it misreads some words, so check
+  the text before relying on it.
 
 ### Fixed
 

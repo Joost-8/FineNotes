@@ -59,7 +59,8 @@ export class AiMenuPopover {
     const device = items.filter((item) => item.section === "device");
     const key = items.filter((item) => item.section !== "device");
     if (device.length > 0) {
-      this.heading(this.el, "Handwriting · on this device");
+      const heading = this.heading(this.el, "Handwriting · on this device");
+      heading.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
       this.rows(this.el, device);
     }
     if (key.length === 0) return;
@@ -92,8 +93,8 @@ export class AiMenuPopover {
     });
   }
 
-  private heading(parent: HTMLElement, text: string): void {
-    parent.createDiv({ cls: "goodobsidian-aimenu-heading", text });
+  private heading(parent: HTMLElement, text: string): HTMLElement {
+    return parent.createDiv({ cls: "goodobsidian-aimenu-heading", text });
   }
 
   private rows(parent: HTMLElement, items: readonly AiMenuItem[]): void {

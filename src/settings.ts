@@ -442,10 +442,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return group("Handwriting", [
       toggle(
         "handwritingOnDevice",
-        "Read handwriting on this device",
+        "Read handwriting on this device (beta)",
         "Reads your handwriting with a model built into FineNotes, on this device: notebook " +
           "search and Obsidian's search find it, and a lassoed heading or word fills in its " +
-          "title or link. Nothing leaves the device.",
+          "title or link. Nothing leaves the device. In beta: it misreads some words, more " +
+          "so in small or hurried writing, so check what it reads before relying on it.",
         ["handwriting", "recognition", "search", "offline"],
       ),
       drawnRow(
