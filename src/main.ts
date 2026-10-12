@@ -77,6 +77,7 @@ import type { AttachmentFolders, InkDocument } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { HandwritingReader } from "./view/handwriting";
+import { ReadingGuard } from "./recognition/reading-guard";
 import {
   HandwritingLearner,
   type LearningHost,
@@ -146,6 +147,12 @@ export default class GoodObsidianPlugin extends Plugin {
     learnedPath: this.settings.handwritingModel ? learnedModelPath(this.pluginDir) : "",
   }));
 
+  /**
+   * Keeps a page that took the app down while it was read on this device
+   * from being read again at every launch (set up in `onload`).
+   */
+  readingGuard!: ReadingGuard;
+
   /** Learning the user's handwriting, in the background; one run at a time. */
   readonly learner = new HandwritingLearner(() => this.learningHost());
 
@@ -200,6 +207,7 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.loadSettings();
     await this.setUpKeyStore();
 
+    this.setUpReadingGuard();
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
@@ -471,6 +479,35 @@ export default class GoodObsidianPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();
+  }
+
+  /**
+   * The reading guard, on this device's own storage, and what it found: if
+   * the last run ended while a page was read, that page is skipped from now
+   * on and automatic reading waits for the next start.
+   */
+  private setUpReadingGuard(): void {
+    const key = "finenotes:device-reading";
+    this.readingGuard = new ReadingGuard(
+      {
+        load: () => {
+          const raw: unknown = this.app.loadLocalStorage(key);
+          return raw;
+        },
+        save: (value) => this.app.saveLocalStorage(key, value),
+      },
+      this.manifest.version,
+    );
+    const crash = this.readingGuard.crash;
+    if (!crash) return;
+    const name = crash.path.split("/").pop() ?? crash.path;
+    new Notice(
+      `FineNotes: Obsidian closed while page ${crash.page} of "${name}" was being read on this ` +
+        "device. That page is skipped until it changes, and reading on this device is paused " +
+        'until Obsidian restarts. If this happens again, turn off "Read handwriting on this ' +
+        'device" in the settings.',
+      20_000,
+    );
   }
 
   // --- API keys and AI configuration -----------------------------------------

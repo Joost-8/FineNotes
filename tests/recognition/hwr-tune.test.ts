@@ -9,6 +9,7 @@ import { parseBundle } from "../../src/recognition/hwr/bundle";
 import { writeBundle } from "../../src/recognition/hwr/bundle-write";
 import {
   type LabelledLine,
+  TUNE_MAX_FRAMES,
   augmentFeatures,
   augmentStrokes,
   editDistance,
@@ -119,6 +120,17 @@ describe("tune", () => {
     expect(parseBundle(writeBundle(BYTES, result!.net, { name: "personal" })).meta.name).toBe(
       "personal",
     );
+  }, 120000);
+
+  it("leaves out a line too long to learn from, so it cannot size the run's memory", () => {
+    const lines = ["hello", "world", "notes", "ink", "pages", "lines"].map((t, i) => line(t, i));
+    // The same wave for 40 letters: ~1,850 frames, past any copied practice line.
+    const long = line("x".repeat(40), 9);
+    expect(prepareLine(long, BASE.meta.alphabet, seededRandom(1), false)!.frames).toBeGreaterThan(
+      TUNE_MAX_FRAMES,
+    );
+    const result = tune(BYTES, [...lines, long], { steps: 1, batch: 2 });
+    expect(result!.trained + result!.heldOut).toBe(6);
   }, 120000);
 
   it("stops when told to, and does nothing without lines to learn from", () => {

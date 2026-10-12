@@ -164,6 +164,13 @@ function bandsByTime<S extends PageInk>(items: readonly Item<S>[], xh: number): 
  * Join pieces of one row the pen order split (a bullet dash, a colon, a late
  * word): horizontally close, and their bands meet where they are nearest.
  * `left` and `right` are each line's edges, kept as lines merge.
+ *
+ * Each step joins the closest pair (the first in row-major order on a tie),
+ * as the reference does by scanning every pair. Scanning every pair after
+ * every join cost seconds on a page of scattered strokes (28 s for 2,000 on
+ * a laptop; FineNotes#22), so each row keeps its closest partner, and a join
+ * recomputes only the rows it touched. The joins, and so the lines, are the
+ * same.
  */
 function mergeRows<S>(
   input: Item<S>[][],
@@ -174,34 +181,68 @@ function mergeRows<S>(
   const lines = input.map((l) => [...l]);
   const x0s = [...left];
   const x1s = [...right];
-  for (;;) {
-    let best: [number, number, number] | null = null;
-    for (let i = 0; i < lines.length; i++) {
-      for (let j = 0; j < lines.length; j++) {
-        if (i === j) continue;
-        const ax0 = x0s[i];
-        const ax1 = x1s[i];
-        const bx0 = x0s[j];
-        const bx1 = x1s[j];
-        const gap = Math.max(bx0 - ax1, ax0 - bx1);
-        if (gap > 6 * xh) continue;
-        const ax = Math.min(Math.max(bx0, ax0), ax1);
-        const bx = Math.min(Math.max(ax0, bx0), bx1);
-        const b = lines[j];
-        const dy = Math.abs(localCy(lines[i], ax, xh) - localCy(b, bx, xh));
-        const small = b.length <= 3 && bx1 - bx0 < 3 * xh;
-        const limit = (small ? 1.6 : 1.2) * xh;
-        if (dy < limit && (best === null || dy < best[0])) best = [dy, i, j];
+  const n = lines.length;
+  // Rows keep their index; a joined row is no longer alive. Index order is
+  // the reference's list order, since a join never reorders the rest.
+  const alive = new Array<boolean>(n).fill(true);
+  const bestDy = new Float64Array(n).fill(Infinity);
+  const bestJ = new Int32Array(n).fill(-1);
+  /** How far row j's band is from row i's where they are nearest; Infinity when they may not join. */
+  const distance = (i: number, j: number): number => {
+    const ax0 = x0s[i];
+    const ax1 = x1s[i];
+    const bx0 = x0s[j];
+    const bx1 = x1s[j];
+    const gap = Math.max(bx0 - ax1, ax0 - bx1);
+    if (gap > 6 * xh) return Infinity;
+    const ax = Math.min(Math.max(bx0, ax0), ax1);
+    const bx = Math.min(Math.max(ax0, bx0), bx1);
+    const b = lines[j];
+    const dy = Math.abs(localCy(lines[i], ax, xh) - localCy(b, bx, xh));
+    const small = b.length <= 3 && bx1 - bx0 < 3 * xh;
+    const limit = (small ? 1.6 : 1.2) * xh;
+    return dy < limit ? dy : Infinity;
+  };
+  /** Row i's closest partner, the first one on a tie. */
+  const findBest = (i: number): void => {
+    bestDy[i] = Infinity;
+    bestJ[i] = -1;
+    for (let j = 0; j < n; j++) {
+      if (j === i || !alive[j]) continue;
+      const d = distance(i, j);
+      if (d < bestDy[i]) {
+        bestDy[i] = d;
+        bestJ[i] = j;
       }
     }
-    if (!best) return lines;
-    const [, i, j] = best;
+  };
+  for (let i = 0; i < n; i++) findBest(i);
+  for (;;) {
+    let i = -1;
+    for (let k = 0; k < n; k++) if (alive[k] && bestDy[k] < (i < 0 ? Infinity : bestDy[i])) i = k;
+    if (i < 0) return lines.filter((_, k) => alive[k]);
+    const j = bestJ[i];
     lines[i].push(...lines[j]);
     x0s[i] = Math.min(x0s[i], x0s[j]);
     x1s[i] = Math.max(x1s[i], x1s[j]);
-    lines.splice(j, 1);
-    x0s.splice(j, 1);
-    x1s.splice(j, 1);
+    alive[j] = false;
+    findBest(i);
+    for (let k = 0; k < n; k++) {
+      if (k === i || !alive[k]) continue;
+      if (bestJ[k] === j) {
+        findBest(k);
+        continue;
+      }
+      const d = distance(k, i);
+      if (bestJ[k] === i) {
+        // Row i changed under its partners: still the closest only if no farther.
+        if (d <= bestDy[k]) bestDy[k] = d;
+        else findBest(k);
+      } else if (d < bestDy[k] || (d === bestDy[k] && d < Infinity && i < bestJ[k])) {
+        bestDy[k] = d;
+        bestJ[k] = i;
+      }
+    }
   }
 }
 

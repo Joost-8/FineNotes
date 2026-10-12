@@ -27,6 +27,8 @@ export interface DeviceReadingState {
   hashOf: (page: Page) => string;
   /** Pages read already in this session, by key, at the hash they were read at. */
   read: ReadonlyMap<string, string>;
+  /** Pages not to read (they failed, or took the app down), by key, at that hash. */
+  skip?: ReadonlyMap<string, string>;
   /** The page being read: it goes first. */
   current: number;
 }
@@ -38,7 +40,7 @@ export function hasReadableInk(page: Page): boolean {
 
 /** The next thing to do, or null when every page is up to date. */
 export function nextDeviceStep(state: DeviceReadingState): DeviceStep | null {
-  const { pages, keys, entries, hashOf, read, current } = state;
+  const { pages, keys, entries, hashOf, read, skip, current } = state;
   const order = pages.map((_, i) => i);
   if (current > 0 && current < pages.length) {
     order.splice(current, 1);
@@ -54,7 +56,7 @@ export function nextDeviceStep(state: DeviceReadingState): DeviceStep | null {
       continue;
     }
     const hash = hashOf(page);
-    if (entry?.hash === hash || read.get(key) === hash) continue;
+    if (entry?.hash === hash || read.get(key) === hash || skip?.get(key) === hash) continue;
     return { kind: "read", page, key, hash };
   }
   return null;

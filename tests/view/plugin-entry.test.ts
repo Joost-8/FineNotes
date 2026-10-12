@@ -116,8 +116,12 @@ interface FakeApp {
   secrets: Map<string, string>;
 }
 
-function fakeApp(keychain = true): FakeApp & Record<string, unknown> {
+function fakeApp(
+  keychain = true,
+  local: Record<string, string> = {},
+): FakeApp & Record<string, unknown> {
   const files = new Map<string, TFile>();
+  const stored = new Map(Object.entries(local));
   const frontmatter = new Map<string, Record<string, unknown>>();
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
@@ -169,6 +173,8 @@ function fakeApp(keychain = true): FakeApp & Record<string, unknown> {
         }
       : undefined,
     secrets,
+    loadLocalStorage: (key: string): unknown => stored.get(key) ?? null,
+    saveLocalStorage: (key: string, value: string) => stored.set(key, value),
     addFile(path: string, fm?: Record<string, unknown>) {
       const file = new TFile(path);
       files.set(path, file);
@@ -187,8 +193,13 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function load(stored: unknown = null, version = VERSION, keychain = true): Promise<void> {
-  app = fakeApp(keychain);
+async function load(
+  stored: unknown = null,
+  version = VERSION,
+  keychain = true,
+  local: Record<string, string> = {},
+): Promise<void> {
+  app = fakeApp(keychain, local);
   plugin = new GoodObsidianPlugin(
     app as never,
     {
@@ -688,6 +699,24 @@ describe("loading settings", () => {
     registered.unload();
     await load({ apiKeys: null }, VERSION, false);
     expect(plugin.settings.apiKeys).toEqual({});
+  });
+
+  it("says which page took the app down while it was read on the device, and skips it", async () => {
+    const mark = { path: "School/Maths.notebook.md", key: "p3", hash: "h3", page: 3 };
+    const reading = JSON.stringify({ version: VERSION, reading: mark, crashed: [] });
+    await load({ lastSeenVersion: VERSION }, VERSION, true, {
+      "finenotes:device-reading": reading,
+    });
+    expect(plugin.readingGuard.paused).toBe(true);
+    expect(plugin.readingGuard.skipped(mark.path)).toEqual(new Map([["p3", "h3"]]));
+    expect(notices).toHaveLength(1);
+    expect(notices[0].message).toMatch(/page 3 of "Maths\.notebook\.md"/);
+  });
+
+  it("starts quietly after a run whose readings all finished", async () => {
+    await load({ lastSeenVersion: VERSION });
+    expect(plugin.readingGuard.paused).toBe(false);
+    expect(notices).toHaveLength(0);
   });
 
   it("moves plain-text keys into the keychain, and says so", async () => {

@@ -120,7 +120,6 @@ import { externalUrl, isExternalTarget, linkStrokes, linkTargets } from "../mode
 import { LinkSuggestModal } from "./link-modal";
 import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
-import { lineStrokes, segmentPage } from "../recognition/hwr/lines";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
@@ -971,7 +970,9 @@ export class InkView extends TextFileView {
 
   private async readNextPageOnDevice(): Promise<void> {
     this.deviceTimer = 0;
-    if (this.deviceBusy || !this.surface) return;
+    const guard = this.plugin.readingGuard;
+    const path = this.file?.path;
+    if (this.deviceBusy || !this.surface || !path || guard.paused) return;
     if (this.penIsDown) {
       this.scheduleDeviceReading();
       return;
@@ -984,6 +985,7 @@ export class InkView extends TextFileView {
       entries: transcriptSources(readTextSection(this.noteBody)),
       hashOf: pageContentHash,
       read: this.deviceRead,
+      skip: guard.skipped(path),
       current: this.surface.currentPage,
     });
     if (!step) return;
@@ -993,30 +995,46 @@ export class InkView extends TextFileView {
       return;
     }
     this.deviceBusy = true;
-    let text = "";
-    let reading: PageReading | null = null;
     try {
-      reading = await this.plugin.handwriting.readPage(step.page.strokes);
-      text = readingText(reading);
+      await this.plugin.handwriting.model();
     } catch {
-      // Unreadable now (the model failed to load): try again after the next edit.
+      // The model failed to load, which is no fault of the page: try again
+      // after the next edit.
       this.deviceBusy = false;
       return;
     }
-    this.deviceBusy = false;
-    // The page may have changed, moved or gone, or been transcribed, meanwhile.
-    if (this.doc !== doc || !doc.pages.includes(step.page)) return;
-    if (pageContentHash(step.page) !== step.hash) {
-      this.scheduleDeviceReading();
-      return;
+    // Marked until the reading and the link check are over: a mark left at
+    // the next start means this page took the app down (reading-guard.ts).
+    const mark = { path, key: step.key, hash: step.hash, page: doc.pages.indexOf(step.page) + 1 };
+    guard.begin(mark);
+    try {
+      let reading: PageReading;
+      try {
+        reading = await this.plugin.handwriting.readPage(step.page.strokes);
+      } catch {
+        // An error or a timeout: skip this page until it changes, and go on.
+        guard.fail(mark);
+        this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
+        return;
+      }
+      // The page may have changed, moved or gone, or been transcribed, meanwhile.
+      if (this.doc !== doc || !doc.pages.includes(step.page)) return;
+      if (pageContentHash(step.page) !== step.hash) {
+        this.scheduleDeviceReading();
+        return;
+      }
+      this.deviceRead.set(step.key, step.hash);
+      const entry = transcriptSources(readTextSection(this.noteBody)).get(step.key);
+      if (!entry || entry.device) {
+        const text = readingText(reading);
+        this.writeTranscripts([{ page: step.page, text, hash: step.hash, device: true }]);
+      }
+      await this.offerHandwrittenLinks(step.page, reading);
+      this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
+    } finally {
+      guard.end();
+      this.deviceBusy = false;
     }
-    this.deviceRead.set(step.key, step.hash);
-    const entry = transcriptSources(readTextSection(this.noteBody)).get(step.key);
-    if (!entry || entry.device) {
-      this.writeTranscripts([{ page: step.page, text, hash: step.hash, device: true }]);
-    }
-    if (reading) await this.offerHandwrittenLinks(step.page, reading);
-    this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
   }
 
   /**
@@ -1032,12 +1050,14 @@ export class InkView extends TextFileView {
     );
     const found: HandwrittenLink[] = [];
     if (bracketed.length > 0) {
-      const lines = segmentPage(inkForReading(page.strokes)).lines;
+      // The worker found the words: finding them again here would block the
+      // main thread for as long as a dense page takes to segment.
+      const ink = new Map(inkForReading(page.strokes).map((s) => [s.id, s]));
       for (const read of bracketed) {
-        const ids = new Set(read.strokeIds);
-        const line = lines.find((l) => lineStrokes(l).some((s) => ids.has(s.id)));
-        if (!line) continue;
-        const groups = line.words.map((word) => word.strokes);
+        const groups = read.words
+          .map((word) => word.flatMap((id) => ink.get(id) ?? []))
+          .filter((group) => group.length > 0);
+        if (groups.length === 0) continue;
         try {
           const words = await this.plugin.handwriting.readGroups(groups);
           found.push(
@@ -1261,7 +1281,10 @@ export class InkView extends TextFileView {
     audio.attachPanel(this.sidebar.audioEl);
     this.surface.setClock(() => audio.now());
     this.registerDomEvent(document, "visibilitychange", () => {
-      if (document.visibilityState !== "hidden") return;
+      const hidden = document.visibilityState === "hidden";
+      // A page read while the app is away is not blamed if iPadOS ends it.
+      this.plugin.readingGuard.setHidden(hidden);
+      if (!hidden) return;
       this.audio?.onHidden();
       // iPadOS may end the app from the background: keep the page now, and
       // a save the pen put off.

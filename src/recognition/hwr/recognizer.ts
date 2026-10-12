@@ -34,6 +34,8 @@ export interface LineReading {
 
 export interface PageLineReading extends LineReading {
   strokeIds: string[];
+  /** The line's words, as stroke ids, so a caller need not find them again. */
+  words: string[][];
   box: Box;
 }
 
@@ -109,7 +111,12 @@ export function readPage(
     wordGap,
     lines: lines.map((line) => {
       const ink = lineStrokes(line);
-      return { ...readLine(bundle, ink, options), strokeIds: ink.map((s) => s.id), box: line.box };
+      return {
+        ...readLine(bundle, ink, options),
+        strokeIds: ink.map((s) => s.id),
+        words: line.words.map((word) => word.strokes.map((s) => s.id)),
+        box: line.box,
+      };
     }),
   };
 }

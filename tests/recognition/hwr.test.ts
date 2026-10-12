@@ -248,6 +248,33 @@ describe("a page", () => {
     });
   }
 
+  it("gives each line's words, as the reference finds them", () => {
+    for (const page of golden.pages) {
+      const reading = readPage(bundle, page.strokes, { useLm: false });
+      expect(reading.lines.map((l) => l.words)).toEqual(page.lines.map((l) => l.words));
+      for (const line of reading.lines) expect(line.words.flat()).toEqual(line.strokeIds);
+    }
+  });
+
+  it("finds the lines of a page of scattered strokes in seconds, not minutes (FineNotes#22)", () => {
+    // Letter-sized strokes in random places, in random order (labels on a
+    // diagram, a page of formulas): joining rows pair by pair took 28 s for
+    // 2,000 of them on a laptop.
+    let seed = 7;
+    const random = (): number => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const ink = Array.from({ length: 1500 }, (_, i) => {
+      const x = random() * 1000;
+      const y = random() * 1400;
+      const pts: number[] = [];
+      for (let k = 0; k < 8; k++) pts.push(x + k, y + (k % 2) * 10, 0.5);
+      return { id: `s${i}`, tool: "pen", t0: i * 300, pts };
+    });
+    const started = performance.now();
+    const { lines } = segmentPage(ink);
+    expect(performance.now() - started).toBeLessThan(8000);
+    expect(lines.flatMap((l) => l.words.flatMap((w) => w.strokes))).toHaveLength(1500);
+  });
+
   it("has no lines without writing", () => {
     const shape = { id: "s1", tool: "pen", shape: "rect", pts: [0, 0, 0.5, 10, 10, 0.5] };
     const marker = { id: "s2", tool: "highlighter", pts: [0, 0, 0.5, 10, 0, 0.5] };

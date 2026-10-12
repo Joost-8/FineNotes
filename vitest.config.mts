@@ -65,6 +65,7 @@ export default defineConfig({
         "src/input/multi-finger-tap.ts",
         "src/recognition/text-layer.ts",
         "src/recognition/device-reading.ts",
+        "src/recognition/reading-guard.ts",
         "src/recognition/hwr/train.ts",
         "src/recognition/hwr/train-engine.ts",
         "src/recognition/hwr/tune.ts",

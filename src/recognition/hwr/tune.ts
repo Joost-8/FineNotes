@@ -45,6 +45,16 @@ export interface TuneOptions {
   seed: number;
 }
 
+/**
+ * The longest practice line learned from, in frames before augmentation.
+ * The training engine keeps ~73 KB a frame for 2.5 times its longest line
+ * (augmentation stretches a line up to 2.7 times, 2 for 99 % of them), so
+ * one long line set the memory of the whole run: 2,000 frames took ~365 MB,
+ * too much beside everything else on a 4 GB iPad. Copied practice lines run
+ * to ~700; at this cap the engine stays under ~185 MB.
+ */
+export const TUNE_MAX_FRAMES = 1000;
+
 /** finetune_v2's recipe, with 100 steps. */
 export const TUNE_DEFAULTS: TuneOptions = {
   steps: 100,
@@ -229,19 +239,20 @@ export function tune(
   const o = { ...TUNE_DEFAULTS, ...options };
   const base = parseBundle(bytes);
   const alphabet = base.meta.alphabet;
-  const usable = lines.filter(
-    (l) => encodeLabel(l.text, alphabet) !== null && l.strokes.length > 0,
-  );
+  const random = seededRandom(o.seed);
+  // Lines past TUNE_MAX_FRAMES are left out, of the held-out lines too.
+  let maxFrames = 0;
+  const usable = lines.filter((line) => {
+    if (encodeLabel(line.text, alphabet) === null || line.strokes.length === 0) return false;
+    const prepared = prepareLine(line, alphabet, random, false);
+    if (!prepared || prepared.frames > TUNE_MAX_FRAMES) return false;
+    maxFrames = Math.max(maxFrames, prepared.frames);
+    return true;
+  });
   const { train, holdout } = splitHoldout(usable);
   if (train.length === 0) return null;
-  const random = seededRandom(o.seed);
   const net: TrainNet = trainNetFrom(base.net);
-  // Room for the longest line, with slack for a slower random pen speed.
-  let maxFrames = 0;
-  for (const line of train) {
-    const prepared = prepareLine(line, alphabet, random, false);
-    if (prepared) maxFrames = Math.max(maxFrames, prepared.frames);
-  }
+  // Room for the longest line, with slack for augmentation.
   const engine = TrainEngine.create(net, Math.ceil(maxFrames * 2.5) + 16);
   const adam = adamState(net);
   for (let step = 1; step <= o.steps; step++) {

@@ -60,6 +60,12 @@ describe("nextDeviceStep", () => {
     expect(step(state())).toBe("read:p1");
   });
 
+  it("skips a page it was told to, until the page changes", () => {
+    const skip = new Map([["p1", "h-p1-1"]]);
+    expect(step(state({ skip }))).toBe("read:p2");
+    expect(step(state({ skip: new Map([["p1", "earlier"]]) }))).toBe("read:p1");
+  });
+
   it("leaves a transcribed page alone, current or not", () => {
     const entries = new Map([
       ["p1", { hash: "old", device: false }],
