@@ -8,6 +8,23 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool options come back the way you left them.** Tuck the pen's options
+  away, pick the eraser, and the pen returns with its options still tucked
+  away, whether you tap it or it comes back on its own after one use. Each
+  tool remembers this for itself.
+
+### Fixed
+
+- Reading handwriting on the device no longer makes Obsidian restart over
+  and over on some iPads. A short level line, such as a minus sign or a
+  fraction bar, could take all of the memory (#22).
+- A page whose reading took the app down, failed or timed out is no longer
+  read again at every start or after every edit; it waits until you change
+  it.
+- Reading a page with thousands of strokes is much faster.
+
 ## [2.0.0] - 2026-10-12
 
 Thank you for all the feedback and support. FineNotes has passed 500

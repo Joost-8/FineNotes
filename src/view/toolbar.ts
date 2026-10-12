@@ -447,6 +447,13 @@ export class Toolbar {
 
   /** The active tool remains active when its options are tucked away. */
   private optionsVisible = true;
+  /** Tools whose options were tucked away when they were left: they come back tucked. */
+  private readonly tuckedTools = new Set<ActiveTool>();
+  /**
+   * The tool `optionsVisible` belongs to. Not `state.tool`: the surface shares
+   * the state object and changes its tool before `setState` is called.
+   */
+  private optionsTool: ActiveTool;
   /** What the pill shows ("text" or a tool); a change fades the new controls in. */
   private pillKind: string | null = null;
   private pillMorph: Animation | null = null;
@@ -470,6 +477,7 @@ export class Toolbar {
     private readonly options: ToolbarOptions = {},
   ) {
     this.palette = [...palette];
+    this.optionsTool = state.tool;
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", "Handwriting tools");
@@ -705,12 +713,26 @@ export class Toolbar {
       this.optionsVisible = !this.optionsVisible;
       this.showOptions(this.optionsVisible);
     } else {
+      this.leaveToolFor(tool);
       this.state.tool = tool;
-      this.optionsVisible = true;
       this.callbacks.onToolChange(tool);
       this.buildOptions();
     }
     this.syncActive();
+  }
+
+  /**
+   * Remember whether the tool being left had its options showing, and show
+   * the next tool's options as it was last left (showing, the first time).
+   * Highlighter is a pen type, so the two share one memory.
+   */
+  private leaveToolFor(next: ActiveTool): void {
+    const key = (tool: ActiveTool): ActiveTool => (tool === "highlighter" ? "pen" : tool);
+    if (key(next) === key(this.optionsTool)) return;
+    if (this.optionsVisible) this.tuckedTools.delete(key(this.optionsTool));
+    else this.tuckedTools.add(key(this.optionsTool));
+    this.optionsVisible = !this.tuckedTools.has(key(next));
+    this.optionsTool = next;
   }
 
   // --- Tier 2 ---------------------------------------------------------------
@@ -2157,6 +2179,7 @@ export class Toolbar {
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
   setState(next: ToolbarState): void {
     this.drawingTool = drawingToolOf(this.drawingTool, next.tool);
+    this.leaveToolFor(next.tool);
     this.state = next;
     this.buildOptions();
     this.syncActive();

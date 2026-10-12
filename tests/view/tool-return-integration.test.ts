@@ -60,6 +60,8 @@ describe("secondary tool integration", () => {
         const s: Fake = Object.assign(Object.create(Toolbar.prototype), {
           state: { tool },
           optionsVisible: true,
+          tuckedTools: new Set(),
+          optionsTool: tool,
           callbacks: { returnToPenOnReselect: () => enabled, onToolChange: vi.fn() },
           toggleLassoPopover: vi.fn(),
           closePopover: vi.fn(),
@@ -290,6 +292,8 @@ describe("secondary tool integration", () => {
       state: { tool: "highlighter" },
       drawingTool: "pen",
       optionsVisible: true,
+      tuckedTools: new Set(),
+      optionsTool: "highlighter",
       callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
       toggleLassoPopover: vi.fn(),
       closePopover: vi.fn(),
@@ -305,6 +309,42 @@ describe("secondary tool integration", () => {
     run(bar, "setState", { tool: "shape" });
     run(bar, "tapTool", "shape", {});
     expect(bar.state.tool).toBe("pen");
+  });
+  it("brings each tool's options back as they were when it was left", () => {
+    const state: { tool: ActiveTool } = { tool: "pen" };
+    const bar: Fake = Object.assign(Object.create(Toolbar.prototype), {
+      state,
+      drawingTool: "pen",
+      optionsVisible: true,
+      tuckedTools: new Set(),
+      optionsTool: "pen",
+      callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
+      closePopover: vi.fn(),
+      showOptions: vi.fn(),
+      buildOptions: vi.fn(),
+      syncActive: vi.fn(),
+    });
+    // Tuck the pen's options away, pick the eraser: its options show.
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(false);
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.optionsVisible).toBe(true);
+    // Back to the pen after one use: the surface changes the shared state first.
+    state.tool = "pen";
+    run(bar, "setState", state);
+    expect(bar.optionsVisible).toBe(false);
+    // The highlighter is a pen type, so it shares the pen's memory.
+    run(bar, "tapTool", "eraser", {});
+    state.tool = "highlighter";
+    run(bar, "setState", state);
+    expect(bar.optionsVisible).toBe(false);
+    // Shown again, the pen's options stay shown across the next round trip.
+    run(bar, "tapTool", "highlighter", {});
+    expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "shape", {});
+    state.tool = "pen";
+    run(bar, "setState", state);
+    expect(bar.optionsVisible).toBe(true);
   });
   it("reads settings live, including both switches independently", () => {
     const s = surface("eraser", false);
