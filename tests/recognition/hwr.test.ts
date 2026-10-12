@@ -12,7 +12,13 @@ import { forward, simdAvailable } from "../../src/recognition/hwr/blstm";
 import { HwrFormatError, parseBundle } from "../../src/recognition/hwr/bundle";
 import { BOS } from "../../src/recognition/hwr/char-lm";
 import { DEFAULT_BEAM, beamDecode, greedyDecode } from "../../src/recognition/hwr/ctc";
-import { lineFeatures, robustLine, writingOrder } from "../../src/recognition/hwr/features";
+import {
+  LineTooLongError,
+  MIN_LINE_HEIGHT,
+  lineFeatures,
+  robustLine,
+  writingOrder,
+} from "../../src/recognition/hwr/features";
 import { autoWordGap, segmentPage } from "../../src/recognition/hwr/lines";
 import {
   fitLine,
@@ -168,6 +174,29 @@ describe("one line", () => {
     expect(writingOrder([a, b])).toEqual([b, a]);
     expect(writingOrder([a, b, c])).toEqual([b, c, a]);
     expect(() => lineFeatures([{ pts: [] }])).toThrow(/at least one stroke/);
+  });
+
+  it("keeps a perfectly level dash to a few hundred frames (FineNotes#22)", () => {
+    // A minus sign as whole-px Pencil input on iPadOS 17 stores it: every y
+    // the same. With the line height floored at 1e-6 this asked for ~10^8
+    // frames, and the allocation brought the iPad down.
+    for (const length of [20, 60, 110]) {
+      const pts: number[] = [];
+      for (let x = 0; x <= length; x += 1.4) pts.push(100 + x, 300, 0.5);
+      const { frames, norm } = lineFeatures([{ pts, t0: 0 }]);
+      expect(norm.full).toBe(MIN_LINE_HEIGHT);
+      expect(frames).toBeLessThan(25 * length);
+    }
+  });
+
+  it("refuses a line past the frame cap before making its frames, and reads it as nothing", () => {
+    // A tall zig-zag 300 page widths long: far past any real line.
+    const pts: number[] = [];
+    for (let i = 0; i <= 4000; i++) pts.push(i * 80, i % 2 === 0 ? 0 : 40, 0.5);
+    const line = [{ pts, t0: 0 }];
+    expect(() => lineFeatures(line)).toThrow(LineTooLongError);
+    const read = readLine(bundle, line);
+    expect(read).toMatchObject({ text: "", greedy: "", frames: 0, confidence: 0 });
   });
 
   it("reads a line end to end, with and without the LM", () => {

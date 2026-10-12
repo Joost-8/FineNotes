@@ -46,6 +46,27 @@ export const HEIGHTS_PER_SECOND = 5.3;
 export const CORE_UNITS = 0.4;
 /** Channels per frame: dx, dy, dt, new-stroke. */
 export const FEATURE_CHANNELS = 4;
+/**
+ * The flattest a line is taken to be, in page px. The reference floors it at
+ * 1e-6, so a dash drawn perfectly level (whole-px Pencil input on iPadOS 17
+ * gives exactly that) was scaled up ~10^5 times into hundreds of millions of
+ * frames, and the allocation took the iPad down (FineNotes#22). The pen
+ * speed already floors the height at 1 px; no line of writing is under it.
+ */
+export const MIN_LINE_HEIGHT = 1;
+/**
+ * The most frames a line may have. Real lines run to ~750 (a full-width line
+ * of Joost's notes); the network's memory grows ~4.4 KB a frame and never
+ * shrinks, so a line past this is not read rather than allocated.
+ */
+export const MAX_LINE_FRAMES = 6000;
+
+/** Thrown, before anything is allocated, for a line past `MAX_LINE_FRAMES`. */
+export class LineTooLongError extends Error {
+  constructor(readonly frames: number) {
+    super(`a line of ${frames} frames is past the ${MAX_LINE_FRAMES} the recogniser reads`);
+  }
+}
 
 /** A stroke with a time per point: x, y (y up) and t in seconds. */
 interface TimedStroke {
@@ -191,7 +212,7 @@ export function robustLine(xs: readonly number[], ys: readonly number[]): [numbe
 
 /** The normalisation's intermediate values, for tests against the reference. */
 export interface NormalizeInfo {
-  /** Ink height of the line (y up), at least 1e-6. */
+  /** Ink height of the line (y up), at least `MIN_LINE_HEIGHT`. */
   full: number;
   /** The baseline, in centred coordinates. */
   base: number;
@@ -219,7 +240,7 @@ function normalizeCore(strokes: readonly TimedStroke[]): {
     allY.set(s.y, o);
     o += s.x.length;
   }
-  const full = Math.max(ptp(allY), 1e-6);
+  const full = Math.max(ptp(allY), MIN_LINE_HEIGHT);
   // Levelling is off: the reference rotates by 0, which leaves the centred
   // points exactly as they are.
   const cx = npMean(allX);
@@ -280,27 +301,34 @@ function frameFeatures(strokes: readonly TimedStroke[]): {
   features: Float32Array;
   frameStroke: Int32Array;
 } {
-  const xs: Float64Array[] = [];
-  const ys: Float64Array[] = [];
-  const ts: Float64Array[] = [];
-  let total = 0;
-  for (const s of strokes) {
+  // Every stroke's frame count first: a line past the cap is refused before
+  // its frames are made.
+  const counts = strokes.map((s) => {
     const n0 = s.x.length;
-    if (n0 === 1) {
-      xs.push(s.x);
-      ys.push(s.y);
-      ts.push(s.t);
-      total += 1;
-      continue;
-    }
+    if (n0 === 1) return 1;
     const seg = new Float64Array(n0 - 1);
     for (let k = 0; k < n0 - 1; k++) {
       const dx = s.x[k + 1] - s.x[k];
       const dy = s.y[k + 1] - s.y[k];
       seg[k] = Math.sqrt(dx * dx + dy * dy);
     }
-    const length = npSum(seg);
-    const n = Math.max(Math.ceil(length * POINTS_PER_UNIT_LENGTH), 2);
+    return Math.max(Math.ceil(npSum(seg) * POINTS_PER_UNIT_LENGTH), 2);
+  });
+  const frames = counts.reduce((sum, n) => sum + n, 0);
+  if (!(frames <= MAX_LINE_FRAMES)) throw new LineTooLongError(frames);
+  const xs: Float64Array[] = [];
+  const ys: Float64Array[] = [];
+  const ts: Float64Array[] = [];
+  let total = 0;
+  for (const [i, s] of strokes.entries()) {
+    if (s.x.length === 1) {
+      xs.push(s.x);
+      ys.push(s.y);
+      ts.push(s.t);
+      total += 1;
+      continue;
+    }
+    const n = counts[i];
     let tmin = Infinity;
     let tmax = -Infinity;
     for (const v of s.t) {

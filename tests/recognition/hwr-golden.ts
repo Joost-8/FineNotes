@@ -8,7 +8,7 @@ import { expect } from "vitest";
 import { forward } from "../../src/recognition/hwr/blstm";
 import type { HwrBundle } from "../../src/recognition/hwr/bundle";
 import { beamDecode, greedyDecode } from "../../src/recognition/hwr/ctc";
-import { lineFeatures } from "../../src/recognition/hwr/features";
+import { MIN_LINE_HEIGHT, lineFeatures } from "../../src/recognition/hwr/features";
 import { segmentPage } from "../../src/recognition/hwr/lines";
 import { readPage } from "../../src/recognition/hwr/recognizer";
 
@@ -102,9 +102,15 @@ export function checkLine(
   const want = float32(line.features);
   const featureDiff = maxAbsDiff(got.features, want);
   expect(featureDiff).toBeLessThan(1e-6);
-  expect(got.norm.full).toBe(line.norm.full);
-  expect(got.norm.core).toBeCloseTo(line.norm.core, 9);
-  expect(Math.abs(got.norm.scale / line.norm.scale - 1)).toBeLessThan(1e-12);
+  if (line.norm.full < MIN_LINE_HEIGHT) {
+    // The one place the port parts from the reference on purpose: a line
+    // flatter than 1 px is taken as 1 px tall (FineNotes#22).
+    expect(got.norm.full).toBe(MIN_LINE_HEIGHT);
+  } else {
+    expect(got.norm.full).toBe(line.norm.full);
+    expect(got.norm.core).toBeCloseTo(line.norm.core, 9);
+    expect(Math.abs(got.norm.scale / line.norm.scale - 1)).toBeLessThan(1e-12);
+  }
   expect(got.norm.base).toBeCloseTo(line.norm.base, 6);
 
   // The network, on the reference's own frames: both kernels.

@@ -10,7 +10,7 @@
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
 import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
-import { type InkStroke, lineFeatures } from "./features";
+import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
 
 export interface LineTimings {
@@ -53,7 +53,11 @@ export interface ReadOptions {
   now?: () => number;
 }
 
-/** Read one line of strokes (any order: they are put in writing order). */
+/**
+ * Read one line of strokes (any order: they are put in writing order). A
+ * line too long to read (`MAX_LINE_FRAMES`) reads as nothing, so the rest of
+ * its page is still read.
+ */
 export function readLine(
   bundle: HwrBundle,
   strokes: readonly InkStroke[],
@@ -61,7 +65,15 @@ export function readLine(
 ): LineReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  const { features, frames } = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+  let line: { features: Float32Array; frames: number };
+  try {
+    line = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+  } catch (error) {
+    if (!(error instanceof LineTooLongError)) throw error;
+    const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };
+    return { greedy: "", text: "", confidence: 0, frames: 0, timings };
+  }
+  const { features, frames } = line;
   const t1 = now();
   const logp = forward(bundle.net, features, frames);
   const t2 = now();
