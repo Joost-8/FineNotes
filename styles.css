@@ -1306,8 +1306,11 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: block;
 }
 
+/* The textarea's colour is set inline (the box's own), which no rule here
+   can outrank without an important flag; it draws nothing but its text, so
+   it is hidden by opacity instead. It still takes taps and keeps its size. */
 .goodobsidian-page-textbox.has-links:not(:focus-within) .goodobsidian-page-textbox-input {
-  color: transparent !important;
+  opacity: 0;
 }
 
 .goodobsidian-textbox-link {
