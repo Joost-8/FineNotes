@@ -2341,6 +2341,94 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   font-weight: var(--font-semibold, 600);
 }
 
+/* "Import from another app…": a quiet accent link under the title, with a
+   full touch target. Its own selector outranks Obsidian's
+   `.clickable-icon` padding and hover fill. */
+.goodobsidian-newnb button.goodobsidian-newnb-import.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  width: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 4px;
+  margin-top: -4px;
+  border-radius: var(--gob-radius-s, 6px);
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent-hover);
+}
+
+/* A dialog's call-to-action that also carries `clickable-icon` (to escape
+   the iPad's 20 px button padding) would take that class's faint icon
+   colour, which on the accent fill is unreadable. */
+.goodobsidian-dialog button.mod-cta.clickable-icon {
+  padding: 0 var(--size-4-3);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-dialog button.mod-cta.clickable-icon:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* Import notebook: "How do I export my notebooks?", a row like the
+   settings above it, opened by a chevron instead of the browser's triangle. */
+.goodobsidian-import-help {
+  border-top: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-2) 0;
+}
+
+.goodobsidian-import-help > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  min-height: var(--gob-touch-compact);
+  list-style: none;
+  cursor: var(--cursor);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-import-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.goodobsidian-import-help > summary:hover {
+  color: var(--text-normal);
+}
+
+.goodobsidian-import-help-chevron {
+  display: inline-flex;
+  --icon-size: 16px;
+  transition: transform 120ms ease;
+}
+
+.goodobsidian-import-help[open] .goodobsidian-import-help-chevron {
+  transform: rotate(90deg);
+}
+
+.goodobsidian-import-help ul {
+  margin: var(--size-4-1) 0 var(--size-4-2);
+  padding-inline-start: calc(16px + var(--size-4-1) + 1em);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+}
+
+.goodobsidian-newnb-import-icon {
+  display: inline-flex;
+  --icon-size: 16px;
+}
+
 .goodobsidian-newnb select.dropdown {
   min-height: var(--gob-touch);
   font-size: max(16px, var(--font-ui-small));

@@ -19,6 +19,7 @@
  */
 
 import { type App, Modal, ToggleComponent, setIcon } from "obsidian";
+import { ICON_IMPORT_NOTEBOOK } from "../constants";
 import type { PageGeometry, Ruling } from "../model/document";
 import {
   type CoverChoice,
@@ -50,6 +51,11 @@ export interface NewNotebookOptions {
   /** Preselected folder: the setting, or the active file's folder. */
   folder: string;
   onCreate: (request: NewNotebookRequest) => void;
+  /**
+   * "Import from another app…", under the title: closes the dialog and imports
+   * into the dialog's folder. Left out, there is no link.
+   */
+  onImport?: (folder: string) => void;
 }
 
 /** Preview width of a cover or template card, CSS px. */
@@ -205,6 +211,26 @@ export class NewNotebookModal extends Modal {
       this.releaseCap();
     });
     this.titleInput = input;
+    this.buildImportLink(body);
+  }
+
+  /** A quiet link under the title: bring a notebook in from another app instead. */
+  private buildImportLink(body: HTMLElement): void {
+    const onImport = this.options.onImport;
+    if (!onImport) return;
+    // `clickable-icon` keeps Obsidian's own button styling (and its iPad
+    // padding) off this link-styled button.
+    const link = body.createEl("button", {
+      cls: "goodobsidian-newnb-import clickable-icon",
+      attr: { type: "button" },
+    });
+    setIcon(link.createSpan({ cls: "goodobsidian-newnb-import-icon" }), ICON_IMPORT_NOTEBOOK);
+    link.createSpan({ text: "Import from another app…" });
+    link.addEventListener("click", () => {
+      const folder = this.folder;
+      this.close();
+      onImport(folder);
+    });
   }
 
   private buildType(body: HTMLElement): void {

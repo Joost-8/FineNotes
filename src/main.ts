@@ -4,6 +4,7 @@ import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
   Notice,
+  addIcon,
   Platform,
   Plugin,
   type RequestUrlResponse,
@@ -13,7 +14,13 @@ import {
   WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
-import { ICON_NEW_NOTEBOOK, PREVIOUS_PLUGIN_ID, VIEW_TYPE_INK } from "./constants";
+import {
+  ICON_IMPORT_NOTEBOOK,
+  ICON_IMPORT_NOTEBOOK_SVG,
+  ICON_NEW_NOTEBOOK,
+  PREVIOUS_PLUGIN_ID,
+  VIEW_TYPE_INK,
+} from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { buildInkFile } from "./model/serialize";
 import type { RecognitionProvider } from "./recognition/provider";
@@ -70,6 +77,7 @@ import {
   uniqueFileName,
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
+import { openImportNotebookModal } from "./view/import-notebook-modal";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -201,6 +209,8 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.setUpKeyStore();
 
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
+    // FineNotes' own icons, before any button that uses them is made.
+    addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
     this.register(
@@ -235,6 +245,16 @@ export default class GoodObsidianPlugin extends Plugin {
               .setSection("action-primary")
               .onClick(() =>
                 this.openNewNotebookDialog(folder && !folder.isRoot() ? folder.path : ""),
+              ),
+          );
+          // Right below it: a notebook from another app, into the folder clicked.
+          menu.addItem((item) =>
+            item
+              .setTitle("Import notebook…")
+              .setIcon(ICON_IMPORT_NOTEBOOK)
+              .setSection("action-primary")
+              .onClick(() =>
+                this.openImportNotebook(folder && !folder.isRoot() ? folder.path : ""),
               ),
           );
         }
@@ -1016,11 +1036,29 @@ export default class GoodObsidianPlugin extends Plugin {
 
   // --- New notebook ---------------------------------------------------------
 
+  /**
+   * Import a notebook from another note-taking app into `folder` (vault
+   * relative; undefined means the default notebook folder). Called from the
+   * file explorer's right-click menu and the New notebook dialog.
+   */
+  openImportNotebook(folder = ""): void {
+    openImportNotebookModal(this.app, {
+      folder: folder || this.newNotebookFolder(),
+      ownFolder: parseNotebookChoices(this.settings.lastNotebookChoices).ownFolder,
+      open: async (file) => {
+        const tab = this.app.workspace.getLeaf(false);
+        await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+        await this.app.workspace.revealLeaf(tab);
+      },
+    });
+  }
+
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
   openNewNotebookDialog(folder?: string): void {
     new NewNotebookModal(this.app, {
       choices: parseNotebookChoices(this.settings.lastNotebookChoices),
       folder: folder ?? this.newNotebookFolder(),
+      onImport: (folder) => this.openImportNotebook(folder),
       onCreate: ({ title, choices, folder }) => {
         this.settings.lastNotebookChoices = { ...choices };
         void this.saveSettings();

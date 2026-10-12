@@ -269,6 +269,13 @@ export function requireApiVersion(_version: string): boolean {
 
 export function setIcon(): void {}
 
+/** Icons the plugin registered with `addIcon`, by id. */
+export const addedIcons = new Map<string, string>();
+
+export function addIcon(iconId: string, svgContent: string): void {
+  addedIcons.set(iconId, svgContent);
+}
+
 export function loadPdfJs(): Promise<never> {
   return Promise.reject(new Error("no pdf.js under test"));
 }

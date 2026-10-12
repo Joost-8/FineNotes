@@ -18,6 +18,7 @@ import {
   TFile,
   TFolder,
   WorkspaceLeaf,
+  addedIcons,
   notices,
   resetFakes,
   viewStateCalls,
@@ -50,6 +51,7 @@ const hooks = vi.hoisted(() => ({
   confirms: 0,
   post: null as null | ((url: string, headers: unknown, body: unknown) => Promise<unknown>),
   posts: [] as { url: string; headers: unknown; body: unknown }[],
+  imports: [] as { folder: string; ownFolder: boolean }[],
 }));
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
@@ -73,6 +75,11 @@ vi.mock("../../src/ui/confirm-modal", () => ({
     },
   },
 }));
+vi.mock("../../src/view/import-notebook-modal", () => ({
+  openImportNotebookModal: (_app: unknown, options: { folder: string; ownFolder: boolean }) => {
+    hooks.imports.push(options);
+  },
+}));
 vi.mock("../../src/recognition/http", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   postJson: (url: string, headers: unknown, body: unknown): Promise<unknown> => {
@@ -94,7 +101,7 @@ interface Registered {
   commands: FakeCommand[];
   views: Map<string, unknown>;
   protocolHandlers: Map<string, (params: Record<string, string>) => unknown>;
-  ribbon: { icon: string; title: string }[];
+  ribbon: { icon: string; title: string; callback: () => unknown }[];
   stored: unknown;
   saved: Record<string, unknown>[];
   unload(): void;
@@ -327,7 +334,7 @@ describe("New notebook context menu", () => {
     await load({ newNotebookFolder: "Default" });
     const open = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => {});
     const items = menuFor(new TFolder(path));
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({
       title: "New notebook",
       icon: "notebook-pen",
@@ -336,6 +343,21 @@ describe("New notebook context menu", () => {
     items[0].click();
     expect(open).toHaveBeenCalledWith(path === "/" ? "" : path);
   });
+  it.each(["School", "/", ""])(
+    "offers Import notebook right below it, into folder %s",
+    async (path) => {
+      await load();
+      const importNotebook = vi.spyOn(plugin, "openImportNotebook").mockImplementation(() => {});
+      const items = menuFor(new TFolder(path));
+      expect(items[1]).toMatchObject({
+        title: "Import notebook…",
+        icon: "finenotes-notebook-import",
+        section: "action-primary",
+      });
+      items[1].click();
+      expect(importNotebook).toHaveBeenCalledWith(path === "/" ? "" : path);
+    },
+  );
   it("uses the selected file's parent folder", async () => {
     await load();
     const open = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => {});
@@ -349,7 +371,7 @@ describe("New notebook context menu", () => {
     const folder = new TFolder("School");
     expect(menuFor(folder)).toHaveLength(0);
     plugin.settings.showNewNotebookInContextMenu = true;
-    expect(menuFor(folder)).toHaveLength(1);
+    expect(menuFor(folder)).toHaveLength(2);
     expect(menuFor(folder, "link-context-menu")).toHaveLength(0);
     expect(menuFor(folder, "file-explorer")).toHaveLength(0);
     plugin.settings.showNewNotebookInContextMenu = false;
@@ -403,7 +425,18 @@ describe("registration", () => {
     expect([...registered.views.keys()]).toEqual([INK]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen"]);
     expect(registered.ribbon[0].title).toBe("New notebook");
+    // The import icon is FineNotes' own, so it must be registered before use.
+    expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
     expect([...registered.protocolHandlers.keys()]).toEqual(["goodobsidian-openrouter"]);
+  });
+
+  it("opens the import dialog on the folder it was asked for", async () => {
+    await load();
+    hooks.imports.length = 0;
+    plugin.openImportNotebook("School");
+    expect(hooks.imports).toHaveLength(1);
+    expect(hooks.imports[0].folder).toBe("School");
+    expect(typeof hooks.imports[0].ownFolder).toBe("boolean");
   });
 
   it("builds an InkView for a leaf", async () => {
