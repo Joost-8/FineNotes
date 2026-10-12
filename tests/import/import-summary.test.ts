@@ -10,7 +10,7 @@ import { goodnotesFiles, JPEG, PDF, zip } from "./builders";
 
 const PAGE = (n: number): string => `${n}1111111-0000-0000-0000-00000000000A`;
 
-function notebook(pages: number, pictures: number) {
+async function notebook(pages: number, pictures: number) {
   const files = zip(
     goodnotesFiles({
       title: "Bio",
@@ -35,26 +35,30 @@ function notebook(pages: number, pictures: number) {
 }
 
 describe("import summary", () => {
-  it("describes a notebook", () => {
-    expect(describeImport(notebook(1, 0).results[0])).toBe("1 page · from Goodnotes");
-    expect(describeImport(notebook(3, 2).results[0])).toBe("3 pages · from Goodnotes · 2 pictures");
-    expect(describeImport(notebook(2, 1).results[0])).toBe("2 pages · from Goodnotes · 1 picture");
+  it("describes a notebook", async () => {
+    expect(describeImport((await notebook(1, 0)).results[0])).toBe("1 page · from Goodnotes");
+    expect(describeImport((await notebook(3, 2)).results[0])).toBe(
+      "3 pages · from Goodnotes · 2 pictures",
+    );
+    expect(describeImport((await notebook(2, 1)).results[0])).toBe(
+      "2 pages · from Goodnotes · 1 picture",
+    );
   });
 
-  it("heads the results", () => {
-    expect(importHeading(notebook(1, 0))).toBe("Imported 1 notebook");
-    const two = notebook(1, 0);
+  it("heads the results", async () => {
+    expect(importHeading(await notebook(1, 0))).toBe("Imported 1 notebook");
+    const two = await notebook(1, 0);
     two.results.push(two.results[0]);
     expect(importHeading(two)).toBe("Imported 2 notebooks");
     expect(importHeading({ results: [], failures: [] })).toBe("Nothing was imported");
   });
 
-  it("recognises importable files", () => {
+  it("recognises importable files", async () => {
     expect(["a.goodnotes", "B.NOTE", "backup.zip"].every(isImportFileName)).toBe(true);
     expect(["a.pdf", "notes.md", "goodnotes"].some(isImportFileName)).toBe(false);
   });
 
-  it("shows progress", () => {
+  it("shows progress", async () => {
     expect(progressText(0, 1, "Folder/Bio.goodnotes")).toBe("Importing Bio.goodnotes…");
     expect(progressText(1, 3, "Maths.note")).toBe("Importing 2 of 3: Maths.note…");
   });

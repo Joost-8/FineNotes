@@ -6,11 +6,13 @@ import {
   layerId,
   penSamples,
   readGoodnotes,
+  penPath,
   readTpl,
+  readTplLayout,
 } from "../../src/import/goodnotes";
 import { PAGE_PX_PER_MM } from "../../src/model/units";
 import { parseInkFile, buildInkFile } from "../../src/model/serialize";
-import { goodnotesFiles, JPEG, PDF, PNG, tplStroke, type GnPage } from "./builders";
+import { goodnotesFiles, JPEG, PDF, PNG, tplStroke, tplStroke25, type GnPage } from "./builders";
 
 const LETTER: [number, number] = [834.24, 1078.825];
 const K = PAGE_PX_PER_MM / GOODNOTES_UNITS_PER_MM;
@@ -46,7 +48,7 @@ describe("readGoodnotes", () => {
         { id: PAGE_C, template: "T-RULED", order: "C", deleted: true },
         { id: PAGE_D, template: "T-RULED", order: "D" },
       ]),
-      "fallback",
+      "",
     );
     expect(result.source).toBe("goodnotes");
     expect(result.title).toBe("Biology");
@@ -92,7 +94,7 @@ describe("readGoodnotes", () => {
           ],
         },
       ]),
-      "x",
+      "",
     );
     const [pen, marker] = result.doc.pages[0].strokes;
     expect(pen.id).toBe("s1");
@@ -127,7 +129,7 @@ describe("readGoodnotes", () => {
           ],
         },
       ]),
-      "x",
+      "",
     );
     const [a, b, c] = result.doc.pages[0].images;
     expect(a).toMatchObject({ id: "i1", path: "Biology - picture 2.jpg" });
@@ -156,7 +158,7 @@ describe("readGoodnotes", () => {
           ],
         },
       ]),
-      "x",
+      "",
     );
     expect(result.doc.pages[0].images.map((i) => i.path)).toEqual(["Biology - picture 2.jpg"]);
     expect(result.attachments.map((x) => x.name)).toEqual([
@@ -173,7 +175,7 @@ describe("readGoodnotes", () => {
         { id: PAGE_B, template: "T-RULED", order: "b", unbookmarked: true },
         { id: PAGE_C, template: "T-RULED", order: "c", restored: true, bookmarked: true },
       ]),
-      "x",
+      "",
     );
     expect(result.doc.pages.map((p) => p.bookmarked)).toEqual([true, undefined, true]);
   });
@@ -189,7 +191,7 @@ describe("readGoodnotes", () => {
         strokes: [{ id: "S1", samples: [] }],
       },
     ]);
-    const result = readGoodnotes(files, "x");
+    const result = readGoodnotes(files, "");
     expect(result.doc.pages[0].backdrop).toEqual({
       kind: "pdf",
       path: "Biology - paper 1.pdf",
@@ -198,7 +200,7 @@ describe("readGoodnotes", () => {
     expect(result.warnings).toEqual([
       "1 page uses a Goodnotes paper that is not in the file; the notebook's usual paper was used instead.",
       "1 stroke could not be read.",
-      "3 items (text boxes, shapes or other elements) could not be brought over yet.",
+      "3 other items could not be brought over yet.",
     ]);
   });
 
@@ -248,7 +250,7 @@ describe("readGoodnotes", () => {
           images: [{ id: "I1", attachment: "A-PHOTO", frame: [1, 2, 3, 4] }],
         },
       ]),
-      "x",
+      "",
     );
     const back = parseInkFile(buildInkFile("# Biology\n", result.doc)).doc;
     expect(back?.pages.length).toBe(1);
@@ -290,5 +292,278 @@ describe("Goodnotes internals", () => {
     expect(() => readTpl(badArray)).toThrow(GoodnotesError);
     const truncated = raw.slice(0, raw.indexOf(0, 8) + 4);
     expect(() => readTpl(truncated)).toThrow(GoodnotesError);
+  });
+});
+
+describe("readGoodnotes: what real notebooks hold", () => {
+  const SLIDE: [number, number] = [1760, 990];
+  const KS = PAGE_PX_PER_MM / (SLIDE[0] / (SLIDE[0] / GOODNOTES_UNITS_PER_MM));
+
+  it("follows a paper's attachment record to its PDF, at the page it names", () => {
+    const files = map(
+      goodnotesFiles({
+        templates: [
+          { id: "T1", size: SLIDE, attachment: "REC", pdfPage: 1 },
+          { id: "T2", size: SLIDE, attachment: "REC", pdfPage: 2 },
+          { id: "T3", size: SLIDE, attachment: "REC", pdfPage: 3 },
+        ],
+        records: { REC: "LECTURE" },
+        pages: [
+          { id: PAGE_A, template: "T1", order: "a" },
+          { id: PAGE_B, template: "T2", order: "b", deleted: true },
+          { id: PAGE_C, template: "T3", order: "c" },
+        ],
+        attachments: { LECTURE: PDF },
+      }),
+    );
+    const result = readGoodnotes(files, "Networks");
+    expect(result.doc.pages.map((p) => p.backdrop)).toEqual([
+      { kind: "pdf", path: "Networks - paper 1.pdf", page: 0 },
+      { kind: "pdf", path: "Networks - paper 1.pdf", page: 2 },
+    ]);
+    expect(result.attachments.map((a) => a.name)).toEqual(["Networks - paper 1.pdf"]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("sorts pages by their order keys as bytes: a page added in front comes first", () => {
+    const result = readGoodnotes(
+      notebook([
+        { id: PAGE_A, template: "T-RULED", order: "4zLQe01" },
+        { id: PAGE_B, template: "T-RULED", order: "4zLQe02" },
+        { id: PAGE_C, template: "T-COVER", order: "-QKIL" },
+      ]),
+      "",
+    );
+    expect(result.doc.pages.map((p) => (p.backdrop.kind === "pdf" ? p.backdrop.path : ""))).toEqual(
+      ["Biology - paper 1.pdf", "Biology - paper 2.pdf", "Biology - paper 2.pdf"],
+    );
+  });
+
+  it("reads the marker's seven floats a sample", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          strokes: [
+            {
+              id: "M",
+              stride: 7,
+              rgba: [1, 0.37, 0.4, 1],
+              samples: [
+                [100, 200, 18],
+                [120, 210, 18],
+                [140, 230, 18],
+              ],
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const [marker] = result.doc.pages[0].strokes;
+    expect(result.warnings).toEqual([]);
+    expect(marker.size).toBeCloseTo(36 * K, 2);
+    expect(marker.pts.length).toBe(9);
+    expect(marker.pts[3]).toBeCloseTo(120 * K, 3);
+    expect(marker.pts[4]).toBeCloseTo(210 * K, 3);
+  });
+
+  it("reads strokes in the newer layout, at the stroke's width", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          strokes: [
+            {
+              id: "P",
+              schema25: 1.56,
+              samples: [
+                [100, 100, 0],
+                [101, 104, 0],
+                [102, 108, 0],
+                [103, 112, 0],
+                [104, 116, 0],
+              ],
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const [pencil] = result.doc.pages[0].strokes;
+    expect(result.warnings).toEqual([]);
+    expect(pencil.pts.length).toBe(15);
+    expect(pencil.pts[12]).toBeCloseTo(104 * K, 3);
+    expect(pencil.pts[13]).toBeCloseTo(116 * K, 3);
+    expect(pencil.size).toBeCloseTo(1.56 * K, 2);
+    for (const p of pencil.pts.filter((_, i) => i % 3 === 2)) expect(p).toBe(0.5);
+  });
+
+  it("moves a stroke by its lasso offset", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          strokes: [
+            {
+              id: "S",
+              offset: [558.8, -172.5],
+              samples: [
+                [340, 374, 2],
+                [350, 380, 2],
+              ],
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const [moved] = result.doc.pages[0].strokes;
+    expect(moved.pts[0]).toBeCloseTo((340 + 558.8) * K, 2);
+    expect(moved.pts[1]).toBeCloseTo((374 - 172.5) * K, 2);
+  });
+
+  it("turns the outline into the contents: page titles and headings, live pages only", () => {
+    const files = map(
+      goodnotesFiles({
+        templates: [{ id: "T", size: SLIDE, attachment: "A" }],
+        pages: [
+          { id: PAGE_A, template: "T", order: "a" },
+          { id: PAGE_B, template: "T", order: "b", deleted: true },
+          { id: PAGE_C, template: "T", order: "c" },
+        ],
+        attachments: { A: PDF },
+        outline: [
+          { id: "O1", page: PAGE_A, title: "Slide 1:\nNetworks", order: "1", y: 990 },
+          { id: "O2", page: PAGE_B, title: "Slide 2", order: "2", y: 990 },
+          { id: "O3", page: PAGE_C, title: "Slide 3", order: "3", y: 990 },
+          { id: "O4", page: PAGE_C, title: "Further down", order: "4", x: 40, y: 490 },
+          { id: "O5", page: PAGE_C, title: "   ", order: "5", y: 100 },
+        ],
+      }),
+    );
+    const result = readGoodnotes(files, "Networks");
+    const [first, second] = result.doc.pages;
+    expect(first.title).toBe("Slide 1: Networks");
+    expect(first.sections).toBeUndefined();
+    expect(second.title).toBe("Slide 3");
+    const round2 = (v: number): number => Math.round(v * 100) / 100;
+    expect(second.sections).toEqual([
+      { id: "c1", x: round2(40 * KS), y: round2(500 * KS), title: "Further down" },
+    ]);
+  });
+
+  it("brings text boxes over, and counts shapes, comments and PDF pictures it cannot yet", () => {
+    const result = readGoodnotes(
+      notebook(
+        [
+          {
+            id: PAGE_A,
+            template: "T-RULED",
+            order: "a",
+            texts: [
+              {
+                id: "X1",
+                origin: [100, 200],
+                width: 220,
+                runs: [
+                  { text: "Testing ", rgba: [1, 0, 0, 1], size: 25, font: "Times New Roman" },
+                  { text: "boxes" },
+                ],
+                fill: [1, 1, 0, 1],
+              },
+              { id: "X2", origin: [10, 20], textWidth: 51, runs: [{ text: "Test " }] },
+              { id: "X3", origin: [0, 0], runs: [] },
+              { id: "X4", origin: [0, 0], runs: [{ text: "  " }], width: 100 },
+              { id: "X5", origin: [0, 0], runs: [{ text: "Note" }], comment: true },
+            ],
+            images: [{ id: "I1", attachment: "A-PDF", frame: [0, 0, 50, 50] }],
+          },
+        ],
+        { attachments: { "A-RULED": PDF, "A-PDF": PDF } },
+      ),
+      "",
+    );
+    const [fixed, grown] = result.doc.pages[0].textBoxes;
+    expect(fixed).toMatchObject({
+      id: "t1",
+      text: "Testing boxes",
+      color: "#ff0000",
+      font: "times",
+      fill: "#ffff00",
+    });
+    expect(fixed.fit).toBeUndefined();
+    expect(fixed.x).toBeCloseTo(110 * K, 1);
+    expect(fixed.y).toBeCloseTo(210 * K, 1);
+    expect(fixed.w).toBeCloseTo(200 * K, 1);
+    expect(fixed.fontSize).toBeCloseTo(Math.max(12, 25 * K), 1);
+    expect(grown).toMatchObject({ id: "t2", text: "Test ", fit: true, color: "#000000" });
+    expect(grown.fill).toBeUndefined();
+    expect(grown.font).toBeUndefined();
+    expect(grown.w).toBeCloseTo(51 * K, 1);
+    expect(grown.fontSize).toBeCloseTo(Math.max(12, 24 * K), 1);
+    expect(result.doc.pages[0].images).toEqual([]);
+    expect(result.warnings).toEqual([
+      "2 shapes could not be brought over yet.",
+      "1 comment could not be brought over yet.",
+      "1 PDF placed as a picture could not be brought over yet.",
+    ]);
+  });
+
+  it("names the notebook after its file before the name inside it", () => {
+    expect(
+      readGoodnotes(notebook([{ id: PAGE_A, template: "T-RULED", order: "a" }]), "Test").title,
+    ).toBe("Test");
+    const untitled = map(
+      goodnotesFiles({ templates: [], pages: [{ id: PAGE_A, template: "T", order: "a" }] }),
+    );
+    expect(readGoodnotes(untitled, "").title).toBe("Imported notebook");
+  });
+});
+
+describe("Goodnotes stroke layouts", () => {
+  it("reads both layouts' points", () => {
+    expect(penPath(tplStroke([[5, 6, 0.5]])).points).toEqual([{ x: 5, y: 6, half: 0.5 }]);
+    expect(penPath(tplStroke([[5, 6, 9]], 7)).points).toEqual([{ x: 5, y: 6, half: 9 }]);
+    const newer = penPath(
+      tplStroke25(
+        [
+          [1, 2],
+          [3, 4],
+          [5, 6],
+        ],
+        2,
+      ),
+    );
+    expect(newer.points).toEqual([
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+      { x: 5, y: 6 },
+    ]);
+    expect(newer.half).toBe(1);
+    const layout = readTplLayout(tplStroke25([[1, 2]], 2));
+    expect(layout.scalars.map((s) => s.kind)).toEqual(["v", "u"]);
+    expect(layout.arrays[1]).toMatchObject({ kind: "S", count: 1, size: 20, fields: "uuuuu" });
+  });
+
+  it("refuses layouts it cannot read", () => {
+    // A sample count that does not divide the samples.
+    const ragged = tplStroke([[5, 6, 0.5]]);
+    const view = new DataView(ragged.buffer);
+    view.setUint32(ragged.length - 6, 2, true);
+    expect(() => penPath(ragged)).toThrow(GoodnotesError);
+    // Structs without a start point.
+    const noStart = tplStroke25([], 2);
+    expect(() => penPath(noStart)).toThrow(GoodnotesError);
+    // A struct array whose brackets do not close.
+    const open = tplStroke25([[1, 2]], 2);
+    open[open.indexOf(0, 8) - 1] = "u".charCodeAt(0);
+    expect(() => readTplLayout(open)).toThrow(GoodnotesError);
   });
 });

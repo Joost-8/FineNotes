@@ -3,7 +3,7 @@
  * every converter shares. Pure.
  */
 
-import type { InkDocument } from "../model/document";
+import type { InkDocument, TextFont } from "../model/document";
 import { PAGE_PX_PER_MM } from "../model/units";
 
 export type ImportSource = "goodnotes" | "notability";
@@ -81,6 +81,53 @@ export function sniffFile(bytes: Uint8Array): { mime: string; ext: string } {
   }
   if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return { mime: "image/webp", ext: "webp" };
   return { mime: "application/octet-stream", ext: "bin" };
+}
+
+/**
+ * A picture's size in pixels from its header (PNG, JPEG, GIF), or null when
+ * the header does not say.
+ */
+export function imageSize(bytes: Uint8Array): { width: number; height: number } | null {
+  const b = bytes;
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const { mime } = sniffFile(b);
+  if (mime === "image/png" && b.length >= 24) {
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  if (mime === "image/gif" && b.length >= 10) {
+    return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  }
+  if (mime === "image/jpeg") {
+    // Walk the segments to the first start-of-frame marker.
+    let at = 2;
+    while (at + 9 < b.length) {
+      if (b[at] !== 0xff) return null;
+      const marker = b[at + 1];
+      const length = view.getUint16(at + 2);
+      const isFrame = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
+      if (isFrame) return { width: view.getUint16(at + 7), height: view.getUint16(at + 5) };
+      at += 2 + length;
+    }
+  }
+  return null;
+}
+
+/** "1 stroke", "3 strokes": a count with its noun. */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The FineNotes typeface nearest to a font family another app names. */
+export function fontFor(family: string | undefined): TextFont {
+  const name = (family ?? "").toLowerCase();
+  if (/courier|mono|menlo/.test(name)) return "mono";
+  if (/times/.test(name)) return "times";
+  if (/verdana/.test(name)) return "verdana";
+  if (/trebuchet/.test(name)) return "trebuchet";
+  if (/georgia|serif|garamond|baskerville|palatino/.test(name) && !/sans/.test(name)) {
+    return "serif";
+  }
+  return "sans";
 }
 
 /** `#rrggbb` from colour channels in 0..1. */

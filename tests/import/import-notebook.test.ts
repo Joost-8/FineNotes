@@ -43,20 +43,20 @@ const notability = (): Uint8Array =>
   });
 
 describe("importNotebooks", () => {
-  it("imports a single Goodnotes or Notability file", () => {
-    const a = importNotebooks(goodnotes("Biology"), "Biology.goodnotes");
+  it("imports a single Goodnotes or Notability file", async () => {
+    const a = await importNotebooks(goodnotes("Biology"), "Biology.goodnotes");
     expect(a.failures).toEqual([]);
     expect(a.results.map((r) => [r.source, r.title])).toEqual([["goodnotes", "Biology"]]);
-    const b = importNotebooks(notability(), "Maths.note");
+    const b = await importNotebooks(notability(), "Maths.note");
     expect(b.results.map((r) => [r.source, r.title])).toEqual([["notability", "Maths"]]);
   });
 
-  it("names a notebook without a title after its file", () => {
-    const result = importNotebooks(goodnotes(), "Folder/Chemistry 101.goodnotes");
+  it("names a notebook without a title after its file", async () => {
+    const result = await importNotebooks(goodnotes(), "Folder/Chemistry 101.goodnotes");
     expect(result.results[0].title).toBe("Chemistry 101");
   });
 
-  it("opens a backup zip: packed files and unzipped package folders, in name order", () => {
+  it("opens a backup zip: packed files and unzipped package folders, in name order", async () => {
     const inner = zipSync({ "Inner.goodnotes": goodnotes("Inner") }, { level: 0 });
     const unzippedNote: Record<string, Uint8Array> = {};
     unzippedNote["Unpacked.note/Unpacked/Session.plist"] = keyedArchive({
@@ -74,40 +74,41 @@ describe("importNotebooks", () => {
       "readme.txt": new TextEncoder().encode("hi"),
       ...unzippedNote,
     });
-    const batch = importNotebooks(backup, "Backup.zip");
+    const batch = await importNotebooks(backup, "Backup.zip");
     expect(batch.results.map((r) => r.title)).toEqual(["A", "B", "Maths", "Inner", "Unpacked"]);
     expect(batch.failures).toEqual([
       { name: "broken.goodnotes", reason: "It is not a Goodnotes or Notability file." },
     ]);
   });
 
-  it("reports files it cannot use instead of throwing", () => {
-    expect(importNotebooks(new Uint8Array([1, 2, 3]), "x.goodnotes").failures).toEqual([
+  it("reports files it cannot use instead of throwing", async () => {
+    expect((await importNotebooks(new Uint8Array([1, 2, 3]), "x.goodnotes")).failures).toEqual([
       { name: "x.goodnotes", reason: "It is not a Goodnotes or Notability file." },
     ]);
-    expect(importNotebooks(zip({ "a.txt": new Uint8Array([1]) }), "a.zip").failures).toEqual([
-      { name: "a.zip", reason: "No Goodnotes or Notability notebook was found in it." },
-    ]);
+    expect(
+      (await importNotebooks(zip({ "a.txt": new Uint8Array([1]) }), "a.zip")).failures,
+    ).toEqual([{ name: "a.zip", reason: "No Goodnotes or Notability notebook was found in it." }]);
     const noPages = zip(goodnotesFiles({ templates: [], pages: [] }));
-    const failed = importNotebooks(noPages, "Empty.goodnotes").failures[0];
+    const failed = (await importNotebooks(noPages, "Empty.goodnotes")).failures[0];
     expect(failed.name).toBe("Empty.goodnotes");
     expect(failed.reason).toMatch(/^It could not be read \(.*no pages.*\)\.$/);
   });
 
-  it("stops opening zips inside zips after two levels", () => {
+  it("stops opening zips inside zips after two levels", async () => {
     let nested = goodnotes("Deep");
     for (let i = 0; i < 3; i++) nested = zipSync({ [`level${i}.zip`]: nested }, { level: 0 });
-    expect(importNotebooks(nested, "deep.zip").results).toEqual([]);
+    expect((await importNotebooks(nested, "deep.zip")).results).toEqual([]);
   });
 
-  it("lists the extensions to pick", () => {
+  it("lists the extensions to pick", async () => {
     expect(IMPORT_EXTENSIONS).toEqual(["goodnotes", "note", "zip"]);
   });
 });
 
 describe("relinkAttachments", () => {
-  it("swaps attachment names for vault paths", () => {
-    const { doc, attachments } = importNotebooks(goodnotes("Bio"), "Bio.goodnotes").results[0];
+  it("swaps attachment names for vault paths", async () => {
+    const { doc, attachments } = (await importNotebooks(goodnotes("Bio"), "Bio.goodnotes"))
+      .results[0];
     doc.recordings = [{ id: "r1", path: "rec.m4a", start: 0, duration: 1 }];
     const paths = new Map(attachments.map((a) => [a.name, `Imports/${a.name}`]));
     relinkAttachments(doc, paths);
@@ -119,7 +120,7 @@ describe("relinkAttachments", () => {
 });
 
 describe("import helpers", () => {
-  it("tells file types apart", () => {
+  it("tells file types apart", async () => {
     const ascii = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
     expect(sniffFile(JPEG).ext).toBe("jpg");
     expect(sniffFile(PNG).ext).toBe("png");
@@ -131,7 +132,7 @@ describe("import helpers", () => {
     expect(sniffFile(new Uint8Array([1, 2, 3])).ext).toBe("bin");
   });
 
-  it("formats colours and widths", () => {
+  it("formats colours and widths", async () => {
     expect(hexColor(1, 0.5, 0)).toBe("#ff8000");
     expect(hexColor(NaN, 2, -1)).toBe("#00ff00");
     expect(pressureForWidth(1, 0)).toBe(0.5);
@@ -139,5 +140,94 @@ describe("import helpers", () => {
     expect(pressureForWidth(0, 1)).toBe(0);
     expect(median([3, 1, 2])).toBe(2);
     expect(pageScale(1024, 210)).toBeCloseTo(1);
+  });
+});
+
+describe("importNotebooks, one notebook at a time", () => {
+  const backup = (): Uint8Array =>
+    zip({
+      "A.goodnotes": goodnotes("A"),
+      "B.goodnotes": goodnotes("B"),
+      "C.goodnotes": goodnotes("C"),
+    });
+
+  it("hands each notebook over before reading the next, then lets its files go", async () => {
+    const seen: string[] = [];
+    const batch = await importNotebooks(backup(), "Backup.zip", {
+      onResult: async (result) => {
+        expect(result.attachments.length).toBe(2);
+        seen.push(`${result.title}:${batch_size()}`);
+        await Promise.resolve();
+      },
+    });
+    // How many results the batch held while each was handed over: none yet.
+    function batch_size(): number {
+      return seen.length;
+    }
+    expect(seen).toEqual(["A:0", "B:1", "C:2"]);
+    expect(batch.results.map((r) => r.title)).toEqual(["A", "B", "C"]);
+    expect(batch.results.every((r) => r.attachments.length === 0)).toBe(true);
+  });
+
+  it("reports a notebook that could not be saved, and goes on", async () => {
+    const batch = await importNotebooks(backup(), "Backup.zip", {
+      onResult: (result) =>
+        result.title === "B" ? Promise.reject(new Error("disk full")) : Promise.resolve(),
+    });
+    expect(batch.results.map((r) => r.title)).toEqual(["A", "C"]);
+    expect(batch.failures).toEqual([{ name: "B", reason: "It could not be saved (disk full)." }]);
+  });
+
+  it("stops when cancelled, without calling the backup empty", async () => {
+    let stop = false;
+    const batch = await importNotebooks(backup(), "Backup.zip", {
+      onResult: () => {
+        stop = true;
+        return Promise.resolve();
+      },
+      cancelled: () => stop,
+    });
+    expect(batch.results.map((r) => r.title)).toEqual(["A"]);
+    expect(batch.failures).toEqual([]);
+    const none = await importNotebooks(goodnotes("A"), "A.goodnotes", { cancelled: () => true });
+    expect(none).toEqual({ results: [], failures: [] });
+  });
+
+  it("measures a note's PDFs, and imports it unmeasured when that fails", async () => {
+    const note = zip({
+      "Slides/Session.plist": keyedArchive({
+        $class: "NoteTakingSession",
+        NBNoteTakingSessionDocumentPaperLayoutModelKey: {
+          $class: "NoteDocumentPaperLayoutModel",
+          pageLayoutArray: [
+            {
+              kPageLayoutPDFFileNameKey: "s.pdf",
+              kPageLayoutPDFPageNumberKey: 1,
+              kPageLayoutDocumentPageNumberKey: 1,
+            },
+          ],
+        },
+        richText: {},
+      }),
+      "Slides/PDFs/s.pdf": PDF,
+    });
+    const measured: number[] = [];
+    const ok = await importNotebooks(note, "Slides.note", {
+      measurePdf: (bytes) => {
+        measured.push(bytes.length);
+        return Promise.resolve([{ width: 960, height: 540 }]);
+      },
+    });
+    expect(measured).toEqual([PDF.length]);
+    expect(ok.results[0].warnings).toEqual([]);
+    const page = ok.results[0].doc.pages[0];
+    expect(page.geometry.height).toBe(Math.round((page.geometry.width * 540) / 960));
+
+    const failed = await importNotebooks(note, "Slides.note", {
+      measurePdf: () => Promise.reject(new Error("no pdf.js")),
+    });
+    expect(failed.results[0].warnings).toEqual([
+      "The PDF's page sizes could not be read, so its pages may be out of place.",
+    ]);
   });
 });

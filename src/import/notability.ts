@@ -2,9 +2,19 @@
  * Notability notes (`.note`) as FineNotes documents. Pure.
  *
  * The format is undocumented. A `.note` file is a zip holding a folder with
- * `Session.plist` (a binary NSKeyedArchiver graph), `Images/`, `PDFs/` and
- * `Recordings/`. The ink is one "spatial hash" of byte arrays, all
- * little-endian:
+ * `Session.plist` (a binary NSKeyedArchiver graph), `Images/`, `PDFs/`,
+ * `Assets/` and `Recordings/`. Read from real notes of Notability 16
+ * (2026-10, see `research/IMPORT-FORMATS.md` in the dev repo) and Julia
+ * Evans' reverse engineering (2018).
+ *
+ * The note is one long column of pages `pageWidthInDocumentCoordsKey` wide,
+ * in document units, y down. When it annotates a PDF,
+ * `pageLayoutArray` lists its pages in order: a page of a PDF in `PDFs/`
+ * (`kPageLayoutPDFFileNameKey`, `kPageLayoutPDFPageNumberKey`, 1-based) as
+ * tall as that PDF page at the column's width, or a page inserted between
+ * them (page number `INT64_MAX`), Letter-sized like a note without a PDF.
+ *
+ * The ink is one "spatial hash" of byte arrays, all little-endian:
  *
  * - `curvesnumpoints`: int32 per stroke, its number of points;
  * - `curvespoints`: float32 x, y per point. A stroke of 3m + 1 points is m
@@ -12,37 +22,69 @@
  * - `curveswidth`: float32 per stroke, its width;
  * - `curvesfractionalwidths`: float32 per anchor, a multiplier of that width
  *   (max(⌊n / 3⌋ + 1, 2) of them per stroke);
- * - `curvescolors`: RGBA bytes per stroke.
+ * - `curvescolors`: RGBA bytes per stroke;
+ * - `curvesstyles`: a byte per stroke; 6 is the highlighter, which is stored
+ *   fully opaque.
  *
- * The note is one long column of pages `pageWidthInDocumentCoordsKey` wide.
- * Where it was checked: Julia Evans' reverse engineering (2018) and a note of
- * that era. Pictures, PDFs and recordings are not read yet: they are counted
- * and reported, so nothing is lost silently.
+ * `mediaObjects` holds pictures (`ImageMediaObject`), text boxes
+ * (`TextBlockMediaObject`) and sticky canvases (`CanvasMediaObject`), each at
+ * a `documentOrigin` with an `unscaledContentSize`. The note's own typed text
+ * is `richText.attributedString`, flowing down from the top of the column.
  */
 
-import type { InkDocument, Page, Stroke } from "../model/document";
+import type { ImageElement, InkDocument, Page, Stroke, TextBoxElement } from "../model/document";
 import { SCHEMA_VERSION } from "../constants";
 import { PAGE_SIZES } from "../model/templates";
 import { isDict, parseBinaryPlist, unarchive, type PlistValue } from "./bplist";
 import {
+  fontFor,
   hexColor,
+  imageSize,
   median,
   packageRoot,
+  plural,
   pressureForWidth,
   round2,
+  sniffFile,
+  type ImportAttachment,
   type ImportResult,
 } from "./import-types";
 
 export class NotabilityError extends Error {}
 
+/** A PDF page's size, in points. */
+export interface PdfPageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * The page sizes of a note's PDFs, by file name in `PDFs/`. Measuring a PDF
+ * needs pdf.js, so the caller does it ({@link notabilityPdfFiles}).
+ */
+export type PdfSizes = ReadonlyMap<string, readonly PdfPageSize[]>;
+
 /** Below this opacity a stroke is taken for the highlighter. */
 const HIGHLIGHTER_ALPHA = 0.95 * 255;
+
+/** `curvesstyles` of the highlighter. */
+const HIGHLIGHTER_STYLE = 6;
 
 /** Page width in Notability's units when the note does not say. */
 const DEFAULT_PAGE_WIDTH = 574;
 
 /** Page px between the points a Bézier is sampled at. */
 const SAMPLE_SPACING = 2;
+
+/** `kPageLayoutPDFPageNumberKey` of a page inserted between PDF pages. */
+const NOT_A_PDF_PAGE = 2 ** 31;
+
+/** Where a text box's text starts inside its frame, in document units (measured on one note). */
+const TEXT_BLOCK_INSET = { x: 20, y: 5 };
+
+/** The note's own typed text: its left margin, and line height per font size (document units). */
+const BODY_MARGIN = 15;
+const BODY_LINE_HEIGHT = 1.2;
 
 /** Whether a set of zip entries is a Notability note. */
 export function isNotability(files: ReadonlyMap<string, Uint8Array>): boolean {
@@ -54,9 +96,35 @@ function findSession(files: ReadonlyMap<string, Uint8Array>): string | null {
   return root === null ? null : `${root}Session.plist`;
 }
 
+/** The PDFs a note carries, by their file name in `PDFs/`, for measuring. */
+export function notabilityPdfFiles(
+  files: ReadonlyMap<string, Uint8Array>,
+): Array<{ name: string; bytes: Uint8Array }> {
+  const session = findSession(files);
+  if (session === null) return [];
+  const prefix = `${session.slice(0, -"Session.plist".length)}PDFs/`;
+  return [...files]
+    .filter(([path, bytes]) => path.startsWith(prefix) && !path.endsWith("/") && bytes.length > 0)
+    .map(([path, bytes]) => ({ name: path.slice(prefix.length), bytes }));
+}
+
+/** One page of the column, in document units. */
+interface Slot {
+  top: number;
+  height: number;
+  pdf?: { file: string; page: number };
+  bookmarked: boolean;
+}
+
+/**
+ * Convert one note. `fileTitle` names it (the name it was exported under);
+ * the note's inner name is used only when that is empty. `pdfSizes` gives
+ * the page sizes of its PDFs; without them a PDF page is taken for Letter.
+ */
 export function readNotability(
   files: ReadonlyMap<string, Uint8Array>,
-  fallbackTitle: string,
+  fileTitle: string,
+  pdfSizes: PdfSizes = new Map(),
 ): ImportResult {
   const sessionPath = findSession(files);
   if (sessionPath === null) throw new NotabilityError("not a Notability note");
@@ -71,70 +139,261 @@ export function readNotability(
   const session =
     findDict(tree, (d) => d.$class === "NoteTakingSession") ??
     findDict(tree, (d) => "richText" in d);
-  const hash = findDict(tree, (d) => d.curvespoints instanceof Uint8Array);
+  const richText = isDict(session) && isDict(session.richText) ? session.richText : null;
   const name =
-    (isDict(session) && typeof session.name === "string" && session.name) || fallbackTitle;
+    fileTitle ||
+    (isDict(session) && typeof session.name === "string" && session.name) ||
+    "Imported note";
 
-  // The note is drawn on a column of Letter pages (Notability's default paper).
+  // Pages are Letter-sized at the column's width unless a PDF says otherwise.
   const unitWidth = numberIn(tree, "pageWidthInDocumentCoordsKey") ?? DEFAULT_PAGE_WIDTH;
   const letter = PAGE_SIZES.find((s) => s.id === "letter") ?? { width: 1053, height: 1362 };
   const k = letter.width / unitWidth;
-
-  const strokes = hash ? readCurves(hash, k) : [];
-  const pageCount = Math.max(1, ...strokes.map((s) => Math.floor(s.top / letter.height) + 1));
-  const pages: Page[] = Array.from({ length: pageCount }, (_, i) => ({
-    id: `p${i + 1}`,
-    kind: "ink",
-    geometry: { width: letter.width, height: letter.height },
-    backdrop: { kind: "blank" },
-    strokes: [],
-    images: [],
-    textBoxes: [],
-  }));
-  let n = 0;
-  for (const s of strokes) {
-    const index = Math.min(pageCount - 1, Math.max(0, Math.floor(s.top / letter.height)));
-    const offset = index * letter.height;
-    const pts = s.pts.slice();
-    for (let i = 1; i < pts.length; i += 3) pts[i] = round2(pts[i] - offset);
-    pages[index].strokes.push({ ...s.stroke, id: `s${++n}`, pts });
-  }
+  const letterUnits = letter.height / k;
 
   const warnings: string[] = [];
-  const count = (key: string): number => {
-    const v = valueIn(tree, key);
-    return Array.isArray(v) ? v.length : 0;
+  const attachments: ImportAttachment[] = [];
+  const attachFile = (path: string, label: string): string | null => {
+    const bytes = files.get(root + path);
+    if (!bytes || bytes.length === 0) return null;
+    const { mime, ext } = sniffFile(bytes);
+    const fileName = `${name} - ${label} ${attachments.length + 1}.${ext}`;
+    attachments.push({ name: fileName, bytes, mime });
+    return fileName;
   };
-  const pictures = count("mediaObjects");
-  const pdfs = count("pdfFiles");
+
+  // --- The column of pages ---------------------------------------------------
+  const slots: Slot[] = [];
+  let unmeasured = false;
+  const pdfNames = new Map<string, string | null>();
+  for (const entry of pageLayout(tree)) {
+    const top = slots.reduce((sum, s) => sum + s.height, 0);
+    const file = typeof entry.file === "string" ? entry.file : undefined;
+    const number = entry.page;
+    if (file && number !== undefined && number >= 1 && number < NOT_A_PDF_PAGE) {
+      if (!pdfNames.has(file)) pdfNames.set(file, attachFile(`PDFs/${file}`, "PDF"));
+      const size = pdfSizes.get(file)?.[number - 1];
+      if (!size) unmeasured = true;
+      const height = size && size.width > 0 ? (unitWidth * size.height) / size.width : letterUnits;
+      slots.push({ top, height, pdf: { file, page: number - 1 }, bookmarked: entry.bookmarked });
+    } else {
+      slots.push({ top, height: letterUnits, bookmarked: entry.bookmarked });
+    }
+  }
+  if (unmeasured && pdfNames.size > 0) {
+    warnings.push("The PDF's page sizes could not be read, so its pages may be out of place.");
+  }
+  if ([...pdfNames.values()].some((path) => path === null)) {
+    warnings.push("A PDF the note uses is missing from the file; its pages are blank.");
+  }
+  /** The page `y` (document units) falls on, adding Letter pages past the end. */
+  const slotAt = (y: number): number => {
+    while (
+      slots.length === 0 ||
+      y >= slots[slots.length - 1].top + slots[slots.length - 1].height
+    ) {
+      const last = slots[slots.length - 1];
+      slots.push({
+        top: last ? last.top + last.height : 0,
+        height: letterUnits,
+        bookmarked: false,
+      });
+    }
+    let i = slots.length - 1;
+    while (i > 0 && y < slots[i].top) i--;
+    return i;
+  };
+
+  // --- What goes on the pages, in document units -------------------------------
+  type Placed<T> = { at: number; item: T };
+  const strokes: Placed<Omit<Stroke, "id">>[] = [];
+  const images: Placed<Omit<ImageElement, "id">>[] = [];
+  const texts: Placed<Omit<TextBoxElement, "id">>[] = [];
+
+  // The note's own ink; text boxes and sticky canvases nest hashes of their own.
+  const overlay = richText?.["Handwriting Overlay"];
+  const own = isDict(overlay) && isDict(overlay.SpatialHash) ? overlay.SpatialHash : null;
+  const hash =
+    own && own.curvespoints instanceof Uint8Array
+      ? own
+      : findDict(richText ?? tree, (d) => d.curvespoints instanceof Uint8Array);
+  for (const placed of hash ? readCurves(hash, k) : []) {
+    strokes.push({ at: slotAt(placed.top / k), item: placed.stroke });
+  }
+
+  for (const block of bodyText(richText, unitWidth)) {
+    texts.push({ at: slotAt(block.y), item: { ...block.box } });
+  }
+
+  const skipped = { canvases: 0, pictures: 0, other: 0 };
+  let picN = 0;
+  const media = richText && Array.isArray(richText.mediaObjects) ? richText.mediaObjects : [];
+  for (const object of media) {
+    if (!isDict(object)) continue;
+    const origin = parsePoint(object.documentOrigin);
+    const size = parsePoint(object.unscaledContentSize);
+    if (!origin || !size) {
+      skipped.other++;
+      continue;
+    }
+    if (object.$class === "ImageMediaObject") {
+      const figure = isDict(object.figure) ? object.figure : null;
+      const background = isDict(figure?.FigureBackgroundObjectKey)
+        ? figure.FigureBackgroundObjectKey
+        : null;
+      const snapshot = isDict(background?.kImageObjectSnapshotKey)
+        ? background.kImageObjectSnapshotKey
+        : null;
+      const relative = typeof snapshot?.relativePath === "string" ? snapshot.relativePath : "";
+      const bytes = relative ? files.get(root + relative) : undefined;
+      const path = relative ? attachFile(relative, "picture") : null;
+      if (!path || !bytes || size[0] <= 0 || size[1] <= 0) {
+        skipped.pictures++;
+        continue;
+      }
+      picN++;
+      const image: Omit<ImageElement, "id"> = {
+        path,
+        x: origin[0],
+        y: origin[1],
+        w: size[0],
+        h: size[1],
+      };
+      const degrees = typeof object.rotationDegrees === "number" ? object.rotationDegrees : 0;
+      if (Number.isFinite(degrees) && Math.abs(degrees) > 0.01) {
+        image.rotation = round2((degrees * Math.PI) / 180);
+      }
+      const crop = cropOf(figure?.FigureCropRectKey, bytes);
+      if (crop) image.crop = crop;
+      images.push({ at: slotAt(origin[1]), item: image });
+    } else if (object.$class === "TextBlockMediaObject") {
+      const box = textBlock(object, origin, size);
+      if (box) texts.push({ at: slotAt(origin[1]), item: box });
+    } else if (object.$class === "CanvasMediaObject") {
+      skipped.canvases++;
+    } else {
+      skipped.other++;
+    }
+  }
+
+  // --- Pages ----------------------------------------------------------------------
+  if (slots.length === 0) slotAt(0);
+  const pages: Page[] = slots.map((slot, i) => {
+    const pdfPath = slot.pdf ? pdfNames.get(slot.pdf.file) : null;
+    const page: Page = {
+      id: `p${i + 1}`,
+      kind: "ink",
+      geometry: { width: letter.width, height: Math.round(slot.height * k) },
+      backdrop:
+        pdfPath && slot.pdf
+          ? { kind: "pdf", path: pdfPath, page: slot.pdf.page }
+          : { kind: "blank" },
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    };
+    if (slot.bookmarked) page.bookmarked = true;
+    return page;
+  });
+  let n = 0;
+  for (const { at, item } of strokes) {
+    const offset = slots[at].top * k;
+    const pts = item.pts.slice();
+    for (let i = 1; i < pts.length; i += 3) pts[i] = round2(pts[i] - offset);
+    pages[at].strokes.push({ ...item, id: `s${++n}`, pts });
+  }
+  n = 0;
+  for (const { at, item } of images) {
+    pages[at].images.push({
+      ...item,
+      id: `i${++n}`,
+      x: round2(item.x * k),
+      y: round2((item.y - slots[at].top) * k),
+      w: round2(item.w * k),
+      h: round2(item.h * k),
+    });
+  }
+  n = 0;
+  for (const { at, item } of texts) {
+    pages[at].textBoxes.push({
+      ...item,
+      id: `t${++n}`,
+      x: round2(item.x * k),
+      y: round2((item.y - slots[at].top) * k),
+      w: round2(Math.max(8, item.w * k)),
+      fontSize: round2(Math.max(12, item.fontSize * k)),
+    });
+  }
+
+  // --- What did not come over ---------------------------------------------------
   const recordings = [...files.keys()].filter(
     (f) => f.startsWith(`${root}Recordings/`) && !f.endsWith(".plist") && !f.endsWith("/"),
   ).length;
-  const typed =
-    typeof stringIn(tree, "stringKey") === "string" &&
-    (stringIn(tree, "stringKey") ?? "").trim() !== "";
-  if (pictures > 0)
-    warnings.push(`${pictures} picture${pictures === 1 ? "" : "s"} could not be brought over yet.`);
-  if (pdfs > 0) warnings.push(`${pdfs} PDF${pdfs === 1 ? "" : "s"} could not be brought over yet.`);
-  if (recordings > 0) {
+  const assets = [...files.keys()].filter(
+    (f) => f.startsWith(`${root}Assets/`) && !f.endsWith("/"),
+  ).length;
+  if (skipped.pictures > 0) {
+    warnings.push(`${plural(skipped.pictures, "picture")} could not be found in the file.`);
+  }
+  if (skipped.canvases > 0) {
     warnings.push(
-      `${recordings} recording${recordings === 1 ? "" : "s"} could not be brought over yet.`,
+      `${plural(skipped.canvases, "sticky canvas", "sticky canvases")} could not be brought over yet.`,
     );
   }
-  if (typed) warnings.push("Typed text could not be brought over yet.");
-  if (!hash) warnings.push("No handwriting was found in this note.");
+  if (assets > 0) {
+    warnings.push(
+      `${plural(assets, "sticker or GIF", "stickers or GIFs")} could not be brought over yet.`,
+    );
+  }
+  if (skipped.other > 0) {
+    warnings.push(`${plural(skipped.other, "other item")} could not be brought over yet.`);
+  }
+  if (recordings > 0) {
+    warnings.push(`${plural(recordings, "recording")} could not be brought over yet.`);
+  }
+  if (strokes.length === 0 && picN === 0 && texts.length === 0 && pdfNames.size === 0) {
+    warnings.push("No handwriting was found in this note.");
+  }
 
   const doc: InkDocument = {
     version: SCHEMA_VERSION,
     view: { scrollY: 0, width: letter.width, scale: 1 },
     pages,
   };
-  return { source: "notability", title: name, doc, attachments: [], warnings };
+  return { source: "notability", title: name, doc, attachments, warnings };
+}
+
+interface LayoutEntry {
+  file?: string;
+  page?: number;
+  bookmarked: boolean;
+}
+
+/** `pageLayoutArray`, in document page order; empty for a note without one. */
+function pageLayout(tree: PlistValue): LayoutEntry[] {
+  const raw = valueIn(tree, "pageLayoutArray");
+  if (!Array.isArray(raw)) return [];
+  const entries = raw.filter(isDict).map((d, i) => {
+    const page = d.kPageLayoutPDFPageNumberKey;
+    const order = d.kPageLayoutDocumentPageNumberKey;
+    return {
+      file:
+        typeof d.kPageLayoutPDFFileNameKey === "string" ? d.kPageLayoutPDFFileNameKey : undefined,
+      page:
+        typeof page === "number"
+          ? page
+          : typeof page === "bigint"
+            ? Number(page > BigInt(NOT_A_PDF_PAGE) ? BigInt(NOT_A_PDF_PAGE) : page)
+            : undefined,
+      bookmarked: d.kPageLayoutPageIsBookmarkedKey === true,
+      order: typeof order === "number" ? order : i + 1,
+    };
+  });
+  return entries.sort((a, b) => a.order - b.order);
 }
 
 interface PlacedStroke {
   stroke: Omit<Stroke, "id">;
-  pts: number[];
   /** The stroke's first y, in page px down the whole column. */
   top: number;
 }
@@ -144,6 +403,7 @@ function readCurves(hash: { [key: string]: PlistValue }, k: number): PlacedStrok
   const points = float32s(hash.curvespoints);
   const widths = float32s(hash.curveswidth);
   const colours = hash.curvescolors instanceof Uint8Array ? hash.curvescolors : new Uint8Array();
+  const styles = hash.curvesstyles instanceof Uint8Array ? hash.curvesstyles : new Uint8Array();
   let fractions = float32s(hash.curvesfractionalwidths);
   const anchorsOf = (n: number): number => Math.max(Math.floor(n / 3) + 1, 2);
   if (fractions.length !== counts.reduce((sum, n) => sum + anchorsOf(n), 0))
@@ -169,14 +429,14 @@ function readCurves(hash: { [key: string]: PlistValue }, k: number): PlacedStrok
 
     const c = colours.subarray(i * 4, i * 4 + 4);
     const [r, g, b, a] = c.length === 4 ? Array.from(c) : [0, 0, 0, 255];
+    const highlighter = styles[i] === HIGHLIGHTER_STYLE || a < HIGHLIGHTER_ALPHA;
     out.push({
       stroke: {
         color: hexColor(r / 255, g / 255, b / 255),
         size,
-        tool: a < HIGHLIGHTER_ALPHA ? "highlighter" : "pen",
-        pts: [],
+        tool: highlighter ? "highlighter" : "pen",
+        pts,
       },
-      pts,
       top: sampled[0].y,
     });
   });
@@ -237,6 +497,156 @@ export function sampleCurve(
   return out;
 }
 
+/** The style of the run that covers `index` in an attributed string. */
+interface RunStyle {
+  size: number;
+  color: string;
+  family?: string;
+}
+
+/** A Notability attributed string: its text and the style at any index. */
+function attributed(store: PlistValue | undefined): {
+  text: string;
+  styleAt: (index: number) => RunStyle;
+} {
+  const dict = isDict(store) ? store : null;
+  const text = typeof dict?.stringKey === "string" ? dict.stringKey : "";
+  const runs = Array.isArray(dict?.subRangesKey) ? dict.subRangesKey.filter(isDict) : [];
+  const styled = runs.map((run) => {
+    const range = parsePoint(run.subRangeRangeKey) ?? [0, 0];
+    const font = isDict(run.subRangeFontKey) ? run.subRangeFontKey : {};
+    const size = typeof font.NSFontSizeAttribute === "number" ? font.NSFontSizeAttribute : 12;
+    const family =
+      typeof font.NSFontNameAttribute === "string" ? font.NSFontNameAttribute : undefined;
+    return {
+      from: range[0],
+      to: range[0] + range[1],
+      style: { size, color: rgbaColor(run.subRangeColorCrossPlatformKey), family },
+    };
+  });
+  const fallback: RunStyle = { size: 12, color: "#000000" };
+  return {
+    text,
+    styleAt: (index) =>
+      styled.find((r) => index >= r.from && index < r.to)?.style ?? styled[0]?.style ?? fallback,
+  };
+}
+
+/**
+ * The note's own typed text as text boxes: each block of lines without an
+ * empty one between them, at the height the lines above put it (document
+ * units). List and checklist formatting is not carried over.
+ */
+function bodyText(
+  richText: { [key: string]: PlistValue } | null,
+  unitWidth: number,
+): Array<{ y: number; box: Omit<TextBoxElement, "id"> }> {
+  const { text, styleAt } = attributed(richText?.attributedString);
+  const out: Array<{ y: number; box: Omit<TextBoxElement, "id"> }> = [];
+  let y = 0;
+  let index = 0;
+  let block: { y: number; lines: string[]; style: RunStyle } | null = null;
+  const flush = (): void => {
+    if (!block) return;
+    out.push({
+      y: block.y,
+      box: textBox(
+        BODY_MARGIN,
+        block.y,
+        unitWidth - 2 * BODY_MARGIN,
+        block.lines.join("\n"),
+        block.style,
+      ),
+    });
+    block = null;
+  };
+  for (const line of text.split("\n")) {
+    const style = styleAt(index);
+    if (line.trim() === "") flush();
+    else if (block) block.lines.push(line);
+    else block = { y, lines: [line], style };
+    y += style.size * BODY_LINE_HEIGHT;
+    index += line.length + 1;
+  }
+  flush();
+  return out;
+}
+
+/** A Notability text box, in document units; null when it holds no text. */
+function textBlock(
+  object: { [key: string]: PlistValue },
+  origin: [number, number],
+  size: [number, number],
+): Omit<TextBoxElement, "id"> | null {
+  const store = isDict(object.textStore) ? object.textStore.attributedString : undefined;
+  const { text, styleAt } = attributed(store);
+  if (text.trim() === "") return null;
+  return textBox(
+    origin[0] + TEXT_BLOCK_INSET.x,
+    origin[1] + TEXT_BLOCK_INSET.y,
+    size[0] - 2 * TEXT_BLOCK_INSET.x,
+    text.replace(/\s+$/, ""),
+    styleAt(0),
+  );
+}
+
+function textBox(
+  x: number,
+  y: number,
+  w: number,
+  text: string,
+  style: RunStyle,
+): Omit<TextBoxElement, "id"> {
+  const box: Omit<TextBoxElement, "id"> = {
+    x,
+    y,
+    w: Math.max(8, w),
+    text,
+    color: style.color,
+    fontSize: style.size,
+  };
+  const font = fontFor(style.family);
+  if (font !== "sans") box.font = font;
+  return box;
+}
+
+/**
+ * A crop as fractions of the picture, from `FigureCropRectKey` (pixels), or
+ * undefined for the whole picture or when the picture's size is unknown.
+ */
+function cropOf(raw: PlistValue | undefined, bytes: Uint8Array): ImageElement["crop"] {
+  const numbers = typeof raw === "string" ? raw.match(/-?[\d.]+(?:e-?\d+)?/gi)?.map(Number) : null;
+  const size = imageSize(bytes);
+  if (!numbers || numbers.length !== 4 || !size || size.width <= 0 || size.height <= 0) return;
+  const [cx, cy, cw, ch] = numbers;
+  const x = Math.max(0, cx / size.width);
+  const y = Math.max(0, cy / size.height);
+  const w = Math.min(1 - x, cw / size.width);
+  const h = Math.min(1 - y, ch / size.height);
+  if (!(w > 0 && h > 0)) return;
+  if (x < 0.001 && y < 0.001 && w > 0.999 && h > 0.999) return;
+  const r = (v: number): number => Math.round(v * 10000) / 10000;
+  return { x: r(x), y: r(y), w: r(w), h: r(h) };
+}
+
+/** `"{x, y}"` (an NSStringFromCGPoint or CGSize) as two numbers. */
+function parsePoint(raw: PlistValue | undefined): [number, number] | null {
+  if (typeof raw !== "string") return null;
+  const m = /^\{\s*(-?[\d.]+(?:e-?\d+)?)\s*,\s*(-?[\d.]+(?:e-?\d+)?)\s*\}$/i.exec(raw);
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return Number.isFinite(a) && Number.isFinite(b) ? [a, b] : null;
+}
+
+/** `"r,g,b,a"` in 0..1 as `#rrggbb`; black when it does not parse. */
+function rgbaColor(raw: PlistValue | undefined): string {
+  const parts = typeof raw === "string" ? raw.split(",").map(Number) : [];
+  return parts.length >= 3 && parts.every(Number.isFinite)
+    ? hexColor(parts[0], parts[1], parts[2])
+    : "#000000";
+}
+
 function float32s(v: PlistValue | undefined): Float32Array {
   if (!(v instanceof Uint8Array)) return new Float32Array();
   const view = new DataView(v.buffer, v.byteOffset, v.byteLength);
@@ -285,9 +695,4 @@ function valueIn(tree: PlistValue, key: string): PlistValue | undefined {
 function numberIn(tree: PlistValue, key: string): number | undefined {
   const v = valueIn(tree, key);
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
-}
-
-function stringIn(tree: PlistValue, key: string): string | undefined {
-  const v = valueIn(tree, key);
-  return typeof v === "string" ? v : undefined;
 }

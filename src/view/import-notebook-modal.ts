@@ -9,6 +9,7 @@ import {
   type App,
   FuzzySuggestModal,
   Modal,
+  Notice,
   normalizePath,
   Platform,
   setIcon,
@@ -39,6 +40,7 @@ import {
 import { buildInkFile } from "../model/serialize";
 import { errorMessage } from "../util/errors";
 import { saveImageAttachment } from "./image-import";
+import { measurePdfPages } from "./pdf-pages";
 
 export interface ImportNotebookOptions {
   /** Where new notebooks go (vault-relative, "" for the root). */
@@ -57,6 +59,8 @@ interface Picked {
 
 export class ImportNotebookModal extends Modal {
   private busy = false;
+  /** Closed while importing: stop after the notebook being saved. */
+  private closed = false;
 
   constructor(
     app: App,
@@ -71,6 +75,7 @@ export class ImportNotebookModal extends Modal {
   }
 
   override onClose(): void {
+    this.closed = true;
     this.contentEl.empty();
   }
 
@@ -156,10 +161,18 @@ export class ImportNotebookModal extends Modal {
     const written: Array<{ result: ImportResult; file: TFile }> = [];
     try {
       for (const [index, picked] of files.entries()) {
+        if (this.closed) break;
         status.setText(progressText(index, files.length, picked.name));
         let one: ImportBatch;
         try {
-          one = importNotebooks(new Uint8Array(await picked.read()), picked.name);
+          // Each notebook is saved, and its files let go, before the next is read.
+          one = await importNotebooks(new Uint8Array(await picked.read()), picked.name, {
+            measurePdf: (bytes) => measurePdfPages(ownBuffer(bytes)),
+            onResult: async (result) => {
+              written.push({ result, file: await this.save(result) });
+            },
+            cancelled: () => this.closed,
+          });
         } catch (error) {
           batch.failures.push({
             name: picked.name,
@@ -168,20 +181,19 @@ export class ImportNotebookModal extends Modal {
           continue;
         }
         batch.failures.push(...one.failures);
-        for (const result of one.results) {
-          try {
-            written.push({ result, file: await this.save(result) });
-            batch.results.push(result);
-          } catch (error) {
-            batch.failures.push({
-              name: result.title,
-              reason: `It could not be saved (${errorMessage(error)}).`,
-            });
-          }
-        }
+        batch.results.push(...one.results);
       }
     } finally {
       this.busy = false;
+    }
+    if (this.closed) {
+      // Closed mid-import: what was saved stays, and the user is told so.
+      if (written.length > 0) {
+        new Notice(
+          `Import stopped. ${written.length} notebook${written.length === 1 ? " was" : "s were"} imported.`,
+        );
+      }
+      return;
     }
     this.showResults(batch, written);
   }
@@ -203,7 +215,7 @@ export class ImportNotebookModal extends Modal {
     for (const attachment of result.attachments) {
       const dot = attachment.name.lastIndexOf(".");
       const ext = dot > 0 ? attachment.name.slice(dot + 1) : "bin";
-      const bytes = attachment.bytes.slice().buffer;
+      const bytes = ownBuffer(attachment.bytes);
       const file = await saveImageAttachment(
         this.app,
         { bytes, mime: attachment.mime, ext, width: 0, height: 0 },
@@ -283,6 +295,12 @@ export class ImportNotebookModal extends Modal {
           .onClick(() => this.close()),
       );
   }
+}
+
+/** The bytes as an ArrayBuffer of their own, copied only when they share one. */
+function ownBuffer(bytes: Uint8Array): ArrayBuffer {
+  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+  return whole && bytes.buffer instanceof ArrayBuffer ? bytes.buffer : bytes.slice().buffer;
 }
 
 /** Notebook files already in the vault. */
