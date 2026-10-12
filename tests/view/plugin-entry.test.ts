@@ -350,7 +350,7 @@ describe("New notebook context menu", () => {
       const importNotebook = vi.spyOn(plugin, "openImportNotebook").mockImplementation(() => {});
       const items = menuFor(new TFolder(path));
       expect(items[1]).toMatchObject({
-        title: "Import notebook…",
+        title: "Import notebook (beta)…",
         icon: "finenotes-notebook-import",
         section: "action-primary",
       });

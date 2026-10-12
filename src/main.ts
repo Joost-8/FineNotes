@@ -250,7 +250,7 @@ export default class GoodObsidianPlugin extends Plugin {
           // Right below it: a notebook from another app, into the folder clicked.
           menu.addItem((item) =>
             item
-              .setTitle("Import notebook…")
+              .setTitle("Import notebook (beta)…")
               .setIcon(ICON_IMPORT_NOTEBOOK)
               .setSection("action-primary")
               .onClick(() =>

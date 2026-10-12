@@ -80,12 +80,25 @@ export class ImportNotebookModal extends Modal {
     this.contentEl.empty();
   }
 
+  /** The dialog's title at each step, tagged as a beta. */
+  private showTitle(text: string): void {
+    this.titleEl.setText(text);
+    this.titleEl.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
+  }
+
   // --- Step 1: choose files ---------------------------------------------------
 
   private showPicker(): void {
-    this.titleEl.setText("Import notebook");
+    this.showTitle("Import notebook");
     const el = this.contentEl;
     el.empty();
+    el.createDiv({
+      cls: "goodobsidian-beta-note",
+      text:
+        "Beta: Goodnotes and Notability do not publish their file formats, so a notebook " +
+        "may not come over completely. Check it after importing. The files you import " +
+        "from are not changed.",
+    });
     el.createEl("p", {
       text:
         "Bring notebooks over from Goodnotes or Notability. Your handwriting stays editable, " +
@@ -156,7 +169,7 @@ export class ImportNotebookModal extends Modal {
     this.busy = true;
     const el = this.contentEl;
     el.empty();
-    this.titleEl.setText("Importing…");
+    this.showTitle("Importing…");
     const status = el.createEl("p");
     const batch: ImportBatch = { results: [], failures: [] };
     const written: Array<{ result: ImportResult; file: TFile }> = [];
@@ -245,7 +258,7 @@ export class ImportNotebookModal extends Modal {
     batch: ImportBatch,
     written: Array<{ result: ImportResult; file: TFile }>,
   ): void {
-    this.titleEl.setText(importHeading(batch));
+    this.showTitle(importHeading(batch));
     const el = this.contentEl;
     el.empty();
 

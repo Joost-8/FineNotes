@@ -226,6 +226,7 @@ export class NewNotebookModal extends Modal {
     });
     setIcon(link.createSpan({ cls: "goodobsidian-newnb-import-icon" }), ICON_IMPORT_NOTEBOOK);
     link.createSpan({ text: "Import from another app…" });
+    link.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
     link.addEventListener("click", () => {
       const folder = this.folder;
       this.close();
