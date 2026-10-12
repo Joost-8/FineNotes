@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Thanks for the idea. Say what you are trying to do, not only the button you would add: there may be a simpler way to get there.
+        Not sure yet, or want to talk it through first? Start a thread in [Discussions](https://github.com/Joost-8/FineNotes/discussions) instead.
   - type: textarea
     id: problem
     attributes:
@@ -36,4 +37,4 @@ body:
     id: extra
     attributes:
       label: Anything else?
-      description: Sketches, screenshots, or links to similar features.
+      description: Sketches, screenshots, or links to similar features. Drag files into this box.
