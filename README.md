@@ -7,6 +7,10 @@ gives you **pages**, as Goodnotes does. A page has a fixed size, so ink stays
 exactly where you wrote it on an iPad, a phone and a laptop, whatever the width
 of the window.
 
+**Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
+
+**Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
+
 ## Why I made FineNotes
 
 FineNotes started as a personal project because I was tired of all the paid
@@ -31,7 +35,7 @@ Hope you guys enjoy this and give me some
 
 ## Features
 
-**Handwriting recognition on your device: Grape**
+**Handwriting recognition on your device: Grape (handwriting recognizer model)**
 
 - FineNotes reads your handwriting with its own model, Grape, on your
   device and offline. Nothing leaves the device, and no account or key is
@@ -321,7 +325,7 @@ audio.
 
 ### Reading your handwriting (Grape)
 
-Grape, FineNotes' handwriting model, reads your ink on the device a few
+Grape (handwriting recognizer model), built into FineNotes, reads your ink on the device a few
 seconds after you stop writing: notebook search and Obsidian's search then
 find it. Nothing leaves the device. Switch it off under Settings → FineNotes
 → Handwriting → **Read handwriting on this device**.
@@ -434,8 +438,9 @@ for you to type in.
 ## Privacy and network use
 
 FineNotes works fully offline. It sends nothing anywhere, and it has no
-telemetry, no ads and no account. Your handwriting is read by Grape on the
-device; practice files and what Grape learns from them stay in your vault.
+telemetry, no ads and no account. Your handwriting is read by Grape
+(handwriting recognizer model) on the device; practice files and what Grape
+learns from them stay in your vault.
 
 The network is only used by the optional AI features, and only after you:
 
@@ -550,6 +555,17 @@ build.
   starts. Custom hotkeys have to be set again, and you can remove the old
   plugin afterwards.
 - Do not run InkedMark in the same vault: both open `.ink.md` files.
+
+## Feedback and community
+
+- **Ideas and questions:** start a thread in
+  [Discussions](https://github.com/Joost-8/FineNotes/discussions).
+- **Something broken?** [Report a bug](https://github.com/Joost-8/FineNotes/issues/new/choose):
+  the form says which diagnostics help with which problem.
+- **Follow FineNotes** for news, tips and demos: [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian).
+- The same links are in Settings → FineNotes → Feedback and community.
+- Everyone taking part is expected to follow the
+  [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Credits
 

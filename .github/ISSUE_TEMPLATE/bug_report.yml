@@ -16,7 +16,7 @@ body:
         - Writing, erasing or how the ink looks
         - Shapes snapping (or not)
         - Scrolling, zooming or the page jumping
-        - Handwriting recognition (Grape, search, links)
+        - "Handwriting recognition: Grape (handwriting recognizer model), search, links"
         - PDFs or pictures
         - Text boxes or the keyboard
         - Saving, sync or a notebook that will not open

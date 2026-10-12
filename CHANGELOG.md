@@ -8,6 +8,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Feedback and community** in the settings: open Discussions for ideas and
+  questions, report a bug, and follow FineNotes on X, Instagram, TikTok and
+  YouTube. The links open in your browser; nothing is sent from the plugin.
+
+### Changed
+
+- The "Read handwriting on this device" setting names the model it uses:
+  Grape (handwriting recognizer model).
+
 ## [2.0.0] - 2026-10-12
 
 Thank you for all the feedback and support. FineNotes has passed 500

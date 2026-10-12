@@ -198,6 +198,7 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 
 const AI = "AI with your own key";
 const SUPPORT = "Support and diagnostics";
+const COMMUNITY = "Feedback and community";
 const WRITING = "Writing and tools";
 const PAGES = "Pages and notebooks";
 const HANDWRITING = "Handwriting";
@@ -256,7 +257,9 @@ describe("the rows", () => {
       [ADVANCED, "(block)", "render"],
       [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
       [SUPPORT, "Input debug overlay", "toggle:debugHud"],
-      [SUPPORT, "(block)", "render"],
+      [COMMUNITY, "Ideas and questions", "render"],
+      [COMMUNITY, "Report a bug", "render"],
+      [COMMUNITY, "Follow FineNotes", "render"],
     ]);
   });
 
@@ -319,6 +322,9 @@ describe("the rows", () => {
       "Image model": [],
       [`${label} API key for images`]: ["image key"],
       "Input debug overlay": ["diagnostics", "HUD", "troubleshooting"],
+      "Ideas and questions": ["feedback", "idea", "question", "suggestion", "community"],
+      "Report a bug": ["bug", "issue", "problem", "GitHub"],
+      "Follow FineNotes": ["social", "X", "Twitter", "Instagram", "TikTok", "YouTube"],
     });
   });
 
@@ -405,7 +411,9 @@ describe("which rows show", () => {
       "Pressure-sensitive pens (advanced)",
       "Handwriting model file",
       "Input debug overlay",
-      "(block 37)",
+      "Ideas and questions",
+      "Report a bug",
+      "Follow FineNotes",
     ]);
   });
 
@@ -825,14 +833,31 @@ describe("API key rows", () => {
 });
 
 describe("the support footer", () => {
-  it("links to the issue tracker", () => {
-    const all = rows(makeTab(makePlugin()).tab);
-    const footer = renderRow(all[all.length - 1].def);
-    expect(footer.settingEl.hasClass("goodobsidian-plain-row")).toBe(true);
-    const link = footer.settingEl.children
-      .flatMap((c) => [c, ...c.children])
-      .find((c) => c.tag === "a");
-    expect(link?.href).toBe("https://github.com/Joost-8/FineNotes/issues");
+  it("links to Discussions, the bug report and FineNotes' accounts", async () => {
+    const opened: string[] = [];
+    vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
+    try {
+      const all = rows(makeTab(makePlugin()).tab);
+      for (const name of ["Ideas and questions", "Report a bug", "Follow FineNotes"]) {
+        for (const button of renderRow(named(all, name)).buttons) await button.click();
+      }
+      expect(opened).toEqual([
+        "https://github.com/Joost-8/FineNotes/discussions",
+        "https://github.com/Joost-8/FineNotes/issues/new/choose",
+        "https://x.com/finenotes_",
+        "https://www.instagram.com/finenotesobsidian/",
+        "https://www.tiktok.com/@finenotesobsidian",
+        "https://www.youtube.com/@FineNotesAtObsidian",
+      ]);
+      expect(renderRow(named(all, "Follow FineNotes")).buttons.map((b) => b.text)).toEqual([
+        "X",
+        "Instagram",
+        "TikTok",
+        "YouTube",
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
