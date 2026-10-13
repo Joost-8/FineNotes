@@ -53,6 +53,7 @@ export default defineConfig({
         "src/view/pointer-hud.ts",
         "src/view/surface-size.ts",
         "src/view/write-hold.ts",
+        "src/view/background-save.ts",
         "src/view/view-rest.ts",
         "src/view/file-moves.ts",
         "src/canvas/scan-raster.ts",

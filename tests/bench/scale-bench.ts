@@ -6,6 +6,8 @@
  *   npm run bench:scale                      # quick: 50 and 200 typical pages
  *   npm run bench:scale -- --full            # every size in research/SCALE.md
  *   npm run bench:scale -- --sizes 100,500 --density dense --json out.json
+ *   npm run bench:scale -- --save            # main-thread save, before and after
+ *                                            # (50, 200 and 1,000 typical pages)
  *
  * Numbers are laptop numbers: an older iPad is several times slower, and
  * kills the web view rather than throwing when memory runs out. Compare runs
@@ -15,6 +17,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { MessageChannel, type MessagePort } from "node:worker_threads";
 import { deflateSync } from "node:zlib";
 import { layoutPages } from "../../src/canvas/page-layout";
 import {
@@ -27,7 +30,15 @@ import { AddPage, RemovePage } from "../../src/model/commands";
 import { blankPage, type InkDocument } from "../../src/model/document";
 import { History } from "../../src/model/history";
 import { MovePage, RemoveStrokesFromPage, nextPageId } from "../../src/model/page-commands";
-import { DocumentEncoder, buildInkFile, parseInkFile } from "../../src/model/serialize";
+import { FragmentStore } from "../../src/model/fragment-store";
+import {
+  DocumentEncoder,
+  type DocumentSnapshot,
+  buildInkFile,
+  inkFileText,
+  parseInkFile,
+  runSteps,
+} from "../../src/model/serialize";
 import { nextDeviceStep } from "../../src/recognition/device-reading";
 import {
   pageContentHash,
@@ -429,8 +440,167 @@ async function benchPdf(): Promise<void> {
 
 // --- Run --------------------------------------------------------------------------
 
+// --- The save, on the main thread, before and after the background save ----------
+
+/** Slices the background save cuts its serialising into (background-save.ts). */
+const SLICE_MS = 6;
+
+/**
+ * One background save as background-save.ts makes it, with the time spent on
+ * the main thread added up: serialising the pages that changed (in slices;
+ * the longest is reported, as that is the stall a stroke can meet), sending
+ * them to the worker (a real postMessage, which copies on this thread),
+ * comparing with the last payload, and taking the payload back and putting
+ * the file text together. The worker's share is timed apart. Obsidian's own
+ * write of the file text is not included, before or after: it is the same.
+ */
+function backgroundSave(
+  doc: InkDocument,
+  encoder: DocumentEncoder,
+  worker: { store: FragmentStore; sent: Set<number>; port: MessagePort },
+): Row {
+  let main = 0;
+  let slice = 0;
+  let longest = 0;
+  let pagesSent = 0;
+  const send = (fragments: readonly { slot: number; json: string }[]): void => {
+    const seen = new Set<number>();
+    const fresh = fragments.filter((f) => {
+      if (worker.sent.has(f.slot) || seen.has(f.slot)) return false;
+      seen.add(f.slot);
+      return true;
+    });
+    if (fresh.length === 0) return;
+    const t = performance.now();
+    const slots = fresh.map((f) => f.slot);
+    const jsons = fresh.map((f) => f.json);
+    worker.port.postMessage({ slots, jsons });
+    for (const slot of slots) worker.sent.add(slot);
+    const dt = performance.now() - t;
+    main += dt;
+    slice += dt;
+    pagesSent += fresh.length;
+    worker.store.put(slots, jsons);
+  };
+  const steps = encoder.snapshotSteps(doc);
+  let batch: { slot: number; json: string }[] = [];
+  let snapshot: DocumentSnapshot;
+  for (;;) {
+    const t = performance.now();
+    const step = steps.next();
+    const dt = performance.now() - t;
+    main += dt;
+    slice += dt;
+    if (step.done) {
+      snapshot = step.value;
+      break;
+    }
+    batch.push(step.value);
+    if (slice >= SLICE_MS) {
+      send(batch);
+      batch = [];
+      longest = Math.max(longest, slice);
+      slice = 0;
+    }
+  }
+  send([...batch, ...snapshot.pages]);
+  longest = Math.max(longest, slice);
+  const slots = snapshot.pages.map((p) => p.slot);
+  const listed = new Set(slots);
+  for (const slot of worker.sent) if (!listed.has(slot)) worker.sent.delete(slot);
+  let t = performance.now();
+  const same = runSteps(encoder.matchesKnown(snapshot));
+  const compare = performance.now() - t;
+  main += compare;
+  longest = Math.max(longest, compare);
+  let payload = encoder.knownPayload ?? "";
+  let workerMs = 0;
+  if (!same) {
+    t = performance.now();
+    payload = worker.store.compress(snapshot.head, slots);
+    workerMs = performance.now() - t;
+  }
+  // Taking the payload back copies it once on this thread (the worker made
+  // the other copy as it posted it): half of a structuredClone. Then the
+  // file text, which Obsidian flattens and writes as it did before.
+  t = performance.now();
+  const received = structuredClone(payload);
+  const handBack = (performance.now() - t) / 2;
+  t = performance.now();
+  void inkFileText("", received);
+  const fileText = performance.now() - t;
+  main += handBack + fileText;
+  longest = Math.max(longest, handBack + fileText);
+  encoder.accept(snapshot, payload);
+  return {
+    mainMs: main,
+    longestSliceMs: longest,
+    pagesSent,
+    workerMs,
+    handBackMs: handBack + fileText,
+  };
+}
+
+function benchSave(pages: number, density: Density): void {
+  const doc = stressNotebook(pages, { density });
+  const tag = { save: pages, density };
+  // Before: every save serialised and compressed the whole notebook here.
+  // DocumentEncoder.encode still does exactly that (the closing save).
+  const before = new DocumentEncoder();
+  before.encode(doc);
+  // After: a first save fills the cache and the worker, as the first save
+  // after opening a notebook does.
+  const after = new DocumentEncoder();
+  const { port1, port2 } = new MessageChannel();
+  port2.on("message", () => undefined);
+  const worker = { store: new FragmentStore(), sent: new Set<number>(), port: port1 };
+  report({ ...tag, edit: "first save (cold cache)", ...backgroundSave(doc, after, worker) });
+
+  // One page edited: a stroke on the last page.
+  const last = doc.pages[doc.pages.length - 1];
+  const extra = {
+    id: "s-extra",
+    color: "#1a1a1a",
+    size: 2,
+    tool: "pen" as const,
+    pts: [10, 10, 0.5],
+  };
+  last.strokes.push(extra);
+  after.touch([last]);
+  const syncOne = time(() => before.encode(doc), 1);
+  report({
+    ...tag,
+    edit: "one page",
+    beforeMainMs: syncOne,
+    ...backgroundSave(doc, after, worker),
+  });
+
+  // Every page edited (an undo, or anything that cannot name its pages).
+  for (const page of doc.pages) page.strokes.push({ ...extra, id: `s-all-${page.id}` });
+  after.touchAll();
+  const syncAll = time(() => before.encode(doc), 1);
+  report({
+    ...tag,
+    edit: "all pages",
+    beforeMainMs: syncAll,
+    ...backgroundSave(doc, after, worker),
+  });
+
+  // Nothing changed, but every page touched: serialised again, nothing sent.
+  after.touchAll();
+  report({ ...tag, edit: "all touched, none changed", ...backgroundSave(doc, after, worker) });
+  port1.close();
+  port2.close();
+}
+
 async function main(): Promise<void> {
   console.log(`node ${process.version}, gc ${gc ? "exposed" : "not exposed (pass --expose-gc)"}`);
+  if (flag("save")) {
+    const saveSizes = option("sizes") ? sizes : [50, 200, 1000];
+    for (const pages of saveSizes) benchSave(pages, densities[0]);
+    if (jsonOut) writeFileSync(jsonOut, JSON.stringify(results, null, 2));
+    return;
+  }
   if (!skip.has("notebooks")) {
     for (const density of densities) {
       for (const pages of sizes) {
