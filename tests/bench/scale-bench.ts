@@ -56,6 +56,9 @@ const densities = (option("density") ?? (full ? "typical,dense" : "typical")).sp
 ) as Density[];
 const jsonOut = option("json");
 const skip = new Set((option("skip") ?? "").split(",").filter(Boolean));
+/** Back every page with a PDF (`--pdf-backed`), and ink every n-th page (`--ink-every n`). */
+const pdfBacked = flag("pdf-backed") ? "lecture.pdf" : undefined;
+const inkEvery = Number(option("ink-every") ?? 1);
 
 // --- Measuring -------------------------------------------------------------------
 
@@ -121,8 +124,8 @@ function transcribedBody(doc: InkDocument): string {
 }
 
 function benchNotebook(pages: number, density: Density): void {
-  const tag = { pages, density };
-  const doc = stressNotebook(pages, { density });
+  const tag = { pages, density, ...(pdfBacked ? { pdfBacked: true, inkEvery } : {}) };
+  const doc = stressNotebook(pages, { density, pdf: pdfBacked, inkEvery });
   const strokes = doc.pages.reduce((n, p) => n + p.strokes.length, 0);
   const points = pointCount(doc);
 
@@ -140,7 +143,7 @@ function benchNotebook(pages: number, density: Density): void {
 
   // A save after one more stroke: what every pause in writing costs.
   const last = doc.pages[doc.pages.length - 1];
-  last.strokes.push({ ...last.strokes[0], id: "s-extra" });
+  last.strokes.push({ id: "s-extra", color: "#1a1a1a", size: 2, tool: "pen", pts: [10, 10, 0.5] });
   const editSave = time(() => buildInkFile("", doc, encoder), 1);
   last.strokes.pop();
   // How much of a save is DEFLATE (and base64), the rest being JSON.
