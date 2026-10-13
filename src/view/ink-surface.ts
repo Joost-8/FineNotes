@@ -4749,7 +4749,8 @@ export class InkSurface {
       this.strokeIndex.add(page.id, stroke);
       this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
     }
-    this.inkChanged();
+    // Only this page changed: the save cache serialises it alone.
+    this.inkChanged([page.id]);
     this.showTextCopy(mark.selection.text, command);
   }
 

@@ -49,8 +49,18 @@ extracted from the matching section of this file by `release.yml`.
   the text before relying on it.
 - The "Read handwriting on this device" setting names the model it uses:
   Grape (handwriting recognizer model).
+- **Saving no longer pauses your writing in long notebooks.** Only the pages
+  you changed are prepared again, and the file is compressed in the
+  background, so a save costs about the same in a 200-page notebook as in a
+  10-page one.
+- **Long notebooks are lighter.** They open about twice as fast, the page
+  sidebar lets go of thumbnails you have scrolled past, and erasing and
+  searching no longer slow down as a notebook grows.
 
 ### Fixed
+
+- A notebook of a few hundred pages no longer reopens read-only after it
+  saved without trouble.
 
 - Links in a notebook, handwritten or typed in a text box, keep working
   when the note or heading they lead to is renamed or moved. Obsidian
