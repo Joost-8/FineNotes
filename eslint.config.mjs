@@ -15,6 +15,8 @@ export default tseslint.config(
       "node_modules/**",
       // Agent worktrees live here, each a full copy of the repo (gitignored).
       ".claude/**",
+      // Promo videos and their editor scripts (gitignored; not the plugin).
+      "content creation/**",
       "**/*.mjs",
       // UI gallery output and Obsidian's extracted files (gitignored).
       "scripts/ui-gallery/.cache/**",

@@ -180,3 +180,24 @@ export const DEVICE_READ_NEXT_MS = 300;
  */
 export const ICON_INK_VIEW = "pen-tool";
 export const ICON_NEW_NOTEBOOK = "notebook-pen";
+
+/**
+ * "Import notebook": FineNotes' own icon, registered with `addIcon` on load.
+ * The New notebook icon's notebook (outline and spine marks) with an arrow
+ * coming in where the pen was, so the two read as a pair.
+ */
+export const ICON_IMPORT_NOTEBOOK = "finenotes-notebook-import";
+
+/**
+ * The import icon's drawing for `addIcon`, whose box is 100 × 100: Lucide's
+ * 24 × 24 paths in a group scaled up, so the stroke Obsidian sets on every
+ * icon (`--icon-stroke`, in 24-unit terms) scales with them and the line
+ * weight matches the built-in icons.
+ */
+export const ICON_IMPORT_NOTEBOOK_SVG =
+  '<g transform="scale(4.1667)" fill="none" stroke="currentColor" ' +
+  'stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>' +
+  '<path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>' +
+  '<path d="M21 3l-8 8"/><path d="M13 6v5h5"/>' +
+  "</g>";

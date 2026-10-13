@@ -1,0 +1,979 @@
+/**
+ * Goodnotes 6 notebooks (`.goodnotes`) as FineNotes documents. Pure.
+ *
+ * The format is undocumented; this reads what was found in real files
+ * (2026-10, see `research/IMPORT-FORMATS.md` in the dev repo). A `.goodnotes`
+ * file is a zip:
+ *
+ * - `index.events.pb`: the notebook as a log of changes, each a
+ *   length-prefixed protobuf record `{1: target id, <kind>: body}`, the latest
+ *   event winning. Kind 30/31 names the notebook; kind 6 records an
+ *   attachment (`2` its file in `attachments/`, which for an imported PDF is
+ *   not the record's own id); kind 2 defines a paper template (`4` an
+ *   attachment record, `5` the PDF page, 1-based, `8` its size); kind 54 adds
+ *   a page (its template, and an order key that sorts as plain bytes); kinds
+ *   56 and 57 set a flag on a page, `{3: {1: 1}}` for on and `{3: {}}` for
+ *   off: 56 removes the page, 57 bookmarks it; kind 62 is an outline entry
+ *   (`1` its page, `5` the title, `6` its order, `3.1` a point on the page
+ *   with y up from the bottom).
+ * - `notes/<id>`: one page's content, as header/body record pairs. The id is
+ *   the page's id plus one. A body `{7: …}` is a stroke, `{1: …}` a picture,
+ *   `{21: …}` a text box (or a shape, when it holds no text), `{20: …}` a
+ *   comment. A header with `{3: 1}` marks its element deleted.
+ * - `attachments/<id>`: paper PDFs and pictures, as they are.
+ *
+ * A stroke's points are Apple-LZ4 compressed, in a small typed layout
+ * (`tpl\0`, length, a signature like `vA(v)A(u)…`, then the values). Two
+ * layouts exist (the stroke's field 21 names its schema):
+ *
+ * - 24: ten flat arrays. The second-last holds the pen samples, the last one
+ *   entry per sample, so the stride is their ratio: 5 floats for a pen (x, y,
+ *   half-width, two not used here), 7 for the marker (x, y, a value not used
+ *   here, half-width, three more).
+ * - 25: arrays of structs, `A(S(…))`. A start point (x, y, azimuth,
+ *   altitude, force), then segments of 11 floats: one not used here and two
+ *   more points. The width is the layout's first float, for the whole stroke.
+ *
+ * A stroke moved with the lasso keeps its points and gains an offset
+ * (field 6, `{1: dx, 2: dy}`).
+ */
+
+import type {
+  ImageElement,
+  InkDocument,
+  Page,
+  PageSection,
+  ShapeKind,
+  Stroke,
+  TextBoxElement,
+} from "../model/document";
+import { SCHEMA_VERSION } from "../constants";
+import { normalizePageTitle } from "../model/contents";
+import { decodeAppleLz4 } from "./apple-lz4";
+import {
+  fontFor,
+  hexColor,
+  ImportTally,
+  median,
+  packageRoot,
+  pageScale,
+  plural,
+  pressureForWidth,
+  round2,
+  sniffFile,
+  type ImportAttachment,
+  type ImportResult,
+} from "./import-types";
+import { Message, splitDelimited } from "./protobuf";
+
+export class GoodnotesError extends Error {}
+
+/**
+ * Goodnotes' page units per millimetre: its Letter page is 834.24 units
+ * across 215.9 mm.
+ */
+export const GOODNOTES_UNITS_PER_MM = 834.24 / 215.9;
+
+/** Below this opacity a stroke is taken for the highlighter. */
+const HIGHLIGHTER_ALPHA = 0.95;
+
+/**
+ * An outline entry this close to the top of its page (a share of the page's
+ * height) names the page itself; one further down is a heading inside it.
+ * Goodnotes puts the entries it makes from a PDF's own outline at the very top.
+ */
+const PAGE_TITLE_BAND = 0.05;
+
+/** Goodnotes' "use the box's own size" for a run of text. */
+const INHERITED_FONT_SIZE = -404;
+
+/** Whether a set of zip entries is a Goodnotes notebook. */
+export function isGoodnotes(files: ReadonlyMap<string, Uint8Array>): boolean {
+  return findRoot(files) !== null;
+}
+
+function findRoot(files: ReadonlyMap<string, Uint8Array>): string | null {
+  return packageRoot(files, "index.events.pb");
+}
+
+interface Template {
+  width: number;
+  height: number;
+  /** An attachment record id (kind 6), or a file id for files without one. */
+  attachment?: string;
+  /** 0-based page of a PDF attachment. */
+  pdfPage: number;
+}
+
+interface PageEntry {
+  id: string;
+  template?: string;
+  order: string;
+  deleted: boolean;
+  bookmarked: boolean;
+  created: number;
+}
+
+interface OutlineEntry {
+  page: string;
+  title: string;
+  order: string;
+  /** Distance from the bottom of the page, in Goodnotes units; absent is 0. */
+  y: number;
+  x: number;
+}
+
+/**
+ * Convert one notebook, given its zip entries. `fileTitle` names it: the
+ * name the notebook was exported under is the one the user gave it, while
+ * the name inside the package is often Goodnotes' default ("Untitled", or
+ * the PDF's own name). The inner name is used only when `fileTitle` is empty.
+ */
+export function readGoodnotes(
+  files: ReadonlyMap<string, Uint8Array>,
+  fileTitle: string,
+): ImportResult {
+  const root = findRoot(files);
+  if (root === null) throw new GoodnotesError("not a Goodnotes notebook");
+  const file = (path: string): Uint8Array | undefined => files.get(root + path);
+
+  let title = "";
+  const records = new Map<string, string>();
+  const templates = new Map<string, Template>();
+  const pages = new Map<string, PageEntry>();
+  const outline = new Map<string, OutlineEntry>();
+  let created = 0;
+  for (const record of splitDelimited(file("index.events.pb") ?? new Uint8Array())) {
+    let event: Message;
+    try {
+      event = Message.parse(record);
+    } catch {
+      continue;
+    }
+    const id = event.string(1);
+    const kind = event.fields.find((f) => f.field !== 1 && f.wire === 2);
+    if (!id || !kind?.bytes) continue;
+    let body: Message;
+    try {
+      body = Message.parse(kind.bytes);
+    } catch {
+      continue;
+    }
+    switch (kind.field) {
+      case 30:
+      case 31: {
+        const name = body.message(2)?.string(1);
+        if (name) title = name;
+        break;
+      }
+      case 6: {
+        const target = body.string(2);
+        if (target) records.set(id, target);
+        break;
+      }
+      case 2: {
+        const size = body.message(8);
+        const width = size?.float(1);
+        const height = size?.float(2);
+        if (width && height && width > 0 && height > 0) {
+          const page = Math.round(num(body, 5) ?? 1);
+          templates.set(id, {
+            width,
+            height,
+            attachment: body.string(4),
+            pdfPage: Math.max(0, page - 1),
+          });
+        }
+        break;
+      }
+      case 54:
+        pages.set(id, {
+          id,
+          template: body.message(3)?.string(1),
+          order: body.message(4)?.string(1) ?? "",
+          deleted: false,
+          bookmarked: false,
+          created: created++,
+        });
+        break;
+      case 56: {
+        const page = pages.get(id);
+        if (page) page.deleted = flagOn(body);
+        break;
+      }
+      case 57: {
+        const page = pages.get(id);
+        if (page) page.bookmarked = flagOn(body);
+        break;
+      }
+      case 62: {
+        const entry = body.string(2);
+        const page = body.string(1);
+        const text = body.string(5);
+        if (!entry || !page || text === undefined) break;
+        const point = body.message(3)?.message(1);
+        outline.set(entry, {
+          page,
+          title: text,
+          order: body.string(6) ?? "",
+          x: num(point, 1) ?? 0,
+          y: num(point, 2) ?? 0,
+        });
+        break;
+      }
+    }
+  }
+
+  const live = [...pages.values()]
+    .filter((p) => !p.deleted)
+    .sort((a, b) => compareKeys(a.order, b.order) || a.created - b.created);
+  if (live.length === 0) throw new GoodnotesError("the notebook has no pages");
+
+  // A template the package does not carry (one of Goodnotes' built-in ones)
+  // gets the paper most of the other pages have.
+  const counts = new Map<string, number>();
+  for (const p of live) {
+    if (p.template && templates.has(p.template)) {
+      counts.set(p.template, (counts.get(p.template) ?? 0) + 1);
+    }
+  }
+  const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  const name = fileTitle || title || "Imported notebook";
+  const attachments: ImportAttachment[] = [];
+  const attached = new Map<string, string>();
+  /** A file in `attachments/`, by record or file id; its name in the result, or null. */
+  const attach = (id: string, label: string): string | null => {
+    const fileId = records.get(id) ?? id;
+    const known = attached.get(fileId);
+    if (known) return known;
+    const bytes = file(`attachments/${fileId}`);
+    if (!bytes || bytes.length === 0) return null;
+    const { mime, ext } = sniffFile(bytes);
+    const fileName = `${name} - ${label} ${attachments.length + 1}.${ext}`;
+    attachments.push({ name: fileName, bytes, mime });
+    attached.set(fileId, fileName);
+    return fileName;
+  };
+
+  const outlineByPage = new Map<string, OutlineEntry[]>();
+  for (const entry of [...outline.values()].sort((a, b) => compareKeys(a.order, b.order))) {
+    const list = outlineByPage.get(entry.page) ?? [];
+    list.push(entry);
+    outlineByPage.set(entry.page, list);
+  }
+
+  const tally = new ImportTally();
+  let missingPaper = 0;
+  let strokeN = 0;
+  let imageN = 0;
+  let textN = 0;
+  let sectionN = 0;
+  // Links in typed text name pages by id: their page number once sorted.
+  const pageNumbers = new Map(live.map((entry, index) => [entry.id, index + 1]));
+  const pageText: string[] = [];
+
+  const docPages: Page[] = live.map((entry, index) => {
+    const pageNumber = index + 1;
+    const templateId = entry.template && templates.has(entry.template) ? entry.template : common;
+    if (templateId !== entry.template) missingPaper++;
+    const template = templateId ? templates.get(templateId) : undefined;
+    const width = template?.width ?? 834.24;
+    const height = template?.height ?? 1078.825;
+    const k = pageScale(width, width / GOODNOTES_UNITS_PER_MM);
+    const paper = template?.attachment ? attach(template.attachment, "paper") : null;
+
+    const page: Page = {
+      id: `p${pageNumber}`,
+      kind: "ink",
+      geometry: { width: Math.round(width * k), height: Math.round(height * k) },
+      backdrop: paper
+        ? { kind: "pdf", path: paper, page: template?.pdfPage ?? 0 }
+        : { kind: "blank" },
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    };
+    if (entry.bookmarked) page.bookmarked = true;
+
+    const sections: PageSection[] = [];
+    for (const item of outlineByPage.get(entry.id) ?? []) {
+      const text = normalizePageTitle(item.title);
+      if (!text) continue;
+      const fromTop = Math.max(0, height - item.y);
+      if (page.title === undefined && fromTop <= height * PAGE_TITLE_BAND) {
+        page.title = text;
+      } else {
+        sections.push({
+          id: `c${++sectionN}`,
+          x: round2(Math.max(0, item.x) * k),
+          y: round2(fromTop * k),
+          title: text,
+        });
+      }
+    }
+    if (sections.length > 0) page.sections = sections.sort((a, b) => a.y - b.y);
+
+    const text = searchText(file(`search/${layerId(entry.id)}`));
+    if (text) pageText[index] = text;
+
+    const pageLink = (url: string): string => {
+      const target = goodnotesPageLink(url);
+      const number = target === null ? undefined : pageNumbers.get(target);
+      if (number !== undefined) return `(→ page ${number})`;
+      return target === null ? `(${url})` : "(→ a page of another notebook)";
+    };
+
+    const content = file(`notes/${layerId(entry.id)}`);
+    // Whether the last header marked its element removed (`{3: 1}`): a
+    // picture deleted in Goodnotes stays in the file with that mark.
+    let removed = false;
+    for (const record of content ? splitDelimited(content) : []) {
+      let outer: Message;
+      try {
+        outer = Message.parse(record);
+      } catch {
+        continue;
+      }
+      // Headers carry several fields; a body is one length-delimited field.
+      if (outer.fields.length !== 1 || outer.fields[0].wire !== 2) {
+        removed = (outer.int(3) ?? 0) !== 0;
+        continue;
+      }
+      if (removed) continue;
+      const kind = outer.fields[0].field;
+      const body = outer.message(kind);
+      if (!body) continue;
+      if (kind === 7) {
+        const stroke = readStroke(body, k, `s${strokeN + 1}`);
+        if (stroke) {
+          page.strokes.push(stroke);
+          strokeN++;
+        } else tally.add("unreadable", pageNumber);
+      } else if (kind === 1) {
+        const image = readImage(body, k, `i${imageN + 1}`, (id) => attach(id, "picture"));
+        if (image) {
+          page.images.push(image);
+          imageN++;
+        } else tally.add("other", pageNumber);
+      } else if (kind === 21) {
+        const typed = readTyped(body, 32, pageLink);
+        const box = typed ? textBoxOf(body, typed, k, `t${textN + 1}`) : null;
+        if (box) {
+          page.textBoxes.push(box);
+          textN++;
+          if (typed?.linked) tally.add("links", pageNumber);
+        }
+        const shape = readShape(body, k, `s${strokeN + 1}`);
+        if (shape) {
+          page.strokes.push(shape.outline);
+          strokeN++;
+          tally.add("shapes", pageNumber);
+          if (shape.fill && !box) {
+            // A filled rectangle keeps its fill as an empty filled box.
+            if (shape.outline.shape === "rect" || shape.outline.shape === "roundrect") {
+              page.textBoxes.push({ ...shape.fill, id: `t${++textN}` });
+            } else tally.add("fills", pageNumber);
+          }
+        } else if (!box) tally.add("empty", pageNumber);
+      } else if (kind === 20) {
+        const note = readComment(body, k, `t${textN + 1}`, pageLink);
+        if (note) {
+          page.textBoxes.push(note);
+          textN++;
+          tally.add("comments", pageNumber);
+        } else tally.add("other", pageNumber);
+      } else tally.add("other", pageNumber);
+    }
+    return page;
+  });
+
+  const warnings: string[] = [];
+  if (missingPaper > 0) {
+    warnings.push(
+      `${plural(missingPaper, "page uses", "pages use")} a Goodnotes paper that is not in the file; ` +
+        "the notebook's usual paper was used instead.",
+    );
+  }
+  const lines = [
+    tally.line("unreadable", (n) => `${plural(n, "stroke")} could not be read.`),
+    tally.line("shapes", (n) => `${plural(n, "shape")} came over as outlines.`),
+    tally.line(
+      "fills",
+      (n) => `${plural(n, "shape's fill", "shapes' fills")} could not be kept, only the outline.`,
+    ),
+    tally.line(
+      "comments",
+      (n) => `${plural(n, "comment")} came over as a text box with the author's name.`,
+    ),
+    tally.line(
+      "links",
+      (n) =>
+        `${plural(n, "text box links", "text boxes link")} somewhere; ` +
+        "the link is written after its words.",
+    ),
+    tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
+  ];
+  for (const line of lines) if (line) warnings.push(line);
+
+  const first = docPages[0];
+  const doc: InkDocument = {
+    version: SCHEMA_VERSION,
+    view: { scrollY: 0, width: first.geometry.width, scale: 1 },
+    pages: docPages,
+  };
+  const result: ImportResult = { source: "goodnotes", title: name, doc, attachments, warnings };
+  if (pageText.some(Boolean)) result.pageText = Array.from(pageText, (t) => t ?? "");
+  return result;
+}
+
+/** Order keys compare as plain bytes (`-QKIL` sorts before `4zLQe01`). */
+function compareKeys(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** The id of a page's content file: the page id with one added to its last group. */
+export function layerId(pageId: string): string {
+  const dash = pageId.lastIndexOf("-");
+  const tail = pageId.slice(dash + 1);
+  if (dash < 0 || !/^[0-9a-fA-F]{1,12}$/.test(tail)) return pageId;
+  const next = (BigInt(`0x${tail}`) + 1n).toString(16).toUpperCase().padStart(tail.length, "0");
+  return pageId.slice(0, dash + 1) + next.slice(-tail.length);
+}
+
+/** One pen sample in Goodnotes units. */
+export interface PenPoint {
+  x: number;
+  y: number;
+  /** Half the stroke's width here, when the layout records it per sample. */
+  half?: number;
+}
+
+/** A stroke's samples, and the half-width of the whole stroke when no sample has one. */
+export interface PenPath {
+  points: PenPoint[];
+  half?: number;
+}
+
+function readStroke(body: Message, k: number, id: string): Stroke | null {
+  const data = body.bytes(2);
+  if (!data) return null;
+  let path: PenPath;
+  try {
+    path = penPath(decodeAppleLz4(data));
+  } catch {
+    return null;
+  }
+  const offset = body.message(6);
+  const dx = finite(offset?.float(1));
+  const dy = finite(offset?.float(2));
+  const points = path.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (points.length === 0) return null;
+
+  const halves = points.map((p) => p.half).filter((h): h is number => h !== undefined);
+  const half = halves.length > 0 ? median(halves) : (path.half ?? 1);
+  const size = round2(Math.max(0.1, 2 * half * k));
+  const pts: number[] = [];
+  for (const p of points) {
+    const pressure = p.half === undefined ? 0.5 : pressureForWidth(2 * p.half * k, size);
+    pts.push((p.x + dx) * k, (p.y + dy) * k, pressure);
+  }
+
+  const colour = body.message(4);
+  const [r, g, b, a] = [1, 2, 3, 4].map((f) => colour?.float(f) ?? (f === 4 ? 1 : 0));
+  return {
+    id,
+    color: hexColor(r, g, b),
+    size,
+    tool: a < HIGHLIGHTER_ALPHA ? "highlighter" : "pen",
+    pts,
+  };
+}
+
+/** The pen samples of a decompressed stroke, in either layout. Throws on anything else. */
+export function penPath(raw: Uint8Array): PenPath {
+  const layout = readTplLayout(raw);
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const f32 = (at: number): number => view.getFloat32(at, true);
+  const { arrays } = layout;
+
+  if (arrays.some((a) => a.kind === "S")) {
+    // Schema 25: a start point, then segments of two points each.
+    const start = arrays.find((a) => a.kind === "S" && a.fields === "uuuuu");
+    const segments = arrays.find((a) => a.kind === "S" && a.fields === "u".repeat(11));
+    if (!start || !segments || start.count < 1) {
+      throw new GoodnotesError("unexpected stroke layout");
+    }
+    const points: PenPoint[] = [{ x: f32(start.at), y: f32(start.at + 4) }];
+    for (let i = 0; i < segments.count; i++) {
+      const at = segments.at + i * segments.size;
+      points.push({ x: f32(at + 4), y: f32(at + 8) }, { x: f32(at + 24), y: f32(at + 28) });
+    }
+    const width = layout.scalars.find((s) => s.kind === "u");
+    const w = width ? f32(width.at) : NaN;
+    return { points, half: Number.isFinite(w) && w > 0 ? w / 2 : undefined };
+  }
+
+  // Schema 24: the second-last array holds the samples, the last one entry per sample.
+  const samples = arrays[arrays.length - 2];
+  const perSample = arrays[arrays.length - 1];
+  if (!samples || !perSample || samples.kind !== "u" || perSample.count < 1) {
+    throw new GoodnotesError("unexpected stroke layout");
+  }
+  const stride = samples.count / perSample.count;
+  if (!Number.isInteger(stride) || stride < 3) throw new GoodnotesError("unexpected stroke layout");
+  const halfAt = stride === 5 ? 2 : stride === 7 ? 3 : -1;
+  const points: PenPoint[] = [];
+  for (let i = 0; i < perSample.count; i++) {
+    const at = samples.at + i * stride * 4;
+    const point: PenPoint = { x: f32(at), y: f32(at + 4) };
+    if (halfAt >= 0) point.half = f32(at + halfAt * 4);
+    points.push(point);
+  }
+  // Without a known per-sample width, the start point's third value is the stroke's.
+  const startPoint = arrays[1];
+  const half = startPoint?.kind === "u" && startPoint.count >= 3 ? f32(startPoint.at + 8) : NaN;
+  return { points, half: halfAt < 0 && Number.isFinite(half) && half > 0 ? half : undefined };
+}
+
+/** The pen samples of a schema-24 stroke as flat floats, five or seven a sample. */
+export function penSamples(raw: Uint8Array): Float32Array {
+  const arrays = readTpl(raw);
+  const samples = arrays[arrays.length - 2];
+  if (!samples || samples.kind !== "u") throw new GoodnotesError("unexpected stroke layout");
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const out = new Float32Array(samples.count);
+  for (let i = 0; i < samples.count; i++) out[i] = view.getFloat32(samples.at + i * 4, true);
+  return out;
+}
+
+interface TplScalar {
+  kind: "u" | "v";
+  at: number;
+}
+
+interface TplArray {
+  /** `S` is an array of structs. */
+  kind: "u" | "v" | "S";
+  count: number;
+  /** Offset of the first item. */
+  at: number;
+  /** Bytes per item. */
+  size: number;
+  /** A struct's field types, such as `uuuuu`; for `u` and `v` the type itself. */
+  fields: string;
+}
+
+/** A `tpl` layout: its loose values and its arrays. */
+export function readTplLayout(raw: Uint8Array): { scalars: TplScalar[]; arrays: TplArray[] } {
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  if (raw.length < 9 || String.fromCharCode(...raw.subarray(0, 4)) !== "tpl\0") {
+    throw new GoodnotesError("not a tpl block");
+  }
+  const sigEnd = raw.indexOf(0, 8);
+  if (sigEnd < 0) throw new GoodnotesError("unterminated signature");
+  const signature = String.fromCharCode(...raw.subarray(8, sigEnd));
+  const width = (t: string): number => {
+    if (t === "v") return 2;
+    if (t === "u") return 4;
+    throw new GoodnotesError(`unknown type ${t}`);
+  };
+  /** The text inside the brackets that open at `open`, and the index after them. */
+  const group = (open: number): [string, number] => {
+    if (signature[open] !== "(") throw new GoodnotesError("bad signature");
+    const close = signature.indexOf(")", open);
+    if (close < 0) throw new GoodnotesError("bad signature");
+    return [signature.slice(open + 1, close), close + 1];
+  };
+
+  const scalars: TplScalar[] = [];
+  const arrays: TplArray[] = [];
+  let at = sigEnd + 1;
+  for (let s = 0; s < signature.length;) {
+    const c = signature[s];
+    if (c === "A") {
+      let item: string;
+      let next: number;
+      if (signature[s + 2] === "S") {
+        // `A(S(uuu))`: the struct's own brackets close one before the array's.
+        [item, next] = group(s + 3);
+        if (signature[next] !== ")") throw new GoodnotesError("bad signature");
+        next += 1;
+      } else {
+        [item, next] = group(s + 1);
+        if (item.length !== 1) throw new GoodnotesError("bad signature");
+      }
+      const struct = signature[s + 2] === "S";
+      const size = [...item].reduce((n, t) => n + width(t), 0);
+      if (at + 4 > raw.length) throw new GoodnotesError("array past end");
+      const count = view.getUint32(at, true);
+      at += 4;
+      const end = at + count * size;
+      if (end > raw.length) throw new GoodnotesError("array past end");
+      arrays.push({ kind: struct ? "S" : (item as "u" | "v"), count, at, size, fields: item });
+      at = end;
+      s = next;
+    } else {
+      const size = width(c);
+      if (at + size > raw.length) throw new GoodnotesError("value past end");
+      scalars.push({ kind: c as "u" | "v", at });
+      at += size;
+      s += 1;
+    }
+  }
+  return { scalars, arrays };
+}
+
+/** The arrays of a `tpl` layout: where each starts and how many items it has. */
+export function readTpl(raw: Uint8Array): TplArray[] {
+  return readTplLayout(raw).arrays;
+}
+
+/**
+ * A picture element, or null. A PDF placed as a picture comes back as one
+ * too; `importNotebooks` turns it into an image.
+ */
+function readImage(
+  body: Message,
+  k: number,
+  id: string,
+  attach: (attachmentId: string) => string | null,
+): ImageElement | null {
+  const attachment = body.string(4);
+  const frame = body.message(2);
+  const origin = frame?.message(1);
+  const size = frame?.message(2);
+  const x = origin?.float(1) ?? 0;
+  const y = origin?.float(2) ?? 0;
+  const w = size?.float(1);
+  const h = size?.float(2);
+  if (!attachment || !w || !h || w <= 0 || h <= 0) return null;
+  const path = attach(attachment);
+  if (!path) return null;
+  return { id, path, x: round2(x * k), y: round2(y * k), w: round2(w * k), h: round2(h * k) };
+}
+
+/** Typed text read from a text store: its runs joined, with any links written out. */
+interface Typed {
+  store: Message;
+  text: string;
+  /** The first run's attributes, for the box's colour, size and typeface. */
+  attrs?: Message;
+  /** Whether a link was written out. */
+  linked: boolean;
+}
+
+/**
+ * The text in a box's store (field `32` of a text box, `31` of a comment):
+ * runs of `{1: text, 2: attributes}` behind Apple LZ4, an attribute `4` a
+ * link. A link is kept as text after the words it is on, `link(url)`.
+ * Null when there is no text at all.
+ */
+function readTyped(body: Message, field: number, link: (url: string) => string): Typed | null {
+  const store = body.message(field);
+  const data = store?.message(1)?.bytes(2);
+  if (!store || !data) return null;
+  let runs: Message[];
+  try {
+    runs = Message.parse(decodeAppleLz4(data))
+      .fields.filter((f) => f.field === 1 && f.wire === 2 && f.bytes)
+      .map((f) => Message.parse(f.bytes as Uint8Array));
+  } catch {
+    return null;
+  }
+  let text = "";
+  let linked = false;
+  runs.forEach((run, i) => {
+    text += run.string(1) ?? "";
+    const url = run.message(2)?.string(4);
+    // A link spanning several runs is written once, after its last run.
+    if (url && runs[i + 1]?.message(2)?.string(4) !== url) {
+      text = `${text.trimEnd()} ${link(url)}`;
+      linked = true;
+    }
+  });
+  if (text.trim() === "") return null;
+  const attrs = runs.find((run) => (run.string(1) ?? "").trim() !== "")?.message(2);
+  return { store, text, attrs, linked };
+}
+
+/**
+ * A text box from its typed text. Its top-left is field `20.1`, the text
+ * sits inside the insets of the store's `10`; a fixed width is `21.2.1`,
+ * otherwise the box grows with its text (the store's `2` is that text's size).
+ */
+function textBoxOf(body: Message, typed: Typed, k: number, id: string): TextBoxElement {
+  const { store, attrs } = typed;
+  const origin = body.message(20)?.message(1);
+  const insets = store.message(10);
+  const left = finite(num(insets, 2), 10);
+  const top = finite(num(insets, 1), 10);
+  const right = finite(num(insets, 4), 10);
+  const fixedWidth = num(body.message(21)?.message(2), 1);
+  const textWidth = num(store.message(2), 1);
+  const fixed = fixedWidth !== undefined && Number.isFinite(fixedWidth) && fixedWidth > 0;
+
+  const box: TextBoxElement = {
+    id,
+    x: round2((finite(num(origin, 1)) + left) * k),
+    y: round2((finite(num(origin, 2)) + top) * k),
+    w: round2(Math.max(8, (fixed ? fixedWidth - left - right : (textWidth ?? 200)) * k)),
+    text: typed.text,
+    color: rgba(attrs?.message(3)) ?? "#000000",
+    fontSize: round2(Math.max(12, fontSize(attrs, store) * k)),
+  };
+  if (!fixed) box.fit = true;
+  const typeface = fontFor(attrs?.string(30) ?? store.message(5)?.message(1)?.string(30));
+  if (typeface !== "sans") box.font = typeface;
+  const fill = rgba(body.message(30)?.message(1)?.message(1), true);
+  if (fill) box.fill = fill;
+  return box;
+}
+
+/** A run's font size, or the box's own (`-404` means "the box's"). */
+function fontSize(attrs: Message | undefined, store: Message): number {
+  const run = num(attrs, 40);
+  if (run !== undefined && run !== INHERITED_FONT_SIZE && run > 0) return run;
+  return num(store.message(5)?.message(1), 40) ?? 24;
+}
+
+/**
+ * A text box's outline as a shape stroke, when it has one: a polygon in the
+ * box's unit square (field `22.3`, e.g. a diamond), a rounded rectangle
+ * (`22.1.1`, the corner radius) or a plain border (`31.1`, its width, wider
+ * than 0). `fill` is the box's fill as an empty text box the same size, for
+ * the caller to keep when the outline is a rectangle.
+ */
+function readShape(
+  body: Message,
+  k: number,
+  id: string,
+): { outline: Stroke; fill?: Omit<TextBoxElement, "id"> } | null {
+  const geometry = body.message(22);
+  const border = body.message(31);
+  const borderWidth = num(border, 1) ?? 0;
+  // A polygon is `22.3.1`: its vertices (each `{1: {1: x, 2: y}}`, in the
+  // box's unit square) as repeated field 1.
+  const vertices = (geometry?.message(3)?.message(1)?.fields ?? [])
+    .filter((f) => f.field === 1 && f.wire === 2 && f.bytes)
+    .map((f) => Message.parse(f.bytes as Uint8Array).message(1))
+    .map((v): [number, number] => [finite(num(v, 1)), finite(num(v, 2))]);
+  const cornerRadius = finite(num(geometry?.message(1), 1));
+  const drawn = vertices.length >= 3 || cornerRadius > 0;
+  // An outline needs a border, or a drawn shape whose fill alone shows it.
+  const origin = body.message(20)?.message(1);
+  const size = body.message(21)?.message(2);
+  const x = finite(num(origin, 1));
+  const y = finite(num(origin, 2));
+  const w = finite(num(size, 1));
+  const hRaw = num(size, 2);
+  const h = hRaw !== undefined && Number.isFinite(hRaw) && hRaw > 0 ? hRaw : w;
+  if (!(w > 0 && h > 0)) return null;
+
+  const fill = rgba(body.message(30)?.message(1)?.message(1), true);
+  if (!(borderWidth > 0) && !(drawn && fill)) return null;
+  const colour = (borderWidth > 0 ? rgba(border?.message(3)?.message(1)) : undefined) ?? fill;
+  let kind: ShapeKind = "rect";
+  let points: Array<[number, number]>;
+  if (vertices.length >= 3) {
+    const diamond =
+      vertices.length === 4 &&
+      [
+        [0.5, 0],
+        [1, 0.5],
+        [0.5, 1],
+        [0, 0.5],
+      ].every(
+        ([vx, vy], i) => Math.abs(vertices[i][0] - vx) + Math.abs(vertices[i][1] - vy) < 0.01,
+      );
+    kind = diamond ? "diamond" : vertices.length === 3 ? "triangle" : "polygon";
+    points = [...vertices, vertices[0]].map(([u, v]) => [x + u * w, y + v * h]);
+  } else {
+    const radius = Math.min(cornerRadius, w / 2, h / 2);
+    if (radius > 0) {
+      kind = "roundrect";
+      points = roundRect(x, y, w, h, radius);
+    } else {
+      points = [
+        [x, y],
+        [x + w, y],
+        [x + w, y + h],
+        [x, y + h],
+        [x, y],
+      ];
+    }
+  }
+  const outline: Stroke = {
+    id,
+    color: colour?.slice(0, 7) ?? "#000000",
+    size: round2(Math.max(0.5, (borderWidth > 0 ? borderWidth : 2) * k)),
+    tool: "pen",
+    pts: points.flatMap(([px, py]) => [round2(px * k), round2(py * k), 0.5]),
+    shape: kind,
+  };
+  const result: { outline: Stroke; fill?: Omit<TextBoxElement, "id"> } = { outline };
+  if (fill) {
+    result.fill = {
+      x: round2(x * k),
+      y: round2(y * k),
+      w: round2(w * k),
+      h: round2(Math.max(24, h * k)),
+      text: "",
+      color: "#000000",
+      fontSize: 22,
+      fill,
+    };
+  }
+  return result;
+}
+
+/** A rounded rectangle as the Shape tool lays one out: four 8-segment quarter arcs, closed (37 points). */
+function roundRect(x: number, y: number, w: number, h: number, r: number): Array<[number, number]> {
+  const corners: Array<[number, number, number]> = [
+    [x + w - r, y + r, -Math.PI / 2],
+    [x + w - r, y + h - r, 0],
+    [x + r, y + h - r, Math.PI / 2],
+    [x + r, y + r, Math.PI],
+  ];
+  const points: Array<[number, number]> = [];
+  for (const [cx, cy, from] of corners) {
+    for (let i = 0; i <= 8; i++) {
+      const a = from + (i / 8) * (Math.PI / 2);
+      points.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
+  points.push(points[0]);
+  return points;
+}
+
+/**
+ * A comment (kind 20) as a text box: its colour (`30`), its size (`21.2`),
+ * and its text (`31`) signed with its author (`33`), or the author alone for
+ * a comment without text.
+ */
+function readComment(
+  body: Message,
+  k: number,
+  id: string,
+  link: (url: string) => string,
+): TextBoxElement | null {
+  const typed = readTyped(body, 31, link);
+  const author = body.string(33)?.trim();
+  const words = typed?.text.trim();
+  const text = words
+    ? author
+      ? `${author}: ${words}`
+      : words
+    : `Comment by ${author || "someone"}`;
+  const origin = body.message(20)?.message(1);
+  const size = body.message(21)?.message(2);
+  const w = finite(num(size, 1), 200);
+  const h = num(size, 2);
+  const store = typed?.store ?? body.message(31);
+  const box: TextBoxElement = {
+    id,
+    x: round2(finite(num(origin, 1)) * k),
+    y: round2(finite(num(origin, 2)) * k),
+    w: round2(Math.max(80, w * k)),
+    text,
+    color: rgba(typed?.attrs?.message(3)) ?? "#000000",
+    fontSize: round2(Math.max(12, (store ? fontSize(typed?.attrs, store) : 24) * k)),
+    fill: rgba(body.message(30), true) ?? "#fff3b0",
+  };
+  if (h !== undefined && Number.isFinite(h) && h > 0) box.h = round2(Math.max(24, h * k));
+  return box;
+}
+
+/**
+ * The page a Goodnotes link points at, by page id, or null when the URL is
+ * not one: `https://app.goodnotes.com/documents/?anchor=<base64 of "page-<id>">`.
+ */
+export function goodnotesPageLink(url: string): string | null {
+  const match = /^https:\/\/app\.goodnotes\.com\/documents\/\?(?:.*&)?anchor=([^&#]+)/.exec(url);
+  if (!match) return null;
+  let decoded: string;
+  try {
+    decoded = new TextDecoder().decode(base64Bytes(decodeURIComponent(match[1])));
+  } catch {
+    return null;
+  }
+  return decoded.startsWith("page-") ? decoded.slice(5) : null;
+}
+
+const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Standard or URL-safe base64, padding optional. Throws on other characters. */
+function base64Bytes(text: string): Uint8Array {
+  const clean = text.replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+  const out: number[] = [];
+  let bits = 0;
+  let value = 0;
+  for (const c of clean) {
+    const v = BASE64.indexOf(c);
+    if (v < 0) throw new GoodnotesError("not base64");
+    value = (value << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((value >> bits) & 255);
+    }
+  }
+  return new Uint8Array(out);
+}
+
+/**
+ * What Goodnotes' own handwriting recognition read on a page, from
+ * `search/<page>`: one group (field `6`) per word, space or line break, in
+ * reading order, each with its candidates (field `3`), the best first.
+ * Blank lines are dropped; "" when there is nothing.
+ */
+export function searchText(data: Uint8Array | undefined): string {
+  if (!data || data.length === 0) return "";
+  let index: Message;
+  try {
+    index = Message.parse(data);
+  } catch {
+    return "";
+  }
+  let text = "";
+  for (const field of index.fields) {
+    if (field.field !== 6 || field.wire !== 2 || !field.bytes) continue;
+    try {
+      text += Message.parse(field.bytes).string(3) ?? "";
+    } catch {
+      // Not a word group.
+    }
+  }
+  return text
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+/** `#rrggbb` (or `#rrggbbaa` with `alpha`, when not opaque) from `{1: r, 2: g, 3: b, 4: a}`; undefined when absent or, with `alpha`, invisible. */
+function rgba(colour: Message | undefined, alpha = false): string | undefined {
+  if (!colour) return undefined;
+  const hex = hexColor(num(colour, 1) ?? 0, num(colour, 2) ?? 0, num(colour, 3) ?? 0);
+  if (!alpha) return hex;
+  const a = num(colour, 4) ?? 0;
+  if (!(a > 0.01)) return undefined;
+  if (a >= 0.999) return hex;
+  return `${hex}${Math.round(Math.min(1, a) * 255)
+    .toString(16)
+    .padStart(2, "0")}`;
+}
+
+/** A page flag event's value: `{3: {1: 1}}` is on, anything else off. */
+function flagOn(body: Message): boolean {
+  return (body.message(3)?.int(1) ?? 0) !== 0;
+}
+
+/** A number stored either as a float or as a varint. */
+function num(message: Message | undefined, field: number): number | undefined {
+  return message?.float(field) ?? message?.double(field) ?? message?.int(field);
+}
+
+function finite(v: number | undefined, fallback = 0): number {
+  return v !== undefined && Number.isFinite(v) ? v : fallback;
+}

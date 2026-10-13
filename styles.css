@@ -1834,25 +1834,28 @@ body.is-mobile .goodobsidian-scrollthumb {
   padding: 0;
 }
 
-/* A slider whose track widens from thin to thick, as the stroke does. The
-   wedge is its own layer under a transparent track: a clip on the input
-   would clip the thumb too. */
+/* FineNotes' sliders (pen width, eraser size, the audio player's position):
+   a rounded bar filled up to an always-visible knob. Dark theme: the accent
+   fills the bar under a white knob; light theme: a neutral fill under an
+   accent knob. The fill's length is `--gob-range-fill`, which
+   `view/range-fill.ts` sets from the value (CSS cannot read an input's
+   value). The colours are tokens on the theme classes, so a `theme-dark`
+   island resolves them in its own theme. */
+body,
+.theme-dark {
+  --gob-slider-fill: var(--interactive-accent);
+  --gob-slider-knob: #ffffff;
+}
+
+.theme-light {
+  --gob-slider-fill: var(--text-faint);
+  --gob-slider-knob: var(--interactive-accent);
+}
+
 .goodobsidian-width-slider {
   position: relative;
   height: var(--gob-touch);
   margin: 4px 0 8px;
-}
-
-.goodobsidian-width-wedge {
-  position: absolute;
-  top: 50%;
-  left: 11px;
-  /* An absolutely positioned SVG ignores `right`, so the width is explicit. */
-  width: calc(100% - 22px);
-  height: 14px;
-  transform: translateY(-50%);
-  fill: var(--text-faint);
-  pointer-events: none;
 }
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range {
@@ -1868,22 +1871,124 @@ body.is-mobile .goodobsidian-scrollthumb {
   touch-action: none;
 }
 
-.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track {
-  height: 100%;
-  background: transparent;
-  border: none;
+/* How tall each slider's input (its touch target) is. */
+.goodobsidian-popover input[type="range"].goodobsidian-width-range {
+  --gob-slider-height: var(--gob-touch);
 }
 
-.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb {
-  width: 22px;
-  height: 22px;
-  margin-top: calc((var(--gob-touch) - 22px) / 2);
-  border: 2px solid var(--interactive-accent);
+input[type="range"].goodobsidian-player-scrubber {
+  --gob-slider-height: var(--gob-touch-compact);
+}
+
+/* The track takes the input's whole height and the 8 px bar is painted in its
+   middle: an 8 px track is placed differently by Chromium and WebKit (the
+   knob sat ~6 px above it in Chromium), while a full-height one puts the
+   knob at exactly its margin. The bar is a strip between two round caps;
+   the caps sit under the knob at either end of the range, so their colours
+   never need to change. The selectors outrank Obsidian's own
+   `input[type='range']` rules. */
+.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
+  height: var(--gob-slider-height);
+  border: none;
+  background:
+    radial-gradient(circle 4px at 4px 50%, var(--gob-slider-fill) 3.5px, transparent 4px),
+    radial-gradient(
+      circle 4px at calc(100% - 4px) 50%,
+      var(--background-modifier-border) 3.5px,
+      transparent 4px
+    ),
+    linear-gradient(
+        to right,
+        var(--gob-slider-fill) var(--gob-range-fill, 0%),
+        var(--background-modifier-border) var(--gob-range-fill, 0%)
+      )
+      center / calc(100% - 8px) 8px no-repeat;
+}
+
+/* A 16 px knob centred on the bar, so on the track's middle. It grows from
+   its own centre while held, so it never drifts. Obsidian lifts every knob
+   with `position: relative; top: var(--slider-thumb-y)` (-9 px, sized for
+   its own slider), which put ours 9 px above the bar: `top` is reset. */
+.goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
+  top: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: calc((var(--gob-slider-height) - 16px) / 2);
+  border: none;
   border-radius: 50%;
-  background: var(--background-primary);
-  box-shadow: var(--gob-shadow-raised);
+  background: var(--gob-slider-knob);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
   -webkit-appearance: none;
   appearance: none;
+}
+
+.goodobsidian-popover input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
+  /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
+  top: 0;
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
+    transition: none;
+  }
+}
+
+/* The size previews under the width and eraser sliders: a strip of ruled
+   paper (white whatever the theme, as the pages are) with a sample stroke or
+   the eraser's footprint on it, at its real size on screen. */
+.goodobsidian-size-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  margin: 0 0 8px;
+  overflow: hidden;
+  border-radius: var(--gob-radius-m);
+  background-color: #fdfdfb;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 15px,
+    rgba(110, 110, 150, 0.2) 15px,
+    rgba(110, 110, 150, 0.2) 16px
+  );
+}
+
+/* White ink on dark paper, or it could not be seen. */
+.goodobsidian-size-preview.is-light-ink {
+  background-color: #2b2939;
+}
+
+.goodobsidian-size-preview-stroke {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The highlighter multiplies onto the paper, as on the page (its translucency
+   comes with its shape, `sampleStroke`). */
+.goodobsidian-size-preview.is-highlighter .goodobsidian-size-preview-stroke {
+  mix-blend-mode: multiply;
+}
+
+.goodobsidian-size-preview-eraser {
+  flex: none;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 /* ------------------------------------------------ add page + templates */
@@ -2271,6 +2376,94 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   height: 48px;
   font-size: max(18px, var(--font-ui-large));
   font-weight: var(--font-semibold, 600);
+}
+
+/* "Import from another app…": a quiet accent link under the title, with a
+   full touch target. Its own selector outranks Obsidian's
+   `.clickable-icon` padding and hover fill. */
+.goodobsidian-newnb button.goodobsidian-newnb-import.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  width: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 4px;
+  margin-top: -4px;
+  border-radius: var(--gob-radius-s, 6px);
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent-hover);
+}
+
+/* A dialog's call-to-action that also carries `clickable-icon` (to escape
+   the iPad's 20 px button padding) would take that class's faint icon
+   colour, which on the accent fill is unreadable. */
+.goodobsidian-dialog button.mod-cta.clickable-icon {
+  padding: 0 var(--size-4-3);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-dialog button.mod-cta.clickable-icon:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* Import notebook: "How do I export my notebooks?", a row like the
+   settings above it, opened by a chevron instead of the browser's triangle. */
+.goodobsidian-import-help {
+  border-top: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-2) 0;
+}
+
+.goodobsidian-import-help > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  min-height: var(--gob-touch-compact);
+  list-style: none;
+  cursor: var(--cursor);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-import-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.goodobsidian-import-help > summary:hover {
+  color: var(--text-normal);
+}
+
+.goodobsidian-import-help-chevron {
+  display: inline-flex;
+  --icon-size: 16px;
+  transition: transform 120ms ease;
+}
+
+.goodobsidian-import-help[open] .goodobsidian-import-help-chevron {
+  transform: rotate(90deg);
+}
+
+.goodobsidian-import-help ul {
+  margin: var(--size-4-1) 0 var(--size-4-2);
+  padding-inline-start: calc(16px + var(--size-4-1) + 1em);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+}
+
+.goodobsidian-newnb-import-icon {
+  display: inline-flex;
+  --icon-size: 16px;
 }
 
 .goodobsidian-newnb select.dropdown {
@@ -3838,18 +4031,18 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   text-overflow: ellipsis;
 }
 
-/* Obsidian's thin slider in a fingertip-tall target: the padding takes the
-   taps, and the track (the input's own background) is painted in the content
-   box only. The type selector is needed to outrank Obsidian's
-   `input[type='range']`, which otherwise sets the height to the track's 6 px. */
+/* FineNotes' own slider (see the width slider's section for the bar and the
+   knob) in a fingertip-tall target. The type selector is needed to outrank
+   Obsidian's `input[type='range']`, which otherwise sets the height to the
+   track's 6 px. */
 input[type="range"].goodobsidian-player-scrubber {
-  box-sizing: content-box;
   width: 100%;
-  height: var(--slider-track-height, 6px);
+  height: var(--gob-touch-compact);
   margin: 0;
-  padding: calc((var(--gob-touch-compact) - var(--slider-track-height, 6px)) / 2) 0;
-  background-clip: content-box;
-  accent-color: var(--interactive-accent);
+  padding: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
   touch-action: auto;
 }
 

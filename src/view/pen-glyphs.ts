@@ -75,13 +75,19 @@ export function glyphThickness(size: number): number {
   return Math.max(1.5, Math.min(MAX_THICKNESS, Number.isFinite(size) ? size : 1.5));
 }
 
-/** The swoosh's centre line: a cubic from lower left to upper right. */
-const P0 = [4, 19];
-const P1 = [11, 19];
-const P2 = [18, 8];
-const P3 = [26, 5];
+/** A cubic Bézier: start, two control points, end. */
+type Curve = readonly [readonly number[], readonly number[], readonly number[], readonly number[]];
 
-function at(t: number): { x: number; y: number; dx: number; dy: number } {
+/** The swoosh's centre line: a cubic from lower left to upper right. */
+const SWOOSH_CURVE: Curve = [
+  [4, 19],
+  [11, 19],
+  [18, 8],
+  [26, 5],
+];
+
+function at(curve: Curve, t: number): { x: number; y: number; dx: number; dy: number } {
+  const [P0, P1, P2, P3] = curve;
   const u = 1 - t;
   const x = u * u * u * P0[0] + 3 * u * u * t * P1[0] + 3 * u * t * t * P2[0] + t * t * t * P3[0];
   const y = u * u * u * P0[1] + 3 * u * u * t * P1[1] + 3 * u * t * t * P2[1] + t * t * t * P3[1];
@@ -92,17 +98,21 @@ function at(t: number): { x: number; y: number; dx: number; dy: number } {
   return { x, y, dx, dy };
 }
 
-const CENTRE = `M${P0.join(" ")}C${P1.join(" ")} ${P2.join(" ")} ${P3.join(" ")}`;
-
 const n = (value: number): string => String(Math.round(value * 100) / 100);
 
-/** A filled outline around the centre line, `half(t)` wide on each side. */
-function outline(half: (t: number) => number): string {
+/** A curve as an SVG path. */
+function centre(curve: Curve): string {
+  const [P0, P1, P2, P3] = curve.map((p) => `${n(p[0])} ${n(p[1])}`);
+  return `M${P0}C${P1} ${P2} ${P3}`;
+}
+
+/** A filled outline around `curve`, `half(t)` wide on each side. */
+function outline(curve: Curve, half: (t: number) => number): string {
   const left: string[] = [];
   const right: string[] = [];
   for (let i = 0; i <= SAMPLES; i++) {
     const t = i / SAMPLES;
-    const p = at(t);
+    const p = at(curve, t);
     const length = Math.hypot(p.dx, p.dy) || 1;
     const nx = -p.dy / length;
     const ny = p.dx / length;
@@ -113,29 +123,74 @@ function outline(half: (t: number) => number): string {
   return `M${left.join("L")}L${right.reverse().join("L")}Z`;
 }
 
+/**
+ * Each pen's thickness along a stroke, as a share of its full width at `t`
+ * from 0 (pen down) to 1 (pen up). Null: one even width (the ballpoint and
+ * the highlighter).
+ */
+function profile(pen: string): ((t: number) => number) | null {
+  switch (pen) {
+    case "ball":
+    case "highlighter":
+      return null;
+    case "brush":
+      // Pressed down at the start, lifting off to a point.
+      return (t) => (t < 0.12 ? 0.6 + (0.4 * t) / 0.12 : 1 - (0.9 * (t - 0.12)) / 0.88);
+    default:
+      // A fountain pen's swell: fine at both ends, full in the middle.
+      return (t) => 0.2 + 0.8 * Math.sin(Math.PI * t);
+  }
+}
+
+/** A stroke along `curve` in `pen`'s character, `thick` at its fullest. */
+function penStroke(pen: string, curve: Curve, thick: number, highlighterOpacity: number): Swoosh {
+  // The highlighter: a flat, translucent band.
+  if (pen === "highlighter") {
+    return { d: centre(curve), strokeWidth: thick, cap: "butt", opacity: highlighterOpacity };
+  }
+  const shape = profile(pen);
+  if (!shape) return { d: centre(curve), strokeWidth: thick, cap: "round" };
+  return { d: outline(curve, (t) => (thick / 2) * shape(t)) };
+}
+
 /** The width button for `size` (page px) with pen `pen`. */
 export function swoosh(pen: string, size: number): Swoosh {
   const thick = glyphThickness(size);
-  switch (pen) {
-    case "ball":
-      return { d: CENTRE, strokeWidth: thick, cap: "round" };
-    case "highlighter":
-      // A flat, translucent band, a little heavier: it is drawn wide.
-      return {
-        d: CENTRE,
-        strokeWidth: Math.min(MAX_THICKNESS + 2, thick + 2),
-        cap: "butt",
-        opacity: 0.55,
-      };
-    case "brush":
-      // Pressed down at the start, lifting off to a point.
-      return {
-        d: outline(
-          (t) => (thick / 2) * (t < 0.12 ? 0.6 + (0.4 * t) / 0.12 : 1 - (0.9 * (t - 0.12)) / 0.88),
-        ),
-      };
-    default:
-      // A fountain pen's swell: fine at both ends, full in the middle.
-      return { d: outline((t) => (thick / 2) * (0.2 + 0.8 * Math.sin(Math.PI * t))) };
+  // The highlighter's band is a little heavier there: it is drawn wide.
+  if (pen === "highlighter") {
+    return penStroke(pen, SWOOSH_CURVE, Math.min(MAX_THICKNESS + 2, thick + 2), 0.55);
   }
+  return penStroke(pen, SWOOSH_CURVE, thick, 0.55);
+}
+
+/** How opaque the size preview draws the highlighter: the page's default. */
+export const PREVIEW_HIGHLIGHTER_OPACITY = 0.4;
+
+/**
+ * The size preview's sample stroke: a wave across a `width` × `height` box
+ * (screen px) in `pen`'s character, `thickness` screen px at its fullest,
+ * the width it lays down on the page now. It stays inside the box while it
+ * fits; a stroke thicker than the box is cut by it, which still reads as thick.
+ */
+export function sampleStroke(
+  pen: string,
+  thickness: number,
+  width: number,
+  height: number,
+): Swoosh {
+  const thick = Number.isFinite(thickness) && thickness > 0 ? thickness : 1;
+  // Room for the caps at either end, and for the stroke above and below.
+  const padX = Math.min(width / 4, thick / 2 + 10);
+  const padY = Math.min(height / 2 - 1, thick / 2 + 3);
+  const left = padX;
+  const span = width - 2 * padX;
+  const top = padY;
+  const rise = height - 2 * padY;
+  const curve: Curve = [
+    [left, top + rise * 0.75],
+    [left + span * 0.35, top - rise * 0.35],
+    [left + span * 0.65, top + rise * 1.35],
+    [left + span, top + rise * 0.25],
+  ];
+  return penStroke(pen, curve, thick, PREVIEW_HIGHLIGHTER_OPACITY);
 }

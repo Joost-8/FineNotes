@@ -16,6 +16,7 @@
 import { type App, FuzzySuggestModal, setIcon } from "obsidian";
 import { describeRecording, formatClock } from "../audio/recording";
 import type { Recording } from "../model/document";
+import { syncRangeFill } from "./range-fill";
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
 function iconInto(el: HTMLElement, icon: string, fallback: string): void {
@@ -305,6 +306,7 @@ export class AudioPlayerBar {
   private setDuration(ms: number): void {
     this.durationMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
     this.scrubber.max = String(this.durationMs / 1000);
+    syncRangeFill(this.scrubber);
   }
 
   private renderPosition(ms: number): void {
@@ -313,6 +315,8 @@ export class AudioPlayerBar {
   }
 
   private renderTime(ms: number): void {
+    // Called after every change of the scrubber's value, dragged or played.
+    syncRangeFill(this.scrubber);
     this.timeEl.setText(`${formatClock(ms)} / ${formatClock(this.durationMs)}`);
   }
 
