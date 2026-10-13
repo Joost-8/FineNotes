@@ -424,9 +424,12 @@ export interface InkSurfaceOptions {
 export interface InkSurfaceCallbacks {
   /**
    * The document changed — ink drawn, erased or moved, a text box edited, a
-   * page cleared, an undo or redo — and is due to be saved.
+   * page cleared, an undo or redo — and is due to be saved. `pages` names
+   * the ids of the only pages it changed, when the change is one of the few
+   * that can say (a stroke, an erase, a selection's edit); without it,
+   * anything may have changed, anywhere.
    */
-  onChange: () => void;
+  onChange: (pages?: readonly string[]) => void;
   /** Something the host may display changed (stroke count, zoom, current page). */
   onStatus?: () => void;
   /**
@@ -1685,20 +1688,24 @@ export class InkSurface {
     this.callbacks.onStatus?.();
   }
 
-  /** The document changed: the host refreshes its status and saves. */
-  private changed(): void {
+  /**
+   * The document changed: the host refreshes its status and saves. `pages`:
+   * the ids of the only pages changed, only where that is certain (the
+   * host's save cache trusts it; see InkSurfaceCallbacks.onChange).
+   */
+  private changed(pages?: readonly string[]): void {
     this.reportStatus();
     // Ink moved or went: the underlines and ribbons follow it.
     this.syncSectionRibbons();
     // A page's template may have changed: its lines, and their markers.
     this.syncSpaceHandles();
-    this.callbacks.onChange();
+    this.callbacks.onChange(pages);
   }
 
   /** After an edit to the ink: put the tiles right at once, then tell the host. */
-  private inkChanged(): void {
+  private inkChanged(pages?: readonly string[]): void {
     this.renderDry();
-    this.changed();
+    this.changed(pages);
   }
 
   // --- What the host can ask for -----------------------------------------------
@@ -4387,7 +4394,7 @@ export class InkSurface {
     this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
     // The wet layer was just cleared: blit the tiles now, or the stroke
     // would be missing for a frame.
-    this.inkChanged();
+    this.inkChanged([page.id]);
     return command;
   }
 
@@ -4503,7 +4510,7 @@ export class InkSurface {
       this.strokeIndex.add(page.id, stroke);
       this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
     }
-    this.inkChanged();
+    this.inkChanged([page.id]);
   }
 
   // --- The eraser -------------------------------------------------------------------
@@ -4712,10 +4719,11 @@ export class InkSurface {
     const touched = steps.map((step) => step.pageId);
     if (touched.every((id): id is string => id !== undefined)) {
       this.strokeIndex.refreshPages(this.doc.pages, touched);
+      this.inkChanged(touched);
     } else {
       this.strokeIndex.rebuild(this.doc.pages);
+      this.inkChanged();
     }
-    this.inkChanged();
   }
 
   /** The cut strokes, each replaced by what is left of it. */
@@ -4790,7 +4798,7 @@ export class InkSurface {
     for (const id of ids) this.strokeIndex.remove(id, page.id);
     if (erased) this.renderer?.invalidateRegion(box.index, erased);
     if (this.debug) this.hud.mark("scribble");
-    this.inkChanged();
+    this.inkChanged([page.id]);
     return true;
   }
 
@@ -5819,7 +5827,7 @@ export class InkSurface {
     this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     this.renderDry();
     this.syncTextBoxes();
-    this.changed();
+    this.changed([sel.pageId]);
     return true;
   }
 
@@ -5918,7 +5926,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.select(page.id, copies);
-    this.changed();
+    this.changed([page.id]);
     return true;
   }
 
@@ -6449,7 +6457,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.select(sel.pageId, copies);
-    this.changed();
+    this.changed([sel.pageId]);
   }
 
   /** Give every selected stroke one colour, as one undo step. */
@@ -6464,7 +6472,7 @@ export class InkSurface {
     if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
     this.renderDry();
     this.syncActionBar();
-    this.changed();
+    this.changed([sel.pageId]);
   }
 
   /**
@@ -6617,7 +6625,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.syncSelectionOverlay();
-    if (moved) this.changed();
+    if (moved) this.changed([pageId]);
   }
 
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */

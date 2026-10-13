@@ -267,19 +267,93 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
   return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
 
-function storeDocument(doc: InkDocument): StoredDocument {
+/**
+ * Everything but the pages, with `pages` left empty. The pages go last, so
+ * the stored JSON is this object's JSON with the pages' own JSON put between
+ * its final `[` and `]}` (see {@link assembleJson}).
+ */
+function storeHead(doc: InkDocument): StoredDocument {
   return {
     version: SCHEMA_VERSION,
     view: doc.view,
     meta: storeMeta(doc),
     recordings: doc.recordings?.length ? doc.recordings : undefined,
-    pages: doc.pages.map(storePage),
+    pages: [],
   };
+}
+
+function storeDocument(doc: InkDocument): StoredDocument {
+  const stored = storeHead(doc);
+  // Set after the other keys, so it keeps its place as the last one.
+  stored.pages = doc.pages.map(storePage);
+  return stored;
 }
 
 /** The document as a `v<n>:<base64>` payload, always at the current schema version. */
 export function encodeDocument(doc: InkDocument): string {
   return `v${SCHEMA_VERSION}:${deflateToBase64(JSON.stringify(storeDocument(doc)))}`;
+}
+
+/** What closes the stored JSON after the last page. */
+const PAGES_CLOSE = "]}";
+
+/** The stored JSON up to and including the `[` that opens the page list. */
+function headJson(doc: InkDocument): string {
+  const json = JSON.stringify(storeHead(doc));
+  // Only true while `pages` is the last key; a key added after it would
+  // break every snapshot, and the tests that compare them with the plain
+  // encoder say so.
+  if (!json.endsWith(`[${PAGES_CLOSE}`)) throw new Error("`pages` is not the last stored key");
+  return json.slice(0, -PAGES_CLOSE.length);
+}
+
+/** One page as it is written, and a number naming that exact text. */
+export interface PageFragment {
+  readonly json: string;
+  /**
+   * Equal slots, equal text; new text, a new slot. A worker that keeps the
+   * pages' bytes by slot (fragment-store.ts) is sent only the slots it lacks.
+   */
+  readonly slot: number;
+}
+
+/**
+ * A document as it is written, at one moment: the stored JSON is `head`,
+ * then the pages' JSON joined by commas, then `]}`.
+ */
+export interface DocumentSnapshot {
+  readonly head: string;
+  readonly pages: readonly PageFragment[];
+}
+
+/** The stored JSON of a snapshot: exactly what `JSON.stringify` makes of the whole document. */
+export function assembleJson(snapshot: DocumentSnapshot): string {
+  return snapshot.head + snapshot.pages.map((page) => page.json).join(",") + PAGES_CLOSE;
+}
+
+/** A page's fragment, and the cache generation it was made in. */
+interface CachedFragment extends PageFragment {
+  readonly generation: number;
+}
+
+/** A fragment's generation once its page has been touched. */
+const STALE = -1;
+
+/**
+ * A payload and the JSON it holds: as read (one string), or as last
+ * written (the snapshot's parts, which are the cached fragments' own
+ * strings, so comparing them is mostly comparing references).
+ */
+type Known =
+  | { readonly payload: string; readonly json: string }
+  | { readonly payload: string; readonly head: string; readonly pages: readonly string[] };
+
+/** Runs a step-wise computation to its end, without stopping. */
+export function runSteps<T>(steps: Generator<unknown, T>): T {
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
 }
 
 /**
@@ -288,20 +362,167 @@ export function encodeDocument(doc: InkDocument): string {
  * read or last encoded gets the very same payload back, so a note opened and
  * closed untouched is not rewritten (the payload on disk was likely made at
  * another level), and sync sees no change.
+ *
+ * It also keeps each page's JSON, so a save in the background serialises
+ * only the pages that changed (background-save.ts). Whoever changes a page
+ * says so: {@link touch} for pages it can name, {@link touchAll} for
+ * anything else. Nothing here can see a change made in place, so a change
+ * not reported is a page saved as it was: when in doubt, touch everything.
+ * {@link encode}, the synchronous save, trusts none of it and serialises
+ * every page afresh, as it always did.
  */
 export class DocumentEncoder {
-  /** The JSON the payload last read or written holds, and that payload. */
-  private known: { json: string; payload: string } | null = null;
+  private known: Known | null = null;
   /** Whether the last encode handed back the known payload. */
   reused = false;
+  private fragments = new WeakMap<Page, CachedFragment>();
+  /** Fragments made in an older generation are stale: {@link touchAll} starts a new one. */
+  private generation = 0;
+  private nextSlot = 1;
+  private touches = 0;
+  /**
+   * Pages {@link encode} found changed although nothing had touched them: a
+   * change the cache missed. Should stay 0; the view reports it.
+   */
+  missed = 0;
 
-  /** The document as a `v<n>:<base64>` payload. */
+  /** How many touches so far: a saver compares it to see whether anything changed since its snapshot. */
+  get edits(): number {
+    return this.touches;
+  }
+
+  /** These pages changed. */
+  touch(pages: Iterable<Page>): void {
+    this.touches++;
+    for (const page of pages) {
+      const cached = this.fragments.get(page);
+      if (cached)
+        this.fragments.set(page, { json: cached.json, slot: cached.slot, generation: STALE });
+    }
+  }
+
+  /**
+   * The pages of `doc` with these ids changed. Every page with such an id
+   * counts, since an id can repeat in a file and a command acts on the
+   * first page that has it.
+   */
+  touchIds(doc: InkDocument, ids: Iterable<string>): void {
+    const wanted = new Set(ids);
+    this.touch(doc.pages.filter((page) => wanted.has(page.id)));
+  }
+
+  /** Something changed, or may have, anywhere: every page is serialised again at the next save. */
+  touchAll(): void {
+    this.touches++;
+    this.generation++;
+  }
+
+  /** The page's fragment, if nothing has touched the page since it was made. */
+  private current(page: Page): CachedFragment | undefined {
+    const cached = this.fragments.get(page);
+    return cached && cached.generation === this.generation ? cached : undefined;
+  }
+
+  /** Serialise the page now. Unchanged text keeps its string and its slot. */
+  private refresh(page: Page, audit = false): CachedFragment {
+    const json = JSON.stringify(storePage(page));
+    const old = this.fragments.get(page);
+    let fragment: CachedFragment;
+    if (old && old.json === json) {
+      fragment = { json: old.json, slot: old.slot, generation: this.generation };
+    } else {
+      if (audit && old && old.generation === this.generation) this.missed++;
+      fragment = { json, slot: this.nextSlot++, generation: this.generation };
+    }
+    this.fragments.set(page, fragment);
+    return fragment;
+  }
+
+  /** The document as written now; pages touched since they were serialised are serialised here. */
+  snapshot(doc: InkDocument): DocumentSnapshot {
+    return {
+      head: headJson(doc),
+      pages: doc.pages.map((page) => this.current(page) ?? this.refresh(page)),
+    };
+  }
+
+  /**
+   * {@link snapshot}, a page at a time: each step serialises one page that
+   * changed and yields its fragment; the result is the snapshot. Edits may
+   * land between steps: the pages they touch are serialised again, and the
+   * snapshot is taken in the same step as the last pass that found nothing
+   * to do, so it is the whole document at one moment.
+   */
+  *snapshotSteps(doc: InkDocument): Generator<PageFragment, DocumentSnapshot> {
+    for (;;) {
+      let refreshed = false;
+      for (const page of doc.pages) {
+        if (this.current(page)) continue;
+        refreshed = true;
+        yield this.refresh(page);
+      }
+      if (!refreshed) return this.snapshot(doc);
+    }
+  }
+
+  /**
+   * Whether `snapshot` is exactly the JSON of the known payload, a page per
+   * step. A payload read from disk is one string, compared piece by piece
+   * rather than by building the snapshot's whole JSON.
+   */
+  *matchesKnown(snapshot: DocumentSnapshot): Generator<void, boolean> {
+    const known = this.known;
+    if (!known) return false;
+    const { head, pages } = snapshot;
+    if ("pages" in known) {
+      if (known.head !== head || known.pages.length !== pages.length) return false;
+      for (let i = 0; i < pages.length; i++) {
+        if (known.pages[i] !== pages[i].json) return false;
+        yield;
+      }
+      return true;
+    }
+    const { json } = known;
+    let length = head.length + Math.max(0, pages.length - 1) + PAGES_CLOSE.length;
+    for (const page of pages) length += page.json.length;
+    if (length !== json.length || !json.startsWith(head)) return false;
+    let at = head.length;
+    for (let i = 0; i < pages.length; i++) {
+      if (i > 0 && json[at++] !== ",") return false;
+      if (!json.startsWith(pages[i].json, at)) return false;
+      at += pages[i].json.length;
+      yield;
+    }
+    return json.startsWith(PAGES_CLOSE, at);
+  }
+
+  /** The payload known to hold exactly the JSON last matched, if any. */
+  get knownPayload(): string | null {
+    return this.known?.payload ?? null;
+  }
+
+  /** `payload` holds exactly `snapshot`: the next save of the same JSON reuses it. */
+  accept(snapshot: DocumentSnapshot, payload: string): void {
+    this.known = { payload, head: snapshot.head, pages: snapshot.pages.map((page) => page.json) };
+  }
+
+  /**
+   * The document as a `v<n>:<base64>` payload, made here and now: every
+   * page serialised afresh (whatever the cache holds), then compressed on
+   * this thread unless the known payload already holds that JSON.
+   */
   encode(doc: InkDocument): string {
-    const json = JSON.stringify(storeDocument(doc));
-    this.reused = this.known !== null && this.known.json === json;
-    if (this.known && this.reused) return this.known.payload;
-    const payload = `v${SCHEMA_VERSION}:${deflateToBase64(json, SAVE_LEVEL)}`;
-    this.known = { json, payload };
+    const snapshot: DocumentSnapshot = {
+      head: headJson(doc),
+      pages: doc.pages.map((page) => this.refresh(page, true)),
+    };
+    const known = this.known;
+    this.reused = runSteps(this.matchesKnown(snapshot));
+    const payload =
+      this.reused && known
+        ? known.payload
+        : `v${SCHEMA_VERSION}:${deflateToBase64(assembleJson(snapshot), SAVE_LEVEL)}`;
+    this.accept(snapshot, payload);
     return payload;
   }
 
@@ -311,9 +532,9 @@ export class DocumentEncoder {
    * is reused for as long as the document would be written as exactly that
    * JSON — so a note an older version wrote, or one the loader repaired, is
    * written afresh at the first save. Nothing is encoded here: comparing at
-   * the first save, which stringifies the document anyway, gives the same
-   * answer, and opening a large notebook no longer unpacks and stringifies
-   * it a second time.
+   * the first save, which serialises the document anyway, gives the same
+   * answer, and opening a large notebook does not unpack and serialise it a
+   * second time.
    */
   remember(payload: string, json?: string): void {
     this.known = null;
@@ -869,8 +1090,12 @@ export function parseInkFile(markdown: string, fallbackWidth = DEFAULT_PAPER_WID
  * renamed, trailing whitespace trimmed), a blank line, then the data block.
  */
 export function buildInkFile(body: string, doc: InkDocument, encoder?: DocumentEncoder): string {
+  return inkFileText(body, encoder ? encoder.encode(doc) : encodeDocument(doc));
+}
+
+/** {@link buildInkFile} around a payload already made (in the background, by a worker). */
+export function inkFileText(body: string, payload: string): string {
   const text = migrateFrontmatter(body).trimEnd();
-  const payload = encoder ? encoder.encode(doc) : encodeDocument(doc);
   const block = `%%${BLOCK_LABEL}\n${payload}\n%%\n`;
   return text.length > 0 ? `${text}\n\n${block}` : block;
 }

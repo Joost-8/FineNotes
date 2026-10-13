@@ -43,6 +43,7 @@ import {
   emptyDocument,
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
+import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
 import { MANUAL_PROVIDER_ID } from "../recognition/manual";
 import { readTextSection, writeTextSection } from "../recognition/text-layer";
@@ -260,8 +261,21 @@ export class InkView extends TextFileView {
   private backdrops: VaultBackdropRenderer | null = null;
   /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
   private thumbBackdrops: VaultBackdropRenderer | null = null;
-  /** Compresses saves quickly, and hands back what was read while nothing changed. */
+  /**
+   * Compresses saves quickly, hands back what was read while nothing
+   * changed, and keeps each page's JSON for the background save. Every
+   * change to a page must reach it: {@link requestSaveOf} names the pages,
+   * and `requestSave` (wrapped in the constructor) counts as all of them.
+   */
   private readonly encoder = new DocumentEncoder();
+  /** Saves with the main thread kept free (background-save.ts). */
+  private readonly saver: BackgroundSaver;
+  /** Obsidian's own `requestSave`, which says nothing about what changed. */
+  private readonly saveRequest: () => void;
+  /** What `getViewData` answers while a background save writes; null otherwise. */
+  private preparedContents: string | null = null;
+  /** The save cache was found to have missed a change (reported once). */
+  private missedReported = false;
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
   private quietTimer = 0;
@@ -296,6 +310,28 @@ export class InkView extends TextFileView {
     private readonly plugin: GoodObsidianPlugin,
   ) {
     super(leaf);
+    // Any save asked for without naming pages may follow a change anywhere:
+    // every page is serialised again (the save cache's conservative default).
+    this.saveRequest = this.requestSave.bind(this);
+    this.requestSave = () => {
+      this.encoder.touchAll();
+      this.saveRequest();
+    };
+    this.saver = new BackgroundSaver(
+      this.encoder,
+      {
+        target: () => (this.file && !this.guard.locked ? { doc: this.doc, file: this.file } : null),
+        body: () => this.syncedBody(),
+        write: (contents, behind) => this.writePrepared(contents, behind),
+        writeNow: () => super.save(),
+        penBusy: () => this.writeHold.writing(performance.now()),
+      },
+      // Loaded when first needed, as the recogniser's client is.
+      async () =>
+        typeof Worker === "undefined"
+          ? null
+          : (await import("./save-worker-client")).startSaveWorker(),
+    );
     this.showHud = plugin.settings.debugHud;
     this.doc = this.blankNotebook();
     this.toolState = toolStateFrom(plugin.settings);
@@ -327,10 +363,55 @@ export class InkView extends TextFileView {
 
   /** What Obsidian writes to the file: the note rebuilt, unless its load was held. */
   getViewData(): string {
+    if (this.preparedContents !== null) return this.preparedContents;
+    const body = this.syncedBody();
+    const missed = this.encoder.missed;
+    const text = this.guard.contents(() => buildInkFile(body, this.doc, this.encoder));
+    if (this.encoder.missed > missed && !this.missedReported) {
+      this.missedReported = true;
+      console.warn("FineNotes: a page changed without telling the save cache; saved in full.");
+    }
+    return text;
+  }
+
+  /** The note's body, its links list brought up to date. */
+  private syncedBody(): string {
     // The text block's links list follows the notebook's handwritten links,
     // so backlinks and the graph see them (FineNotes#20).
     this.noteBody = syncLinkIndex(this.noteBody, linkTargets(this.doc));
-    return this.guard.contents(() => buildInkFile(this.noteBody, this.doc, this.encoder));
+    return this.noteBody;
+  }
+
+  /**
+   * These pages changed (ids), or anything did when none are named: save,
+   * and serialise only those pages again.
+   */
+  private requestSaveOf(pageIds?: readonly string[]): void {
+    if (pageIds) this.encoder.touchIds(this.doc, pageIds);
+    else this.encoder.touchAll();
+    this.saveRequest();
+  }
+
+  /** Only the note's text around the ink changed: save it, with every page as cached. */
+  private requestBodySave(): void {
+    this.saveRequest();
+  }
+
+  /**
+   * A background save's result: Obsidian's save writes it, `getViewData`
+   * answering with it (Obsidian asks before its first `await`). `behind`:
+   * the notebook changed since, so it is marked unsaved again.
+   */
+  private writePrepared(contents: string, behind: boolean): Promise<void> {
+    this.preparedContents = contents;
+    let saving: Promise<void>;
+    try {
+      saving = super.save();
+    } finally {
+      this.preparedContents = null;
+    }
+    if (behind) this.saveRequest();
+    return saving;
   }
 
   /** Obsidian read the file (on open, or because it changed on disk). */
@@ -366,7 +447,10 @@ export class InkView extends TextFileView {
     if (this.guard.locked) return 0;
     const log = this.plugin.fileMoves.log();
     if (log.length === 0) return 0;
-    return relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+    const relinked = relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+    // Paths rewritten in place, on any page: nothing else can tell the save cache.
+    if (relinked > 0) this.encoder.touchAll();
+    return relinked;
   }
 
   /**
@@ -399,6 +483,8 @@ export class InkView extends TextFileView {
     this.recordLastPage();
     this.restoredPath = null;
     this.loadedPath = null;
+    // The worker holds this notebook's pages: let it go with them.
+    this.saver.stop();
     this.noteBody = "";
     this.doc = this.blankNotebook();
     if (!this.mounted) return;
@@ -421,15 +507,19 @@ export class InkView extends TextFileView {
    * running recording so it joins *this* note, and save that.
    */
   override async onUnloadFile(file: TFile): Promise<void> {
-    if (await this.audio?.finishForUnload()) await this.saveNow();
+    if (await this.audio?.finishForUnload()) {
+      this.encoder.touchAll();
+      await this.saveNow(false, true);
+    }
     await super.onUnloadFile(file);
   }
 
   /**
-   * Obsidian's save, put off while the pen is writing: it rebuilds the whole
-   * note on the main thread, and a stall mid-stroke is ink lost on iPadOS
-   * before 18.2 (write-hold.ts). `clear` (the note is closing; Obsidian
-   * then clears the view) never waits. A save put off is made once the pen
+   * Obsidian's save, put off while the pen is writing, and then made in the
+   * background (background-save.ts): a stall mid-stroke is ink lost on
+   * iPadOS before 18.2 (write-hold.ts). `clear` (the note is closing;
+   * Obsidian then clears the view) never waits, and is made on the main
+   * thread at once, as it always was. A save put off is made once the pen
    * has been up a moment.
    */
   override async save(clear?: boolean): Promise<void> {
@@ -437,10 +527,20 @@ export class InkView extends TextFileView {
     await this.saveNow(clear);
   }
 
-  /** Save at once, whatever the pen is doing. */
-  private async saveNow(clear?: boolean): Promise<void> {
+  /**
+   * Save at once, whatever the pen is doing: in the background, unless the
+   * note is closing (`clear`) or `now` says it must be on disk before this
+   * returns. A save made now drops any background save still running, whose
+   * result would be older.
+   */
+  private async saveNow(clear?: boolean, now = false): Promise<void> {
     this.writeHold.saved();
-    await super.save(clear);
+    if (clear || now) {
+      this.saver.supersede();
+      await super.save(clear);
+      return;
+    }
+    await this.saver.save();
   }
 
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
@@ -478,6 +578,7 @@ export class InkView extends TextFileView {
     this.deviceTimer = 0;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    this.saver.stop();
     this.surface?.destroy();
     this.surface = null;
     this.toolbar?.destroy();
@@ -726,7 +827,7 @@ export class InkView extends TextFileView {
     const section = updatePageTranscripts(readTextSection(this.noteBody), keys, resolved);
     this.noteBody = writeTextSection(this.noteBody, section);
     this.textPanel?.load(this.noteBody);
-    this.requestSave();
+    this.requestBodySave();
   }
 
   /** The page as the reader sees it, sized for a vision model. */
@@ -1222,7 +1323,7 @@ export class InkView extends TextFileView {
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
-        onChange: () => {
+        onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
           // Undoing or redoing "Convert to notebook" flips `single`.
           this.syncSingle();
@@ -1230,7 +1331,7 @@ export class InkView extends TextFileView {
           this.audio?.syncChrome();
           this.scheduleAutoTranscription();
           this.scheduleDeviceReading();
-          this.requestSave();
+          this.requestSaveOf(pages);
           this.relinkMovedFiles();
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
@@ -1287,9 +1388,10 @@ export class InkView extends TextFileView {
       if (!hidden) return;
       this.audio?.onHidden();
       // iPadOS may end the app from the background: keep the page now, and
-      // a save the pen put off.
+      // a save the pen put off or one still in the background, made here
+      // on the main thread, as it may not get another chance.
       this.recordLastPage();
-      if (this.writeHold.savePending) void this.saveNow();
+      if (this.writeHold.savePending || this.saver.busy) void this.saveNow(false, true);
     });
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => this.lastPageFileMoved(oldPath, file.path)),
@@ -1349,7 +1451,7 @@ export class InkView extends TextFileView {
     panel.setOpen(this.textPanelOpen);
     this.registerDomEvent(panel.field, "input", () => {
       this.noteBody = panel.edited();
-      this.requestSave();
+      this.requestBodySave();
     });
     this.textPanel = panel;
 

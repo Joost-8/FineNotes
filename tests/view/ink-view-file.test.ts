@@ -465,7 +465,8 @@ describe("saving while the pen writes", () => {
     await view.save();
     clock = 25_000;
     set(false);
-    await Promise.resolve();
+    // The save starts at the lift; it reaches Obsidian a few promise steps on.
+    await vi.advanceTimersByTimeAsync(0);
     expect(saves).toBe(1);
   });
 

@@ -45,7 +45,15 @@ export const SAVE_LEVEL = 1;
 
 /** Text to base64 of its DEFLATEd UTF-8, at fflate's default level unless `level` says. */
 export function deflateToBase64(text: string, level?: 1): string {
-  const packed = deflateSync(strToU8(text), level === undefined ? undefined : { level });
+  return deflateBytesToBase64(strToU8(text), level);
+}
+
+/**
+ * {@link deflateToBase64} of text already encoded as UTF-8: the same bytes
+ * give the same base64, here or in a worker (fragment-store.ts).
+ */
+export function deflateBytesToBase64(utf8: Uint8Array, level?: 1): string {
+  const packed = deflateSync(utf8, level === undefined ? undefined : { level });
   // `btoa` wants one character per byte; fflate's latin1 mode builds that
   // string in slices, so a large note never overflows the argument limit.
   return btoa(strFromU8(packed, true));
