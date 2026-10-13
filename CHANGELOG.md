@@ -33,6 +33,15 @@ extracted from the matching section of this file by `release.yml`.
   or text from another app where your finger was. On the iPad, the system
   may ask you to tap its own "Paste" first. On a computer, right-click the
   page.
+- **Import notebooks from Goodnotes and Notability (beta).** "Import from
+  another app…" in the New notebook dialog, or "Import notebook (beta)…" in
+  a folder's menu, turns a `.goodnotes` or `.note` export, or a backup
+  `.zip` of them, into FineNotes notebooks: pages, PDFs, ink, text and
+  pictures. You can pick several files at once. The files you import from
+  are not changed; check the notebook afterwards, since neither app
+  publishes its format.
+- **New sliders** for the pen width and the eraser size, with a preview of
+  the size.
 
 ### Changed
 
