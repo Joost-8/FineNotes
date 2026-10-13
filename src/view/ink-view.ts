@@ -54,6 +54,7 @@ import {
   pageKeys,
   transcriptHashes,
   transcriptSources,
+  renamedLinkTargets,
   syncLinkIndex,
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
@@ -116,7 +117,13 @@ import {
   pageFromTemplate,
 } from "../model/page-commands";
 import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
-import { externalUrl, isExternalTarget, linkStrokes, linkTargets } from "../model/links";
+import {
+  externalUrl,
+  isExternalTarget,
+  linkStrokes,
+  linkTargets,
+  renameLinkTargets,
+} from "../model/links";
 import { LinkSuggestModal } from "./link-modal";
 import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
@@ -345,8 +352,9 @@ export class InkView extends TextFileView {
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
     if (doc && payload !== undefined && !held) this.encoder.remember(doc, payload);
-    // Files it points at that moved while it was closed (#14).
-    if (doc && !held && this.relinkDoc() > 0) this.requestSave();
+    // Files it points at that moved while it was closed (#14), and notes
+    // its links lead to that Obsidian renamed in the links list.
+    if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -367,6 +375,17 @@ export class InkView extends TextFileView {
     const log = this.plugin.fileMoves.log();
     if (log.length === 0) return 0;
     return relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+  }
+
+  /**
+   * Take the targets Obsidian rewrote in the note's links list (a note or
+   * heading renamed, with its links updated) into the notebook itself, so a
+   * tap still opens them and the next save keeps them; how many changed.
+   */
+  private adoptRenamedLinks(body: string): number {
+    if (this.guard.locked) return 0;
+    const renames = renamedLinkTargets(readTextSection(body), linkTargets(this.doc));
+    return renameLinkTargets(this.doc, renames);
   }
 
   /**

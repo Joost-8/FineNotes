@@ -10,7 +10,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument, InkLink, Page } from "./document";
-import { textLinkTargets } from "./text-links";
+import { isExternalTarget, renameTextLinks, textLinkTargets } from "./text-links";
 
 /** Longest target kept, in UTF-16 units. */
 export const MAX_LINK_TARGET_LENGTH = 2000;
@@ -29,10 +29,7 @@ export function normalizeLinkTarget(raw: unknown): string | undefined {
   return target;
 }
 
-/** Whether a target is a web address (or another scheme) rather than a note in the vault. */
-export function isExternalTarget(target: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/i.test(target) || /^www\./i.test(target);
-}
+export { isExternalTarget };
 
 /** A target to open: a bare `www.` address gets its `https://`. */
 export function externalUrl(target: string): string {
@@ -149,6 +146,33 @@ export function linkTargets(doc: InkDocument): string[] {
     }
   }
   return out;
+}
+
+/**
+ * Point every link to a note that `renames` names somewhere new, in place:
+ * ink links (erased ones too, so an undo brings back a working link) and
+ * links typed in text boxes. The number of links and boxes changed. In
+ * place for the same reason as `relinkDocument`: the undo history holds
+ * these objects.
+ */
+export function renameLinkTargets(doc: InkDocument, renames: ReadonlyMap<string, string>): number {
+  if (renames.size === 0) return 0;
+  let changed = 0;
+  for (const page of doc.pages) {
+    for (const link of page.links ?? []) {
+      const to = renames.get(link.target);
+      if (to === undefined || to === link.target) continue;
+      link.target = to;
+      changed++;
+    }
+    for (const box of page.textBoxes) {
+      const text = renameTextLinks(box.text, (target) => renames.get(target));
+      if (text === box.text) continue;
+      box.text = text;
+      changed++;
+    }
+  }
+  return changed;
 }
 
 /**

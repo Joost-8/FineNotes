@@ -9,6 +9,11 @@
  * PURE: no DOM, no Obsidian.
  */
 
+/** Whether a target is a web address (or another scheme) rather than a note in the vault. */
+export function isExternalTarget(target: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(target) || /^www\./i.test(target);
+}
+
 /** A target as found in the text: one trimmed line, or nothing. */
 function targetOf(raw: string): string | undefined {
   const target = raw.replace(/\s+/g, " ").trim();
@@ -87,4 +92,32 @@ export function textLinkTargets(raw: string): string[] {
   const out: string[] = [];
   for (const s of textSegments(raw)) if (s.target && !out.includes(s.target)) out.push(s.target);
   return out;
+}
+
+/**
+ * A box's text with its note links pointed somewhere else: `rename` gives a
+ * link's new target, or `undefined` to leave it. Only the target changes; a
+ * wikilink keeps its shown text, a markdown link its label. A markdown link
+ * whose new target cannot be written between its parentheses (a space in
+ * the name) becomes a wikilink with the same label. Web addresses and
+ * everything outside a link stay exactly as typed.
+ */
+export function renameTextLinks(
+  raw: string,
+  rename: (target: string) => string | undefined,
+): string {
+  const renamed = (text: string): string | undefined => {
+    const target = targetOf(text);
+    return target === undefined || isExternalTarget(target) ? undefined : rename(target);
+  };
+  return raw.replace(LINK_RE, (whole, wiki?: string, label?: string, href?: string) => {
+    if (wiki !== undefined) {
+      const bar = wiki.indexOf("|");
+      const to = renamed(bar >= 0 ? wiki.slice(0, bar) : wiki);
+      return to === undefined ? whole : `[[${to}${bar >= 0 ? wiki.slice(bar) : ""}]]`;
+    }
+    const to = label !== undefined && href !== undefined ? renamed(href) : undefined;
+    if (to === undefined) return whole;
+    return /^[^()\s]+$/.test(to) ? `[${label}](${to})` : `[[${to}|${label}]]`;
+  });
 }
