@@ -66,6 +66,8 @@ export default defineConfig({
         "src/input/pen-rejoin.ts",
         "src/input/finger-gesture.ts",
         "src/input/multi-finger-tap.ts",
+        "src/input/finger-hold.ts",
+        "src/view/paste-choice.ts",
         "src/recognition/text-layer.ts",
         "src/recognition/device-reading.ts",
         "src/recognition/reading-guard.ts",

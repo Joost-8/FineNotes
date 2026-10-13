@@ -1393,7 +1393,7 @@ export class InkView extends TextFileView {
         // A copied picture also goes to the system clipboard, for other apps;
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),
-        onPasteImage: (file) => void this.pastePictureFile(file),
+        onPasteImage: (file, at) => void this.pastePictureFile(file, at),
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
@@ -2384,10 +2384,14 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * A picture pasted from the system clipboard (Cmd/Ctrl+V): saved as an
-   * attachment and placed like one from Photos. Errors end in a notice.
+   * A picture pasted from the system clipboard (Cmd/Ctrl+V, or the press
+   * menu's Paste, centred on `at`): saved as an attachment and placed like
+   * one from Photos. Errors end in a notice.
    */
-  private async pastePictureFile(file: File): Promise<void> {
+  private async pastePictureFile(
+    file: File,
+    at?: { pageIndex: number; x: number; y: number },
+  ): Promise<void> {
     let bytes: ArrayBuffer;
     try {
       bytes = await file.arrayBuffer();
@@ -2396,7 +2400,8 @@ export class InkView extends TextFileView {
       new Notice(`FineNotes: couldn't paste that picture — ${message}`, 8000);
       return;
     }
-    await this.insertImageBytes(bytes, file.type, file.name || "Pasted image");
+    const options = at ? { pageIndex: at.pageIndex, center: { x: at.x, y: at.y } } : {};
+    await this.insertImageBytes(bytes, file.type, file.name || "Pasted image", options);
   }
 
   /**
@@ -2445,8 +2450,12 @@ export class InkView extends TextFileView {
     );
     const page = doc.pages[index];
     if (!page) return null;
+    // Centred on a point: the "visible area" is a speck around it.
+    const c = options.center;
+    const around = c ? { minX: c.x - 1, minY: c.y - 1, maxX: c.x + 1, maxY: c.y + 1 } : null;
     const box =
-      options.box ?? placeImageBox({ width, height }, page.geometry, surface.visibleRegion(index));
+      options.box ??
+      placeImageBox({ width, height }, page.geometry, around ?? surface.visibleRegion(index));
     const image = newImageElement(doc, path, box);
     surface.applyCommand(new InsertImage(page.id, image));
     if (options.select !== false) surface.selectImage(page.id, image.id);

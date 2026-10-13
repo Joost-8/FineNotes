@@ -3464,6 +3464,12 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   display: none;
 }
 
+/* A finger hold's bar while that finger is still down: a palm may have
+   opened it, so a pen landing on it goes through to the page. */
+.goodobsidian-selection-bar.is-provisional {
+  pointer-events: none;
+}
+
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon {
   display: inline-flex;
   align-items: center;

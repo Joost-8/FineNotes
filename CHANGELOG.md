@@ -28,6 +28,11 @@ extracted from the matching section of this file by `release.yml`.
   notebook there. `![[Physics.notebook]]` shows the first page and opens the
   notebook as any link does. It follows the notebook as you write, and a page
   that does not exist shows as a plain link.
+- **Hold a finger on the page for Paste, Text box and Select all**, with any
+  tool, as in GoodNotes. Paste puts ink you copied with the lasso, a picture
+  or text from another app where your finger was. On the iPad, the system
+  may ask you to tap its own "Paste" first. On a computer, right-click the
+  page.
 
 ### Changed
 
