@@ -363,6 +363,7 @@ export function readGoodnotes(
           page.textBoxes.push(box);
           textN++;
           if (typed?.linked) tally.add("links", pageNumber);
+          if (typed?.mixed) tally.add("mixed", pageNumber);
         }
         const shape = readShape(body, k, `s${strokeN + 1}`);
         if (shape) {
@@ -411,6 +412,12 @@ export function readGoodnotes(
       (n) =>
         `${plural(n, "text box links", "text boxes link")} somewhere; ` +
         "the link is written after its words.",
+    ),
+    tally.line(
+      "mixed",
+      (n) =>
+        `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
+        "a text box here has one, so the first was kept.",
     ),
     tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
   ];
@@ -661,6 +668,8 @@ interface Typed {
   attrs?: Message;
   /** Whether a link was written out. */
   linked: boolean;
+  /** Whether its words are in more than one colour (a box has one: the first run's). */
+  mixed: boolean;
 }
 
 /**
@@ -693,8 +702,13 @@ function readTyped(body: Message, field: number, link: (url: string) => string):
     }
   });
   if (text.trim() === "") return null;
-  const attrs = runs.find((run) => (run.string(1) ?? "").trim() !== "")?.message(2);
-  return { store, text, attrs, linked };
+  const inked = runs.filter((run) => (run.string(1) ?? "").trim() !== "");
+  const attrs = inked[0]?.message(2);
+  // Only runs that state a colour count: one without may simply carry on the last.
+  const colours = new Set(
+    inked.map((run) => rgba(run.message(2)?.message(3))).filter((c) => c !== undefined),
+  );
+  return { store, text, attrs, linked, mixed: colours.size > 1 };
 }
 
 /**

@@ -525,8 +525,10 @@ describe("readGoodnotes: what real notebooks hold", () => {
     // The PDF picture is kept as a picture: `importNotebooks` makes an image of it.
     expect(result.doc.pages[0].images.map((i) => i.path)).toEqual(["Biology - picture 2.pdf"]);
     // The empty boxes have no outline (neither a border nor a drawn shape): nothing to keep.
+    // "Testing " is red and "boxes" black: the box keeps red, and says so.
     expect(result.warnings).toEqual([
       "1 comment came over as a text box with the author's name (page 1).",
+      "1 text box has words in more than one colour; a text box here has one, so the first was kept (page 1).",
     ]);
   });
 

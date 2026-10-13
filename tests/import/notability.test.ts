@@ -395,6 +395,70 @@ describe("readNotability", () => {
     expect(box.fontSize).toBeCloseTo(Math.max(12, 16 * K), 1);
   });
 
+  describe("words in more than one colour", () => {
+    const run = (from: number, length: number, rgba?: string) => ({
+      $class: "NSObject",
+      subRangeRangeKey: `{${from}, ${length}}`,
+      ...(rgba === undefined ? {} : { subRangeColorCrossPlatformKey: rgba }),
+    });
+    const box = (y: number, text: string, runs: unknown[]) => ({
+      $class: "TextBlockMediaObject",
+      documentOrigin: `{100, ${y}}`,
+      unscaledContentSize: "{200, 30}",
+      textStore: {
+        $class: "FormattedString",
+        attributedString: { $class: "NSObject", stringKey: text, subRangesKey: runs },
+      },
+    });
+    const warning = (n: number) =>
+      `${n} text box${n === 1 ? " has" : "es have"} words in more than one colour; ` +
+      "a text box here has one, so the first was kept (page 1).";
+
+    it("in the typed text: a paragraph keeps its first colour, and says so", () => {
+      const result = readNotability(
+        note(
+          session(null, {
+            // "Red" and "blue" in one paragraph; "Plain" on its own, in one colour.
+            attributedString: {
+              $class: "NSObject",
+              stringKey: ["Red blue", "", "Plain", ""].join("\n"),
+              subRangesKey: [run(0, 4, "1,0,0,1"), run(4, 4, "0,0,1,1"), run(8, 8, "1,0,0,1")],
+            },
+          }),
+        ),
+        "x",
+      );
+      expect(result.warnings).toEqual([warning(1)]);
+      expect(result.doc.pages[0].textBoxes.map((b) => [b.text, b.color])).toEqual([
+        ["Red blue", "#ff0000"],
+        ["Plain", "#ff0000"],
+      ]);
+    });
+
+    it("in text boxes: counts only words, and only runs that state a colour", () => {
+      const result = readNotability(
+        note(
+          session(null, {
+            mediaObjects: [
+              box(200, "Two tones", [run(0, 4, "0,0,0,1"), run(4, 5, "0,1,0,1")]),
+              // A run without a colour of its own is not a second colour.
+              box(300, "One tone", [run(0, 4, "0,0,0,1"), run(4, 4)]),
+              // Blanks in another colour do not count.
+              box(400, "Word  ", [run(0, 4, "0,0,0,1"), run(4, 2, "1,0,0,1")]),
+            ],
+          }),
+        ),
+        "x",
+      );
+      expect(result.warnings).toEqual([warning(1)]);
+      expect(result.doc.pages[0].textBoxes.map((b) => b.color)).toEqual([
+        "#000000",
+        "#000000",
+        "#000000",
+      ]);
+    });
+  });
+
   it("places pictures with their rotation and crop, on the page they are on", () => {
     // A PNG header saying 100 × 40 pixels.
     const png = new Uint8Array(24);

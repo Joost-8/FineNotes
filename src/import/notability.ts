@@ -235,13 +235,13 @@ export function readNotability(
     strokes.push({ at: slotAt(placed.top / k), item: placed.stroke });
   }
 
-  for (const block of bodyText(richText, unitWidth)) {
-    texts.push({ at: slotAt(block.y), item: { ...block.box } });
-  }
-
   const tally = new ImportTally();
   // Media objects are counted by the page they land on once the column is laid out.
   const counted: Array<{ key: string; y: number }> = [];
+  for (const block of bodyText(richText, unitWidth)) {
+    texts.push({ at: slotAt(block.y), item: { ...block.box } });
+    if (block.mixed) counted.push({ key: "mixed", y: block.y });
+  }
   const usedAssets = new Set<string>();
   let picN = 0;
   const media = richText && Array.isArray(richText.mediaObjects) ? richText.mediaObjects : [];
@@ -292,8 +292,11 @@ export function readNotability(
       }
       images.push({ at: slotAt(origin[1]), item: image });
     } else if (object.$class === "TextBlockMediaObject") {
-      const box = textBlock(object, origin, size);
-      if (box) texts.push({ at: slotAt(origin[1]), item: box });
+      const block = textBlock(object, origin, size);
+      if (block) {
+        texts.push({ at: slotAt(origin[1]), item: block.box });
+        if (block.mixed) counted.push({ key: "mixed", y: origin[1] });
+      }
     } else if (object.$class === "CanvasMediaObject") {
       // A sticky canvas: its paper as a filled box, its ruling and its ink on top.
       const canvas = stickyCanvas(object, origin, size, unitWidth);
@@ -397,6 +400,12 @@ export function readNotability(
       (n) =>
         `${plural(n, "sticky canvas", "sticky canvases")} came over as a coloured box ` +
         "with its lines and ink.",
+    ),
+    tally.line(
+      "mixed",
+      (n) =>
+        `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
+        "a text box here has one, so the first was kept.",
     ),
     tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
     tally.line(
@@ -694,6 +703,8 @@ function listMarker(other: { [key: string]: PlistValue }): string | undefined {
 function attributed(store: PlistValue | undefined): {
   text: string;
   styleAt: (index: number) => RunStyle;
+  /** Whether the words in `[from, to)` are in more than one colour. */
+  mixedIn: (from: number, to: number) => boolean;
 } {
   const dict = isDict(store) ? store : null;
   const text = typeof dict?.stringKey === "string" ? dict.stringKey : "";
@@ -708,13 +719,25 @@ function attributed(store: PlistValue | undefined): {
     const style: RunStyle = { size, color: rgbaColor(run.subRangeColorCrossPlatformKey), family };
     const marker = listMarker(other);
     if (marker) style.marker = marker;
-    return { from: range[0], to: range[0] + range[1], style };
+    // Whether the run states a colour, rather than falling back to black.
+    const stated = typeof run.subRangeColorCrossPlatformKey === "string";
+    return { from: range[0], to: range[0] + range[1], style, stated };
   });
   const fallback: RunStyle = { size: 12, color: "#000000" };
   return {
     text,
     styleAt: (index) =>
       styled.find((r) => index >= r.from && index < r.to)?.style ?? styled[0]?.style ?? fallback,
+    mixedIn: (from, to) => {
+      const colours = new Set<string>();
+      for (const run of styled) {
+        if (!run.stated) continue;
+        const a = Math.max(from, run.from);
+        const b = Math.min(to, run.to);
+        if (b > a && text.slice(a, b).trim() !== "") colours.add(run.style.color);
+      }
+      return colours.size > 1;
+    },
   };
 }
 
@@ -727,16 +750,17 @@ function attributed(store: PlistValue | undefined): {
 function bodyText(
   richText: { [key: string]: PlistValue } | null,
   unitWidth: number,
-): Array<{ y: number; box: Omit<TextBoxElement, "id"> }> {
-  const { text, styleAt } = attributed(richText?.attributedString);
-  const out: Array<{ y: number; box: Omit<TextBoxElement, "id"> }> = [];
+): Array<{ y: number; box: Omit<TextBoxElement, "id">; mixed: boolean }> {
+  const { text, styleAt, mixedIn } = attributed(richText?.attributedString);
+  const out: Array<{ y: number; box: Omit<TextBoxElement, "id">; mixed: boolean }> = [];
   let y = 0;
   let index = 0;
-  let block: { y: number; lines: string[]; style: RunStyle } | null = null;
+  let block: { y: number; from: number; lines: string[]; style: RunStyle } | null = null;
   const flush = (): void => {
     if (!block) return;
     out.push({
       y: block.y,
+      mixed: mixedIn(block.from, index),
       box: textBox(
         BODY_MARGIN,
         block.y,
@@ -752,7 +776,7 @@ function bodyText(
     const line = style.marker ? `${style.marker}${raw.trim()}` : raw;
     if (line.trim() === "") flush();
     else if (block) block.lines.push(line);
-    else block = { y, lines: [line], style };
+    else block = { y, from: index, lines: [line], style };
     y += style.size * BODY_LINE_HEIGHT;
     index += raw.length + 1;
   }
@@ -765,17 +789,18 @@ function textBlock(
   object: { [key: string]: PlistValue },
   origin: [number, number],
   size: [number, number],
-): Omit<TextBoxElement, "id"> | null {
+): { box: Omit<TextBoxElement, "id">; mixed: boolean } | null {
   const store = isDict(object.textStore) ? object.textStore.attributedString : undefined;
-  const { text, styleAt } = attributed(store);
+  const { text, styleAt, mixedIn } = attributed(store);
   if (text.trim() === "") return null;
-  return textBox(
+  const box = textBox(
     origin[0] + TEXT_BLOCK_INSET.x,
     origin[1] + TEXT_BLOCK_INSET.y,
     size[0] - 2 * TEXT_BLOCK_INSET.x,
     text.replace(/\s+$/, ""),
     styleAt(0),
   );
+  return { box, mixed: mixedIn(0, text.length) };
 }
 
 function textBox(
