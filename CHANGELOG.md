@@ -8,6 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Feedback and community** in the settings: open Discussions for ideas and
+  questions, report a bug, and follow FineNotes on X, Instagram, TikTok and
+  YouTube. The links open in your browser; nothing is sent from the plugin.
+
 ### Changed
 
 - **Tool options come back the way you left them.** Tuck the pen's options
@@ -21,6 +27,8 @@ extracted from the matching section of this file by `release.yml`.
 - **Reading handwriting on the device is marked as a beta**, in Settings,
   in the AI menu and above what it reads: it misreads some words, so check
   the text before relying on it.
+- The "Read handwriting on this device" setting names the model it uses:
+  Grape (handwriting recognizer model).
 
 ### Fixed
 

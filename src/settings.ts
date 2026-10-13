@@ -183,7 +183,19 @@ const IMAGE_VENDOR_LABELS: Record<ImageVendorChoice, string> = {
   openrouter: "OpenRouter",
 };
 
-const ISSUES_URL = "https://github.com/Joost-8/FineNotes/issues";
+const REPO_URL = "https://github.com/Joost-8/FineNotes";
+
+/** Where FineNotes' people are: the repository's Discussions and issues, and its accounts. */
+export const COMMUNITY_LINKS = {
+  discussions: `${REPO_URL}/discussions`,
+  bugReport: `${REPO_URL}/issues/new/choose`,
+  social: [
+    { label: "X", url: "https://x.com/finenotes_" },
+    { label: "Instagram", url: "https://www.instagram.com/finenotesobsidian/" },
+    { label: "TikTok", url: "https://www.tiktok.com/@finenotesobsidian" },
+    { label: "YouTube", url: "https://www.youtube.com/@FineNotesAtObsidian" },
+  ],
+} as const;
 
 // --- Row builders ------------------------------------------------------------
 
@@ -292,6 +304,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.aiGroup(),
       this.advancedGroup(),
       this.supportGroup(),
+      this.communityGroup(),
     ];
   }
 
@@ -443,10 +456,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       toggle(
         "handwritingOnDevice",
         "Read handwriting on this device (beta)",
-        "Reads your handwriting with a model built into FineNotes, on this device: notebook " +
-          "search and Obsidian's search find it, and a lassoed heading or word fills in its " +
-          "title or link. Nothing leaves the device. In beta: it misreads some words, more " +
-          "so in small or hurried writing, so check what it reads before relying on it.",
+        "Reads your handwriting with Grape (handwriting recognizer model), built into " +
+          "FineNotes, on this device: notebook search and Obsidian's search find it, and a " +
+          "lassoed heading or word fills in its title or link. Nothing leaves the device. " +
+          "In beta: it misreads some words, more so in small or hurried writing, so check " +
+          "what it reads before relying on it.",
         ["handwriting", "recognition", "search", "offline"],
       ),
       drawnRow(
@@ -579,11 +593,36 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "HUD",
         "troubleshooting",
       ]),
-      block((el) => {
-        const footer = el.createDiv({ cls: "goodobsidian-support" });
-        footer.appendText("Found a bug, or have a question? ");
-        footer.createEl("a", { text: "Open an issue on GitHub", href: ISSUES_URL });
-      }),
+    ]);
+  }
+
+  /** Ideas, bugs and FineNotes' accounts: each a link that opens in the browser. */
+  private communityGroup(): SettingDefinitionItem {
+    const links = (setting: Setting, items: readonly { label: string; url: string }[]): void => {
+      for (const { label, url } of items) {
+        setting.addButton((b) => b.setButtonText(label).onClick(() => window.open(url)));
+      }
+    };
+    return group("Feedback and community", [
+      drawnRow(
+        "Ideas and questions",
+        "Share an idea, ask how something works, or show what you made with FineNotes, in " +
+          "the repository's Discussions.",
+        (s) => links(s, [{ label: "Open Discussions", url: COMMUNITY_LINKS.discussions }]),
+        ["feedback", "idea", "question", "suggestion", "community"],
+      ),
+      drawnRow(
+        "Report a bug",
+        "Opens a bug report on GitHub. It says which diagnostics help with which problem.",
+        (s) => links(s, [{ label: "Report a bug", url: COMMUNITY_LINKS.bugReport }]),
+        ["bug", "issue", "problem", "GitHub"],
+      ),
+      drawnRow(
+        "Follow FineNotes",
+        "News, tips and demos.",
+        (s) => links(s, COMMUNITY_LINKS.social),
+        ["social", "X", "Twitter", "Instagram", "TikTok", "YouTube"],
+      ),
     ]);
   }
 

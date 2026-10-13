@@ -1565,12 +1565,6 @@ body.is-mobile .goodobsidian-scrollthumb {
 
 /* ---------------------------------------------------------- settings tab */
 
-.goodobsidian-support {
-  margin-top: 1em;
-  font-size: var(--font-ui-small);
-  color: var(--text-muted);
-}
-
 /* A note between settings rows: muted text on the secondary surface, marked
    by an accent bar down its left edge, with a bold title line. */
 .goodobsidian-callout {

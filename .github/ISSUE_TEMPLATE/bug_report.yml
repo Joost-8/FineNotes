@@ -7,6 +7,22 @@ body:
       value: |
         Thanks for taking the time. The more exactly you describe what happened, the faster it can be fixed.
         For a security problem, do not open an issue: use **Security → Report a vulnerability** instead.
+        Questions and ideas are welcome in [Discussions](https://github.com/Joost-8/FineNotes/discussions).
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is it about?
+      options:
+        - Writing, erasing or how the ink looks
+        - Shapes snapping (or not)
+        - Scrolling, zooming or the page jumping
+        - "Handwriting recognition: Grape (handwriting recognizer model), search, links"
+        - PDFs or pictures
+        - Text boxes or the keyboard
+        - Saving, sync or a notebook that will not open
+        - Something else
+    validations:
+      required: true
   - type: textarea
     id: what
     attributes:
@@ -30,9 +46,10 @@ body:
       label: Device
       options:
         - iPad with Apple Pencil
-        - iPad without a Pencil
+        - iPad with another stylus
+        - iPad without a stylus
         - iPhone
-        - Android
+        - Android tablet or phone
         - Desktop (Windows)
         - Desktop (macOS)
         - Desktop (Linux)
@@ -42,16 +59,32 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Plugin version (Settings → Community plugins), Obsidian version (Settings → About), and your iPadOS/OS version.
-      placeholder: "Plugin 1.0.0, Obsidian 1.13.8, iPadOS 26.1"
+      description: FineNotes version (Settings → Community plugins), Obsidian version (Settings → About), and your iPadOS/OS version.
+      placeholder: "FineNotes 2.0.0, Obsidian 1.13.8, iPadOS 26.1"
     validations:
       required: true
-  - type: textarea
-    id: recording
+  - type: markdown
     attributes:
-      label: Screen recording or screenshots
-      description: |
-        For anything to do with writing, erasing, scrolling or zooming on an iPad, a screen recording helps most — ideally with the command **Show or hide the input debug overlay** switched on, so the recording shows what the plugin saw. Drag files into this box.
+      value: |
+        ### What helps most
+
+        Run these from Obsidian's command palette (Ctrl/Cmd+P on a computer; on an iPad, swipe down on a note or use the command button). Pick what fits your problem:
+
+        - **Writing, erasing, scrolling or zooming feels wrong** → run **FineNotes: Show or hide the input debug overlay**, then make a **screen recording** while it happens. The overlay shows what FineNotes received from the pen and fingers. Turn it off again with the same command.
+        - **A shape did not snap, or the ink looks wobbly or broken** → draw the problem a few times, then run **FineNotes: Copy shape diagnostics** and paste the result in the *Diagnostics* box below. It copies your recent strokes (their points, timing and how they were recognised) and also saves them as a note called *FineNotes shape diagnostics*; nothing else from your notes.
+        - **Handwriting is read wrongly** → run **FineNotes: Show this page read on this device** and add a screenshot of what it shows next to the page.
+        - **A notebook looks wrong, lost something or will not open** → attach the notebook file itself (`Name.notebook.md` in your vault). Only do this if you are fine with sharing what is in it; a small test notebook that shows the problem works just as well. If GitHub refuses the file, put it in a `.zip` first.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of **Copy shape diagnostics** here, if you ran it.
+      render: json
+  - type: textarea
+    id: files
+    attributes:
+      label: Recording, screenshots and files
+      description: Drag files into this box (screen recordings, screenshots, a notebook file or a `.zip`), or click below it to pick them.
   - type: textarea
     id: extra
     attributes:
