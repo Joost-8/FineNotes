@@ -36,6 +36,9 @@
  * Thumbnails are only painted while the panel is open, only when on screen,
  * and only when the page's content signature changed since the last paint —
  * outlining every stroke of every page on each edit would stall an iPad.
+ * Those scrolled out of view keep their pixels only up to a budget
+ * ({@link KEEP_PAINTED_OFFSCREEN}); older ones give their canvas memory back
+ * and are painted again if they return.
  */
 
 import { Menu, setIcon } from "obsidian";
@@ -52,6 +55,7 @@ import { renderPageThumbnail } from "../canvas/renderer";
 import type { PaperTheme } from "../canvas/backdrop";
 import { type InkDocument, type Page, isCoverRuling } from "../model/document";
 import { textStyleKey } from "../model/text-style";
+import { releaseCanvas } from "./image-import";
 import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
 
 export type PageAction =
@@ -134,6 +138,15 @@ export function thumbnailRasterScale(dpr: number): number {
 /** Quiet time after an edit before thumbnails repaint. */
 const REFRESH_DEBOUNCE_MS = 350;
 
+/**
+ * How many painted thumbnails stay painted out of view, the least recently
+ * seen given back first. A thumbnail's canvas is ~330 KB at an iPad's pixel
+ * ratio, and keeping every one painted held 325 MB after a scroll through
+ * 1,000 pages: past what an iPad's web view grants canvases, where a canvas
+ * then draws nothing (research/SCALE.md). Forty is a few screens either way.
+ */
+export const KEEP_PAINTED_OFFSCREEN = 40;
+
 interface ThumbView {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
@@ -141,7 +154,11 @@ interface ThumbView {
   label: HTMLElement;
   /** Content signature at the last paint; empty means "never painted". */
   painted: string;
+  /** The canvas holds pixels (it was painted and not given back since). */
+  held: boolean;
   visible: boolean;
+  /** When it was last on screen, as a paint count: the oldest is given back first. */
+  seen: number;
 }
 
 export class PageSidebar {
@@ -173,6 +190,10 @@ export class PageSidebar {
   private filter: PageFilter = "all";
   private readonly addTile: HTMLElement;
   private readonly thumbs: ThumbView[] = [];
+  /** Each thumbnail by its root element, for the intersection observer. */
+  private readonly viewOf = new Map<Element, ThumbView>();
+  /** Paint passes so far: the clock {@link ThumbView.seen} counts on. */
+  private paints = 0;
   private readonly observer: IntersectionObserver;
 
   private doc: InkDocument | null = null;
@@ -271,7 +292,7 @@ export class PageSidebar {
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          const view = this.thumbs.find((t) => t.root === entry.target);
+          const view = this.viewOf.get(entry.target);
           if (view) view.visible = entry.isIntersecting;
         }
         this.schedulePaint();
@@ -511,6 +532,8 @@ export class PageSidebar {
       const view = this.thumbs.pop();
       if (!view) break;
       this.observer.unobserve(view.root);
+      this.viewOf.delete(view.root);
+      releaseCanvas(view.canvas);
       view.root.remove();
     }
     this.thumbs.forEach((view, index) => {
@@ -658,7 +681,16 @@ export class PageSidebar {
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", "Page options");
 
-    const view: ThumbView = { root, canvas, ribbon, label, painted: "", visible: false };
+    const view: ThumbView = {
+      root,
+      canvas,
+      ribbon,
+      label,
+      painted: "",
+      held: false,
+      visible: false,
+      seen: 0,
+    };
     frame.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
       if (index < 0) return;
@@ -673,6 +705,7 @@ export class PageSidebar {
       const index = this.thumbs.indexOf(view);
       if (index >= 0) this.showMenu(index, event, more);
     });
+    this.viewOf.set(root, view);
     this.observer.observe(root);
     return view;
   }
@@ -739,9 +772,11 @@ export class PageSidebar {
   private paintVisible(): void {
     const pages = this.doc?.pages ?? [];
     const dpr = window.devicePixelRatio || 1;
+    const now = ++this.paints;
     this.thumbs.forEach((view, index) => {
       const page = pages[index];
       if (!page || !view.visible) return;
+      view.seen = now;
       const signature = pageSignature(page);
       if (signature === view.painted) return;
       renderPageThumbnail(view.canvas, page, this.render.painter, THUMB_WIDTH, dpr, {
@@ -751,7 +786,25 @@ export class PageSidebar {
         images: this.render.images,
       });
       view.painted = signature;
+      view.held = true;
     });
+    this.releaseOffscreen();
+  }
+
+  /**
+   * Give back the canvas memory of the thumbnails out of view, beyond the
+   * {@link KEEP_PAINTED_OFFSCREEN} seen most recently. The page's aspect
+   * ratio is set in CSS, so a released canvas keeps its place in the grid.
+   */
+  private releaseOffscreen(): void {
+    const hidden = this.thumbs.filter((view) => view.held && !view.visible);
+    if (hidden.length <= KEEP_PAINTED_OFFSCREEN) return;
+    hidden.sort((a, b) => a.seen - b.seen);
+    for (const view of hidden.slice(0, hidden.length - KEEP_PAINTED_OFFSCREEN)) {
+      releaseCanvas(view.canvas);
+      view.held = false;
+      view.painted = "";
+    }
   }
 
   private showMenu(index: number, event: MouseEvent, anchor: HTMLElement): void {
