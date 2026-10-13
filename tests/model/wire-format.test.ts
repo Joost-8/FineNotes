@@ -4,7 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { MAX_INFLATED_BYTES, deflateToBase64, inflateFromBase64 } from "../../src/model/compress";
+import { deflateSync } from "fflate";
+import {
+  MAX_INFLATED_BYTES,
+  MAX_INFLATE_RATIO,
+  deflateToBase64,
+  inflateFromBase64,
+  inflateLimit,
+} from "../../src/model/compress";
 import { type InkDocument, type Stroke, emptyDocument } from "../../src/model/document";
 import {
   SerializeError,
@@ -330,6 +337,30 @@ describe("compression", () => {
     expect(() => inflateFromBase64(packed, 999)).toThrow();
     expect(MAX_INFLATED_BYTES).toBe(67_108_864);
   });
+
+  it("lets a large payload unpack to its ratio, a small one only to 64 MB", () => {
+    expect(inflateLimit(0)).toBe(MAX_INFLATED_BYTES);
+    expect(inflateLimit(4000)).toBe(MAX_INFLATED_BYTES);
+    // 4 M base64 characters are 3 MB packed.
+    expect(inflateLimit(4_000_000)).toBe(3_000_000 * MAX_INFLATE_RATIO);
+  });
+
+  it("opens a notebook whose JSON is past 64 MB (research/SCALE.md)", () => {
+    // Ink packs about 3:1; this pads a document with digits that pack about
+    // as badly, to just past the old fixed cap.
+    const size = MAX_INFLATED_BYTES + 1_000_000;
+    const head = '{"version":3,"view":{"scrollY":0,"width":1024,"scale":1},"pages":[],"pad":"';
+    const bytes = new Uint8Array(size);
+    let a = 7;
+    for (let i = 0; i < size; i++) {
+      a = (Math.imul(a, 1103515245) + 12345) >>> 0;
+      bytes[i] = 48 + ((a >>> 16) % 10);
+    }
+    bytes.set(new TextEncoder().encode(head));
+    bytes.set(new TextEncoder().encode('"}'), size - 2);
+    const payload = `v3:${Buffer.from(deflateSync(bytes, { level: 1 })).toString("base64")}`;
+    expect(decodeDocument(payload).pages).toHaveLength(1);
+  }, 30_000);
 
   it("counts the cap in bytes, not characters", () => {
     const packed = deflateToBase64("é".repeat(10)); // 20 bytes of UTF-8

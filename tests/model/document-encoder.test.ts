@@ -37,7 +37,7 @@ describe("DocumentEncoder", () => {
     const doc = notebook();
     const onDisk = encodeDocument(doc);
     const encoder = new DocumentEncoder();
-    encoder.remember(decodeDocument(onDisk), onDisk);
+    encoder.remember(onDisk);
     expect(encoder.encode(decodeDocument(onDisk))).toBe(onDisk);
     expect(encoder.reused).toBe(true);
   });
@@ -46,7 +46,7 @@ describe("DocumentEncoder", () => {
     const onDisk = encodeDocument(notebook());
     const doc = decodeDocument(onDisk);
     const encoder = new DocumentEncoder();
-    encoder.remember(doc, onDisk);
+    encoder.remember(onDisk);
     doc.pages[0].strokes[0].pts[0] = 11;
     const changed = encoder.encode(doc);
     expect(changed).not.toBe(onDisk);
@@ -64,7 +64,7 @@ describe("DocumentEncoder", () => {
     other.pages[0].strokes = [];
     const stale = encodeDocument(other);
     const encoder = new DocumentEncoder();
-    encoder.remember(doc, stale);
+    encoder.remember(stale);
     const payload = encoder.encode(doc);
     expect(payload).not.toBe(stale);
     expect(decodeDocument(payload).pages[0].strokes).toHaveLength(1);
@@ -73,10 +73,10 @@ describe("DocumentEncoder", () => {
   it("ignores a payload of another version or one that does not decode", () => {
     const doc = notebook();
     const encoder = new DocumentEncoder();
-    encoder.remember(doc, "v1:abc");
+    encoder.remember("v1:abc");
     encoder.encode(doc);
     expect(encoder.reused).toBe(false);
-    encoder.remember(doc, `${encodeDocument(doc).slice(0, 3)}@@@`);
+    encoder.remember(`${encodeDocument(doc).slice(0, 3)}@@@`);
     encoder.encode(doc);
     expect(encoder.reused).toBe(false);
   });

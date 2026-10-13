@@ -335,7 +335,7 @@ export class InkView extends TextFileView {
 
   /** Obsidian read the file (on open, or because it changed on disk). */
   setViewData(data: string, _clear: boolean): void {
-    const { body, doc, payload } = parseInkFile(data, this.settings.paperWidth);
+    const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
     const held = this.guard.admit({
       text: data,
       bytesOnDisk: this.file?.stat.size ?? 0,
@@ -344,7 +344,7 @@ export class InkView extends TextFileView {
     if (held) new Notice(HELD_LOAD_NOTICE, 10000);
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
-    if (doc && payload !== undefined && !held) this.encoder.remember(doc, payload);
+    if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
     // Files it points at that moved while it was closed (#14).
     if (doc && !held && this.relinkDoc() > 0) this.requestSave();
     this.loadedPath = this.file?.path ?? null;

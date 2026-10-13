@@ -12,11 +12,27 @@
 import { Inflate, deflateSync, strFromU8, strToU8 } from "fflate";
 
 /**
- * The most a payload may unpack to (64 MB). A real notebook's JSON is a few
- * MB; the limit means a crafted note, a few KB on disk, cannot make the
- * plugin allocate gigabytes the moment it is opened.
+ * The most a small payload may unpack to (64 MB): a crafted note, a few KB on
+ * disk, cannot make the plugin allocate gigabytes the moment it is opened.
  */
 export const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+
+/**
+ * How many times its packed size a large payload may unpack to. A notebook's
+ * JSON packs about 3:1 (research/SCALE.md); DEFLATE can reach 1032:1.
+ */
+export const MAX_INFLATE_RATIO = 32;
+
+/**
+ * The most a base64 payload of `base64Length` characters may unpack to:
+ * {@link MAX_INFLATED_BYTES}, or {@link MAX_INFLATE_RATIO} times its bytes
+ * when that is more. A fixed 64 MB held every notebook past ~250 pages of
+ * notes (~100 dense ones) read-only the next time it opened, though it had
+ * saved without complaint.
+ */
+export function inflateLimit(base64Length: number): number {
+  return Math.max(MAX_INFLATED_BYTES, Math.floor((base64Length * 3) / 4) * MAX_INFLATE_RATIO);
+}
 
 /**
  * The level a view's saves compress at. fflate's default (6) spent most of a
@@ -38,9 +54,10 @@ export function deflateToBase64(text: string, level?: 1): string {
 /**
  * The inverse of {@link deflateToBase64}. Throws for anything that is not
  * base64 of a complete DEFLATE stream, and stops with an error as soon as
- * the output passes `maxBytes`, without unpacking the rest.
+ * the output passes `maxBytes` ({@link inflateLimit} unless given), without
+ * unpacking the rest.
  */
-export function inflateFromBase64(base64: string, maxBytes = MAX_INFLATED_BYTES): string {
+export function inflateFromBase64(base64: string, maxBytes = inflateLimit(base64.length)): string {
   const packed = strToU8(atob(base64), true);
   // The text is decoded as the bytes stream out, so the unpacked buffer is
   // never held in full beside the string it becomes. A streaming decode

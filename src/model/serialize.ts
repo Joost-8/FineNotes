@@ -306,23 +306,28 @@ export class DocumentEncoder {
   }
 
   /**
-   * `payload` was just read and decoded to `doc`. It is reused for as long
-   * as the document stays the same — but only if it holds exactly what
-   * `doc` would be written as: a note an older version wrote, or one the
-   * loader repaired, is written afresh at the first save.
+   * `payload` was just read; `json` is what it unpacks to, when the reader
+   * has it at hand (`parseInkFile` does), or it is unpacked here. The payload
+   * is reused for as long as the document would be written as exactly that
+   * JSON — so a note an older version wrote, or one the loader repaired, is
+   * written afresh at the first save. Nothing is encoded here: comparing at
+   * the first save, which stringifies the document anyway, gives the same
+   * answer, and opening a large notebook no longer unpacks and stringifies
+   * it a second time.
    */
-  remember(doc: InkDocument, payload: string): void {
+  remember(payload: string, json?: string): void {
     this.known = null;
     const prefix = `v${SCHEMA_VERSION}:`;
     if (!payload.startsWith(prefix)) return;
-    let stored: string;
-    try {
-      stored = inflateFromBase64(payload.slice(prefix.length));
-    } catch {
-      return;
+    let stored = json;
+    if (stored === undefined) {
+      try {
+        stored = inflateFromBase64(payload.slice(prefix.length));
+      } catch {
+        return;
+      }
     }
-    const json = JSON.stringify(storeDocument(doc));
-    if (json === stored) this.known = { json, payload };
+    this.known = { json: stored, payload };
   }
 }
 
@@ -746,6 +751,11 @@ function stage<T>(what: string, run: () => T): T {
  * payload cannot be read at all.
  */
 export function decodeDocument(payload: string, fallbackWidth = DEFAULT_PAPER_WIDTH): InkDocument {
+  return decodePayload(payload, fallbackWidth).doc;
+}
+
+/** {@link decodeDocument}, also handing back the JSON the payload unpacked to. */
+function decodePayload(payload: string, fallbackWidth: number): { doc: InkDocument; json: string } {
   const text = payload.trim();
   const colon = text.indexOf(":");
   if (!text.startsWith("v") || colon < 0) {
@@ -758,7 +768,7 @@ export function decodeDocument(payload: string, fallbackWidth = DEFAULT_PAPER_WI
     inflateFromBase64(text.slice(colon + 1)),
   );
   const parsed = stage("the payload is not JSON", () => JSON.parse(json) as unknown);
-  return readDocument(parsed, fallbackWidth);
+  return { doc: readDocument(parsed, fallbackWidth), json };
 }
 
 // --- The note file ---------------------------------------------------------------
@@ -801,6 +811,8 @@ export interface ParsedInkFile {
   doc: InkDocument | null;
   /** The block's payload as it was read, when there is a block. */
   payload?: string;
+  /** What the payload unpacked to, when it decoded (for `DocumentEncoder.remember`). */
+  json?: string;
 }
 
 // Matches the `%%goodobsidian … %%` block — or the `%%inkedmark … %%` block a
@@ -844,13 +856,12 @@ export function parseInkFile(markdown: string, fallbackWidth = DEFAULT_PAPER_WID
   if (!block) return { body: markdown, doc: null };
   const before = markdown.slice(0, block.index);
   const after = markdown.slice(block.index + block[0].length);
-  let doc: InkDocument | null;
   try {
-    doc = decodeDocument(block[1], fallbackWidth);
+    const { doc, json } = decodePayload(block[1], fallbackWidth);
+    return { body: before + after, doc, payload: block[1], json };
   } catch {
-    doc = null;
+    return { body: before + after, doc: null, payload: block[1] };
   }
-  return { body: before + after, doc, payload: block[1] };
 }
 
 /**
