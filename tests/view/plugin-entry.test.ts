@@ -383,6 +383,7 @@ describe("registration", () => {
     expect(registered.commands.map((c) => c.id).sort()).toEqual(
       [
         "convert-to-notebook",
+        "copy-highlighted-text",
         "copy-page-link",
         "copy-shape-diagnostics",
         "create-handwriting-note",

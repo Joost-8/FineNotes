@@ -73,6 +73,7 @@ import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { PdfTextCache } from "./pdf-text-source";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
@@ -242,6 +243,8 @@ export class InkView extends TextFileView {
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
   private transcription: { cancelled: boolean } | null = null;
   private pdfCache: PdfBackdropCache | null = null;
+  /** The PDF pages' text, for the highlighter that snaps to it and for Copy text. */
+  private pdfText: PdfTextCache | null = null;
   /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
   private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
@@ -552,6 +555,7 @@ export class InkView extends TextFileView {
     if (down) {
       this.writeHold.penDown(t);
       this.pdfCache?.setHeld(true);
+      this.pdfText?.setHeld(true);
       // Should the lift never arrive, let go anyway.
       this.quietTimer = window.setTimeout(() => this.penQuiet(), this.writeHold.quietIn(t));
       return;
@@ -566,6 +570,7 @@ export class InkView extends TextFileView {
   private penQuiet(): void {
     this.quietTimer = 0;
     this.pdfCache?.setHeld(false);
+    this.pdfText?.setHeld(false);
     if (this.writeHold.savePending) void this.saveNow();
   }
 
@@ -598,6 +603,8 @@ export class InkView extends TextFileView {
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
+    this.pdfText?.destroy();
+    this.pdfText = null;
     if (this.pdfWorkerHeld) {
       this.pdfWorkerHeld = false;
       releasePdfWorker();
@@ -1367,6 +1374,9 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.pdfText?.destroy();
+    this.pdfText = new PdfTextCache(this.app);
+    this.surface.setTextSource(this.pdfText);
     // Audio (0.5). Strokes are stamped on the recorder's clock, so ink and
     // audio share one timeline even if the wall clock jumps mid-recording.
     const audio = new NoteAudio({
@@ -1430,6 +1440,7 @@ export class InkView extends TextFileView {
     // Likewise a PDF: one moved back, or synced in, is read again instead
     // of staying "missing".
     const pdfFileChanged = (path: string): void => {
+      if (/\.pdf$/i.test(path)) this.pdfText?.forget(path);
       if (!/\.pdf$/i.test(path) || !this.pdfCache?.forget(path)) return;
       this.surface?.repaint();
       this.sidebar?.invalidate();
@@ -2068,6 +2079,11 @@ export class InkView extends TextFileView {
         break;
     }
     this.requestSave();
+  }
+
+  /** Copy the PDF text under the highlights on the page in view. */
+  copyHighlightedText(): void {
+    this.surface?.copyHighlightedText();
   }
 
   /**

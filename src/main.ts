@@ -337,6 +337,9 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("copy-page-link", "Copy link to current page", (view) =>
       view.copyPageLink(),
     );
+    this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
+      view.copyHighlightedText(),
+    );
     this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
 
     this.addCommand({

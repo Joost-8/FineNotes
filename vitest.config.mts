@@ -34,6 +34,7 @@ export default defineConfig({
         "src/canvas/image-raster.ts",
         "src/canvas/pdf-raster.ts",
         "src/canvas/pdf-tiles.ts",
+        "src/canvas/pdf-text.ts",
         "src/canvas/text-layout.ts",
         "src/canvas/lasso.ts",
         "src/canvas/writing-lines.ts",
