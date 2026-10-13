@@ -41,6 +41,8 @@ export interface InsertImageOptions {
    * visible part of the page, fitted inside 60 % of it, aspect kept).
    */
   box?: { x: number; y: number; w: number; h: number; rotation?: number };
+  /** Page-space point to centre it on (kept on the page), instead of the visible part's centre. */
+  center?: { x: number; y: number };
   /** Select it once placed, as GoodNotes does. Default `true`. */
   select?: boolean;
 }

@@ -105,6 +105,13 @@ export interface PointerControllerCallbacks {
   onFingerDoubleTap?(fingers: number): void;
   /** Every touch of two or more fingers and what it counted as, for the debug HUD. */
   onFingerTapReport?(report: TapReport): void;
+  /** A finger reported its contact size, CSS px (on landing and as it moves). */
+  onFingerContact?(width: number, height: number): void;
+  /**
+   * A finger ended in `pointercancel`, just before the gesture hears of it
+   * as a lift: WebKit's own long press takes a finger held still that way.
+   */
+  onFingerCancel?(t: number): void;
   /** Each event of the drawing pointer as it arrived, for the debug HUD. */
   onDebug?(record: PointerDebugRecord): void;
 }
@@ -119,6 +126,8 @@ export class PointerController {
   private penIsPrecise = false;
   /** See {@link strokeRounded}. */
   private rounded = false;
+  /** See {@link lastPenAt}. */
+  private penSeenAt: number | null = null;
   private readonly fingers: FingerGesture;
   /** Watches every finger, the third included, for undo and redo taps. */
   private readonly taps: MultiFingerTap;
@@ -167,8 +176,20 @@ export class PointerController {
     return this.rounded;
   }
 
+  /**
+   * When a pen last did anything on the page, hovering included (event time
+   * stamps, ms); `null` before the first. A finger held just after it is the
+   * writing hand (`finger-hold.ts`).
+   */
+  get lastPenAt(): number | null {
+    return this.penSeenAt;
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
+    this.notePenSeen(event);
+    // The right mouse button opens the page's menu (`contextmenu`); it never draws.
+    if (event.pointerType === "mouse" && event.button === 2) return;
     const role = roleOf(event.pointerType, this.stroke !== null);
     if (role === "draw" && this.stroke === null && this.handHeld()) {
       // A stroke already under way is left to finish; only a new one pans.
@@ -185,6 +206,8 @@ export class PointerController {
         // Capture, so a fast swipe that leaves the pane still scrolls it.
         this.element.setPointerCapture(pointerId);
       }
+      // After the gesture has heard of the finger, so a hold it began counts it.
+      this.listener.onFingerContact?.(event.width, event.height);
     }
   }
 
@@ -209,7 +232,9 @@ export class PointerController {
   }
 
   private moved(event: PointerEvent): void {
+    this.notePenSeen(event);
     if (event.pointerId !== this.stroke) {
+      if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);
       this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
       return;
@@ -226,10 +251,13 @@ export class PointerController {
 
   private released(event: PointerEvent, cancelled: boolean): void {
     const id = event.pointerId;
+    this.notePenSeen(event);
     if (id !== this.stroke) {
       // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
       if (cancelled) this.taps.cancel(id, event.timeStamp);
       else this.taps.up(id, event.timeStamp);
+      if (cancelled && event.pointerType === "touch")
+        this.listener.onFingerCancel?.(event.timeStamp);
       if (this.fingers.lift(id, event.timeStamp)) this.releaseCapture(id);
       return;
     }
@@ -258,6 +286,10 @@ export class PointerController {
       t: event.timeStamp,
       pointerType: event.pointerType,
     };
+  }
+
+  private notePenSeen(event: PointerEvent): void {
+    if (event.pointerType === "pen") this.penSeenAt = event.timeStamp;
   }
 
   /** One position with a fraction is enough: this device's pen does not round. */

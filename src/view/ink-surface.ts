@@ -278,6 +278,9 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import { SelectionActionBar } from "./selection-bar";
+import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
+import { inkFirst, pastedTextOrigin } from "./paste-choice";
+import { canReadSystemClipboard, readSystemClipboard } from "./system-clipboard";
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
@@ -509,10 +512,11 @@ export interface InkSurfaceCallbacks {
   onCopyImage?: (image: ImageElement) => void;
   /**
    * Cmd/Ctrl+V found a picture on the system clipboard, fresher than the
-   * plugin's own (see `handlePaste`). The host saves and places it. Without
-   * this, only the plugin's clipboard is pasted.
+   * plugin's own (see `handlePaste`), or the press menu's Paste did — then
+   * with `at`, the page and page-local point to centre it on. The host saves
+   * and places it. Without this, only the plugin's clipboard is pasted.
    */
-  onPasteImage?: (file: File) => void;
+  onPasteImage?: (file: File, at?: { pageIndex: number; x: number; y: number }) => void;
 }
 
 /**
@@ -694,13 +698,23 @@ interface CropSession {
   } | null;
 }
 
-/** The small bar a lasso tap-and-hold opens: Paste on paper, Unlock on a locked picture. */
+/**
+ * The small bar a tap-and-hold opens (a finger with any tool, the lasso's
+ * pen, a right-click): Paste, Text box and Select all on paper; Unlock on a
+ * locked picture.
+ */
 interface PressMenu {
   pageId: string;
   /** The pressed page point. */
   at: Pt;
   /** The locked picture pressed, if one was. */
   locked: ImageElement | null;
+  /**
+   * Opened by a finger that is still down. Until it lifts the bar takes no
+   * presses, so a palm that opened it cannot have the pen land on Paste:
+   * the pen goes through to the page, which closes the bar.
+   */
+  provisional: boolean;
 }
 
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
@@ -1006,6 +1020,10 @@ export class InkSurface {
   private imagesShown = false;
   /** A finger went down and could still turn out to be a tap. */
   private fingerTap: { x: number; y: number; t: number } | null = null;
+  /** The same finger, watched for a hold that opens the press menu (`finger-hold.ts`). */
+  private readonly fingerHold = new FingerHold();
+  /** Touch points on the glass at the last touch event over the page. */
+  private touchCount = 0;
 
   // Circle to lasso (pen gestures). The loop the pen just drew round
   // something, for as long as it is the latest step; a pen held on it for
@@ -1384,6 +1402,7 @@ export class InkSurface {
     // listens on the bubbling path is an assumption; see the ledger.)
     const onTouch = (event: TouchEvent): void => {
       if (event.type === "touchstart") this.diagSums.touchStarts++;
+      this.touchCount = event.touches.length;
       for (let i = 0; i < event.changedTouches.length; i++) {
         const touch = event.changedTouches[i] as Touch & { touchType?: string };
         if (touch.touchType === "stylus") {
@@ -1403,12 +1422,19 @@ export class InkSurface {
       if (event.type === "touchmove" && this.touchPanning && event.cancelable) {
         event.preventDefault();
       }
-      // With the lasso, a finger held still is a tap-and-hold (Paste,
-      // Unlock). Cancelling its touchstart keeps WebKit's own long press from
+      // A finger held still is a tap-and-hold (the press menu), with any
+      // tool. Cancelling its touchstart keeps WebKit's own long press from
       // claiming it and ending it in pointercancel, as it does a held Pencil.
-      // No finger tap needs its click here: with the lasso, text boxes are
-      // selected, not typed in, and every control acts on pointer events.
-      if (event.type === "touchstart" && this.toolState.tool === "select" && event.cancelable) {
+      // No finger tap on the page needs its click: every control over it acts
+      // on pointer events, and text boxes returned above. Except while a box
+      // is being typed in, outside the lasso: a tap beside it must still
+      // blur it, and a hold that WebKit cancels is caught as one anyway.
+      if (
+        event.type === "touchstart" &&
+        event.cancelable &&
+        !isButtonLike(event.target) &&
+        (this.toolState.tool === "select" || !this.editingTextView())
+      ) {
         event.preventDefault();
       }
     };
@@ -1416,6 +1442,28 @@ export class InkSurface {
       this.scrollEl.addEventListener(type, onTouch, { passive: false });
       this.disposers.push(() => this.scrollEl.removeEventListener(type, onTouch));
     }
+
+    // A right-click (or a trackpad's secondary click) on the paper opens the
+    // press menu where it landed, as holding a finger does on the iPad. A
+    // touch or the Pencil open it by holding, not here (Chromium sends a
+    // contextmenu for a long press too, palm or not). Text boxes keep the
+    // system's menu.
+    const onContextMenu = (event: MouseEvent): void => {
+      if (onTextBox(event.target) || isEditable(event.target)) return;
+      event.preventDefault();
+      const type = (event as Partial<PointerEvent>).pointerType;
+      if (type === "touch" || type === "pen" || this.touchPanning) return;
+      const target = event.target as Node | null;
+      if (target && (this.selectionUiEl.contains(target) || this.imageUiEl.contains(target))) {
+        return;
+      }
+      if (this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
+      const at = this.toLayout(event.clientX, event.clientY);
+      const box = boxAtPoint(this.pageLayout, at.x, at.y);
+      if (box) this.openPressMenu(box, this.toPage(box, at));
+    };
+    this.scrollEl.addEventListener("contextmenu", onContextMenu);
+    this.disposers.push(() => this.scrollEl.removeEventListener("contextmenu", onContextMenu));
 
     // Wheel and trackpad: scroll, or zoom with Ctrl/Cmd (a trackpad pinch
     // arrives as a Ctrl+wheel). Momentum on a trackpad is the OS's own.
@@ -3364,14 +3412,15 @@ export class InkSurface {
       // are no-ops.
       if (this.imageDrag || this.groupDrag) return;
       // Only the first finger can be a tap; a re-anchor keeps what it had. A
-      // touch that stops a fling is only that, as on iOS. With the lasso, a
-      // finger held still is a tap-and-hold, as the Pencil's is.
+      // touch that stops a fling is only that, as on iOS. A finger held
+      // still is a tap-and-hold, with any tool, as the lasso's Pencil is.
       // A pan with space held is never a tap (FineNotes#7).
       if (this.handHeld) this.scrollEl.addClass("is-hand-dragging");
       if (!this.touchPanning) {
         this.fingerTap = this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
-        if (this.fingerTap && this.toolState.tool === "select" && !this.lasso) {
-          this.startPress(() => this.fingerHeld(x, y));
+        if (this.fingerTap && !this.lasso) {
+          this.fingerHold.begin(x, y, t);
+          this.startPress(() => this.fingerHeld(), FINGER_HOLD_MS);
         }
       }
       if (!this.touchPanning) {
@@ -3390,6 +3439,7 @@ export class InkSurface {
         this.fingerTap = null;
         this.stopPress();
       }
+      if (this.fingerHold.active && !this.fingerHold.move(x, y)) this.stopPress();
       this.scroller.dragMove(x, y, t);
       this.requestFrame();
     },
@@ -3397,6 +3447,12 @@ export class InkSurface {
       const tap = this.fingerTap;
       this.fingerTap = null;
       this.stopPress();
+      this.fingerHold.end();
+      // The finger that opened the press menu lifted: now it takes presses.
+      if (this.pressMenu?.provisional) {
+        this.pressMenu.provisional = false;
+        this.syncActionBar();
+      }
       // Read before the release springs it back: past the end far enough,
       // letting go adds a page.
       // A zoomed-in row is held to its page: its edge is no place to add one.
@@ -3421,6 +3477,7 @@ export class InkSurface {
     onPanCancel: () => {
       this.fingerTap = null;
       this.stopPress();
+      this.fingerHold.end();
       this.touchPanning = false;
       this.pullAdd.hide();
       this.pinch = null;
@@ -3431,6 +3488,7 @@ export class InkSurface {
     onPinchStart: (centerX, centerY) => {
       this.fingerTap = null;
       this.stopPress();
+      this.fingerHold.end();
       if (this.imageDrag || this.groupDrag) return;
       this.zoomAnim = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
@@ -3467,6 +3525,16 @@ export class InkSurface {
       this.requestFrame();
     },
     onFingerDoubleTap: (fingers) => this.fingerDoubleTap(fingers),
+    onFingerContact: (width, height) => {
+      if (this.fingerHold.active) this.fingerHold.noteContact(width, height);
+    },
+    // WebKit's own long press may end a finger held still before the press
+    // timer is due: that is the hold it interrupted (ledger).
+    onFingerCancel: (t) => {
+      if (!this.pressTimer || !this.fingerHold.cancelIsHold(t)) return;
+      this.stopPress();
+      this.fingerHeld();
+    },
     // With the debug overlay on, every touch of two or more fingers says what
     // it counted as, so a gesture that does nothing on a device can be read.
     onFingerTapReport: (r) => {
@@ -4996,22 +5064,37 @@ export class InkSurface {
     this.openPressMenu(lasso.box, lasso.origin);
   }
 
-  /** A finger held still on the page with the lasso: the same bar, where it rests. */
-  private fingerHeld(clientX: number, clientY: number): void {
-    if (!this.fingerTap || this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
+  /**
+   * A finger held still on the page, with any tool: the same bar, where it
+   * rests — unless it is the writing hand, a palm or one of two fingers
+   * (`finger-hold.ts`), or rests on a text box or a control, which have
+   * long presses of their own.
+   */
+  private fingerHeld(): void {
+    const origin = this.fingerHold.origin;
+    const veto = this.fingerHold.verdict({
+      t: now(),
+      lastPenAt: this.pointerInput?.lastPenAt ?? null,
+      touches: this.touchCount,
+    });
+    if (this.debug) this.hud.mark(`hold:${veto ?? "menu"}`);
+    if (veto || !origin || !this.fingerTap) return;
+    if (this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
+    const under = activeDocument.elementFromPoint(origin.x, origin.y);
+    if (onTextBox(under) || isButtonLike(under)) return;
     // The lift is no longer a tap.
     this.fingerTap = null;
-    const at = this.toLayout(clientX, clientY);
+    const at = this.toLayout(origin.x, origin.y);
     const box = boxAtPoint(this.pageLayout, at.x, at.y);
-    if (box) this.openPressMenu(box, this.toPage(box, at));
+    if (box) this.openPressMenu(box, this.toPage(box, at), true);
   }
 
-  private startPress(open: () => void): void {
+  private startPress(open: () => void, ms = PRESS_HOLD_MS): void {
     this.stopPress();
     this.pressTimer = window.setTimeout(() => {
       this.pressTimer = 0;
       open();
-    }, PRESS_HOLD_MS);
+    }, ms);
   }
 
   private stopPress(): void {
@@ -5022,9 +5105,10 @@ export class InkSurface {
   /**
    * Open the small bar a tap-and-hold brings up at page point `p`: Unlock
    * when the topmost picture there is locked (GoodNotes' way back to a locked
-   * picture), otherwise Paste — greyed while the clipboard is empty.
+   * picture), otherwise Paste, Text box and Select all. `provisional` while
+   * the finger that held is still down (see {@link PressMenu}).
    */
-  private openPressMenu(box: PageBox, p: Pt): void {
+  private openPressMenu(box: PageBox, p: Pt, provisional = false): void {
     const page = this.pageAt(box.index);
     if (!page) return;
     this.clearSelection();
@@ -5034,6 +5118,7 @@ export class InkSurface {
       pageId: page.id,
       at: { x: p.x, y: p.y },
       locked: top?.locked === true ? top : null,
+      provisional,
     };
     this.syncActionBar();
   }
@@ -5458,6 +5543,7 @@ export class InkSurface {
       clearAbove = clearBelow = PRESS_CLEAR_PX;
       this.actionBar.setActions(this.pressActions(press));
     }
+    this.actionBar.el.toggleClass("is-provisional", press?.provisional === true);
     if (!box || !bounds || dragging) {
       this.actionBar.hide();
       return;
@@ -5776,15 +5862,118 @@ export class InkSurface {
         },
       ];
     }
-    return [
+    const page = this.doc.pages.find((candidate) => candidate.id === press.pageId);
+    const inBar = { bar: true, menu: "none", showLabel: true } as const;
+    const actions: SelectionAction[] = [
       {
-        ...this.pasteAction(press.pageId, press.at),
+        id: "paste",
+        icon: "clipboard-paste",
+        label: "Paste",
         group: "press",
-        bar: true,
-        menu: "none",
-        showLabel: true,
+        ...inBar,
+        enabled: this.canPasteHere(),
+        run: () => this.pasteHere(press.pageId, press.at),
       },
     ];
+    // A practice file takes the pen alone (`practice.ts`).
+    if (this.practice) return actions;
+    actions.push(
+      {
+        id: "text-here",
+        icon: "type",
+        label: "Text box",
+        group: "press-text",
+        ...inBar,
+        run: () => this.textBoxHere(press.pageId, press.at),
+      },
+      {
+        id: "select-page",
+        icon: "box-select",
+        label: "Select all",
+        group: "press-select",
+        ...inBar,
+        enabled: page !== undefined && !isEmptySelection(selectablesOf(page)),
+        run: () => {
+          if (page) this.select(page.id, selectablesOf(page));
+        },
+      },
+    );
+    return actions;
+  }
+
+  /**
+   * Whether the press menu's Paste can have anything: the plugin's
+   * clipboard holds something, or the system's can be read (what it holds
+   * is only known once it is, which on iPad asks the user first).
+   */
+  private canPasteHere(): boolean {
+    if (clipboard.canPaste(this.imagesShown)) return true;
+    return !this.practice && canReadSystemClipboard();
+  }
+
+  /**
+   * The press menu's Paste, at page point `at` (`paste-choice.ts`): the
+   * plugin's clipboard when nothing newer can be on the system's, else a
+   * picture or text from the system clipboard, else the plugin's after all.
+   * Runs inside the tap, which the system clipboard's read requires.
+   */
+  private pasteHere(pageId: string, at: Pt): void {
+    const ink = clipboard.canPaste(this.imagesShown);
+    if (this.practice || inkFirst(ink, clipboard.leftSinceCopy) || !canReadSystemClipboard()) {
+      if (!this.paste({ pageId, at }) && !ink) new Notice("FineNotes: nothing to paste.");
+      return;
+    }
+    void readSystemClipboard().then((found) => {
+      const index = this.doc.pages.findIndex((page) => page.id === pageId);
+      if (index < 0 || this.callbacks.isLocked?.()) return;
+      const onImage = this.imagesShown ? this.callbacks.onPasteImage : undefined;
+      if (found.kind === "image" && onImage) {
+        onImage(found.file, { pageIndex: index, x: at.x, y: at.y });
+        return;
+      }
+      if (found.kind === "text") {
+        this.addPastedText(index, at, found.text);
+        return;
+      }
+      if (this.paste({ pageId, at })) return;
+      new Notice(
+        found.kind === "unavailable"
+          ? "FineNotes: couldn't read the clipboard here."
+          : "FineNotes: nothing to paste.",
+      );
+    });
+  }
+
+  /** Text from the system clipboard as a new text box at `at`, selected: one undo step. */
+  private addPastedText(index: number, at: Pt, text: string): void {
+    const page = this.pageAt(index);
+    if (!page) return;
+    const origin = pastedTextOrigin(at, page.geometry);
+    const textBox: TextBoxElement = {
+      id: this.textBoxIds.next(),
+      x: origin.x,
+      y: origin.y,
+      w: TEXT_MIN_W,
+      fit: true,
+      text,
+      ...textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE),
+    };
+    this.dropSelection();
+    this.history.push(this.doc, new AddTextBoxToPage(page.id, textBox));
+    this.syncTextBoxes();
+    this.select(page.id, { strokes: [], images: [], textBoxes: [textBox] });
+    this.changed();
+  }
+
+  /** The press menu's Text box: a new, empty box at `at`, focused for typing, as the Text tool's tap makes. */
+  private textBoxHere(pageId: string, at: Pt): void {
+    if (this.callbacks.isLocked?.()) return;
+    const box = this.boxForPage(pageId);
+    if (!box) return;
+    this.clearSelection();
+    const x = clamp(at.x, 0, Math.max(0, box.width - TEXT_MIN_W));
+    // Inside the tap, so iPadOS raises the keyboard for the focus.
+    this.addTextBox(box, { x, y: at.y, w: TEXT_MIN_W, fit: true });
   }
 
   /** Delete everything selected, as one undo step. */
@@ -6633,7 +6822,16 @@ export class InkSurface {
       this.endCrop(true);
       return;
     }
-    if (this.toolState.tool !== "select") this.deselectImage();
+    // A tap beside the press menu only closes it, as a tap beside any menu does.
+    if (this.pressMenu) {
+      this.clearSelection();
+      return;
+    }
+    // Outside the lasso a selection is a paste's or Circle to lasso's: a tap lets go of it.
+    if (this.toolState.tool !== "select") {
+      this.deselectImage();
+      this.clearSelection();
+    }
     const at = this.toLayout(clientX, clientY);
     const box = boxAtPoint(this.pageLayout, at.x, at.y);
     // A finger on linked ink opens the link; the pen keeps writing over it.
@@ -7251,6 +7449,15 @@ function now(): number {
 /** Whether an event's target is a page text box, or inside one. */
 function onTextBox(target: EventTarget | null): boolean {
   return (target as Element | null)?.closest(".goodobsidian-page-textbox") != null;
+}
+
+/** Everything on a page the lasso could pick up: a locked picture stays put. */
+function selectablesOf(page: Page): ElementLists {
+  return {
+    strokes: page.strokes,
+    images: page.images.filter((image) => image.locked !== true),
+    textBoxes: page.textBoxes,
+  };
 }
 
 function onSelectionMenu(target: EventTarget | null): boolean {

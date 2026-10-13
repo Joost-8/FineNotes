@@ -56,6 +56,8 @@ interface Contact {
   /** The contact's size, CSS px; left out, the event has none (as WebKit reports 1). */
   width?: number;
   height?: number;
+  /** The mouse button pressed (2 is the right one); left out, the main one. */
+  button?: number;
   /** Samples `getCoalescedEvents()` returns; `undefined` leaves the method out. */
   coalesced?: Contact[];
   /** Samples `getPredictedEvents()` returns; `undefined` leaves the method out. */
@@ -73,6 +75,7 @@ interface StandInEvent {
   timeStamp: number;
   width: number;
   height: number;
+  button: number;
   prevented: boolean;
   preventDefault(): void;
   getCoalescedEvents?: () => StandInEvent[];
@@ -91,6 +94,7 @@ function eventFor(id: number, pointerType: string, c: Contact): StandInEvent {
     timeStamp: c.t ?? 0,
     width: c.width ?? 1,
     height: c.height ?? 1,
+    button: c.button ?? 0,
     prevented: false,
     preventDefault() {
       event.prevented = true;
@@ -817,5 +821,79 @@ describe("finger double taps", () => {
     tap(rig, [1, 2], 1000);
     tap(rig, [3, 4], 1250);
     expect(taps(rig)).toEqual([]);
+  });
+});
+
+describe("what the press menu's hold reads (finger-hold.ts)", () => {
+  function holdRig(): { el: StandInElement; controller: PointerController; log: string[] } {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(el as unknown as HTMLElement, toSurface, {
+      onStart: (s) => log.push(`start ${show(s)}`),
+      onMove: () => log.push("move"),
+      onEnd: () => log.push("end"),
+      onCancel: () => log.push("cancel"),
+      onPanStart: () => log.push("panStart"),
+      onPanEnd: (t) => log.push(`panEnd t=${t}`),
+      onFingerContact: (w, h) => log.push(`contact ${w}x${h}`),
+      onFingerCancel: (t) => log.push(`fingerCancel t=${t}`),
+    });
+    controller.attach();
+    return { el, controller, log };
+  }
+  const fire = (el: StandInElement, phase: Phase, id: number, type: string, c: Contact): void =>
+    el.listeners.get(phase)?.(eventFor(id, type, c));
+
+  it("remembers when a pen last did anything, hovering included", () => {
+    const { el, controller } = holdRig();
+    expect(controller.lastPenAt).toBeNull();
+    fire(el, "pointermove", 1, "pen", { x: 1, y: 1, t: 40 });
+    expect(controller.lastPenAt).toBe(40);
+    fire(el, "pointerdown", 1, "pen", { x: 1, y: 1, t: 50 });
+    fire(el, "pointerup", 1, "pen", { x: 1, y: 1, t: 90 });
+    expect(controller.lastPenAt).toBe(90);
+    // Fingers and the mouse are no pen.
+    fire(el, "pointerdown", 2, "touch", { x: 1, y: 1, t: 200 });
+    fire(el, "pointerdown", 3, "mouse", { x: 1, y: 1, t: 300 });
+    expect(controller.lastPenAt).toBe(90);
+  });
+
+  it("reports a finger's contact size once the pan has started, and as it moves", () => {
+    const { el, log } = holdRig();
+    fire(el, "pointerdown", 2, "touch", { x: 5, y: 5, t: 1, width: 30, height: 40 });
+    fire(el, "pointermove", 2, "touch", { x: 6, y: 5, t: 2, width: 90, height: 80 });
+    expect(log).toEqual(["panStart", "contact 30x40", "contact 90x80"]);
+  });
+
+  it("tells a cancelled finger from a lifted one, just before the pan ends", () => {
+    const { el, log } = holdRig();
+    fire(el, "pointerdown", 2, "touch", { x: 5, y: 5, t: 1 });
+    fire(el, "pointercancel", 2, "touch", { x: 5, y: 5, t: 600 });
+    fire(el, "pointerdown", 3, "touch", { x: 5, y: 5, t: 700 });
+    fire(el, "pointerup", 3, "touch", { x: 5, y: 5, t: 800 });
+    expect(log.filter((line) => !line.startsWith("contact"))).toEqual([
+      "panStart",
+      "fingerCancel t=600",
+      "panEnd t=600",
+      "panStart",
+      "panEnd t=800",
+    ]);
+  });
+
+  it("never draws with the right mouse button: it opens the page's menu", () => {
+    const { el, log } = holdRig();
+    fire(el, "pointerdown", 1, "mouse", { x: 5, y: 5, button: 2 });
+    fire(el, "pointermove", 1, "mouse", { x: 9, y: 9 });
+    fire(el, "pointerup", 1, "mouse", { x: 9, y: 9, button: 2 });
+    expect(log).toEqual([]);
+    expect(el.captured.size).toBe(0);
+    fire(el, "pointerdown", 1, "mouse", { x: 5, y: 5, button: 0 });
+    expect(log).toEqual(["start 1005,2005 p=0.5 tilt=0,0"]);
+  });
+
+  it("lets a pen draw whatever button it reports (a barrel button is no right-click)", () => {
+    const { el, log } = holdRig();
+    fire(el, "pointerdown", 1, "pen", { x: 5, y: 5, button: 2 });
+    expect(log).toEqual(["start 1005,2005 p=0.5 tilt=0,0"]);
   });
 });
