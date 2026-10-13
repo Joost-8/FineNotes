@@ -22,22 +22,29 @@
  * A section written before 0.5 has no page comments; it was a transcription of
  * page 1 (the old code only ever read `firstPage`), and is adopted as such.
  *
- * The section ends with the notebook's handwritten links, when it has any
- * (FineNotes#20), so Obsidian's backlinks and graph see them:
+ * The section ends with the notebook's links, handwritten and typed in text
+ * boxes, when it has any (FineNotes#20), so Obsidian's backlinks, outgoing
+ * links and graph see them:
  *
  *     ### Links
  *     <!--goodobsidian-links-->
- *     - [[Signals#FIR filters]]
+ *     - [[Signals#FIR filters]] <!--1k9z0qa-->
  *     - <https://en.wikipedia.org/wiki/Finite_impulse_response>
  *
- * The list is rewritten from the notebook on every save; transcription
- * writes leave it where it is, at the end.
+ * The list is rewritten from the notebook on save, only when it differs;
+ * transcription writes leave it where it is, at the end. Each note link
+ * carries a key: a hash of the target as the notebook stores it. When a note
+ * or heading it leads to is renamed, Obsidian rewrites the link in this list
+ * like any other, and the key tells which of the notebook's links it was,
+ * so the notebook adopts the new target when it next loads
+ * (`renamedLinkTargets`). A list written by 2.0.0 has no keys, and is read
+ * by position: it was written from the same notebook, in the same order.
  *
  * No DOM, no Obsidian.
  */
 
 import type { Page } from "../model/document";
-import { externalUrl, isExternalTarget } from "../model/links";
+import { externalUrl, isExternalTarget, normalizeLinkTarget } from "../model/links";
 import { readTextSection, writeTextSection } from "./text-layer";
 
 /** The comment that opens the links list at the end of the section. */
@@ -59,13 +66,111 @@ export function splitLinkIndex(section: string): { rest: string; links: string }
   };
 }
 
+/**
+ * The key a note link is listed under: FNV-1a over the target as the
+ * notebook stores it, base 36.
+ */
+export function linkKey(target: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < target.length; i++) {
+    h ^= target.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
 /** The links list for these targets, or "" for none. */
 export function formatLinkIndex(targets: readonly string[]): string {
   if (targets.length === 0) return "";
   const items = targets.map((target) =>
-    isExternalTarget(target) ? `- <${externalUrl(target)}>` : `- [[${target}]]`,
+    isExternalTarget(target)
+      ? `- <${externalUrl(target)}>`
+      : `- [[${target}]] <!--${linkKey(target)}-->`,
   );
   return [LINKS_HEADING, LINKS_MARKER, ...items].join("\n");
+}
+
+/** One item of a links list as it is on disk now. */
+export interface ListedLink {
+  /** Where it leads now: a note link's target, or a web address. */
+  target: string;
+  external: boolean;
+  /** The key written beside a note link. */
+  key?: string;
+}
+
+const NOTE_ITEM_RE = /^- \[\[(.*)\]\](?:\s*<!--([0-9a-z]+)-->)?$/;
+const WEB_ITEM_RE = /^- <(.*)>$/;
+
+/**
+ * The items of a section's links list, in order. A line that is not an
+ * item (a hand edit) is left out, and so is an alias, should one have been
+ * added to a note link.
+ */
+export function readLinkIndex(section: string | null): ListedLink[] {
+  const out: ListedLink[] = [];
+  for (const raw of splitLinkIndex(section ?? "").links.split("\n")) {
+    const line = raw.trim();
+    const note = NOTE_ITEM_RE.exec(line);
+    const web = note ? null : WEB_ITEM_RE.exec(line);
+    if (note) {
+      const target = normalizeLinkTarget(`[[${note[1]}]]`);
+      const key = note[2] ? { key: note[2] } : {};
+      if (target !== undefined) out.push({ target, external: false, ...key });
+    } else if (web) out.push({ target: web[1], external: true });
+  }
+  return out;
+}
+
+/** Whether a target read back from the list can stand in a box's `[[…]]`, and in the list again. */
+function adoptable(target: string): boolean {
+  return !isExternalTarget(target) && !/[[\]]/.test(target);
+}
+
+/**
+ * The note links Obsidian renamed in the list since the notebook wrote it:
+ * each of `targets` (the notebook's own, as `linkTargets` gives them) whose
+ * item now leads somewhere else, mapped to where. Nothing is guessed: a key
+ * two targets share, or that two items carry with different targets,
+ * renames neither; a list without keys counts only when it lines up with
+ * `targets` item for item, web links included.
+ */
+export function renamedLinkTargets(
+  section: string | null,
+  targets: readonly string[],
+): Map<string, string> {
+  const renames = new Map<string, string>();
+  const items = readLinkIndex(section);
+  const adopt = (from: string, to: string): void => {
+    if (to !== from && !isExternalTarget(from) && adoptable(to)) renames.set(from, to);
+  };
+
+  if (!items.some((item) => item.key !== undefined)) {
+    // Written by 2.0.0: by position.
+    if (items.length !== targets.length) return renames;
+    const lined = targets.every((target, i) =>
+      isExternalTarget(target)
+        ? items[i].external && items[i].target === externalUrl(target)
+        : !items[i].external,
+    );
+    if (lined) targets.forEach((target, i) => adopt(target, items[i].target));
+    return renames;
+  }
+
+  // Where each key leads now, and how many of the notebook's targets have it.
+  const listed = new Map<string, Set<string>>();
+  for (const { key, target } of items) {
+    if (key !== undefined) listed.set(key, (listed.get(key) ?? new Set()).add(target));
+  }
+  const owners = new Map<string, number>();
+  const notes = targets.filter((target) => !isExternalTarget(target));
+  for (const key of notes.map(linkKey)) owners.set(key, (owners.get(key) ?? 0) + 1);
+  for (const target of notes) {
+    const key = linkKey(target);
+    const now = listed.get(key);
+    if (owners.get(key) === 1 && now?.size === 1) adopt(target, [...now][0]);
+  }
+  return renames;
 }
 
 /** A section with its links list replaced by one for these targets. */

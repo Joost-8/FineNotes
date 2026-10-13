@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   LINKS_MARKER,
   formatLinkIndex,
+  linkKey,
   parsePageTranscripts,
   splitLinkIndex,
   syncLinkIndex,
@@ -21,12 +22,12 @@ const PAGE = "### Page 1\n<!--goodobsidian-page p1 abc-->\nHello";
 const LIST = formatLinkIndex(["Signals#FIR filters", "https://x.org/a b", "www.styluslabs.com"]);
 
 describe("formatLinkIndex", () => {
-  it("lists notes as wikilinks and addresses as autolinks, under a heading", () => {
+  it("lists notes as keyed wikilinks and addresses as autolinks, under a heading", () => {
     expect(LIST).toBe(
       [
         "### Links",
         LINKS_MARKER,
-        "- [[Signals#FIR filters]]",
+        `- [[Signals#FIR filters]] <!--${linkKey("Signals#FIR filters")}-->`,
         "- <https://x.org/a b>",
         "- <https://www.styluslabs.com>",
       ].join("\n"),

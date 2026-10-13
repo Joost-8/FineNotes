@@ -47,6 +47,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- Links in a notebook, handwritten or typed in a text box, keep working
+  when the note or heading they lead to is renamed or moved. Obsidian
+  updated them in the notebook's links list, but the notebook's next save
+  put the old name back; now the notebook takes the new name from the list
+  when it next opens, or at once if it is open.
 - Reading handwriting on the device no longer makes Obsidian restart over
   and over on some iPads. A short level line, such as a minus sign or a
   fraction bar, could take all of the memory (#22).
