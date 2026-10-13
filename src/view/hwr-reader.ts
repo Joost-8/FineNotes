@@ -10,6 +10,7 @@ import type { PageReading } from "../recognition/hwr/recognizer";
 import { errorMessage } from "../util/errors";
 import type { HandwritingReader } from "./handwriting";
 import type { InkView } from "./ink-view";
+import { writeSystemText } from "./system-clipboard";
 
 /** Read the page in view and show what it says. */
 export async function showPageReading(
@@ -95,7 +96,7 @@ class HwrReadingModal extends Modal {
       .addButton((button) =>
         button.setButtonText("Copy text").onClick(() => {
           const text = reading.lines.map((l) => l.text).join("\n");
-          navigator.clipboard.writeText(text).then(
+          writeSystemText(text).then(
             () => new Notice("FineNotes: page text copied."),
             () => new Notice("FineNotes: could not copy here; select the text instead."),
           );

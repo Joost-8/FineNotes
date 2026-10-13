@@ -21,6 +21,7 @@ import {
   markdownToPlainText,
 } from "../recognition/ai-chat";
 import { errorMessage } from "../util/errors";
+import { writeSystemText } from "./system-clipboard";
 
 export interface AskPages {
   images: ChatImage[];
@@ -213,7 +214,7 @@ export class AskAiModal extends Modal {
     setIcon(copy.createSpan(), "copy");
     copy.createSpan({ text: "Copy" });
     copy.addEventListener("click", () => {
-      void navigator.clipboard.writeText(markdown).then(
+      void writeSystemText(markdown).then(
         () => new Notice("Answer copied."),
         () => new Notice("FineNotes could not use the clipboard here."),
       );

@@ -179,6 +179,7 @@ import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
 import { errorMessage } from "../util/errors";
+import { writeSystemText } from "./system-clipboard";
 
 /** Quiet time after the page being read changes before it is remembered. */
 const LAST_PAGE_DEBOUNCE_MS = 500;
@@ -2126,7 +2127,7 @@ export class InkView extends TextFileView {
       `#page=${page}`,
       pageLinkLabel(file.basename, page),
     );
-    void navigator.clipboard.writeText(link).then(
+    void writeSystemText(link).then(
       () => new Notice(`Link to page ${page} copied.`),
       () => new Notice("FineNotes could not use the clipboard here."),
     );

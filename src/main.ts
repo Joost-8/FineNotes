@@ -99,6 +99,7 @@ import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
+import { writeSystemText } from "./view/system-clipboard";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
@@ -992,7 +993,7 @@ export default class GoodObsidianPlugin extends Plugin {
     else await this.app.vault.create(path, body);
     let copied = false;
     try {
-      await navigator.clipboard.writeText(report);
+      await writeSystemText(report);
       copied = true;
     } catch {
       // iOS refuses clipboard writes outside a direct user gesture; the note is the fallback.

@@ -20,6 +20,31 @@ export type SystemPaste =
   /** It could not be read: no API here, a declined bubble, or a refusal. */
   | { kind: "unavailable" };
 
+/** Told each time FineNotes writes text to the system clipboard. */
+const textWritten = new Set<() => void>();
+
+/** Call `listener` whenever {@link writeSystemText} succeeds; returns the unsubscribe. */
+export function onSystemTextWritten(listener: () => void): () => void {
+  textWritten.add(listener);
+  return () => textWritten.delete(listener);
+}
+
+/**
+ * Put `text` on the system clipboard. Every copy of text in FineNotes goes
+ * through here, so the plugin's own ink clipboard learns it is now the
+ * older of the two: a Paste after "Copy text" pastes the text, not ink
+ * copied before it.
+ */
+export function writeSystemText(text: string): Promise<void> {
+  const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+  if (!clip || typeof clip.writeText !== "function") {
+    return Promise.reject(new Error("No clipboard here"));
+  }
+  return clip.writeText(text).then(() => {
+    for (const listener of textWritten) listener();
+  });
+}
+
 /** Whether this engine can read the system clipboard at all. */
 export function canReadSystemClipboard(): boolean {
   const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;

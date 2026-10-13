@@ -96,6 +96,18 @@ describe("InkClipboard", () => {
     clip.put({ strokes: [stroke("s1")], images: [], textBoxes: [] }, BOUNDS);
     expect(clip.leftSinceCopy).toBe(false);
   });
+
+  it("counts text FineNotes copied as newer than the ink it holds, until the next copy", () => {
+    const clip = new InkClipboard();
+    clip.noteSystemCopy();
+    expect(clip.leftSinceCopy).toBe(false);
+    clip.put({ strokes: [stroke("s1")], images: [], textBoxes: [] }, BOUNDS);
+    // A highlight's "Copy text" after copying its ink: the text wins the next paste.
+    clip.noteSystemCopy();
+    expect(clip.leftSinceCopy).toBe(true);
+    clip.put({ strokes: [stroke("s2")], images: [], textBoxes: [] }, BOUNDS);
+    expect(clip.leftSinceCopy).toBe(false);
+  });
 });
 
 describe("pasteCopies", () => {

@@ -105,7 +105,19 @@ export class InkClipboard {
     if (this.entry) this.left = true;
   }
 
-  /** Whether the window was left since the last copy (see {@link noteWindowLeft}). */
+  /**
+   * FineNotes itself put text on the system clipboard (Copy text, Copy link
+   * to page) since the last copy: that text is now the fresher of the two,
+   * just as after {@link noteWindowLeft}.
+   */
+  noteSystemCopy(): void {
+    if (this.entry) this.left = true;
+  }
+
+  /**
+   * Whether the system clipboard may hold something newer than this one: the
+   * window was left, or FineNotes wrote to it, since the last copy.
+   */
   get leftSinceCopy(): boolean {
     return this.left;
   }

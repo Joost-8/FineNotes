@@ -281,8 +281,13 @@ import {
 } from "./toolbar";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
-import { inkFirst, pastedTextOrigin } from "./paste-choice";
-import { canReadSystemClipboard, readSystemClipboard } from "./system-clipboard";
+import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
+import {
+  canReadSystemClipboard,
+  onSystemTextWritten,
+  readSystemClipboard,
+  writeSystemText,
+} from "./system-clipboard";
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
@@ -667,6 +672,8 @@ const LOCK_BADGE_INSET_PX = 18;
  * this Obsidian window, so ink copied in one note pastes into another.
  */
 const clipboard = new InkClipboard();
+// Text FineNotes copies (Copy text, a page link) is newer than any ink held.
+onSystemTextWritten(() => clipboard.noteSystemCopy());
 
 /**
  * A move, resize, stretch or rotate of the selected image, from pointerdown
@@ -4773,7 +4780,7 @@ export class InkSurface {
   /** Put `text` on the system clipboard, and say so. */
   private copyText(text: string): void {
     if (!text) return;
-    void navigator.clipboard.writeText(text).then(
+    void writeSystemText(text).then(
       () => new Notice("Text copied."),
       () => new Notice("FineNotes could not use the clipboard here."),
     );
@@ -6389,11 +6396,11 @@ export class InkSurface {
 
   /**
    * A paste event reached the host. The plugin's clipboard is pasted — unless
-   * the system clipboard holds a picture and is likely the fresher of the
-   * two (the plugin's is empty, or the app was left since it was filled, so
-   * another app may have copied since); then the picture goes to the host's
-   * `onPasteImage`. Text fields keep their own pastes. Returns whether the
-   * paste was taken.
+   * the system clipboard holds a picture or text and is likely the fresher of
+   * the two (the plugin's is empty, the app was left since it was filled, or
+   * FineNotes copied text since); then a picture goes to the host's
+   * `onPasteImage`, and text becomes a text box on the page in view. Text
+   * fields keep their own pastes. Returns whether the paste was taken.
    */
   handlePaste(event: ClipboardEvent): boolean {
     window.clearTimeout(this.pasteTimer);
@@ -6407,8 +6414,12 @@ export class InkSurface {
     }
     const onImage = this.imagesShown && !this.practice ? this.callbacks.onPasteImage : undefined;
     const file = onImage ? imageFileOf(event.clipboardData) : null;
+    const text = this.practice
+      ? ""
+      : cleanPastedText(event.clipboardData?.getData("text/plain") ?? "");
     const systemFirst =
-      file !== null && (clipboard.leftSinceCopy || !clipboard.canPaste(this.imagesShown));
+      (file !== null || text !== "") &&
+      (clipboard.leftSinceCopy || !clipboard.canPaste(this.imagesShown));
     if (!systemFirst && this.paste()) {
       event.preventDefault();
       return true;
@@ -6416,6 +6427,15 @@ export class InkSurface {
     if (file && onImage) {
       event.preventDefault();
       onImage(file);
+      return true;
+    }
+    // Text, as the press menu's Paste takes it: a text box in the middle of
+    // the page in view.
+    const region = text ? this.visibleRegion(this.pageIndex) : null;
+    if (region) {
+      event.preventDefault();
+      const at = { x: (region.minX + region.maxX) / 2, y: (region.minY + region.maxY) / 2 };
+      this.addPastedText(this.pageIndex, at, text);
       return true;
     }
     return false;
