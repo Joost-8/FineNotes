@@ -32,7 +32,7 @@ extracted from the matching section of this file by `release.yml`.
   tool, as in GoodNotes. Paste puts ink you copied with the lasso, a picture
   or text from another app where your finger was. On the iPad, the system
   may ask you to tap its own "Paste" first. On a computer, right-click the
-  page.
+  page; Cmd/Ctrl+V now also pastes copied text as a text box.
 - **Import notebooks from Goodnotes and Notability (beta).** "Import from
   another app…" in the New notebook dialog, or "Import notebook (beta)…" in
   a folder's menu, turns a `.goodnotes` or `.note` export, or a backup
