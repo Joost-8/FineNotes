@@ -186,6 +186,8 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type PageGeometry,
+  type PdfBackdrop,
   type ShapeKind,
   type Stroke,
   type TextBoxElement,
@@ -193,6 +195,8 @@ import {
   strokeBounds,
   strokeCount,
 } from "../model/document";
+import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
+import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
   AddElements,
@@ -277,7 +281,7 @@ import {
   shapeModeFor,
   tableSizeFor,
 } from "./toolbar";
-import { SelectionActionBar } from "./selection-bar";
+import { SelectionActionBar, onTap } from "./selection-bar";
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
@@ -327,6 +331,14 @@ const OFF_PAGE_TOLERANCE_PX = 24;
 /** How long the notice stays, and how long it takes to fade. */
 const OFF_PAGE_NOTICE_MS = 4000;
 const OFF_PAGE_FADE_MS = 200;
+/**
+ * How near a PDF's text the highlighter must come down to snap to it, in
+ * screen px at fit-to-page ({@link InkSurface.atFitZoom}): a Pencil aimed at
+ * a line of small print lands a little above or below it.
+ */
+const TEXT_SNAP_SLOP_PX = 8;
+/** How long the snapped text and its Copy stay up. */
+const TEXT_COPY_NOTICE_MS = 6000;
 
 /*
  * The page counter, the scroll thumbs and the zoom readout show only while
@@ -513,6 +525,16 @@ export interface InkSurfaceCallbacks {
    * this, only the plugin's clipboard is pasted.
    */
   onPasteImage?: (file: File) => void;
+}
+
+/**
+ * The text of PDF backdrop pages, laid out in page space (the host reads it
+ * with pdf.js; `pdf-text-source.ts`). `peek` never waits: null means not
+ * read yet, and the highlighter stays freehand until `request` has read it.
+ */
+export interface PdfTextSource {
+  peek(backdrop: PdfBackdrop, geometry: PageGeometry): TextLayout | null;
+  request(backdrop: PdfBackdrop): void;
 }
 
 /**
@@ -806,6 +828,17 @@ export class InkSurface {
   private offPageCommand: Command | null = null;
   private offPageTimer = 0;
   private offPageFade: Animation | null = null;
+  /** The text a highlight just snapped to, with Copy (`showTextCopy`). */
+  private readonly textCopyEl: HTMLElement;
+  private readonly textCopyLabel: HTMLElement;
+  private textCopyText = "";
+  private textCopyTimer = 0;
+  /** The highlight the notice is about: it goes once that is undone or followed. */
+  private textCopyCommand: Command | null = null;
+  /** PDF pages' text, for the highlighter that snaps to it; null until the host sets one. */
+  private textSource: PdfTextSource | null = null;
+  /** A highlighter drag that started over a PDF's text, from pen-down to lift. */
+  private textMark: { layout: TextLayout; from: Pt; selection: TextSelection } | null = null;
   private readonly indicatorEl: HTMLElement;
   /** "68%", while the zoom changes. */
   private readonly zoomReadoutEl: HTMLElement;
@@ -1265,6 +1298,20 @@ export class InkSurface {
       const command = this.offPageCommand;
       this.hideOffPage();
       if (command && this.history.isLatest(command)) this.undo();
+    });
+    // The text a highlight snapped to, with Copy, where the off-page notice shows.
+    this.textCopyEl = this.surfaceEl.createDiv({ cls: "goodobsidian-text-copy is-hidden" });
+    this.textCopyEl.setAttribute("role", "status");
+    iconInto(this.textCopyEl.createSpan({ cls: "goodobsidian-text-copy-icon" }), "highlighter", "");
+    this.textCopyLabel = this.textCopyEl.createSpan({ cls: "goodobsidian-text-copy-label" });
+    const textCopyButton = this.textCopyEl.createEl("button", {
+      cls: "goodobsidian-text-copy-button clickable-icon",
+      text: "Copy",
+    });
+    onTap(textCopyButton, () => {
+      const text = this.textCopyText;
+      this.hideTextCopy();
+      this.copyText(text);
     });
     this.hudEl = this.surfaceEl.createDiv({ cls: "goodobsidian-hud" });
     this.eraserCursorEl = this.paperEl.createDiv({ cls: "goodobsidian-eraser-cursor is-hidden" });
@@ -1852,6 +1899,9 @@ export class InkSurface {
     this.cancelPendingReturn();
     this.toolSeen = tool;
     this.toolState.tool = tool;
+    if (tool !== "highlighter") this.dropTextMark();
+    if (this.textCopyTimer) this.hideTextCopy();
+    this.prefetchText();
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", tool === "text");
     if (tool !== "select") this.dropSelection();
@@ -2277,6 +2327,7 @@ export class InkSurface {
       this.pageIndex = index;
       this.callbacks.onPageChange?.(index, total);
       this.reportStatus();
+      this.prefetchText();
     }
   }
 
@@ -3670,6 +3721,7 @@ export class InkSurface {
       this.showShapeDraft(box);
       return;
     }
+    if (this.startTextMark(box, at)) return;
     const resumed = this.resumeLifted(box, at);
     const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
@@ -3724,6 +3776,10 @@ export class InkSurface {
 
   private inkMove(box: PageBox, samples: PointerSample[]): void {
     const last = samples[samples.length - 1];
+    if (this.textMark) {
+      if (last) this.dragTextMark(box, this.toPage(box, last));
+      return;
+    }
     if (this.shapeDrag) {
       if (last) {
         const local = this.toPage(box, last);
@@ -3767,6 +3823,10 @@ export class InkSurface {
   }
 
   private inkUp(box: PageBox, sample: PointerSample): void {
+    if (this.textMark) {
+      this.finishTextMark(box);
+      return;
+    }
     if (this.shapeDrag) {
       this.finishShapeDrag(box);
       return;
@@ -3786,6 +3846,11 @@ export class InkSurface {
    * still counts as the hold it was.
    */
   private inkCancel(box: PageBox | null): void {
+    // As ink is, a highlight is kept when iOS cancels the lift.
+    if (box && this.textMark) {
+      this.finishTextMark(box);
+      return;
+    }
     if (box && this.shapeDrag) {
       this.finishShapeDrag(box);
       return;
@@ -4504,6 +4569,166 @@ export class InkSurface {
       this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
     }
     this.inkChanged();
+  }
+
+  // --- The highlighter on a PDF's text ------------------------------------------
+
+  /**
+   * Where the text of PDF pages comes from (null: nowhere; the highlighter
+   * then never snaps). Reads the pages in view if the highlighter is in hand.
+   */
+  setTextSource(source: PdfTextSource | null): void {
+    this.textSource = source;
+    this.prefetchText();
+  }
+
+  /**
+   * The text of page `index`'s PDF, laid out on the page, or null when the
+   * page is not a PDF's or its text is not read yet (it is asked for then).
+   * Never waits: the pen can be on its way down.
+   */
+  private pageText(index: number): TextLayout | null {
+    const page = this.pageAt(index);
+    const source = this.textSource;
+    if (!page || !source || page.backdrop.kind !== "pdf") return null;
+    const layout = source.peek(page.backdrop, page.geometry);
+    if (!layout) source.request(page.backdrop);
+    return layout;
+  }
+
+  /**
+   * With the highlighter in hand, have the text of the page in view and the
+   * pages either side read, so the first stroke on them can snap.
+   */
+  private prefetchText(): void {
+    if (!this.textSource || this.toolState.tool !== "highlighter") return;
+    for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
+      this.pageText(index);
+    }
+  }
+
+  /**
+   * The highlighter came down on a PDF page's text: it marks that text, a
+   * line at a time, instead of drawing freehand. Anywhere else (off the
+   * text, on a scan, on a page whose text is still being read) it draws
+   * freehand as ever.
+   */
+  private startTextMark(box: PageBox, at: Pt): boolean {
+    if (this.toolState.tool !== "highlighter" || this.practice) return false;
+    const layout = this.pageText(box.index);
+    if (!layout) return false;
+    const selection = selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX));
+    if (!selection) return false;
+    // Not the carry-on of a stroke just lifted: this is no handwriting.
+    this.lastLift = null;
+    this.textMark = { layout, from: at, selection };
+    this.showTextMark(box);
+    return true;
+  }
+
+  private dragTextMark(box: PageBox, to: Pt): void {
+    const mark = this.textMark;
+    if (!mark) return;
+    const selection = selectText(mark.layout, mark.from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX));
+    if (!selection) return;
+    if (selection.start === mark.selection.start && selection.end === mark.selection.end) return;
+    mark.selection = selection;
+    this.showTextMark(box);
+  }
+
+  /** The highlight being dragged, drawn wet exactly as it will be stored. */
+  private showTextMark(box: PageBox): void {
+    const mark = this.textMark;
+    if (!mark) return;
+    let n = 0;
+    const strokes = textHighlightStrokes(
+      mark.selection.rects,
+      this.strokeColor(),
+      () => `draft${++n}`,
+    );
+    this.renderer?.renderWetStrokes(box.index, strokes);
+  }
+
+  /** Let go of a text highlight being dragged, keeping nothing (the tool changed under it). */
+  private dropTextMark(): void {
+    if (!this.textMark) return;
+    this.textMark = null;
+    this.renderer?.clearWet();
+  }
+
+  /** The pen lifted from a text highlight: add it, one stroke a line, as one undo step. */
+  private finishTextMark(box: PageBox): void {
+    const mark = this.textMark;
+    this.textMark = null;
+    this.activePage = null;
+    this.renderer?.clearWet();
+    const page = this.pageAt(box.index);
+    if (!mark || !page) return;
+    const strokes = textHighlightStrokes(mark.selection.rects, this.strokeColor(), () =>
+      this.strokeIds.next(),
+    );
+    if (strokes.length === 0) return;
+    const command = highlightText(page, strokes, this.penDownAt);
+    this.history.push(this.doc, command);
+    for (const stroke of strokes) {
+      this.strokeIndex.add(page.id, stroke);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
+    }
+    this.inkChanged();
+    this.showTextCopy(mark.selection.text, command);
+  }
+
+  /** Show the text a highlight snapped to, with Copy, for a few seconds. */
+  private showTextCopy(text: string, command: Command): void {
+    this.hideTextCopy();
+    if (!text) return;
+    this.textCopyText = text;
+    this.textCopyCommand = command;
+    this.textCopyLabel.setText(`\u201c${text.replace(/\s+/g, " ")}\u201d`);
+    this.textCopyEl.removeClass("is-hidden");
+    this.textCopyTimer = window.setTimeout(() => this.hideTextCopy(), TEXT_COPY_NOTICE_MS);
+  }
+
+  private hideTextCopy(): void {
+    window.clearTimeout(this.textCopyTimer);
+    this.textCopyTimer = 0;
+    this.textCopyText = "";
+    this.textCopyCommand = null;
+    this.textCopyEl.addClass("is-hidden");
+  }
+
+  /** Put `text` on the system clipboard, and say so. */
+  private copyText(text: string): void {
+    if (!text) return;
+    void navigator.clipboard.writeText(text).then(
+      () => new Notice("Text copied."),
+      () => new Notice("FineNotes could not use the clipboard here."),
+    );
+  }
+
+  /**
+   * The PDF text under highlighter ink on page `index`, snapped or freehand
+   * (`strokes`, or all of the page's). Null when the page is not a PDF's or
+   * its text is not read yet; "" when no highlight covers any text.
+   */
+  highlightedText(index = this.pageIndex, strokes?: readonly Stroke[]): string | null {
+    const page = this.pageAt(index);
+    const layout = this.pageText(index);
+    if (!page || !layout) return null;
+    return textUnder(layout, (strokes ?? page.strokes).filter(isHighlight));
+  }
+
+  /** Copy the text highlighted on the page in view, or say why there is none. */
+  copyHighlightedText(): void {
+    const page = this.pageAt(this.pageIndex);
+    if (!page || page.backdrop.kind !== "pdf" || !this.textSource) {
+      new Notice("This page has no PDF text to copy.");
+      return;
+    }
+    const text = this.highlightedText(this.pageIndex);
+    if (text === null) new Notice("Reading this page's text. Try again in a moment.");
+    else if (!text) new Notice("Nothing highlighted on this page covers text.");
+    else this.copyText(text);
   }
 
   // --- The eraser -------------------------------------------------------------------
@@ -5627,6 +5852,19 @@ export class InkSurface {
     }
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    // Highlighter ink over a PDF's text: the text it covers can be copied.
+    const highlighted = sel.strokes.some(isHighlight)
+      ? this.highlightedText(index, sel.strokes)
+      : null;
+    if (highlighted) {
+      actions.push({
+        id: "copy-text",
+        icon: "type",
+        label: "Copy text",
+        group: "edit",
+        run: () => this.copyText(highlighted),
+      });
+    }
     actions.push(...this.linkActions(sel, index));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
@@ -6983,6 +7221,7 @@ export class InkSurface {
     // The off-page notice's Undo means that stroke; once it is not the
     // latest step (more ink, an undo, a withdrawn loop) the notice goes.
     if (this.offPageCommand && !this.history.isLatest(this.offPageCommand)) this.hideOffPage();
+    if (this.textCopyCommand && !this.history.isLatest(this.textCopyCommand)) this.hideTextCopy();
     const canUndo = this.history.canUndo();
     const canRedo = this.history.canRedo();
     const shown = `${canUndo}/${canRedo}`;

@@ -5715,3 +5715,76 @@ button.goodobsidian-learn-button.is-learning {
 button.goodobsidian-learn-stop.is-hidden {
   display: none;
 }
+
+/* ------------------------------------------- highlighting a PDF's text */
+
+/* The text a highlight snapped to, with Copy: the off-page notice's toast,
+   where it shows. The quote is one line, cut short with an ellipsis. */
+.goodobsidian-text-copy {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(480px, calc(100% - 32px));
+  padding: 2px 2px 2px 14px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+  animation: goodobsidian-toast-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+.goodobsidian-text-copy.is-hidden {
+  display: none;
+}
+
+.goodobsidian-text-copy-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.goodobsidian-text-copy-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-text-copy-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-text-copy .goodobsidian-text-copy-button.clickable-icon {
+  flex: 0 0 auto;
+  height: var(--gob-touch);
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--interactive-accent);
+  font-weight: var(--font-semibold, 600);
+  opacity: 1;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) and
+  (background: color-mix(in srgb, red 50%, transparent)) {
+  .goodobsidian-text-copy {
+    background: var(--gob-frost);
+    -webkit-backdrop-filter: var(--gob-blur);
+    backdrop-filter: var(--gob-blur);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-text-copy {
+    animation: none;
+  }
+}

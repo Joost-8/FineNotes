@@ -349,7 +349,7 @@ function stopPageInput(el: HTMLElement): void {
  * Run `action` on a pointerup that follows a pointerdown on the same button,
  * or on a keyboard click. See the file comment for why not on `click`.
  */
-function onTap(button: HTMLButtonElement, action: () => void): void {
+export function onTap(button: HTMLButtonElement, action: () => void): void {
   let armed: number | null = null;
   button.addEventListener("pointerdown", (event) => {
     event.stopPropagation();

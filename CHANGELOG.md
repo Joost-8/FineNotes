@@ -8,6 +8,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **The highlighter snaps to a PDF's text.** Start a highlight on the words
+  of a PDF page and it covers whole words, line by line, as neatly as in a
+  PDF reader; start it anywhere else and it draws freehand as before. A
+  scanned page without text stays freehand.
+- **Copy the text you highlighted.** After a highlight snaps, Copy puts its
+  words on the clipboard. Lasso any highlight on a PDF page and its menu has
+  Copy text, and the command "Copy highlighted text on this page" copies all
+  of them at once.
+
 ### Changed
 
 - **Tool options come back the way you left them.** Tuck the pen's options

@@ -1201,6 +1201,25 @@ export class Renderer {
   }
 
   /**
+   * Draw strokes that are not committed yet, each in its own style, on the
+   * wet layer: a highlight snapped to a PDF's text, a stroke a line, while
+   * the pen drags it out.
+   */
+  renderWetStrokes(pageIndex: number, strokes: readonly Stroke[]): void {
+    const box = this.layout.boxes[pageIndex];
+    const ctx = this.wet.ctx;
+    this.wipe(ctx);
+    if (!box) return;
+    this.toLayoutSpace(ctx);
+    this.enterPage(ctx, box);
+    for (const stroke of strokes) {
+      fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha);
+    }
+    ctx.restore();
+    this.setWetVisible(true);
+  }
+
+  /**
    * Draw the handwriting being written, already traced into `runs` (page
    * space), on the wet layer, painted as a stored stroke of `style` is.
    */
