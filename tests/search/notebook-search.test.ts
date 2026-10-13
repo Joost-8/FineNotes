@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Page } from "../../src/model/document";
 import {
   collectPageText,
@@ -113,6 +113,28 @@ describe("searchPages", () => {
     const [hit] = searchPages(busy, "a");
     expect(hit.count).toBe(5);
     expect(hit.snippets).toHaveLength(3);
+  });
+
+  it("folds each page's text once, not again at every keystroke (research/SCALE.md)", () => {
+    const fresh = collectPageText(pages, null, SIDECAR);
+    const first = searchPages(fresh, "dec");
+    const normalize = vi.spyOn(String.prototype, "normalize");
+    try {
+      expect(searchPages(fresh, "decy")).toEqual(searchPages(index, "decy"));
+      expect(searchPages(fresh, "dec")).toEqual(first);
+      // Only the queries' own characters are folded: "decy" twice, then "dec".
+      expect(normalize.mock.calls.length).toBe(11);
+    } finally {
+      normalize.mockRestore();
+    }
+  });
+
+  it("searches a source's new text if it changes", () => {
+    const changing = collectPageText([page("x", ["first draft"])], null, null);
+    expect(searchPages(changing, "draft")).toHaveLength(1);
+    changing[0].sources[0].text = "final copy";
+    expect(searchPages(changing, "draft")).toEqual([]);
+    expect(searchPages(changing, "copy")[0].snippets[0].match).toBe("copy");
   });
 
   it("returns nothing for a blank query", () => {

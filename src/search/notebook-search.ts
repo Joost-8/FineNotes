@@ -147,7 +147,7 @@ export function searchPages(index: readonly PageText[], query: string): SearchHi
   if (terms.length === 0) return [];
   const hits: SearchHit[] = [];
   for (const page of index) {
-    const folded = page.sources.map((source) => ({ source, ...fold(source.text) }));
+    const folded = page.sources.map((source) => ({ source, ...foldedOf(source) }));
     const all = folded.map((f) => f.text).join("\n");
     if (!terms.every((term) => all.includes(term))) continue;
 
@@ -164,6 +164,24 @@ export function searchPages(index: readonly PageText[], query: string): SearchHi
     hits.push({ pageIndex: page.pageIndex, count, snippets });
   }
   return hits;
+}
+
+/**
+ * Each source's folded text, made the first time it is searched. The search
+ * box searches on every keystroke, and folding every page again each time
+ * took ~230 ms a key in a 1,000-page notebook (research/SCALE.md). Keyed on
+ * the source object, so it lives as long as the index that holds it.
+ */
+const foldedSources = new WeakMap<PageSource, { of: string; text: string; map: number[] }>();
+
+function foldedOf(source: PageSource): { text: string; map: number[] } {
+  let folded = foldedSources.get(source);
+  // A source given new text is folded again.
+  if (folded?.of !== source.text) {
+    folded = { of: source.text, ...fold(source.text) };
+    foldedSources.set(source, folded);
+  }
+  return folded;
 }
 
 /** Non-overlapping matches of any term, left to right, longest term first at a tie. */

@@ -10,7 +10,8 @@
  *
  * The index caches the document, it does not own it. Whoever changes a
  * page's strokes either reports the change (`add`, `remove`, `clearPage`)
- * or has the index read the pages again (`rebuild`).
+ * or has the index read those pages again (`refreshPages`), or all of them
+ * (`rebuild`).
  *
  * Pure: no DOM, no Obsidian.
  */
@@ -32,6 +33,25 @@ export class StrokeIndex {
     this.grids.clear();
     this.placed.clear();
     for (const page of pages) {
+      for (const stroke of page.strokes) this.add(page.id, stroke);
+    }
+  }
+
+  /**
+   * Read again only the pages whose id is in `pageIds`, from `pages`, after
+   * an edit known to change no other page; a page no longer in `pages` is
+   * dropped. Reading every page took ~1 s an erase in a notebook of 1,000
+   * pages of notes (research/SCALE.md).
+   */
+  refreshPages(pages: readonly Page[], pageIds: Iterable<string>): void {
+    const wanted = new Set(pageIds);
+    if (wanted.size === 0) return;
+    for (const id of wanted) this.grids.delete(id);
+    for (const [id, where] of this.placed) {
+      if (wanted.has(where.pageId)) this.placed.delete(id);
+    }
+    for (const page of pages) {
+      if (!wanted.has(page.id)) continue;
       for (const stroke of page.strokes) this.add(page.id, stroke);
     }
   }

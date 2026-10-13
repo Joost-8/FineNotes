@@ -790,6 +790,19 @@ describe("whole-stroke erase", () => {
     expect(ids(w.doc.pages[1])).toEqual(["s4", "s5"]);
   });
 
+  it("re-reads only the pages it erased on, and has them right in the index", () => {
+    const w = ink(twoPages());
+    const index = w.surface.strokeIndex as StrokeIndex;
+    const rebuild = vi.spyOn(index, "rebuild");
+    (w.surface.eraseIds as Set<string>).add("s2").add("s4");
+    w.lift(0);
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(w.strokeAt(0, 50, 100)).toBeNull();
+    expect(w.strokeAt(1, 50, 10)).toBeNull();
+    expect(w.strokeAt(1, 50, 100)?.id).toBe("s5");
+    expect(w.strokeAt(0, 50, 10)?.id).toBe("s1");
+  });
+
   it("records nothing when nothing was marked, or only ids no page holds", () => {
     const w = ink(twoPages());
     w.lift(0);

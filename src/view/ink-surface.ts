@@ -4708,7 +4708,13 @@ export class InkSurface {
       this.doc,
       steps.length === 1 ? steps[0] : new CompositeCommand("Erase", steps),
     );
-    this.strokeIndex.rebuild(this.doc.pages);
+    // Each step changes the one page it names; the rest of the index stands.
+    const touched = steps.map((step) => step.pageId);
+    if (touched.every((id): id is string => id !== undefined)) {
+      this.strokeIndex.refreshPages(this.doc.pages, touched);
+    } else {
+      this.strokeIndex.rebuild(this.doc.pages);
+    }
     this.inkChanged();
   }
 
@@ -5810,7 +5816,7 @@ export class InkSurface {
     this.clearSelection();
     this.history.push(this.doc, new RemoveElements(sel.pageId, elements, label));
     if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
-    this.strokeIndex.rebuild(this.doc.pages);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     this.renderDry();
     this.syncTextBoxes();
     this.changed();
@@ -5908,7 +5914,7 @@ export class InkSurface {
     this.dropSelection();
     this.history.push(this.doc, new AddElements(page.id, copies, "Paste"));
     this.renderer?.invalidateRegion(box.index, shiftBounds(entry.bounds, d.dx, d.dy));
-    this.strokeIndex.rebuild(this.doc.pages);
+    this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
     this.renderDry();
     this.syncTextBoxes();
     this.select(page.id, copies);
@@ -6439,7 +6445,7 @@ export class InkSurface {
     const copies = copyElements(sel, this.freshIds(), d.dx, d.dy);
     this.history.push(this.doc, new AddElements(sel.pageId, copies));
     this.renderer?.invalidateRegion(box.index, shiftBounds(bounds, d.dx, d.dy));
-    this.strokeIndex.rebuild(this.doc.pages);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     this.renderDry();
     this.syncTextBoxes();
     this.select(sel.pageId, copies);
@@ -6602,7 +6608,7 @@ export class InkSurface {
       this.doc.pages.some((page) => page.id === pageId);
     if (moved) {
       this.history.push(this.doc, new TranslateElements(pageId, drag.selection, drag.dx, drag.dy));
-      this.strokeIndex.rebuild(this.doc.pages);
+      this.strokeIndex.refreshPages(this.doc.pages, [pageId]);
     }
     if (box) {
       const after = moved ? shiftBounds(drag.bounds, drag.dx, drag.dy) : null;

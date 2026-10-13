@@ -122,4 +122,65 @@ describe("StrokeIndex", () => {
     index.rebuild([page("p1", [line("s1", 0, 10, 0)]), page("p2", [line("s1", 0, 10, 50)])]);
     expect(index.pageOf("s1")).toBe("p2");
   });
+
+  describe("refreshPages", () => {
+    /** Everything the index answers about `pages`, to compare two indexes. */
+    function answers(index: StrokeIndex, pages: Page[]): unknown {
+      const box = { minX: -1000, minY: -1000, maxX: 5000, maxY: 5000 };
+      const ids = pages.flatMap((p) => p.strokes.map((s) => s.id)).concat(["s1", "s2", "s3"]);
+      return {
+        within: pages.map((p) => [...index.within(p.id, box)].sort()),
+        near: pages.map((p) => [...index.near(p.id, 50, 10, 2)].sort()),
+        where: ids.map((id) => [id, index.pageOf(id), index.get(id)?.pts[0]]),
+      };
+    }
+
+    function rebuilt(pages: Page[]): StrokeIndex {
+      const index = new StrokeIndex();
+      index.rebuild(pages);
+      return index;
+    }
+
+    it("answers as a rebuild does after strokes on one page are erased, added and moved", () => {
+      const pages = twoPages();
+      const index = rebuilt(pages);
+      pages[0].strokes.splice(0, 1);
+      pages[0].strokes.push(line("s4", 300, 400, 900));
+      // MoveStrokesOnPage moves points in place.
+      pages[0].strokes[0].pts[1] += 500;
+      pages[0].strokes[0].pts[4] += 500;
+      index.refreshPages(pages, ["p1"]);
+      expect(answers(index, pages)).toEqual(answers(rebuilt(pages), pages));
+      expect(index.get("s1")).toBeUndefined();
+      expect([...index.near("p1", 50, 1100, 2)]).toEqual(["s2"]);
+    });
+
+    it("leaves the other pages as they were indexed", () => {
+      const pages = twoPages();
+      const index = rebuilt(pages);
+      // Not reported, and not refreshed: the index still has p2 as it was.
+      pages[1].strokes = [];
+      index.refreshPages(pages, ["p1"]);
+      expect([...index.near("p2", 50, 10, 2)]).toEqual(["s3"]);
+    });
+
+    it("drops a page that is gone, and ignores an empty list", () => {
+      const pages = twoPages();
+      const index = rebuilt(pages);
+      index.refreshPages(pages, []);
+      expect(index.get("s3")).toBeDefined();
+      index.refreshPages([pages[0]], ["p2"]);
+      expect(index.get("s3")).toBeUndefined();
+      expect(index.near("p2", 50, 10, 2).size).toBe(0);
+      expect(index.get("s1")).toBeDefined();
+    });
+
+    it("reads every page that shares a refreshed id", () => {
+      const pages = [page("p1", [line("s1", 0, 10, 0)]), page("p1", [line("s2", 0, 10, 50)])];
+      const index = rebuilt(pages);
+      pages[1].strokes.push(line("s3", 0, 10, 90));
+      index.refreshPages(pages, ["p1"]);
+      expect(answers(index, pages)).toEqual(answers(rebuilt(pages), pages));
+    });
+  });
 });

@@ -53,3 +53,6 @@ scripts/ui-gallery/pulled/
 
 # Promo videos, audio, covers and stats (private working files)
 /content creation/
+
+# Scale benchmark bundle and generated stress files (npm run bench:scale)
+scripts/scale/out/
