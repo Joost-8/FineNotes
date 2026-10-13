@@ -21,6 +21,7 @@ export default tseslint.config(
       "scripts/ui-gallery/out/**",
       "scripts/ui-gallery/pulled/**",
       "scripts/ui-gallery/pdf-harness/out/**",
+      "scripts/ui-gallery/embed-harness/out/**",
       "scripts/ui-gallery/showcase/out/**",
       // The handwriting rig's Python environments and outputs (gitignored).
       "research/**/.venv*/**",

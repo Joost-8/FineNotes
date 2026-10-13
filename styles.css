@@ -663,6 +663,45 @@ body,
   min-height: 0;
 }
 
+/* ------------------------------------------------------------ page embeds */
+
+/* `![[Physics.notebook#page=3]]` in a note: that page, read-only, at the
+   note's width (page-embed.ts). Reading view puts an embed in an inline span. */
+.internal-embed.goodobsidian-page-embed {
+  display: block;
+}
+
+/* Sized by its aspect-ratio (set inline) before anything is painted, so the
+   note does not jump when the page lands. Paper-white in every theme, as in
+   the notebook view; the edge keeps a white page visible on a white note. */
+.goodobsidian-page-embed-page {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: var(--radius-s);
+  background: var(--gob-paper);
+  box-shadow:
+    0 0 0 1px var(--background-modifier-border),
+    var(--shadow-s);
+}
+
+.goodobsidian-page-embed-page:focus-visible {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.goodobsidian-page-embed-page.is-hidden {
+  display: none;
+}
+
+.goodobsidian-page-embed-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* ------------------------------------------------------- page sidebar */
 
 /* GoodNotes' thumbnail panel: a two-column grid of pages docked left of the
