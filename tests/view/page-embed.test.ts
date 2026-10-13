@@ -99,12 +99,17 @@ describe("PageEmbeds' hook into Obsidian's embed registry", () => {
     expect(creator(ctx("Physics.notebook#p9"), notebook, "#p9")).not.toBe(markdownEmbed);
     expect(original).not.toHaveBeenCalled();
 
-    // A heading, the whole notebook, or a page of an ordinary note: Obsidian's.
+    // The whole notebook shows its first page.
+    expect(creator(ctx("Physics.notebook"), notebook, "")).not.toBe(markdownEmbed);
+    expect(original).not.toHaveBeenCalled();
+
+    // A heading, a block, or an ordinary note, with or without a page: Obsidian's.
     expect(creator(ctx("Physics.notebook#Intro"), notebook, "#Intro")).toBe(markdownEmbed);
-    expect(creator(ctx("Physics.notebook"), notebook, "")).toBe(markdownEmbed);
+    expect(creator(ctx("Physics.notebook#^abc"), notebook, "#^abc")).toBe(markdownEmbed);
     const plain = new TFile("Plain.md") as never;
     expect(creator(ctx("Plain#page=2"), plain, "#page=2")).toBe(markdownEmbed);
-    expect(original).toHaveBeenCalledTimes(3);
+    expect(creator(ctx("Plain"), plain, "")).toBe(markdownEmbed);
+    expect(original).toHaveBeenCalledTimes(4);
   });
 
   it("puts Obsidian's creator back when the plugin unloads", () => {

@@ -5,6 +5,8 @@ import {
   MAX_EMBED_DEVICE_WIDTH,
   SharedNotebooks,
   embedPaintSize,
+  embedLabel,
+  embedTarget,
   embedWidth,
   embeddedPageNumber,
   embedsToRelease,
@@ -34,6 +36,33 @@ describe("embeddedPageNumber", () => {
       expect(embeddedPageNumber(subpath)).toBeNull();
     },
   );
+});
+
+describe("embedTarget", () => {
+  it("shows page 1 of a notebook embedded whole", () => {
+    expect(embedTarget("")).toEqual({ page: 1, whole: true });
+    expect(embedTarget("#")).toEqual({ page: 1, whole: true });
+    expect(embedTarget("  ")).toEqual({ page: 1, whole: true });
+  });
+
+  it("shows the page a subpath names, past the end too", () => {
+    expect(embedTarget("#page=1")).toEqual({ page: 1, whole: false });
+    expect(embedTarget("#Page 3")).toEqual({ page: 3, whole: false });
+    expect(embedTarget("#p40")).toEqual({ page: 40, whole: false });
+  });
+
+  it("leaves a heading or a block to Obsidian", () => {
+    expect(embedTarget("#Introduction")).toBeNull();
+    expect(embedTarget("#^block")).toBeNull();
+    expect(embedTarget("#page=0")).toBeNull();
+  });
+});
+
+describe("embedLabel", () => {
+  it("names the whole notebook, or the page", () => {
+    expect(embedLabel("Physics.notebook", { page: 1, whole: true })).toBe("Physics");
+    expect(embedLabel("Physics.notebook", { page: 3, whole: false })).toBe("Physics, page 3");
+  });
 });
 
 describe("pageLinkLabel", () => {

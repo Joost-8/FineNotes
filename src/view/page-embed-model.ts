@@ -22,6 +22,29 @@ export function embeddedPageNumber(subpath: string): number | null {
   return index === null ? null : index + 1;
 }
 
+/** What an embed of a notebook shows: page `page` (1-based); `whole` for a link to the notebook itself. */
+export interface EmbedTarget {
+  page: number;
+  /** `![[Physics.notebook]]`: page 1 is shown, and a click opens the notebook as any link does. */
+  whole: boolean;
+}
+
+/**
+ * What an embed of a notebook with this subpath shows: the page it names, or
+ * page 1 for the notebook itself (no subpath). `null` for any other subpath,
+ * such as a heading: those stay Obsidian's.
+ */
+export function embedTarget(subpath: string): EmbedTarget | null {
+  if (/^#?\s*$/.test(subpath)) return { page: 1, whole: true };
+  const page = embeddedPageNumber(subpath);
+  return page === null ? null : { page, whole: false };
+}
+
+/** What an embed reads as when it is a link: "Physics" for the whole notebook, else "Physics, page 3". */
+export function embedLabel(basename: string, target: EmbedTarget): string {
+  return target.whole ? stripInkSuffix(basename) : pageLinkLabel(basename, target.page);
+}
+
 /** What a link to page `page` (1-based) of a notebook reads as: "Physics, page 3". */
 export function pageLinkLabel(basename: string, page: number): string {
   return `${stripInkSuffix(basename)}, page ${page}`;

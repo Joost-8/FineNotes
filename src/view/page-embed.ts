@@ -12,8 +12,9 @@
  * notebook is a `.md` file, so its embeds reach the Markdown creator, which
  * would show the note's text and fail to find a section named "page=3".
  * The plugin puts a creator in front of that one: it takes notebook files
- * whose subpath names a page and hands everything else to the original,
- * untouched. The registry is not public API, so the hook checks its shape
+ * whose subpath names a page, or that have none (`![[Physics.notebook]]`
+ * shows page 1), and hands everything else, headings included, to the
+ * original, untouched. The registry is not public API, so the hook checks its shape
  * first and stands aside when it is not there; Obsidian then shows the
  * Markdown embed it always did.
  *
@@ -27,7 +28,7 @@
 
 import { type App, Component, Keymap, type TAbstractFile, TFile } from "obsidian";
 import { paperTheme } from "../canvas/backdrop";
-import { DEFAULT_PAGE_GEOMETRY, type InkDocument, type Page } from "../model/document";
+import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
 import { VaultImageCache } from "./image-cache";
@@ -37,9 +38,10 @@ import {
   SharedNotebooks,
   embedPaintSize,
   embedWidth,
-  embeddedPageNumber,
+  type EmbedTarget,
+  embedLabel,
+  embedTarget,
   embedsToRelease,
-  pageLinkLabel,
 } from "./page-embed-model";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { type PdfExportSources, paintPagePreview } from "./pdf-export";
@@ -102,7 +104,8 @@ const SLOW_PAINT_MS = 1500;
  * plugin: the hook comes off with it.
  */
 export class PageEmbeds extends Component {
-  private readonly notebooks = new SharedNotebooks<InkDocument | null>(3);
+  /** Each notebook's pages; none for a file without an ink block, `null` for one that would not decode. */
+  private readonly notebooks = new SharedNotebooks<readonly Page[] | null>(3);
   private readonly live = new Set<NotebookPageEmbed>();
   /** The embeds by the element the observers report. */
   private readonly byElement = new Map<Element, NotebookPageEmbed>();
@@ -185,9 +188,9 @@ export class PageEmbeds extends Component {
   /** A page embed for `file`, or `null` to leave the embed to Obsidian. */
   private create(ctx: EmbedContext, file: TFile, subpath: string): NotebookPageEmbed | null {
     if (!this.active) return null;
-    const page = embeddedPageNumber(subpath);
-    if (page === null || !this.host.isInkFile(file)) return null;
-    return new NotebookPageEmbed(this, ctx, file, page);
+    const target = embedTarget(subpath);
+    if (target === null || !this.host.isInkFile(file)) return null;
+    return new NotebookPageEmbed(this, ctx, file, target);
   }
 
   // --- Embeds coming and going ----------------------------------------------------
@@ -293,12 +296,12 @@ export class PageEmbeds extends Component {
     }
     const version = file.stat.mtime;
     if (embed.version !== version || !embed.page) {
-      const doc = await this.notebook(file, version);
+      const pages = await this.notebook(file, version);
       if (!this.live.has(embed)) return;
       embed.version = version;
-      embed.page = doc?.pages[embed.pageNumber - 1] ?? null;
+      embed.page = pages?.[embed.target.page - 1] ?? null;
       if (!embed.page) {
-        embed.showLink(doc ? "missing-page" : "unreadable");
+        embed.showLink(!pages ? "unreadable" : pages.length === 0 ? "no-pages" : "missing-page");
         return;
       }
     }
@@ -315,11 +318,17 @@ export class PageEmbeds extends Component {
     this.trim();
   }
 
-  /** The notebook at `file` as of `version`, decoded once for every embed of it. */
-  private notebook(file: TFile, version: number): Promise<InkDocument | null> {
+  /**
+   * The pages of the notebook at `file` as of `version`, decoded once for
+   * every embed of it: none when the file has no ink block yet (a decoded
+   * notebook always has a page), `null` when its block does not decode.
+   */
+  private notebook(file: TFile, version: number): Promise<readonly Page[] | null> {
     return this.notebooks.get(file.path, version, async () => {
       const text = await this.host.app.vault.cachedRead(file);
-      return parseInkFile(text, this.host.paperWidth()).doc;
+      const { doc, payload } = parseInkFile(text, this.host.paperWidth());
+      if (doc) return doc.pages;
+      return payload === undefined ? [] : null;
     });
   }
 
@@ -415,10 +424,11 @@ export class PageEmbeds extends Component {
 }
 
 /** Why an embed shows a link instead of its page. */
-type LinkReason = "missing-page" | "missing-file" | "unreadable";
+type LinkReason = "missing-page" | "no-pages" | "missing-file" | "unreadable";
 
 const LINK_TITLES: Record<LinkReason, (page: number) => string> = {
   "missing-page": (page) => `This notebook has no page ${page}.`,
+  "no-pages": () => "This notebook has no pages.",
   "missing-file": () => "This notebook is not in the vault.",
   unreadable: () => "This notebook could not be read.",
 };
@@ -449,8 +459,8 @@ class NotebookPageEmbed extends Component {
     private readonly embeds: PageEmbeds,
     private readonly ctx: EmbedContext,
     readonly file: TFile,
-    /** 1-based, as the link writes it. */
-    readonly pageNumber: number,
+    /** The page shown (1-based, as the link writes it), or page 1 of the whole notebook. */
+    readonly target: EmbedTarget,
   ) {
     super();
     this.containerEl = ctx.containerEl;
@@ -462,7 +472,7 @@ class NotebookPageEmbed extends Component {
     });
     this.pageEl.setAttribute("role", "link");
     this.pageEl.tabIndex = 0;
-    this.pageEl.setAttribute("aria-label", pageLinkLabel(file.basename, pageNumber));
+    this.pageEl.setAttribute("aria-label", embedLabel(file.basename, target));
     this.pageEl.setCssStyles({ aspectRatio: aspectOf(DEFAULT_PAGE_GEOMETRY) });
     this.canvas = this.pageEl.createEl("canvas", { cls: "goodobsidian-page-embed-canvas" });
     // No backing store until the page is painted (a canvas starts at 300 x 150).
@@ -522,11 +532,11 @@ class NotebookPageEmbed extends Component {
     this.linkEl?.remove();
     const link = this.containerEl.createEl("a", {
       cls: "internal-link goodobsidian-page-embed-link interactive-child",
-      text: pageLinkLabel(this.file.basename, this.pageNumber),
+      text: embedLabel(this.file.basename, this.target),
       href: this.ctx.linktext,
     });
     link.dataset.href = this.ctx.linktext;
-    link.setAttribute("title", LINK_TITLES[reason](this.pageNumber));
+    link.setAttribute("title", LINK_TITLES[reason](this.target.page));
     link.toggleClass("is-unresolved", reason === "missing-file");
     link.addEventListener("click", (event) => this.open(event));
     this.linkEl = link;

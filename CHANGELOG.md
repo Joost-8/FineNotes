@@ -14,8 +14,9 @@ extracted from the matching section of this file by `release.yml`.
   (or `#Page 3`, `#p3`, as "Copy link to page" writes it) shows that page,
   paper or PDF slide, pictures, text and ink, at the note's width, in reading
   view and live preview. `|300` sets a width. Tap the page to open the
-  notebook there. It follows the notebook as you write, and a page that does
-  not exist shows as a plain link.
+  notebook there. `![[Physics.notebook]]` shows the first page and opens the
+  notebook as any link does. It follows the notebook as you write, and a page
+  that does not exist shows as a plain link.
 
 ### Changed
 
