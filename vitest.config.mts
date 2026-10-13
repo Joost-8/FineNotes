@@ -57,6 +57,7 @@ export default defineConfig({
         "src/view/background-save.ts",
         "src/view/view-rest.ts",
         "src/view/file-moves.ts",
+        "src/view/page-embed-model.ts",
         "src/canvas/scan-raster.ts",
         "src/canvas/homography.ts",
         "src/canvas/page-detect.ts",

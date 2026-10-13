@@ -136,6 +136,7 @@ import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
 import { collectPageText, pageFromSubpath, transcriptSidecarPath } from "../search/notebook-search";
+import { pageLinkLabel } from "./page-embed-model";
 import { exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
 import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
@@ -2100,7 +2101,7 @@ export class InkView extends TextFileView {
       file,
       "",
       `#page=${page}`,
-      `${stripInkSuffix(file.basename)}, page ${page}`,
+      pageLinkLabel(file.basename, page),
     );
     void navigator.clipboard.writeText(link).then(
       () => new Notice(`Link to page ${page} copied.`),

@@ -21,6 +21,13 @@ extracted from the matching section of this file by `release.yml`.
   words on the clipboard. Lasso any highlight on a PDF page and its menu has
   Copy text, and the command "Copy highlighted text on this page" copies all
   of them at once.
+- **Embed a notebook page in any note.** `![[Physics.notebook#page=3]]`
+  (or `#Page 3`, `#p3`, as "Copy link to page" writes it) shows that page,
+  paper or PDF slide, pictures, text and ink, at the note's width, in reading
+  view and live preview. `|300` sets a width. Tap the page to open the
+  notebook there. `![[Physics.notebook]]` shows the first page and opens the
+  notebook as any link does. It follows the notebook as you write, and a page
+  that does not exist shows as a plain link.
 
 ### Changed
 

@@ -52,6 +52,7 @@ import { WhatsNewModal } from "./ui/whats-new-modal";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
+import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
@@ -264,6 +265,16 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.routeInkNotes();
+    // `![[Physics.notebook#page=3]]` in any note shows that page (page-embed.ts).
+    this.addChild(
+      new PageEmbeds({
+        app: this.app,
+        isInkFile: (file) => this.isInkFile(file),
+        paperWidth: () => this.settings.paperWidth,
+        usePressure: () => this.settings.pressureWidth,
+        highlighterAlpha: () => this.settings.highlighterAlpha,
+      }),
+    );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => this.fileMoves.renamed(file, oldPath)),
     );
