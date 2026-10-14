@@ -1,5 +1,5 @@
 /**
- * Commands on a lasso selection (0.5): move, delete, duplicate and recolour
+ * Commands on a lasso selection (0.5): move, resize, delete, duplicate and recolour
  * strokes, images and text boxes on one page, each as **one** undo step.
  *
  * Every element is held by identity, not by id: ids are only unique per file,
@@ -21,6 +21,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
+import { MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
 
 /** The elements a selection holds on one page. */
 export interface PageElements {
@@ -123,6 +124,137 @@ export class TranslateElements implements Command {
       textBox.y = y;
     }
     this.moved = null;
+  }
+}
+
+/** A copy of `pts` scaled by `k` about (ax, ay); pressure, and any ragged tail, copied as is. */
+export function scalePoints(pts: readonly number[], ax: number, ay: number, k: number): number[] {
+  const out = pts.slice();
+  const usable = out.length - (out.length % POINT_STRIDE);
+  for (let i = 0; i < usable; i += POINT_STRIDE) {
+    out[i] = ax + (out[i] - ax) * k;
+    out[i + 1] = ay + (out[i + 1] - ay) * k;
+  }
+  return out;
+}
+
+/**
+ * How far a resize may scale `textBoxes`: no box's font below
+ * `MIN_TEXT_SIZE`, which the loader would raise it back to (a size that
+ * changes on the next open is a silent lie), nor above `MAX_TEXT_SIZE`, the
+ * largest the style menu offers. Without text boxes, anything goes.
+ */
+export function textScaleRange(textBoxes: readonly TextBoxElement[]): { min: number; max: number } {
+  let min = 0;
+  let max = Infinity;
+  for (const { fontSize } of textBoxes) {
+    if (!(fontSize > 0) || !Number.isFinite(fontSize)) continue;
+    min = Math.max(min, MIN_TEXT_SIZE / fontSize);
+    max = Math.min(max, MAX_TEXT_SIZE / fontSize);
+  }
+  // A box already outside the range may stay as it is.
+  return { min: Math.min(min, 1), max: Math.max(max, 1) };
+}
+
+/**
+ * Resize everything selected on one page by `k` about the page point
+ * (ax, ay) — the frame corner opposite the one dragged — as one undo step.
+ * The scale is uniform, the aspect kept, as GoodNotes resizes a lasso
+ * selection from its corners:
+ *
+ * - a stroke's points scale and so does its width, so the ink looks the
+ *   same, only bigger or smaller; pressure is untouched, and a snapped
+ *   shape keeps its `shape` (a uniformly scaled rectangle is still one);
+ * - a picture's box scales about the anchor and keeps its rotation and
+ *   crop (a uniform scale commutes with turning about the centre);
+ * - a text box's frame and its font scale together, so it wraps at the
+ *   same words; a fixed height scales, an auto height stays absent.
+ *
+ * A non-finite or non-positive `k`, or a non-finite anchor, changes nothing.
+ * A stroke's `samples` (practice files' raw pen input) stay as recorded, as
+ * they do under a move.
+ */
+export class ScaleElements implements Command {
+  readonly label = "Resize selection";
+  private scaled: {
+    strokes: Array<{ stroke: Stroke; pts: number[]; size: number }>;
+    images: Array<{ image: ImageElement; x: number; y: number; w: number; h: number }>;
+    textBoxes: Array<{
+      textBox: TextBoxElement;
+      x: number;
+      y: number;
+      w: number;
+      h: number | undefined;
+      fontSize: number;
+    }>;
+  } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly elements: PageElements,
+    private readonly ax: number,
+    private readonly ay: number,
+    private readonly k: number,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.scaled = null;
+    const { ax, ay, k } = this;
+    if (!(k > 0) || !Number.isFinite(k) || !Number.isFinite(ax) || !Number.isFinite(ay)) return;
+    const page = pageById(doc, this.pageId);
+    if (!page) return;
+    const on = elementsOnPage(page, this.elements);
+    const sx = (x: number): number => ax + (x - ax) * k;
+    const sy = (y: number): number => ay + (y - ay) * k;
+    this.scaled = {
+      strokes: on.strokes.map((stroke) => {
+        const saved = { stroke, pts: stroke.pts, size: stroke.size };
+        stroke.pts = scalePoints(stroke.pts, ax, ay, k);
+        stroke.size *= k;
+        return saved;
+      }),
+      images: on.images.map((image) => {
+        const { x, y, w, h } = image;
+        image.x = sx(x);
+        image.y = sy(y);
+        image.w = w * k;
+        image.h = h * k;
+        return { image, x, y, w, h };
+      }),
+      textBoxes: on.textBoxes.map((textBox) => {
+        const { x, y, w, h, fontSize } = textBox;
+        textBox.x = sx(x);
+        textBox.y = sy(y);
+        textBox.w = w * k;
+        if (h !== undefined) textBox.h = h * k;
+        textBox.fontSize = fontSize * k;
+        return { textBox, x, y, w, h, fontSize };
+      }),
+    };
+  }
+
+  invert(doc: InkDocument): void {
+    const scaled = this.scaled;
+    if (!scaled || !pageById(doc, this.pageId)) return;
+    for (const { stroke, pts, size } of scaled.strokes) {
+      stroke.pts = pts;
+      stroke.size = size;
+    }
+    for (const { image, x, y, w, h } of scaled.images) {
+      image.x = x;
+      image.y = y;
+      image.w = w;
+      image.h = h;
+    }
+    for (const { textBox, x, y, w, h, fontSize } of scaled.textBoxes) {
+      textBox.x = x;
+      textBox.y = y;
+      textBox.w = w;
+      // Assigned, never deleted and re-added: the key keeps its place.
+      if (h !== undefined) textBox.h = h;
+      textBox.fontSize = fontSize;
+    }
+    this.scaled = null;
   }
 }
 

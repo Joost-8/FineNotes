@@ -993,14 +993,16 @@ export class Renderer {
 
   /**
    * The stroke's runs and their `Path2D`s, traced once. The fingerprint is
-   * the point count and both end points, which changes under every edit the
-   * commands make (a translation moves every point; an erase re-points).
+   * the width, the point count and both end points, which changes under
+   * every edit the commands make (a translation moves every point; an erase
+   * re-points; a resize changes the width, even of a closed shape whose
+   * seam is the corner it was scaled about).
    */
   private pathEntry(stroke: Stroke, usePressure: boolean): PathEntry {
     const pressure = pressureFor(stroke.tool, usePressure);
     const pts = stroke.pts;
     const n = pts.length;
-    const fingerprint = `${pressure ? 1 : 0}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
+    const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
     if (cached && cached.fingerprint === fingerprint) return cached;
     let runs: InkRun[] = [];
@@ -1058,7 +1060,9 @@ export class Renderer {
    * moved by (dx, dy): its images, then its ink over them, as the tiles
    * stack them. While it is dragged it is hidden from the tiles, so a move
    * costs one redraw of the selection per frame, from the cached outlines,
-   * instead of re-rasterising every tile it crosses.
+   * instead of re-rasterising every tile it crosses. A resize passes
+   * `scale`: the same outlines drawn `k` times the size about (x, y), which
+   * is what `ScaleElements` commits (ink width scales with the ink).
    */
   renderSelectionDraft(
     pageIndex: number,
@@ -1067,6 +1071,7 @@ export class Renderer {
     dx: number,
     dy: number,
     usePressure: boolean,
+    scale?: { x: number; y: number; k: number },
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
@@ -1075,6 +1080,11 @@ export class Renderer {
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
     ctx.translate(dx, dy);
+    if (scale && scale.k > 0 && Number.isFinite(scale.k)) {
+      ctx.translate(scale.x, scale.y);
+      ctx.scale(scale.k, scale.k);
+      ctx.translate(-scale.x, -scale.y);
+    }
     if (this.imagePainter) {
       for (const image of images) {
         drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale);

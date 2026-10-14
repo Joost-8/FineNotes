@@ -60,11 +60,17 @@ import {
   type LassoMode,
   LassoPath,
   type Polygon,
+  anchorCorner,
+  boundsCorner,
   boxInLasso,
   clampGroupDelta,
+  cornerScale,
+  hitSelectionCorner,
   lassoTakesStroke,
+  minScaleForSide,
   polygonOf,
   rectLoop,
+  scaleBounds,
   smoothLoop,
   selectionBounds,
   strokeInLasso,
@@ -74,6 +80,7 @@ import {
   HANDLE_HIT_RADIUS_PX,
   IMAGE_CORNERS,
   IMAGE_EDGES,
+  type ImageCorner,
   type ImagePart,
   ROTATE_HANDLE_OFFSET_PX,
   dragImageHandle,
@@ -203,10 +210,12 @@ import {
   type PageElements,
   RecolorStrokes,
   RemoveElements,
+  ScaleElements,
   TranslateElements,
   copyElements,
   elementsOnPage,
   isEmptySelection,
+  textScaleRange,
 } from "../model/selection-commands";
 import {
   CropImage,
@@ -631,6 +640,8 @@ const TAP_SLOP_PX = 8;
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
 const SELECTION_PAD_PX = 8;
+/** Smallest a corner resize may make a lasso selection's longer side, screen px. */
+const MIN_SELECTION_SIDE_PX = 32;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far off ink or a picture a Pencil tap may land and still pick it, screen px. */
 const PEN_TAP_TOLERANCE_PX = 6;
@@ -776,10 +787,12 @@ interface LassoDraft {
 }
 
 /**
- * A lasso selection being dragged by its frame, from pointerdown to lift.
- * The document is untouched until the lift commits one `TranslateElements`;
- * meanwhile the selection's ink and pictures are drawn on the wet layer,
- * moved by (dx, dy), and left out of the tiles, and its text boxes follow.
+ * A lasso selection being dragged by its frame, from pointerdown to lift:
+ * moved by its body, or resized by a corner handle. The document is
+ * untouched until the lift commits one `TranslateElements` or
+ * `ScaleElements`; meanwhile the selection's ink and pictures are drawn on
+ * the wet layer, moved by (dx, dy) or scaled by `scale`, and left out of
+ * the tiles, and its text boxes follow.
  */
 interface GroupDrag {
   pointerId: number;
@@ -793,8 +806,23 @@ interface GroupDrag {
   clientY: number;
   dx: number;
   dy: number;
+  /** Set when a corner handle was grabbed: the drag resizes instead of moving. */
+  scale: GroupScale | null;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+}
+
+/** A corner resize of a lasso selection, about the opposite corner of its bounds. */
+interface GroupScale {
+  corner: ImageCorner;
+  /** The fixed corner, page space. */
+  anchor: Pt;
+  /** The grabbed corner of the bounds less the pointer-down point: the corner follows the pen from where it was. */
+  grab: Pt;
+  /** Scale so far, and the range it may take (the minimum size, the text sizes). */
+  k: number;
+  min: number;
+  max: number;
 }
 
 /** The tools a practice file has: writing and rubbing out. */
@@ -1408,6 +1436,12 @@ export class InkSurface {
     this.selectionPathEl = activeDocument.createElementNS(SVG_NS, "path");
     outline.append(this.selectionPathEl);
     this.selectionFrameEl.append(outline);
+    // A square handle at each corner resizes the selection, the aspect kept,
+    // drawn as a picture's corner handles are, from the same sizes.
+    this.selectionUiEl.setCssProps(chromeSizes);
+    for (const corner of IMAGE_CORNERS) {
+      this.selectionFrameEl.createDiv({ cls: `goodobsidian-image-handle is-corner is-${corner}` });
+    }
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
     // With the lasso, a text box is something to select, not to type in.
@@ -5205,6 +5239,7 @@ export class InkSurface {
       clientY: 0,
       dx: 0,
       dy: 0,
+      scale: null,
       lifted: false,
     };
     this.circleDrag = true;
@@ -5705,7 +5740,21 @@ export class InkSurface {
   private dragShift(pageId: string, textBox: TextBoxElement): Pt {
     const drag = this.groupDrag;
     if (!drag?.lifted || drag.selection.pageId !== pageId) return { x: 0, y: 0 };
-    return drag.selection.textBoxes.includes(textBox) ? { x: drag.dx, y: drag.dy } : { x: 0, y: 0 };
+    if (!drag.selection.textBoxes.includes(textBox)) return { x: 0, y: 0 };
+    const scale = drag.scale;
+    if (!scale) return { x: drag.dx, y: drag.dy };
+    // A resize carries the box's corner away from the anchor (its size is a transform).
+    return {
+      x: (textBox.x - scale.anchor.x) * (scale.k - 1),
+      y: (textBox.y - scale.anchor.y) * (scale.k - 1),
+    };
+  }
+
+  /** Where a lasso drag has the selection's bounds now, page space. */
+  private draggedBounds(drag: GroupDrag): Bounds {
+    return drag.scale
+      ? scaleBounds(drag.bounds, drag.scale.anchor, drag.scale.k)
+      : shiftBounds(drag.bounds, drag.dx, drag.dy);
   }
 
   /** The part of the paper element on screen, in its own (scaled layout) px. */
@@ -5723,13 +5772,13 @@ export class InkSurface {
   private syncSelectionOverlay(): void {
     const sel = this.liveSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
-    const bounds = sel && box ? this.groupBounds(sel) : null;
+    const drag = this.groupDrag?.lifted ? this.groupDrag : null;
+    const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     if (box && bounds) {
       const scale = this.unitScale;
-      const drag = this.groupDrag?.lifted ? this.groupDrag : null;
-      const x = (box.x + bounds.minX + (drag?.dx ?? 0)) * scale - SELECTION_PAD_PX;
-      const y = (box.y + bounds.minY + (drag?.dy ?? 0)) * scale - SELECTION_PAD_PX;
+      const x = (box.x + bounds.minX) * scale - SELECTION_PAD_PX;
+      const y = (box.y + bounds.minY) * scale - SELECTION_PAD_PX;
       this.selectionFrameEl.setCssStyles({
         left: `${x}px`,
         top: `${y}px`,
@@ -5743,7 +5792,9 @@ export class InkSurface {
       const shown = outline !== null && outline.count === count;
       this.selectionFrameEl.toggleClass("has-outline", shown);
       if (shown) {
-        const at = (v: number): string => (SELECTION_PAD_PX + v * scale).toFixed(1);
+        // The loop is relative to the bounds' corner, so a resize scales it too.
+        const k = drag?.scale?.k ?? 1;
+        const at = (v: number): string => (SELECTION_PAD_PX + v * k * scale).toFixed(1);
         const pts = outline.loop;
         let d = `M${at(pts[0])} ${at(pts[1])}`;
         for (let i = 2; i + 1 < pts.length; i += 2) d += `L${at(pts[i])} ${at(pts[i + 1])}`;
@@ -5775,6 +5826,8 @@ export class InkSurface {
       this.actionBar.setActions(this.cropActions(crop));
     } else if (group) {
       bounds = this.groupBounds(group);
+      // Clear of the corner handles on the frame, as of a picture's.
+      clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
     } else if (image) {
       // The picture and its rotate knob, wherever a turn has put the knob.
@@ -6922,7 +6975,10 @@ export class InkSurface {
 
   /**
    * A press on the selection's frame: the whole selection follows it, and
-   * the lift commits one `TranslateElements`. A finger works it too.
+   * the lift commits one `TranslateElements`. A press on a corner handle
+   * resizes it instead, about the opposite corner, the aspect kept, and the
+   * lift commits one `ScaleElements`. The pure hit test decides which, so
+   * the handles answer across 44 screen px at any zoom. A finger works it too.
    */
   private readonly onSelectionPointerDown = (event: PointerEvent): void => {
     // Everything on the frame is the frame's: the page below never sees it.
@@ -6940,15 +6996,17 @@ export class InkSurface {
     } catch {
       // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
     }
+    const from = this.pagePoint(box, event.clientX, event.clientY);
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
       bounds,
-      from: this.pagePoint(box, event.clientX, event.clientY),
+      from,
       clientX: event.clientX,
       clientY: event.clientY,
       dx: 0,
       dy: 0,
+      scale: this.cornerGrabbed(sel, bounds, from),
       lifted: false,
     };
     this.selectionFrameEl.addEventListener("pointermove", this.onSelectionPointerMove);
@@ -6968,11 +7026,45 @@ export class InkSurface {
     this.moveGroupDrag(drag, box, this.pagePoint(box, event.clientX, event.clientY));
   };
 
+  /**
+   * The corner resize a press at page point `from` starts on the selection's
+   * frame, or `null` when it grabbed no corner handle. The handles sit on the
+   * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
+   */
+  private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
+    const scale = this.unitScale;
+    const pad = SELECTION_PAD_PX / scale;
+    const frame: Bounds = {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+    const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
+    if (!corner) return null;
+    const at = boundsCorner(bounds, corner);
+    const text = textScaleRange(sel.textBoxes);
+    return {
+      corner,
+      anchor: anchorCorner(bounds, corner),
+      grab: { x: at.x - from.x, y: at.y - from.y },
+      k: 1,
+      min: Math.max(minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / scale), text.min),
+      max: text.max,
+    };
+  }
+
   /** Carry a selection being dragged to page point `p`, from where the drag began. */
   private moveGroupDrag(drag: GroupDrag, box: PageBox, p: Pt): void {
-    const d = clampGroupDelta(drag.bounds, p.x - drag.from.x, p.y - drag.from.y, box);
-    drag.dx = d.dx;
-    drag.dy = d.dy;
+    const scale = drag.scale;
+    if (scale) {
+      const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
+      scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
+    } else {
+      const d = clampGroupDelta(drag.bounds, p.x - drag.from.x, p.y - drag.from.y, box);
+      drag.dx = d.dx;
+      drag.dy = d.dy;
+    }
     if (!drag.lifted) this.liftSelection(drag, box);
     this.renderGroupDraft();
     this.placeDraggedTextBoxes(drag, box);
@@ -7009,6 +7101,7 @@ export class InkSurface {
     const box = drag ? this.boxForPage(drag.selection.pageId) : null;
     if (!drag?.lifted || !box) return;
     const { strokes, images } = drag.selection;
+    const scale = drag.scale;
     this.renderer?.renderSelectionDraft(
       box.index,
       strokes,
@@ -7016,17 +7109,25 @@ export class InkSurface {
       drag.dx,
       drag.dy,
       this.toolState.pressureEnabled,
+      scale ? { x: scale.anchor.x, y: scale.anchor.y, k: scale.k } : undefined,
     );
   }
 
-  /** Move just the dragged text boxes' frames; a full sync waits for the lift. */
+  /**
+   * Move just the dragged text boxes' frames; a full sync waits for the
+   * lift. A resize scales each box by a transform meanwhile, so its text
+   * is not laid out again on every frame.
+   */
   private placeDraggedTextBoxes(drag: GroupDrag, box: PageBox): void {
     const scale = this.unitScale;
+    const k = drag.scale?.k;
     for (const textBox of drag.selection.textBoxes) {
       const view = this.textBoxInputs.get(`${drag.selection.pageId}:${textBox.id}`);
+      const shift = this.dragShift(drag.selection.pageId, textBox);
       view?.root.setCssStyles({
-        left: `${Math.round((box.x + textBox.x + drag.dx) * scale)}px`,
-        top: `${Math.round((box.y + textBox.y + drag.dy) * scale)}px`,
+        left: `${Math.round((box.x + textBox.x + shift.x) * scale)}px`,
+        top: `${Math.round((box.y + textBox.y + shift.y) * scale)}px`,
+        ...(k === undefined ? {} : { transform: `scale(${k})`, transformOrigin: "0 0" }),
       });
     }
   }
@@ -7055,16 +7156,32 @@ export class InkSurface {
     this.renderer?.clearWet();
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
-    const moved =
-      commit &&
-      (drag.dx !== 0 || drag.dy !== 0) &&
-      this.doc.pages.some((page) => page.id === pageId);
+    const scale = drag.scale;
+    if (scale) {
+      for (const textBox of drag.selection.textBoxes) {
+        this.textBoxInputs
+          .get(`${pageId}:${textBox.id}`)
+          ?.root.setCssStyles({ transform: "", transformOrigin: "" });
+      }
+    }
+    const changed = scale ? scale.k !== 1 : drag.dx !== 0 || drag.dy !== 0;
+    const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
     if (moved) {
-      this.history.push(this.doc, new TranslateElements(pageId, drag.selection, drag.dx, drag.dy));
+      this.history.push(
+        this.doc,
+        scale
+          ? new ScaleElements(pageId, drag.selection, scale.anchor.x, scale.anchor.y, scale.k)
+          : new TranslateElements(pageId, drag.selection, drag.dx, drag.dy),
+      );
       this.strokeIndex.refreshPages(this.doc.pages, [pageId]);
+      // The freehand loop is drawn relative to the bounds: it scales with them.
+      const outline = this.selectionOutline;
+      if (scale && outline) {
+        this.selectionOutline = { ...outline, loop: outline.loop.map((v) => v * scale.k) };
+      }
     }
     if (box) {
-      const after = moved ? shiftBounds(drag.bounds, drag.dx, drag.dy) : null;
+      const after = moved ? this.draggedBounds(drag) : null;
       this.renderer?.invalidateRegion(box.index, unionBounds(drag.bounds, after) ?? drag.bounds);
     }
     this.renderDry();

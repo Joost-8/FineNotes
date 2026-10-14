@@ -10,8 +10,14 @@ import {
   LassoPath,
   type Polygon,
   STROKE_SAMPLES,
+  anchorCorner,
+  boundsCorner,
   boxInLasso,
   clampGroupDelta,
+  cornerScale,
+  hitSelectionCorner,
+  minScaleForSide,
+  scaleBounds,
   lassoFilterOf,
   lassoModeOf,
   lassoTakesStroke,
@@ -375,5 +381,103 @@ describe("smoothLoop", () => {
     const copy = [...square];
     smoothLoop(square);
     expect(square).toEqual(copy);
+  });
+});
+
+describe("resizing a selection by its corners", () => {
+  const b = { minX: 100, minY: 200, maxX: 300, maxY: 300 };
+
+  it("names each corner and the one across from it", () => {
+    expect(boundsCorner(b, "nw")).toEqual({ x: 100, y: 200 });
+    expect(boundsCorner(b, "se")).toEqual({ x: 300, y: 300 });
+    expect(anchorCorner(b, "nw")).toEqual({ x: 300, y: 300 });
+    expect(anchorCorner(b, "ne")).toEqual({ x: 100, y: 300 });
+    expect(anchorCorner(b, "sw")).toEqual({ x: 300, y: 200 });
+  });
+
+  it("hits a corner across its radius outside, and only its quarter inside", () => {
+    expect(hitSelectionCorner(b, { x: 85, y: 190 }, 22)).toBe("nw");
+    expect(hitSelectionCorner(b, { x: 310, y: 310 }, 22)).toBe("se");
+    expect(hitSelectionCorner(b, { x: 200, y: 250 }, 22)).toBeNull();
+    expect(hitSelectionCorner(b, { x: 60, y: 200 }, 22)).toBeNull();
+    // A small frame: the middle still moves it.
+    const small = { minX: 0, minY: 0, maxX: 20, maxY: 20 };
+    expect(hitSelectionCorner(small, { x: 10, y: 10 }, 22)).toBeNull();
+    expect(hitSelectionCorner(small, { x: 3, y: 3 }, 22)).toBe("nw");
+    expect(hitSelectionCorner(small, { x: 18, y: 4 }, 22)).toBe("ne");
+    // Outside, the nearer corner wins.
+    expect(hitSelectionCorner(small, { x: 22, y: -2 }, 22)).toBe("ne");
+  });
+
+  it("scales along the diagonal about the opposite corner", () => {
+    expect(cornerScale(b, "se", { x: 500, y: 400 }, 0, Infinity)).toBeCloseTo(2);
+    expect(cornerScale(b, "nw", { x: 200, y: 250 }, 0, Infinity)).toBeCloseTo(0.5);
+    // Straying off the diagonal follows its projection.
+    expect(cornerScale(b, "se", { x: 500, y: 300 }, 0, Infinity)).toBeCloseTo(1.8);
+    // Across the anchor it stops at the minimum, never flips.
+    expect(cornerScale(b, "se", { x: 0, y: 0 }, 0.25, Infinity)).toBe(0.25);
+    expect(cornerScale(b, "se", { x: 5000, y: 5000 }, 0, 3)).toBe(3);
+  });
+
+  it("stays at 1 for a box with no extent or a bad pointer", () => {
+    const dot = { minX: 5, minY: 5, maxX: 5, maxY: 5 };
+    expect(cornerScale(dot, "se", { x: 50, y: 50 }, 0, Infinity)).toBe(1);
+    expect(cornerScale(b, "se", { x: Number.NaN, y: 0 }, 0, Infinity)).toBe(1);
+    expect(minScaleForSide(dot, 30)).toBe(1);
+  });
+
+  it("works for a flat selection, such as one straight line", () => {
+    const line = { minX: 0, minY: 10, maxX: 400, maxY: 10 };
+    expect(cornerScale(line, "se", { x: 200, y: 999 }, 0, Infinity)).toBeCloseTo(0.5);
+    expect(minScaleForSide(line, 40)).toBeCloseTo(0.1);
+  });
+
+  it("floors the longer side, never above a scale of 1", () => {
+    expect(minScaleForSide(b, 50)).toBeCloseTo(0.25);
+    expect(minScaleForSide(b, 400)).toBe(1);
+    expect(minScaleForSide(b, -5)).toBe(0);
+  });
+
+  it("scales bounds about an anchor", () => {
+    expect(scaleBounds(b, { x: 100, y: 200 }, 2)).toEqual({
+      minX: 100,
+      minY: 200,
+      maxX: 500,
+      maxY: 400,
+    });
+    expect(scaleBounds(b, { x: 300, y: 300 }, 0.5)).toEqual({
+      minX: 200,
+      minY: 250,
+      maxX: 300,
+      maxY: 300,
+    });
+  });
+
+  it("matches the bounds of the elements ScaleElements scales, stroke widths included", () => {
+    const s: Stroke = {
+      id: "s",
+      color: "#000",
+      size: 4,
+      tool: "pen",
+      pts: [10, 20, 0.5, 50, 80, 0.5],
+    };
+    const before = selectionBounds([s], [], [])!;
+    const anchor = anchorCorner(before, "se");
+    const k = 1.7;
+    const scaled: Stroke = {
+      ...s,
+      size: s.size * k,
+      pts: s.pts.map((v, i) =>
+        i % 3 === 2
+          ? v
+          : (i % 3 === 0 ? anchor.x : anchor.y) + (v - (i % 3 === 0 ? anchor.x : anchor.y)) * k,
+      ),
+    };
+    const after = selectionBounds([scaled], [], [])!;
+    const expected = scaleBounds(before, anchor, k);
+    expect(after.minX).toBeCloseTo(expected.minX);
+    expect(after.minY).toBeCloseTo(expected.minY);
+    expect(after.maxX).toBeCloseTo(expected.maxX);
+    expect(after.maxY).toBeCloseTo(expected.maxY);
   });
 });

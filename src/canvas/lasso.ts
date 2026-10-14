@@ -20,7 +20,13 @@
 
 import { type Bounds, type Stroke, type TextBoxElement, POINT_STRIDE } from "../model/document";
 import type { ImageTransform } from "../model/commands";
-import { fromImageLocal, imageBounds, imageCentre } from "./image-geometry";
+import {
+  type ImageCorner,
+  IMAGE_CORNERS,
+  fromImageLocal,
+  imageBounds,
+  imageCentre,
+} from "./image-geometry";
 
 export interface Pt {
   x: number;
@@ -419,6 +425,111 @@ export function clampGroupDelta(
   const x = clamp(cx + dx, Math.min(0, cx), Math.max(page.width, cx));
   const y = clamp(cy + dy, Math.min(0, cy), Math.max(page.height, cy));
   return { dx: x - cx, dy: y - cy };
+}
+
+// --- Resizing a selection by its corners -----------------------------------
+//
+// The selection frame has a square handle at each corner, as a picture
+// does: dragging one scales the whole selection about the opposite corner,
+// the aspect kept (`ScaleElements`). The frame is axis-aligned and a scale
+// keeps it so, which is why there is no edge stretch: it would shear a
+// turned picture and squash handwriting.
+
+/** Signs of each corner: nw is (-1, -1). */
+const CORNER_SIGNS: Readonly<Record<ImageCorner, readonly [number, number]>> = {
+  nw: [-1, -1],
+  ne: [1, -1],
+  se: [1, 1],
+  sw: [-1, 1],
+};
+
+/** One corner of a bounds box. */
+export function boundsCorner(b: Bounds, corner: ImageCorner): Pt {
+  const [sx, sy] = CORNER_SIGNS[corner];
+  return { x: sx < 0 ? b.minX : b.maxX, y: sy < 0 ? b.minY : b.maxY };
+}
+
+/** The corner a drag of `corner` scales about: the one across the diagonal. */
+export function anchorCorner(b: Bounds, corner: ImageCorner): Pt {
+  const [sx, sy] = CORNER_SIGNS[corner];
+  return { x: sx < 0 ? b.maxX : b.minX, y: sy < 0 ? b.maxY : b.minY };
+}
+
+/**
+ * Which corner handle of the frame `frame` a press at `p` grabbed, or
+ * `null`. Outside the frame a handle answers across its whole `radius` (a
+ * 44 px target, in page px); inside it, only the quarter of the frame
+ * nearest to it, so the middle of even a small selection still moves it.
+ * Where two targets meet, the nearer corner wins.
+ */
+export function hitSelectionCorner(frame: Bounds, p: Pt, radius: number): ImageCorner | null {
+  const w = frame.maxX - frame.minX;
+  const h = frame.maxY - frame.minY;
+  const inside = p.x >= frame.minX && p.x <= frame.maxX && p.y >= frame.minY && p.y <= frame.maxY;
+  const qx = Math.min(radius, w / 4);
+  const qy = Math.min(radius, h / 4);
+  let best: ImageCorner | null = null;
+  let bestDistance = Infinity;
+  for (const corner of IMAGE_CORNERS) {
+    const c = boundsCorner(frame, corner);
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if (d > radius || d >= bestDistance) continue;
+    if (inside && (Math.abs(p.x - c.x) > qx || Math.abs(p.y - c.y) > qy)) continue;
+    best = corner;
+    bestDistance = d;
+  }
+  return best;
+}
+
+/**
+ * The scale a drag of `corner` to `pointer` gives the selection `bounds`,
+ * about the opposite corner, within [`min`, `max`]. The pointer is
+ * projected onto the diagonal, as `resizeImage` does, so the size follows
+ * the pen smoothly whichever way it strays, and a drag across the anchor
+ * stops at `min` rather than flipping the selection. A box with no extent
+ * stays at 1.
+ */
+export function cornerScale(
+  bounds: Bounds,
+  corner: ImageCorner,
+  pointer: Pt,
+  min: number,
+  max: number,
+): number {
+  const [sx, sy] = CORNER_SIGNS[corner];
+  const w = bounds.maxX - bounds.minX;
+  const h = bounds.maxY - bounds.minY;
+  const diagonal = w * w + h * h;
+  if (!(diagonal > 0) || !Number.isFinite(diagonal)) return 1;
+  const anchor = anchorCorner(bounds, corner);
+  const along = ((pointer.x - anchor.x) * sx * w + (pointer.y - anchor.y) * sy * h) / diagonal;
+  if (!Number.isFinite(along)) return 1;
+  return Math.min(Math.max(along, min), Math.max(min, max));
+}
+
+/**
+ * The smallest scale that keeps the selection's longer side at least
+ * `minSide` long (page px; the caller converts a screen length). Never above
+ * 1, so a selection already smaller than that can stay as it is.
+ */
+export function minScaleForSide(bounds: Bounds, minSide: number): number {
+  const longer = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+  if (!(longer > 0) || !Number.isFinite(longer)) return 1;
+  return Math.min(1, Math.max(0, minSide) / longer);
+}
+
+/** `b` scaled by `k` about `anchor`. */
+export function scaleBounds(b: Bounds, anchor: Pt, k: number): Bounds {
+  const x0 = anchor.x + (b.minX - anchor.x) * k;
+  const x1 = anchor.x + (b.maxX - anchor.x) * k;
+  const y0 = anchor.y + (b.minY - anchor.y) * k;
+  const y1 = anchor.y + (b.maxY - anchor.y) * k;
+  return {
+    minX: Math.min(x0, x1),
+    minY: Math.min(y0, y1),
+    maxX: Math.max(x0, x1),
+    maxY: Math.max(y0, y1),
+  };
 }
 
 /** A text box's frame, given the height the view measured for an auto-height one. */
