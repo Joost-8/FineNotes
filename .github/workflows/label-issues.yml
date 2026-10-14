@@ -1,0 +1,33 @@
+name: Label new issues
+
+# Adds platform and area labels from the issue form's answers. The forms
+# themselves add bug/enhancement and triage. No issue text reaches a shell.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { labelsFor } = require("./.github/scripts/issue-labels.cjs");
+            const labels = labelsFor(context.payload.issue.body);
+            core.info(`Labels: ${labels.join(", ") || "none"}`);
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: context.payload.issue.number,
+                labels,
+              });
+            }
