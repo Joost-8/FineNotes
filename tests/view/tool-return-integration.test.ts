@@ -346,13 +346,23 @@ describe("secondary tool integration", () => {
     state.tool = "highlighter";
     run(bar, "setState", state);
     expect(bar.optionsVisible).toBe(false);
-    // Shown again, the pen's options stay shown across the next round trip.
+    // Shown again, the pen's options still start tucked the next time it is picked.
     run(bar, "tapTool", "highlighter", {});
     expect(bar.optionsVisible).toBe(true);
     run(bar, "tapTool", "shape", {});
     state.tool = "pen";
     run(bar, "setState", state);
+    expect(bar.optionsVisible).toBe(false);
+    // Other tools remember: the eraser tucked away comes back tucked, shown comes back shown.
+    bar.callbacks.returnToPenOnReselect = () => false;
+    run(bar, "tapTool", "eraser", {});
     expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.optionsVisible).toBe(false);
+    run(bar, "tapTool", "shape", {});
+    expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.optionsVisible).toBe(false);
   });
   it("reads settings live, including both switches independently", () => {
     const s = surface("eraser", false);

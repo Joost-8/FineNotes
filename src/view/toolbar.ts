@@ -203,6 +203,18 @@ export function strokeWidthFor(state: ToolbarState): number {
   return Math.max(0.5, chosenWidth(state.size, floor) * spec.sizeScale);
 }
 
+/** The tool whose options memory `tool` shares: the highlighter is a pen type. */
+function optionsKey(tool: ActiveTool): ActiveTool {
+  return tool === "highlighter" ? "pen" : tool;
+}
+
+/**
+ * Tools whose options pill starts tucked away each time they are picked, so
+ * the page stays clear while writing: a tap on the tool's button again shows
+ * it. The pen (and the highlighter with it).
+ */
+const STARTS_TUCKED: ReadonlySet<ActiveTool> = new Set<ActiveTool>(["pen"]);
+
 /** The pen a toolbar state writes with, as a saved pen would hold it. */
 export function penOfState(state: ToolbarState): SavedPen {
   return { type: penTypeFor(state).id, color: state.color, size: state.size };
@@ -507,7 +519,7 @@ export class Toolbar {
   private readonly disposers: Array<() => void> = [];
 
   /** The active tool remains active when its options are tucked away. */
-  private optionsVisible = true;
+  private optionsVisible: boolean;
   /** Tools whose options were tucked away when they were left: they come back tucked. */
   private readonly tuckedTools = new Set<ActiveTool>();
   /**
@@ -541,6 +553,7 @@ export class Toolbar {
   ) {
     this.palette = [...palette];
     this.optionsTool = state.tool;
+    this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", "Handwriting tools");
@@ -787,14 +800,15 @@ export class Toolbar {
   /**
    * Remember whether the tool being left had its options showing, and show
    * the next tool's options as it was last left (showing, the first time).
+   * The pen's start tucked away every time it is picked ({@link STARTS_TUCKED}).
    * Highlighter is a pen type, so the two share one memory.
    */
   private leaveToolFor(next: ActiveTool): void {
-    const key = (tool: ActiveTool): ActiveTool => (tool === "highlighter" ? "pen" : tool);
-    if (key(next) === key(this.optionsTool)) return;
-    if (this.optionsVisible) this.tuckedTools.delete(key(this.optionsTool));
-    else this.tuckedTools.add(key(this.optionsTool));
-    this.optionsVisible = !this.tuckedTools.has(key(next));
+    if (optionsKey(next) === optionsKey(this.optionsTool)) return;
+    if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
+    else this.tuckedTools.add(optionsKey(this.optionsTool));
+    this.optionsVisible =
+      !this.tuckedTools.has(optionsKey(next)) && !STARTS_TUCKED.has(optionsKey(next));
     this.optionsTool = next;
   }
 
