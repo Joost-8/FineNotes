@@ -38,6 +38,13 @@ export interface Command {
    * view. Absent for document-wide commands.
    */
   readonly pageId?: string;
+  /**
+   * The command adds, removes or reorders pages around the one being read:
+   * the surface keeps the reader on that page, where they were on it, when
+   * it is applied, undone or redone, instead of on whatever page now sits
+   * at the old scroll position.
+   */
+  readonly keepsReading?: boolean;
   /** Make the change. Redo calls it again after an `invert`. */
   apply(doc: InkDocument): void;
   /** Take back what the last `apply` did. */

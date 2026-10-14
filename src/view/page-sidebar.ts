@@ -2,14 +2,15 @@
  * The page sidebar: GoodNotes' thumbnail panel, opened from the leftmost
  * toolbar button.
  *
- *   .goodobsidian-pagesidebar
+ *   .goodobsidian-pagesidebar          (.is-overview: the full-pane grid; .is-selecting)
  *     .goodobsidian-pagesidebar-top
- *       .goodobsidian-pagesidebar-head  (Pages / Contents / Audio · ✕)
+ *       .goodobsidian-pagesidebar-head  (⤢ · Pages / Contents / Audio · ✕;
+ *                                         overview: ⤡ or Select all · Pages · Select or Done)
  *       .goodobsidian-pagesidebar-tabs  (Pages | Contents | Audio)
  *     .goodobsidian-pagesidebar-pages
  *       .goodobsidian-pagesidebar-filter ("All pages ⌄" / "Bookmarks only ⌄")
  *       .goodobsidian-pagesidebar-grid
- *         .goodobsidian-thumb × N    (canvas + ribbon + page number + ⌄ menu)
+ *         .goodobsidian-thumb × N    (canvas + ribbon + tick + page number + ⌄ menu)
  *         .goodobsidian-thumb-add    ("+ Add page")
  *       .goodobsidian-pagesidebar-empty (no bookmarks yet)
  *     .goodobsidian-pagesidebar-contents
@@ -20,6 +21,8 @@
  *       .goodobsidian-contents-empty
  *       .goodobsidian-contents-add  ("Add page N to contents")
  *     .goodobsidian-pagesidebar-audio (filled by the note's audio controller)
+ *     .goodobsidian-pagesidebar-selectbar (overview, Select: Move · Duplicate · Bookmark · Export · Delete)
+ *   .goodobsidian-pagesidebar-spacer  (holds the panel's width while the overview covers the page)
  *
  * The Contents tab is the notebook's table of contents: every page given a
  * title (model/contents.ts), in page order, as a heading, with the headings
@@ -32,6 +35,17 @@
  * outlined in the accent colour and kept in view as the reader scrolls. Every
  * page operation goes through an undoable command owned by the host, so the
  * sidebar never mutates the document itself.
+ *
+ * Pages are reordered by dragging their thumbnails (page-drag.ts): with the
+ * mouse or the Pencil at once, with a finger after resting on the page. Under
+ * "Bookmarks only" a drop lands next to the bookmarked page it is dropped
+ * beside, in the whole page list.
+ *
+ * The ⤢ button grows the panel into the **overview**: every page in a grid
+ * filling the notebook view, GoodNotes' page grid. A tap opens a page and
+ * goes back; ⤡ or Escape goes back without. Select (or Shift/Cmd-click on a
+ * desktop) picks several pages, to move, duplicate, bookmark, export or
+ * delete together, or to drag as one block.
  *
  * Thumbnails are only painted while the panel is open, only when on screen,
  * and only when the page's content signature changed since the last paint —
@@ -57,6 +71,8 @@ import { type InkDocument, type Page, isCoverRuling } from "../model/document";
 import { releaseCanvas } from "./image-import";
 import { pageSignature } from "../model/page-signature";
 import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
+import { PageDrag } from "./page-drag";
+import { rangeOf } from "./page-drag-model";
 
 export type PageAction =
   | "add-before"
@@ -78,8 +94,13 @@ export type PageAction =
 /** What a section's ⌄ menu can do. */
 export type SectionAction = "rename" | "remove";
 
+/** What the overview's selection bar does to the selected pages. */
+export type SelectionAction =
+  "move-start" | "move-end" | "duplicate" | "bookmark" | "export" | "delete";
+
 export interface PageSidebarCallbacks {
-  onSelectPage: (index: number) => void;
+  /** A page was tapped; `fromOverview` when the overview closes to show it (jump, do not glide). */
+  onSelectPage: (index: number, fromOverview?: boolean) => void;
   /** A section in the Contents tab was tapped: go to its line on page `index`. */
   onSelectSection?: (index: number, section: PageSection) => void;
   /** Rename or remove a section, from its ⌄ menu. */
@@ -95,6 +116,14 @@ export interface PageSidebarCallbacks {
   onAddPage: (anchor: HTMLElement) => void;
   /** The ✕ in the header. */
   onClose: () => void;
+  /** Whether pages may be reordered now (not on a protected note). Default: yes. */
+  canEdit?: () => boolean;
+  /** Pages were dragged: move `indexes` to gap `gap` of the page list (page-order.ts). */
+  onMovePages?: (indexes: number[], gap: number) => void;
+  /** An action from the overview's selection bar, on `indexes` in page order. */
+  onSelectionAction?: (action: SelectionAction, indexes: number[], anchor: HTMLElement) => void;
+  /** The overview opened or closed. */
+  onOverviewChange?: (open: boolean) => void;
 }
 
 export interface PageSidebarRenderOptions {
@@ -127,6 +156,14 @@ const FILTER_LABELS: Record<PageFilter, string> = {
 const THUMB_WIDTH = 120;
 
 /**
+ * The overview's thumbnails are painted this wide: its columns are 170-260
+ * CSS px. PDF backdrops keep their thumbnail rasters ({@link thumbnailRasterScale},
+ * already double the sidebar's width), so the overview asks the PDF cache for
+ * nothing larger than the sidebar does.
+ */
+const OVERVIEW_THUMB_WIDTH = 240;
+
+/**
  * The scale a PDF backdrop is rasterised at for a thumbnail, in the units of
  * `InkSurface.deviceScale` (device px per page px, for a page about 1024 page
  * px wide), doubled to stay sharp. Asking for the page view's own scale here
@@ -147,8 +184,13 @@ const REFRESH_DEBOUNCE_MS = 350;
  */
 export const KEEP_PAINTED_OFFSCREEN = 40;
 
+/** The same budget in the overview, whose canvases each hold four times the pixels. */
+const KEEP_PAINTED_OFFSCREEN_OVERVIEW = 10;
+
 interface ThumbView {
   root: HTMLElement;
+  /** The page it shows, by identity: a page that moves keeps its thumbnail and its pixels. */
+  page: Page | null;
   canvas: HTMLCanvasElement;
   ribbon: HTMLElement;
   label: HTMLElement;
@@ -189,7 +231,28 @@ export class PageSidebar {
   private tab: SidebarTab = "pages";
   private filter: PageFilter = "all";
   private readonly addTile: HTMLElement;
-  private readonly thumbs: ThumbView[] = [];
+  private thumbs: ThumbView[] = [];
+  private readonly drag: PageDrag;
+  /** The header's ⤢ / ⤡, and the overview's Select all and Select / Done. */
+  private readonly expandButton: HTMLButtonElement;
+  private readonly selectAllButton: HTMLButtonElement;
+  private readonly selectButton: HTMLButtonElement;
+  private readonly closeButton: HTMLButtonElement;
+  private readonly tabsEl: HTMLElement;
+  private readonly selectBar: HTMLElement;
+  private readonly selectBarButtons = new Map<SelectionAction | "move", HTMLButtonElement>();
+  /** Holds the docked panel's width in the layout while the overview covers the page. */
+  private readonly spacer: HTMLElement;
+  /** The overview: every page in a grid over the whole notebook view. */
+  private overview = false;
+  /** Select mode in the overview: a tap ticks a page instead of opening it. */
+  private selecting = false;
+  /** The ticked pages, by identity, so a selection survives pages moving. */
+  private readonly selected = new Set<Page>();
+  /** Where a Shift-click range starts: the page ticked last. */
+  private anchor: Page | null = null;
+  /** The overview's open or close animation, while it runs. */
+  private zoom: Animation | null = null;
   /** Each thumbnail by its root element, for the intersection observer. */
   private readonly viewOf = new Map<Element, ThumbView>();
   /** Paint passes so far: the clock {@link ThumbView.seen} counts on. */
@@ -219,6 +282,14 @@ export class PageSidebar {
     // Header and tabs stay put while the thumbnails scroll under them.
     const top = this.el.createDiv({ cls: "goodobsidian-pagesidebar-top" });
     const head = top.createDiv({ cls: "goodobsidian-pagesidebar-head" });
+    this.expandButton = head.createEl("button", {
+      cls: "goodobsidian-pagesidebar-expand clickable-icon",
+    });
+    this.expandButton.addEventListener("click", () => this.setOverview(!this.overview, true));
+    this.selectAllButton = head.createEl("button", {
+      cls: "goodobsidian-pagesidebar-textbutton goodobsidian-pagesidebar-selectall clickable-icon",
+    });
+    this.selectAllButton.addEventListener("click", () => this.toggleSelectAll());
     this.titleEl = head.createDiv({ cls: "goodobsidian-pagesidebar-title", text: "Pages" });
     const close = head.createEl("button", {
       cls: "goodobsidian-pagesidebar-close clickable-icon",
@@ -226,6 +297,11 @@ export class PageSidebar {
     });
     setIcon(close, "x");
     close.addEventListener("click", () => this.callbacks.onClose());
+    this.closeButton = close;
+    this.selectButton = head.createEl("button", {
+      cls: "goodobsidian-pagesidebar-textbutton goodobsidian-pagesidebar-select clickable-icon",
+    });
+    this.selectButton.addEventListener("click", () => this.setSelecting(!this.selecting));
     const tabs = top.createDiv({
       cls: "goodobsidian-pagesidebar-tabs",
       attr: { role: "tablist" },
@@ -244,6 +320,7 @@ export class PageSidebar {
       button.addEventListener("click", () => this.showTab(tab));
       this.tabButtons.set(tab, button);
     }
+    this.tabsEl = tabs;
     this.pagesEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-pages" });
     this.filterChip = this.pagesEl.createEl("button", {
       cls: "goodobsidian-pagesidebar-filter clickable-icon",
@@ -278,6 +355,36 @@ export class PageSidebar {
       this.callbacks.onPageAction("contents", this.current, this.contentsAdd),
     );
     this.audioEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-audio" });
+    this.selectBar = this.el.createDiv({
+      cls: "goodobsidian-pagesidebar-selectbar is-hidden",
+      attr: { role: "toolbar", "aria-label": "Selected pages" },
+    });
+    for (const [action, icon, label] of [
+      ["move", "arrow-up-down", "Move"],
+      ["duplicate", "copy", "Duplicate"],
+      ["bookmark", "bookmark", "Bookmark"],
+      ["export", "share", "Export"],
+      ["delete", "trash-2", "Delete"],
+    ] as const) {
+      const button = this.selectBar.createEl("button", {
+        cls: "goodobsidian-pagesidebar-selectbar-button clickable-icon",
+        attr: { "aria-label": label },
+      });
+      button.toggleClass("mod-warning", action === "delete");
+      setIcon(button.createSpan({ cls: "goodobsidian-pagesidebar-selectbar-icon" }), icon);
+      button.createSpan({ cls: "goodobsidian-pagesidebar-selectbar-label", text: label });
+      button.addEventListener("click", (event) => {
+        if (action === "move") this.showMoveMenu(event, button);
+        else this.selectionAction(action, button);
+      });
+      this.selectBarButtons.set(action, button);
+    }
+    // Holds the panel's width while the overview covers the page, so the
+    // page underneath keeps its size and place (and needs no relayout).
+    this.spacer = host.createDiv({ cls: "goodobsidian-pagesidebar-spacer is-hidden" });
+    // Obsidian's swipe recogniser opens its own sidebars on a sideways swipe:
+    // not while a page is dragged across this panel (CLAUDE.md ledger).
+    this.el.dataset.ignoreSwipe = "true";
 
     // Every button here carries `clickable-icon`: Obsidian gives any other
     // button a filled background, and on iPad 20 px of side padding, which
@@ -288,6 +395,20 @@ export class PageSidebar {
     setIcon(plus, "plus");
     this.addTile.createSpan({ text: "Add page" });
     this.addTile.addEventListener("click", () => this.callbacks.onAddPage(this.addTile));
+
+    this.drag = new PageDrag(this.el, this.grid, {
+      canDrag: () =>
+        this.open &&
+        !this.single &&
+        this.callbacks.canEdit?.() !== false &&
+        !!this.callbacks.onMovePages,
+      shown: () => this.shownThumbs(),
+      moving: (index) => this.movingWith(index),
+      visibleTop: () =>
+        this.el.querySelector(".goodobsidian-pagesidebar-top")?.getBoundingClientRect().bottom ?? 0,
+      onDrop: (indexes, gap) => this.callbacks.onMovePages?.(indexes, gap),
+      onPenTap: (index, target, event) => this.tapThumb(index, target, event),
+    });
 
     this.observer = new IntersectionObserver(
       (entries) => {
@@ -300,6 +421,7 @@ export class PageSidebar {
       { root: this.el, rootMargin: "200px 0px" },
     );
     this.showTab(this.tab);
+    this.syncChrome();
   }
 
   get isOpen(): boolean {
@@ -313,6 +435,10 @@ export class PageSidebar {
    */
   setOpen(open: boolean, animate = false): void {
     if (open === this.open) return;
+    if (!open) {
+      this.drag.cancel();
+      this.setOverview(false);
+    }
     this.open = open;
     this.slide?.cancel();
     this.slide = null;
@@ -352,6 +478,89 @@ export class PageSidebar {
     };
   }
 
+  /** Whether the overview (every page in a grid over the notebook view) is showing. */
+  get isOverview(): boolean {
+    return this.overview;
+  }
+
+  /**
+   * Grow the panel into the overview, or back. The overview always shows
+   * the pages; leaving it ends Select. With `animate` it zooms open.
+   */
+  setOverview(on: boolean, animate = false): void {
+    if (on === this.overview || (on && (!this.open || this.single))) return;
+    this.drag.cancel();
+    const docked = this.el.offsetWidth;
+    const floating = this.el.win.getComputedStyle(this.el).position === "absolute";
+    this.overview = on;
+    if (!on) this.setSelecting(false);
+    if (on && this.tab !== "pages") this.showTab("pages");
+    this.spacer.setCssStyles({ width: on && !floating ? `${docked}px` : "" });
+    this.spacer.toggleClass("is-hidden", !on || floating);
+    this.el.toggleClass("is-overview", on);
+    this.zoom?.cancel();
+    this.zoom = null;
+    // It zooms open from the panel; going back, the page is simply there again.
+    if (on && animate && !prefersReducedMotion() && typeof this.el.animate === "function") {
+      this.zoom = this.el.animate(
+        [
+          { opacity: 0, transform: "scale(0.97)" },
+          { opacity: 1, transform: "scale(1)" },
+        ],
+        { duration: PANEL_SLIDE_MS, easing: "ease" },
+      );
+    }
+    this.syncChrome();
+    // A thumbnail is painted for the width it shows at.
+    for (const view of this.thumbs) view.painted = "";
+    this.schedulePaint();
+    this.revealCurrent();
+    this.callbacks.onOverviewChange?.(on);
+  }
+
+  /** Select mode in the overview: taps tick pages, and the selection bar shows. */
+  setSelecting(on: boolean): void {
+    if (on && !this.overview) return;
+    if (on === this.selecting) return;
+    this.selecting = on;
+    if (!on) {
+      this.selected.clear();
+      this.anchor = null;
+    }
+    this.syncChrome();
+    this.syncSelection();
+  }
+
+  /**
+   * A key while this panel is in charge: Escape drops a drag, leaves Select,
+   * then leaves the overview; in the overview Cmd/Ctrl+A selects every page
+   * and Delete deletes the selection. True if the key was taken.
+   */
+  handleKeyDown(event: KeyboardEvent): boolean {
+    if (!this.open) return false;
+    if (event.key === "Escape") {
+      if (this.drag.active) this.drag.cancel();
+      else if (this.selecting) this.setSelecting(false);
+      else if (this.overview) this.setOverview(false, true);
+      else return false;
+      event.preventDefault();
+      return true;
+    }
+    if (!this.overview || this.tab !== "pages") return false;
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      this.setSelecting(true);
+      this.selectShown(true);
+      return true;
+    }
+    if ((event.key === "Delete" || event.key === "Backspace") && this.selected.size > 0) {
+      event.preventDefault();
+      this.selectionAction("delete", this.selectBarButtons.get("delete") ?? this.el);
+      return true;
+    }
+    return false;
+  }
+
   /** Show the page thumbnails or the recordings. */
   showTab(tab: SidebarTab): void {
     this.tab = tab;
@@ -361,6 +570,7 @@ export class PageSidebar {
     const title = TAB_TITLES[tab];
     this.el.setAttribute("aria-label", title);
     this.titleEl.setText(title);
+    this.syncChrome();
     for (const [key, button] of this.tabButtons) {
       button.toggleClass("is-active", key === tab);
       button.setAttribute("aria-selected", key === tab ? "true" : "false");
@@ -457,7 +667,9 @@ export class PageSidebar {
   setSingle(single: boolean, fixed = false): void {
     this.single = single || fixed;
     this.fixed = fixed;
+    if (this.single) this.setOverview(false);
     this.applyFilter();
+    this.syncChrome();
   }
 
   /** Force every thumbnail to repaint (e.g. a PDF raster just arrived). */
@@ -512,13 +724,22 @@ export class PageSidebar {
     }
   }
 
+  /** Bring the thumbnails up to date now, not after the edit debounce (a drop just landed). */
+  flush(): void {
+    if (this.open) this.sync();
+  }
+
   destroy(): void {
     window.clearTimeout(this.refreshTimer);
     window.cancelAnimationFrame(this.paintFrame);
     this.slide?.cancel();
     this.slide = null;
+    this.zoom?.cancel();
+    this.zoom = null;
+    this.drag.destroy();
     this.observer.disconnect();
     this.el.remove();
+    this.spacer.remove();
   }
 
   // --- Internals ------------------------------------------------------------
@@ -527,16 +748,31 @@ export class PageSidebar {
   private sync(): void {
     window.clearTimeout(this.refreshTimer);
     const pages = this.doc?.pages ?? [];
-    while (this.thumbs.length < pages.length) this.thumbs.push(this.createThumb());
-    while (this.thumbs.length > pages.length) {
-      const view = this.thumbs.pop();
-      if (!view) break;
+    // Each page keeps its own thumbnail, found by identity, so a page that
+    // moved keeps its pixels and nothing repaints for a reorder.
+    const byPage = new Map<Page, ThumbView>();
+    for (const view of this.thumbs) if (view.page) byPage.set(view.page, view);
+    const next: Array<ThumbView | null> = pages.map((page) => {
+      const view = byPage.get(page);
+      if (view) byPage.delete(page);
+      return view ?? null;
+    });
+    const taken = new Set(next);
+    const spare = this.thumbs.filter((view) => !taken.has(view));
+    const thumbs = next.map((view) => view ?? spare.shift() ?? this.createThumb());
+    for (const view of spare) {
       this.observer.unobserve(view.root);
       this.viewOf.delete(view.root);
       releaseCanvas(view.canvas);
       view.root.remove();
     }
+    const reordered = thumbs.some((view, index) => this.grid.children[index] !== view.root);
+    this.thumbs = thumbs;
+    if (reordered) for (const view of thumbs) this.grid.insertBefore(view.root, this.addTile);
+    for (const page of [...this.selected]) if (!pages.includes(page)) this.selected.delete(page);
+    if (this.anchor && !pages.includes(this.anchor)) this.anchor = null;
     this.thumbs.forEach((view, index) => {
+      view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
       view.canvas.setCssStyles({ aspectRatio: aspectOf(pages[index]) });
     });
@@ -546,6 +782,8 @@ export class PageSidebar {
     this.applyFilter();
     this.renderContents();
     this.syncCurrent();
+    this.syncSelection();
+    this.syncChrome();
     this.schedulePaint();
   }
 
@@ -675,6 +913,8 @@ export class PageSidebar {
     // red when the page is bookmarked. A tap on it toggles the bookmark.
     const ribbon = frame.createSpan({ cls: "goodobsidian-thumb-ribbon is-outline" });
     setIcon(ribbon, "bookmark");
+    // The overview's Select mode: a tick at the page's corner.
+    setIcon(frame.createSpan({ cls: "goodobsidian-thumb-check" }), "check");
     const footer = root.createDiv({ cls: "goodobsidian-thumb-footer" });
     const label = footer.createSpan({ cls: "goodobsidian-thumb-number" });
     const more = footer.createEl("button", { cls: "goodobsidian-thumb-more clickable-icon" });
@@ -683,6 +923,7 @@ export class PageSidebar {
 
     const view: ThumbView = {
       root,
+      page: null,
       canvas,
       ribbon,
       label,
@@ -693,13 +934,9 @@ export class PageSidebar {
     };
     frame.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
-      if (index < 0) return;
-      // The ribbon lies inside the page's button: a tap on it bookmarks.
-      if ((event.target as Element | null)?.closest(".goodobsidian-thumb-ribbon")) {
-        this.callbacks.onPageAction("bookmark", index, ribbon);
-        return;
-      }
-      this.callbacks.onSelectPage(index);
+      // A drag just ended here, or the Pencil's tap was already taken.
+      if (index < 0 || this.drag.consumeClick()) return;
+      this.tapThumb(index, event.target instanceof Element ? event.target : frame, event);
     });
     more.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
@@ -772,6 +1009,7 @@ export class PageSidebar {
   private paintVisible(): void {
     const pages = this.doc?.pages ?? [];
     const dpr = window.devicePixelRatio || 1;
+    const width = this.overview ? OVERVIEW_THUMB_WIDTH : THUMB_WIDTH;
     const now = ++this.paints;
     this.thumbs.forEach((view, index) => {
       const page = pages[index];
@@ -779,7 +1017,7 @@ export class PageSidebar {
       view.seen = now;
       const signature = pageSignature(page);
       if (signature === view.painted) return;
-      renderPageThumbnail(view.canvas, page, this.render.painter, THUMB_WIDTH, dpr, {
+      renderPageThumbnail(view.canvas, page, this.render.painter, width, dpr, {
         usePressure: this.render.usePressure,
         highlighterAlpha: this.render.highlighterAlpha,
         paper: this.render.paper,
@@ -797,13 +1035,186 @@ export class PageSidebar {
    * ratio is set in CSS, so a released canvas keeps its place in the grid.
    */
   private releaseOffscreen(): void {
+    const keep = this.overview ? KEEP_PAINTED_OFFSCREEN_OVERVIEW : KEEP_PAINTED_OFFSCREEN;
     const hidden = this.thumbs.filter((view) => view.held && !view.visible);
-    if (hidden.length <= KEEP_PAINTED_OFFSCREEN) return;
+    if (hidden.length <= keep) return;
     hidden.sort((a, b) => a.seen - b.seen);
-    for (const view of hidden.slice(0, hidden.length - KEEP_PAINTED_OFFSCREEN)) {
+    for (const view of hidden.slice(0, hidden.length - keep)) {
       releaseCanvas(view.canvas);
       view.held = false;
       view.painted = "";
+    }
+  }
+
+  /**
+   * A tap on page `index`'s thumbnail (a click, or the Pencil's pointerup):
+   * the ribbon bookmarks; in Select mode, or with Shift or Cmd/Ctrl in the
+   * overview, it ticks pages; otherwise it opens the page, and the overview
+   * closes to show it.
+   */
+  private tapThumb(index: number, target: Element, event: MouseEvent): void {
+    const page = this.doc?.pages[index];
+    if (!page) return;
+    const range = event.shiftKey;
+    const toggle = event.metaKey || event.ctrlKey;
+    if (this.overview && (this.selecting || range || toggle)) {
+      this.setSelecting(true);
+      if (range && this.anchor && this.doc) {
+        const from = this.doc.pages.indexOf(this.anchor);
+        for (const at of rangeOf(from < 0 ? index : from, index)) {
+          const each = this.doc.pages[at];
+          if (each && !this.thumbs[at]?.root.hasClass("is-hidden")) this.selected.add(each);
+        }
+      } else if (this.selected.has(page)) {
+        this.selected.delete(page);
+      } else {
+        this.selected.add(page);
+      }
+      this.anchor = page;
+      this.syncSelection();
+      this.syncChrome();
+      return;
+    }
+    // The ribbon lies inside the page's button: a tap on it bookmarks.
+    if (target.closest(".goodobsidian-thumb-ribbon")) {
+      const ribbon = this.thumbs[index]?.ribbon;
+      if (ribbon) this.callbacks.onPageAction("bookmark", index, ribbon);
+      return;
+    }
+    if (this.overview) {
+      this.setOverview(false);
+      this.callbacks.onSelectPage(index, true);
+      return;
+    }
+    this.callbacks.onSelectPage(index);
+  }
+
+  /** The thumbnails the filter shows, in order, with their pages' indexes. */
+  private shownThumbs(): Array<{ root: HTMLElement; index: number }> {
+    const out: Array<{ root: HTMLElement; index: number }> = [];
+    this.thumbs.forEach((view, index) => {
+      if (!view.root.hasClass("is-hidden")) out.push({ root: view.root, index });
+    });
+    return out;
+  }
+
+  /** What moves when page `index` is dragged: the selection, when it is ticked; else itself. */
+  private movingWith(index: number): number[] {
+    const page = this.doc?.pages[index];
+    if (!page || !this.selected.has(page)) return [index];
+    return this.selectedIndexes();
+  }
+
+  /** The ticked pages' indexes, in page order. */
+  private selectedIndexes(): number[] {
+    const pages = this.doc?.pages ?? [];
+    const out: number[] = [];
+    pages.forEach((page, index) => {
+      if (this.selected.has(page)) out.push(index);
+    });
+    return out;
+  }
+
+  /** Tick every page shown, or (`on` false) none. */
+  private selectShown(on: boolean): void {
+    this.selected.clear();
+    if (on) {
+      for (const { index } of this.shownThumbs()) {
+        const page = this.doc?.pages[index];
+        if (page) this.selected.add(page);
+      }
+    }
+    this.anchor = null;
+    this.syncSelection();
+    this.syncChrome();
+  }
+
+  /** Select all, or Deselect all when every page shown is ticked. */
+  private toggleSelectAll(): void {
+    const shown = this.shownThumbs();
+    this.selectShown(!(shown.length > 0 && this.selected.size >= shown.length));
+  }
+
+  private selectionAction(action: SelectionAction, anchor: HTMLElement): void {
+    const indexes = this.selectedIndexes();
+    if (indexes.length === 0) return;
+    if (action === "delete" && indexes.length >= (this.doc?.pages.length ?? 0)) return;
+    this.callbacks.onSelectionAction?.(action, indexes, anchor);
+  }
+
+  private showMoveMenu(event: MouseEvent, anchor: HTMLElement): void {
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("Move to the start")
+        .setIcon("arrow-up-to-line")
+        .onClick(() => this.selectionAction("move-start", anchor)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Move to the end")
+        .setIcon("arrow-down-to-line")
+        .onClick(() => this.selectionAction("move-end", anchor)),
+    );
+    menu.showAtMouseEvent(event);
+  }
+
+  /** Tick or untick each thumbnail as the selection says. */
+  private syncSelection(): void {
+    this.el.toggleClass("is-selecting", this.selecting);
+    for (const view of this.thumbs) {
+      const on = this.selecting && view.page !== null && this.selected.has(view.page);
+      view.root.toggleClass("is-selected", on);
+      const frame = view.root.querySelector(".goodobsidian-thumb-frame");
+      if (this.selecting) frame?.setAttribute("aria-pressed", String(on));
+      else frame?.removeAttribute("aria-pressed");
+    }
+  }
+
+  /**
+   * The header and selection bar for the mode: ⤢ in the panel; ⤡ and Select
+   * in the overview; Select all, "N pages" and Done while selecting.
+   */
+  private syncChrome(): void {
+    const overview = this.overview;
+    const selecting = this.selecting;
+    setIcon(this.expandButton, overview ? "minimize-2" : "maximize-2");
+    const expandLabel = overview ? "Back to the sidebar" : "Show all pages";
+    this.expandButton.setAttribute("aria-label", expandLabel);
+    this.expandButton.setAttribute("title", expandLabel);
+    this.expandButton.toggleClass("is-hidden", this.single || selecting);
+    this.closeButton.toggleClass("is-hidden", overview);
+    this.tabsEl.toggleClass("is-hidden", overview);
+    this.selectButton.toggleClass("is-hidden", !overview);
+    this.selectButton.setText(selecting ? "Done" : "Select");
+    this.selectButton.toggleClass("is-done", selecting);
+    this.selectAllButton.toggleClass("is-hidden", !selecting);
+    const shown = this.shownThumbs().length;
+    const all = shown > 0 && this.selected.size >= shown;
+    this.selectAllButton.setText(all ? "Deselect all" : "Select all");
+    const count = this.selected.size;
+    if (selecting) {
+      this.titleEl.setText(
+        count === 0 ? "Select pages" : count === 1 ? "1 page" : `${count} pages`,
+      );
+    } else {
+      this.titleEl.setText(TAB_TITLES[this.tab]);
+    }
+    this.selectBar.toggleClass("is-hidden", !selecting);
+    // Moving or deleting every page means nothing (and a notebook keeps one).
+    const total = this.doc?.pages.length ?? 0;
+    for (const [action, button] of this.selectBarButtons) {
+      const whole = (action === "delete" || action === "move") && count >= total;
+      button.disabled = count === 0 || whole;
+    }
+    const bookmark = this.selectBarButtons.get("bookmark");
+    if (bookmark) {
+      const marked = count > 0 && [...this.selected].every((page) => page.bookmarked === true);
+      const label = marked ? "Remove bookmark" : "Bookmark";
+      bookmark.setAttribute("aria-label", label);
+      bookmark.querySelector(".goodobsidian-pagesidebar-selectbar-label")?.setText(label);
+      const icon = bookmark.querySelector<HTMLElement>(".goodobsidian-pagesidebar-selectbar-icon");
+      if (icon) setIcon(icon, marked ? "bookmark-minus" : "bookmark");
     }
   }
 

@@ -415,6 +415,7 @@ function maxNumericId(
  */
 export class MovePage implements Command {
   readonly label = "Move page";
+  readonly keepsReading = true;
   private moved: Page | null = null;
 
   constructor(

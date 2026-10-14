@@ -8,6 +8,24 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Drag pages to reorder them** in the page sidebar. With a mouse or the
+  Pencil, press a page and drag; with a finger, rest on it a moment, then
+  drag, so a swipe still scrolls. The page lifts and follows you, a bar shows
+  where it will land, and the panel scrolls when you near its top or bottom.
+  Letting go outside the panel, or Escape, puts it back. One undo step, and
+  the page you were reading stays in view. Under "Bookmarks only" a page
+  lands next to the bookmarked page you drop it by.
+- **See all pages at once.** The new button at the top left of the page
+  sidebar grows it into a grid of every page over the whole notebook. Tap a
+  page to open it; the button again, or Escape, goes back. Pages drag to
+  reorder here too.
+- **Work on several pages together** in that grid: tap Select (or
+  Shift/Cmd-click on a computer), tick pages, then move them to the start or
+  end, duplicate, bookmark, export or delete them, or drag them as one block.
+  Deleting asks first, and each action is one undo step.
+
 ## [2.1.0] - 2026-10-13
 
 ### Added

@@ -120,6 +120,14 @@ import {
 } from "../model/page-commands";
 import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
 import {
+  DuplicatePages,
+  MovePages,
+  RemovePages,
+  isNoOpBlockMove,
+  moveIndexForGap,
+} from "../model/page-order";
+import { ConfirmModal } from "../ui/confirm-modal";
+import {
   externalUrl,
   isExternalTarget,
   linkStrokes,
@@ -162,6 +170,7 @@ import {
   type PageSidebarRenderOptions,
   thumbnailRasterScale,
   type SectionAction,
+  type SelectionAction,
 } from "./page-sidebar";
 import { Toolbar, type ToolbarState, penTypeFor } from "./toolbar";
 import { PANEL_SLIDE_MS } from "./motion";
@@ -1329,8 +1338,9 @@ export class InkView extends TextFileView {
     this.sidebar = new PageSidebar(
       body,
       {
-        // A tapped thumbnail glides to its page, as GoodNotes does.
-        onSelectPage: (index) => this.surface?.goToPage(index, true),
+        // A tapped thumbnail glides to its page, as GoodNotes does; from the
+        // overview, which covered the page, it is simply there.
+        onSelectPage: (index, fromOverview) => this.surface?.goToPage(index, !fromOverview),
         onPageAction: (action, index, anchor) => this.pageAction(action, index, anchor),
         onSelectSection: (index, section) => this.surface?.goToPagePoint(index, section.y, true),
         onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
@@ -1338,6 +1348,11 @@ export class InkView extends TextFileView {
         onClose: () => {
           if (this.sidebar?.isOpen) this.toggleSidebar();
         },
+        canEdit: () => !this.isProtected(),
+        onMovePages: (indexes, gap) => this.movePages(indexes, gap),
+        onSelectionAction: (action, indexes) => this.selectionAction(action, indexes),
+        // The options pill floats over the page, which the overview covers.
+        onOverviewChange: (open) => root.toggleClass("goodobsidian-overview-open", open),
       },
       this.sidebarRendering(this.thumbBackdrops),
     );
@@ -1499,7 +1514,9 @@ export class InkView extends TextFileView {
       root,
       this.app.scope,
       () => this.app.workspace.getActiveViewOfType(InkView) === this,
-      (event) => this.surface?.handleKeyDown(event) ?? false,
+      // The page sidebar first: Escape leaves its overview before anything else.
+      (event) =>
+        this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
     );
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
@@ -1711,17 +1728,17 @@ export class InkView extends TextFileView {
    * Read-only on the note, but refused while it is protected: its pages may
    * not be the pages on disk.
    */
-  exportPdf(): void {
+  exportPdf(chosen?: readonly number[]): void {
     const note = this.file;
     if (this.isProtected() || !note) return;
     const doc = this.surface?.document ?? this.doc;
     const total = doc.pages.length;
     if (total === 0) return;
-    const chosen = this.attachmentFolder("exports");
-    const folder = chosen ?? note.parent?.path ?? "";
+    const exports = this.attachmentFolder("exports");
+    const folder = exports ?? note.parent?.path ?? "";
     // Read when needed: the folder may be created, or filled, meanwhile.
     const taken = (): Set<string> => {
-      const dir = chosen === undefined ? note.parent : this.app.vault.getFolderByPath(chosen);
+      const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
     const sources = {
@@ -1741,7 +1758,8 @@ export class InkView extends TextFileView {
       pageCount: total,
       currentPage: Math.max(0, Math.min(total - 1, this.surface?.currentPage ?? 0)),
       pageSize: (i) => doc.pages[i]?.geometry ?? { width: 0, height: 0 },
-      folder: chosen ?? null,
+      folder: exports ?? null,
+      chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
         if (page)
@@ -1759,9 +1777,9 @@ export class InkView extends TextFileView {
         // have taken the name since.
         const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
         const path = normalizePath(folder ? `${folder}/${name}` : name);
-        if (chosen !== undefined && !this.app.vault.getFolderByPath(chosen)) {
+        if (exports !== undefined && !this.app.vault.getFolderByPath(exports)) {
           try {
-            await this.app.vault.createFolder(chosen);
+            await this.app.vault.createFolder(exports);
           } catch {
             // Created meanwhile.
           }
@@ -2103,6 +2121,93 @@ export class InkView extends TextFileView {
         new Notice(`Deleted page ${index + 1}. Undo (Cmd/Ctrl+Z) brings it back.`);
         break;
     }
+    this.requestSave();
+  }
+
+  /**
+   * Pages dragged in the sidebar or its overview: `indexes` (page order) to
+   * gap `gap`. One page is a `MovePage`, as its menu's Move up and down are;
+   * several are one `MovePages`. Either way one undo step, and the page being
+   * read stays the page being read (`keepsReading`).
+   */
+  private movePages(indexes: readonly number[], gap: number): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected() || this.isSinglePage) return;
+    const doc = surface.document;
+    const total = doc.pages.length;
+    if (indexes.length === 1) {
+      const to = moveIndexForGap(indexes[0], gap, total);
+      if (to === null) return;
+      surface.applyCommand(new MovePage(indexes[0], to));
+    } else {
+      if (indexes.length === 0 || isNoOpBlockMove(total, indexes, gap)) return;
+      surface.applyCommand(new MovePages(this.pagesAt(indexes), gap));
+    }
+    // Show the new order at once, not after the edit debounce.
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /** The pages at `indexes`, by identity, for commands that must outlive a reorder. */
+  private pagesAt(indexes: readonly number[]): Page[] {
+    const pages = this.surface?.document.pages ?? [];
+    return indexes.map((i) => pages[i]).filter((page): page is Page => page !== undefined);
+  }
+
+  /** An action from the overview's selection bar, on the pages at `indexes`. */
+  private selectionAction(action: SelectionAction, indexes: readonly number[]): void {
+    if (action === "export") {
+      this.exportPdf(indexes);
+      return;
+    }
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    const pages = this.pagesAt(indexes);
+    if (pages.length === 0) return;
+    switch (action) {
+      case "move-start":
+        this.movePages(indexes, 0);
+        return;
+      case "move-end":
+        this.movePages(indexes, surface.document.pages.length);
+        return;
+      case "duplicate":
+        if (this.refuseSinglePage()) return;
+        surface.applyCommand(new DuplicatePages(pages));
+        break;
+      case "bookmark": {
+        // Like the page menu: all bookmarked already takes the bookmarks off.
+        const on = !pages.every((page) => page.bookmarked === true);
+        const label = on ? "Bookmark pages" : "Remove bookmarks";
+        surface.applyCommand(
+          new CompositeCommand(
+            label,
+            pages.map((page) => new SetPageBookmark(page, on)),
+          ),
+        );
+        break;
+      }
+      case "delete": {
+        const n = pages.length;
+        if (n >= surface.document.pages.length) return;
+        const what = n === 1 ? "this page" : `these ${n} pages`;
+        void ConfirmModal.confirm(this.app, {
+          title: n === 1 ? "Delete 1 page?" : `Delete ${n} pages?`,
+          message: `Everything on ${what} goes with it. Undo (Cmd/Ctrl+Z) brings it back.`,
+          cta: "Delete",
+        }).then((yes) => {
+          if (!yes || this.surface !== surface || this.isProtected()) return;
+          surface.applyCommand(new RemovePages(pages));
+          this.sidebar?.flush();
+          this.requestSave();
+          new Notice(
+            `Deleted ${n === 1 ? "1 page" : `${n} pages`}. Undo (Cmd/Ctrl+Z) brings ${n === 1 ? "it" : "them"} back.`,
+          );
+        });
+        return;
+      }
+    }
+    this.sidebar?.flush();
     this.requestSave();
   }
 

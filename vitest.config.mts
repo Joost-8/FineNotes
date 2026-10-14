@@ -60,6 +60,7 @@ export default defineConfig({
         "src/view/file-moves.ts",
         "src/view/page-embed-model.ts",
         "src/view/range-fill.ts",
+        "src/view/page-drag-model.ts",
         "src/canvas/scan-raster.ts",
         "src/canvas/homography.ts",
         "src/canvas/page-detect.ts",

@@ -49,6 +49,8 @@ export interface ExportPdfHost {
   pageSize: (index: number) => { width: number; height: number };
   /** The note's "PDF exports" folder, or `null` when PDFs are saved next to the note. */
   folder: string | null;
+  /** Pages already chosen (the overview's selection): opens on Choose pages with these ticked. */
+  chosen?: readonly number[];
   /** Paint page `index`'s preview into `canvas`, `cssWidth` CSS px wide, as it will export. */
   paintPreview: (canvas: HTMLCanvasElement, index: number, cssWidth: number) => Promise<void>;
   /** The file name the pages would be saved under. */
@@ -89,8 +91,9 @@ export class ExportPdfModal extends Modal {
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
-    this.pageScope = host.pageCount > 1 ? "all" : "current";
-    this.chosen = [host.currentPage];
+    const chosen = (host.chosen ?? []).filter((i) => i >= 0 && i < host.pageCount);
+    this.pageScope = chosen.length > 0 ? "custom" : host.pageCount > 1 ? "all" : "current";
+    this.chosen = chosen.length > 0 ? [...chosen] : [host.currentPage];
   }
 
   override onOpen(): void {
