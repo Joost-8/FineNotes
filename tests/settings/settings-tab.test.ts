@@ -49,7 +49,8 @@ vi.mock("../../src/view/folder-suggest", () => ({
 }));
 
 const { Platform, Setting } = await import("../fakes/obsidian");
-const { DEFAULT_SETTINGS, GoodObsidianSettingTab } = await import("../../src/settings");
+const { DEFAULT_SETTINGS, GoodObsidianSettingTab, shortcutList } =
+  await import("../../src/settings");
 const { SIZES } = await import("../../src/constants");
 const { DEFAULT_MODELS, LLM_PROVIDER_ID, VENDOR_LABELS, VENDORS } =
   await import("../../src/recognition/llm-request");
@@ -108,6 +109,15 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     removeApiKey: vi.fn((slot: string) => {
       calls.push(`remove:${slot}`);
       delete keys[slot];
+    }),
+    saveSavedPens: vi.fn((pens: Settings["savedPens"]) => {
+      calls.push(`pens:${pens.length}`);
+      settings.savedPens = pens.map((pen) => ({ ...pen }));
+    }),
+    setPenCursor: vi.fn((on: boolean) => {
+      calls.push(`penCursor:${on}`);
+      settings.penCursor = on;
+      return Promise.resolve();
     }),
   };
   return plugin;
@@ -203,6 +213,7 @@ const WRITING = "Writing and tools";
 const PAGES = "Pages and notebooks";
 const HANDWRITING = "Handwriting";
 const ADVANCED = "Advanced";
+const PENS = "Pens and shortcuts";
 
 beforeEach(() => {
   dialogs.keyModals.length = 0;
@@ -230,6 +241,12 @@ describe("the rows", () => {
       [WRITING, "Default ink color", "color:defaultColor"],
       [WRITING, "Custom colors", "text:customColors"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
+      [PENS, "Saved pens", "render"],
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [PENS, `Saved pen ${n}`, "render"]),
+      [PENS, "Save the pen in hand", "render"],
+      [PENS, "Stylus side button", "dropdown:barrelButton"],
+      [PENS, "Crosshair cursor", "toggle:penCursor"],
+      [PENS, "Keyboard and stylus shortcuts", "render"],
       [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Dark PDF pages", "toggle:invertPdfPages"],
       [PAGES, "Paper width", "render"],
@@ -311,6 +328,17 @@ describe("the rows", () => {
       "Default stroke size": ["pen size", "line width"],
       "Highlighter opacity": ["transparency", "alpha"],
       "Custom colors": ["palette"],
+      "Saved pens": ["favorite pens", "presets"],
+      ...Object.fromEntries(
+        [1, 2, 3, 4, 5, 6, 7, 8].map((n) => [
+          `Saved pen ${n}`,
+          ["favorite pen", "preset", "number key"],
+        ]),
+      ),
+      "Save the pen in hand": ["favorite pen", "preset"],
+      "Stylus side button": ["barrel button", "pen tablet", "wacom", "stylus"],
+      "Crosshair cursor": ["cursor", "pointer"],
+      "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
       "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
@@ -377,6 +405,16 @@ describe("the rows", () => {
 
 // --- Visibility --------------------------------------------------------------
 
+/** The "Pens and shortcuts" rows a fresh install shows, on a computer. */
+const PEN_ROWS = [
+  "Saved pens",
+  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `Saved pen ${n}`),
+  "Save the pen in hand",
+  "Stylus side button",
+  "Crosshair cursor",
+  "Keyboard and stylus shortcuts",
+];
+
 describe("which rows show", () => {
   /** The rows shown; `aiOpen`: the AI group opened, as Show does when no key is set up. */
   function visibleNames(plugin: Plugin, aiOpen = true): string[] {
@@ -404,6 +442,7 @@ describe("which rows show", () => {
       "Default ink color",
       "Custom colors",
       "Highlighter opacity",
+      ...PEN_ROWS,
       // "Dark PDF pages" shows with dark pages only.
       "Page appearance",
       "Paper width",
@@ -434,7 +473,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block 29)",
+      `(block ${29 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -885,5 +924,113 @@ describe("refresh", () => {
     const plugin = makePlugin();
     makeTab(plugin).tab.refresh();
     expect(plugin.calls).toEqual(["update"]);
+  });
+});
+
+describe("pens and shortcuts (FineNotes#24, #25)", () => {
+  it("edits a saved pen's type, colour and width where it is", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    const setting = renderRow(named(all, "Saved pen 2"));
+    expect(setting.dropdowns[0].value).toBe("ball");
+    expect(Object.keys(setting.dropdowns[0].options)).toEqual([
+      "fountain",
+      "ball",
+      "brush",
+      "highlighter",
+    ]);
+    expect(setting.colors[0].value).toBe("#e03131");
+    expect(setting.texts[0].value).toBe("0.41");
+
+    await setting.colors[0].pick("#00AA00");
+    expect(plugin.settings.savedPens[1].color).toBe("#00aa00");
+    expect(setting.find("goodobsidian-saved-pen-swatch")?.style.backgroundColor).toBe("#00aa00");
+    // Typed widths are saved as they become widths; the tab is not rebuilt under the field.
+    await setting.texts[0].type("1");
+    expect(plugin.settings.savedPens[1].size).toBe(4.88);
+    await setting.texts[0].type("9");
+    expect(plugin.settings.savedPens[1].size).toBe(4.88);
+    expect(setting.texts[0].inputEl.hasClass("is-invalid")).toBe(true);
+    expect(plugin.calls).not.toContain("update");
+    await setting.dropdowns[0].pick("highlighter");
+    expect(plugin.settings.savedPens[1].type).toBe("highlighter");
+    expect(plugin.calls).toContain("update");
+  });
+
+  it("moves and deletes saved pens, and keeps the ends' arrows off", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    const first = renderRow(named(all, "Saved pen 1"));
+    const last = renderRow(named(all, "Saved pen 8"));
+    expect(first.extras.map((b) => [b.icon, b.disabled])).toEqual([
+      ["arrow-up", true],
+      ["arrow-down", false],
+      ["trash-2", false],
+    ]);
+    expect(last.extras[1].disabled).toBe(true);
+    const [blue, red] = plugin.settings.savedPens;
+    await first.extras[1].click();
+    expect(plugin.settings.savedPens.slice(0, 2)).toEqual([red, blue]);
+    await first.extras[2].click();
+    expect(plugin.settings.savedPens).toHaveLength(7);
+    expect(plugin.settings.savedPens[0]).toEqual(blue);
+  });
+
+  it("saves the pen in hand once, and restores the defaults", async () => {
+    const lastPen = { type: "brush" as const, color: "#123456", size: 4 };
+    const plugin = makePlugin({ lastPen });
+    const all = rows(makeTab(plugin).tab);
+    expect(named(all, "Save the pen in hand").desc).toContain("Brush pen");
+    const save = renderRow(named(all, "Save the pen in hand"));
+    // Eight are saved already: full.
+    expect(save.button("Save pen").disabled).toBe(true);
+    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 3);
+    const room = renderRow(named(rows(makeTab(plugin).tab), "Save the pen in hand"));
+    expect(room.button("Save pen").disabled).toBe(false);
+    await room.button("Save pen").click();
+    expect(plugin.settings.savedPens[3]).toEqual(lastPen);
+    expect(named(rows(makeTab(plugin).tab), "Save the pen in hand").desc).toContain("saved");
+    const restore = renderRow(named(all, "Saved pens"));
+    await restore.button("Restore defaults").click();
+    expect(plugin.settings.savedPens).toHaveLength(8);
+  });
+
+  it("asks for a pen first when none was written with", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    expect(named(all, "Save the pen in hand").desc).toMatch(/first/);
+    const save = renderRow(named(all, "Save the pen in hand"));
+    expect(save.button("Save pen").disabled).toBe(true);
+  });
+
+  it("offers the barrel's four choices, and the cursor only on a computer", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
+      "erase",
+      "lasso",
+      "pan",
+      "none",
+    ]);
+    expect(shown(named(all, "Crosshair cursor"))).toBe(true);
+    Platform.isMobile = true;
+    try {
+      expect(shown(named(rows(makeTab(makePlugin()).tab), "Crosshair cursor"))).toBe(false);
+    } finally {
+      Platform.isMobile = false;
+    }
+  });
+
+  it("hands the cursor switch to the plugin, which updates every notebook", async () => {
+    const plugin = makePlugin();
+    await makeTab(plugin).tab.setControlValue("penCursor", false);
+    expect(plugin.calls).toEqual(["penCursor:false"]);
+  });
+
+  it("lists the shortcuts, with Cmd on a Mac", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    const pc = renderRow(named(all, "Keyboard and stylus shortcuts"));
+    expect(pc.descEl.textContent).toContain("Ctrl+A");
+    expect(pc.descEl.textContent).toContain("1 – 8");
+    expect(shortcutList(true).map(([keys]) => keys)).toContain("Cmd+A");
+    expect(shortcutList(true).map(([keys]) => keys)).toContain("Option + write up or down");
   });
 });

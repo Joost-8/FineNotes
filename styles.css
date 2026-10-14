@@ -433,6 +433,33 @@ body,
   height: 16px;
 }
 
+/* The saved pens' star, right after the pen type (FineNotes#24). */
+.goodobsidian-options .goodobsidian-saved-pens {
+  color: var(--gob-icon);
+}
+
+.goodobsidian-options .goodobsidian-saved-pens svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The laser pointer has nothing to set: the pill only says what it is. */
+.goodobsidian-laser-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  min-height: var(--gob-touch-compact);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.goodobsidian-laser-note-icon {
+  display: inline-flex;
+  color: var(--color-red);
+}
+
 .goodobsidian-options .goodobsidian-tool.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
@@ -597,6 +624,39 @@ body,
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* A saved pen, or the laser: its name, then the key that picks it. */
+.goodobsidian-saved-pen-label {
+  flex: 1 1 auto;
+  text-align: start;
+}
+
+.goodobsidian-saved-pen-key {
+  margin-inline-start: auto;
+  padding: 0 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-s, 4px);
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-popover button.is-active .goodobsidian-saved-pen-key {
+  border-color: currentColor;
+  background: transparent;
+  color: inherit;
+}
+
+.goodobsidian-saved-pens-popover {
+  min-width: 260px;
+}
+
+.goodobsidian-laser-row-icon {
+  display: inline-flex;
+  width: 24px;
+  justify-content: center;
+  color: var(--color-red);
 }
 
 .goodobsidian-swatch {
@@ -1506,6 +1566,13 @@ body,
   z-index: 2;
 }
 
+/* The laser pointer's trail (FineNotes#25), over the ink, in screen px. */
+.goodobsidian-canvas-laser {
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+}
+
 /* Transparent overlay that receives pen/touch input. touch-action is none so
    iOS WebKit never hijacks a pen drag as a scroll (which cuts strokes short).
    Nothing here scrolls natively: ink-surface.ts moves the paper by a
@@ -1825,6 +1892,16 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
+/* A pen, the highlighter or the laser in hand on a computer: a small
+   crosshair, 17 screen px, in place of the arrow (FineNotes#25). The white
+   halo keeps it legible on dark ink and dark paper. Space's hand wins. */
+.goodobsidian-surface.is-pen-cursor .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17'%3E%3Cpath d='M8.5 1v6M8.5 10v6M1 8.5h6M10 8.5h6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M8.5 1v6M8.5 10v6M1 8.5h6M10 8.5h6' stroke='black' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E")
+      8 8,
+    crosshair;
+}
+
 /* On a tablet the thumbs are a readout, not a control: a palm rests on the
    edge of the page and the Pencil starts strokes there, and both belong to
    the page (palm rejection, the stylus touch guards). */
@@ -1928,6 +2005,41 @@ body.is-mobile .goodobsidian-scrollthumb {
 
 .goodobsidian-wide-text .setting-item-control input {
   width: 100%;
+}
+
+/* A saved pen's row: its colour as a dot before its name, then its controls. */
+.goodobsidian-saved-pen-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-inline-start: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width {
+  width: 5em;
+  text-align: end;
+}
+
+.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width.is-invalid {
+  border-color: var(--text-error);
+}
+
+/* The shortcuts, as a two-column table under their row's name. */
+.goodobsidian-shortcuts {
+  margin-top: 8px;
+  border-collapse: collapse;
+}
+
+.goodobsidian-shortcuts td {
+  padding: 2px 12px 2px 0;
+  vertical-align: top;
+}
+
+.goodobsidian-shortcuts kbd {
+  white-space: nowrap;
 }
 
 /* ------------------------------------------- tier-2 swatch sizing (late) */
@@ -2103,9 +2215,26 @@ body.is-mobile .goodobsidian-scrollthumb {
 }
 
 .goodobsidian-width-readout {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
+}
+
+/* The width, typed in mm (FineNotes#24). */
+.goodobsidian-width-readout input.goodobsidian-width-field {
+  width: 4.5em;
+  height: 28px;
+  padding: 0 6px;
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.goodobsidian-width-readout input.goodobsidian-width-field.is-invalid {
+  border-color: var(--text-error);
 }
 
 .goodobsidian-popover button.goodobsidian-width-reset.clickable-icon {

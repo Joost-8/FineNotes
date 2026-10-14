@@ -366,7 +366,7 @@ describe("handleKeyDown", () => {
   });
 
   it("passes keys it has no use for", () => {
-    for (const key of ["x", "Tab", "Enter", "1", "ArrowLeft", "Escape", "Delete"]) {
+    for (const key of ["x", "Tab", "Enter", "9", "ArrowLeft", "Escape", "Delete"]) {
       expect(press(key)).toEqual(PASSED);
     }
   });
@@ -1578,5 +1578,157 @@ describe("undoPalm", () => {
     const none = scene(null, { x: 0, y: 10 });
     run(none.surface, "undoPalm");
     expect(none.calls).toEqual([]);
+  });
+});
+
+describe("pens and shortcuts (FineNotes#25)", () => {
+  function keySurface(practice: object | null = null) {
+    const calls: string[] = [];
+    const page = blankPage("p0");
+    const surface = surfaceWith({
+      toolState: { tool: "pen" },
+      practice,
+      doc: { pages: [page] },
+      pageIndex: 0,
+      callbacks: { onSavedPen: (n: number) => calls.push(`savedPen(${n})`) },
+      select: (id: string) => calls.push(`select(${id})`),
+    });
+    return { surface, calls };
+  }
+
+  it("hands a number key's saved pen to the host, except in a practice file", () => {
+    const { surface, calls } = keySurface();
+    run(surface, "runKeyAction", { savedPen: 3 });
+    expect(calls).toEqual(["savedPen(3)"]);
+    const practice = keySurface({ device: "ipad" });
+    run(practice.surface, "runKeyAction", { savedPen: 3 });
+    expect(practice.calls).toEqual([]);
+  });
+
+  it("selects everything on the page being read with Cmd/Ctrl+A", () => {
+    const { surface, calls } = keySurface();
+    run(surface, "runKeyAction", "select-all");
+    expect(calls).toEqual(["select(p0)"]);
+    const practice = keySurface({ device: "ipad" });
+    run(practice.surface, "runKeyAction", "select-all");
+    expect(practice.calls).toEqual([]);
+  });
+
+  function routed(state: State = {}) {
+    return surfaceWith({
+      surfaceEl: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+      offsetX: 0,
+      viewport: { scrollY: 0 },
+      baseScale: 1,
+      userZoom: 1,
+      pageLayout: { boxes: [], width: 100, height: 100, gap: 0 },
+      callbacks: {},
+      editingTextView: () => null,
+      heldText: null,
+      stylusMenuUntil: 0,
+      penPanning: false,
+      ...state,
+    });
+  }
+
+  const pen = (over: Record<string, unknown> = {}) => ({
+    pointerType: "pen",
+    button: 0,
+    buttons: 1,
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    clientX: 50,
+    clientY: 50,
+    ...over,
+  });
+
+  it("moves the page from beside the pages, and draws on them", () => {
+    const margin = routed();
+    expect(run(margin, "pressRoute", pen())).toBe("pan");
+    expect(margin.penPanning).toBe(true);
+    const typing = routed({ editingTextView: () => ({}) });
+    expect(run(typing, "pressRoute", pen())).toBe("draw");
+  });
+
+  it("ignores a barrel set to nothing pressed while hovering, and keeps its menu away", () => {
+    const surface = routed({ callbacks: { barrelAction: () => "none" } });
+    expect(run(surface, "pressRoute", pen({ button: 2, buttons: 2 }))).toBe("ignore");
+    expect(surface.stylusMenuUntil).toBeGreaterThan(0);
+  });
+
+  it("lends the eraser or the lasso for one press, never while typing", () => {
+    const surface = routed({ practice: null });
+    expect(run(surface, "pressOverrideOf", pen({ shiftKey: true }))).toBe("eraser");
+    expect(run(surface, "pressOverrideOf", pen({ ctrlKey: true }))).toBe("select");
+    expect(run(surface, "pressOverrideOf", pen({ altKey: true }))).toBe("zoom");
+    expect(run(surface, "pressOverrideOf", pen())).toBeNull();
+    const practice = routed({ practice: { device: "ipad" } });
+    expect(run(practice, "pressOverrideOf", pen({ ctrlKey: true }))).toBeNull();
+    const typing = routed({ editingTextView: () => ({}) });
+    expect(run(typing, "pressOverrideOf", pen({ shiftKey: true }))).toBeNull();
+  });
+
+  it("runs a lent tool's gesture and does not count it as a use of the tool in hand", () => {
+    const calls: string[] = [];
+    const gesture = { up: () => calls.push("up"), cancel: () => calls.push("cancel") };
+    const surface = surfaceWith({
+      toolState: { tool: "pen" },
+      pressTool: "eraser",
+      gestureOf: (tool: string) => {
+        calls.push(`gesture(${tool})`);
+        return gesture;
+      },
+      deferToolUse: () => calls.push("defer"),
+    });
+    expect(run(surface, "gestureTool")).toBe("eraser");
+    run(surface, "finishToolGesture", {}, { x: 0, y: 0 });
+    expect(calls).toEqual(["gesture(eraser)", "up"]);
+    expect(surface.pressTool).toBeNull();
+    expect(run(surface, "gestureTool")).toBe("pen");
+    run(surface, "finishToolGesture", {}, { x: 0, y: 0 });
+    expect(calls.slice(2)).toEqual(["gesture(pen)", "up", "defer"]);
+  });
+
+  it("zooms with an Alt-drag about where the pen came down, within the limits", () => {
+    const applyZoom = vi.fn((zoom: number) => {
+      surface.userZoom = zoom;
+    });
+    const surface = routed({
+      minZoom: 0.5,
+      zoomAnim: null,
+      zoomDrag: null,
+      direction: "vertical",
+      applyZoom,
+      snapRowAfterZoom: false,
+      settleRowAfterZoom: vi.fn(),
+      requestFrame: vi.fn(),
+    });
+    run(surface, "startZoomDrag", { x: 40, y: 300 });
+    expect(surface.zoomDrag).toEqual({ from: 1, x: 40, y: 300 });
+    run(surface, "moveZoomDrag", { x: 40, y: 150 });
+    expect(applyZoom).toHaveBeenLastCalledWith(2, 40, 300);
+    expect(run(surface, "endZoomDrag")).toBe(true);
+    expect(surface.zoomDrag).toBeNull();
+    expect(run(surface, "endZoomDrag")).toBe(false);
+  });
+
+  it("shows the crosshair for the pens only, and only when it is on", () => {
+    const classes = new Map<string, boolean>();
+    const surface = surfaceWith({
+      toolState: { tool: "pen" },
+      surfaceEl: { toggleClass: (name: string, on: boolean) => classes.set(name, on) },
+    });
+    run(surface, "setPenCursor", true);
+    expect(classes.get("is-pen-cursor")).toBe(true);
+    (surface.toolState as { tool: string }).tool = "eraser";
+    run(surface, "syncPenCursor");
+    expect(classes.get("is-pen-cursor")).toBe(false);
+    (surface.toolState as { tool: string }).tool = "laser";
+    run(surface, "syncPenCursor");
+    expect(classes.get("is-laser")).toBe(true);
+    run(surface, "setPenCursor", false);
+    expect(classes.get("is-pen-cursor")).toBe(false);
   });
 });

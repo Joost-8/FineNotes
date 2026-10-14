@@ -100,10 +100,14 @@ import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
+import { type SavedPen, savedPensOf } from "./model/saved-pens";
 import { writeSystemText } from "./view/system-clipboard";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
+
+/** The pen in hand is saved once it has been left alone this long, ms: a width slider drags. */
+const LAST_PEN_SAVE_MS = 600;
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
 
@@ -150,6 +154,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** True when this vault had no saved settings: a new install, with no news to show. */
   private firstInstall = false;
+  /** A save of the pen in hand, waiting for the picking to rest. */
+  private lastPenTimer = 0;
 
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
@@ -219,6 +225,12 @@ export default class GoodObsidianPlugin extends Plugin {
 
     await this.loadSettings();
     await this.setUpKeyStore();
+    // A pen picked just before the plugin stops is still kept.
+    this.register(() => {
+      if (!this.lastPenTimer) return;
+      window.clearTimeout(this.lastPenTimer);
+      void this.saveSettings();
+    });
 
     this.setUpReadingGuard();
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
@@ -488,6 +500,8 @@ export default class GoodObsidianPlugin extends Plugin {
     // not carried over.
     delete loaded.pressureEnabled;
     delete loaded.trocrModel;
+    // A list of its own, read as pens: the default's must stay as it is.
+    this.settings.savedPens = savedPensOf(this.settings.savedPens);
     // Settings found under the old id are written to this id's folder at
     // once, so the carry-over happens exactly one time.
     if (own === null && saved !== null) await this.saveSettings();
@@ -789,6 +803,33 @@ export default class GoodObsidianPlugin extends Plugin {
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
     void this.saveSettings();
+  }
+
+  /**
+   * Remember the pen in hand (type, colour, width) for every notebook and
+   * the next start (FineNotes#24). Saved once the picking rests, since a
+   * width slider reports every step of a drag.
+   */
+  saveLastPen(pen: SavedPen): void {
+    this.settings.lastPen = { ...pen };
+    window.clearTimeout(this.lastPenTimer);
+    this.lastPenTimer = window.setTimeout(() => {
+      this.lastPenTimer = 0;
+      void this.saveSettings();
+    }, LAST_PEN_SAVE_MS);
+  }
+
+  /** Keep the saved pens (FineNotes#24), and show them in every open notebook's toolbar. */
+  saveSavedPens(pens: readonly SavedPen[]): void {
+    this.settings.savedPens = pens.map((pen) => ({ ...pen }));
+    void this.saveSettings();
+  }
+
+  /** The pen cursor setting changed: every open notebook shows the crosshair, or not. */
+  async setPenCursor(on: boolean): Promise<void> {
+    this.settings.penCursor = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.setPenCursor(on);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

@@ -19,6 +19,8 @@ import {
 import { type PaperTheme, paperTheme } from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
+import type { BarrelAction } from "./input/pen-modifiers";
+import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR } from "./model/colors";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
@@ -163,6 +165,16 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+
+  // Pens and shortcuts (FineNotes#24, #25).
+  /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
+  savedPens: SavedPen[];
+  /** The pen last written with, which every notebook opens with. Checked where it is read. */
+  lastPen?: SavedPen;
+  /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
+  barrelButton: BarrelAction;
+  /** A small crosshair over the page for the pens, on a computer. */
+  penCursor: boolean;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -217,6 +229,10 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   showNewNotebookInExplorer: false,
   pageAppearance: "light",
   invertPdfPages: true,
+
+  savedPens: defaultSavedPens(),
+  barrelButton: "erase",
+  penCursor: true,
 };
 
 // --- Dark pages ----------------------------------------------------------------

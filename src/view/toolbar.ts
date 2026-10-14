@@ -133,9 +133,22 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
+import {
+  MAX_SAVED_PENS,
+  type SavedPen,
+  mmText,
+  samePen,
+  savedPenLabel,
+  widthFromMm,
+} from "../model/saved-pens";
+import { DialogKeyboard } from "./dialog-keyboard";
 
-/** Tools selectable in the toolbar. Pen, highlighter and shape produce strokes. */
-export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | "shape";
+/**
+ * Tools selectable in the toolbar. Pen, highlighter and shape produce
+ * strokes. The laser pointer draws a fading trail that is never kept; it has
+ * no bar button (FineNotes#25): L, or the pen type menu.
+ */
+export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -188,6 +201,11 @@ export function strokeWidthFor(state: ToolbarState): number {
   // thinnest preset (FineNotes#7).
   const floor = spec.tool === "highlighter" ? Math.min(...SIZES) : 0;
   return Math.max(0.5, chosenWidth(state.size, floor) * spec.sizeScale);
+}
+
+/** The pen a toolbar state writes with, as a saved pen would hold it. */
+export function penOfState(state: ToolbarState): SavedPen {
+  return { type: penTypeFor(state).id, color: state.color, size: state.size };
 }
 
 /**
@@ -400,6 +418,13 @@ export interface ToolbarCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** The pen row's picked slots changed. Hosts persist them. */
   onPenColors?: (colors: string[]) => void;
+  // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
+  /** The saved pens, as the settings have them now. */
+  savedPens?: () => readonly SavedPen[];
+  /** "Save current pen": add `pen` to the saved pens. Hosts persist it. */
+  onSavePen?: (pen: SavedPen) => void;
+  /** "Edit saved pens": open where they are edited (the settings). */
+  onEditPens?: () => void;
 }
 
 export interface ToolbarOptions {
@@ -492,6 +517,8 @@ export class Toolbar {
   private palette: string[];
   /** The pen or highlighter last in use, which "select again" goes back to. */
   private drawingTool: ActiveTool = "pen";
+  /** Keeps the width popover's mm field above the iPad keyboard while it is typed in. */
+  private popoverKeyboard: DialogKeyboard | null = null;
 
   /**
    * Both tiers are appended to `host`, the view's content element. `widths`
@@ -615,7 +642,7 @@ export class Toolbar {
     const tools = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-tools" });
     this.toolsGroup = tools;
     keep(this.addToolButton(tools, "select", "lasso", "Lasso select (V)"));
-    this.addToolButton(tools, "pen", "pen-tool", "Pen (P)");
+    this.addToolButton(tools, "pen", "pen-tool", "Pen (P or W)");
     this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
     keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
     keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
@@ -806,6 +833,9 @@ export class Toolbar {
         case "shape":
           this.buildShapeOptions();
           break;
+        case "laser":
+          this.buildLaserOptions();
+          break;
       }
     }
     this.optionsEl.toggleClass("is-collapsed", !this.optionsVisible);
@@ -827,6 +857,17 @@ export class Toolbar {
     pen.addEventListener("click", () => this.togglePenTypeList());
     this.penTypeButtons.set(active.id, pen);
     this.chevron("Pen options", () => this.togglePenTypeList());
+    // The saved pens, as Write and GoodNotes keep favourites (FineNotes#24).
+    if (this.callbacks.savedPens && !this.practice) {
+      const saved = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-saved-pens clickable-icon",
+      });
+      iconOrText(saved, "star", "Saved pens");
+      saved.setAttribute("aria-label", "Saved pens (1–8)");
+      saved.setAttribute("title", "Saved pens (1–8)");
+      saved.setAttribute("aria-haspopup", "dialog");
+      saved.addEventListener("click", () => this.toggleSavedPens(saved));
+    }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
@@ -973,6 +1014,104 @@ export class Toolbar {
     swatch.setAttr("aria-label", color);
     swatch.addEventListener("click", onPick);
     return swatch;
+  }
+
+  /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
+  private buildLaserOptions(): void {
+    const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
+    iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "pointer", "");
+    note.createSpan({ text: "Laser pointer (L): its trail fades and is never saved" });
+  }
+
+  /**
+   * The saved pens' popover: each pen with its number key, the one in hand
+   * marked; then Save current pen, and a way to the settings, where they are
+   * reordered and deleted.
+   */
+  private toggleSavedPens(anchor: HTMLElement): void {
+    if (this.popoverKind === "saved-pens") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("saved-pens", anchor);
+    body.addClass("goodobsidian-saved-pens-popover");
+    this.popoverRender = () => {
+      body.empty();
+      this.renderSavedPens(body);
+      this.keepPopoverInside(anchor);
+    };
+    this.popoverRender();
+  }
+
+  private renderSavedPens(body: HTMLElement): void {
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Saved pens" });
+    const pens = this.callbacks.savedPens?.() ?? [];
+    const current = penOfState(this.state);
+    const inHand = this.state.tool === "pen" || this.state.tool === "highlighter";
+    pens.forEach((pen, index) => {
+      const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
+      const row = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-saved-pen",
+      });
+      row.append(penGlyph(spec, pen.color));
+      row.createSpan({ cls: "goodobsidian-saved-pen-label", text: savedPenLabel(pen) });
+      row.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
+      row.toggleClass("is-active", inHand && samePen(pen, current));
+      row.addEventListener("click", () => {
+        this.closePopover();
+        this.applySavedPen(pen);
+      });
+    });
+    if (pens.length === 0) {
+      body.createDiv({ cls: "goodobsidian-popover-hint", text: "No saved pens yet." });
+    }
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const saved = pens.some((pen) => samePen(pen, current));
+    const add = body.createEl("button", {
+      cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
+    });
+    add.createSpan({
+      text: saved
+        ? "This pen is saved"
+        : pens.length >= MAX_SAVED_PENS
+          ? `Saved pens are full (${MAX_SAVED_PENS})`
+          : "Save current pen",
+    });
+    add.disabled = !inHand || saved || pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen;
+    add.addEventListener("click", () => {
+      if (add.disabled) return;
+      this.callbacks.onSavePen?.(current);
+      this.popoverRender?.();
+    });
+    if (!this.callbacks.onEditPens) return;
+    const edit = body.createEl("button", {
+      cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
+    });
+    edit.createSpan({ text: "Edit saved pens" });
+    iconOrText(edit.createSpan({ cls: "goodobsidian-popover-link-icon" }), "chevron-right", ">");
+    edit.addEventListener("click", () => {
+      this.closePopover();
+      this.callbacks.onEditPens?.();
+    });
+  }
+
+  /**
+   * Write with a saved pen: its type, colour and width, switching to the pen
+   * or highlighter if another tool is in hand (the keys 1 to 8, the saved
+   * pens' popover). Every change is reported as a pick by hand would be.
+   */
+  applySavedPen(pen: SavedPen): void {
+    const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
+    if (this.practice && spec.tool === "highlighter") return;
+    this.state.color = pen.color;
+    this.state.size = pen.size;
+    this.callbacks.onColorChange(pen.color);
+    this.callbacks.onSizeChange(pen.size);
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
   }
 
   private buildEraserOptions(): void {
@@ -1653,7 +1792,20 @@ export class Toolbar {
     // track widens like the stroke does, and the presets.
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
     head.createDiv({ cls: "goodobsidian-popover-label", text: "Stroke width" });
-    const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
+    // The width as a field: any width from the thinnest pen to 5 mm can be
+    // typed, to a hundredth of a mm (FineNotes#24).
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const field = readout.createEl("input", {
+      cls: "goodobsidian-width-field",
+      type: "text",
+      attr: {
+        inputmode: "decimal",
+        spellcheck: "false",
+        autocomplete: "off",
+        "aria-label": "Stroke width in millimetres",
+      },
+    });
+    readout.createSpan({ cls: "goodobsidian-width-unit", text: "mm" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-width-reset clickable-icon",
       attr: { "aria-label": "Reset stroke width", title: "Reset stroke width" },
@@ -1680,7 +1832,8 @@ export class Toolbar {
     // The readout, the thumb, the preview and the presets always show the live width.
     const show = (): void => {
       const width = chosenWidth(this.state.size, floor);
-      readout.setText(formatMm(width));
+      if (activeDocument.activeElement !== field) field.value = mmText(width);
+      field.setAttribute("title", formatMm(width));
       range.value = String(nearestStop(stops, width));
       syncRangeFill(range);
       markChosen(presets, this.state.size);
@@ -1716,6 +1869,25 @@ export class Toolbar {
       pick(this.options.defaultSize ?? this.widths[Math.floor(this.widths.length / 2)]);
       settle();
     });
+    const typed = (): void => {
+      const width = widthFromMm(field.value);
+      field.toggleClass("is-invalid", width === null);
+      if (width === null) return;
+      pick(width);
+      field.value = mmText(chosenWidth(this.state.size, floor));
+      settle();
+    };
+    field.addEventListener("change", typed);
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        typed();
+      }
+    });
+    if (this.popover) {
+      this.popoverKeyboard = new DialogKeyboard(this.popover);
+      this.popoverKeyboard.watch(field, head);
+    }
     show();
   }
 
@@ -1907,6 +2079,21 @@ export class Toolbar {
       });
     }
     if (this.practice) return;
+    // The laser pointer has no bar button (FineNotes#25): here, and L.
+    const laser = body.createEl("button", {
+      cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
+    });
+    iconOrText(laser.createSpan({ cls: "goodobsidian-laser-row-icon" }), "pointer", "");
+    laser.createSpan({ text: "Laser pointer" });
+    laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
+    laser.addEventListener("click", () => {
+      this.closePopover();
+      this.leaveToolFor("laser");
+      this.state.tool = "laser";
+      this.callbacks.onToolChange("laser");
+      this.buildOptions();
+      this.syncActive();
+    });
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     const link = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
@@ -1986,6 +2173,8 @@ export class Toolbar {
   }
 
   private closePopover(): void {
+    this.popoverKeyboard?.end();
+    this.popoverKeyboard = null;
     this.popover?.remove();
     this.popover = null;
     this.popoverKind = null;

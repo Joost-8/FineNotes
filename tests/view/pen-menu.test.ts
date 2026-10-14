@@ -30,3 +30,71 @@ describe("the pen-type menu", () => {
     expect(penTypeFor({ tool: "pen" } as never).id).toBe("fountain");
   });
 });
+
+describe("saved pens on the toolbar (FineNotes#24, #25)", () => {
+  async function toolbar(tool: string, practice = false) {
+    const { Toolbar } = await import("../../src/view/toolbar");
+    const calls: string[] = [];
+    const state = { tool, color: "#000000", size: 3, pressureEnabled: false } as Record<
+      string,
+      unknown
+    >;
+    const bar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      state,
+      practice,
+      drawingTool: "pen",
+      optionsTool: tool,
+      optionsVisible: true,
+      tuckedTools: new Set(),
+      callbacks: {
+        onColorChange: (c: string) => calls.push(`color(${c})`),
+        onSizeChange: (s: number) => calls.push(`size(${s})`),
+        onToolChange: (t: string) => calls.push(`tool(${t})`),
+        onPressureToggle: (on: boolean) => calls.push(`pressure(${on})`),
+        onPenTypeChange: (spec: { id: string }) => calls.push(`type(${spec.id})`),
+        pressureAllowed: () => true,
+      },
+      buildOptions: () => calls.push("build"),
+      syncActive: () => undefined,
+    }) as unknown as InstanceType<typeof Toolbar>;
+    return { bar, state, calls };
+  }
+
+  it("writes with a saved pen: its type, colour and width, leaving the eraser for it", async () => {
+    const { bar, state, calls } = await toolbar("eraser");
+    bar.applySavedPen({ type: "highlighter", color: "#fab005", size: 5 });
+    expect(state).toMatchObject({
+      tool: "highlighter",
+      penType: "highlighter",
+      color: "#fab005",
+      size: 5,
+      pressureEnabled: false,
+    });
+    expect(calls).toEqual([
+      "color(#fab005)",
+      "size(5)",
+      "tool(highlighter)",
+      "pressure(false)",
+      "type(highlighter)",
+      "build",
+    ]);
+  });
+
+  it("keeps the pressure for a pressure pen, and refuses the highlighter in a practice file", async () => {
+    const { bar, state } = await toolbar("pen");
+    bar.applySavedPen({ type: "fountain", color: "#1971c2", size: 5 });
+    expect(state).toMatchObject({ tool: "pen", penType: "fountain", pressureEnabled: true });
+    const practice = await toolbar("pen", true);
+    practice.bar.applySavedPen({ type: "highlighter", color: "#fab005", size: 5 });
+    expect(practice.calls).toEqual([]);
+  });
+
+  it("names the pen in hand as a saved pen would hold it", async () => {
+    const { penOfState } = await import("../../src/view/toolbar");
+    expect(penOfState({ tool: "highlighter", color: "#ff0000", size: 8 } as never)).toEqual({
+      type: "highlighter",
+      color: "#ff0000",
+      size: 8,
+    });
+  });
+});

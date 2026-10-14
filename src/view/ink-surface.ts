@@ -278,9 +278,20 @@ import {
   type PointerControllerCallbacks,
   type PointerDebugRecord,
   type PointerSample,
+  type PressRoute,
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
+import {
+  type BarrelAction,
+  type PressInput,
+  type PressOverride,
+  barrelActionOf,
+  dragZoom,
+  pressOverride,
+  stylusButtonDown,
+} from "../input/pen-modifiers";
+import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import {
   type ActiveTool,
@@ -480,6 +491,10 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
+  /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
+  onSavedPen?: (index: number) => void;
+  /** What the stylus barrel button does (the settings); erase when absent. */
+  barrelAction?: () => BarrelAction;
   returnToPenOnReselect?: () => boolean;
   returnToPenAfterUse?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
@@ -933,6 +948,20 @@ export class InkSurface {
   private touchPanning = false;
   /** Space is held: pen and mouse pan (FineNotes#7). */
   private handHeld = false;
+  /**
+   * What the press under way does instead of the tool in hand, because a
+   * key or a stylus button was held as it came down (`pen-modifiers.ts`,
+   * FineNotes#25). Null for the tool itself; it lasts for that press only.
+   */
+  private pressTool: PressOverride | null = null;
+  /** A pen or mouse is moving the page from beside the pages, or with the barrel. */
+  private penPanning = false;
+  /** An Alt-drag zooming: the zoom it began at, and the client point it zooms about. */
+  private zoomDrag: { from: number; x: number; y: number } | null = null;
+  /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
+  private stylusMenuUntil = 0;
+  /** The small crosshair over the page for the pens, on a computer (FineNotes#25). */
+  private penCursor = false;
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
   private palmUndo: {
     t: number;
@@ -1030,6 +1059,10 @@ export class InkSurface {
   private eraseRuled: RuledEraser | null = null;
   /** The eraser's footprint, shown on the page while erasing. */
   private readonly eraserCursorEl: HTMLElement;
+  /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
+  private readonly laserTrail = new LaserTrail();
+  private readonly laserCanvas: HTMLCanvasElement;
+  private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
   // page, held by identity and resolved against the live document. One
@@ -1374,6 +1407,11 @@ export class InkSurface {
     });
     this.hudEl = this.surfaceEl.createDiv({ cls: "goodobsidian-hud" });
     this.eraserCursorEl = this.paperEl.createDiv({ cls: "goodobsidian-eraser-cursor is-hidden" });
+    // Over the ink and under the text boxes, in screen px: the laser's trail.
+    this.laserCanvas = this.surfaceEl.createEl("canvas", {
+      cls: "goodobsidian-canvas goodobsidian-canvas-laser",
+    });
+    this.surfaceEl.insertBefore(this.laserCanvas, this.scrollEl);
     this.setDebug(options.debug);
 
     // A lock badge on each locked picture, under the selection chrome. The
@@ -1470,6 +1508,7 @@ export class InkSurface {
       (clientX, clientY) => this.toLayout(clientX, clientY),
       this.pointerCallbacks,
       () => this.handHeld,
+      (event) => this.pressRoute(event),
     );
     input.attach();
     this.pointerInput = input;
@@ -1547,6 +1586,8 @@ export class InkSurface {
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
       if (type === "touch" || type === "pen" || this.touchPanning) return;
+      // A tablet driver can send a stylus button as a right click (FineNotes#25).
+      if (now() < this.stylusMenuUntil) return;
       const target = event.target as Node | null;
       if (target && (this.selectionUiEl.contains(target) || this.imageUiEl.contains(target))) {
         return;
@@ -1636,6 +1677,7 @@ export class InkSurface {
       this.wetFrame,
       this.focusHoldFrame,
       this.relayoutFrame,
+      this.laserFrame,
     ]) {
       if (frame) window.cancelAnimationFrame(frame);
     }
@@ -2039,6 +2081,7 @@ export class InkSurface {
     this.prefetchText();
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", tool === "text");
+    this.syncPenCursor();
     if (tool !== "select") this.dropSelection();
     // Locked pictures wear a badge only while the lasso could select them.
     this.syncLockBadges();
@@ -2167,6 +2210,29 @@ export class InkSurface {
     return true;
   }
 
+  /**
+   * Cmd/Ctrl+A: everything on the page being read, as the press menu's
+   * Select all does, so Delete then clears it in one step (FineNotes#25).
+   */
+  private selectAllOnPage(): void {
+    if (this.practice) return;
+    const page = this.doc.pages[this.pageIndex];
+    if (page) this.select(page.id, selectablesOf(page));
+  }
+
+  /** Show the small crosshair over the page while a pen is in hand, or never (FineNotes#25). */
+  setPenCursor(on: boolean): void {
+    this.penCursor = on;
+    this.syncPenCursor();
+  }
+
+  private syncPenCursor(): void {
+    const tool = this.toolState.tool;
+    const pen = tool === "pen" || tool === "highlighter" || tool === "shape" || tool === "laser";
+    this.surfaceEl.toggleClass("is-pen-cursor", this.penCursor === true && pen);
+    this.surfaceEl.toggleClass("is-laser", tool === "laser");
+  }
+
   /** A key let go anywhere: space ends the hand (FineNotes#7). */
   handleKeyUp(event: KeyboardEvent): void {
     if (event.key === " ") this.setHand(false);
@@ -2185,6 +2251,11 @@ export class InkSurface {
   }
 
   private runKeyAction(action: KeyAction): void {
+    if (typeof action === "object" && "savedPen" in action) {
+      // A practice file is written with the pen it has.
+      if (!this.practice) this.callbacks.onSavedPen?.(action.savedPen);
+      return;
+    }
     if (typeof action === "object") {
       const tool = selectedTool(
         this.toolState.tool,
@@ -2200,6 +2271,8 @@ export class InkSurface {
     switch (action) {
       case "hand":
         return this.setHand(true);
+      case "select-all":
+        return this.selectAllOnPage();
       case "undo":
         return this.undo();
       case "redo":
@@ -2589,7 +2662,12 @@ export class InkSurface {
 
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
   private get zoomTransient(): boolean {
-    return this.pinch !== null || this.zoomAnim !== null || this.wheelZoomTimer !== 0;
+    return (
+      this.pinch !== null ||
+      this.zoomAnim !== null ||
+      this.wheelZoomTimer !== 0 ||
+      this.zoomDrag !== null
+    );
   }
 
   /** Whether the view moved within `REST_MS`: PDF detail waits until it rests. */
@@ -3523,23 +3601,34 @@ export class InkSurface {
   }
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
-    onStart: (sample) => {
+    onStart: (sample, press) => {
       this.callbacks.onPen?.(true);
+      this.pressTool = this.pressOverrideOf(press);
+      if (this.pressTool === "zoom") {
+        this.startZoomDrag(sample);
+        return;
+      }
       this.penDown(sample);
     },
     onMove: (coalesced) => {
       this.penAt = coalesced[coalesced.length - 1] ?? this.penAt;
+      if (this.zoomDrag) {
+        this.moveZoomDrag(this.penAt);
+        return;
+      }
       const box = this.activePage;
-      if (box) this.gestureOf(this.toolState.tool).move(box, coalesced);
+      if (box) this.gestureOf(this.gestureTool()).move(box, coalesced);
     },
     onEnd: (sample) => {
       this.callbacks.onPen?.(false);
+      if (this.endZoomDrag()) return;
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
       this.finishToolGesture(box, sample);
     },
     onCancel: () => {
       this.callbacks.onPen?.(false);
+      if (this.endZoomDrag()) return;
       if (this.finishTextDismiss()) return;
       this.finishToolGesture(this.activePage, null);
     },
@@ -3554,7 +3643,7 @@ export class InkSurface {
       // touch that stops a fling is only that, as on iOS. A finger held
       // still is a tap-and-hold, with any tool, as the lasso's Pencil is.
       // A pan with space held is never a tap (FineNotes#7).
-      if (this.handHeld) this.scrollEl.addClass("is-hand-dragging");
+      if (this.handHeld || this.penPanning) this.scrollEl.addClass("is-hand-dragging");
       if (!this.touchPanning) {
         this.fingerTap = this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
         if (this.fingerTap && !this.lasso) {
@@ -3600,6 +3689,7 @@ export class InkSurface {
         (this.direction !== "horizontal" || this.turnsPages) &&
         pullAddProgress(this.pullOverscroll()) >= 1;
       this.touchPanning = false;
+      this.penPanning = false;
       this.palmUndo = null;
       this.scrollEl.removeClass("is-hand-dragging");
       this.pullAdd.hide();
@@ -3618,6 +3708,7 @@ export class InkSurface {
       this.stopPress();
       this.fingerHold.end();
       this.touchPanning = false;
+      this.penPanning = false;
       this.pullAdd.hide();
       this.pinch = null;
       this.scroller.cancel();
@@ -3756,7 +3847,7 @@ export class InkSurface {
     this.clearSelection();
     if (this.heldText) {
       // The second tap beside a kept text box only lets go of it (on lift).
-      if (this.toolState.tool === "text") {
+      if (this.gestureTool() === "text") {
         this.textRelease = true;
         return;
       }
@@ -3770,7 +3861,7 @@ export class InkSurface {
     const local = this.toPage(box, sample);
 
     if (this.editingTextView()) {
-      if (this.toolState.tool === "text") {
+      if (this.gestureTool() === "text") {
         // A tap beside the box being edited finishes it, as in GoodNotes;
         // the next tap makes a new box. Finished on lift, like any tap.
         this.textDismiss = true;
@@ -3780,12 +3871,15 @@ export class InkSurface {
       // cancelled, so the box would otherwise keep focus and the keyboard.)
       this.blurTextBox();
     }
-    this.gestureOf(this.toolState.tool).down(box, local, sample);
+    this.gestureOf(this.gestureTool()).down(box, local, sample);
   }
 
   /** Complete the tool before switching; cancelled erasing is rolled back. */
   private finishToolGesture(box: PageBox | null, sample: PointerSample | null): void {
-    const tool = this.toolState.tool;
+    const tool = this.gestureTool();
+    // A tool a key or a stylus button lent is done with; the tool in hand was not used.
+    const lent = Boolean(this.pressTool);
+    this.pressTool = null;
     const gesture = this.gestureOf(tool);
     if (sample) {
       if (!box) return;
@@ -3795,7 +3889,88 @@ export class InkSurface {
       // WebKit can cancel an ordinary lift; shapes keep their committed ink.
       if (!box || tool !== "shape") return;
     }
-    this.deferToolUse(sample ?? this.penAt);
+    if (!lent) this.deferToolUse(sample ?? this.penAt);
+  }
+
+  /**
+   * The tool the press under way uses: the one in hand, or the eraser or
+   * lasso a key or a stylus button lent it.
+   */
+  private gestureTool(): ActiveTool {
+    const lent = this.pressTool;
+    if (lent === "eraser" || lent === "select") return lent;
+    return this.toolState.tool;
+  }
+
+  /**
+   * Where a pen or mouse press goes before it is a stroke: beside the pages
+   * or with a barrel set to pan it moves the page as a finger does, with a
+   * fling (rnote); a barrel set to do nothing, pressed while hovering, is
+   * no press at all. Never while text is being typed: a press there is the
+   * text box's, as it always was.
+   */
+  private pressRoute(event: PointerEvent): PressRoute {
+    if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    if (this.editingTextView() || this.heldText) return "draw";
+    const at = this.toLayout(event.clientX, event.clientY);
+    const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
+    const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
+    if (route === "ignore") return "ignore";
+    if (route !== "pan") return "draw";
+    this.penPanning = true;
+    return "pan";
+  }
+
+  /** The tool a stroke's keys and buttons lend it, or null for the tool in hand. */
+  private pressOverrideOf(press: PressInput): PressOverride | null {
+    // Typing keeps its keys: Shift is a capital there, not an eraser.
+    if (this.editingTextView()) return null;
+    const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
+    // A practice file has the pen and the eraser only.
+    if (this.practice && lent === "select") return null;
+    return lent === "eraser" || lent === "select" || lent === "zoom" ? lent : null;
+  }
+
+  private barrel(): BarrelAction {
+    return barrelActionOf(this.callbacks.barrelAction?.());
+  }
+
+  /** Layout space -> client px, at the view as it is now: the inverse of {@link toLayout}. */
+  private toClient(p: Pt): Pt {
+    const rect = this.surfaceEl.getBoundingClientRect();
+    const scale = this.unitScale;
+    return {
+      x: rect.left + this.offsetX + p.x * scale,
+      y: rect.top + (p.y - this.viewport.scrollY) * scale,
+    };
+  }
+
+  /** Alt held as the pen came down: drawing up zooms in, down out, about that point. */
+  private startZoomDrag(sample: Pt): void {
+    const at = this.toClient(sample);
+    this.zoomAnim = null;
+    this.zoomDrag = { from: this.userZoom, x: at.x, y: at.y };
+  }
+
+  private moveZoomDrag(sample: Pt): void {
+    const drag = this.zoomDrag;
+    if (!drag) return;
+    // The sample was mapped with the view as it is now, so this is where the pen is.
+    const at = this.toClient(sample);
+    const zoom = dragZoom(drag.from, at.y - drag.y, this.minZoom, MAX_SCALE);
+    if (zoom !== this.userZoom) this.applyZoom(zoom, drag.x, drag.y);
+  }
+
+  /** The Alt-drag ended; true if there was one. A row zoomed back out settles on its page. */
+  private endZoomDrag(): boolean {
+    if (!this.zoomDrag) return false;
+    this.zoomDrag = null;
+    this.pressTool = null;
+    this.snapRowAfterZoom =
+      this.direction === "horizontal" && rowTurnsPages(this.userZoom, this.minZoom);
+    this.settleRowAfterZoom();
+    this.requestFrame();
+    return true;
   }
 
   /** How the tool in use handles the pen (see {@link PenGesture}). */
@@ -3807,9 +3982,99 @@ export class InkSurface {
         return this.lassoGesture;
       case "text":
         return this.textGesture;
+      case "laser":
+        return this.laserGesture;
       default:
         return this.inkGesture;
     }
+  }
+
+  /** The laser pointer: a fading trail behind the pen, never part of the notebook. */
+  private readonly laserGesture: PenGesture = {
+    down: (_box, _at, sample) => {
+      this.laserTrail.start({ x: sample.x, y: sample.y, t: now() });
+      this.requestLaser();
+    },
+    move: (_box, samples) => {
+      const t = now();
+      for (const sample of samples) this.laserTrail.add({ x: sample.x, y: sample.y, t });
+      this.requestLaser();
+    },
+    up: () => this.endLaser(),
+    cancel: () => this.endLaser(),
+  };
+
+  private endLaser(): void {
+    this.laserTrail.end(now());
+    this.activePage = null;
+    this.requestLaser();
+  }
+
+  private requestLaser(): void {
+    if (this.laserFrame) return;
+    this.laserFrame = window.requestAnimationFrame(() => {
+      this.laserFrame = 0;
+      this.paintLaser();
+    });
+  }
+
+  /**
+   * Draw the laser's trail where its points are on screen now (it stays on
+   * what it pointed at while the page moves), and keep drawing while any
+   * of it is still fading.
+   */
+  private paintLaser(): void {
+    const canvas = this.laserCanvas;
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.round(this.cssW * ratio);
+    const height = Math.round(this.cssH * ratio);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const t = now();
+    if (!this.laserTrail.visible(t)) return;
+    const scale = this.unitScale;
+    const scrollY = this.viewport.scrollY;
+    const sx = (x: number): number => (x * scale + this.offsetX) * ratio;
+    const sy = (y: number): number => (y - scrollY) * scale * ratio;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = LASER_COLOR;
+    ctx.fillStyle = LASER_COLOR;
+    const segments = this.laserTrail.segments(t);
+    // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
+    // which is slow on the iPad.
+    for (const [lineWidth, strength] of [
+      [LASER_GLOW_PX, 0.25],
+      [LASER_WIDTH_PX, 1],
+    ] as const) {
+      ctx.lineWidth = lineWidth * ratio;
+      for (const { a, b, alpha } of segments) {
+        ctx.globalAlpha = alpha * strength;
+        ctx.beginPath();
+        ctx.moveTo(sx(a.x), sy(a.y));
+        ctx.lineTo(sx(b.x), sy(b.y));
+        ctx.stroke();
+      }
+    }
+    const tip = this.laserTrail.tip();
+    if (tip) {
+      for (const [radius, strength] of [
+        [LASER_GLOW_PX / 2, 0.3],
+        [LASER_WIDTH_PX * 0.75, 1],
+      ] as const) {
+        ctx.globalAlpha = strength;
+        ctx.beginPath();
+        ctx.arc(sx(tip.x), sy(tip.y), radius * ratio, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    this.requestLaser();
   }
 
   /** Every sample erases (a preview); the lift commits the gesture as one step. */
@@ -7873,6 +8138,17 @@ function verdictOf(pts: number[], held: boolean): string {
   const e = explainShape(pts, { held });
   const scored = e.candidates.map((c) => `${c.kind}:${c.confidence.toFixed(2)}`).join(" ");
   return `${e.closed ? "closed" : "open"} n=${e.n} diag=${Math.round(e.diag)} gap=${Math.round(e.gap)} [${scored}]`;
+}
+
+/** How long after a stylus button goes down a right-click menu is taken to be its doing, ms. */
+const STYLUS_MENU_MS = 1500;
+
+/**
+ * Whether Cmd, not Ctrl, is the command key: macOS, where Ctrl+click is the
+ * right click, and an iPad with a keyboard.
+ */
+function macKeys(): boolean {
+  return Platform.isMacOS || Platform.isIosApp;
 }
 
 function now(): number {
