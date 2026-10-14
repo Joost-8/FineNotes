@@ -61,6 +61,8 @@ export interface MorePanelActions {
   remove: (index: number) => void;
   /** Show every notebook's pages dark, or light again. */
   toggleDarkPages: () => void;
+  /** Show the keyboard and stylus shortcuts. */
+  showShortcuts: () => void;
 }
 
 const PANEL_WIDTH = 330;
@@ -158,11 +160,18 @@ export class MorePanel {
     });
     if (page.total > 1) this.goToRow(card);
 
-    // The quick switch for the page appearance setting, for writing at night.
-    this.row(this.group(), {
+    // The quick switch for the page appearance setting, for writing at night,
+    // and the shortcuts, for an iPad with no keyboard to press ? on.
+    const view = this.group();
+    this.row(view, {
       icon: page.darkPages ? "sun" : "moon",
       text: page.darkPages ? "Light pages" : "Dark pages",
       run: () => actions.toggleDarkPages(),
+    });
+    this.row(view, {
+      icon: "keyboard",
+      text: "Keyboard shortcuts",
+      run: () => actions.showShortcuts(),
     });
 
     this.heading("Clear or delete page");

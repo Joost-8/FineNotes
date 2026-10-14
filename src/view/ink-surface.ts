@@ -502,6 +502,8 @@ export interface InkSurfaceCallbacks {
   onToolChange?: (tool: ActiveTool) => void;
   /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
   onSavedPen?: (index: number) => void;
+  /** ? asked for the keyboard shortcuts; the host shows them. */
+  onShortcuts?: () => void;
   /** What the stylus barrel button does (the settings); erase when absent. */
   barrelAction?: () => BarrelAction;
   returnToPenOnReselect?: () => boolean;
@@ -2287,6 +2289,8 @@ export class InkSurface {
         return this.setHand(true);
       case "select-all":
         return this.selectAllOnPage();
+      case "shortcuts":
+        return this.callbacks.onShortcuts?.();
       case "undo":
         return this.undo();
       case "redo":

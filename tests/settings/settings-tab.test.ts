@@ -1080,7 +1080,8 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(mac["Zoom in or out about the pen"]).toBe("⌥ + write up or down");
     expect(pc["Lasso select"]).toBe("Ctrl + write");
     expect(pc.Erase).toBe("Write with the eraser end");
-    expect(shortcutList(false)).toHaveLength(18);
+    expect(pc["Show or hide this list"]).toBe("?");
+    expect(shortcutList(false)).toHaveLength(19);
   });
 
   it("folds the shortcut list at first, and remembers it open", () => {

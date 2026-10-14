@@ -418,6 +418,9 @@ export default class GoodObsidianPlugin extends Plugin {
       name: "Learn my handwriting from the practice files",
       callback: () => void this.learner.start(),
     });
+    this.notebookCommand("show-keyboard-shortcuts", "Show keyboard shortcuts", (view) =>
+      view.toggleShortcuts(),
+    );
     this.notebookCommand(
       "read-handwriting-on-device",
       "Show this page read on this device",

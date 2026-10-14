@@ -65,6 +65,7 @@ export type KeyAction =
   | "scroll-up"
   | "hand"
   | "select-all"
+  | "shortcuts"
   | { tool: ActiveTool }
   | { savedPen: number };
 
@@ -145,6 +146,9 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
   // Space held down: pen and mouse move the page instead of drawing
   // (FineNotes#7). Not while typing, where it is a space.
   if (bare && key === " " && !scene.editingText()) return cancelling("hand");
+
+  // ? shows the shortcuts, as in most apps; Shift is how most layouts type it.
+  if (!command && !chord.altKey && key === "?") return cancelling("shortcuts");
 
   // 1 to 8 pick the saved pens (FineNotes#25, Stylus Labs Write's keys).
   if (bare && /^[1-8]$/.test(key)) return passing({ savedPen: Number(key) - 1 });

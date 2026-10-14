@@ -2142,6 +2142,27 @@ kbd.goodobsidian-key {
   white-space: nowrap;
 }
 
+/* The same list in its own pop-up over the notebook (the ? key): groups
+   side by side where there is room, so it fits an iPad in landscape
+   without scrolling; one column on a narrow screen. */
+.modal.goodobsidian-shortcuts-modal {
+  width: min(800px, calc(100vw - 32px));
+}
+
+.goodobsidian-shortcuts-modal .goodobsidian-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-items: start;
+  gap: var(--size-4-4) var(--size-4-8);
+  margin-top: 0;
+}
+
+.goodobsidian-shortcuts-hint {
+  margin-top: var(--size-4-4);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 kbd.goodobsidian-key.is-glyph {
   font-size: var(--font-ui-medium);
   line-height: 1.15;

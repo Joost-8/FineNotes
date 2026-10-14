@@ -420,6 +420,7 @@ describe("registration", () => {
         "recognize-handwriting",
         "scan-document",
         "search-notebook",
+        "show-keyboard-shortcuts",
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-text-layer",

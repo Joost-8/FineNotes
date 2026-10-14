@@ -341,6 +341,13 @@ export class Setting {
 // --- Modal, tab and platform -------------------------------------------------
 
 export class Modal {
+  /** Keys the modal registered on its scope, as `register` was called. */
+  readonly scopeKeys: Array<{ modifiers: unknown; key: string | null; run: () => unknown }> = [];
+  readonly scope = {
+    register: (modifiers: unknown, key: string | null, run: () => unknown) => {
+      this.scopeKeys.push({ modifiers, key, run });
+    },
+  };
   readonly modalEl = new FakeEl("div", "modal");
   readonly titleEl = this.modalEl.createDiv("modal-title");
   readonly contentEl = this.modalEl.createDiv("modal-content");

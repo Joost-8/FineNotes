@@ -59,13 +59,8 @@ import {
   storeShownValue,
   withSection,
 } from "./settings-data";
-import {
-  SHORTCUT_GROUPS,
-  type ShortcutWay,
-  keyLabel,
-  keyName,
-  shortcutText,
-} from "./model/shortcuts";
+import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
+import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { FolderInputSuggest } from "./view/folder-suggest";
@@ -730,26 +725,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const apple = Platform.isMacOS || Platform.isIosApp;
     const row = setting.settingEl;
     row.addClass("goodobsidian-shortcuts-row");
-    const list = row.createDiv({ cls: "goodobsidian-shortcuts" });
-    for (const group of SHORTCUT_GROUPS) {
-      const block = list.createDiv({ cls: "goodobsidian-shortcut-group" });
-      block.createDiv({ cls: "goodobsidian-shortcut-group-title", text: group.title });
-      for (const shortcut of group.shortcuts) {
-        const line = block.createDiv({ cls: "goodobsidian-shortcut" });
-        line.createDiv({ cls: "goodobsidian-shortcut-action", text: shortcut.action });
-        const keys = line.createDiv({ cls: "goodobsidian-shortcut-keys" });
-        keys.setAttribute("aria-label", shortcutText(shortcut, apple));
-        shortcut.ways.forEach((way, index) => {
-          if (index > 0) {
-            keys.createSpan({
-              cls: "goodobsidian-shortcut-sep",
-              text: shortcut.range ? "–" : "or",
-            });
-          }
-          this.drawWay(keys, way, apple);
-        });
-      }
-    }
+    const list = renderShortcutList(row, apple);
     const folded = (): boolean => row.hasClass("is-folded");
     row.toggleClass(
       "is-folded",
@@ -782,27 +758,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         toggle();
       });
     });
-  }
-
-  /** One way to do a shortcut: a key cap per key, then what the pen or mouse does. */
-  private drawWay(parent: HTMLElement, way: ShortcutWay, apple: boolean): void {
-    const span = parent.createSpan({ cls: "goodobsidian-shortcut-way" });
-    way.keys.forEach((name, index) => {
-      // Obsidian joins keys with "+" in words, and sets glyphs side by side.
-      if (index > 0 && !apple) span.createSpan({ cls: "goodobsidian-shortcut-plus", text: "+" });
-      const label = keyLabel(name, apple);
-      const cap = span.createEl("kbd", { cls: "goodobsidian-key", text: label });
-      // ⌘ ⌥ ⇧ are small in most fonts: their caps set them larger.
-      if (label !== name && label.length === 1) cap.addClass("is-glyph");
-      const spoken = keyName(name, apple);
-      if (spoken !== label) cap.setAttribute("title", spoken);
-    });
-    if (way.gesture) {
-      span.createSpan({
-        cls: "goodobsidian-shortcut-gesture",
-        text: way.keys.length > 0 ? `+ ${way.gesture}` : way.gesture,
-      });
-    }
   }
 
   /** The paper, and where new notebooks go and how they are made. */

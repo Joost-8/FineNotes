@@ -77,6 +77,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { action: "Zoom in or out about the pen", ways: [held(["Alt"], "write up or down")] },
       { action: "Move the page", ways: [held(["Space"], "drag")] },
       { action: "Previous and next page", ways: [key("Page Up"), key("Page Down")] },
+      { action: "Show or hide this list", ways: [key("?")] },
     ],
   },
   {

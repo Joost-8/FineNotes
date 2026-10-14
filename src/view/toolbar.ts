@@ -863,17 +863,6 @@ export class Toolbar {
     pen.addEventListener("click", () => this.togglePenTypeList());
     this.penTypeButtons.set(active.id, pen);
     this.chevron("Pen options", () => this.togglePenTypeList());
-    // The saved pens, as Write and GoodNotes keep favourites (FineNotes#24).
-    if (this.callbacks.savedPens && !this.practice) {
-      const saved = this.optionsEl.createEl("button", {
-        cls: "goodobsidian-saved-pens clickable-icon",
-      });
-      iconOrText(saved, "star", "Saved pens");
-      saved.setAttribute("aria-label", "Saved pens (1–8)");
-      saved.setAttribute("title", "Saved pens (1–8)");
-      saved.setAttribute("aria-haspopup", "dialog");
-      saved.addEventListener("click", () => this.toggleSavedPens(saved));
-    }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
@@ -934,6 +923,21 @@ export class Toolbar {
       this.callbacks.onPenAutoShapeChange?.(!on);
       this.buildOptions();
     });
+
+    // The saved pens, as Write and GoodNotes keep favourites (FineNotes#24),
+    // at the far end: used less than the pen, widths and colours. (A
+    // practice file has returned above.)
+    if (this.callbacks.savedPens) {
+      this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+      const saved = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-saved-pens clickable-icon",
+      });
+      iconOrText(saved, "star", "Saved pens");
+      saved.setAttribute("aria-label", "Saved pens (1–8)");
+      saved.setAttribute("title", "Saved pens (1–8)");
+      saved.setAttribute("aria-haspopup", "dialog");
+      saved.addEventListener("click", () => this.toggleSavedPens(saved));
+    }
   }
 
   /**

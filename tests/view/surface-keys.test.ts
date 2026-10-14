@@ -169,6 +169,18 @@ describe("saved pens and Select all (FineNotes#25)", () => {
   });
 });
 
+describe("? shows the shortcuts", () => {
+  it("takes ? with or without Shift, never with Cmd, Ctrl or Alt", () => {
+    expect(keyOutcome(chord("?", { shiftKey: true }), scene())).toEqual(loud("shortcuts"));
+    expect(keyOutcome(chord("?"), scene())).toEqual(loud("shortcuts"));
+    expect(keyOutcome(chord("?", { metaKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("?", { ctrlKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("?", { altKey: true }), scene())).toBeNull();
+    // The slash under it is no shortcut.
+    expect(keyOutcome(chord("/"), scene())).toBeNull();
+  });
+});
+
 describe("space: the hand (FineNotes#7)", () => {
   it("holds the hand with a bare space", () => {
     expect(keyOutcome(chord(" "), scene())).toEqual(loud("hand"));

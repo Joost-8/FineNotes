@@ -85,6 +85,11 @@ extracted from the matching section of this file by `release.yml`.
   not the darkened one you see. Escape, ✕ or a tap off the page cancels,
   and a text box being edited stays in editing. On a computer, "From
   screen" picks a colour from anywhere on the screen.
+- **See the shortcuts without leaving the notebook.** Press ? (or pick
+  "Keyboard shortcuts" in the notebook's ⋯ menu, or the command "Show
+  keyboard shortcuts", which can have its own hotkey) for a pop-up with
+  every keyboard and stylus shortcut, grouped as in the settings. ?,
+  Escape or a tap outside closes it.
 
 ### Changed
 
@@ -99,6 +104,8 @@ extracted from the matching section of this file by `release.yml`.
   drawn as a key cap in Obsidian's own style: ⌘, ⌥ and ⇧ on a Mac or an
   iPad, Ctrl, Alt and Shift elsewhere. It starts folded; tap its row to
   show it.
+- **The saved-pens star moved to the far right of the pen's options**, after
+  the auto-shape switch: the pen, widths and colours come first.
 
 ## [2.1.0] - 2026-10-13
 

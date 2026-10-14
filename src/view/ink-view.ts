@@ -156,6 +156,7 @@ import { exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
 import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { MorePanel } from "./more-panel";
+import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { sanitizeTextStyle } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
@@ -260,6 +261,8 @@ export class InkView extends TextFileView {
   private sidebar: PageSidebar | null = null;
   /** The ⋯ panel, while open. */
   private morePanel: MorePanel | null = null;
+  /** The keyboard shortcuts pop-up, while it shows. */
+  private shortcuts: ShortcutsModal | null = null;
   private addPagePopover: { popover: AddPagePopover; anchor: HTMLElement } | null = null;
   private coverPopover: { popover: CoverPopover; anchor: HTMLElement } | null = null;
   private aiMenu: AiMenuPopover | null = null;
@@ -630,6 +633,8 @@ export class InkView extends TextFileView {
     this.sidebar = null;
     this.morePanel?.close();
     this.morePanel = null;
+    this.shortcuts?.close();
+    this.shortcuts = null;
     this.addPagePopover?.popover.close();
     this.addPagePopover = null;
     this.coverPopover?.popover.close();
@@ -1436,6 +1441,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
@@ -2352,8 +2358,25 @@ export class InkView extends TextFileView {
         remove: (at) => act("delete", at),
         toggleDarkPages: () =>
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
+        showShortcuts: () => this.toggleShortcuts(),
       },
     );
+  }
+
+  /**
+   * The keyboard and stylus shortcuts in a pop-up (? on the page, the
+   * command, the ⋯ panel); asked again while it shows, it closes.
+   */
+  toggleShortcuts(): void {
+    const open = this.shortcuts;
+    this.shortcuts = null;
+    if (open?.shown) {
+      open.close();
+      return;
+    }
+    const modal = new ShortcutsModal(this.app, Platform.isMacOS || Platform.isIosApp);
+    modal.open();
+    this.shortcuts = modal;
   }
 
   // --- Templates ------------------------------------------------------------
