@@ -8,6 +8,8 @@
  * PURE: shapes as SVG data; the toolbar makes the elements.
  */
 
+import { relativeLuminance } from "../model/cover";
+
 /** The pen types a glyph exists for (`PenTypeSpec.id`). */
 export type GlyphPen = "fountain" | "ball" | "brush" | "highlighter";
 
@@ -93,6 +95,16 @@ export function penIconParts(pen: string): GlyphPart[] {
         path("M12 16.3v6", { ink: true }),
       ];
   }
+}
+
+/**
+ * Whether ink of this colour would vanish into the bar behind it (black ink
+ * on a dark theme, white or pale yellow on a light one). Its parts then get
+ * a rim in the icon's own colour, so the pen's shape still reads.
+ */
+export function inkNeedsRim(ink: string, darkTheme: boolean): boolean {
+  const luminance = relativeLuminance(ink);
+  return darkTheme ? luminance < 0.06 : luminance > 0.75;
 }
 
 /** The width glyphs' view box. */

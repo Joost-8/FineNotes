@@ -92,6 +92,7 @@ import {
   PEN_ICON_BOX,
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  inkNeedsRim,
   penIconParts,
   sampleStroke,
   swoosh,
@@ -2512,13 +2513,20 @@ function penGlyph(spec: PenTypeSpec, color: string): SVGElement {
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   // An outline of the pen, its tip in the ink it writes with (pen-glyphs.ts).
+  // Ink that would vanish into the bar gets a rim in the icon's colour; its
+  // lines are drawn in the icon's colour outright.
+  const rim = inkNeedsRim(color, activeDocument.body.hasClass("theme-dark"));
   for (const part of penIconParts(spec.id)) {
     const el = activeDocument.createElementNS(SVG_NS, part.tag);
     for (const [key, value] of Object.entries(part.attrs)) el.setAttribute(key, value);
-    const paint = part.ink ? color : "currentColor";
+    const paint = part.ink && !(rim && !part.fill) ? color : "currentColor";
     if (part.fill) el.setAttribute("fill", paint);
     if ((part.fill || part.ink) && part.attrs.stroke === undefined)
       el.setAttribute("stroke", paint);
+    if (rim && part.ink && part.fill) {
+      el.setAttribute("stroke", "currentColor");
+      el.setAttribute("stroke-width", "1");
+    }
     svg.append(el);
   }
   return svg;

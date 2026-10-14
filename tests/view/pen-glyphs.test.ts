@@ -9,6 +9,7 @@ import {
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
   glyphThickness,
+  inkNeedsRim,
   penIconParts,
   sampleStroke,
   swoosh,
@@ -51,6 +52,19 @@ describe("pen icons", () => {
         if (part.ink && part.fill) expect(part.attrs.stroke, pen).toBe("none");
       }
     }
+  });
+});
+
+describe("ink that would vanish into the bar", () => {
+  it("rims black ink on a dark theme and pale ink on a light one, nothing else", () => {
+    expect(inkNeedsRim("#1a1a1a", true)).toBe(true);
+    expect(inkNeedsRim("#000000", true)).toBe(true);
+    expect(inkNeedsRim("#2f6fdf", true)).toBe(false);
+    expect(inkNeedsRim("#d6453d", true)).toBe(false);
+    expect(inkNeedsRim("#ffffff", false)).toBe(true);
+    expect(inkNeedsRim("#fff176", false)).toBe(true);
+    expect(inkNeedsRim("#1a1a1a", false)).toBe(false);
+    expect(inkNeedsRim("#2f6fdf", false)).toBe(false);
   });
 });
 

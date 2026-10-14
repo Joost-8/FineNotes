@@ -393,10 +393,10 @@ body,
   background: var(--gob-line);
 }
 
-/* A pen type: the nib is tinted with the live ink colour, and the active one
-   sits in a filled well with a chevron, as in the reference screenshot. */
+/* A pen type: the tip is tinted with the live ink colour, and the active one
+   sits in a filled well with a chevron, as in the reference screenshot. The
+   pens lean (pen-glyphs.ts), so the glyph sits in the middle of its well. */
 .goodobsidian-options button.goodobsidian-pentype {
-  align-items: flex-end;
   min-width: 34px;
   padding: 0 2px;
   color: var(--text-muted);
@@ -405,7 +405,6 @@ body,
 .goodobsidian-options .goodobsidian-pentype.is-active {
   background: var(--gob-accent-tint);
   color: var(--text-normal);
-  transform: translateY(-3px);
 }
 
 /* A stroke width, drawn as a literal stroke; the active one is boxed. */
