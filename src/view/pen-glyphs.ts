@@ -53,13 +53,14 @@ export function penIconParts(pen: string): GlyphPart[] {
   switch (pen) {
     case "ball":
       return [
-        path("M9.8 1.5h4.4v12H9.8z"),
+        path("M9.8 1.5h4.4v11H9.8z"),
         // The clip.
         path("M14.2 3h1.3v6.5"),
-        path("M9.8 13.5h4.4l-1.4 6h-1.6z"),
+        // The cone in ink, then the ball.
+        inkFill("M9.4 12.5h5.2l-1.8 7.4h-1.6z"),
         {
           tag: "circle",
-          attrs: { cx: "12", cy: "21.3", r: "1.1", transform: TILT, stroke: "none" },
+          attrs: { cx: "12", cy: "21.4", r: "1.2", transform: TILT, stroke: "none" },
           ink: true,
           fill: true,
         },
@@ -81,18 +82,17 @@ export function penIconParts(pen: string): GlyphPart[] {
     default:
       return [
         path("M10.2 1.5h3.6v7.5h-3.6z"),
-        // The grip, then the nib with its breather hole and slit in ink.
+        // The grip, then the nib in ink, its breather hole and slit in the icon's colour.
         path("M9.6 9h4.8v2.4H9.6z"),
-        path(
+        inkFill(
           "M12 22.5c-1.9-3.8-3-6.6-3-8.9 0-.9.3-1.6.8-2.2h4.4c.5.6.8 1.3.8 2.2 0 2.3-1.1 5.1-3 8.9z",
         ),
         {
           tag: "circle",
-          attrs: { cx: "12", cy: "14.8", r: "0.9", transform: TILT, stroke: "none" },
-          ink: true,
+          attrs: { cx: "12", cy: "14.8", r: "0.75", transform: TILT, stroke: "none" },
           fill: true,
         },
-        path("M12 16.3v6", { ink: true }),
+        { tag: "path", attrs: { d: "M12 16.3v3.8", transform: TILT, "stroke-width": "0.9" } },
       ];
   }
 }
