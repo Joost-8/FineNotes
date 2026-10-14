@@ -1697,6 +1697,7 @@ export class InkSurface {
    */
   applyCommand(command: Command): void {
     this.dropSelection();
+    const place = this.readingPlace();
     this.history.push(this.doc, command);
     // A host command can bring in elements with ids of their own (a duplicated
     // page does), so the id sequences must never fall behind the document.
@@ -1705,7 +1706,38 @@ export class InkSurface {
     this.strokeIndex.rebuild(this.doc.pages);
     this.renderer?.invalidateAll();
     this.layout();
+    if (command.keepsReading) this.keepReading(place);
     this.changed();
+  }
+
+  /** The page being read and where the view is on it, to come back to after pages move. */
+  private readingPlace(): { page: Page; y: number } | null {
+    const page = this.doc.pages[this.pageIndex];
+    const box = this.pageLayout.boxes[this.pageIndex];
+    if (!page || !box || !(this.scale > 0)) return null;
+    // In layout px, so a change of scale (the widest page gone) cannot skew it.
+    return { page, y: this.scroller.position.y / this.scale - box.y };
+  }
+
+  /**
+   * Pages were added, removed or reordered (a `keepsReading` command): keep
+   * the page that was being read in view, at the same place on it, rather
+   * than whatever page now sits at the old scroll position. If that page is
+   * gone, the view stays where it is.
+   */
+  private keepReading(place: ReturnType<InkSurface["readingPlace"]>): void {
+    if (!place) return;
+    const index = this.doc.pages.indexOf(place.page);
+    const box = this.pageLayout.boxes[index];
+    if (index < 0 || !box) return;
+    if (this.direction === "horizontal") {
+      this.goToPage(index);
+      return;
+    }
+    // `layout` has already rescaled x; only the page's place in the column moved.
+    this.scroller.setPosition(this.scroller.position.x, (box.y + place.y) * this.scale);
+    this.syncViewport();
+    this.requestFrame();
   }
 
   /**
@@ -7538,6 +7570,7 @@ export class InkSurface {
     this.endCrop(false);
     this.cancelImageDrag();
     this.cancelGroupDrag();
+    const place = this.readingPlace();
     const command = step(this.doc);
     if (!command) return;
     // What was selected may have moved, gone or come back: start afresh.
@@ -7545,6 +7578,7 @@ export class InkSurface {
     this.strokeIndex.rebuild(this.doc.pages);
     this.renderer?.invalidateAll();
     if (this.layoutStale()) this.layout();
+    if (command.keepsReading) this.keepReading(place);
     this.renderAll();
     this.reportTextEditing();
     this.changed();

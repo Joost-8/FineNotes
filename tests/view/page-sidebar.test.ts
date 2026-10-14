@@ -100,6 +100,17 @@ describe("thumbnail canvases", () => {
     expect(holding()).toBe(30);
   });
 
+  it("paints the overview's larger thumbnails, and keeps fewer of them out of view", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 2 });
+    const { sidebar, show, holding, thumbs } = sidebarOf(notebook(200));
+    sidebar.overview = true;
+    for (let top = 0; top + 20 <= 200; top += 20) show(top, top + 20);
+    // 240 CSS px at 2x: four times the pixels of a sidebar thumbnail.
+    expect(thumbs[199].canvas.width).toBe(480);
+    expect(holding()).toBeLessThan(20 + KEEP_PAINTED_OFFSCREEN / 2);
+    expect(holding()).toBeGreaterThan(20);
+  });
+
   it("counts a thumbnail marked for repaint as still holding its pixels", () => {
     vi.stubGlobal("window", { devicePixelRatio: 2 });
     const { sidebar, show, holding } = sidebarOf(notebook(300));

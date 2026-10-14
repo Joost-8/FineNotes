@@ -1193,6 +1193,286 @@ body,
   color: var(--text-muted);
 }
 
+/* ⤢ at the header's left grows the panel into the overview; in the overview
+   the header is ⤡ (or Select all) · title · Select (or Done). Every head
+   control shares row 1: only the ones the mode shows are displayed. */
+.goodobsidian-pagesidebar-head > * {
+  grid-row: 1;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-expand.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  color: var(--gob-icon);
+  border-radius: 50%;
+  grid-column: 1;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-textbutton.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-accent);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-medium, 500);
+  white-space: nowrap;
+  opacity: 1;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-selectall.clickable-icon {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-select.clickable-icon {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-select.clickable-icon.is-done {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-expand.is-hidden,
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-textbutton.is-hidden,
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.is-hidden,
+.goodobsidian-pagesidebar-tabs.is-hidden,
+.goodobsidian-pagesidebar-selectbar.is-hidden,
+.goodobsidian-pagesidebar-spacer.is-hidden,
+.goodobsidian-thumb-drop.is-hidden {
+  display: none;
+}
+
+/* The overview: the same panel grown over the whole notebook view, the
+   page grid several pages across, GoodNotes' page overview. The spacer
+   keeps the panel's width in the layout, so the page under it stays put. */
+.goodobsidian-pagesidebar.is-overview {
+  position: absolute;
+  z-index: 16;
+  inset: 0;
+  width: auto;
+  max-width: none;
+  border-right: none;
+  box-shadow: none;
+}
+
+.goodobsidian-pagesidebar-spacer {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-pagesidebar.is-overview .goodobsidian-pagesidebar-head {
+  grid-template-columns: 1fr auto 1fr;
+  padding: 0 16px;
+}
+
+.goodobsidian-pagesidebar.is-overview .goodobsidian-pagesidebar-filter.clickable-icon {
+  margin-left: 32px;
+}
+
+.goodobsidian-pagesidebar.is-overview .goodobsidian-pagesidebar-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 24px 28px;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 16px 32px 32px;
+}
+
+/* The options pill floats over the page, which the overview covers. */
+.goodobsidian-overview-open .goodobsidian-options {
+  visibility: hidden;
+}
+
+/* Select mode: a tick at each page's corner, filled for the pages chosen,
+   which also take the accent ring (the page being read gives its ring up). */
+.goodobsidian-thumb-check {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--color-base-00);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: var(--gob-shadow-raised);
+  color: transparent;
+}
+
+.goodobsidian-thumb-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+.goodobsidian-pagesidebar.is-selecting .goodobsidian-thumb-check {
+  display: flex;
+}
+
+.goodobsidian-pagesidebar.is-selecting .goodobsidian-thumb.is-selected .goodobsidian-thumb-check {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pagesidebar.is-selecting .goodobsidian-thumb .goodobsidian-thumb-frame {
+  outline-color: transparent;
+}
+
+.goodobsidian-pagesidebar.is-selecting .goodobsidian-thumb.is-selected .goodobsidian-thumb-frame {
+  outline-color: var(--interactive-accent);
+}
+
+/* What to do with the pages chosen: the lasso's dark pill, floating at the
+   bottom of the overview while the grid scrolls under it. */
+.goodobsidian-pagesidebar-selectbar {
+  position: sticky;
+  z-index: 3;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0 auto 20px;
+  padding: 3px 6px;
+  border: 1px solid var(--gob-sel-line);
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-sel-bg);
+  box-shadow: var(--gob-shadow-float);
+  animation: goodobsidian-fade-in var(--gob-t-fade) ease-out;
+}
+
+.goodobsidian-pagesidebar-selectbar .goodobsidian-pagesidebar-selectbar-button.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--gob-touch);
+  padding: 0 14px;
+  border-radius: var(--gob-tool-radius);
+  /* Obsidian fills a .mod-warning button red; here it is only red text. */
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+  font-size: var(--font-ui-small);
+  opacity: 1;
+}
+
+.goodobsidian-pagesidebar-selectbar
+  .goodobsidian-pagesidebar-selectbar-button.clickable-icon:hover:not(:disabled) {
+  background: var(--gob-sel-well);
+  color: var(--color-base-100);
+}
+
+.goodobsidian-pagesidebar-selectbar
+  .goodobsidian-pagesidebar-selectbar-button.clickable-icon.mod-warning {
+  color: var(--color-red);
+}
+
+.goodobsidian-pagesidebar-selectbar
+  .goodobsidian-pagesidebar-selectbar-button.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-pagesidebar-selectbar-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-pagesidebar-selectbar-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Dragging a page: it lifts off the panel and follows the pointer, fades
+   where it was, and an accent bar marks where it would land (page-drag.ts). */
+.goodobsidian-thumb-frame {
+  -webkit-touch-callout: none;
+}
+
+.goodobsidian-thumb.is-drag-source {
+  opacity: 0.35;
+}
+
+/* Over the lifted page (which can cover the gap), with a ring of panel
+   colour so it reads on paper too. */
+.goodobsidian-thumb-drop {
+  position: fixed;
+  z-index: calc(var(--layer-dragged-item, 2000) + 1);
+  width: 4px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--gob-side-bg);
+  pointer-events: none;
+}
+
+.goodobsidian-thumb-drop.is-level {
+  width: auto;
+  height: 4px;
+}
+
+.goodobsidian-thumb-ghost {
+  position: fixed;
+  z-index: var(--layer-dragged-item, 2000);
+  top: 0;
+  left: 0;
+  border-radius: var(--gob-radius-s);
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.goodobsidian-thumb-ghost-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+}
+
+/* Several pages move together: a second sheet behind, and their number. */
+.goodobsidian-thumb-ghost.is-stack::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+  box-shadow: var(--gob-shadow-paper);
+  transform: translate(7px, 7px) rotate(4deg);
+}
+
+.goodobsidian-thumb-ghost-count {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 13px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-pagesidebar.is-dragging-page,
+.goodobsidian-pagesidebar.is-dragging-page * {
+  cursor: grabbing;
+}
+
 /* On a phone-width pane the panel overlays the page instead of halving it. */
 @media (max-width: 600px) {
   .goodobsidian-pagesidebar {
