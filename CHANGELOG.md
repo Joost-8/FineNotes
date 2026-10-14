@@ -75,11 +75,30 @@ extracted from the matching section of this file by `release.yml`.
 - **A crosshair cursor** over the page while a pen, the highlighter or the
   laser is in hand, on a computer. It can be switched off in the settings
   (FineNotes#25).
+- **Pick a colour from the page.** Every colour picker (pen, highlighter,
+  shapes, text, a text box's fill, and the lasso's Colour) has an
+  eyedropper: tap it, then tap the page with the Pencil, a finger or the
+  mouse. A tap on ink, a shape or a text box takes that element's own
+  colour; anywhere else (the paper, a picture, a PDF page) the colour under
+  the tap. A loupe shows the colour before you lift, and the colour is kept
+  with your recent ones. With dark pages on you still get the true colour,
+  not the darkened one you see. Escape, ✕ or a tap off the page cancels,
+  and a text box being edited stays in editing. On a computer, "From
+  screen" picks a colour from anywhere on the screen.
 
 ### Changed
 
 - **Notebooks open with the pen you last wrote with**, in any notebook and
   after a restart: its type, colour and width (FineNotes#24).
+- **Settings sections fold.** Tap a section's heading to fold or unfold it;
+  the settings remember which are open, also after a restart. At first only
+  "Writing and tools" is open. Search still finds every setting, and opens
+  the section of the one you pick.
+- **A clearer shortcut list.** "Keyboard and stylus shortcuts" is grouped
+  (tools, pens, selection and editing, view and zoom, stylus), with each key
+  drawn as a key cap in Obsidian's own style: ⌘, ⌥ and ⇧ on a Mac or an
+  iPad, Ctrl, Alt and Shift elsewhere. It starts folded; tap its row to
+  show it.
 
 ## [2.1.0] - 2026-10-13
 

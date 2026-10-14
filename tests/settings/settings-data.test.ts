@@ -16,12 +16,15 @@ import {
   PAPER_WIDTH_RANGE,
   changesTabLayout,
   endpointWarning,
+  openSectionsOf,
   pagesAreDark,
   paperWidthFrom,
   parseColorList,
+  sectionOpen,
   shownPaperTheme,
   shownValue,
   storeShownValue,
+  withSection,
 } from "../../src/settings-data";
 import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
 
@@ -93,6 +96,7 @@ const FRESH_INSTALL = {
   ],
   barrelButton: "erase",
   penCursor: true,
+  openSettingsSections: ["writing"],
 };
 
 /**
@@ -155,6 +159,7 @@ const USED_VAULT = {
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   penCursor: false,
+  openSettingsSections: ["pens", "shortcuts"],
   experimentalFutureFlag: 7,
 };
 
@@ -319,5 +324,32 @@ describe("control values", () => {
     for (const key of ["llmModel", "llmBaseUrl", "debugHud", "paperWidth", "defaultTool"]) {
       expect(changesTabLayout(key)).toBe(false);
     }
+  });
+});
+
+describe("folded settings sections", () => {
+  it("opens the first section, and only it, on a fresh install", () => {
+    expect(openSectionsOf(undefined)).toEqual(["writing"]);
+    expect(sectionOpen(undefined, "writing")).toBe(true);
+    expect(sectionOpen(undefined, "shortcuts")).toBe(false);
+    expect(sectionOpen(DEFAULT_SETTINGS.openSettingsSections, "pens")).toBe(false);
+  });
+
+  it("reads a hand-edited value without trusting it", () => {
+    expect(openSectionsOf("pens")).toEqual(["writing"]);
+    expect(openSectionsOf(null)).toEqual(["writing"]);
+    // Unknown ids go; known ones come back in the tab's order, once each.
+    expect(openSectionsOf(["ai", "nope", "pens", "ai", 7, "toString"])).toEqual(["pens", "ai"]);
+    // Everything folded is a choice, not a missing value.
+    expect(openSectionsOf([])).toEqual([]);
+  });
+
+  it("opens and folds one section, leaving the others", () => {
+    const opened = withSection(["writing"], "advanced", true);
+    expect(opened).toEqual(["writing", "advanced"]);
+    expect(withSection(opened, "writing", false)).toEqual(["advanced"]);
+    expect(withSection(opened, "advanced", true)).toEqual(["writing", "advanced"]);
+    expect(withSection(undefined, "shortcuts", true)).toEqual(["writing", "shortcuts"]);
+    expect(withSection(["pens"], "toString" as never, true)).toEqual(["pens"]);
   });
 });

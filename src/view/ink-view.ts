@@ -1340,6 +1340,10 @@ export class InkView extends TextFileView {
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
         onShapeColorChange: (color) => this.plugin.saveShapeColor(color),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
+        onPickFromPage: (done) => {
+          if (this.surface) this.surface.pickColorFromPage(done);
+          else done(null);
+        },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),

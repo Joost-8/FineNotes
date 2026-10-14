@@ -234,6 +234,11 @@ export class DrawLog {
       },
       fillText: (text: string, x: number, y: number) =>
         draw(`fillText ${JSON.stringify(text)} ${apply(state.matrix, x, y)}`),
+      // Reading back: opaque white, as a fresh canvas painted with paper would be.
+      getImageData: (x: number, y: number, w: number, h: number) => {
+        this.write(`${label} getImageData ${num(x)},${num(y)} ${num(w)}x${num(h)}`);
+        return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) };
+      },
       measureText: (text: string) => ({
         width: text.length * 6,
         fontBoundingBoxAscent: 9,

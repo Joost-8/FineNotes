@@ -17,6 +17,7 @@ import {
 } from "./view/handwriting-learning";
 import {
   type App,
+  type ExtraButtonComponent,
   Platform,
   PluginSettingTab,
   type Setting,
@@ -49,12 +50,22 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
+  type SettingsSection,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
+  sectionOpen,
   shownValue,
   storeShownValue,
+  withSection,
 } from "./settings-data";
+import {
+  SHORTCUT_GROUPS,
+  type ShortcutWay,
+  keyLabel,
+  keyName,
+  shortcutText,
+} from "./model/shortcuts";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { FolderInputSuggest } from "./view/folder-suggest";
@@ -155,30 +166,17 @@ const BARREL_NAMES: Record<BarrelAction, string> = {
 };
 
 /**
- * The keyboard and stylus shortcuts, as the settings list them (FineNotes#25).
- * `mac` names Cmd for Ctrl, where Ctrl-click is the right click.
+ * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
+ * each, in the order the settings list them (FineNotes#25). `apple` names
+ * the keys as Obsidian does on a Mac or an iPad (⌘ for Ctrl).
  */
-export function shortcutList(mac: boolean): Array<[string, string]> {
-  const command = mac ? "Cmd" : "Ctrl";
-  return [
-    ["P or W", "Pen"],
-    ["H", "Highlighter"],
-    ["E", "Eraser"],
-    ["V", "Lasso"],
-    ["S", "Shapes"],
-    ["T", "Text box"],
-    ["L", "Laser pointer: a trail that fades, never saved"],
-    ["1 – 8", "Saved pens 1 to 8"],
-    [`${command}+A`, "Select everything on the page; Delete then clears it"],
-    ["Shift + write", "Erase, with the eraser's settings"],
-    [`${command} + write`, "Lasso select"],
-    [`${mac ? "Option" : "Alt"} + write up or down`, "Zoom in or out about the pen"],
-    ["Space + drag", "Move the page"],
-    ["Drag beside the page", "Move the page, with a pen or mouse"],
-    ["Stylus eraser end", "Erase"],
-    [`${command}+Z, ${command}+Shift+Z`, "Undo, redo"],
-    ["Page Up, Page Down", "Previous and next page"],
-  ];
+export function shortcutList(apple: boolean): Array<[string, string]> {
+  return SHORTCUT_GROUPS.flatMap((group) =>
+    group.shortcuts.map((shortcut): [string, string] => [
+      shortcutText(shortcut, apple),
+      shortcut.action,
+    ]),
+  );
 }
 
 /** The tools an ink note can open with, as the dropdown names them. */
@@ -327,9 +325,8 @@ function drawnRow(
   return { name, desc, aliases, visible, render: draw };
 }
 
-function group(heading: string, items: SettingDefinition[]): SettingDefinitionItem {
-  return { type: "group", heading, items };
-}
+/** The class every folding section carries; `is-folded` beside it hides its rows. */
+const SECTION_CLS = "goodobsidian-section";
 
 /**
  * A row with no name or control, filled edge to edge by `draw` (a callout or
@@ -377,6 +374,98 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Rebuild the rows, e.g. after a key was added or OpenRouter connected. */
   refresh(): void {
     this.update();
+  }
+
+  // --- Folding ---------------------------------------------------------------
+
+  /**
+   * A section under a header that folds it: tapping the header (or its
+   * chevron) hides or shows the rows, and the tab remembers which are open
+   * (`openSettingsSections`). Folding is a class on the group, never the
+   * rows' `visible`: Obsidian's search leaves out rows that are not visible,
+   * and a folded row must still be found. Obsidian applies `cls` when it
+   * first draws the group; after that the class on the group is the state.
+   */
+  private section(
+    id: SettingsSection,
+    heading: string,
+    items: SettingDefinition[],
+  ): SettingDefinitionItem {
+    const open = sectionOpen(this.plugin.settings.openSettingsSections, id);
+    return {
+      type: "group",
+      heading,
+      items,
+      cls: open ? SECTION_CLS : `${SECTION_CLS} is-folded`,
+      extraButtons: [(button) => this.foldButton(button, id, heading)],
+    };
+  }
+
+  /**
+   * The chevron in a section's header, and the header made the control that
+   * folds it. Obsidian puts the button in the header's control column, so
+   * the header and the group are its ancestors.
+   */
+  private foldButton(button: ExtraButtonComponent, id: SettingsSection, heading: string): void {
+    const chevron = button.extraSettingsEl;
+    const header = chevron.closest<HTMLElement>(".setting-item-heading");
+    const group = chevron.closest<HTMLElement>(".setting-group");
+    if (!header || !group) return;
+    button.setIcon("chevron-right");
+    chevron.addClass("goodobsidian-fold-chevron");
+    header.addClass("goodobsidian-fold-header");
+    const sync = (): void => {
+      const open = !group.hasClass("is-folded");
+      chevron.setAttribute("role", "button");
+      chevron.setAttribute("aria-expanded", String(open));
+      chevron.setAttribute("aria-label", `${open ? "Fold" : "Unfold"} ${heading}`);
+    };
+    const toggle = (): void => {
+      const open = group.hasClass("is-folded");
+      group.toggleClass("is-folded", !open);
+      sync();
+      this.rememberFold(id, open);
+    };
+    sync();
+    // The whole header is the target, chevron included: one click, one toggle.
+    header.addEventListener("click", toggle);
+    chevron.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggle();
+    });
+    this.unfoldOnFlash(group, () => {
+      group.removeClass("is-folded");
+      sync();
+      this.rememberFold(id, true);
+    });
+  }
+
+  /**
+   * A search result opens its row by scrolling to it and flashing it
+   * (`is-flashing`). A row in a folded section cannot be scrolled to, so the
+   * flash unfolds the section, and the row is scrolled to again.
+   */
+  private unfoldOnFlash(container: HTMLElement, unfold: () => void): void {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver((changes) => {
+      if (!container.hasClass("is-folded")) return;
+      for (const change of changes) {
+        const target = change.target;
+        if (!target.instanceOf(HTMLElement) || !target.hasClass("is-flashing")) continue;
+        unfold();
+        target.scrollIntoView({ block: "center" });
+        return;
+      }
+    });
+    observer.observe(container, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  }
+
+  /** Save a section opened or folded. */
+  private rememberFold(id: SettingsSection, open: boolean): void {
+    const settings = this.plugin.settings;
+    settings.openSettingsSections = withSection(settings.openSettingsSections, id, open);
+    void this.plugin.saveSettings();
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
@@ -445,7 +534,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** How the pen, the tools and the gestures behave, and what a new note starts with. */
   private writingGroup(): SettingDefinitionItem {
     const widths = Object.fromEntries(SIZES.map((size) => [String(size), String(size)]));
-    return group("Writing and tools", [
+    return this.section("writing", "Writing and tools", [
       toggle("drawAndHold", "Draw and hold to make shapes", DESC.drawAndHold, [
         "shape recognition",
         "straighten",
@@ -507,7 +596,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["favorite pen", "preset", "number key"],
       ),
     );
-    return group("Pens and shortcuts", [
+    return this.section("pens", "Pens and shortcuts", [
       drawnRow("Saved pens", DESC.savedPens, (s) => this.drawRestorePens(s), [
         "favorite pens",
         "presets",
@@ -632,21 +721,94 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     });
   }
 
-  /** The shortcut table under its row, full width. */
+  /**
+   * The shortcuts, under their row and the full width of it, in groups, with
+   * each key a key cap as Obsidian's Hotkeys tab draws them. Folded at
+   * first: the row (or its chevron) unfolds it, and the tab remembers.
+   */
   private drawShortcuts(setting: Setting): void {
-    const mac = Platform.isMacOS || Platform.isIosApp;
-    const table = setting.descEl.createEl("table", { cls: "goodobsidian-shortcuts" });
-    for (const [keys, action] of shortcutList(mac)) {
-      const row = table.createEl("tr");
-      row.createEl("td").createEl("kbd", { text: keys });
-      row.createEl("td", { text: action });
+    const apple = Platform.isMacOS || Platform.isIosApp;
+    const row = setting.settingEl;
+    row.addClass("goodobsidian-shortcuts-row");
+    const list = row.createDiv({ cls: "goodobsidian-shortcuts" });
+    for (const group of SHORTCUT_GROUPS) {
+      const block = list.createDiv({ cls: "goodobsidian-shortcut-group" });
+      block.createDiv({ cls: "goodobsidian-shortcut-group-title", text: group.title });
+      for (const shortcut of group.shortcuts) {
+        const line = block.createDiv({ cls: "goodobsidian-shortcut" });
+        line.createDiv({ cls: "goodobsidian-shortcut-action", text: shortcut.action });
+        const keys = line.createDiv({ cls: "goodobsidian-shortcut-keys" });
+        keys.setAttribute("aria-label", shortcutText(shortcut, apple));
+        shortcut.ways.forEach((way, index) => {
+          if (index > 0) {
+            keys.createSpan({
+              cls: "goodobsidian-shortcut-sep",
+              text: shortcut.range ? "–" : "or",
+            });
+          }
+          this.drawWay(keys, way, apple);
+        });
+      }
+    }
+    const folded = (): boolean => row.hasClass("is-folded");
+    row.toggleClass(
+      "is-folded",
+      !sectionOpen(this.plugin.settings.openSettingsSections, "shortcuts"),
+    );
+    setting.addExtraButton((button) => {
+      button.setIcon("chevron-right");
+      const chevron = button.extraSettingsEl;
+      chevron.addClass("goodobsidian-fold-chevron");
+      const sync = (): void => {
+        chevron.setAttribute("role", "button");
+        chevron.setAttribute("aria-expanded", String(!folded()));
+        chevron.setAttribute("aria-label", folded() ? "Show the shortcuts" : "Hide the shortcuts");
+      };
+      const toggle = (): void => {
+        const open = folded();
+        row.toggleClass("is-folded", !open);
+        sync();
+        this.rememberFold("shortcuts", open);
+      };
+      sync();
+      row.addEventListener("click", (event) => {
+        // A tap on the list itself is reading, not folding.
+        if (list.contains(event.target as Node | null)) return;
+        toggle();
+      });
+      chevron.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        toggle();
+      });
+    });
+  }
+
+  /** One way to do a shortcut: a key cap per key, then what the pen or mouse does. */
+  private drawWay(parent: HTMLElement, way: ShortcutWay, apple: boolean): void {
+    const span = parent.createSpan({ cls: "goodobsidian-shortcut-way" });
+    way.keys.forEach((name, index) => {
+      // Obsidian joins keys with "+" in words, and sets glyphs side by side.
+      if (index > 0 && !apple) span.createSpan({ cls: "goodobsidian-shortcut-plus", text: "+" });
+      const label = keyLabel(name, apple);
+      const cap = span.createEl("kbd", { cls: "goodobsidian-key", text: label });
+      // ⌘ ⌥ ⇧ are small in most fonts: their caps set them larger.
+      if (label !== name && label.length === 1) cap.addClass("is-glyph");
+      const spoken = keyName(name, apple);
+      if (spoken !== label) cap.setAttribute("title", spoken);
+    });
+    if (way.gesture) {
+      span.createSpan({
+        cls: "goodobsidian-shortcut-gesture",
+        text: way.keys.length > 0 ? `+ ${way.gesture}` : way.gesture,
+      });
     }
   }
 
   /** The paper, and where new notebooks go and how they are made. */
   private pagesGroup(): SettingDefinitionItem {
     const settings = this.plugin.settings;
-    return group("Pages and notebooks", [
+    return this.section("pages", "Pages and notebooks", [
       dropdown("pageAppearance", "Page appearance", DESC.pageAppearance, PAGE_APPEARANCES, [
         "dark mode",
         "night mode",
@@ -689,7 +851,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   /** Rendering and input switches most people never need. */
   private advancedGroup(): SettingDefinitionItem {
-    return group("Advanced", [
+    return this.section("advanced", "Advanced", [
       toggle("desynchronizedCanvas", "Desynchronized canvas", DESC.desynchronized, [
         "latency",
         "glitch",
@@ -717,7 +879,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Reading handwriting on this device, and learning the user's. */
   private handwritingGroup(): SettingDefinitionItem {
     const { settings } = this.plugin;
-    return group("Handwriting", [
+    return this.section("handwriting", "Handwriting", [
       toggle(
         "handwritingOnDevice",
         "Read handwriting on this device (beta)",
@@ -838,7 +1000,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
       },
     ];
-    return group("AI with your own key", [
+    return this.section("ai", "AI with your own key", [
       drawnRow(
         "Set up an AI service",
         "Transcribe pages, ask about your notes and make pictures with an AI service you " +
@@ -852,7 +1014,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   private supportGroup(): SettingDefinitionItem {
-    return group("Support and diagnostics", [
+    return this.section("support", "Support and diagnostics", [
       toggle("debugHud", "Input debug overlay", DESC.debugHud, [
         "diagnostics",
         "HUD",
@@ -868,7 +1030,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         setting.addButton((b) => b.setButtonText(label).onClick(() => window.open(url)));
       }
     };
-    return group("Feedback and community", [
+    return this.section("community", "Feedback and community", [
       drawnRow(
         "Ideas and questions",
         "Share an idea, ask how something works, or show what you made with FineNotes, in " +

@@ -26,10 +26,48 @@ export class FakeEl {
     }
   }
 
+  /** The element this one was created in, if any. */
+  parent: FakeEl | null = null;
+  readonly listeners: Record<string, Array<(event: unknown) => void>> = {};
+
   createEl(tag: string, info?: ElInfo): FakeEl {
     const child = new FakeEl(tag, info);
+    child.parent = this;
     this.children.push(child);
     return child;
+  }
+  /** The nearest of this element and its ancestors with every class in `selector` (".a.b"). */
+  closest(selector: string): FakeEl | null {
+    const wanted = selector.split(".").filter(Boolean);
+    let el: FakeEl | null = null;
+    for (el = this.self(); el; el = el.parent) {
+      const at = el;
+      if (wanted.every((cls) => at.hasClass(cls))) return at;
+    }
+    return null;
+  }
+  contains(node: unknown): boolean {
+    for (let el = node instanceof FakeEl ? node : null; el; el = el.parent) {
+      if (el === this) return true;
+    }
+    return false;
+  }
+  addEventListener(type: string, listener: (event: unknown) => void): void {
+    (this.listeners[type] ??= []).push(listener);
+  }
+  /** Fire `type` here and on every ancestor, as a bubbling DOM event would. */
+  dispatch(type: string, init: Record<string, unknown> = {}): Record<string, unknown> {
+    const event: Record<string, unknown> = { type, target: this, defaultPrevented: false, ...init };
+    event.preventDefault = () => {
+      event.defaultPrevented = true;
+    };
+    for (let el: FakeEl | null = this.self(); el; el = el.parent) {
+      for (const listener of el.listeners[type] ?? []) listener(event);
+    }
+    return event;
+  }
+  private self(): FakeEl {
+    return this;
   }
   createDiv(info?: ElInfo): FakeEl {
     return this.createEl("div", info);
@@ -189,6 +227,12 @@ export class DropdownComponent extends ValueComponent {
 export class ColorComponent extends ValueComponent {}
 
 export class ExtraButtonComponent {
+  readonly extraSettingsEl: FakeEl;
+  constructor(parent?: FakeEl) {
+    this.extraSettingsEl = parent
+      ? parent.createDiv("clickable-icon extra-setting-button")
+      : new FakeEl("div", "clickable-icon extra-setting-button");
+  }
   icon = "";
   tooltip = "";
   disabled = false;
@@ -230,7 +274,10 @@ export class Setting {
   static readonly created: Setting[] = [];
 
   constructor(parent?: unknown) {
-    if (parent instanceof FakeEl) parent.children.push(this.settingEl);
+    if (parent instanceof FakeEl) {
+      parent.children.push(this.settingEl);
+      this.settingEl.parent = parent;
+    }
     Setting.created.push(this);
   }
 
@@ -276,7 +323,7 @@ export class Setting {
     return this;
   }
   addExtraButton(build: (button: ExtraButtonComponent) => unknown): this {
-    const button = new ExtraButtonComponent();
+    const button = new ExtraButtonComponent(this.controlEl);
     this.extras.push(button);
     build(button);
     return this;

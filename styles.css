@@ -2027,19 +2027,131 @@ body.is-mobile .goodobsidian-scrollthumb {
   border-color: var(--text-error);
 }
 
-/* The shortcuts, as a two-column table under their row's name. */
+/* Sections that fold. The header is the control (the chevron is its
+   visible sign); a folded section shows its header only. Hidden by class,
+   never by `visible`, so Obsidian's search still finds every row. The
+   chevron is Obsidian's own extra button, a `clickable-icon` div, so the
+   iPad's 20 px button padding does not reach it. */
+.setting-group.goodobsidian-section > .setting-item-heading.goodobsidian-fold-header {
+  cursor: var(--cursor);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.setting-group.goodobsidian-section.is-folded > .setting-items,
+.setting-group.goodobsidian-section.is-folded > .setting-group-search {
+  display: none;
+}
+
+.setting-group.goodobsidian-section.is-folded > .setting-item-heading {
+  margin-bottom: 0;
+}
+
+/* Folded headers stack closer than open sections do. */
+.setting-group.goodobsidian-section.is-folded + .setting-group.goodobsidian-section {
+  margin-top: var(--size-4-4);
+}
+
+.goodobsidian-fold-chevron .svg-icon {
+  transform: rotate(90deg);
+  transition: transform 150ms ease;
+}
+
+.setting-group.is-folded > .setting-item-heading .goodobsidian-fold-chevron .svg-icon,
+.goodobsidian-shortcuts-row.is-folded .goodobsidian-fold-chevron .svg-icon {
+  transform: none;
+}
+
+/* The shortcuts: the full width under their row, in groups, two columns,
+   each key a key cap in Obsidian's own hotkey chip (its Hotkeys tab). */
+.setting-item.goodobsidian-shortcuts-row {
+  flex-wrap: wrap;
+  cursor: var(--cursor);
+}
+
 .goodobsidian-shortcuts {
-  margin-top: 8px;
-  border-collapse: collapse;
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+  margin-top: var(--size-4-3);
+  cursor: auto;
 }
 
-.goodobsidian-shortcuts td {
-  padding: 2px 12px 2px 0;
-  vertical-align: top;
+.goodobsidian-shortcuts-row.is-folded .goodobsidian-shortcuts {
+  display: none;
 }
 
-.goodobsidian-shortcuts kbd {
+.goodobsidian-shortcut-group-title {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  padding-bottom: var(--size-4-1);
+}
+
+.goodobsidian-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-4);
+  min-height: 32px;
+  padding: var(--size-2-2) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+}
+
+.goodobsidian-shortcut-group-title + .goodobsidian-shortcut {
+  border-top: none;
+}
+
+.goodobsidian-shortcut-action {
+  min-width: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-shortcut-keys {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--size-4-1) var(--size-4-2);
+  max-width: 60%;
+}
+
+.goodobsidian-shortcut-way {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-2);
   white-space: nowrap;
+}
+
+/* Over Obsidian's own `kbd` (code colours), at its specificity plus one. */
+kbd.goodobsidian-key {
+  display: inline-block;
+  min-width: 1.9em;
+  padding: 2px 8px;
+  border-radius: var(--hotkey-radius);
+  background-color: var(--hotkey-background);
+  color: var(--text-normal);
+  font-family: var(--hotkey-font);
+  font-size: var(--hotkey-font-size);
+  line-height: 1.5;
+  text-align: center;
+  white-space: nowrap;
+}
+
+kbd.goodobsidian-key.is-glyph {
+  font-size: var(--font-ui-medium);
+  line-height: 1.15;
+}
+
+.goodobsidian-shortcut-plus,
+.goodobsidian-shortcut-sep,
+.goodobsidian-shortcut-gesture {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 /* ------------------------------------------- tier-2 swatch sizing (late) */
@@ -4275,6 +4387,20 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
     0 0 0 4px var(--color-base-100);
 }
 
+/* The eyedropper in the lasso's colours: an icon in a disc, not a colour. */
+.goodobsidian-selection-swatch.is-eyedropper .goodobsidian-selection-swatch-disc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* The menu is a dark island: its own token, not the page theme's text. */
+  color: var(--gob-sel-icon);
+}
+
+.goodobsidian-selection-swatch.is-eyedropper .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
 /* ------------------------------------------ audio recording (0.5) */
 
 /* The mic while a recording runs: red, so it reads as "live", not as a tool. */
@@ -5957,11 +6083,42 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   );
 }
 
+/* Under the swatches: "Custom colour…", and the eyedropper beside it. */
+.goodobsidian-color-picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .goodobsidian-color-custom-toggle.clickable-icon {
+  flex: 1 1 auto;
   justify-content: center;
   width: 100%;
   font-size: var(--font-ui-small);
   color: var(--text-accent);
+}
+
+/* The eyedropper: a plain icon, as the other picker chrome; it picks from the page. */
+button.goodobsidian-color-eyedropper.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-accent);
+}
+
+button.goodobsidian-color-eyedropper .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* In the custom colour's title row it sits before the way back. */
+.goodobsidian-color-mixer-head .goodobsidian-popover-title {
+  flex: 1 1 auto;
 }
 
 /* The custom colour, as Notability's: a title with the way back, the
@@ -6278,6 +6435,141 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   position: relative;
 }
 
+/* ---------------------------------------------------------- eyedropper */
+
+/* Picking a colour from the page (src/view/eyedropper.ts): a bar at the
+   bottom, where the page's other hints are (the options pill covers the
+   top), says so and cancels, and a loupe shows the colour under the pointer. On a
+   computer the page takes a crosshair. */
+.goodobsidian-surface.is-eyedropping .goodobsidian-scroll {
+  cursor: crosshair;
+}
+
+.goodobsidian-eyedrop-bar {
+  position: absolute;
+  z-index: 14;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 2px 2px 2px 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+}
+
+.goodobsidian-eyedrop-bar-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-accent);
+}
+
+.goodobsidian-eyedrop-bar-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-eyedrop-bar-text {
+  padding-right: 4px;
+}
+
+.goodobsidian-eyedrop-bar button.goodobsidian-eyedrop-bar-button.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0 10px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  opacity: 1;
+}
+
+.goodobsidian-eyedrop-bar.is-screen .goodobsidian-eyedrop-bar-text {
+  color: var(--text-muted);
+}
+
+/* The loupe: a ring at the sampled point, and above it (below it near the
+   top) a disc of the colour a press there picks, with its value. Never a
+   target: presses go to the page under it. */
+.goodobsidian-eyedrop-loupe {
+  position: absolute;
+  z-index: 15;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-eyedrop-loupe.is-hidden {
+  display: none;
+}
+
+.goodobsidian-eyedrop-target {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--gob-mark);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-mark);
+}
+
+.goodobsidian-eyedrop-bubble {
+  position: absolute;
+  left: 0;
+  bottom: 30px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 5px;
+  border-radius: 20px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+}
+
+.goodobsidian-eyedrop-loupe.is-below .goodobsidian-eyedrop-bubble {
+  top: 30px;
+  bottom: auto;
+}
+
+.goodobsidian-eyedrop-swatch {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  box-shadow: var(--gob-ring-disc);
+}
+
+/* Off the pages: nothing to pick, a hatched disc. */
+.goodobsidian-eyedrop-loupe.is-off .goodobsidian-eyedrop-swatch {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--background-modifier-border) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.goodobsidian-eyedrop-hex {
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------- frosted chrome */
 
 /*
@@ -6293,7 +6585,8 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   .goodobsidian-pageindicator,
   .goodobsidian-zoomreadout,
   .goodobsidian-offpage,
-  .goodobsidian-text-hint {
+  .goodobsidian-text-hint,
+  .goodobsidian-eyedrop-bar {
     background: var(--gob-frost);
     -webkit-backdrop-filter: var(--gob-blur);
     backdrop-filter: var(--gob-blur);

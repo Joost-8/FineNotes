@@ -48,7 +48,7 @@ vi.mock("../../src/view/folder-suggest", () => ({
   },
 }));
 
-const { Platform, Setting } = await import("../fakes/obsidian");
+const { ExtraButtonComponent, FakeEl, Platform, Setting } = await import("../fakes/obsidian");
 const { DEFAULT_SETTINGS, GoodObsidianSettingTab, shortcutList } =
   await import("../../src/settings");
 const { SIZES } = await import("../../src/constants");
@@ -1025,12 +1025,203 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.calls).toEqual(["penCursor:false"]);
   });
 
-  it("lists the shortcuts, with Cmd on a Mac", () => {
-    const all = rows(makeTab(makePlugin()).tab);
-    const pc = renderRow(named(all, "Keyboard and stylus shortcuts"));
-    expect(pc.descEl.textContent).toContain("Ctrl+A");
-    expect(pc.descEl.textContent).toContain("1 – 8");
-    expect(shortcutList(true).map(([keys]) => keys)).toContain("Cmd+A");
-    expect(shortcutList(true).map(([keys]) => keys)).toContain("Option + write up or down");
+  it("lists the shortcuts in groups, each key a key cap, Ctrl or ⌘ by platform", () => {
+    const pc = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard and stylus shortcuts"));
+    const list = pc.find("goodobsidian-shortcuts");
+    expect(list?.findAll("goodobsidian-shortcut-group-title").map((el) => el.text)).toEqual([
+      "Tools",
+      "Pens",
+      "Selection and editing",
+      "View and zoom",
+      "Stylus",
+    ]);
+    const line = (action: string) => {
+      const found = list
+        ?.findAll("goodobsidian-shortcut")
+        .find((el) => el.find("goodobsidian-shortcut-action")?.text === action);
+      if (!found) throw new Error(`no shortcut "${action}"`);
+      return found;
+    };
+    const caps = (action: string) =>
+      line(action)
+        .findAll("goodobsidian-key")
+        .map((el) => el.text);
+    expect(caps("Redo")).toEqual(["Ctrl", "Shift", "Z"]);
+    expect(line("Redo").find("goodobsidian-shortcut-keys")?.textContent).toBe("Ctrl+Shift+Z");
+    expect(caps("Pen")).toEqual(["P", "W"]);
+    expect(line("Pen").find("goodobsidian-shortcut-sep")?.text).toBe("or");
+    expect(line("Saved pens 1 to 8").find("goodobsidian-shortcut-sep")?.text).toBe("–");
+    expect(line("Move the page").find("goodobsidian-shortcut-gesture")?.text).toBe("+ drag");
+    expect(caps("Erase")).toEqual([]);
+
+    Platform.isIosApp = true;
+    const ipad = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard and stylus shortcuts"));
+    const redo = ipad
+      .find("goodobsidian-shortcuts")
+      ?.findAll("goodobsidian-shortcut")
+      .find((el) => el.find("goodobsidian-shortcut-action")?.text === "Redo");
+    expect(redo?.findAll("goodobsidian-key").map((el) => [el.text, el.attrs.title])).toEqual([
+      ["⌘", "Command"],
+      ["⇧", "Shift"],
+      ["Z", undefined],
+    ]);
+    // Glyphs sit side by side, as in Obsidian's Hotkeys tab: no "+" between them.
+    expect(redo?.findAll("goodobsidian-shortcut-plus")).toEqual([]);
+  });
+
+  it("writes each shortcut as Obsidian prints a hotkey", () => {
+    const pc = Object.fromEntries(shortcutList(false).map(([keys, action]) => [action, keys]));
+    const mac = Object.fromEntries(shortcutList(true).map(([keys, action]) => [action, keys]));
+    expect(pc.Pen).toBe("P or W");
+    expect(pc["Saved pens 1 to 8"]).toBe("1 – 8");
+    expect(pc.Redo).toBe("Ctrl + Shift + Z");
+    expect(mac.Redo).toBe("⌘ ⇧ Z");
+    expect(pc["Zoom in or out about the pen"]).toBe("Alt + write up or down");
+    expect(mac["Zoom in or out about the pen"]).toBe("⌥ + write up or down");
+    expect(pc["Lasso select"]).toBe("Ctrl + write");
+    expect(pc.Erase).toBe("Write with the eraser end");
+    expect(shortcutList(false)).toHaveLength(18);
+  });
+
+  it("folds the shortcut list at first, and remembers it open", () => {
+    const plugin = makePlugin();
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Keyboard and stylus shortcuts"));
+    expect(row.settingEl.hasClass("is-folded")).toBe(true);
+    const chevron = row.extras[0].extraSettingsEl;
+    expect(chevron.attrs["aria-expanded"]).toBe("false");
+
+    // Reading the list is not folding it.
+    row.find("goodobsidian-shortcut-action")?.dispatch("click");
+    chevron.dispatch("click");
+    expect(row.settingEl.hasClass("is-folded")).toBe(false);
+    expect(chevron.attrs["aria-expanded"]).toBe("true");
+    expect(plugin.settings.openSettingsSections).toEqual(["writing", "shortcuts"]);
+    expect(plugin.calls).toEqual(["save"]);
+    row.find("goodobsidian-shortcut-action")?.dispatch("click");
+    expect(row.settingEl.hasClass("is-folded")).toBe(false);
+
+    // Opened again later, it is open.
+    const again = renderRow(named(rows(makeTab(plugin).tab), "Keyboard and stylus shortcuts"));
+    expect(again.settingEl.hasClass("is-folded")).toBe(false);
+    // The keyboard folds it from the chevron.
+    const key = again.extras[0].extraSettingsEl.dispatch("keydown", { key: "Enter" });
+    expect(key.defaultPrevented).toBe(true);
+    expect(again.settingEl.hasClass("is-folded")).toBe(true);
+    expect(plugin.settings.openSettingsSections).toEqual(["writing"]);
+  });
+});
+
+// --- Folding sections ----------------------------------------------------------
+
+interface GroupDef {
+  type: string;
+  heading?: string;
+  cls?: string;
+  items?: Def[];
+  extraButtons?: Array<(button: unknown) => unknown>;
+}
+
+function groups(tab: InstanceType<typeof GoodObsidianSettingTab>): GroupDef[] {
+  return (tab.getSettingDefinitions() as GroupDef[]).filter((item) => item.type === "group");
+}
+
+/** Draw a group's header as Obsidian does: its classes, the header row, the extra buttons. */
+function drawGroup(def: GroupDef) {
+  const groupEl = new FakeEl("div", `setting-group ${def.cls ?? ""}`);
+  const header = groupEl.createDiv("setting-item setting-item-heading");
+  header.createDiv({ cls: "setting-item-name", text: def.heading ?? "" });
+  const control = header.createDiv("setting-item-control");
+  const buttons = (def.extraButtons ?? []).map((build) => {
+    const button = new ExtraButtonComponent(control);
+    build(button);
+    return button;
+  });
+  return { groupEl, header, chevron: buttons[0]?.extraSettingsEl };
+}
+
+/** The rows a person sees: those of the sections not folded, and rows outside any. */
+function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
+  const out: Row[] = [];
+  for (const item of tab.getSettingDefinitions() as GroupDef[]) {
+    if (item.type !== "group") out.push({ heading: "", def: item as unknown as Def });
+    else if (!(item.cls ?? "").split(" ").includes("is-folded")) {
+      for (const def of item.items ?? []) out.push({ heading: item.heading ?? "", def });
+    }
+  }
+  return out.filter((row) => shown(row.def));
+}
+
+describe("folding sections", () => {
+  it("opens the first section only, at first", () => {
+    const { tab } = makeTab(makePlugin(), false);
+    expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual([
+      [WRITING, "goodobsidian-section"],
+      [PENS, "goodobsidian-section is-folded"],
+      [PAGES, "goodobsidian-section is-folded"],
+      [HANDWRITING, "goodobsidian-section is-folded"],
+      [AI, "goodobsidian-section is-folded"],
+      [ADVANCED, "goodobsidian-section is-folded"],
+      [SUPPORT, "goodobsidian-section is-folded"],
+      [COMMUNITY, "goodobsidian-section is-folded"],
+    ]);
+    expect(new Set(unfoldedRows(tab).map((r) => r.heading))).toEqual(new Set([WRITING]));
+    expect(unfoldedRows(tab).filter((r) => r.heading === WRITING)).toHaveLength(9);
+  });
+
+  it("shows the rows of the sections that are open", () => {
+    const plugin = makePlugin({ openSettingsSections: ["pens", "community"] });
+    const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
+    expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
+  });
+
+  it("keeps a folded section's rows, so search still finds them", () => {
+    const folded = makeTab(makePlugin({ openSettingsSections: [] })).tab;
+    const open = makeTab(
+      makePlugin({ openSettingsSections: ["writing", "pens", "pages", "ai"] }),
+    ).tab;
+    const names = (tab: InstanceType<typeof GoodObsidianSettingTab>) =>
+      rows(tab)
+        .filter((r) => shown(r.def) && r.def.searchable !== false)
+        .map((r) => r.def.name);
+    expect(names(folded)).toEqual(names(open));
+    expect(names(folded)).toContain("Keyboard and stylus shortcuts");
+  });
+
+  it("folds and unfolds from the header, and remembers it", () => {
+    const plugin = makePlugin();
+    const { tab } = makeTab(plugin, false);
+    const pens = drawGroup(groups(tab)[1]);
+    expect(pens.groupEl.hasClass("is-folded")).toBe(true);
+    expect(pens.header.hasClass("goodobsidian-fold-header")).toBe(true);
+    expect(pens.chevron?.attrs).toMatchObject({
+      role: "button",
+      "aria-expanded": "false",
+      "aria-label": `Unfold ${PENS}`,
+    });
+
+    // A tap anywhere on the header, the chevron included, is one toggle.
+    pens.chevron?.dispatch("click");
+    expect(pens.groupEl.hasClass("is-folded")).toBe(false);
+    expect(pens.chevron?.attrs["aria-expanded"]).toBe("true");
+    expect(plugin.settings.openSettingsSections).toEqual(["writing", "pens"]);
+    expect(plugin.calls).toEqual(["save"]);
+
+    // Reopening the settings (or Obsidian) draws it open.
+    const reopened = makeTab(plugin, false).tab;
+    expect(groups(reopened)[1].cls).toBe("goodobsidian-section");
+    expect(unfoldedRows(reopened).some((r) => r.def.name === "Stylus side button")).toBe(true);
+
+    const writing = drawGroup(groups(reopened)[0]);
+    writing.header.find("setting-item-name")?.dispatch("click");
+    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(plugin.settings.openSettingsSections).toEqual(["pens"]);
+    // Space on the chevron, as on any button.
+    const space = writing.chevron?.dispatch("keydown", { key: " " });
+    expect(space?.defaultPrevented).toBe(true);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+    expect(plugin.settings.openSettingsSections).toEqual(["writing", "pens"]);
+    writing.chevron?.dispatch("keydown", { key: "a" });
+    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
   });
 });

@@ -153,6 +153,15 @@ import {
   inkBeyondPage,
 } from "../canvas/page-layout";
 import { strokeHitByPoint } from "../canvas/hit-test";
+import {
+  EYEDROP_REACH_PX,
+  type EyedropResult,
+  averagePixels,
+  eyedropColor,
+  eyedropSquare,
+  textBoxColor,
+} from "../canvas/eyedropper";
+import { Eyedropper } from "./eyedropper";
 import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/stroke-eraser";
 import {
   MAX_SCALE,
@@ -1027,6 +1036,8 @@ export class InkSurface {
    * down, not at the lift: a stroke's `t0` is when it began.
    */
   private penDownAt: number | null = null;
+  /** The colour pickers' "pick from the page", made on first use. */
+  private eyedropper: Eyedropper | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
@@ -1666,6 +1677,7 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.eyedropper?.cancel();
     window.clearTimeout(this.wheelSnapTimer);
     this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
@@ -2065,6 +2077,8 @@ export class InkSurface {
   }
 
   setTool(tool: ActiveTool): void {
+    // A colour waiting to be picked was for the tool being left.
+    this.eyedropper?.cancel();
     // A practice file has the pen and the eraser only.
     if (this.practice && !isPracticeTool(tool)) tool = "pen";
     // The toolbar shares `toolState` and has already written the new tool
@@ -5923,6 +5937,73 @@ export class InkSurface {
     if (image) this.setImageSelection(page.id, image);
   }
 
+  // --- Picking a colour from the page --------------------------------------------
+
+  /**
+   * Arm the eyedropper for a colour picker: the next press on the page picks
+   * a colour (`../canvas/eyedropper`) and `done` gets it, or `null` when it
+   * is cancelled (Escape, the bar's ✕, a press off the page, a tool change).
+   * The page does nothing else with that press, and nothing takes focus, so
+   * a text box being edited stays edited.
+   */
+  pickColorFromPage(done: (color: string | null) => void): void {
+    this.eyedropper ??= new Eyedropper({
+      input: this.scrollEl,
+      layer: this.surfaceEl,
+      colorAt: (clientX, clientY) => this.eyedropAt(clientX, clientY),
+    });
+    this.eyedropper.arm(done);
+  }
+
+  /** Recolour the selection with a colour of the user's own, remembered as recent. */
+  private recolorCustom(color: string): void {
+    const recent = pushRecentColor(this.toolState.recentColors ?? [], color);
+    this.toolState.recentColors = recent;
+    this.callbacks.onRecentColors?.(recent);
+    this.recolorSelection(color);
+  }
+
+  /** Whether a colour is waiting to be picked from the page. */
+  get pickingColor(): boolean {
+    return this.eyedropper?.armed === true;
+  }
+
+  /**
+   * What the eyedropper picks at a client point: the stored colour of the
+   * text box or ink there (typed text sits above the ink, as for the
+   * lasso's tap), else the averaged pixels of a light render of the page
+   * there, so dark pages never hand back their night colours. `null` off
+   * the pages.
+   */
+  private eyedropAt(clientX: number, clientY: number): EyedropResult | null {
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) return null;
+    const p = this.toPage(box, at);
+    const frames = page.textBoxes.map((textBox) => ({
+      textBox,
+      ...this.textBoxFrameOf(page.id, textBox),
+    }));
+    const framed = topImageAt(frames, p, 0);
+    const element =
+      (framed ? textBoxColor(framed.textBox) : null) ??
+      this.strokeAt(page, p, EYEDROP_REACH_PX / this.unitScale)?.color ??
+      null;
+    const stored = eyedropColor(element, null);
+    if (stored || !this.renderer) return stored;
+    const level = this.deviceScale;
+    const square = eyedropSquare(p.x * level, p.y * level);
+    const pixels = this.renderer.samplePage(
+      page,
+      box,
+      square,
+      level,
+      this.toolState.pressureEnabled,
+    );
+    return eyedropColor(null, pixels ? averagePixels(pixels) : null);
+  }
+
   /** The topmost stroke whose ink passes within `tolerance` of a page point. */
   private strokeAt(
     page: Page,
@@ -6307,12 +6388,12 @@ export class InkSurface {
           ],
           current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
-          custom: (color) => {
-            const recent = pushRecentColor(this.toolState.recentColors ?? [], color);
-            this.toolState.recentColors = recent;
-            this.callbacks.onRecentColors?.(recent);
-            this.recolorSelection(color);
-          },
+          custom: (color) => this.recolorCustom(color),
+          // The selection stays while the page is tapped: the eyedropper takes that press.
+          eyedropper: () =>
+            this.pickColorFromPage((color) => {
+              if (color) this.recolorCustom(color);
+            }),
         },
       });
     }

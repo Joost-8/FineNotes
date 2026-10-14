@@ -25,6 +25,8 @@ export interface ActionSwatches {
   pick: (color: string) => void;
   /** Offer a custom colour, mixed from red, green and blue; this applies it. */
   custom?: (color: string) => void;
+  /** Offer to pick the colour from the page; the host arms its eyedropper and applies the pick. */
+  eyedropper?: () => void;
 }
 
 /** One thing the selection's bar or menu can do. */

@@ -10,7 +10,12 @@
  * would end, the keyboard drop, and the colour land on the next new box
  * instead of this one. So the square and the slider are drawn and driven by
  * pointer events, every press cancels its default, and the hex value is
- * shown, not typed. (There is no eyedropper: iPad WebKit has no EyeDropper.)
+ * shown, not typed.
+ *
+ * The eyedropper button hands the pick to the host (`onEyedropper`), which
+ * arms the page's eyedropper (`./eyedropper`): iPad WebKit has no
+ * EyeDropper API, so the page samples itself. It is a button like the
+ * others, so it takes no focus either.
  */
 
 import { setIcon } from "obsidian";
@@ -44,6 +49,11 @@ export interface ColorPickerOptions {
   customOpen?: boolean;
   /** How a button is activated; a `click` listener unless the host says otherwise. */
   tap?: TapBinder;
+  /**
+   * Pick a colour from the page instead. Offered (an eyedropper button)
+   * only when the host can: it arms the page and reports the colour itself.
+   */
+  onEyedropper?: () => void;
 }
 
 /**
@@ -92,11 +102,13 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     }
   }
 
-  const toggle = body.createEl("button", {
+  const foot = body.createDiv({ cls: "goodobsidian-color-picker-foot" });
+  presets.push(foot);
+  const toggle = foot.createEl("button", {
     cls: "goodobsidian-color-custom-toggle clickable-icon",
     text: "Custom colour…",
   });
-  presets.push(toggle);
+  if (options.onEyedropper) eyedropperButton(foot, tap, options.onEyedropper);
   const mixer = body.createDiv();
   const open = (custom: boolean): void => {
     body.toggleClass("is-custom", custom);
@@ -104,7 +116,14 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     mixer.toggleClass("is-hidden", !custom);
   };
   tap(toggle, () => open(true));
-  renderColorMixer(mixer, options.current, options.onCustom, tap, () => open(false));
+  renderColorMixer(
+    mixer,
+    options.current,
+    options.onCustom,
+    tap,
+    () => open(false),
+    options.onEyedropper,
+  );
   open(options.customOpen === true);
 }
 
@@ -112,7 +131,8 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
  * The custom colour on its own, starting at `initial`: its title (and, with
  * `onBack`, a button back to the common colours), the saturation-by-
  * brightness square, the hue slider, the hex value, and a button showing the
- * colour that hands it to `onUse`.
+ * colour that hands it to `onUse`. With `onEyedropper`, an eyedropper in
+ * the title row picks from the page instead.
  */
 export function renderColorMixer(
   mixer: HTMLElement,
@@ -120,6 +140,7 @@ export function renderColorMixer(
   onUse: (color: string) => void,
   tap: TapBinder = clickTap,
   onBack?: () => void,
+  onEyedropper?: () => void,
 ): void {
   mixer.addClass("goodobsidian-color-mixer");
   noFocus(mixer);
@@ -129,6 +150,7 @@ export function renderColorMixer(
 
   const head = mixer.createDiv({ cls: "goodobsidian-color-mixer-head" });
   head.createDiv({ cls: "goodobsidian-popover-title", text: "Custom colour" });
+  if (onEyedropper) eyedropperButton(head, tap, onEyedropper);
   if (onBack) {
     const back = head.createEl("button", {
       cls: "goodobsidian-color-presets clickable-icon",
@@ -232,6 +254,17 @@ function drag(area: HTMLElement, onValue: (x: number, y: number) => void): void 
   };
   area.addEventListener("pointerup", end);
   area.addEventListener("pointercancel", end);
+}
+
+/** The eyedropper: hands the pick to the page (see the file comment). */
+function eyedropperButton(parent: HTMLElement, tap: TapBinder, run: () => void): HTMLElement {
+  const button = parent.createEl("button", {
+    cls: "goodobsidian-color-eyedropper clickable-icon",
+    attr: { "aria-label": "Pick a colour from the page", title: "Pick a colour from the page" },
+  });
+  setIcon(button, "pipette");
+  tap(button, run);
+  return button;
 }
 
 /** A round swatch; `null` is "none", drawn crossed out. */

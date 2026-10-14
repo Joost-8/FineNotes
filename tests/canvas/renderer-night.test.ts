@@ -229,3 +229,51 @@ describe("the renderer switching theme", () => {
     expect(fills).toContain(NIGHT_PAPER);
   });
 });
+
+describe("the eyedropper's sample", () => {
+  const LAYOUT: DocumentLayout = {
+    boxes: [{ index: 0, id: "a", x: 0, y: 0, width: 400, height: 500 }],
+    width: 400,
+    height: 500,
+    direction: "vertical",
+    fitWidth: 400,
+  };
+
+  function sample(paper: typeof LIGHT_PAPER): { data: Uint8ClampedArray | null; theme: unknown } {
+    const renderer = new Renderer(log.canvas("bd"), log.canvas("dry"), log.canvas("wet"), false);
+    renderer.setLayout(LAYOUT);
+    renderer.setPainter(painters().backdrop);
+    renderer.setImagePainter(painters().images);
+    renderer.paper = paper;
+    log.lines.length = 0;
+    // Device px (110, 196)-(115, 201) at 2 device px a page px: on the black ink at y = 100.
+    const data = renderer.samplePage(
+      page("a"),
+      LAYOUT.boxes[0],
+      { x: 110, y: 196, size: 5 },
+      2,
+      false,
+    );
+    return { data, theme: renderer.paper };
+  }
+
+  it("paints the square on the day's paper even with dark pages, and leaves the view dark", () => {
+    const { data, theme } = sample(DARK_PAPER);
+    expect(theme).toBe(DARK_PAPER);
+    expect(data).toHaveLength(5 * 5 * 4);
+    const lines = log.lines.filter((l) => l.startsWith("el"));
+    const fills = styles(lines, "fillStyle");
+    expect(fills[0]).toBe("#ffffff");
+    expect(styles(lines, "strokeStyle")).toContain(INK);
+    expect(styles(lines, "strokeStyle")).not.toContain(nightColor(INK));
+    expect(log.lines.some((l) => l.endsWith("painter ruled-wide night=false"))).toBe(true);
+    expect(log.lines.some((l) => /el\d+ getImageData 0,0 5x5/.test(l))).toBe(true);
+  });
+
+  it("draws only what is near the square, in device px", () => {
+    sample(LIGHT_PAPER);
+    expect(log.lines.some((l) => l.includes("el1.width = 5"))).toBe(true);
+    // The picture at y 300-390 is far from the square: not drawn.
+    expect(log.lines.some((l) => l.includes("image a-pic"))).toBe(false);
+  });
+});

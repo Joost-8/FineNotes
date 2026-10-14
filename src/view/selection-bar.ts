@@ -280,6 +280,20 @@ export class SelectionActionBar {
         if (latest?.swatches && isEnabled(latest)) latest.swatches.pick(color);
       });
     }
+    if (swatches.eyedropper) {
+      // The eyedropper: the next tap on the page picks the colour.
+      const dropper = this.button(
+        row,
+        "goodobsidian-selection-swatch is-eyedropper",
+        "Pick from the page",
+      );
+      setIcon(dropper.createSpan({ cls: "goodobsidian-selection-swatch-disc" }), "pipette");
+      dropper.disabled = !isEnabled(action);
+      onTap(dropper, () => {
+        const latest = this.actions.find((a) => a.id === action.id);
+        if (latest?.swatches?.eyedropper && isEnabled(latest)) latest.swatches.eyedropper();
+      });
+    }
     if (!swatches.custom) return;
     // "+": a colour of one's own, picked by hue and shade, below the row.
     const plus = this.button(row, "goodobsidian-selection-swatch is-custom", "Custom colour");

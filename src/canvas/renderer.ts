@@ -912,6 +912,56 @@ export class Renderer {
     return tile;
   }
 
+  /**
+   * The eyedropper's sample: a square of `size` device px of a page, its
+   * top-left corner at device px (`x`, `y`) of the page drawn at `level`
+   * device px per page px, painted afresh (paper, backdrop, pictures, ink)
+   * and read back as RGBA. Always on the day's paper, whatever the view
+   * shows: dark pages invert only what is painted, and the eyedropper picks
+   * the note's own colours (`./eyedropper`). `null` where a canvas cannot be
+   * read.
+   */
+  samplePage(
+    page: Page,
+    box: PageBox,
+    square: { x: number; y: number; size: number },
+    level: number,
+    usePressure: boolean,
+  ): Uint8ClampedArray | null {
+    const canvas = createEl("canvas");
+    canvas.width = square.size;
+    canvas.height = square.size;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx || !(level > 0)) return null;
+    ctx.setTransform(level, 0, 0, level, -square.x, -square.y);
+    const region: Bounds = {
+      minX: square.x / level,
+      minY: square.y / level,
+      maxX: (square.x + square.size) / level,
+      maxY: (square.y + square.size) / level,
+    };
+    const theme = this.paper;
+    this.paper = LIGHT_PAPER;
+    try {
+      this.paintPage(ctx, page, box, level, region);
+      const inked: Bounds = {
+        minX: region.minX - INK_PAD,
+        minY: region.minY - INK_PAD,
+        maxX: region.maxX + INK_PAD,
+        maxY: region.maxY + INK_PAD,
+      };
+      this.paintStrokes(ctx, page, inked, usePressure);
+    } finally {
+      this.paper = theme;
+    }
+    try {
+      return ctx.getImageData(0, 0, square.size, square.size).data;
+    } catch {
+      // A picture from elsewhere taints the canvas; there is nothing to read.
+      return null;
+    }
+  }
+
   /** The whole page at thumbnail resolution: the fallback while tiles catch up. */
   private buildPreview(page: Page, box: PageBox, usePressure: boolean): Preview | null {
     const scale = previewScale(box.width, box.height);

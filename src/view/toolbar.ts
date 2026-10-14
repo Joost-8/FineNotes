@@ -416,6 +416,12 @@ export interface ToolbarCallbacks {
   onShapeColorChange?: (color: string) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
+  /**
+   * Pick a colour from the page: the next press on it picks one, and `done`
+   * gets it, or `null` if the pick was cancelled. Without it the colour
+   * pickers offer no eyedropper.
+   */
+  onPickFromPage?: (done: (color: string | null) => void) => void;
   /** The pen row's picked slots changed. Hosts persist them. */
   onPenColors?: (colors: string[]) => void;
   // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
@@ -979,6 +985,7 @@ export class Toolbar {
         this.rememberColor(color);
         pick(color);
       },
+      onEyedropper: this.eyedropper(pick),
     });
     this.keepPopoverInside(anchor);
   }
@@ -991,6 +998,24 @@ export class Toolbar {
   private pickerExtras(current: string): string[] {
     const own = this.palette.filter((color) => !(PALETTE as readonly string[]).includes(color));
     return [...own, current];
+  }
+
+  /**
+   * The colour pickers' eyedropper, where the host can pick from the page:
+   * the popover closes so the page shows, and the colour picked there is
+   * used as a custom one would be (and remembered as recent).
+   */
+  private eyedropper(use: (color: string) => void): (() => void) | undefined {
+    const pickFromPage = this.callbacks.onPickFromPage;
+    if (!pickFromPage) return undefined;
+    return () => {
+      this.closePopover();
+      pickFromPage((color) => {
+        if (!color) return;
+        this.rememberColor(color);
+        use(color);
+      });
+    };
   }
 
   /** Put a custom colour at the front of the recent list, and have the host save it. */
@@ -1616,6 +1641,7 @@ export class Toolbar {
         this.rememberColor(color);
         this.pickText({ color });
       },
+      onEyedropper: this.eyedropper((color) => this.pickText({ color })),
     });
   }
 
@@ -1707,6 +1733,7 @@ export class Toolbar {
         this.rememberColor(fill);
         this.pickText({ fill });
       },
+      onEyedropper: this.eyedropper((fill) => this.pickText({ fill })),
     });
   }
 
