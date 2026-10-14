@@ -70,14 +70,76 @@ describe("saved pens on the toolbar (FineNotes#24, #25)", () => {
       size: 5,
       pressureEnabled: false,
     });
+    // The type first (a highlighter never used starts yellow), then the saved
+    // pen's own colour and width over it.
     expect(calls).toEqual([
       "color(#fab005)",
-      "size(5)",
       "tool(highlighter)",
       "pressure(false)",
       "type(highlighter)",
       "build",
+      "color(#fab005)",
+      "size(5)",
+      "build",
     ]);
+    expect((state.penInks as Record<string, unknown>).highlighter).toEqual({ color: "#fab005" });
+  });
+
+  it("gives each pen type its own colour and row, and brings them back", async () => {
+    const { bar, state } = await toolbar("pen");
+    const { PEN_TYPES } = await import("../../src/view/toolbar");
+    const spec = (id: string) => PEN_TYPES.find((type) => type.id === id)!;
+    const choose = (id: string) =>
+      (bar as unknown as { choosePenType: (s: unknown) => void }).choosePenType(spec(id));
+    state.penType = "fountain";
+    state.color = "#1971c2";
+    state.penColors = ["#1971c2", "#e03131"];
+    choose("brush");
+    // Never used, the brush starts with the fountain pen's ink.
+    expect(state.color).toBe("#1971c2");
+    state.color = "#9c36b5";
+    state.penColors = ["#9c36b5"];
+    choose("fountain");
+    expect(state).toMatchObject({ color: "#1971c2", penColors: ["#1971c2", "#e03131"] });
+    choose("brush");
+    expect(state).toMatchObject({ color: "#9c36b5", penColors: ["#9c36b5"] });
+    // The highlighter starts yellow and keeps its own from then on.
+    choose("highlighter");
+    expect(state.color).toBe("#fab005");
+  });
+
+  it("repaints the open pen menu's icons in each pen's colour", async () => {
+    const { bar, state } = await toolbar("pen");
+    const replaced: string[] = [];
+    const row = (id: string) => ({
+      isConnected: true,
+      querySelector: () => ({ replaceWith: () => replaced.push(id) }),
+      toggleClass: () => undefined,
+    });
+    Object.assign(bar, {
+      popoverKind: "pens",
+      penMenuRows: new Map([
+        ["fountain", row("fountain")],
+        ["highlighter", row("highlighter")],
+      ]),
+      toolButtons: new Map(),
+      colorSwatches: new Map(),
+      widthButtons: new Map(),
+      eraserSizeButtons: new Map(),
+      penTypeButtons: new Map(),
+      shapeButtons: new Map(),
+    });
+    state.penType = "fountain";
+    // Just enough of a document to build the icons.
+    const element = (): unknown => ({ setAttribute: () => undefined, append: () => undefined });
+    vi.stubGlobal("activeDocument", {
+      createElementNS: element,
+      body: { hasClass: () => false },
+    });
+    const { Toolbar } = await import("../../src/view/toolbar");
+    Toolbar.prototype.syncActive.call(bar);
+    vi.unstubAllGlobals();
+    expect(replaced).toEqual(["fountain", "highlighter"]);
   });
 
   it("keeps the pressure for a pressure pen, and refuses the highlighter in a practice file", async () => {

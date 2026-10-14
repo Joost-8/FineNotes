@@ -88,6 +88,7 @@ import {
 import type { ListKind } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
+import { type PenInks, penInkFor, switchPenInk, withPenInk } from "../model/pen-inks";
 import {
   PEN_ICON_BOX,
   SWOOSH_HEIGHT,
@@ -334,6 +335,12 @@ export interface ToolbarState {
   recentColors?: string[];
   /** The pen row's picked slots, after the reserved ones. `undefined`: the built-in palette. */
   penColors?: string[];
+  /**
+   * Each pen type's own colour and row, kept while another pen type is in
+   * hand (`model/pen-inks.ts`). The type in hand's live ones are `color` and
+   * `penColors`.
+   */
+  penInks?: PenInks;
   /** The Shape tool's mode. `undefined` counts as "auto". */
   shapeMode?: ShapeMode;
   /** The Table tool's size. `undefined` counts as the last one picked. */
@@ -437,6 +444,8 @@ export interface ToolbarCallbacks {
   onPickFromPage?: (done: (color: string | null) => void) => void;
   /** The pen row's picked slots changed. Hosts persist them. */
   onPenColors?: (colors: string[]) => void;
+  /** A pen type's own colour or row changed (`ToolbarState.penInks`). Hosts persist them. */
+  onPenInks?: (inks: PenInks) => void;
   // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
   /** The saved pens, as the settings have them now. */
   savedPens?: () => readonly SavedPen[];
@@ -536,6 +545,8 @@ export class Toolbar {
   private palette: string[];
   /** The pen or highlighter last in use, which "select again" goes back to. */
   private drawingTool: ActiveTool = "pen";
+  /** The open pen menu's rows, by pen type, so a colour change repaints their icons. */
+  private readonly penMenuRows = new Map<PenType, HTMLElement>();
   /** Keeps the width popover's mm field above the iPad keyboard while it is typed in. */
   private popoverKeyboard: DialogKeyboard | null = null;
 
@@ -970,8 +981,19 @@ export class Toolbar {
     }
     this.state.color = color;
     this.callbacks.onColorChange(color);
+    this.keepPenInk();
     this.buildOptions();
     this.syncActive();
+  }
+
+  /** Remember the ink in hand as the active pen type's own. */
+  private keepPenInk(): void {
+    const { color, penColors } = this.state;
+    this.state.penInks = withPenInk(this.state.penInks ?? {}, this.activePenType().id, {
+      color,
+      ...(penColors ? { colors: penColors } : {}),
+    });
+    this.callbacks.onPenInks?.(this.state.penInks);
   }
 
   /**
@@ -1147,15 +1169,20 @@ export class Toolbar {
   applySavedPen(pen: SavedPen): void {
     const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
     if (this.practice && spec.tool === "highlighter") return;
-    this.state.color = pen.color;
-    this.state.size = pen.size;
-    this.callbacks.onColorChange(pen.color);
-    this.callbacks.onSizeChange(pen.size);
     if (this.state.tool !== spec.tool) {
       this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
       this.leaveToolFor(spec.tool);
     }
+    // The type first, so its own colour comes back, then the saved pen's
+    // colour and width over it: that colour becomes the type's own.
     this.choosePenType(spec);
+    this.state.color = pen.color;
+    this.state.size = pen.size;
+    this.callbacks.onColorChange(pen.color);
+    this.callbacks.onSizeChange(pen.size);
+    this.keepPenInk();
+    this.buildOptions();
+    this.syncActive();
   }
 
   private buildEraserOptions(): void {
@@ -1775,6 +1802,26 @@ export class Toolbar {
   }
 
   private choosePenType(spec: PenTypeSpec): void {
+    // Each pen type keeps its own colour and row (GoodNotes): the one being
+    // left keeps what it wrote with, the one picked brings back its own.
+    const from = this.activePenType().id;
+    if (from !== spec.id) {
+      const { color, penColors } = this.state;
+      const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, {
+        color,
+        ...(penColors ? { colors: penColors } : {}),
+      });
+      this.state.penInks = step.inks;
+      this.callbacks.onPenInks?.(step.inks);
+      if (step.ink.colors) {
+        this.state.penColors = step.ink.colors;
+        this.callbacks.onPenColors?.(step.ink.colors);
+      }
+      if (step.ink.color !== color) {
+        this.state.color = step.ink.color;
+        this.callbacks.onColorChange(step.ink.color);
+      }
+    }
     this.state.penType = spec.id;
     if (this.state.tool !== spec.tool) {
       this.state.tool = spec.tool;
@@ -2111,12 +2158,24 @@ export class Toolbar {
     this.popoverRender();
   }
 
+  /** The colour pen type `spec` writes with: the live one in hand, else its own. */
+  private inkColorOf(spec: PenTypeSpec): string {
+    if (spec.id === this.activePenType().id) return this.state.color;
+    const { color, penColors } = this.state;
+    return penInkFor(this.state.penInks ?? {}, spec.id, {
+      color,
+      ...(penColors ? { colors: penColors } : {}),
+    }).color;
+  }
+
   private renderPenTypes(body: HTMLElement, openGestures: () => void): void {
+    this.penMenuRows.clear();
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
     for (const spec of PEN_MENU_TYPES) {
       if (this.practice && spec.tool === "highlighter") continue;
       const button = body.createEl("button", { cls: "goodobsidian-wide goodobsidian-pen-row" });
-      button.append(penGlyph(spec, this.state.color));
+      button.append(penGlyph(spec, this.inkColorOf(spec)));
+      this.penMenuRows.set(spec.id, button);
       button.createSpan({ text: spec.label });
       button.toggleClass("is-active", spec.id === this.activePenType().id);
       button.addEventListener("click", () => {
@@ -2457,6 +2516,16 @@ export class Toolbar {
     markChosen(this.eraserSizeButtons, eraserSizeFor(state));
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
+    // The pen menu, if it is open, shows each pen in its colour now.
+    if (this.popoverKind === "pens") {
+      for (const [id, row] of this.penMenuRows) {
+        if (!row.isConnected) continue;
+        const spec = PEN_TYPES.find((type) => type.id === id);
+        const glyph = row.querySelector("svg");
+        if (spec && glyph) glyph.replaceWith(penGlyph(spec, this.inkColorOf(spec)));
+        row.toggleClass("is-active", id === this.activePenType().id);
+      }
+    }
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */

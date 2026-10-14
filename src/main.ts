@@ -100,6 +100,7 @@ import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
+import { type PenInks } from "./model/pen-inks";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
 import { writeSystemText } from "./view/system-clipboard";
 
@@ -805,6 +806,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the pen row's picked colours, for every notebook. */
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
+    void this.saveSettings();
+  }
+
+  /** Remember each pen type's own colour and row, for every notebook. */
+  savePenInks(inks: PenInks): void {
+    this.settings.penInks = { ...inks };
     void this.saveSettings();
   }
 

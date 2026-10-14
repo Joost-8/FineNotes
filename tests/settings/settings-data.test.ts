@@ -96,6 +96,7 @@ const FRESH_INSTALL = {
   ],
   barrelButton: "erase",
   penCursor: true,
+  straightHighlighter: true,
   foldedSettingsSections: ["pens", "shortcuts"],
 };
 
@@ -159,6 +160,7 @@ const USED_VAULT = {
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   penCursor: false,
+  straightHighlighter: false,
   foldedSettingsSections: ["writing", "ai"],
   experimentalFutureFlag: 7,
 };

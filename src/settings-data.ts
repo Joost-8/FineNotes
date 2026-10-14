@@ -137,6 +137,11 @@ export interface GoodObsidianSettings {
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
   penColors?: string[];
   /**
+   * Each pen type's own colour and row (`model/pen-inks.ts`), so switching
+   * pens brings each one's colours back. Checked where it is read.
+   */
+  penInks?: Record<string, unknown>;
+  /**
    * Advanced: the pressure pens (Fountain, Brush) widen with pen pressure.
    * Off, every pen draws one width. It replaced `pressureEnabled`
    * (2026-09-30), which was on by default and is dropped on load.
@@ -175,6 +180,11 @@ export interface GoodObsidianSettings {
   barrelButton: BarrelAction;
   /** A small crosshair over the page for the pens, on a computer. */
   penCursor: boolean;
+  /**
+   * Highlighter strokes are drawn as straight runs that bend only where the
+   * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
+   */
+  straightHighlighter: boolean;
 
   /**
    * The settings tab's sections shown folded, by id. Checked where read
@@ -240,6 +250,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   savedPens: defaultSavedPens(),
   barrelButton: "erase",
   penCursor: true,
+  straightHighlighter: true,
 
   foldedSettingsSections: ["pens", "shortcuts"],
 };

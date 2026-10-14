@@ -21,6 +21,7 @@ export default defineConfig({
         "src/ink/stroke-eraser.ts",
         "src/ink/scribble.ts",
         "src/ink/pen-gestures.ts",
+        "src/ink/straighten.ts",
         "src/canvas/backdrop.ts",
         "src/canvas/night.ts",
         "src/canvas/cover-patterns.ts",

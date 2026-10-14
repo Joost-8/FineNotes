@@ -233,6 +233,9 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
+  straightHighlighter:
+    "Highlighter strokes are drawn as straight lines that only bend where you turned, so " +
+    "the band stays tidy however your hand wobbles.",
   penCursor:
     "On a computer, show a small crosshair instead of the arrow over the page while a pen, " +
     "the highlighter or the laser is in hand.",
@@ -600,6 +603,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       drawnRow("Save the pen in hand", this.lastPenDesc(pens), (s) => this.drawSavePen(s, pens), [
         "favorite pen",
         "preset",
+      ]),
+      toggle("straightHighlighter", "Straighten highlighter strokes", DESC.straightHighlighter, [
+        "highlighter",
+        "straight",
+        "line",
       ]),
       dropdown("barrelButton", "Stylus side button", DESC.barrel, BARREL_NAMES, [
         "barrel button",

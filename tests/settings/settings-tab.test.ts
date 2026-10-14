@@ -244,6 +244,7 @@ describe("the rows", () => {
       [PENS, "Saved pens", "render"],
       ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [PENS, `Saved pen ${n}`, "render"]),
       [PENS, "Save the pen in hand", "render"],
+      [PENS, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Crosshair cursor", "toggle:penCursor"],
       [PENS, "Keyboard and stylus shortcuts", "render"],
@@ -336,6 +337,7 @@ describe("the rows", () => {
         ]),
       ),
       "Save the pen in hand": ["favorite pen", "preset"],
+      "Straighten highlighter strokes": ["highlighter", "straight", "line"],
       "Stylus side button": ["barrel button", "pen tablet", "wacom", "stylus"],
       "Crosshair cursor": ["cursor", "pointer"],
       "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
@@ -410,6 +412,7 @@ const PEN_ROWS = [
   "Saved pens",
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `Saved pen ${n}`),
   "Save the pen in hand",
+  "Straighten highlighter strokes",
   "Stylus side button",
   "Crosshair cursor",
   "Keyboard and stylus shortcuts",
@@ -1177,7 +1180,7 @@ describe("folding sections", () => {
     });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(14);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

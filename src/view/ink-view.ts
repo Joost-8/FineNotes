@@ -174,6 +174,7 @@ import {
   type SelectionAction,
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
+import { penInksOf } from "../model/pen-inks";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS } from "./motion";
 import {
@@ -213,6 +214,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
   const last = savedPenOf(s.lastPen);
   // Without a last pen, a notebook opens with the Fountain pen, a pressure pen.
   const spec = PEN_TYPES.find((type) => type.id === last?.type) ?? PEN_TYPES[0];
+  const inks = penInksOf(s.penInks);
   return {
     tool: openingTool(s.defaultTool, last),
     color: last?.color ?? s.defaultColor,
@@ -232,7 +234,9 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     recentColors: recentColorsOf(s.recentColors),
-    penColors: Array.isArray(s.penColors) ? [...s.penColors] : undefined,
+    // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
+    penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
+    penInks: inks,
   };
 }
 
@@ -1350,6 +1354,7 @@ export class InkView extends TextFileView {
           else done(null);
         },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
+        onPenInks: (inks) => this.plugin.savePenInks(inks),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
@@ -1440,6 +1445,7 @@ export class InkView extends TextFileView {
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
+        straightenHighlighter: () => this.settings.straightHighlighter !== false,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
