@@ -43,6 +43,15 @@ describe("pen icons", () => {
     }
     expect(penIconParts("unknown")).toEqual(penIconParts("fountain"));
   });
+
+  it("leans every pen the same way, and keeps filled ink tips unoutlined", () => {
+    for (const pen of ["fountain", "ball", "brush", "highlighter"]) {
+      for (const part of penIconParts(pen)) {
+        expect(part.attrs.transform, pen).toBe("rotate(45 12 12)");
+        if (part.ink && part.fill) expect(part.attrs.stroke, pen).toBe("none");
+      }
+    }
+  });
 });
 
 describe("width glyphs", () => {

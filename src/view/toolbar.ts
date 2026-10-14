@@ -2503,7 +2503,8 @@ function penGlyph(spec: PenTypeSpec, color: string): SVGElement {
     for (const [key, value] of Object.entries(part.attrs)) el.setAttribute(key, value);
     const paint = part.ink ? color : "currentColor";
     if (part.fill) el.setAttribute("fill", paint);
-    if (part.fill || part.ink) el.setAttribute("stroke", paint);
+    if ((part.fill || part.ink) && part.attrs.stroke === undefined)
+      el.setAttribute("stroke", paint);
     svg.append(el);
   }
   return svg;

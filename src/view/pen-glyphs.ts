@@ -11,7 +11,10 @@
 /** The pen types a glyph exists for (`PenTypeSpec.id`). */
 export type GlyphPen = "fountain" | "ball" | "brush" | "highlighter";
 
-/** One SVG element of a glyph. `ink`: painted in the pen's ink colour, not the icon's. */
+/**
+ * One SVG element of a glyph. `ink`: painted in the pen's ink colour, not the
+ * icon's. An `attrs.stroke` of "none" keeps a filled part unoutlined.
+ */
 export interface GlyphPart {
   tag: "path" | "circle";
   attrs: Record<string, string>;
@@ -23,31 +26,71 @@ export interface GlyphPart {
 /** The pen icons' view box: 24 × 24, outlined at 1.6 like the rest of the bar. */
 export const PEN_ICON_BOX = 24;
 
+/**
+ * The pens lean 45° like a pen in the hand, tip at the lower left. Each is
+ * drawn upright (tip down) and turned about the box's centre.
+ */
+const TILT = "rotate(45 12 12)";
+
+const path = (d: string, extra: Partial<GlyphPart> = {}): GlyphPart => ({
+  tag: "path",
+  attrs: { d, transform: TILT },
+  ...extra,
+});
+
+/** A tip filled with ink, unoutlined so it keeps its drawn size. */
+const inkFill = (d: string): GlyphPart => ({
+  tag: "path",
+  attrs: { d, transform: TILT, stroke: "none" },
+  ink: true,
+  fill: true,
+});
+
 /** Each pen type's outline icon, its tip in ink. Unknown types get the fountain pen's. */
 export function penIconParts(pen: string): GlyphPart[] {
   switch (pen) {
     case "ball":
       return [
-        { tag: "path", attrs: { d: "M9 3h6v9l-3 7-3-7z" } },
-        { tag: "path", attrs: { d: "M9 12h6" } },
-        { tag: "circle", attrs: { cx: "12", cy: "21", r: "1.3" }, ink: true, fill: true },
+        path("M9.8 1.5h4.4v12H9.8z"),
+        // The clip.
+        path("M14.2 3h1.3v6.5"),
+        path("M9.8 13.5h4.4l-1.4 6h-1.6z"),
+        {
+          tag: "circle",
+          attrs: { cx: "12", cy: "21.3", r: "1.1", transform: TILT, stroke: "none" },
+          ink: true,
+          fill: true,
+        },
       ];
     case "brush":
       return [
-        { tag: "path", attrs: { d: "M9 3h6v7H9z" } },
-        { tag: "path", attrs: { d: "M9 10c0 5 2 8 3 11 1-3 3-6 3-11z" }, ink: true, fill: true },
+        path("M10.6 1.5h2.8l.4 9h-3.6z"),
+        // The ferrule, then the bristles.
+        path("M9.6 10.5h4.8v3H9.6z"),
+        inkFill("M9.6 13.5h4.8c0 3.6-1.4 6.2-2.4 9-1-2.8-2.4-5.4-2.4-9z"),
       ];
     case "highlighter":
       return [
-        { tag: "path", attrs: { d: "M7 3h10v9H7z" } },
-        { tag: "path", attrs: { d: "M7 12h10l-2 6H9z" } },
-        { tag: "path", attrs: { d: "M8 21h8", "stroke-width": "2.4" }, ink: true },
+        path("M8.5 1.5h7v10h-7z"),
+        path("M9.2 11.5h5.6l-.6 3H9.8z"),
+        // The chisel tip.
+        inkFill("M9.8 14.5h4.4v3.2l-4.4 3.3z"),
       ];
     default:
       return [
-        { tag: "path", attrs: { d: "M12 3c3 4 5 7 5 10l-5 8-5-8c0-3 2-6 5-10z" } },
-        { tag: "path", attrs: { d: "M12 14v7" }, ink: true },
-        { tag: "circle", attrs: { cx: "12", cy: "12", r: "1.2" } },
+        path("M10.2 1.5h3.6v7.5h-3.6z"),
+        // The grip, then the nib with its breather hole and slit in ink.
+        path("M9.6 9h4.8v2.4H9.6z"),
+        path(
+          "M12 22.5c-1.9-3.8-3-6.6-3-8.9 0-.9.3-1.6.8-2.2h4.4c.5.6.8 1.3.8 2.2 0 2.3-1.1 5.1-3 8.9z",
+        ),
+        {
+          tag: "circle",
+          attrs: { cx: "12", cy: "14.8", r: "0.9", transform: TILT, stroke: "none" },
+          ink: true,
+          fill: true,
+        },
+        path("M12 16.3v6", { ink: true }),
       ];
   }
 }
