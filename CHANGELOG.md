@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Resize a lasso selection by its corners.** Drag a square handle on the
+  selection's frame to make everything in it bigger or smaller, with the
+  aspect kept and the opposite corner holding still. Handwriting gets
+  thicker or thinner with it, pictures keep their turn, and text boxes
+  scale their text. One undo puts it all back
+  ([#23](https://github.com/Joost-8/FineNotes/discussions/23)).
+
 ## [2.1.0] - 2026-10-13
 
 ### Added

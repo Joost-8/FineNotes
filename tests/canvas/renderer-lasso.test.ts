@@ -158,6 +158,47 @@ describe("renderSelectionDraft", () => {
   });
 });
 
+describe("renderSelectionDraft while resizing", () => {
+  it("scales about the anchor after the move, before anything is drawn", () => {
+    const { renderer, wetLog } = setup();
+    renderer.renderSelectionDraft(0, [stroke("s1", 0)], [], 0, 0, true, { x: 40, y: 60, k: 2 });
+    const names = wetLog.map(([name]) => name);
+    const scale = names.indexOf("scale");
+    expect(wetLog[scale]).toEqual(["scale", 2, 2]);
+    expect(wetLog[scale - 1]).toEqual(["translate", 40, 60]);
+    expect(wetLog[scale + 1]).toEqual(["translate", -40, -60]);
+    expect(scale).toBeLessThan(names.indexOf("stroke"));
+  });
+
+  it("ignores a scale that is not a finite positive number", () => {
+    const { renderer, wetLog } = setup();
+    renderer.renderSelectionDraft(0, [stroke("s1", 0)], [], 0, 0, true, { x: 0, y: 0, k: 0 });
+    renderer.renderSelectionDraft(0, [stroke("s1", 0)], [], 0, 0, true, {
+      x: 0,
+      y: 0,
+      k: Number.NaN,
+    });
+    expect(wetLog.some(([name]) => name === "scale")).toBe(false);
+  });
+
+  it("traces a stroke again when only its width changed", () => {
+    const { renderer } = setup();
+    const s = stroke("s1", 0);
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    // A closed loop scaled about its own seam keeps both end points: only the width says so.
+    const paths = new Set<unknown>();
+    const capture = (): void => {
+      const draft = renderer as unknown as { paths: WeakMap<Stroke, { paths: unknown[] }> };
+      paths.add(draft.paths.get(s)?.paths[0]);
+    };
+    capture();
+    s.size = 4;
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    capture();
+    expect(paths.size).toBe(2);
+  });
+});
+
 describe("renderImageCropDraft", () => {
   it("draws the whole picture, then veils what the crop leaves out", () => {
     const { renderer, wet, wetLog } = setup();

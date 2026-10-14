@@ -8,10 +8,13 @@ import {
   AddElements,
   RecolorStrokes,
   RemoveElements,
+  ScaleElements,
   TranslateElements,
   copyElements,
   elementsOnPage,
   isEmptySelection,
+  scalePoints,
+  textScaleRange,
   translatePoints,
 } from "../../src/model/selection-commands";
 import {
@@ -23,6 +26,7 @@ import {
   emptyDocument,
 } from "../../src/model/document";
 import { History } from "../../src/model/history";
+import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 
 function stroke(id: string, x = 0.1, extra: Partial<Stroke> = {}): Stroke {
   return {
@@ -276,5 +280,124 @@ describe("RecolorStrokes", () => {
     expect(loose.color).toBe("#000000");
     new RecolorStrokes("nope", s, "#ff0000").apply(doc);
     expect(s[0].color).toBe("#000000");
+  });
+});
+
+describe("ScaleElements", () => {
+  it("scales points about the anchor, leaving pressure and a ragged tail alone", () => {
+    const pts = [10, 20, 0.5, 30, 40, 0.7, 99, 98];
+    const out = scalePoints(pts, 10, 20, 2);
+    expect(out).toEqual([10, 20, 0.5, 50, 60, 0.7, 99, 98]);
+    expect(pts).toEqual([10, 20, 0.5, 30, 40, 0.7, 99, 98]);
+    expect(out.length).toBe(pts.length);
+  });
+
+  it("scales strokes, widths, pictures and text boxes about the anchor as one step", () => {
+    const { doc, s, i, t } = fixture();
+    const history = new History();
+    history.push(doc, new ScaleElements("p1", { strokes: s, images: i, textBoxes: t }, 0, 0, 2));
+    // Points and width double; pressure stays.
+    expect(s[0].pts).toEqual([0.2, 0.4, 0.5, 20.8, 41.4, 0.6]);
+    expect(s[0].size).toBe(4);
+    expect(s[1].shape).toBe("rect");
+    expect(s[1].t0).toBe(12);
+    // A picture keeps its rotation; its box scales.
+    expect(i[1]).toMatchObject({ x: 20.2, y: 40.4, w: 200, h: 100, rotation: 0.3 });
+    // A text box's frame and font scale together; an auto height stays auto.
+    expect(t[0]).toMatchObject({ x: 60.6, y: 80.8, w: 400, fontSize: 36 });
+    expect("h" in t[0]).toBe(false);
+    expect(t[1].h).toBe(120);
+    // Elements on another page are untouched.
+    expect(doc.pages[1].strokes[0].size).toBe(2);
+    expect(history.undo(doc)).not.toBeNull();
+    expect(s[0].size).toBe(2);
+  });
+
+  it("keeps the anchor where it is and moves everything else away from it", () => {
+    const { doc, s } = fixture();
+    const before = s[0].pts.slice();
+    new ScaleElements("p1", { strokes: [s[0]], images: [], textBoxes: [] }, 0.1, 0.2, 3).apply(doc);
+    expect(s[0].pts[0]).toBeCloseTo(before[0]);
+    expect(s[0].pts[1]).toBeCloseTo(before[1]);
+    expect(s[0].pts[3]).toBeCloseTo(0.1 + (before[3] - 0.1) * 3);
+  });
+
+  it("undoes JSON-identically, key order included, and redoes to the same place", () => {
+    const { doc, s, i, t } = fixture();
+    const before = snap(doc);
+    const keys = Object.keys(t[1]);
+    const history = new History();
+    history.push(
+      doc,
+      new ScaleElements("p1", { strokes: s, images: i, textBoxes: t }, 7.3, 9.1, 0.37),
+    );
+    const scaled = snap(doc);
+    history.undo(doc);
+    expect(snap(doc)).toBe(before);
+    expect(Object.keys(t[1])).toEqual(keys);
+    history.redo(doc);
+    expect(snap(doc)).toBe(scaled);
+    history.undo(doc);
+    expect(snap(doc)).toBe(before);
+  });
+
+  it("changes nothing for a scale or anchor that is not a finite positive number", () => {
+    for (const [ax, ay, k] of [
+      [0, 0, 0],
+      [0, 0, -1],
+      [0, 0, Number.NaN],
+      [0, 0, Infinity],
+      [Number.NaN, 0, 2],
+      [0, Infinity, 2],
+    ]) {
+      const { doc, s, i, t } = fixture();
+      const before = snap(doc);
+      const cmd = new ScaleElements("p1", { strokes: s, images: i, textBoxes: t }, ax, ay, k);
+      cmd.apply(doc);
+      expect(snap(doc)).toBe(before);
+      cmd.invert(doc);
+      expect(snap(doc)).toBe(before);
+    }
+  });
+
+  it("never writes NaN, even on a ragged stroke", () => {
+    const { doc } = fixture();
+    const ragged = stroke("r", 1, { pts: [1, 2, 0.5, 3, 4] });
+    doc.pages[0].strokes.push(ragged);
+    new ScaleElements("p1", { strokes: [ragged], images: [], textBoxes: [] }, 0, 0, 1.5).apply(doc);
+    expect(ragged.pts).toEqual([1.5, 3, 0.5, 3, 4]);
+    expect(ragged.pts.some((v) => Number.isNaN(v))).toBe(false);
+  });
+
+  it("leaves alone elements no longer on the page, and a missing page", () => {
+    const { doc, s } = fixture();
+    const loose = stroke("loose");
+    new ScaleElements("p1", { strokes: [loose], images: [], textBoxes: [] }, 0, 0, 2).apply(doc);
+    expect(loose.size).toBe(2);
+    const cmd = new ScaleElements("nope", { strokes: s, images: [], textBoxes: [] }, 0, 0, 2);
+    cmd.apply(doc);
+    expect(s[0].size).toBe(2);
+    cmd.invert(doc);
+    expect(s[0].size).toBe(2);
+  });
+
+  it("survives a save and a load as it was scaled", () => {
+    const { doc, s, t } = fixture();
+    new ScaleElements("p1", { strokes: s, images: [], textBoxes: t }, 0, 0, 0.7).apply(doc);
+    const back = decodeDocument(encodeDocument(doc)).pages[0];
+    expect(back.textBoxes[0].fontSize).toBeCloseTo(12.6);
+    expect(back.strokes[0].size).toBeCloseTo(1.4);
+  });
+
+  it("keeps text inside the sizes the loader and the style menu allow", () => {
+    expect(textScaleRange([])).toEqual({ min: 0, max: Infinity });
+    const range = textScaleRange([textBox("a", { fontSize: 24 }), textBox("b", { fontSize: 100 })]);
+    expect(range.min).toBe(0.5);
+    expect(range.max).toBe(4);
+    // A box already at the floor cannot shrink, but may grow.
+    expect(textScaleRange([textBox("c", { fontSize: 12 })]).min).toBe(1);
+    // One already outside the range may stay as it is.
+    expect(textScaleRange([textBox("d", { fontSize: 8 })]).min).toBe(1);
+    expect(textScaleRange([textBox("e", { fontSize: 500 })]).max).toBe(1);
   });
 });
