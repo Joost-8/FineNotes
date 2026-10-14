@@ -19,6 +19,7 @@ import {
   TEXT_FONTS,
   TEXT_FONT_STACKS,
   type TextAlign,
+  type TextBorder,
   type TextFont,
 } from "./document";
 
@@ -32,6 +33,12 @@ export const MAX_LINE_HEIGHT = 3;
  * this on load, so offering a smaller size would change on the next open.
  */
 export const MIN_TEXT_SIZE = 12;
+
+/**
+ * Narrowest a box that does not fit its text keeps: `serialize.ts` widens
+ * anything narrower to this on load, so an importer must not write one.
+ */
+export const MIN_TEXT_BOX_WIDTH = 80;
 export const MAX_TEXT_SIZE = 400;
 
 /** The size dropdown. 22 is the size every box was created at before 0.5. */
@@ -55,6 +62,25 @@ export const TEXT_FILLS: readonly string[] = [
   "#e8defc",
   "#ececec",
 ];
+
+/**
+ * Border widths the menu offers, page px. Each is inside the loader's range
+ * ({@link MAX_BORDER_WIDTH}), so a box reopens with the width it was given.
+ */
+export const TEXT_BORDER_WIDTHS: ReadonlyArray<{ label: string; width: number }> = [
+  { label: "Thin", width: 1 },
+  { label: "Medium", width: 2 },
+  { label: "Thick", width: 4 },
+];
+
+/** Widest border a box keeps, page px; a wider stored one is dropped as corrupt. */
+export const MAX_BORDER_WIDTH = 50;
+
+/** The radius the menu's "Rounded corners" sets, page px. */
+export const TEXT_CORNER_RADIUS = 12;
+
+/** Largest corner radius a box keeps, page px; a larger stored one is dropped as corrupt. */
+export const MAX_CORNER_RADIUS = 500;
 
 /** Menu names for the typefaces, shown in their own face. */
 export const TEXT_FONT_LABELS: Readonly<Record<TextFont, string>> = {
@@ -85,6 +111,8 @@ export interface TextStyle {
   align?: TextAlign;
   lineHeight?: number;
   fill?: string;
+  border?: TextBorder;
+  radius?: number;
 }
 
 /**
@@ -103,6 +131,15 @@ export interface TextStylePatch {
   align?: TextAlign;
   lineHeight?: number;
   fill?: string | null;
+  /**
+   * The border's width; `null` removes the border. Given to a box with no
+   * border, the border takes `borderColor`, else the text colour.
+   */
+  borderWidth?: number | null;
+  /** The border's colour. Given to a box with no border, it adds a thin one. */
+  borderColor?: string;
+  /** Corner radius, page px; `null` squares the corners. */
+  radius?: number | null;
 }
 
 /** The style a Text tool starts with, and "Reset to default" returns to. */
@@ -131,6 +168,31 @@ function isLineHeight(value: unknown): value is number {
     value >= MIN_LINE_HEIGHT &&
     value <= MAX_LINE_HEIGHT
   );
+}
+
+/** A border width the loader keeps: finite, above 0, at most {@link MAX_BORDER_WIDTH}. */
+export function isBorderWidth(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_BORDER_WIDTH
+  );
+}
+
+/** A corner radius the loader keeps: finite, above 0, at most {@link MAX_CORNER_RADIUS}. */
+export function isCornerRadius(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_CORNER_RADIUS
+  );
+}
+
+/**
+ * A stored border, or `undefined` when it is not one: a width out of range or
+ * a colour that is not hex drops the whole border rather than inventing half
+ * of it.
+ */
+export function normalizeBorder(raw: unknown): TextBorder | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { width, color } = raw as Record<string, unknown>;
+  return isBorderWidth(width) && isHexColor(color) ? { width, color } : undefined;
 }
 
 /** A flag is stored as `true` or not at all. */
@@ -168,6 +230,24 @@ export function applyTextStyle(target: TextStyle, patch: TextStylePatch): void {
   }
   if (patch.fill === null) delete target.fill;
   else if (isHexColor(patch.fill)) target.fill = patch.fill;
+  applyBorder(target, patch);
+  if (patch.radius === null) delete target.radius;
+  else if (isCornerRadius(patch.radius)) target.radius = patch.radius;
+}
+
+function applyBorder(target: TextStyle, patch: TextStylePatch): void {
+  if (patch.borderWidth === null) {
+    delete target.border;
+    return;
+  }
+  const width = isBorderWidth(patch.borderWidth) ? patch.borderWidth : undefined;
+  const color = isHexColor(patch.borderColor) ? patch.borderColor : undefined;
+  if (width === undefined && color === undefined) return;
+  // A new object every time: an undo snapshot may hold the old one.
+  target.border = {
+    width: width ?? target.border?.width ?? TEXT_BORDER_WIDTHS[0].width,
+    color: color ?? target.border?.color ?? target.color,
+  };
 }
 
 /** Just the style of a box (or of any style), absent keys left absent. */
@@ -181,6 +261,8 @@ export function textStyleOf(source: TextStyle): TextStyle {
   if (source.align !== undefined) style.align = source.align;
   if (source.lineHeight !== undefined) style.lineHeight = source.lineHeight;
   if (source.fill !== undefined) style.fill = source.fill;
+  if (source.border !== undefined) style.border = { ...source.border };
+  if (source.radius !== undefined) style.radius = source.radius;
   return style;
 }
 
@@ -205,6 +287,8 @@ export function textStyleKey(style: TextStyle): string {
     s.align ?? "left",
     s.lineHeight ?? DEFAULT_LINE_HEIGHT,
     s.fill ?? "",
+    s.border ? `${s.border.width}/${s.border.color}` : "",
+    s.radius ?? 0,
   ].join("|");
 }
 
@@ -226,6 +310,8 @@ export function resetTextStylePatch(): TextStylePatch {
     align: "left",
     lineHeight: DEFAULT_LINE_HEIGHT,
     fill: null,
+    borderWidth: null,
+    radius: null,
   };
 }
 
@@ -248,7 +334,10 @@ export function sanitizeTextStyle(raw: unknown): TextStyle {
     align: typeof r.align === "string" ? (r.align as TextAlign) : undefined,
     lineHeight: typeof r.lineHeight === "number" ? r.lineHeight : undefined,
     fill: typeof r.fill === "string" ? r.fill : undefined,
+    radius: typeof r.radius === "number" ? r.radius : undefined,
   });
+  const border = normalizeBorder(r.border);
+  if (border) style.border = border;
   return style;
 }
 

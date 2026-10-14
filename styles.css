@@ -3449,6 +3449,11 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 4px;
 }
 
+/* The border popover's "Rounded corners" switch, between widths and colour. */
+.goodobsidian-text-popover .goodobsidian-text-switches {
+  margin: 8px 0 4px;
+}
+
 .goodobsidian-text-popover .goodobsidian-text-option.is-bold {
   font-weight: 800;
 }

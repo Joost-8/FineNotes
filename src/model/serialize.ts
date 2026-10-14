@@ -32,6 +32,7 @@ import {
 import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
+import { MIN_TEXT_BOX_WIDTH, isCornerRadius, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import {
   type AttachmentFolders,
@@ -755,7 +756,7 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     x: num(raw.x, 0),
     y: num(raw.y, 0),
     // A fitted box is as narrow as its text: a short word must not reopen 80 wide.
-    w: Math.max(raw.fit === true ? 8 : 80, num(raw.w, 320)),
+    w: Math.max(raw.fit === true ? 8 : MIN_TEXT_BOX_WIDTH, num(raw.w, 320)),
     // Absent means "grows with its text"; only a real, positive height is kept.
     ...(typeof raw.h === "number" && Number.isFinite(raw.h) && raw.h > 0
       ? { h: Math.max(24, raw.h) }
@@ -792,6 +793,9 @@ function normalizeTextStyle(raw: Record<string, unknown>): Partial<TextBoxElemen
     style.lineHeight = raw.lineHeight;
   }
   if (typeof raw.fill === "string" && HEX_COLOR.test(raw.fill)) style.fill = raw.fill;
+  const border = normalizeBorder(raw.border);
+  if (border) style.border = border;
+  if (isCornerRadius(raw.radius)) style.radius = raw.radius;
   return style;
 }
 

@@ -270,18 +270,13 @@ import {
   changesTextStyle,
   fontFamilyOf,
   lineHeightOf,
+  normalizeBorder,
   textStyleOf,
 } from "../model/text-style";
 import { type ListKind, type TextEdit, continueList, toggleList } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
-import {
-  TEXT_PAD_X,
-  TEXT_PAD_Y,
-  canvasFont,
-  fitTextWidth,
-  textDecorationOf,
-} from "../canvas/text-layout";
+import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
 import { History } from "../model/history";
 import {
   PointerController,
@@ -2956,6 +2951,8 @@ export class InkSurface {
         const heightModeChanged = view.fixed !== fixedHeight;
         view.fixed = fixedHeight;
         root.toggleClass("has-fixed-height", fixedHeight);
+        const border = normalizeBorder(textBox.border);
+        const inset = textInset(textBox);
         root.setCssStyles({
           left: `${Math.round((box.x + frame.x + shift.x) * scale)}px`,
           top: `${Math.round((box.y + frame.y + shift.y) * scale)}px`,
@@ -2963,6 +2960,22 @@ export class InkSurface {
           height: fixedHeight ? `${Math.round((frame.h ?? 0) * scale)}px` : root.style.height,
           // The fill is the frame's, so it covers the whole box, handles aside.
           background: textBox.fill !== undefined ? shownColor(textBox.fill, night) : "",
+          // The border is an inset shadow: drawn inside the edge, as the
+          // thumbnails draw it, and taking no width from the text (the
+          // padding below keeps the text clear of it). Never under 1 px: a
+          // thinner shadow showed on two sides only, zoomed out.
+          boxShadow: border
+            ? `inset 0 0 0 ${Math.max(1, border.width * scale).toFixed(2)}px ${shownColor(border.color, night)}`
+            : "",
+          // A box that shows a fill or border has the corners the thumbnails
+          // draw; a bare one keeps the soft editing frame from the stylesheet.
+          // CSS shrinks a radius too big for the box, as cornerRadiusOf does.
+          borderRadius:
+            textBox.radius !== undefined
+              ? `${(textBox.radius * scale).toFixed(2)}px`
+              : textBox.fill !== undefined || border
+                ? "0"
+                : "",
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -2978,11 +2991,11 @@ export class InkSurface {
           textDecoration: textDecorationOf(textBox),
           textAlign: textBox.align ?? "left",
           lineHeight: String(lineHeight),
-          padding: `${(TEXT_PAD_Y * unit).toFixed(2)}px ${(TEXT_PAD_X * unit).toFixed(2)}px`,
+          padding: `${(inset.y * unit).toFixed(2)}px ${(inset.x * unit).toFixed(2)}px`,
           // One line tall at least, as text-layout.ts assumes for the fill.
           minHeight: fixedHeight
             ? "0"
-            : `${((textBox.fontSize * lineHeight + 2 * TEXT_PAD_Y) * unit).toFixed(2)}px`,
+            : `${((textBox.fontSize * lineHeight + 2 * inset.y) * unit).toFixed(2)}px`,
           color: shownColor(textBox.color, night),
           width: `${100 / shrink}%`,
           transform: shrink < 1 ? `scale(${shrink})` : "",
@@ -3095,16 +3108,17 @@ export class InkSurface {
   ): number {
     const font = canvasFont(textBox, textBox.fontSize);
     const room = pageWidth - x;
-    const key = `${font}|${room}|${textBox.text}`;
+    const inset = textInset(textBox).x;
+    const key = `${font}|${room}|${inset}|${textBox.text}`;
     if (view.fitKey === key) return view.fitW;
     this.measureCtx ??= createEl("canvas").getContext("2d");
     const ctx = this.measureCtx;
     // One wide character at least: room for the caret in an empty box.
-    const min = Math.ceil(textBox.fontSize + 2 * TEXT_PAD_X);
+    const min = Math.ceil(textBox.fontSize + 2 * inset);
     if (!ctx) return Math.max(min, textBox.w);
     ctx.font = font;
     view.fitKey = key;
-    view.fitW = fitTextWidth(textBox.text, min, room, (text) => ctx.measureText(text).width);
+    view.fitW = fitTextWidth(textBox.text, min, room, (text) => ctx.measureText(text).width, inset);
     return view.fitW;
   }
 
@@ -6154,7 +6168,7 @@ export class InkSurface {
     const view = this.textBoxInputs.get(`${pageId}:${textBox.id}`);
     const measured = view
       ? view.root.offsetHeight / this.unitScale
-      : textBox.fontSize * lineHeightOf(textBox) + 2 * TEXT_PAD_Y;
+      : textBox.fontSize * lineHeightOf(textBox) + 2 * textInset(textBox).y;
     return textBoxFrame(textBox, measured);
   }
 

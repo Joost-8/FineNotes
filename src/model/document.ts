@@ -357,6 +357,20 @@ export interface TextBoxElement {
   lineHeight?: number;
   /** Background fill, `#rrggbb` or `#rrggbbaa`; absent means none. */
   fill?: string;
+  /**
+   * A line around the box, drawn inside its edge; the text keeps clear of it.
+   * Absent means none. Replaced as a whole, never edited in place, so an undo
+   * snapshot of the old object stays true.
+   */
+  border?: TextBorder;
+  /** Corner radius of the fill and border, page px; absent means square corners. */
+  radius?: number;
+}
+
+/** A text box's border: its width in page px and its colour (hex, as `fill`). */
+export interface TextBorder {
+  width: number;
+  color: string;
 }
 
 export type PageKind = "ink";

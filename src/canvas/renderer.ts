@@ -58,8 +58,16 @@ import {
 } from "../model/document";
 import { imageBounds, rotationOf } from "./image-geometry";
 import type { DocumentLayout, PageBox } from "./page-layout";
-import { baselineOffset, canvasFont, decorationMetrics, layoutTextBox } from "./text-layout";
+import {
+  baselineOffset,
+  canvasFont,
+  cornerRadiusOf,
+  decorationMetrics,
+  layoutTextBox,
+  traceBoxPath,
+} from "./text-layout";
 import { displayText } from "../model/text-links";
+import { normalizeBorder } from "../model/text-style";
 import {
   ByteLru,
   TILE_SIZE,
@@ -1445,7 +1453,8 @@ export function renderPageThumbnail(
 }
 
 /**
- * Paint one text box in page space: its fill, then its lines with the box's
+ * Paint one text box in page space: its fill and border, with the box's
+ * corners, then its lines with the box's
  * font, alignment, line height and decorations. The line breaks come from
  * `text-layout.ts`, which follows the textarea's own rules, so a thumbnail
  * wraps where the page does. The font is a real family list from the model,
@@ -1460,13 +1469,38 @@ export function paintTextBox(
 ): void {
   // Links in the text show as their text, brackets hidden, as on the page.
   const box = { ...typed, text: displayText(typed.text) };
-  if (!box.text && !box.fill) return;
+  const border = normalizeBorder(box.border);
+  if (!box.text && !box.fill && !border) return;
   ctx.save();
   ctx.font = canvasFont(box, box.fontSize);
   const layout = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  // The corners the page's frame has (its CSS `border-radius`).
+  const radius = cornerRadiusOf(box.radius, box.w, layout.height);
   if (box.fill) {
     ctx.fillStyle = shownColor(box.fill, night);
-    ctx.fillRect(box.x, box.y, box.w, layout.height);
+    if (radius > 0) {
+      ctx.beginPath();
+      traceBoxPath(ctx, box.x, box.y, box.w, layout.height, radius);
+      ctx.fill();
+    } else ctx.fillRect(box.x, box.y, box.w, layout.height);
+  }
+  if (border) {
+    // Inside the edge, as the frame's inset shadow is: the line's centre
+    // sits half its width in, on corners half its width tighter.
+    const width = Math.min(border.width, box.w / 2, layout.height / 2);
+    const half = width / 2;
+    ctx.strokeStyle = shownColor(border.color, night);
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    traceBoxPath(
+      ctx,
+      box.x + half,
+      box.y + half,
+      box.w - width,
+      layout.height - width,
+      Math.max(0, radius - half),
+    );
+    ctx.stroke();
   }
   if (box.text) {
     // A fixed-height box clips its overflow, as its textarea does.

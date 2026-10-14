@@ -13,7 +13,12 @@ import {
   readTplLayout,
 } from "../../src/import/goodnotes";
 import { PAGE_PX_PER_MM } from "../../src/model/units";
-import { parseInkFile, buildInkFile } from "../../src/model/serialize";
+import {
+  buildInkFile,
+  decodeDocument,
+  encodeDocument,
+  parseInkFile,
+} from "../../src/model/serialize";
 import {
   bv4Raw,
   delimited,
@@ -532,6 +537,62 @@ describe("readGoodnotes: what real notebooks hold", () => {
     ]);
   });
 
+  it("brings a text box in a bordered, rounded frame over as one box", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          texts: [
+            {
+              id: "X1",
+              origin: [100, 200],
+              width: 220,
+              height: 90,
+              runs: [{ text: "Framed" }],
+              fill: [1, 1, 0, 1],
+              border: { width: 2, rgba: [0, 0, 1, 1] },
+              radius: 12,
+            },
+            {
+              // A fully transparent border is none: the box keeps only its fill.
+              id: "X2",
+              origin: [0, 0],
+              width: 100,
+              runs: [{ text: "Plain" }],
+              fill: [1, 1, 0, 1],
+              border: { width: 2, rgba: [0, 0, 1, 0] },
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const page = result.doc.pages[0];
+    // No outline stroke: the frame is the box's own.
+    expect(page.strokes).toEqual([]);
+    const at = (v: number): number => Math.round(v * K * 100) / 100;
+    const [framed, plain] = page.textBoxes;
+    expect(framed).toMatchObject({
+      id: "t1",
+      text: "Framed",
+      x: at(100),
+      y: at(200),
+      w: at(220),
+      h: at(90),
+      fill: "#ffff00",
+      border: { width: at(2), color: "#0000ff" },
+      radius: at(12),
+    });
+    expect(framed.fit).toBeUndefined();
+    expect(plain.border).toBeUndefined();
+    expect(plain.fill).toBe("#ffff00");
+    // The unframed box keeps Goodnotes' text inset, as before.
+    expect(plain.x).toBeCloseTo(10 * K, 1);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("names the notebook after its file before the name inside it", () => {
     expect(
       readGoodnotes(notebook([{ id: PAGE_A, template: "T-RULED", order: "a" }]), "Test").title,
@@ -693,7 +754,7 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
     return readGoodnotes(files, "");
   }
 
-  it("draws shapes as outlines, keeping a rectangle's fill as a filled box", () => {
+  it("draws polygons as outlines, and brings rectangles over as boxes with a border", () => {
     const result = withNotes([
       shapeBody({
         origin: [100, 100],
@@ -708,6 +769,7 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
         shape: [[1, { msg: [[1, { f32: 80 }]] }]],
         border: 3,
       }),
+      // Narrower than the narrowest box the loader keeps: an outline and a filled box.
       shapeBody({ origin: [300, 300], size: [50, 40], border: 2, fill: [0, 0, 1, 1] }),
       // A frame with neither a border nor a drawn shape: nothing to show.
       shapeBody({ origin: [0, 0], size: [10, 10], shape: [[1, { str: "" }]] }),
@@ -715,31 +777,45 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
     const page = result.doc.pages[0];
     expect(page.strokes.map((s) => [s.shape, s.color, s.pts.length / 3])).toEqual([
       ["diamond", "#ff0000", 5],
-      ["roundrect", "#ff0000", 37],
       ["rect", "#ff0000", 5],
     ]);
     const [d] = page.strokes;
     expect(d.pts[0]).toBeCloseTo(150 * K, 1);
     expect(d.pts[1]).toBeCloseTo(100 * K, 1);
     expect(d.size).toBeCloseTo(6 * K, 1);
-    // The round rectangle's radius is capped at half its height: its top edge starts 50 in.
-    const r = page.strokes[1];
-    expect(r.pts[0]).toBeCloseTo((10 + 200 - 50) * K, 1);
+    const at = (v: number): number => Math.round(v * K * 100) / 100;
     expect(page.textBoxes).toEqual([
       {
         id: "t1",
-        x: Math.round(300 * K * 100) / 100,
-        y: Math.round(300 * K * 100) / 100,
-        w: Math.round(50 * K * 100) / 100,
-        h: Math.round(40 * K * 100) / 100,
+        x: at(10),
+        y: at(10),
+        w: at(200),
+        h: at(100),
+        text: "",
+        color: "#000000",
+        fontSize: 22,
+        border: { width: at(3), color: "#ff0000" },
+        // The radius is capped at half the height, as the outline's was.
+        radius: at(50),
+      },
+      {
+        id: "t2",
+        x: at(300),
+        y: at(300),
+        w: at(50),
+        h: at(40),
         text: "",
         color: "#000000",
         fontSize: 22,
         fill: "#0000ff",
       },
     ]);
+    // The framed box survives a save and a load unchanged: nothing the loader drops.
+    expect(decodeDocument(encodeDocument(result.doc)).pages[0].textBoxes[0]).toEqual(
+      page.textBoxes[0],
+    );
     expect(result.warnings).toEqual([
-      "3 shapes came over as outlines (page 1).",
+      "2 shapes came over as outlines (page 1).",
       "1 shape's fill could not be kept, only the outline (page 1).",
     ]);
   });

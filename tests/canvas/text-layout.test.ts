@@ -14,10 +14,13 @@ import {
   alignLines,
   baselineOffset,
   canvasFont,
+  cornerRadiusOf,
   decorationMetrics,
   fitTextWidth,
   layoutTextBox,
   textDecorationOf,
+  textInset,
+  traceBoxPath,
   wrapText,
 } from "../../src/canvas/text-layout";
 import { TEXT_FONT_STACKS } from "../../src/model/document";
@@ -204,5 +207,65 @@ describe("fitTextWidth", () => {
     const w = fitTextWidth(text, 0, 1000, mono);
     const layout = layoutTextBox({ x: 0, y: 0, w, text, color: "#000", fontSize: 20 }, mono);
     expect(layout.lines).toHaveLength(2);
+  });
+});
+
+describe("border inset and corners", () => {
+  const box = { x: 10, y: 20, w: 108, text: "aa bb cc dd", color: "#000", fontSize: 20 };
+  const border = { width: 4, color: "#000000" };
+
+  it("insets the text by the padding plus the border's width", () => {
+    expect(textInset({})).toEqual({ x: TEXT_PAD_X, y: TEXT_PAD_Y });
+    expect(textInset({ border })).toEqual({ x: TEXT_PAD_X + 4, y: TEXT_PAD_Y + 4 });
+    // A border the loader would drop takes no room either.
+    expect(textInset({ border: { width: -3, color: "#000000" } })).toEqual(textInset({}));
+  });
+
+  it("wraps a bordered box narrower and grows it by the border on both sides", () => {
+    const plain = layoutTextBox(box, mono);
+    const bordered = layoutTextBox({ ...box, border: { width: 12, color: "#000000" } }, mono);
+    expect(bordered.x).toBe(plain.x + 12);
+    expect(bordered.y).toBe(plain.y + 12);
+    expect(bordered.width).toBe(plain.width - 24);
+    expect(bordered.lines.map((l) => l.runs.map((r) => r.text).join(""))).toEqual([
+      "aa bb",
+      "cc dd",
+    ]);
+    expect(bordered.height).toBe(2 * (TEXT_PAD_Y + 12) + 2 * 25);
+  });
+
+  it("fits a bordered box's width around its text and border", () => {
+    expect(fitTextWidth("abc", 0, 1000, mono, TEXT_PAD_X + 4)).toBe(
+      fitTextWidth("abc", 0, 1000, mono) + 8,
+    );
+  });
+
+  it("resolves a radius as CSS does: at most half the shorter side, 0 for none", () => {
+    expect(cornerRadiusOf(undefined, 100, 50)).toBe(0);
+    expect(cornerRadiusOf(12, 100, 50)).toBe(12);
+    expect(cornerRadiusOf(40, 100, 50)).toBe(25);
+    expect(cornerRadiusOf(-5, 100, 50)).toBe(0);
+  });
+
+  it("traces a plain rectangle, or four arcs closed", () => {
+    const ops: unknown[][] = [];
+    const sink = {
+      moveTo: (...a: number[]) => ops.push(["moveTo", ...a]),
+      arcTo: (...a: number[]) => ops.push(["arcTo", ...a]),
+      rect: (...a: number[]) => ops.push(["rect", ...a]),
+      closePath: () => ops.push(["closePath"]),
+    };
+    traceBoxPath(sink, 0, 0, 100, 50, 0);
+    expect(ops).toEqual([["rect", 0, 0, 100, 50]]);
+    ops.length = 0;
+    traceBoxPath(sink, 0, 0, 100, 50, 10);
+    expect(ops).toEqual([
+      ["moveTo", 10, 0],
+      ["arcTo", 100, 0, 100, 50, 10],
+      ["arcTo", 100, 50, 0, 50, 10],
+      ["arcTo", 0, 50, 0, 0, 10],
+      ["arcTo", 0, 0, 100, 0, 10],
+      ["closePath"],
+    ]);
   });
 });

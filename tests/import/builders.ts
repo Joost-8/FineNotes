@@ -182,8 +182,14 @@ export interface GnText {
   origin: [number, number];
   /** A fixed width (`21.2.1`); absent, the box grows with its text (`32.2.1` wide). */
   width?: number;
+  /** The frame's height (`21.2.2`), beside a fixed width. */
+  height?: number;
   textWidth?: number;
   fill?: [number, number, number, number];
+  /** A border (`31`): its width (`31.1`) and colour (`31.3.1`). Text boxes only. */
+  border?: { width: number; rgba: [number, number, number, number] };
+  /** A rounded rectangle's corner radius (`22.1.1`). */
+  radius?: number;
   comment?: boolean;
 }
 
@@ -558,7 +564,17 @@ export function goodnotesFiles(spec: {
       ];
       const size: PbField[] =
         t.width !== undefined
-          ? [[2, { msg: [[1, { f32: t.width }]] }]]
+          ? [
+              [
+                2,
+                {
+                  msg: [
+                    [1, { f32: t.width }],
+                    ...(t.height !== undefined ? [[2, { f32: t.height }] as PbField] : []),
+                  ],
+                },
+              ],
+            ]
           : [[3, { msg: [[1, { f32: 32 }]] }]];
       const body: PbField[] = [
         [1, { str: t.id }],
@@ -567,6 +583,20 @@ export function goodnotesFiles(spec: {
         [30, { msg: [[1, { msg: [[1, colour(t.fill ?? [1, 1, 1, 0])]] }]] }],
         [t.comment ? 31 : 32, { msg: store }],
       ];
+      if (t.radius !== undefined) {
+        body.push([22, { msg: [[1, { msg: [[1, { f32: t.radius }]] }]] }]);
+      }
+      if (t.border && !t.comment) {
+        body.push([
+          31,
+          {
+            msg: [
+              [1, { f32: t.border.width }],
+              [3, { msg: [[1, colour(t.border.rgba)]] }],
+            ],
+          },
+        ]);
+      }
       records.push(pb([[t.comment ? 20 : 21, { msg: body }]]));
     }
     for (let i = 0; i < (p.unknown ?? 0); i++)
