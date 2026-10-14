@@ -437,6 +437,12 @@ body,
   color: var(--gob-icon);
 }
 
+/* Last in the pill, the star sits midway between the divider before it (its
+   margin plus the gap) and the pill's rounded end (the pill's padding only). */
+.goodobsidian-options .goodobsidian-saved-pens:last-child {
+  margin-right: 4px;
+}
+
 .goodobsidian-options .goodobsidian-saved-pens svg {
   width: 18px;
   height: 18px;
