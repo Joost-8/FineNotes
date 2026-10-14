@@ -5,6 +5,7 @@ import {
   fold,
   hasTranscripts,
   pageFromSubpath,
+  pageInThisNotebook,
   queryTerms,
   searchPages,
   transcriptSidecarPath,
@@ -197,6 +198,23 @@ describe("pageFromSubpath", () => {
     expect(pageFromSubpath("#Page 6", 5)).toBeNull();
     expect(pageFromSubpath("#Page 0", 5)).toBeNull();
     expect(pageFromSubpath("", 5)).toBeNull();
+  });
+});
+
+describe("pageInThisNotebook", () => {
+  const here = (path: string) => path === "Lectures.notebook";
+
+  it("reads a link inside the same note, and one naming this notebook", () => {
+    expect(pageInThisNotebook("#page=3", 5, here)).toBe(2);
+    expect(pageInThisNotebook("Lectures.notebook#page=3", 5, here)).toBe(2);
+    expect(pageInThisNotebook("Lectures.notebook#Page 1", 5, here)).toBe(0);
+  });
+
+  it("leaves links elsewhere, without a page, or past the end to open as usual", () => {
+    expect(pageInThisNotebook("Other#page=3", 5, here)).toBeNull();
+    expect(pageInThisNotebook("Lectures.notebook", 5, here)).toBeNull();
+    expect(pageInThisNotebook("#Introduction", 5, here)).toBeNull();
+    expect(pageInThisNotebook("#page=9", 5, here)).toBeNull();
   });
 });
 

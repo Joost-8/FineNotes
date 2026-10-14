@@ -49,6 +49,7 @@ import type {
 } from "../model/document";
 import { SCHEMA_VERSION } from "../constants";
 import { normalizePageTitle } from "../model/contents";
+import { textSegments } from "../model/text-links";
 import { decodeAppleLz4 } from "./apple-lz4";
 import {
   fontFor,
@@ -317,11 +318,14 @@ export function readGoodnotes(
     const text = searchText(file(`search/${layerId(entry.id)}`));
     if (text) pageText[index] = text;
 
-    const pageLink = (url: string): string => {
+    // A page of this notebook becomes a link inside the same note; a page of
+    // another notebook has no known place in the vault, so its words stay plain.
+    const pageLink = (words: string, url: string): LinkedWords => {
       const target = goodnotesPageLink(url);
-      const number = target === null ? undefined : pageNumbers.get(target);
-      if (number !== undefined) return `(→ page ${number})`;
-      return target === null ? `(${url})` : "(→ a page of another notebook)";
+      if (target === null) return linkWords(words, url, `(${url})`);
+      const number = pageNumbers.get(target);
+      if (number === undefined) return { text: words, kept: "elsewhere" };
+      return linkWords(words, `#page=${number}`, `(→ page ${number})`);
     };
 
     const content = file(`notes/${layerId(entry.id)}`);
@@ -362,7 +366,8 @@ export function readGoodnotes(
         if (box) {
           page.textBoxes.push(box);
           textN++;
-          if (typed?.linked) tally.add("links", pageNumber);
+          if (typed?.written) tally.add("links", pageNumber);
+          if (typed?.elsewhere) tally.add("elsewhere", pageNumber);
           if (typed?.mixed) tally.add("mixed", pageNumber);
         }
         const shape = readShape(body, k, `s${strokeN + 1}`);
@@ -410,8 +415,14 @@ export function readGoodnotes(
     tally.line(
       "links",
       (n) =>
-        `${plural(n, "text box links", "text boxes link")} somewhere; ` +
-        "the link is written after its words.",
+        `${plural(n, "text box keeps a link", "text boxes keep a link")} written after the words, ` +
+        "which cannot hold one.",
+    ),
+    tally.line(
+      "elsewhere",
+      (n) =>
+        `${plural(n, "text box links", "text boxes link")} to another Goodnotes notebook; ` +
+        "those words came over without the link.",
     ),
     tally.line(
       "mixed",
@@ -660,25 +671,73 @@ function readImage(
   return { id, path, x: round2(x * k), y: round2(y * k), w: round2(w * k), h: round2(h * k) };
 }
 
-/** Typed text read from a text store: its runs joined, with any links written out. */
+/** Typed text read from a text store: its runs joined, its links in FineNotes' link syntax. */
 interface Typed {
   store: Message;
   text: string;
   /** The first run's attributes, for the box's colour, size and typeface. */
   attrs?: Message;
-  /** Whether a link was written out. */
-  linked: boolean;
+  /** Whether a link had to be written out after its words. */
+  written: boolean;
+  /** Whether a link to another notebook was left off its words. */
+  elsewhere: boolean;
   /** Whether its words are in more than one colour (a box has one: the first run's). */
   mixed: boolean;
 }
 
 /**
+ * Linked words as they go into a text box: `link` a working link (FineNotes#20),
+ * `written` the words with the link written out after them, `elsewhere` the
+ * words alone, their link leading to another notebook.
+ */
+interface LinkedWords {
+  text: string;
+  kept: "link" | "written" | "elsewhere";
+}
+
+/**
+ * Words linked to `target` (`#page=3`, a page of this notebook, or a web
+ * address) as a text box writes a link: `[[#page=3|words]]`, `[words](url)`,
+ * or the words alone when they are the address itself. Spaces around the
+ * words stay outside the link. Words a link cannot hold (a bracket, a line
+ * break) keep `writtenOut` after them instead; each form is read back with
+ * the text box's own parser before it is used.
+ */
+function linkWords(words: string, target: string, writtenOut: string): LinkedWords {
+  const core = words.trim();
+  if (core === "") return { text: words, kept: "link" };
+  const lead = words.slice(0, words.length - words.trimStart().length);
+  const trail = words.slice(words.trimEnd().length);
+  const inPage = target.startsWith("#");
+  // A web address cannot hold a bracket or a space between a markdown link's parentheses.
+  const href = inPage
+    ? target
+    : target.replace(
+        /[()\s]/g,
+        (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
+      );
+  const forms = inPage ? [`[[${target}|${core}]]`] : [core, `[${core}](${href})`];
+  for (const form of forms) {
+    const segments = textSegments(form);
+    if (segments.length === 1 && segments[0].text === core && segments[0].target === href) {
+      return { text: `${lead}${form}${trail}`, kept: "link" };
+    }
+  }
+  return { text: `${lead}${core} ${writtenOut}${trail}`, kept: "written" };
+}
+
+/**
  * The text in a box's store (field `32` of a text box, `31` of a comment):
  * runs of `{1: text, 2: attributes}` behind Apple LZ4, an attribute `4` a
- * link. A link is kept as text after the words it is on, `link(url)`.
+ * link. A link may span several runs (Goodnotes splits runs where the font
+ * changes); its words are handed to `link` together, once.
  * Null when there is no text at all.
  */
-function readTyped(body: Message, field: number, link: (url: string) => string): Typed | null {
+function readTyped(
+  body: Message,
+  field: number,
+  link: (words: string, url: string) => LinkedWords,
+): Typed | null {
   const store = body.message(field);
   const data = store?.message(1)?.bytes(2);
   if (!store || !data) return null;
@@ -691,15 +750,23 @@ function readTyped(body: Message, field: number, link: (url: string) => string):
     return null;
   }
   let text = "";
-  let linked = false;
+  let linkedWords = "";
+  let written = false;
+  let elsewhere = false;
   runs.forEach((run, i) => {
-    text += run.string(1) ?? "";
+    const words = run.string(1) ?? "";
     const url = run.message(2)?.string(4);
-    // A link spanning several runs is written once, after its last run.
-    if (url && runs[i + 1]?.message(2)?.string(4) !== url) {
-      text = `${text.trimEnd()} ${link(url)}`;
-      linked = true;
+    if (!url) {
+      text += words;
+      return;
     }
+    linkedWords += words;
+    if (runs[i + 1]?.message(2)?.string(4) === url) return;
+    const made = link(linkedWords, url);
+    linkedWords = "";
+    text += made.text;
+    if (made.kept === "written") written = true;
+    if (made.kept === "elsewhere") elsewhere = true;
   });
   if (text.trim() === "") return null;
   const inked = runs.filter((run) => (run.string(1) ?? "").trim() !== "");
@@ -708,7 +775,7 @@ function readTyped(body: Message, field: number, link: (url: string) => string):
   const colours = new Set(
     inked.map((run) => rgba(run.message(2)?.message(3))).filter((c) => c !== undefined),
   );
-  return { store, text, attrs, linked, mixed: colours.size > 1 };
+  return { store, text, attrs, written, elsewhere, mixed: colours.size > 1 };
 }
 
 /**
@@ -869,7 +936,7 @@ function readComment(
   body: Message,
   k: number,
   id: string,
-  link: (url: string) => string,
+  link: (words: string, url: string) => LinkedWords,
 ): TextBoxElement | null {
   const typed = readTyped(body, 31, link);
   const author = body.string(33)?.trim();

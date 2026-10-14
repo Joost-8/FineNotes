@@ -76,6 +76,24 @@ export function pageFromSubpath(subpath: string, pageCount: number): number | nu
   return n >= 1 && n <= pageCount ? n - 1 : null;
 }
 
+/**
+ * The page of the open notebook a link leads to, 0-based: `#page=3` (a link
+ * inside the same note, as Obsidian writes one) or `Name#page=3` when
+ * `isThisNotebook("Name")`. `null` for a link elsewhere, or one without a
+ * page in it; that link opens as any other.
+ */
+export function pageInThisNotebook(
+  target: string,
+  pageCount: number,
+  isThisNotebook: (path: string) => boolean,
+): number | null {
+  const hash = target.indexOf("#");
+  if (hash < 0) return null;
+  const path = target.slice(0, hash).trim();
+  if (path !== "" && !isThisNotebook(path)) return null;
+  return pageFromSubpath(target.slice(hash), pageCount);
+}
+
 /** Characters of context either side of a match in a snippet. */
 const CONTEXT = 36;
 const MAX_SNIPPETS = 3;

@@ -14,6 +14,8 @@ import {
 } from "../../src/import/goodnotes";
 import { PAGE_PX_PER_MM } from "../../src/model/units";
 import { parseInkFile, buildInkFile } from "../../src/model/serialize";
+import { hasTextLinks, textLinkTargets, textSegments } from "../../src/model/text-links";
+import { pageInThisNotebook } from "../../src/search/notebook-search";
 import {
   bv4Raw,
   delimited,
@@ -744,93 +746,145 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
     ]);
   });
 
-  it("writes links out after their words, naming the page of this notebook they lead to", () => {
-    const anchor = (id: string): string =>
-      `https://app.goodnotes.com/documents/?anchor=${encodeURIComponent(btoa(`page-${id}`))}#X`;
-    const runs: PbField[] = [
-      [1, { msg: [[1, { str: "See " }]] }],
-      [
-        1,
-        {
-          msg: [
-            [1, { str: "this" }],
-            [2, { msg: [[4, { str: anchor(PAGE_B) }]] }],
-          ],
-        },
-      ],
-      [
-        1,
-        {
-          msg: [
-            [1, { str: " page" }],
-            [2, { msg: [[4, { str: anchor(PAGE_B) }]] }],
-          ],
-        },
-      ],
-      [1, { msg: [[1, { str: " and " }]] }],
-      [
-        1,
-        {
-          msg: [
-            [1, { str: "that" }],
-            [2, { msg: [[4, { str: "https://example.org" }]] }],
-          ],
-        },
-      ],
-      [
-        1,
-        {
-          msg: [
-            [1, { str: " elsewhere" }],
-            [2, { msg: [[4, { str: anchor("NOT-HERE") }]] }],
-          ],
-        },
-      ],
-    ];
-    const box = pb([
-      [
-        21,
-        {
-          msg: [
-            [
-              20,
-              {
-                msg: [
-                  [
-                    1,
-                    {
-                      msg: [
-                        [1, { f32: 10 }],
-                        [2, { f32: 10 }],
-                      ],
-                    },
-                  ],
+  // Built as `Test (Goodnotes)` (Joost's export, 2026-10-12) holds its one
+  // linked text box: every run of the link carries the URL in attribute 4
+  // next to its colour (3), typeface (30) and size (40), and Goodnotes
+  // splits runs where the font changes, here mid-word. A page link is
+  // `?anchor=` the URL-encoded base64 of "page-<id>", then `#` the base64 of
+  // the element on that page it was made from.
+  describe("links in typed text", () => {
+    const anchor = (pageId: string): string =>
+      `https://app.goodnotes.com/documents/?anchor=${encodeURIComponent(btoa(`page-${pageId}`))}` +
+      `#${btoa("7C8442C6-96A2-4733-91D2-E360A18EAE1C")}`;
+    const run = (str: string, url?: string): PbField => [
+      1,
+      {
+        msg: [
+          [1, { str }],
+          [
+            2,
+            {
+              msg: [
+                [
+                  3,
+                  {
+                    msg: [
+                      [1, { f32: 0 }],
+                      [2, { f32: 0 }],
+                      [3, { f32: 0 }],
+                      [4, { f32: 1 }],
+                    ],
+                  },
                 ],
-              },
-            ],
-            [32, { msg: [[1, { msg: [[2, { bytes: bv4Raw(pb(runs)) }]] }]] }],
+                ...(url ? [[4, { str: url }] as PbField] : []),
+                [30, { str: "Helvetica" }],
+                [40, { f32: 24 }],
+              ],
+            },
           ],
-        },
-      ],
-    ]);
-    const files = notebook([
-      { id: PAGE_A, template: "T-RULED", order: "a" },
-      { id: PAGE_B, template: "T-RULED", order: "b" },
-    ]);
-    files.set(`notes/${layerId(PAGE_A)}`, delimited([box]));
-    const result = readGoodnotes(files, "");
-    expect(result.doc.pages[0].textBoxes[0].text).toBe(
-      "See this page (→ page 2) and that (https://example.org) elsewhere (→ a page of another notebook)",
-    );
-    expect(result.warnings).toEqual([
-      "1 text box links somewhere; the link is written after its words (page 1).",
-    ]);
-    expect(goodnotesPageLink("https://example.org/?anchor=cGFnZS1Y")).toBeNull();
-    expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=%%%")).toBeNull();
-    expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=!!")).toBeNull();
-    expect(
-      goodnotesPageLink(`https://app.goodnotes.com/documents/?anchor=${btoa("note-1")}`),
-    ).toBeNull();
+        ],
+      },
+    ];
+    const textBox = (runs: PbField[]): Uint8Array =>
+      pb([
+        [
+          21,
+          {
+            msg: [
+              [
+                20,
+                {
+                  msg: [
+                    [
+                      1,
+                      {
+                        msg: [
+                          [1, { f32: 10 }],
+                          [2, { f32: 10 }],
+                        ],
+                      },
+                    ],
+                  ],
+                },
+              ],
+              [32, { msg: [[1, { msg: [[2, { bytes: bv4Raw(pb(runs)) }]] }]] }],
+            ],
+          },
+        ],
+      ]);
+    const read = (...boxes: PbField[][]) => {
+      const files = notebook([
+        { id: PAGE_A, template: "T-RULED", order: "a" },
+        { id: PAGE_B, template: "T-RULED", order: "b" },
+      ]);
+      files.set(`notes/${layerId(PAGE_A)}`, delimited(boxes.map(textBox)));
+      const result = readGoodnotes(files, "Lectures");
+      return { texts: result.doc.pages[0].textBoxes.map((b) => b.text), result };
+    };
+
+    it("makes a link to a page of this notebook a link inside the note, whatever its runs", () => {
+      const { texts, result } = read([
+        run("See "),
+        run("this pa", anchor(PAGE_B)),
+        run("ge ", anchor(PAGE_B)),
+        run("first."),
+      ]);
+      expect(texts).toEqual(["See [[#page=2|this page]] first."]);
+      expect(result.warnings).toEqual([]);
+      // A tap on it scrolls the notebook it is in to page 2.
+      const [, link] = textSegments(texts[0]);
+      expect(link).toEqual({ text: "this page", target: "#page=2" });
+      expect(pageInThisNotebook(link.target ?? "", 2, () => false)).toBe(1);
+    });
+
+    it("makes a web link a markdown link, or leaves an address that is its own words", () => {
+      const { texts, result } = read(
+        [run("Read "), run("the notes", "https://example.org/notes"), run(".")],
+        [run("https://example.org", "https://example.org")],
+        [run("Wiki", "https://en.wikipedia.org/wiki/Mercury_(planet)")],
+      );
+      expect(texts).toEqual([
+        "Read [the notes](https://example.org/notes).",
+        "https://example.org",
+        "[Wiki](https://en.wikipedia.org/wiki/Mercury_%28planet%29)",
+      ]);
+      expect(texts.map((t) => textLinkTargets(t))).toEqual([
+        ["https://example.org/notes"],
+        ["https://example.org"],
+        ["https://en.wikipedia.org/wiki/Mercury_%28planet%29"],
+      ]);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("keeps the words of a link to another notebook, and says so", () => {
+      const { texts, result } = read([run("Old "), run("summary", anchor("NOT-HERE"))]);
+      expect(texts).toEqual(["Old summary"]);
+      expect(hasTextLinks(texts[0])).toBe(false);
+      expect(result.warnings).toEqual([
+        "1 text box links to another Goodnotes notebook; those words came over without the link (page 1).",
+      ]);
+    });
+
+    it("writes a link out after words that cannot carry one", () => {
+      const { texts, result } = read(
+        [run("[1]", "https://example.org/ref")],
+        [run("line one\nline two", anchor(PAGE_B))],
+      );
+      expect(texts).toEqual(["[1] (https://example.org/ref)", "line one\nline two (→ page 2)"]);
+      expect(result.warnings).toEqual([
+        "2 text boxes keep a link written after the words, which cannot hold one (page 1).",
+      ]);
+    });
+
+    it("reads only Goodnotes page links as pages", () => {
+      expect(goodnotesPageLink("https://example.org/?anchor=cGFnZS1Y")).toBeNull();
+      expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=%%%")).toBeNull();
+      expect(goodnotesPageLink("https://app.goodnotes.com/documents/?anchor=!!")).toBeNull();
+      expect(
+        goodnotesPageLink(`https://app.goodnotes.com/documents/?anchor=${btoa("note-1")}`),
+      ).toBeNull();
+      expect(goodnotesPageLink(anchor(PAGE_B))).toBe(PAGE_B);
+    });
   });
 
   it("signs a comment with its author, in its colour and size", () => {

@@ -150,7 +150,12 @@ import { NoteSettingsModal } from "./note-settings-modal";
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
-import { collectPageText, pageFromSubpath, transcriptSidecarPath } from "../search/notebook-search";
+import {
+  collectPageText,
+  pageFromSubpath,
+  pageInThisNotebook,
+  transcriptSidecarPath,
+} from "../search/notebook-search";
 import { pageLinkLabel } from "./page-embed-model";
 import { exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
@@ -717,6 +722,7 @@ export class InkView extends TextFileView {
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
   setPressureWidth(enabled: boolean): void {
     this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
+    this.surface?.setInkPressure(enabled);
     this.updateSidebarRendering();
   }
 
@@ -918,7 +924,7 @@ export class InkView extends TextFileView {
   private async renderForAi(page: Page): Promise<RenderedPage | null> {
     if (!this.backdrops) return null;
     return renderPageForAi(page, this.backdrops, {
-      usePressure: this.toolState.pressureEnabled,
+      usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
       // Pictures the page shows are part of what the model should see. One
       // not decoded yet (rare: the page being read is on screen) draws as
@@ -1480,6 +1486,7 @@ export class InkView extends TextFileView {
     );
     this.surface.setBackdropPainter(this.backdrops);
     this.setPenCursor(this.settings.penCursor);
+    this.surface.setInkPressure(this.settings.pressureWidth);
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app);
     this.surface.setTextSource(this.pdfText);
@@ -1822,7 +1829,7 @@ export class InkView extends TextFileView {
       pdf: this.pdfCache,
       images: this.images,
       paper: paperTheme(false),
-      usePressure: this.toolState.pressureEnabled,
+      usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
     };
     new ExportPdfModal(this.app, {
@@ -1977,7 +1984,7 @@ export class InkView extends TextFileView {
       images: this.images ?? undefined,
       // The thumbnails follow the pages: dark with dark pages.
       paper: this.surface?.paperTheme ?? this.shownPaper(),
-      usePressure: this.toolState.pressureEnabled,
+      usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
     };
   }
@@ -2041,13 +2048,30 @@ export class InkView extends TextFileView {
       }));
   }
 
-  /** Open where linked ink leads: a note or heading in a new tab, or a web address. */
+  /**
+   * Open where linked ink or a text box's link leads: a page of this
+   * notebook by scrolling to it, a note or heading in a new tab, or a web
+   * address.
+   */
   private openInkLink(target: string): void {
     if (isExternalTarget(target)) {
       window.open(externalUrl(target));
       return;
     }
-    void this.app.workspace.openLinkText(target, this.file?.path ?? "", true);
+    const from = this.file?.path ?? "";
+    const surface = this.surface;
+    if (surface) {
+      const index = pageInThisNotebook(
+        target,
+        surface.document.pages.length,
+        (path) => this.app.metadataCache.getFirstLinkpathDest(path, from)?.path === from,
+      );
+      if (index !== null) {
+        surface.goToPage(index, true);
+        return;
+      }
+    }
+    void this.app.workspace.openLinkText(target, from, true);
   }
 
   /**

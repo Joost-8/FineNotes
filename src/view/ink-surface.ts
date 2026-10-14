@@ -1003,6 +1003,8 @@ export class InkSurface {
   private readonly pullAdd: PullAddIndicator;
   /** Pressure the tiles were last rasterised with; a change invalidates them. */
   private tilesPressure: boolean | null = null;
+  /** Whether ink on the pages is drawn with its pressure ({@link setInkPressure}). */
+  private inkPressure = false;
   private cssW = 0;
   private cssH = 0;
 
@@ -2197,9 +2199,21 @@ export class InkSurface {
    * Show or hide the diagnostics HUD. Showing it starts its event log and
    * totals from zero, so a recording begins clean.
    */
-  /** Widen ink with pressure, or not: every stroke is traced again at the next frame. */
+  /** Whether the pen in hand records pressure, so its new strokes widen with it. */
   setPressure(enabled: boolean): void {
     this.toolState.pressureEnabled = enabled;
+  }
+
+  /**
+   * Draw the ink on the pages with its pressure (the "Pressure-sensitive pens"
+   * setting), or at one even width: every stroke is traced again at the next
+   * frame. Not the pen in hand: picking the ball pen must not redraw the
+   * fountain pen's strokes. A stroke written without pressure stores 0.5,
+   * which draws at the pen's own width either way.
+   */
+  setInkPressure(enabled: boolean): void {
+    if (this.inkPressure === enabled) return;
+    this.inkPressure = enabled;
     this.requestFrame();
   }
 
@@ -2724,9 +2738,9 @@ export class InkSurface {
   /** Paint the backdrop and the dry layer. Returns whether every tile was ready. */
   private paint(budgetMs: number): boolean {
     if (!this.renderer) return true;
-    if (this.tilesPressure !== this.toolState.pressureEnabled) {
-      // The pen type changed pressure: every outline is different now.
-      this.tilesPressure = this.toolState.pressureEnabled;
+    if (this.tilesPressure !== this.inkPressure) {
+      // The pressure setting changed: every outline is different now.
+      this.tilesPressure = this.inkPressure;
       this.renderer.invalidateAll();
     }
     this.renderBackdrop();
@@ -2745,11 +2759,7 @@ export class InkSurface {
     this.prefetchReq = window.requestAnimationFrame(() => {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
-      const more = this.renderer.prefetch(
-        this.doc,
-        this.toolState.pressureEnabled,
-        PREFETCH_BUDGET_MS,
-      );
+      const more = this.renderer.prefetch(this.doc, this.inkPressure, PREFETCH_BUDGET_MS);
       if (more) this.schedulePrefetch();
     });
   }
@@ -3426,7 +3436,7 @@ export class InkSurface {
     // The lasso selection's frame is DOM (it takes presses), not canvas.
     return this.renderer.renderDocument(
       this.doc,
-      this.toolState.pressureEnabled,
+      this.inkPressure,
       this.eraseIds,
       null,
       this.erasePieces,
@@ -4926,7 +4936,7 @@ export class InkSurface {
     const command = addStrokesTimed(page, [stroke], this.penDownAt);
     this.history.push(this.doc, command);
     this.strokeIndex.add(page.id, stroke);
-    this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
+    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
     // The wet layer was just cleared: blit the tiles now, or the stroke
     // would be missing for a frame.
     this.inkChanged([page.id]);
@@ -5043,7 +5053,7 @@ export class InkSurface {
     this.history.push(this.doc, addStrokesTimed(page, strokes, this.penDownAt, "Add table"));
     for (const stroke of strokes) {
       this.strokeIndex.add(page.id, stroke);
-      this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
     }
     this.inkChanged([page.id]);
   }
@@ -5149,7 +5159,7 @@ export class InkSurface {
     this.history.push(this.doc, command);
     for (const stroke of strokes) {
       this.strokeIndex.add(page.id, stroke);
-      this.renderer?.appendCommittedStroke(box.index, stroke, this.toolState.pressureEnabled);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
     }
     // Only this page changed: the save cache serialises it alone.
     this.inkChanged([page.id]);
@@ -6036,13 +6046,7 @@ export class InkSurface {
     if (stored || !this.renderer) return stored;
     const level = this.deviceScale;
     const square = eyedropSquare(p.x * level, p.y * level);
-    const pixels = this.renderer.samplePage(
-      page,
-      box,
-      square,
-      level,
-      this.toolState.pressureEnabled,
-    );
+    const pixels = this.renderer.samplePage(page, box, square, level, this.inkPressure);
     return eyedropColor(null, pixels ? averagePixels(pixels) : null);
   }
 
@@ -7539,7 +7543,7 @@ export class InkSurface {
       images,
       drag.dx,
       drag.dy,
-      this.toolState.pressureEnabled,
+      this.inkPressure,
       scale ? { x: scale.anchor.x, y: scale.anchor.y, k: scale.k } : undefined,
     );
   }

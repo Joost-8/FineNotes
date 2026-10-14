@@ -1732,3 +1732,27 @@ describe("pens and shortcuts (FineNotes#25)", () => {
     expect(classes.get("is-pen-cursor")).toBe(false);
   });
 });
+
+describe("ink pressure", () => {
+  it("draws the pages' ink by the pressure setting, not by the pen in hand", () => {
+    const frames: string[] = [];
+    const s = surfaceWith({
+      toolState: { pressureEnabled: true },
+      inkPressure: true,
+      tilesPressure: true,
+      requestFrame: () => frames.push("frame"),
+    });
+    // Picking the ball pen: new strokes record no pressure; the ink already
+    // on the page is not redrawn.
+    run(s, "setPressure", false);
+    expect(s.toolState).toEqual({ pressureEnabled: false });
+    expect(s.inkPressure).toBe(true);
+    expect(frames).toEqual([]);
+    // The setting switched off: every stroke is traced again, evenly.
+    run(s, "setInkPressure", false);
+    expect(s.inkPressure).toBe(false);
+    expect(frames).toEqual(["frame"]);
+    run(s, "setInkPressure", false);
+    expect(frames).toEqual(["frame"]);
+  });
+});
