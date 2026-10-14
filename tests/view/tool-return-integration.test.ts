@@ -195,14 +195,19 @@ describe("secondary tool integration", () => {
     expect(s.toolState.tool).toBe("pen");
     expect(s.gestureOf).not.toHaveBeenCalled();
   });
-  it("returns text to pen after editing, overrides pin only when enabled, and preserves legacy handback", () => {
+  it("returns text to pen after editing, keeps a pinned Text tool, and preserves legacy handback", () => {
     const s = surface("text");
     s.toolState.textPinned = true;
     s.toolBeforeText = "eraser";
     s.editingTextView = () => ({});
     run(s, "handBackFromText");
     expect(s.toolState.tool).toBe("text");
+    // Pinned, Text stays even with "Return to pen after one use" on.
     s.editingTextView = () => null;
+    run(s, "handBackFromText");
+    expect(s.toolState.tool).toBe("text");
+    // Unpinned, that setting returns to the pen rather than the tool before Text.
+    s.toolState.textPinned = false;
     run(s, "handBackFromText");
     expect(s.toolState.tool).toBe("pen");
     const old = surface("text", false);
@@ -225,6 +230,17 @@ describe("secondary tool integration", () => {
       run(s, "endTextEditing", view);
       expect(s.toolState.tool).toBe(enabled ? "pen" : "text");
     }
+    // Pinned, the box stays held and Text stays the tool, setting or not.
+    const pinned = surface("text", true);
+    const view = { pageId: "p1", id: "t1" };
+    pinned.toolState.textPinned = true;
+    pinned.heldText = view;
+    pinned.releaseTextEditingClass = vi.fn();
+    pinned.removeIfEmpty = vi.fn();
+    pinned.liveTextBox = () => ({});
+    run(pinned, "endTextEditing", view);
+    expect(pinned.toolState.tool).toBe("text");
+    expect(pinned.heldText).toBe(view);
   });
   it("finger outside taps dismiss the used lasso and selection callbacks arm it", () => {
     const s = surface("select");

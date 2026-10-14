@@ -8043,14 +8043,19 @@ export class InkSurface {
     if (handBack) this.handBackFromText();
   }
 
-  /** An unpinned Text tool hands back the tool used before it (GoodNotes' default). */
+  /**
+   * An unpinned Text tool hands back the tool used before it (GoodNotes'
+   * default), or the pen with "Return to pen after one use". A pinned one
+   * stays: the pin is the choice made for this tool, so it wins over the
+   * general setting.
+   */
   private handBackFromText(): void {
     if (this.toolState.tool !== "text" || this.editingTextView()) return;
+    if (this.toolState.textPinned === true) return;
     if (this.callbacks.returnToPenAfterUse?.() === true) {
       this.completeToolUse("text");
       return;
     }
-    if (this.toolState.textPinned === true) return;
     const back =
       this.toolBeforeText && this.toolBeforeText !== "text" ? this.toolBeforeText : "pen";
     this.setTool(back);
@@ -8140,7 +8145,10 @@ export class InkSurface {
       // Kept by a tap beside it: the tool waits for the tap that lets go —
       // unless the box was empty and has just gone.
       if (this.liveTextBox(view.pageId, view.id)) {
-        if (this.callbacks.returnToPenAfterUse?.() !== true) return;
+        // Only a Text tool about to hand back lets go at once; a pinned one stays.
+        const returning =
+          this.callbacks.returnToPenAfterUse?.() === true && this.toolState.textPinned !== true;
+        if (!returning) return;
         this.releaseHeldText();
       } else {
         this.heldText = null;
