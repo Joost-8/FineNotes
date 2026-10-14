@@ -8,8 +8,10 @@
  * So this module states the textarea's rules once, in page px:
  *
  * - The box is `w` wide with {@link TEXT_PAD_X} / {@link TEXT_PAD_Y} of
- *   padding. The view scales that padding with the page (ink-surface.ts), so
- *   the textarea's wrap width is zoom-invariant, as the canvas's is.
+ *   padding, plus its border's width ({@link textInset}): a border is drawn
+ *   inside the box's edge and the text keeps clear of it. The view scales
+ *   that padding with the page (ink-surface.ts), so the textarea's wrap
+ *   width is zoom-invariant, as the canvas's is.
  * - Wrapping is `white-space: pre-wrap` plus `overflow-wrap: break-word`, a
  *   textarea's defaults: break at spaces, keep runs of spaces, let trailing
  *   spaces hang past the edge, and break inside a word only when it alone is
@@ -25,12 +27,70 @@
  */
 
 import type { TextAlign } from "../model/document";
-import { type TextStyle, fontFamilyOf, lineHeightOf } from "../model/text-style";
+import {
+  type TextStyle,
+  fontFamilyOf,
+  isBorderWidth,
+  isCornerRadius,
+  lineHeightOf,
+} from "../model/text-style";
 
 /** Horizontal padding inside a text box, in page px (the textarea's own, at 1:1). */
 export const TEXT_PAD_X = 4;
 /** Vertical padding inside a text box, in page px. */
 export const TEXT_PAD_Y = 2;
+
+/**
+ * Space between a box's edge and its text, page px: the padding, plus the
+ * border's width, which is drawn inside the edge.
+ */
+export function textInset(style: Pick<TextStyle, "border">): { x: number; y: number } {
+  const width = style.border?.width;
+  const border = isBorderWidth(width) ? width : 0;
+  return { x: TEXT_PAD_X + border, y: TEXT_PAD_Y + border };
+}
+
+/**
+ * The radius a box's corners are drawn with: its own, but never more than
+ * half its shorter side (as CSS `border-radius` resolves it), 0 for none.
+ */
+export function cornerRadiusOf(radius: number | undefined, w: number, h: number): number {
+  if (!isCornerRadius(radius)) return 0;
+  return Math.max(0, Math.min(radius, w / 2, h / 2));
+}
+
+/** The calls {@link traceBoxPath} makes, which a canvas context and `Path2D` both have. */
+export interface BoxPathSink {
+  moveTo(x: number, y: number): void;
+  arcTo(x1: number, y1: number, x2: number, y2: number, r: number): void;
+  rect(x: number, y: number, w: number, h: number): void;
+  closePath(): void;
+}
+
+/**
+ * Add a box's outline to `path`: a rectangle, or one with corners of radius
+ * `r` (already resolved by {@link cornerRadiusOf}). `arcTo`, not
+ * `roundRect`, which older iPadOS WebKit lacks.
+ */
+export function traceBoxPath(
+  path: BoxPathSink,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  if (!(r > 0)) {
+    path.rect(x, y, w, h);
+    return;
+  }
+  path.moveTo(x + r, y);
+  path.arcTo(x + w, y, x + w, y + h, r);
+  path.arcTo(x + w, y + h, x, y + h, r);
+  path.arcTo(x, y + h, x, y, r);
+  path.arcTo(x, y, x + w, y, r);
+  path.closePath();
+}
 
 /** Width of `text` in the font being laid out. */
 export type Measure = (text: string) => number;
@@ -176,18 +236,20 @@ export const TEXT_FIT_SLACK = 3;
  * widest paragraph, padding included, never under `minWidth` and never past
  * `maxWidth` — where the page ends, after which the text wraps. Trailing
  * spaces hang, as they do in the textarea, so they do not widen the box.
+ * `insetX` is the box's horizontal {@link textInset}.
  */
 export function fitTextWidth(
   text: string,
   minWidth: number,
   maxWidth: number,
   measure: Measure,
+  insetX = TEXT_PAD_X,
 ): number {
   let widest = 0;
   for (const paragraph of text.split("\n")) {
     widest = Math.max(widest, measure(paragraph.trimEnd()));
   }
-  const natural = Math.ceil(widest + 2 * TEXT_PAD_X + TEXT_FIT_SLACK);
+  const natural = Math.ceil(widest + 2 * insetX + TEXT_FIT_SLACK);
   return Math.max(minWidth, Math.min(natural, maxWidth));
 }
 
@@ -196,12 +258,13 @@ export function layoutTextBox(
   box: TextStyle & { x: number; y: number; w: number; h?: number; text: string },
   measure: Measure,
 ): TextBoxLayout {
-  const width = Math.max(0, box.w - 2 * TEXT_PAD_X);
+  const inset = textInset(box);
+  const width = Math.max(0, box.w - 2 * inset.x);
   const lineBox = box.fontSize * lineHeightOf(box);
   const lines = alignLines(wrapText(box.text, width, measure), width, box.align ?? "left", measure);
   // An auto-height box is at least one line tall, as the textarea is.
-  const height = box.h ?? 2 * TEXT_PAD_Y + Math.max(1, lines.length) * lineBox;
-  return { x: box.x + TEXT_PAD_X, y: box.y + TEXT_PAD_Y, width, lineBox, height, lines };
+  const height = box.h ?? 2 * inset.y + Math.max(1, lines.length) * lineBox;
+  return { x: box.x + inset.x, y: box.y + inset.y, width, lineBox, height, lines };
 }
 
 /**

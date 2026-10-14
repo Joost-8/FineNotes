@@ -48,6 +48,7 @@ import type {
   TextBoxElement,
 } from "../model/document";
 import { SCHEMA_VERSION } from "../constants";
+import { MIN_TEXT_BOX_WIDTH, isBorderWidth, isCornerRadius } from "../model/text-style";
 import { normalizePageTitle } from "../model/contents";
 import { textSegments } from "../model/text-links";
 import { decodeAppleLz4 } from "./apple-lz4";
@@ -364,24 +365,35 @@ export function readGoodnotes(
         const typed = readTyped(body, 32, pageLink);
         const box = typed ? textBoxOf(body, typed, k, `t${textN + 1}`) : null;
         if (box) {
-          page.textBoxes.push(box);
-          textN++;
           if (typed?.written) tally.add("links", pageNumber);
           if (typed?.elsewhere) tally.add("elsewhere", pageNumber);
           if (typed?.mixed) tally.add("mixed", pageNumber);
         }
-        const shape = readShape(body, k, `s${strokeN + 1}`);
-        if (shape) {
-          page.strokes.push(shape.outline);
-          strokeN++;
-          tally.add("shapes", pageNumber);
-          if (shape.fill && !box) {
-            // A filled rectangle keeps its fill as an empty filled box.
-            if (shape.outline.shape === "rect" || shape.outline.shape === "roundrect") {
-              page.textBoxes.push({ ...shape.fill, id: `t${++textN}` });
-            } else tally.add("fills", pageNumber);
+        const frame = readFrame(body);
+        const framed = frame ? framedBox(frame, box, k, `t${textN + 1}`) : null;
+        if (framed) {
+          // A rectangle, rounded or not: one box with its border, corners and fill.
+          page.textBoxes.push(framed);
+          textN++;
+        } else {
+          if (box) {
+            page.textBoxes.push(box);
+            textN++;
           }
-        } else if (!box) tally.add("empty", pageNumber);
+          if (frame) {
+            // A diamond or another polygon, or a rectangle a box cannot be:
+            // its outline as a shape stroke.
+            page.strokes.push(outlineOf(frame, k, `s${strokeN + 1}`));
+            strokeN++;
+            tally.add("shapes", pageNumber);
+            if (frame.fill && !box) {
+              // Such a rectangle keeps its fill as an empty filled box.
+              if (frame.vertices.length < 3) {
+                page.textBoxes.push(filledBox(frame, k, `t${++textN}`));
+              } else tally.add("fills", pageNumber);
+            }
+          } else if (!box) tally.add("empty", pageNumber);
+        }
       } else if (kind === 20) {
         const note = readComment(body, k, `t${textN + 1}`, pageLink);
         if (note) {
@@ -818,18 +830,32 @@ function fontSize(attrs: Message | undefined, store: Message): number {
   return num(store.message(5)?.message(1), 40) ?? 24;
 }
 
+/** What a text box draws around itself, in Goodnotes units. */
+interface Frame {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The height was stored (`21.2.2`), not taken from the width. */
+  storedHeight: boolean;
+  /** A polygon's vertices in the box's unit square; empty for a rectangle. */
+  vertices: Array<[number, number]>;
+  cornerRadius: number;
+  /** The border's width, 0 for none (or one in a fully transparent colour). */
+  borderWidth: number;
+  /** The border's colour, with its alpha; absent for none. */
+  borderColor?: string;
+  fill?: string;
+}
+
 /**
- * A text box's outline as a shape stroke, when it has one: a polygon in the
- * box's unit square (field `22.3`, e.g. a diamond), a rounded rectangle
- * (`22.1.1`, the corner radius) or a plain border (`31.1`, its width, wider
- * than 0). `fill` is the box's fill as an empty text box the same size, for
- * the caller to keep when the outline is a rectangle.
+ * A text box's frame, when it draws one: a plain border (`31.1`, its width,
+ * wider than 0), a rounded rectangle (`22.1.1`, the corner radius) or a
+ * polygon in the box's unit square (field `22.3`, e.g. a diamond), each with
+ * the box's fill (`30.1.1`). A drawn shape without a border needs a fill to
+ * show at all.
  */
-function readShape(
-  body: Message,
-  k: number,
-  id: string,
-): { outline: Stroke; fill?: Omit<TextBoxElement, "id"> } | null {
+function readFrame(body: Message): Frame | null {
   const geometry = body.message(22);
   const border = body.message(31);
   const borderWidth = num(border, 1) ?? 0;
@@ -841,19 +867,91 @@ function readShape(
     .map((v): [number, number] => [finite(num(v, 1)), finite(num(v, 2))]);
   const cornerRadius = finite(num(geometry?.message(1), 1));
   const drawn = vertices.length >= 3 || cornerRadius > 0;
-  // An outline needs a border, or a drawn shape whose fill alone shows it.
   const origin = body.message(20)?.message(1);
   const size = body.message(21)?.message(2);
-  const x = finite(num(origin, 1));
-  const y = finite(num(origin, 2));
   const w = finite(num(size, 1));
   const hRaw = num(size, 2);
-  const h = hRaw !== undefined && Number.isFinite(hRaw) && hRaw > 0 ? hRaw : w;
+  const storedHeight = hRaw !== undefined && Number.isFinite(hRaw) && hRaw > 0;
+  const h = storedHeight ? hRaw : w;
   if (!(w > 0 && h > 0)) return null;
-
   const fill = rgba(body.message(30)?.message(1)?.message(1), true);
-  if (!(borderWidth > 0) && !(drawn && fill)) return null;
-  const colour = (borderWidth > 0 ? rgba(border?.message(3)?.message(1)) : undefined) ?? fill;
+  // A border without a colour is black; one in a transparent colour is none.
+  const colour = border?.message(3)?.message(1);
+  const borderColor = borderWidth > 0 ? (colour ? rgba(colour, true) : "#000000") : undefined;
+  if (!borderColor && !(drawn && fill)) return null;
+  return {
+    x: finite(num(origin, 1)),
+    y: finite(num(origin, 2)),
+    w,
+    h,
+    storedHeight,
+    vertices,
+    cornerRadius,
+    borderWidth: borderColor ? borderWidth : 0,
+    ...(borderColor ? { borderColor } : {}),
+    ...(fill ? { fill } : {}),
+  };
+}
+
+/**
+ * A rectangular frame (square or rounded corners) as one box: the text box
+ * it frames, or an empty one, spread to the frame and given its border,
+ * corners and fill. The text keeps clear of the border by itself
+ * (`text-layout.ts`). `null` for a polygon, for a border or radius past
+ * what the loader keeps, and for a frame narrower than the narrowest box the
+ * loader keeps (it would reopen wider than its outline); those come over as
+ * an outline instead.
+ */
+function framedBox(
+  frame: Frame,
+  box: TextBoxElement | null,
+  k: number,
+  id: string,
+): TextBoxElement | null {
+  if (frame.vertices.length >= 3) return null;
+  if (round2(frame.w * k) < MIN_TEXT_BOX_WIDTH) return null;
+  const width = round2(frame.borderWidth * k);
+  const border = frame.borderColor && width > 0 ? { width, color: frame.borderColor } : undefined;
+  if (border && !isBorderWidth(border.width)) return null;
+  const radius = round2(Math.min(frame.cornerRadius, frame.w / 2, frame.h / 2) * k);
+  if (radius > 0 && !isCornerRadius(radius)) return null;
+  if (!border && !frame.fill && !box) return null;
+  const framed: TextBoxElement = {
+    ...(box ?? { id, x: 0, y: 0, w: 0, text: "", color: "#000000", fontSize: 22 }),
+    x: round2(frame.x * k),
+    y: round2(frame.y * k),
+    w: round2(frame.w * k),
+  };
+  // Goodnotes' frame is the box's size, however little text it holds.
+  if (frame.storedHeight || !box) framed.h = round2(Math.max(24, frame.h * k));
+  delete framed.fit;
+  if (frame.fill) framed.fill = frame.fill;
+  if (border) framed.border = border;
+  if (radius > 0) framed.radius = radius;
+  return framed;
+}
+
+/** A rectangle's fill as an empty filled box the frame's size. */
+function filledBox(frame: Frame, k: number, id: string): TextBoxElement {
+  return {
+    id,
+    x: round2(frame.x * k),
+    y: round2(frame.y * k),
+    w: round2(frame.w * k),
+    h: round2(Math.max(24, frame.h * k)),
+    text: "",
+    color: "#000000",
+    fontSize: 22,
+    ...(frame.fill ? { fill: frame.fill } : {}),
+  };
+}
+
+/**
+ * A frame's outline as a shape stroke: a diamond, a triangle or a polygon,
+ * or a rectangle whose border or corners the loader would not keep.
+ */
+function outlineOf(frame: Frame, k: number, id: string): Stroke {
+  const { x, y, w, h, vertices } = frame;
   let kind: ShapeKind = "rect";
   let points: Array<[number, number]>;
   if (vertices.length >= 3) {
@@ -870,7 +968,7 @@ function readShape(
     kind = diamond ? "diamond" : vertices.length === 3 ? "triangle" : "polygon";
     points = [...vertices, vertices[0]].map(([u, v]) => [x + u * w, y + v * h]);
   } else {
-    const radius = Math.min(cornerRadius, w / 2, h / 2);
+    const radius = Math.min(frame.cornerRadius, w / 2, h / 2);
     if (radius > 0) {
       kind = "roundrect";
       points = roundRect(x, y, w, h, radius);
@@ -884,28 +982,15 @@ function readShape(
       ];
     }
   }
-  const outline: Stroke = {
+  const colour = (frame.borderWidth > 0 ? frame.borderColor : undefined) ?? frame.fill;
+  return {
     id,
     color: colour?.slice(0, 7) ?? "#000000",
-    size: round2(Math.max(0.5, (borderWidth > 0 ? borderWidth : 2) * k)),
+    size: round2(Math.max(0.5, (frame.borderWidth > 0 ? frame.borderWidth : 2) * k)),
     tool: "pen",
     pts: points.flatMap(([px, py]) => [round2(px * k), round2(py * k), 0.5]),
     shape: kind,
   };
-  const result: { outline: Stroke; fill?: Omit<TextBoxElement, "id"> } = { outline };
-  if (fill) {
-    result.fill = {
-      x: round2(x * k),
-      y: round2(y * k),
-      w: round2(w * k),
-      h: round2(Math.max(24, h * k)),
-      text: "",
-      color: "#000000",
-      fontSize: 22,
-      fill,
-    };
-  }
-  return result;
 }
 
 /** A rounded rectangle as the Shape tool lays one out: four 8-segment quarter arcs, closed (37 points). */

@@ -10,6 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Borders and rounded corners for text boxes.** The Text tool's new
+  border button, next to the fill, gives a box a thin, medium or thick
+  border in any colour, and rounded corners for its border and fill. The
+  text keeps clear of a thick border, and thumbnails, exports and page
+  embeds show the box as the page does. Goodnotes notebooks keep their
+  bordered and rounded text boxes as one box with its text, instead of an
+  outline drawn around a separate box; diamonds and other polygons still
+  come over as outlines.
+
 - **Resize a lasso selection by its corners.** Drag a square handle on the
   selection's frame to make everything in it bigger or smaller, with the
   aspect kept and the opposite corner holding still. Handwriting gets

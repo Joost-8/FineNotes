@@ -21,7 +21,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
-import { MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
+import { MAX_BORDER_WIDTH, MAX_CORNER_RADIUS, MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
 
 /** The elements a selection holds on one page. */
 export interface PageElements {
@@ -142,12 +142,15 @@ export function scalePoints(pts: readonly number[], ax: number, ay: number, k: n
  * How far a resize may scale `textBoxes`: no box's font below
  * `MIN_TEXT_SIZE`, which the loader would raise it back to (a size that
  * changes on the next open is a silent lie), nor above `MAX_TEXT_SIZE`, the
- * largest the style menu offers. Without text boxes, anything goes.
+ * largest the style menu offers; and no border or corner past the most the
+ * loader keeps, which would drop it. Without text boxes, anything goes.
  */
 export function textScaleRange(textBoxes: readonly TextBoxElement[]): { min: number; max: number } {
   let min = 0;
   let max = Infinity;
-  for (const { fontSize } of textBoxes) {
+  for (const { fontSize, border, radius } of textBoxes) {
+    if (border && border.width > 0) max = Math.min(max, MAX_BORDER_WIDTH / border.width);
+    if (radius !== undefined && radius > 0) max = Math.min(max, MAX_CORNER_RADIUS / radius);
     if (!(fontSize > 0) || !Number.isFinite(fontSize)) continue;
     min = Math.max(min, MIN_TEXT_SIZE / fontSize);
     max = Math.min(max, MAX_TEXT_SIZE / fontSize);
@@ -186,6 +189,8 @@ export class ScaleElements implements Command {
       w: number;
       h: number | undefined;
       fontSize: number;
+      border: TextBoxElement["border"];
+      radius: number | undefined;
     }>;
   } | null = null;
 
@@ -222,13 +227,16 @@ export class ScaleElements implements Command {
         return { image, x, y, w, h };
       }),
       textBoxes: on.textBoxes.map((textBox) => {
-        const { x, y, w, h, fontSize } = textBox;
+        const { x, y, w, h, fontSize, border, radius } = textBox;
         textBox.x = sx(x);
         textBox.y = sy(y);
         textBox.w = w * k;
         if (h !== undefined) textBox.h = h * k;
         textBox.fontSize = fontSize * k;
-        return { textBox, x, y, w, h, fontSize };
+        // The border and corners grow with the box, as a stroke's width does.
+        if (border) textBox.border = { ...border, width: border.width * k };
+        if (radius !== undefined) textBox.radius = radius * k;
+        return { textBox, x, y, w, h, fontSize, border, radius };
       }),
     };
   }
@@ -246,13 +254,15 @@ export class ScaleElements implements Command {
       image.w = w;
       image.h = h;
     }
-    for (const { textBox, x, y, w, h, fontSize } of scaled.textBoxes) {
+    for (const { textBox, x, y, w, h, fontSize, border, radius } of scaled.textBoxes) {
       textBox.x = x;
       textBox.y = y;
       textBox.w = w;
       // Assigned, never deleted and re-added: the key keeps its place.
       if (h !== undefined) textBox.h = h;
       textBox.fontSize = fontSize;
+      if (border) textBox.border = border;
+      if (radius !== undefined) textBox.radius = radius;
     }
     this.scaled = null;
   }

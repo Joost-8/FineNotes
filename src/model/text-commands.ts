@@ -34,6 +34,8 @@ const STYLE_KEYS = [
   "align",
   "lineHeight",
   "fill",
+  "border",
+  "radius",
 ] as const;
 
 /** A box's style keys before a change. A key absent here was absent on the box. */

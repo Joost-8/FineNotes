@@ -74,6 +74,8 @@ import {
   DEFAULT_TEXT_STYLE,
   LINE_HEIGHTS,
   TEXT_ALIGN_LABELS,
+  TEXT_BORDER_WIDTHS,
+  TEXT_CORNER_RADIUS,
   TEXT_FILLS,
   TEXT_FONT_LABELS,
   TEXT_SIZES,
@@ -1518,6 +1520,10 @@ export class Toolbar {
       this.toggleTextPopover("fill", b, (body) => this.renderTextFills(body)),
     ).append(fillGlyph(style.fill));
 
+    this.textControl("is-glyph", style.border ? "Box border" : "Box border: none", (b) =>
+      this.toggleTextPopover("border", b, (body) => this.renderTextBorder(body)),
+    ).append(borderGlyph(style.border, style.radius !== undefined));
+
     // Off (the default), every new box fits its text, as in GoodNotes; on,
     // a drag draws the box's size, and a tap still makes a fitted box.
     const dragSize = this.state.textDragSize === true;
@@ -1780,6 +1786,53 @@ export class Toolbar {
         this.pickText({ fill });
       },
       onEyedropper: this.eyedropper((fill) => this.pickText({ fill })),
+    });
+  }
+
+  /**
+   * The box's border: none or a width, rounded corners, and a colour. Each
+   * choice applies at once and the popover stays open, so a border can be
+   * set up in one visit.
+   */
+  private renderTextBorder(body: HTMLElement): void {
+    const style = this.shownTextStyle();
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Border" });
+    const row = body.createDiv({ cls: "goodobsidian-text-row" });
+    const widths = [{ label: "None", width: null }, ...TEXT_BORDER_WIDTHS];
+    for (const { label, width } of widths) {
+      const button = this.textOption(row, "is-flag", "", () =>
+        this.applyTextPatch({ borderWidth: width }),
+      );
+      button.append(borderWidthGlyph(width));
+      const name = width === null ? "No border" : `${label} border`;
+      button.setAttribute("aria-label", name);
+      button.setAttribute("title", name);
+      const on = width === null ? !style.border : style.border?.width === width;
+      button.setAttribute("aria-pressed", String(on));
+      button.toggleClass("is-active", on);
+    }
+    const rounded = style.radius !== undefined;
+    this.switchRow(
+      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
+      "Rounded corners",
+      rounded,
+      (on) => this.applyTextPatch({ radius: on ? TEXT_CORNER_RADIUS : null }),
+    );
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Border colour" });
+    const current = style.border?.color ?? style.color;
+    // A colour picked with no border adds a thin one in that colour.
+    renderColorPicker(body, {
+      current: style.border ? current : null,
+      extra: this.pickerExtras(current),
+      recent: this.state.recentColors ?? [],
+      onPick: (color) => {
+        if (color) this.applyTextPatch({ borderColor: color });
+      },
+      onCustom: (color) => {
+        this.rememberColor(color);
+        this.applyTextPatch({ borderColor: color });
+      },
+      onEyedropper: this.eyedropper((color) => this.applyTextPatch({ borderColor: color })),
     });
   }
 
@@ -2866,6 +2919,37 @@ function fillGlyph(fill: string | undefined): SVGElement {
       ...(fill ? { fill } : {}),
     });
     if (!fill) add("path", { d: "M6.5 6.5l11 11" });
+  });
+}
+
+/**
+ * Box border, in the pill: a square outlined in the border's colour, as thick
+ * as the border and with its corners; a dotted square for none.
+ */
+function borderGlyph(border: TextStyle["border"], rounded: boolean): SVGElement {
+  return textGlyph((add) => {
+    const width = border ? Math.min(3.2, 1.2 + border.width * 0.5) : 1.6;
+    add("rect", {
+      x: "4.5",
+      y: "4.5",
+      width: "15",
+      height: "15",
+      rx: rounded ? "4.5" : "0.5",
+      "stroke-width": width.toFixed(1),
+      ...(border ? { stroke: border.color } : { "stroke-dasharray": "1.5 2.6" }),
+    });
+  });
+}
+
+/** A border width in the border popover: a line that thick, or a struck-out square for none. */
+function borderWidthGlyph(width: number | null): SVGElement {
+  return textGlyph((add) => {
+    if (width === null) {
+      add("rect", { x: "4", y: "4", width: "16", height: "16", rx: "2.5" });
+      add("path", { d: "M6.5 6.5l11 11" });
+      return;
+    }
+    add("path", { d: "M4 12h16", "stroke-width": String(Math.min(5, 0.8 + width)) });
   });
 }
 
