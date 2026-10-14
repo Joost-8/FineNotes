@@ -19,7 +19,9 @@ import {
   drawMissingSource,
   drawSynthetic,
   fillPaper,
+  pageLook,
 } from "../canvas/backdrop";
+import { type PdfDraw, invertPdfArea } from "../canvas/night";
 import type { BackdropPainter } from "../canvas/renderer";
 import { tilesFor } from "../canvas/pdf-tiles";
 import {
@@ -38,7 +40,10 @@ import {
 } from "./pdf-backdrop";
 
 export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter {
-  /** Paper colours. Paper-white unless the notebook overrides it. */
+  /**
+   * Paper colours, where a paint names none (`target.paper`) and for
+   * {@link draw}. Paper-white unless set.
+   */
   theme: PaperTheme = LIGHT_PAPER;
 
   /** `devicePixelRatio * viewScale`, quantised. Part of the PDF cache key. */
@@ -127,51 +132,69 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     this.pdf.setVisibleRegions(requests, shown);
   }
 
-  /** Synchronous paint for the scroll path. Never blocks. */
+  /**
+   * Synchronous paint for the scroll path. Never blocks.
+   *
+   * With dark pages a PDF page is painted as it is, then inverted in place
+   * (`invertPdfArea`), unless the theme keeps PDFs. So the raster cache
+   * only ever holds the true page, whatever the setting: switching it
+   * re-uses every raster, and no light raster can be shown for a dark one
+   * or the other way round. The tiles holding the result are the
+   * renderer's, which empties them when the theme changes.
+   */
   paint(
     ctx: CanvasRenderingContext2D,
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight = 1,
-    target?: { deviceScale: number; region?: Bounds },
+    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
   ): void {
+    const theme = target?.paper ?? this.theme;
     if (backdrop.kind !== "pdf") {
-      drawSynthetic(ctx, backdrop, geometry, this.theme, weight);
+      drawSynthetic(ctx, backdrop, geometry, theme, weight);
       return;
     }
+    // Inverted or kept, the page is painted as it is first.
+    const invert = pageLook(backdrop, theme).night;
+    const paper = theme.night ? LIGHT_PAPER : theme;
     if (!this.pdf) {
-      drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
+      drawMissingSource(ctx, geometry, paper, missingLabel(backdrop.path));
+      if (invert) invertPdfArea(ctx, geometry.width, geometry.height, []);
       return;
     }
+    const draws: PdfDraw[] = [];
     const scale = this.pageScale ?? quantiseScale(target?.deviceScale ?? this.scale);
     const area = { geometry };
     const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
-    if (entry) this.paintEntry(ctx, entry, geometry);
+    if (entry) this.paintEntry(ctx, entry, geometry, paper, draws);
     else {
       // Not rasterised at this scale yet: the page at another scale if one is
       // cached (a zoom just changed it), else plain paper; repaint when the
       // bitmap arrives.
       const stand = this.pdf.peekNearest(backdrop.path, backdrop.page, scale, area);
-      if (stand) this.paintEntry(ctx, stand, geometry);
-      else fillPaper(ctx, geometry, this.theme);
+      if (stand) this.paintEntry(ctx, stand, geometry, paper, draws);
+      else fillPaper(ctx, geometry, paper);
       this.pdf.request(backdrop.path, backdrop.page, scale, area);
     }
     // Previews/exports never pick up viewport detail. Zoomed in, a tile draws
     // every cached detail patch that meets it, newest on top, even while the
     // view moves; around them the page image remains.
     const region = target?.region;
-    if (!region || this.detailScale === null) return;
-    for (const patch of this.pdf.detailPatches(
-      backdrop.path,
-      backdrop.page,
-      this.detailScale,
-      geometry,
-    )) {
-      const { box, canvas } = patch;
-      const bounds = { minX: box.x, minY: box.y, maxX: box.x + box.w, maxY: box.y + box.h };
-      if (!canvas.width || !canvas.height || !boundsMeet(bounds, region)) continue;
-      ctx.drawImage(canvas, box.x, box.y, box.w, box.h);
+    if (region && this.detailScale !== null) {
+      for (const patch of this.pdf.detailPatches(
+        backdrop.path,
+        backdrop.page,
+        this.detailScale,
+        geometry,
+      )) {
+        const { box, canvas } = patch;
+        const bounds = { minX: box.x, minY: box.y, maxX: box.x + box.w, maxY: box.y + box.h };
+        if (!canvas.width || !canvas.height || !boundsMeet(bounds, region)) continue;
+        ctx.drawImage(canvas, box.x, box.y, box.w, box.h);
+        draws.push({ source: canvas, x: box.x, y: box.y, w: box.w, h: box.h });
+      }
     }
+    if (invert) invertPdfArea(ctx, geometry.width, geometry.height, draws);
   }
 
   /** The contract's asynchronous form: waits for the raster. */
@@ -189,29 +212,36 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       return;
     }
     const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, { geometry });
-    this.paintEntry(ctx, entry, geometry);
+    this.paintEntry(ctx, entry, geometry, this.theme);
   }
 
-  private paintEntry(ctx: CanvasRenderingContext2D, entry: PdfEntry, geometry: PageGeometry): void {
+  /** Paint a rasterised page on `paper`; each `drawImage` it makes is added to `draws`. */
+  private paintEntry(
+    ctx: CanvasRenderingContext2D,
+    entry: PdfEntry,
+    geometry: PageGeometry,
+    paper: PaperTheme,
+    draws: PdfDraw[] = [],
+  ): void {
     if (!entry.ok) {
       // The page still exists and the ink is still drawn over it.
-      drawMissingSource(ctx, geometry, this.theme, entry.reason);
+      drawMissingSource(ctx, geometry, paper, entry.reason);
       return;
     }
-    fillPaper(ctx, geometry, this.theme);
+    fillPaper(ctx, geometry, paper);
     const { canvas } = entry;
     if (canvas.width === 0 || canvas.height === 0) return;
-    if (entry.box) {
-      const { x, y, w, h } = entry.box;
-      ctx.drawImage(canvas, x, y, w, h);
-      return;
+    let box = entry.box;
+    if (!box) {
+      // Contain: a PDF page whose aspect differs from the notebook's page size is
+      // centred rather than stretched — stretched slides read as a rendering bug.
+      const k = Math.min(geometry.width / canvas.width, geometry.height / canvas.height);
+      const w = canvas.width * k;
+      const h = canvas.height * k;
+      box = { x: (geometry.width - w) / 2, y: (geometry.height - h) / 2, w, h };
     }
-    // Contain: a PDF page whose aspect differs from the notebook's page size is
-    // centred rather than stretched — stretched slides read as a rendering bug.
-    const k = Math.min(geometry.width / canvas.width, geometry.height / canvas.height);
-    const w = canvas.width * k;
-    const h = canvas.height * k;
-    ctx.drawImage(canvas, (geometry.width - w) / 2, (geometry.height - h) / 2, w, h);
+    ctx.drawImage(canvas, box.x, box.y, box.w, box.h);
+    draws.push({ source: canvas, ...box });
   }
 }
 

@@ -10,12 +10,13 @@
  * Two rules from contracts/design-brief.md that this module exists to enforce:
  *
  * - **Pages are paper-white by default.** Paper colour is a property of the
- *   notebook, not of the Obsidian theme. A dark page is an explicit per-notebook
- *   override ({@link DARK_PAPER}), never something the app theme imposes.
- * - **Ink colour is absolute.** Nothing here touches stroke colour. The renderer
- *   paints `stroke.color` verbatim; a black stroke stays black on a dark page
- *   (the user is told to recolour, rather than having their ink changed under
- *   them).
+ *   notebook, not of the Obsidian theme. Dark pages ({@link DARK_PAPER}) are
+ *   a view setting the user picks (light, dark, or following Obsidian's
+ *   theme), never something the app theme imposes unasked.
+ * - **Ink colour is absolute.** A stored colour is never changed. On dark
+ *   pages every colour a page names (its paper, rules, printed text, and the
+ *   renderer's ink and text) is *shown* through `./night`'s mapping, at
+ *   paint time only; see {@link pageLook}.
  *
  * All drawing happens in **page space**: the caller has already translated the
  * context so `(0, 0)` is the page's top-left corner, and `geometry` is the full
@@ -48,6 +49,7 @@ import {
   softGradient,
 } from "./cover-patterns";
 import { type LineBlock, evenBlock } from "./writing-lines";
+import { NIGHT_PAPER, nightColor, nightRule, paperFlips } from "./night";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
  *  these are the *paper*, which is deliberately theme-independent. */
@@ -70,6 +72,13 @@ export interface PaperTheme {
    * rather than to the chrome.
    */
   desk: string;
+  /**
+   * Dark pages: the colours a page names are shown through `./night`'s
+   * mapping ({@link pageLook}). Absent on light paper.
+   */
+  night?: boolean;
+  /** Dark pages only: PDF pages are drawn as they are, not inverted (dark slides). */
+  keepPdf?: boolean;
 }
 
 /** The default: real paper-white, whatever the Obsidian theme is doing. */
@@ -82,18 +91,65 @@ export const LIGHT_PAPER: PaperTheme = {
   desk: "#3b3e45",
 };
 
-/** The per-notebook dark override. Not automatic — the user asks for it. */
+/**
+ * Dark pages, the view setting. Its paper, rule and marker are the light
+ * ones as `./night` shows them (the rule as `nightRule`), so a page that
+ * names no colours looks the same as one that names the light defaults. The desk is darker than the
+ * paper, and the edge a faint light line, so a page still lies on it.
+ */
 export const DARK_PAPER: PaperTheme = {
-  paper: "#1c1d21",
-  rule: "#383b44",
-  edge: "rgba(0, 0, 0, 0.55)",
-  shadow: "rgba(0, 0, 0, 0.55)",
-  marker: "#7d848f",
-  desk: "#1b1c1f",
+  paper: NIGHT_PAPER,
+  rule: nightRule(LIGHT_PAPER.rule),
+  edge: "rgba(255, 255, 255, 0.1)",
+  shadow: "rgba(0, 0, 0, 0.6)",
+  marker: nightColor(LIGHT_PAPER.marker),
+  desk: "#0e0f11",
+  night: true,
 };
 
-export function paperTheme(dark: boolean): PaperTheme {
-  return dark ? DARK_PAPER : LIGHT_PAPER;
+/** Dark pages that leave PDF pages as they are. */
+const DARK_PAPER_KEEP_PDF: PaperTheme = { ...DARK_PAPER, keepPdf: true };
+
+/** The paper theme for dark pages or light; `keepPdf` only matters for dark. */
+export function paperTheme(dark: boolean, keepPdf = false): PaperTheme {
+  if (!dark) return LIGHT_PAPER;
+  return keepPdf ? DARK_PAPER_KEEP_PDF : DARK_PAPER;
+}
+
+/** How one page is shown under a paper theme. */
+export interface PageLook {
+  /** The colour the page's paper is painted. */
+  paper: string;
+  /** The colours the page names are shown through `nightColor`. */
+  night: boolean;
+  /** The theme its own defaults (rules, labels) come from. */
+  theme: PaperTheme;
+}
+
+/**
+ * How a page with `backdrop` is shown under `theme`. By day, as stored. With
+ * dark pages, a page whose paper is light is inverted (`./night`): its paper,
+ * rules, printed text, ink and text are shown through `nightColor`. A page
+ * whose paper is already dark (a navy cover) is left as it is, ink and all,
+ * and so is a PDF page when the theme keeps PDFs ({@link PaperTheme.keepPdf}).
+ */
+export function pageLook(backdrop: Backdrop, theme: PaperTheme): PageLook {
+  const own = backdrop.kind !== "pdf" ? backdrop.paperColor : undefined;
+  if (!theme.night) return { paper: own ?? theme.paper, night: false, theme };
+  if (backdrop.kind === "pdf") {
+    return theme.keepPdf
+      ? { paper: LIGHT_PAPER.paper, night: false, theme: LIGHT_PAPER }
+      : { paper: theme.paper, night: true, theme };
+  }
+  if (own === undefined) return { paper: theme.paper, night: true, theme };
+  return paperFlips(own)
+    ? { paper: nightColor(own), night: true, theme }
+    : { paper: own, night: false, theme: LIGHT_PAPER };
+}
+
+/** A colour a page names, as a page of that look shows it. */
+export function shownColor(color: string, night: boolean): string {
+  return night ? nightColor(color) : color;
 }
 
 /**
@@ -1299,16 +1355,22 @@ export function drawSyntheticRules(
   const paper = backdrop;
   const entry = rulingEntry(paper.kind);
   const spacing = resolveSpacing(paper.spacing, paper.kind);
+  const look = pageLook(backdrop, theme);
   // A heavy preview weight must not fill the gaps of a dense ruling (music
   // staves are 12 px apart): keep a line under a quarter of its pitch.
   const requested = Number.isFinite(weight) && weight > 0 ? weight : 1;
   const context: RulingContext = {
     geometry,
     spacing,
-    color: paper.color ?? theme.rule,
+    color:
+      paper.color === undefined
+        ? look.theme.rule
+        : look.night
+          ? nightRule(paper.color)
+          : paper.color,
     weight: Math.max(1, Math.min(requested, spacing / 4)),
-    theme,
-    paper: paper.paperColor ?? theme.paper,
+    theme: look.theme,
+    paper: look.paper,
   };
 
   ctx.save();
@@ -1331,9 +1393,10 @@ export function drawSynthetic(
   theme: PaperTheme,
   weight = 1,
 ): void {
-  fillPaper(ctx, geometry, theme, backdrop.paperColor);
+  const look = pageLook(backdrop, theme);
+  fillPaper(ctx, geometry, theme, look.paper);
   drawSyntheticRules(ctx, backdrop, geometry, theme, weight);
-  if (backdrop.printed?.length) drawPrinted(ctx, backdrop.printed);
+  if (backdrop.printed?.length) drawPrinted(ctx, backdrop.printed, look.night);
 }
 
 /** Printed text's colour when it names none: the grey of a printed prompt. */
@@ -1345,14 +1408,18 @@ export const PRINTED_COLOR = "#7a7a7a";
 const PRINTED_FONT =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-/** Text printed on the paper, one line each, from its baseline. */
-function drawPrinted(ctx: CanvasRenderingContext2D, lines: readonly PrintedText[]): void {
+/** Text printed on the paper, one line each, from its baseline; `night` as {@link pageLook}. */
+function drawPrinted(
+  ctx: CanvasRenderingContext2D,
+  lines: readonly PrintedText[],
+  night: boolean,
+): void {
   ctx.save();
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
   for (const line of lines) {
     ctx.font = `${line.bold ? "600 " : ""}${line.size}px ${PRINTED_FONT}`;
-    ctx.fillStyle = line.color ?? PRINTED_COLOR;
+    ctx.fillStyle = shownColor(line.color ?? PRINTED_COLOR, night);
     ctx.fillText(line.text, line.x, line.y);
   }
   ctx.restore();

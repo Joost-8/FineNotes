@@ -230,6 +230,8 @@ describe("the rows", () => {
       [WRITING, "Default ink color", "color:defaultColor"],
       [WRITING, "Custom colors", "text:customColors"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
+      [PAGES, "Page appearance", "dropdown:pageAppearance"],
+      [PAGES, "Dark PDF pages", "toggle:invertPdfPages"],
       [PAGES, "Paper width", "render"],
       [PAGES, "(block)", "render"],
       [PAGES, "Default folder for new notebooks", "render"],
@@ -298,6 +300,8 @@ describe("the rows", () => {
         "fountain pen",
         "brush pen",
       ],
+      "Page appearance": ["dark mode", "night mode", "invert", "theme"],
+      "Dark PDF pages": ["dark mode", "invert", "slides"],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
       "Show New notebook in right-click menu": ["context menu", "file explorer", "new notebook"],
@@ -400,6 +404,8 @@ describe("which rows show", () => {
       "Default ink color",
       "Custom colors",
       "Highlighter opacity",
+      // "Dark PDF pages" shows with dark pages only.
+      "Page appearance",
       "Paper width",
       "Default folder for new notebooks",
       "Show New notebook in right-click menu",
@@ -428,7 +434,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block 27)",
+      "(block 29)",
       "Handwriting recognition",
     ]);
   });

@@ -27,7 +27,7 @@
  */
 
 import { type App, Component, Keymap, type TAbstractFile, TFile } from "obsidian";
-import { paperTheme } from "../canvas/backdrop";
+import type { PaperTheme } from "../canvas/backdrop";
 import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
@@ -92,6 +92,8 @@ export interface PageEmbedHost {
   paperWidth(): number;
   usePressure(): boolean;
   highlighterAlpha(): number;
+  /** The paper theme pages are shown in: light, or dark pages (the view setting). */
+  paper(): PaperTheme;
 }
 
 /** Quiet time after a notebook is saved before its embeds repaint. */
@@ -128,6 +130,7 @@ export class PageEmbeds extends Component {
     this.register(this.installHook());
     const { vault } = this.host.app;
     this.registerEvent(vault.on("modify", (file) => this.fileChanged(file)));
+    this.registerEvent(this.host.app.workspace.on("css-change", () => this.repaintAll()));
     this.registerEvent(vault.on("create", (file) => this.fileChanged(file)));
     this.registerEvent(vault.on("delete", (file) => this.fileDeleted(file)));
     this.registerEvent(
@@ -309,7 +312,9 @@ export class PageEmbeds extends Component {
     embed.showPage(page);
     const size = embedPaintSize(embed.boxWidth(), window.devicePixelRatio || 1);
     if (!size) return;
-    const key = `${pageSignature(page)}@${size.cssWidth}x${size.dpr}`;
+    const paper = this.host.paper();
+    const look = paper.night ? (paper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
+    const key = `${pageSignature(page)}@${size.cssWidth}x${size.dpr}${look}`;
     if (key === embed.painted) return;
     await paintPagePreview(embed.canvas, page, this.sources(page), size.cssWidth, size.dpr);
     if (!this.live.has(embed)) return;
@@ -336,7 +341,7 @@ export class PageEmbeds extends Component {
     return {
       pdf: page.backdrop.kind === "pdf" ? this.pdfCache() : this.pdf,
       images: page.images.length > 0 ? this.imageCache() : this.images,
-      paper: paperTheme(false),
+      paper: this.host.paper(),
       usePressure: this.host.usePressure(),
       highlighterAlpha: this.host.highlighterAlpha(),
     };
@@ -403,6 +408,14 @@ export class PageEmbeds extends Component {
   private watches(path: string): boolean {
     for (const embed of this.live) if (embed.file.path === path) return true;
     return false;
+  }
+
+  /**
+   * The page appearance may have changed (the setting, or Obsidian's theme
+   * it follows): every embed in view repaints if its look did.
+   */
+  repaintAll(): void {
+    for (const embed of this.live) if (embed.visible) this.schedule(embed);
   }
 
   /** A picture or PDF changed under the pages that show it: they read it afresh. */

@@ -48,6 +48,7 @@ import { providerLabel } from "./recognition/registry";
 import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
+  type PageAppearance,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
@@ -112,6 +113,13 @@ const CALLOUTS = {
   },
 } satisfies Record<string, Callout>;
 
+/** The page appearances, as the dropdown names them. */
+const PAGE_APPEARANCES: Record<PageAppearance, string> = {
+  light: "Light",
+  dark: "Dark",
+  system: "Match Obsidian's theme",
+};
+
 /** The tools an ink note can open with, as the dropdown names them. */
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
 
@@ -125,6 +133,14 @@ const DESC = {
     "Asks the browser to draw ink with less delay. Switch it off if ink looks garbled on " +
     "your device; iOS WebKit has had trouble with it.",
   paperWidth: "The paper's width in pixels, before it is scaled to fit the screen.",
+  pageAppearance:
+    "Show pages dark for writing at night: the paper turns dark and ink light, keeping its " +
+    "color. Only the view changes: ink is saved, exported and printed in its true color, " +
+    "and pictures are left as they are. White ink stays the color of the paper, so it " +
+    "disappears on dark pages as it does on white ones.",
+  invertPdfPages:
+    "Turn PDF pages dark with the rest. Switch it off for PDFs that are dark already, " +
+    "such as slides with a dark background.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
     "folder of the note that is open.",
@@ -325,6 +341,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "pageAppearance" || key === "invertPdfPages") {
+      // Saved by the plugin, which redraws every open notebook; the PDF row
+      // shows only with dark pages.
+      storeShownValue(this.plugin.settings, key, value);
+      await this.plugin.applyPageAppearance();
+      this.update();
+      return;
+    }
     if (key === "llmVendor") {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
@@ -395,7 +419,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   /** The paper, and where new notebooks go and how they are made. */
   private pagesGroup(): SettingDefinitionItem {
+    const settings = this.plugin.settings;
     return group("Pages and notebooks", [
+      dropdown("pageAppearance", "Page appearance", DESC.pageAppearance, PAGE_APPEARANCES, [
+        "dark mode",
+        "night mode",
+        "invert",
+        "theme",
+      ]),
+      {
+        ...toggle("invertPdfPages", "Dark PDF pages", DESC.invertPdfPages, [
+          "dark mode",
+          "invert",
+          "slides",
+        ]),
+        visible: () => settings.pageAppearance === "dark" || settings.pageAppearance === "system",
+      },
       drawnRow("Paper width", DESC.paperWidth, (s) => this.drawPaperWidth(s), [
         "canvas size",
         "page width",

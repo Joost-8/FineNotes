@@ -5,6 +5,7 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const { TFile } = await import("./fake-obsidian");
 const { PageEmbeds } = await import("../../src/view/page-embed");
+const { LIGHT_PAPER } = await import("../../src/canvas/backdrop");
 
 /** Just enough of an element for the embed to build itself into. */
 function fakeEl(): Record<string, unknown> {
@@ -63,7 +64,7 @@ function setUp(app: Record<string, unknown> = {}) {
   const fullApp = {
     embedRegistry: reg,
     vault: { on: () => ({}) },
-    workspace: {},
+    workspace: { on: () => ({}) },
     ...app,
   };
   const embeds = new PageEmbeds({
@@ -72,6 +73,7 @@ function setUp(app: Record<string, unknown> = {}) {
     paperWidth: () => 1024,
     usePressure: () => true,
     highlighterAlpha: () => 0.35,
+    paper: () => LIGHT_PAPER,
   });
   return { reg, original, embeds };
 }

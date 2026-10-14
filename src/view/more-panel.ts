@@ -12,6 +12,7 @@
  *   │ Change template (or cover)          │
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
+ *   ┌ Dark pages / Light pages            ┐
  *   Clear or delete page
  *   ┌ Clear page · Delete page (red)      ┐
  *
@@ -42,6 +43,8 @@ export interface MorePanelPage {
   fixed?: boolean;
   /** Whether there is ink to clear. */
   clearable: boolean;
+  /** The pages are shown dark (the view setting). */
+  darkPages?: boolean;
 }
 
 export interface MorePanelActions {
@@ -56,6 +59,8 @@ export interface MorePanelActions {
   goToPage: (index: number) => void;
   clear: (index: number) => void;
   remove: (index: number) => void;
+  /** Show every notebook's pages dark, or light again. */
+  toggleDarkPages: () => void;
 }
 
 const PANEL_WIDTH = 330;
@@ -152,6 +157,13 @@ export class MorePanel {
       run: (button) => actions.changeTemplate(page.index, button),
     });
     if (page.total > 1) this.goToRow(card);
+
+    // The quick switch for the page appearance setting, for writing at night.
+    this.row(this.group(), {
+      icon: page.darkPages ? "sun" : "moon",
+      text: page.darkPages ? "Light pages" : "Dark pages",
+      run: () => actions.toggleDarkPages(),
+    });
 
     this.heading("Clear or delete page");
     const danger = this.group();

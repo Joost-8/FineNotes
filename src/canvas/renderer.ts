@@ -35,7 +35,13 @@
  */
 
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
-import { LIGHT_PAPER, type PaperTheme } from "./backdrop";
+import { LIGHT_PAPER, type PaperTheme, pageLook, shownColor } from "./backdrop";
+import {
+  DAY_HIGHLIGHTER_BLEND,
+  NIGHT_HIGHLIGHTER_BLEND,
+  nightColor,
+  nightHighlighter,
+} from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
 import {
   type Backdrop,
@@ -72,8 +78,6 @@ const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
 /** The lasso's and the selection box's line, and the lasso's fill. Real colours, as above. */
 const SELECTION_LINE = "rgba(120,170,255,0.95)";
 const SELECTION_FILL = "rgba(120,170,255,0.12)";
-/** Highlighter ink multiplies with what is under it: it tints writing instead of covering it. */
-const HIGHLIGHTER_BLEND: GlobalCompositeOperation = "multiply";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
 
@@ -114,13 +118,18 @@ export interface BackdropPainter {
     /** The view is moving (or rested less than `REST_MS` ago). */
     moving?: boolean,
   ) => void;
-  /** `weight` thickens synthetic rules for a small thumbnail (default 1). */
+  /**
+   * `weight` thickens synthetic rules for a small thumbnail (default 1).
+   * `target.paper` is the paper theme the caller paints the rest of the page
+   * in (light or dark pages), so backdrop and ink always agree; without it,
+   * the painter's own.
+   */
   paint(
     ctx: CanvasRenderingContext2D,
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight?: number,
-    target?: { deviceScale: number; region?: Bounds },
+    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
   ): void;
 }
 
@@ -163,14 +172,14 @@ export function drawPlacedImage(
 
 /**
  * The colour a page's paper is: its backdrop's `paperColor` (a cover's
- * cloth, a coloured paper), else the theme's paper. Whatever lies under the
- * page, or is filled before its backdrop, is this colour — so an edge pixel
- * the page only partly covers blends with its own paper. White there drew a
- * light line along a cover's edges (Joost, 2026-09-24).
+ * cloth, a coloured paper), else the theme's paper; with dark pages, as
+ * `pageLook` shows it. Whatever lies under the page, or is filled before its
+ * backdrop, is this colour — so an edge pixel the page only partly covers
+ * blends with its own paper. White there drew a light line along a cover's
+ * edges (Joost, 2026-09-24).
  */
 export function paperColorOf(page: Page, theme: PaperTheme): string {
-  const backdrop = page.backdrop;
-  return (backdrop.kind !== "pdf" ? backdrop.paperColor : undefined) ?? theme.paper;
+  return pageLook(page.backdrop, theme).paper;
 }
 
 /**
@@ -316,7 +325,10 @@ function now(): number {
 export class Renderer {
   /** How opaque highlighter ink is drawn, 0..1. The surface sets it from the settings. */
   highlighterAlpha = DEFAULT_HIGHLIGHTER_ALPHA;
-  /** Paper colours. Paper-white by default; a dark page is a notebook override. */
+  /**
+   * Paper colours. Paper-white by default; dark pages are a view setting,
+   * and whoever changes this must {@link invalidateAll}: tiles hold colour.
+   */
   paper: PaperTheme = LIGHT_PAPER;
 
   /** The desk and the page shadows. */
@@ -333,6 +345,8 @@ export class Renderer {
   /** How far right of the canvases' left edge the layout's origin sits, in CSS px. */
   private originX = 0;
   private layout: DocumentLayout = EMPTY_LAYOUT;
+  /** The document last painted: the wet layer reads its pages' look from it. */
+  private doc: InkDocument | null = null;
   private painter: BackdropPainter | null = null;
   private imagePainter: ImagePainter | null = null;
   /**
@@ -581,6 +595,7 @@ export class Renderer {
 
   /** Repaint the backdrop layer: the desk, and a shadow under each visible page. */
   renderBackdrops(doc: InkDocument): void {
+    this.doc = doc;
     const ctx = this.backdrop.ctx;
     // The desk. The page is an object lying on it, not a region filling the
     // pane (design brief), so the field is painted edge to edge first.
@@ -701,6 +716,7 @@ export class Renderer {
     budgetMs = Infinity,
     detailTransient = false,
   ): boolean {
+    this.doc = doc;
     const ctx = this.dry.ctx;
     this.wipe(ctx);
     if (this.level === 0) this.level = quantiseLevel(this.deviceScale);
@@ -935,6 +951,7 @@ export class Renderer {
     // device pixel wide there, as the sidebar thumbnails do.
     this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level), {
       deviceScale: level,
+      paper: this.paper,
       ...(Number.isFinite(region.minX) ? { region } : {}),
     });
     this.paintImages(ctx, page, region, level);
@@ -969,14 +986,15 @@ export class Renderer {
     hidden?: ReadonlySet<string>,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
   ): void {
+    const night = pageLook(page.backdrop, this.paper).night;
     for (const stroke of page.strokes) {
       if (hidden?.has(stroke.id) || this.hiddenStrokes.has(stroke.id)) continue;
       const pieces = replaced?.get(stroke.id);
       if (pieces) {
-        for (const piece of pieces) this.paintEntry(ctx, piece, region, usePressure);
+        for (const piece of pieces) this.paintEntry(ctx, piece, region, usePressure, night);
         continue;
       }
-      this.paintEntry(ctx, stroke, region, usePressure);
+      this.paintEntry(ctx, stroke, region, usePressure, night);
     }
   }
 
@@ -985,10 +1003,17 @@ export class Renderer {
     stroke: Stroke,
     region: Bounds,
     usePressure: boolean,
+    night: boolean,
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) return;
-    paintStroke(ctx, entry, stroke, this.highlighterAlpha);
+    paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
+  }
+
+  /** Whether page `pageIndex` of the document last painted is shown inverted (`pageLook`). */
+  private nightAt(pageIndex: number): boolean {
+    const page = this.doc?.pages[pageIndex];
+    return page ? pageLook(page.backdrop, this.paper).night : false;
   }
 
   /**
@@ -1090,8 +1115,9 @@ export class Renderer {
         drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale);
       }
     }
+    const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
-      paintStroke(ctx, this.pathEntry(stroke, usePressure), stroke, this.highlighterAlpha);
+      paintStroke(ctx, this.pathEntry(stroke, usePressure), stroke, this.highlighterAlpha, night);
     }
     ctx.restore();
     this.setWetVisible(true);
@@ -1109,6 +1135,7 @@ export class Renderer {
     if (!box) return;
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds) return;
+    const night = this.nightAt(pageIndex);
     for (const tile of this.tiles.values()) {
       if (tile.pageId !== box.id || tile.level !== this.level) continue;
       const tr = tile.rect;
@@ -1126,7 +1153,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
       ctx.restore();
     }
     const preview = this.previews.peek(box.id);
@@ -1137,7 +1164,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
       ctx.restore();
     }
   }
@@ -1205,7 +1232,8 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
-    for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha);
+    const night = this.nightAt(pageIndex);
+    for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha, night);
     ctx.restore();
     this.setWetVisible(true);
   }
@@ -1222,8 +1250,9 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
+    const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
-      fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha);
+      fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
     }
     ctx.restore();
     this.setWetVisible(true);
@@ -1240,7 +1269,7 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
-    paintStroke(ctx, { runs }, style, this.highlighterAlpha);
+    paintStroke(ctx, { runs }, style, this.highlighterAlpha, this.nightAt(pageIndex));
     ctx.restore();
     this.setWetVisible(true);
   }
@@ -1260,25 +1289,29 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
 
 /**
  * Paint a stroke's runs in its colour, in whatever space `ctx` is in; a
- * highlighter translucent and multiplied. A highlighter keeps one width, so
- * it is always one run: its overlaps are never painted twice.
+ * highlighter translucent, multiplied into light paper and screened onto a
+ * night page (`./night`). A highlighter keeps one width, so it is always one
+ * run: its overlaps are never painted twice.
  */
 function paintStroke(
   ctx: CanvasRenderingContext2D,
   ink: { runs: readonly InkRun[]; paths?: readonly Path2D[] },
   style: { color: string; tool: Tool },
   highlighterAlpha: number,
+  night = false,
 ): void {
   const highlighter = style.tool === "highlighter";
   ctx.save();
   if (highlighter) {
     ctx.globalAlpha = highlighterAlpha;
-    ctx.globalCompositeOperation = HIGHLIGHTER_BLEND;
+    ctx.globalCompositeOperation = night ? NIGHT_HIGHLIGHTER_BLEND : DAY_HIGHLIGHTER_BLEND;
   }
   // Ink colour is absolute (contracts/design-brief.md): a stored colour is
-  // painted exactly as stored. It is never remapped to suit the app theme —
-  // that is how a note written on one device stays legible on another.
-  ctx.fillStyle = style.color;
+  // never changed, and never remapped to suit the app theme — that is how a
+  // note written on one device stays legible on another. Only a night page
+  // (dark pages, the view setting) *shows* it through `./night`'s mapping.
+  if (!night) ctx.fillStyle = style.color;
+  else ctx.fillStyle = highlighter ? nightHighlighter(style.color) : nightColor(style.color);
   paintInk(ctx, ink.runs, ink.paths);
   ctx.restore();
 }
@@ -1289,9 +1322,10 @@ function fillStroke(
   points: number[],
   style: StrokeStyle,
   highlighterAlpha: number,
+  night = false,
 ): void {
   const runs = inkRuns(points, penFor(style), style.shape === true);
-  paintStroke(ctx, { runs }, style, highlighterAlpha);
+  paintStroke(ctx, { runs }, style, highlighterAlpha, night);
 }
 
 export interface ThumbnailOptions {
@@ -1325,9 +1359,10 @@ export function renderPageThumbnail(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const look = pageLook(page.backdrop, options.paper ?? LIGHT_PAPER);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (!options.transparent) {
-    ctx.fillStyle = paperColorOf(page, options.paper ?? LIGHT_PAPER);
+    ctx.fillStyle = look.paper;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   // Each axis scaled to the rounded canvas, so the page fills it exactly: at
@@ -1343,17 +1378,18 @@ export function renderPageThumbnail(
   if (!options.transparent) {
     painter.paint(ctx, page.backdrop, page.geometry, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
+      paper: options.paper ?? LIGHT_PAPER,
     });
   }
   if (options.images) {
     for (const image of page.images) drawPlacedImage(ctx, image, options.images, k);
   }
 
-  for (const box of page.textBoxes) paintTextBox(ctx, box);
+  for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
 
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
-    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha);
+    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
   ctx.restore();
 }
@@ -1364,9 +1400,14 @@ export function renderPageThumbnail(
  * `text-layout.ts`, which follows the textarea's own rules, so a thumbnail
  * wraps where the page does. The font is a real family list from the model,
  * never `var(--…)`: canvas string properties do not resolve CSS variables.
+ * On a night page (`night`) its colours are shown as `./night` maps them.
  * Exported for its tests.
  */
-export function paintTextBox(ctx: CanvasRenderingContext2D, typed: TextBoxElement): void {
+export function paintTextBox(
+  ctx: CanvasRenderingContext2D,
+  typed: TextBoxElement,
+  night = false,
+): void {
   // Links in the text show as their text, brackets hidden, as on the page.
   const box = { ...typed, text: displayText(typed.text) };
   if (!box.text && !box.fill) return;
@@ -1374,7 +1415,7 @@ export function paintTextBox(ctx: CanvasRenderingContext2D, typed: TextBoxElemen
   ctx.font = canvasFont(box, box.fontSize);
   const layout = layoutTextBox(box, (text) => ctx.measureText(text).width);
   if (box.fill) {
-    ctx.fillStyle = box.fill;
+    ctx.fillStyle = shownColor(box.fill, night);
     ctx.fillRect(box.x, box.y, box.w, layout.height);
   }
   if (box.text) {
@@ -1382,7 +1423,7 @@ export function paintTextBox(ctx: CanvasRenderingContext2D, typed: TextBoxElemen
     ctx.beginPath();
     ctx.rect(box.x, box.y, box.w, layout.height);
     ctx.clip();
-    ctx.fillStyle = box.color;
+    ctx.fillStyle = shownColor(box.color, night);
     ctx.textBaseline = "alphabetic";
     const metrics = ctx.measureText("Hg");
     // Older WebKit lacks the font-box metrics; fall back to typical proportions.

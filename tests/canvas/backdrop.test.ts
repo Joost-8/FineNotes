@@ -20,6 +20,7 @@ import {
   drawSynthetic,
   drawSyntheticRules,
   fillPaper,
+  pageLook,
   paperTheme,
   resolveSpacing,
 } from "../../src/canvas/backdrop";
@@ -37,6 +38,7 @@ import {
 import { COVER_RULINGS, isCoverRuling } from "../../src/model/document";
 import { coverLayout, coverPalette, isClassicCover } from "../../src/model/cover";
 import { COVER_COLORS } from "../../src/model/templates";
+import { FLIP_POINT, lightnessOf, nightColor, nightRule, oklchOf } from "../../src/canvas/night";
 
 const A4: PageGeometry = { width: 1024, height: 1448 };
 
@@ -427,14 +429,124 @@ describe("SyntheticBackdropRenderer", () => {
     });
   });
 
-  it("a document paperColor still wins over an explicit dark theme", () => {
-    const ctx = fakeContext();
+  it("on dark pages a document paperColor keeps its hue, darkened; a dark one is kept", async () => {
     const renderer = new SyntheticBackdropRenderer(DARK_PAPER);
-    return renderer
-      .draw(asCanvasContext(ctx), { kind: "blank", paperColor: PAPER_PRESETS.cream }, A4)
-      .then(() => {
-        expect(ctx.ops.find((o) => o.op === "fillRect")).toMatchObject({ fillStyle: "#fbf8ed" });
-      });
+    const cream = fakeContext();
+    await renderer.draw(
+      asCanvasContext(cream),
+      { kind: "blank", paperColor: PAPER_PRESETS.cream },
+      A4,
+    );
+    expect(cream.ops.find((o) => o.op === "fillRect")).toMatchObject({
+      fillStyle: nightColor(PAPER_PRESETS.cream),
+    });
+    const navy = fakeContext();
+    await renderer.draw(asCanvasContext(navy), { kind: "blank", paperColor: "#1f3a5f" }, A4);
+    expect(navy.ops.find((o) => o.op === "fillRect")).toMatchObject({ fillStyle: "#1f3a5f" });
+  });
+});
+
+describe("dark pages: pageLook and the paper it paints", () => {
+  const cream = { kind: "blank", paperColor: PAPER_PRESETS.cream } as const;
+  const pdf = { kind: "pdf", path: "slides.pdf", page: 0 } as const;
+
+  it("by day shows every page as stored", () => {
+    expect(pageLook({ kind: "blank" }, LIGHT_PAPER)).toEqual({
+      paper: "#ffffff",
+      night: false,
+      theme: LIGHT_PAPER,
+    });
+    expect(pageLook(cream, LIGHT_PAPER).paper).toBe(PAPER_PRESETS.cream);
+    expect(pageLook(pdf, LIGHT_PAPER).night).toBe(false);
+  });
+
+  it("inverts light pages, darkens coloured ones and keeps dark ones", () => {
+    expect(pageLook({ kind: "blank" }, DARK_PAPER)).toEqual({
+      paper: DARK_PAPER.paper,
+      night: true,
+      theme: DARK_PAPER,
+    });
+    expect(pageLook({ kind: "blank", paperColor: "#ffffff" }, DARK_PAPER).paper).toBe(
+      DARK_PAPER.paper,
+    );
+    expect(pageLook(cream, DARK_PAPER)).toMatchObject({
+      paper: nightColor(PAPER_PRESETS.cream),
+      night: true,
+    });
+    expect(pageLook({ kind: "blank", paperColor: "#1f3a5f" }, DARK_PAPER)).toEqual({
+      paper: "#1f3a5f",
+      night: false,
+      theme: LIGHT_PAPER,
+    });
+  });
+
+  it("inverts PDF pages, unless the theme keeps them", () => {
+    expect(pageLook(pdf, DARK_PAPER).night).toBe(true);
+    const keep = paperTheme(true, true);
+    expect(keep.keepPdf).toBe(true);
+    expect(keep.night).toBe(true);
+    expect(pageLook(pdf, keep)).toEqual({ paper: "#ffffff", night: false, theme: LIGHT_PAPER });
+    // Keeping PDFs changes nothing else.
+    expect(pageLook(cream, keep)).toMatchObject({
+      paper: pageLook(cream, DARK_PAPER).paper,
+      night: true,
+    });
+    expect(paperTheme(false, true)).toBe(LIGHT_PAPER);
+  });
+
+  it("rules, printed text and a template's own rule colour follow the page", () => {
+    const ctx = fakeContext();
+    drawSynthetic(
+      asCanvasContext(ctx),
+      {
+        kind: "ruled-wide",
+        color: "#99aabb",
+        printed: [{ text: "Title", x: 10, y: 30, size: 20 }],
+      },
+      A4,
+      DARK_PAPER,
+    );
+    expect(ctx.ops.find((o) => o.op === "stroke")).toMatchObject({
+      strokeStyle: nightRule("#99aabb"),
+    });
+    const plain = fakeContext();
+    drawSynthetic(asCanvasContext(plain), { kind: "ruled-wide" }, A4, DARK_PAPER);
+    expect(plain.ops.find((o) => o.op === "stroke")).toMatchObject({
+      strokeStyle: DARK_PAPER.rule,
+    });
+    expect(DARK_PAPER.rule).toBe(nightRule(LIGHT_PAPER.rule));
+    const printed = ctx.ops.findIndex((o) => o.op === "fillText");
+    expect(printed).toBeGreaterThan(-1);
+  });
+
+  it("a dark cover keeps its own cloth and the light theme's rules", () => {
+    const ctx = fakeContext();
+    drawSynthetic(
+      asCanvasContext(ctx),
+      { kind: "ruled-wide", paperColor: "#1f3a5f" },
+      A4,
+      DARK_PAPER,
+    );
+    expect(ctx.ops.find((o) => o.op === "fillRect")).toMatchObject({ fillStyle: "#1f3a5f" });
+    expect(ctx.ops.find((o) => o.op === "stroke")).toMatchObject({
+      strokeStyle: LIGHT_PAPER.rule,
+    });
+  });
+
+  it("darkens light cloth, keeping its hue, and keeps dark cloth as it is", () => {
+    for (const { id, color } of COVER_COLORS) {
+      const look = pageLook({ kind: "cover-plain", paperColor: color }, DARK_PAPER);
+      if (!look.night) {
+        // Already darker than where the map meets the identity: a night cover.
+        expect(look.paper, id).toBe(color);
+        expect(lightnessOf(color) ?? 1, id).toBeLessThan(FLIP_POINT);
+        continue;
+      }
+      expect(lightnessOf(look.paper) ?? 1, id).toBeLessThan(lightnessOf(color) ?? 0);
+      const hue = (c: string): number => oklchOf(c)?.h ?? 0;
+      const gap = Math.abs(hue(look.paper) - hue(color)) % (2 * Math.PI);
+      expect(Math.min(gap, 2 * Math.PI - gap), id).toBeLessThan(0.25);
+    }
   });
 });
 

@@ -16,11 +16,14 @@ import {
   PAPER_WIDTH_RANGE,
   changesTabLayout,
   endpointWarning,
+  pagesAreDark,
   paperWidthFrom,
   parseColorList,
+  shownPaperTheme,
   shownValue,
   storeShownValue,
 } from "../../src/settings-data";
+import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
 
 /**
  * What a fresh install writes, key for key and in this order. `twoFileStorage`
@@ -75,6 +78,8 @@ const FRESH_INSTALL = {
   handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
+  pageAppearance: "light",
+  invertPdfPages: true,
 };
 
 /**
@@ -130,6 +135,8 @@ const USED_VAULT = {
   shapeColor: "#0066ff",
   recentColors: ["#123456", "#abcdef"],
   pressureWidth: true,
+  pageAppearance: "system",
+  invertPdfPages: false,
   experimentalFutureFlag: 7,
 };
 
@@ -181,6 +188,32 @@ describe("data.json", () => {
     expect(DEFAULT_SETTINGS.lassoFilter).not.toBe(DEFAULT_LASSO_FILTER);
     expect(DEFAULT_SETTINGS.textStyle).not.toBe(DEFAULT_TEXT_STYLE);
     expect(DEFAULT_SETTINGS.penGestures).not.toBe(DEFAULT_PEN_GESTURES);
+  });
+});
+
+describe("dark pages", () => {
+  it("are off by default, on when chosen, and follow Obsidian's theme when asked", () => {
+    expect(DEFAULT_SETTINGS.pageAppearance).toBe("light");
+    expect(pagesAreDark("light", true)).toBe(false);
+    expect(pagesAreDark("dark", false)).toBe(true);
+    expect(pagesAreDark("system", true)).toBe(true);
+    expect(pagesAreDark("system", false)).toBe(false);
+  });
+
+  it("read anything they do not know as light", () => {
+    for (const value of [undefined, null, "Dark", "auto", 1, true]) {
+      expect(pagesAreDark(value, true)).toBe(false);
+    }
+  });
+
+  it("give the paper theme, keeping PDFs only when PDF inversion is off", () => {
+    expect(shownPaperTheme(DEFAULT_SETTINGS, true)).toBe(LIGHT_PAPER);
+    const dark = { pageAppearance: "dark", invertPdfPages: true } as const;
+    expect(shownPaperTheme(dark, false)).toBe(DARK_PAPER);
+    const keep = shownPaperTheme({ ...dark, invertPdfPages: false }, false);
+    expect(keep.night && keep.keepPdf).toBe(true);
+    // The same theme object each time, so a view can tell nothing changed.
+    expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
   });
 });
 
