@@ -8,11 +8,11 @@
  *                                         overview: ⤡ or Select all · Pages · Select or Done)
  *       .goodobsidian-pagesidebar-tabs  (Pages | Contents | Audio)
  *     .goodobsidian-pagesidebar-pages
- *       .goodobsidian-pagesidebar-filter ("All pages ⌄" / "Bookmarks only ⌄")
+ *       .goodobsidian-pagesidebar-filter ("All pages ⌄" / "Bookmarks only ⌄" / "In the contents ⌄")
  *       .goodobsidian-pagesidebar-grid
  *         .goodobsidian-thumb × N    (canvas + ribbon + tick + page number + ⌄ menu)
  *         .goodobsidian-thumb-add    ("+ Add page")
- *       .goodobsidian-pagesidebar-empty (no bookmarks yet)
+ *       .goodobsidian-pagesidebar-empty (no page passes the filter yet)
  *     .goodobsidian-pagesidebar-contents
  *       .goodobsidian-contents-list
  *         .goodobsidian-contents-row × N  (› fold · title · page number · ⌄ menu)
@@ -38,8 +38,8 @@
  *
  * Pages are reordered by dragging their thumbnails (page-drag.ts): with the
  * mouse or the Pencil at once, with a finger after resting on the page. Under
- * "Bookmarks only" a drop lands next to the bookmarked page it is dropped
- * beside, in the whole page list.
+ * a filter a drop lands next to the shown page it is dropped beside, in the
+ * whole page list.
  *
  * The ⤢ button grows the panel into the **overview**: every page in a grid
  * filling the notebook view, GoodNotes' page grid. A tap opens a page and
@@ -56,7 +56,6 @@
  */
 
 import { Menu, setIcon } from "obsidian";
-import { bookmarkedPageIndexes } from "../model/page-commands";
 import {
   type ContentsEntry,
   contentsEntries,
@@ -144,13 +143,33 @@ const TAB_TITLES: Record<SidebarTab, string> = {
   audio: "Audio",
 };
 
-/** Which pages the Pages tab shows: GoodNotes' "All pages" / "Bookmarks only". */
-export type PageFilter = "all" | "bookmarks";
+/**
+ * Which pages the Pages tab shows: GoodNotes' "All pages" / "Bookmarks only",
+ * or the pages listed in the contents (a title, or headings inside).
+ */
+export type PageFilter = "all" | "bookmarks" | "contents";
 
-const FILTER_LABELS: Record<PageFilter, string> = {
-  all: "All pages",
-  bookmarks: "Bookmarks only",
+const FILTERS: Record<PageFilter, { label: string; icon: string; empty: string }> = {
+  all: { label: "All pages", icon: "files", empty: "" },
+  bookmarks: {
+    label: "Bookmarks only",
+    icon: "bookmark",
+    empty:
+      "No bookmarked pages yet. Tap the ribbon on a page, or bookmark it from ⋯ in the toolbar or its ⌄ menu.",
+  },
+  contents: {
+    label: "In the contents",
+    icon: "list",
+    empty: "No pages in the contents yet. Give a page a title, or add a heading, from its ⌄ menu.",
+  },
 };
+
+/** Whether `page` passes `filter`. */
+export function pagePassesFilter(page: Page, filter: PageFilter): boolean {
+  if (filter === "bookmarks") return page.bookmarked === true;
+  if (filter === "contents") return page.title !== undefined || (page.sections?.length ?? 0) > 0;
+  return true;
+}
 
 /** Thumbnail width in CSS px; the height follows each page's own aspect ratio. */
 const THUMB_WIDTH = 120;
@@ -333,10 +352,7 @@ export class PageSidebar {
     );
     this.filterChip.addEventListener("click", () => this.showFilterMenu());
     this.grid = this.pagesEl.createDiv({ cls: "goodobsidian-pagesidebar-grid" });
-    this.emptyEl = this.pagesEl.createDiv({
-      cls: "goodobsidian-pagesidebar-empty is-hidden",
-      text: "No bookmarked pages yet. Tap the ribbon on a page, or bookmark it from ⋯ in the toolbar or its ⌄ menu.",
-    });
+    this.emptyEl = this.pagesEl.createDiv({ cls: "goodobsidian-pagesidebar-empty is-hidden" });
     this.contentsEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-contents" });
     this.contentsList = this.contentsEl.createDiv({
       cls: "goodobsidian-contents-list",
@@ -587,7 +603,7 @@ export class PageSidebar {
     return this.open;
   }
 
-  /** Show every page, or only the bookmarked ones. */
+  /** Show every page, or only the bookmarked ones, or only those in the contents. */
   setFilter(filter: PageFilter): void {
     this.filter = filter;
     this.applyFilter();
@@ -610,11 +626,11 @@ export class PageSidebar {
 
   private showFilterMenu(): void {
     const menu = new Menu();
-    for (const filter of ["all", "bookmarks"] as const) {
+    for (const filter of ["all", "bookmarks", "contents"] as const) {
       menu.addItem((item) =>
         item
-          .setTitle(FILTER_LABELS[filter])
-          .setIcon(filter === "all" ? "files" : "bookmark")
+          .setTitle(FILTERS[filter].label)
+          .setIcon(FILTERS[filter].icon)
           .setChecked(this.filter === filter)
           .onClick(() => this.setFilter(filter)),
       );
@@ -625,22 +641,27 @@ export class PageSidebar {
 
   /**
    * Hide the thumbnails the filter leaves out, and the "Add page" tile with
-   * them: a new page is never bookmarked, so it would not show. Pages keep
-   * their real numbers.
+   * them: a new page is neither bookmarked nor in the contents, so it would
+   * not show. Pages keep their real numbers.
    */
   private applyFilter(): void {
     const pages = this.doc?.pages ?? [];
-    const onlyMarked = this.filter === "bookmarks";
-    this.filterLabel.setText(FILTER_LABELS[this.filter]);
-    this.filterChip.toggleClass("is-filtered", onlyMarked);
+    const filtered = this.filter !== "all";
+    this.filterLabel.setText(FILTERS[this.filter].label);
+    this.filterChip.toggleClass("is-filtered", filtered);
+    let shown = 0;
     this.thumbs.forEach((view, index) => {
-      const marked = pages[index]?.bookmarked === true;
+      const page = pages[index];
+      const marked = page?.bookmarked === true;
       view.ribbon.toggleClass("is-outline", !marked);
       view.ribbon.setAttribute("title", marked ? "Remove bookmark" : "Bookmark page");
-      view.root.toggleClass("is-hidden", onlyMarked && !marked);
+      const passes = !filtered || (page !== undefined && pagePassesFilter(page, this.filter));
+      if (passes) shown++;
+      view.root.toggleClass("is-hidden", !passes);
     });
-    this.addTile.toggleClass("is-hidden", onlyMarked || this.single);
-    const none = onlyMarked && this.doc !== null && bookmarkedPageIndexes(this.doc).length === 0;
+    this.addTile.toggleClass("is-hidden", filtered || this.single);
+    const none = filtered && this.doc !== null && shown === 0;
+    this.emptyEl.setText(FILTERS[this.filter].empty);
     this.emptyEl.toggleClass("is-hidden", !none);
     if (this.open) this.schedulePaint();
   }

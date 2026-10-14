@@ -19,7 +19,8 @@ vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path,
 }));
 
-const { KEEP_PAINTED_OFFSCREEN, PageSidebar } = await import("../../src/view/page-sidebar");
+const { KEEP_PAINTED_OFFSCREEN, PageSidebar, pagePassesFilter } =
+  await import("../../src/view/page-sidebar");
 
 interface FakeView {
   root: object;
@@ -120,5 +121,39 @@ describe("thumbnail canvases", () => {
     (PageSidebar.prototype as unknown as { invalidate: () => void }).invalidate.call(sidebar);
     show(0, 10);
     expect(holding()).toBeLessThanOrEqual(10 + KEEP_PAINTED_OFFSCREEN);
+  });
+});
+
+describe("page filter", () => {
+  const plain = blankPage("a");
+  const marked: Page = { ...blankPage("b"), bookmarked: true };
+  const titled: Page = { ...blankPage("c"), title: "Week 3" };
+  const headed: Page = {
+    ...blankPage("d"),
+    sections: [{ id: "c1", title: "Fourier", x: 10, y: 40 }],
+  };
+
+  it("shows every page under All pages", () => {
+    for (const page of [plain, marked, titled, headed])
+      expect(pagePassesFilter(page, "all")).toBe(true);
+  });
+
+  it("shows only bookmarked pages under Bookmarks only", () => {
+    expect([plain, marked, titled, headed].map((p) => pagePassesFilter(p, "bookmarks"))).toEqual([
+      false,
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it("shows pages with a title or a heading inside under In the contents", () => {
+    expect([plain, marked, titled, headed].map((p) => pagePassesFilter(p, "contents"))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(pagePassesFilter({ ...blankPage("e"), sections: [] }, "contents")).toBe(false);
   });
 });
