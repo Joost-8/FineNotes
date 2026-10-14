@@ -1,7 +1,8 @@
 /**
- * Each pen type's own ink: the colour it writes with and its row of colours
- * in the pen pill. Switching from the fountain pen to the highlighter and
- * back brings each one's colours back, as GoodNotes keeps them per pen.
+ * Each pen type's own ink: the colour it writes with, its row of colours in
+ * the pen pill, and its width. Switching from the fountain pen to the
+ * highlighter and back brings each one's colours and width back, as
+ * GoodNotes keeps them per pen.
  *
  * PURE: plain records in and out; the toolbar holds them, the settings keep
  * them (`penInks`).
@@ -10,11 +11,17 @@
 import { parseHexColor } from "./colors";
 import { SAVED_PEN_TYPES, type SavedPenType } from "./saved-pens";
 
-/** A pen type's ink: the colour in hand, and its pill row's picked colours. */
+/** A pen type's ink: the colour in hand, its pill row's picked colours, and its width. */
 export interface PenInk {
   color: string;
   /** The row's picked slots (`ToolbarState.penColors`); absent: the built-in palette. */
   colors?: string[];
+  /**
+   * The width chosen for it (`ToolbarState.size`, before the pen type's own
+   * multiplier), page px. Absent on inks saved before widths were kept per
+   * pen: such a pen takes the width in hand.
+   */
+  size?: number;
 }
 
 /** Every pen type's ink, as far as it has been used. */
@@ -25,6 +32,19 @@ export const FIRST_HIGHLIGHTER_COLOR = "#fab005";
 
 /** The most colours a row keeps; more than a pill shows, fewer than a file can hold. */
 const MAX_ROW = 16;
+
+/** A width a file can hold: a finite positive number; anything else is none. */
+function sizeOf(raw: unknown): number | undefined {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : undefined;
+}
+
+/** A copy of `ink`, its row copied too, with only the keys it has. */
+function copyInk(ink: PenInk, color = ink.color): PenInk {
+  const out: PenInk = { color };
+  if (ink.colors) out.colors = [...ink.colors];
+  if (ink.size !== undefined) out.size = ink.size;
+  return out;
+}
 
 function colorsOf(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
@@ -50,33 +70,37 @@ export function penInksOf(raw: unknown): PenInks {
     if (!Object.prototype.hasOwnProperty.call(record, type)) continue;
     const entry = record[type];
     if (typeof entry !== "object" || entry === null) continue;
-    const { color, colors } = entry as Record<string, unknown>;
+    const { color, colors, size } = entry as Record<string, unknown>;
     const parsed = typeof color === "string" ? parseHexColor(color) : null;
     if (!parsed) continue;
+    const ink: PenInk = { color: parsed };
     const row = colorsOf(colors);
-    out[type] = row ? { color: parsed, colors: row } : { color: parsed };
+    if (row) ink.colors = row;
+    const width = sizeOf(size);
+    if (width !== undefined) ink.size = width;
+    out[type] = ink;
   }
   return out;
 }
 
 /** `inks` with `type`'s ink set to `ink`, a copy. */
 export function withPenInk(inks: PenInks, type: SavedPenType, ink: PenInk): PenInks {
-  const copy: PenInk = ink.colors
-    ? { color: ink.color, colors: [...ink.colors] }
-    : { color: ink.color };
-  return { ...inks, [type]: copy };
+  return { ...inks, [type]: copyInk(ink) };
 }
 
 /**
  * The ink `type` writes with: its own if it has been used, else `current`
- * (the pen in hand's), except that a highlighter starts yellow.
+ * (the pen in hand's), except that a highlighter starts yellow. An own ink
+ * saved without a width takes the width in hand.
  */
 export function penInkFor(inks: PenInks, type: SavedPenType, current: PenInk): PenInk {
   const own = inks[type];
-  if (own) return own.colors ? { color: own.color, colors: [...own.colors] } : { color: own.color };
-  const colors = current.colors ? [...current.colors] : undefined;
-  const color = type === "highlighter" ? FIRST_HIGHLIGHTER_COLOR : current.color;
-  return colors ? { color, colors } : { color };
+  if (own) {
+    const ink = copyInk(own);
+    if (ink.size === undefined && current.size !== undefined) ink.size = current.size;
+    return ink;
+  }
+  return copyInk(current, type === "highlighter" ? FIRST_HIGHLIGHTER_COLOR : current.color);
 }
 
 /**

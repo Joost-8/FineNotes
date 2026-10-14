@@ -129,6 +129,16 @@ extracted from the matching section of this file by `release.yml`.
   show it.
 - **The saved-pens star moved to the far right of the pen's options**, after
   the auto-shape switch: the pen, widths and colours come first.
+- **Each pen keeps its own width**, as it keeps its colours: a wide
+  highlighter and a fine fountain pen stay that way when you switch between
+  them. A pen you have not set a width for starts with the one in hand.
+- **A finger tap on a picture selects it**, whatever pen is in hand: the
+  lasso is picked and the picture shows its handles to move, resize and
+  turn it. The Pencil keeps writing over pictures as before.
+- **The eyedropper reads more of the page.** On a text box it picks the
+  border's colour on the border, the fill's between the letters and the
+  text's on the text; ink showing through a box gives the ink's colour.
+  Ink of every pen type, the highlighter included, gives its own colour.
 
 ## [2.1.0] - 2026-10-13
 

@@ -83,6 +83,107 @@ export function textBoxColor(box: { text: string; color: string; fill?: string }
   return box.fill ?? null;
 }
 
+/** A colour stored on something under the tap, and how opaque it is drawn (1: solid). */
+export interface StoredCandidate {
+  color: string;
+  alpha?: number;
+}
+
+/**
+ * A stored colour as `#rrggbb` with its own opacity: `#rgb`, `#rrggbb` and
+ * a fill's `#rrggbbaa` all read; anything else is `null`.
+ */
+export function storedColor(input: string): { color: string; alpha: number } | null {
+  const text = input.trim().replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{8}$/.test(text)) {
+    return { color: `#${text.slice(0, 6)}`, alpha: Number.parseInt(text.slice(6), 16) / 255 };
+  }
+  const color = parseHexColor(text);
+  return color ? { color, alpha: 1 } : null;
+}
+
+/** How a candidate looks over white paper: its colour at its opacity. */
+function onPaper(candidate: StoredCandidate): [number, number, number] | null {
+  const read = storedColor(candidate.color);
+  if (!read) return null;
+  const a = Math.max(0, Math.min(1, read.alpha * (candidate.alpha ?? 1)));
+  const n = Number.parseInt(read.color.slice(1), 16);
+  const mix = (c: number): number => c * a + 255 * (1 - a);
+  return [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)];
+}
+
+/**
+ * Which of the colours stored under the tap (topmost first) the user is
+ * pointing at: the one that looks most like the pixels there, each judged as
+ * it is drawn (a highlighter's or a fill's opacity over the paper). Without
+ * pixels, or with one candidate, the topmost. Returns the stored colour as
+ * `#rrggbb`, never the blended look; `null` when no candidate is a colour.
+ */
+export function nearestStored(
+  candidates: readonly StoredCandidate[],
+  pixel: string | null,
+): string | null {
+  const usable = candidates.filter((c) => storedColor(c.color) !== null);
+  if (usable.length === 0) return null;
+  const sampled = pixel ? parseHexColor(pixel) : null;
+  if (usable.length === 1 || !sampled) return storedColor(usable[0].color)?.color ?? null;
+  const n = Number.parseInt(sampled.slice(1), 16);
+  const px = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  let best = usable[0];
+  let bestDistance = Infinity;
+  for (const candidate of usable) {
+    const look = onPaper(candidate);
+    if (!look) continue;
+    const d = (look[0] - px[0]) ** 2 + (look[1] - px[1]) ** 2 + (look[2] - px[2]) ** 2;
+    // Ties keep the higher one.
+    if (d < bestDistance) {
+      best = candidate;
+      bestDistance = d;
+    }
+  }
+  return storedColor(best.color)?.color ?? null;
+}
+
+/** A text box as the eyedropper sees it: its look, and its frame in page space. */
+export interface EyedropTextBox {
+  text: string;
+  color: string;
+  fill?: string;
+  border?: { width: number; color: string } | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The colours a text box shows at page point `p`: its border when `p` is on
+ * it (the border is drawn inside the frame's edge, `reach` page px of
+ * forgiveness either side), else its text's colour when it has text, and its
+ * fill. Topmost first; empty when `p` is off the box.
+ */
+export function textBoxCandidates(
+  box: EyedropTextBox,
+  p: { x: number; y: number },
+  reach: number,
+): StoredCandidate[] {
+  const r = Math.max(0, reach);
+  const inside = p.x >= box.x && p.x <= box.x + box.w && p.y >= box.y && p.y <= box.y + box.h;
+  const near =
+    p.x >= box.x - r && p.x <= box.x + box.w + r && p.y >= box.y - r && p.y <= box.y + box.h + r;
+  const border = box.border && box.border.width > 0 ? box.border : null;
+  if (border && near) {
+    const toEdge = Math.min(p.x - box.x, box.x + box.w - p.x, p.y - box.y, box.y + box.h - p.y);
+    // Negative outside the frame: within reach of the edge counts as on it.
+    if (toEdge <= border.width + r) return [{ color: border.color }];
+  }
+  if (!inside) return [];
+  const out: StoredCandidate[] = [];
+  if (box.text.trim() !== "") out.push({ color: box.color });
+  if (box.fill) out.push({ color: box.fill });
+  return out;
+}
+
 /**
  * The colour a tap picks: the element's stored colour when the tap landed on
  * one and it is a colour, else the averaged pixels, else nothing.

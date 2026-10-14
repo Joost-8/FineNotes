@@ -274,7 +274,8 @@ chosen after a box is done. While you type, the red bin deletes the box.
 - **Generate with AI**, once an image service is set up.
 
 A new picture is selected: drag its corners to resize it and the knob below
-to rotate it. To select it later, tap it with the lasso. Its bar has
+to rotate it. To select it later, tap it with the lasso, or with a finger
+whatever tool is in hand. Its bar has
 **Crop**, **Cut**, **Duplicate** and **Delete**; **…** adds **Front**,
 **Back**, **Copy**, **Paste**, **Lock image**, **Flip horizontal** and
 **Flip vertical**. The lasso ignores a locked

@@ -809,10 +809,18 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember each pen type's own colour and row, for every notebook. */
+  /**
+   * Remember each pen type's own colour, row and width, for every notebook.
+   * Saved once the picking rests, as the last pen is: the width slider
+   * reports every step of a drag.
+   */
   savePenInks(inks: PenInks): void {
     this.settings.penInks = { ...inks };
-    void this.saveSettings();
+    window.clearTimeout(this.lastPenTimer);
+    this.lastPenTimer = window.setTimeout(() => {
+      this.lastPenTimer = 0;
+      void this.saveSettings();
+    }, LAST_PEN_SAVE_MS);
   }
 
   /**

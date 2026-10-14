@@ -90,7 +90,7 @@ import {
 import type { ListKind } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
-import { type PenInks, penInkFor, switchPenInk, withPenInk } from "../model/pen-inks";
+import { type PenInk, type PenInks, penInkFor, switchPenInk, withPenInk } from "../model/pen-inks";
 import {
   PEN_ICON_BOX,
   SWOOSH_HEIGHT,
@@ -988,14 +988,20 @@ export class Toolbar {
     this.syncActive();
   }
 
-  /** Remember the ink in hand as the active pen type's own. */
+  /** Remember the ink in hand (colour, row and width) as the active pen type's own. */
   private keepPenInk(): void {
-    const { color, penColors } = this.state;
-    this.state.penInks = withPenInk(this.state.penInks ?? {}, this.activePenType().id, {
-      color,
-      ...(penColors ? { colors: penColors } : {}),
-    });
+    this.state.penInks = withPenInk(
+      this.state.penInks ?? {},
+      this.activePenType().id,
+      this.inkInHand(),
+    );
     this.callbacks.onPenInks?.(this.state.penInks);
+  }
+
+  /** The pen in hand's ink, as a pen type keeps it. */
+  private inkInHand(): PenInk {
+    const { color, penColors, size } = this.state;
+    return { color, ...(penColors ? { colors: penColors } : {}), size };
   }
 
   /**
@@ -1855,15 +1861,12 @@ export class Toolbar {
   }
 
   private choosePenType(spec: PenTypeSpec): void {
-    // Each pen type keeps its own colour and row (GoodNotes): the one being
-    // left keeps what it wrote with, the one picked brings back its own.
+    // Each pen type keeps its own colour, row and width (GoodNotes): the one
+    // being left keeps what it wrote with, the one picked brings back its own.
     const from = this.activePenType().id;
     if (from !== spec.id) {
-      const { color, penColors } = this.state;
-      const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, {
-        color,
-        ...(penColors ? { colors: penColors } : {}),
-      });
+      const { color, size } = this.state;
+      const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, this.inkInHand());
       this.state.penInks = step.inks;
       this.callbacks.onPenInks?.(step.inks);
       if (step.ink.colors) {
@@ -1873,6 +1876,10 @@ export class Toolbar {
       if (step.ink.color !== color) {
         this.state.color = step.ink.color;
         this.callbacks.onColorChange(step.ink.color);
+      }
+      if (step.ink.size !== undefined && step.ink.size !== size) {
+        this.state.size = step.ink.size;
+        this.callbacks.onSizeChange(step.ink.size);
       }
     }
     this.state.penType = spec.id;
@@ -2046,9 +2053,11 @@ export class Toolbar {
   }
 
   /** A new pen width, from a preset, the slider or a reset. */
+  /** Write with `width` (page px, before the pen type's multiplier); the pen type keeps it. */
   private setWidth(width: number): void {
     this.state.size = width;
     this.callbacks.onSizeChange(width);
+    this.keepPenInk();
   }
 
   /**
@@ -2214,11 +2223,7 @@ export class Toolbar {
   /** The colour pen type `spec` writes with: the live one in hand, else its own. */
   private inkColorOf(spec: PenTypeSpec): string {
     if (spec.id === this.activePenType().id) return this.state.color;
-    const { color, penColors } = this.state;
-    return penInkFor(this.state.penInks ?? {}, spec.id, {
-      color,
-      ...(penColors ? { colors: penColors } : {}),
-    }).color;
+    return penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand()).color;
   }
 
   private renderPenTypes(body: HTMLElement, openGestures: () => void): void {

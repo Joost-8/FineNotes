@@ -82,7 +82,11 @@ describe("saved pens on the toolbar (FineNotes#24, #25)", () => {
       "size(5)",
       "build",
     ]);
-    expect((state.penInks as Record<string, unknown>).highlighter).toEqual({ color: "#fab005" });
+    // The highlighter keeps the saved pen's width as its own, with the colour.
+    expect((state.penInks as Record<string, unknown>).highlighter).toEqual({
+      color: "#fab005",
+      size: 5,
+    });
   });
 
   it("gives each pen type its own colour and row, and brings them back", async () => {

@@ -160,10 +160,12 @@ import { strokeHitByPoint } from "../canvas/hit-test";
 import {
   EYEDROP_REACH_PX,
   type EyedropResult,
+  type StoredCandidate,
   averagePixels,
   eyedropColor,
   eyedropSquare,
-  textBoxColor,
+  nearestStored,
+  textBoxCandidates,
 } from "../canvas/eyedropper";
 import { Eyedropper } from "./eyedropper";
 import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/stroke-eraser";
@@ -6101,11 +6103,16 @@ export class InkSurface {
   }
 
   /**
-   * What the eyedropper picks at a client point: the stored colour of the
-   * text box or ink there (typed text sits above the ink, as for the
-   * lasso's tap), else the averaged pixels of a light render of the page
-   * there, so dark pages never hand back their night colours. `null` off
-   * the pages.
+   * What the eyedropper picks at a client point. Everything there that
+   * stores a colour is a candidate, topmost first: the topmost text box's
+   * border (when the tap is on it), else its text and its fill, then the
+   * ink under them, whatever pen wrote it (typed text sits above the ink,
+   * as for the lasso's tap). One candidate is picked as stored; several are
+   * told apart by the pixels there, so a tap between the letters of a
+   * filled box gives the fill, and ink showing through a box gives the ink.
+   * With none (a picture, a PDF page, the paper) the averaged pixels are
+   * picked. Pixels come from a light render of the page there, so dark
+   * pages never hand back their night colours. `null` off the pages.
    */
   private eyedropAt(clientX: number, clientY: number): EyedropResult | null {
     const at = this.toLayout(clientX, clientY);
@@ -6113,21 +6120,36 @@ export class InkSurface {
     const page = box ? this.pageAt(box.index) : null;
     if (!box || !page) return null;
     const p = this.toPage(box, at);
-    const frames = page.textBoxes.map((textBox) => ({
-      textBox,
-      ...this.textBoxFrameOf(page.id, textBox),
-    }));
-    const framed = topImageAt(frames, p, 0);
-    const element =
-      (framed ? textBoxColor(framed.textBox) : null) ??
-      this.strokeAt(page, p, EYEDROP_REACH_PX / this.unitScale)?.color ??
-      null;
-    const stored = eyedropColor(element, null);
-    if (stored || !this.renderer) return stored;
-    const level = this.deviceScale;
-    const square = eyedropSquare(p.x * level, p.y * level);
-    const pixels = this.renderer.samplePage(page, box, square, level, this.inkPressure);
-    return eyedropColor(null, pixels ? averagePixels(pixels) : null);
+    const reach = EYEDROP_REACH_PX / this.unitScale;
+    const candidates: StoredCandidate[] = [];
+    for (let i = page.textBoxes.length - 1; i >= 0 && candidates.length === 0; i--) {
+      const textBox = page.textBoxes[i];
+      const frame = this.textBoxFrameOf(page.id, textBox);
+      candidates.push(
+        ...textBoxCandidates(
+          { ...textBox, ...frame, border: normalizeBorder(textBox.border) },
+          p,
+          reach,
+        ),
+      );
+    }
+    const stroke = this.strokeAt(page, p, reach);
+    if (stroke) {
+      const alpha = stroke.tool === "highlighter" ? (this.renderer?.highlighterAlpha ?? 1) : 1;
+      candidates.push({ color: stroke.color, alpha });
+    }
+    const sample = (): string | null => {
+      if (!this.renderer) return null;
+      const level = this.deviceScale;
+      const square = eyedropSquare(p.x * level, p.y * level);
+      const pixels = this.renderer.samplePage(page, box, square, level, this.inkPressure);
+      return pixels ? averagePixels(pixels) : null;
+    };
+    // Pixels only when they have something to decide.
+    const pixel = candidates.length > 0 ? (candidates.length > 1 ? sample() : null) : sample();
+    const stored = eyedropColor(nearestStored(candidates, pixel), null);
+    // A candidate that is not a colour (a hand-edited note) falls through to the pixels.
+    return stored ?? eyedropColor(null, candidates.length === 1 ? sample() : pixel);
   }
 
   /** The topmost stroke whose ink passes within `tolerance` of a page point. */
@@ -7856,9 +7878,10 @@ export class InkSurface {
 
   /**
    * A finger tapped the page (client px). With the lasso it selects, like a
-   * Pencil tap; with any other tool it only lets go of a selected image —
-   * fingers never draw. While audio replay is open, a tap on ink goes to it
-   * first, whatever the tool.
+   * Pencil tap; with any other tool it lets go of a selected image, and a
+   * tap on a picture picks the lasso and selects it (`fingerPicksPicture`)
+   * — fingers never draw. While audio replay is open, a tap on ink goes to
+   * it first, whatever the tool.
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
@@ -7890,13 +7913,37 @@ export class InkSurface {
       this.clearSelection();
       return;
     }
-    if (this.toolState.tool !== "select") return;
+    if (this.toolState.tool !== "select") {
+      if (box && tapped) this.fingerPicksPicture(tapped, this.toPage(box, at));
+      return;
+    }
     if (!box) {
       this.clearSelection();
       this.deselectImage();
       return;
     }
     this.tapSelect(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX);
+  }
+
+  /**
+   * A finger tapped a picture while a pen, the highlighter, the eraser or
+   * the shape tool was in hand: the lasso is picked and the picture selected,
+   * with its handles to move, resize and turn it, since a finger never draws.
+   * Not with the Text tool (a finger places and focuses boxes there), in a
+   * practice file, or on a locked picture. Returns whether it did.
+   */
+  private fingerPicksPicture(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const image = topImageAt(
+      page.images.filter((candidate) => candidate.locked !== true),
+      p,
+      0,
+    );
+    if (!image) return false;
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+    this.setImageSelection(page.id, image);
+    return true;
   }
 
   // --- Placed images --------------------------------------------------------
