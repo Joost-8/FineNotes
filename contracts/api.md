@@ -670,6 +670,7 @@ ignore them.
 | `InkDocument.recordings?: Recording[]`                                        | `{ id, path, start (epoch ms), duration (ms), transcript? }`; audio files live in the vault, never inline                                                                                                                                             |
 | `InkDocument.folders?: { images?: string; audio?: string; exports?: string }` | where new pictures / recordings / PDF exports are saved (toolbar gear). Vault folder, canonical; absent = Obsidian's default (exports: next to the note). `meta.folders`. `exports` added 2026-09-25; an older build drops it on save                 |
 | `InkDocument.scroll?: "horizontal"`                                           | pages run across, one per screen (toolbar gear → Scroll direction). Stored as `meta.scroll`, only when horizontal; anything else reads as vertical. Page space is unchanged: only `layoutPages` places the boxes differently                          |
+| `ImageElement.flipX?: true`, `flipY?: true`                                   | mirrored in the picture's own frame: crop from the file, then mirror, then `rotation`. Stored only as `true` (2026-10-15)                                                                                                                             |
 
 `t0` itself is unchanged (§1b), but until 0.5 **nothing wrote it**. The audio
 work starts stamping every new stroke; `epoch` is set by the first stamped
@@ -734,15 +735,15 @@ Reconciled with the merged code on 2026-09-22, from the agents' reports.
 
 **Invertible commands, by file**
 
-| File                              | Commands                                                                                       |
-| --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `src/model/text-commands.ts`      | `SetTextBoxStyle` (restores key order and only the keys it owns)                               |
-| `src/model/notebook-commands.ts`  | `SetSingle`, `changeCover` (backdrop and title restyle, one step)                              |
-| `src/model/selection-commands.ts` | `TranslateElements`, `RemoveElements`, `AddElements`, `RecolorStrokes`                         |
-| `src/model/recording-commands.ts` | `SetPageEpoch`, `addStrokesTimed`, `AddRecording`, `RemoveRecording`, `SetRecordingTranscript` |
-| `src/model/scan-commands.ts`      | `buildScanInsert` (`AddPage` + `InsertImage` in one `CompositeCommand`)                        |
-| `src/model/image-commands.ts`     | `ReorderImage`, `SetImageLocked`, `CropImage`                                                  |
-| `src/model/clipboard.ts`          | the in-window clipboard: deep copies, fresh ids on paste, no `t0`, no lock                     |
+| File                              | Commands                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `src/model/text-commands.ts`      | `SetTextBoxStyle` (restores key order and only the keys it owns)                                                         |
+| `src/model/notebook-commands.ts`  | `SetSingle`, `changeCover` (backdrop and title restyle, one step)                                                        |
+| `src/model/selection-commands.ts` | `TranslateElements`, `ScaleElements`, `ReorientElements` (turn, flip), `RemoveElements`, `AddElements`, `RecolorStrokes` |
+| `src/model/recording-commands.ts` | `SetPageEpoch`, `addStrokesTimed`, `AddRecording`, `RemoveRecording`, `SetRecordingTranscript`                           |
+| `src/model/scan-commands.ts`      | `buildScanInsert` (`AddPage` + `InsertImage` in one `CompositeCommand`)                                                  |
+| `src/model/image-commands.ts`     | `ReorderImage`, `SetImageLocked`, `CropImage`, `FlipImage`                                                               |
+| `src/model/clipboard.ts`          | the in-window clipboard: deep copies, fresh ids on paste, no `t0`, no lock                                               |
 
 Every one holds its elements by identity, not id, and undoes to
 `JSON.stringify`-identical JSON. The older `TransformImage` still finds its

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type ImagePainter, Renderer } from "../../src/canvas/renderer";
+import { type ImagePainter, Renderer, drawPlacedImage } from "../../src/canvas/renderer";
 import {
   type ImageElement,
   type InkDocument,
@@ -255,5 +255,94 @@ describe("hidden strokes", () => {
     renderer.invalidateAll();
     renderer.renderDocument(d, false);
     expect(fills()).toBe(2);
+  });
+});
+
+describe("renderSelectionDraft while turning", () => {
+  it("turns about the centre after the move, before anything is drawn", () => {
+    const { renderer, wetLog } = setup();
+    const turn = { x: 40, y: 60, angle: 0.5 };
+    renderer.renderSelectionDraft(0, [stroke("s1", 0)], [], 0, 0, true, undefined, turn);
+    const names = wetLog.map(([name]) => name);
+    const rotate = names.indexOf("rotate");
+    expect(wetLog[rotate]).toEqual(["rotate", 0.5]);
+    expect(wetLog[rotate - 1]).toEqual(["translate", 40, 60]);
+    expect(wetLog[rotate + 1]).toEqual(["translate", -40, -60]);
+    expect(rotate).toBeLessThan(names.indexOf("stroke"));
+  });
+
+  it("does not turn by nothing, or by a non-finite angle", () => {
+    const { renderer, wetLog } = setup();
+    for (const angle of [0, Number.NaN]) {
+      renderer.renderSelectionDraft(0, [stroke("s1", 0)], [], 0, 0, true, undefined, {
+        x: 0,
+        y: 0,
+        angle,
+      });
+    }
+    expect(wetLog.some(([name]) => name === "rotate")).toBe(false);
+  });
+
+  it("traces a stroke again when a command gave it new points with the same ends", () => {
+    const { renderer } = setup();
+    // A figure eight started and ended in its middle: a turn about that
+    // middle keeps both ends, the count and the width.
+    const s: Stroke = {
+      id: "s8",
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [50, 50, 0.5, 70, 40, 0.5, 50, 50, 0.5, 30, 60, 0.5, 50, 50, 0.5],
+    };
+    const traced = (): unknown => {
+      const draft = renderer as unknown as { paths: WeakMap<Stroke, { paths: unknown[] }> };
+      return draft.paths.get(s)?.paths[0];
+    };
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    const first = traced();
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    expect(traced()).toBe(first);
+    s.pts = [50, 50, 0.5, 30, 60, 0.5, 50, 50, 0.5, 70, 40, 0.5, 50, 50, 0.5];
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    expect(traced()).not.toBe(first);
+  });
+});
+
+describe("drawPlacedImage with a flipped picture", () => {
+  it("mirrors in the picture's own frame, after turning, before the painter draws", () => {
+    const log: Call[] = [];
+    const ctx = recorder(log);
+    const painted: ImageElement[] = [];
+    const image: ImageElement = {
+      id: "i1",
+      path: "a.png",
+      x: 10,
+      y: 20,
+      w: 40,
+      h: 30,
+      rotation: 0.25,
+      flipX: true,
+    };
+    drawPlacedImage(ctx, image, { paintImage: (_c, i) => void painted.push(i) }, 1);
+    expect(log.slice(0, 5)).toEqual([
+      ["save"],
+      ["translate", 30, 35],
+      ["rotate", 0.25],
+      ["scale", -1, 1],
+      ["translate", -20, -15],
+    ]);
+    expect(painted).toEqual([image]);
+    const flippedY: ImageElement = { ...image, rotation: undefined, flipX: undefined, flipY: true };
+    log.length = 0;
+    drawPlacedImage(ctx, flippedY, { paintImage: () => undefined }, 1);
+    expect(log.find(([name]) => name === "scale")).toEqual(["scale", 1, -1]);
+    expect(log.some(([name]) => name === "rotate")).toBe(false);
+  });
+
+  it("does not mirror an unflipped picture", () => {
+    const log: Call[] = [];
+    const image: ImageElement = { id: "i1", path: "a.png", x: 0, y: 0, w: 4, h: 4 };
+    drawPlacedImage(recorder(log), image, { paintImage: () => undefined }, 1);
+    expect(log.some(([name]) => name === "scale")).toBe(false);
   });
 });

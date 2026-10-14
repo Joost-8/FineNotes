@@ -122,7 +122,15 @@ export class VaultImageCache implements ImagePainter {
   paintImage(ctx: CanvasRenderingContext2D, image: ImageElement, deviceScale: number): void {
     const px = deviceScale > 0 ? 1 / deviceScale : 1;
     if (this.misses.has(image.path)) {
+      // `drawPlacedImage` mirrors a flipped picture; "Missing image" still reads forwards.
+      ctx.save();
+      if (image.flipX === true || image.flipY === true) {
+        ctx.translate(image.w / 2, image.h / 2);
+        ctx.scale(image.flipX === true ? -1 : 1, image.flipY === true ? -1 : 1);
+        ctx.translate(-image.w / 2, -image.h / 2);
+      }
       drawImagePlaceholder(ctx, image.w, image.h, true, px, this.marker);
+      ctx.restore();
       return;
     }
     // A crop enlarges what is shown of the picture, so the decode must cover

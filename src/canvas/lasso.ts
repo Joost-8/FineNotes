@@ -532,6 +532,28 @@ export function scaleBounds(b: Bounds, anchor: Pt, k: number): Bounds {
   };
 }
 
+// --- Turning a selection by its knob ----------------------------------------
+//
+// Below the frame hangs a rotate knob on a stem, as below a picture: turning
+// it turns the whole selection about the middle of its bounds
+// (`ReorientElements`), snapping onto quarter turns (`sweptTurn`).
+
+/** The middle of a bounds box: what a selection turns and flips about. */
+export function boundsCentre(b: Bounds): Pt {
+  return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+}
+
+/** Where the rotate knob sits: `offset` page px below the middle of the frame's bottom edge. */
+export function selectionKnobPoint(frame: Bounds, offset: number): Pt {
+  return { x: (frame.minX + frame.maxX) / 2, y: frame.maxY + offset };
+}
+
+/** Whether a press at `p` grabbed the knob of `frame`, answering across `radius` (page px). */
+export function hitSelectionKnob(frame: Bounds, p: Pt, offset: number, radius: number): boolean {
+  const knob = selectionKnobPoint(frame, offset);
+  return Math.hypot(p.x - knob.x, p.y - knob.y) <= radius;
+}
+
 /** A text box's frame, given the height the view measured for an auto-height one. */
 export function textBoxFrame(box: TextBoxElement, measuredHeight: number): BoxFrame {
   return { x: box.x, y: box.y, w: box.w, h: box.h ?? Math.max(0, measuredHeight) };

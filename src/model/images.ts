@@ -95,7 +95,7 @@ export function newImageElement(
  * A copy of `image` with a fresh id, nudged down and right so it reads as a
  * second picture, and kept on the page where it fits. Both share one file:
  * a duplicate never copies the attachment. The copy shows the same part of
- * the picture (its crop); it is never locked.
+ * the picture (its crop), mirrored the same way; it is never locked.
  */
 export function duplicateImage(
   doc: InkDocument,
@@ -114,6 +114,8 @@ export function duplicateImage(
   );
   const copy = newImageElement(doc, image.path, { ...image, x, y });
   if (image.crop) copy.crop = { ...image.crop };
+  if (image.flipX === true) copy.flipX = true;
+  if (image.flipY === true) copy.flipY = true;
   return copy;
 }
 

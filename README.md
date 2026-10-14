@@ -98,13 +98,15 @@ Hope you guys enjoy this and give me some
 - A freehand or rectangular lasso, with switches for what it picks up:
   handwriting, pictures, shapes, arrows and text boxes.
 - Move, cut, copy, paste and recolour a selection, between pages and between
-  notebooks. Pictures and text boxes can be resized, and pictures rotated.
+  notebooks. Resize it by its corners, turn it by the knob below it, or flip
+  it from its **…** menu. Pictures and text boxes can be resized, and pictures
+  rotated.
 
 **Text, pictures and PDFs**
 
 - Text boxes with colours, sizes, bold, italic, bullets and numbering.
-- Pictures from Photos, the camera or your vault. They can be cropped, rotated
-  and locked in place.
+- Pictures from Photos, the camera or your vault. They can be cropped, rotated,
+  flipped and locked in place.
 - Scan a document with the camera.
 - Bring in a PDF, such as lecture slides or a worksheet: every PDF page becomes
   a page you can write on.
@@ -274,7 +276,8 @@ chosen after a box is done. While you type, the red bin deletes the box.
 A new picture is selected: drag its corners to resize it and the knob below
 to rotate it. To select it later, tap it with the lasso. Its bar has
 **Crop**, **Cut**, **Duplicate** and **Delete**; **…** adds **Front**,
-**Back**, **Copy**, **Paste** and **Lock image**. The lasso ignores a locked
+**Back**, **Copy**, **Paste**, **Lock image**, **Flip horizontal** and
+**Flip vertical**. The lasso ignores a locked
 picture, such as a worksheet you write on; hold the lasso on it and tap
 **Unlock** to free it.
 

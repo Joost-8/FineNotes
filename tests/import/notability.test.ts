@@ -642,7 +642,9 @@ describe("readNotability: what FineNotes cannot hold, approximated", () => {
       "x",
     );
     const page = result.doc.pages[0];
-    expect(page.images.map((i) => [i.path, i.crop])).toEqual([["x - picture 1.gif", undefined]]);
+    expect(page.images.map((i) => [i.path, i.crop, i.flipX, i.flipY])).toEqual([
+      ["x - picture 1.gif", undefined, true, undefined],
+    ]);
     const [paper] = page.textBoxes;
     expect(paper).toMatchObject({ text: "", fill: "#ff000066" });
     expect(paper.h).toBeCloseTo(100 * K, 1);
@@ -655,7 +657,6 @@ describe("readNotability: what FineNotes cannot hold, approximated", () => {
     expect(ink.pts[0]).toBeCloseTo((30 + 1) * K, 1);
     expect(ink.pts[1]).toBeCloseTo((300 + 2) * K, 1);
     expect(result.warnings).toEqual([
-      "1 flipped picture came over unflipped (page 1).",
       "1 sticky canvas came over as a coloured box with its lines and ink (page 1).",
     ]);
   });

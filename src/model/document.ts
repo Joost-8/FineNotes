@@ -276,6 +276,13 @@ export interface ImageElement {
    * crop can always be undone or widened again.
    */
   crop?: ImageCrop;
+  /**
+   * Mirrored left to right (`flipX`) or top to bottom (`flipY`) in the
+   * picture's own frame: the crop is taken from the source first, then
+   * mirrored, then turned by `rotation`. Stored only as `true`.
+   */
+  flipX?: true;
+  flipY?: true;
   /** A locked image cannot be selected, moved or erased until unlocked. Stored only as `true`. */
   locked?: boolean;
 }

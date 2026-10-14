@@ -150,9 +150,12 @@ export interface ImagePainter {
 }
 
 /**
- * Draw one placed image in page space: translate to its centre, rotate, and
- * hand the painter its unrotated box. Shared by the tiles, the page preview,
- * the wet-layer drag preview and the sidebar thumbnails.
+ * Draw one placed image in page space: translate to its centre, rotate,
+ * mirror it when flipped, and hand the painter its unrotated box. Shared by
+ * the tiles, the page preview, the wet-layer drag preview and the sidebar
+ * thumbnails. The painter draws the crop into that box as usual; the mirror
+ * applies to what it drew, which is why a stored crop stays in fractions of
+ * the source file.
  */
 export function drawPlacedImage(
   ctx: CanvasRenderingContext2D,
@@ -165,6 +168,9 @@ export function drawPlacedImage(
   ctx.translate(image.x + image.w / 2, image.y + image.h / 2);
   const rotation = rotationOf(image);
   if (rotation !== 0) ctx.rotate(rotation);
+  if (image.flipX === true || image.flipY === true) {
+    ctx.scale(image.flipX === true ? -1 : 1, image.flipY === true ? -1 : 1);
+  }
   ctx.translate(-image.w / 2, -image.h / 2);
   painter.paintImage(ctx, image, deviceScale);
   ctx.restore();
@@ -260,6 +266,8 @@ interface Preview {
 
 interface PathEntry {
   fingerprint: string;
+  /** The points array traced: a command that replaces it is always a change. */
+  pts: readonly number[];
   /** The stroke's runs, and a `Path2D` for each. */
   runs: InkRun[];
   paths: Path2D[];
@@ -1067,11 +1075,13 @@ export class Renderer {
   }
 
   /**
-   * The stroke's runs and their `Path2D`s, traced once. The fingerprint is
-   * the width, the point count and both end points, which changes under
-   * every edit the commands make (a translation moves every point; an erase
-   * re-points; a resize changes the width, even of a closed shape whose
-   * seam is the corner it was scaled about).
+   * The stroke's runs and their `Path2D`s, traced once. They are reused
+   * only for the same points array with the same fingerprint (the width, the
+   * point count and both end points). Every command gives a stroke a new
+   * array, which is what catches a turn or a mirror about a centre that one
+   * of its ends sits on: a figure eight started from its middle and turned
+   * keeps both ends, its count and its width. The fingerprint still catches
+   * an array edited in place.
    */
   private pathEntry(stroke: Stroke, usePressure: boolean): PathEntry {
     const pressure = pressureFor(stroke.tool, usePressure);
@@ -1079,7 +1089,7 @@ export class Renderer {
     const n = pts.length;
     const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
-    if (cached && cached.fingerprint === fingerprint) return cached;
+    if (cached && cached.pts === pts && cached.fingerprint === fingerprint) return cached;
     let runs: InkRun[] = [];
     let bounds: Bounds | null = null;
     if (n >= 3) {
@@ -1090,7 +1100,7 @@ export class Renderer {
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
-    const entry: PathEntry = { fingerprint, runs, paths: runs.map(pathOf), bounds };
+    const entry: PathEntry = { fingerprint, pts, runs, paths: runs.map(pathOf), bounds };
     this.paths.set(stroke, entry);
     return entry;
   }
@@ -1137,7 +1147,10 @@ export class Renderer {
    * costs one redraw of the selection per frame, from the cached outlines,
    * instead of re-rasterising every tile it crosses. A resize passes
    * `scale`: the same outlines drawn `k` times the size about (x, y), which
-   * is what `ScaleElements` commits (ink width scales with the ink).
+   * is what `ScaleElements` commits (ink width scales with the ink). A turn
+   * passes `turn`: the outlines turned `angle` radians clockwise about
+   * (x, y), which is what `ReorientElements` commits for the ink and the
+   * pictures (text boxes are DOM, and stay upright).
    */
   renderSelectionDraft(
     pageIndex: number,
@@ -1147,6 +1160,7 @@ export class Renderer {
     dy: number,
     usePressure: boolean,
     scale?: { x: number; y: number; k: number },
+    turn?: { x: number; y: number; angle: number },
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
@@ -1159,6 +1173,11 @@ export class Renderer {
       ctx.translate(scale.x, scale.y);
       ctx.scale(scale.k, scale.k);
       ctx.translate(-scale.x, -scale.y);
+    }
+    if (turn && Number.isFinite(turn.angle) && turn.angle !== 0) {
+      ctx.translate(turn.x, turn.y);
+      ctx.rotate(turn.angle);
+      ctx.translate(-turn.x, -turn.y);
     }
     if (this.imagePainter) {
       for (const image of images) {

@@ -1,6 +1,6 @@
 /**
  * Commands on one placed picture (0.5): bring it to the front or send it to
- * the back among the page's pictures, lock or unlock it, and crop it. Each is
+ * the back among the page's pictures, lock or unlock it, crop it and flip it. Each is
  * one undo step. Pure, like the rest of `src/model/`.
  *
  * The picture is held by identity, falling back to its id only if the object
@@ -181,4 +181,50 @@ export class CropImage implements Command {
     restore(previous.image, previous.saved);
     this.previous = null;
   }
+}
+
+/** Which way a picture is mirrored: `x` left to right, `y` top to bottom. */
+export type FlipAxis = "x" | "y";
+
+/**
+ * Mirror a picture left to right (`x`) or top to bottom (`y`) in its own
+ * frame: its box, rotation and crop stay as they are, and the flag toggles
+ * (`true`, or the key deleted). Flipping twice is the picture as it was.
+ */
+export class FlipImage implements Command {
+  readonly label: string;
+  private previous: { image: ImageElement; saved: ImageElement } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly image: ImageElement,
+    private readonly axis: FlipAxis,
+  ) {
+    this.label = axis === "x" ? "Flip horizontal" : "Flip vertical";
+  }
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    const image = page ? findImage(page, this.image) : null;
+    if (!image) return;
+    this.previous = { image, saved: snapshot(image) };
+    toggleFlip(image, this.axis);
+  }
+
+  invert(doc: InkDocument): void {
+    const previous = this.previous;
+    if (!previous || !pageById(doc, this.pageId)) return;
+    restore(previous.image, previous.saved);
+    this.previous = null;
+  }
+}
+
+/** Toggle one of a picture's mirror flags in place: `true`, or the key deleted. */
+export function toggleFlip(image: ImageElement, axis: FlipAxis): void {
+  if (axis === "x") {
+    if (image.flipX === true) delete image.flipX;
+    else image.flipX = true;
+  } else if (image.flipY === true) delete image.flipY;
+  else image.flipY = true;
 }

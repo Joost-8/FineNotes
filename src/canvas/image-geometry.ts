@@ -404,6 +404,24 @@ export function rotateImage(
   return withRotation(start, snapAngle(rotationOf(start) + a1 - a0, snapDeg));
 }
 
+/**
+ * The turn, in radians clockwise, that the pointer swept about `centre` from
+ * `from` to `to`, snapped onto quarter turns as a picture's rotation is: what
+ * a lasso selection's rotate knob turns everything in it by. Zero when either
+ * point sits on the centre.
+ */
+export function sweptTurn(centre: Pt, from: Pt, to: Pt, snapDeg = ROTATION_SNAP_DEG): number {
+  if (
+    Math.hypot(to.x - centre.x, to.y - centre.y) < 1e-6 ||
+    Math.hypot(from.x - centre.x, from.y - centre.y) < 1e-6
+  ) {
+    return 0;
+  }
+  const a0 = Math.atan2(from.y - centre.y, from.x - centre.x);
+  const a1 = Math.atan2(to.y - centre.y, to.x - centre.x);
+  return snapAngle(a1 - a0, snapDeg);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

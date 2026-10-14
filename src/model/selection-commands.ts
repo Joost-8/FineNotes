@@ -1,5 +1,5 @@
 /**
- * Commands on a lasso selection (0.5): move, resize, delete, duplicate and recolour
+ * Commands on a lasso selection (0.5): move, resize, rotate, flip, delete, duplicate and recolour
  * strokes, images and text boxes on one page, each as **one** undo step.
  *
  * Every element is held by identity, not by id: ids are only unique per file,
@@ -255,6 +255,165 @@ export class ScaleElements implements Command {
       textBox.fontSize = fontSize;
     }
     this.scaled = null;
+  }
+}
+
+/**
+ * A rigid turn or mirror of a selection about a page point: `rotate` turns
+ * it `angle` radians clockwise (y down, as a picture's `rotation`); `flip`
+ * mirrors it left to right (`x`) or top to bottom (`y`).
+ */
+export type Reorientation = { kind: "rotate"; angle: number } | { kind: "flip"; axis: "x" | "y" };
+
+/** Where page point (x, y) goes under `motion` about (cx, cy). */
+export function reorientPoint(
+  motion: Reorientation,
+  cx: number,
+  cy: number,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  const dx = x - cx;
+  const dy = y - cy;
+  if (motion.kind === "flip") {
+    return motion.axis === "x" ? { x: cx - dx, y } : { x, y: cy - dy };
+  }
+  const c = Math.cos(motion.angle);
+  const s = Math.sin(motion.angle);
+  return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+}
+
+/** A copy of `pts` under `motion` about (cx, cy); pressure, and any ragged tail, copied as is. */
+export function reorientPoints(
+  pts: readonly number[],
+  motion: Reorientation,
+  cx: number,
+  cy: number,
+): number[] {
+  const out = pts.slice();
+  const usable = out.length - (out.length % POINT_STRIDE);
+  for (let i = 0; i < usable; i += POINT_STRIDE) {
+    const p = reorientPoint(motion, cx, cy, out[i], out[i + 1]);
+    out[i] = p.x;
+    out[i + 1] = p.y;
+  }
+  return out;
+}
+
+/** Rotations smaller than this are "no rotation", and the key is left absent. */
+const ROTATION_EPSILON = 1e-9;
+
+/** Wrap an angle into (-π, π]. */
+function wrapAngle(angle: number): number {
+  const turn = Math.PI * 2;
+  let a = angle % turn;
+  if (a <= -Math.PI) a += turn;
+  if (a > Math.PI) a -= turn;
+  return a;
+}
+
+/**
+ * Turn or mirror everything selected on one page about the page point
+ * (cx, cy) — the middle of the selection's bounds — as one undo step:
+ *
+ * - a stroke's points move and nothing else changes: its width, pressure
+ *   and `shape` stay (a turned rectangle is still a rectangle);
+ * - a picture's centre moves; a turn adds to its `rotation`, a mirror
+ *   flips it in its own frame and negates its rotation, since mirroring a
+ *   turned picture is mirroring it first and turning it the other way;
+ * - a text box has no rotation, so it stays upright and only its middle
+ *   moves (`heights` gives a box's measured height when it has none fixed).
+ *
+ * A non-finite angle or centre changes nothing. A stroke's `samples` stay as
+ * recorded, as they do under a move.
+ */
+export class ReorientElements implements Command {
+  readonly label: string;
+  private saved: {
+    strokes: Array<{ stroke: Stroke; pts: number[] }>;
+    images: Array<{ image: ImageElement; saved: ImageElement }>;
+    textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
+  } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly elements: PageElements,
+    private readonly motion: Reorientation,
+    private readonly cx: number,
+    private readonly cy: number,
+    private readonly heights?: ReadonlyMap<TextBoxElement, number>,
+  ) {
+    this.label =
+      motion.kind === "rotate"
+        ? "Rotate selection"
+        : motion.axis === "x"
+          ? "Flip horizontal"
+          : "Flip vertical";
+  }
+
+  apply(doc: InkDocument): void {
+    this.saved = null;
+    const { motion, cx, cy } = this;
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+    if (motion.kind === "rotate" && !Number.isFinite(motion.angle)) return;
+    const page = pageById(doc, this.pageId);
+    if (!page) return;
+    const on = elementsOnPage(page, this.elements);
+    this.saved = {
+      strokes: on.strokes.map((stroke) => {
+        const pts = stroke.pts;
+        stroke.pts = reorientPoints(pts, motion, cx, cy);
+        return { stroke, pts };
+      }),
+      images: on.images.map((image) => {
+        const saved = { ...image };
+        const c = reorientPoint(motion, cx, cy, image.x + image.w / 2, image.y + image.h / 2);
+        image.x = c.x - image.w / 2;
+        image.y = c.y - image.h / 2;
+        const was =
+          typeof image.rotation === "number" && Number.isFinite(image.rotation)
+            ? image.rotation
+            : 0;
+        let turned: number;
+        if (motion.kind === "rotate") {
+          turned = wrapAngle(was + motion.angle);
+        } else {
+          turned = wrapAngle(-was);
+          if (motion.axis === "x") {
+            if (image.flipX === true) delete image.flipX;
+            else image.flipX = true;
+          } else if (image.flipY === true) delete image.flipY;
+          else image.flipY = true;
+        }
+        if (Math.abs(turned) > ROTATION_EPSILON) image.rotation = turned;
+        else delete image.rotation;
+        return { image, saved };
+      }),
+      textBoxes: on.textBoxes.map((textBox) => {
+        const { x, y, w } = textBox;
+        const h = this.heights?.get(textBox) ?? textBox.h ?? 0;
+        const c = reorientPoint(motion, cx, cy, x + w / 2, y + h / 2);
+        textBox.x = c.x - w / 2;
+        textBox.y = c.y - h / 2;
+        return { textBox, x, y };
+      }),
+    };
+  }
+
+  invert(doc: InkDocument): void {
+    const saved = this.saved;
+    if (!saved || !pageById(doc, this.pageId)) return;
+    for (const { stroke, pts } of saved.strokes) stroke.pts = pts;
+    for (const { image, saved: before } of saved.images) {
+      const target = image as unknown as Record<string, unknown>;
+      for (const key of Object.keys(target)) delete target[key];
+      Object.assign(image, before);
+    }
+    for (const { textBox, x, y } of saved.textBoxes) {
+      textBox.x = x;
+      textBox.y = y;
+    }
+    this.saved = null;
   }
 }
 

@@ -17,8 +17,9 @@ import { MAX_IMAGE_LONG_SIDE, fitLongSide, mimeForExtension } from "../canvas/im
 import { decodeToCanvas, releaseCanvas } from "./image-import";
 
 /**
- * Put a placed picture on the system clipboard as a PNG, cropped as it
- * shows (not turned: a rotation belongs to the page, not to the picture).
+ * Put a placed picture on the system clipboard as a PNG, cropped and
+ * mirrored as it shows (not turned: a rotation belongs to the page, not to
+ * the picture).
  * Must be called inside the user's gesture: the clipboard item is handed
  * over at once with a promise of the pixels, which WebKit accepts while the
  * gesture lasts and Chromium accepts anyway.
@@ -37,7 +38,7 @@ export function copyPictureToSystemClipboard(app: App, image: ImageElement): voi
   }
 }
 
-/** The picture's pixels (at most 2048 px long), its crop applied, as PNG. */
+/** The picture's pixels (at most 2048 px long), its crop and flips applied, as PNG. */
 async function pictureAsPng(app: App, image: ImageElement): Promise<Blob> {
   const file = app.vault.getFileByPath(image.path);
   if (!file) throw new Error(`Missing image — ${image.path}`);
@@ -46,14 +47,21 @@ async function pictureAsPng(app: App, image: ImageElement): Promise<Blob> {
     fitLongSide(w, h, MAX_IMAGE_LONG_SIDE),
   );
   let canvas = decoded.canvas;
-  if (image.crop) {
-    const src = cropSourceRect(image.crop, canvas.width, canvas.height);
+  const flipX = image.flipX === true;
+  const flipY = image.flipY === true;
+  if (image.crop || flipX || flipY) {
+    const src = image.crop
+      ? cropSourceRect(image.crop, canvas.width, canvas.height)
+      : { sx: 0, sy: 0, sw: canvas.width, sh: canvas.height };
     const cropped = createEl("canvas");
     cropped.width = Math.max(1, Math.round(src.sw));
     cropped.height = Math.max(1, Math.round(src.sh));
-    cropped
-      .getContext("2d")
-      ?.drawImage(canvas, src.sx, src.sy, src.sw, src.sh, 0, 0, cropped.width, cropped.height);
+    const ctx = cropped.getContext("2d");
+    if (ctx) {
+      ctx.translate(flipX ? cropped.width : 0, flipY ? cropped.height : 0);
+      ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+      ctx.drawImage(canvas, src.sx, src.sy, src.sw, src.sh, 0, 0, cropped.width, cropped.height);
+    }
     releaseCanvas(canvas);
     canvas = cropped;
   }

@@ -287,9 +287,8 @@ export function readNotability(
       // The crop is in the still's pixels; the original is shown whole.
       const crop = asset ? undefined : cropOf(figure?.FigureCropRectKey, bytes);
       if (crop) image.crop = crop;
-      if (object.isFlippedHorizontal === true || object.isFlippedVertical === true) {
-        counted.push({ key: "flipped", y: origin[1] });
-      }
+      if (object.isFlippedHorizontal === true) image.flipX = true;
+      if (object.isFlippedVertical === true) image.flipY = true;
       images.push({ at: slotAt(origin[1]), item: image });
     } else if (object.$class === "TextBlockMediaObject") {
       const block = textBlock(object, origin, size);
@@ -394,7 +393,6 @@ export function readNotability(
   ).length;
   const lines = [
     tally.line("missing", (n) => `${plural(n, "picture")} could not be found in the file.`),
-    tally.line("flipped", (n) => `${plural(n, "flipped picture")} came over unflipped.`),
     tally.line(
       "canvases",
       (n) =>

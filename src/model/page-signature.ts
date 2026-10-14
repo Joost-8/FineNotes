@@ -26,7 +26,11 @@ export function pageSignature(page: Page): string {
     .map((t) => `${t.x},${t.y},${t.w},${t.h ?? ""},${textStyleKey(t)},${t.text}`)
     .join("|");
   const images = page.images
-    .map((i) => `${i.path},${i.x},${i.y},${i.w},${i.h},${i.rotation ?? 0}`)
+    .map(
+      (i) =>
+        `${i.path},${i.x},${i.y},${i.w},${i.h},${i.rotation ?? 0},` +
+        `${i.flipX ? 1 : 0}${i.flipY ? 1 : 0},${i.crop ? JSON.stringify(i.crop) : ""}`,
+    )
     .join("|");
   return [
     page.id,

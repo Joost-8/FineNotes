@@ -17,6 +17,20 @@ extracted from the matching section of this file by `release.yml`.
   scale their text. One undo puts it all back
   ([#23](https://github.com/Joost-8/FineNotes/discussions/23)).
 
+- **Rotate a lasso selection.** A knob hangs below the selection's frame,
+  as below a picture: turn it and everything selected turns about the
+  middle, snapping to quarter turns as it passes them. Handwriting and
+  shapes turn, pictures turn with their own rotation, and text boxes go
+  round with the rest but stay upright, so they still read across the
+  page. One undo puts it all back.
+
+- **Flip pictures and selections.** A picture's ⋯ menu has Flip horizontal
+  and Flip vertical; the picture mirrors in place, keeping its crop and its
+  turn, and the file is never touched. A lasso selection's ⋯ menu has them
+  too: ink is mirrored, pictures flip, and text boxes move to their
+  mirrored place but still read forwards. Pictures that were flipped in
+  Notability now come over flipped.
+
 - **Dark pages, for writing at night** (#25). Settings → Pages and
   notebooks → Page appearance: Light, Dark, or Match Obsidian's theme; the
   notebook's ⋯ menu switches between dark and light pages in one tap. The

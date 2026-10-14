@@ -722,6 +722,8 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
       ? { rotation: raw.rotation }
       : {}),
     ...normalizeCrop(raw.crop),
+    ...(raw.flipX === true ? { flipX: true } : {}),
+    ...(raw.flipY === true ? { flipY: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
   };
 }

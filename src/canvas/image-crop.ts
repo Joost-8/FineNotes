@@ -16,6 +16,12 @@
  * resetting, works on that whole picture and derives the new visible box from
  * it — which is why the part that stays visible never moves on the page, at
  * any rotation.
+ *
+ * A **flipped** picture (`flipX`, `flipY`) is drawn mirrored in its own
+ * frame, so its crop sits mirrored in the whole picture as drawn. The stored
+ * crop stays in fractions of the source file; everything that places a box
+ * or a crop frame on the page works with {@link shownCrop}, the crop as
+ * fractions of the picture as drawn, and {@link cropResult} turns that back.
  */
 
 import type { ImageCrop } from "../model/document";
@@ -43,8 +49,23 @@ export const MIN_CROP_FRACTION = 0.01;
 /** Fractions this close to an edge count as on it. */
 const EPS = 1e-9;
 
-/** An element that may carry a crop. */
-export type CroppableBox = ImageTransform & { crop?: ImageCrop };
+/** An element that may carry a crop, and be mirrored. */
+export type CroppableBox = ImageTransform & { crop?: ImageCrop; flipX?: true; flipY?: true };
+
+/** Mirror a crop left to right and/or top to bottom within the picture. Its own inverse. */
+export function mirrorCrop(crop: ImageCrop, flipX: boolean, flipY: boolean): ImageCrop {
+  return {
+    x: flipX ? Math.max(0, 1 - crop.x - crop.w) : crop.x,
+    y: flipY ? Math.max(0, 1 - crop.y - crop.h) : crop.y,
+    w: crop.w,
+    h: crop.h,
+  };
+}
+
+/** The crop an element shows, as fractions of the picture as it is drawn (mirrored when flipped). */
+export function shownCrop(image: { crop?: ImageCrop; flipX?: true; flipY?: true }): ImageCrop {
+  return mirrorCrop(cropOf(image), image.flipX === true, image.flipY === true);
+}
 
 /**
  * The crop an element shows: its own when it is a real sub-rectangle of the
@@ -117,7 +138,7 @@ export function cropSourceRect(
  * crop undone, same rotation. For an uncropped element, its own box.
  */
 export function uncroppedBox(image: CroppableBox): ImageTransform {
-  const crop = cropOf(image);
+  const crop = shownCrop(image);
   const angle = rotationOf(image);
   if (isFullCrop(crop)) return withRotation(image, angle);
   const W = image.w / crop.w;
@@ -155,10 +176,11 @@ export interface CropResult {
 }
 
 /**
- * What cropping `image` to `crop` (fractions of the *whole* picture) makes
- * of it: the visible box, and the crop to store — none when the crop is the
- * whole picture, so a reset leaves no key behind. The part that stays
- * visible does not move on the page; the rotation is untouched.
+ * What cropping `image` to `crop` (fractions of the *whole* picture as it is
+ * drawn, see {@link shownCrop}) makes of it: the visible box, and the crop to
+ * store, in fractions of the source file — none when the crop is the whole
+ * picture, so a reset leaves no key behind. The part that stays visible does
+ * not move on the page; the rotation and any flip are untouched.
  */
 export function cropResult(image: CroppableBox, crop: ImageCrop): CropResult {
   const full = uncroppedBox(image);
@@ -166,7 +188,9 @@ export function cropResult(image: CroppableBox, crop: ImageCrop): CropResult {
   const whole = isFullCrop(clean);
   const box = whole ? full : croppedBox(full, clean);
   const out: CropResult = { x: box.x, y: box.y, w: box.w, h: box.h };
-  if (!whole) out.crop = clean;
+  if (!whole) {
+    out.crop = clampCrop(mirrorCrop(clean, image.flipX === true, image.flipY === true));
+  }
   return out;
 }
 
