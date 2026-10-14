@@ -16,7 +16,7 @@ import {
   PAPER_WIDTH_RANGE,
   changesTabLayout,
   endpointWarning,
-  openSectionsOf,
+  foldedSectionsOf,
   pagesAreDark,
   paperWidthFrom,
   parseColorList,
@@ -96,7 +96,7 @@ const FRESH_INSTALL = {
   ],
   barrelButton: "erase",
   penCursor: true,
-  openSettingsSections: ["writing"],
+  foldedSettingsSections: ["pens", "shortcuts"],
 };
 
 /**
@@ -159,7 +159,7 @@ const USED_VAULT = {
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   penCursor: false,
-  openSettingsSections: ["pens", "shortcuts"],
+  foldedSettingsSections: ["writing", "ai"],
   experimentalFutureFlag: 7,
 };
 
@@ -328,28 +328,30 @@ describe("control values", () => {
 });
 
 describe("folded settings sections", () => {
-  it("opens the first section, and only it, on a fresh install", () => {
-    expect(openSectionsOf(undefined)).toEqual(["writing"]);
+  it("folds only Pens and shortcuts, and its shortcut list, on a fresh install", () => {
+    expect(foldedSectionsOf(undefined)).toEqual(["pens", "shortcuts"]);
     expect(sectionOpen(undefined, "writing")).toBe(true);
+    expect(sectionOpen(undefined, "pages")).toBe(true);
+    expect(sectionOpen(undefined, "community")).toBe(true);
     expect(sectionOpen(undefined, "shortcuts")).toBe(false);
-    expect(sectionOpen(DEFAULT_SETTINGS.openSettingsSections, "pens")).toBe(false);
+    expect(sectionOpen(DEFAULT_SETTINGS.foldedSettingsSections, "pens")).toBe(false);
   });
 
   it("reads a hand-edited value without trusting it", () => {
-    expect(openSectionsOf("pens")).toEqual(["writing"]);
-    expect(openSectionsOf(null)).toEqual(["writing"]);
+    expect(foldedSectionsOf("pens")).toEqual(["pens", "shortcuts"]);
+    expect(foldedSectionsOf(null)).toEqual(["pens", "shortcuts"]);
     // Unknown ids go; known ones come back in the tab's order, once each.
-    expect(openSectionsOf(["ai", "nope", "pens", "ai", 7, "toString"])).toEqual(["pens", "ai"]);
-    // Everything folded is a choice, not a missing value.
-    expect(openSectionsOf([])).toEqual([]);
+    expect(foldedSectionsOf(["ai", "nope", "pens", "ai", 7, "toString"])).toEqual(["pens", "ai"]);
+    // Everything open is a choice, not a missing value.
+    expect(foldedSectionsOf([])).toEqual([]);
   });
 
   it("opens and folds one section, leaving the others", () => {
-    const opened = withSection(["writing"], "advanced", true);
-    expect(opened).toEqual(["writing", "advanced"]);
-    expect(withSection(opened, "writing", false)).toEqual(["advanced"]);
-    expect(withSection(opened, "advanced", true)).toEqual(["writing", "advanced"]);
-    expect(withSection(undefined, "shortcuts", true)).toEqual(["writing", "shortcuts"]);
-    expect(withSection(["pens"], "toString" as never, true)).toEqual(["pens"]);
+    const folded = withSection(["pens"], "advanced", false);
+    expect(folded).toEqual(["pens", "advanced"]);
+    expect(withSection(folded, "pens", true)).toEqual(["advanced"]);
+    expect(withSection(folded, "advanced", false)).toEqual(["pens", "advanced"]);
+    expect(withSection(undefined, "shortcuts", true)).toEqual(["pens"]);
+    expect(withSection(["pens"], "toString" as never, false)).toEqual(["pens"]);
   });
 });

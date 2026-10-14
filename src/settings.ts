@@ -375,8 +375,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   /**
    * A section under a header that folds it: tapping the header (or its
-   * chevron) hides or shows the rows, and the tab remembers which are open
-   * (`openSettingsSections`). Folding is a class on the group, never the
+   * chevron) hides or shows the rows, and the tab remembers which are folded
+   * (`foldedSettingsSections`). Folding is a class on the group, never the
    * rows' `visible`: Obsidian's search leaves out rows that are not visible,
    * and a folded row must still be found. Obsidian applies `cls` when it
    * first draws the group; after that the class on the group is the state.
@@ -386,7 +386,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     heading: string,
     items: SettingDefinition[],
   ): SettingDefinitionItem {
-    const open = sectionOpen(this.plugin.settings.openSettingsSections, id);
+    const open = sectionOpen(this.plugin.settings.foldedSettingsSections, id);
     return {
       type: "group",
       heading,
@@ -459,7 +459,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Save a section opened or folded. */
   private rememberFold(id: SettingsSection, open: boolean): void {
     const settings = this.plugin.settings;
-    settings.openSettingsSections = withSection(settings.openSettingsSections, id, open);
+    settings.foldedSettingsSections = withSection(settings.foldedSettingsSections, id, open);
     void this.plugin.saveSettings();
   }
 
@@ -729,7 +729,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const folded = (): boolean => row.hasClass("is-folded");
     row.toggleClass(
       "is-folded",
-      !sectionOpen(this.plugin.settings.openSettingsSections, "shortcuts"),
+      !sectionOpen(this.plugin.settings.foldedSettingsSections, "shortcuts"),
     );
     setting.addExtraButton((button) => {
       button.setIcon("chevron-right");

@@ -1096,7 +1096,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     chevron.dispatch("click");
     expect(row.settingEl.hasClass("is-folded")).toBe(false);
     expect(chevron.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.openSettingsSections).toEqual(["writing", "shortcuts"]);
+    expect(plugin.settings.foldedSettingsSections).toEqual(["pens"]);
     expect(plugin.calls).toEqual(["save"]);
     row.find("goodobsidian-shortcut-action")?.dispatch("click");
     expect(row.settingEl.hasClass("is-folded")).toBe(false);
@@ -1108,7 +1108,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     const key = again.extras[0].extraSettingsEl.dispatch("keydown", { key: "Enter" });
     expect(key.defaultPrevented).toBe(true);
     expect(again.settingEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.openSettingsSections).toEqual(["writing"]);
+    expect(plugin.settings.foldedSettingsSections).toEqual(["pens", "shortcuts"]);
   });
 });
 
@@ -1153,34 +1153,50 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
 }
 
 describe("folding sections", () => {
-  it("opens the first section only, at first", () => {
+  it("folds Pens and shortcuts only, at first", () => {
     const { tab } = makeTab(makePlugin(), false);
     expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual([
       [WRITING, "goodobsidian-section"],
       [PENS, "goodobsidian-section is-folded"],
-      [PAGES, "goodobsidian-section is-folded"],
-      [HANDWRITING, "goodobsidian-section is-folded"],
-      [AI, "goodobsidian-section is-folded"],
-      [ADVANCED, "goodobsidian-section is-folded"],
-      [SUPPORT, "goodobsidian-section is-folded"],
-      [COMMUNITY, "goodobsidian-section is-folded"],
+      [PAGES, "goodobsidian-section"],
+      [HANDWRITING, "goodobsidian-section"],
+      [AI, "goodobsidian-section"],
+      [ADVANCED, "goodobsidian-section"],
+      [SUPPORT, "goodobsidian-section"],
+      [COMMUNITY, "goodobsidian-section"],
     ]);
-    expect(new Set(unfoldedRows(tab).map((r) => r.heading))).toEqual(new Set([WRITING]));
+    const shownHeadings = new Set(unfoldedRows(tab).map((r) => r.heading));
+    expect(shownHeadings.has(PENS)).toBe(false);
+    expect(shownHeadings.has(WRITING) && shownHeadings.has(COMMUNITY)).toBe(true);
     expect(unfoldedRows(tab).filter((r) => r.heading === WRITING)).toHaveLength(9);
   });
 
   it("shows the rows of the sections that are open", () => {
-    const plugin = makePlugin({ openSettingsSections: ["pens", "community"] });
+    const plugin = makePlugin({
+      foldedSettingsSections: ["writing", "pages", "handwriting", "ai", "advanced", "support"],
+    });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
     expect(headings.filter((h) => h === PENS)).toHaveLength(13);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
-    const folded = makeTab(makePlugin({ openSettingsSections: [] })).tab;
-    const open = makeTab(
-      makePlugin({ openSettingsSections: ["writing", "pens", "pages", "ai"] }),
+    const folded = makeTab(
+      makePlugin({
+        foldedSettingsSections: [
+          "writing",
+          "pens",
+          "shortcuts",
+          "pages",
+          "handwriting",
+          "ai",
+          "advanced",
+          "support",
+          "community",
+        ],
+      }),
     ).tab;
+    const open = makeTab(makePlugin({ foldedSettingsSections: [] })).tab;
     const names = (tab: InstanceType<typeof GoodObsidianSettingTab>) =>
       rows(tab)
         .filter((r) => shown(r.def) && r.def.searchable !== false)
@@ -1205,7 +1221,7 @@ describe("folding sections", () => {
     pens.chevron?.dispatch("click");
     expect(pens.groupEl.hasClass("is-folded")).toBe(false);
     expect(pens.chevron?.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.openSettingsSections).toEqual(["writing", "pens"]);
+    expect(plugin.settings.foldedSettingsSections).toEqual(["shortcuts"]);
     expect(plugin.calls).toEqual(["save"]);
 
     // Reopening the settings (or Obsidian) draws it open.
@@ -1216,12 +1232,12 @@ describe("folding sections", () => {
     const writing = drawGroup(groups(reopened)[0]);
     writing.header.find("setting-item-name")?.dispatch("click");
     expect(writing.groupEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.openSettingsSections).toEqual(["pens"]);
+    expect(plugin.settings.foldedSettingsSections).toEqual(["writing", "shortcuts"]);
     // Space on the chevron, as on any button.
     const space = writing.chevron?.dispatch("keydown", { key: " " });
     expect(space?.defaultPrevented).toBe(true);
     expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-    expect(plugin.settings.openSettingsSections).toEqual(["writing", "pens"]);
+    expect(plugin.settings.foldedSettingsSections).toEqual(["shortcuts"]);
     writing.chevron?.dispatch("keydown", { key: "a" });
     expect(writing.groupEl.hasClass("is-folded")).toBe(false);
   });

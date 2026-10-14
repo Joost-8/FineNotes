@@ -176,8 +176,12 @@ export interface GoodObsidianSettings {
   /** A small crosshair over the page for the pens, on a computer. */
   penCursor: boolean;
 
-  /** The settings tab's sections shown unfolded, by id. Checked where read ({@link openSectionsOf}). */
-  openSettingsSections: string[];
+  /**
+   * The settings tab's sections shown folded, by id. Checked where read
+   * ({@link foldedSectionsOf}). It replaced `openSettingsSections` (the open
+   * ones), so everyone starts again from the new default.
+   */
+  foldedSettingsSections: string[];
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -237,13 +241,13 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   barrelButton: "erase",
   penCursor: true,
 
-  openSettingsSections: ["writing"],
+  foldedSettingsSections: ["pens", "shortcuts"],
 };
 
 // --- Folded settings sections ----------------------------------------------------
 
 /**
- * The parts of the settings tab that fold, by the id `openSettingsSections`
+ * The parts of the settings tab that fold, by the id `foldedSettingsSections`
  * keeps: the sections, and the shortcut list inside "Pens and shortcuts".
  * Ids, not headings, so a renamed heading keeps its state.
  */
@@ -261,33 +265,33 @@ export const SETTINGS_SECTIONS = [
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
-/** Open on a fresh install: the first section only; the shortcut list starts folded. */
-export const DEFAULT_OPEN_SECTIONS: readonly SettingsSection[] = ["writing"];
+/** Folded on a fresh install: "Pens and shortcuts" (the longest) and its shortcut list. */
+export const DEFAULT_FOLDED_SECTIONS: readonly SettingsSection[] = ["pens", "shortcuts"];
 
 function isSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
 /**
- * The open sections a stored value names, in the tab's order, once each.
+ * The folded sections a stored value names, in the tab's order, once each.
  * Anything but a list (a missing key, a hand-edited file) is the default;
  * ids this build does not know are dropped.
  */
-export function openSectionsOf(raw: unknown): SettingsSection[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_OPEN_SECTIONS];
+export function foldedSectionsOf(raw: unknown): SettingsSection[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_FOLDED_SECTIONS];
   return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
 }
 
 /** Whether `id` is shown unfolded. */
 export function sectionOpen(raw: unknown, id: SettingsSection): boolean {
-  return openSectionsOf(raw).includes(id);
+  return !foldedSectionsOf(raw).includes(id);
 }
 
-/** The open sections with `id` opened or folded. */
+/** The folded sections with `id` opened or folded. */
 export function withSection(raw: unknown, id: SettingsSection, open: boolean): SettingsSection[] {
-  if (!isSection(id)) return openSectionsOf(raw);
-  const rest = openSectionsOf(raw).filter((section) => section !== id);
-  return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
+  if (!isSection(id)) return foldedSectionsOf(raw);
+  const rest = foldedSectionsOf(raw).filter((section) => section !== id);
+  return open ? rest : SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s));
 }
 
 // --- Dark pages ----------------------------------------------------------------
