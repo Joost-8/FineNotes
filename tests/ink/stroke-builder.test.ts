@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { FALLBACK_PRESSURE, MIN_SAMPLE_DISTANCE } from "../../src/constants";
-import { StrokeBuilder, mapPressure } from "../../src/ink/stroke-builder";
+import {
+  BRUSH_PRESSURE,
+  StrokeBuilder,
+  mapPressure,
+  shapePressure,
+  unshapePressure,
+} from "../../src/ink/stroke-builder";
 
 describe("mapPressure on one reading", () => {
   const on = { minDistance: 1, pressureEnabled: true, fallbackPressure: 0.35 };
@@ -156,5 +162,34 @@ describe("StrokeBuilder: recording a practice file's raw samples", () => {
     const b = new StrokeBuilder();
     b.add({ x: 10, y: 10, pressure: 0.3, t: 1000 });
     expect(b.recorded()).toBeNull();
+  });
+});
+
+describe("the Brush pen's pressure curve", () => {
+  it("draws a usual hand at the brush's width, and swells and thins far more than the reading", () => {
+    expect(shapePressure(0.3, BRUSH_PRESSURE)).toBeCloseTo(0.5);
+    expect(shapePressure(0.5, BRUSH_PRESSURE)).toBeCloseTo(0.86);
+    expect(shapePressure(0.9, BRUSH_PRESSURE)).toBe(1);
+    // A light landing still leaves ink.
+    expect(shapePressure(0.02, BRUSH_PRESSURE)).toBe(0.08);
+    expect(unshapePressure(shapePressure(0.4, BRUSH_PRESSURE), BRUSH_PRESSURE)).toBeCloseTo(0.4);
+  });
+
+  it("stores shaped pressure, and reports the hand's own as typical", () => {
+    const b = new StrokeBuilder({
+      minDistance: 0,
+      pressureEnabled: true,
+      fallbackPressure: 0.5,
+      pressureCurve: BRUSH_PRESSURE,
+    });
+    b.add({ x: 0, y: 0, pressure: 0.1 });
+    b.add({ x: 5, y: 0, pressure: 0.3 });
+    b.add({ x: 10, y: 0, pressure: 0.5 });
+    b.settle();
+    const stored = b.points().filter((_, i) => i % 3 === 2);
+    expect(stored[0]).toBeCloseTo(0.14);
+    expect(stored[1]).toBeCloseTo(0.5);
+    expect(stored[2]).toBeCloseTo(0.86);
+    expect(b.typicalPressure()).toBeCloseTo(0.3);
   });
 });

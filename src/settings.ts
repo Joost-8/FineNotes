@@ -179,7 +179,8 @@ const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", s
 
 const DESC = {
   pressure:
-    "Advanced. The Fountain and Brush pens get wider the harder you press. Off, every pen " +
+    "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
+    "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
   drawAndHold:
     "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",

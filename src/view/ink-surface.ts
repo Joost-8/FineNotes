@@ -61,16 +61,19 @@ import {
   LassoPath,
   type Polygon,
   anchorCorner,
+  boundsCentre,
   boundsCorner,
   boxInLasso,
   clampGroupDelta,
   cornerScale,
   hitSelectionCorner,
+  hitSelectionKnob,
   lassoTakesStroke,
   minScaleForSide,
   polygonOf,
   rectLoop,
   scaleBounds,
+  selectionKnobPoint,
   smoothLoop,
   selectionBounds,
   strokeInLasso,
@@ -94,11 +97,11 @@ import {
   rotateImage,
   rotationOf,
   sameTransform,
+  sweptTurn,
   topImageAt,
   transformOf,
 } from "../canvas/image-geometry";
 import {
-  cropOf,
   cropResult,
   croppedBox,
   dragCrop,
@@ -106,6 +109,7 @@ import {
   minCropFractions,
   pictureFraction,
   sameCrop,
+  shownCrop,
   uncroppedBox,
 } from "../canvas/image-crop";
 import {
@@ -174,7 +178,12 @@ import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physic
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
 import { prefersReducedMotion } from "./motion";
-import { type Smoothing, StrokeBuilder, type StrokeBuilderOptions } from "../ink/stroke-builder";
+import {
+  BRUSH_PRESSURE,
+  type Smoothing,
+  StrokeBuilder,
+  type StrokeBuilderOptions,
+} from "../ink/stroke-builder";
 import { InkTracer } from "../ink/freehand";
 import { straightenRuns } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
@@ -226,15 +235,20 @@ import {
   type PageElements,
   RecolorStrokes,
   RemoveElements,
+  ReorientElements,
+  type Reorientation,
   ScaleElements,
   TranslateElements,
   copyElements,
   elementsOnPage,
   isEmptySelection,
+  reorientPoint,
   textScaleRange,
 } from "../model/selection-commands";
 import {
   CropImage,
+  type FlipAxis,
+  FlipImage,
   type ImageLayer,
   ReorderImage,
   SetImageLocked,
@@ -767,7 +781,7 @@ interface CropSession {
   image: ImageElement;
   /** The whole picture, page space: the element's crop undone. */
   full: ImageTransform;
-  /** The crop being edited, as fractions of the whole picture. */
+  /** The crop being edited, as fractions of the whole picture as drawn (mirrored when flipped). */
   crop: ImageCrop;
   /** The crop the picture had when crop mode began. */
   initial: ImageCrop;
@@ -831,11 +845,11 @@ interface LassoDraft {
 
 /**
  * A lasso selection being dragged by its frame, from pointerdown to lift:
- * moved by its body, or resized by a corner handle. The document is
- * untouched until the lift commits one `TranslateElements` or
- * `ScaleElements`; meanwhile the selection's ink and pictures are drawn on
- * the wet layer, moved by (dx, dy) or scaled by `scale`, and left out of
- * the tiles, and its text boxes follow.
+ * moved by its body, resized by a corner handle, or turned by its knob. The
+ * document is untouched until the lift commits one `TranslateElements`,
+ * `ScaleElements` or `ReorientElements`; meanwhile the selection's ink and
+ * pictures are drawn on the wet layer, moved by (dx, dy), scaled by `scale`
+ * or turned by `turn`, and left out of the tiles, and its text boxes follow.
  */
 interface GroupDrag {
   pointerId: number;
@@ -851,8 +865,20 @@ interface GroupDrag {
   dy: number;
   /** Set when a corner handle was grabbed: the drag resizes instead of moving. */
   scale: GroupScale | null;
+  /** Set when the rotate knob was grabbed: the drag turns instead of moving. */
+  turn: GroupTurn | null;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+}
+
+/** A turn of a lasso selection by its knob, about the middle of its bounds. */
+interface GroupTurn {
+  /** The middle of the bounds, page space. */
+  centre: Pt;
+  /** Page-local point where the knob was grabbed. */
+  from: Pt;
+  /** Radians clockwise so far, snapped onto quarter turns. */
+  angle: number;
 }
 
 /** A corner resize of a lasso selection, about the opposite corner of its bounds. */
@@ -866,6 +892,38 @@ interface GroupScale {
   k: number;
   min: number;
   max: number;
+}
+
+/**
+ * A full copy of a picture with its box and turn replaced by `t`: every other
+ * field (crop, flips, and any added later) comes along, and a turn `t` does
+ * not have is dropped rather than left over from the picture.
+ */
+function placedAt(image: ImageElement, t: ImageTransform): ImageElement {
+  const out: ImageElement = { ...image, x: t.x, y: t.y, w: t.w, h: t.h };
+  if (t.rotation === undefined) delete out.rotation;
+  else out.rotation = t.rotation;
+  return out;
+}
+
+/** Flip horizontal · Flip vertical, as rows of their own in the "…" menu. */
+function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
+  return [
+    {
+      id: "flip-x",
+      icon: "flip-horizontal-2",
+      label: "Flip horizontal",
+      group: "flip",
+      run: () => flip("x"),
+    },
+    {
+      id: "flip-y",
+      icon: "flip-vertical-2",
+      label: "Flip vertical",
+      group: "flip",
+      run: () => flip("y"),
+    },
+  ];
 }
 
 /** The tools a practice file has: writing and rubbing out. */
@@ -1510,6 +1568,9 @@ export class InkSurface {
     for (const corner of IMAGE_CORNERS) {
       this.selectionFrameEl.createDiv({ cls: `goodobsidian-image-handle is-corner is-${corner}` });
     }
+    // And a rotate knob below it on a stem, as below a picture.
+    const groupKnob = this.selectionFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
+    iconInto(groupKnob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
     // With the lasso, a text box is something to select, not to type in.
@@ -3612,6 +3673,10 @@ export class InkSurface {
       fallbackPressure: this.toolState.pressureEnabled
         ? (this.penPressure ?? FALLBACK_PRESSURE)
         : FALLBACK_PRESSURE,
+      // The Brush pen answers pressure far more strongly than the Fountain pen.
+      ...(this.toolState.pressureEnabled && this.toolState.penType === "brush"
+        ? { pressureCurve: BRUSH_PRESSURE }
+        : {}),
       // One sample a frame (iPadOS before 18.2): fill the stroke in between
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
@@ -5614,6 +5679,7 @@ export class InkSurface {
       dx: 0,
       dy: 0,
       scale: null,
+      turn: null,
       lifted: false,
     };
     this.circleDrag = true;
@@ -6176,6 +6242,15 @@ export class InkSurface {
     const drag = this.groupDrag;
     if (!drag?.lifted || drag.selection.pageId !== pageId) return { x: 0, y: 0 };
     if (!drag.selection.textBoxes.includes(textBox)) return { x: 0, y: 0 };
+    const turn = drag.turn;
+    if (turn) {
+      // A box stays upright: only its middle goes round.
+      const f = this.textBoxFrameOf(pageId, textBox);
+      const c = { x: f.x + f.w / 2, y: f.y + f.h / 2 };
+      const motion: Reorientation = { kind: "rotate", angle: turn.angle };
+      const to = reorientPoint(motion, turn.centre.x, turn.centre.y, c.x, c.y);
+      return { x: to.x - c.x, y: to.y - c.y };
+    }
     const scale = drag.scale;
     if (!scale) return { x: drag.dx, y: drag.dy };
     // A resize carries the box's corner away from the anchor (its size is a transform).
@@ -6185,8 +6260,12 @@ export class InkSurface {
     };
   }
 
-  /** Where a lasso drag has the selection's bounds now, page space. */
+  /**
+   * Where a lasso drag has the selection's bounds now, page space. A turn
+   * leaves them where they were: the frame turns with the selection instead.
+   */
   private draggedBounds(drag: GroupDrag): Bounds {
+    if (drag.turn) return drag.bounds;
     return drag.scale
       ? scaleBounds(drag.bounds, drag.scale.anchor, drag.scale.k)
       : shiftBounds(drag.bounds, drag.dx, drag.dy);
@@ -6221,6 +6300,9 @@ export class InkSurface {
         height: `${(bounds.maxY - bounds.minY) * scale + 2 * SELECTION_PAD_PX}px`,
       });
       this.selectionFrameEl.toggleClass("is-dragging", drag !== null);
+      // While the knob turns it, the frame turns with the selection about its middle.
+      const angle = drag?.turn?.angle ?? 0;
+      this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
       const count = sel ? sel.strokes.length + sel.images.length + sel.textBoxes.length : 0;
@@ -6260,7 +6342,7 @@ export class InkSurface {
       clearAbove = clearBelow = IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.cropActions(crop));
     } else if (group) {
-      bounds = this.groupBounds(group);
+      bounds = this.groupChromeBounds(group);
       // Clear of the corner handles on the frame, as of a picture's.
       clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
@@ -6288,6 +6370,19 @@ export class InkSurface {
       maxY: (box.y + bounds.maxY) * scale,
     };
     this.actionBar.show(anchor, this.visiblePaperRect(), { clearAbove, clearBelow });
+  }
+
+  /**
+   * What a lasso selection's chrome covers, page space: its bounds, reaching
+   * down to the rotate knob (less the frame's pad, which the bar adds back).
+   */
+  private groupChromeBounds(sel: GroupSelection): Bounds | null {
+    const bounds = this.groupBounds(sel);
+    if (!bounds) return null;
+    const scale = this.unitScale;
+    const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
+    const r = ROTATE_KNOB_RADIUS_PX / scale;
+    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - SELECTION_PAD_PX / scale) };
   }
 
   /** What a lone picture's chrome covers, page space: the rotated picture and its knob. */
@@ -6378,6 +6473,7 @@ export class InkSurface {
         group: "crop-image",
         run: () => this.startCrop(),
       },
+      ...flipActions((axis) => this.flipSelectedImage(axis)),
       {
         id: "delete",
         icon: "trash-2",
@@ -6459,6 +6555,7 @@ export class InkSurface {
       });
     }
     actions.push(...this.linkActions(sel, index));
+    actions.push(...flipActions((axis) => this.flipSelection(axis)));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -6932,6 +7029,18 @@ export class InkSurface {
   // --- A picture's order, lock and crop (0.5) ---------------------------------
 
   /** Bring the selected picture to the front of the page's pictures, or send it to the back. */
+  /** Mirror the selected picture in its own frame; it stays selected, its box unchanged. */
+  private flipSelectedImage(axis: FlipAxis): void {
+    const sel = this.liveImageSelection();
+    if (!sel || this.callbacks.isLocked?.()) return;
+    this.history.push(this.doc, new FlipImage(sel.pageId, sel.image, axis));
+    const box = this.boxForPage(sel.pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(sel.image)));
+    this.renderDry();
+    this.syncActionBar();
+    this.changed();
+  }
+
   private reorderSelectedImage(to: ImageLayer): void {
     const sel = this.liveImageSelection();
     const page = sel ? this.doc.pages.find((candidate) => candidate.id === sel.pageId) : null;
@@ -7213,7 +7322,7 @@ export class InkSurface {
     const box = sel ? this.boxForPage(sel.pageId) : null;
     if (!sel || !box || this.cropping || this.callbacks.isLocked?.()) return;
     this.cancelImageDrag();
-    const crop = cropOf(sel.image);
+    const crop = shownCrop(sel.image);
     this.cropping = {
       pageId: sel.pageId,
       image: sel.image,
@@ -7272,8 +7381,10 @@ export class InkSurface {
     const session = this.cropping;
     const box = session ? this.boxForPage(session.pageId) : null;
     if (!session || !box) return;
-    const { id, path } = session.image;
-    this.renderer?.renderImageCropDraft(box.index, { id, path, ...session.full }, session.crop);
+    // The whole picture, mirrored as the element is; the crop is as it is drawn.
+    const whole = placedAt(session.image, session.full);
+    delete whole.crop;
+    this.renderer?.renderImageCropDraft(box.index, whole, session.crop);
   }
 
   /** Put crop mode's DOM on the whole picture, and its frame on the crop. */
@@ -7412,8 +7523,10 @@ export class InkSurface {
    * A press on the selection's frame: the whole selection follows it, and
    * the lift commits one `TranslateElements`. A press on a corner handle
    * resizes it instead, about the opposite corner, the aspect kept, and the
-   * lift commits one `ScaleElements`. The pure hit test decides which, so
-   * the handles answer across 44 screen px at any zoom. A finger works it too.
+   * lift commits one `ScaleElements`; the knob below turns it about its
+   * middle, and the lift commits one `ReorientElements`. The pure hit tests
+   * decide which, so the handles answer across 44 screen px at any zoom. A
+   * finger works it too.
    */
   private readonly onSelectionPointerDown = (event: PointerEvent): void => {
     // Everything on the frame is the frame's: the page below never sees it.
@@ -7432,6 +7545,7 @@ export class InkSurface {
       // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
     }
     const from = this.pagePoint(box, event.clientX, event.clientY);
+    const turn = this.knobGrabbed(bounds, from);
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
@@ -7441,7 +7555,8 @@ export class InkSurface {
       clientY: event.clientY,
       dx: 0,
       dy: 0,
-      scale: this.cornerGrabbed(sel, bounds, from),
+      scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
+      turn,
       lifted: false,
     };
     this.selectionFrameEl.addEventListener("pointermove", this.onSelectionPointerMove);
@@ -7466,6 +7581,30 @@ export class InkSurface {
    * frame, or `null` when it grabbed no corner handle. The handles sit on the
    * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
    */
+  /** The selection's dashed frame, page space: its bounds grown by `SELECTION_PAD_PX`. */
+  private selectionFrameOf(bounds: Bounds): Bounds {
+    const pad = SELECTION_PAD_PX / this.unitScale;
+    return {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+  }
+
+  /** The turn a press at page point `from` starts, or `null` when it missed the rotate knob. */
+  private knobGrabbed(bounds: Bounds, from: Pt): GroupTurn | null {
+    const scale = this.unitScale;
+    const frame = this.selectionFrameOf(bounds);
+    const hit = hitSelectionKnob(
+      frame,
+      from,
+      ROTATE_HANDLE_OFFSET_PX / scale,
+      HANDLE_HIT_RADIUS_PX / scale,
+    );
+    return hit ? { centre: boundsCentre(bounds), from, angle: 0 } : null;
+  }
+
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
     const scale = this.unitScale;
     const pad = SELECTION_PAD_PX / scale;
@@ -7492,7 +7631,10 @@ export class InkSurface {
   /** Carry a selection being dragged to page point `p`, from where the drag began. */
   private moveGroupDrag(drag: GroupDrag, box: PageBox, p: Pt): void {
     const scale = drag.scale;
-    if (scale) {
+    const turn = drag.turn;
+    if (turn) {
+      turn.angle = sweptTurn(turn.centre, turn.from, p);
+    } else if (scale) {
       const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
       scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
     } else {
@@ -7545,6 +7687,9 @@ export class InkSurface {
       drag.dy,
       this.inkPressure,
       scale ? { x: scale.anchor.x, y: scale.anchor.y, k: scale.k } : undefined,
+      drag.turn
+        ? { x: drag.turn.centre.x, y: drag.turn.centre.y, angle: drag.turn.angle }
+        : undefined,
     );
   }
 
@@ -7599,9 +7744,18 @@ export class InkSurface {
           ?.root.setCssStyles({ transform: "", transformOrigin: "" });
       }
     }
-    const changed = scale ? scale.k !== 1 : drag.dx !== 0 || drag.dy !== 0;
+    const turn = drag.turn;
+    const changed = turn
+      ? turn.angle !== 0
+      : scale
+        ? scale.k !== 1
+        : drag.dx !== 0 || drag.dy !== 0;
     const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
-    if (moved) {
+    let after: Bounds | null = null;
+    if (moved && turn) {
+      const motion: Reorientation = { kind: "rotate", angle: turn.angle };
+      after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
+    } else if (moved) {
       this.history.push(
         this.doc,
         scale
@@ -7614,15 +7768,71 @@ export class InkSurface {
       if (scale && outline) {
         this.selectionOutline = { ...outline, loop: outline.loop.map((v) => v * scale.k) };
       }
+      after = this.draggedBounds(drag);
     }
+    this.selectionFrameEl.setCssStyles({ transform: "" });
     if (box) {
-      const after = moved ? this.draggedBounds(drag) : null;
       this.renderer?.invalidateRegion(box.index, unionBounds(drag.bounds, after) ?? drag.bounds);
     }
     this.renderDry();
     this.syncTextBoxes();
     this.syncSelectionOverlay();
     if (moved) this.changed([pageId]);
+  }
+
+  /**
+   * Turn or mirror a selection about `centre` as one `ReorientElements`, and
+   * carry the freehand loop round with it. Returns the selection's bounds
+   * afterwards; the caller repaints them and the bounds `before`.
+   */
+  private reorientSelection(
+    sel: GroupSelection,
+    before: Bounds,
+    motion: Reorientation,
+    centre: Pt,
+  ): Bounds | null {
+    const heights = new Map<TextBoxElement, number>();
+    for (const textBox of sel.textBoxes) {
+      heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
+    }
+    this.history.push(
+      this.doc,
+      new ReorientElements(sel.pageId, sel, motion, centre.x, centre.y, heights),
+    );
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    const after = this.groupBounds(sel);
+    // The loop is stored relative to the bounds' corner, which has moved.
+    const outline = this.selectionOutline;
+    if (outline && after) {
+      const loop: number[] = [];
+      for (let i = 0; i + 1 < outline.loop.length; i += 2) {
+        const x = before.minX + outline.loop[i];
+        const y = before.minY + outline.loop[i + 1];
+        const p = reorientPoint(motion, centre.x, centre.y, x, y);
+        loop.push(p.x - after.minX, p.y - after.minY);
+      }
+      this.selectionOutline = { ...outline, loop };
+    }
+    return after;
+  }
+
+  /**
+   * Mirror the lasso selection about the middle of its bounds: ink is
+   * mirrored, pictures flip, and text boxes move to their mirrored place but
+   * still read forwards. One undo step; the selection stays.
+   */
+  private flipSelection(axis: FlipAxis): void {
+    const sel = this.liveSelection();
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    const before = this.groupBounds(sel);
+    const box = this.boxForPage(sel.pageId);
+    if (!before || !box) return;
+    const after = this.reorientSelection(sel, before, { kind: "flip", axis }, boundsCentre(before));
+    this.renderer?.invalidateRegion(box.index, unionBounds(before, after) ?? before);
+    this.renderDry();
+    this.syncTextBoxes();
+    this.syncSelectionOverlay();
+    this.changed([sel.pageId]);
   }
 
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
@@ -7889,14 +8099,8 @@ export class InkSurface {
     const drag = this.imageDrag;
     const box = drag ? this.boxForPage(drag.pageId) : null;
     if (!drag || !box) return;
-    // A cropped picture is dragged cropped: the draft keeps its crop.
-    const { id, path, crop } = drag.image;
-    this.renderer?.renderImageDraft(box.index, {
-      id,
-      path,
-      ...drag.draft,
-      ...(crop ? { crop } : {}),
-    });
+    // A cropped or flipped picture is dragged as it is: the draft is a full copy.
+    this.renderer?.renderImageDraft(box.index, placedAt(drag.image, drag.draft));
   }
 
   /**

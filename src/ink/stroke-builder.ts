@@ -35,6 +35,12 @@ export interface StrokeBuilderOptions {
   /** The pressure stored when there is no reading to go by. */
   fallbackPressure: number;
   /**
+   * A pen's own response to pressure ({@link shapePressure}): the Brush pen
+   * swells and thins far more than the Fountain pen. Absent: the reading as
+   * it is.
+   */
+  pressureCurve?: PressureCurve;
+  /**
    * The input is sparse: fill in points between the samples kept, along a
    * curve through them, about `minDistance` apart ({@link StrokeBuilder}).
    */
@@ -92,6 +98,34 @@ const CENTRED_WEIGHTS: readonly (readonly number[])[] = [
  * capped at 1, if pressure is on and there is one; otherwise the fallback.
  * (`StrokeBuilder` does better for a missing reading mid-stroke.)
  */
+export interface PressureCurve {
+  /** The reading stored as 0.5, which draws at the pen's own width. */
+  centre: number;
+  /** How much a reading away from `centre` moves the stored pressure. */
+  gain: number;
+}
+
+/**
+ * The Brush pen: a usual hand (0.3) draws at the brush's width, a light
+ * touch much thinner and a firm one much wider. A Pencil lands and lifts
+ * lightly, so a brush stroke also tapers at both ends, as it grows: nothing
+ * drawn is changed afterwards.
+ */
+export const BRUSH_PRESSURE: PressureCurve = { centre: 0.3, gain: 1.8 };
+
+/** The thinnest a shaped pressure goes, so a light touch still leaves ink. */
+const MIN_SHAPED = 0.08;
+
+/** A reading (0..1) through `curve`, kept within `MIN_SHAPED`..1. */
+export function shapePressure(reading: number, curve: PressureCurve): number {
+  return Math.min(1, Math.max(MIN_SHAPED, 0.5 + (reading - curve.centre) * curve.gain));
+}
+
+/** The reading a shaped pressure came from (the inverse of {@link shapePressure}, within its range). */
+export function unshapePressure(stored: number, curve: PressureCurve): number {
+  return Math.min(1, Math.max(0, curve.centre + (stored - 0.5) / curve.gain));
+}
+
 export function mapPressure(reading: number, settings: StrokeBuilderOptions): number {
   const use = settings.pressureEnabled && reading > 0;
   return use ? Math.min(reading, 1) : settings.fallbackPressure;
@@ -246,7 +280,11 @@ export class StrokeBuilder {
     if (readings.length === 0) return null;
     readings.sort((a, b) => a - b);
     const mid = readings.length >> 1;
-    return readings.length % 2 === 1 ? readings[mid] : (readings[mid - 1] + readings[mid]) / 2;
+    const median =
+      readings.length % 2 === 1 ? readings[mid] : (readings[mid - 1] + readings[mid]) / 2;
+    // The hand's own pressure, not the pen's response to it.
+    const curve = this.options.pressureCurve;
+    return curve ? unshapePressure(median, curve) : median;
   }
 
   private offer(sample: InputSample, final: boolean): boolean {
@@ -373,10 +411,11 @@ export class StrokeBuilder {
    * always the fallback.
    */
   private pressureFor(raw: number): number {
-    const { pressureEnabled, fallbackPressure } = this.options;
+    const { pressureEnabled, fallbackPressure, pressureCurve } = this.options;
     if (!pressureEnabled) return fallbackPressure;
     if (!(raw > 0)) return Number.isNaN(this.lastReading) ? fallbackPressure : this.lastReading;
-    const reading = Math.min(raw, 1);
+    const capped = Math.min(raw, 1);
+    const reading = pressureCurve ? shapePressure(capped, pressureCurve) : capped;
     if (Number.isNaN(this.lastReading) && (this.flat.length > 0 || this.held.length > 0)) {
       for (let p = 2; p < this.flat.length; p += POINT_STRIDE) this.flat[p] = reading;
       for (const kept of [this.before, this.last, this.waiting]) if (kept) kept[2] = reading;
