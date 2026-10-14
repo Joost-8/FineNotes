@@ -57,6 +57,24 @@ import {
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { FolderInputSuggest } from "./view/folder-suggest";
+import {
+  MAX_SAVED_PENS,
+  SAVED_PEN_TYPES,
+  type SavedPen,
+  type SavedPenType,
+  addSavedPen,
+  defaultSavedPens,
+  editSavedPen,
+  mmText,
+  moveSavedPen,
+  removeSavedPen,
+  savedPenIndex,
+  savedPenLabel,
+  savedPenOf,
+  savedPensOf,
+  widthFromMm,
+} from "./model/saved-pens";
+import type { BarrelAction } from "./input/pen-modifiers";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -112,6 +130,49 @@ const CALLOUTS = {
   },
 } satisfies Record<string, Callout>;
 
+/** The pen types, as the saved pens' dropdowns name them. */
+const PEN_TYPE_NAMES: Record<SavedPenType, string> = {
+  fountain: "Fountain pen",
+  ball: "Ball pen",
+  brush: "Brush pen",
+  highlighter: "Highlighter",
+};
+
+/** What the barrel button can do, as its dropdown names it. */
+const BARREL_NAMES: Record<BarrelAction, string> = {
+  erase: "Erase",
+  lasso: "Lasso select",
+  pan: "Move the page",
+  none: "Nothing",
+};
+
+/**
+ * The keyboard and stylus shortcuts, as the settings list them (FineNotes#25).
+ * `mac` names Cmd for Ctrl, where Ctrl-click is the right click.
+ */
+export function shortcutList(mac: boolean): Array<[string, string]> {
+  const command = mac ? "Cmd" : "Ctrl";
+  return [
+    ["P or W", "Pen"],
+    ["H", "Highlighter"],
+    ["E", "Eraser"],
+    ["V", "Lasso"],
+    ["S", "Shapes"],
+    ["T", "Text box"],
+    ["L", "Laser pointer: a trail that fades, never saved"],
+    ["1 – 8", "Saved pens 1 to 8"],
+    [`${command}+A`, "Select everything on the page; Delete then clears it"],
+    ["Shift + write", "Erase, with the eraser's settings"],
+    [`${command} + write`, "Lasso select"],
+    [`${mac ? "Option" : "Alt"} + write up or down`, "Zoom in or out about the pen"],
+    ["Space + drag", "Move the page"],
+    ["Drag beside the page", "Move the page, with a pen or mouse"],
+    ["Stylus eraser end", "Erase"],
+    [`${command}+Z, ${command}+Shift+Z`, "Undo, redo"],
+    ["Page Up, Page Down", "Previous and next page"],
+  ];
+}
+
 /** The tools an ink note can open with, as the dropdown names them. */
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
 
@@ -157,6 +218,15 @@ const DESC = {
   imageVendor:
     "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
+  savedPens:
+    "Up to eight pens with their own type, colour and width, picked from the star in the " +
+    "pen's toolbar or with the keys 1 to 8. Change one here; the arrows reorder them.",
+  barrel:
+    "What a pen tablet's side button does while you write with it. The eraser end of the " +
+    "pen always erases.",
+  penCursor:
+    "On a computer, show a small crosshair instead of the arrow over the page while a pen, " +
+    "the highlighter or the laser is in hand.",
   debugHud:
     "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
     "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
@@ -299,6 +369,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return [
       ...this.topRows(),
       this.writingGroup(),
+      this.pensGroup(),
       this.pagesGroup(),
       this.handwritingGroup(),
       this.aiGroup(),
@@ -317,6 +388,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // The plugin saves this one itself, and shows or hides the overlay in
       // every open note.
       await this.plugin.setDebugHud(value as boolean);
+      return;
+    }
+    if (key === "penCursor") {
+      // Saved by the plugin, which shows or hides the crosshair in every open notebook.
+      await this.plugin.setPenCursor(value as boolean);
       return;
     }
     if (key === "pressureWidth") {
@@ -391,6 +467,156 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["transparency", "alpha"],
       ),
     ]);
+  }
+
+  /**
+   * Saved pens, the stylus buttons, the cursor, and every shortcut
+   * (FineNotes#24, #25).
+   */
+  private pensGroup(): SettingDefinitionItem {
+    const pens = savedPensOf(this.plugin.settings.savedPens);
+    const rows: SettingDefinition[] = pens.map((pen, index) =>
+      drawnRow(
+        `Saved pen ${index + 1}`,
+        savedPenLabel(pen),
+        (s) => this.drawSavedPen(s, pens, index),
+        ["favorite pen", "preset", "number key"],
+      ),
+    );
+    return group("Pens and shortcuts", [
+      drawnRow("Saved pens", DESC.savedPens, (s) => this.drawRestorePens(s), [
+        "favorite pens",
+        "presets",
+      ]),
+      ...rows,
+      drawnRow("Save the pen in hand", this.lastPenDesc(pens), (s) => this.drawSavePen(s, pens), [
+        "favorite pen",
+        "preset",
+      ]),
+      dropdown("barrelButton", "Stylus side button", DESC.barrel, BARREL_NAMES, [
+        "barrel button",
+        "pen tablet",
+        "wacom",
+        "stylus",
+      ]),
+      {
+        ...toggle("penCursor", "Crosshair cursor", DESC.penCursor, ["cursor", "pointer"]),
+        visible: !Platform.isMobile,
+      },
+      drawnRow(
+        "Keyboard and stylus shortcuts",
+        "None of them act while you type in a text box.",
+        (s) => this.drawShortcuts(s),
+        ["hotkeys", "keys", "modifier"],
+      ),
+    ]);
+  }
+
+  /** What "Save the pen in hand" would add, or why it cannot. */
+  private lastPenDesc(pens: readonly SavedPen[]): string {
+    const last = savedPenOf(this.plugin.settings.lastPen);
+    if (!last) return "Write with a pen first; the one you last wrote with is saved.";
+    if (savedPenIndex(pens, last) >= 0) return `${savedPenLabel(last)}: saved already.`;
+    if (pens.length >= MAX_SAVED_PENS) {
+      return `${savedPenLabel(last)}: all ${MAX_SAVED_PENS} places are taken, so delete one first.`;
+    }
+    return `Adds the pen you last wrote with: ${savedPenLabel(last)}, ${last.color}.`;
+  }
+
+  private savePens(pens: readonly SavedPen[]): void {
+    this.plugin.saveSavedPens(pens);
+    this.update();
+  }
+
+  /** A saved pen's row: its type, colour and width, then up, down and delete. */
+  private drawSavedPen(setting: Setting, pens: readonly SavedPen[], index: number): void {
+    const pen = pens[index];
+    setting.setClass("goodobsidian-saved-pen-setting");
+    const swatch = setting.nameEl.createSpan({ cls: "goodobsidian-saved-pen-swatch" });
+    swatch.setCssStyles({ backgroundColor: pen.color });
+    // A colour or a width is saved as it changes, without rebuilding the tab
+    // under the picker or the field being typed in.
+    const edit = (patch: Partial<SavedPen>): SavedPen => {
+      const edited = editSavedPen(savedPensOf(this.plugin.settings.savedPens), index, patch);
+      this.plugin.saveSavedPens(edited);
+      return edited[index];
+    };
+    setting.addDropdown((dropdown) => {
+      for (const type of SAVED_PEN_TYPES) dropdown.addOption(type, PEN_TYPE_NAMES[type]);
+      dropdown.setValue(pen.type).onChange((type) => {
+        edit({ type: type as SavedPenType });
+        this.update();
+      });
+    });
+    setting.addColorPicker((picker) => {
+      picker.setValue(pen.color).onChange((color) => {
+        swatch.setCssStyles({ backgroundColor: edit({ color }).color });
+      });
+    });
+    setting.addText((text) => {
+      text.inputEl.addClass("goodobsidian-saved-pen-width");
+      text.inputEl.setAttribute("inputmode", "decimal");
+      text.inputEl.setAttribute("aria-label", "Width in millimetres");
+      text.setValue(mmText(pen.size));
+      text.onChange((typed) => {
+        const size = widthFromMm(typed);
+        text.inputEl.toggleClass("is-invalid", size === null);
+        if (size !== null) edit({ size });
+      });
+    });
+    const move = (step: number): void =>
+      this.savePens(moveSavedPen(savedPensOf(this.plugin.settings.savedPens), index, step));
+    setting.addExtraButton((button) => {
+      button
+        .setIcon("arrow-up")
+        .setTooltip("Move up")
+        .onClick(() => move(-1));
+      button.setDisabled(index === 0);
+    });
+    setting.addExtraButton((button) => {
+      button
+        .setIcon("arrow-down")
+        .setTooltip("Move down")
+        .onClick(() => move(1));
+      button.setDisabled(index === pens.length - 1);
+    });
+    setting.addExtraButton((button) => {
+      button
+        .setIcon("trash-2")
+        .setTooltip("Delete")
+        .onClick(() =>
+          this.savePens(removeSavedPen(savedPensOf(this.plugin.settings.savedPens), index)),
+        );
+    });
+  }
+
+  private drawSavePen(setting: Setting, pens: readonly SavedPen[]): void {
+    const last = savedPenOf(this.plugin.settings.lastPen);
+    const can = last !== null && savedPenIndex(pens, last) < 0 && pens.length < MAX_SAVED_PENS;
+    setting.addButton((button) => {
+      button.setButtonText("Save pen").setDisabled(!can);
+      button.onClick(() => {
+        if (last) this.savePens(addSavedPen(savedPensOf(this.plugin.settings.savedPens), last));
+      });
+    });
+  }
+
+  private drawRestorePens(setting: Setting): void {
+    setting.addButton((button) => {
+      button.setButtonText("Restore defaults");
+      button.onClick(() => this.savePens(defaultSavedPens()));
+    });
+  }
+
+  /** The shortcut table under its row, full width. */
+  private drawShortcuts(setting: Setting): void {
+    const mac = Platform.isMacOS || Platform.isIosApp;
+    const table = setting.descEl.createEl("table", { cls: "goodobsidian-shortcuts" });
+    for (const [keys, action] of shortcutList(mac)) {
+      const row = table.createEl("tr");
+      row.createEl("td").createEl("kbd", { text: keys });
+      row.createEl("td", { text: action });
+    }
   }
 
   /** The paper, and where new notebooks go and how they are made. */

@@ -64,6 +64,14 @@ export class FakeEl {
   toggle(show: boolean): void {
     this.hidden = !show;
   }
+  readonly attrs: Record<string, string> = {};
+  readonly style: Record<string, string> = {};
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
+  }
+  setCssStyles(styles: Record<string, string>): void {
+    Object.assign(this.style, styles);
+  }
 
   /** All text below this element, in document order. */
   get textContent(): string {
@@ -134,7 +142,67 @@ export class ButtonComponent {
     this.buttonEl.addClass(name);
     return this;
   }
-  setDisabled(): this {
+  disabled = false;
+  setDisabled(disabled = true): this {
+    this.disabled = disabled;
+    return this;
+  }
+  onClick(handler: () => unknown): this {
+    this.handler = handler;
+    return this;
+  }
+  async click(): Promise<void> {
+    await this.handler?.();
+  }
+}
+
+/** A value control: a dropdown or a colour picker. */
+class ValueComponent {
+  value = "";
+  private handler: ((value: string) => unknown) | null = null;
+  setValue(value: string): this {
+    this.value = value;
+    return this;
+  }
+  getValue(): string {
+    return this.value;
+  }
+  onChange(handler: (value: string) => unknown): this {
+    this.handler = handler;
+    return this;
+  }
+  /** What a user picking `value` would cause. */
+  async pick(value: string): Promise<void> {
+    this.value = value;
+    await this.handler?.(value);
+  }
+}
+
+export class DropdownComponent extends ValueComponent {
+  readonly options: Record<string, string> = {};
+  addOption(value: string, label: string): this {
+    this.options[value] = label;
+    return this;
+  }
+}
+
+export class ColorComponent extends ValueComponent {}
+
+export class ExtraButtonComponent {
+  icon = "";
+  tooltip = "";
+  disabled = false;
+  private handler: (() => unknown) | null = null;
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
   onClick(handler: () => unknown): this {
@@ -154,6 +222,9 @@ export class Setting {
   readonly controlEl = this.settingEl.createDiv("setting-item-control");
   readonly texts: TextComponent[] = [];
   readonly buttons: ButtonComponent[] = [];
+  readonly dropdowns: DropdownComponent[] = [];
+  readonly colors: ColorComponent[] = [];
+  readonly extras: ExtraButtonComponent[] = [];
 
   /** Every row built so far, for code that builds one inside a dialog. */
   static readonly created: Setting[] = [];
@@ -189,6 +260,24 @@ export class Setting {
     const button = new ButtonComponent();
     this.buttons.push(button);
     this.controlEl.children.push(button.buttonEl);
+    build(button);
+    return this;
+  }
+  addDropdown(build: (dropdown: DropdownComponent) => unknown): this {
+    const dropdown = new DropdownComponent();
+    this.dropdowns.push(dropdown);
+    build(dropdown);
+    return this;
+  }
+  addColorPicker(build: (color: ColorComponent) => unknown): this {
+    const color = new ColorComponent();
+    this.colors.push(color);
+    build(color);
+    return this;
+  }
+  addExtraButton(build: (button: ExtraButtonComponent) => unknown): this {
+    const button = new ExtraButtonComponent();
+    this.extras.push(button);
     build(button);
     return this;
   }

@@ -26,7 +26,13 @@ export function continuesUse(
 }
 
 export type ToolUse = "gesture" | "text" | "selection";
-const SECONDARY_TOOLS: ReadonlySet<ActiveTool> = new Set(["eraser", "select", "text", "shape"]);
+const SECONDARY_TOOLS: ReadonlySet<ActiveTool> = new Set([
+  "eraser",
+  "select",
+  "text",
+  "shape",
+  "laser",
+]);
 
 /**
  * The pen or highlighter a secondary tool hands back to: `tool` if it is

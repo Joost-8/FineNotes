@@ -134,13 +134,38 @@ describe("keyOutcome", () => {
       expect(keyOutcome(chord(letter, { altKey: true }), scene())).toBeNull();
       expect(keyOutcome(chord(letter, { metaKey: true }), scene())).toBeNull();
     }
-    expect([...TOOL_KEYS.keys()].sort()).toEqual(["e", "h", "p", "s", "t", "v"]);
+    expect([...TOOL_KEYS.keys()].sort()).toEqual(["e", "h", "l", "p", "s", "t", "v", "w"]);
+    // W is the pen too, beside E (FineNotes#25); L the laser.
+    expect(TOOL_KEYS.get("w")).toBe("pen");
+    expect(TOOL_KEYS.get("l")).toBe("laser");
   });
 
   it("has no use for other keys, including names an object would inherit", () => {
-    for (const key of ["x", "Tab", "1", "ArrowLeft", "constructor", "toString", "__proto__"]) {
+    for (const key of ["x", "Tab", "0", "9", "ArrowLeft", "constructor", "toString", "__proto__"]) {
       expect(keyOutcome(chord(key), scene())).toBeNull();
     }
+  });
+});
+
+describe("saved pens and Select all (FineNotes#25)", () => {
+  it("picks saved pens 1 to 8 with the bare number keys", () => {
+    for (let n = 1; n <= 8; n++) {
+      expect(keyOutcome(chord(String(n)), scene())).toEqual(quiet({ savedPen: n - 1 }));
+    }
+    expect(keyOutcome(chord("1", { ctrlKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("1", { metaKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("1", { altKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("12"), scene())).toBeNull();
+  });
+
+  it("selects the page with Cmd or Ctrl+A, but not while text is typed or with Alt or Shift", () => {
+    expect(keyOutcome(chord("a", { metaKey: true }), scene())).toEqual(loud("select-all"));
+    expect(keyOutcome(chord("A", { ctrlKey: true }), scene())).toEqual(loud("select-all"));
+    expect(keyOutcome(chord("a", { ctrlKey: true }), scene({ editingText: true }))).toBeNull();
+    expect(keyOutcome(chord("a", { ctrlKey: true, altKey: true }), scene())).toBeNull();
+    expect(keyOutcome(chord("a", { ctrlKey: true, shiftKey: true }), scene())).toBeNull();
+    // A bare A is no tool.
+    expect(keyOutcome(chord("a"), scene())).toBeNull();
   });
 });
 

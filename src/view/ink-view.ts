@@ -163,7 +163,8 @@ import {
   thumbnailRasterScale,
   type SectionAction,
 } from "./page-sidebar";
-import { Toolbar, type ToolbarState, penTypeFor } from "./toolbar";
+import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
+import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS } from "./motion";
 import {
   type LastPages,
@@ -193,17 +194,20 @@ const HELD_LOAD_NOTICE =
   "finished syncing. Nothing on disk has changed. The notebook stays read-only until it " +
   "loads cleanly: reopen it once the sync is done.";
 
-/** For toolbar callbacks this view has nothing to do for. */
-const ignore = (): void => undefined;
-
-/** The tools as the settings left them, for a view that has just opened. */
+/**
+ * The tools as the settings left them, for a view that has just opened: the
+ * pen last written with, in any notebook (FineNotes#24), else the defaults.
+ */
 function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
+  const last = savedPenOf(s.lastPen);
+  // Without a last pen, a notebook opens with the Fountain pen, a pressure pen.
+  const spec = PEN_TYPES.find((type) => type.id === last?.type) ?? PEN_TYPES[0];
   return {
-    tool: s.defaultTool,
-    color: s.defaultColor,
-    size: s.defaultSize,
-    // A notebook opens with the Fountain pen, a pressure pen.
-    pressureEnabled: s.pressureWidth,
+    tool: openingTool(s.defaultTool, last),
+    color: last?.color ?? s.defaultColor,
+    size: last?.size ?? s.defaultSize,
+    penType: last?.type,
+    pressureEnabled: s.pressureWidth && spec.pressure,
     shapeSnapEnabled: s.drawAndHold,
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
@@ -674,6 +678,21 @@ export class InkView extends TextFileView {
   setDebug(enabled: boolean): void {
     this.showHud = enabled;
     this.surface?.setDebug(enabled);
+  }
+
+  /**
+   * Show the small crosshair over the page for the pens, or not (FineNotes#25).
+   * Only on a computer: a finger or the Pencil has no cursor to replace.
+   */
+  setPenCursor(on: boolean): void {
+    this.surface?.setPenCursor(on !== false && !Platform.isMobile);
+  }
+
+  /** Keep the pen in hand for the next notebook, and the next start (FineNotes#24). */
+  private rememberPen(): void {
+    const tool = this.toolState.tool;
+    if (tool !== "pen" && tool !== "highlighter") return;
+    this.plugin.saveLastPen(penOfState(this.toolState));
   }
 
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
@@ -1263,16 +1282,24 @@ export class InkView extends TextFileView {
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
         // The toolbar writes colour and size into the shared tool state,
-        // which is where the surface reads them.
-        onColorChange: ignore,
-        onSizeChange: ignore,
+        // which is where the surface reads them; the pen is remembered for
+        // the next notebook (FineNotes#24).
+        onColorChange: () => this.rememberPen(),
+        onSizeChange: () => this.rememberPen(),
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
         onRedo: () => this.surface?.redo(),
         onClear: () => this.clearPage(),
         onAddPage: (anchor) => this.openAddPage(anchor, this.surface?.currentPage ?? 0, "after"),
-        onPenTypeChange: () => this.toolbar?.syncActive(),
+        onPenTypeChange: () => {
+          this.toolbar?.syncActive();
+          this.rememberPen();
+        },
+        savedPens: () => savedPensOf(this.settings.savedPens),
+        onSavePen: (pen) =>
+          this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
+        onEditPens: () => this.plugin.openSettingsTab(),
         onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
@@ -1373,6 +1400,11 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        onSavedPen: (index) => {
+          const pen = savedPensOf(this.settings.savedPens)[index];
+          if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
+        },
+        barrelAction: () => this.settings.barrelButton,
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
@@ -1399,6 +1431,7 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.setPenCursor(this.settings.penCursor);
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app);
     this.surface.setTextSource(this.pdfText);

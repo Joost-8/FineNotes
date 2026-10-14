@@ -76,7 +76,7 @@ describe("secondary tool integration", () => {
       }
     },
   );
-  it.each(["eraser", "select", "text", "shape"] as ActiveTool[])(
+  it.each(["eraser", "select", "text", "shape", "laser"] as ActiveTool[])(
     "keyboard reselects %s consistently",
     (tool) => {
       const s = surface(tool);
@@ -88,7 +88,15 @@ describe("secondary tool integration", () => {
         direction: "vertical",
         scroller: { bounds: { maxY: 1 } },
       });
-      const keys = { eraser: "e", select: "v", text: "t", shape: "s", pen: "p", highlighter: "h" };
+      const keys = {
+        eraser: "e",
+        select: "v",
+        text: "t",
+        shape: "s",
+        pen: "p",
+        highlighter: "h",
+        laser: "l",
+      };
       run(s, "handleKeyDown", { key: keys[tool], target: null, preventDefault: vi.fn() });
       expect(s.toolState.tool).toBe("pen");
       expect(s.callbacks.onToolChange).toHaveBeenCalledWith("pen");

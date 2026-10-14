@@ -64,7 +64,9 @@ export type KeyAction =
   | "scroll-down"
   | "scroll-up"
   | "hand"
-  | { tool: ActiveTool };
+  | "select-all"
+  | { tool: ActiveTool }
+  | { savedPen: number };
 
 export interface KeyOutcome {
   action: KeyAction;
@@ -72,9 +74,15 @@ export interface KeyOutcome {
   preventDefault: boolean;
 }
 
-/** A letter for each tool, pressed on its own; either case. */
+/**
+ * A letter for each tool, pressed on its own; either case. W is the pen too
+ * (FineNotes#25: it sits beside E, the eraser), and L the laser pointer, as
+ * in GoodNotes.
+ */
 export const TOOL_KEYS: ReadonlyMap<string, ActiveTool> = new Map<string, ActiveTool>([
   ["p", "pen"],
+  ["w", "pen"],
+  ["l", "laser"],
   ["h", "highlighter"],
   ["e", "eraser"],
   ["v", "select"],
@@ -114,6 +122,11 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
   const clipboardChord = command && !chord.altKey && !chord.shiftKey;
   if (clipboardChord && !scene.editingText() && scene.clipboard()) return passing("none");
 
+  // Everything on the page in view, to move or Delete as one (FineNotes#25).
+  if (clipboardChord && key.toLowerCase() === "a" && !scene.editingText()) {
+    return cancelling("select-all");
+  }
+
   if (escape && scene.menuOpen()) return passing("close-menu");
   if (erase && scene.imageSelected()) return cancelling("delete-image");
   if (escape && scene.imageSelected()) return passing("deselect-image");
@@ -132,6 +145,9 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
   // Space held down: pen and mouse move the page instead of drawing
   // (FineNotes#7). Not while typing, where it is a space.
   if (bare && key === " " && !scene.editingText()) return cancelling("hand");
+
+  // 1 to 8 pick the saved pens (FineNotes#25, Stylus Labs Write's keys).
+  if (bare && /^[1-8]$/.test(key)) return passing({ savedPen: Number(key) - 1 });
 
   const tool = bare ? TOOL_KEYS.get(key.toLowerCase()) : undefined;
   return tool ? passing({ tool }) : null;

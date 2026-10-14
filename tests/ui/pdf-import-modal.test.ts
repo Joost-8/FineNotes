@@ -7,11 +7,8 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("obsidian", async () => {
   const fakes = await import("../fakes/obsidian");
-  class Dropdown {
-    addOption(): this {
-      return this;
-    }
-    onChange(handler: (value: string) => void): this {
+  class Dropdown extends fakes.DropdownComponent {
+    override onChange(handler: (value: string) => void): this {
       state.changes.push(handler);
       return this;
     }
@@ -19,7 +16,7 @@ vi.mock("obsidian", async () => {
   return {
     ...fakes,
     Setting: class extends fakes.Setting {
-      addDropdown(build: (dropdown: Dropdown) => void): this {
+      override addDropdown(build: (dropdown: Dropdown) => void): this {
         build(new Dropdown());
         return this;
       }

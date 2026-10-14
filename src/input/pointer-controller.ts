@@ -27,6 +27,7 @@
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
+import type { PressInput } from "./pen-modifiers";
 
 export type { PinchInfo };
 
@@ -41,6 +42,12 @@ export interface PointerSample {
   /** "pen", "mouse" or "touch". */
   pointerType?: string;
 }
+
+/**
+ * What a pen or mouse coming down does: draw, move the page as a finger
+ * would (FineNotes#7, #25), or nothing.
+ */
+export type PressRoute = "draw" | "pan" | "ignore";
 
 export type PointerDebugType = "down" | "move" | "up" | "cancel";
 
@@ -83,7 +90,8 @@ export function deliversCoalescedSamples(): boolean {
 }
 
 export interface PointerControllerCallbacks {
-  onStart(sample: PointerSample): void;
+  /** A stroke began; `press` has its buttons and the keys held (`pen-modifiers.ts`). */
+  onStart(sample: PointerSample, press: PressInput): void;
   /** The samples since the last move. */
   onMove(coalesced: PointerSample[]): void;
   onEnd(sample: PointerSample): void;
@@ -139,6 +147,8 @@ export class PointerController {
     private readonly listener: PointerControllerCallbacks,
     /** Space is held: a pen or mouse coming down pans like a finger (FineNotes#7). */
     private readonly handHeld: () => boolean = () => false,
+    /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
+    private readonly route: (event: PointerEvent) => PressRoute = () => "draw",
   ) {
     this.fingers = new FingerGesture(listener);
     this.taps = new MultiFingerTap(
@@ -191,7 +201,13 @@ export class PointerController {
     // The right mouse button opens the page's menu (`contextmenu`); it never draws.
     if (event.pointerType === "mouse" && event.button === 2) return;
     const role = roleOf(event.pointerType, this.stroke !== null);
-    if (role === "draw" && this.stroke === null && this.handHeld()) {
+    const free = role === "draw" && this.stroke === null;
+    const route = free ? (this.handHeld() ? "pan" : this.route(event)) : "draw";
+    if (route === "ignore") {
+      event.preventDefault();
+      return;
+    }
+    if (free && route === "pan") {
       // A stroke already under way is left to finish; only a new one pans.
       event.preventDefault();
       if (this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
@@ -228,7 +244,9 @@ export class PointerController {
     if (pen) this.notePen(event);
     this.rounded = pen && !this.penIsPrecise;
     this.debug("down", event, 0);
-    this.listener.onStart(this.sample(event));
+    const { button, buttons, shiftKey, ctrlKey, metaKey, altKey, pointerType } = event;
+    const press = { pointerType, button, buttons, shiftKey, ctrlKey, metaKey, altKey };
+    this.listener.onStart(this.sample(event), press);
   }
 
   private moved(event: PointerEvent): void {

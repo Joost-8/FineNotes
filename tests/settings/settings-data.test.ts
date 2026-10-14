@@ -75,6 +75,18 @@ const FRESH_INSTALL = {
   handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
+  savedPens: [
+    { type: "ball", color: "#1971c2", size: 2 },
+    { type: "ball", color: "#e03131", size: 2 },
+    { type: "ball", color: "#2f9e44", size: 2 },
+    { type: "fountain", color: "#1971c2", size: 5 },
+    { type: "fountain", color: "#1a1a1a", size: 3 },
+    { type: "ball", color: "#1a1a1a", size: 1.22 },
+    { type: "brush", color: "#9c36b5", size: 3 },
+    { type: "highlighter", color: "#fab005", size: 5 },
+  ],
+  barrelButton: "erase",
+  penCursor: true,
 };
 
 /**
@@ -130,6 +142,10 @@ const USED_VAULT = {
   shapeColor: "#0066ff",
   recentColors: ["#123456", "#abcdef"],
   pressureWidth: true,
+  savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
+  lastPen: { type: "highlighter", color: "#fab005", size: 8 },
+  barrelButton: "pan",
+  penCursor: false,
   experimentalFutureFlag: 7,
 };
 
@@ -181,6 +197,9 @@ describe("data.json", () => {
     expect(DEFAULT_SETTINGS.lassoFilter).not.toBe(DEFAULT_LASSO_FILTER);
     expect(DEFAULT_SETTINGS.textStyle).not.toBe(DEFAULT_TEXT_STYLE);
     expect(DEFAULT_SETTINGS.penGestures).not.toBe(DEFAULT_PEN_GESTURES);
+    const { DEFAULT_SAVED_PENS } = await import("../../src/model/saved-pens");
+    expect(DEFAULT_SETTINGS.savedPens).not.toBe(DEFAULT_SAVED_PENS);
+    expect(DEFAULT_SETTINGS.savedPens[0]).not.toBe(DEFAULT_SAVED_PENS[0]);
   });
 });
 

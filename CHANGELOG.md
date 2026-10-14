@@ -8,6 +8,42 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Saved pens.** Keep up to eight pens, each with its own type, colour and
+  width (the highlighter too), and pick one from the star in the pen's
+  options or with the keys 1 to 8. Change, reorder and delete them in
+  Settings → Pens and shortcuts, or save the pen in hand there or from the
+  star. A fresh install has blue, red and green, a broader blue, black, a
+  fine black, a purple brush and a yellow highlighter (FineNotes#24, #25).
+- **Type a stroke width.** The stroke width popover takes a width in mm,
+  from 0.20 to 5 mm, to a hundredth (FineNotes#24).
+- **Shortcuts for pen tablets and keyboards** (FineNotes#25). A held key
+  lasts for that one stroke, and none of them act while you type:
+  - hold Shift while writing to erase, with the eraser's own settings;
+  - hold Ctrl (Cmd on a Mac or an iPad) while writing to lasso;
+  - hold Alt (Option) and draw up to zoom in, down to zoom out, about the pen;
+  - Ctrl/Cmd+A selects everything on the page, and Delete then clears it in
+    one undo step;
+  - W picks the pen, as P does, and L the new laser pointer.
+- **Laser pointer.** A red trail that fades behind the pen, for pointing at
+  a page; nothing it draws is kept. Press L, or pick it in the pen type
+  menu (FineNotes#25).
+- **Stylus buttons.** A tablet pen's eraser end erases, and its side button
+  erases, lassos, moves the page or does nothing, as set in Settings → Pens
+  and shortcuts. Neither opens the right-click menu (FineNotes#25).
+- **Move the page from beside it.** With a pen or a mouse, drag in the
+  margin or the gutter beside the pages to scroll, with a fling, as a finger
+  does (FineNotes#25).
+- **A crosshair cursor** over the page while a pen, the highlighter or the
+  laser is in hand, on a computer. It can be switched off in the settings
+  (FineNotes#25).
+
+### Changed
+
+- **Notebooks open with the pen you last wrote with**, in any notebook and
+  after a restart: its type, colour and width (FineNotes#24).
+
 ## [2.1.0] - 2026-10-13
 
 ### Added
