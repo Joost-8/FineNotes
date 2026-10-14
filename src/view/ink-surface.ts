@@ -101,7 +101,13 @@ import {
   sameCrop,
   uncroppedBox,
 } from "../canvas/image-crop";
-import { type PaperTheme, paperTheme, writingLines } from "../canvas/backdrop";
+import {
+  LIGHT_PAPER,
+  type PaperTheme,
+  pageLook,
+  shownColor,
+  writingLines,
+} from "../canvas/backdrop";
 import {
   type LineSpan,
   RuledEraser,
@@ -428,10 +434,11 @@ export interface InkSurfaceOptions {
   /** Opacity of highlighter ink, 0–1. */
   highlighterAlpha: number;
   /**
-   * Per-notebook dark paper. Pages are paper-white by default no matter what
-   * the Obsidian theme is doing (contracts/design-brief.md).
+   * The paper theme: light, or dark pages (the view setting). Pages are
+   * paper-white by default no matter what the Obsidian theme is doing
+   * (contracts/design-brief.md).
    */
-  darkPaper?: boolean;
+  paper?: PaperTheme;
   /** Open with the diagnostics HUD showing (see {@link InkSurface.setDebug}). */
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
@@ -938,7 +945,6 @@ export class InkSurface {
   /** Whether the first layout has set the default zoom yet. */
   private zoomInitialised = false;
   private paper: PaperTheme;
-  private paperIsDark: boolean;
   private pageIndex = 0;
 
   /** The pen stroke being drawn, from pen-down to lift. */
@@ -1202,8 +1208,7 @@ export class InkSurface {
     options: InkSurfaceOptions,
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
-    this.paperIsDark = options.darkPaper === true;
-    this.paper = paperTheme(this.paperIsDark);
+    this.paper = options.paper ?? LIGHT_PAPER;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -1810,19 +1815,23 @@ export class InkSurface {
 
   // --- What the host can ask for -----------------------------------------------
 
-  /** Switch this notebook's paper between white (default) and dark. */
-  setDarkPaper(dark: boolean): void {
-    this.paperIsDark = dark;
-    this.paper = paperTheme(dark);
+  /**
+   * Show the pages light or dark (`paperTheme`). Only what is painted
+   * changes: tiles and page previews are emptied, since they hold colour;
+   * the stroke outlines they are drawn from hold none and stay.
+   */
+  setPaperTheme(theme: PaperTheme): void {
+    if (theme === this.paper) return;
+    this.paper = theme;
     if (!this.renderer) return;
-    this.renderer.paper = this.paper;
+    this.renderer.paper = theme;
     this.renderer.invalidateAll();
-    this.reportStatus();
+    this.syncTextBoxes();
     this.requestFrame();
   }
 
-  get darkPaper(): boolean {
-    return this.paperIsDark;
+  get paperTheme(): PaperTheme {
+    return this.paper;
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
@@ -2736,6 +2745,8 @@ export class InkSurface {
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
       if (!page) continue;
+      // Dark pages show a box's colours as its ink is shown (`./night`).
+      const night = pageLook(page.backdrop, this.paper).night;
       for (const textBox of page.textBoxes) {
         const key = `${page.id}:${textBox.id}`;
         expected.add(key);
@@ -2779,7 +2790,7 @@ export class InkSurface {
           width: `${Math.round(width * scale)}px`,
           height: fixedHeight ? `${Math.round((frame.h ?? 0) * scale)}px` : root.style.height,
           // The fill is the frame's, so it covers the whole box, handles aside.
-          background: textBox.fill ?? "",
+          background: textBox.fill !== undefined ? shownColor(textBox.fill, night) : "",
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -2800,7 +2811,7 @@ export class InkSurface {
           minHeight: fixedHeight
             ? "0"
             : `${((textBox.fontSize * lineHeight + 2 * TEXT_PAD_Y) * unit).toFixed(2)}px`,
-          color: textBox.color,
+          color: shownColor(textBox.color, night),
           width: `${100 / shrink}%`,
           transform: shrink < 1 ? `scale(${shrink})` : "",
         };

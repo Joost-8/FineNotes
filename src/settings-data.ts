@@ -16,6 +16,7 @@ import {
   PALETTE,
   SIZES,
 } from "./constants";
+import { type PaperTheme, paperTheme } from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { EraserFilter } from "./ink/stroke-eraser";
@@ -29,6 +30,9 @@ import type { EraserMode } from "./view/toolbar";
 
 /** The tools an ink note can open with (`defaultTool`). */
 export type ToolId = "pen" | "highlighter" | "eraser" | "select";
+
+/** How pages are shown (`pageAppearance`): light paper, dark pages, or as Obsidian's theme is. */
+export type PageAppearance = "light" | "dark" | "system";
 
 export interface GoodObsidianSettings {
   // What an ink note starts with. Tool state the toolbar remembers is further down.
@@ -153,6 +157,12 @@ export interface GoodObsidianSettings {
   handwritingModel?: LearnedModel;
   /** Where the practice notebook was written. */
   practiceNotebookPath?: string;
+
+  // Dark pages (#25): a view setting. What is stored never changes.
+  /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */
+  pageAppearance: PageAppearance;
+  /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
+  invertPdfPages: boolean;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -205,7 +215,33 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
+  pageAppearance: "light",
+  invertPdfPages: true,
 };
+
+// --- Dark pages ----------------------------------------------------------------
+
+/**
+ * Whether pages are shown dark, from the `pageAppearance` setting (anything
+ * it does not know is light) and whether Obsidian's theme is dark.
+ */
+export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolean {
+  if (appearance === "dark") return true;
+  return appearance === "system" && obsidianDark;
+}
+
+/**
+ * The paper theme notebooks and page embeds are shown in, by the dark pages
+ * settings and Obsidian's theme. A view setting only: export, printing and
+ * AI reading always paint `paperTheme(false)`.
+ */
+export function shownPaperTheme(
+  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
+  obsidianDark: boolean,
+): PaperTheme {
+  const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
+  return paperTheme(dark, settings.invertPdfPages === false);
+}
 
 // --- Paper width -------------------------------------------------------------
 

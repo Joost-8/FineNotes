@@ -8,6 +8,22 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Dark pages, for writing at night** (#25). Settings → Pages and
+  notebooks → Page appearance: Light, Dark, or Match Obsidian's theme; the
+  notebook's ⋯ menu switches between dark and light pages in one tap. The
+  paper turns dark and ink light, keeping its colour: black ink shows
+  near-white, dark blue light blue, red stays red, and the highlighter
+  still reads as a highlighter. Coloured paper and light covers keep their
+  hue, darkened; a page that is already dark, such as a navy cover, is left
+  as it is. Pictures are never inverted. PDF pages turn dark too, keeping
+  their colours; switch off "Dark PDF pages" for slides that are dark
+  already. Only the view changes: your ink is saved, exported and printed
+  in its true colour, and the colour picker shows true colours. White ink
+  stays the colour of the paper, so it disappears on dark pages as it does
+  on white ones. Thumbnails and page embeds in notes follow the setting.
+
 ## [2.1.0] - 2026-10-13
 
 ### Added

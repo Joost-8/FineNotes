@@ -22,6 +22,7 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
+import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { buildInkFile } from "./model/serialize";
 import type { RecognitionProvider } from "./recognition/provider";
 import { createProviderRegistry, resolveProvider } from "./recognition/registry";
@@ -130,6 +131,8 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   override settings!: GoodObsidianSettings;
+  /** `![[Notebook#page=3]]` previews in notes; repainted when the page appearance changes. */
+  private pageEmbeds: PageEmbeds | null = null;
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
   readonly providers = createProviderRegistry();
   /** Where API keys live: Obsidian's keychain when it has one (see key-store.ts). */
@@ -287,13 +290,14 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.routeInkNotes();
     // `![[Physics.notebook#page=3]]` in any note shows that page (page-embed.ts).
-    this.addChild(
+    this.pageEmbeds = this.addChild(
       new PageEmbeds({
         app: this.app,
         isInkFile: (file) => this.isInkFile(file),
         paperWidth: () => this.settings.paperWidth,
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
+        paper: () => shownPaperTheme(this.settings, document.body.hasClass("theme-dark")),
       }),
     );
     this.registerEvent(
@@ -963,6 +967,19 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.pressureWidth = enabled;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setPressureWidth(enabled);
+  }
+
+  /** Show pages light, dark or as Obsidian's theme is, in every open notebook (the setting). */
+  async setPageAppearance(appearance: PageAppearance): Promise<void> {
+    this.settings.pageAppearance = appearance;
+    await this.applyPageAppearance();
+  }
+
+  /** Save the dark pages settings, and redraw every open notebook with them. */
+  async applyPageAppearance(): Promise<void> {
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncPaperTheme();
+    this.pageEmbeds?.repaintAll();
   }
 
   /** Every notebook view open in the workspace. */

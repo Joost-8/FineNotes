@@ -153,7 +153,7 @@ import { sanitizeTextStyle } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
-import { paperTheme } from "../canvas/backdrop";
+import { type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { eraserFilterOf } from "../ink/stroke-eraser";
 import {
@@ -178,6 +178,7 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
+import { shownPaperTheme } from "../settings-data";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 
@@ -679,6 +680,21 @@ export class InkView extends TextFileView {
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
   setPressureWidth(enabled: boolean): void {
     this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
+    this.updateSidebarRendering();
+  }
+
+  /** The paper theme the pages are shown in (`shownPaperTheme`). */
+  private shownPaper(): PaperTheme {
+    return shownPaperTheme(this.settings, this.containerEl.doc.body.hasClass("theme-dark"));
+  }
+
+  /** The dark pages settings or Obsidian's theme changed: show the pages as they now say. */
+  syncPaperTheme(): void {
+    const surface = this.surface;
+    if (!surface) return;
+    const theme = this.shownPaper();
+    if (surface.paperTheme === theme) return;
+    surface.setPaperTheme(theme);
     this.updateSidebarRendering();
   }
 
@@ -1352,6 +1368,7 @@ export class InkView extends TextFileView {
         highlighterAlpha: this.settings.highlighterAlpha,
         debug: this.showHud,
         palette,
+        paper: this.shownPaper(),
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
@@ -1491,9 +1508,15 @@ export class InkView extends TextFileView {
     });
     this.textPanel = panel;
 
-    // A theme change restyles the chrome, never the paper or the ink, but
-    // the options pill's size follows the theme's metrics.
-    this.registerEvent(this.app.workspace.on("css-change", () => this.relayout()));
+    // A theme change restyles the chrome, and the pages only when their
+    // appearance follows Obsidian's theme; the options pill's size follows
+    // the theme's metrics.
+    this.registerEvent(
+      this.app.workspace.on("css-change", () => {
+        this.syncPaperTheme();
+        this.relayout();
+      }),
+    );
     // Keyboard shortcuts on the page (undo, delete a selection, and so on).
     this.scope = notebookKeyScope(
       root,
@@ -1885,7 +1908,8 @@ export class InkView extends TextFileView {
     return {
       painter,
       images: this.images ?? undefined,
-      paper: paperTheme(false),
+      // The thumbnails follow the pages: dark with dark pages.
+      paper: this.surface?.paperTheme ?? this.shownPaper(),
       usePressure: this.toolState.pressureEnabled,
       highlighterAlpha: this.settings.highlighterAlpha,
     };
@@ -2166,6 +2190,7 @@ export class InkView extends TextFileView {
         single: this.isSinglePage,
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
+        darkPages: surface.paperTheme.night === true,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -2183,6 +2208,8 @@ export class InkView extends TextFileView {
         goToPage: (at) => surface.goToPage(at, true),
         clear: (at) => act("clear", at),
         remove: (at) => act("delete", at),
+        toggleDarkPages: () =>
+          void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
       },
     );
   }
