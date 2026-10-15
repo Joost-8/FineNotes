@@ -187,7 +187,7 @@ import {
   type StrokeBuilderOptions,
 } from "../ink/stroke-builder";
 import { InkTracer } from "../ink/freehand";
-import { lineOfHighlight, straightenRuns } from "../ink/straighten";
+import { lineOfHighlight } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -392,12 +392,6 @@ const OFF_PAGE_FADE_MS = 200;
  */
 const TEXT_SNAP_SLOP_PX = 8;
 
-/**
- * How far a straightened highlight (`ink/straighten.ts`) may stray from the
- * pen before its run bends, in screen px: more than a hand's wobble, less
- * than a deliberate step to the next line.
- */
-const HIGHLIGHT_STRAIGHT_PX = 7;
 /** The shortest highlight, in screen px, that becomes a straight line on lift when drawn as one. */
 const HIGHLIGHT_LINE_MIN_PX = 24;
 /** How long the snapped text and its Copy stay up. */
@@ -4849,15 +4843,6 @@ export class InkSurface {
     const style = this.currentStyle();
     // A straightened highlight is traced afresh each frame: a new sample can
     // move where its runs bend. It has few samples, so that stays cheap.
-    const straight = this.straightRuns(style.tool, builder.view, builder.tail);
-    if (straight) {
-      const fresh = new InkTracer(penFor(style));
-      for (let i = 0; i + 2 < straight.length; i += 3) {
-        fresh.push(straight[i], straight[i + 1], straight[i + 2]);
-      }
-      this.renderer?.renderWetRuns(box.index, fresh.runs(), style);
-      return;
-    }
     const pts = builder.view;
     let tracer = this.wetTracer;
     if (!tracer || builder.revision !== this.wetRevision) {
@@ -4877,23 +4862,6 @@ export class InkSurface {
     const open = runs[runs.length - 1];
     if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
     this.renderer?.renderWetRuns(box.index, runs, style);
-  }
-
-  /**
-   * The highlighter's straight runs for samples `pts` (and the provisional
-   * `tail` samples after them), for a highlighter stroke (`tool`) with the
-   * setting on; null otherwise. The tolerance is a screen length: the
-   * hand's wobble, whatever the zoom.
-   */
-  private straightRuns(
-    tool: Tool,
-    pts: readonly number[],
-    tail: ReadonlyArray<readonly number[]> = [],
-  ): number[] | null {
-    if (tool !== "highlighter") return null;
-    if (this.callbacks.straightenHighlighter?.() === false) return null;
-    const all = tail.length > 0 ? [...pts, ...tail.flatMap((t) => [t[0], t[1], t[2] ?? 0.5])] : pts;
-    return straightenRuns(all, this.atFitZoom(HIGHLIGHT_STRAIGHT_PX));
   }
 
   /**
@@ -5087,11 +5055,7 @@ export class InkSurface {
       color,
       size,
       tool,
-      pts: shape
-        ? shape.pts
-        : (this.highlightLine(tool, builder.points()) ??
-          this.straightRuns(tool, builder.points()) ??
-          builder.points()),
+      pts: shape ? shape.pts : (this.highlightLine(tool, builder.points()) ?? builder.points()),
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
     };

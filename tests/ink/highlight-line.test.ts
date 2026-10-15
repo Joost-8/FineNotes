@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { LINE_MAX_DEVIATION, lineOfHighlight } from "../../src/ink/straighten";
 import real from "./fixtures/real-highlights-ipad.json";
+import goodnotes from "./fixtures/goodnotes-highlights-ipad.json";
 
 /** Flat samples along `f(t)` for t in [0, 1], `n` of them, pressure 0.5. */
 function along(f: (t: number) => [number, number], n = 60): number[] {
@@ -26,6 +27,13 @@ describe("lineOfHighlight", () => {
       expect(Math.abs(line![0] - pts[0])).toBeLessThan(3);
       expect(Math.abs(line![3] - pts[(n - 1) * 3])).toBeLessThan(3);
     }
+  });
+
+  it("snaps as Goodnotes does: its two highlights meant as lines, never its S curve", () => {
+    // Traced from Joost's recording of Goodnotes just before each lift: the
+    // wobbly bands Goodnotes then made straight, and a curve it left alone.
+    for (const pts of goodnotes.lines) expect(lineOfHighlight(pts, 20)).not.toBeNull();
+    for (const pts of goodnotes.curves) expect(lineOfHighlight(pts, 20)).toBeNull();
   });
 
   it("puts a clean line's ends exactly where it started and ended, with their pressure", () => {

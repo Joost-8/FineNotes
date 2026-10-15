@@ -235,9 +235,8 @@ const DESC = {
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
   straightHighlighter:
-    "Highlighter strokes are drawn as straight lines that only bend where you turned, so " +
-    "the band stays tidy however your hand wobbles. A stroke drawn along a line becomes a " +
-    "perfectly straight one when you lift the pen.",
+    "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
+    "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
   penCursor:
     "On a computer, show a small crosshair instead of the arrow over the page while a pen, " +
     "the highlighter or the laser is in hand.",
