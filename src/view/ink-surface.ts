@@ -291,6 +291,7 @@ import {
 } from "../model/text-style";
 import { type ListKind, type TextEdit, continueList, toggleList } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
+import { revealDelta } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
 import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
 import { History } from "../model/history";
@@ -681,6 +682,15 @@ const TEXT_MIN_H = 32;
 /** How long after focusing a text box the surface owns scrolling (keyboard animation). */
 const TEXT_FOCUS_HOLD_MS = 1200;
 /**
+ * Room kept above a box being typed in, screen px: the text pill floats
+ * there (about 46 px tall, 10 px off the box).
+ */
+const TEXT_PILL_ROOM_PX = 64;
+/** Space kept between a box being typed in and the keyboard, screen px. */
+const TEXT_REVEAL_MARGIN_PX = 16;
+/** How often a box being typed in looks for the keyboard (`watchTypingKeyboard`). */
+const TYPING_KEYBOARD_WATCH_MS = 250;
+/**
  * Body class set while a page text box is being edited. styles.css uses it to
  * lift Obsidian's mobile keyboard cap on the app container, which otherwise
  * collapsed the page to zero height on iPad (the keyboard covers the lower
@@ -933,12 +943,13 @@ function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
   ];
 }
 
-/** A box on screen, client px. */
+/** A box on screen, client px, and whether it is being typed in (the keyboard is up). */
 export interface TextAnchorRect {
   left: number;
   top: number;
   right: number;
   bottom: number;
+  typing: boolean;
 }
 
 /** How long after a finger tap the click iOS makes of it can still arrive. */
@@ -1007,6 +1018,9 @@ export class InkSurface {
   private heldText: TextBoxView | null = null;
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
   private textAnchorKey = "";
+  /** While a box is typed in: an interval looking for the keyboard (`watchTypingKeyboard`). */
+  private typingKeyboardWatch = 0;
+  private typingKeyboardSeen = 0;
   /** A pending release of the editing body class (see `releaseTextEditingClass`). */
   private textClassTimer = 0;
   /** The Text tool's hint pill, and what its × does. */
@@ -1793,6 +1807,7 @@ export class InkSurface {
    */
   destroy(): void {
     this.eyedropper?.cancel();
+    this.watchTypingKeyboard(false);
     window.clearTimeout(this.wheelSnapTimer);
     this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
@@ -3295,6 +3310,9 @@ export class InkSurface {
       const live = this.liveTextBox(view.pageId, view.id);
       if (live) this.callbacks.onTextEditing?.(textStyleOf(live));
       this.reportTextAnchor();
+      this.watchTypingKeyboard(true);
+      // A keyboard already up (typing went on from another box) covers it now.
+      if (!snapshot) this.keepTypingBoxVisible();
     });
     input.addEventListener("blur", (event) => {
       if (!this.renderer) return;
@@ -3326,6 +3344,8 @@ export class InkSurface {
       // without changing the width, which the sync's own measure keys on.
       if (live.fit) this.syncTextBoxes();
       if (live.h === undefined) this.autoSize(view, true);
+      // A new line can reach under the keyboard.
+      this.keepTypingBoxVisible();
       this.reportTextAnchor();
       this.changed();
     });
@@ -3521,29 +3541,67 @@ export class InkSurface {
         this.requestFrame();
       }
 
-      // Keep the caret's box above the on-screen keyboard, if it covers it.
-      // Obsidian's iOS app does not shrink the visual viewport for the
-      // keyboard; it publishes the keyboard's height as a CSS variable.
-      const vv = window.visualViewport;
-      const visibleBottom = Math.min(
-        this.surfaceEl.getBoundingClientRect().bottom,
-        vv ? vv.offsetTop + vv.height : window.innerHeight,
-        window.innerHeight - keyboardHeight(),
-      );
-      const boxRect = input.getBoundingClientRect();
-      const lineBottom = Math.min(boxRect.bottom, boxRect.top + 64);
-      if (lineBottom > visibleBottom - 16) {
-        // The keyboard's height is known now: let the scroll range reach past it.
-        this.ensurePaperSize();
-        top += lineBottom - visibleBottom + 16;
-        this.scroller.setPosition(snapshot.left, top);
-        top = this.scroller.position.y;
-        this.syncViewport();
-        this.requestFrame();
-      }
+      // Keep the box above the on-screen keyboard, with room for the pill.
+      if (this.keepTypingBoxVisible()) top = this.scroller.position.y;
       if (now() < until) this.focusHoldFrame = window.requestAnimationFrame(step);
     };
     step();
+  }
+
+  /**
+   * Scroll the page so the box being typed in sits above the on-screen
+   * keyboard, with room above it for the text pill that floats over it
+   * (`text-reveal.ts`), as GoodNotes does. Obsidian's iOS app does not shrink
+   * the visual viewport for the keyboard; it publishes the keyboard's height
+   * as a CSS variable (`keyboardHeight`). Returns whether it scrolled.
+   */
+  private keepTypingBoxVisible(): boolean {
+    const view = this.editingTextView();
+    if (!view || !this.renderer) return false;
+    const surface = this.surfaceEl.getBoundingClientRect();
+    const vv = window.visualViewport;
+    const bottom =
+      Math.min(
+        surface.bottom,
+        vv ? vv.offsetTop + vv.height : window.innerHeight,
+        window.innerHeight - keyboardHeight(),
+      ) - TEXT_REVEAL_MARGIN_PX;
+    const box = view.root.getBoundingClientRect();
+    const { input } = view;
+    const delta = revealDelta(
+      box,
+      { top: surface.top + TEXT_PILL_ROOM_PX, bottom },
+      input.selectionEnd >= input.value.length,
+    );
+    if (Math.abs(delta) < 1) return false;
+    // The keyboard's height is known now: let the scroll range reach past it.
+    this.ensurePaperSize();
+    const position = this.scroller.position;
+    this.scroller.setPosition(position.x, position.y + delta);
+    this.syncViewport();
+    this.requestFrame();
+    return true;
+  }
+
+  /**
+   * While a box is typed in, keep it clear of the keyboard as the keyboard
+   * comes, changes height (the predictive bar, a hardware keyboard's strip)
+   * or goes: nothing announces it, so look four times a second.
+   */
+  private watchTypingKeyboard(on: boolean): void {
+    if (!on) {
+      if (this.typingKeyboardWatch) window.clearInterval(this.typingKeyboardWatch);
+      this.typingKeyboardWatch = 0;
+      return;
+    }
+    if (this.typingKeyboardWatch) return;
+    this.typingKeyboardSeen = keyboardHeight();
+    this.typingKeyboardWatch = window.setInterval(() => {
+      const height = keyboardHeight();
+      if (height === this.typingKeyboardSeen) return;
+      this.typingKeyboardSeen = height;
+      this.keepTypingBoxVisible();
+    }, TYPING_KEYBOARD_WATCH_MS);
   }
 
   private renderBackdrop(): void {
@@ -8433,12 +8491,13 @@ export class InkSurface {
     if (!this.callbacks.onTextAnchor) return;
     const view = this.textTargetView();
     const box = view ? view.root.getBoundingClientRect() : null;
+    const typing = view !== null && view === this.editingTextView();
     const rect =
       box && box.width > 0 && box.height > 0
-        ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+        ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom, typing }
         : null;
     const key = rect
-      ? [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(",")
+      ? [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(",") + `,${typing}`
       : "";
     if (key === this.textAnchorKey) return;
     this.textAnchorKey = key;
@@ -8605,6 +8664,7 @@ export class InkSurface {
    * when focus went straight into another box.
    */
   private endTextEditing(view: TextBoxView): void {
+    this.watchTypingKeyboard(false);
     this.releaseTextEditingClass();
     this.removeIfEmpty(view);
     this.callbacks.onTextEditing?.(null);

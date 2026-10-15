@@ -474,12 +474,16 @@ const KEYBOARD_WATCH_MS = 250;
 /** How far the text pill floats from its box, in screen px. */
 const TEXT_PILL_GAP = 10;
 
-/** A text box on screen, client px: where the text pill floats (`Toolbar.setTextAnchor`). */
+/**
+ * A text box on screen, client px: where the text pill floats
+ * (`Toolbar.setTextAnchor`); `typing` when it is being typed in.
+ */
 export interface TextAnchor {
   left: number;
   top: number;
   right: number;
   bottom: number;
+  typing?: boolean;
 }
 
 /** The least room kept between the centred tools and the groups beside them. */
@@ -2446,9 +2450,10 @@ export class Toolbar {
 
   /**
    * Where the text pill floats by its box (host px), as GoodNotes' text bar
-   * does: under the box, centred on it, or over it when there is no room
-   * under it (the keyboard's top counts as the screen's bottom), kept inside
-   * the page area and below the tool bar. `null` when there is no box, the
+   * does: under a selected box, over one being typed in, centred on it, and
+   * on the other side when the first has no room (the keyboard's top counts
+   * as the screen's bottom), kept inside the page area and below the tool
+   * bar. `null` when there is no box, the
    * pill is not the text pill, or the box leaves no room either side (a box
    * as tall as the screen): the pill then stays under the tool bar.
    */
@@ -2463,9 +2468,15 @@ export class Toolbar {
     const maxBottom = Math.min(hostBox.height, windowBottom - hostBox.top) - EDGE_INSET;
     const below = anchor.bottom - hostBox.top + TEXT_PILL_GAP;
     const above = anchor.top - hostBox.top - TEXT_PILL_GAP - pill.height;
+    const fitsBelow = below + pill.height <= maxBottom && below >= minTop;
+    const fitsAbove = above >= minTop && above + pill.height <= maxBottom;
+    // GoodNotes: under a selected box, over one being typed in (the keyboard
+    // is coming up under it); the other side when the first has no room.
+    const order = anchor.typing === true ? [fitsAbove, fitsBelow] : [fitsBelow, fitsAbove];
+    const tops = anchor.typing === true ? [above, below] : [below, above];
     let top: number;
-    if (below + pill.height <= maxBottom && below >= minTop) top = below;
-    else if (above >= minTop && above + pill.height <= maxBottom) top = above;
+    if (order[0]) top = tops[0];
+    else if (order[1]) top = tops[1];
     else return null;
     const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
     const minLeft = inset + EDGE_INSET;

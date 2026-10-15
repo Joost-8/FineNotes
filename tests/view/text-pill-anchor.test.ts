@@ -14,7 +14,9 @@ type Fake = Record<string, unknown>;
 const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
 
-function pill(anchor: { left: number; top: number; right: number; bottom: number } | null) {
+function pill(
+  anchor: { left: number; top: number; right: number; bottom: number; typing?: boolean } | null,
+) {
   const t: Fake = Object.assign(Object.create(Toolbar.prototype), {
     textAnchor: anchor,
     textTarget: { color: "#1a1a1a", fontSize: 18 },
@@ -47,6 +49,15 @@ describe("the floating text pill", () => {
     // 300 - 50 - 10 - 46: just over the box.
     expect(place()).toEqual({ left: 300, top: 194 });
     keyboard.height = 0;
+  });
+
+  it("floats over a box being typed in, as GoodNotes does, even with room under it", () => {
+    keyboard.height = 0;
+    const place = pill({ left: 500, top: 300, right: 700, bottom: 340, typing: true });
+    expect(place()).toEqual({ left: 300, top: 194 });
+    // No room over it (just under the tool bar): under it after all.
+    const high = pill({ left: 500, top: 140, right: 700, bottom: 180, typing: true });
+    expect(high()).toEqual({ left: 300, top: 140 });
   });
 
   it("stays inside the page area at the sides", () => {
