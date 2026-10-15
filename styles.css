@@ -1214,6 +1214,22 @@ body,
   font-weight: var(--font-normal, 400);
 }
 
+/* The page's title in the contents, after its number, cut short with an ellipsis. */
+.goodobsidian-thumb-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-thumb-title.is-hidden {
+  display: none;
+}
+
 .goodobsidian-thumb-more {
   display: inline-flex;
   flex: 0 0 auto;

@@ -171,6 +171,18 @@ export function pagePassesFilter(page: Page, filter: PageFilter): boolean {
   return true;
 }
 
+/**
+ * The name shown under a page's thumbnail: its title in the contents, or
+ * else its topmost heading; empty for a page in neither.
+ */
+export function thumbnailTitleOf(page: Page | undefined): string {
+  if (!page) return "";
+  if (page.title !== undefined) return page.title;
+  let top: { title: string; y: number } | undefined;
+  for (const section of page.sections ?? []) if (!top || section.y < top.y) top = section;
+  return top?.title ?? "";
+}
+
 /** Thumbnail width in CSS px; the height follows each page's own aspect ratio. */
 const THUMB_WIDTH = 120;
 
@@ -213,6 +225,8 @@ interface ThumbView {
   canvas: HTMLCanvasElement;
   ribbon: HTMLElement;
   label: HTMLElement;
+  /** The page's title in the contents, beside its number; empty when it has none. */
+  title: HTMLElement;
   /** Content signature at the last paint; empty means "never painted". */
   painted: string;
   /** The canvas holds pixels (it was painted and not given back since). */
@@ -795,6 +809,10 @@ export class PageSidebar {
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
+      const title = thumbnailTitleOf(pages[index]);
+      view.title.setText(title);
+      view.title.setAttribute("title", title);
+      view.title.toggleClass("is-hidden", title === "");
       view.canvas.setCssStyles({ aspectRatio: aspectOf(pages[index]) });
     });
     // "Add page" takes the shape of the page it would add: a copy of the last.
@@ -938,6 +956,7 @@ export class PageSidebar {
     setIcon(frame.createSpan({ cls: "goodobsidian-thumb-check" }), "check");
     const footer = root.createDiv({ cls: "goodobsidian-thumb-footer" });
     const label = footer.createSpan({ cls: "goodobsidian-thumb-number" });
+    const title = footer.createSpan({ cls: "goodobsidian-thumb-title" });
     const more = footer.createEl("button", { cls: "goodobsidian-thumb-more clickable-icon" });
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", "Page options");
@@ -948,6 +967,7 @@ export class PageSidebar {
       canvas,
       ribbon,
       label,
+      title,
       painted: "",
       held: false,
       visible: false,

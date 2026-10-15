@@ -10,6 +10,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Page names under the thumbnails.** In the page sidebar and the page
+  overview, a page shows its title from the contents beside its number,
+  or else its topmost heading, cut short when it does not fit.
+
 - **Borders and rounded corners for text boxes.** The Text tool's new
   border button, next to the fill, gives a box a thin, medium or thick
   border in any colour, and rounded corners for its border and fill. The

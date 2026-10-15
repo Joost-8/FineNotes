@@ -19,7 +19,7 @@ vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path,
 }));
 
-const { KEEP_PAINTED_OFFSCREEN, PageSidebar, pagePassesFilter } =
+const { KEEP_PAINTED_OFFSCREEN, PageSidebar, pagePassesFilter, thumbnailTitleOf } =
   await import("../../src/view/page-sidebar");
 
 interface FakeView {
@@ -155,5 +155,29 @@ describe("page filter", () => {
       true,
     ]);
     expect(pagePassesFilter({ ...blankPage("e"), sections: [] }, "contents")).toBe(false);
+  });
+});
+
+describe("thumbnail title", () => {
+  it("is the page's title in the contents", () => {
+    expect(thumbnailTitleOf({ ...blankPage("a"), title: "Week 3" })).toBe("Week 3");
+  });
+
+  it("is the topmost heading on a page without a title", () => {
+    const page: Page = {
+      ...blankPage("b"),
+      sections: [
+        { id: "c2", title: "Exercise", x: 10, y: 400 },
+        { id: "c1", title: "Fermat's little theorem", x: 10, y: 40 },
+      ],
+    };
+    expect(thumbnailTitleOf(page)).toBe("Fermat's little theorem");
+    expect(thumbnailTitleOf({ ...page, title: "Lecture 5" })).toBe("Lecture 5");
+  });
+
+  it("is empty for a page in neither, and for no page", () => {
+    expect(thumbnailTitleOf(blankPage("c"))).toBe("");
+    expect(thumbnailTitleOf({ ...blankPage("d"), sections: [] })).toBe("");
+    expect(thumbnailTitleOf(undefined)).toBe("");
   });
 });
