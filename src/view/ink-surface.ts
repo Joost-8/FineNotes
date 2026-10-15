@@ -531,6 +531,12 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /**
+   * Where the box the text pill acts on is on screen (client px), or `null`
+   * when there is none: the host floats the pill beside it, as GoodNotes
+   * does. Reported when the target changes and whenever it moves.
+   */
+  onTextAnchor?: (rect: TextAnchorRect | null) => void;
   /** "Drag to size text boxes" (settings): a Text-tool drag draws the new box. Read live. */
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
@@ -927,6 +933,14 @@ function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
   ];
 }
 
+/** A box on screen, client px. */
+export interface TextAnchorRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 /** How long after a finger tap the click iOS makes of it can still arrive. */
 const CLICK_AFTER_TAP_MS = 600;
 
@@ -991,6 +1005,8 @@ export class InkSurface {
    * handles, until the next tap beside it.
    */
   private heldText: TextBoxView | null = null;
+  /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
+  private textAnchorKey = "";
   /** A pending release of the editing body class (see `releaseTextEditingClass`). */
   private textClassTimer = 0;
   /** The Text tool's hint pill, and what its × does. */
@@ -2770,6 +2786,7 @@ export class InkSurface {
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
+    this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
     const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : Infinity);
@@ -3127,6 +3144,8 @@ export class InkSurface {
       if (this.heldText === view) this.heldText = null;
       view.root.remove();
     }
+    // The pill floats by its box: a moved, resized, restyled or removed box moves it.
+    this.reportTextAnchor();
   }
 
   /**
@@ -3275,6 +3294,7 @@ export class InkSurface {
       if (snapshot) this.holdScroll(input, snapshot);
       const live = this.liveTextBox(view.pageId, view.id);
       if (live) this.callbacks.onTextEditing?.(textStyleOf(live));
+      this.reportTextAnchor();
     });
     input.addEventListener("blur", (event) => {
       if (!this.renderer) return;
@@ -3306,6 +3326,7 @@ export class InkSurface {
       // without changing the width, which the sync's own measure keys on.
       if (live.fit) this.syncTextBoxes();
       if (live.h === undefined) this.autoSize(view, true);
+      this.reportTextAnchor();
       this.changed();
     });
     moveHandle.addEventListener("pointerdown", (event) =>
@@ -8400,6 +8421,28 @@ export class InkSurface {
     const view = this.textTargetView();
     const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
     if (live) this.callbacks.onTextEditing?.(textStyleOf(live));
+    this.reportTextAnchor();
+  }
+
+  /**
+   * Tell the host where the pill's box is on screen now, if that changed
+   * (see `onTextAnchor`). One measure per call, and only while there is a
+   * box: cheap enough for every frame of a scroll.
+   */
+  private reportTextAnchor(): void {
+    if (!this.callbacks.onTextAnchor) return;
+    const view = this.textTargetView();
+    const box = view ? view.root.getBoundingClientRect() : null;
+    const rect =
+      box && box.width > 0 && box.height > 0
+        ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+        : null;
+    const key = rect
+      ? [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(",")
+      : "";
+    if (key === this.textAnchorKey) return;
+    this.textAnchorKey = key;
+    this.callbacks.onTextAnchor?.(rect);
   }
 
   /** Finish editing the focused text box, if there is one (the blur handler does the rest). */
@@ -8448,6 +8491,7 @@ export class InkSurface {
     view.root.removeClass("is-held");
     // The pill goes back to the tool's own style, unless typing goes on elsewhere.
     if (!this.editingTextView()) this.callbacks.onTextEditing?.(null);
+    this.reportTextAnchor();
     if (handBack) this.handBackFromText();
   }
 
@@ -8564,6 +8608,7 @@ export class InkSurface {
     this.releaseTextEditingClass();
     this.removeIfEmpty(view);
     this.callbacks.onTextEditing?.(null);
+    this.reportTextAnchor();
     if (this.heldText === view) {
       // Kept by a tap beside it: the tool waits for the tap that lets go —
       // unless the box was empty and has just gone.

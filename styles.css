@@ -343,6 +343,12 @@ body,
     visibility 0s;
 }
 
+/* Floating by a text box, the pill appears where it is, without the slide
+   down from the tool bar: it is far from the bar (toolbar.ts, setTextAnchor). */
+.goodobsidian-options.is-floating.is-anchored {
+  transition: none;
+}
+
 .goodobsidian-options.is-floating.is-collapsed {
   display: flex;
   translate: 0 calc(-100% - var(--gob-pill-gap) - 2px);

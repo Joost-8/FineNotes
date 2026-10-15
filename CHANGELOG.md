@@ -141,6 +141,11 @@ extracted from the matching section of this file by `release.yml`.
   the text pill set to its style and no keyboard yet. Colour, size, font,
   fill, border, lists and delete act on it straight away. Tap it again to
   type; tap beside it to let go, and the pen comes back.
+- **The text options float by their box**, as GoodNotes' text bar does:
+  while a box is selected or being typed in, the pill sits just under it,
+  or over it when the keyboard or the screen's edge leaves no room under
+  it, and follows the box as the page scrolls or zooms. Without a box it is
+  back under the tool bar.
 - **"Drag to size text boxes" moved to Settings** (Writing and tools), out
   of the text pill: it is a way of working, set once, not a style of a box.
 - **A finger tap on a picture selects it**, whatever pen is in hand: the

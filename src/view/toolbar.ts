@@ -469,6 +469,18 @@ export interface ToolbarOptions {
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
 const EDGE_INSET = 8;
+/** How often a floating text pill looks for the keyboard (see `watchKeyboard`). */
+const KEYBOARD_WATCH_MS = 250;
+/** How far the text pill floats from its box, in screen px. */
+const TEXT_PILL_GAP = 10;
+
+/** A text box on screen, client px: where the text pill floats (`Toolbar.setTextAnchor`). */
+export interface TextAnchor {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 
 /** The least room kept between the centred tools and the groups beside them. */
 const BAR_GAP = 8;
@@ -518,6 +530,14 @@ export class Toolbar {
   private redoButton: HTMLButtonElement | null = null;
   /** Width of a panel docked at the host's left edge; the pill stays clear of it. */
   private leftInset = 0;
+  /**
+   * The text box the text pill acts on, on screen (client px), while one is
+   * held or being typed in: the pill floats beside it (`setTextAnchor`).
+   */
+  private textAnchor: TextAnchor | null = null;
+  /** While anchored: re-places the pill when the keyboard comes or goes (no event says so). */
+  private keyboardWatch = 0;
+  private keyboardSeen = 0;
 
   private popover: HTMLElement | null = null;
   private popoverKind: string | null = null;
@@ -872,7 +892,9 @@ export class Toolbar {
           break;
       }
     }
-    this.optionsEl.toggleClass("is-collapsed", !this.optionsVisible);
+    // A held or edited box always shows its pill, floating beside it.
+    const anchored = this.textAnchor !== null && this.textTarget !== null;
+    this.optionsEl.toggleClass("is-collapsed", !this.optionsVisible && !anchored);
     this.applyPosition();
     // Highlighter is a pen type: the same controls, so nothing to fade.
     const kind = text ? "text" : this.state.tool === "highlighter" ? "pen" : this.state.tool;
@@ -2402,6 +2424,15 @@ export class Toolbar {
     this.fitTextPill();
     const hostBox = this.host.getBoundingClientRect();
     const pill = this.optionsEl.getBoundingClientRect();
+    const anchored = this.anchoredPlace(hostBox, pill);
+    this.optionsEl.toggleClass("is-anchored", anchored !== null);
+    if (anchored) {
+      this.optionsEl.setCssStyles({
+        left: `${Math.round(anchored.left)}px`,
+        top: `${Math.round(anchored.top)}px`,
+      });
+      return;
+    }
     const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
     const span = Math.max(1, hostBox.width - inset);
     const minLeft = inset + EDGE_INSET;
@@ -2411,6 +2442,37 @@ export class Toolbar {
       left: `${Math.round(left)}px`,
       top: `${Math.round(this.barBottom())}px`,
     });
+  }
+
+  /**
+   * Where the text pill floats by its box (host px), as GoodNotes' text bar
+   * does: under the box, centred on it, or over it when there is no room
+   * under it (the keyboard's top counts as the screen's bottom), kept inside
+   * the page area and below the tool bar. `null` when there is no box, the
+   * pill is not the text pill, or the box leaves no room either side (a box
+   * as tall as the screen): the pill then stays under the tool bar.
+   */
+  private anchoredPlace(hostBox: DOMRect, pill: DOMRect): { left: number; top: number } | null {
+    const anchor = this.textAnchor;
+    if (!anchor || !this.textTarget || !this.optionsEl.hasClass("is-text")) return null;
+    if (pill.width === 0 || pill.height === 0) return null;
+    const minTop = this.barBottom();
+    // The keyboard covers the bottom of the window, whatever the host's height.
+    const windowBottom =
+      (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
+    const maxBottom = Math.min(hostBox.height, windowBottom - hostBox.top) - EDGE_INSET;
+    const below = anchor.bottom - hostBox.top + TEXT_PILL_GAP;
+    const above = anchor.top - hostBox.top - TEXT_PILL_GAP - pill.height;
+    let top: number;
+    if (below + pill.height <= maxBottom && below >= minTop) top = below;
+    else if (above >= minTop && above + pill.height <= maxBottom) top = above;
+    else return null;
+    const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
+    const minLeft = inset + EDGE_INSET;
+    const maxLeft = Math.max(minLeft, hostBox.width - pill.width - EDGE_INSET);
+    const centre = (anchor.left + anchor.right) / 2 - hostBox.left;
+    const left = Math.min(maxLeft, Math.max(minLeft, centre - pill.width / 2));
+    return { left, top };
   }
 
   /** The floating pill's box in host px, or `null` while it is not shown. */
@@ -2488,6 +2550,45 @@ export class Toolbar {
    * with `null` (editing ended), the style new boxes get. Hosts call this
    * when a box takes or loses focus, and after an undo while one has it.
    */
+  /**
+   * Where the box the text pill acts on is on screen (client px), or `null`:
+   * while there is one, the pill floats beside it and shows even if it was
+   * tucked away. Hosts call this whenever the box appears, moves or goes.
+   */
+  setTextAnchor(rect: TextAnchor | null): void {
+    const was = this.textAnchor;
+    this.textAnchor = rect ? { ...rect } : null;
+    if (!was && !rect) return;
+    this.watchKeyboard(rect !== null);
+    // A held box always shows its pill, as GoodNotes shows its bar.
+    const anchored = rect !== null && this.textTarget !== null;
+    this.optionsEl.toggleClass("is-collapsed", !this.optionsVisible && !anchored);
+    this.applyPosition();
+  }
+
+  /**
+   * Obsidian sets `--keyboard-height` from its native side, with no event a
+   * page can hear, and the iPad's keyboard does not resize the window: while
+   * the pill floats by a box, look four times a second, and re-place it
+   * (over the box instead of under it) when the keyboard has come or gone.
+   */
+  private watchKeyboard(on: boolean): void {
+    const win = this.host.ownerDocument.defaultView;
+    if (!on || !win) {
+      if (this.keyboardWatch) win?.clearInterval(this.keyboardWatch);
+      this.keyboardWatch = 0;
+      return;
+    }
+    if (this.keyboardWatch) return;
+    this.keyboardSeen = keyboardHeight();
+    this.keyboardWatch = win.setInterval(() => {
+      const height = keyboardHeight();
+      if (height === this.keyboardSeen) return;
+      this.keyboardSeen = height;
+      this.applyPosition();
+    }, KEYBOARD_WATCH_MS);
+  }
+
   setTextTarget(style: TextStyle | null): void {
     const next = style ? textStyleOf(style) : null;
     const same =
@@ -2593,6 +2694,7 @@ export class Toolbar {
   destroy(): void {
     this.closePopover();
     this.stopPillMorph();
+    this.watchKeyboard(false);
     const disposers = this.disposers.splice(0);
     disposers.forEach((dispose) => dispose());
     this.barEl.remove();

@@ -1479,6 +1479,7 @@ export class InkView extends TextFileView {
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
+        onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         // A copied picture also goes to the system clipboard, for other apps;
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),
