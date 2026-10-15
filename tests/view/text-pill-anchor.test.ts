@@ -15,11 +15,21 @@ const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
 
 function pill(
-  anchor: { left: number; top: number; right: number; bottom: number; typing?: boolean } | null,
+  anchor: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    typing?: boolean;
+    clipTop?: number;
+    clipBottom?: number;
+  } | null,
+  pinned = false,
 ) {
   const t: Fake = Object.assign(Object.create(Toolbar.prototype), {
     textAnchor: anchor,
     textTarget: { color: "#1a1a1a", fontSize: 18 },
+    state: { textPinned: pinned },
     leftInset: 0,
     optionsEl: { hasClass: (c: string) => c === "is-text" },
     // The host fills an 1180 x 820 window from y = 50; the tool bar ends at y = 120.
@@ -82,5 +92,24 @@ describe("the floating text pill and a box out of sight", () => {
     keyboard.height = 450;
     expect(pill({ left: 500, top: 400, right: 700, bottom: 440 })()).toBe("hidden");
     keyboard.height = 0;
+  });
+
+  it("hides with a box below the page that is still inside the window (the iPad)", () => {
+    keyboard.height = 0;
+    // The page ends at 760 on screen; the window and the host go on to 820.
+    const below = { left: 500, top: 765, right: 700, bottom: 800, clipTop: 50, clipBottom: 760 };
+    expect(pill(below)()).toBe("hidden");
+  });
+
+  it("hides when only a sliver of the box shows, and stays while most of it does", () => {
+    keyboard.height = 0;
+    const page = { clipTop: 50, clipBottom: 760 };
+    expect(pill({ left: 500, top: 752, right: 700, bottom: 792, ...page })()).toBe("hidden");
+    expect(pill({ left: 500, top: 700, right: 700, bottom: 740, ...page })()).not.toBe("hidden");
+  });
+
+  it("with the Text tool pinned, stays (under the tool bar) when its box goes", () => {
+    keyboard.height = 0;
+    expect(pill({ left: 500, top: 900, right: 700, bottom: 950 }, true)()).toBeNull();
   });
 });

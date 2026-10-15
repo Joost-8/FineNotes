@@ -175,7 +175,10 @@ extracted from the matching section of this file by `release.yml`.
   highlighter strokes, which multiply over ink, typed text and PDF pages so
   everything under them stays readable, and straighten on lift.
 - **A selected text box's options go off screen with it** when you scroll
-  it out of sight, and come back with it.
+  it out of sight (once less than half of it shows), and come back with it.
+  On the iPad they stayed when the box went below the page, since the window
+  reaches further down than the page does. With the Text tool pinned they
+  stay, under the tool bar.
 
 ## [2.1.0] - 2026-10-13
 

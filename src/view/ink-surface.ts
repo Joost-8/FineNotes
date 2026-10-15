@@ -943,13 +943,18 @@ function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
   ];
 }
 
-/** A box on screen, client px, and whether it is being typed in (the keyboard is up). */
+/**
+ * A box on screen, client px; whether it is being typed in (the keyboard is
+ * up); and the top and bottom of the page's own part of the screen.
+ */
 export interface TextAnchorRect {
   left: number;
   top: number;
   right: number;
   bottom: number;
   typing: boolean;
+  clipTop: number;
+  clipBottom: number;
 }
 
 /** How long after the tap that held a box it takes taps itself (to type in it). */
@@ -8554,12 +8559,26 @@ export class InkSurface {
     const view = this.textTargetView();
     const box = view ? view.root.getBoundingClientRect() : null;
     const typing = view !== null && view === this.editingTextView();
+    // The part of the screen the page shows: on the iPad the window and the
+    // toolbar's host reach below it, so a box can be gone from the page and
+    // still inside them.
+    const page = this.surfaceEl.getBoundingClientRect();
     const rect =
       box && box.width > 0 && box.height > 0
-        ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom, typing }
+        ? {
+            left: box.left,
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+            typing,
+            clipTop: page.top,
+            clipBottom: page.bottom,
+          }
         : null;
     const key = rect
-      ? [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(",") + `,${typing}`
+      ? [rect.left, rect.top, rect.right, rect.bottom, page.top, page.bottom]
+          .map(Math.round)
+          .join(",") + `,${typing}`
       : "";
     if (key === this.textAnchorKey) return;
     this.textAnchorKey = key;

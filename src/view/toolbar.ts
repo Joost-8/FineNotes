@@ -471,6 +471,11 @@ export interface ToolbarOptions {
 const EDGE_INSET = 8;
 /** How often a floating text pill looks for the keyboard (see `watchKeyboard`). */
 const KEYBOARD_WATCH_MS = 250;
+/**
+ * How much of a text box, in screen px, must still show for its pill to stay
+ * by it (or half the box, if that is less); less, and the pill leaves too.
+ */
+const TEXT_BOX_MIN_SHOWN = 16;
 /** How far the text pill floats from its box, in screen px. */
 const TEXT_PILL_GAP = 10;
 
@@ -484,6 +489,12 @@ export interface TextAnchor {
   right: number;
   bottom: number;
   typing?: boolean;
+  /**
+   * The page's own part of the screen, client px, when the host knows it:
+   * on the iPad the window and the toolbar's host reach below the page.
+   */
+  clipTop?: number;
+  clipBottom?: number;
 }
 
 /** The least room kept between the centred tools and the groups beside them. */
@@ -2474,12 +2485,24 @@ export class Toolbar {
     // The keyboard covers the bottom of the window, whatever the host's height.
     const windowBottom =
       (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
-    const maxBottom = Math.min(hostBox.height, windowBottom - hostBox.top) - EDGE_INSET;
-    // A box scrolled out of sight takes its pill with it (GoodNotes): no bar
-    // left on screen without the box it belongs to.
+    // The part of the screen the box can be seen in: below the tool bar,
+    // above the keyboard, inside the page.
+    const visibleTop = Math.max(minTop, (anchor.clipTop ?? -Infinity) - hostBox.top);
+    const visibleBottom = Math.min(
+      hostBox.height,
+      windowBottom - hostBox.top,
+      (anchor.clipBottom ?? Infinity) - hostBox.top,
+    );
+    const maxBottom = visibleBottom - EDGE_INSET;
+    // A box scrolled (mostly) out of sight takes its pill with it, as in
+    // GoodNotes: no bar left on screen beside a box that is not. With the
+    // Text tool pinned the pill stays, under the tool bar.
     const boxTop = anchor.top - hostBox.top;
     const boxBottom = anchor.bottom - hostBox.top;
-    if (boxBottom <= minTop || boxTop >= maxBottom + EDGE_INSET) return "hidden";
+    const shown = Math.min(boxBottom, visibleBottom) - Math.max(boxTop, visibleTop);
+    if (shown < Math.min(TEXT_BOX_MIN_SHOWN, (boxBottom - boxTop) / 2)) {
+      return this.state.textPinned === true ? null : "hidden";
+    }
     const below = anchor.bottom - hostBox.top + TEXT_PILL_GAP;
     const above = anchor.top - hostBox.top - TEXT_PILL_GAP - pill.height;
     const fitsBelow = below + pill.height <= maxBottom && below >= minTop;
