@@ -2832,6 +2832,7 @@ export class InkSurface {
     this.noteViewMotion(busy);
     this.syncViewport();
     this.textAnchorMoving = busy;
+    this.dropTextOutOfSight();
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
@@ -8158,15 +8159,53 @@ export class InkSurface {
       if (view !== typing) this.focusTextBox(view.input);
       return true;
     }
+    this.letGoOfText();
+    return true;
+  }
+
+  /**
+   * Let go of the text box held or typed in: the keyboard goes, the box's
+   * frame and its pill go, and the tool in hand before comes back — the
+   * lasso's way (`heldReturnTool`) or the unpinned Text tool's (it hands
+   * back the tool used before it). Nothing is recorded: a selection is not
+   * an edit, so undo is as it was. What a tap beside the box does, and what
+   * scrolling the box out of sight does (`dropTextOutOfSight`).
+   */
+  private letGoOfText(): void {
+    const typing = this.editingTextView();
     const back = this.heldReturnTool;
-    // The keyboard goes; the blur keeps the box held, which is let go next.
+    // The keyboard goes; with the lasso the blur keeps the box held, and
+    // with the Text tool it may hand the tool back already.
     typing?.input.blur();
+    if (this.toolState.tool === "text") {
+      this.releaseHeldText(true);
+      return;
+    }
     this.releaseHeldText();
-    if (back && back !== "select") {
+    if (back && back !== "select" && this.toolState.tool === "select") {
       this.setTool(back);
       this.callbacks.onToolChange?.(back);
     }
-    return true;
+  }
+
+  /**
+   * A held or typed-in box that has left the page's part of the screen
+   * entirely (no pixel of it shows) is let go for good, as in GoodNotes:
+   * scrolling back to it does not bring its frame or its pill back; only a
+   * tap on it does. Checked as the view moves.
+   */
+  private dropTextOutOfSight(): void {
+    const view = this.heldText ?? this.editingTextView();
+    if (!view) return;
+    const box = view.root.getBoundingClientRect();
+    if (box.width === 0 && box.height === 0) return;
+    const page = this.surfaceEl.getBoundingClientRect();
+    const showing =
+      box.bottom > page.top &&
+      box.top < page.bottom &&
+      box.right > page.left &&
+      box.left < page.right;
+    if (!showing) this.letGoOfText();
   }
 
   /**

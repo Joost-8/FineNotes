@@ -183,8 +183,11 @@ extracted from the matching section of this file by `release.yml`.
 - **A selected text box's options step aside while the page moves**, as in
   GoodNotes: they leave as soon as you scroll or zoom and fade back in by
   the box once the page settles, if the box is still in view (at least half
-  of it). On the iPad they used to slide about with the box and linger at
-  the page's edge. With the Text tool pinned they stay, under the tool bar.
+  of it). With the Text tool pinned they stay, under the tool bar.
+- **A text box scrolled out of sight is let go**, as in GoodNotes: once no
+  part of it shows, its frame and options go and stay gone when you scroll
+  back; tap it to select it again. If you were typing in it, the typing
+  ends. The tool you had before comes back, as with a tap beside it.
 
 ## [2.1.0] - 2026-10-13
 

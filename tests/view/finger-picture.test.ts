@@ -261,6 +261,62 @@ describe("a finger tap on a text box", () => {
     expect(s.focusTextBox).not.toHaveBeenCalled();
   });
 
+  it("a held box scrolled entirely out of sight is let go for good, the tool coming back", () => {
+    const { s, view, classes } = holdable("select");
+    const rect = (top: number) => ({
+      top,
+      bottom: top + 40,
+      left: 100,
+      right: 300,
+      width: 200,
+      height: 40,
+    });
+    let boxTop = 400;
+    (view.root as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () =>
+      rect(boxTop);
+    s.surfaceEl = {
+      getBoundingClientRect: () => ({ top: 120, bottom: 800, left: 0, right: 1180 }),
+    };
+    s.heldText = view;
+    s.heldReturnTool = "pen";
+    classes.add("is-held");
+    // Still showing, even by a sliver: nothing happens.
+    boxTop = 790;
+    run(s, "dropTextOutOfSight");
+    expect(s.heldText).toBe(view);
+    // Gone below the page: let go, the pen back, as a tap beside would.
+    boxTop = 805;
+    run(s, "dropTextOutOfSight");
+    expect(s.heldText).toBeNull();
+    expect(classes.has("is-held")).toBe(false);
+    expect(s.setTool).toHaveBeenLastCalledWith("pen");
+    // Scrolled back: nothing comes back.
+    boxTop = 400;
+    run(s, "dropTextOutOfSight");
+    expect(s.heldText).toBeNull();
+  });
+
+  it("a box being typed in that leaves the screen ends the typing too", () => {
+    const { s, view } = holdable("select");
+    const blur = vi.fn();
+    (view as unknown as { input: { blur: () => void } }).input.blur = blur;
+    (view.root as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect =
+      () => ({
+        top: -200,
+        bottom: -160,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 40,
+      });
+    s.surfaceEl = {
+      getBoundingClientRect: () => ({ top: 120, bottom: 800, left: 0, right: 1180 }),
+    };
+    s.editingTextView = () => view;
+    run(s, "dropTextOutOfSight");
+    expect(blur).toHaveBeenCalled();
+  });
+
   it("a held box is what the pill styles, and letting go hands the pill back", () => {
     const { s, view } = holdable("text");
     s.heldText = view;
