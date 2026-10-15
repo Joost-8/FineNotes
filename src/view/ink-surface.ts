@@ -187,7 +187,7 @@ import {
   type StrokeBuilderOptions,
 } from "../ink/stroke-builder";
 import { InkTracer } from "../ink/freehand";
-import { straightenRuns } from "../ink/straighten";
+import { lineOfHighlight, straightenRuns } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -397,6 +397,8 @@ const TEXT_SNAP_SLOP_PX = 8;
  * than a deliberate step to the next line.
  */
 const HIGHLIGHT_STRAIGHT_PX = 7;
+/** The shortest highlight, in screen px, that becomes a straight line on lift when drawn as one. */
+const HIGHLIGHT_LINE_MIN_PX = 24;
 /** How long the snapped text and its Copy stay up. */
 const TEXT_COPY_NOTICE_MS = 6000;
 
@@ -4762,6 +4764,18 @@ export class InkSurface {
   }
 
   /**
+   * A highlighter stroke drawn as a line, lifted: the straight line it meant
+   * (`lineOfHighlight`), with the straightening setting on; null for any
+   * other stroke, or one that is not a line. The shortest it snaps is a
+   * screen length.
+   */
+  private highlightLine(tool: Tool, pts: readonly number[]): number[] | null {
+    if (tool !== "highlighter") return null;
+    if (this.callbacks.straightenHighlighter?.() === false) return null;
+    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX));
+  }
+
+  /**
    * Stop drawing the stroke in progress: no frame pending, no hold timer,
    * the wet layer clear. Returns its builder, for a caller that keeps it.
    */
@@ -4940,7 +4954,11 @@ export class InkSurface {
       color,
       size,
       tool,
-      pts: shape ? shape.pts : (this.straightRuns(tool, builder.points()) ?? builder.points()),
+      pts: shape
+        ? shape.pts
+        : (this.highlightLine(tool, builder.points()) ??
+          this.straightRuns(tool, builder.points()) ??
+          builder.points()),
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
     };

@@ -236,7 +236,8 @@ const DESC = {
     "pen always erases.",
   straightHighlighter:
     "Highlighter strokes are drawn as straight lines that only bend where you turned, so " +
-    "the band stays tidy however your hand wobbles.",
+    "the band stays tidy however your hand wobbles. A stroke drawn along a line becomes a " +
+    "perfectly straight one when you lift the pen.",
   penCursor:
     "On a computer, show a small crosshair instead of the arrow over the page while a pen, " +
     "the highlighter or the laser is in hand.",

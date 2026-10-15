@@ -129,6 +129,10 @@ extracted from the matching section of this file by `release.yml`.
   show it.
 - **The saved-pens star moved to the far right of the pen's options**, after
   the auto-shape switch: the pen, widths and colours come first.
+- **A highlight drawn along a line becomes a straight line** when you lift
+  the pen, from where you started to where you stopped, however your hand
+  wavered. A curve, a corner or a zigzag over several lines stays as drawn.
+  Part of "Straighten highlighter strokes" (on by default).
 - **Each pen keeps its own width**, as it keeps its colours: a wide
   highlighter and a fine fountain pen stay that way when you switch between
   them. A pen you have not set a width for starts with the one in hand.
