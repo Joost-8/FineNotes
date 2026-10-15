@@ -136,15 +136,17 @@ extracted from the matching section of this file by `release.yml`.
 - **Each pen keeps its own width**, as it keeps its colours: a wide
   highlighter and a fine fountain pen stay that way when you switch between
   them. A pen you have not set a width for starts with the one in hand.
-- **A finger tap on a text box selects it**, as in GoodNotes: whatever pen
-  is in hand, the lasso is picked and the box shows its handles, with the
-  text options beside it set to its style and no keyboard. Colour, size,
-  font, fill, border, lists and delete act on it straight away. Tap it again
-  to type (the Text tool comes with the keyboard); tap beside it to let go,
-  and the pen comes back.
-- **Only the Text tool types into text boxes.** With a pen, the eraser or a
-  shape, the Pencil writes over a box instead of opening the keyboard, and
-  links in boxes still open on a tap.
+- **The lasso edits text, as in GoodNotes.** Tap a text box with the lasso
+  (Pencil or finger), or with a finger whatever pen is in hand (the lasso is
+  then picked): the box shows its handles and its text options float beside
+  it, with no keyboard. Colour, size, font, fill, border, lists and delete
+  act on it straight away. Tap it again to type, the lasso still in hand;
+  hiding the keyboard keeps it selected. Tap beside it to let go, and the
+  pen comes back if it was the pen you came from. The Text tool is for
+  making new boxes.
+- **Pens write over text boxes.** With a pen, the eraser or a shape, the
+  Pencil no longer opens a box's keyboard, and links in boxes still open on
+  a tap.
 - **The text options float by their box**, as GoodNotes' text bar does:
   under a selected box, over a box being typed in, and on the other side
   when there is no room, following the box as the page scrolls or zooms.

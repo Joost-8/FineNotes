@@ -150,6 +150,8 @@ describe("a finger tap on a text box", () => {
       textBoxFrameOf: () => ({ x: 100, y: 100, w: 200, h: 50 }),
       liveTextBox: () => textBox,
       editingTextView: () => null,
+      clearSelection: vi.fn(),
+      deselectImage: vi.fn(),
       ...extra,
     });
     (s.callbacks as Fake).onTextEditing = vi.fn();
@@ -212,6 +214,51 @@ describe("a finger tap on a text box", () => {
     expect((s.callbacks as Fake).onToolChange).toHaveBeenLastCalledWith("pen");
     // Nothing held: the lasso's own tap goes on.
     expect(run(s, "tapWithHeldText", page, { x: 150, y: 120 })).toBe(false);
+  });
+
+  it("with the lasso, a tap on a box holds it with its options, not a group selection", () => {
+    const { s, view, classes } = holdable("select");
+    s.pageAt = () => page;
+    Object.defineProperty(s, "unitScale", { value: 1 });
+    s.toolState = { tool: "select", lassoFilter: undefined };
+    s.select = vi.fn();
+    run(s, "tapSelect", { index: 0 }, { x: 150, y: 120 }, 4);
+    expect(s.heldText).toBe(view);
+    expect(s.heldReturnTool).toBeNull();
+    expect(classes.has("is-held")).toBe(true);
+    expect(s.select).not.toHaveBeenCalled();
+  });
+
+  it("typing with the lasso: hiding the keyboard keeps the box selected", () => {
+    const { s, view, classes } = holdable("select");
+    s.heldReturnTool = "pen";
+    Object.assign(s, {
+      releaseTextEditingClass: vi.fn(),
+      removeIfEmpty: vi.fn(),
+      handBackFromText: vi.fn(),
+    });
+    run(s, "endTextEditing", view);
+    expect(s.heldText).toBe(view);
+    expect(s.heldReturnTool).toBe("pen");
+    expect(classes.has("is-held") && classes.has("is-tappable")).toBe(true);
+    expect(s.handBackFromText).not.toHaveBeenCalled();
+  });
+
+  it("typing with the lasso: a tap beside ends it, lets go and brings the tool back", () => {
+    const { s, view } = holdable("select");
+    const blur = vi.fn();
+    (view as unknown as { input: { blur: () => void } }).input.blur = blur;
+    s.editingTextView = () => view;
+    s.heldReturnTool = "highlighter";
+    expect(run(s, "tapWithHeldText", page, { x: 600, y: 600 })).toBe(true);
+    expect(blur).toHaveBeenCalled();
+    expect(s.setTool).toHaveBeenLastCalledWith("highlighter");
+    // A tap on the box being typed in is the box's own (the caret).
+    (s.toolState as { tool: ActiveTool }).tool = "select";
+    s.editingTextView = () => view;
+    s.focusTextBox = vi.fn();
+    expect(run(s, "tapWithHeldText", page, { x: 150, y: 120 })).toBe(true);
+    expect(s.focusTextBox).not.toHaveBeenCalled();
   });
 
   it("a held box is what the pill styles, and letting go hands the pill back", () => {

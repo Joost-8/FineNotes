@@ -3974,6 +3974,12 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   pointer-events: none;
 }
 
+/* A box being typed in takes its own taps (the caret), whatever the tool:
+   the lasso types in text too. */
+.goodobsidian-surface .goodobsidian-page-textbox:focus-within {
+  pointer-events: auto;
+}
+
 /* A box selected without the keyboard takes the tap that types in it, once
    the tap that selected it is over (ink-surface.ts, fingerHoldsTextBox),
    and its handles move and resize it with any tool. */
