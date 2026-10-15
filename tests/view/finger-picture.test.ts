@@ -261,7 +261,7 @@ describe("a finger tap on a text box", () => {
     expect(s.focusTextBox).not.toHaveBeenCalled();
   });
 
-  it("a held box scrolled entirely out of sight is let go for good, the tool coming back", () => {
+  it("a held box scrolled entirely out of sight loses its frame for good, but stays parked", () => {
     const { s, view, classes } = holdable("select");
     const rect = (top: number) => ({
       top,
@@ -284,16 +284,44 @@ describe("a finger tap on a text box", () => {
     boxTop = 790;
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBe(view);
-    // Gone below the page: let go, the pen back, as a tap beside would.
+    // Gone below the page: the frame goes, the tool stays, the box is parked.
     boxTop = 805;
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBeNull();
     expect(classes.has("is-held")).toBe(false);
-    expect(s.setTool).toHaveBeenLastCalledWith("pen");
-    // Scrolled back: nothing comes back.
+    expect(s.setTool).not.toHaveBeenCalled();
+    expect(s.parkedText).toMatchObject({ view, tool: "select", returnTool: "pen" });
+    // Scrolled back: nothing comes back by itself.
     boxTop = 400;
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBeNull();
+  });
+
+  it("a tap on the parked box types in it at once; a tap elsewhere forgets it", () => {
+    const { s, view } = holdable("select");
+    s.focusTextBox = vi.fn();
+    s.parkedText = { view, tool: "select", returnTool: "pen" };
+    expect(run(s, "tapParkedText", page, { x: 150, y: 120 })).toBe(true);
+    expect(s.focusTextBox).toHaveBeenCalledWith(view.input);
+    expect(s.heldReturnTool).toBe("pen");
+    expect(s.parkedText).toBeNull();
+    // Elsewhere: forgotten, and the tool before the lasso comes back.
+    s.parkedText = { view, tool: "select", returnTool: "pen" };
+    expect(run(s, "tapParkedText", page, { x: 600, y: 600 })).toBe(true);
+    expect(s.parkedText).toBeNull();
+    expect(s.setTool).toHaveBeenLastCalledWith("pen");
+    // Nothing parked: the lasso's own tap goes on.
+    expect(run(s, "tapParkedText", page, { x: 150, y: 120 })).toBe(false);
+  });
+
+  it("another tool forgets the parked box, so a tap selects first again", () => {
+    const { s, view } = holdable("select");
+    s.focusTextBox = vi.fn();
+    s.parkedText = { view, tool: "pen", returnTool: null };
+    // Parked with the pen in hand, tapped with the lasso: the tool changed.
+    expect(run(s, "tapParkedText", page, { x: 150, y: 120 })).toBe(false);
+    expect(s.focusTextBox).not.toHaveBeenCalled();
+    expect(s.parkedText).toBeNull();
   });
 
   it("a box being typed in that leaves the screen ends the typing too", () => {

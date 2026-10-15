@@ -184,10 +184,13 @@ extracted from the matching section of this file by `release.yml`.
   GoodNotes: they leave as soon as you scroll or zoom and fade back in by
   the box once the page settles, if the box is still in view (at least half
   of it). With the Text tool pinned they stay, under the tool bar.
-- **A text box scrolled out of sight is let go**, as in GoodNotes: once no
-  part of it shows, its frame and options go and stay gone when you scroll
-  back; tap it to select it again. If you were typing in it, the typing
-  ends. The tool you had before comes back, as with a tap beside it.
+- **A text box scrolled out of sight lets go of its frame**, as in GoodNotes:
+  once no part of it shows, its frame, its options and the keyboard go, and
+  scrolling back does not bring them back. The box is remembered, though:
+  tap it again, without changing tools or tapping anything else first, and
+  you are typing in it straight away. A tap anywhere else (which also brings
+  back the tool you had before the lasso), another tool, an undo, going to
+  another page or a reload forgets it, and a tap selects it first again.
 
 ## [2.1.0] - 2026-10-13
 

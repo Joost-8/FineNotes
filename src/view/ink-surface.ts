@@ -1036,6 +1036,19 @@ export class InkSurface {
   private heldReturnTool: ActiveTool | null = null;
   /** Makes a held box take taps once the tap that selected it is over. */
   private heldTapTimer = 0;
+  /**
+   * The box that was held or typed in when it scrolled out of sight: its
+   * frame, pill and keyboard went, but a tap on it, with the same tool and
+   * nothing else tapped in between, types in it at once (Joost, after
+   * GoodNotes). The tool held then, and the one to come back to after.
+   */
+  private parkedText: {
+    view: TextBoxView;
+    tool: ActiveTool;
+    returnTool: ActiveTool | null;
+  } | null = null;
+  /** Set while a box is parked: its blur must not hand the Text tool back. */
+  private parkingText = false;
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
   private textAnchorKey = "";
   /**
@@ -1881,6 +1894,7 @@ export class InkSurface {
    */
   setDocument(doc: InkDocument): void {
     this.doc = doc;
+    this.parkedText = null;
     this.strokeIds.restart(strokeIdsOf(doc));
     this.textBoxIds.restart(textBoxIdsOf(doc));
     this.history.clear();
@@ -2137,6 +2151,7 @@ export class InkSurface {
    * time (`GLIDE_MS`), however far away the page is, as GoodNotes does.
    */
   goToPage(index: number, animate = false): void {
+    this.parkedText = null;
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const row = this.direction === "horizontal";
     if (row && !this.turnsPages && clamped !== this.pageIndex) {
@@ -2234,6 +2249,8 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // Another tool: a box scrolled out of sight is forgotten.
+    this.parkedText = null;
     // "The pen" means the pen type in hand: with the highlighter as the type,
     // a return to the pen is a return to the highlighter. Otherwise strokes
     // were stored as opaque pen ink in the highlighter's colour and width.
@@ -3330,9 +3347,11 @@ export class InkSurface {
       if (document.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
     });
     input.addEventListener("focus", () => {
-      // Typing again in a kept box, or in another one: nothing is held now.
-      // A box held with the lasso is typed in with the lasso still in hand
-      // (GoodNotes); the tool to come back to stays for when it is let go.
+      // Typing again in a kept box, or in another one: nothing is held now,
+      // and nothing parked. A box held with the lasso is typed in with the
+      // lasso still in hand (GoodNotes); the tool to come back to stays for
+      // when it is let go.
+      this.parkedText = null;
       if (this.heldText === view) {
         this.heldText = null;
         window.clearTimeout(this.heldTapTimer);
@@ -6176,6 +6195,7 @@ export class InkSurface {
    */
   private tapSelect(box: PageBox, p: Pt, tolerancePx: number): void {
     const tappedPage = this.pageAt(box.index);
+    if (tappedPage && this.tapParkedText(tappedPage, p)) return;
     if (tappedPage && this.tapWithHeldText(tappedPage, p)) return;
     this.clearSelection();
     this.deselectImage();
@@ -8069,6 +8089,8 @@ export class InkSurface {
       return;
     }
     if (!box) {
+      // Off the pages is tapping out too: a parked box is forgotten.
+      this.forgetParkedText();
       this.clearSelection();
       this.deselectImage();
       return;
@@ -8190,9 +8212,11 @@ export class InkSurface {
 
   /**
    * A held or typed-in box that has left the page's part of the screen
-   * entirely (no pixel of it shows) is let go for good, as in GoodNotes:
-   * scrolling back to it does not bring its frame or its pill back; only a
-   * tap on it does. Checked as the view moves.
+   * entirely (no pixel of it shows) loses its frame, its pill and the
+   * keyboard for good, as in GoodNotes: scrolling back brings none of them
+   * back. The tool stays as it is and the box is parked (`parkedText`): a
+   * tap on it types in it at once; a tap anywhere else, another tool, an
+   * undo, a page change or a reload forgets it. Checked as the view moves.
    */
   private dropTextOutOfSight(): void {
     const view = this.heldText ?? this.editingTextView();
@@ -8205,7 +8229,65 @@ export class InkSurface {
       box.top < page.bottom &&
       box.right > page.left &&
       box.left < page.right;
-    if (!showing) this.letGoOfText();
+    if (showing) return;
+    const parked = { view, tool: this.toolState.tool, returnTool: this.heldReturnTool };
+    // The keyboard goes. With the lasso the blur keeps the box held, which
+    // is let go next; the Text tool must not hand itself back.
+    this.parkingText = true;
+    try {
+      this.editingTextView()?.input.blur();
+    } finally {
+      this.parkingText = false;
+    }
+    this.releaseHeldText();
+    this.parkedText = parked;
+  }
+
+  /**
+   * A lasso tap (finger or Pencil) while a box is parked: on that box, it
+   * types in it at once, the keyboard and the pill by the box; anywhere
+   * else, the box is forgotten and, as after a tap beside a held box, the
+   * tool in hand before the lasso comes back. Returns whether the tap was
+   * the parked box's to answer.
+   */
+  private tapParkedText(page: Page, p: Pt): boolean {
+    const parked = this.parkedText;
+    if (!parked) return false;
+    this.parkedText = null;
+    if (parked.tool !== this.toolState.tool || this.toolState.tool !== "select") return false;
+    const { view } = parked;
+    const live = this.liveTextBox(view.pageId, view.id);
+    const f = live ? this.textBoxFrameOf(view.pageId, live) : null;
+    const on =
+      f !== null &&
+      page.id === view.pageId &&
+      p.x >= f.x &&
+      p.x <= f.x + f.w &&
+      p.y >= f.y &&
+      p.y <= f.y + f.h;
+    if (on) {
+      this.heldReturnTool = parked.returnTool;
+      this.focusTextBox(view.input);
+      return true;
+    }
+    this.returnFromParked(parked.returnTool);
+    return true;
+  }
+
+  /** A tap off the pages while a box is parked: forget it, and come back from the lasso. */
+  private forgetParkedText(): void {
+    const parked = this.parkedText;
+    this.parkedText = null;
+    if (parked && parked.tool === "select" && this.toolState.tool === "select") {
+      this.returnFromParked(parked.returnTool);
+    }
+  }
+
+  /** As after a tap beside a held box: the tool in hand before the lasso comes back. */
+  private returnFromParked(back: ActiveTool | null): void {
+    if (!back || back === "select") return;
+    this.setTool(back);
+    this.callbacks.onToolChange?.(back);
   }
 
   /**
@@ -8507,6 +8589,7 @@ export class InkSurface {
    * surface derives from the document is rebuilt, and the change is shown.
    */
   private stepHistory(step: (doc: InkDocument) => Command | null): void {
+    this.parkedText = null;
     this.endCrop(false);
     this.cancelImageDrag();
     this.cancelGroupDrag();
@@ -8696,7 +8779,7 @@ export class InkSurface {
    * general setting.
    */
   private handBackFromText(): void {
-    if (this.toolState.tool !== "text" || this.editingTextView()) return;
+    if (this.toolState.tool !== "text" || this.editingTextView() || this.parkingText) return;
     if (this.toolState.textPinned === true) return;
     if (this.callbacks.returnToPenAfterUse?.() === true) {
       this.completeToolUse("text");
