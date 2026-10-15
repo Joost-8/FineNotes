@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
 ### Added
 
 - **Page names under the thumbnails.** In the page sidebar and the page
