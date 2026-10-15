@@ -1405,7 +1405,8 @@ export class InkView extends TextFileView {
         // overview, which covered the page, it is simply there.
         onSelectPage: (index, fromOverview) => this.surface?.goToPage(index, !fromOverview),
         onPageAction: (action, index, anchor) => this.pageAction(action, index, anchor),
-        onSelectSection: (index, section) => this.surface?.goToPagePoint(index, section.y, true),
+        onSelectSection: (index, section, fromOverview) =>
+          this.surface?.goToPagePoint(index, section.y, !fromOverview),
         onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
         onAddPage: (anchor) => this.openAddPage(anchor, this.doc.pages.length - 1, "last"),
         onClose: () => {
@@ -1480,6 +1481,7 @@ export class InkView extends TextFileView {
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
+        textPillState: () => this.toolbar?.textPillState ?? "-",
         // A copied picture also goes to the system clipboard, for other apps;
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),

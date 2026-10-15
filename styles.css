@@ -351,8 +351,15 @@ body,
 }
 
 /* Floating by a text box, the pill appears where it is, without the slide
-   down from the tool bar: it is far from the bar (toolbar.ts, setTextAnchor). */
+   down from the tool bar: it is far from the bar (toolbar.ts, setTextAnchor).
+   It fades back in once the page settles; it leaves at once. */
 .goodobsidian-options.is-floating.is-anchored {
+  opacity: 1;
+  transition: opacity 0.12s ease-out;
+}
+
+.goodobsidian-options.is-floating.is-anchored.is-offscreen {
+  opacity: 0;
   transition: none;
 }
 
@@ -1214,19 +1221,46 @@ body,
   font-weight: var(--font-normal, 400);
 }
 
-/* The page's title in the contents, after its number, cut short with an ellipsis. */
-.goodobsidian-thumb-title {
+/*
+ * The page's name after its number (its title in the contents, else its first
+ * heading), cut short with an ellipsis, and "+2" when it has more entries. A
+ * tap lists them all.
+ */
+.goodobsidian-thumb-name.clickable-icon {
+  display: flex;
   flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
   min-width: 0;
-  margin-left: 6px;
-  overflow: hidden;
-  font-size: var(--font-ui-small);
+  height: auto;
+  margin-left: 4px;
+  padding: 2px;
   color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: left;
+}
+
+.goodobsidian-thumb-name.is-hidden {
+  display: none;
+}
+
+.goodobsidian-thumb-title {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.goodobsidian-thumb-title.is-hidden {
+.goodobsidian-thumb-count {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-thumb-count.is-hidden {
   display: none;
 }
 

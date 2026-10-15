@@ -61,6 +61,7 @@ import {
   contentsEntries,
   contentsTree,
   currentContentsEntry,
+  pageContentsEntries,
 } from "../model/contents";
 import type { PageSection } from "../model/document";
 import type { BackdropPainter, ImagePainter } from "../canvas/renderer";
@@ -100,8 +101,11 @@ export type SelectionAction =
 export interface PageSidebarCallbacks {
   /** A page was tapped; `fromOverview` when the overview closes to show it (jump, do not glide). */
   onSelectPage: (index: number, fromOverview?: boolean) => void;
-  /** A section in the Contents tab was tapped: go to its line on page `index`. */
-  onSelectSection?: (index: number, section: PageSection) => void;
+  /**
+   * A section was tapped, in the Contents tab or a page's list of its own:
+   * go to its line on page `index` (`fromOverview`: jump, do not glide).
+   */
+  onSelectSection?: (index: number, section: PageSection, fromOverview?: boolean) => void;
   /** Rename or remove a section, from its ⌄ menu. */
   onSectionAction?: (
     action: SectionAction,
@@ -173,14 +177,11 @@ export function pagePassesFilter(page: Page, filter: PageFilter): boolean {
 
 /**
  * The name shown under a page's thumbnail: its title in the contents, or
- * else its topmost heading; empty for a page in neither.
+ * else its topmost heading (sections are kept top to bottom); empty for a
+ * page in neither.
  */
 export function thumbnailTitleOf(page: Page | undefined): string {
-  if (!page) return "";
-  if (page.title !== undefined) return page.title;
-  let top: { title: string; y: number } | undefined;
-  for (const section of page.sections ?? []) if (!top || section.y < top.y) top = section;
-  return top?.title ?? "";
+  return page ? (pageContentsEntries(page, 0)[0]?.title ?? "") : "";
 }
 
 /** Thumbnail width in CSS px; the height follows each page's own aspect ratio. */
@@ -225,8 +226,14 @@ interface ThumbView {
   canvas: HTMLCanvasElement;
   ribbon: HTMLElement;
   label: HTMLElement;
-  /** The page's title in the contents, beside its number; empty when it has none. */
+  /**
+   * The page's name beside its number (its title in the contents, else its
+   * first heading), hidden when it has none; a tap lists all its entries.
+   */
+  name: HTMLButtonElement;
   title: HTMLElement;
+  /** "+2": how many more entries the page has in the contents. */
+  count: HTMLElement;
   /** Content signature at the last paint; empty means "never painted". */
   painted: string;
   /** The canvas holds pixels (it was painted and not given back since). */
@@ -809,10 +816,17 @@ export class PageSidebar {
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
-      const title = thumbnailTitleOf(pages[index]);
+      const page = pages[index];
+      const entries = page ? pageContentsEntries(page, index).length : 0;
+      const title = thumbnailTitleOf(page);
       view.title.setText(title);
-      view.title.setAttribute("title", title);
-      view.title.toggleClass("is-hidden", title === "");
+      view.count.setText(entries > 1 ? `+${entries - 1}` : "");
+      view.count.toggleClass("is-hidden", entries < 2);
+      view.name.toggleClass("is-hidden", title === "");
+      view.name.setAttribute(
+        "aria-label",
+        entries > 1 ? `${title}, and ${entries - 1} more in the contents` : title,
+      );
       view.canvas.setCssStyles({ aspectRatio: aspectOf(pages[index]) });
     });
     // "Add page" takes the shape of the page it would add: a copy of the last.
@@ -956,7 +970,9 @@ export class PageSidebar {
     setIcon(frame.createSpan({ cls: "goodobsidian-thumb-check" }), "check");
     const footer = root.createDiv({ cls: "goodobsidian-thumb-footer" });
     const label = footer.createSpan({ cls: "goodobsidian-thumb-number" });
-    const title = footer.createSpan({ cls: "goodobsidian-thumb-title" });
+    const name = footer.createEl("button", { cls: "goodobsidian-thumb-name clickable-icon" });
+    const title = name.createSpan({ cls: "goodobsidian-thumb-title" });
+    const count = name.createSpan({ cls: "goodobsidian-thumb-count" });
     const more = footer.createEl("button", { cls: "goodobsidian-thumb-more clickable-icon" });
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", "Page options");
@@ -967,7 +983,9 @@ export class PageSidebar {
       canvas,
       ribbon,
       label,
+      name,
       title,
+      count,
       painted: "",
       held: false,
       visible: false,
@@ -978,6 +996,11 @@ export class PageSidebar {
       // A drag just ended here, or the Pencil's tap was already taken.
       if (index < 0 || this.drag.consumeClick()) return;
       this.tapThumb(index, event.target instanceof Element ? event.target : frame, event);
+    });
+    name.addEventListener("click", (event) => {
+      const index = this.thumbs.indexOf(view);
+      if (index < 0 || this.drag.consumeClick()) return;
+      this.tapName(index, event, name);
     });
     more.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
@@ -1128,6 +1151,43 @@ export class PageSidebar {
       return;
     }
     this.callbacks.onSelectPage(index);
+  }
+
+  /**
+   * A tap on a page's name: with one entry in the contents, go to it; with
+   * more, list them all, top to bottom, to pick one. While pages are being
+   * picked in the overview the name is part of its page, and picks it.
+   */
+  private tapName(index: number, event: MouseEvent, anchor: HTMLElement): void {
+    const page = this.doc?.pages[index];
+    if (!page) return;
+    if (this.overview && (this.selecting || event.shiftKey || event.metaKey || event.ctrlKey)) {
+      this.tapThumb(index, anchor, event);
+      return;
+    }
+    const entries = pageContentsEntries(page, index);
+    if (entries.length < 2) {
+      if (entries[0]) this.goToEntry(entries[0]);
+      return;
+    }
+    const menu = new Menu();
+    for (const entry of entries) {
+      menu.addItem((item) =>
+        item
+          .setTitle(entry.title)
+          .setIcon(entry.section ? "heading" : "file-text")
+          .onClick(() => this.goToEntry(entry)),
+      );
+    }
+    menu.showAtMouseEvent(event);
+  }
+
+  /** Go to a page's title or to a heading on it, closing the overview first. */
+  private goToEntry(entry: ContentsEntry): void {
+    const fromOverview = this.overview;
+    if (fromOverview) this.setOverview(false);
+    if (entry.section) this.callbacks.onSelectSection?.(entry.index, entry.section, fromOverview);
+    else this.callbacks.onSelectPage(entry.index, fromOverview);
   }
 
   /** The thumbnails the filter shows, in order, with their pages' indexes. */

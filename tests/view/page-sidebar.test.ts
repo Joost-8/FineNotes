@@ -164,11 +164,12 @@ describe("thumbnail title", () => {
   });
 
   it("is the topmost heading on a page without a title", () => {
+    // Sections are stored top to bottom (sortSections).
     const page: Page = {
       ...blankPage("b"),
       sections: [
-        { id: "c2", title: "Exercise", x: 10, y: 400 },
         { id: "c1", title: "Fermat's little theorem", x: 10, y: 40 },
+        { id: "c2", title: "Exercise", x: 10, y: 400 },
       ],
     };
     expect(thumbnailTitleOf(page)).toBe("Fermat's little theorem");

@@ -43,11 +43,14 @@ export interface ContentsEntry {
 
 /** The contents, in page order: each page's title, then its sections top to bottom. */
 export function contentsEntries(doc: InkDocument): ContentsEntry[] {
+  return doc.pages.flatMap((page, index) => pageContentsEntries(page, index));
+}
+
+/** One page's lines of the contents, `index` being its place in the page list. */
+export function pageContentsEntries(page: Page, index: number): ContentsEntry[] {
   const out: ContentsEntry[] = [];
-  doc.pages.forEach((page, index) => {
-    if (page.title !== undefined) out.push({ index, title: page.title });
-    for (const section of page.sections ?? []) out.push({ index, title: section.title, section });
-  });
+  if (page.title !== undefined) out.push({ index, title: page.title });
+  for (const section of page.sections ?? []) out.push({ index, title: section.title, section });
   return out;
 }
 

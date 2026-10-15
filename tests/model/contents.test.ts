@@ -11,6 +11,7 @@ import {
   contentsEntries,
   currentContentsEntry,
   normalizePageTitle,
+  pageContentsEntries,
 } from "../../src/model/contents";
 import { RemovePage } from "../../src/model/commands";
 import { duplicatePageAfter } from "../../src/model/page-commands";
@@ -98,6 +99,23 @@ describe("contentsEntries and currentContentsEntry", () => {
       { index: 1, title: "Forwarding" },
       { index: 3, title: "Routing" },
     ]);
+  });
+
+  it("lists one page's title, then its headings top to bottom", () => {
+    const page = {
+      ...blankPage("p"),
+      title: "Primitives",
+      sections: [
+        { id: "c1", title: "Order", x: 20, y: 80 },
+        { id: "c2", title: "Exercise", x: 20, y: 640 },
+      ],
+    };
+    expect(pageContentsEntries(page, 6).map((e) => [e.index, e.title, e.section?.id])).toEqual([
+      [6, "Primitives", undefined],
+      [6, "Order", "c1"],
+      [6, "Exercise", "c2"],
+    ]);
+    expect(pageContentsEntries(blankPage("q"), 0)).toEqual([]);
   });
 
   it("puts the reader under the last entry at or before the page", () => {
