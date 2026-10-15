@@ -686,6 +686,12 @@ const TEXT_FOCUS_HOLD_MS = 1200;
  * there (about 46 px tall, 10 px off the box).
  */
 const TEXT_PILL_ROOM_PX = 64;
+/**
+ * The part of the window a box being typed in keeps clear at the bottom,
+ * whatever keyboard height is reported: a floating keyboard or a small one
+ * still covers the bottom of the screen (Joost, 2026-10-15).
+ */
+const TYPING_KEYBOARD_SHARE = 0.4;
 /** Space kept between a box being typed in and the keyboard, screen px. */
 const TEXT_REVEAL_MARGIN_PX = 16;
 /** How often a box being typed in looks for the keyboard (`watchTypingKeyboard`). */
@@ -952,6 +958,9 @@ export interface TextAnchorRect {
   typing: boolean;
 }
 
+/** How long after the tap that held a box it takes taps itself (to type in it). */
+const HELD_TAP_DELAY_MS = 350;
+
 /** How long after a finger tap the click iOS makes of it can still arrive. */
 const CLICK_AFTER_TAP_MS = 600;
 
@@ -1016,6 +1025,13 @@ export class InkSurface {
    * handles, until the next tap beside it.
    */
   private heldText: TextBoxView | null = null;
+  /**
+   * The tool a finger tap on a box replaced with the lasso, to come back to
+   * when the box is let go or typing in it ends (`fingerHoldsTextBox`).
+   */
+  private heldReturnTool: ActiveTool | null = null;
+  /** Makes a held box take taps once the tap that selected it is over. */
+  private heldTapTimer = 0;
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
   private textAnchorKey = "";
   /** While a box is typed in: an interval looking for the keyboard (`watchTypingKeyboard`). */
@@ -3298,11 +3314,22 @@ export class InkSurface {
       if (document.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
     });
     input.addEventListener("focus", () => {
+      // A box held with the lasso types with the Text tool, which hands back
+      // the tool in hand before the lasso once the typing is done.
+      const back = this.heldText === view ? this.heldReturnTool : null;
       // Typing again in a kept box, or in another one: nothing is held now.
       if (this.heldText === view) {
         this.heldText = null;
-        root.removeClass("is-held");
+        this.heldReturnTool = null;
+        window.clearTimeout(this.heldTapTimer);
+        this.heldTapTimer = 0;
+        root.removeClass("is-held", "is-tappable");
       } else this.releaseHeldText();
+      if (this.toolState.tool !== "text") {
+        this.setTool("text");
+        if (back) this.toolBeforeText = back;
+        this.callbacks.onToolChange?.("text");
+      }
       this.holdTextEditingClass();
       const snapshot = this.pendingFocusHold;
       this.pendingFocusHold = null;
@@ -3560,11 +3587,14 @@ export class InkSurface {
     if (!view || !this.renderer) return false;
     const surface = this.surfaceEl.getBoundingClientRect();
     const vv = window.visualViewport;
+    // A floating or minimised keyboard reports a small height, or none,
+    // but still sits low on the screen: the box rises above it either way.
+    const keyboard = Math.max(keyboardHeight(), window.innerHeight * TYPING_KEYBOARD_SHARE);
     const bottom =
       Math.min(
         surface.bottom,
         vv ? vv.offsetTop + vv.height : window.innerHeight,
-        window.innerHeight - keyboardHeight(),
+        window.innerHeight - keyboard,
       ) - TEXT_REVEAL_MARGIN_PX;
     const box = view.root.getBoundingClientRect();
     const { input } = view;
@@ -6165,6 +6195,8 @@ export class InkSurface {
    * screen px.
    */
   private tapSelect(box: PageBox, p: Pt, tolerancePx: number): void {
+    const tappedPage = this.pageAt(box.index);
+    if (tappedPage && this.tapWithHeldText(tappedPage, p)) return;
     this.clearSelection();
     this.deselectImage();
     const page = this.pageAt(box.index);
@@ -8059,12 +8091,13 @@ export class InkSurface {
 
   /**
    * A finger tapped a text box while a pen, the highlighter, the eraser or
-   * the shape tool was in hand: the Text tool is picked and the box held, as
-   * GoodNotes does — framed with its handles, the text pill on its style, no
-   * keyboard yet. A second tap on it types; a tap beside it lets go, and an
-   * unpinned Text tool hands back the tool used before. Not with the Text
-   * tool (a tap there already edits), in a practice file, or on a page that
-   * is locked. Returns whether it did.
+   * the shape tool was in hand: the lasso is picked and the box held, as
+   * GoodNotes does — framed with its handles, the text pill floating by it on
+   * its style, no keyboard (the lasso never types). A second tap on the box
+   * focuses it, which brings the keyboard and the Text tool; a tap beside it
+   * lets go and the tool in hand before comes back. Not with the Text tool
+   * (a tap there already edits), in a practice file, or on a page that is
+   * locked. Returns whether it did.
    */
   private fingerHoldsTextBox(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
@@ -8078,16 +8111,54 @@ export class InkSurface {
       }
     }
     if (!view) return false;
-    this.setTool("text");
-    this.callbacks.onToolChange?.("text");
+    const back = this.toolState.tool;
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
     this.releaseHeldText();
     this.heldText = view;
+    this.heldReturnTool = back;
     view.root.addClass("is-held");
     this.reportTextEditing();
     // iOS turns the tap into a click once the finger is up, aimed at
-    // whatever is under it now: the box, which the Text tool lets take it
-    // and focus. That first tap must not type.
+    // whatever is under it now. The box takes taps (to type) only once that
+    // has passed, and anything that reaches it before then is stopped.
     swallowClickAfterTap(view.root);
+    window.clearTimeout(this.heldTapTimer);
+    this.heldTapTimer = window.setTimeout(() => {
+      this.heldTapTimer = 0;
+      if (this.heldText === view) view.root.addClass("is-tappable");
+    }, HELD_TAP_DELAY_MS);
+    return true;
+  }
+
+  /**
+   * A tap with the lasso while a box is held: on the box (a Pencil's, or a
+   * finger's before the box takes taps) types in it; beside it lets go, and
+   * the tool in hand before the lasso comes back. Returns whether there was a
+   * held box to answer the tap.
+   */
+  private tapWithHeldText(page: Page, p: Pt): boolean {
+    const view = this.heldText;
+    if (!view || this.toolState.tool !== "select") return false;
+    const live = this.liveTextBox(view.pageId, view.id);
+    const f = live ? this.textBoxFrameOf(view.pageId, live) : null;
+    const on =
+      f !== null &&
+      page.id === view.pageId &&
+      p.x >= f.x &&
+      p.x <= f.x + f.w &&
+      p.y >= f.y &&
+      p.y <= f.y + f.h;
+    if (on) {
+      this.focusTextBox(view.input);
+      return true;
+    }
+    const back = this.heldReturnTool;
+    this.releaseHeldText();
+    if (back && back !== "select") {
+      this.setTool(back);
+      this.callbacks.onToolChange?.(back);
+    }
     return true;
   }
 
@@ -8547,7 +8618,10 @@ export class InkSurface {
     const view = this.heldText;
     if (!view) return;
     this.heldText = null;
-    view.root.removeClass("is-held");
+    this.heldReturnTool = null;
+    window.clearTimeout(this.heldTapTimer);
+    this.heldTapTimer = 0;
+    view.root.removeClass("is-held", "is-tappable");
     // The pill goes back to the tool's own style, unless typing goes on elsewhere.
     if (!this.editingTextView()) this.callbacks.onTextEditing?.(null);
     this.reportTextAnchor();

@@ -4,7 +4,7 @@
  * width in the toolbar (`Toolbar.choosePenType`, `setWidth`).
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveTool } from "../../src/view/toolbar";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 const { InkSurface, Toolbar, PEN_TYPES } = await (async () => {
@@ -113,6 +113,14 @@ describe("the toolbar keeps a width per pen type", () => {
 });
 
 describe("a finger tap on a text box", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
   const textBox = {
     id: "t1",
     x: 100,
@@ -130,7 +138,7 @@ describe("a finger tap on a text box", () => {
       id: "t1",
       root: {
         addClass: (c: string) => void classes.add(c),
-        removeClass: (c: string) => void classes.delete(c),
+        removeClass: (...cs: string[]) => cs.forEach((c) => classes.delete(c)),
         ownerDocument: { defaultView: null },
       },
       input: { value: "hi" },
@@ -150,12 +158,14 @@ describe("a finger tap on a text box", () => {
   const page = { id: "p1", textBoxes: [textBox], images: [] };
 
   it.each(["pen", "highlighter", "eraser", "shape"] as ActiveTool[])(
-    "with the %s in hand picks the Text tool and holds the box, without the keyboard",
+    "with the %s in hand picks the lasso and holds the box, without the keyboard",
     (tool) => {
       const { s, view, classes } = holdable(tool);
       expect(run(s, "fingerHoldsTextBox", page, { x: 150, y: 120 })).toBe(true);
-      expect(s.setTool).toHaveBeenCalledWith("text");
-      expect((s.callbacks as Fake).onToolChange).toHaveBeenCalledWith("text");
+      expect(s.setTool).toHaveBeenCalledWith("select");
+      expect((s.callbacks as Fake).onToolChange).toHaveBeenCalledWith("select");
+      // The tool in hand comes back when the box is let go.
+      expect(s.heldReturnTool).toBe(tool);
       expect(s.heldText).toBe(view);
       expect(classes.has("is-held")).toBe(true);
       // The pill shows the box's style; nothing focused it.
@@ -179,6 +189,29 @@ describe("a finger tap on a text box", () => {
       expect(s.setTool).not.toHaveBeenCalled();
       expect(s.heldText).toBeNull();
     }
+  });
+
+  it("the held box takes taps itself only once the tap that held it is over", () => {
+    const { s, classes } = holdable("pen");
+    run(s, "fingerHoldsTextBox", page, { x: 150, y: 120 });
+    expect(classes.has("is-tappable")).toBe(false);
+    vi.advanceTimersByTime(400);
+    expect(classes.has("is-tappable")).toBe(true);
+  });
+
+  it("a tap on the held box types in it; a tap beside lets go and brings the tool back", () => {
+    const { s, view } = holdable("select");
+    s.heldText = view;
+    s.heldReturnTool = "pen";
+    s.focusTextBox = vi.fn();
+    expect(run(s, "tapWithHeldText", page, { x: 150, y: 120 })).toBe(true);
+    expect(s.focusTextBox).toHaveBeenCalledWith(view.input);
+    expect(run(s, "tapWithHeldText", page, { x: 500, y: 500 })).toBe(true);
+    expect(s.heldText).toBeNull();
+    expect(s.setTool).toHaveBeenLastCalledWith("pen");
+    expect((s.callbacks as Fake).onToolChange).toHaveBeenLastCalledWith("pen");
+    // Nothing held: the lasso's own tap goes on.
+    expect(run(s, "tapWithHeldText", page, { x: 150, y: 120 })).toBe(false);
   });
 
   it("a held box is what the pill styles, and letting go hands the pill back", () => {

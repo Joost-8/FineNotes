@@ -3960,6 +3960,21 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   pointer-events: none;
 }
 
+/* Only the Text tool types into a box. With a pen, the eraser or a shape,
+   the Pencil writes over boxes and a finger's tap reaches the page, which
+   selects the box (GoodNotes); its links still open on a tap. */
+.goodobsidian-surface:not(.is-text-tool) .goodobsidian-page-textbox {
+  pointer-events: none;
+}
+
+/* A box selected without the keyboard takes the tap that types in it, once
+   the tap that selected it is over (ink-surface.ts, fingerHoldsTextBox),
+   and its handles move and resize it with any tool. */
+.goodobsidian-surface .goodobsidian-page-textbox.is-held.is-tappable,
+.goodobsidian-surface .goodobsidian-page-textbox.is-held .goodobsidian-page-textbox-handle {
+  pointer-events: auto;
+}
+
 /* The lasso's options live in a popover hanging from its tier-1 button, as in
    GoodNotes; the chevron on the button says so. */
 /* The caret sits in the button's right margin, out of the flow, so the lasso

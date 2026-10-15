@@ -137,15 +137,22 @@ extracted from the matching section of this file by `release.yml`.
   highlighter and a fine fountain pen stay that way when you switch between
   them. A pen you have not set a width for starts with the one in hand.
 - **A finger tap on a text box selects it**, as in GoodNotes: whatever pen
-  is in hand, the Text tool is picked and the box shows its handles, with
-  the text pill set to its style and no keyboard yet. Colour, size, font,
-  fill, border, lists and delete act on it straight away. Tap it again to
-  type; tap beside it to let go, and the pen comes back.
+  is in hand, the lasso is picked and the box shows its handles, with the
+  text options beside it set to its style and no keyboard. Colour, size,
+  font, fill, border, lists and delete act on it straight away. Tap it again
+  to type (the Text tool comes with the keyboard); tap beside it to let go,
+  and the pen comes back.
+- **Only the Text tool types into text boxes.** With a pen, the eraser or a
+  shape, the Pencil writes over a box instead of opening the keyboard, and
+  links in boxes still open on a tap.
 - **The text options float by their box**, as GoodNotes' text bar does:
-  while a box is selected or being typed in, the pill sits just under it,
-  or over it when the keyboard or the screen's edge leaves no room under
-  it, and follows the box as the page scrolls or zooms. Without a box it is
-  back under the tool bar.
+  under a selected box, over a box being typed in, and on the other side
+  when there is no room, following the box as the page scrolls or zooms.
+  Without a box it is back under the tool bar.
+- **The box you type in stays in view**: the page scrolls it above the
+  keyboard when the keyboard comes up, changes height or the text grows,
+  with room for the text options over it. With a floating or small keyboard,
+  or a hardware one, it still rises into the top part of the screen.
 - **"Drag to size text boxes" moved to Settings** (Writing and tools), out
   of the text pill: it is a way of working, set once, not a style of a box.
 - **A finger tap on a picture selects it**, whatever pen is in hand: the
