@@ -1530,21 +1530,8 @@ export class Toolbar {
       this.toggleTextPopover("border", b, (body) => this.renderTextBorder(body)),
     ).append(borderGlyph(style.border, style.radius !== undefined));
 
-    // Off (the default), every new box fits its text, as in GoodNotes; on,
-    // a drag draws the box's size, and a tap still makes a fitted box.
-    const dragSize = this.state.textDragSize === true;
-    const sizing = this.textControl(
-      "is-drag-size",
-      dragSize ? "Drag to size text boxes: on" : "Drag to size text boxes: off",
-      () => {
-        this.state.textDragSize = !dragSize;
-        this.saveTextTool();
-        this.buildOptions();
-      },
-    );
-    iconOrText(sizing.createSpan({ cls: "goodobsidian-text-pin-icon" }), "square-dashed", "Size");
-    sizing.toggleClass("is-active", dragSize);
-    sizing.setAttribute("aria-pressed", String(dragSize));
+    // "Drag to size text boxes" is a setting (Writing and tools), not a pill
+    // button: it is a way of working, set once, not a style of one box.
 
     // GoodNotes' "Pin Text tool". Unpinned, finishing a box hands the page
     // back to the tool used before Text; pinned, Text stays.

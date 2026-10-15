@@ -235,6 +235,7 @@ describe("the rows", () => {
       [WRITING, "Draw and hold to make shapes", "toggle:drawAndHold"],
       [WRITING, "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
       [WRITING, "Return to pen after one use", "toggle:returnToPenAfterUse"],
+      [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Double-tap with fingers to undo and redo", "toggle:fingerTapUndo"],
       [WRITING, "Default tool", "dropdown:defaultTool"],
       [WRITING, "Default stroke size", "dropdown:defaultSize"],
@@ -309,6 +310,7 @@ describe("the rows", () => {
       "Draw and hold to make shapes": ["shape recognition", "straighten", "snap"],
       "Select active tool again to return to pen": ["tool", "eraser", "lasso", "text", "shape"],
       "Return to pen after one use": ["tool", "eraser", "lasso", "text", "shape"],
+      "Drag to size text boxes": ["text", "text box", "size", "drag"],
       "Double-tap with fingers to undo and redo": ["undo", "redo", "gesture", "fingers", "tap"],
       "Desynchronized canvas": ["latency", "glitch", "artifacts"],
       "Pressure-sensitive pens (advanced)": [
@@ -439,6 +441,7 @@ describe("which rows show", () => {
       "Draw and hold to make shapes",
       "Select active tool again to return to pen",
       "Return to pen after one use",
+      "Drag to size text boxes",
       "Double-tap with fingers to undo and redo",
       "Default tool",
       "Default stroke size",
@@ -476,7 +479,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${29 + PEN_ROWS.length})`,
+      `(block ${30 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1171,7 +1174,7 @@ describe("folding sections", () => {
     const shownHeadings = new Set(unfoldedRows(tab).map((r) => r.heading));
     expect(shownHeadings.has(PENS)).toBe(false);
     expect(shownHeadings.has(WRITING) && shownHeadings.has(COMMUNITY)).toBe(true);
-    expect(unfoldedRows(tab).filter((r) => r.heading === WRITING)).toHaveLength(9);
+    expect(unfoldedRows(tab).filter((r) => r.heading === WRITING)).toHaveLength(10);
   });
 
   it("shows the rows of the sections that are open", () => {

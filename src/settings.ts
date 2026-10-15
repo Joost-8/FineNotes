@@ -553,6 +553,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["tool", "eraser", "lasso", "text", "shape"],
       ),
       toggle(
+        "textDragSize",
+        "Drag to size text boxes",
+        "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
+        ["text", "text box", "size", "drag"],
+      ),
+      toggle(
         "fingerTapUndo",
         "Double-tap with fingers to undo and redo",
         "Double-tap the page with two fingers to undo, or with three fingers to redo.",

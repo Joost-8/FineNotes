@@ -531,6 +531,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** "Drag to size text boxes" (settings): a Text-tool drag draws the new box. Read live. */
+  textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
   /**
@@ -923,6 +925,29 @@ function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
       run: () => flip("y"),
     },
   ];
+}
+
+/** How long after a finger tap the click iOS makes of it can still arrive. */
+const CLICK_AFTER_TAP_MS = 600;
+
+/**
+ * Keep the click a browser synthesises from a tap that has been handled
+ * already from reaching `target` (and focusing a field there): its
+ * `mousedown` and `click` within {@link CLICK_AFTER_TAP_MS} are stopped.
+ */
+function swallowClickAfterTap(target: HTMLElement): void {
+  const win = target.ownerDocument.defaultView;
+  if (!win) return;
+  const stop = (event: Event): void => {
+    if (!(event.target instanceof Node) || !target.contains(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const options = { capture: true };
+  for (const type of ["mousedown", "click"]) win.addEventListener(type, stop, options);
+  win.setTimeout(() => {
+    for (const type of ["mousedown", "click"]) win.removeEventListener(type, stop, options);
+  }, CLICK_AFTER_TAP_MS);
 }
 
 /** The tools a practice file has: writing and rubbing out. */
@@ -4805,7 +4830,7 @@ export class InkSurface {
 
   /** "Drag to size" is on: a text-tool drag draws the new box. */
   private dragSizesText(): boolean {
-    return this.toolState.textDragSize === true;
+    return this.callbacks.textDragSize?.() ?? this.toolState.textDragSize === true;
   }
 
   private showTextDraft(box: PageBox): void {
@@ -7932,7 +7957,17 @@ export class InkSurface {
       return;
     }
     if (this.toolState.tool !== "select") {
-      if (box && tapped) this.fingerPicksPicture(tapped, this.toPage(box, at));
+      // A box held without the keyboard: a finger beside it lets go, as the
+      // Pencil's tap does, and an unpinned Text tool hands back the tool before.
+      if (this.toolState.tool === "text" && this.heldText) {
+        this.releaseHeldText(true);
+        return;
+      }
+      if (box && tapped) {
+        const p = this.toPage(box, at);
+        // Typed text sits above the pictures, so a box is tried first.
+        if (!this.fingerHoldsTextBox(tapped, p)) this.fingerPicksPicture(tapped, p);
+      }
       return;
     }
     if (!box) {
@@ -7941,6 +7976,40 @@ export class InkSurface {
       return;
     }
     this.tapSelect(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX);
+  }
+
+  /**
+   * A finger tapped a text box while a pen, the highlighter, the eraser or
+   * the shape tool was in hand: the Text tool is picked and the box held, as
+   * GoodNotes does — framed with its handles, the text pill on its style, no
+   * keyboard yet. A second tap on it types; a tap beside it lets go, and an
+   * unpinned Text tool hands back the tool used before. Not with the Text
+   * tool (a tap there already edits), in a practice file, or on a page that
+   * is locked. Returns whether it did.
+   */
+  private fingerHoldsTextBox(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    if (this.callbacks.isLocked?.()) return false;
+    let view: TextBoxView | undefined;
+    for (let i = page.textBoxes.length - 1; i >= 0 && !view; i--) {
+      const textBox = page.textBoxes[i];
+      const f = this.textBoxFrameOf(page.id, textBox);
+      if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) {
+        view = this.textBoxInputs.get(`${page.id}:${textBox.id}`);
+      }
+    }
+    if (!view) return false;
+    this.setTool("text");
+    this.callbacks.onToolChange?.("text");
+    this.releaseHeldText();
+    this.heldText = view;
+    view.root.addClass("is-held");
+    this.reportTextEditing();
+    // iOS turns the tap into a click once the finger is up, aimed at
+    // whatever is under it now: the box, which the Text tool lets take it
+    // and focus. That first tap must not type.
+    swallowClickAfterTap(view.root);
+    return true;
   }
 
   /**
@@ -8316,9 +8385,19 @@ export class InkSurface {
     return null;
   }
 
-  /** Tell the host the style of the box being edited, after something may have changed it. */
+  /**
+   * The box the text pill acts on: the one being typed in, else the one held
+   * without the keyboard (a tap beside it, or a finger tap on it with
+   * another tool).
+   */
+  private textTargetView(): TextBoxView | null {
+    const view = this.editingTextView() ?? this.heldText;
+    return view && this.liveTextBox(view.pageId, view.id) ? view : null;
+  }
+
+  /** Tell the host the style of the box the pill acts on, after something may have changed it. */
   private reportTextEditing(): void {
-    const view = this.editingTextView();
+    const view = this.textTargetView();
     const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
     if (live) this.callbacks.onTextEditing?.(textStyleOf(live));
   }
@@ -8351,6 +8430,8 @@ export class InkSurface {
       this.heldText = view;
       view.root.addClass("is-held");
       view.input.blur();
+      // The blur handed the pill back to the tool: the held box keeps it.
+      this.reportTextEditing();
     }
     return true;
   }
@@ -8365,6 +8446,8 @@ export class InkSurface {
     if (!view) return;
     this.heldText = null;
     view.root.removeClass("is-held");
+    // The pill goes back to the tool's own style, unless typing goes on elsewhere.
+    if (!this.editingTextView()) this.callbacks.onTextEditing?.(null);
     if (handBack) this.handBackFromText();
   }
 
@@ -8393,13 +8476,20 @@ export class InkSurface {
    * edited. The markers are text, so this is an edit like typing.
    */
   applyTextList(kind: ListKind): boolean {
-    const view = this.editingTextView();
+    const view = this.textTargetView();
     if (!view) return false;
     if (this.callbacks.isLocked?.()) return true;
     const { input } = view;
+    // A held box has no caret: the list takes every line.
+    const typing = view === this.editingTextView();
     this.setTextInput(
       input,
-      toggleList(input.value, input.selectionStart, input.selectionEnd, kind),
+      toggleList(
+        input.value,
+        typing ? input.selectionStart : 0,
+        typing ? input.selectionEnd : input.value.length,
+        kind,
+      ),
     );
     return true;
   }
@@ -8410,9 +8500,17 @@ export class InkSurface {
    * when no box is being edited.
    */
   deleteEditingTextBox(): boolean {
-    const view = this.editingTextView();
+    const view = this.textTargetView();
     const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
     if (!view || !live) return false;
+    if (view === this.heldText && view !== this.editingTextView()) {
+      if (this.callbacks.isLocked?.()) return true;
+      this.history.push(this.doc, new RemoveTextBoxFromPage(view.pageId, view.id));
+      this.releaseHeldText(true);
+      this.syncTextBoxes();
+      this.changed();
+      return true;
+    }
     if (this.callbacks.isLocked?.()) return true;
     // A box deleted on purpose is recorded as a removal, never withdrawn
     // with its creation as an empty box is.
@@ -8439,7 +8537,7 @@ export class InkSurface {
    * style new boxes get). A change that alters nothing records nothing.
    */
   applyTextStyle(patch: TextStylePatch): boolean {
-    const view = this.editingTextView();
+    const view = this.textTargetView();
     const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
     if (!view || !live) return false;
     if (this.callbacks.isLocked?.()) {

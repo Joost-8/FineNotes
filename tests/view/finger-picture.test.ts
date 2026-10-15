@@ -111,3 +111,86 @@ describe("the toolbar keeps a width per pen type", () => {
     expect(inks.highlighter.size).toBe(6);
   });
 });
+
+describe("a finger tap on a text box", () => {
+  const textBox = {
+    id: "t1",
+    x: 100,
+    y: 100,
+    w: 200,
+    h: 50,
+    text: "hi",
+    color: "#1a1a1a",
+    fontSize: 18,
+  };
+  function holdable(tool: ActiveTool, extra: Fake = {}) {
+    const classes = new Set<string>();
+    const view = {
+      pageId: "p1",
+      id: "t1",
+      root: {
+        addClass: (c: string) => void classes.add(c),
+        removeClass: (c: string) => void classes.delete(c),
+        ownerDocument: { defaultView: null },
+      },
+      input: { value: "hi" },
+    };
+    const s = surface(tool);
+    Object.assign(s, {
+      heldText: null,
+      textBoxInputs: new Map([["p1:t1", view]]),
+      textBoxFrameOf: () => ({ x: 100, y: 100, w: 200, h: 50 }),
+      liveTextBox: () => textBox,
+      editingTextView: () => null,
+      ...extra,
+    });
+    (s.callbacks as Fake).onTextEditing = vi.fn();
+    return { s, view, classes };
+  }
+  const page = { id: "p1", textBoxes: [textBox], images: [] };
+
+  it.each(["pen", "highlighter", "eraser", "shape"] as ActiveTool[])(
+    "with the %s in hand picks the Text tool and holds the box, without the keyboard",
+    (tool) => {
+      const { s, view, classes } = holdable(tool);
+      expect(run(s, "fingerHoldsTextBox", page, { x: 150, y: 120 })).toBe(true);
+      expect(s.setTool).toHaveBeenCalledWith("text");
+      expect((s.callbacks as Fake).onToolChange).toHaveBeenCalledWith("text");
+      expect(s.heldText).toBe(view);
+      expect(classes.has("is-held")).toBe(true);
+      // The pill shows the box's style; nothing focused it.
+      expect((s.callbacks as Fake).onTextEditing).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "#1a1a1a", fontSize: 18 }),
+      );
+    },
+  );
+
+  it("does nothing beside the box, with the Text tool, in a practice file or on a locked page", () => {
+    const cases: Array<[Fake, { x: number; y: number }]> = [
+      [holdable("pen").s, { x: 50, y: 50 }],
+      [holdable("text").s, { x: 150, y: 120 }],
+      [holdable("pen", { practice: { device: "ipad" } }).s, { x: 150, y: 120 }],
+    ];
+    const locked = holdable("pen").s;
+    (locked.callbacks as Fake).isLocked = () => true;
+    cases.push([locked, { x: 150, y: 120 }]);
+    for (const [s, at] of cases) {
+      expect(run(s, "fingerHoldsTextBox", page, at)).toBe(false);
+      expect(s.setTool).not.toHaveBeenCalled();
+      expect(s.heldText).toBeNull();
+    }
+  });
+
+  it("a held box is what the pill styles, and letting go hands the pill back", () => {
+    const { s, view } = holdable("text");
+    s.heldText = view;
+    s.pushTextCommand = vi.fn();
+    s.syncTextBoxes = vi.fn();
+    s.changed = vi.fn();
+    expect(run(s, "applyTextStyle", { bold: true })).toBe(true);
+    expect(s.pushTextCommand).toHaveBeenCalledWith("p1:t1", expect.anything());
+    run(s, "releaseHeldText");
+    expect(s.heldText).toBeNull();
+    expect((s.callbacks as Fake).onTextEditing).toHaveBeenLastCalledWith(null);
+  });
+});

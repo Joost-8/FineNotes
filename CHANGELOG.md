@@ -136,6 +136,13 @@ extracted from the matching section of this file by `release.yml`.
 - **Each pen keeps its own width**, as it keeps its colours: a wide
   highlighter and a fine fountain pen stay that way when you switch between
   them. A pen you have not set a width for starts with the one in hand.
+- **A finger tap on a text box selects it**, as in GoodNotes: whatever pen
+  is in hand, the Text tool is picked and the box shows its handles, with
+  the text pill set to its style and no keyboard yet. Colour, size, font,
+  fill, border, lists and delete act on it straight away. Tap it again to
+  type; tap beside it to let go, and the pen comes back.
+- **"Drag to size text boxes" moved to Settings** (Writing and tools), out
+  of the text pill: it is a way of working, set once, not a style of a box.
 - **A finger tap on a picture selects it**, whatever pen is in hand: the
   lasso is picked and the picture shows its handles to move, resize and
   turn it. The Pencil keeps writing over pictures as before.
