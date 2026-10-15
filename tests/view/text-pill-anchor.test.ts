@@ -23,6 +23,7 @@ function pill(
     typing?: boolean;
     clipTop?: number;
     clipBottom?: number;
+    moving?: boolean;
   } | null,
   pinned = false,
 ) {
@@ -111,5 +112,44 @@ describe("the floating text pill and a box out of sight", () => {
   it("with the Text tool pinned, stays (under the tool bar) when its box goes", () => {
     keyboard.height = 0;
     expect(pill({ left: 500, top: 900, right: 700, bottom: 950 }, true)()).toBeNull();
+  });
+
+  it("leaves while the page moves and comes back by its box once it settles", () => {
+    keyboard.height = 0;
+    const box = { left: 500, top: 300, right: 700, bottom: 340, clipTop: 50, clipBottom: 760 };
+    expect(pill({ ...box, moving: true })()).toBe("hidden");
+    expect(pill({ ...box, moving: false })()).toEqual({ left: 300, top: 300 });
+    // Pinned, it waits under the tool bar instead.
+    expect(pill({ ...box, moving: true }, true)()).toBeNull();
+  });
+});
+
+describe("the text pill's decision, for the debug HUD", () => {
+  it("says where the pill went or why it hid", () => {
+    keyboard.height = 0;
+    const toolbar = (anchor: Record<string, unknown> | null, pinned = false) => {
+      const t = Object.assign(Object.create(Toolbar.prototype), {
+        textAnchor: anchor,
+        textTarget: anchor ? { color: "#1a1a1a", fontSize: 18 } : null,
+        state: { textPinned: pinned },
+        leftInset: 0,
+        optionsEl: { hasClass: (c: string) => c === "is-text" },
+        host: { ownerDocument: { defaultView: { innerHeight: 820 } } },
+        barBottom: () => 78,
+      });
+      (t.anchoredPlace as (h: DOMRect, p: DOMRect) => unknown).call(
+        t,
+        rect(0, 50, 1180, 770),
+        rect(0, 0, 600, 46),
+      );
+      return (t as { textPillState: string }).textPillState;
+    };
+    const box = { left: 500, top: 300, right: 700, bottom: 340 };
+    expect(toolbar(box)).toBe("below the box");
+    expect(toolbar({ ...box, typing: true })).toBe("above the box");
+    expect(toolbar({ ...box, moving: true })).toBe("hidden (page moving)");
+    expect(toolbar({ ...box, top: 900, bottom: 950 })).toBe("hidden (box out of view)");
+    expect(toolbar({ ...box, moving: true }, true)).toBe("toolbar (pinned)");
+    expect(toolbar(null)).toBe("toolbar");
   });
 });

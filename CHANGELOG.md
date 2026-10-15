@@ -180,11 +180,11 @@ extracted from the matching section of this file by `release.yml`.
   solid bands that hid the letters, and never straightened. It now writes
   highlighter strokes, which multiply over ink, typed text and PDF pages so
   everything under them stays readable, and straighten on lift.
-- **A selected text box's options go off screen with it** when you scroll
-  it out of sight (once less than half of it shows), and come back with it.
-  On the iPad they stayed when the box went below the page, since the window
-  reaches further down than the page does. With the Text tool pinned they
-  stay, under the tool bar.
+- **A selected text box's options step aside while the page moves**, as in
+  GoodNotes: they leave as soon as you scroll or zoom and fade back in by
+  the box once the page settles, if the box is still in view (at least half
+  of it). On the iPad they used to slide about with the box and linger at
+  the page's edge. With the Text tool pinned they stay, under the tool bar.
 
 ## [2.1.0] - 2026-10-13
 

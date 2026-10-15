@@ -532,6 +532,8 @@ export interface InkSurfaceCallbacks {
    * does. Reported when the target changes and whenever it moves.
    */
   onTextAnchor?: (rect: TextAnchorRect | null) => void;
+  /** What the host did with the text pill last (debug HUD): where it put it, or why it hid it. */
+  textPillState?: () => string;
   /** "Drag to size text boxes" (settings): a Text-tool drag draws the new box. Read live. */
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
@@ -955,6 +957,8 @@ export interface TextAnchorRect {
   typing: boolean;
   clipTop: number;
   clipBottom: number;
+  /** The page is moving (scroll, momentum, zoom, a finger on it). */
+  moving: boolean;
 }
 
 /** How long after the tap that held a box it takes taps itself (to type in it). */
@@ -1034,6 +1038,11 @@ export class InkSurface {
   private heldTapTimer = 0;
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
   private textAnchorKey = "";
+  /**
+   * Whether the page is moving (a scroll, its momentum, a zoom, a finger
+   * still on it): the text pill stays out of the way until it settles.
+   */
+  private textAnchorMoving = false;
   /** While a box is typed in: an interval looking for the keyboard (`watchTypingKeyboard`). */
   private typingKeyboardWatch = 0;
   private typingKeyboardSeen = 0;
@@ -2822,6 +2831,7 @@ export class InkSurface {
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
+    this.textAnchorMoving = busy;
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
@@ -4788,6 +4798,7 @@ export class InkSurface {
       `scroll x=${r(this.scroller.position.x)} y=${r(this.scroller.position.y)} ` +
       `cv ${canvas ? `${canvas.width}x${canvas.height}` : "-"} layouts=${this.hudLayouts}
 ` +
+      `pill=${this.callbacks.textPillState?.() ?? "-"} ` +
       `focus=${focus} zoom=${this.scale.toFixed(2)} kb=${r(keyboardHeight())} ` +
       `app=${r(document.querySelector(".app-container")?.getBoundingClientRect().height ?? -1)}
 ` +
@@ -8573,12 +8584,13 @@ export class InkSurface {
             typing,
             clipTop: page.top,
             clipBottom: page.bottom,
+            moving: this.textAnchorMoving,
           }
         : null;
     const key = rect
       ? [rect.left, rect.top, rect.right, rect.bottom, page.top, page.bottom]
           .map(Math.round)
-          .join(",") + `,${typing}`
+          .join(",") + `,${typing},${this.textAnchorMoving}`
       : "";
     if (key === this.textAnchorKey) return;
     this.textAnchorKey = key;

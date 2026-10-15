@@ -495,6 +495,8 @@ export interface TextAnchor {
    */
   clipTop?: number;
   clipBottom?: number;
+  /** The page is moving (scroll, momentum, zoom): the pill waits until it settles. */
+  moving?: boolean;
 }
 
 /** The least room kept between the centred tools and the groups beside them. */
@@ -550,6 +552,8 @@ export class Toolbar {
    * held or being typed in: the pill floats beside it (`setTextAnchor`).
    */
   private textAnchor: TextAnchor | null = null;
+  /** What `anchoredPlace` decided last, in words, for the debug HUD (`textPillState`). */
+  private pillDecision = "toolbar";
   /** While anchored: re-places the pill when the keyboard comes or goes (no event says so). */
   private keyboardWatch = 0;
   private keyboardSeen = 0;
@@ -2479,6 +2483,7 @@ export class Toolbar {
     pill: DOMRect,
   ): { left: number; top: number } | "hidden" | null {
     const anchor = this.textAnchor;
+    this.pillDecision = "toolbar";
     if (!anchor || !this.textTarget || !this.optionsEl.hasClass("is-text")) return null;
     if (pill.width === 0 || pill.height === 0) return null;
     const minTop = this.barBottom();
@@ -2500,8 +2505,17 @@ export class Toolbar {
     const boxTop = anchor.top - hostBox.top;
     const boxBottom = anchor.bottom - hostBox.top;
     const shown = Math.min(boxBottom, visibleBottom) - Math.max(boxTop, visibleTop);
-    if (shown < Math.min(TEXT_BOX_MIN_SHOWN, (boxBottom - boxTop) / 2)) {
-      return this.state.textPinned === true ? null : "hidden";
+    const gone = shown < Math.min(TEXT_BOX_MIN_SHOWN, (boxBottom - boxTop) / 2);
+    // GoodNotes' bars leave while the page moves and come back, by their
+    // box, once it settles: never a bar sliding about the screen, or one a
+    // frame behind its box.
+    if (gone || anchor.moving === true) {
+      if (this.state.textPinned === true) {
+        this.pillDecision = "toolbar (pinned)";
+        return null;
+      }
+      this.pillDecision = gone ? "hidden (box out of view)" : "hidden (page moving)";
+      return "hidden";
     }
     const below = anchor.bottom - hostBox.top + TEXT_PILL_GAP;
     const above = anchor.top - hostBox.top - TEXT_PILL_GAP - pill.height;
@@ -2514,7 +2528,11 @@ export class Toolbar {
     let top: number;
     if (order[0]) top = tops[0];
     else if (order[1]) top = tops[1];
-    else return null;
+    else {
+      this.pillDecision = "toolbar (no room by the box)";
+      return null;
+    }
+    this.pillDecision = top === below ? "below the box" : "above the box";
     const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
     const minLeft = inset + EDGE_INSET;
     const maxLeft = Math.max(minLeft, hostBox.width - pill.width - EDGE_INSET);
@@ -2635,6 +2653,11 @@ export class Toolbar {
       this.keyboardSeen = height;
       this.applyPosition();
     }, KEYBOARD_WATCH_MS);
+  }
+
+  /** What the text pill did last: where it went, or why it hid (the debug HUD shows it). */
+  get textPillState(): string {
+    return this.pillDecision;
   }
 
   setTextTarget(style: TextStyle | null): void {
