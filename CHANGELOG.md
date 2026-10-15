@@ -163,6 +163,17 @@ extracted from the matching section of this file by `release.yml`.
   text's on the text; ink showing through a box gives the ink's colour.
   Ink of every pen type, the highlighter included, gives its own colour.
 
+### Fixed
+
+- **The pen button picks the highlighter when that is your pen type.**
+  Coming back to the pen (from the lasso, text, the eraser) with the
+  highlighter chosen wrote ordinary pen ink in the highlighter's colour:
+  solid bands that hid the letters, and never straightened. It now writes
+  highlighter strokes, which multiply over ink, typed text and PDF pages so
+  everything under them stays readable, and straighten on lift.
+- **A selected text box's options go off screen with it** when you scroll
+  it out of sight, and come back with it.
+
 ## [2.1.0] - 2026-10-13
 
 ### Added

@@ -72,3 +72,15 @@ describe("the floating text pill", () => {
     expect(pill(null)()).toBeNull();
   });
 });
+
+describe("the floating text pill and a box out of sight", () => {
+  it("hides with a box scrolled above the tool bar or below the screen", () => {
+    keyboard.height = 0;
+    expect(pill({ left: 500, top: 40, right: 700, bottom: 120 })()).toBe("hidden");
+    expect(pill({ left: 500, top: 900, right: 700, bottom: 950 })()).toBe("hidden");
+    // Under the keyboard counts as out of sight.
+    keyboard.height = 450;
+    expect(pill({ left: 500, top: 400, right: 700, bottom: 440 })()).toBe("hidden");
+    keyboard.height = 0;
+  });
+});

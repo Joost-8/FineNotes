@@ -810,6 +810,10 @@ export class Toolbar {
    * (GoodNotes: the chevron on it says so).
    */
   private tapTool(tool: ActiveTool, button: HTMLElement): void {
+    // The pen button stands for every pen type, the highlighter included:
+    // it picks the type in hand. Picking plain "pen" with the highlighter as
+    // the type wrote opaque pen ink in the highlighter's colour.
+    if (tool === "pen") tool = this.activePenType().tool;
     const current = this.state.tool;
     this.drawingTool = drawingToolOf(this.drawingTool, current);
     tool = selectedTool(
@@ -2430,6 +2434,8 @@ export class Toolbar {
     const pill = this.optionsEl.getBoundingClientRect();
     const anchored = this.anchoredPlace(hostBox, pill);
     this.optionsEl.toggleClass("is-anchored", anchored !== null);
+    this.optionsEl.toggleClass("is-offscreen", anchored === "hidden");
+    if (anchored === "hidden") return;
     if (anchored) {
       this.optionsEl.setCssStyles({
         left: `${Math.round(anchored.left)}px`,
@@ -2457,7 +2463,10 @@ export class Toolbar {
    * pill is not the text pill, or the box leaves no room either side (a box
    * as tall as the screen): the pill then stays under the tool bar.
    */
-  private anchoredPlace(hostBox: DOMRect, pill: DOMRect): { left: number; top: number } | null {
+  private anchoredPlace(
+    hostBox: DOMRect,
+    pill: DOMRect,
+  ): { left: number; top: number } | "hidden" | null {
     const anchor = this.textAnchor;
     if (!anchor || !this.textTarget || !this.optionsEl.hasClass("is-text")) return null;
     if (pill.width === 0 || pill.height === 0) return null;
@@ -2466,6 +2475,11 @@ export class Toolbar {
     const windowBottom =
       (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
     const maxBottom = Math.min(hostBox.height, windowBottom - hostBox.top) - EDGE_INSET;
+    // A box scrolled out of sight takes its pill with it (GoodNotes): no bar
+    // left on screen without the box it belongs to.
+    const boxTop = anchor.top - hostBox.top;
+    const boxBottom = anchor.bottom - hostBox.top;
+    if (boxBottom <= minTop || boxTop >= maxBottom + EDGE_INSET) return "hidden";
     const below = anchor.bottom - hostBox.top + TEXT_PILL_GAP;
     const above = anchor.top - hostBox.top - TEXT_PILL_GAP - pill.height;
     const fitsBelow = below + pill.height <= maxBottom && below >= minTop;

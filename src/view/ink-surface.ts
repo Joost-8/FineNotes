@@ -2225,6 +2225,11 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // "The pen" means the pen type in hand: with the highlighter as the type,
+    // a return to the pen is a return to the highlighter. Otherwise strokes
+    // were stored as opaque pen ink in the highlighter's colour and width.
+    // (An explicit highlighter, the H key, stays the highlighter.)
+    if (tool === "pen" && this.toolState.penType === "highlighter") tool = "highlighter";
     // A practice file has the pen and the eraser only.
     if (this.practice && !isPracticeTool(tool)) tool = "pen";
     // The toolbar shares `toolState` and has already written the new tool

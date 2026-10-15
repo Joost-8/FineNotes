@@ -343,6 +343,13 @@ body,
     visibility 0s;
 }
 
+/* Its box scrolled out of sight: the pill goes with it (toolbar.ts,
+   anchoredPlace) and comes back with it. */
+.goodobsidian-options.is-floating.is-offscreen {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Floating by a text box, the pill appears where it is, without the slide
    down from the tool bar: it is far from the bar (toolbar.ts, setTextAnchor). */
 .goodobsidian-options.is-floating.is-anchored {
