@@ -181,9 +181,10 @@ extracted from the matching section of this file by `release.yml`.
   highlighter strokes, which multiply over ink, typed text and PDF pages so
   everything under them stays readable, and straighten on lift.
 - **A selected text box's options step aside while the page moves**, as in
-  GoodNotes: they leave as soon as you scroll or zoom and fade back in by
-  the box once the page settles, if the box is still in view (at least half
-  of it). With the Text tool pinned they stay, under the tool bar.
+  GoodNotes: a real scroll or zoom fades them out, and they fade back in by
+  the box once the page has settled, if the box is still in view (at least
+  half of it). A nudge (under 24 screen px, or a pinch under 6 %) leaves
+  them by the box. With the Text tool pinned they stay, under the tool bar.
 - **A text box scrolled out of sight lets go of its frame**, as in GoodNotes:
   once no part of it shows, its frame, its options and the keyboard go, and
   scrolling back does not bring them back. The box is remembered, though:

@@ -961,6 +961,16 @@ export interface TextAnchorRect {
   moving: boolean;
 }
 
+/**
+ * How far the page must scroll, in screen px, or how much it must zoom, as a
+ * ratio, within one gesture before the text pill steps aside; less is a
+ * nudge, and the pill follows its box. And how long the page must then be
+ * still before the pill fades back in.
+ */
+const TEXT_PILL_MOVE_PX = 24;
+const TEXT_PILL_ZOOM_RATIO = 0.06;
+const TEXT_PILL_SETTLE_MS = 150;
+
 /** How long after the tap that held a box it takes taps itself (to type in it). */
 const HELD_TAP_DELAY_MS = 350;
 
@@ -1052,10 +1062,17 @@ export class InkSurface {
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
   private textAnchorKey = "";
   /**
-   * Whether the page is moving (a scroll, its momentum, a zoom, a finger
-   * still on it): the text pill stays out of the way until it settles.
+   * Whether the page is moving enough to send the text pill away: a real
+   * scroll or zoom, not a nudge (`trackTextPillMotion`). It stays away until
+   * the page has settled for a moment.
    */
   private textAnchorMoving = false;
+  /** Where the view was when the page started moving, and whether that has sent the pill away. */
+  private textPillMotion: { x: number; y: number; scale: number; away: boolean } | null = null;
+  /** Brings the pill back once the page has settled (`TEXT_PILL_SETTLE_MS`). */
+  private textPillSettleTimer = 0;
+  /** Where the view was on the last frame at rest: where a movement is measured from. */
+  private textPillRest: { x: number; y: number; scale: number } | null = null;
   /** While a box is typed in: an interval looking for the keyboard (`watchTypingKeyboard`). */
   private typingKeyboardWatch = 0;
   private typingKeyboardSeen = 0;
@@ -1846,6 +1863,7 @@ export class InkSurface {
   destroy(): void {
     this.eyedropper?.cancel();
     this.watchTypingKeyboard(false);
+    window.clearTimeout(this.textPillSettleTimer);
     window.clearTimeout(this.wheelSnapTimer);
     this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
@@ -2848,7 +2866,7 @@ export class InkSurface {
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
-    this.textAnchorMoving = busy;
+    this.trackTextPillMotion(busy);
     this.dropTextOutOfSight();
     this.reportTextAnchor();
     this.syncPullAdd();
@@ -8208,6 +8226,42 @@ export class InkSurface {
       this.setTool(back);
       this.callbacks.onToolChange?.(back);
     }
+  }
+
+  /**
+   * Whether the page has moved enough, this gesture, to send the text pill
+   * away: more than `TEXT_PILL_MOVE_PX` of scroll or `TEXT_PILL_ZOOM_RATIO`
+   * of zoom since it started. A nudge, a palm or a pinch that barely moves
+   * leaves the pill by its box, following it. Once sent away it stays away
+   * until the page has been still for `TEXT_PILL_SETTLE_MS`, so a scroll
+   * that stops and starts again does not flash it.
+   */
+  private trackTextPillMotion(busy: boolean): void {
+    const position = this.scroller.position;
+    if (busy) {
+      window.clearTimeout(this.textPillSettleTimer);
+      this.textPillSettleTimer = 0;
+      const from = this.textPillRest ?? { x: position.x, y: position.y, scale: this.scale };
+      const motion = (this.textPillMotion ??= { ...from, away: this.textAnchorMoving });
+      if (!motion.away) {
+        const scrolled = Math.hypot(position.x - motion.x, position.y - motion.y);
+        const zoomed = motion.scale > 0 ? Math.abs(this.scale / motion.scale - 1) : 0;
+        motion.away = scrolled > TEXT_PILL_MOVE_PX || zoomed > TEXT_PILL_ZOOM_RATIO;
+      }
+      this.textAnchorMoving = motion.away;
+      return;
+    }
+    const motion = this.textPillMotion;
+    this.textPillMotion = null;
+    this.textPillRest = { x: position.x, y: position.y, scale: this.scale };
+    // Nothing moved since the last frame at rest: a pending settle decides.
+    if (!motion?.away) return;
+    window.clearTimeout(this.textPillSettleTimer);
+    this.textPillSettleTimer = window.setTimeout(() => {
+      this.textPillSettleTimer = 0;
+      this.textAnchorMoving = false;
+      this.reportTextAnchor();
+    }, TEXT_PILL_SETTLE_MS);
   }
 
   /**
