@@ -10,6 +10,10 @@ import { loadPdfJs } from "obsidian";
 // `any` is an error in this repo (pdf-backdrop.ts types its own slice too).
 interface PdfPageLike {
   getViewport(params: { scale: number }): { width: number; height: number };
+  render(params: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: { width: number; height: number };
+  }): { promise: Promise<void> };
   cleanup?: () => void;
 }
 
@@ -47,6 +51,46 @@ export async function measurePdfPages(
     }
     if (sizes.length === 0) throw new Error("The PDF has no pages");
     return sizes;
+  } finally {
+    await doc.destroy().catch(() => undefined);
+  }
+}
+
+/** The longest edge, in pixels, of a PDF page drawn as a picture. */
+const PICTURE_EDGE = 2000;
+
+/**
+ * A PDF's first page as PNG bytes, at most {@link PICTURE_EDGE} pixels on its
+ * longer side: what a PDF placed on a page as a picture looks like. Rejects
+ * when the bytes are not a readable PDF.
+ */
+export async function rasterizePdfFirstPage(bytes: Uint8Array): Promise<Uint8Array> {
+  const lib = await loadPdfJs().then((value: unknown) => value as PdfJsLike);
+  const doc = await lib.getDocument({ data: new Uint8Array(bytes) }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({
+      scale: Math.min(4, PICTURE_EDGE / Math.max(1, base.width, base.height)),
+    });
+    // Obsidian's global createEl gives a detached canvas (see pdf-backdrop.ts).
+    const canvas = createEl("canvas");
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas unavailable");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    page.cleanup?.();
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("PNG encoding failed"))),
+        "image/png",
+      ),
+    );
+    canvas.width = canvas.height = 0;
+    return new Uint8Array(await blob.arrayBuffer());
   } finally {
     await doc.destroy().catch(() => undefined);
   }

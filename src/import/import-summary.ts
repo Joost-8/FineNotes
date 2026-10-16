@@ -3,6 +3,14 @@
  * so the dialog's text is tested without a DOM.
  */
 
+import type { InkDocument } from "../model/document";
+import {
+  pageContentHash,
+  pageKeys,
+  updatePageTranscripts,
+  type TranscriptUpdate,
+} from "../recognition/page-transcripts";
+import { writeTextSection } from "../recognition/text-layer";
 import { type ImportBatch, isImportFileName } from "./import-notebook";
 import type { ImportResult, ImportSource } from "./import-types";
 
@@ -63,4 +71,21 @@ export function sortDropped<T extends { name: string }>(
 export function progressText(index: number, total: number, name: string): string {
   const leaf = name.split(/[\\/]/).pop() ?? name;
   return total > 1 ? `Importing ${index + 1} of ${total}: ${leaf}…` : `Importing ${leaf}…`;
+}
+
+/**
+ * A new note's body with what the other app's recogniser read on each page,
+ * as that page's transcription. It is marked as read on the device, so the
+ * notebook is searchable at once and transcribing still replaces it.
+ * `doc` must already point at the saved files: the page hash covers them.
+ */
+export function withPageText(body: string, doc: InkDocument, pageText?: readonly string[]): string {
+  if (!pageText || pageText.every((text) => !text.trim())) return body;
+  const keys = pageKeys(doc.pages);
+  const updates: TranscriptUpdate[] = [];
+  doc.pages.forEach((page, index) => {
+    const text = pageText[index]?.trim();
+    if (text) updates.push({ key: keys[index], text, hash: pageContentHash(page), device: true });
+  });
+  return writeTextSection(body, updatePageTranscripts(null, keys, updates));
 }

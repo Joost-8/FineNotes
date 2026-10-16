@@ -292,7 +292,7 @@ describe("readNoteful", () => {
     ).toThrow(/no pages/);
   });
 
-  it("is chosen from the bytes, alone or in a backup, and reads back unchanged", () => {
+  it("is chosen from the bytes, alone or in a backup, and reads back unchanged", async () => {
     const file = notefulFile({
       title: "Chem",
       pages: [{ id: "P1", key: "a", ink: "INK" }],
@@ -309,8 +309,11 @@ describe("readNoteful", () => {
         ),
       },
     });
-    expect(importNotebooks(file, "Chem.noteful").results[0].source).toBe("noteful");
-    const backup = importNotebooks(zip({ "Archive/Year 1/Chem.noteful": file }), "Archive.zip");
+    expect((await importNotebooks(file, "Chem.noteful")).results[0].source).toBe("noteful");
+    const backup = await importNotebooks(
+      zip({ "Archive/Year 1/Chem.noteful": file }),
+      "Archive.zip",
+    );
     expect(backup.results.map((r) => r.title)).toEqual(["Chem"]);
     const result = readNoteful(file, "x");
     const back = parseInkFile(buildInkFile("# Chem\n", result.doc)).doc;

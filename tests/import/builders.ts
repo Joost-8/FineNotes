@@ -85,10 +85,12 @@ export function bv4Block(block: number[], rawSize: number): Uint8Array {
 // --- Goodnotes stroke layout ------------------------------------------------
 
 /**
- * A `tpl` block as Goodnotes writes a stroke: ten arrays, the second-last
- * the pen samples (x, y, half-width, two unused), the last one u16 per sample.
+ * A `tpl` block as Goodnotes writes a schema-24 stroke: ten arrays, the
+ * second-last the pen samples, the last one u16 per sample. A pen sample is
+ * five floats (x, y, half-width, two unused); the marker's is seven (x, y,
+ * one unused, half-width, three unused).
  */
-export function tplStroke(samples: Array<[number, number, number]>): Uint8Array {
+export function tplStroke(samples: Array<[number, number, number]>, stride: 5 | 7 = 5): Uint8Array {
   const sig = "vA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)";
   const out: number[] = [...ascii("tpl\0"), 0, 0, 0, 0, ...ascii(sig), 0];
   const u16 = (n: number): number[] => [n & 255, (n >> 8) & 255];
@@ -107,15 +109,47 @@ export function tplStroke(samples: Array<[number, number, number]>): Uint8Array 
     for (const v of vals) out.push(...u16(v));
   };
   arrayV([0]); // segment kinds
-  arrayU([1, 2, 3]); // first centreline point
+  arrayU(stride === 7 ? [1, 2, samples[0]?.[2] ?? 1, 0] : [1, 2, 3]); // first centreline point
   arrayU([]); // centreline
   arrayV([]);
   arrayV([]);
   arrayU([]);
   arrayU([]);
   arrayU([]);
-  arrayU(samples.flatMap(([x, y, h]) => [x, y, h, 0.5, -0.5]));
+  arrayU(
+    samples.flatMap(([x, y, h]) =>
+      stride === 7 ? [x, y, 1.8, h, 1.57, -1.57, 0] : [x, y, h, 0.5, -0.5],
+    ),
+  );
   arrayV(samples.map(() => 1));
+  const bytes = new Uint8Array(out);
+  new DataView(bytes.buffer).setUint32(4, bytes.length, true);
+  return bytes;
+}
+
+/**
+ * A schema-25 stroke: a width, a start point and segments of two points
+ * (each x, y, azimuth, altitude, force), behind one unused float.
+ */
+export function tplStroke25(points: Array<[number, number]>, width: number): Uint8Array {
+  const sig = "vuA(v)A(S(uuuuu))A(S(uuuuuuuuuuu))A(S(uu))A(v)A(S(uu))A(S(uuuu))A(u)";
+  const out: number[] = [...ascii("tpl"), 0, 0, 0, 0, 0, ...ascii(sig), 0];
+  const f32 = (v: number): number[] => {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setFloat32(0, v, true);
+    return [...b];
+  };
+  const point = ([x, y]: [number, number]): number[] => [x, y, -0.524, 1.047, 1].flatMap(f32);
+  out.push(1, 0, ...f32(width));
+  const [start, ...rest] = points;
+  const segments: number[][] = [];
+  for (let i = 0; i + 1 < rest.length; i += 2) {
+    segments.push([...f32(0), ...point(rest[i]), ...point(rest[i + 1])]);
+  }
+  out.push(...le32(segments.length + 1), 0, 0, ...segments.flatMap(() => [1, 0]));
+  out.push(...le32(start ? 1 : 0), ...(start ? point(start) : []));
+  out.push(...le32(segments.length), ...segments.flat());
+  for (let i = 0; i < 5; i++) out.push(...le32(0));
   const bytes = new Uint8Array(out);
   new DataView(bytes.buffer).setUint32(4, bytes.length, true);
   return bytes;
@@ -127,6 +161,30 @@ export interface GnStroke {
   id: string;
   samples: Array<[number, number, number]>;
   rgba?: [number, number, number, number];
+  /** Floats per sample in a schema-24 stroke: 5 for a pen, 7 for the marker. */
+  stride?: 5 | 7;
+  /** Write it in schema 25, at this width (the samples' half-widths are ignored). */
+  schema25?: number;
+  /** A lasso move: field 6. */
+  offset?: [number, number];
+}
+
+/** A Goodnotes text box (kind 21) or comment (kind 20). */
+export interface GnText {
+  id: string;
+  /** Runs of text; empty for a shape. */
+  runs: Array<{
+    text: string;
+    rgba?: [number, number, number, number];
+    size?: number;
+    font?: string;
+  }>;
+  origin: [number, number];
+  /** A fixed width (`21.2.1`); absent, the box grows with its text (`32.2.1` wide). */
+  width?: number;
+  textWidth?: number;
+  fill?: [number, number, number, number];
+  comment?: boolean;
 }
 
 export interface GnImage {
@@ -151,6 +209,7 @@ export interface GnPage {
   restored?: boolean;
   strokes?: GnStroke[];
   images?: GnImage[];
+  texts?: GnText[];
   /** Bodies of element kinds the importer does not know. */
   unknown?: number;
 }
@@ -159,6 +218,18 @@ export interface GnTemplate {
   id: string;
   size: [number, number];
   attachment?: string;
+  /** The PDF page, 1-based (field 5). */
+  pdfPage?: number;
+}
+
+/** An outline entry (kind 62): `y` up from the bottom of the page. */
+export interface GnOutline {
+  id: string;
+  page: string;
+  title: string;
+  order: string;
+  x?: number;
+  y?: number;
 }
 
 const clock = (n: number): PbValue => ({
@@ -173,6 +244,9 @@ export function goodnotesFiles(spec: {
   templates: GnTemplate[];
   pages: GnPage[];
   attachments?: Record<string, Uint8Array>;
+  /** Attachment records (kind 6): record id → file id in `attachments/`. */
+  records?: Record<string, string>;
+  outline?: GnOutline[];
   /** Put every entry under this folder, as some zips do. */
   prefix?: string;
 }): Record<string, Uint8Array> {
@@ -202,6 +276,23 @@ export function goodnotesFiles(spec: {
       ]),
     );
   }
+  for (const [record, fileId] of Object.entries(spec.records ?? {})) {
+    events.push(
+      pb([
+        [1, { str: record }],
+        [
+          6,
+          {
+            msg: [
+              [1, { str: record }],
+              [2, { str: fileId }],
+              [6, { str: doc }],
+            ],
+          },
+        ],
+      ]),
+    );
+  }
   for (const t of spec.templates) {
     const body: PbField[] = [
       [1, { str: doc }],
@@ -217,6 +308,7 @@ export function goodnotesFiles(spec: {
       ],
     ];
     if (t.attachment) body.push([4, { str: t.attachment }]);
+    if (t.pdfPage !== undefined) body.push([5, { int: t.pdfPage }]);
     events.push(
       pb([
         [1, { str: t.id }],
@@ -290,6 +382,28 @@ export function goodnotesFiles(spec: {
     if (p.bookmarked || p.unbookmarked) events.push(flag(p.id, 57, true));
     if (p.unbookmarked) events.push(flag(p.id, 57, false));
   }
+  for (const o of spec.outline ?? []) {
+    const point: PbField[] = [];
+    if (o.x !== undefined) point.push([1, { f32: o.x }]);
+    if (o.y !== undefined) point.push([2, { f32: o.y }]);
+    events.push(
+      pb([
+        [1, { str: o.page }],
+        [
+          62,
+          {
+            msg: [
+              [1, { str: o.page }],
+              [2, { str: o.id }],
+              [3, { msg: [[1, { msg: point }]] }],
+              [5, { str: o.title }],
+              [6, { str: o.order }],
+            ],
+          },
+        ],
+      ]),
+    );
+  }
   // An event of a kind the importer ignores, and a record that is not a message.
   events.push(
     pb([
@@ -321,9 +435,35 @@ export function goodnotesFiles(spec: {
             {
               msg: [
                 [1, { str: s.id }],
-                [2, { bytes: bv4Raw(tplStroke(s.samples)) }],
+                [
+                  2,
+                  {
+                    bytes: bv4Raw(
+                      s.schema25 !== undefined
+                        ? tplStroke25(
+                            s.samples.map(([x, y]): [number, number] => [x, y]),
+                            s.schema25,
+                          )
+                        : tplStroke(s.samples, s.stride),
+                    ),
+                  },
+                ],
                 [3, { int: 1 }],
                 [4, { msg: rgba.map((v, i): PbField => [i + 1, { f32: v }]) }],
+                ...(s.offset
+                  ? [
+                      [
+                        6,
+                        {
+                          msg: [
+                            [1, { f32: s.offset[0] }],
+                            [2, { f32: s.offset[1] }],
+                          ],
+                        },
+                      ] as PbField,
+                    ]
+                  : []),
+                [21, { int: s.schema25 !== undefined ? 25 : 24 }],
               ],
             },
           ],
@@ -378,6 +518,56 @@ export function goodnotesFiles(spec: {
           ],
         ]),
       );
+    }
+    for (const t of p.texts ?? []) {
+      records.push(
+        pb([
+          [1, { str: t.id }],
+          [2, clock(2)],
+        ]),
+      );
+      const colour = (rgba: number[]): PbValue => ({
+        msg: rgba.map((v, i): PbField => [i + 1, { f32: v }]),
+      });
+      const runs = t.runs.map((run): PbField => {
+        const attrs: PbField[] = [[3, colour(run.rgba ?? [0, 0, 0, 1])]];
+        if (run.font) attrs.push([30, { str: run.font }]);
+        attrs.push([40, { f32: run.size ?? -404 }]);
+        return [
+          1,
+          {
+            msg: [
+              [1, { str: run.text }],
+              [2, { msg: attrs }],
+            ],
+          },
+        ];
+      });
+      const font: PbField[] = [
+        [30, { str: "Helvetica Neue" }],
+        [40, { f32: 24 }],
+      ];
+      const store: PbField[] = [
+        [1, { msg: [[2, { bytes: bv4Raw(pb(runs)) }]] }],
+        [2, { msg: [[1, { f32: t.textWidth ?? 100 }]] }],
+        [5, { msg: [[1, { msg: font }]] }],
+      ];
+      const origin: PbField[] = [
+        [1, { f32: t.origin[0] }],
+        [2, { f32: t.origin[1] }],
+      ];
+      const size: PbField[] =
+        t.width !== undefined
+          ? [[2, { msg: [[1, { f32: t.width }]] }]]
+          : [[3, { msg: [[1, { f32: 32 }]] }]];
+      const body: PbField[] = [
+        [1, { str: t.id }],
+        [20, { msg: [[1, { msg: origin }]] }],
+        [21, { msg: size }],
+        [30, { msg: [[1, { msg: [[1, colour(t.fill ?? [1, 1, 1, 0])]] }]] }],
+        [t.comment ? 31 : 32, { msg: store }],
+      ];
+      records.push(pb([[t.comment ? 20 : 21, { msg: body }]]));
     }
     for (let i = 0; i < (p.unknown ?? 0); i++)
       records.push(pb([[9, { msg: [[1, { str: `u${i}` }]] }]]));
