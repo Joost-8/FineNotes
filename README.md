@@ -176,7 +176,8 @@ on your device, called a _vault_. FineNotes runs inside it. On an iPad:
    allow community plugins there, then go back and tap **Add to Obsidian**
    again. Tap **Install**, then **Enable**.
 4. FineNotes welcomes you with a short tour, a way to bring your notebooks over
-   from Goodnotes or Notability, and a button for a new notebook.
+   from Goodnotes, Notability, Noteful, reMarkable and other apps, and a button
+   for a new notebook.
 
 To have your notebooks on several devices, sync the vault: with Obsidian Sync,
 iCloud, or any app that syncs a folder.

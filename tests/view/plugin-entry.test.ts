@@ -141,6 +141,7 @@ function fakeApp(
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
+  const created: { path: string; content: string }[] = [];
   const workspace = {
     leaves: [] as WorkspaceLeaf[],
     active: null as unknown,
@@ -164,6 +165,8 @@ function fakeApp(
       return workspace.active instanceof type ? workspace.active : null;
     },
     getActiveFile: () => null,
+    getLeaf: () => new WorkspaceLeaf(),
+    revealLeaf: () => Promise.resolve(),
   };
   return {
     workspace,
@@ -172,6 +175,20 @@ function fakeApp(
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
       getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
+      getFiles: () => [...files.values()],
+      getRoot: () => ({
+        path: "/",
+        children: [...files.values()].filter((f) => !f.path.includes("/")),
+      }),
+      getFolderByPath: () => null,
+      createFolder: () => Promise.resolve(),
+      created,
+      create(path: string, content: string) {
+        created.push({ path, content });
+        const file = new TFile(path);
+        files.set(path, file);
+        return Promise.resolve(file);
+      },
     },
     metadataCache: {
       getFileCache: (file: TFile) => {
@@ -463,6 +480,36 @@ describe("registration", () => {
     expect(typeof hooks.imports[0].ownFolder).toBe("boolean");
   });
 
+  it("makes the welcome notebook from the welcome's tour, once, and reopens it after", async () => {
+    await load();
+    app.workspace.leaves.length = 0;
+    await plugin.openWelcomeTour();
+    const created = (app.vault as unknown as { created: { path: string; content: string }[] })
+      .created;
+    expect(created.map((c) => c.path)).toEqual(["Welcome to FineNotes.notebook.md"]);
+    expect(created[0].content).toContain("# Welcome to FineNotes");
+    expect(viewStateCalls.at(-1)?.state).toMatchObject({
+      type: INK,
+      state: { file: "Welcome to FineNotes.notebook.md" },
+    });
+    // Already in the vault: opened again, not made again.
+    await plugin.openWelcomeTour();
+    expect(created).toHaveLength(1);
+    expect(viewStateCalls.at(-1)?.state).toMatchObject({
+      state: { file: "Welcome to FineNotes.notebook.md" },
+    });
+  });
+
+  it("makes no notebook by itself, on a first install or an update", async () => {
+    for (const stored of [null, { lastSeenVersion: "0.1.0" }]) {
+      await load(stored);
+      app.workspace.fireLayoutReady();
+      await flush();
+      const created = (app.vault as unknown as { created: unknown[] }).created;
+      expect(created).toEqual([]);
+    }
+  });
+
   it("builds an InkView for a leaf", async () => {
     await load();
     const factory = registered.views.get(INK) as (leaf: WorkspaceLeaf) => unknown;
@@ -642,7 +689,8 @@ describe("view routing of open leaves", () => {
   });
 
   it("does the same once the layout is ready", async () => {
-    await load();
+    // An existing install: a first one would also greet the user.
+    await load({ lastSeenVersion: VERSION });
     const leaf = markdownLeaf(app.addFile("Physics.notebook.md"));
     app.workspace.fireLayoutReady();
     await flush();

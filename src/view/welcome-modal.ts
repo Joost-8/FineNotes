@@ -6,7 +6,7 @@
  *   Welcome to FineNotes
  *   Handwritten notebooks with real pages, kept as files in this vault.
  *   Take the tour            A short notebook that shows the tools.   [Open]
- *   Bring your notebooks     From Goodnotes or Notability.            [Import…]
+ *   Bring your notebooks     From Goodnotes, Notability and more.     [Import…]
  *   Start fresh              A notebook with the cover and paper …    [New notebook]
  *
  * Written for someone who has never used Obsidian. It only reports the
@@ -49,7 +49,7 @@ export class WelcomeModal extends Modal {
     );
     this.choice(
       "Bring your notebooks",
-      "From Goodnotes or Notability, with your handwriting still editable.",
+      "From Goodnotes, Notability, Noteful, reMarkable and more, with your handwriting still editable.",
       "Import…",
       false,
       this.actions.importNotebooks,

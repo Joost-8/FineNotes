@@ -3040,50 +3040,214 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   margin-bottom: 0;
 }
 
-/* Import notebook: "How do I export my notebooks?", a row like the
-   settings above it, opened by a chevron instead of the browser's triangle. */
-.goodobsidian-import-help {
-  border-top: 1px solid var(--background-modifier-border);
-  padding: var(--size-4-2) 0;
+/* Import notebook, first screen: two columns, where from (drop zone and the
+   vault) and what comes over; they stack on a narrow screen. Under them a
+   footer with the destination folder and the export help. */
+.goodobsidian-import-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--size-4-4);
+  margin-top: var(--size-4-2);
 }
 
-.goodobsidian-import-help > summary {
+.goodobsidian-import-from {
   display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  min-width: 0;
+}
+
+/* The drop zone: a dashed frame holding an icon, two lines and the picker;
+   files dragged over it fill it with the accent. */
+.goodobsidian-import-drop {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--size-4-1);
-  min-height: var(--gob-touch-compact);
-  list-style: none;
-  cursor: var(--cursor);
+  padding: var(--size-4-5) var(--size-4-4);
+  text-align: center;
+  border: 2px dashed var(--background-modifier-border-hover);
+  border-radius: var(--gob-radius-m, 10px);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.goodobsidian-import-drop.is-dragging {
+  border-color: var(--interactive-accent);
+  background-color: hsla(var(--interactive-accent-hsl), 0.12);
+}
+
+.goodobsidian-import-drop-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+  --icon-size: 28px;
+  --icon-stroke: 1.5px;
+}
+
+.goodobsidian-import-drop.is-dragging .goodobsidian-import-drop-icon {
+  color: var(--text-accent);
+}
+
+.goodobsidian-import-drop-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-import-drop-desc {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-import-help > summary::-webkit-details-marker {
-  display: none;
+.goodobsidian-import-drop button.goodobsidian-import-drop-button {
+  margin-top: var(--size-4-2);
+  min-height: var(--gob-touch-compact);
 }
 
-.goodobsidian-import-help > summary:hover {
+/* "From this vault": a full-width row with an icon and a chevron. */
+button.goodobsidian-import-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-s, 8px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-import-row-icon {
+  display: inline-flex;
+  --icon-size: 16px;
+}
+
+.goodobsidian-import-row-icon.is-trailing {
+  margin-inline-start: auto;
+  color: var(--text-faint);
+}
+
+.goodobsidian-import-row-label {
+  white-space: normal;
+  text-align: start;
+}
+
+/* What comes over: three checked lines and the apps it reads. */
+.goodobsidian-import-what {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.9;
+}
+
+.goodobsidian-import-what-title {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--size-2-1);
+}
+
+.goodobsidian-import-what-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.goodobsidian-import-what-check {
+  display: inline-flex;
+  color: var(--color-green);
+  --icon-size: 16px;
+}
+
+.goodobsidian-import-what-apps {
+  margin-top: var(--size-4-2);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-normal);
+}
+
+/* The PDF note under the list: a PDF stays a PDF, so it is set apart. */
+.goodobsidian-import-what-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--gob-radius-s, 8px);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-normal);
+}
+
+.goodobsidian-import-what-note-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  --icon-size: 16px;
+}
+/* Footer: "Save to" and the folder button, the help link on the right. */
+.goodobsidian-import-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-4);
+  padding-top: var(--size-4-3);
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-import-footer-label {
+  color: var(--text-muted);
+}
+
+button.goodobsidian-import-folder.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  min-height: var(--gob-touch-compact);
+  max-width: 100%;
+  padding: 0 var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-s, 8px);
   color: var(--text-normal);
 }
 
-.goodobsidian-import-help-chevron {
+.goodobsidian-import-folder-icon {
   display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
   --icon-size: 16px;
-  transition: transform 120ms ease;
 }
 
-.goodobsidian-import-help[open] .goodobsidian-import-help-chevron {
-  transform: rotate(90deg);
+.goodobsidian-import-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.goodobsidian-import-help-toggle.clickable-icon {
+  margin-inline-start: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 var(--size-4-1);
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+}
+
+/* The export help, opened by the footer's link. */
+.goodobsidian-import-help.is-hidden {
+  display: none;
 }
 
 .goodobsidian-import-help ul {
-  margin: var(--size-4-1) 0 var(--size-4-2);
-  padding-inline-start: calc(16px + var(--size-4-1) + 1em);
+  margin: var(--size-4-2) 0 0;
+  padding-inline-start: 1.25em;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   line-height: var(--line-height-normal);
 }
-
 .goodobsidian-newnb-import-icon {
   display: inline-flex;
   --icon-size: 16px;

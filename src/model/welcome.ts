@@ -1232,8 +1232,10 @@ const TOUR: readonly TourPage[] = [
         "• Goodnotes: in the library tap Select, pick notebooks or folders, tap Export and " +
           "choose the Goodnotes format. Several at once come as one .zip.\n" +
           "• Notability: share or export a note in the Note format.\n" +
-          "• Then New notebook › Import from another app. Your handwriting stays editable.\n" +
-          "• Anything else, such as Apple Notes: share it as a PDF and use Insert PDF.",
+          "• Noteful, Xournal++, Saber, reMarkable, Supernote and FreeNotes: their own " +
+          "notebook files come over too.\n" +
+          "• Anything else, such as Apple Notes: export a PDF, and write over its pages.\n" +
+          "Then choose New notebook › Import from another app. Your handwriting stays editable.",
         "Bring your notebooks over",
       );
       s.foot({ page: 16, title: "AI with your own key" });
