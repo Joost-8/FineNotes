@@ -198,6 +198,7 @@ import type { GoodObsidianSettings } from "../settings";
 import { shownPaperTheme } from "../settings-data";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
+import { obsidianOpenUri } from "../model/home-link";
 
 /** Quiet time after the page being read changes before it is remembered. */
 const LAST_PAGE_DEBOUNCE_MS = 500;
@@ -2393,7 +2394,27 @@ export class InkView extends TextFileView {
         toggleDarkPages: () =>
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
         showShortcuts: () => this.toggleShortcuts(),
+        copyHomeLink: () => this.copyHomeLink(),
       },
+    );
+  }
+
+  /**
+   * The `obsidian://open` link to this notebook, for a home-screen shortcut
+   * (the Shortcuts app's "Open URLs" on an iPad) or a bookmark.
+   */
+  copyHomeLink(): void {
+    const file = this.file;
+    if (!file) return;
+    const link = obsidianOpenUri(this.app.vault.getName(), file.path);
+    void writeSystemText(link).then(
+      () =>
+        new Notice(
+          "Link copied. On an iPad, paste it into a Shortcuts shortcut's Open URLs, " +
+            "then add the shortcut to your Home Screen.",
+          8000,
+        ),
+      () => new Notice("FineNotes could not use the clipboard here."),
     );
   }
 

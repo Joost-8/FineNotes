@@ -6,8 +6,10 @@ installs Obsidian if you do not have it, makes a vault, and puts FineNotes in
 it. It asks you before it installs anything.
 
 On an iPad, an Android tablet or a phone, an assistant cannot install apps for
-you. Install Obsidian from the App Store or Google Play, then follow
-[Install](README.md#install) in the README.
+you. Install Obsidian from the App Store or Google Play, make a vault, then
+open the [FineNotes page](https://community.obsidian.md/plugins/finenotes) and
+tap **Add to Obsidian**. [New to Obsidian?](README.md#new-to-obsidian) in the
+README has the steps.
 
 ```text
 Install the Obsidian note-taking app and the FineNotes plugin on this computer
@@ -43,6 +45,14 @@ Never download either from anywhere else.
    the JSON array contains "finenotes". If the file exists, add to it and keep
    what is there; never remove other plugins.
 
+   Alternative to steps 4 and 5, only if I already use the vault in Obsidian
+   1.12.7 or later and its command line is on (Settings → General → Command
+   line interface): with Obsidian running, `obsidian help plugin:install`,
+   then `obsidian vault="<vault name>" plugin:install id=finenotes enable`.
+   If the command is missing or refuses, copy the files as above instead.
+   Never turn off Restricted mode for me from the command line; I do that
+   myself in step 7.
+
 6. If Obsidian is running, ask me to close it first. Then open the vault: tell
    me to start Obsidian, choose "Open folder as vault" and pick the vault
    folder (or, if it is already one of my vaults, open
@@ -52,8 +62,8 @@ Never download either from anywhere else.
    - when Obsidian asks whether I trust the vault's author, choose
      "Trust author and enable plugins" (or, under Settings → Community
      plugins, turn off Restricted mode and switch FineNotes on);
-   - then open a notebook with the notebook button in the left ribbon, or the
-     command "New notebook or page…".
+   - FineNotes then shows a welcome with a short tour, an import from
+     Goodnotes or Notability, and a button for a new notebook.
 
 At the end, tell me in two or three sentences what you installed and where.
 ```

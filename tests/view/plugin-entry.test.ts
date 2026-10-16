@@ -52,6 +52,7 @@ const hooks = vi.hoisted(() => ({
   post: null as null | ((url: string, headers: unknown, body: unknown) => Promise<unknown>),
   posts: [] as { url: string; headers: unknown; body: unknown }[],
   imports: [] as { folder: string; ownFolder: boolean }[],
+  welcomes: 0,
 }));
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
@@ -78,6 +79,13 @@ vi.mock("../../src/ui/confirm-modal", () => ({
 vi.mock("../../src/view/import-notebook-modal", () => ({
   openImportNotebookModal: (_app: unknown, options: { folder: string; ownFolder: boolean }) => {
     hooks.imports.push(options);
+  },
+}));
+vi.mock("../../src/view/welcome-modal", () => ({
+  WelcomeModal: class {
+    open(): void {
+      hooks.welcomes++;
+    }
   },
 }));
 vi.mock("../../src/recognition/http", async (importOriginal) => ({
@@ -163,6 +171,7 @@ function fakeApp(
       on: (name: string) => ({ name }),
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
+      getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
     },
     metadataCache: {
       getFileCache: (file: TFile) => {
@@ -274,6 +283,7 @@ beforeEach(() => {
   hooks.confirms = 0;
   hooks.post = null;
   hooks.posts.length = 0;
+  hooks.welcomes = 0;
   opened = hooks.whatsNew;
   openWindow.mockReset();
   vi.stubGlobal("window", Object.assign(Object.create(globalThis) as object, { open: openWindow }));
@@ -421,6 +431,7 @@ describe("registration", () => {
         "scan-document",
         "search-notebook",
         "show-keyboard-shortcuts",
+        "show-welcome",
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-text-layer",
@@ -861,6 +872,36 @@ describe("settings after a change of plugin id", () => {
 });
 
 // --- What's new --------------------------------------------------------------------------
+
+describe("The welcome", () => {
+  it("greets a first install in a vault with no notebooks", async () => {
+    await load(null);
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(1);
+  });
+
+  it("does not greet a vault that already has FineNotes settings", async () => {
+    await load({ lastSeenVersion: VERSION });
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(0);
+  });
+
+  it("does not greet a vault that already holds a notebook", async () => {
+    await load(null);
+    app.addFile("School/Biology.notebook.md");
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(0);
+  });
+
+  it("can be shown again from the command", async () => {
+    await load({ lastSeenVersion: VERSION });
+    run("show-welcome");
+    expect(hooks.welcomes).toBe(1);
+  });
+});
 
 describe("What's new", () => {
   it("stays silent on a fresh install, and remembers the version", async () => {

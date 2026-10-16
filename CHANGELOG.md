@@ -8,6 +8,26 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A welcome for new users.** The first time FineNotes runs in a vault with
+  no notebooks, it offers a short tour notebook (the tools, the pen gestures,
+  where notebooks live in Obsidian, and how to bring notebooks over from
+  Goodnotes or Notability), the importer, or a new notebook. The command
+  **Show the welcome** brings it back. A vault that already has FineNotes
+  settings or notebooks, such as a second synced device, is not greeted.
+
+- **Copy home screen link**, in the **More** (⋯) panel: a link that opens
+  the notebook straight from outside Obsidian. Paste it into a Shortcuts
+  shortcut's **Open URLs** on an iPad or iPhone and add the shortcut to the
+  Home Screen, or keep it as a bookmark on a computer.
+
+### Changed
+
+- **Import notebook:** "How do I export my notebooks?" now gives Goodnotes'
+  own steps for exporting several notebooks or whole folders as one .zip,
+  and Notability's Auto-backup for everything at once.
+
 ## [2.2.0] - 2026-10-15
 
 ### Added

@@ -3033,6 +3033,13 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--text-on-accent);
 }
 
+/* The welcome: where to find it again, quieter than the choices above. */
+.goodobsidian-welcome-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-bottom: 0;
+}
+
 /* Import notebook: "How do I export my notebooks?", a row like the
    settings above it, opened by a chevron instead of the browser's triangle. */
 .goodobsidian-import-help {

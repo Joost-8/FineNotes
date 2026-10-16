@@ -146,10 +146,15 @@ export class ImportNotebookModal extends Modal {
     const steps = help.createEl("ul");
     steps.createEl("li", {
       text:
-        "Goodnotes: share or export a notebook in the Goodnotes format. To move everything at " +
-        "once, turn on auto-backup in Goodnotes format and pick the backup .zip.",
+        "Goodnotes: in the library tap Select, pick notebooks or whole folders, tap Export and " +
+        "choose the Goodnotes format. Several at once come as one .zip, folders and all. An " +
+        "auto-backup .zip in Goodnotes format works too.",
     });
-    steps.createEl("li", { text: "Notability: share or export a note in the Note format." });
+    steps.createEl("li", {
+      text:
+        "Notability: share or export a note in the Note format. For everything at once, turn " +
+        "on Auto-backup with the Note format.",
+    });
     steps.createEl("li", {
       text: "Save the file to this vault's folder or to Files, then choose it here.",
     });
