@@ -13,6 +13,10 @@ import {
   pageScale,
 } from "../../src/import/import-types";
 import { goodnotesFiles, JPEG, keyedArchive, PDF, PNG, zip } from "./builders";
+import { xopp } from "./xournal-builders";
+import { note, point } from "./saber-builders";
+import { rmOld } from "./remarkable-builders";
+import { buildSupernote } from "./supernote-builders";
 
 const PAGE = "11111111-0000-0000-0000-00000000000A";
 
@@ -77,21 +81,50 @@ describe("importNotebooks", () => {
     const batch = importNotebooks(backup, "Backup.zip");
     expect(batch.results.map((r) => r.title)).toEqual(["A", "B", "Maths", "Inner", "Unpacked"]);
     expect(batch.failures).toEqual([
-      { name: "broken.goodnotes", reason: "It is not a Goodnotes or Notability file." },
+      { name: "broken.goodnotes", reason: "It is not a notebook FineNotes can import." },
     ]);
   });
 
   it("reports files it cannot use instead of throwing", () => {
     expect(importNotebooks(new Uint8Array([1, 2, 3]), "x.goodnotes").failures).toEqual([
-      { name: "x.goodnotes", reason: "It is not a Goodnotes or Notability file." },
+      { name: "x.goodnotes", reason: "It is not a notebook FineNotes can import." },
     ]);
     expect(importNotebooks(zip({ "a.txt": new Uint8Array([1]) }), "a.zip").failures).toEqual([
-      { name: "a.zip", reason: "No Goodnotes or Notability notebook was found in it." },
+      { name: "a.zip", reason: "No notebook FineNotes can import was found in it." },
     ]);
     const noPages = zip(goodnotesFiles({ templates: [], pages: [] }));
     const failed = importNotebooks(noPages, "Empty.goodnotes").failures[0];
     expect(failed.name).toBe("Empty.goodnotes");
     expect(failed.reason).toMatch(/^It could not be read \(.*no pages.*\)\.$/);
+  });
+
+  it("tells the formats apart by their bytes, alone or inside a backup", () => {
+    const sbn2 = note([
+      { w: 1000, h: 1400, s: [{ p: [point(1, 1), point(5, 5)], c: 0xff000000 }] },
+    ]);
+    const singles: Record<string, Uint8Array> = {
+      "Physics.xopp": xopp([{}], "Physics"),
+      "Draft.sbn2": sbn2,
+      "Page.rm": rmOld(5, []),
+      "Diary.note": buildSupernote({ pages: [{}] }),
+    };
+    const sources = Object.entries(singles).map(
+      ([name, bytes]) => importNotebooks(bytes, name).results[0]?.source,
+    );
+    expect(sources).toEqual(["xournal", "saber", "remarkable", "supernote"]);
+    // The same extension, two apps: a Supernote .note and a Notability .note.
+    expect(importNotebooks(singles["Diary.note"], "a.note").results[0].title).toBe("a");
+    const mixed = importNotebooks(zip({ ...singles, "x.pdf": PDF }), "Mixed.zip");
+    expect(mixed.results.map((r) => r.source).sort()).toEqual([
+      "remarkable",
+      "saber",
+      "supernote",
+      "xournal",
+    ]);
+    expect(mixed.failures).toEqual([]);
+    expect(importNotebooks(zip({ "main.sbn2": sbn2 }), "Draft.sba").results[0].source).toBe(
+      "saber",
+    );
   });
 
   it("stops opening zips inside zips after two levels", () => {
@@ -101,7 +134,20 @@ describe("importNotebooks", () => {
   });
 
   it("lists the extensions to pick", () => {
-    expect(IMPORT_EXTENSIONS).toEqual(["goodnotes", "note", "zip"]);
+    expect(IMPORT_EXTENSIONS).toEqual([
+      "goodnotes",
+      "note",
+      "noteful",
+      "zip",
+      "pdf",
+      "xopp",
+      "xoj",
+      "sbn2",
+      "sbn",
+      "sba",
+      "rm",
+      "rmdoc",
+    ]);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   importHeading,
   isImportFileName,
   progressText,
+  sortDropped,
 } from "../../src/import/import-summary";
 import { goodnotesFiles, JPEG, PDF, zip } from "./builders";
 
@@ -50,8 +51,27 @@ describe("import summary", () => {
   });
 
   it("recognises importable files", () => {
-    expect(["a.goodnotes", "B.NOTE", "backup.zip"].every(isImportFileName)).toBe(true);
-    expect(["a.pdf", "notes.md", "goodnotes"].some(isImportFileName)).toBe(false);
+    const known = ["a.goodnotes", "B.NOTE", "backup.zip", "s.pdf", "x.xopp", "x.xoj"];
+    expect([...known, "s.sbn2", "s.sbn", "s.sba", "p.rm", "d.rmdoc"].every(isImportFileName)).toBe(
+      true,
+    );
+    expect(["notes.md", "goodnotes", ".pdf", "a.docx"].some(isImportFileName)).toBe(false);
+  });
+
+  it("sorts dropped files into the importable and a line for the rest", () => {
+    const f = (...names: string[]) => names.map((name) => ({ name }));
+    expect(sortDropped(f("a.goodnotes", "b.note"))).toEqual({
+      accepted: f("a.goodnotes", "b.note"),
+      refused: "",
+    });
+    expect(sortDropped(f("a.goodnotes", "photo.png")).refused).toBe(
+      "photo.png is not a notebook FineNotes can import, so it was left out.",
+    );
+    const many = sortDropped(f("a.docx", "b.png", "c.md", "d.txt"));
+    expect(many.accepted).toEqual([]);
+    expect(many.refused).toBe(
+      "a.docx, b.png and 2 more are not notebooks FineNotes can import, so they were left out.",
+    );
   });
 
   it("shows progress", () => {

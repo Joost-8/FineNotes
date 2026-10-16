@@ -10,6 +10,7 @@ import {
   FuzzySuggestModal,
   Modal,
   normalizePath,
+  Notice,
   Platform,
   setIcon,
   Setting,
@@ -27,6 +28,7 @@ import {
   importHeading,
   isImportFileName,
   progressText,
+  sortDropped,
 } from "../import/import-summary";
 import {
   cleanTitle,
@@ -39,6 +41,9 @@ import {
 import { buildInkFile } from "../model/serialize";
 import { errorMessage } from "../util/errors";
 import { saveImageAttachment } from "./image-import";
+import { isPdf, readPdf } from "../import/pdf";
+import { readPdfPages } from "./pdf-reading";
+import { FolderSuggestModal } from "./folder-suggest";
 
 export interface ImportNotebookOptions {
   /** Where new notebooks go (vault-relative, "" for the root). */
@@ -49,6 +54,11 @@ export interface ImportNotebookOptions {
   open: (file: TFile) => Promise<void>;
 }
 
+/** Whether a drag carries files from outside the app. */
+function carriesFiles(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes("Files") ?? false;
+}
+
 /** A picked file before it is read. */
 interface Picked {
   name: string;
@@ -57,17 +67,80 @@ interface Picked {
 
 export class ImportNotebookModal extends Modal {
   private busy = false;
+  /** Where the notebooks go: the caller's folder, until changed here. */
+  private folder: string;
 
   constructor(
     app: App,
     private readonly options: ImportNotebookOptions,
   ) {
     super(app);
+    this.folder = options.folder;
   }
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog");
+    this.keepDropsInside();
     this.showPicker();
+  }
+
+  /**
+   * A file let go over the dialog but outside the drop zone does nothing,
+   * rather than reaching Obsidian, which would copy it into the vault.
+   */
+  private keepDropsInside(): void {
+    for (const type of ["dragover", "drop"] as const) {
+      this.containerEl.addEventListener(type, (event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+      });
+    }
+  }
+
+  /**
+   * The drop zone: files dragged over it light it up, and import when let
+   * go. The drop stops here, so Obsidian does not also copy the files into
+   * the vault. Drags that carry no files (text, a vault file from the
+   * explorer) are left alone.
+   */
+  private listenForDrops(zone: HTMLElement): void {
+    let depth = 0;
+    const highlight = (on: boolean): void => {
+      zone.toggleClass("is-dragging", on);
+    };
+    zone.addEventListener("dragenter", (event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      depth++;
+      highlight(!this.busy);
+    });
+    zone.addEventListener("dragover", (event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = this.busy ? "none" : "copy";
+    });
+    zone.addEventListener("dragleave", (event) => {
+      if (!carriesFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) highlight(false);
+    });
+    zone.addEventListener("drop", (event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      depth = 0;
+      highlight(false);
+      if (this.busy) return;
+      const { accepted, refused } = sortDropped(Array.from(event.dataTransfer?.files ?? []));
+      if (refused) new Notice(refused);
+      if (accepted.length > 0) {
+        void this.run(
+          accepted.map((file) => ({ name: file.name, read: () => file.arrayBuffer() })),
+        );
+      }
+    });
   }
 
   override onClose(): void {
@@ -76,54 +149,112 @@ export class ImportNotebookModal extends Modal {
 
   // --- Step 1: choose files ---------------------------------------------------
 
+  /**
+   * The first screen, in two columns: where the notebooks come from (drop
+   * zone with the picker, or a vault file) and what comes over. Under them,
+   * where they go (a folder button that opens the folder list) and the
+   * export help. On a narrow screen the columns stack.
+   */
   private showPicker(): void {
-    this.titleEl.setText("Import notebook");
+    this.titleEl.setText("Import notebooks");
     const el = this.contentEl;
     el.empty();
-    el.createEl("p", {
-      text:
-        "Bring notebooks over from Goodnotes or Notability. Your handwriting stays editable, " +
-        "and paper and pictures come along.",
+    const cols = el.createDiv({ cls: "goodobsidian-import-cols" });
+
+    // Where from: the drop zone, with the picker inside it, and the vault.
+    const from = cols.createDiv({ cls: "goodobsidian-import-from" });
+    const zone = from.createDiv({ cls: "goodobsidian-import-drop" });
+    setIcon(zone.createDiv({ cls: "goodobsidian-import-drop-icon" }), "file-up");
+    zone.createDiv({
+      cls: "goodobsidian-import-drop-title",
+      text: Platform.isPhone ? "Choose notebooks" : "Drop files or a .zip",
+    });
+    zone.createDiv({
+      cls: "goodobsidian-import-drop-desc",
+      text: "Notebook files or a PDF, several at once",
+    });
+    const choose = zone.createEl("button", {
+      cls: "mod-cta clickable-icon goodobsidian-import-drop-button",
+      text: "Choose files",
+      attr: { type: "button" },
+    });
+    choose.addEventListener("click", () => {
+      // Opened inside the tap: iPadOS only shows a picker for a click made in a gesture.
+      void pickFiles(el).then((files) => {
+        if (files.length > 0) void this.run(files);
+      });
+    });
+    this.listenForDrops(zone);
+
+    const vault = from.createEl("button", {
+      cls: "goodobsidian-import-row clickable-icon",
+      attr: { type: "button" },
+    });
+    setIcon(vault.createSpan({ cls: "goodobsidian-import-row-icon" }), "folder-open");
+    vault.createSpan({ cls: "goodobsidian-import-row-label", text: "From this vault" });
+    setIcon(vault.createSpan({ cls: "goodobsidian-import-row-icon is-trailing" }), "chevron-right");
+    vault.addEventListener("click", () => {
+      new VaultImportSuggestModal(this.app, (file) => {
+        void this.run([{ name: file.name, read: () => this.app.vault.readBinary(file) }]);
+      }).open();
     });
 
-    new Setting(el)
-      .setName("From this device")
-      .setDesc("A .goodnotes or .note file, or a backup .zip. You can pick several.")
-      .addButton((button) =>
-        button
-          .setClass("clickable-icon")
-          .setButtonText("Choose files…")
-          .setCta()
-          .onClick(() => {
-            // Opened inside the tap: iPadOS only shows a picker for a click made in a gesture.
-            void pickFiles(el).then((files) => {
-              if (files.length > 0) void this.run(files);
-            });
-          }),
-      );
+    // What comes over.
+    const what = cols.createDiv({ cls: "goodobsidian-import-what" });
+    what.createDiv({ cls: "goodobsidian-import-what-title", text: "What comes over" });
+    for (const line of ["Handwriting, still editable", "Paper and templates", "Pictures"]) {
+      const item = what.createDiv({ cls: "goodobsidian-import-what-item" });
+      setIcon(item.createSpan({ cls: "goodobsidian-import-what-check" }), "check");
+      item.createSpan({ text: line });
+    }
+    what.createDiv({
+      cls: "goodobsidian-import-what-apps",
+      text: "From Goodnotes, Freenotes, Notability and more.",
+    });
+    // A PDF's own content is never turned back into ink: say so before anyone picks one.
+    const pdf = what.createDiv({ cls: "goodobsidian-import-what-note" });
+    setIcon(pdf.createSpan({ cls: "goodobsidian-import-what-note-icon" }), "file-text");
+    pdf.createSpan({
+      text: "A PDF comes in as it is: you can write over its pages, but what's already on them can't be edited.",
+    });
 
-    new Setting(el)
-      .setName("From the vault")
-      .setDesc("A file already synced into this vault.")
-      .addButton((button) =>
-        button
-          .setClass("clickable-icon")
-          .setButtonText("Choose…")
-          .onClick(() => {
-            new VaultImportSuggestModal(this.app, (file) => {
-              void this.run([{ name: file.name, read: () => this.app.vault.readBinary(file) }]);
-            }).open();
-          }),
-      );
+    // Where to, and help.
+    const footer = el.createDiv({ cls: "goodobsidian-import-footer" });
+    footer.createSpan({ cls: "goodobsidian-import-footer-label", text: "Save to" });
+    const folder = footer.createEl("button", {
+      cls: "goodobsidian-import-folder clickable-icon",
+      attr: { type: "button", "aria-label": "Choose the folder to save to" },
+    });
+    setIcon(folder.createSpan({ cls: "goodobsidian-import-folder-icon" }), "folder");
+    const folderName = folder.createSpan({ cls: "goodobsidian-import-folder-name" });
+    setIcon(folder.createSpan({ cls: "goodobsidian-import-folder-icon" }), "chevron-down");
+    const showFolder = (): void => {
+      folderName.setText(this.folder || "Vault's top folder");
+    };
+    showFolder();
+    folder.addEventListener("click", () => {
+      new FolderSuggestModal(
+        this.app,
+        (path) => {
+          this.folder = normalizeFolder(path);
+          showFolder();
+        },
+        "Choose a folder for the imported notebooks",
+        this.folder,
+      ).open();
+    });
 
-    new Setting(el)
-      .setName("Save to")
-      .setDesc(this.options.folder ? this.options.folder : "The vault's top folder");
-
-    const help = el.createEl("details", { cls: "goodobsidian-import-help" });
-    const summary = help.createEl("summary");
-    setIcon(summary.createSpan({ cls: "goodobsidian-import-help-chevron" }), "chevron-right");
-    summary.createSpan({ text: "How do I export my notebooks?" });
+    const helpToggle = footer.createEl("button", {
+      cls: "goodobsidian-import-help-toggle clickable-icon",
+      text: "How do I export?",
+      attr: { type: "button", "aria-expanded": "false" },
+    });
+    const help = el.createDiv({ cls: "goodobsidian-import-help is-hidden" });
+    helpToggle.addEventListener("click", () => {
+      const open = help.hasClass("is-hidden");
+      help.toggleClass("is-hidden", !open);
+      helpToggle.setAttribute("aria-expanded", String(open));
+    });
     const steps = help.createEl("ul");
     steps.createEl("li", {
       text:
@@ -132,20 +263,23 @@ export class ImportNotebookModal extends Modal {
     });
     steps.createEl("li", { text: "Notability: share or export a note in the Note format." });
     steps.createEl("li", {
+      text:
+        "Xournal++ and Saber: the notebook file itself (.xopp, .xoj, .sbn2, .sba). reMarkable: " +
+        "export a notebook as .rmdoc. Supernote: the .note file from the device.",
+    });
+    steps.createEl("li", {
+      text:
+        "Noteful: export a notebook in the Noteful format (.noteful), or make a backup and pick its " +
+        "files. Any other app (Apple Notes, Noteshelf, Nebo, CollaNote…): export a PDF. A PDF " +
+        "stays a PDF: you write over its pages, but its own handwriting and text can't be edited.",
+    });
+    steps.createEl("li", {
       text: "Save the file to this vault's folder or to Files, then choose it here.",
     });
-
-    new Setting(el).addButton((button) =>
-      button
-        .setClass("clickable-icon")
-        .setButtonText("Cancel")
-        .onClick(() => this.close()),
-    );
   }
-
   // --- Step 2: convert and save ------------------------------------------------
 
-  private async run(files: Picked[]): Promise<void> {
+  private async run(files: readonly Picked[]): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     const el = this.contentEl;
@@ -159,7 +293,12 @@ export class ImportNotebookModal extends Modal {
         status.setText(progressText(index, files.length, picked.name));
         let one: ImportBatch;
         try {
-          one = importNotebooks(new Uint8Array(await picked.read()), picked.name);
+          const bytes = new Uint8Array(await picked.read());
+          // A PDF needs pdf.js to read its pages, so it is read here; the
+          // other formats are converted from their bytes alone.
+          one = isPdf(bytes)
+            ? await importPdf(bytes, picked.name)
+            : importNotebooks(bytes, picked.name);
         } catch (error) {
           batch.failures.push({
             name: picked.name,
@@ -189,7 +328,7 @@ export class ImportNotebookModal extends Modal {
   /** Write one converted notebook and its attachments; returns the notebook file. */
   private async save(result: ImportResult): Promise<TFile> {
     const vault = this.app.vault;
-    const dir = normalizeFolder(this.options.folder);
+    const dir = normalizeFolder(this.folder);
     const parent = dir ? vault.getFolderByPath(dir) : vault.getRoot();
     const taken = new Set(parent?.children.map((child) => child.name) ?? []);
     const paths = notebookPaths(dir, result.title, "notebook", this.options.ownFolder, taken);
@@ -333,6 +472,14 @@ function pickFiles(host: HTMLElement): Promise<Picked[]> {
     input.addEventListener("cancel", () => finish([]));
     input.click();
   });
+}
+
+/** A PDF from another app: its pages as paper, its ink annotations as ink. */
+async function importPdf(bytes: Uint8Array, name: string): Promise<ImportBatch> {
+  const leaf = name.split(/[\\/]/).pop() ?? name;
+  const title = leaf.replace(/\.pdf$/i, "") || "Imported notebook";
+  const { pages, madeBy } = await readPdfPages(bytes);
+  return { results: [readPdf(bytes, pages, title, madeBy)], failures: [] };
 }
 
 /**

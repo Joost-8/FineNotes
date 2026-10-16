@@ -6,7 +6,8 @@
 import type { InkDocument } from "../model/document";
 import { PAGE_PX_PER_MM } from "../model/units";
 
-export type ImportSource = "goodnotes" | "notability";
+export type ImportSource =
+  "goodnotes" | "notability" | "noteful" | "xournal" | "saber" | "remarkable" | "supernote" | "pdf";
 
 /** A file the notebook uses: a paper or annotated PDF, a picture, a recording. */
 export interface ImportAttachment {
@@ -21,6 +22,8 @@ export interface ImportAttachment {
 
 export interface ImportResult {
   source: ImportSource;
+  /** The app it came from, when the source alone does not say (a PDF from Noteful). */
+  app?: string;
   /** The notebook's title in the other app (or the file's name). */
   title: string;
   /** Ready for `buildInkFile` once its attachment paths are relinked. */
