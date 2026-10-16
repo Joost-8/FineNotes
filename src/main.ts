@@ -64,6 +64,7 @@ import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
 import {
   type NotebookChoices,
+  DEFAULT_NOTEBOOK_CHOICES,
   buildNewDocument,
   buildPdfNotebook,
   cleanTitle,
@@ -77,6 +78,7 @@ import {
   uniqueFileName,
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
+import { buildWelcomeNotebook, WELCOME_TITLE } from "./model/welcome";
 import { openImportNotebookModal } from "./view/import-notebook-modal";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
@@ -985,7 +987,22 @@ export default class GoodObsidianPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       this.moveInkNotesOver();
       void this.showWhatsNew();
+      if (this.firstInstall) void this.openWelcomeNotebook();
     });
+  }
+
+  /**
+   * On a first install, once: a "Welcome to FineNotes" notebook in the
+   * default notebook folder, opened, so there is something to write in at
+   * once. Not when one is already in the vault (a reinstall).
+   */
+  async openWelcomeNotebook(): Promise<TFile | null> {
+    const exists = this.app.vault
+      .getFiles()
+      .some((file) => stripInkSuffix(file.name) === WELCOME_TITLE && this.isInkFile(file));
+    if (exists) return null;
+    const choices: NotebookChoices = { ...DEFAULT_NOTEBOOK_CHOICES, ownFolder: false };
+    return this.createNotebook(WELCOME_TITLE, choices, undefined, () => buildWelcomeNotebook());
   }
 
   /** Whether `file` is an ink note (see `isInkNote`). */
