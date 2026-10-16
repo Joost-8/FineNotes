@@ -62,6 +62,9 @@ export interface PointerDebugRecord {
   timeStamp: number;
   /** Its position is whole CSS px on both axes ({@link isWholePixel}). */
   wholePixel: boolean;
+  /** The button that changed (`-1`: none) and every button held, as a bit set. */
+  button: number;
+  buttons: number;
 }
 
 /**
@@ -316,7 +319,7 @@ export class PointerController {
   }
 
   private debug(type: PointerDebugType, event: PointerEvent, coalesced: number): void {
-    const { pointerType, pointerId, pressure, timeStamp } = event;
+    const { pointerType, pointerId, pressure, timeStamp, button, buttons } = event;
     const wholePixel = isWholePixel(event);
     this.listener.onDebug?.({
       type,
@@ -326,6 +329,8 @@ export class PointerController {
       coalesced,
       timeStamp,
       wholePixel,
+      button,
+      buttons,
     });
   }
 

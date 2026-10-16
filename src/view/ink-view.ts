@@ -1461,6 +1461,7 @@ export class InkView extends TextFileView {
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
         },
         barrelAction: () => this.settings.barrelButton,
+        secondBarrelAction: () => this.settings.secondBarrelButton,
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);

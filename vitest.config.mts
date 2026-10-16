@@ -73,6 +73,7 @@ export default defineConfig({
         "src/input/palm-rejection.ts",
         "src/input/pen-rejoin.ts",
         "src/input/pen-modifiers.ts",
+        "src/input/pen-button-log.ts",
         "src/input/finger-gesture.ts",
         "src/input/multi-finger-tap.ts",
         "src/input/finger-hold.ts",

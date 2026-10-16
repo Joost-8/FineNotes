@@ -58,6 +58,8 @@ interface Contact {
   height?: number;
   /** The mouse button pressed (2 is the right one); left out, the main one. */
   button?: number;
+  /** Every button held, as a bit set (default 1: touching). */
+  buttons?: number;
   /** Samples `getCoalescedEvents()` returns; `undefined` leaves the method out. */
   coalesced?: Contact[];
   /** Samples `getPredictedEvents()` returns; `undefined` leaves the method out. */
@@ -76,6 +78,7 @@ interface StandInEvent {
   width: number;
   height: number;
   button: number;
+  buttons: number;
   prevented: boolean;
   preventDefault(): void;
   getCoalescedEvents?: () => StandInEvent[];
@@ -95,6 +98,7 @@ function eventFor(id: number, pointerType: string, c: Contact): StandInEvent {
     width: c.width ?? 1,
     height: c.height ?? 1,
     button: c.button ?? 0,
+    buttons: c.buttons ?? 1,
     prevented: false,
     preventDefault() {
       event.prevented = true;
@@ -274,6 +278,8 @@ describe("a drawing pointer", () => {
         coalesced: 0,
         timeStamp: 3,
         wholePixel: true,
+        button: 0,
+        buttons: 1,
       },
       {
         type: "move",
@@ -283,6 +289,8 @@ describe("a drawing pointer", () => {
         coalesced: 1,
         timeStamp: 4,
         wholePixel: true,
+        button: 0,
+        buttons: 1,
       },
     ]);
   });

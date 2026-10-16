@@ -102,4 +102,12 @@ describe("PointerHud", () => {
     hud.record(event({ pressure: 0.25, wholePixel: false }));
     expect(hud.pointer()).toBe("pen p=0.25 xy=frac");
   });
+
+  it("shows the latest event's button and buttons, to read what a pen's side buttons send", () => {
+    const hud = new PointerHud();
+    hud.record(event({ type: "down", pressure: 0.25, button: 2, buttons: 3 }));
+    expect(hud.pointer()).toBe("pen p=0.25 b=2 bs=3");
+    hud.record(event({ pressure: 0.25, wholePixel: false, button: -1, buttons: 5 }));
+    expect(hud.pointer()).toBe("pen p=0.25 xy=frac b=-1 bs=5");
+  });
 });

@@ -24,7 +24,7 @@ export type HudEvent = Pick<
   PointerDebugRecord,
   "type" | "pointerType" | "pressure" | "coalesced" | "timeStamp"
 > &
-  Partial<Pick<PointerDebugRecord, "wholePixel">>;
+  Partial<Pick<PointerDebugRecord, "wholePixel" | "button" | "buttons">>;
 
 export class PointerHud {
   private log: LogEntry[] = [];
@@ -46,11 +46,16 @@ export class PointerHud {
   private pressure = 0;
   /** Whether its position was whole px (rounded input); undefined if unknown. */
   private wholePixel: boolean | undefined;
+  /** Its button and buttons (`PointerEvent.button`, `.buttons`); undefined if unknown. */
+  private button: number | undefined;
+  private buttons: number | undefined;
 
   record(event: HudEvent): void {
     this.pointerType = event.pointerType;
     this.pressure = event.pressure;
     this.wholePixel = event.wholePixel;
+    this.button = event.button;
+    this.buttons = event.buttons;
     switch (event.type) {
       case "down":
         this.downs += 1;
@@ -104,12 +109,17 @@ export class PointerHud {
   }
 
   /**
-   * The latest event's pointer type ("-" before any) and pressure, and
-   * whether its position was whole px (`xy=int`, rounded) or not (`xy=frac`).
+   * The latest event's pointer type ("-" before any) and pressure, whether
+   * its position was whole px (`xy=int`, rounded) or not (`xy=frac`), and
+   * its button and buttons (`b=2 bs=3`: the barrel, held while touching).
    */
   pointer(): string {
     const xy = this.wholePixel === undefined ? "" : ` xy=${this.wholePixel ? "int" : "frac"}`;
-    return `${this.pointerType || "-"} p=${this.pressure.toFixed(2)}${xy}`;
+    const b =
+      this.button === undefined || this.buttons === undefined
+        ? ""
+        : ` b=${this.button} bs=${this.buttons}`;
+    return `${this.pointerType || "-"} p=${this.pressure.toFixed(2)}${xy}${b}`;
   }
 
   private recordMove(event: HudEvent): void {

@@ -103,11 +103,56 @@ describe("pressOverride: stylus buttons", () => {
   });
 });
 
+describe("pressOverride: the second barrel button", () => {
+  // Browsers send it as the middle button: bit 4, and button 1 on a hover press.
+  const second = (action: "erase" | "lasso" | "pan" | "none") => ({ ...PC, secondBarrel: action });
+
+  it("does nothing unless it is set, so a pen writes on as it always did", () => {
+    expect(pressOverride(press({ buttons: 5 }), PC)).toBeNull();
+    expect(pressOverride(press({ buttons: 5 }), second("none"))).toBeNull();
+  });
+
+  it("does what it is set to, over any key", () => {
+    const held = press({ buttons: 5, shiftKey: true });
+    expect(pressOverride(held, second("erase"))).toBe("eraser");
+    expect(pressOverride(held, second("lasso"))).toBe("select");
+    expect(pressOverride(held, second("pan"))).toBe("pan");
+  });
+
+  it("reads a hover press by its button number as well as its bit", () => {
+    expect(pressOverride(press({ button: 1, buttons: 4 }), second("lasso"))).toBe("select");
+    expect(pressOverride(press({ button: 1, buttons: 0 }), second("lasso"))).toBe("select");
+    expect(pressOverride(press({ button: 1, buttons: 4 }), second("none"))).toBe("ignore");
+  });
+
+  it("gives way to the first barrel button and to the eraser end", () => {
+    const both = { ...PC, barrel: "erase" as const, secondBarrel: "lasso" as const };
+    expect(pressOverride(press({ buttons: 7 }), both)).toBe("eraser");
+    expect(pressOverride(press({ buttons: 37 }), { ...both, barrel: "pan" })).toBe("eraser");
+  });
+
+  it("is never read from a mouse, whose middle button is its own", () => {
+    expect(
+      pressOverride(press({ pointerType: "mouse", button: 1, buttons: 4 }), second("lasso")),
+    ).toBeNull();
+  });
+
+  it("counts as a stylus button down", () => {
+    expect(stylusButtonDown(press({ buttons: 5 }))).toBe(true);
+    expect(stylusButtonDown(press({ button: 1, buttons: 4 }))).toBe(true);
+  });
+});
+
 describe("barrelActionOf", () => {
   it("reads a stored setting, erase when it is not one", () => {
     for (const action of BARREL_ACTIONS) expect(barrelActionOf(action)).toBe(action);
     expect(barrelActionOf("zoom")).toBe("erase");
     expect(barrelActionOf(undefined)).toBe("erase");
+  });
+
+  it("falls back to what it is told, for the second button nothing", () => {
+    expect(barrelActionOf(undefined, "none")).toBe("none");
+    expect(barrelActionOf("lasso", "none")).toBe("lasso");
   });
 });
 

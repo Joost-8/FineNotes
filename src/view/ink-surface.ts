@@ -306,6 +306,7 @@ import {
 import { undoesPalm } from "../input/palm-rejection";
 import {
   type BarrelAction,
+  type PressContext,
   type PressInput,
   type PressOverride,
   barrelActionOf,
@@ -313,6 +314,7 @@ import {
   pressOverride,
   stylusButtonDown,
 } from "../input/pen-modifiers";
+import { PenButtonLog } from "../input/pen-button-log";
 import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import {
@@ -522,6 +524,8 @@ export interface InkSurfaceCallbacks {
   onShortcuts?: () => void;
   /** What the stylus barrel button does (the settings); erase when absent. */
   barrelAction?: () => BarrelAction;
+  /** What a pen's second barrel button does (the settings); nothing when absent. */
+  secondBarrelAction?: () => BarrelAction;
   returnToPenOnReselect?: () => boolean;
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
@@ -1414,6 +1418,8 @@ export class InkSurface {
   // numbers the surface adds (the last shape verdict, layouts, frame rate).
   private debug = false;
   private readonly hud = new PointerHud();
+  /** What the pen's buttons sent, kept whether or not the HUD is on (for the export). */
+  private readonly penButtons = new PenButtonLog();
   private hudFrame = 0;
   private hudLastVerdict = "-";
   private hudLayouts = 0;
@@ -1708,6 +1714,7 @@ export class InkSurface {
     input.attach();
     this.pointerInput = input;
     this.disposers.push(() => input.detach());
+    this.watchPenButtons();
 
     // iOS WebKit runs its own long-press recogniser on the raw *touch* stream,
     // and when it claims a stationary pen it ends the pointer in pointercancel
@@ -2403,6 +2410,7 @@ export class InkSurface {
     this.hudEl.toggleClass("is-hidden", !enabled);
     if (!enabled) return;
     this.hud.restart();
+    this.penButtons.restart();
     this.renderHud();
   }
 
@@ -4215,7 +4223,7 @@ export class InkSurface {
     if (this.editingTextView() || this.heldText) return "draw";
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
-    const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
+    const route = pressOverride(event, this.pressContext(onPage));
     if (route === "ignore") return "ignore";
     if (route !== "pan") return "draw";
     this.penPanning = true;
@@ -4226,14 +4234,20 @@ export class InkSurface {
   private pressOverrideOf(press: PressInput): PressOverride | null {
     // Typing keeps its keys: Shift is a capital there, not an eraser.
     if (this.editingTextView()) return null;
-    const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
+    const lent = pressOverride(press, this.pressContext(true));
     // A practice file has the pen and the eraser only.
     if (this.practice && lent === "select") return null;
     return lent === "eraser" || lent === "select" || lent === "zoom" ? lent : null;
   }
 
-  private barrel(): BarrelAction {
-    return barrelActionOf(this.callbacks.barrelAction?.());
+  /** What a press's keys and stylus buttons are read against: the platform and the settings. */
+  private pressContext(onPage: boolean): PressContext {
+    return {
+      mac: macKeys(),
+      barrel: barrelActionOf(this.callbacks.barrelAction?.()),
+      secondBarrel: barrelActionOf(this.callbacks.secondBarrelAction?.(), "none"),
+      onPage,
+    };
   }
 
   /** Layout space -> client px, at the view as it is now: the inverse of {@link toLayout}. */
@@ -4750,6 +4764,7 @@ export class InkSurface {
         holdMs: HOLD_MS,
         holdRadius: HOLD_RADIUS,
         pointers: this.diagSums,
+        penButtons: this.penButtons.entries(),
         strokes: this.diagnostics,
       },
       null,
@@ -4758,6 +4773,39 @@ export class InkSurface {
   }
 
   // --- The diagnostics HUD -------------------------------------------------------
+
+  /**
+   * Log what the pen's buttons send ({@link PenButtonLog}): every pen event
+   * on the page, hovering included, and the right-click menus beside them.
+   * Keys too, while the HUD shows and nothing is being typed, since some
+   * pens send their buttons as key presses. Listening only: nothing is
+   * prevented, and the capture phase sees an event before anything stops it.
+   */
+  private watchPenButtons(): void {
+    const onPointer = (event: Event): void => {
+      this.penButtons.record(event as PointerEvent);
+      if (this.debug) this.scheduleHud();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (!this.debug || this.editingTextView() || isEditable(event.target)) return;
+      this.penButtons.key(event);
+      this.scheduleHud();
+    };
+    const types = [
+      ...["over", "down", "move", "up", "cancel", "out"].map((phase) => `pointer${phase}`),
+      "contextmenu",
+      "auxclick",
+    ];
+    const options = { capture: true, passive: true };
+    for (const type of types) this.scrollEl.addEventListener(type, onPointer, options);
+    window.addEventListener("keydown", onKey, options);
+    window.addEventListener("keyup", onKey, options);
+    this.disposers.push(() => {
+      for (const type of types) this.scrollEl.removeEventListener(type, onPointer, options);
+      window.removeEventListener("keydown", onKey, options);
+      window.removeEventListener("keyup", onKey, options);
+    });
+  }
 
   /**
    * A drawing-pointer event, as the pointer controller reports it: always
@@ -4811,6 +4859,7 @@ export class InkSurface {
       this.hud.summary(strokeCount(this.doc)) +
         `shape ${this.hudLastVerdict}\n` +
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
+        `${this.penButtons.line()}\n` +
         this.hudGeometry(),
     );
   }

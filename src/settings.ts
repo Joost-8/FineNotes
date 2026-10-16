@@ -232,8 +232,12 @@ const DESC = {
     "Up to eight pens with their own type, colour and width, picked from the star in the " +
     "pen's toolbar or with the keys 1 to 8. Change one here; the arrows reorder them.",
   barrel:
-    "What a pen tablet's side button does while you write with it. The eraser end of the " +
-    "pen always erases.",
+    "What a pen's side button does while you hold it and write: a pen tablet's, or an " +
+    "Android pen's. The eraser end of the pen always erases.",
+  secondBarrel:
+    "For a pen with two side buttons: what the other one does. Some tablets keep that " +
+    "button for their own pen app, and then it does nothing here.",
+
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -620,6 +624,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "barrel button",
         "pen tablet",
         "wacom",
+        "stylus",
+      ]),
+      dropdown("secondBarrelButton", "Stylus second side button", DESC.secondBarrel, BARREL_NAMES, [
+        "barrel button",
+        "middle button",
+        "pen tablet",
         "stylus",
       ]),
       {

@@ -178,6 +178,11 @@ export interface GoodObsidianSettings {
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
   barrelButton: BarrelAction;
+  /**
+   * What a pen's second barrel button does, where it has one (the middle
+   * button to the browser): nothing unless set. Checked where read.
+   */
+  secondBarrelButton: BarrelAction;
   /** A small crosshair over the page for the pens, on a computer. */
   penCursor: boolean;
   /**
@@ -249,6 +254,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   barrelButton: "erase",
+  secondBarrelButton: "none",
   penCursor: true,
   straightHighlighter: true,
 

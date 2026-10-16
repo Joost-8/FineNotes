@@ -19,6 +19,7 @@ import { History } from "../../src/model/history";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
+import { PenButtonLog } from "../../src/input/pen-button-log";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
 
@@ -533,6 +534,7 @@ function hud(debug = true): Hud {
   const surface = surfaceWith({
     debug,
     hud: pointerHud,
+    penButtons: new PenButtonLog(),
     hudFrame: 0,
     hudLastVerdict: "-",
     hudEl: {
@@ -573,7 +575,7 @@ function hud(debug = true): Hud {
 describe("the HUD's pointer lines", () => {
   it("starts empty", () => {
     expect(hud().text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nbtn -\nGEOMETRY",
     );
   });
 
@@ -581,7 +583,7 @@ describe("the HUD's pointer lines", () => {
     const h = hud();
     for (const r of strokeRecords(100)) h.record(r);
     expect(h.text()).toBe(
-      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\nbtn -\nGEOMETRY",
     );
   });
 
@@ -599,7 +601,7 @@ describe("the HUD's pointer lines", () => {
     h.record({ type: "move", pointerType: "touch", pressure: 0.1, coalesced: 4, timeStamp: 505 });
     h.record({ type: "cancel", pointerType: "touch", pressure: 0.1, timeStamp: 510 });
     expect(h.text()).toBe(
-      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\nGEOMETRY",
+      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\nbtn -\nGEOMETRY",
     );
   });
 
@@ -629,7 +631,7 @@ describe("the HUD's pointer lines", () => {
     h.setDebug(true);
     expect(h.hidden()).toBe(false);
     expect(h.text()).toBe(
-      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\nbtn -\nGEOMETRY",
     );
   });
 
@@ -640,7 +642,7 @@ describe("the HUD's pointer lines", () => {
     for (const r of strokeRecords(0)) h.record(r);
     h.setDebug(true);
     expect(h.text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nbtn -\nGEOMETRY",
     );
   });
 });
@@ -1656,6 +1658,17 @@ describe("pens and shortcuts (FineNotes#25)", () => {
     const surface = routed({ callbacks: { barrelAction: () => "none" } });
     expect(run(surface, "pressRoute", pen({ button: 2, buttons: 2 }))).toBe("ignore");
     expect(surface.stylusMenuUntil).toBeGreaterThan(0);
+  });
+
+  it("reads the second side button by its own setting, nothing when unset", () => {
+    const unset = routed({ practice: null });
+    expect(run(unset, "pressOverrideOf", pen({ buttons: 5 }))).toBeNull();
+    const lasso = routed({ practice: null, callbacks: { secondBarrelAction: () => "lasso" } });
+    expect(run(lasso, "pressOverrideOf", pen({ buttons: 5 }))).toBe("select");
+    // The first button keeps its own setting (erase), and wins when both are held.
+    expect(run(lasso, "pressOverrideOf", pen({ buttons: 7 }))).toBe("eraser");
+    const pan = routed({ callbacks: { secondBarrelAction: () => "pan" } });
+    expect(run(pan, "pressRoute", pen({ button: 1, buttons: 4 }))).toBe("pan");
   });
 
   it("lends the eraser or the lasso for one press, never while typing", () => {
