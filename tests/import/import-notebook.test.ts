@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import {
   IMPORT_EXTENSIONS,
   importNotebooks,
@@ -17,6 +17,7 @@ import { xopp } from "./xournal-builders";
 import { note, point } from "./saber-builders";
 import { rmOld } from "./remarkable-builders";
 import { buildSupernote } from "./supernote-builders";
+import { freenotes } from "./freenotes-builders";
 
 const PAGE = "11111111-0000-0000-0000-00000000000A";
 
@@ -148,9 +149,55 @@ describe("importNotebooks", () => {
       "sba",
       "rm",
       "rmdoc",
+      "freenotes",
     ]);
   });
+
+  it("imports a FreeNotes notebook, alone, inside a backup, or unzipped in one", async () => {
+    const ink = [
+      {
+        pattern: 5,
+        items: [
+          {
+            points: [
+              { x: 1, y: 1 },
+              { x: 9, y: 9 },
+            ],
+          },
+        ],
+      },
+    ];
+    const book = freenotes({ title: "prob and stats", pages: ink });
+    const alone = await importNotebooks(book, "prob and stats.freenotes");
+    expect(alone.failures).toEqual([]);
+    expect(alone.results.map((r) => [r.source, r.title, r.doc.pages[0].strokes.length])).toEqual([
+      ["freenotes", "prob and stats", 1],
+    ]);
+
+    const unzipped = zipSync(
+      Object.fromEntries(
+        Object.entries(unzipSync(freenotes({ pages: ink, folder: "Maths.frnote/" }))).map(
+          ([name, data]) => [`Backup/${name}`, data],
+        ),
+      ),
+      { level: 0 },
+    );
+    const backup = await importNotebooks(
+      zip({ "a.freenotes": book, "nested.zip": unzipped }),
+      "Backup.zip",
+    );
+    expect(backup.failures).toEqual([]);
+    expect(backup.results.map((r) => r.title).sort()).toEqual(["Maths", "prob and stats"]);
+
+    const broken = await importNotebooks(
+      zip({ "x.frnote/document.dat": new Uint8Array([0xff]), "x.frnote/layout.dat": EMPTY_FILE }),
+      "x.freenotes",
+    );
+    expect(broken.failures[0].reason).toMatch(/could not be read \(.*page list.*\)/);
+  });
 });
+
+const EMPTY_FILE = new Uint8Array();
 
 describe("relinkAttachments", () => {
   it("swaps attachment names for vault paths", async () => {

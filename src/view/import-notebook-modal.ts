@@ -270,7 +270,8 @@ export class ImportNotebookModal extends Modal {
     steps.createEl("li", {
       text:
         "Xournal++ and Saber: the notebook file itself (.xopp, .xoj, .sbn2, .sba). reMarkable: " +
-        "export a notebook as .rmdoc. Supernote: the .note file from the device.",
+        "export a notebook as .rmdoc. Supernote: the .note file from the device. FreeNotes: " +
+        "share a notebook as a .freenotes file.",
     });
     steps.createEl("li", {
       text:

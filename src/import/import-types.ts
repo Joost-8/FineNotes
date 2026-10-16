@@ -7,7 +7,15 @@ import type { InkDocument, TextFont } from "../model/document";
 import { PAGE_PX_PER_MM } from "../model/units";
 
 export type ImportSource =
-  "goodnotes" | "notability" | "noteful" | "xournal" | "saber" | "remarkable" | "supernote" | "pdf";
+  | "goodnotes"
+  | "notability"
+  | "noteful"
+  | "xournal"
+  | "saber"
+  | "remarkable"
+  | "supernote"
+  | "freenotes"
+  | "pdf";
 
 /** A file the notebook uses: a paper or annotated PDF, a picture, a recording. */
 export interface ImportAttachment {

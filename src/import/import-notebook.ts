@@ -9,6 +9,7 @@
  *
  * - Goodnotes (`.goodnotes`) and Notability (`.note`): zips.
  * - Noteful (`.noteful`): its own binary format; a backup is a folder of them.
+ * - FreeNotes (`.freenotes`): a zip around one `.frnote` folder.
  * - Xournal++ and Xournal (`.xopp`, `.xoj`): gzipped XML, or plain XML.
  * - Saber (`.sbn2`, `.sbn`): BSON or JSON; an `.sba` is a zip around one.
  * - reMarkable: one page (`.rm`), or a whole document (`.rmdoc`, a zip).
@@ -25,6 +26,7 @@
  */
 
 import { unzipSync } from "fflate";
+import { isFreenotes, readFreenotes } from "./freenotes";
 import { isGoodnotes, readGoodnotes } from "./goodnotes";
 import { plural, type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
@@ -61,6 +63,7 @@ export const IMPORT_EXTENSIONS: readonly string[] = [
   "sba",
   "rm",
   "rmdoc",
+  "freenotes",
 ];
 
 /** Whether a file name has one of {@link IMPORT_EXTENSIONS}. */
@@ -235,7 +238,13 @@ async function collect(
   const remarkable =
     names.some((name) => name.endsWith(".content")) &&
     safely(() => isRemarkableDocument(readEntries(bytes, (n) => n.endsWith(".content"))));
-  if (isGoodnotes(index) || isNotability(index) || isSaberArchive(index) || remarkable) {
+  if (
+    isGoodnotes(index) ||
+    isNotability(index) ||
+    isSaberArchive(index) ||
+    isFreenotes(index) ||
+    remarkable
+  ) {
     if (options.cancelled?.()) return;
     let files: Files;
     try {
@@ -281,6 +290,7 @@ async function collect(
       isGoodnotes(files) ||
       isNotability(files) ||
       isSaberArchive(files) ||
+      isFreenotes(files) ||
       safely(() => isRemarkableDocument(files))
     ) {
       await convert(files, folder, batch, options);
@@ -300,6 +310,8 @@ async function convert(
   try {
     if (isGoodnotes(files)) {
       result = readGoodnotes(files, title);
+    } else if (isFreenotes(files)) {
+      result = readFreenotes(files, title || "Imported notebook");
     } else if (isSaberArchive(files)) {
       result = readSaberArchive(files, title || "Imported notebook");
     } else if (safely(() => isRemarkableDocument(files))) {
@@ -347,11 +359,11 @@ async function deliver(
   batch.results.push(result);
 }
 
-/** `X.goodnotes/…`, `X.note/…`, `X.rmdoc/…` or `X.sba/…` folders, in name order. */
+/** `X.goodnotes/…`, `X.note/…`, `X.rmdoc/…`, `X.sba/…` or `X.frnote/…` folders, in name order. */
 function packageFolders(names: string[]): string[] {
   const folders = new Set<string>();
   for (const name of names) {
-    const match = /^(.*?\.(?:goodnotes|note|rmdoc|sba))\/(.+)$/i.exec(name);
+    const match = /^(.*?\.(?:goodnotes|note|rmdoc|sba|frnote))\/(.+)$/i.exec(name);
     if (match && !match[2].endsWith("/")) folders.add(match[1]);
   }
   return [...folders].sort();
