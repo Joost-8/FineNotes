@@ -23,6 +23,8 @@ const START_TIMEOUT_MS = 15_000;
 
 /** What to draw: pdf.js's viewport scale, the bitmap's size, and an optional offset. */
 export interface PdfWorkerPlan {
+  /** `false`: draw none of the PDF's own annotations (`PdfBackdrop.annotations`). */
+  annotations?: false;
   sourceScale: number;
   width: number;
   height: number;
@@ -99,6 +101,7 @@ self.addEventListener("message", async (event) => {
         canvasContext: canvas.getContext("2d"),
         viewport,
         ...(m.transform ? { transform: m.transform } : {}),
+        ...(m.annotations === false ? { annotationMode: 0 } : {}),
       });
       tasks.set(id, task);
       try {

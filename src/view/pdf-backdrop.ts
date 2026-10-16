@@ -95,6 +95,8 @@ interface PdfPageLike {
     canvasContext: CanvasRenderingContext2D;
     viewport: PdfViewportLike;
     transform?: number[];
+    /** pdf.js `AnnotationMode`: 0 draws no annotations, the default 1 draws them. */
+    annotationMode?: number;
   }): {
     promise: Promise<void>;
     cancel?: () => void;
@@ -224,6 +226,12 @@ export class PdfBackdropCache {
     { path: string; page: number; dprScale: number; area?: PdfRenderArea }
   >();
   private held = false;
+  /**
+   * PDFs drawn without their own annotations (`PdfBackdrop.annotations`):
+   * imported ink already stands in for them. Per file, which an imported
+   * PDF is to itself, so the cache keys need not change.
+   */
+  private readonly bare = new Set<string>();
   /** pdf.js in a background worker (`setWorker`); `null` renders on the main thread. */
   private worker: PdfWorker | null = null;
   /** Per path: the page count the worker opened it with, or `null` if missing. */
@@ -529,6 +537,16 @@ export class PdfBackdropCache {
   }
 
   /**
+   * Draw `path` without its own annotations from now on
+   * (`PdfBackdrop.annotations`), dropping any raster drawn with them.
+   */
+  skipAnnotations(path: string): void {
+    if (this.bare.has(path)) return;
+    this.bare.add(path);
+    this.entries.deleteWhere((cached) => cached.path === path);
+  }
+
+  /**
    * The file at `path` changed (created, replaced, deleted, moved away):
    * drop what was read from it, a cached "missing" included, so the next
    * paint reads it afresh. Whether anything was dropped.
@@ -668,6 +686,7 @@ export class PdfBackdropCache {
     const cap = MAX_RASTER_EDGE / Math.max(1, base.width, base.height);
     const scale = plan?.sourceScale ?? Math.min(Math.max(0.05, dprScale), cap);
     const render = worker.render(path, page, {
+      ...(this.bare.has(path) ? { annotations: false as const } : {}),
       sourceScale: scale,
       width: plan?.width ?? Math.max(1, Math.round(base.width * scale)),
       height: plan?.height ?? Math.max(1, Math.round(base.height * scale)),
@@ -760,6 +779,7 @@ export class PdfBackdropCache {
       const render = pdfPage.render({
         canvasContext: ctx,
         viewport,
+        ...(this.bare.has(path) ? { annotationMode: 0 } : {}),
         ...(plan ? { transform: plan.transform } : {}),
       });
       if (job) job.cancelRender = render.cancel ? () => render.cancel?.() : undefined;

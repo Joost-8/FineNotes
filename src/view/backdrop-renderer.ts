@@ -143,6 +143,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
+    if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
     const scale = this.pageScale ?? quantiseScale(target?.deviceScale ?? this.scale);
     const area = { geometry };
     const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
@@ -188,6 +189,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       drawMissingSource(ctx, geometry, this.theme, missingLabel(backdrop.path));
       return;
     }
+    if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
     const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, { geometry });
     this.paintEntry(ctx, entry, geometry);
   }

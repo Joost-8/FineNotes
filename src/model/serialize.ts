@@ -464,7 +464,12 @@ function normalizeBackdrop(raw: unknown): Backdrop {
     // A PDF backdrop without a usable path is meaningless; fall back to blank
     // rather than dropping the page and its ink with it.
     if (typeof b.path === "string" && b.path.length > 0) {
-      return { kind: "pdf", path: b.path, page: Math.max(0, Math.round(num(b.page, 0))) };
+      return {
+        kind: "pdf",
+        path: b.path,
+        page: Math.max(0, Math.round(num(b.page, 0))),
+        ...(b.annotations === false ? { annotations: false as const } : {}),
+      };
     }
     return { kind: "blank" };
   }

@@ -254,6 +254,12 @@ export interface PdfBackdrop {
   path: string;
   /** 0-based page index within that PDF. */
   page: number;
+  /**
+   * `false`: the PDF's own annotations are not drawn. A PDF imported from
+   * another app has its ink annotations brought over as strokes, which would
+   * otherwise show twice. Stored only as `false`; absent means drawn.
+   */
+  annotations?: false;
 }
 
 export type Backdrop = SyntheticBackdrop | PdfBackdrop;
