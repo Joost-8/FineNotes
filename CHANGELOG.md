@@ -8,7 +8,38 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A welcome for new users.** The first time FineNotes runs in a vault with
+  no notebooks, it offers a tour notebook, the importer, or a new notebook.
+  The tour is made of FineNotes itself: text boxes, shapes, tables and ink
+  you can select, move, recolour and erase. A contents page of links leads
+  to the essentials (writing, the toolbar, pens, pages) and then a page per
+  feature, each with examples and a "Try it" space: loops to erase, a star
+  to circle, a house to lasso and turn, and how to bring notebooks over from
+  other apps. The command **Show the welcome** brings it back.
+  A vault that already has FineNotes settings or notebooks, such as a second
+  synced device, is not greeted.
+
+- **Import from more apps (beta).** Besides Goodnotes and Notability, the
+  import dialog reads Noteful (`.noteful`), Xournal++ and Xournal (`.xopp`,
+  `.xoj`), Saber (`.sbn2`, `.sbn`, `.sba`), reMarkable (`.rmdoc`, `.rm`),
+  Supernote (`.note`, each page's handwriting as a picture) and FreeNotes
+  (`.freenotes`), and any app's PDF: its pages become the paper, and its ink
+  and highlight annotations become ink you can edit. A backup `.zip` may
+  hold any mix. Thanks to [@OskarRabenda](https://github.com/OskarRabenda).
+
+- **Copy home screen link**, in the **More** (⋯) panel: a link that opens
+  the notebook straight from outside Obsidian. Paste it into a Shortcuts
+  shortcut's **Open URLs** on an iPad or iPhone and add the shortcut to the
+  Home Screen, or keep it as a bookmark on a computer.
+
 ### Changed
+
+- **A new import dialog**: a drop zone with the file picker in it, the
+  vault as a second source, what comes over, the folder to save to, and
+  "How do I export?" with each app's own steps (Goodnotes' several notebooks
+  or whole folders as one .zip, Notability's Auto-backup, and the rest).
 
 - **An ink-coloured cursor on a computer.** Over the page, the pen now
   shows a dot in its ink colour, as wide as it writes at the zoom in use,

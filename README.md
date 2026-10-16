@@ -151,6 +151,45 @@ Hope you guys enjoy this and give me some
   [latest release](https://github.com/Joost-8/FineNotes/releases/latest) into
   `<your vault>/.obsidian/plugins/finenotes/`. Then enable the plugin under
   Community plugins.
+- **With an AI assistant:** paste the prompt in
+  [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md) into one that can run commands on
+  your computer; it installs Obsidian too.
+- **With a link:** on a device with Obsidian, open
+  `obsidian://show-plugin?id=finenotes` (paste it in the browser's address
+  bar), or tap **Add to Obsidian** on the
+  [FineNotes page](https://community.obsidian.md/plugins/finenotes), which is
+  the same link. It opens FineNotes in Obsidian, ready to install. If community
+  plugins are still off, it opens the page to turn them on first; open the
+  link again after that.
+
+### New to Obsidian?
+
+Obsidian is a free notes app that keeps everything as plain files in a folder
+on your device, called a _vault_. FineNotes runs inside it. On an iPad:
+
+1. Install [Obsidian](https://apps.apple.com/app/obsidian-connected-notes/id1557175442)
+   from the App Store, open it, and tap **Create new vault**. Give it any name.
+2. Open the
+   [FineNotes page](https://community.obsidian.md/plugins/finenotes) and tap
+   **Add to Obsidian**.
+3. The first time, Obsidian opens its Community plugins settings instead:
+   allow community plugins there, then go back and tap **Add to Obsidian**
+   again. Tap **Install**, then **Enable**.
+4. FineNotes welcomes you with a short tour, a way to bring your notebooks over
+   from Goodnotes, Notability, Noteful, reMarkable and other apps, and a button
+   for a new notebook.
+
+To have your notebooks on several devices, sync the vault: with Obsidian Sync,
+iCloud, or any app that syncs a folder.
+
+### Open a notebook from the home screen
+
+In a notebook, open **More** (⋯) and choose **Copy home screen link**. On an
+iPad or iPhone, open the Shortcuts app, make a new shortcut with the action
+**Open URLs**, paste the link into it, and choose **Add to Home Screen** from
+the shortcut's menu. Tapping the icon opens Obsidian straight at that
+notebook. On a computer, the same link works as a desktop shortcut or a
+bookmark.
 
 ## Getting started
 

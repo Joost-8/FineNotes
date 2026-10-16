@@ -66,6 +66,7 @@ import type { EraserMode } from "./view/toolbar";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
 import {
+  DEFAULT_NOTEBOOK_CHOICES,
   type NotebookChoices,
   buildNewDocument,
   buildPdfNotebook,
@@ -81,6 +82,8 @@ import {
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
 import { openImportNotebookModal } from "./view/import-notebook-modal";
+import { WELCOME_TITLE, buildWelcomeNotebook, shouldShowWelcome } from "./model/welcome";
+import { WelcomeModal } from "./view/welcome-modal";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -96,7 +99,7 @@ import {
   writePracticePage,
 } from "./view/handwriting-learning";
 import { buildPracticeFile } from "./recognition/practice";
-import { PRACTICE_FILE_SUFFIX } from "./constants";
+import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
@@ -361,6 +364,12 @@ export default class GoodObsidianPlugin extends Plugin {
       name: "Create notebook with last settings",
       callback: () =>
         void this.createNotebook("", parseNotebookChoices(this.settings.lastNotebookChoices)),
+    });
+
+    this.addCommand({
+      id: "show-welcome",
+      name: "Show the welcome",
+      callback: () => this.showWelcome(),
     });
 
     this.addCommand({
@@ -1115,7 +1124,10 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("layout-change", () => this.moveInkNotesOver()));
     this.app.workspace.onLayoutReady(() => {
       this.moveInkNotesOver();
+      // Read before showWhatsNew, which starts the record of what this vault has seen.
+      const welcome = shouldShowWelcome(this.firstInstall, this.hasNotebooks());
       void this.showWhatsNew();
+      if (welcome) this.showWelcome();
     });
   }
 
@@ -1182,6 +1194,38 @@ export default class GoodObsidianPlugin extends Plugin {
         await this.app.workspace.revealLeaf(tab);
       },
     });
+  }
+
+  /** Whether the vault holds any notebook or page yet. */
+  private hasNotebooks(): boolean {
+    return this.app.vault.getMarkdownFiles().some((file) => this.isInkFile(file));
+  }
+
+  /** The welcome: the tour, the importer, or a new notebook (welcome-modal.ts). */
+  showWelcome(): void {
+    new WelcomeModal(this.app, {
+      openTour: () => void this.openWelcomeTour(),
+      importNotebooks: () => this.openImportNotebook(),
+      newNotebook: () => this.openNewNotebookDialog(),
+    }).open();
+  }
+
+  /** The welcome notebook: the one already in the vault, or a new one in the default folder. */
+  async openWelcomeTour(): Promise<void> {
+    const name = `${WELCOME_TITLE}${NOTEBOOK_FILE_SUFFIX}`;
+    const existing = this.app.vault.getMarkdownFiles().find((file) => file.name === name);
+    if (existing) {
+      const tab = this.app.workspace.getLeaf(false);
+      await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: existing.path } });
+      await this.app.workspace.revealLeaf(tab);
+      return;
+    }
+    await this.createNotebook(
+      WELCOME_TITLE,
+      { ...DEFAULT_NOTEBOOK_CHOICES },
+      undefined,
+      (heading, attachments) => buildWelcomeNotebook(heading, attachments),
+    );
   }
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */

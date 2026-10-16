@@ -52,6 +52,7 @@ const hooks = vi.hoisted(() => ({
   post: null as null | ((url: string, headers: unknown, body: unknown) => Promise<unknown>),
   posts: [] as { url: string; headers: unknown; body: unknown }[],
   imports: [] as { folder: string; ownFolder: boolean }[],
+  welcomes: 0,
 }));
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
@@ -78,6 +79,13 @@ vi.mock("../../src/ui/confirm-modal", () => ({
 vi.mock("../../src/view/import-notebook-modal", () => ({
   openImportNotebookModal: (_app: unknown, options: { folder: string; ownFolder: boolean }) => {
     hooks.imports.push(options);
+  },
+}));
+vi.mock("../../src/view/welcome-modal", () => ({
+  WelcomeModal: class {
+    open(): void {
+      hooks.welcomes++;
+    }
   },
 }));
 vi.mock("../../src/recognition/http", async (importOriginal) => ({
@@ -133,6 +141,7 @@ function fakeApp(
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
+  const created: { path: string; content: string }[] = [];
   const workspace = {
     leaves: [] as WorkspaceLeaf[],
     active: null as unknown,
@@ -156,6 +165,8 @@ function fakeApp(
       return workspace.active instanceof type ? workspace.active : null;
     },
     getActiveFile: () => null,
+    getLeaf: () => new WorkspaceLeaf(),
+    revealLeaf: () => Promise.resolve(),
   };
   return {
     workspace,
@@ -163,6 +174,21 @@ function fakeApp(
       on: (name: string) => ({ name }),
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
+      getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
+      getFiles: () => [...files.values()],
+      getRoot: () => ({
+        path: "/",
+        children: [...files.values()].filter((f) => !f.path.includes("/")),
+      }),
+      getFolderByPath: () => null,
+      createFolder: () => Promise.resolve(),
+      created,
+      create(path: string, content: string) {
+        created.push({ path, content });
+        const file = new TFile(path);
+        files.set(path, file);
+        return Promise.resolve(file);
+      },
     },
     metadataCache: {
       getFileCache: (file: TFile) => {
@@ -274,6 +300,7 @@ beforeEach(() => {
   hooks.confirms = 0;
   hooks.post = null;
   hooks.posts.length = 0;
+  hooks.welcomes = 0;
   opened = hooks.whatsNew;
   openWindow.mockReset();
   vi.stubGlobal("window", Object.assign(Object.create(globalThis) as object, { open: openWindow }));
@@ -421,6 +448,7 @@ describe("registration", () => {
         "scan-document",
         "search-notebook",
         "show-keyboard-shortcuts",
+        "show-welcome",
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-text-layer",
@@ -450,6 +478,36 @@ describe("registration", () => {
     expect(hooks.imports).toHaveLength(1);
     expect(hooks.imports[0].folder).toBe("School");
     expect(typeof hooks.imports[0].ownFolder).toBe("boolean");
+  });
+
+  it("makes the welcome notebook from the welcome's tour, once, and reopens it after", async () => {
+    await load();
+    app.workspace.leaves.length = 0;
+    await plugin.openWelcomeTour();
+    const created = (app.vault as unknown as { created: { path: string; content: string }[] })
+      .created;
+    expect(created.map((c) => c.path)).toEqual(["Welcome to FineNotes.notebook.md"]);
+    expect(created[0].content).toContain("# Welcome to FineNotes");
+    expect(viewStateCalls.at(-1)?.state).toMatchObject({
+      type: INK,
+      state: { file: "Welcome to FineNotes.notebook.md" },
+    });
+    // Already in the vault: opened again, not made again.
+    await plugin.openWelcomeTour();
+    expect(created).toHaveLength(1);
+    expect(viewStateCalls.at(-1)?.state).toMatchObject({
+      state: { file: "Welcome to FineNotes.notebook.md" },
+    });
+  });
+
+  it("makes no notebook by itself, on a first install or an update", async () => {
+    for (const stored of [null, { lastSeenVersion: "0.1.0" }]) {
+      await load(stored);
+      app.workspace.fireLayoutReady();
+      await flush();
+      const created = (app.vault as unknown as { created: unknown[] }).created;
+      expect(created).toEqual([]);
+    }
   });
 
   it("builds an InkView for a leaf", async () => {
@@ -631,7 +689,8 @@ describe("view routing of open leaves", () => {
   });
 
   it("does the same once the layout is ready", async () => {
-    await load();
+    // An existing install: a first one would also greet the user.
+    await load({ lastSeenVersion: VERSION });
     const leaf = markdownLeaf(app.addFile("Physics.notebook.md"));
     app.workspace.fireLayoutReady();
     await flush();
@@ -872,6 +931,36 @@ describe("settings after a change of plugin id", () => {
 });
 
 // --- What's new --------------------------------------------------------------------------
+
+describe("The welcome", () => {
+  it("greets a first install in a vault with no notebooks", async () => {
+    await load(null);
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(1);
+  });
+
+  it("does not greet a vault that already has FineNotes settings", async () => {
+    await load({ lastSeenVersion: VERSION });
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(0);
+  });
+
+  it("does not greet a vault that already holds a notebook", async () => {
+    await load(null);
+    app.addFile("School/Biology.notebook.md");
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(hooks.welcomes).toBe(0);
+  });
+
+  it("can be shown again from the command", async () => {
+    await load({ lastSeenVersion: VERSION });
+    run("show-welcome");
+    expect(hooks.welcomes).toBe(1);
+  });
+});
 
 describe("What's new", () => {
   it("stays silent on a fresh install, and remembers the version", async () => {

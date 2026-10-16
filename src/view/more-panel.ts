@@ -13,6 +13,8 @@
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
  *   ┌ Dark pages / Light pages            ┐
+ *   │ Keyboard shortcuts                  │
+ *   │ Copy home screen link               │
  *   Clear or delete page
  *   ┌ Clear page · Delete page (red)      ┐
  *
@@ -63,6 +65,8 @@ export interface MorePanelActions {
   toggleDarkPages: () => void;
   /** Show the keyboard and stylus shortcuts. */
   showShortcuts: () => void;
+  /** Copy the link that opens this notebook from a home-screen shortcut. */
+  copyHomeLink: () => void;
 }
 
 const PANEL_WIDTH = 330;
@@ -172,6 +176,11 @@ export class MorePanel {
       icon: "keyboard",
       text: "Keyboard shortcuts",
       run: () => actions.showShortcuts(),
+    });
+    this.row(view, {
+      icon: "smartphone",
+      text: "Copy home screen link",
+      run: () => actions.copyHomeLink(),
     });
 
     this.heading("Clear or delete page");

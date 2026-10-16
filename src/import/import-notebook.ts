@@ -3,9 +3,21 @@
  * Pure — the caller reads the picked files, measures PDFs and saves what
  * comes back.
  *
- * Accepted: a Goodnotes notebook (`.goodnotes`), a Notability note
- * (`.note`), or a zip of either — Goodnotes' library backup is a zip of
- * `.goodnotes` files, and a zipped Notability backup folder holds `.note`s.
+ * Which converter reads a file is decided from its bytes, never from its
+ * name: `.note` is both Notability (a zip) and Supernote (not one), and a
+ * backup zip can hold any mix. Accepted:
+ *
+ * - Goodnotes (`.goodnotes`) and Notability (`.note`): zips.
+ * - Noteful (`.noteful`): its own binary format; a backup is a folder of them.
+ * - FreeNotes (`.freenotes`): a zip around one `.frnote` folder.
+ * - Xournal++ and Xournal (`.xopp`, `.xoj`): gzipped XML, or plain XML.
+ * - Saber (`.sbn2`, `.sbn`): BSON or JSON; an `.sba` is a zip around one.
+ * - reMarkable: one page (`.rm`), or a whole document (`.rmdoc`, a zip).
+ * - Supernote (`.note`): its own binary format.
+ * - A zip of any of these: Goodnotes' library backup, a zipped Notability
+ *   backup folder, a folder of notebooks someone zipped.
+ *
+ * (PDFs need pdf.js, so the dialog reads them with `import/pdf.ts` itself.)
  *
  * A backup can be gigabytes, so nothing is unpacked up front: the zip's
  * names are listed first, and each notebook's entries are inflated only when
@@ -14,17 +26,89 @@
  */
 
 import { unzipSync } from "fflate";
+import { isFreenotes, readFreenotes } from "./freenotes";
 import { isGoodnotes, readGoodnotes } from "./goodnotes";
 import { plural, type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
+import { isNoteful, readNoteful } from "./noteful";
+import {
+  isRemarkableDocument,
+  isRemarkableLines,
+  readRemarkableDocument,
+  readRemarkableLines,
+} from "./remarkable";
+import { isSaber, isSaberArchive, readSaber, readSaberArchive } from "./saber";
+import { isSupernote, readSupernote } from "./supernote";
+import { isXournal, readXournal } from "./xournal";
 
 export type { ImportAttachment, ImportResult, ImportSource } from "./import-types";
 export { relinkAttachments } from "./import-types";
 export type { PdfPageSize } from "./notability";
 
-/** The file extensions the picker should accept. */
-export const IMPORT_EXTENSIONS: readonly string[] = ["goodnotes", "note", "zip"];
+/**
+ * The file extensions the picker and drag-and-drop accept. Which converter
+ * reads a file is decided from its bytes, not from this list.
+ */
+export const IMPORT_EXTENSIONS: readonly string[] = [
+  "goodnotes",
+  "note",
+  "noteful",
+  "zip",
+  "pdf",
+  "xopp",
+  "xoj",
+  "sbn2",
+  "sbn",
+  "sba",
+  "rm",
+  "rmdoc",
+  "freenotes",
+];
+
+/** Whether a file name has one of {@link IMPORT_EXTENSIONS}. */
+export function isImportFileName(name: string): boolean {
+  return extensionOf(name) !== null;
+}
+
+/** A file name's import extension, lower case, or `null` when it has none of ours. */
+function extensionOf(name: string): string | null {
+  const leaf = name.split(/[\\/]/).pop() ?? name;
+  const dot = leaf.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const ext = leaf.slice(dot + 1).toLowerCase();
+  return IMPORT_EXTENSIONS.includes(ext) ? ext : null;
+}
+
+const NOT_A_NOTEBOOK = "It is not a notebook FineNotes can import.";
+
+/** A converter for a file read whole: whether it is one, and how to read it. */
+interface SingleFile {
+  is: (bytes: Uint8Array) => boolean;
+  read: (bytes: Uint8Array, title: string) => ImportResult;
+}
+
+/**
+ * Formats that are one file, tried before a file is opened as a zip. Order
+ * matters only where one format can contain another's signature: Xournal++
+ * also saves a zip, which only it recognises, so it goes before the zips.
+ */
+const SINGLE_FILES: readonly SingleFile[] = [
+  { is: isNoteful, read: readNoteful },
+  { is: isXournal, read: readXournal },
+  { is: isSupernote, read: readSupernote },
+  { is: isRemarkableLines, read: readRemarkableLines },
+  { is: isSaber, read: (bytes, title) => readSaber(bytes, title) },
+];
+
+/** A sniffing test that throws is a "no". */
+function safely(test: () => boolean): boolean {
+  try {
+    return test();
+  } catch {
+    return false;
+  }
+}
 
 /** One file that could not be imported, and why, in a sentence for the user. */
 export interface ImportFailure {
@@ -81,19 +165,42 @@ export async function importNotebooks(
   options: ImportOptions = {},
 ): Promise<ImportBatch> {
   const batch: ImportBatch = { results: [], failures: [] };
-  const names = entryNames(bytes);
-  if (!names) {
-    batch.failures.push({ name: fileName, reason: "It is not a Goodnotes or Notability file." });
-    return batch;
-  }
-  await collect(bytes, names, fileName, batch, 0, options);
+  await fromBytes(bytes, fileName, batch, 0, options);
   if (batch.results.length === 0 && batch.failures.length === 0 && !options.cancelled?.()) {
     batch.failures.push({
       name: fileName,
-      reason: "No Goodnotes or Notability notebook was found in it.",
+      reason: "No notebook FineNotes can import was found in it.",
     });
   }
   return batch;
+}
+
+/** One file's bytes: a single-file notebook, or a zip to look into. */
+async function fromBytes(
+  bytes: Uint8Array,
+  fileName: string,
+  batch: ImportBatch,
+  depth: number,
+  options: ImportOptions,
+): Promise<void> {
+  const single = SINGLE_FILES.find((format) => safely(() => format.is(bytes)));
+  if (single) {
+    let result: ImportResult;
+    try {
+      result = single.read(bytes, baseName(fileName) || "Imported notebook");
+    } catch (e) {
+      batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
+      return;
+    }
+    await deliver(result, batch, options);
+    return;
+  }
+  const names = entryNames(bytes);
+  if (!names) {
+    batch.failures.push({ name: fileName, reason: NOT_A_NOTEBOOK });
+    return;
+  }
+  await collect(bytes, names, fileName, batch, depth, options);
 }
 
 /** A zip's entry names, without inflating anything; null when it is not a zip. */
@@ -127,7 +234,17 @@ async function collect(
 ): Promise<void> {
   // Whether this zip is itself one notebook: the readers decide from names alone.
   const index: Files = new Map(names.map((name) => [name, EMPTY]));
-  if (isGoodnotes(index) || isNotability(index)) {
+  // A reMarkable document is told by its `.content` file's JSON, so that one is read.
+  const remarkable =
+    names.some((name) => name.endsWith(".content")) &&
+    safely(() => isRemarkableDocument(readEntries(bytes, (n) => n.endsWith(".content"))));
+  if (
+    isGoodnotes(index) ||
+    isNotability(index) ||
+    isSaberArchive(index) ||
+    isFreenotes(index) ||
+    remarkable
+  ) {
     if (options.cancelled?.()) return;
     let files: Files;
     try {
@@ -142,7 +259,10 @@ async function collect(
   if (depth >= MAX_NESTING) return;
 
   // A backup: notebooks packed inside as files, or as unzipped package folders.
-  const packed = names.filter((name) => /\.(goodnotes|note|zip)$/i.test(name)).sort();
+  // PDFs inside a backup need pdf.js; they are left for the dialog's own PDF path.
+  const packed = names
+    .filter((name) => isImportFileName(name) && extensionOf(name) !== "pdf")
+    .sort();
   for (const name of packed) {
     if (options.cancelled?.()) return;
     let inner: Uint8Array | undefined;
@@ -153,9 +273,7 @@ async function collect(
       continue;
     }
     if (!inner || inner.length === 0) continue;
-    const innerNames = entryNames(inner);
-    if (innerNames) await collect(inner, innerNames, name, batch, depth + 1, options);
-    else batch.failures.push({ name, reason: "It is not a Goodnotes or Notability file." });
+    await fromBytes(inner, name, batch, depth + 1, options);
   }
   for (const folder of packageFolders(names)) {
     if (options.cancelled?.()) return;
@@ -168,7 +286,15 @@ async function collect(
       batch.failures.push({ name: folder, reason: `It could not be read (${errorText(e)}).` });
       continue;
     }
-    if (isGoodnotes(files) || isNotability(files)) await convert(files, folder, batch, options);
+    if (
+      isGoodnotes(files) ||
+      isNotability(files) ||
+      isSaberArchive(files) ||
+      isFreenotes(files) ||
+      safely(() => isRemarkableDocument(files))
+    ) {
+      await convert(files, folder, batch, options);
+    }
   }
 }
 
@@ -184,6 +310,12 @@ async function convert(
   try {
     if (isGoodnotes(files)) {
       result = readGoodnotes(files, title);
+    } else if (isFreenotes(files)) {
+      result = readFreenotes(files, title || "Imported notebook");
+    } else if (isSaberArchive(files)) {
+      result = readSaberArchive(files, title || "Imported notebook");
+    } else if (safely(() => isRemarkableDocument(files))) {
+      result = readRemarkableDocument(files, title || "Imported notebook");
     } else {
       const sizes = new Map<string, readonly PdfPageSize[]>();
       if (options.measurePdf) {
@@ -201,6 +333,15 @@ async function convert(
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
+  await deliver(result, batch, options);
+}
+
+/** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
+async function deliver(
+  result: ImportResult,
+  batch: ImportBatch,
+  options: ImportOptions,
+): Promise<void> {
   await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {
@@ -218,11 +359,11 @@ async function convert(
   batch.results.push(result);
 }
 
-/** `X.goodnotes/…` or `X.note/…` folders, in name order. */
+/** `X.goodnotes/…`, `X.note/…`, `X.rmdoc/…`, `X.sba/…` or `X.frnote/…` folders, in name order. */
 function packageFolders(names: string[]): string[] {
   const folders = new Set<string>();
   for (const name of names) {
-    const match = /^(.*?\.(?:goodnotes|note))\/(.+)$/i.exec(name);
+    const match = /^(.*?\.(?:goodnotes|note|rmdoc|sba|frnote))\/(.+)$/i.exec(name);
     if (match && !match[2].endsWith("/")) folders.add(match[1]);
   }
   return [...folders].sort();
@@ -231,7 +372,8 @@ function packageFolders(names: string[]): string[] {
 /** A file name without folders and without its notebook extension; "" when nothing is left. */
 function baseName(fileName: string): string {
   const last = fileName.split(/[\\/]/).pop() ?? fileName;
-  return last.replace(/\.(goodnotes|note|zip)$/i, "").trim();
+  const ext = extensionOf(last);
+  return (ext ? last.slice(0, -ext.length - 1) : last).trim();
 }
 
 function errorText(e: unknown): string {
