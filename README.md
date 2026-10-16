@@ -151,6 +151,9 @@ Hope you guys enjoy this and give me some
   [latest release](https://github.com/Joost-8/FineNotes/releases/latest) into
   `<your vault>/.obsidian/plugins/finenotes/`. Then enable the plugin under
   Community plugins.
+- **With an AI assistant:** paste the prompt in
+  [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md) into one that can run commands on
+  your computer; it installs Obsidian too.
 
 ## Getting started
 
