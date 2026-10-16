@@ -82,6 +82,7 @@ import {
   widthFromMm,
 } from "./model/saved-pens";
 import type { BarrelAction } from "./input/pen-modifiers";
+import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -150,6 +151,13 @@ const PEN_TYPE_NAMES: Record<SavedPenType, string> = {
   ball: "Ball pen",
   brush: "Brush pen",
   highlighter: "Highlighter",
+};
+
+/** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
+const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
+  ink: "Ink dot",
+  crosshair: "Crosshair",
+  arrow: "Arrow",
 };
 
 /** What the barrel button can do, as its dropdown names it. */
@@ -238,8 +246,8 @@ const DESC = {
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
   penCursor:
-    "On a computer, show a small crosshair instead of the arrow over the page while a pen, " +
-    "the highlighter or the laser is in hand.",
+    "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
+    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
   debugHud:
     "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
     "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
@@ -495,8 +503,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       return;
     }
     if (key === "penCursor") {
-      // Saved by the plugin, which shows or hides the crosshair in every open notebook.
-      await this.plugin.setPenCursor(value as boolean);
+      // Saved by the plugin, which changes the cursor in every open notebook.
+      await this.plugin.setPenCursor(penCursorStyleOf(value));
       return;
     }
     if (key === "pressureWidth") {
@@ -623,7 +631,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "stylus",
       ]),
       {
-        ...toggle("penCursor", "Crosshair cursor", DESC.penCursor, ["cursor", "pointer"]),
+        ...dropdown("penCursor", "Cursor over the page", DESC.penCursor, PEN_CURSOR_NAMES, [
+          "cursor",
+          "pointer",
+          "crosshair",
+        ]),
         visible: !Platform.isMobile,
       },
       drawnRow(

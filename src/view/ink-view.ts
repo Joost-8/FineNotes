@@ -196,6 +196,7 @@ import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
 import { shownPaperTheme } from "../settings-data";
+import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 
@@ -705,11 +706,12 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Show the small crosshair over the page for the pens, or not (FineNotes#25).
-   * Only on a computer: a finger or the Pencil has no cursor to replace.
+   * The cursor over the page for the pens: the ink dot (FineNotes#27), the
+   * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
+   * finger or the Pencil has no cursor to replace.
    */
-  setPenCursor(on: boolean): void {
-    this.surface?.setPenCursor(on !== false && !Platform.isMobile);
+  setPenCursor(style: unknown): void {
+    this.surface?.setPenCursor(Platform.isMobile ? "arrow" : penCursorStyleOf(style));
   }
 
   /** Keep the pen in hand for the next notebook, and the next start (FineNotes#24). */
@@ -1324,8 +1326,14 @@ export class InkView extends TextFileView {
         // The toolbar writes colour and size into the shared tool state,
         // which is where the surface reads them; the pen is remembered for
         // the next notebook (FineNotes#24).
-        onColorChange: () => this.rememberPen(),
-        onSizeChange: () => this.rememberPen(),
+        onColorChange: () => {
+          this.surface?.refreshPenCursor();
+          this.rememberPen();
+        },
+        onSizeChange: () => {
+          this.surface?.refreshPenCursor();
+          this.rememberPen();
+        },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
@@ -1334,6 +1342,7 @@ export class InkView extends TextFileView {
         onAddPage: (anchor) => this.openAddPage(anchor, this.surface?.currentPage ?? 0, "after"),
         onPenTypeChange: () => {
           this.toolbar?.syncActive();
+          this.surface?.refreshPenCursor();
           this.rememberPen();
         },
         savedPens: () => savedPensOf(this.settings.savedPens),
@@ -1353,7 +1362,10 @@ export class InkView extends TextFileView {
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
         onPenAutoShapeChange: (enabled) => this.plugin.savePenAutoShape(enabled),
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
-        onShapeColorChange: (color) => this.plugin.saveShapeColor(color),
+        onShapeColorChange: (color) => {
+          this.surface?.refreshPenCursor();
+          this.plugin.saveShapeColor(color);
+        },
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
           if (this.surface) this.surface.pickColorFromPage(done);

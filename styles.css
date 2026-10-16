@@ -1976,6 +1976,20 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
     crosshair;
 }
 
+/* "Ink dot", the default (FineNotes#27): the pen's own colour, as wide as it
+   writes at this zoom, a slim bar for the highlighter and a glowing point
+   for the laser. `pen-cursor.ts` draws them and the surface sets them as
+   properties; while the pen is down a pen shrinks to a 2 px dot, so it never
+   hides the ink. Space's hand wins here too. */
+.goodobsidian-surface.is-ink-cursor .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor: var(--goodobsidian-pen-cursor, crosshair);
+}
+
+.goodobsidian-surface.is-ink-cursor.is-drawing
+  .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor: var(--goodobsidian-pen-cursor-drawing, crosshair);
+}
+
 /* On a tablet the thumbs are a readout, not a control: a palm rests on the
    edge of the page and the Pencil starts strokes there, and both belong to
    the page (palm rejection, the stylus touch guards). */
