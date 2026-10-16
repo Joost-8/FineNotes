@@ -11,11 +11,15 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **A welcome for new users.** The first time FineNotes runs in a vault with
-  no notebooks, it offers a short tour notebook (the tools, the pen gestures,
-  where notebooks live in Obsidian, and how to bring notebooks over from
-  Goodnotes or Notability), the importer, or a new notebook. The command
-  **Show the welcome** brings it back. A vault that already has FineNotes
-  settings or notebooks, such as a second synced device, is not greeted.
+  no notebooks, it offers a tour notebook, the importer, or a new notebook.
+  The tour is made of FineNotes itself: text boxes, shapes, tables and ink
+  you can select, move, recolour and erase. A contents page of links leads
+  to the essentials (writing, the toolbar, pens, pages) and then a page per
+  feature, each with examples and a "Try it" space: loops to erase, a star
+  to circle, a house to lasso and turn, and how to bring notebooks over from
+  Goodnotes or Notability. The command **Show the welcome** brings it back.
+  A vault that already has FineNotes settings or notebooks, such as a second
+  synced device, is not greeted.
 
 - **Copy home screen link**, in the **More** (⋯) panel: a link that opens
   the notebook straight from outside Obsidian. Paste it into a Shortcuts
