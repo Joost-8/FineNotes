@@ -53,6 +53,7 @@ import {
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { keyboardHeight } from "./keyboard";
 import { writeSystemText } from "./system-clipboard";
 
 export interface AskAiHost {
@@ -97,6 +98,12 @@ const SUGGESTIONS = {
 
 /** Tallest the question field grows before it scrolls, px. */
 const INPUT_MAX_PX = 160;
+/** Shortest the field gets when the keyboard leaves little room, px. */
+const INPUT_MIN_PX = 40;
+/** Of the thread, what stays in view above the field however tall it grows, px. */
+const THREAD_MIN_PX = 32;
+/** The chat column's gap between rows, px (styles.css). */
+const ROW_GAP_PX = 8;
 /** Width of a page in the picker's grid, and of the chip's thumbnail, CSS px. */
 const GRID_THUMB_PX = 96;
 const CHIP_THUMB_PX = 26;
@@ -111,6 +118,8 @@ export class AskChat {
   /** Owns the markdown render children of every answer; unloaded on close. */
   private component: Component | null = null;
   private unsubscribe: (() => void) | null = null;
+  /** Refits the field when the column changes height (the keyboard sliding in). */
+  private resize: ResizeObserver | null = null;
 
   private threadEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
@@ -219,6 +228,7 @@ export class AskChat {
       this.syncInput();
     });
     input.addEventListener("focus", () => this.closePicker());
+    input.addEventListener("blur", () => this.syncInput());
     input.addEventListener("keydown", (event) => {
       // Return sends, as in any chat; Shift+Return is a new line. Not while
       // an input method is still composing a character.
@@ -236,6 +246,8 @@ export class AskChat {
     this.keyboard.watch(input, composer);
 
     this.unsubscribe = this.session.onChange(() => this.render());
+    this.resize = new ResizeObserver(() => this.syncInput());
+    this.resize.observe(contentEl);
     this.render();
     this.scrollToEnd();
     window.setTimeout(() => this.input?.focus(), 0);
@@ -243,6 +255,8 @@ export class AskChat {
 
   /** Take the chat down; the session, and so the chat and the draft, live on. */
   destroy(): void {
+    this.resize?.disconnect();
+    this.resize = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.keyboard.end();
@@ -621,13 +635,49 @@ export class AskChat {
   private syncInput(): void {
     const input = this.input;
     if (!input) return;
+    // The keyboard first: the room the field has depends on it. While it is
+    // up, the line under the tools gives its room to the field.
+    this.keyboard.update();
+    this.frame.content.toggleClass(
+      "is-typing",
+      document.activeElement === input && keyboardHeight() > 0,
+    );
     input.setCssProps({ "--goodobsidian-chat-input-h": "auto" });
-    const height = Math.min(INPUT_MAX_PX, input.scrollHeight);
-    input.setCssProps({ "--goodobsidian-chat-input-h": `${height}px` });
-    input.toggleClass("is-scrolling", input.scrollHeight > INPUT_MAX_PX);
+    const max = this.inputRoom(input);
+    const height = Math.min(max, input.scrollHeight);
+    input.setCssProps({
+      "--goodobsidian-chat-input-h": `${height}px`,
+      "--goodobsidian-chat-input-max": `${max}px`,
+    });
+    // Past its room the field scrolls inside, and the line being typed stays in view.
+    input.toggleClass("is-scrolling", input.scrollHeight > max);
     if (this.sendButton) this.sendButton.disabled = this.session.busy || !input.value.trim();
-    // A taller field moves its top: keep it above the keyboard.
-    this.keyboard?.update();
+  }
+
+  /**
+   * How tall the field may grow: up to `INPUT_MAX_PX`, but never so tall
+   * that the column overflows, which on the iPad pushed the field under
+   * the keyboard (the column is short then). The thread above gives up
+   * its height first, down to `THREAD_MIN_PX`.
+   */
+  private inputRoom(input: HTMLTextAreaElement): number {
+    const content = this.frame.content;
+    const composer = input.closest<HTMLElement>(".goodobsidian-chat-composer");
+    const above =
+      this.pickerEl && !this.pickerEl.hasClass("is-hidden") ? this.pickerEl : this.threadEl;
+    if (!composer || !above) return INPUT_MAX_PX;
+    const box = content.getBoundingClientRect();
+    if (box.height === 0) return INPUT_MAX_PX;
+    const padding = parseFloat(getComputedStyle(content).paddingBottom) || 0;
+    const chrome = composer.offsetHeight - input.offsetHeight;
+    const room =
+      box.bottom -
+      padding -
+      above.getBoundingClientRect().top -
+      THREAD_MIN_PX -
+      ROW_GAP_PX -
+      chrome;
+    return Math.max(INPUT_MIN_PX, Math.min(INPUT_MAX_PX, Math.floor(room)));
   }
 
   /**

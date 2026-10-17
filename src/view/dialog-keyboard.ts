@@ -66,7 +66,14 @@ export class DialogKeyboard {
    */
   watch(field: HTMLElement, row: HTMLElement, below: HTMLElement | null = null): void {
     field.addEventListener("pointerdown", () => {
-      if (document.activeElement !== field) this.holdWindow(field);
+      if (document.activeElement !== field) {
+        this.holdWindow(field);
+        return;
+      }
+      // Already focused (a dialog that focuses its field on open, where the
+      // iPad shows no keyboard): this tap brings the keyboard up, and no
+      // focus event will, so follow it from here.
+      this.start(row, below);
     });
     field.addEventListener("focus", () => this.start(row, below));
     field.addEventListener("blur", () => this.endFor(row));

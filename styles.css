@@ -4990,7 +4990,7 @@ textarea.goodobsidian-chat-input {
   min-width: 0;
   height: var(--goodobsidian-chat-input-h, auto);
   min-height: 32px;
-  max-height: 160px;
+  max-height: var(--goodobsidian-chat-input-max, 160px);
   margin: 0;
   padding: 6px 0;
   border: none;
@@ -8493,4 +8493,10 @@ button.goodobsidian-learn-stop.is-hidden {
   padding: 16px 12px;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
+}
+
+/* While the iPad keyboard is up, the line under the chat's tools gives its
+   room to the field (AskChat, ask-ai-modal.ts). */
+.goodobsidian-chat.is-typing .goodobsidian-chat-note {
+  display: none;
 }
