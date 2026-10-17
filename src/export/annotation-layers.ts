@@ -7,7 +7,9 @@ export interface AnnotationLayer {
 }
 
 export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
-  if (page.images.length || page.textBoxes.length) {
+  // Pictures, tables and text boxes in one layer under the ink; the ink's
+  // layers carry none of them, so none is painted twice or over the ink.
+  if (page.images.length || page.textBoxes.length || page.tables?.length) {
     yield { page: { ...page, strokes: [] }, multiply: false };
   }
   let start = 0;
@@ -17,7 +19,13 @@ export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
     while (end < page.strokes.length && (page.strokes[end].tool === "highlighter") === multiply)
       end++;
     yield {
-      page: { ...page, images: [], textBoxes: [], strokes: page.strokes.slice(start, end) },
+      page: {
+        ...page,
+        images: [],
+        textBoxes: [],
+        ...(page.tables ? { tables: [] } : {}),
+        strokes: page.strokes.slice(start, end),
+      },
       multiply,
     };
     start = end;

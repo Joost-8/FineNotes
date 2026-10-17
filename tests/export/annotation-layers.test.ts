@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { annotationLayers } from "../../src/export/annotation-layers";
 import { blankPage, type Stroke } from "../../src/model/document";
+import { makeTable } from "../../src/model/table";
 const stroke = (id: string, tool: Stroke["tool"]): Stroke => ({
   id,
   tool,
@@ -45,6 +46,18 @@ describe("PDF annotation layers", () => {
         .every((layer) => layer.page.images.length === 0 && layer.page.textBoxes.length === 0),
     ).toBe(true);
     expect(JSON.stringify(page)).toBe(before);
+  });
+  it("puts a table in the layer under the ink, and in no ink layer", () => {
+    const page = blankPage("p1");
+    page.tables = [
+      makeTable({
+        ...{ id: "g1", x: 0, y: 0, w: 100, h: 40, rows: 1, cols: 2 },
+        ...{ color: "#000000", textColor: "#000000" },
+      }),
+    ];
+    page.strokes = [stroke("s1", "pen"), stroke("s2", "highlighter")];
+    const layers = [...annotationLayers(page)];
+    expect(layers.map((layer) => layer.page.tables?.length)).toEqual([1, 0, 0]);
   });
   it("omits empty layers and leaves a plain PDF page with no raster overlay", () => {
     expect([...annotationLayers(blankPage("p1"))]).toEqual([]);
