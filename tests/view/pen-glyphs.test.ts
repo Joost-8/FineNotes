@@ -13,6 +13,7 @@ import {
   penIconParts,
   sampleStroke,
   swoosh,
+  widthMarkThickness,
 } from "../../src/view/pen-glyphs";
 
 /** Every number in a path, as x, y pairs. */
@@ -184,5 +185,21 @@ describe("sampleStroke (the size preview)", () => {
   it("draws a nonsense thickness as a hairline, not as nothing", () => {
     expect(sampleStroke("ball", Number.NaN, W, H).strokeWidth).toBe(1);
     expect(sampleStroke("ball", 0, W, H).strokeWidth).toBe(1);
+  });
+});
+
+describe("the tool bar's width mark", () => {
+  it("thickens with every preset width, the highlighter's included", () => {
+    const widths = [0.5, 2, 3, 5, 8, 12, 20];
+    const marks = widths.map(widthMarkThickness);
+    for (let i = 1; i < marks.length; i++) expect(marks[i]).toBeGreaterThan(marks[i - 1]);
+  });
+
+  it("stays between 1 and 5 px, whatever it is given", () => {
+    for (const width of [0, -3, Number.NaN, Number.POSITIVE_INFINITY, 0.01, 48, 400]) {
+      const mark = widthMarkThickness(width);
+      expect(mark).toBeGreaterThanOrEqual(1);
+      expect(mark).toBeLessThanOrEqual(5);
+    }
   });
 });

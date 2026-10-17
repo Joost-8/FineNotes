@@ -249,3 +249,19 @@ export function sampleStroke(
   ];
   return penStroke(pen, curve, thick, PREVIEW_HIGHLIGHTER_OPACITY);
 }
+
+/** The tool bar's width mark: thinnest and thickest, in screen px. */
+const MARK_MIN = 1;
+const MARK_MAX = 5;
+
+/**
+ * How thick the tool bar's pen button draws its width mark, in screen px,
+ * for a stroke `width` page px wide (`strokeWidthFor`, so the highlighter's
+ * fat nib reads fat). A square root, so the thin pens that are used most
+ * stay apart while a highlighter still fits under a 24 px icon.
+ */
+export function widthMarkThickness(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) return MARK_MIN;
+  const px = 1.2 * Math.sqrt(width);
+  return Math.round(Math.min(MARK_MAX, Math.max(MARK_MIN, px)) * 10) / 10;
+}

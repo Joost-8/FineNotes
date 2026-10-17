@@ -291,6 +291,35 @@ body,
   background: var(--gob-line);
 }
 
+/* The pen button is its own preview (toolbar.ts, drawPenPreview): the pen
+   type in hand with its nib in the ink colour, lifted a little over a mark
+   as thick as the width it writes. */
+.goodobsidian-toolbar button.goodobsidian-tool-pen .goodobsidian-tool-pen-glyph {
+  transform: translateY(-3px);
+}
+
+.goodobsidian-tool-pen-width {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 16px;
+  height: var(--gob-ink-width, 2px);
+  border-radius: 999px;
+  background: var(--gob-ink, currentColor);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.goodobsidian-tool-pen-width.is-highlighter {
+  border-radius: 1px;
+  opacity: 0.55;
+}
+
+/* Ink that would vanish into the bar keeps an outline in the icon's colour. */
+.goodobsidian-tool-pen-width.is-rimmed {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
 /* --------------------------------------------------- toolbar, tier 2 */
 
 /* The active tool's options: a floating rounded pill directly below the bar.

@@ -106,6 +106,7 @@ import {
   penIconParts,
   sampleStroke,
   swoosh,
+  widthMarkThickness,
 } from "./pen-glyphs";
 import {
   DEFAULT_SHAPE_COLOR,
@@ -550,6 +551,10 @@ export class Toolbar {
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
   private thumbnailsButton: HTMLButtonElement | null = null;
+  /** The tier-1 pen button, drawn as the pen in hand (`drawPenPreview`). */
+  private penToolButton: HTMLElement | null = null;
+  /** What the pen button last drew, so an unchanged pen is not redrawn. */
+  private penPreviewKey = "";
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
   /** The record button (0.5). */
@@ -830,8 +835,43 @@ export class Toolbar {
       iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
       button.setAttribute("aria-haspopup", "dialog");
     }
+    if (tool === "pen") {
+      button.addClass("goodobsidian-tool-pen");
+      this.penToolButton = button;
+      this.drawPenPreview();
+    }
     this.toolButtons.set(tool, button);
     return button;
+  }
+
+  /**
+   * The pen button as its own preview, as Apple's pen picker draws each
+   * tool: the pen type in hand, its nib in the ink colour, over a mark as
+   * thick as the width it writes (`widthMarkThickness`). Redrawn only when
+   * one of those changes, since `syncActive` runs on every pick.
+   */
+  private drawPenPreview(): void {
+    const button = this.penToolButton;
+    if (!button) return;
+    const spec = this.activePenType();
+    const color = this.state.color;
+    const width = strokeWidthFor({ ...this.state, tool: spec.tool });
+    const dark = activeDocument.body.hasClass("theme-dark");
+    const key = `${spec.id}|${color}|${width}|${dark}`;
+    if (key === this.penPreviewKey) return;
+    this.penPreviewKey = key;
+    button.empty();
+    const glyph = penGlyph(spec, color);
+    glyph.classList.add("goodobsidian-tool-pen-glyph");
+    button.append(glyph);
+    const mark = button.createSpan({ cls: "goodobsidian-tool-pen-width" });
+    mark.toggleClass("is-highlighter", spec.tool === "highlighter");
+    mark.toggleClass("is-rimmed", inkNeedsRim(color, dark));
+    mark.setCssProps({
+      "--gob-ink": color,
+      "--gob-ink-width": `${widthMarkThickness(width)}px`,
+    });
+    button.setAttribute("aria-label", `${spec.label} (P or W)`);
   }
 
   /**
@@ -2855,6 +2895,7 @@ export class Toolbar {
     markChosen(this.eraserSizeButtons, eraserSizeFor(state));
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
+    this.drawPenPreview();
     // The pen menu, if it is open, shows each pen in its colour now.
     if (this.popoverKind === "pens") {
       for (const [id, row] of this.penMenuRows) {
