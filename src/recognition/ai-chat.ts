@@ -282,8 +282,9 @@ export function buildAskSystemPrompt(): string {
  */
 export function buildAskToolsPrompt(): string {
   return [
-    "You can use tools on the user's notebook: read other pages, search its text, add a text box or a page, go to a page, and put a drawing on a page.",
-    "Read or search when the question needs pages you were not given. Change the notebook (text boxes, pages, drawings) only when the user asks for it, and say what you did.",
+    "You can use tools on the user's notebook: read other pages, search its text, add a text box, a table, a page or a practice page, go to a page, put a drawing on a page, mark an area of a page, pin a comment to a spot, and organise the notebook (page titles, contents headings, bookmarks, page order).",
+    "Read or search when the question needs pages you were not given. Change the notebook only when the user asks for it, and say what you did.",
+    "When asked to check work, point at each problem where it is: a comment at that spot, or mark_area with a comment. Positions are fractions of the page (0 to 1 from the top-left), read off the page's image.",
   ].join("\n");
 }
 

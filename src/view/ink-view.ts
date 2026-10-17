@@ -37,6 +37,7 @@ import {
 import {
   type AttachmentKind,
   type InkDocument,
+  type PageComment,
   type Page,
   type TextBoxElement,
   emptyDocument,
@@ -108,6 +109,22 @@ import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
+import { type Stroke } from "../model/document";
+import { AddStrokeToPage } from "../model/page-commands";
+import { AddTable } from "../model/table-commands";
+import { setCellText } from "../model/table";
+import { nextTableId } from "../model/table";
+import { makeTable } from "../model/table";
+import { presetGeometry } from "../ink/shape-geometry";
+import { CommentModal } from "./comment-modal";
+import {
+  AddComment,
+  MAX_COMMENT_LENGTH,
+  RemoveComment,
+  SetCommentResolved,
+  SetCommentText,
+  nextCommentId,
+} from "../model/comments";
 import { type AskAiHost, AskAiModal, AskChatPanel } from "./ask-ai-modal";
 import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
 import {
@@ -1294,7 +1311,200 @@ export class InkView extends TextFileView {
           done: `Drew on page ${call.page}`,
         };
       }
+      default:
+        return this.runOrganiseTool(call);
     }
+  }
+
+  /**
+   * The tools that organise or annotate the notebook (`ask-tools.ts`): page
+   * titles, contents, bookmarks, page order, tables, practice pages, marks
+   * and comments. Each is one undoable step.
+   */
+  private runOrganiseTool(call: AskToolCall): AskToolOutcome {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) {
+      return { text: "The notebook cannot be changed right now.", isError: true };
+    }
+    const doc = surface.document;
+    const pageAt = (n: number): Page | null => doc.pages[n - 1] ?? null;
+    const apply = (command: Command): void => {
+      surface.applyCommand(command);
+      this.requestSave();
+    };
+    switch (call.tool) {
+      case "set_page_title": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        apply(new SetPageTitle(page, call.title || null));
+        return call.title
+          ? {
+              text: `Page ${call.page} is now “${call.title}” in the contents.`,
+              done: `Titled page ${call.page} “${call.title}”`,
+            }
+          : {
+              text: `Page ${call.page} has no title now.`,
+              done: `Removed page ${call.page}'s title`,
+            };
+      }
+      case "add_section": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        const { width, height } = page.geometry;
+        apply(
+          new SetSection(page, nextSectionId(doc), {
+            x: width * 0.08,
+            y: call.y * height,
+            title: call.title,
+          }),
+        );
+        return {
+          text: `Added “${call.title}” to the contents, on page ${call.page}.`,
+          done: `Added “${call.title}” to the contents`,
+        };
+      }
+      case "bookmark_page": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        apply(new SetPageBookmark(page, call.bookmarked));
+        return call.bookmarked
+          ? { text: `Bookmarked page ${call.page}.`, done: `Bookmarked page ${call.page}` }
+          : {
+              text: `Page ${call.page} has no bookmark now.`,
+              done: `Unbookmarked page ${call.page}`,
+            };
+      }
+      case "move_page": {
+        if (this.isSinglePage) return { text: "This note is a single page.", isError: true };
+        apply(new MovePage(call.page - 1, call.to - 1));
+        this.sidebar?.flush();
+        return {
+          text: `Page ${call.page} is now page ${call.to}; the pages between moved by one.`,
+          done: `Moved page ${call.page} to ${call.to}`,
+        };
+      }
+      case "add_table": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        const { width, height } = page.geometry;
+        const rows = call.cells.length;
+        const cols = call.cells[0]?.length ?? 1;
+        const x = (call.x ?? 0.08) * width;
+        const y = (call.y ?? 0.08) * height;
+        const w = Math.max(cols * 60, Math.min((call.width ?? 0.84) * width, width - x));
+        const table = makeTable({
+          id: nextTableId(doc),
+          x,
+          y,
+          w,
+          h: rows * 44,
+          rows,
+          cols,
+          color: "#1a1a1a",
+          textColor: "#1a1a1a",
+          header: call.header,
+        });
+        call.cells.forEach((row, r) => row.forEach((cell, c) => setCellText(table, r, c, cell)));
+        apply(new AddTable(page.id, table));
+        return {
+          text: `Added a ${rows}×${cols} table on page ${call.page}.`,
+          done: `Added a table on page ${call.page}`,
+        };
+      }
+      case "add_practice_page": {
+        if (this.isSinglePage) return { text: "This note is a single page.", isError: true };
+        const insert = pageToInsertAfter(doc, call.after - 1);
+        if (!insert) break;
+        const { page } = insert;
+        const { width, height } = page.geometry;
+        const parts: Command[] = [new AddPage(insert.index, page)];
+        if (call.title) parts.push(new SetPageTitle(page, call.title));
+        // Ids counted on from the notebook's highest, one per box.
+        let next = Number(nextElementId(doc, "t").slice(1));
+        const box = (y: number, text: string, fontSize: number, bold = false): TextBoxElement => ({
+          id: `t${next++}`,
+          x: width * 0.08,
+          y,
+          w: width * 0.84,
+          text,
+          color: "#1a1a1a",
+          fontSize,
+          ...(bold ? { bold: true } : {}),
+        });
+        let top = height * 0.06;
+        if (call.title) {
+          parts.push(new AddTextBoxToPage(page.id, box(top, call.title, 30, true)));
+          top += 60;
+        }
+        // Each question gets an even share of what is left, to answer under it.
+        const slot = (height * 0.96 - top) / call.questions.length;
+        call.questions.forEach((question, i) => {
+          parts.push(
+            new AddTextBoxToPage(page.id, box(top + i * slot, `${i + 1}. ${question}`, 22)),
+          );
+        });
+        apply(new CompositeCommand("Add practice page", parts));
+        surface.goToPage(insert.index, true);
+        return {
+          text:
+            `Added practice page ${insert.index + 1} with ${call.questions.length} ` +
+            `question${call.questions.length === 1 ? "" : "s"}, on the same paper as page ${call.after}.`,
+          done: `Added practice page ${insert.index + 1}`,
+        };
+      }
+      case "mark_area": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        const { width, height } = page.geometry;
+        const x0 = call.x * width;
+        const y0 = call.y * height;
+        const x1 = (call.x + call.width) * width;
+        const y1 = (call.y + call.height) * height;
+        const parts: Command[] = [
+          new AddStrokeToPage(page.id, markStroke(doc, call.shape, x0, y0, x1, y1)),
+        ];
+        if (call.comment) {
+          parts.push(new AddComment(page.id, this.aiComment(doc, page, x1, y0, call.comment)));
+        }
+        apply(new CompositeCommand("Mark", parts));
+        const what =
+          call.shape === "highlight" ? "Highlighted" : call.shape === "box" ? "Boxed" : "Circled";
+        return {
+          text: `${what} that part of page ${call.page}${call.comment ? ", with the comment beside it" : ""}.`,
+          done: `${what} part of page ${call.page}${call.comment ? " and commented" : ""}`,
+        };
+      }
+      case "add_comment": {
+        const page = pageAt(call.page);
+        if (!page) break;
+        const { width, height } = page.geometry;
+        apply(
+          new AddComment(
+            page.id,
+            this.aiComment(doc, page, call.x * width, call.y * height, call.text),
+          ),
+        );
+        return {
+          text: `Pinned the comment on page ${call.page}; the user opens it by tapping its marker.`,
+          done: `Commented on page ${call.page}`,
+        };
+      }
+      default:
+        return { text: "That tool is not here.", isError: true };
+    }
+    return { text: "That page is not in the notebook.", isError: true };
+  }
+
+  /** A comment by the AI at page point (`x`, `y`), kept on the page. */
+  private aiComment(doc: InkDocument, page: Page, x: number, y: number, text: string): PageComment {
+    return {
+      id: nextCommentId(doc),
+      x: Math.min(Math.max(0, x), page.geometry.width),
+      y: Math.min(Math.max(0, y), page.geometry.height),
+      text: text.slice(0, MAX_COMMENT_LENGTH),
+      author: "ai",
+      created: Date.now(),
+    };
   }
 
   /**
@@ -1341,6 +1551,46 @@ export class InkView extends TextFileView {
       pageNumbers.push(index + 1);
     }
     return { images, pageNumbers, totalPages: this.doc.pages.length };
+  }
+
+  /** Pin a comment to page `index` at `at`, one undoable step. Resolves to it, or null. */
+  private addComment(
+    index: number,
+    at: { x: number; y: number },
+    text: string,
+    author: "you" | "ai",
+  ): PageComment | null {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected() || !text.trim()) return null;
+    const comment: PageComment = {
+      id: nextCommentId(surface.document),
+      x: Math.min(Math.max(0, at.x), page.geometry.width),
+      y: Math.min(Math.max(0, at.y), page.geometry.height),
+      text: text.trim().slice(0, MAX_COMMENT_LENGTH),
+      author,
+      created: Date.now(),
+    };
+    surface.applyCommand(new AddComment(page.id, comment));
+    this.requestSave();
+    return comment;
+  }
+
+  /** A comment's marker was tapped: read it, edit it, resolve or delete it. */
+  private openComment(index: number, comment: PageComment): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page) return;
+    const apply = (command: Command): void => {
+      if (this.isProtected()) return;
+      surface.applyCommand(command);
+      this.requestSave();
+    };
+    new CommentModal(this.app, comment, index + 1, {
+      save: (text) => apply(new SetCommentText(page.id, comment, text)),
+      resolve: (resolved) => apply(new SetCommentResolved(page.id, comment, resolved)),
+      remove: () => apply(new RemoveComment(page.id, comment)),
+    }).open();
   }
 
   /** An answer as a text box near the top of what is in view on the current page. */
@@ -1775,6 +2025,13 @@ export class InkView extends TextFileView {
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onOpenLink: (target) => this.openInkLink(target),
+        onTapComment: (index, comment) => this.openComment(index, comment),
+        onAddComment: (index, at) => {
+          if (this.isProtected()) return;
+          new CommentModal(this.app, null, index + 1, {
+            save: (text) => this.addComment(index, at, text, "you"),
+          }).open();
+        },
         onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
         onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
@@ -3407,4 +3664,55 @@ export class InkView extends TextFileView {
     this.doc.recognizedHash = undefined;
     this.requestSave();
   }
+}
+
+/**
+ * The ink of an AI's mark around page box (`x0`, `y0`)-(`x1`, `y1`): a red
+ * circle that leaves the box inside it, a red box a little outside it, or a
+ * yellow highlighter stroke across it as tall as it. A snapped shape, so it
+ * draws as clean geometry and the eraser and lasso take it as any other.
+ */
+function markStroke(
+  doc: InkDocument,
+  shape: "circle" | "box" | "highlight",
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Stroke {
+  let max = 0;
+  for (const page of doc.pages) {
+    for (const stroke of page.strokes) {
+      const match = /^s(\d+)$/.exec(stroke.id);
+      if (match) max = Math.max(max, Number(match[1]));
+    }
+  }
+  const id = `s${max + 1}`;
+  if (shape === "highlight") {
+    const cy = (y0 + y1) / 2;
+    return {
+      id,
+      color: "#ffd43b",
+      size: Math.max(8, y1 - y0),
+      tool: "highlighter",
+      pts: [x0, cy, 0.5, x1, cy, 0.5],
+      shape: "line",
+    };
+  }
+  // A circle through the box's corners would cut them: grow it by √2 about
+  // its middle, so the ellipse goes round what it marks.
+  const grow = shape === "circle" ? Math.SQRT2 : 1.08;
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const hw = ((x1 - x0) / 2) * grow + 4;
+  const hh = ((y1 - y0) / 2) * grow + 4;
+  const preset = shape === "circle" ? "ellipse" : "rect";
+  return {
+    id,
+    color: "#e03131",
+    size: 3,
+    tool: "pen",
+    pts: presetGeometry(preset, { x: cx - hw, y: cy - hh }, { x: cx + hw, y: cy + hh }, 0.5),
+    shape: preset,
+  };
 }

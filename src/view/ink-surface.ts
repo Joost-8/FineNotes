@@ -242,6 +242,7 @@ import {
   type Tool,
   strokeBounds,
   strokeCount,
+  type PageComment,
 } from "../model/document";
 import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
@@ -628,6 +629,10 @@ export interface InkSurfaceCallbacks {
   onLinkStrokes?: (index: number, strokeIds: string[], current: string | null) => void;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
+  /** A comment's marker was tapped (`anchor` is the marker). */
+  onTapComment?: (index: number, comment: PageComment, anchor: HTMLElement) => void;
+  /** The press menu's Comment: pin a new comment at page point `at` of page `index`. */
+  onAddComment?: (index: number, at: { x: number; y: number }) => void;
   /**
    * A finger tapped a `[[link]]` written by hand and found on the device:
    * the host offers to link those strokes to `target`.
@@ -1380,6 +1385,11 @@ export class InkSurface {
   /** A lock badge on each locked picture, shown only while the lasso is the tool. */
   private readonly lockBadgesEl: HTMLElement;
   private readonly lockBadges: HTMLElement[] = [];
+  /** A marker on each comment pinned to a page; a tap opens it (`onTapComment`). */
+  private readonly commentMarkersEl: HTMLElement;
+  private readonly commentMarkers: HTMLButtonElement[] = [];
+  /** What each marker in the pool stands for now: its page and comment. */
+  private commentTargets: Array<{ index: number; comment: PageComment }> = [];
   /** The by-line lasso's insert-space markers: a column per block of lines per page. */
   private readonly spaceHandlesEl: HTMLElement;
   private readonly spaceHandleEls: HTMLElement[] = [];
@@ -1691,6 +1701,9 @@ export class InkSurface {
     // A lock badge on each locked picture, under the selection chrome. The
     // badges take no presses: a tap-and-hold on the picture reaches the page.
     this.lockBadgesEl = this.paperEl.createDiv({ cls: "goodobsidian-lock-badges is-hidden" });
+    this.commentMarkersEl = this.paperEl.createDiv({
+      cls: "goodobsidian-comment-markers is-hidden",
+    });
     // A ribbon beside each heading listed in the contents. Takes no presses either.
     this.sectionRibbonsEl = this.paperEl.createDiv({
       cls: "goodobsidian-section-ribbons is-hidden",
@@ -2251,6 +2264,8 @@ export class InkSurface {
     this.syncSectionRibbons();
     // A page's template may have changed: its lines, and their markers.
     this.syncSpaceHandles();
+    // A comment added, resolved or removed (an undo too).
+    this.syncCommentMarkers();
     this.callbacks.onChange(pages);
   }
 
@@ -3187,6 +3202,7 @@ export class InkSurface {
     this.syncImageOverlay();
     this.syncSelectionOverlay();
     this.syncLockBadges();
+    this.syncCommentMarkers();
     this.syncSectionRibbons();
     this.syncSpaceHandles();
     this.flashChrome(true);
@@ -3300,6 +3316,7 @@ export class InkSurface {
     this.syncImageOverlay();
     this.syncSelectionOverlay();
     this.syncLockBadges();
+    this.syncCommentMarkers();
     this.syncSectionRibbons();
     this.syncSpaceHandles();
     this.syncPageTabs();
@@ -7377,6 +7394,18 @@ export class InkSurface {
         run: () => this.textBoxHere(press.pageId, press.at),
       },
       {
+        id: "comment-here",
+        icon: "message-square-plus",
+        label: "Comment",
+        group: "press-text",
+        ...inBar,
+        enabled: this.callbacks.onAddComment !== undefined,
+        run: () => {
+          const box = this.boxForPage(press.pageId);
+          if (box) this.callbacks.onAddComment?.(box.index, press.at);
+        },
+      },
+      {
         id: "select-page",
         icon: "box-select",
         label: "Select all",
@@ -7987,6 +8016,52 @@ export class InkSurface {
       }
     }
     return false;
+  }
+
+  /**
+   * A marker on every comment, at the point it was pinned to: a speech
+   * bubble, the AI's with a spark, faded once resolved. Pooled buttons in
+   * the paper, so they scroll with it; `onTap` takes finger, Pencil and
+   * mouse alike, and keeps the pen from writing under the marker.
+   */
+  private syncCommentMarkers(): void {
+    // Not built yet (the first change can come from the constructor's load).
+    if (!this.commentMarkersEl || !this.pageLayout) return;
+    const scale = this.unitScale;
+    const targets: Array<{ index: number; comment: PageComment }> = [];
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      for (const comment of page?.comments ?? []) {
+        const i = targets.length;
+        targets.push({ index: box.index, comment });
+        let marker = this.commentMarkers[i];
+        if (!marker) {
+          marker = this.commentMarkersEl.createEl("button", {
+            cls: "goodobsidian-comment-marker clickable-icon",
+          });
+          iconInto(marker, "message-square", "•");
+          // The pool slot, not the comment: what it stands for is read at tap time.
+          onTap(marker, () => {
+            const target = this.commentTargets[i];
+            if (target) this.callbacks.onTapComment?.(target.index, target.comment, marker);
+          });
+          this.commentMarkers.push(marker);
+        }
+        marker.removeClass("is-hidden");
+        marker.toggleClass("is-ai", comment.author === "ai");
+        marker.toggleClass("is-resolved", comment.resolved === true);
+        marker.setAttribute("aria-label", `Comment: ${comment.text}`);
+        marker.setCssStyles({
+          left: `${(box.x + comment.x) * scale}px`,
+          top: `${(box.y + comment.y) * scale}px`,
+        });
+      }
+    }
+    this.commentTargets = targets;
+    for (let i = targets.length; i < this.commentMarkers.length; i++) {
+      this.commentMarkers[i].addClass("is-hidden");
+    }
+    this.commentMarkersEl.toggleClass("is-hidden", targets.length === 0);
   }
 
   private syncLockBadges(): void {

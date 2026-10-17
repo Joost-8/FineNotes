@@ -8780,3 +8780,68 @@ button.goodobsidian-learn-stop.is-hidden {
 .goodobsidian-newnb-under-title .goodobsidian-newnb-folder-icon {
   --icon-size: 16px;
 }
+
+/* Comments pinned to a page (`syncCommentMarkers`, ink-surface.ts): a bubble
+   sitting just above the point it is pinned to, the AI's in the accent
+   colour, faded once resolved. The layer takes no presses; its markers do. */
+.goodobsidian-comment-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-comment-markers.is-hidden,
+.goodobsidian-comment-marker.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-comment-marker.clickable-icon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 4px;
+  background: #f59e0b;
+  color: #fff;
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(0, -100%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+button.goodobsidian-comment-marker.is-ai.clickable-icon {
+  background: var(--interactive-accent);
+}
+
+button.goodobsidian-comment-marker.is-resolved.clickable-icon {
+  opacity: 0.45;
+}
+
+button.goodobsidian-comment-marker.clickable-icon:hover {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+.goodobsidian-comment-marker svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The comment dialog: Delete on the left, Resolve and Save on the right. */
+.goodobsidian-comment-field {
+  min-height: 96px;
+}
+
+.goodobsidian-comment-actions {
+  justify-content: flex-end;
+}
+
+.goodobsidian-dialog button.goodobsidian-comment-delete.clickable-icon {
+  margin-right: auto;
+  padding: 0 var(--size-4-3);
+  color: var(--text-error);
+}

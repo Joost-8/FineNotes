@@ -83,6 +83,94 @@ describe("ask tools", () => {
     });
   });
 
+  it("checks the organising tools", () => {
+    expect(parseToolCall("set_page_title", { page: 2, title: "  Groups " }, 3)).toEqual({
+      tool: "set_page_title",
+      page: 2,
+      title: "Groups",
+    });
+    expect(parseToolCall("set_page_title", { page: 2, title: "" }, 3)).toMatchObject({ title: "" });
+    expect(parseToolCall("add_section", { page: 1, title: "Rings", y: 0.5 }, 3)).toEqual({
+      tool: "add_section",
+      page: 1,
+      title: "Rings",
+      y: 0.5,
+    });
+    expect(parseToolCall("add_section", { page: 1, title: "Rings", y: 3 }, 3)).toMatchObject({
+      error: expect.stringMatching(/0 to 1/),
+    });
+    expect(parseToolCall("bookmark_page", { page: 1, bookmarked: "yes" }, 3)).toMatchObject({
+      error: expect.any(String),
+    });
+    expect(parseToolCall("move_page", { page: 2, to: 2 }, 3)).toMatchObject({
+      error: "Page 2 is already there.",
+    });
+    expect(parseToolCall("move_page", { page: 3, to: 1 }, 3)).toEqual({
+      tool: "move_page",
+      page: 3,
+      to: 1,
+    });
+  });
+
+  it("checks tables, practice pages, marks and comments", () => {
+    expect(
+      parseToolCall("add_table", { page: 1, rows: [["a", "b"], ["c"]], header: true, x: 0.1 }, 1),
+    ).toEqual({
+      tool: "add_table",
+      page: 1,
+      cells: [
+        ["a", "b"],
+        ["c", ""],
+      ],
+      header: true,
+      x: 0.1,
+      y: undefined,
+      width: undefined,
+    });
+    expect(parseToolCall("add_table", { page: 1, rows: [] }, 1)).toMatchObject({
+      error: expect.any(String),
+    });
+    expect(
+      parseToolCall("add_table", { page: 1, rows: [Array.from({ length: 9 }, () => "x")] }, 1),
+    ).toMatchObject({ error: expect.stringMatching(/columns/) });
+    expect(
+      parseToolCall("add_practice_page", { after: 1, questions: [" Q1 ", "", 3, "Q2"] }, 1),
+    ).toEqual({ tool: "add_practice_page", after: 1, title: "", questions: ["Q1", "Q2"] });
+    // A little past the edge is let in, at the edge; the area is kept on the page.
+    expect(
+      parseToolCall(
+        "mark_area",
+        { page: 1, x: 0.9, y: -0.02, width: 0.5, height: 0.1, shape: "circle", comment: " Why? " },
+        1,
+      ),
+    ).toEqual({
+      tool: "mark_area",
+      page: 1,
+      x: 0.9,
+      y: 0,
+      width: expect.closeTo(0.1, 6),
+      height: 0.1,
+      shape: "circle",
+      comment: "Why?",
+    });
+    expect(
+      parseToolCall("mark_area", { page: 1, x: 0, y: 0, width: 0, height: 0.1, shape: "box" }, 1),
+    ).toMatchObject({ error: expect.stringMatching(/empty/) });
+    expect(
+      parseToolCall("mark_area", { page: 1, x: 0, y: 0, width: 1, height: 1, shape: "star" }, 1),
+    ).toMatchObject({ error: expect.stringMatching(/shape/) });
+    expect(parseToolCall("add_comment", { page: 1, x: 0.5, y: 0.5, text: "Check" }, 1)).toEqual({
+      tool: "add_comment",
+      page: 1,
+      x: 0.5,
+      y: 0.5,
+      text: "Check",
+    });
+    expect(parseToolCall("add_comment", { page: 1, x: 2, y: 0.5, text: "x" }, 1)).toMatchObject({
+      error: expect.any(String),
+    });
+  });
+
   it("says what is happening, and how search results read", () => {
     expect(toolStatus({ tool: "read_pages", pages: [2, 3] })).toBe("Reading pages 2 and 3…");
     expect(toolStatus({ tool: "add_text_box", page: 4, text: "x" })).toBe("Writing on page 4…");

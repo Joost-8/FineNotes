@@ -88,7 +88,7 @@ describe("tool dialects", () => {
     const declarations = body.tools[0].functionDeclarations;
     expect(declarations.map((d) => d.name)).toEqual(ASK_TOOLS.map((t) => t.name));
     expect(JSON.stringify(declarations)).not.toMatch(
-      /additionalProperties|minimum|minItems|maxItems/,
+      /additionalProperties|minimum|maximum|minItems|maxItems/,
     );
     expect((google.body({ contents: [] }, [], true) as { toolConfig: unknown }).toolConfig).toEqual(
       { functionCallingConfig: { mode: "NONE" } },

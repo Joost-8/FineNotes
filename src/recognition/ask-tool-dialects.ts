@@ -153,6 +153,7 @@ export function geminiSchema(schema: unknown): unknown {
     if (
       key === "additionalProperties" ||
       key === "minimum" ||
+      key === "maximum" ||
       key === "minItems" ||
       key === "maxItems"
     ) {

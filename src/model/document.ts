@@ -498,6 +498,8 @@ export interface Page {
   textBoxes: TextBoxElement[];
   /** Tables, bottom to top. Absent when the page has none. */
   tables?: TableElement[];
+  /** Comments pinned to the page (`model/comments`). Absent when it has none. */
+  comments?: PageComment[];
   /**
    * Wall-clock time (ms since the Unix epoch) that this page's stroke `t0`
    * values count from: the pen-down of the first timestamped stroke. Absent
@@ -547,6 +549,27 @@ export interface InkLink {
  * contents goes to that point, and a ribbon marks it in the margin. Insert
  * space moves it with its line.
  */
+/**
+ * A comment pinned to a point on a page, by the user or by the AI (Ask's
+ * `add_comment` tool): a short note about what is written there, shown as
+ * a marker on the page that opens to its text. It is not ink: it is never
+ * drawn into the page, its thumbnails or its exports.
+ */
+export interface PageComment {
+  /** `cm<N>`, unique in the notebook. */
+  id: string;
+  /** Where it points, page px. */
+  x: number;
+  y: number;
+  text: string;
+  /** Who wrote it. */
+  author: "you" | "ai";
+  /** When, ms since the Unix epoch. */
+  created: number;
+  /** Dealt with: shown faded. Stored only as `true`. */
+  resolved?: true;
+}
+
 export interface PageSection {
   /** `c<N>`, unique in the notebook. */
   id: string;
