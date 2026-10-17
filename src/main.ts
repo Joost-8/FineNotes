@@ -1,3 +1,4 @@
+import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
@@ -806,6 +807,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the Shape tool's colour, for the next session. */
   saveShapeColor(color: string): void {
     this.settings.shapeColor = parseHexColor(color) ?? DEFAULT_SHAPE_COLOR;
+    void this.saveSettings();
+  }
+
+  /** Remember the Shape tool's fill, line, corners and arrowheads, for the next session. */
+  saveShapeStyle(style: ShapeToolStyle): void {
+    this.settings.shapeStyle = readShapeToolStyle(style);
     void this.saveSettings();
   }
 

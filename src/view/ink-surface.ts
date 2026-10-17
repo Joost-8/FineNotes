@@ -53,8 +53,17 @@ import {
   type ImagePainter,
   Renderer,
   type StrokeStyle,
+  decorOf,
   penFor,
 } from "../canvas/renderer";
+import {
+  ROUND_RADIUS,
+  type ShapeStyle,
+  commonShapeStyle,
+  readShapeToolStyle,
+  splitFill,
+  styleNewShape,
+} from "../model/shape-style";
 import {
   type BoxFrame,
   type LassoFilter,
@@ -158,7 +167,7 @@ import {
   scrollTopForPage,
   inkBeyondPage,
 } from "../canvas/page-layout";
-import { strokeHitByPoint } from "../canvas/hit-test";
+import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import {
   EYEDROP_REACH_PX,
   type EyedropResult,
@@ -239,6 +248,7 @@ import {
   type PageElements,
   RecolorStrokes,
   RemoveElements,
+  RestyleShapes,
   ReorientElements,
   type Reorientation,
   ScaleElements,
@@ -3989,6 +3999,35 @@ export class InkSurface {
     };
   }
 
+  /**
+   * A shape the Shape tool made, given the tool's fill, line, corners and
+   * arrowheads (`styleNewShape`). A shape the pen snapped keeps plain ink.
+   */
+  private styleShape(stroke: Stroke): Stroke {
+    if (this.toolState.tool === "shape") {
+      styleNewShape(stroke, readShapeToolStyle(this.toolState.shapeStyle));
+    }
+    return stroke;
+  }
+
+  /** Draw a shape being placed or held on the wet layer, styled as it will be committed. */
+  private renderWetShape(pageIndex: number, kind: ShapeKind, pts: number[]): void {
+    const style = this.currentStyle();
+    const shape = this.styleShape({
+      id: "",
+      color: style.color,
+      size: style.size,
+      tool: style.tool,
+      pts,
+      shape: kind,
+    });
+    this.renderer?.renderWet(pageIndex, shape.pts, {
+      ...style,
+      shape: true,
+      decor: decorOf(shape),
+    });
+  }
+
   /** Settings for a new stroke's sampling, from the pen as it is now. */
   private builderOpts(): StrokeBuilderOptions {
     // A pen whose positions arrive as whole screen px (WebKit before iPadOS
@@ -5030,7 +5069,7 @@ export class InkSurface {
     if (!builder || !box) return;
     // A snapped shape is drawn as the clean shape, following the held pen.
     if (this.snap) {
-      this.renderer?.renderWet(box.index, this.snap.pts, { ...this.currentStyle(), shape: true });
+      this.renderWetShape(box.index, this.snap.kind, this.snap.pts);
       return;
     }
     const style = this.currentStyle();
@@ -5252,6 +5291,7 @@ export class InkSurface {
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
     };
+    if (shape) this.styleShape(stroke);
     this.notePracticeInput();
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
@@ -5390,7 +5430,7 @@ export class InkSurface {
       this.renderer?.clearWet();
       return;
     }
-    this.renderer?.renderWet(box.index, pts, { ...this.currentStyle(), shape: true });
+    this.renderWetShape(box.index, drag.preset, pts);
   }
 
   /** A table is ruled in the pen's colour, thinner than handwriting. */
@@ -5412,14 +5452,18 @@ export class InkSurface {
       return;
     }
     if (pts.length === 0) return;
-    this.commitStroke(box, page, {
-      id: this.strokeIds.next(),
-      color: this.strokeColor(),
-      size: this.strokeSize(),
-      tool: "pen",
-      pts,
-      shape: drag.preset,
-    });
+    this.commitStroke(
+      box,
+      page,
+      this.styleShape({
+        id: this.strokeIds.next(),
+        color: this.strokeColor(),
+        size: this.strokeSize(),
+        tool: "pen",
+        pts,
+        shape: drag.preset,
+      }),
+    );
   }
 
   /**
@@ -6483,7 +6527,10 @@ export class InkSurface {
     for (const id of candidates) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || (filter && !lassoTakesStroke(stroke, filter))) continue;
-      if (!strokeHitByPoint(stroke, p.x, p.y, stroke.size / 2 + tolerance)) continue;
+      const hit =
+        strokeHitByPoint(stroke, p.x, p.y, stroke.size / 2 + tolerance) ||
+        strokeFillHit(stroke, p.x, p.y);
+      if (!hit) continue;
       const index = page.strokes.indexOf(stroke);
       if (index > bestIndex) {
         best = stroke;
@@ -6893,6 +6940,7 @@ export class InkSurface {
         },
       });
     }
+    actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Highlighter ink over a PDF's text: the text it covers can be copied.
@@ -7855,6 +7903,95 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.select(sel.pageId, copies);
+    this.changed([sel.pageId]);
+  }
+
+  /**
+   * The selected shapes' fill, line, corners and arrowheads, as menu rows
+   * with a check on what they have now (none where they differ). Each row
+   * restyles every shape that can take it, as one undo step.
+   */
+  private shapeStyleActions(strokes: readonly Stroke[]): SelectionAction[] {
+    const common = commonShapeStyle(strokes);
+    if (common.shapes === 0) return [];
+    const { style } = common;
+    const out: SelectionAction[] = [];
+    const row = (
+      id: string,
+      icon: string,
+      label: string,
+      group: string,
+      checked: boolean,
+      apply: ShapeStyle,
+    ): void => {
+      out.push({ id, icon, label, group, checked, run: () => this.restyleSelection(apply) });
+    };
+    if (common.fillable) {
+      const fill =
+        style.fill === undefined
+          ? null
+          : style.fill === null
+            ? "none"
+            : splitFill(style.fill).alpha < 1
+              ? "soft"
+              : "solid";
+      row("fill-none", "square", "No fill", "fill", fill === "none", { fill: null });
+      row("fill-soft", "paint-bucket", "Soft fill", "fill", fill === "soft", { fillFrom: "soft" });
+      row("fill-solid", "paint-bucket", "Solid fill", "fill", fill === "solid", {
+        fillFrom: "solid",
+      });
+    }
+    row("line-solid", "minus", "Solid line", "line", style.dash === null, { dash: null });
+    row("line-dash", "square-dashed", "Dashed line", "line", style.dash === "dash", {
+      dash: "dash",
+    });
+    row("line-dot", "ellipsis", "Dotted line", "line", style.dash === "dot", { dash: "dot" });
+    if (common.roundable) {
+      const rounded = typeof style.radius === "number" && style.radius > 0;
+      row("corners", "square-round-corner", "Rounded corners", "corners", rounded, {
+        radius: rounded ? null : ROUND_RADIUS,
+      });
+    }
+    if (common.headed) {
+      const heads = style.heads ?? null;
+      const start = heads?.start;
+      const end = heads?.end;
+      const filled = start === "filled" || end === "filled";
+      const kind = filled ? "filled" : "open";
+      row("head-start", "arrow-left", "Arrow at start", "heads", start !== undefined, {
+        heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) },
+      });
+      row("head-end", "arrow-right", "Arrow at end", "heads", end !== undefined, {
+        heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) },
+      });
+      const flip = filled ? "open" : "filled";
+      row("head-filled", "triangle", "Filled arrowheads", "heads", filled, {
+        heads:
+          start || end
+            ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
+            : { end: "filled" },
+      });
+    }
+    return out;
+  }
+
+  /** Restyle the selected shapes (`RestyleShapes`), as one undo step. */
+  private restyleSelection(style: ShapeStyle): void {
+    const sel = this.liveSelection();
+    if (!sel || sel.strokes.length === 0 || this.callbacks.isLocked?.()) return;
+    const before = selectionBounds(sel.strokes, [], []);
+    const command = new RestyleShapes(sel.pageId, sel.strokes, style);
+    this.history.push(this.doc, command);
+    const box = this.boxForPage(sel.pageId);
+    const after = selectionBounds(sel.strokes, [], []);
+    const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+    // A fill, dash or corner is not part of a stroke's cached outline: re-rasterise.
+    if (box && dirty) this.renderer?.invalidateRegion(box.index, dirty);
+    // An arrow given heads became a line: its points changed.
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    this.renderDry();
+    this.syncSelectionOverlay();
+    this.syncActionBar();
     this.changed([sel.pageId]);
   }
 

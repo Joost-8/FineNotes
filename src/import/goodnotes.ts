@@ -38,6 +38,7 @@
  * (field 6, `{1: dx, 2: dy}`).
  */
 
+import { canFill, isClosedLoop, readFill } from "../model/shape-style";
 import type {
   ImageElement,
   InkDocument,
@@ -383,13 +384,18 @@ export function readGoodnotes(
           if (frame) {
             // A diamond or another polygon, or a rectangle a box cannot be:
             // its outline as a shape stroke.
-            page.strokes.push(outlineOf(frame, k, `s${strokeN + 1}`));
+            const outline = outlineOf(frame, k, `s${strokeN + 1}`);
+            page.strokes.push(outline);
             strokeN++;
             tally.add("shapes", pageNumber);
             if (frame.fill && !box) {
-              // Such a rectangle keeps its fill as an empty filled box.
+              // Such a rectangle keeps its fill as an empty filled box; any
+              // other closed shape keeps it on its outline.
+              const fill = readFill(frame.fill);
               if (frame.vertices.length < 3) {
                 page.textBoxes.push(filledBox(frame, k, `t${++textN}`));
+              } else if (fill && canFill(outline.shape) && isClosedLoop(outline.pts)) {
+                outline.fill = fill;
               } else tally.add("fills", pageNumber);
             }
           } else if (!box) tally.add("empty", pageNumber);

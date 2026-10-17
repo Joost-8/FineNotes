@@ -39,6 +39,7 @@ export default defineConfig({
         "src/canvas/pdf-tiles.ts",
         "src/canvas/pdf-text.ts",
         "src/canvas/text-layout.ts",
+        "src/canvas/shape-decor.ts",
         "src/canvas/lasso.ts",
         "src/canvas/writing-lines.ts",
         "src/canvas/ruled-ink.ts",

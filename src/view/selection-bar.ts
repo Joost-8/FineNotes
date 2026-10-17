@@ -246,6 +246,12 @@ export class SelectionActionBar {
         "",
       );
       button.createSpan({ cls: "goodobsidian-selection-row-label", text: action.label });
+      if (action.checked !== undefined) {
+        button.setAttribute("role", "menuitemcheckbox");
+        button.setAttribute("aria-checked", String(action.checked));
+        const check = button.createSpan({ cls: "goodobsidian-selection-row-check" });
+        if (action.checked) iconInto(check, ["check"], "✓");
+      }
       this.decorate(button, action);
       onTap(button, () => this.run(action.id, true));
     }

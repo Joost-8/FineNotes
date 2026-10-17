@@ -5,7 +5,7 @@
      An agent that finds this contract wrong does NOT edit it — it finishes
      what it can and requests the change in its final report. -->
 
-Version: 8
+Version: 9
 
 ## Scope of this contract
 
@@ -359,6 +359,30 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `ellipse`                        | 65 points: a closed polygon sampled every 5.625°                 |
 | `triangle`, `diamond`, `polygon` | n+1 points, closed: the vertices, first repeated last            |
 | `roundrect`                      | 37 points, closed: four 8-segment quarter-arcs (Shape tool only) |
+
+### A shape's style (v9)
+
+A shape may also carry a style, all optional, and a stroke without them is
+drawn exactly as before (`src/model/shape-style.ts`, `src/canvas/shape-decor.ts`):
+
+```ts
+fill?: string;          // "#rrggbb" or "#rrggbbaa"; closed kinds only, painted under the outline
+dash?: "dash" | "dot";  // the outline; absent is solid
+radius?: number;        // page px; rect, triangle, diamond, polygon, star; scales with a resize
+heads?: { start?: "open" | "filled"; end?: "open" | "filled" };  // `line` only
+```
+
+- The style is drawn at paint time, never stored in `pts`: the layouts above
+  are unchanged. A fill is painted only while the outline is closed, so an
+  erased piece (which keeps `dash` and `radius`, never `fill` or `heads`) is
+  not filled. Corners are rounded by `arcTo`, each no further than halfway
+  along its edges.
+- An `arrow` keeps its head in its points. Giving it other heads turns it
+  into a `line` from its tail to its tip with those `heads`.
+- Arrowheads are drawn at most 30 page px a side, so they stay inside the
+  ink padding tiles are redrawn with.
+- The loader keeps a field only when it can read it; nothing is clamped
+  except `radius`, to 500.
 
 A shape's `pts` are sparse on purpose. The renderer draws a shape as its
 exact centreline, stroked at the stroke's `size` with round joins and caps —

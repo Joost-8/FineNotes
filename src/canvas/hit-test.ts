@@ -59,3 +59,28 @@ export function strokeHitByPoint(stroke: Stroke, x: number, y: number, reach: nu
   }
   return hit;
 }
+
+/**
+ * Whether (x, y) lies inside a filled shape's fill: a closed outline with a
+ * fill, by the even-odd rule the canvas fills it with. A shape without a fill
+ * has no inside to hit; its line is {@link strokeHitByPoint}'s.
+ */
+export function strokeFillHit(stroke: Stroke, x: number, y: number): boolean {
+  if (stroke.fill === undefined || stroke.shape === undefined) return false;
+  const pts = stroke.pts;
+  const n = pts.length - (pts.length % POINT_STRIDE);
+  if (n < 3 * POINT_STRIDE) return false;
+  if (Math.hypot(pts[0] - pts[n - POINT_STRIDE], pts[1] - pts[n - POINT_STRIDE + 1]) >= 0.5) {
+    return false;
+  }
+  let inside = false;
+  for (let a = 0, b = n - POINT_STRIDE; a < n; b = a, a += POINT_STRIDE) {
+    const ya = pts[a + 1];
+    const yb = pts[b + 1];
+    if (ya > y !== yb > y) {
+      const cross = pts[a] + ((y - ya) / (yb - ya)) * (pts[b] - pts[a]);
+      if (x < cross) inside = !inside;
+    }
+  }
+  return inside;
+}

@@ -51,6 +51,22 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "cloud",
 ];
 
+/** How a shape's outline is drawn when it is not solid. */
+export type ShapeDash = "dash" | "dot";
+
+export const SHAPE_DASHES: readonly ShapeDash[] = ["dash", "dot"];
+
+/** An arrowhead: an open V, or a filled triangle. */
+export type ArrowHead = "open" | "filled";
+
+export const ARROW_HEADS: readonly ArrowHead[] = ["open", "filled"];
+
+/** The heads on a line's two ends; an end left out has none. */
+export interface ArrowHeads {
+  start?: ArrowHead;
+  end?: ArrowHead;
+}
+
 export interface Stroke {
   id: string;
   color: string;
@@ -74,6 +90,22 @@ export interface Stroke {
    * erasing and lasso need no special case. See contracts/api.md §2.
    */
   shape?: ShapeKind;
+  /**
+   * A shape's inside colour, `#rrggbb` or `#rrggbbaa` (a soft tint keeps its
+   * alpha). Painted under the outline, and only while the outline is closed:
+   * a piece the eraser cut from a filled shape is not filled.
+   */
+  fill?: string;
+  /** A shape's outline drawn dashed or dotted; absent is solid. */
+  dash?: ShapeDash;
+  /**
+   * Corner radius, page px, for a shape with straight edges (rect, triangle,
+   * diamond, polygon, star, line): each corner is rounded, never by more than
+   * its edges allow. Scales with the shape.
+   */
+  radius?: number;
+  /** Arrowheads drawn on a `line`'s ends. A stored `arrow` keeps its head in its points. */
+  heads?: ArrowHeads;
   /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds

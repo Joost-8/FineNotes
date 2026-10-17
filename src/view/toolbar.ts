@@ -68,7 +68,14 @@ import {
   isShapeMode,
   starPoints,
 } from "../ink/shape-geometry";
-import { TEXT_ALIGNS, TEXT_FONTS, TEXT_FONT_STACKS, type TextAlign } from "../model/document";
+import {
+  type ArrowHead,
+  type ShapeDash,
+  TEXT_ALIGNS,
+  TEXT_FONTS,
+  TEXT_FONT_STACKS,
+  type TextAlign,
+} from "../model/document";
 import {
   DEFAULT_LINE_HEIGHT,
   DEFAULT_TEXT_STYLE,
@@ -146,6 +153,12 @@ import {
   widthFromMm,
 } from "../model/saved-pens";
 import { DialogKeyboard } from "./dialog-keyboard";
+import {
+  DEFAULT_ARROW_HEADS,
+  type FillMode,
+  type ShapeToolStyle,
+  readShapeToolStyle,
+} from "../model/shape-style";
 
 /**
  * Tools selectable in the toolbar. Pen, highlighter and shape produce
@@ -345,6 +358,8 @@ export interface ToolbarState {
   penInks?: PenInks;
   /** The Shape tool's mode. `undefined` counts as "auto". */
   shapeMode?: ShapeMode;
+  /** The Shape tool's fill, line, corners and arrowheads. `undefined`: plain outlines. */
+  shapeStyle?: ShapeToolStyle;
   /** The Table tool's size. `undefined` counts as the last one picked. */
   tableSize?: TableSize;
   /** Active pen type. `undefined` counts as "fountain". */
@@ -436,6 +451,8 @@ export interface ToolbarCallbacks {
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
+  /** The Shape tool's style changed. Hosts persist it. */
+  onShapeStyleChange?: (style: ShapeToolStyle) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
   /**
@@ -1339,6 +1356,111 @@ export class Toolbar {
         this.callbacks.onShapeColorChange?.(picked);
         this.buildOptions();
       }),
+    );
+
+    // Fill, line, corners and arrowheads, in one popover; the button shows
+    // the fill and line a new shape gets.
+    const styleButton = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-style clickable-icon",
+    });
+    styleButton.append(shapeStyleGlyph(readShapeToolStyle(this.state.shapeStyle), color));
+    caretIn(styleButton);
+    styleButton.setAttribute("aria-label", "Shape style: fill, line, corners and arrowheads");
+    styleButton.setAttribute("title", "Shape style");
+    styleButton.addEventListener("click", () => this.toggleShapeStylePopover(styleButton));
+  }
+
+  private toggleShapeStylePopover(anchor: HTMLElement): void {
+    if (this.popoverKind === "shape-style") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("shape-style", anchor);
+    body.addClass("goodobsidian-shape-style-popover");
+    this.renderShapeStyle(body, anchor);
+    this.keepPopoverInside(anchor);
+  }
+
+  /**
+   * The Shape tool's style. Each choice applies at once and the popover
+   * stays open, so a shape can be set up in one visit, as a text box's
+   * border is.
+   */
+  private renderShapeStyle(body: HTMLElement, anchor: HTMLElement): void {
+    body.empty();
+    const style = readShapeToolStyle(this.state.shapeStyle);
+    const color = this.state.shapeColor ?? DEFAULT_SHAPE_COLOR;
+    const set = (patch: Partial<ShapeToolStyle>): void => {
+      const next: ShapeToolStyle = { ...style, ...patch };
+      for (const key of Object.keys(next) as Array<keyof ShapeToolStyle>) {
+        if (next[key] === undefined) delete next[key];
+      }
+      this.state.shapeStyle = next;
+      this.callbacks.onShapeStyleChange?.(next);
+      anchor.querySelector("svg")?.replaceWith(shapeStyleGlyph(next, color));
+      this.renderShapeStyle(body, anchor);
+    };
+    const choices = <T>(
+      label: string,
+      options: ReadonlyArray<{ value: T; name: string; glyph: SVGElement }>,
+      current: T,
+      pick: (value: T) => void,
+    ): void => {
+      body.createDiv({ cls: "goodobsidian-popover-label", text: label });
+      const row = body.createDiv({ cls: "goodobsidian-text-row" });
+      for (const option of options) {
+        const button = this.textOption(row, "is-flag", "", () => pick(option.value));
+        button.append(option.glyph);
+        button.setAttribute("aria-label", option.name);
+        button.setAttribute("title", option.name);
+        const on = option.value === current;
+        button.setAttribute("aria-pressed", String(on));
+        button.toggleClass("is-active", on);
+      }
+    };
+    choices<FillMode | undefined>(
+      "Fill",
+      [
+        { value: undefined, name: "No fill", glyph: shapeFillGlyph(undefined, color) },
+        { value: "soft", name: "Soft fill", glyph: shapeFillGlyph("soft", color) },
+        { value: "solid", name: "Solid fill", glyph: shapeFillGlyph("solid", color) },
+      ],
+      style.fill,
+      (fill) => set({ fill }),
+    );
+    choices<ShapeDash | undefined>(
+      "Line",
+      [
+        { value: undefined, name: "Solid line", glyph: dashGlyph(undefined) },
+        { value: "dash", name: "Dashed line", glyph: dashGlyph("dash") },
+        { value: "dot", name: "Dotted line", glyph: dashGlyph("dot") },
+      ],
+      style.dash,
+      (dash) => set({ dash }),
+    );
+    this.switchRow(
+      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
+      "Rounded corners",
+      style.round === true,
+      (on) => set({ round: on ? true : undefined }),
+    );
+    const heads = style.heads ?? DEFAULT_ARROW_HEADS;
+    const headOptions = (
+      end: "start" | "end",
+    ): Array<{
+      value: ArrowHead | undefined;
+      name: string;
+      glyph: SVGElement;
+    }> => [
+      { value: undefined, name: `No head at the ${end}`, glyph: headGlyph(end, undefined) },
+      { value: "open", name: `Open head at the ${end}`, glyph: headGlyph(end, "open") },
+      { value: "filled", name: `Filled head at the ${end}`, glyph: headGlyph(end, "filled") },
+    ];
+    choices("Arrow start", headOptions("start"), heads.start, (start) =>
+      set({ heads: { ...(start ? { start } : {}), ...(heads.end ? { end: heads.end } : {}) } }),
+    );
+    choices("Arrow end", headOptions("end"), heads.end, (end) =>
+      set({ heads: { ...(heads.start ? { start: heads.start } : {}), ...(end ? { end } : {}) } }),
     );
   }
 
@@ -3115,6 +3237,62 @@ function borderWidthGlyph(width: number | null): SVGElement {
       return;
     }
     add("path", { d: "M4 12h16", "stroke-width": String(Math.min(5, 0.8 + width)) });
+  });
+}
+
+/** What a new shape gets: its fill (or none) inside, its line round it. */
+function shapeStyleGlyph(style: ShapeToolStyle, color: string): SVGElement {
+  return textGlyph((add) => {
+    const attrs: Record<string, string> = { x: "4.5", y: "4.5", width: "15", height: "15" };
+    attrs.rx = style.round ? "4" : "1";
+    if (style.fill) {
+      attrs.fill = color;
+      attrs["fill-opacity"] = style.fill === "soft" ? "0.3" : "1";
+    }
+    if (style.dash === "dash") attrs["stroke-dasharray"] = "3.5 3";
+    if (style.dash === "dot") attrs["stroke-dasharray"] = "0.1 3.2";
+    add("rect", attrs);
+  });
+}
+
+function shapeFillGlyph(fill: FillMode | undefined, color: string): SVGElement {
+  return textGlyph((add) => {
+    const attrs: Record<string, string> = {
+      x: "4.5",
+      y: "4.5",
+      width: "15",
+      height: "15",
+      rx: "3",
+    };
+    if (fill) {
+      attrs.fill = color;
+      attrs["fill-opacity"] = fill === "soft" ? "0.3" : "1";
+    }
+    add("rect", attrs);
+    if (!fill) add("path", { d: "M7 17 17 7" });
+  });
+}
+
+function dashGlyph(dash: ShapeDash | undefined): SVGElement {
+  return textGlyph((add) => {
+    const attrs: Record<string, string> = { d: "M3.5 12h17", "stroke-width": "2.2" };
+    if (dash === "dash") attrs["stroke-dasharray"] = "4.5 3.5";
+    if (dash === "dot") attrs["stroke-dasharray"] = "0.1 4";
+    add("path", attrs);
+  });
+}
+
+/** A line with its head (or none) on the end `end` names. */
+function headGlyph(end: "start" | "end", head: ArrowHead | undefined): SVGElement {
+  return textGlyph((add) => {
+    // Pointing right for the end, left for the start.
+    const tip = end === "end" ? 20 : 4;
+    const back = end === "end" ? 13 : 11;
+    add("path", { d: `M4 12h16` });
+    if (head === "open") add("path", { d: `M${back} 7.5 ${tip} 12 ${back} 16.5` });
+    if (head === "filled") {
+      add("path", { d: `M${back} 7.5 ${tip} 12 ${back} 16.5Z`, fill: "currentColor" });
+    }
   });
 }
 

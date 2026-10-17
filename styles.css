@@ -4967,6 +4967,19 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--gob-sel-icon);
 }
 
+/* A choice that is on: its check sits at the row's far end. */
+.goodobsidian-selection-row-check {
+  display: inline-flex;
+  width: 18px;
+  margin-left: auto;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-selection-row-check svg {
+  width: 18px;
+  height: 18px;
+}
+
 .goodobsidian-selection-menu-divider {
   flex: 0 0 auto;
   height: 1px;

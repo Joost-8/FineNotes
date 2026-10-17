@@ -51,6 +51,9 @@ import {
   type InkDocument,
   type Page,
   type PageGeometry,
+  type ArrowHeads,
+  type ShapeDash,
+  type ShapeKind,
   type Stroke,
   type TextBoxElement,
   type Tool,
@@ -68,6 +71,15 @@ import {
 } from "./text-layout";
 import { displayText } from "../model/text-links";
 import { normalizeBorder } from "../model/text-style";
+import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
+import {
+  HEAD_MAX,
+  type OutlineOp,
+  arrowHead,
+  dashPattern,
+  outlineOps,
+  pointsOf,
+} from "./shape-decor";
 import {
   ByteLru,
   TILE_SIZE,
@@ -99,6 +111,42 @@ export interface StrokeStyle {
   usePressure: boolean;
   /** Clean shape geometry (a snapped or placed shape), not freehand ink. */
   shape?: boolean;
+  /** A shape's fill, dash, corners and arrowheads, when it has any. */
+  decor?: ShapeDecor | null;
+}
+
+/** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
+export interface ShapeDecor {
+  kind: ShapeKind;
+  fill?: string;
+  dash?: ShapeDash;
+  radius?: number;
+  heads?: ArrowHeads;
+}
+
+/** A stroke's decor, or `null` when it is drawn as plain ink. */
+export function decorOf(stroke: {
+  shape?: ShapeKind;
+  fill?: string;
+  dash?: ShapeDash;
+  radius?: number;
+  heads?: ArrowHeads;
+}): ShapeDecor | null {
+  const kind = stroke.shape;
+  if (kind === undefined) return null;
+  const fill = canFill(kind) ? stroke.fill : undefined;
+  const radius =
+    canRound(kind) && stroke.radius !== undefined && stroke.radius > 0 ? stroke.radius : undefined;
+  const heads =
+    kind === "line" && (stroke.heads?.start || stroke.heads?.end) ? stroke.heads : undefined;
+  if (!fill && !stroke.dash && !radius && !heads) return null;
+  return {
+    kind,
+    ...(fill ? { fill } : {}),
+    ...(stroke.dash ? { dash: stroke.dash } : {}),
+    ...(radius ? { radius } : {}),
+    ...(heads ? { heads } : {}),
+  };
 }
 
 /** A selection box, together with the page it belongs to. */
@@ -1073,7 +1121,7 @@ export class Renderer {
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) return;
-    paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
+    paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
   }
 
   /** Whether page `pageIndex` of the document last painted is shown inverted (`pageLook`). */
@@ -1104,7 +1152,8 @@ export class Renderer {
       runs = inkRuns(pts, penOptions(stroke.size, pressure), stroke.shape !== undefined);
       const b = strokeBounds(stroke);
       if (b) {
-        const pad = stroke.size;
+        // Arrowheads reach sideways past the line's ends.
+        const pad = stroke.size + (stroke.heads ? HEAD_MAX / 2 : 0);
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
@@ -1194,7 +1243,8 @@ export class Renderer {
     }
     const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
-      paintStroke(ctx, this.pathEntry(stroke, usePressure), stroke, this.highlighterAlpha, night);
+      const entry = this.pathEntry(stroke, usePressure);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
     }
     ctx.restore();
     this.setWetVisible(true);
@@ -1230,7 +1280,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
       ctx.restore();
     }
     const preview = this.previews.peek(box.id);
@@ -1241,7 +1291,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
       ctx.restore();
     }
   }
@@ -1361,7 +1411,14 @@ export class Renderer {
 /** The style a stored stroke is drawn with, `pressure` being the user's setting. */
 export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
   const { color, size, tool, shape } = stroke;
-  return { color, size, tool, usePressure: pressure, shape: shape !== undefined };
+  return {
+    color,
+    size,
+    tool,
+    usePressure: pressure,
+    shape: shape !== undefined,
+    decor: decorOf(stroke),
+  };
 }
 
 /**
@@ -1376,6 +1433,8 @@ function paintStroke(
   style: { color: string; tool: Tool },
   highlighterAlpha: number,
   night = false,
+  decor: ShapeDecor | null = null,
+  pts?: readonly number[],
 ): void {
   const highlighter = style.tool === "highlighter";
   ctx.save();
@@ -1389,8 +1448,84 @@ function paintStroke(
   // (dark pages, the view setting) *shows* it through `./night`'s mapping.
   if (!night) ctx.fillStyle = style.color;
   else ctx.fillStyle = highlighter ? nightHighlighter(style.color) : nightColor(style.color);
-  paintInk(ctx, ink.runs, ink.paths);
+  if (decor && pts && ink.runs.length > 0) paintShape(ctx, pts, ink.runs[0].width, decor, night);
+  else paintInk(ctx, ink.runs, ink.paths);
   ctx.restore();
+}
+
+/** Outline operations as a `Path2D`. */
+function pathFromOps(ops: readonly OutlineOp[]): Path2D {
+  const path = new Path2D();
+  for (const o of ops) {
+    if (o.op === "M") path.moveTo(o.x, o.y);
+    else if (o.op === "L") path.lineTo(o.x, o.y);
+    else if (o.op === "A") path.arcTo(o.x1, o.y1, o.x2, o.y2, o.r);
+    else path.closePath();
+  }
+  return path;
+}
+
+/**
+ * Paint a styled shape in the context's current `fillStyle` (its ink
+ * colour): the fill under the outline, then the outline, dashed or dotted
+ * when it is, then its arrowheads, solid. `width` is the width plain ink of
+ * this stroke is drawn at, so a styled shape is exactly as heavy.
+ */
+function paintShape(
+  ctx: CanvasRenderingContext2D,
+  pts: readonly number[],
+  width: number,
+  decor: ShapeDecor,
+  night: boolean,
+): void {
+  const ink = ctx.fillStyle;
+  const closed = isClosedLoop(pts);
+  let line = pts;
+  const heads: Array<{ points: Array<{ x: number; y: number }>; filled: boolean }> = [];
+  if (decor.heads) {
+    const points = pointsOf(pts);
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first && last) {
+      const span = Math.hypot(last.x - first.x, last.y - first.y);
+      const start = decor.heads.start
+        ? arrowHead(last, first, width, decor.heads.start, span)
+        : null;
+      const end = decor.heads.end ? arrowHead(first, last, width, decor.heads.end, span) : null;
+      const from = start ? start.stop : first;
+      const to = end ? end.stop : last;
+      const p = pts[2] ?? 0.5;
+      line = [from.x, from.y, p, to.x, to.y, p];
+      if (start) heads.push(start);
+      if (end) heads.push(end);
+    }
+  }
+  const path = pathFromOps(outlineOps(line, decor.radius ?? 0, closed));
+  if (decor.fill && closed) {
+    const { color, alpha } = splitFill(decor.fill);
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.fillStyle = night ? nightColor(color) : color;
+    ctx.fill(path);
+    ctx.restore();
+  }
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (decor.dash) ctx.setLineDash(dashPattern(decor.dash, width));
+  ctx.stroke(path);
+  ctx.setLineDash([]);
+  for (const head of heads) {
+    const shape = new Path2D();
+    head.points.forEach((p, i) => (i === 0 ? shape.moveTo(p.x, p.y) : shape.lineTo(p.x, p.y)));
+    if (head.filled) {
+      shape.closePath();
+      ctx.fillStyle = ink;
+      ctx.fill(shape);
+    }
+    ctx.stroke(shape);
+  }
 }
 
 /** Trace one stroke from its points and paint it, in whatever space `ctx` is in. */
@@ -1402,7 +1537,7 @@ function fillStroke(
   night = false,
 ): void {
   const runs = inkRuns(points, penFor(style), style.shape === true);
-  paintStroke(ctx, { runs }, style, highlighterAlpha, night);
+  paintStroke(ctx, { runs }, style, highlighterAlpha, night, style.decor ?? null, points);
 }
 
 export interface ThumbnailOptions {

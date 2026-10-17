@@ -22,6 +22,13 @@ import {
   pageById,
 } from "./document";
 import { MAX_BORDER_WIDTH, MAX_CORNER_RADIUS, MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
+import {
+  type ShapeStyle,
+  type StyleFields,
+  applyShapeStyle,
+  restoreStyleFields,
+  styleFieldsOf,
+} from "./shape-style";
 
 /** The elements a selection holds on one page. */
 export interface PageElements {
@@ -180,7 +187,7 @@ export function textScaleRange(textBoxes: readonly TextBoxElement[]): { min: num
 export class ScaleElements implements Command {
   readonly label = "Resize selection";
   private scaled: {
-    strokes: Array<{ stroke: Stroke; pts: number[]; size: number }>;
+    strokes: Array<{ stroke: Stroke; pts: number[]; size: number; radius: number | undefined }>;
     images: Array<{ image: ImageElement; x: number; y: number; w: number; h: number }>;
     textBoxes: Array<{
       textBox: TextBoxElement;
@@ -213,9 +220,11 @@ export class ScaleElements implements Command {
     const sy = (y: number): number => ay + (y - ay) * k;
     this.scaled = {
       strokes: on.strokes.map((stroke) => {
-        const saved = { stroke, pts: stroke.pts, size: stroke.size };
+        const saved = { stroke, pts: stroke.pts, size: stroke.size, radius: stroke.radius };
         stroke.pts = scalePoints(stroke.pts, ax, ay, k);
         stroke.size *= k;
+        // Rounded corners grow with the shape, as its width does.
+        if (stroke.radius !== undefined) stroke.radius *= k;
         return saved;
       }),
       images: on.images.map((image) => {
@@ -244,9 +253,11 @@ export class ScaleElements implements Command {
   invert(doc: InkDocument): void {
     const scaled = this.scaled;
     if (!scaled || !pageById(doc, this.pageId)) return;
-    for (const { stroke, pts, size } of scaled.strokes) {
+    for (const { stroke, pts, size, radius } of scaled.strokes) {
       stroke.pts = pts;
       stroke.size = size;
+      if (radius === undefined) delete stroke.radius;
+      else stroke.radius = radius;
     }
     for (const { image, x, y, w, h } of scaled.images) {
       image.x = x;
@@ -518,6 +529,43 @@ export class RecolorStrokes implements Command {
   invert(doc: InkDocument): void {
     if (!pageById(doc, this.pageId)) return;
     for (const { stroke, color } of this.previous) stroke.color = color;
+    this.previous = [];
+  }
+}
+
+/**
+ * Give the selected shapes a fill, line style, corners or arrowheads, each
+ * shape taking the parts its kind can (`applyShapeStyle`); undo puts every
+ * shape back as it was, points included (an arrow given heads became a line).
+ */
+export class RestyleShapes implements Command {
+  readonly label = "Change shape style";
+  private previous: Array<{ stroke: Stroke; saved: StyleFields }> = [];
+
+  constructor(
+    readonly pageId: string,
+    private readonly strokes: readonly Stroke[],
+    private readonly style: ShapeStyle,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = [];
+    const page = pageById(doc, this.pageId);
+    if (!page) return;
+    for (const stroke of present(page.strokes, this.strokes)) {
+      const saved = styleFieldsOf(stroke);
+      if (applyShapeStyle(stroke, this.style)) this.previous.push({ stroke, saved });
+    }
+  }
+
+  /** Whether applying it changed anything. */
+  get changed(): boolean {
+    return this.previous.length > 0;
+  }
+
+  invert(doc: InkDocument): void {
+    if (!pageById(doc, this.pageId)) return;
+    for (const { stroke, saved } of this.previous) restoreStyleFields(stroke, saved);
     this.previous = [];
   }
 }

@@ -197,6 +197,10 @@ export function eraseCircleFromStroke(
     };
     if (stroke.t0 !== undefined) piece.t0 = stroke.t0;
     if (stroke.shape !== undefined) piece.shape = stroke.shape;
+    // A piece is drawn as its shape was: dashed, its corners as round. Not
+    // filled (a piece is open) and without heads (its ends are new).
+    if (stroke.dash !== undefined) piece.dash = stroke.dash;
+    if (stroke.radius !== undefined) piece.radius = stroke.radius;
     return piece;
   });
 }

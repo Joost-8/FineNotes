@@ -756,7 +756,7 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
     return readGoodnotes(files, "");
   }
 
-  it("draws polygons as outlines, and brings rectangles over as boxes with a border", () => {
+  it("draws polygons as outlines with their fills, and brings rectangles over as boxes with a border", () => {
     const result = withNotes([
       shapeBody({
         origin: [100, 100],
@@ -816,10 +816,10 @@ describe("readGoodnotes: what FineNotes cannot hold, approximated", () => {
     expect(decodeDocument(encodeDocument(result.doc)).pages[0].textBoxes[0]).toEqual(
       page.textBoxes[0],
     );
-    expect(result.warnings).toEqual([
-      "2 shapes came over as outlines (page 1).",
-      "1 shape's fill could not be kept, only the outline (page 1).",
-    ]);
+    // The diamond keeps its translucent fill on its outline (alpha 0.1).
+    expect(d.fill).toBe("#ff00001a");
+    expect(decodeDocument(encodeDocument(result.doc)).pages[0].strokes[0].fill).toBe("#ff00001a");
+    expect(result.warnings).toEqual(["2 shapes came over as outlines (page 1)."]);
   });
 
   // Built as `Test (Goodnotes)` (Joost's export, 2026-10-12) holds its one

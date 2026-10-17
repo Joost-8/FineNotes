@@ -16,6 +16,7 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
 import {
   Notice,
@@ -243,6 +244,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penAutoShape: s.penAutoShape === true,
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
+    shapeStyle: readShapeToolStyle(s.shapeStyle),
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
@@ -1427,6 +1429,7 @@ export class InkView extends TextFileView {
           this.surface?.refreshPenCursor();
           this.plugin.saveShapeColor(color);
         },
+        onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
           if (this.surface) this.surface.pickColorFromPage(done);

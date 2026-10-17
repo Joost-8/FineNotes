@@ -8,6 +8,7 @@
  * `tests/settings/settings-data.test.ts` pins all of it.
  */
 
+import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./view/handwriting-learning";
 import {
   DEFAULT_ERASER_SIZE,
@@ -135,6 +136,8 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** The Shape tool's fill, line, corners and arrowheads (`model/shape-style`). */
+  shapeStyle?: ShapeToolStyle;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */

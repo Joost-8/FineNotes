@@ -64,6 +64,12 @@ export interface SelectionAction {
    * `tile` in the strip across the top (icon over label), or `none`.
    */
   menu?: "row" | "tile" | "none";
+  /**
+   * A choice that is on or off (a row of the menu shows a check when it is
+   * on): one of the selected shapes' fills, line styles, corners or heads.
+   * Absent on plain actions.
+   */
+  checked?: boolean;
   /** Draw a row of colour swatches instead of a button (menu only). */
   swatches?: ActionSwatches;
   run?: () => void;

@@ -34,6 +34,7 @@ import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
+import { readDash, readFill, readHeads, readRadius } from "./shape-style";
 import {
   type AttachmentFolders,
   type Backdrop,
@@ -138,6 +139,10 @@ interface StoredStroke {
   tool: string;
   pts: number[];
   shape?: string;
+  fill?: string;
+  dash?: string;
+  radius?: number;
+  heads?: { start?: string; end?: string };
   t0?: number;
   samples?: number[];
 }
@@ -191,6 +196,10 @@ function storeStroke(stroke: Stroke): StoredStroke {
     tool: stroke.tool,
     pts: quantizePts(stroke.pts),
     shape: stroke.shape || undefined,
+    fill: stroke.fill,
+    dash: stroke.dash,
+    radius: stroke.radius,
+    heads: stroke.heads ? { start: stroke.heads.start, end: stroke.heads.end } : undefined,
     // Absent means "unknown", which is not the same as 0 (ledger: clamping
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
@@ -618,6 +627,15 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   };
   const shape = asShape(raw.shape);
   if (shape) stroke.shape = shape;
+  // A shape's style; anything unreadable is simply not there.
+  const fill = readFill(raw.fill);
+  if (fill) stroke.fill = fill;
+  const dash = readDash(raw.dash);
+  if (dash) stroke.dash = dash;
+  const radius = readRadius(raw.radius);
+  if (radius) stroke.radius = radius;
+  const heads = readHeads(raw.heads);
+  if (heads) stroke.heads = heads;
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;

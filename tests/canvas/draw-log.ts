@@ -88,6 +88,10 @@ export class LoggedPath2D {
     this.d += ` L ${num(x)} ${num(y)}`;
   }
 
+  arcTo(x1: number, y1: number, x2: number, y2: number, r: number): void {
+    this.d += ` A ${num(x1)} ${num(y1)} ${num(x2)} ${num(y2)} ${num(r)}`;
+  }
+
   closePath(): void {
     this.d += " Z";
   }
