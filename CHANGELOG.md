@@ -10,6 +10,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Notebook settings (the gear) are this notebook's own.** Pages (scroll
+  direction, page numbers, header), a new **Read-only** switch (nothing
+  writes, erases or changes the pages; you can still scroll, search and
+  export), and the notebook's name (renaming it, and its own folder) with its
+  pages, size, dates and folder. Notebook colour themes are gone. Where new
+  files are saved moved to FineNotes' settings, Advanced, for every notebook
+  without a folder of its own.
+- **The More panel scrolls instead of cutting off rows** on a short screen.
 - **The Shape tool starts at the square.** Its auto-shape button is gone;
   the pen's Auto shape switch still turns a drawn shape clean.
 - **Everything new is a notebook.** The New notebook dialog no longer offers

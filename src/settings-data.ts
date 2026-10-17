@@ -25,6 +25,7 @@ import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
+import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
@@ -152,6 +153,17 @@ export interface GoodObsidianSettings {
   shapeColor: string;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
+  /**
+   * Where notebooks without a folder of their own save new files, by kind;
+   * "" keeps each kind's own default (Obsidian's attachment setting, next to
+   * the recording, an AI chats folder, next to the note). A notebook with its
+   * own folder, or one that set a folder itself, keeps its own.
+   */
+  imagesFolder: string;
+  recordingsFolder: string;
+  transcriptsFolder: string;
+  chatsFolder: string;
+  exportsFolder: string;
   /** New tables get a header row. */
   tableHeader?: boolean;
   /** Vault folder "Save as template" writes `.finetemplate` files to. */
@@ -271,6 +283,11 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
   stickerFolder: DEFAULT_STICKER_FOLDER,
+  imagesFolder: "",
+  recordingsFolder: "",
+  transcriptsFolder: "",
+  chatsFolder: "",
+  exportsFolder: "",
   templateFolder: "FineNotes templates",
   templateGalleryUrl: "",
   recentColors: [],
@@ -327,6 +344,22 @@ function isSection(value: unknown): value is SettingsSection {
  * Anything but a list (a missing key, a hand-edited file) is the default;
  * ids this build does not know are dropped.
  */
+/** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
+export function attachmentDefaults(
+  settings: Pick<
+    GoodObsidianSettings,
+    "imagesFolder" | "recordingsFolder" | "transcriptsFolder" | "chatsFolder" | "exportsFolder"
+  >,
+): Record<AttachmentKind, string> {
+  return {
+    images: settings.imagesFolder,
+    audio: settings.recordingsFolder,
+    transcripts: settings.transcriptsFolder,
+    chats: settings.chatsFolder,
+    exports: settings.exportsFolder,
+  };
+}
+
 export function foldedSectionsOf(raw: unknown): SettingsSection[] {
   if (!Array.isArray(raw)) return [...DEFAULT_FOLDED_SECTIONS];
   return SETTINGS_SECTIONS.filter((id) => raw.includes(id));

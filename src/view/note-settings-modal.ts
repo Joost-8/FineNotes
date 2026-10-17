@@ -1,103 +1,61 @@
 /**
- * The toolbar's settings button: this notebook's (or single page's) own
- * settings — which way its pages run (a notebook only), and where its new
- * pictures, recordings, recording transcripts, AI chats and PDF exports are saved. Each row takes a typed
- * path (with type-ahead, and a folder that does not exist yet is created on
- * the first save) or a pick from the full folder list, which is what a
- * finger on an iPad wants. An empty row means Obsidian's own "Default
- * location for new attachments" — or, for transcripts, the recording's
- * folder, and for exports, the note's own folder.
+ * The toolbar's settings button: this notebook's own settings, the ones that
+ * belong to one notebook rather than to every one.
+ *
+ *   Pages         Scroll direction · Page numbers · Header
+ *   Editing       Read-only
+ *   Notebook      Name (renames it) · pages · size · created · edited · folder
+ *                 All FineNotes settings  [Open]
+ *
+ * Where new files are saved is in FineNotes' own settings (Advanced), for
+ * every notebook without a folder of its own.
  *
  * The modal only reports choices; the host applies them as undoable commands
  * and the modal re-reads the note, so what it shows is always what is stored.
- *
- * Typing a path on the iPad (Joost's recording, 2026-09-22): the keyboard
- * covered the field being typed in, Obsidian's floating type-ahead list
- * placed itself over the toolbar because the field was under the keyboard,
- * and the app behind the dialog collapsed to black. So the matches are listed
- * inside the dialog, right under the field; while a field has focus the
- * dialog rises just far enough to keep the field and its list above the
- * keyboard; and Obsidian's keyboard cap is lifted as in the New notebook
- * dialog.
+ * The text fields follow the iPad keyboard (`DialogKeyboard`).
  */
 
-import { type NotebookPalette, PALETTES } from "../model/palette";
-import type { NotebookFurniture } from "../model/furniture";
 import { type App, Modal, Setting } from "obsidian";
-import { cleanFolder, suggestFolders } from "../model/attachment-folders";
-import type { AttachmentFolders, AttachmentKind, ScrollDirection } from "../model/document";
-import { FolderSuggestModal } from "./folder-suggest";
+import type { ScrollDirection } from "../model/document";
+import type { NotebookFurniture } from "../model/furniture";
+import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
-/** Most folders listed under a field at once. */
-const SUGGESTIONS = 5;
+
+/** What the Notebook section shows. */
+export interface NotebookInfo {
+  /** The name it shows as (its file name without the suffix). */
+  name: string;
+  pages: number;
+  bytes: number;
+  /** ms since the epoch. */
+  created: number;
+  modified: number;
+  /** The vault folder it is in ("" is the vault root). */
+  folder: string;
+}
 
 export interface NoteSettingsHost {
   /** A single page rather than a notebook: only the wording changes. */
   single: boolean;
-  /** The note's folders as stored now. */
-  folders: () => AttachmentFolders;
-  /** Set (`undefined` clears) where the note saves `kind`. */
-  setFolder: (kind: AttachmentKind, folder: string | undefined) => void;
   /** Which way the pages run now. */
   scrollDirection: () => ScrollDirection;
   setScrollDirection: (direction: ScrollDirection) => void;
-  /** Open FineNotes' own tab in Obsidian's settings. */
-  openPluginSettings: () => void;
-  /** The notebook's palette now, and setting another (which recolours it). */
-  palette?: () => NotebookPalette;
-  setPalette?: (palette: NotebookPalette) => void;
   /** The notebook's header and page numbers, and setting them. */
   furniture?: () => NotebookFurniture;
   setFurniture?: (furniture: NotebookFurniture | undefined) => void;
+  /** Whether the notebook is read-only, and setting it. */
+  readOnly: () => boolean;
+  setReadOnly: (on: boolean) => void;
+  /** The notebook's facts now. */
+  info: () => NotebookInfo;
+  /** Rename the notebook (and its own folder, when it has one). */
+  rename: (name: string) => Promise<void>;
+  /** Open FineNotes' own tab in Obsidian's settings. */
+  openPluginSettings: () => void;
 }
 
-/** A row per kind; `empty` is what an empty row does, `reset` its button's tooltip. */
-const ROWS: ReadonlyArray<{
-  kind: AttachmentKind;
-  name: string;
-  desc: string;
-  empty: string;
-  reset: string;
-}> = [
-  {
-    kind: "images",
-    name: "Images and PDFs",
-    desc: "Inserted, pasted, scanned and generated pictures, and imported PDFs.",
-    empty: "Obsidian's default",
-    reset: "Use Obsidian's default",
-  },
-  {
-    kind: "audio",
-    name: "Recordings",
-    desc: "Audio recorded with the microphone button.",
-    empty: "Obsidian's default",
-    reset: "Use Obsidian's default",
-  },
-  {
-    kind: "transcripts",
-    name: "Recording transcripts",
-    desc: "Notes made by transcribing a recording.",
-    empty: "Next to the recording",
-    reset: "Save next to the recording",
-  },
-  {
-    kind: "chats",
-    name: "AI chats",
-    desc: "Ask AI conversations you save.",
-    empty: "AI chats, next to the note",
-    reset: "Save in AI chats, next to the note",
-  },
-  {
-    kind: "exports",
-    name: "PDF exports",
-    desc: "PDFs made with the share button.",
-    empty: "Next to the note",
-    reset: "Save next to the note",
-  },
-];
-
 export class NoteSettingsModal extends Modal {
-  /** Keeps the row being typed in, and its folder list, above the keyboard. */
+  /** Keeps the field being typed in above the keyboard. */
   private readonly keyboard: DialogKeyboard;
 
   constructor(
@@ -124,89 +82,31 @@ export class NoteSettingsModal extends Modal {
     // Re-rendering drops the field being typed in.
     this.keyboard.end();
     contentEl.empty();
-    // A single page has nowhere to scroll to.
-    if (!this.host.single) this.renderScroll(contentEl);
-    this.renderPalette(contentEl);
-    new Setting(contentEl).setName("Where new files are saved").setHeading();
-    contentEl.createDiv({
-      cls: "setting-item-description goodobsidian-note-settings-intro",
-      text:
-        `Choose a folder for this ${this.host.single ? "page" : "notebook"}'s new ` +
-        "files. Empty: pictures, PDFs and recordings follow Obsidian's attachment " +
-        "setting, transcripts go next to their recording, AI chats in an AI " +
-        "chats folder next to the note, and exports next to the note. Files " +
-        "already saved stay " +
-        "where they are.",
-    });
-    const folders = this.host.folders();
-    for (const row of ROWS) this.renderRow(contentEl, row, folders[row.kind]);
-    new Setting(contentEl)
-      .setName("All FineNotes settings")
-      .setDesc("Pens and tools, pages, handwriting, AI and more, for every notebook.")
-      .addButton((button) =>
-        button.setButtonText("Open").onClick(() => {
-          this.close();
-          this.host.openPluginSettings();
-        }),
-      );
+    this.renderPages(contentEl);
+    this.renderEditing(contentEl);
+    this.renderInfo(contentEl);
   }
 
-  /**
-   * The notebook's colours: a chip per curated palette, its six colours over
-   * its name. A pick recolours what is in the old palette's colours, as one
-   * step of undo.
-   */
-  private renderPalette(parent: HTMLElement): void {
-    const current = this.host.palette?.();
-    const setPalette = this.host.setPalette;
-    if (!current || !setPalette) return;
-    new Setting(parent).setName("Colours").setHeading();
-    parent.createDiv({
-      cls: "setting-item-description goodobsidian-note-settings-intro",
-      text:
-        "The colours offered first in every colour picker. Choosing other colours " +
-        "recolours the ink, shapes and text that use this notebook's colours; undo takes it back.",
-    });
-    const row = parent.createDiv({ cls: "goodobsidian-palette-chips" });
-    for (const palette of PALETTES) {
-      const on = palette.id === current.id;
-      const chip = row.createEl("button", {
-        cls: "goodobsidian-palette-chip clickable-icon",
-        attr: { "aria-label": `${palette.name} colours`, "aria-pressed": String(on) },
-      });
-      chip.toggleClass("is-active", on);
-      const dots = chip.createDiv({ cls: "goodobsidian-palette-dots" });
-      for (const color of palette.colors) {
-        dots
-          .createSpan({ cls: "goodobsidian-palette-dot" })
-          .setCssStyles({ backgroundColor: color });
-      }
-      chip.createDiv({ cls: "goodobsidian-palette-name", text: palette.name });
-      chip.addEventListener("click", () => {
-        if (on) return;
-        setPalette(palette);
-        this.render();
-      });
-    }
-  }
-
-  private renderScroll(parent: HTMLElement): void {
+  private renderPages(parent: HTMLElement): void {
     new Setting(parent).setName("Pages").setHeading();
-    new Setting(parent)
-      .setName("Scroll direction")
-      .setDesc(
-        "Vertical scrolls through the pages; horizontal turns them one at a time. " +
-          "Either way, pull past the last page to add one.",
-      )
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("vertical", "Vertical")
-          .addOption("horizontal", "Horizontal")
-          .setValue(this.host.scrollDirection())
-          .onChange((value) => {
-            this.host.setScrollDirection(value === "horizontal" ? "horizontal" : "vertical");
-          }),
-      );
+    // A single page has nowhere to scroll to.
+    if (!this.host.single) {
+      new Setting(parent)
+        .setName("Scroll direction")
+        .setDesc(
+          "Vertical scrolls through the pages; horizontal turns them one at a time. " +
+            "Either way, pull past the last page to add one.",
+        )
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("vertical", "Vertical")
+            .addOption("horizontal", "Horizontal")
+            .setValue(this.host.scrollDirection())
+            .onChange((value) => {
+              this.host.setScrollDirection(value === "horizontal" ? "horizontal" : "vertical");
+            }),
+        );
+    }
     this.renderFurniture(parent);
   }
 
@@ -232,7 +132,7 @@ export class NoteSettingsModal extends Modal {
             set(next);
           }),
       );
-    new Setting(parent)
+    const header = new Setting(parent)
       .setName("Header")
       .setDesc(
         "Printed at the top of every page but the cover. {title}, {page} and {pages} are filled in.",
@@ -242,104 +142,75 @@ export class NoteSettingsModal extends Modal {
         // Set when the field is left, not on every key: each change is a step of undo.
         text.inputEl.addEventListener("change", () => {
           const next = { ...get() };
-          const header = text.getValue().trim();
-          if (header) next.header = header;
+          const value = text.getValue().trim();
+          if (value) next.header = value;
           else delete next.header;
           set(next);
         });
       });
+    const field = header.controlEl.querySelector("input");
+    if (field) this.keyboard.watch(field, header.settingEl);
   }
 
-  private renderRow(
-    parent: HTMLElement,
-    row: (typeof ROWS)[number],
-    current: string | undefined,
-  ): void {
-    const choose = (value: string): void => {
-      const folder = cleanFolder(value);
-      if (folder !== current) this.host.setFolder(row.kind, folder);
-      this.render();
-    };
-    let input: HTMLInputElement | null = null;
-    const setting = new Setting(parent)
-      .setName(row.name)
-      .setDesc(row.desc)
+  private renderEditing(parent: HTMLElement): void {
+    new Setting(parent).setName("Editing").setHeading();
+    new Setting(parent)
+      .setName("Read-only")
+      .setDesc(
+        "Nothing can write, erase or change the pages, so a stray Pencil or palm leaves " +
+          "them alone. You can still scroll, zoom, search and export.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.host.readOnly()).onChange((on) => {
+          this.host.setReadOnly(on);
+          this.render();
+        }),
+      );
+  }
+
+  private renderInfo(parent: HTMLElement): void {
+    const info = this.host.info();
+    new Setting(parent).setName(this.host.single ? "Page" : "Notebook").setHeading();
+    const name = new Setting(parent)
+      .setName("Name")
+      .setDesc("Renames the notebook, and its folder when it has one of its own.")
       .addText((text) => {
-        text.setPlaceholder(row.empty).setValue(current ?? "");
-        input = text.inputEl;
-        input.addClass("goodobsidian-note-settings-path");
-        // Committed on blur or Enter, not per keystroke: every change is an
-        // undo step on the note.
-        input.addEventListener("change", () => choose(text.getValue()));
-      })
-      .addExtraButton((button) =>
-        button
-          .setIcon("folder")
-          .setTooltip("Choose from folders")
-          .onClick(() => {
-            new FolderSuggestModal(
-              this.app,
-              choose,
-              `Choose a folder for this note's ${row.name.toLowerCase()}`,
-              current ?? "",
-            ).open();
-          }),
-      );
-    if (current !== undefined) {
-      setting.addExtraButton((button) =>
-        button
-          .setIcon("rotate-ccw")
-          .setTooltip(row.reset)
-          .onClick(() => choose("")),
-      );
-    }
-    // The matches for what is typed, in the dialog itself, under the field.
-    const list = parent.createDiv({
-      cls: "goodobsidian-folder-list is-hidden",
-      attr: { role: "listbox", "aria-label": `Folders for ${row.name.toLowerCase()}` },
-    });
-    const field = input as HTMLInputElement | null;
-    if (!field) return;
-    const fill = (): void => {
-      list.empty();
-      const matches = suggestFolders(this.folderPaths(), field.value, SUGGESTIONS);
-      for (const path of matches) {
-        const item = list.createEl("button", {
-          cls: "goodobsidian-folder-item clickable-icon",
-          text: path,
-          attr: { role: "option" },
+        text.setValue(info.name);
+        text.inputEl.addEventListener("change", () => {
+          const value = text.getValue().trim();
+          if (!value || value === info.name) return;
+          void this.host.rename(value).then(() => this.render());
         });
-        // Keep the field's focus (and the keyboard) until the choice is made.
-        item.addEventListener("pointerdown", (event) => event.preventDefault());
-        item.addEventListener("mousedown", (event) => event.preventDefault());
-        item.addEventListener("click", () => {
-          field.value = path;
-          choose(path);
-        });
-      }
-      list.toggleClass("is-hidden", matches.length === 0);
-      this.keyboard.update();
+      });
+    const field = name.controlEl.querySelector("input");
+    if (field) this.keyboard.watch(field, name.settingEl);
+    const facts = parent.createDiv({ cls: "goodobsidian-note-info" });
+    const fact = (label: string, value: string) => {
+      const row = facts.createDiv({ cls: "goodobsidian-note-info-row" });
+      row.createSpan({ cls: "goodobsidian-note-info-label", text: label });
+      row.createSpan({ cls: "goodobsidian-note-info-value", text: value });
     };
-    field.addEventListener("pointerdown", () => {
-      if (document.activeElement !== field) this.keyboard.holdWindow(field);
-    });
-    field.addEventListener("focus", () => {
-      this.keyboard.start(setting.settingEl, list);
-      fill();
-    });
-    field.addEventListener("input", fill);
-    field.addEventListener("blur", () => {
-      list.addClass("is-hidden");
-      // Straight into the other row's field: that focus takes over.
-      this.keyboard.endFor(setting.settingEl);
-    });
+    if (!this.host.single) fact("Pages", String(info.pages));
+    fact("Size", formatFileSize(info.bytes));
+    fact("Created", dateTime(info.created));
+    fact("Last edited", dateTime(info.modified));
+    fact("Folder", info.folder || "Vault root");
+    new Setting(parent)
+      .setName("All FineNotes settings")
+      .setDesc(
+        "Pens and tools, pages, handwriting, AI, and where new files are saved, for every notebook.",
+      )
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          this.close();
+          this.host.openPluginSettings();
+        }),
+      );
   }
+}
 
-  /** Every folder in the vault but the root, alphabetically. */
-  private folderPaths(): string[] {
-    return this.app.vault
-      .getAllFolders(false)
-      .map((folder) => folder.path)
-      .sort((a, b) => a.localeCompare(b));
-  }
+/** A date and time in the reader's own format; "" when unknown. */
+function dateTime(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

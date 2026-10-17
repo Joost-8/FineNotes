@@ -11,7 +11,9 @@ import {
   cleanFolder,
   normalizeAttachmentFolders,
   suggestFolders,
+  resolveAttachmentFolder,
 } from "../../src/model/attachment-folders";
+import { attachmentDefaults } from "../../src/settings-data";
 import { type InkDocument, emptyDocument } from "../../src/model/document";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 
@@ -185,5 +187,31 @@ describe("suggestFolders", () => {
       "Computer Science/Algebra for security",
     ]);
     expect(suggestFolders(paths, "c", 1)).toEqual(["Computer Science"]);
+  });
+});
+
+describe("resolveAttachmentFolder", () => {
+  it("takes the note's own folder, then the vault-wide setting, then nothing", () => {
+    const doc = emptyDocument();
+    const defaults = { images: "Shared/Pictures/", audio: "", exports: ".hidden" };
+    expect(resolveAttachmentFolder(doc, "images", defaults)).toBe("Shared/Pictures");
+    // Empty, or a folder no note may use, leaves the kind's own default.
+    expect(resolveAttachmentFolder(doc, "audio", defaults)).toBeUndefined();
+    expect(resolveAttachmentFolder(doc, "exports", defaults)).toBeUndefined();
+    doc.folders = { images: "Physics/Images" };
+    expect(resolveAttachmentFolder(doc, "images", defaults)).toBe("Physics/Images");
+    expect(resolveAttachmentFolder(null, "images", defaults)).toBe("Shared/Pictures");
+  });
+
+  it("reads the settings' folders by kind", () => {
+    expect(
+      attachmentDefaults({
+        imagesFolder: "I",
+        recordingsFolder: "R",
+        transcriptsFolder: "T",
+        chatsFolder: "C",
+        exportsFolder: "E",
+      }),
+    ).toEqual({ images: "I", audio: "R", transcripts: "T", chats: "C", exports: "E" });
   });
 });

@@ -366,6 +366,44 @@ function callout({ title, detail }: Callout, visible: Visible): SettingDefinitio
 
 // --- The tab -----------------------------------------------------------------
 
+/** Applies to every folder row below: what they do and do not reach. */
+const FOLDER_NOTE =
+  "For notebooks without a folder of their own; a notebook with its own folder keeps its files there. Leave empty for the default.";
+
+/** Advanced: where notebooks without a folder of their own save each kind of file. */
+const FOLDER_ROWS = [
+  [
+    "imagesFolder",
+    "Folder for pictures and PDFs",
+    "Inserted, pasted, scanned and generated pictures, and imported PDFs.",
+    "Obsidian's attachment folder",
+  ],
+  [
+    "recordingsFolder",
+    "Folder for recordings",
+    "Audio recorded with the microphone button.",
+    "Obsidian's attachment folder",
+  ],
+  [
+    "transcriptsFolder",
+    "Folder for recording transcripts",
+    "Notes made by transcribing a recording.",
+    "Next to the recording",
+  ],
+  [
+    "chatsFolder",
+    "Folder for AI chats",
+    "Ask AI conversations you save.",
+    "AI chats, next to the notebook",
+  ],
+  [
+    "exportsFolder",
+    "Folder for PDF exports",
+    "PDFs made with the share button.",
+    "Next to the notebook",
+  ],
+] as const;
+
 export class GoodObsidianSettingTab extends PluginSettingTab {
   /**
    * The Paper width field holds text that is not a valid width. Only the
@@ -888,6 +926,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "device only.",
         { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
         ["handwriting", "recognition", "model"],
+      ),
+      ...FOLDER_ROWS.map(([key, name, desc, placeholder]) =>
+        controlRow(name, `${desc} ${FOLDER_NOTE}`, { type: "text", key, placeholder }, [
+          "folder",
+          "attachments",
+          "where files are saved",
+        ]),
       ),
     ]);
   }

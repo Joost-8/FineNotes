@@ -67,6 +67,19 @@ export function attachmentFolder(
 }
 
 /**
+ * Where a note saves `kind`: its own folder when it has one set (a notebook
+ * with a folder of its own always does), else the vault-wide default from
+ * FineNotes' settings, else `undefined` for the kind's built-in default.
+ */
+export function resolveAttachmentFolder(
+  doc: InkDocument | null,
+  kind: AttachmentKind,
+  defaults: Readonly<Partial<Record<AttachmentKind, string>>>,
+): string | undefined {
+  return attachmentFolder(doc, kind) ?? cleanFolder(defaults[kind]);
+}
+
+/**
  * Set (or with `undefined` clear) where a note saves `kind`. Undoable like
  * every other change to the note, and — like `SetSingle` — an inverse puts
  * an absent key back as absent, `folders` included.

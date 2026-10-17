@@ -16,7 +16,6 @@
  * AI menu, pages, pictures, scans and export.
  */
 
-import { SetNotebookPalette, paletteOf } from "../model/palette";
 import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
@@ -187,10 +186,12 @@ import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
 import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { SetAttachmentFolder, attachmentFolder } from "../model/attachment-folders";
+import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
-import { NoteSettingsModal } from "./note-settings-modal";
+import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
+import { SetReadOnly, isReadOnly } from "../model/read-only";
+import { notebookName, renamePlan } from "../model/notebook-info";
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
@@ -244,7 +245,7 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { shownPaperTheme } from "../settings-data";
+import { attachmentDefaults, shownPaperTheme } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -255,6 +256,8 @@ const LAST_PAGE_DEBOUNCE_MS = 500;
 
 /** Shown when an edit is refused because the note's load was held. */
 const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink loads cleanly.";
+/** How long after one "this notebook is read-only" notice the next may show, ms. */
+const READ_ONLY_NOTICE_MS = 4000;
 
 /** Shown once when a load is held (see load-guard.ts). */
 const HELD_LOAD_NOTICE =
@@ -321,6 +324,8 @@ export class InkView extends TextFileView {
 
   /** True from `onOpen` to `onClose`, while the view's DOM exists. */
   private mounted = false;
+  /** When the last "this notebook is read-only" notice showed, ms. */
+  private readOnlyNoticeAt = 0;
   private surface: InkSurface | null = null;
   private toolbar: Toolbar | null = null;
   private sidebar: PageSidebar | null = null;
@@ -1083,7 +1088,7 @@ export class InkView extends TextFileView {
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
-    if (this.isProtected()) return;
+    if (this.isDamaged()) return;
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
       return;
@@ -1900,7 +1905,6 @@ export class InkView extends TextFileView {
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
-        notebookColors: () => paletteOf(this.doc).colors,
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
           if (this.surface) this.surface.pickColorFromPage(done);
@@ -2281,23 +2285,19 @@ export class InkView extends TextFileView {
 
   /** Where this note saves new files of `kind`; `undefined` = Obsidian's default. */
   private attachmentFolder(kind: AttachmentKind): string | undefined {
-    return attachmentFolder(this.doc, kind);
+    return resolveAttachmentFolder(this.doc, kind, attachmentDefaults(this.settings));
   }
 
-  /** The toolbar's gear: where this note's pictures and recordings are saved. */
+  /** The toolbar's gear: this notebook's own settings. */
   openNoteSettings(): void {
     const apply = (command: Command): void => {
-      if (!this.surface || this.isProtected()) {
-        new Notice(READ_ONLY_NOTICE);
-        return;
-      }
+      // Allowed in a read-only notebook: these are its settings, read-only included.
+      if (!this.surface || this.isDamaged()) return;
       // Through the surface's stack, so it saves with the note and undoes.
       this.surface.applyCommand(command);
     };
     new NoteSettingsModal(this.app, {
       single: this.isSinglePage,
-      folders: () => ({ ...this.doc.folders }),
-      setFolder: (kind, folder) => apply(new SetAttachmentFolder(kind, folder)),
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
@@ -2306,9 +2306,48 @@ export class InkView extends TextFileView {
         apply(new SetFurniture(furniture));
         this.sidebar?.setDocument(this.doc);
       },
-      palette: () => paletteOf(this.doc),
-      setPalette: (palette) => apply(new SetNotebookPalette(palette)),
+      readOnly: () => isReadOnly(this.surface?.document ?? this.doc),
+      setReadOnly: (on) => apply(new SetReadOnly(on)),
+      info: () => this.notebookInfo(),
+      rename: (name) => this.renameNotebook(name),
     }).open();
+  }
+
+  /** What the gear's Notebook section shows. */
+  private notebookInfo(): NotebookInfo {
+    const file = this.file;
+    const doc = this.surface?.document ?? this.doc;
+    return {
+      name: file ? notebookName(file.path) : "",
+      pages: doc.pages.length,
+      bytes: file?.stat.size ?? 0,
+      created: file?.stat.ctime ?? 0,
+      modified: file?.stat.mtime ?? 0,
+      folder: file?.parent?.path === "/" ? "" : (file?.parent?.path ?? ""),
+    };
+  }
+
+  /**
+   * Rename the notebook from its settings: its own folder when it has one
+   * (the notebook follows, main.ts `keepFolderNotebookPaired`), else its file.
+   * Through `renameFile`, so links to it follow too.
+   */
+  private async renameNotebook(name: string): Promise<void> {
+    const file = this.file;
+    const plan = file ? renamePlan(file.path, name) : undefined;
+    if (!plan) return;
+    const { vault, fileManager } = this.app;
+    const from = vault.getAbstractFileByPath(plan.from);
+    if (!from) return;
+    if (vault.getAbstractFileByPath(plan.to)) {
+      new Notice(`FineNotes: "${plan.to}" already exists. Choose another name.`);
+      return;
+    }
+    try {
+      await fileManager.renameFile(from, plan.to);
+    } catch (error) {
+      new Notice(`FineNotes: could not rename the notebook — ${errorMessage(error)}`, 8000);
+    }
   }
 
   // --- The Files tab ----------------------------------------------------------------
@@ -2517,7 +2556,7 @@ export class InkView extends TextFileView {
    */
   exportPdf(chosen?: readonly number[]): void {
     const note = this.file;
-    if (this.isProtected() || !note) return;
+    if (this.isDamaged() || !note) return;
     const doc = this.surface?.document ?? this.doc;
     const total = doc.pages.length;
     if (total === 0) return;
@@ -3751,10 +3790,27 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * True, once the user has been told, while the note is read-only because
-   * its load was held. Every edit asks this first.
+   * Whether the notebook may not be changed now, saying why: its ink failed
+   * to load (the load guard), or it was made read-only in its settings.
+   * Reading it (searching, exporting, asking about it) goes through
+   * `isDamaged` instead.
    */
   private isProtected(): boolean {
+    if (this.isDamaged()) return true;
+    if (!isReadOnly(this.surface?.document ?? this.doc)) return false;
+    // Once every few seconds: a pen held down asks on every sample.
+    const now = Date.now();
+    if (now - this.readOnlyNoticeAt > READ_ONLY_NOTICE_MS) {
+      this.readOnlyNoticeAt = now;
+      new Notice(
+        "FineNotes: this notebook is read-only. Turn that off in its settings (the gear).",
+      );
+    }
+    return true;
+  }
+
+  /** Whether the notebook's ink failed to load, so it must not even be saved over. */
+  private isDamaged(): boolean {
     if (!this.guard.locked) return false;
     new Notice(READ_ONLY_NOTICE);
     return true;

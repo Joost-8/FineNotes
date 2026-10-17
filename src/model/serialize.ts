@@ -180,6 +180,7 @@ interface StoredMeta {
   single?: boolean;
   folders?: AttachmentFolders;
   scroll?: "horizontal";
+  readOnly?: true;
   practice?: PracticeInfo;
   palette?: { id: string; name: string; colors: string[] };
   furniture?: { header?: string; numbers?: "center" | "right" };
@@ -290,6 +291,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     single: doc.single === true ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
+    readOnly: doc.readOnly === true ? true : undefined,
     practice: normalizePractice(doc.practice),
     palette: readPalette(doc.palette),
     furniture: readFurniture(doc.furniture),
@@ -1025,6 +1027,7 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
+  if (meta.readOnly === true) doc.readOnly = true;
   const practice = normalizePractice(meta.practice);
   if (practice) doc.practice = practice;
   const palette = readPalette(meta.palette);

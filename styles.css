@@ -7989,45 +7989,31 @@ button.goodobsidian-page-tab.is-current {
   margin-top: 6px;
 }
 
-/* --------------------------------------------------------- notebook colours */
-/* Notebook settings' palettes: six dots over a name, the current one marked. */
-.goodobsidian-palette-chips {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 8px;
-  margin: 4px 0 16px;
-}
-
-button.goodobsidian-palette-chip.clickable-icon {
+/* -------------------------------------------------------- notebook info */
+/* Notebook settings' facts: label left, value right, as a settings row reads. */
+.goodobsidian-note-info {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 6px;
-  height: auto;
-  padding: 10px;
-  border-radius: var(--gob-radius-m);
-  background: var(--background-secondary);
-  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
-}
-
-button.goodobsidian-palette-chip.clickable-icon.is-active {
-  box-shadow: inset 0 0 0 2px var(--interactive-accent);
-}
-
-.goodobsidian-palette-dots {
-  display: flex;
-  gap: 3px;
-}
-
-.goodobsidian-palette-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-}
-
-.goodobsidian-palette-name {
-  color: var(--text-normal);
+  padding: 4px 0 12px;
   font-size: var(--font-ui-small);
+}
+
+.goodobsidian-note-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.goodobsidian-note-info-label {
+  color: var(--text-muted);
+}
+
+.goodobsidian-note-info-value {
+  min-width: 0;
+  color: var(--text-normal);
+  text-align: end;
+  overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------------ paper style */

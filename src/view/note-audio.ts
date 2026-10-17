@@ -39,7 +39,8 @@ import {
   uploadSizeProblem,
 } from "../audio/recording";
 import { availablePath, parentFolder } from "../canvas/image-raster";
-import { attachmentFolder } from "../model/attachment-folders";
+import { resolveAttachmentFolder } from "../model/attachment-folders";
+import { attachmentDefaults } from "../settings-data";
 import type { InkDocument, Page, Recording, Stroke } from "../model/document";
 import { stripInkSuffix } from "../model/new-notebook";
 import { AddRecording, RemoveRecording, SetRecordingTranscript } from "../model/recording-commands";
@@ -115,6 +116,11 @@ export class NoteAudio {
     return this.host.surface()?.document ?? null;
   }
 
+  /** Where this note saves `kind`: its own folder, else FineNotes' setting. */
+  private folderFor(kind: "audio" | "transcripts"): string | undefined {
+    return resolveAttachmentFolder(this.doc(), kind, attachmentDefaults(this.host.plugin.settings));
+  }
+
   private recordings(): Recording[] {
     return this.doc()?.recordings ?? [];
   }
@@ -142,7 +148,7 @@ export class NoteAudio {
     this.starting = true;
     // Synchronously, inside the tap: `start` asks for the microphone before
     // its first await. A player left open would be recorded too.
-    const started = recorder.start(file.path, attachmentFolder(this.doc(), "audio"));
+    const started = recorder.start(file.path, this.folderFor("audio"));
     this.closePlayer();
     try {
       await started;
@@ -603,9 +609,7 @@ export class NoteAudio {
   private async writeTranscript(recording: Recording, audio: TFile, text: string): Promise<string> {
     const { app } = this.host;
     const exists = (path: string): boolean => app.vault.getAbstractFileByPath(path) !== null;
-    let path = normalizePath(
-      transcriptPathFor(audio.path, attachmentFolder(this.doc(), "transcripts")),
-    );
+    let path = normalizePath(transcriptPathFor(audio.path, this.folderFor("transcripts")));
     const folder = parentFolder(path);
     if (folder && !app.vault.getFolderByPath(folder)) await app.vault.createFolder(folder);
     if (exists(path)) {

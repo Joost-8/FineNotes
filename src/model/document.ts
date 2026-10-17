@@ -647,6 +647,11 @@ export interface InkDocument {
    */
   scroll?: "horizontal";
   /**
+   * The pen and every other edit leave the notebook alone (its "Read-only"
+   * setting, `model/read-only.ts`). Only ever stored as `true`.
+   */
+  readOnly?: true;
+  /**
    * The notebook's colours (`model/palette`): offered first in every colour
    * picker; choosing another recolours the notebook. Absent: the classic pen
    * colours.
