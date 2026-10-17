@@ -1,8 +1,9 @@
 /**
  * The welcome notebook a new user is offered the first time FineNotes runs
  * in a vault: a tour of FineNotes made of FineNotes itself. Every page is
- * built from what a user can make with the tools (text boxes with fills,
- * borders and links, snapped shapes, tables, highlighter and pen strokes),
+ * built from what a user can make with the tools (text boxes with links,
+ * snapped shapes with fills, dashes and round corners, tables, highlighter
+ * and pen strokes),
  * so each example can be selected, moved, recoloured or erased, and the
  * notebook teaches by being handled.
  *
@@ -10,8 +11,12 @@
  *   every page ends with links back to it and on to the next one.
  * - The essentials first (writing, the toolbar, pens, pages), then a page
  *   per feature with examples, then a page left free.
- * - "Try it" cards mark a space to practise in, with something to act on
- *   where the feature needs one (loops to erase, a house to lasso).
+ * - Cards are rounded rectangles with a soft fill and a text box on them,
+ *   as the Shape tool makes them: the shape is the card, the text stays
+ *   plain text.
+ * - "Try it" cards mark a space to practise in (a dashed, softly filled
+ *   frame), with something to act on where the feature needs one (loops to
+ *   erase, a house to lasso).
  * - Pictures drawn with the Shape tool's shapes (a toolbar, page
  *   thumbnails, devices, keys) and notes in pen, as a person would annotate
  *   a page, so it reads as a notebook rather than a manual.
@@ -28,6 +33,7 @@ import { arrowPoints, cloudPoints, ellipsePoints, presetGeometry } from "../ink/
 import type { BoxPreset, Pt } from "../ink/shape-geometry";
 import { tableStrokes } from "../ink/table-geometry";
 import type {
+  ArrowHeads,
   AttachmentFolders,
   InkDocument,
   Page,
@@ -39,6 +45,7 @@ import type {
   TextFont,
 } from "./document";
 import { buildNewDocument, DEFAULT_NOTEBOOK_CHOICES, type NotebookChoices } from "./new-notebook";
+import { fillOf } from "./shape-style";
 import { templateBackdrop } from "./templates";
 
 /** The welcome notebook's name, and the title on its cover. */
@@ -61,11 +68,13 @@ export const WELCOME_COVER: Pick<NotebookChoices, "cover" | "coverColor"> = {
 
 // --- Look ------------------------------------------------------------------------
 
-/** A section's colours: its accent, a card's fill and frame, and the swash under a title. */
+/**
+ * A section's colours: its accent, a pale tint, and the swash under a title.
+ * A card is drawn in the swash: its outline, and the same as a soft fill.
+ */
 interface Tone {
   accent: string;
   tint: string;
-  frame: string;
   swash: string;
 }
 
@@ -77,16 +86,16 @@ const ZONE = "#ced4da";
 const SKETCH = "#495057";
 
 const TONES = {
-  start: { accent: "#3b5bdb", tint: "#edf2ff", frame: "#dbe4ff", swash: "#bac8ff" },
-  write: { accent: "#0c8599", tint: "#e3fafc", frame: "#c5f6fa", swash: "#99e9f2" },
-  shape: { accent: "#7048e8", tint: "#f3f0ff", frame: "#e5dbff", swash: "#d0bfff" },
-  text: { accent: "#e8590c", tint: "#fff4e6", frame: "#ffe8cc", swash: "#ffc078" },
-  find: { accent: "#2f9e44", tint: "#ebfbee", frame: "#d3f9d8", swash: "#b2f2bb" },
-  more: { accent: "#c2255c", tint: "#fff0f6", frame: "#ffdeeb", swash: "#fcc2d7" },
+  start: { accent: "#3b5bdb", tint: "#edf2ff", swash: "#bac8ff" },
+  write: { accent: "#0c8599", tint: "#e3fafc", swash: "#99e9f2" },
+  shape: { accent: "#7048e8", tint: "#f3f0ff", swash: "#d0bfff" },
+  text: { accent: "#e8590c", tint: "#fff4e6", swash: "#ffc078" },
+  find: { accent: "#2f9e44", tint: "#ebfbee", swash: "#b2f2bb" },
+  more: { accent: "#c2255c", tint: "#fff0f6", swash: "#fcc2d7" },
 } satisfies Record<string, Tone>;
 
 /** "Try it" cards look the same in every section. */
-const TRY: Tone = { accent: "#e67700", tint: "#fff9db", frame: "#ffec99", swash: "#ffe066" };
+const TRY: Tone = { accent: "#e67700", tint: "#fff9db", swash: "#ffe066" };
 
 /** Pen colours the examples write in. */
 const PEN = {
@@ -107,32 +116,85 @@ const FOOT = 90;
 const BODY_SIZE = 23;
 const CARD_SIZE = 21;
 const LINE_HEIGHT = 1.4;
-/** A card's frame: a thick border in the card's own tint, so it doubles as padding. */
-const CARD_FRAME = 16;
+/** Room between a card's edge and its text box. */
+const CARD_PAD = 16;
+/** A card's corners, and a practice area's. */
 const CARD_RADIUS = 20;
 const TITLE_SIZE = 52;
 
 // --- Measuring ------------------------------------------------------------------
 
 /**
- * Lines `text` wraps to in `width` at `size`, by an average glyph of 0.52 em
- * (0.58 bold) for Arial. Generous on purpose: a box laid out too tall leaves
- * a gap, one too short overlaps what follows. Links count as their shown text.
+ * Arial's advance widths, thousandths of an em, for the printable ASCII
+ * characters from the space on (regular, then bold). The text boxes' sans
+ * typeface is Arial first, on the iPad as on a computer.
+ */
+const ARIAL = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+  556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667,
+  611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+  667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500,
+  222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+const ARIAL_BOLD = [
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+  556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667,
+  611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+  667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556,
+  278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
+/** The rest the tour uses (others count as a lower-case letter); ⋯ and ● come from a fallback font. */
+const ARIAL_OTHER: Record<string, number> = {
+  "•": 350,
+  "·": 278,
+  "‹": 333,
+  "›": 333,
+  "×": 584,
+  "⋯": 1000,
+  "●": 800,
+  "—": 1000,
+};
+/**
+ * Lines wrap this much early, so a measure a little short of the browser's
+ * still never counts fewer lines than it shows.
+ */
+const WRAP_MARGIN = 1.025;
+
+/** `text`'s width in ems, by {@link ARIAL}'s advance widths. */
+function emWidth(text: string, bold: boolean): number {
+  const table = bold ? ARIAL_BOLD : ARIAL;
+  let width = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    width += table[code - 32] ?? ARIAL_OTHER[ch] ?? table[97 - 32];
+  }
+  return width / 1000;
+}
+
+/** A text's shown words: links count as their text. */
+function shownText(text: string): string {
+  return text.replace(/\[\[[^|\]]*\|([^\]]*)\]\]/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+}
+
+/**
+ * Lines `text` wraps to in `width` at `size`, word by word as a text box
+ * wraps, measured in Arial's own widths and wrapped a little early (see
+ * {@link WRAP_MARGIN}): a box laid out too tall leaves a gap, one too short
+ * overlaps what follows. Links count as their shown text.
  */
 export function estimateLines(text: string, width: number, size: number, bold = false): number {
-  const shown = text
-    .replace(/\[\[[^|\]]*\|([^\]]*)\]\]/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
-  const perLine = Math.max(4, Math.floor(width / (size * (bold ? 0.58 : 0.52))));
+  const room = width / (size * WRAP_MARGIN);
+  const space = emWidth(" ", bold);
   let lines = 0;
-  for (const paragraph of shown.split("\n")) {
-    let line = 0;
+  for (const paragraph of shownText(text).split("\n")) {
+    let line = -1;
     lines++;
     for (const word of paragraph.split(" ")) {
-      const next = line === 0 ? word.length : line + 1 + word.length;
-      if (next > perLine && line > 0) {
+      const w = emWidth(word, bold);
+      const next = line < 0 ? w : line + space + w;
+      if (next > room && line >= 0) {
         lines++;
-        line = word.length;
+        line = w;
       } else line = next;
     }
   }
@@ -141,7 +203,7 @@ export function estimateLines(text: string, width: number, size: number, bold = 
 
 /** A one-line text's width at `size`, by the same measure as {@link estimateLines}. */
 function estimateWidth(text: string, size: number, bold = false): number {
-  return text.length * size * (bold ? 0.58 : 0.52);
+  return emWidth(shownText(text), bold) * size * WRAP_MARGIN;
 }
 
 /** Text box style beyond the defaults. */
@@ -167,6 +229,9 @@ function boxHeight(text: string, w: number, style: BoxStyle): number {
   const lines = estimateLines(text, w - 2 * (4 + border), size, style.bold);
   return lines * size * (style.lineHeight ?? LINE_HEIGHT) + 2 * (2 + border);
 }
+
+/** A shape's style beyond its colour and width, as the Shape tool sets it. */
+type Decor = Pick<Stroke, "fill" | "dash" | "radius" | "heads">;
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -320,20 +385,45 @@ class Sheet {
     this.flow(text, {}, 18, MARGIN, w);
   }
 
-  /** A card: the text on a tinted ground with a soft frame, under an optional label. */
+  /** A card: the text on a rounded, softly filled rectangle, under an optional label. */
   card(text: string, label?: string, tone: Tone = this.tone, x = MARGIN, w = this.width): number {
     const start = this.y;
     if (label) {
       const style = { size: 15, bold: true, color: tone.accent, fit: true };
       this.flow(label.toUpperCase(), style, 4, x + 4, w - 4);
     }
-    this.flow(text, cardStyle(tone), 24, x, w);
+    this.y += this.onCard(x, this.y, w, text, { size: CARD_SIZE }, tone) + 24;
     return this.y - start;
   }
 
   /**
-   * "Try it": a yellow card, then space framed in grey to practise in, down
-   * to `until` (the page's floor when absent) or `height` tall.
+   * A text box on a card at (`x`, `y`), `w` wide: a rectangle in the tone's
+   * swash with round corners and the same colour as a soft fill, as the Shape
+   * tool draws one, and the text {@link CARD_PAD} inside it. Returns the card's height.
+   */
+  onCard(x: number, y: number, w: number, text: string, style: BoxStyle, tone: Tone): number {
+    const inner = w - 2 * CARD_PAD;
+    const h = boxHeight(text, inner, style) + 2 * CARD_PAD;
+    this.shape("rect", x, y, x + w, y + h, tone.swash, 2, {
+      fill: fillOf(tone.swash, "soft"),
+      radius: CARD_RADIUS,
+    });
+    this.box(x + CARD_PAD, y + CARD_PAD, inner, text, { color: BODY, ...style });
+    return h;
+  }
+
+  /** A space to practise in: a dashed, rounded frame with a faint grey fill. */
+  zone(x: number, y: number, w: number, h: number): void {
+    this.shape("rect", x, y, x + w, y + h, ZONE, 2, {
+      fill: fillOf(ZONE, "soft"),
+      dash: "dash",
+      radius: CARD_RADIUS,
+    });
+  }
+
+  /**
+   * "Try it": a yellow card, then a {@link zone} to practise in, down to the
+   * page's floor, or `height` tall.
    */
   tryIt(text: string, height?: number): { x: number; y: number; w: number; h: number } {
     this.card(text, "Try it", TRY);
@@ -341,7 +431,7 @@ class Sheet {
     const h = height ?? this.floor - top;
     const area = { x: MARGIN, y: top, w: this.width, h };
     if (h > 40) {
-      this.shape("roundrect", area.x, area.y, area.x + area.w, area.y + area.h, ZONE, 2);
+      this.zone(area.x, area.y, area.w, area.h);
       this.y = top + h + 22;
     }
     return area;
@@ -359,10 +449,15 @@ class Sheet {
     size: number,
     shape?: ShapeKind,
     tool: "pen" | "highlighter" = "pen",
+    decor: Decor = {},
   ): void {
     if (pts.length === 0) return;
     const stroke: Stroke = { id: this.ids.stroke(), color, size, tool, pts };
     if (shape) stroke.shape = shape;
+    if (decor.fill) stroke.fill = decor.fill;
+    if (decor.dash) stroke.dash = decor.dash;
+    if (decor.radius) stroke.radius = decor.radius;
+    if (decor.heads) stroke.heads = { ...decor.heads };
     this.page.strokes.push(stroke);
   }
 
@@ -375,16 +470,28 @@ class Sheet {
     y1: number,
     color: string,
     size = 3,
+    decor: Decor = {},
   ): void {
     this.stroke(
       presetGeometry(kind, { x: x0, y: y0 }, { x: x1, y: y1 }, PRESSURE),
       color,
       size,
       kind,
+      "pen",
+      decor,
     );
   }
 
-  line(x0: number, y0: number, x1: number, y1: number, color: string, size = 3): void {
+  /** A straight line; with `heads`, an arrow with a head at either end or both. */
+  line(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    color: string,
+    size = 3,
+    heads?: ArrowHeads,
+  ): void {
     this.stroke(
       flat([
         { x: x0, y: y0 },
@@ -393,6 +500,8 @@ class Sheet {
       color,
       size,
       "line",
+      "pen",
+      heads ? { heads } : {},
     );
   }
 
@@ -537,16 +646,6 @@ class Sheet {
   }
 }
 
-function cardStyle(tone: Tone): BoxStyle {
-  return {
-    size: CARD_SIZE,
-    color: BODY,
-    fill: tone.tint,
-    border: { width: CARD_FRAME, color: tone.frame },
-    radius: CARD_RADIUS,
-  };
-}
-
 // --- Drawings of the app ------------------------------------------------------------
 
 /**
@@ -621,15 +720,21 @@ function drawDevices(s: Sheet, y: number): void {
   const px = s.right - 120;
   s.shape("roundrect", px, y + 40, px + 95, y + 220, SKETCH, 3);
   page(px + 15, y + 65, 65, 120);
-  // Sync arrows over them.
-  s.inkArrow({ x: tx + 150, y: y - 10 }, { x: lx + 40, y: y + 5 }, 40, TONES.find.accent);
-  s.inkArrow({ x: lx + 270, y: y + 5 }, { x: px + 20, y: y + 25 }, 40, TONES.find.accent);
-  s.label(cx - 30, y - 70, "sync", {
-    color: TONES.find.accent,
-    size: 18,
-    italic: true,
-    bold: true,
-  });
+  // Sync between them, both ways: arrows with a head at each end.
+  const both: ArrowHeads = { start: "filled", end: "filled" };
+  // One length for both, so their heads (which grow with the arrow) match.
+  const sync = (left: number, right: number, at: number): void => {
+    const mid = (left + right) / 2;
+    s.line(mid - 32, at, mid + 32, at, TONES.find.accent, 3, both);
+    s.label(mid - 27, at - 34, "sync", {
+      color: TONES.find.accent,
+      size: 18,
+      italic: true,
+      bold: true,
+    });
+  };
+  sync(tx + 170, lx, y + 110);
+  sync(lx + 300, px, y + 130);
 }
 
 /** A key, drawn: a rounded square with its letter in the middle, and what it does under it. */
@@ -899,7 +1004,7 @@ const TOUR: readonly TourPage[] = [
       s.box(tx + 150, ty + 62, 120, "Cells", { size: 18 });
       s.tick(tx + 300, ty + 80, PEN.green);
       const zone = { x: tx + 460, y: ty, w: s.width - 460, h: s.floor - ty };
-      s.shape("roundrect", zone.x, zone.y, zone.x + zone.w, zone.y + zone.h, ZONE, 2);
+      s.zone(zone.x, zone.y, zone.w, zone.h);
       s.box(zone.x + 18, zone.y + 14, zone.w - 36, "TRY IT", {
         size: 15,
         bold: true,
@@ -1161,13 +1266,14 @@ const TOUR: readonly TourPage[] = [
       );
       // A pill like the recording one, a sound wave, and the writing it lines up with.
       const top = s.y + 4;
-      s.box(MARGIN, top, 230, "●  Recording  12:48", {
+      s.shape("rect", MARGIN, top, MARGIN + 230, top + 51, PEN.red, 2, {
+        fill: fillOf(PEN.red, "solid"),
+        radius: 26,
+      });
+      s.box(MARGIN + 10, top + 10, 210, "●  Recording  12:48", {
         size: 19,
         bold: true,
         color: "#ffffff",
-        fill: "#e03131",
-        border: { width: 10, color: "#e03131" },
-        radius: 26,
       });
       const heights = [
         8, 18, 30, 14, 40, 26, 12, 34, 22, 44, 16, 28, 10, 36, 20, 30, 12, 24, 38, 14, 26, 8,
@@ -1346,19 +1452,16 @@ const TOUR: readonly TourPage[] = [
     ruling: "dotted",
     draw: (s) => {
       s.page.title = "Your turn";
-      s.box(
-        MARGIN,
-        60,
-        s.width,
-        "This page is yours. Keep the notebook, change it, or delete it whenever you like.",
-        {
-          size: 17,
-          color: MUTED,
-          fill: "#ffffff",
-          border: { width: 6, color: "#ffffff" },
-          radius: 10,
-        },
-      );
+      // On a white card, so the dots do not run through the words.
+      const text =
+        "This page is yours. Keep the notebook, change it, or delete it whenever you like.";
+      const style = { size: 17, color: MUTED };
+      const h = boxHeight(text, s.width - 12, style) + 12;
+      s.shape("rect", MARGIN, 60, s.right, 60 + h, "#ffffff", 2, {
+        fill: fillOf("#ffffff", "solid"),
+        radius: 10,
+      });
+      s.box(MARGIN + 6, 66, s.width - 12, text, style);
       s.foot();
     },
   },
@@ -1396,7 +1499,8 @@ function drawContents(s: Sheet): void {
     const lines = TOUR.map((page, i) => ({ page, number: i + FIRST_TOUR_PAGE }))
       .filter(({ page }) => page.section === which)
       .map(({ page, number }, i) => `${i + 1}.  [[#page=${number}|${page.title}]]`);
-    s.flow(lines.join("\n"), { ...cardStyle(tone), size: 22, lineHeight: 1.65 }, 24, MARGIN, listW);
+    s.y +=
+      s.onCard(MARGIN, s.y, listW, lines.join("\n"), { size: 22, lineHeight: 1.65 }, tone) + 24;
   };
   list("The essentials", "start", TONES.start);
   list("More to discover", "more", TONES.shape);

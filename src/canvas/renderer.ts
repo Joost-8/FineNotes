@@ -1552,9 +1552,10 @@ export interface ThumbnailOptions {
 }
 
 /**
- * Paint one whole page — paper, backdrop, images, text boxes and ink — into `ctx`,
- * scaled so the page is `cssWidth` CSS px wide. The page-sidebar thumbnails
- * use this. It resizes the canvas itself, so the caller only picks a width.
+ * Paint one whole page — paper, backdrop, images, ink and text boxes, in the
+ * order the page stacks them — into `ctx`, scaled so the page is `cssWidth`
+ * CSS px wide. The page-sidebar thumbnails, the PDF export and the AI's page
+ * render use this. It resizes the canvas itself, so the caller only picks a width.
  */
 export function renderPageThumbnail(
   canvas: HTMLCanvasElement,
@@ -1598,12 +1599,15 @@ export function renderPageThumbnail(
     for (const image of page.images) drawPlacedImage(ctx, image, options.images, k);
   }
 
-  for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
-
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
+
+  // Over the ink, as on the page, where the text boxes are DOM above the ink
+  // canvas: a filled shape is a ground the text sits on, and a filled box
+  // covers the ink under it in an export just as it does on screen.
+  for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
   ctx.restore();
 }
 

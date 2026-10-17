@@ -1940,8 +1940,6 @@ thumb1 fillRect 0,0 240,0 240,300 0,300 {fillStyle=#ffffff}
 thumb1 clip nonzero [R(0,0 240,0 240,300 0,300)] {fillStyle=#ffffff}
 thumb1 painter ruled-narrow 800x1000 weight=3.3333 at 0.3,0,0,0.3,0,0
 thumb1 image i1 200x120 scale=0.3 at 0.2866,0.0887,-0.0887,0.2866,156.6593,36.9383
-thumb1 clip nonzero [R(18,210 84,210 84,217.95 18,217.95)] {fillStyle=#ffffff font=18px Arial, Helvetica, sans-serif}
-thumb1 fillText "Hello there, page" 19.2,214.875 {fillStyle=#333333 font=18px Arial, Helvetica, sans-serif}
 thumb1 stroke path2d#888c54a2af6e at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=1.632 lineCap=round lineJoin=round}
 thumb1 stroke path2d#74b0a0f36ecf at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=1.6748 lineCap=round lineJoin=round}
 thumb1 stroke path2d#77f497f784c2 at 0.3,0,0,0.3,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=1.7389 lineCap=round lineJoin=round}
@@ -2165,6 +2163,8 @@ thumb1 stroke path2d#e77f75cc2cd7 at 0.3,0,0,0.3,0,0 {fillStyle=#16a34a strokeSt
 thumb1 stroke path2d#cb409475b3f4 at 0.3,0,0,0.3,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.168 lineCap=round lineJoin=round}
 thumb1 stroke path2d#88d4cdcbb006 at 0.3,0,0,0.3,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.1232 lineCap=round lineJoin=round}
 thumb1 stroke path2d#70d484e662f9 at 0.3,0,0,0.3,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.0556 lineCap=round lineJoin=round}
+thumb1 clip nonzero [R(18,210 84,210 84,217.95 18,217.95)] {fillStyle=#ffffff font=18px Arial, Helvetica, sans-serif}
+thumb1 fillText "Hello there, page" 19.2,214.875 {fillStyle=#333333 font=18px Arial, Helvetica, sans-serif}
 thumb2.width = 270
 thumb2.height = 338
 thumb2.getContext 2d null
