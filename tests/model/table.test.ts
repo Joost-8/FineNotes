@@ -54,6 +54,7 @@ import {
   isEmptySelection,
 } from "../../src/model/selection-commands";
 import type { Command } from "../../src/model/commands";
+import { duplicatePageAfter } from "../../src/model/page-commands";
 
 function table(extra: Partial<TableElement> = {}): TableElement {
   return {
@@ -349,6 +350,15 @@ describe("table commands", () => {
     expect(cellText(t, 1, 1)).toBe("");
     new SetTableCell("p1", table(), 0, 0, "", "x").apply(doc);
     new SetTableCell("p1", table(), 0, 0, "", "x").invert(doc);
+  });
+});
+
+describe("duplicating a page", () => {
+  it("copies its tables with fresh ids", () => {
+    const doc = docWith(table({ id: "g3" }));
+    const copy = duplicatePageAfter(doc, 0);
+    expect(copy?.page.tables?.map((t) => t.id)).toEqual(["g4"]);
+    expect(copy?.page.tables?.[0]).not.toBe(doc.pages[0].tables?.[0]);
   });
 });
 

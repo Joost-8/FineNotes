@@ -56,6 +56,7 @@ import {
   decorOf,
   penFor,
   renderPageThumbnail,
+  tableLayoutOf,
 } from "../canvas/renderer";
 import { pageTabs } from "../model/page-tabs";
 import {
@@ -65,7 +66,6 @@ import {
   readShapeToolStyle,
   splitFill,
   styleNewShape,
-  withAlpha,
 } from "../model/shape-style";
 import {
   type BoxFrame,
@@ -223,7 +223,6 @@ import {
 import {
   type TableStroke,
   draggedTableBox,
-  tableHeaderRow,
   tableStrokes,
   tappedTableBox,
 } from "../ink/table-geometry";
@@ -238,6 +237,7 @@ import {
   type PdfBackdrop,
   type ShapeKind,
   type Stroke,
+  type TableElement,
   type TextBoxElement,
   type Tool,
   strokeBounds,
@@ -246,7 +246,38 @@ import {
 import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
-import { nextTableId } from "../model/table";
+import {
+  TABLE_MAX_COLS,
+  TABLE_MAX_ROWS,
+  TABLE_MIN_COL,
+  TABLE_MIN_ROW,
+  cellText,
+  makeTable,
+  nextTableId,
+  setCellText,
+  stepCell,
+  tableScaleRange,
+} from "../model/table";
+import {
+  AddTable,
+  InsertTableColumn,
+  InsertTableRow,
+  RemoveTableColumn,
+  RemoveTableRow,
+  ResizeTableColumn,
+  ResizeTableRow,
+  SetTableCell,
+  SetTableHeader,
+} from "../model/table-commands";
+import {
+  type CellRef,
+  type TableLayout,
+  cellAt,
+  cellFrame,
+  cellStyle,
+  layoutTable,
+} from "../canvas/table-layout";
+import { type TableAction, TableCellEditor } from "./table-cell-editor";
 import {
   AddElements,
   type ElementLists,
@@ -387,8 +418,6 @@ const ZOOM_STEP = 1.25;
  * the budget skips is drawn from the page preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
-/** How strong a table's header row fill is: a tint of the table's colour. */
-const TABLE_HEADER_ALPHA = 0.16;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -875,6 +904,7 @@ interface PressMenu {
 
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
+const NO_TABLES: ReadonlySet<TableElement> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
 interface GroupSelection extends ElementLists {
@@ -1905,6 +1935,9 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.endCellEdit(true);
+    this.cellEditor?.remove();
+    this.cellEditor = null;
     this.eyedropper?.cancel();
     this.watchTypingKeyboard(false);
     window.clearTimeout(this.textPillSettleTimer);
@@ -2837,7 +2870,7 @@ export class InkSurface {
       rangeX,
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
-      trailY: this.editingTextView() ? keyboardHeight() : 0,
+      trailY: this.typingField() ? keyboardHeight() : 0,
     });
   }
 
@@ -3416,6 +3449,7 @@ export class InkSurface {
     }
     // The pill floats by its box: a moved, resized, restyled or removed box moves it.
     this.reportTextAnchor();
+    this.placeCellEditor();
   }
 
   /**
@@ -3856,7 +3890,7 @@ export class InkSurface {
    * as a CSS variable (`keyboardHeight`). Returns whether it scrolled.
    */
   private keepTypingBoxVisible(): boolean {
-    const view = this.editingTextView();
+    const view = this.typingField();
     if (!view || !this.renderer) return false;
     const surface = this.surfaceEl.getBoundingClientRect();
     const vv = window.visualViewport;
@@ -4185,6 +4219,7 @@ export class InkSurface {
       this.callbacks.onPen?.(false);
       this.markDrawing(false);
       if (this.endZoomDrag()) return;
+      if (this.finishCellTap(sample)) return;
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
       this.finishToolGesture(box, sample);
@@ -4193,6 +4228,7 @@ export class InkSurface {
       this.callbacks.onPen?.(false);
       this.markDrawing(false);
       if (this.endZoomDrag()) return;
+      if (this.finishCellTap(null)) return;
       if (this.finishTextDismiss()) return;
       this.finishToolGesture(this.activePage, null);
     },
@@ -4421,6 +4457,15 @@ export class InkSurface {
     if (!box) return;
     const local = this.toPage(box, sample);
 
+    if (this.cellEdit) {
+      // With the Text tool a tap in another cell types there, and a tap
+      // beside the table stops typing: decided on lift. Writing ends it.
+      if (this.gestureTool() === "text") {
+        this.cellTap = true;
+        return;
+      }
+      this.endCellEdit(true);
+    }
     if (this.editingTextView()) {
       if (this.gestureTool() === "text") {
         // A tap beside the box being edited finishes it, as in GoodNotes;
@@ -4472,7 +4517,7 @@ export class InkSurface {
    */
   private pressRoute(event: PointerEvent): PressRoute {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
-    if (this.editingTextView() || this.heldText) return "draw";
+    if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
     const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
@@ -4485,7 +4530,7 @@ export class InkSurface {
   /** The tool a stroke's keys and buttons lend it, or null for the tool in hand. */
   private pressOverrideOf(press: PressInput): PressOverride | null {
     // Typing keeps its keys: Shift is a capital there, not an eraser.
-    if (this.editingTextView()) return null;
+    if (this.editingTextView() || this.cellEdit) return null;
     const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
     // A practice file has the pen and the eraser only.
     if (this.practice && lent === "select") return null;
@@ -5248,6 +5293,8 @@ export class InkSurface {
     if (!rect || !drag) return;
 
     if (!this.dragSizesText() || Math.max(rect.w, rect.h) < this.atFitZoom(TEXT_TAP_SLOP)) {
+      // A tap in a table types in the cell, rather than placing a box on it.
+      if (this.editCellAt(box, drag.origin)) return;
       // GoodNotes' default: the box starts where the pen went down, as small
       // as it can be, and grows with the text (the sync sets its width).
       const x = clamp(drag.origin.x, 0, Math.max(0, box.width - TEXT_MIN_W));
@@ -5551,41 +5598,39 @@ export class InkSurface {
   }
 
   /**
-   * Place a table. Its outline and inner lines are ordinary strokes — a rect
-   * and lines, so they can be written in, erased and lassoed like any ink —
-   * added together as one undo step.
+   * Place a table: one element (`model/table`), its rows, columns and typed
+   * cells drawn under the ink, so a cell can be written in by hand or typed
+   * in with the Text tool. The drag's strokes only showed where it goes.
+   * One undo step.
    */
   private commitTable(box: PageBox, page: Page, parts: readonly TableStroke[]): void {
-    if (parts.length === 0) return;
-    const style = this.tableStyle();
-    const strokes: Stroke[] = parts.map((part) => ({
-      id: this.strokeIds.next(),
-      color: style.color,
-      size: style.size,
-      tool: "pen",
-      pts: part.pts,
-      shape: part.shape,
-    }));
-    // A header row: a soft fill of the table's colour behind the first row,
-    // first in the list so the lines are drawn over it.
-    const header = this.toolState.tableHeader === true ? tableHeaderRow(parts) : null;
-    if (header) {
-      strokes.unshift({
-        id: this.strokeIds.next(),
-        color: style.color,
-        size: style.size,
-        tool: "pen",
-        pts: header,
-        shape: "rect",
-        fill: withAlpha(style.color, TABLE_HEADER_ALPHA),
-      });
-    }
-    // One undo step, every line sharing the gesture's pen-down time.
-    this.history.push(this.doc, addStrokesTimed(page, strokes, this.penDownAt, "Add table"));
-    for (const stroke of strokes) {
-      this.strokeIndex.add(page.id, stroke);
-      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
-    }
+    const outline = parts[0];
+    if (!outline || outline.pts.length < 9) return;
+    const xs = outline.pts.filter((_, i) => i % 3 === 0);
+    const ys = outline.pts.filter((_, i) => i % 3 === 1);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const size = tableSizeFor(this.toolState);
+    const table = makeTable({
+      id: nextTableId(this.doc),
+      x,
+      y,
+      w: Math.max(...xs) - x,
+      h: Math.max(...ys) - y,
+      rows: size.rows,
+      cols: size.cols,
+      color: this.tableStyle().color,
+      // The Text tool's colour and font: typed cells read as typed text.
+      textColor: (this.toolState.textStyle ?? DEFAULT_TEXT_STYLE).color,
+      header: this.toolState.tableHeader === true,
+    });
+    this.history.push(this.doc, new AddTable(page.id, table));
+    this.renderer?.invalidateRegion(box.index, {
+      minX: x - table.size,
+      minY: y - table.size,
+      maxX: x + (Math.max(...xs) - x) + table.size,
+      maxY: y + (Math.max(...ys) - y) + table.size,
+    });
     this.inkChanged([page.id]);
   }
 
@@ -6058,7 +6103,7 @@ export class InkSurface {
   /** What `loop` encloses on `page`, as far as the lasso's switches allow; never `except`. */
   private enclosedBy(page: Page, loop: readonly number[], except: Stroke): ElementLists {
     const poly = polygonOf(loop);
-    if (!poly) return { strokes: [], images: [], textBoxes: [] };
+    if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [] };
     const filter = lassoFilterFor(this.toolState);
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
@@ -6077,6 +6122,7 @@ export class InkSurface {
             boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
+      tables: (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly)),
     };
   }
 
@@ -6447,6 +6493,7 @@ export class InkSurface {
             framed(frameBounds(this.textBoxFrameOf(page.id, textBox))),
           )
         : [],
+      tables: (page.tables ?? []).filter((table) => framed(frameBounds(this.tableFrameOf(table)))),
     });
   }
 
@@ -6457,7 +6504,7 @@ export class InkSurface {
     if (!sel || !bounds || loop.length < 6) return;
     this.selectionOutline = {
       loop: loop.map((v, i) => v - (i % 2 === 0 ? bounds.minX : bounds.minY)),
-      count: sel.strokes.length + sel.images.length + sel.textBoxes.length,
+      count: selectedCount(sel),
     };
     this.syncSelectionOverlay();
   }
@@ -6482,6 +6529,7 @@ export class InkSurface {
             boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
+      tables: (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly)),
     });
   }
 
@@ -6523,6 +6571,28 @@ export class InkSurface {
     const stroke = this.strokeAt(page, p, tolerance, filter);
     if (stroke) {
       this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+      return;
+    }
+    // A table lies under the ink and over the pictures. It is picked up with
+    // the handwriting in its cells, which stays ink of its own but goes
+    // where the table goes.
+    const table = this.tableAt(page, p)?.table;
+    if (table) {
+      const f = this.tableFrameOf(table);
+      const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
+      const near = this.strokeIndex.within(page.id, frame);
+      const inked = page.strokes.filter((stroke) => {
+        const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
+        return (
+          b !== null &&
+          lassoTakesStroke(stroke, filter) &&
+          b.minX >= frame.minX &&
+          b.minY >= frame.minY &&
+          b.maxX <= frame.maxX &&
+          b.maxY <= frame.maxY
+        );
+      });
+      this.select(page.id, { strokes: inked, images: [], textBoxes: [], tables: [table] });
       return;
     }
     // A locked picture is passed over, as if it were part of the paper.
@@ -6659,10 +6729,16 @@ export class InkSurface {
     this.clearSelection();
     this.deselectImage();
     const { strokes, textBoxes } = elements;
+    const tables = elements.tables ?? [];
     const images = elements.images.filter((image) => image.locked !== true);
-    if (isEmptySelection({ strokes, images, textBoxes })) return;
+    if (isEmptySelection({ strokes, images, textBoxes, tables })) return;
     if (this.toolState.tool === "select") this.selectionToolUsed = true;
-    if (strokes.length === 0 && textBoxes.length === 0 && images.length === 1) {
+    if (
+      strokes.length === 0 &&
+      textBoxes.length === 0 &&
+      tables.length === 0 &&
+      images.length === 1
+    ) {
       this.setImageSelection(pageId, images[0]);
       return;
     }
@@ -6670,11 +6746,14 @@ export class InkSurface {
     const editing = this.editingTextView();
     const live = editing ? this.liveTextBox(editing.pageId, editing.id) : undefined;
     if (live && textBoxes.includes(live)) this.blurTextBox();
+    // So does a table being typed in.
+    if (this.cellEdit && tables.includes(this.cellEdit.table)) this.endCellEdit(true);
     this.selection = {
       pageId,
       strokes: [...strokes],
       images: [...images],
       textBoxes: [...textBoxes],
+      tables: [...tables],
     };
     this.syncSelectionOverlay();
   }
@@ -6729,11 +6808,10 @@ export class InkSurface {
 
   /** Bounds of everything in a selection, page space. */
   private groupBounds(sel: GroupSelection): Bounds | null {
-    return selectionBounds(
-      sel.strokes,
-      sel.images,
-      sel.textBoxes.map((textBox) => this.textBoxFrameOf(sel.pageId, textBox)),
-    );
+    return selectionBounds(sel.strokes, sel.images, [
+      ...sel.textBoxes.map((textBox) => this.textBoxFrameOf(sel.pageId, textBox)),
+      ...(sel.tables ?? []).map((table) => this.tableFrameOf(table)),
+    ]);
   }
 
   /** How far a lasso drag has carried an element of `pageId`, page px; zero otherwise. */
@@ -6804,7 +6882,7 @@ export class InkSurface {
       this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
-      const count = sel ? sel.strokes.length + sel.images.length + sel.textBoxes.length : 0;
+      const count = sel ? selectedCount(sel) : 0;
       const shown = outline !== null && outline.count === count;
       this.selectionFrameEl.toggleClass("has-outline", shown);
       if (shown) {
@@ -7365,6 +7443,7 @@ export class InkSurface {
       strokes: sel.strokes,
       images: sel.images.filter((image) => image.locked !== true),
       textBoxes: sel.textBoxes,
+      tables: sel.tables,
     };
     this.clearSelection();
     this.history.push(this.doc, new RemoveElements(sel.pageId, elements, label));
@@ -7401,6 +7480,7 @@ export class InkSurface {
           strokes: group.strokes,
           images: group.images.filter((image) => image.locked !== true),
           textBoxes: group.textBoxes,
+          tables: group.tables,
         },
         bounds,
       );
@@ -7455,6 +7535,7 @@ export class InkSurface {
       strokes: entry.elements.strokes,
       images: withImages ? entry.elements.images : [],
       textBoxes: entry.elements.textBoxes,
+      tables: entry.elements.tables,
     };
     const d = pastePlacement({
       bounds: entry.bounds,
@@ -8295,7 +8376,9 @@ export class InkSurface {
     const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
     if (!corner) return null;
     const at = boundsCorner(bounds, corner);
-    const text = textScaleRange(sel.textBoxes);
+    const fonts = textScaleRange(sel.textBoxes);
+    const cells = tableScaleRange(sel.tables ?? []);
+    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
     return {
       corner,
       anchor: anchorCorner(bounds, corner),
@@ -8347,6 +8430,7 @@ export class InkSurface {
     drag.lifted = true;
     this.renderer?.setHiddenStrokes(new Set(drag.selection.strokes.map((stroke) => stroke.id)));
     this.renderer?.setHiddenImages(new Set(drag.selection.images));
+    this.renderer?.setHiddenTables(new Set(drag.selection.tables ?? []));
     this.renderer?.invalidateRegion(box.index, drag.bounds);
     this.renderDry();
   }
@@ -8368,6 +8452,7 @@ export class InkSurface {
       drag.turn
         ? { x: drag.turn.centre.x, y: drag.turn.centre.y, angle: drag.turn.angle }
         : undefined,
+      drag.selection.tables ?? [],
     );
   }
 
@@ -8411,6 +8496,7 @@ export class InkSurface {
     }
     this.renderer?.setHiddenStrokes(NO_STROKES);
     this.renderer?.setHiddenImages(NO_IMAGES);
+    this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.clearWet();
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
@@ -8469,10 +8555,11 @@ export class InkSurface {
     motion: Reorientation,
     centre: Pt,
   ): Bounds | null {
-    const heights = new Map<TextBoxElement, number>();
+    const heights = new Map<TextBoxElement | TableElement, number>();
     for (const textBox of sel.textBoxes) {
       heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
     }
+    for (const table of sel.tables ?? []) heights.set(table, this.tableFrameOf(table).h);
     this.history.push(
       this.doc,
       new ReorientElements(sel.pageId, sel, motion, centre.x, centre.y, heights),
@@ -9108,6 +9195,8 @@ export class InkSurface {
    */
   private stepHistory(redo: boolean, step: (doc: InkDocument) => Command | null): void {
     this.parkedText = null;
+    // The cell's typing becomes its own step first, so the undo takes it back.
+    this.endCellEdit(true);
     this.endCrop(false);
     this.cancelImageDrag();
     this.cancelGroupDrag();
@@ -9170,6 +9259,362 @@ export class InkSurface {
       scrollDirectionOf(this.doc) !== this.direction ||
       this.pageLayout.boxes.length !== this.doc.pages.length
     );
+  }
+
+  // --- Tables: typing in a cell -------------------------------------------------
+  //
+  // One textarea over the cell being typed in (`table-cell-editor.ts`); the
+  // canvas leaves that cell's text out meanwhile. The typing writes the cell
+  // as it goes and is recorded as one step when the cell is left.
+
+  /** The table cell being typed in, and its text when typing began. */
+  private cellEdit: {
+    pageId: string;
+    table: TableElement;
+    row: number;
+    col: number;
+    before: string;
+  } | null = null;
+  private cellEditor: TableCellEditor | null = null;
+  /** A Text-tool press while a cell is typed in: what it does is decided on lift. */
+  private cellTap = false;
+
+  /** The field being typed in, a text box's or a table cell's, if any. */
+  private typingField(): { root: HTMLElement; input: HTMLTextAreaElement } | null {
+    const view = this.editingTextView();
+    if (view) return view;
+    const editor = this.cellEditor;
+    return this.cellEdit && editor && document.activeElement === editor.input ? editor : null;
+  }
+
+  /** A table laid out with the surface's measuring canvas. */
+  private tableLayout(table: TableElement): TableLayout {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    const ctx = this.measureCtx;
+    if (ctx) return tableLayoutOf(table, ctx);
+    // No 2D context at all: a rough measure, only to keep the geometry sane.
+    return layoutTable(table, () => (text) => text.length * table.fontSize * 0.55);
+  }
+
+  /** A table's frame in page space, its rows grown to their text. */
+  private tableFrameOf(table: TableElement): BoxFrame {
+    const layout = this.tableLayout(table);
+    return { x: layout.x, y: layout.y, w: layout.w, h: layout.h };
+  }
+
+  /** The topmost table with a cell under page point `p`, and that cell. */
+  private tableAt(page: Page, p: Pt): { table: TableElement; cell: CellRef } | null {
+    const tables = page.tables ?? [];
+    for (let i = tables.length - 1; i >= 0; i--) {
+      const cell = cellAt(this.tableLayout(tables[i]), p.x, p.y);
+      if (cell) return { table: tables[i], cell };
+    }
+    return null;
+  }
+
+  /** Type in the cell under page point `p` of the page in `box`; false when there is none. */
+  private editCellAt(box: PageBox, p: Pt): boolean {
+    const page = this.pageAt(box.index);
+    if (!page || this.practice || this.callbacks.isLocked?.()) return false;
+    const hit = this.tableAt(page, p);
+    if (!hit) return false;
+    this.startCellEdit(page.id, hit.table, hit.cell);
+    return true;
+  }
+
+  /**
+   * Start typing in a cell, or move the typing to another one (the keyboard
+   * stays up). Focused synchronously: called inside the pointerup, because
+   * iPadOS raises the keyboard only for a focus made during a user gesture.
+   */
+  private startCellEdit(pageId: string, table: TableElement, cell: CellRef): void {
+    const previous = this.cellEdit;
+    if (previous) this.commitCellEdit();
+    else {
+      this.blurTextBox();
+      this.releaseHeldText();
+      this.clearSelection();
+      this.deselectImage();
+    }
+    this.cellEdit = { pageId, table, ...cell, before: cellText(table, cell.row, cell.col) };
+    const editor = (this.cellEditor ??= new TableCellEditor(this.textBoxesEl, {
+      onInput: (text) => this.typeInCell(text),
+      onFocus: () => {
+        this.holdTextEditingClass();
+        this.watchTypingKeyboard(true);
+        this.callbacks.onTextEditing?.(null);
+        this.keepTypingBoxVisible();
+      },
+      onBlur: (next) => {
+        const target = next as Node | null;
+        if (target && (editor.root.contains(target) || editor.bar.contains(target))) return;
+        this.endCellEdit(false);
+      },
+      onStep: (step) => this.stepCellEdit(step),
+      onEscape: () => this.endCellEdit(true),
+      onAction: (action) => this.tableAction(action),
+      onGrip: (kind, event) => this.startGripDrag(kind, event),
+    }));
+    editor.input.value = this.cellEdit.before;
+    this.renderer?.setEditingCell({ table, cell });
+    if (previous && previous.table !== table) this.repaintTable(previous.pageId, previous.table);
+    this.repaintTable(pageId, table);
+    this.placeCellEditor();
+    if (document.activeElement !== editor.input) this.focusTextBox(editor.input);
+    const end = editor.input.value.length;
+    editor.input.setSelectionRange(end, end);
+  }
+
+  /** Record the cell's typing as one step, if it changed anything; typing goes on. */
+  private commitCellEdit(): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    const after = cellText(edit.table, edit.row, edit.col);
+    if (after === edit.before) return;
+    const onPage = this.doc.pages.some(
+      (page) => page.id === edit.pageId && page.tables?.includes(edit.table),
+    );
+    if (onPage) {
+      this.history.push(
+        this.doc,
+        new SetTableCell(edit.pageId, edit.table, edit.row, edit.col, edit.before, after),
+      );
+    }
+    edit.before = after;
+  }
+
+  /**
+   * Stop typing in the cell: record it, give the cell's text back to the
+   * canvas and put the keyboard away (`blur`: the textarea still has the
+   * focus; the blur handler passes false).
+   */
+  private endCellEdit(blur: boolean): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    this.commitCellEdit();
+    this.cellEdit = null;
+    this.cellTap = false;
+    this.endGripDrag(false);
+    this.renderer?.setEditingCell(null);
+    const editor = this.cellEditor;
+    if (blur && editor && document.activeElement === editor.input) editor.input.blur();
+    editor?.hide();
+    this.watchTypingKeyboard(false);
+    this.releaseTextEditingClass();
+    this.repaintTable(edit.pageId, edit.table);
+    this.handBackFromText();
+  }
+
+  /** The lift of a Text-tool tap made while a cell is typed in (see `penDown`). */
+  private finishCellTap(sample: PointerSample | null): boolean {
+    if (!this.cellTap) return false;
+    this.cellTap = false;
+    this.activePage = null;
+    const box = sample ? boxAtPoint(this.pageLayout, sample.x, sample.y) : null;
+    if (sample && box && this.editCellAt(box, this.toPage(box, sample))) return true;
+    this.endCellEdit(true);
+    return true;
+  }
+
+  /** The cell's text was typed into: the cell changes as it is typed, and its row grows. */
+  private typeInCell(text: string): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    const before = this.tableFrameOf(edit.table);
+    setCellText(edit.table, edit.row, edit.col, text);
+    this.repaintTable(edit.pageId, edit.table, before);
+    this.placeCellEditor();
+    this.keepTypingBoxVisible();
+    this.changed([edit.pageId]);
+  }
+
+  /** Tab: the next cell (a new row past the last one); Shift+Tab: the one before. */
+  private stepCellEdit(step: 1 | -1): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    let next = stepCell(edit.table, edit.row, edit.col, step);
+    if (!next && step === 1 && edit.table.rows.length < TABLE_MAX_ROWS) {
+      this.commitCellEdit();
+      this.history.push(
+        this.doc,
+        new InsertTableRow(edit.pageId, edit.table, edit.table.rows.length),
+      );
+      next = { row: edit.table.rows.length - 1, col: 0 };
+      this.changed([edit.pageId]);
+    }
+    if (next) this.startCellEdit(edit.pageId, edit.table, next);
+  }
+
+  /** A button of the table's bar: one undo step, typing going on in the cell it leaves. */
+  private tableAction(action: TableAction): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    this.commitCellEdit();
+    const { pageId, table } = edit;
+    let { row, col } = edit;
+    const before = this.tableFrameOf(table);
+    let command: Command | null = null;
+    if (action === "row-above" || action === "row-below") {
+      if (table.rows.length >= TABLE_MAX_ROWS) return;
+      row += action === "row-below" ? 1 : 0;
+      command = new InsertTableRow(pageId, table, row);
+    } else if (action === "col-left" || action === "col-right") {
+      if (table.cols.length >= TABLE_MAX_COLS) return;
+      col += action === "col-right" ? 1 : 0;
+      command = new InsertTableColumn(pageId, table, col);
+    } else if (action === "delete-row") {
+      if (table.rows.length <= 1) return;
+      command = new RemoveTableRow(pageId, table, row);
+      row = Math.min(row, table.rows.length - 2);
+    } else if (action === "delete-col") {
+      if (table.cols.length <= 1) return;
+      command = new RemoveTableColumn(pageId, table, col);
+      col = Math.min(col, table.cols.length - 2);
+    } else {
+      command = new SetTableHeader(pageId, table, table.header !== true);
+    }
+    this.history.push(this.doc, command);
+    // The cell typed in after the edit: the new row or column, else the same place.
+    this.cellEdit = null;
+    this.startCellEdit(pageId, table, { row, col });
+    this.repaintTable(pageId, table, before);
+    this.changed([pageId]);
+  }
+
+  /**
+   * Re-rasterise the tiles under a table — where it is now and, when given,
+   * where it was (`before`): a row that grew or a column that went changes
+   * its frame — and repaint.
+   */
+  private repaintTable(pageId: string, table: TableElement, before?: BoxFrame): void {
+    const box = this.boxForPage(pageId);
+    if (!box) return;
+    const frame = this.tableFrameOf(table);
+    const pad = table.size + 2;
+    const bounds = (f: BoxFrame): Bounds => ({
+      minX: f.x - pad,
+      minY: f.y - pad,
+      maxX: f.x + f.w + pad,
+      maxY: f.y + f.h + pad,
+    });
+    this.renderer?.invalidateRegion(box.index, bounds(frame));
+    if (before) this.renderer?.invalidateRegion(box.index, bounds(before));
+    this.renderDry();
+  }
+
+  /** Put the cell editor over its cell where the page is now, or away when no cell is typed in. */
+  private placeCellEditor(): void {
+    const editor = this.cellEditor;
+    const edit = this.cellEdit;
+    if (!editor) return;
+    const box = edit ? this.boxForPage(edit.pageId) : null;
+    const layout = edit ? this.tableLayout(edit.table) : null;
+    const frame = edit && layout ? cellFrame(layout, edit) : null;
+    if (!edit || !box || !layout || !frame) {
+      editor.hide();
+      return;
+    }
+    const scale = this.unitScale;
+    const page = this.pageAt(box.index);
+    const night = page ? pageLook(page.backdrop, this.paper).night : false;
+    const style = cellStyle(edit.table, edit.row);
+    editor.place({
+      left: Math.round((box.x + frame.x) * scale),
+      top: Math.round((box.y + frame.y) * scale),
+      width: Math.round(frame.w * scale),
+      height: Math.round(frame.h * scale),
+      tableLeft: Math.round((box.x + layout.x) * scale),
+      tableTop: Math.round((box.y + layout.y) * scale),
+      scale,
+      style: { ...style, color: shownColor(style.color, night) },
+      header: edit.table.header === true,
+    });
+  }
+
+  // --- Tables: resizing a column or a row by its grip ---------------------------------
+
+  private gripDrag: {
+    pointerId: number;
+    kind: "col" | "row";
+    index: number;
+    /** The column's width or the row's least height before the drag, page px. */
+    was: number;
+    /** Where the drag starts from: the shown size, page px, and the press, client px. */
+    from: number;
+    start: number;
+    target: HTMLElement;
+  } | null = null;
+
+  private startGripDrag(kind: "col" | "row", event: PointerEvent): void {
+    const edit = this.cellEdit;
+    if (!edit || this.gripDrag) return;
+    const layout = this.tableLayout(edit.table);
+    const index = kind === "col" ? edit.col : edit.row;
+    const target = event.currentTarget as HTMLElement;
+    this.gripDrag = {
+      pointerId: event.pointerId,
+      kind,
+      index,
+      was: kind === "col" ? edit.table.cols[index] : edit.table.rows[index],
+      from: kind === "col" ? layout.colW[index] : layout.rowH[index],
+      start: kind === "col" ? event.clientX : event.clientY,
+      target,
+    };
+    target.setPointerCapture(event.pointerId);
+    target.addEventListener("pointermove", this.onGripMove);
+    target.addEventListener("pointerup", this.onGripUp);
+    target.addEventListener("pointercancel", this.onGripUp);
+  }
+
+  private readonly onGripMove = (event: PointerEvent): void => {
+    const drag = this.gripDrag;
+    const edit = this.cellEdit;
+    if (!drag || !edit || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    const before = this.tableFrameOf(edit.table);
+    const at = drag.kind === "col" ? event.clientX : event.clientY;
+    const size = drag.from + (at - drag.start) / this.unitScale;
+    // Previewed on the table itself; the lift records it as one step.
+    if (drag.kind === "col") edit.table.cols[drag.index] = Math.max(TABLE_MIN_COL, size);
+    else edit.table.rows[drag.index] = Math.max(TABLE_MIN_ROW, size);
+    this.repaintTable(edit.pageId, edit.table, before);
+    this.placeCellEditor();
+  };
+
+  private readonly onGripUp = (event: PointerEvent): void => {
+    const drag = this.gripDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endGripDrag(true);
+  };
+
+  /** Finish a grip drag: record the new size as one step (`commit`), or put the old one back. */
+  private endGripDrag(commit: boolean): void {
+    const drag = this.gripDrag;
+    if (!drag) return;
+    this.gripDrag = null;
+    drag.target.removeEventListener("pointermove", this.onGripMove);
+    drag.target.removeEventListener("pointerup", this.onGripUp);
+    drag.target.removeEventListener("pointercancel", this.onGripUp);
+    if (drag.target.hasPointerCapture(drag.pointerId)) {
+      drag.target.releasePointerCapture(drag.pointerId);
+    }
+    const edit = this.cellEdit;
+    if (!edit) return;
+    const list = drag.kind === "col" ? edit.table.cols : edit.table.rows;
+    const size = list[drag.index];
+    list[drag.index] = drag.was;
+    if (commit && size !== drag.was) {
+      this.history.push(
+        this.doc,
+        drag.kind === "col"
+          ? new ResizeTableColumn(edit.pageId, edit.table, drag.index, size)
+          : new ResizeTableRow(edit.pageId, edit.table, drag.index, size),
+      );
+      this.changed([edit.pageId]);
+    }
+    this.repaintTable(edit.pageId, edit.table);
+    this.placeCellEditor();
   }
 
   // --- Text editing (0.5) -----------------------------------------------------
@@ -9455,7 +9900,7 @@ export class InkSurface {
     let deadline = now() + TEXT_CLASS_RELEASE_MS;
     const attempt = (): void => {
       this.textClassTimer = 0;
-      if (!this.renderer || this.editingTextView()) return;
+      if (!this.renderer || this.typingField()) return;
       if (this.textFrameDrag !== null) {
         // The clock starts when the drag ends.
         deadline = now() + TEXT_CLASS_RELEASE_MS;
@@ -9531,7 +9976,13 @@ function selectablesOf(page: Page): ElementLists {
     strokes: page.strokes,
     images: page.images.filter((image) => image.locked !== true),
     textBoxes: page.textBoxes,
+    tables: page.tables ?? [],
   };
+}
+
+/** How many elements a selection holds. */
+function selectedCount(sel: ElementLists): number {
+  return sel.strokes.length + sel.images.length + sel.textBoxes.length + (sel.tables?.length ?? 0);
 }
 
 function onSelectionMenu(target: EventTarget | null): boolean {

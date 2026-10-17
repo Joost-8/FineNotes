@@ -38,7 +38,12 @@ function textBox(id: string, extra: Partial<TextBoxElement> = {}): TextBoxElemen
 
 function ids(): IdSource {
   let n = 100;
-  return { stroke: () => `s${++n}`, image: () => `i${++n}`, textBox: () => `t${++n}`, table: () => `g${++n}` };
+  return {
+    stroke: () => `s${++n}`,
+    image: () => `i${++n}`,
+    textBox: () => `t${++n}`,
+    table: () => `g${++n}`,
+  };
 }
 
 const BOUNDS: Bounds = { minX: 100, minY: 100, maxX: 300, maxY: 200 };

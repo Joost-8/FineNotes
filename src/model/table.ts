@@ -222,7 +222,7 @@ export function normalizeTable(raw: unknown, mintId: () => string): TableElement
   const stored = Array.isArray(r.cells) ? r.cells : [];
   const cells = rows.map((_, i) => {
     const row: unknown[] = Array.isArray(stored[i]) ? (stored[i] as unknown[]) : [];
-    return cols.map((__, j) => (typeof row[j] === "string" ? (row[j] as string) : ""));
+    return cols.map((__, j) => (typeof row[j] === "string" ? row[j] : ""));
   });
   const table: TableElement = {
     id: typeof r.id === "string" ? r.id : mintId(),

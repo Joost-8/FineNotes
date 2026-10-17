@@ -12,7 +12,7 @@ import { textStyleKey } from "./text-style";
 /**
  * Not a hash of every coordinate — that would cost as much as painting — but
  * it moves whenever a stroke is added, erased, split, moved or snapped, a
- * text box or an image changes, or the paper does. A stroke move shifts its
+ * text box, a table or an image changes, or the paper does. A stroke move shifts its
  * first point; a snap or a partial erase changes its point count.
  */
 export function pageSignature(page: Page): string {
@@ -32,7 +32,7 @@ export function pageSignature(page: Page): string {
         `${i.flipX ? 1 : 0}${i.flipY ? 1 : 0},${i.crop ? JSON.stringify(i.crop) : ""}`,
     )
     .join("|");
-  return [
+  const parts = [
     page.id,
     page.strokes.length,
     page.strokes[page.strokes.length - 1]?.id ?? "",
@@ -42,5 +42,9 @@ export function pageSignature(page: Page): string {
     JSON.stringify(page.backdrop),
     page.geometry.width,
     page.geometry.height,
-  ].join("#");
+  ];
+  // A table is small next to its picture: every field, cells included. Left
+  // out when there is none, so a page without tables keeps its signature.
+  if (page.tables?.length) parts.push(JSON.stringify(page.tables));
+  return parts.join("#");
 }

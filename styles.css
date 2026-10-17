@@ -8518,3 +8518,138 @@ button.goodobsidian-learn-stop.is-hidden {
 .goodobsidian-chat.is-typing .goodobsidian-chat-note {
   display: none;
 }
+
+/* A table cell being typed in (view/table-cell-editor.ts): a textarea over
+   the cell, styled inline as the canvas draws the cell's text, with grips on
+   its right and bottom edges, and the table's bar floating above the table. */
+.goodobsidian-table-cell {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -1px;
+  pointer-events: auto;
+}
+
+.goodobsidian-table-cell.is-hidden,
+.goodobsidian-table-bar.is-hidden {
+  display: none;
+}
+
+.goodobsidian-table-cell .goodobsidian-table-cell-input,
+.goodobsidian-table-cell .goodobsidian-table-cell-input:hover,
+.goodobsidian-table-cell .goodobsidian-table-cell-input:focus,
+.goodobsidian-table-cell .goodobsidian-table-cell-input:active {
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  touch-action: manipulation;
+  transform-origin: 0 0;
+}
+
+/* Finger-sized grips with a small visible bar, on the cell's edges. */
+.goodobsidian-table-grip {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+}
+
+.goodobsidian-table-grip.is-col {
+  top: 0;
+  right: -16px;
+  width: 32px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.goodobsidian-table-grip.is-row {
+  left: 0;
+  bottom: -16px;
+  width: 100%;
+  height: 32px;
+  cursor: row-resize;
+}
+
+.goodobsidian-table-grip::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-table-grip.is-col::after {
+  width: 4px;
+  height: min(24px, 60%);
+}
+
+.goodobsidian-table-grip.is-row::after {
+  width: min(24px, 60%);
+  height: 4px;
+}
+
+.goodobsidian-table-bar {
+  --gob-sel-bg: var(--color-base-10);
+  --gob-sel-line: var(--color-base-30);
+  --gob-sel-icon: var(--color-base-70);
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  border: 1px solid var(--gob-sel-line);
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-sel-bg);
+  color: var(--color-base-100);
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: auto;
+  touch-action: none;
+  white-space: nowrap;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--gob-tool-radius);
+  color: var(--color-base-100);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.goodobsidian-table-bar .goodobsidian-table-bar-button.is-active {
+  background: var(--gob-sel-line);
+}
+
+.goodobsidian-table-bar-icon {
+  display: inline-flex;
+  color: var(--gob-sel-icon);
+}
+
+.goodobsidian-table-bar-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-table-bar-gap {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--gob-sel-line);
+}

@@ -1944,19 +1944,19 @@ export function paintTable(
   ctx.lineCap = "butt";
   ctx.lineJoin = "miter";
   if (table.dash) ctx.setLineDash(dashPattern(table.dash, width));
-  const grid = new Path2D();
   const right = layout.x + layout.w;
   const bottom = layout.y + layout.h;
+  ctx.beginPath();
   for (let c = 1; c < layout.colX.length; c++) {
-    grid.moveTo(layout.colX[c], layout.y);
-    grid.lineTo(layout.colX[c], bottom);
+    ctx.moveTo(layout.colX[c], layout.y);
+    ctx.lineTo(layout.colX[c], bottom);
   }
   for (let r = 1; r < layout.rowY.length; r++) {
-    grid.moveTo(layout.x, layout.rowY[r]);
-    grid.lineTo(right, layout.rowY[r]);
+    ctx.moveTo(layout.x, layout.rowY[r]);
+    ctx.lineTo(right, layout.rowY[r]);
   }
-  grid.rect(layout.x, layout.y, layout.w, layout.h);
-  ctx.stroke(grid);
+  ctx.rect(layout.x, layout.y, layout.w, layout.h);
+  ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
 }
