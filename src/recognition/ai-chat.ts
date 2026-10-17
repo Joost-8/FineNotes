@@ -34,6 +34,11 @@ export interface ChatTurn {
   text: string;
   /** Only meaningful on user turns; the model's turns are text. */
   images?: readonly ChatImage[];
+  /**
+   * The question as the user typed it, where `text` adds to it (the first
+   * question's line naming its pages). Shown and saved; never sent.
+   */
+  shown?: string;
 }
 
 /** A conversation for one vendor. A transcription is one of these, one question long. */

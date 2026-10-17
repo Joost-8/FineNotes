@@ -4124,20 +4124,48 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   flex: 0 1 340px;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-new.clickable-icon {
+/* Save chat, Chats, New chat: quiet text buttons at the end of the row. */
+.goodobsidian-chat-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-tool.clickable-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   width: auto;
   height: 38px;
-  margin-left: auto;
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: var(--gob-radius-pill);
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-new.is-hidden {
+.goodobsidian-ask-modal button.goodobsidian-chat-tool.is-active {
+  background: var(--gob-accent-tint);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-tool.is-hidden {
+  display: none;
+}
+
+.goodobsidian-chat-tool-icon {
+  display: inline-flex;
+}
+
+/* The thread's turns and the question still waiting, spaced alike. */
+.goodobsidian-chat-outstanding {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* No room for words beside the icons on a phone. */
+.is-phone .goodobsidian-chat-tool-label {
   display: none;
 }
 

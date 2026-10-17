@@ -91,6 +91,8 @@ export default defineConfig({
         "src/recognition/llm-request.ts",
         "src/recognition/openrouter-auth.ts",
         "src/recognition/ai-chat.ts",
+        "src/recognition/ask-chat-file.ts",
+        "src/recognition/ask-session.ts",
         "src/recognition/ai-image.ts",
         "src/recognition/ai-menu-model.ts",
         "src/recognition/ai-placement.ts",

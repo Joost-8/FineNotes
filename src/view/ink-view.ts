@@ -102,7 +102,10 @@ import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
-import { type AskPages, AskAiModal } from "./ask-ai-modal";
+import { AskAiModal } from "./ask-ai-modal";
+import { listChats, readChat, trashChat, writeChat } from "./ask-chats-io";
+import { chatsFolderFor } from "../recognition/ask-chat-file";
+import { type AskPagesResult, AskSession } from "../recognition/ask-session";
 import { GenerateImageModal } from "./generate-image-modal";
 import { AddPage, type Command, InsertImage, RemovePage } from "../model/commands";
 import {
@@ -320,6 +323,8 @@ export class InkView extends TextFileView {
   private readonly writeHold = new WriteHold();
   private quietTimer = 0;
   private images: VaultImageCache | null = null;
+  /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
+  private askSession: AskSession | null = null;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
   /** Recording, replay and audio transcription (0.5); see note-audio.ts. */
   private audio: NoteAudio | null = null;
@@ -562,6 +567,8 @@ export class InkView extends TextFileView {
    * running recording so it joins *this* note, and save that.
    */
   override async onUnloadFile(file: TFile): Promise<void> {
+    // The conversation was about this notebook's pages.
+    this.askSession = null;
     if (await this.audio?.finishForUnload()) {
       this.encoder.touchAll();
       await this.saveNow(false, true);
@@ -1018,21 +1025,74 @@ export class InkView extends TextFileView {
 
   private openAsk(scope: AskScope): void {
     if (this.isProtected()) return;
+    const multiPage = this.doc.pages.length > 1;
+    const session = this.askConversation(multiPage ? scope : "page");
     new AskAiModal(this.app, {
-      scope,
-      multiPage: this.doc.pages.length > 1,
+      session,
+      multiPage,
       sourcePath: this.file?.path ?? "",
       describe: (s) => this.describeAsk(s),
-      confirm: () =>
-        this.plugin.confirmAiSend(
-          this.plugin.textAiConfig(),
-          "Asking about your notes",
-          "images of the pages you ask about, together with your question,",
-        ),
-      prepare: (s) => this.collectAskPages(s),
-      ask: (turns) => askAi(this.plugin.textAiConfig(), buildAskSystemPrompt(), turns),
       insert: (text) => this.insertAnswer(text),
+      savedChats: () =>
+        this.file ? listChats(this.app, this.file.path, this.chatsFolder()) : Promise.resolve([]),
+      openSaved: async (path) => {
+        const chat = await readChat(this.app, path);
+        if (!chat) {
+          new Notice("FineNotes: that chat could not be read.");
+          return;
+        }
+        session.load(chat, path);
+      },
+      rememberSave: (save) => {
+        this.settings.askSaveChats = save;
+        void this.plugin.saveSettings();
+      },
     }).open();
+  }
+
+  /**
+   * This notebook's conversation, kept while the notebook is open so closing
+   * the dialog loses neither the chat nor the draft. Asked about another
+   * scope before anything was asked, it switches to it.
+   */
+  private askConversation(scope: AskScope): AskSession {
+    let session = this.askSession;
+    if (!session) {
+      session = new AskSession(
+        {
+          notebookPath: () => this.file?.path ?? "",
+          confirm: () =>
+            this.plugin.confirmAiSend(
+              this.plugin.textAiConfig(),
+              "Asking about your notes",
+              "images of the pages you ask about, together with your question,",
+            ),
+          prepare: (s) => this.collectAskPages(this.askPageIndexes(s)),
+          preparePages: (numbers) =>
+            this.collectAskPages(
+              numbers.map((n) => n - 1).filter((i) => i >= 0 && i < this.doc.pages.length),
+            ),
+          ask: (turns) => askAi(this.plugin.textAiConfig(), buildAskSystemPrompt(), turns),
+          save: (chat, path) => writeChat(this.app, chat, path, this.chatsFolder()),
+          unsave: (path) => trashChat(this.app, path),
+          now: () => new Date(),
+        },
+        scope,
+        this.settings.askSaveChats,
+      );
+      this.askSession = session;
+    } else if (session.turns.length === 0 && !session.outstanding && session.scope !== scope) {
+      session.newChat(scope);
+    }
+    return session;
+  }
+
+  /**
+   * Where this notebook keeps saved chats: its own setting (a new notebook
+   * with a files folder sets it there), else "AI chats" beside it.
+   */
+  private chatsFolder(): string {
+    return this.attachmentFolder("chats") ?? chatsFolderFor(this.file?.path ?? "");
   }
 
   /** Which pages a question sends, as indexes. */
@@ -1059,10 +1119,10 @@ export class InkView extends TextFileView {
     );
   }
 
-  private async collectAskPages(scope: AskScope): Promise<AskPages> {
+  private async collectAskPages(indexes: readonly number[]): Promise<AskPagesResult> {
     const images: ChatImage[] = [];
     const pageNumbers: number[] = [];
-    for (const index of this.askPageIndexes(scope)) {
+    for (const index of indexes) {
       const page = this.doc.pages[index];
       if (!page) continue;
       const rendered = await this.renderForAi(page);

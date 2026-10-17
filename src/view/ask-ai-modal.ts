@@ -1,59 +1,44 @@
 /**
- * "Ask about this page / notebook", laid out as a chat: the scope on top, the
- * conversation in the middle (your questions as bubbles on the right, the
- * answers rendered as markdown on the left, each with Copy and Insert as text
- * box), and the question field at the bottom with a round send button.
- * Before the first question, suggestions fill the empty thread.
+ * "Ask about this page / notebook", laid out as a chat: the scope and the
+ * chat's controls on top (Save chat, Chats, New chat), the conversation in
+ * the middle (your questions as bubbles on the right, the answers rendered as
+ * markdown on the left, each with Copy and Insert as text box), and the
+ * question field at the bottom with a round send button. Before the first
+ * question, suggestions fill the empty thread.
  *
- * Follow-up questions continue the same conversation. The history lives in
- * this modal and dies with it; the page images are rendered once, for the
- * first question, and resent with every follow-up because the APIs keep no
- * state between requests. Changing the scope, or New chat, starts over.
+ * The conversation itself is an `AskSession` owned by the notebook's view:
+ * this dialog only draws it. Closing the dialog loses nothing — reopened, it
+ * shows the same chat, an answer that arrived meanwhile, and the draft.
  *
  * On the iPad the field sits at the bottom of a tall dialog, under the
  * keyboard: `DialogKeyboard` with `fit` shrinks the dialog to the room above
  * the keyboard and lifts it there, so the thread gets shorter and the field
  * stays in view.
- *
- * Everything that touches the note or the network is the host's (`AskAiHost`),
- * so this file is only the conversation's UI.
  */
 
-import { type App, Component, MarkdownRenderer, Modal, Notice, setIcon } from "obsidian";
-import {
-  type AskScope,
-  type ChatImage,
-  type ChatTurn,
-  buildAskFirstTurn,
-  markdownToPlainText,
-} from "../recognition/ai-chat";
-import { errorMessage } from "../util/errors";
+import { type App, Component, MarkdownRenderer, Menu, Modal, Notice, setIcon } from "obsidian";
+import { type AskScope, markdownToPlainText } from "../recognition/ai-chat";
+import { type AskSession, shownText } from "../recognition/ask-session";
+import type { SavedChatEntry } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { writeSystemText } from "./system-clipboard";
 
-export interface AskPages {
-  images: ChatImage[];
-  /** 1-based, in the same order as `images`. */
-  pageNumbers: number[];
-  totalPages: number;
-}
-
 export interface AskAiHost {
-  scope: AskScope;
+  session: AskSession;
   /** Offer the notebook scope at all (more than one page). */
   multiPage: boolean;
   /** Markdown links in answers resolve against this note. */
   sourcePath: string;
   /** One line under the scope: what a question sends, and where. */
   describe: (scope: AskScope) => string;
-  /** The one-time consent. False = the user declined. */
-  confirm: () => Promise<boolean>;
-  /** Render the pages a question about `scope` sends. */
-  prepare: (scope: AskScope) => Promise<AskPages>;
-  /** Send the conversation; resolves to the answer's markdown. */
-  ask: (turns: readonly ChatTurn[]) => Promise<string>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
+  /** This notebook's saved chats, newest first. */
+  savedChats: () => Promise<SavedChatEntry[]>;
+  /** Continue a saved chat in the session. */
+  openSaved: (path: string) => Promise<void>;
+  /** Remember "Save chat" for the next new chat. */
+  rememberSave: (save: boolean) => void;
 }
 
 const SCOPES: ReadonlyArray<{ id: AskScope; label: string }> = [
@@ -81,31 +66,36 @@ const SUGGESTIONS: Record<AskScope, readonly string[]> = {
 const INPUT_MAX_PX = 160;
 
 export class AskAiModal extends Modal {
-  private askScope: AskScope;
-  private turns: ChatTurn[] = [];
-  private busy = false;
-  private closed = false;
+  private readonly session: AskSession;
   /** Owns the markdown render children of every answer; unloaded on close. */
   private component: Component | null = null;
   private keyboard: DialogKeyboard | null = null;
+  private unsubscribe: (() => void) | null = null;
 
   private threadEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
   private input: HTMLTextAreaElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
+  private saveButton: HTMLButtonElement | null = null;
+  private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
   private readonly scopeButtons = new Map<AskScope, HTMLButtonElement>();
+
+  /** What the thread shows: each turn's text, in order, and the scope it is drawn for. */
+  private shown: { scope: AskScope | null; texts: string[] } = { scope: null, texts: [] };
+  /** The question waiting for its answer (or failed), drawn after the turns. */
+  private outstandingEl: HTMLElement | null = null;
+  private outstandingKey = "";
 
   constructor(
     app: App,
     private readonly host: AskAiHost,
   ) {
     super(app);
-    this.askScope = host.multiPage ? host.scope : "page";
+    this.session = host.session;
   }
 
   override onOpen(): void {
-    this.closed = false;
     this.component = new Component();
     this.component.load();
     this.modalEl.addClass("goodobsidian-ask-modal", "goodobsidian-dialog");
@@ -124,13 +114,21 @@ export class AskAiModal extends Modal {
         this.scopeButtons.set(id, button);
       }
     }
-    this.newChatButton = top.createEl("button", {
-      cls: "goodobsidian-chat-new clickable-icon",
-      attr: { "aria-label": "New chat" },
+    const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
+    this.saveButton = this.toolButton(tools, "bookmark", "Save chat", () => {
+      const save = !this.session.save;
+      this.host.rememberSave(save);
+      void this.session.setSave(save).catch((error: unknown) => {
+        new Notice(`FineNotes: could not ${save ? "save" : "remove"} the chat: ${String(error)}`);
+      });
     });
-    setIcon(this.newChatButton.createSpan(), "square-pen");
-    this.newChatButton.createSpan({ text: "New chat" });
-    this.newChatButton.addEventListener("click", () => this.newChat());
+    this.chatsButton = this.toolButton(tools, "history", "Chats", (event) => {
+      void this.showChats(event);
+    });
+    this.newChatButton = this.toolButton(tools, "square-pen", "New chat", () => {
+      this.session.newChat();
+      this.input?.focus();
+    });
 
     this.noteEl = contentEl.createDiv({ cls: "goodobsidian-chat-note" });
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
@@ -138,15 +136,18 @@ export class AskAiModal extends Modal {
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
     const input = composer.createEl("textarea", { cls: "goodobsidian-chat-input" });
     this.input = input;
-    input.placeholder = "Ask about your notes…";
     input.rows = 1;
-    input.addEventListener("input", () => this.syncInput());
+    input.value = this.session.draft;
+    input.addEventListener("input", () => {
+      this.session.draft = input.value;
+      this.syncInput();
+    });
     input.addEventListener("keydown", (event) => {
       // Return sends, as in any chat; Shift+Return is a new line. Not while
       // an input method is still composing a character.
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
-        void this.submit();
+        this.submit();
       }
     });
     this.sendButton = composer.createEl("button", {
@@ -154,51 +155,101 @@ export class AskAiModal extends Modal {
       attr: { "aria-label": "Send" },
     });
     setIcon(this.sendButton, "arrow-up");
-    this.sendButton.addEventListener("click", () => void this.submit());
+    this.sendButton.addEventListener("click", () => this.submit());
     this.keyboard.watch(input, composer);
 
-    this.renderEmpty();
-    this.syncScope();
-    this.syncInput();
+    this.unsubscribe = this.session.onChange(() => this.render());
+    this.render();
+    this.scrollToEnd();
     window.setTimeout(() => this.input?.focus(), 0);
   }
 
   override onClose(): void {
-    this.closed = true;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     this.keyboard?.end();
     this.keyboard = null;
     this.component?.unload();
     this.component = null;
-    this.turns = [];
     this.contentEl.empty();
   }
 
+  private toolButton(
+    parent: HTMLElement,
+    icon: string,
+    label: string,
+    onClick: (event: MouseEvent) => void,
+  ): HTMLButtonElement {
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-chat-tool clickable-icon",
+      attr: { "aria-label": label },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-chat-tool-icon" }), icon);
+    button.createSpan({ cls: "goodobsidian-chat-tool-label", text: label });
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
   private setScope(scope: AskScope): void {
-    if (scope === this.askScope || this.busy) return;
-    this.askScope = scope;
+    if (scope === this.session.scope || this.session.busy) return;
     // The first question's images define the conversation; a new scope needs
     // new images, so it is a new conversation.
-    this.newChat();
+    this.session.newChat(scope);
   }
 
-  private newChat(): void {
-    if (this.busy) return;
-    this.turns = [];
-    this.renderEmpty();
-    this.syncScope();
-    this.input?.focus();
+  private submit(question?: string): void {
+    const text = (question ?? this.input?.value ?? "").trim();
+    if (!text || this.session.busy) return;
+    if (question === undefined && this.input) {
+      this.input.value = "";
+      this.session.draft = "";
+      this.syncInput();
+    }
+    this.session.dismissError();
+    void this.session.send(text);
   }
 
-  private syncScope(): void {
+  /** Bring the whole dialog in line with the session. */
+  private render(): void {
+    const session = this.session;
+    const busy = session.busy;
     for (const [id, button] of this.scopeButtons) {
-      button.toggleClass("is-active", id === this.askScope);
-      button.setAttribute("aria-pressed", String(id === this.askScope));
+      button.toggleClass("is-active", id === session.scope);
+      button.setAttribute("aria-pressed", String(id === session.scope));
+      button.disabled = busy;
     }
-    this.noteEl?.setText(this.host.describe(this.askScope));
-    this.newChatButton?.toggleClass("is-hidden", this.turns.length === 0);
+    const saved = session.save;
+    if (this.saveButton) {
+      this.saveButton.toggleClass("is-active", saved);
+      this.saveButton.setAttribute("aria-pressed", String(saved));
+      this.saveButton.setAttribute(
+        "aria-label",
+        saved ? "Saved — tap to stop saving" : "Save chat",
+      );
+      const icon = this.saveButton.querySelector<HTMLElement>(".goodobsidian-chat-tool-icon");
+      if (icon) setIcon(icon, saved ? "bookmark-check" : "bookmark");
+      this.saveButton
+        .querySelector(".goodobsidian-chat-tool-label")
+        ?.setText(saved ? "Saved" : "Save chat");
+    }
+    if (this.chatsButton) this.chatsButton.disabled = busy;
+    if (this.newChatButton) {
+      this.newChatButton.disabled = busy;
+      this.newChatButton.toggleClass(
+        "is-hidden",
+        session.turns.length === 0 && !session.outstanding,
+      );
+    }
+    this.noteEl?.setText(
+      this.host.describe(session.scope) +
+        (saved ? " The chat is saved in the notebook's AI chats folder." : ""),
+    );
     if (this.input) {
-      this.input.placeholder = this.turns.length > 0 ? "Ask a follow-up…" : "Ask about your notes…";
+      this.input.placeholder =
+        session.turns.length > 0 ? "Ask a follow-up…" : "Ask about your notes…";
     }
+    this.renderThread();
+    this.syncInput();
   }
 
   /** Grow the field with its text, up to a few lines, and enable Send when there is a question. */
@@ -209,154 +260,117 @@ export class AskAiModal extends Modal {
     const height = Math.min(INPUT_MAX_PX, input.scrollHeight);
     input.setCssProps({ "--goodobsidian-chat-input-h": `${height}px` });
     input.toggleClass("is-scrolling", input.scrollHeight > INPUT_MAX_PX);
-    if (this.sendButton) this.sendButton.disabled = this.busy || !input.value.trim();
+    if (this.sendButton) this.sendButton.disabled = this.session.busy || !input.value.trim();
     // A taller field moves its top: keep it above the keyboard.
     this.keyboard?.update();
   }
 
-  /** The thread before the first question: what this is, and a few questions to start with. */
-  private renderEmpty(): void {
+  /**
+   * Draw the turns not drawn yet, or all of them again when the chat is a
+   * different one (a new chat, a loaded one); then the outstanding question.
+   */
+  private renderThread(): void {
     const thread = this.threadEl;
     if (!thread) return;
-    thread.empty();
+    const session = this.session;
+    const texts = session.turns.map(shownText);
+    const same =
+      this.shown.scope === session.scope &&
+      this.shown.texts.length <= texts.length &&
+      this.shown.texts.every((text, i) => text === texts[i]);
+    if (!same) {
+      thread.empty();
+      this.outstandingEl = null;
+      this.outstandingKey = "";
+      this.shown = { scope: session.scope, texts: [] };
+    }
+    const added = texts.length > this.shown.texts.length;
+    // New turns go before the outstanding question, which is redrawn below.
+    this.outstandingEl?.remove();
+    this.outstandingEl = null;
+    let lastAnswer: HTMLElement | null = null;
+    for (let i = this.shown.texts.length; i < texts.length; i++) {
+      const turn = session.turns[i];
+      if (turn.role === "user") this.questionRow(thread, texts[i]);
+      else lastAnswer = this.answerRow(thread, texts[i]);
+    }
+    this.shown.texts = texts;
+
+    const empty = texts.length === 0 && !session.outstanding;
+    if (empty) {
+      if (!thread.querySelector(".goodobsidian-chat-empty")) this.renderEmpty(thread);
+    } else {
+      thread.querySelector(".goodobsidian-chat-empty")?.remove();
+    }
+
+    const outstanding = session.outstanding;
+    const key = outstanding
+      ? `${outstanding.question}\u0000${outstanding.status}\u0000${outstanding.error ?? ""}`
+      : "";
+    if (outstanding) {
+      const row = thread.createDiv({ cls: "goodobsidian-chat-outstanding" });
+      this.questionRow(row, outstanding.question);
+      if (outstanding.error === undefined) this.pendingRow(row, outstanding.status);
+      else this.errorRow(row, outstanding.question, outstanding.error);
+      this.outstandingEl = row;
+    }
+    if (added && lastAnswer) this.scrollToAnswer(lastAnswer);
+    else if (key !== this.outstandingKey && outstanding) this.scrollToEnd();
+    this.outstandingKey = key;
+  }
+
+  /** The thread before the first question: what this is, and a few questions to start with. */
+  private renderEmpty(thread: HTMLElement): void {
     const empty = thread.createDiv({ cls: "goodobsidian-chat-empty" });
     setIcon(empty.createDiv({ cls: "goodobsidian-chat-empty-icon" }), "sparkles");
     empty.createDiv({
       cls: "goodobsidian-chat-empty-title",
-      text: this.askScope === "page" ? "Ask about this page" : "Ask about this notebook",
+      text: this.session.scope === "page" ? "Ask about this page" : "Ask about this notebook",
     });
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
-    for (const text of SUGGESTIONS[this.askScope]) {
+    for (const text of SUGGESTIONS[this.session.scope]) {
       const chip = chips.createEl("button", { cls: "goodobsidian-chat-suggestion clickable-icon" });
       chip.setText(text);
-      chip.addEventListener("click", () => void this.submit(text));
+      chip.addEventListener("click", () => this.submit(text));
     }
   }
 
-  private async submit(asked?: string): Promise<void> {
-    const question = (asked ?? this.input?.value ?? "").trim();
-    const thread = this.threadEl;
-    if (!question || this.busy || !thread) return;
-    this.busy = true;
-    this.setBusy(true);
-    if (this.turns.length === 0) thread.empty();
-    // Cleared at once, as in any chat; put back if the question fails.
-    const typed = asked === undefined;
-    if (typed && this.input) {
-      this.input.value = "";
-      this.syncInput();
-    }
-
-    const questionEl = thread.createDiv({ cls: "goodobsidian-chat-msg is-user" });
-    questionEl.createDiv({ cls: "goodobsidian-chat-bubble", text: question });
-    const answerEl = this.answerShell();
-    const status = this.pending(answerEl, this.turns.length === 0 ? "Reading the pages…" : "");
-    this.scrollToEnd();
-
-    try {
-      if (!(await this.host.confirm())) {
-        questionEl.remove();
-        answerEl.remove();
-        this.restore(question, typed);
-        if (this.turns.length === 0) this.renderEmpty();
-        return;
-      }
-      let turn: ChatTurn;
-      if (this.turns.length === 0) {
-        const pages = await this.host.prepare(this.askScope);
-        if (this.closed) return;
-        if (pages.images.length === 0) throw new Error("there is nothing on these pages to send.");
-        turn = buildAskFirstTurn(question, pages.images, pages.pageNumbers, pages.totalPages);
-        status.setText("");
-      } else {
-        turn = { role: "user", text: question };
-      }
-      const answer = await this.host.ask([...this.turns, turn]);
-      if (this.closed) return;
-      // Only a question that was answered joins the history, so a failed one
-      // can simply be asked again.
-      this.turns.push(turn, { role: "assistant", text: answer });
-      await this.renderAnswer(answerEl, answer);
-      this.scrollToAnswer(answerEl);
-    } catch (error) {
-      if (this.closed) return;
-      const message = errorMessage(error);
-      this.renderError(answerEl, questionEl, question, message);
-      this.restore(question, typed);
-      this.scrollToEnd();
-    } finally {
-      this.busy = false;
-      if (!this.closed) {
-        this.setBusy(false);
-        this.syncScope();
-        this.syncInput();
-      }
-    }
+  private questionRow(parent: HTMLElement, text: string): void {
+    const row = parent.createDiv({ cls: "goodobsidian-chat-msg is-user" });
+    row.createDiv({ cls: "goodobsidian-chat-bubble", text });
   }
 
-  /** Put a failed question back in the field, unless something new was typed meanwhile. */
-  private restore(question: string, typed: boolean): void {
-    if (!typed || !this.input || this.input.value.trim()) return;
-    this.input.value = question;
-    this.syncInput();
-  }
-
-  private setBusy(busy: boolean): void {
-    this.modalEl.toggleClass("is-busy", busy);
-    if (this.sendButton) this.sendButton.disabled = busy || !this.input?.value.trim();
-    if (this.newChatButton) this.newChatButton.disabled = busy;
-    for (const button of this.scopeButtons.values()) button.disabled = busy;
-    for (const chip of this.threadEl?.querySelectorAll("button") ?? []) chip.disabled = busy;
-  }
-
-  /** An answer's row: the assistant's mark and an empty body. */
-  private answerShell(): HTMLElement {
-    const row = this.threadEl!.createDiv({ cls: "goodobsidian-chat-msg is-ai" });
+  /** An answer's row: the assistant's mark and a body. */
+  private aiRow(parent: HTMLElement): { row: HTMLElement; body: HTMLElement } {
+    const row = parent.createDiv({ cls: "goodobsidian-chat-msg is-ai" });
     setIcon(row.createDiv({ cls: "goodobsidian-chat-avatar" }), "sparkles");
-    row.createDiv({ cls: "goodobsidian-chat-body" });
-    return row;
+    return { row, body: row.createDiv({ cls: "goodobsidian-chat-body" }) };
   }
 
   /** Three bouncing dots, and what is happening when there is something to say. */
-  private pending(answerEl: HTMLElement, text: string): HTMLElement {
-    const body = answerEl.querySelector<HTMLElement>(".goodobsidian-chat-body")!;
+  private pendingRow(parent: HTMLElement, status: string): void {
+    const { body } = this.aiRow(parent);
     const typing = body.createDiv({ cls: "goodobsidian-chat-typing" });
     typing.setAttribute("aria-label", "Thinking");
     for (let i = 0; i < 3; i++) typing.createSpan({ cls: "goodobsidian-chat-dot" });
-    return body.createDiv({ cls: "goodobsidian-chat-status", text });
+    body.createDiv({ cls: "goodobsidian-chat-status", text: status });
   }
 
-  private renderError(
-    answerEl: HTMLElement,
-    questionEl: HTMLElement,
-    question: string,
-    message: string,
-  ): void {
-    const body = answerEl.querySelector<HTMLElement>(".goodobsidian-chat-body")!;
-    body.empty();
-    answerEl.addClass("is-error");
+  private errorRow(parent: HTMLElement, question: string, message: string): void {
+    const { row, body } = this.aiRow(parent);
+    row.addClass("is-error");
     body.createDiv({ cls: "goodobsidian-chat-error", text: `Could not answer: ${message}` });
     const retry = body.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
     setIcon(retry.createSpan(), "rotate-ccw");
     retry.createSpan({ text: "Try again" });
-    retry.addEventListener("click", () => {
-      if (this.busy) return;
-      questionEl.remove();
-      answerEl.remove();
-      if (this.input?.value.trim() === question) {
-        this.input.value = "";
-        this.syncInput();
-      }
-      void this.submit(question);
-    });
+    retry.addEventListener("click", () => this.submit(question));
   }
 
-  private async renderAnswer(answerEl: HTMLElement, markdown: string): Promise<void> {
-    const body = answerEl.querySelector<HTMLElement>(".goodobsidian-chat-body")!;
-    body.empty();
+  private answerRow(parent: HTMLElement, markdown: string): HTMLElement {
+    const { row, body } = this.aiRow(parent);
     const text = body.createDiv({ cls: "goodobsidian-chat-markdown markdown-rendered" });
     if (this.component) {
-      await MarkdownRenderer.render(this.app, markdown, text, this.host.sourcePath, this.component);
+      void MarkdownRenderer.render(this.app, markdown, text, this.host.sourcePath, this.component);
     } else {
       text.setText(markdown);
     }
@@ -380,6 +394,30 @@ export class AskAiModal extends Modal {
         new Notice("Answer added to the page as a text box. Undo removes it.");
       }
     });
+    return row;
+  }
+
+  /** The saved chats of this notebook, as a menu; picking one continues it. */
+  private async showChats(event: MouseEvent): Promise<void> {
+    const anchor = this.chatsButton?.getBoundingClientRect();
+    const chats = await this.host.savedChats();
+    const menu = new Menu();
+    if (chats.length === 0) {
+      menu.addItem((item) =>
+        item.setTitle("No saved chats yet. Turn on Save chat to keep one.").setDisabled(true),
+      );
+    }
+    for (const chat of chats) {
+      menu.addItem((item) =>
+        item
+          .setTitle(`${chat.title}${chat.created ? ` · ${shortDate(chat.created)}` : ""}`)
+          .setIcon("message-square")
+          .setChecked(chat.path === this.session.savedPath)
+          .onClick(() => void this.host.openSaved(chat.path)),
+      );
+    }
+    if (anchor) menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
+    else menu.showAtMouseEvent(event);
   }
 
   /**
@@ -395,7 +433,18 @@ export class AskAiModal extends Modal {
   private scrollToAnswer(answerEl: HTMLElement): void {
     const thread = this.threadEl;
     if (!thread) return;
-    const fromTop = answerEl.offsetTop - 8;
-    thread.scrollTop = Math.min(fromTop, thread.scrollHeight);
+    thread.scrollTop = Math.min(answerEl.offsetTop - 8, thread.scrollHeight);
   }
+}
+
+/** "17 Oct" this year, "17 Oct 2025" before. */
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
