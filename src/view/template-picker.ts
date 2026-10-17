@@ -523,34 +523,67 @@ export class MyTemplatesSection {
     const summary = details.createEl("summary");
     setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
     summary.createSpan({ text: "My templates" });
-    const row = details.createDiv({ cls: "goodobsidian-templates-row" });
-    const action = (icon: string, label: string, run: (button: HTMLElement) => void): void => {
-      const button = row.createEl("button", {
-        cls: "goodobsidian-template-card is-large is-import clickable-icon",
-        attr: { "aria-label": label },
-      });
-      setIcon(button.createDiv({ cls: "goodobsidian-template-import-icon" }), icon);
-      button.createDiv({ cls: "goodobsidian-template-name", text: label });
-      // Straight from the tap: iPadOS opens a file picker only inside one.
-      button.addEventListener("click", () => run(button));
-    };
     const refresh = (added: boolean): void => {
       if (added && this.alive) void this.render();
     };
-    const browse = host.browseCommunity?.bind(host);
-    if (browse) {
-      action("globe", "Community…", () => {
-        void browse().then(refresh);
+    // Small buttons beside the title: + (bring templates in) and Share.
+    // Inside the summary, so a tap on them must not fold the section.
+    const tools = summary.createSpan({ cls: "goodobsidian-my-papers-tools" });
+    const tool = (icon: string, label: string): HTMLButtonElement => {
+      const button = tools.createEl("button", {
+        cls: "goodobsidian-my-papers-tool clickable-icon",
+        attr: { "aria-label": label, title: label },
+      });
+      setIcon(button, icon);
+      return button;
+    };
+    const add = tool("plus", "Add templates");
+    const share = host.shareTemplate?.bind(host);
+    if (share && entries.length > 0) {
+      tool("share-2", "Share a template").addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        share();
       });
     }
-    action("file-up", "From files…", (button) => {
-      void host.importFile(button).then(refresh);
+    // The + opens a small list of its own buttons, not an Obsidian menu:
+    // From files… must open the system picker inside the tap itself.
+    const list = this.el.createDiv({ cls: "goodobsidian-my-papers-add is-hidden" });
+    const close = (): void => {
+      list.addClass("is-hidden");
+      activeDocument.removeEventListener("pointerdown", outside, true);
+    };
+    const outside = (event: PointerEvent): void => {
+      const target = event.target as Node | null;
+      if (target && (list.contains(target) || add.contains(target))) return;
+      close();
+    };
+    const item = (icon: string, label: string, run: (button: HTMLElement) => void): void => {
+      const button = list.createEl("button", {
+        cls: "goodobsidian-my-papers-add-item clickable-icon",
+      });
+      setIcon(button.createSpan({ cls: "goodobsidian-my-papers-add-icon" }), icon);
+      button.createSpan({ text: label });
+      button.addEventListener("click", () => {
+        close();
+        run(button);
+      });
+    };
+    const browse = host.browseCommunity?.bind(host);
+    if (browse) item("globe", "Community templates…", () => void browse().then(refresh));
+    item("file-up", "From files…", (button) => void host.importFile(button).then(refresh));
+    item("folder-open", "From vault…", () => void host.importFromVault().then(refresh));
+    add.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!list.hasClass("is-hidden")) {
+        close();
+        return;
+      }
+      list.removeClass("is-hidden");
+      activeDocument.addEventListener("pointerdown", outside, true);
     });
-    action("folder-open", "From vault…", () => {
-      void host.importFromVault().then(refresh);
-    });
-    const share = host.shareTemplate?.bind(host);
-    if (share && entries.length > 0) action("share-2", "Share…", () => share());
+    const row = details.createDiv({ cls: "goodobsidian-templates-row" });
     for (const entry of entries) {
       const pages = counts.get(entry.path) ?? 1;
       const name =
@@ -574,9 +607,7 @@ export class MyTemplatesSection {
     if (entries.length === 0) {
       row.createDiv({
         cls: "goodobsidian-my-papers-empty",
-        text: browse
-          ? "Find one in the community gallery, or bring in a PDF or picture: every page of it is a paper here."
-          : "Bring in a PDF or a picture once, and every page of it is a paper here.",
+        text: "Tap + to bring in a PDF or picture, or to find one in the community gallery: every page of it is a paper here.",
       });
     }
     this.sync();

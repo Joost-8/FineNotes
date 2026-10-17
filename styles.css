@@ -8948,3 +8948,65 @@ button.goodobsidian-template-card-more.clickable-icon {
   color: var(--text-muted);
   --icon-size: 16px;
 }
+
+/* My templates' header: + (add templates) and Share, small, beside the title,
+   and the list the + opens (template-picker.ts MyTemplatesSection). */
+.goodobsidian-my-papers {
+  position: relative;
+}
+
+.goodobsidian-my-papers-tools {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+button.goodobsidian-my-papers-tool.clickable-icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  --icon-size: 16px;
+}
+
+.goodobsidian-my-papers-add {
+  position: absolute;
+  z-index: 5;
+  top: 40px;
+  left: 120px;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-l, 12px);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+}
+
+.goodobsidian-my-papers-add.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-my-papers-add-item.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 10px;
+  border-radius: var(--gob-radius-s, 6px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-my-papers-add-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+  --icon-size: 16px;
+}
