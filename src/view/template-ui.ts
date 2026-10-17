@@ -143,6 +143,8 @@ export class TemplateGalleryModal extends Modal {
     private readonly install: (entry: GalleryEntry) => void,
     /** Open a creator's shop, for a template sold there. */
     private readonly openShop: (url: string) => void = (url) => window.open(url),
+    /** The gallery closed, after an install or without one. */
+    private readonly onClosed?: () => void,
   ) {
     super(app);
   }
@@ -238,5 +240,6 @@ export class TemplateGalleryModal extends Modal {
   override onClose(): void {
     this.listEl = null;
     this.contentEl.empty();
+    this.onClosed?.();
   }
 }

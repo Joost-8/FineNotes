@@ -3241,6 +3241,7 @@ export class InkView extends TextFileView {
           highlighterAlpha: this.settings.highlighterAlpha,
         });
       },
+      () => this.plugin.openTemplateGallery(),
     );
   }
 

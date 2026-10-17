@@ -446,6 +446,140 @@ export interface PaperLibraryHost {
   importFile(host: HTMLElement): Promise<boolean>;
   /** Import a PDF or picture already in the vault. True when papers were added. */
   importFromVault(): Promise<boolean>;
+  /** Browse the community template gallery. True when papers were added from it. */
+  browseCommunity?(): Promise<boolean>;
+}
+
+export interface MyTemplatesOptions {
+  host: PaperLibraryHost;
+  /**
+   * A card per template file, not per page: a new notebook takes a whole
+   * template (every page of a planner). The entry chosen is its first page.
+   */
+  wholeFiles?: boolean;
+  previewWidth?: number;
+  onChoose: (entry: PaperEntry) => void;
+  onActivate?: (entry: PaperEntry) => void;
+}
+
+/**
+ * "My templates" (`model/paper-library.ts`): a section like the built-in
+ * ones, with cards to bring templates in (from the device, from the vault,
+ * from the community gallery) and a card for each paper. Used by the
+ * template picker and the New notebook dialog.
+ */
+export class MyTemplatesSection {
+  readonly el: HTMLElement;
+  private cards: Array<{ entry: PaperEntry; root: HTMLElement; canvas: HTMLCanvasElement }> = [];
+  private chosen: PaperEntry | null = null;
+  private alive = true;
+
+  constructor(
+    parent: HTMLElement,
+    private readonly options: MyTemplatesOptions,
+  ) {
+    this.el = parent.createDiv({ cls: "goodobsidian-my-papers" });
+    void this.render();
+  }
+
+  /** Show `entry` as chosen, or none. */
+  select(entry: PaperEntry | null): void {
+    this.chosen = entry;
+    this.sync();
+  }
+
+  /** Repaint the previews of `path`'s pages: one of its PDF pages has rendered. */
+  paperReady(path: string): void {
+    const width = this.options.previewWidth ?? PREVIEW_WIDTH;
+    for (const card of this.cards) {
+      if (card.entry.path === path) this.options.host.paint(card.canvas, card.entry, width);
+    }
+  }
+
+  /** Stop drawing: the dialog closed. */
+  dispose(): void {
+    this.alive = false;
+  }
+
+  private async render(): Promise<void> {
+    const { host } = this.options;
+    const width = this.options.previewWidth ?? PREVIEW_WIDTH;
+    const all = await host.list().catch(() => [] as PaperEntry[]);
+    if (!this.alive) return;
+    // A whole template: the first page of each file, with its page count.
+    const counts = new Map<string, number>();
+    for (const entry of all) counts.set(entry.path, (counts.get(entry.path) ?? 0) + 1);
+    const entries = this.options.wholeFiles ? all.filter((entry) => entry.page === 0) : all;
+    this.el.empty();
+    this.cards = [];
+    const details = this.el.createEl("details", { cls: "goodobsidian-templates-section" });
+    details.open = true;
+    const summary = details.createEl("summary");
+    setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
+    summary.createSpan({ text: "My templates" });
+    const row = details.createDiv({ cls: "goodobsidian-templates-row" });
+    const action = (icon: string, label: string, run: (button: HTMLElement) => void): void => {
+      const button = row.createEl("button", {
+        cls: "goodobsidian-template-card is-large is-import clickable-icon",
+        attr: { "aria-label": label },
+      });
+      setIcon(button.createDiv({ cls: "goodobsidian-template-import-icon" }), icon);
+      button.createDiv({ cls: "goodobsidian-template-name", text: label });
+      // Straight from the tap: iPadOS opens a file picker only inside one.
+      button.addEventListener("click", () => run(button));
+    };
+    const refresh = (added: boolean): void => {
+      if (added && this.alive) void this.render();
+    };
+    const browse = host.browseCommunity?.bind(host);
+    if (browse) {
+      action("globe", "Community…", () => {
+        void browse().then(refresh);
+      });
+    }
+    action("file-up", "From files…", (button) => {
+      void host.importFile(button).then(refresh);
+    });
+    action("folder-open", "From vault…", () => {
+      void host.importFromVault().then(refresh);
+    });
+    for (const entry of entries) {
+      const pages = counts.get(entry.path) ?? 1;
+      const name =
+        this.options.wholeFiles && pages > 1
+          ? `${entry.name.replace(/ · 1$/, "")} · ${pages} pages`
+          : entry.name;
+      const root = row.createEl("button", {
+        cls: "goodobsidian-template-card is-large clickable-icon",
+        attr: { "aria-label": name, title: name },
+      });
+      const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
+      root.createDiv({ cls: "goodobsidian-template-name", text: name });
+      root.addEventListener("click", () => this.options.onChoose(entry));
+      root.addEventListener("dblclick", () => this.options.onActivate?.(entry));
+      this.cards.push({ entry, root, canvas });
+      host.paint(canvas, entry, width);
+    }
+    if (entries.length === 0) {
+      row.createDiv({
+        cls: "goodobsidian-my-papers-empty",
+        text: browse
+          ? "Find one in the community gallery, or bring in a PDF or picture: every page of it is a paper here."
+          : "Bring in a PDF or a picture once, and every page of it is a paper here.",
+      });
+    }
+    this.sync();
+  }
+
+  private sync(): void {
+    const chosen = this.chosen;
+    for (const card of this.cards) {
+      const on =
+        chosen !== null && card.entry.path === chosen.path && card.entry.page === chosen.page;
+      card.root.toggleClass("is-selected", on);
+      card.root.setAttribute("aria-pressed", String(on));
+    }
+  }
 }
 
 export interface TemplatePickerOptions {
@@ -475,9 +609,7 @@ export class TemplatePickerModal extends Modal {
   private grid: TemplateGrid | null = null;
   /** The paper from My templates chosen, if one is (it wins over the ruling). */
   private paper: PaperEntry | null = null;
-  private papersEl: HTMLElement | null = null;
-  private paperCards: Array<{ entry: PaperEntry; root: HTMLElement; canvas: HTMLCanvasElement }> =
-    [];
+  private papers: MyTemplatesSection | null = null;
 
   constructor(
     app: App,
@@ -533,9 +665,15 @@ export class TemplatePickerModal extends Modal {
     });
     // My templates first, in the same scrolling list as the built-in papers.
     if (this.options.papers) {
-      this.papersEl = createDiv({ cls: "goodobsidian-my-papers" });
-      this.grid.el.prepend(this.papersEl);
-      void this.renderPapers();
+      this.papers = new MyTemplatesSection(createDiv(), {
+        host: this.options.papers,
+        onChoose: (entry) => this.choosePaper(entry),
+        onActivate: (entry) => {
+          this.choosePaper(entry);
+          this.apply();
+        },
+      });
+      this.grid.el.prepend(this.papers.el);
     }
 
     const footer = contentEl.createDiv({ cls: "goodobsidian-templates-footer" });
@@ -551,8 +689,8 @@ export class TemplatePickerModal extends Modal {
 
   override onClose(): void {
     this.grid = null;
-    this.papersEl = null;
-    this.paperCards = [];
+    this.papers?.dispose();
+    this.papers = null;
     this.styleEl = null;
     this.contentEl.empty();
   }
@@ -689,91 +827,15 @@ export class TemplatePickerModal extends Modal {
     return button;
   }
 
-  /**
-   * My templates: a section like the built-in ones, with a card for each
-   * paper and two to bring more in, from the device or from the vault.
-   */
-  private async renderPapers(): Promise<void> {
-    const host = this.options.papers;
-    const el = this.papersEl;
-    if (!host || !el) return;
-    const entries = await host.list().catch(() => [] as PaperEntry[]);
-    if (this.papersEl !== el) return;
-    el.empty();
-    this.paperCards = [];
-    const details = el.createEl("details", { cls: "goodobsidian-templates-section" });
-    details.open = true;
-    const summary = details.createEl("summary");
-    setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
-    summary.createSpan({ text: "My templates" });
-    const row = details.createDiv({ cls: "goodobsidian-templates-row" });
-    const action = (icon: string, label: string, run: (button: HTMLElement) => void): void => {
-      const button = row.createEl("button", {
-        cls: "goodobsidian-template-card is-large is-import clickable-icon",
-        attr: { "aria-label": label },
-      });
-      setIcon(button.createDiv({ cls: "goodobsidian-template-import-icon" }), icon);
-      button.createDiv({ cls: "goodobsidian-template-name", text: label });
-      // Straight from the tap: iPadOS opens a file picker only inside one.
-      button.addEventListener("click", () => run(button));
-    };
-    const refresh = (added: boolean): void => {
-      if (added) void this.renderPapers();
-    };
-    action("file-up", "From files…", (button) => {
-      void host.importFile(button).then(refresh);
-    });
-    action("folder-open", "From vault…", () => {
-      void host.importFromVault().then(refresh);
-    });
-    for (const entry of entries) {
-      const root = row.createEl("button", {
-        cls: "goodobsidian-template-card is-large clickable-icon",
-        attr: { "aria-label": entry.name, title: entry.name },
-      });
-      const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
-      root.createDiv({ cls: "goodobsidian-template-name", text: entry.name });
-      root.addEventListener("click", () => this.choosePaper(entry));
-      root.addEventListener("dblclick", () => {
-        this.choosePaper(entry);
-        this.apply();
-      });
-      this.paperCards.push({ entry, root, canvas });
-      host.paint(canvas, entry, PREVIEW_WIDTH);
-    }
-    if (entries.length === 0) {
-      row.createDiv({
-        cls: "goodobsidian-my-papers-empty",
-        text: "Bring in a PDF or a picture once, and every page of it is a paper here.",
-      });
-    }
-    this.syncPapers();
-  }
-
   /** Repaint the previews of `path`'s pages: one of its PDF pages has rendered. */
   paperReady(path: string): void {
-    const host = this.options.papers;
-    if (!host) return;
-    for (const card of this.paperCards) {
-      if (card.entry.path === path) host.paint(card.canvas, card.entry, PREVIEW_WIDTH);
-    }
+    this.papers?.paperReady(path);
   }
 
   private choosePaper(entry: PaperEntry | null): void {
     this.paper = entry;
     this.grid?.setDimmed(entry !== null);
-    this.syncPapers();
-  }
-
-  private syncPapers(): void {
-    for (const card of this.paperCards) {
-      const on =
-        this.paper !== null &&
-        card.entry.path === this.paper.path &&
-        card.entry.page === this.paper.page;
-      card.root.toggleClass("is-selected", on);
-      card.root.setAttribute("aria-pressed", String(on));
-    }
+    this.papers?.select(entry);
   }
 
   private apply(): void {

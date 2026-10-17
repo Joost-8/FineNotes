@@ -29,7 +29,13 @@ import { COVER_COLORS, sizeGeometry } from "../model/templates";
 import { CoverPicker } from "./cover-picker";
 import { FolderSuggestModal } from "./folder-suggest";
 import { type ScrollSnapshot, captureScroll, holdScroll, keyboardGone } from "./scroll-hold";
-import { PaperControls, TemplateGrid } from "./template-picker";
+import type { PaperEntry } from "../model/paper-library";
+import {
+  MyTemplatesSection,
+  type PaperLibraryHost,
+  PaperControls,
+  TemplateGrid,
+} from "./template-picker";
 
 export interface NewNotebookRequest {
   /** As typed; the plugin cleans it and derives the file name. */
@@ -37,9 +43,15 @@ export interface NewNotebookRequest {
   choices: NotebookChoices;
   /** Vault folder path; "" is the root. */
   folder: string;
+  /** A template from My templates, chosen instead of a paper: every page of it. */
+  template?: PaperEntry;
 }
 
 export interface NewNotebookOptions {
+  /** My templates, with the community gallery, when the host has them. */
+  papers?: PaperLibraryHost;
+  /** The dialog closed, whatever it did. */
+  onClosed?: () => void;
   /** Preselected: the choices made last time. */
   choices: NotebookChoices;
   /** Preselected folder: the setting, or the active file's folder. */
@@ -154,7 +166,10 @@ export class NewNotebookModal extends Modal {
     this.releaseCap();
     this.coverPicker = null;
     this.grid = null;
+    this.templates?.dispose();
+    this.templates = null;
     this.contentEl.empty();
+    this.options.onClosed?.();
   }
 
   // --- Sections ---------------------------------------------------------------
@@ -261,20 +276,51 @@ export class NewNotebookModal extends Modal {
         this.repaint();
       },
     });
+    // My templates first: a whole template (a planner's every page) instead of one paper.
+    const papers = this.options.papers;
+    if (papers) {
+      this.templates = new MyTemplatesSection(section, {
+        host: papers,
+        wholeFiles: true,
+        previewWidth: PREVIEW_WIDTH,
+        onChoose: (entry) => this.chooseTemplate(entry),
+        onActivate: (entry) => {
+          this.chooseTemplate(entry);
+          this.create();
+        },
+      });
+    }
     this.grid = new TemplateGrid(section, {
       selected: this.choices.ruling,
       open: "selected",
       previewWidth: PREVIEW_WIDTH,
       onSelect: (ruling: Ruling) => {
         this.choices.ruling = ruling;
+        this.chooseTemplate(null);
       },
       onActivate: (ruling: Ruling) => {
         this.choices.ruling = ruling;
+        this.chooseTemplate(null);
         this.create();
       },
     });
     this.grid.el.addClass("is-inline");
   }
+
+  /** A template from My templates (null: the paper picked in the grid). */
+  private chooseTemplate(entry: PaperEntry | null): void {
+    this.template = entry;
+    this.grid?.setDimmed(entry !== null);
+    this.templates?.select(entry);
+  }
+
+  /** Repaint My templates' previews of `path`: one of its PDF pages has rendered. */
+  paperReady(path: string): void {
+    this.templates?.paperReady(path);
+  }
+
+  private templates: MyTemplatesSection | null = null;
+  private template: PaperEntry | null = null;
 
   /** The folder it is made in, as a chip beside the import link: tap to choose another. */
   private buildFolder(parent: HTMLElement): void {
@@ -360,6 +406,7 @@ export class NewNotebookModal extends Modal {
       choices: { ...this.choices },
       folder: this.folder,
     };
+    if (this.template) request.template = this.template;
     this.close();
     this.options.onCreate(request);
   }

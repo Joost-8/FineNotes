@@ -109,10 +109,15 @@ import {
 import { WelcomeModal } from "./view/welcome-modal";
 import { saveImageAttachment } from "./view/image-import";
 import { VaultPaperLibrary } from "./view/paper-library-host";
+import { PdfBackdropCache } from "./view/pdf-backdrop";
+import { VaultBackdropRenderer } from "./view/backdrop-renderer";
+import { thumbnailRasterScale } from "./view/page-sidebar";
+import { renderPageThumbnail } from "./canvas/renderer";
+import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-library";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
-import type { AttachmentFolders, InkDocument } from "./model/document";
+import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { HandwritingReader } from "./view/handwriting";
@@ -1306,7 +1311,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * listed; a chosen paper goes into My templates, a notebook template opens
    * as a new notebook.
    */
-  async openTemplateGallery(): Promise<void> {
+  async openTemplateGallery(): Promise<boolean> {
     // Empty means FineNotes' own gallery; another address is another gallery.
     const url = this.settings.templateGalleryUrl.trim() || DEFAULT_GALLERY_URL;
     if (!/^https:\/\//i.test(url)) {
@@ -1314,19 +1319,38 @@ export default class GoodObsidianPlugin extends Plugin {
         "FineNotes: a template gallery's address must start with https:// (Settings → Pages and notebooks).",
         8000,
       );
-      return;
+      return false;
     }
     let entries: GalleryEntry[];
     try {
       entries = readGalleryIndex((await requestUrl({ url })).json);
     } catch (error) {
       new Notice(`FineNotes: couldn't read the template gallery — ${errorMessage(error)}`, 8000);
-      return;
+      return false;
     }
-    new TemplateGalleryModal(this.app, entries, (entry) => void this.installTemplate(entry)).open();
+    // Settles once the gallery is closed: true when a paper went into My templates.
+    return new Promise<boolean>((resolve) => {
+      let installing: Promise<boolean> | null = null;
+      new TemplateGalleryModal(
+        this.app,
+        entries,
+        (entry) => {
+          installing = this.installTemplate(entry);
+        },
+        undefined,
+        () => {
+          // An install closes the gallery first, then downloads.
+          window.setTimeout(() => {
+            if (installing) void installing.then(resolve, () => resolve(false));
+            else resolve(false);
+          }, 0);
+        },
+      ).open();
+    });
   }
 
-  private async installTemplate(entry: GalleryEntry): Promise<void> {
+  /** Add a gallery template: a paper to My templates, a notebook as a new notebook. True for a paper added. */
+  private async installTemplate(entry: GalleryEntry): Promise<boolean> {
     const progress = new Notice(`FineNotes: downloading “${entry.name}”…`, 0);
     try {
       const bytes = (await requestUrl({ url: entry.download })).arrayBuffer;
@@ -1339,8 +1363,7 @@ export default class GoodObsidianPlugin extends Plugin {
           () => undefined,
         );
         const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
-        await library.addFile(bytes, `${entry.name}.${ext}`);
-        return;
+        return await library.addFile(bytes, `${entry.name}.${ext}`);
       }
       const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
@@ -1350,8 +1373,10 @@ export default class GoodObsidianPlugin extends Plugin {
       if (existing) await this.app.vault.modifyBinary(existing, bytes);
       else await this.app.vault.createBinary(path, bytes);
       this.openImportNotebook("", [{ name, read: () => Promise.resolve(bytes) }]);
+      return false;
     } catch (error) {
       new Notice(`FineNotes: couldn't download that template — ${errorMessage(error)}`, 8000);
+      return false;
     } finally {
       progress.hide();
     }
@@ -1416,16 +1441,91 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
   openNewNotebookDialog(folder?: string): void {
-    new NewNotebookModal(this.app, {
+    // My templates' previews: a PDF cache of the dialog's own, let go when it closes.
+    const cache = new PdfBackdropCache(this.app);
+    const painter = new VaultBackdropRenderer(cache);
+    painter.setDeviceScale(thumbnailRasterScale(window.devicePixelRatio || 1));
+    const library = this.paperLibrary((canvas, backdrop, geometry, cssWidth) => {
+      const page: Page = {
+        id: "paper",
+        kind: "ink",
+        geometry,
+        backdrop,
+        strokes: [],
+        images: [],
+        textBoxes: [],
+      };
+      renderPageThumbnail(canvas, page, painter, cssWidth, window.devicePixelRatio || 1, {
+        usePressure: false,
+        highlighterAlpha: this.settings.highlighterAlpha,
+      });
+    });
+    const modal = new NewNotebookModal(this.app, {
       choices: parseNotebookChoices(this.settings.lastNotebookChoices),
       folder: folder ?? this.newNotebookFolder(),
+      papers: library,
+      onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
-      onCreate: ({ title, choices, folder }) => {
+      onCreate: ({ title, choices, folder, template }) => {
         this.settings.lastNotebookChoices = { ...choices };
         void this.saveSettings();
-        void this.createNotebook(title, choices, folder);
+        if (template)
+          void this.createNotebookFromTemplate(title, choices, folder, template, library);
+        else void this.createNotebook(title, choices, folder);
       },
-    }).open();
+    });
+    cache.onReady = (path) => modal.paperReady(path);
+    modal.open();
+  }
+
+  /** My templates, painting previews with `paint`, and with the community gallery. */
+  private paperLibrary(
+    paint: ConstructorParameters<typeof VaultPaperLibrary>[2] = () => undefined,
+  ): VaultPaperLibrary {
+    return new VaultPaperLibrary(
+      this.app,
+      () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+      paint,
+      () => this.openTemplateGallery(),
+    );
+  }
+
+  /**
+   * A new notebook made of a template from My templates: the cover chosen,
+   * then every page of the template's PDF, which is copied beside the
+   * notebook first (a notebook keeps its own files, Joost 2026-10-17), so its
+   * links work and deleting the template never blanks it.
+   */
+  private async createNotebookFromTemplate(
+    title: string,
+    choices: NotebookChoices,
+    folder: string,
+    template: PaperEntry,
+    library: VaultPaperLibrary,
+  ): Promise<void> {
+    const source = this.app.vault.getFileByPath(template.path);
+    if (!source) {
+      new Notice("FineNotes: that template's file is gone from the vault.");
+      return;
+    }
+    const sizes = (await library.list())
+      .filter((entry) => entry.path === template.path)
+      .sort((a, b) => a.page - b.page)
+      .map(({ width, height }) => ({ width, height }));
+    const bytes = await this.app.vault.readBinary(source);
+    await this.createNotebook(title, choices, folder, async (heading, attachments, home) => {
+      const dir = attachments?.images ?? home;
+      if (dir && !this.app.vault.getFolderByPath(dir)) {
+        await this.app.vault.createFolder(dir).catch(() => undefined);
+      }
+      const stem = `${PAPER_COPY_PREFIX}${paperName(template.path)}`;
+      let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
+      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+        path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
+      }
+      await this.app.vault.createBinary(path, bytes);
+      return buildPdfNotebook(choices, heading, attachments, path, sizes);
+    });
   }
 
   /**
@@ -1472,10 +1572,13 @@ export default class GoodObsidianPlugin extends Plugin {
     title: string,
     choices: NotebookChoices,
     folder?: string,
-    build: (heading: string, attachments?: AttachmentFolders) => InkDocument = (
-      heading,
-      attachments,
-    ) => buildNewDocument(choices, heading, attachments),
+    /** The notebook, given its title, its own folders and the folder it is made in. */
+    build: (
+      heading: string,
+      attachments: AttachmentFolders | undefined,
+      folder: string,
+    ) => InkDocument | Promise<InkDocument> = (heading, attachments) =>
+      buildNewDocument(choices, heading, attachments),
     ownFolder = this.settings.notebookOwnFolder,
   ): Promise<TFile | null> {
     const dir = normalizeFolder(folder ?? this.newNotebookFolder());
@@ -1490,7 +1593,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const heading = cleanTitle(title) || stripInkSuffix(name);
       const content = buildInkFile(
         newNoteBody(heading, new Date().toISOString()),
-        build(heading, paths.attachments),
+        await build(heading, paths.attachments, paths.folder),
       );
       const file = await this.app.vault.create(
         normalizePath(joinVaultPath(paths.folder, name)),

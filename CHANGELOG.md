@@ -24,6 +24,11 @@ extracted from the matching section of this file by `release.yml`.
   is on, including papers from My templates.
 - **Save page as template**, in the ⋯ panel and the command palette: the
   page as it looks becomes a paper in My templates.
+- **Community templates where you choose paper.** My templates, in the
+  template picker and now also in the New notebook dialog, opens with a
+  Community… card for the gallery. In New notebook a template is a whole
+  notebook: the cover you chose, then every page of the template, its links
+  working.
 - **FineNotes' own template gallery**, on GitHub
   ([Joost-8/FineNotes-templates](https://github.com/Joost-8/FineNotes-templates)):
   Browse template gallery opens it unless another gallery is set, with a

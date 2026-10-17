@@ -46,7 +46,13 @@ export class VaultPaperLibrary implements PaperLibraryHost {
       geometry: PageGeometry,
       cssWidth: number,
     ) => void,
-  ) {}
+    /** Open the community gallery; true when it added papers. */
+    browse?: () => Promise<boolean>,
+  ) {
+    if (browse) this.browseCommunity = browse;
+  }
+
+  browseCommunity?: () => Promise<boolean>;
 
   get folder(): string {
     return normalizePath(papersFolderOf(this.templateFolder()));
