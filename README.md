@@ -401,14 +401,22 @@ handwriting. It is open source (Apache 2.0) at
 4. To generate pictures with Claude or a custom endpoint, choose OpenAI,
    Google or OpenRouter under **Image generation** and add that key.
 
-The **AI** button then offers **Transcribe this page**, **Transcribe whole
-notebook**, **Transcribe recording…**, **Ask about this page…**, **Ask about
-this notebook…** and **Generate image…**. A greyed-out entry says what it
-needs. The first request asks once whether to send; tap **Send**.
+The **AI** button then offers **Ask…**, **Generate image…** and **Transcribe
+recording…**. A greyed-out entry says what it needs. The first request asks
+once whether to send; tap **Send**.
+
+**Ask** is a chat about your notes, in a window or a sidebar beside the page.
+Pick up to 10 pages to send (the page you are on is picked), attach PDFs,
+pictures or text files, and keep a chat in the notebook's AI chats folder
+with **Save chat**. While it answers, the AI can use the notebook: read
+other pages, search its text, add a text box or a page, go to a page, and
+put a drawing on a page; each change can be undone. An answer can be put on
+the page with **Insert as text box**, and a drawing in it with **Insert on
+page**. With a custom endpoint, the tools depend on your server and model:
+see [SELF_HOSTING.md](SELF_HOSTING.md#ask-with-a-local-model-notebook-tools).
 
 Transcriptions go into the note's text layer, one heading per page, which
-opens under the pages so you can correct it. An answer from **Ask** can be
-put on the page with **Insert as text box**.
+opens under the pages so you can correct it.
 
 To transcribe as you go, set **Handwriting recognition** to **Cloud AI** and
 switch on **Recognize automatically**: the page you are on is transcribed

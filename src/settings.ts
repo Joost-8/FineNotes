@@ -231,7 +231,9 @@ const DESC = {
   endpoint:
     "The base URL of an OpenAI-compatible server, with /v1 if the server uses it. Ollama, " +
     "LM Studio, llama.cpp, vLLM and LocalAI all work; SELF_HOSTING.md in the plugin's " +
-    "repository walks through the setup.",
+    "repository walks through the setup. For Ask to read pages, pick a vision model; for " +
+    "it to use the notebook (search, add text boxes and pages, draw), the model and server " +
+    "must support tool calling (llama.cpp: start it with --jinja).",
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",

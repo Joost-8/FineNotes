@@ -3,7 +3,9 @@
 FineNotes's **Custom endpoint** vendor points Cloud AI recognition at any
 OpenAI-compatible server you run yourself — your ink is rendered to an image
 and sent to _your_ machine instead of a cloud provider, so it never leaves
-your own network. This guide covers the common setups.
+your own network. This guide covers the common setups, and what **Ask** and
+its notebook tools need from a local model
+([Ask with a local model](#ask-with-a-local-model-notebook-tools)).
 
 > **Read the [quality expectations](#quality-expectations-read-this-first)
 > section first.** Self-hosting trades recognition quality for privacy, and
@@ -101,6 +103,64 @@ such services:
   selection, or pick a non-reasoning model.
 - Prices and model lists on experimental services change without notice, and
   a model that disappears comes back as that same 403.
+
+## Ask with a local model (notebook tools)
+
+**Ask** works with a custom endpoint as well: it sends the pages you pick, as
+images, with your question. On top of that, the AI can use the notebook
+itself while it answers: read other pages, search the notebook's text, add a
+text box or a page, go to a page, and put a drawing on a page. FineNotes
+offers these as tools in the OpenAI format, and the model decides when to
+call them. Every change is one step on the undo history.
+
+Whether that works with your setup depends on two things.
+
+**1. The server must accept tools.** The common ones do, with the right
+model or flag:
+
+| Server                     | Tools                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| Ollama                     | Yes, for models tagged _tools_ on ollama.com (Qwen 2.5/3, Llama 3.1+, Mistral, …)           |
+| LM Studio                  | Yes, for models it marks as tool-capable                                                    |
+| llama.cpp (`llama-server`) | Yes, when started with `--jinja`                                                            |
+| vLLM                       | Yes, when started with `--enable-auto-tool-choice` and a `--tool-call-parser` for the model |
+| LocalAI                    | Depends on the backend and model                                                            |
+
+A server that refuses tools does no harm: FineNotes asks again without them,
+and the model answers from the pages you picked, as a plain chat.
+
+**2. The model must be up to it.**
+
+- **To read pages it needs to see.** Reading handwriting (the pages you pick,
+  and the `read_pages` tool) takes a vision model: Qwen2.5-VL / Qwen3-VL,
+  Gemma 3 or 4, Llama 3.2 Vision. A text-only model can still search, add
+  text boxes and pages, and go to a page.
+- **Small models (2–8B)** call one simple tool reliably (go to page 4, add a
+  text box) but stumble on tasks of several steps, and their drawings are
+  crude.
+- **Medium models (around 14–32B)**, such as Qwen 3 or Gemma 27B, are much
+  steadier at chaining tools.
+- **Thinking models** are fine: FineNotes reads the answer, and a server's
+  `reasoning_content` is not sent back.
+
+**To check a server before trying it in FineNotes**, ask it for one tool call
+(change the URL and model to yours):
+
+```sh
+curl http://localhost:11434/v1/chat/completions -H "content-type: application/json" -d '{
+  "model": "qwen3:8b",
+  "messages": [{ "role": "user", "content": "Go to page 4 of my notebook." }],
+  "tools": [{ "type": "function", "function": {
+    "name": "go_to_page", "description": "Show a page of the notebook.",
+    "parameters": { "type": "object", "properties": { "page": { "type": "integer" } },
+                    "required": ["page"] } } }]
+}'
+```
+
+A reply whose message holds `tool_calls` with `go_to_page` and `{"page":4}`
+means tools work. A reply with only text means the model ignored the tool
+(try a tool-capable model); an error means the server does not take tools
+(see the table above).
 
 ## Reaching your server from an iPad
 
