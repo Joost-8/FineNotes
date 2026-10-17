@@ -222,6 +222,78 @@ describe("askAiWithTools", () => {
     expect(all[ASK_MAX_TOOL_ROUNDS - 1].tool_choice).toBeUndefined();
     expect(all[ASK_MAX_TOOL_ROUNDS].tool_choice).toEqual({ type: "none" });
   });
+  it("runs the same loop for OpenAI and Gemini, in their own formats", async () => {
+    const google = { vendor: "google" as const, model: "g", apiKey: "AIza", baseUrl: "" };
+    const cases = [
+      {
+        config: openai,
+        replies: [
+          {
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "c1",
+                      type: "function",
+                      function: { name: "go_to_page", arguments: '{"page":2}' },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          },
+          { choices: [{ message: { content: "Showing page 2." }, finish_reason: "stop" }] },
+        ],
+        list: "messages",
+      },
+      {
+        config: google,
+        replies: [
+          {
+            candidates: [
+              {
+                content: {
+                  role: "model",
+                  parts: [{ functionCall: { name: "go_to_page", args: { page: 2 } } }],
+                },
+              },
+            ],
+          },
+          {
+            candidates: [
+              { content: { parts: [{ text: "Showing page 2." }] }, finishReason: "STOP" },
+            ],
+          },
+        ],
+        list: "contents",
+      },
+    ];
+    for (const { config, replies, list } of cases) {
+      sent = [];
+      const queue = [...replies];
+      answer = () => Promise.resolve(response(200, queue.shift()));
+      const result = await askAiWithTools(config, "sys", question, {
+        totalPages: () => 3,
+        run: () => Promise.resolve({ text: "Showing page 2.", done: "Went to page 2" }),
+        onStatus: () => undefined,
+      });
+      expect(result, config.vendor).toEqual({
+        text: "Showing page 2.",
+        actions: ["Went to page 2"],
+      });
+      const [first, second] = bodies();
+      expect(first.tools, config.vendor).toEqual(second.tools);
+      const before = first[list] as unknown[];
+      const after = second[list] as unknown[];
+      // Append-only: the first request's history is the start of the second's.
+      expect(after.slice(0, before.length), config.vendor).toEqual(before);
+      expect(after.length, config.vendor).toBeGreaterThan(before.length);
+    }
+  });
 });
 
 describe("sendVendorRequest", () => {

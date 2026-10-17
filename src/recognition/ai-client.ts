@@ -22,18 +22,11 @@ import {
   describeLlmTarget,
   extractLlmErrorMessage,
   extractLlmText,
-  isRecord,
   isTruncatedLlmResponse,
 } from "./llm-request";
 import { type ChatImage, type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
-import {
-  ASK_MAX_TOOL_ROUNDS,
-  ASK_TOOLS,
-  type AskToolCall,
-  parseToolCall,
-  toolStatus,
-  toolUsesOf,
-} from "./ask-tools";
+import { ASK_MAX_TOOL_ROUNDS, type AskToolCall, parseToolCall, toolStatus } from "./ask-tools";
+import { TOOL_DIALECTS, type ToolResult } from "./ask-tool-dialects";
 import {
   DEFAULT_IMAGE_MODELS,
   type ImageAspect,
@@ -262,7 +255,8 @@ export interface AskAnswer {
 }
 
 /**
- * One answer from Claude with the notebook tools (`ask-tools.ts`): the
+ * One answer with the notebook tools (`ask-tools.ts`), from any vendor in
+ * its own format (`ask-tool-dialects.ts`): the
  * question goes with the tools; while Claude asks for tool calls, each is
  * run (`run`) and the results go back, until it answers in words, or after
  * `ASK_MAX_TOOL_ROUNDS` rounds, when it is asked to answer with what it has.
@@ -292,24 +286,19 @@ export async function askAiWithTools(
     turns,
     cache: true,
   });
-  const baseBody = base.body as { messages: unknown[] };
+  const baseBody = base.body as Record<string, unknown>;
+  const dialect = TOOL_DIALECTS[VENDORS[config.vendor].dialect];
   const label = targetLabel(config);
   const more: unknown[] = [];
   const actions: string[] = [];
   for (let round = 0; ; round++) {
-    const body = {
-      ...baseBody,
-      tools: ASK_TOOLS,
-      // Out of rounds: answer now, with what has been found.
-      ...(round >= ASK_MAX_TOOL_ROUNDS ? { tool_choice: { type: "none" } } : {}),
-      messages: [...baseBody.messages, ...more],
-    };
+    // Out of rounds: answer now, with what has been found.
+    const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
     const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
     const refusal = extractRefusal(config.vendor, json);
     if (refusal) throw new Error(`${label}: ${refusal}.`);
-    const uses = toolUsesOf(json);
-    const stop = isRecord(json) ? json.stop_reason : undefined;
-    if (stop !== "tool_use" || uses.length === 0) {
+    const uses = dialect.calls(json);
+    if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
         if (text) {
@@ -327,8 +316,8 @@ export async function askAiWithTools(
       if (!text && actions.length === 0) throw new Error(`${label} returned no answer.`);
       return { text, actions };
     }
-    more.push({ role: "assistant", content: (json as { content: unknown }).content });
-    const results: unknown[] = [];
+    more.push(...dialect.reply(json));
+    const results: ToolResult[] = [];
     for (const use of uses) {
       const call = parseToolCall(use.name, use.input, options.totalPages());
       let outcome: AskToolOutcome;
@@ -343,26 +332,10 @@ export async function askAiWithTools(
         }
       }
       if (outcome.done) actions.push(outcome.done);
-      results.push(toolResultBlock(use.id, outcome));
+      results.push({ use, text: outcome.text, images: outcome.images, isError: outcome.isError });
     }
-    more.push({ role: "user", content: results });
+    more.push(...dialect.results(results));
   }
-}
-
-/** A tool's outcome as the `tool_result` block that answers its `tool_use`. */
-function toolResultBlock(id: string, outcome: AskToolOutcome): unknown {
-  return {
-    type: "tool_result",
-    tool_use_id: id,
-    content: [
-      { type: "text", text: outcome.text },
-      ...(outcome.images ?? []).map((image) => ({
-        type: "image",
-        source: { type: "base64", media_type: image.mimeType, data: image.base64 },
-      })),
-    ],
-    ...(outcome.isError ? { is_error: true } : {}),
-  };
 }
 
 // --- Generate image ---------------------------------------------------------------

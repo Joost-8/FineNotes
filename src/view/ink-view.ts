@@ -1188,8 +1188,9 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Ask's answer: with Anthropic, Claude may use the notebook's tools on the
-   * way (`askAiWithTools`); the other vendors answer from what was sent.
+   * Ask's answer: the AI may use the notebook's tools on the way
+   * (`askAiWithTools`), whichever vendor answers; a self-hosted endpoint
+   * that cannot do tools answers from what was sent.
    */
   private askWithTools(
     turns: readonly ChatTurn[],
@@ -1197,17 +1198,17 @@ export class InkView extends TextFileView {
   ): Promise<{ text: string; actions?: readonly string[] }> {
     const config = this.plugin.textAiConfig();
     const system = buildAskSystemPrompt();
-    if (config.vendor !== "anthropic") {
-      return askAi(config, system, turns).then((text) => ({ text }));
-    }
-    return askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
+    const withTools = askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
       totalPages: () => this.doc.pages.length,
       run: (call) => this.runAskTool(call),
       onStatus,
     });
+    if (config.vendor !== "custom") return withTools;
+    // A self-hosted server may not do tools: then it answers from what was sent.
+    return withTools.catch(() => askAi(config, system, turns).then((text) => ({ text })));
   }
 
-  /** Run one of Claude's notebook tools (`ask-tools.ts`). */
+  /** Run one of the AI's notebook tools (`ask-tools.ts`). */
   private async runAskTool(call: AskToolCall): Promise<AskToolOutcome> {
     const surface = this.surface;
     const editRefused = (): AskToolOutcome | null =>
