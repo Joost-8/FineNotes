@@ -53,6 +53,7 @@ import {
   RecordingPill,
   RecordingSuggestModal,
   RecordingsPanel,
+  type TranscribeState,
 } from "./audio-ui";
 import type { InkSurface } from "./ink-surface";
 import type { Toolbar } from "./toolbar";
@@ -356,7 +357,7 @@ export class NoteAudio {
     // Its recording was undone off the note, or removed: nothing to play.
     const playing = this.player?.recording;
     if (playing && !recordings.some((r) => sameRecording(r, playing))) this.closePlayer();
-    this.panel?.render(this.entries());
+    this.panel?.render(this.entries(), this.transcribeState());
   }
 
   /** The view is closing. A recording still running is saved but can no longer join the note. */
@@ -377,9 +378,26 @@ export class NoteAudio {
       openTranscript: (recording) => this.openTranscript(recording),
       remove: (recording) => this.remove(recording),
       record: () => this.toggleRecording(),
+      openAiSettings: () => this.host.plugin.openSettingsTab(),
     });
     this.panel.setRecording(this.recorder !== null);
-    this.panel.render(this.entries());
+    this.panel.render(this.entries(), this.transcribeState());
+    // A key or vendor set in the settings meanwhile shows (or hides) Transcribe
+    // the next time the sidebar or its Audio tab comes into view.
+    const refresh = (): void => {
+      if (!container.hasClass("is-hidden"))
+        this.panel?.render(this.entries(), this.transcribeState());
+    };
+    const watch = new MutationObserver(refresh);
+    watch.observe(container, { attributes: true, attributeFilter: ["class"] });
+    if (container.parentElement) {
+      watch.observe(container.parentElement, { attributes: true, attributeFilter: ["class"] });
+    }
+  }
+
+  /** Whether the AI set up can transcribe speech, and if not, what it needs. */
+  private transcribeState(): TranscribeState {
+    return audioAvailability(this.host.plugin.aiSetup());
   }
 
   private entries(): RecordingEntry[] {

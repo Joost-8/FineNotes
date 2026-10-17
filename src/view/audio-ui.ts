@@ -343,17 +343,28 @@ export interface RecordingsActions {
   remove: (recording: Recording) => void;
   /** The Record / Stop button at the foot of the panel. Called inside the tap. */
   record: () => void;
+  /** Open the AI settings (from the line saying transcription needs setting up). */
+  openAiSettings: () => void;
+}
+
+/** Whether recordings can be transcribed with the AI set up, and if not, why. */
+export interface TranscribeState {
+  enabled: boolean;
+  reason: string;
 }
 
 /**
  * The note's recordings, newest first, in the page sidebar's Audio tab — where
  * GoodNotes keeps them (2026-09-22, from Joost's screenshot). Each has Play,
- * Transcribe, Transcript (once there is one) and Remove from note; a Record
- * button sits at the foot. The sidebar is outside the surface that cancels
+ * Transcribe (only when the AI set up can transcribe speech; otherwise a line
+ * under the hint says what it needs), Transcript (once there is one) and
+ * Remove from note; a Record button sits at the foot. The sidebar is outside the surface that cancels
  * Pencil touches, so `click` is right here.
  */
 export class RecordingsPanel {
   private readonly list: HTMLElement;
+  /** What transcribing needs, shown while the AI set up cannot do it. */
+  private readonly needsEl: HTMLElement;
   private readonly recordButton: HTMLButtonElement;
   private readonly recordLabel: HTMLElement;
   private readonly recordIcon: HTMLElement;
@@ -367,6 +378,7 @@ export class RecordingsPanel {
       cls: "goodobsidian-recordings-hint",
       text: "Play one, then tap your writing to hear what was said as you wrote it.",
     });
+    this.needsEl = el.createDiv({ cls: "goodobsidian-recordings-needs is-hidden" });
     this.list = el.createDiv({ cls: "goodobsidian-recordings-list" });
     const foot = el.createDiv({ cls: "goodobsidian-recordings-foot" });
     this.recordButton = foot.createEl("button", {
@@ -379,7 +391,17 @@ export class RecordingsPanel {
   }
 
   /** Redraw with the note's recordings as they are now (after an undo, say). */
-  render(entries: readonly RecordingEntry[]): void {
+  render(entries: readonly RecordingEntry[], transcribe: TranscribeState): void {
+    this.needsEl.empty();
+    this.needsEl.toggleClass("is-hidden", transcribe.enabled || entries.length === 0);
+    if (!transcribe.enabled && entries.length > 0) {
+      this.needsEl.createSpan({ text: `To transcribe recordings: ${transcribe.reason}. ` });
+      const link = this.needsEl.createEl("button", {
+        cls: "goodobsidian-recordings-needs-link clickable-icon",
+        text: "AI settings",
+      });
+      link.addEventListener("click", () => this.actions.openAiSettings());
+    }
     this.list.empty();
     if (entries.length === 0) {
       this.list.createDiv({
@@ -387,7 +409,7 @@ export class RecordingsPanel {
         text: "No recordings in this note yet.",
       });
     }
-    for (const entry of entries) this.renderEntry(entry);
+    for (const entry of entries) this.renderEntry(entry, transcribe.enabled);
   }
 
   /** The foot button reads Record, or Stop while a recording runs. */
@@ -399,7 +421,7 @@ export class RecordingsPanel {
     this.recordButton.setAttribute("aria-label", active ? "Stop recording" : "Record audio");
   }
 
-  private renderEntry(entry: RecordingEntry): void {
+  private renderEntry(entry: RecordingEntry, canTranscribe: boolean): void {
     const { recording } = entry;
     const block = this.list.createDiv({ cls: "goodobsidian-recordings-entry" });
     // Remove sits beside the label, apart from Play and Transcribe.
@@ -437,13 +459,15 @@ export class RecordingsPanel {
       });
     };
     act("play", "Play", "Play", () => this.actions.play(recording), entry.available);
-    act(
-      "file-text",
-      "Transcribe",
-      "Transcribe",
-      () => this.actions.transcribe(recording),
-      entry.available,
-    );
+    if (canTranscribe) {
+      act(
+        "file-text",
+        entry.hasTranscript ? "Transcribe again" : "Transcribe",
+        "Transcribe",
+        () => this.actions.transcribe(recording),
+        entry.available,
+      );
+    }
     if (entry.hasTranscript) {
       act("external-link", "Open transcript", "Transcript", () =>
         this.actions.openTranscript(recording),

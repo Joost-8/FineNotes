@@ -8189,3 +8189,25 @@ button.goodobsidian-learn-stop.is-hidden {
 .goodobsidian-popover.is-leaving {
   pointer-events: none;
 }
+
+/* Under the Audio tab's hint: what transcribing recordings needs, with a way
+   to the AI settings, while the AI set up cannot transcribe speech. */
+.goodobsidian-recordings-needs {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-recordings-needs.is-hidden {
+  display: none;
+}
+
+.goodobsidian-recordings button.goodobsidian-recordings-needs-link.clickable-icon {
+  display: inline;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--text-accent);
+  font-size: inherit;
+  text-decoration: underline;
+}
