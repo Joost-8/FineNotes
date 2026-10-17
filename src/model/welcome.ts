@@ -322,15 +322,100 @@ export const WELCOME_STICKERS: readonly WelcomeSticker[] = [
   { key: "banner", sticker: "label-banner", color: TONES.start.accent },
 ];
 
-/** The files the tour's stickers are saved as: a name to save each under, and its SVG. */
-export function welcomeStickerFiles(): Array<{ key: string; name: string; svg: string }> {
+/**
+ * The files the tour's pictures are saved as: a name to save each under,
+ * and its SVG. With `icon` (Obsidian's `getIcon`, as SVG markup), the
+ * toolbar's picture too ({@link welcomeToolbarSvg}).
+ */
+export function welcomeStickerFiles(
+  icon?: ToolbarIcons,
+): Array<{ key: string; name: string; svg: string }> {
   const out: Array<{ key: string; name: string; svg: string }> = [];
   for (const { key, sticker, color } of WELCOME_STICKERS) {
     const found = stickerById(sticker);
     if (found)
       out.push({ key, name: stickerFileName(found, color), svg: stickerSvg(found, color) });
   }
+  const toolbar = icon ? welcomeToolbarSvg(icon) : null;
+  if (toolbar) out.push({ key: "toolbar", name: "FineNotes toolbar", svg: toolbar });
   return out;
+}
+
+// --- The toolbar's picture -------------------------------------------------------
+
+/** An icon's drawing by name: the inside of its 24 × 24 SVG, or `null` when unknown. */
+export type ToolbarIcons = (name: string) => string | null;
+
+/**
+ * The toolbar's buttons, left to right, in its groups: the icons
+ * `view/toolbar.ts` gives them, so the picture is the bar as it is.
+ */
+export const TOOLBAR_GROUPS: ReadonlyArray<readonly string[]> = [
+  ["panel-left", "search", "sparkles", "undo-2", "redo-2"],
+  ["lasso", "pen-tool", "eraser", "type", "shapes", "image", "file-text", "mic"],
+  ["plus", "share", "more-horizontal", "settings"],
+];
+
+/** The picture's size, its own px: one slot a button, a gap between groups. */
+const BAR = { slot: 46, gap: 26, pad: 14, h: 62, icon: 24 };
+
+/** Where each button's middle is in the toolbar's picture, by group, and the picture's width. */
+export function toolbarLayout(): { width: number; height: number; slots: number[][] } {
+  let x = BAR.pad;
+  const slots = TOOLBAR_GROUPS.map((group, g) => {
+    if (g > 0) x += BAR.gap;
+    return group.map(() => {
+      const mid = x + BAR.slot / 2;
+      x += BAR.slot;
+      return mid;
+    });
+  });
+  return { width: x + BAR.pad, height: BAR.h, slots };
+}
+
+/**
+ * The toolbar as an SVG: the bar, a divider between its groups, and each
+ * button's own icon, with the pen picked as it is when a notebook opens.
+ * `null` when `icon` knows none of them.
+ */
+export function welcomeToolbarSvg(icon: ToolbarIcons): string | null {
+  const { width, height, slots } = toolbarLayout();
+  const cy = height / 2;
+  const parts: string[] = [
+    `<rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="14" fill="#f6f6f6" stroke="#dcdcdc" stroke-width="1.5"/>`,
+  ];
+  let drawn = 0;
+  TOOLBAR_GROUPS.forEach((group, g) => {
+    if (g > 0) {
+      const x = slots[g][0] - BAR.slot / 2 - BAR.gap / 2;
+      parts.push(
+        `<line x1="${x}" y1="${cy - 15}" x2="${x}" y2="${cy + 15}" stroke="#d4d4d4" stroke-width="1.5"/>`,
+      );
+    }
+    group.forEach((name, i) => {
+      const inner = icon(name);
+      if (!inner) return;
+      drawn++;
+      const x = slots[g][i];
+      const picked = name === "pen-tool";
+      if (picked) {
+        parts.push(
+          `<rect x="${x - 19}" y="${cy - 19}" width="38" height="38" rx="10" fill="#e9e3fb"/>`,
+        );
+      }
+      const color = picked ? "#7a5af8" : "#5c5c5c";
+      const at = `translate(${x - BAR.icon / 2} ${cy - BAR.icon / 2})`;
+      parts.push(
+        `<g transform="${at}" color="${color}" fill="none" stroke="${color}" stroke-width="1.75" ` +
+          `stroke-linecap="round" stroke-linejoin="round">${inner}</g>`,
+      );
+    });
+  });
+  if (drawn === 0) return null;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="0 0 ${width} ${height}">${parts.join("")}</svg>`
+  );
 }
 
 /** Where each sticker's file was saved, by its key. */
@@ -524,6 +609,30 @@ class Sheet {
   /** A coloured tab on the page's edge, labelled with its title: a binder's divider. */
   tab(color: string): void {
     this.page.tab = color;
+  }
+
+  /**
+   * The toolbar's picture ({@link welcomeToolbarSvg}) across the page at
+   * `y`: its height and the middle of each group, or `null` when it was
+   * not saved.
+   */
+  toolbarPicture(y: number): { height: number; groups: number[] } | null {
+    const path = this.stickers.toolbar;
+    if (!path) return null;
+    const { width, height, slots } = toolbarLayout();
+    const k = this.width / width;
+    this.page.images.push({
+      id: this.ids.image(),
+      path,
+      x: MARGIN,
+      y: round2(y),
+      w: round2(this.width),
+      h: round2(height * k),
+    });
+    const groups = slots.map((group) =>
+      round2(MARGIN + ((group[0] + group[group.length - 1]) / 2) * k),
+    );
+    return { height: height * k, groups };
   }
 
   /**
@@ -945,8 +1054,10 @@ const TOUR: readonly TourPage[] = [
       s.title("The toolbar");
       s.para("The bar at the top of a notebook has three groups.");
       const bar = s.y + 4;
-      const groups = drawToolbar(s, bar);
-      s.y = bar + 64 + 70;
+      // The toolbar's own picture when it was saved; else a drawing of it.
+      const shown = s.toolbarPicture(bar);
+      const groups = shown?.groups ?? drawToolbar(s, bar);
+      s.y = bar + (shown?.height ?? 64) + 70;
       const gap = 18;
       const w = (s.width - 2 * gap) / 3;
       const top = s.y;

@@ -16,10 +16,13 @@ import { pageInThisNotebook } from "../../src/search/notebook-search";
 import {
   WELCOME_COVER,
   WELCOME_PAGE_TITLES,
+  TOOLBAR_GROUPS,
   WELCOME_STICKERS,
   WELCOME_TITLE,
   buildWelcomeNotebook,
+  toolbarLayout,
   welcomeStickerFiles,
+  welcomeToolbarSvg,
   estimateLines,
   shouldShowWelcome,
 } from "../../src/model/welcome";
@@ -325,6 +328,47 @@ describe("buildWelcomeNotebook", () => {
     expect(new Set(images.map((i) => i.id)).size).toBe(images.length);
     const file = buildInkFile(newNoteBody(WELCOME_TITLE, "2026-10-17T00:00:00.000Z"), withStickers);
     expect(parseInkFile(file).doc?.pages).toEqual(withStickers.pages);
+  });
+
+  it("pictures the toolbar with each button's own icon, in its groups, the pen picked", () => {
+    const asked: string[] = [];
+    const svg = welcomeToolbarSvg((name) => {
+      asked.push(name);
+      return `<path d="M0 0" data-icon="${name}"/>`;
+    });
+    expect(asked).toEqual(TOOLBAR_GROUPS.flat());
+    expect(svg).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    for (const name of TOOLBAR_GROUPS.flat()) expect(svg).toContain(`data-icon="${name}"`);
+    // Two dividers between three groups, and one picked button.
+    expect(svg?.match(/<line /g)).toHaveLength(2);
+    expect(svg?.match(/fill="#e9e3fb"/g)).toHaveLength(1);
+    const { width, slots } = toolbarLayout();
+    expect(svg).toContain(`viewBox="0 0 ${width} `);
+    expect(slots.map((g) => g.length)).toEqual(TOOLBAR_GROUPS.map((g) => g.length));
+  });
+
+  it("skips an icon Obsidian does not know, and makes no picture with none", () => {
+    expect(welcomeToolbarSvg(() => null)).toBeNull();
+    const some = welcomeToolbarSvg((name) => (name === "search" ? "<circle/>" : null));
+    expect(some?.match(/<circle\/>/g)).toHaveLength(1);
+    expect(welcomeStickerFiles(() => null).some((f) => f.key === "toolbar")).toBe(false);
+    expect(welcomeStickerFiles().some((f) => f.key === "toolbar")).toBe(false);
+  });
+
+  it("shows the toolbar's picture across the page when saved, and draws it by hand when not", () => {
+    const toolbarPage = (d: ReturnType<typeof buildWelcomeNotebook>) =>
+      d.pages.find((page) => page.title === "The toolbar");
+    const drawn = toolbarPage(doc);
+    expect(drawn?.images).toEqual([]);
+    const withPicture = toolbarPage(
+      buildWelcomeNotebook(WELCOME_TITLE, undefined, { toolbar: "Images/FineNotes toolbar.svg" }),
+    );
+    const picture = withPicture?.images[0];
+    const { width, height } = toolbarLayout();
+    expect(picture?.path).toBe("Images/FineNotes toolbar.svg");
+    expect((picture?.w ?? 0) / (picture?.h ?? 1)).toBeCloseTo(width / height, 2);
+    // No hand-drawn bar under it: far fewer strokes than the drawn page.
+    expect(withPicture?.strokes.length ?? 0).toBeLessThan((drawn?.strokes.length ?? 0) - 30);
   });
 
   it("leaves out a sticker whose file is missing", () => {

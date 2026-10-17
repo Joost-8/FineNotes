@@ -269,6 +269,11 @@ export function requireApiVersion(_version: string): boolean {
 
 export function setIcon(): void {}
 
+/** No icon set under Node: callers fall back as for an unknown icon. */
+export function getIcon(): null {
+  return null;
+}
+
 export const Keymap = {
   isModEvent: (event?: { ctrlKey?: boolean; metaKey?: boolean }): boolean =>
     Boolean(event?.ctrlKey || event?.metaKey),

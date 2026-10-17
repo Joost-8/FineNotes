@@ -14,6 +14,7 @@ import {
   MarkdownView,
   Notice,
   addIcon,
+  getIcon,
   Platform,
   Plugin,
   type RequestUrlResponse,
@@ -1368,12 +1369,15 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * The welcome tour's stickers, saved where a picture added to a note at
-   * `notePath` would go. One that cannot be saved is left off its page.
+   * The welcome tour's stickers and toolbar picture, saved where a picture
+   * added to a note at `notePath` would go. One that cannot be saved is left
+   * off its page (the toolbar page then draws the bar by hand).
    */
   private async saveWelcomeStickers(notePath: string): Promise<StickerPaths> {
     const paths: Record<string, string> = {};
-    for (const { key, name, svg } of welcomeStickerFiles()) {
+    // The toolbar's picture is drawn with Obsidian's own icons, as the bar shows them.
+    const icon = (id: string): string | null => getIcon(id)?.innerHTML ?? null;
+    for (const { key, name, svg } of welcomeStickerFiles(icon)) {
       try {
         const bytes = new TextEncoder().encode(svg).buffer;
         const prepared = { bytes, mime: "image/svg+xml", ext: "svg", width: 0, height: 0 };
