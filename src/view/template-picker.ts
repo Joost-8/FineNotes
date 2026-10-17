@@ -24,6 +24,7 @@ import {
   styledBackdrop,
 } from "../canvas/paper-style";
 import { type App, Modal, setIcon } from "obsidian";
+import { renderColorMixer } from "./color-picker";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document";
 import type { InsertPosition } from "../model/page-commands";
@@ -433,6 +434,8 @@ export class TemplatePickerModal extends Modal {
   private color: PaperColorId;
   private style: PaperStyle;
   private styleEl: HTMLElement | null = null;
+  /** Which row's custom colour mixer is open under it, if any. */
+  private mixing: "paper" | "rule" | null = null;
   private sizeId: string;
   private landscape: boolean;
   private grid: TemplateGrid | null = null;
@@ -526,6 +529,7 @@ export class TemplatePickerModal extends Modal {
     if (!el) return;
     el.empty();
     const set = (patch: PaperStyle): void => {
+      this.mixing = null;
       this.style = { ...this.style, ...patch };
       for (const key of Object.keys(this.style) as Array<keyof PaperStyle>) {
         if (this.style[key] === undefined) delete this.style[key];
@@ -546,13 +550,9 @@ export class TemplatePickerModal extends Modal {
         set({ paper: swatch.color }),
       );
     }
-    const custom = paperRow.createEl("input", {
-      cls: "goodobsidian-paper-style-custom",
-      type: "color",
-      attr: { "aria-label": "Any paper colour" },
-    });
-    custom.value = shownPaper;
-    custom.addEventListener("input", () => set({ paper: custom.value }));
+    const paperCustom = !PAPER_SWATCHES.some((s) => s.color === shownPaper);
+    this.customSwatch(paperRow, "paper", "Any paper colour", paperCustom ? shownPaper : null);
+    this.mixer(el, "paper", shownPaper, (paper) => set({ paper }));
 
     const ruleRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
     ruleRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Lines" });
@@ -563,6 +563,10 @@ export class TemplatePickerModal extends Modal {
       );
       if (swatch.color === null) button.addClass("is-default");
     }
+    const rule = this.style.rule;
+    const ruleCustom = rule !== undefined && !RULE_SWATCHES.some((s) => s.color === rule);
+    this.customSwatch(ruleRow, "rule", "Any line colour", ruleCustom ? rule : null);
+    this.mixer(el, "rule", rule ?? "#9aa0ab", (color) => set({ rule: color }));
 
     const spacingRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
     spacingRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Spacing" });
@@ -574,6 +578,48 @@ export class TemplatePickerModal extends Modal {
       button.setAttribute("aria-pressed", String(on));
       button.addEventListener("click", () => set({ spacing: step.k === 1 ? undefined : step.k }));
     }
+  }
+
+  /**
+   * The last swatch of a row: any colour. A ring of every hue, holding the
+   * colour when it is one of no preset; a tap opens the mixer under the row.
+   */
+  private customSwatch(
+    row: HTMLElement,
+    which: "paper" | "rule",
+    label: string,
+    color: string | null,
+  ): void {
+    const open = this.mixing === which;
+    const button = row.createEl("button", {
+      cls: "goodobsidian-paper-swatch is-custom clickable-icon",
+      attr: { "aria-label": label, title: label, "aria-expanded": String(open) },
+    });
+    const disc = button.createSpan({ cls: "goodobsidian-paper-swatch-disc" });
+    if (color)
+      disc.createSpan({ cls: "goodobsidian-paper-swatch-own" }).setCssStyles({ background: color });
+    button.toggleClass("is-active", color !== null || open);
+    button.addEventListener("click", () => {
+      this.mixing = open ? null : which;
+      this.renderStyle();
+    });
+  }
+
+  /**
+   * The custom colour mixer under the rows, for `which` when it is open. The
+   * mixer reports only when its + is tapped, so dragging across the square
+   * or the hue never picks a colour half way, and nothing here redraws the
+   * mixer while a finger is on it.
+   */
+  private mixer(
+    el: HTMLElement,
+    which: "paper" | "rule",
+    initial: string,
+    use: (color: string) => void,
+  ): void {
+    if (this.mixing !== which) return;
+    const panel = el.createDiv({ cls: "goodobsidian-paper-style-mixer" });
+    renderColorMixer(panel, initial, (color) => use(color.toLowerCase()));
   }
 
   private swatch(

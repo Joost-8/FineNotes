@@ -8076,13 +8076,39 @@ button.goodobsidian-paper-swatch.is-active .goodobsidian-paper-swatch-disc {
   outline-offset: 3px;
 }
 
-input.goodobsidian-paper-style-custom {
-  width: 32px;
-  height: 28px;
-  margin-left: 4px;
-  padding: 0;
-  border: none;
-  background: none;
+/* Any colour: a ring of every hue, with the chosen colour in its middle
+   when it is none of the presets (template-picker.ts customSwatch). */
+button.goodobsidian-paper-swatch.is-custom .goodobsidian-paper-swatch-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    #ff4d4d,
+    #ffb84d,
+    #ffff4d,
+    #4dff88,
+    #4dd2ff,
+    #6b4dff,
+    #ff4dd2,
+    #ff4d4d
+  );
+}
+
+.goodobsidian-paper-swatch-own {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--background-primary);
+}
+
+/* The mixer opened from a row's custom swatch, under that row. */
+.goodobsidian-paper-style-mixer {
+  max-width: 300px;
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-l);
+  background: var(--background-secondary);
 }
 
 /* ------------------------------------------------------ text style menu */
