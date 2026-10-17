@@ -55,10 +55,19 @@ import {
   type ShapeDash,
   type ShapeKind,
   type Stroke,
+  type TableElement,
   type TextBoxElement,
   type Tool,
   strokeBounds,
 } from "../model/document";
+import {
+  type CellRef,
+  type TableLayout,
+  cellFill,
+  cellStyle,
+  layoutTable,
+  tableLayoutKey,
+} from "./table-layout";
 import { imageBounds, rotationOf } from "./image-geometry";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import {
@@ -68,7 +77,9 @@ import {
   decorationMetrics,
   layoutTextBox,
   traceBoxPath,
+  type TextBoxLayout,
 } from "./text-layout";
+import type { TextStyle } from "../model/text-style";
 import { displayText } from "../model/text-links";
 import { normalizeBorder, shownCase } from "../model/text-style";
 import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
@@ -469,6 +480,10 @@ export class Renderer {
   private hiddenImages: ReadonlySet<ImageElement> = new Set();
   /** Strokes (by id) left out of tiles and previews: a lasso selection being dragged. */
   private hiddenStrokes: ReadonlySet<string> = new Set();
+  /** Tables left out of tiles and previews: a lasso selection being dragged. */
+  private hiddenTables: ReadonlySet<TableElement> = new Set();
+  /** The cell being typed in, whose text its textarea shows instead. */
+  private editingCell: { table: TableElement; cell: CellRef } | null = null;
 
   /** Device px per page px the tiles are rasterised at. 0 until the first frame. */
   private level = 0;
@@ -568,6 +583,20 @@ export class Renderer {
    */
   setHiddenStrokes(ids: ReadonlySet<string>): void {
     this.hiddenStrokes = ids;
+  }
+
+  /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
+  setHiddenTables(tables: ReadonlySet<TableElement>): void {
+    this.hiddenTables = tables;
+  }
+
+  /**
+   * Leave the text of this cell out of the tiles (`null`: none): it is
+   * being typed in, and its textarea shows it. The caller invalidates the
+   * table's region when this changes.
+   */
+  setEditingCell(editing: { table: TableElement; cell: CellRef } | null): void {
+    this.editingCell = editing;
   }
 
   /** Device-pixel scale of one layout unit. Used to size PDF rasters. */
@@ -1125,6 +1154,7 @@ export class Renderer {
       paintFurniture(ctx, page.geometry, texts, pageLook(page.backdrop, this.paper).night);
     }
     this.paintImages(ctx, page, region, level);
+    this.paintTables(ctx, page, region);
     // Inset by half a device pixel so the hairline lies inside the clip.
     const hair = 1 / level;
     ctx.strokeStyle = this.paper.edge;
@@ -1151,6 +1181,26 @@ export class Renderer {
       if (this.hiddenImages.has(image)) continue;
       if (!overlaps(imageBounds(image), region)) continue;
       drawPlacedImage(ctx, image, painter, level);
+    }
+  }
+
+  /** The page's tables that overlap `region`, under the ink, as every render stacks them. */
+  private paintTables(ctx: CanvasRenderingContext2D, page: Page, region: Bounds): void {
+    if (!page.tables || page.tables.length === 0) return;
+    const night = pageLook(page.backdrop, this.paper).night;
+    for (const table of page.tables) {
+      if (this.hiddenTables.has(table)) continue;
+      const layout = tableLayoutOf(table, ctx);
+      const pad = table.size;
+      const bounds: Bounds = {
+        minX: layout.x - pad,
+        minY: layout.y - pad,
+        maxX: layout.x + layout.w + pad,
+        maxY: layout.y + layout.h + pad,
+      };
+      if (!overlaps(bounds, region)) continue;
+      const editing = this.editingCell?.table === table ? this.editingCell.cell : null;
+      paintTable(ctx, table, night, editing, layout);
     }
   }
 
@@ -1284,6 +1334,7 @@ export class Renderer {
     usePressure: boolean,
     scale?: { x: number; y: number; k: number },
     turn?: { x: number; y: number; angle: number },
+    tables: readonly TableElement[] = [],
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
@@ -1291,6 +1342,34 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
+    // A table stays upright under a turn (its middle goes round, as
+    // `ReorientElements` commits), so it is drawn before the turn is applied.
+    const night = this.nightAt(pageIndex);
+    if (tables.length > 0) {
+      ctx.save();
+      ctx.translate(dx, dy);
+      if (scale && scale.k > 0 && Number.isFinite(scale.k)) {
+        ctx.translate(scale.x, scale.y);
+        ctx.scale(scale.k, scale.k);
+        ctx.translate(-scale.x, -scale.y);
+      }
+      for (const table of tables) {
+        const layout = tableLayoutOf(table, ctx);
+        if (turn && Number.isFinite(turn.angle) && turn.angle !== 0) {
+          const cx = layout.x + layout.w / 2;
+          const cy = layout.y + layout.h / 2;
+          const c = Math.cos(turn.angle);
+          const s = Math.sin(turn.angle);
+          const tx = turn.x + (cx - turn.x) * c - (cy - turn.y) * s;
+          const ty = turn.y + (cx - turn.x) * s + (cy - turn.y) * c;
+          ctx.save();
+          ctx.translate(tx - cx, ty - cy);
+          paintTable(ctx, table, night, null, layout);
+          ctx.restore();
+        } else paintTable(ctx, table, night, null, layout);
+      }
+      ctx.restore();
+    }
     ctx.translate(dx, dy);
     if (scale && scale.k > 0 && Number.isFinite(scale.k)) {
       ctx.translate(scale.x, scale.y);
@@ -1310,7 +1389,6 @@ export class Renderer {
       }
     };
     pictures(false);
-    const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
       const entry = this.pathEntry(stroke, usePressure);
       paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
@@ -1685,6 +1763,8 @@ export function renderPageThumbnail(
     }
   };
   pictures(false);
+  // Tables lie under the ink, so handwriting in a cell shows over its lines.
+  for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
 
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
@@ -1750,30 +1830,134 @@ export function paintTextBox(
     );
     ctx.stroke();
   }
-  if (box.text) {
-    // A fixed-height box clips its overflow, as its textarea does.
-    ctx.beginPath();
-    ctx.rect(box.x, box.y, box.w, layout.height);
-    ctx.clip();
-    ctx.fillStyle = shownColor(box.color, night);
-    ctx.textBaseline = "alphabetic";
-    const metrics = ctx.measureText("Hg");
-    // Older WebKit lacks the font-box metrics; fall back to typical proportions.
-    const ascent = finiteOr(metrics.fontBoundingBoxAscent, box.fontSize * 0.8);
-    const descent = finiteOr(metrics.fontBoundingBoxDescent, box.fontSize * 0.2);
-    const baseline = baselineOffset(layout.lineBox, ascent, descent);
-    const deco = decorationMetrics(box.fontSize);
-    layout.lines.forEach((line, i) => {
-      const y = layout.y + i * layout.lineBox + baseline;
-      for (const run of line.runs) ctx.fillText(run.text, layout.x + run.x, y);
-      if (line.runs.length === 0) return;
-      const width = line.right - line.left;
-      if (box.underline) {
-        ctx.fillRect(layout.x + line.left, y + deco.underline, width, deco.thickness);
-      }
-      if (box.strike) ctx.fillRect(layout.x + line.left, y + deco.strike, width, deco.thickness);
+  if (box.text) paintTextLines(ctx, box, layout, { x: box.x, y: box.y, w: box.w }, night);
+  ctx.restore();
+}
+
+/**
+ * Paint laid-out lines of text in `style`'s colour and decorations, clipped
+ * to the box `clip` (as tall as the layout): a fixed-height box, or a table
+ * cell, clips its overflow, as its textarea does. `ctx.font` must already be
+ * the style's. The clip stays: the caller saves and restores round it.
+ */
+function paintTextLines(
+  ctx: CanvasRenderingContext2D,
+  style: TextStyle,
+  layout: TextBoxLayout,
+  clip: { x: number; y: number; w: number },
+  night: boolean,
+): void {
+  ctx.beginPath();
+  ctx.rect(clip.x, clip.y, clip.w, layout.height);
+  ctx.clip();
+  ctx.fillStyle = shownColor(style.color, night);
+  ctx.textBaseline = "alphabetic";
+  const metrics = ctx.measureText("Hg");
+  // Older WebKit lacks the font-box metrics; fall back to typical proportions.
+  const ascent = finiteOr(metrics.fontBoundingBoxAscent, style.fontSize * 0.8);
+  const descent = finiteOr(metrics.fontBoundingBoxDescent, style.fontSize * 0.2);
+  const baseline = baselineOffset(layout.lineBox, ascent, descent);
+  const deco = decorationMetrics(style.fontSize);
+  layout.lines.forEach((line, i) => {
+    const y = layout.y + i * layout.lineBox + baseline;
+    for (const run of line.runs) ctx.fillText(run.text, layout.x + run.x, y);
+    if (line.runs.length === 0) return;
+    const width = line.right - line.left;
+    if (style.underline) {
+      ctx.fillRect(layout.x + line.left, y + deco.underline, width, deco.thickness);
+    }
+    if (style.strike) ctx.fillRect(layout.x + line.left, y + deco.strike, width, deco.thickness);
+  });
+}
+
+/** Laid-out tables by object, kept while nothing their layout depends on changes. */
+const tableLayouts = new WeakMap<TableElement, { key: string; layout: TableLayout }>();
+
+/**
+ * A table laid out with `ctx`'s text measuring (any context measures alike,
+ * so one layout serves every tile), reused while its fingerprint holds.
+ * Exported for the surface, which hit-tests and places the cell editor by it.
+ */
+export function tableLayoutOf(
+  table: TableElement,
+  ctx: Pick<CanvasRenderingContext2D, "font" | "measureText" | "save" | "restore">,
+): TableLayout {
+  const key = tableLayoutKey(table);
+  const cached = tableLayouts.get(table);
+  if (cached && cached.key === key) return cached.layout;
+  ctx.save();
+  const layout = layoutTable(table, (bold) => {
+    const font = canvasFont({ ...cellStyle(table, 1), bold }, table.fontSize);
+    return (text) => {
+      if (ctx.font !== font) ctx.font = font;
+      return ctx.measureText(text).width;
+    };
+  });
+  ctx.restore();
+  tableLayouts.set(table, { key, layout });
+  return layout;
+}
+
+/**
+ * Paint one table in page space: each cell's fill, its text (all but
+ * `skip`, the cell being typed in, which its textarea shows), then the grid
+ * over them in the table's colour, width and dash. The one function the
+ * tiles, the page previews, the thumbnails, the PDF export and the lasso's
+ * drag draft all paint a table with, so they agree. On a night page its
+ * colours are shown as `./night` maps them.
+ */
+export function paintTable(
+  ctx: CanvasRenderingContext2D,
+  table: TableElement,
+  night = false,
+  skip: CellRef | null = null,
+  laidOut?: TableLayout,
+): void {
+  const layout = laidOut ?? tableLayoutOf(table, ctx);
+  ctx.save();
+  layout.rowY.forEach((y, r) => {
+    const fill = cellFill(table, r);
+    if (!fill) return;
+    const { color, alpha } = splitFill(fill);
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.fillStyle = shownColor(color, night);
+    ctx.fillRect(layout.x, y, layout.w, layout.rowH[r]);
+    ctx.restore();
+  });
+  layout.cells.forEach((row, r) => {
+    const style = cellStyle(table, r);
+    ctx.font = canvasFont(style, style.fontSize);
+    row.forEach((cell, c) => {
+      if (skip && skip.row === r && skip.col === c) return;
+      if (cell.lines.every((line) => line.runs.length === 0)) return;
+      const clip = { x: layout.colX[c], y: layout.rowY[r], w: layout.colW[c] };
+      ctx.save();
+      paintTextLines(ctx, style, cell, clip, night);
+      ctx.restore();
     });
+  });
+  // The grid: inner lines first, the outline last over their ends.
+  const width = Math.max(0.25, table.size);
+  ctx.strokeStyle = shownColor(table.color, night);
+  ctx.lineWidth = width;
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+  if (table.dash) ctx.setLineDash(dashPattern(table.dash, width));
+  const grid = new Path2D();
+  const right = layout.x + layout.w;
+  const bottom = layout.y + layout.h;
+  for (let c = 1; c < layout.colX.length; c++) {
+    grid.moveTo(layout.colX[c], layout.y);
+    grid.lineTo(layout.colX[c], bottom);
   }
+  for (let r = 1; r < layout.rowY.length; r++) {
+    grid.moveTo(layout.x, layout.rowY[r]);
+    grid.lineTo(right, layout.rowY[r]);
+  }
+  grid.rect(layout.x, layout.y, layout.w, layout.h);
+  ctx.stroke(grid);
+  ctx.setLineDash([]);
   ctx.restore();
 }
 

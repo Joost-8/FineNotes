@@ -448,6 +448,44 @@ export interface TextBorder {
   color: string;
 }
 
+/**
+ * A table on a page (`model/table`): one object with rows, columns and typed
+ * cells, drawn under the ink so a cell can be written in by hand — that ink
+ * stays ordinary strokes, never part of the table. Cell text wraps as a text
+ * box's does (`canvas/table-layout`).
+ */
+export interface TableElement {
+  /** `g<N>`, unique on the page. */
+  id: string;
+  /** Top-left, page px. */
+  x: number;
+  y: number;
+  /** Each column's width, page px, left to right. */
+  cols: number[];
+  /** Each row's least height, page px, top to bottom: a row grows with its text. */
+  rows: number[];
+  /** Typed text, `cells[row][col]`, every row as long as `cols`. */
+  cells: string[][];
+  /** The grid's line colour, hex, as a shape's ink. */
+  color: string;
+  /** The grid's line width, page px. */
+  size: number;
+  /** The cells' text colour, hex. */
+  textColor: string;
+  /** The cells' font size, page px at a 1:1 scale. */
+  fontSize: number;
+  /** Typeface; absent means `"sans"`. */
+  font?: TextFont;
+  /** The first row is a header: its text bold, its cells filled. Only stored as `true`. */
+  header?: true;
+  /** The header row's fill, `#rrggbb` or `#rrggbbaa`; absent: a soft tint of `color`. */
+  headerFill?: string;
+  /** Every other cell's fill; absent means none. */
+  fill?: string;
+  /** The grid drawn dashed or dotted; absent is solid. */
+  dash?: ShapeDash;
+}
+
 export type PageKind = "ink";
 
 export interface Page {
@@ -458,6 +496,8 @@ export interface Page {
   strokes: Stroke[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
+  /** Tables, bottom to top. Absent when the page has none. */
+  tables?: TableElement[];
   /**
    * Wall-clock time (ms since the Unix epoch) that this page's stroke `t0`
    * values count from: the pen-down of the first timestamped stroke. Absent

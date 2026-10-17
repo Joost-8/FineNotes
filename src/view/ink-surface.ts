@@ -246,6 +246,7 @@ import {
 import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
+import { nextTableId } from "../model/table";
 import {
   AddElements,
   type ElementLists,
@@ -7477,10 +7478,12 @@ export class InkSurface {
   /** Fresh ids for copies placed in this document. */
   private freshIds(): IdSource {
     let imageSeq = Number(nextImageId(this.doc).slice(1)) - 1;
+    let tableSeq = Number(nextTableId(this.doc).slice(1)) - 1;
     return {
       stroke: () => this.strokeIds.next(),
       image: () => `i${++imageSeq}`,
       textBox: () => this.textBoxIds.next(),
+      table: () => `g${++tableSeq}`,
     };
   }
 
@@ -7573,7 +7576,7 @@ export class InkSurface {
     const pad = STICKER_PAD;
     const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
     const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
-    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t" };
+    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t", table: () => "g" };
     const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
     const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
     const canvas = createEl("canvas");

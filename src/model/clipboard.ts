@@ -24,7 +24,14 @@
  * result always keeps the pasted group's centre on the page.
  */
 
-import type { Bounds, ImageElement, PageGeometry, Stroke, TextBoxElement } from "./document";
+import type {
+  Bounds,
+  ImageElement,
+  PageGeometry,
+  Stroke,
+  TableElement,
+  TextBoxElement,
+} from "./document";
 import { DUPLICATE_OFFSET } from "./images";
 import {
   type ElementLists,
@@ -70,6 +77,7 @@ export class InkClipboard {
         strokes: elements.strokes.map((stroke) => structuredClone(stroke)),
         images: elements.images.map((image) => structuredClone(image)),
         textBoxes: elements.textBoxes.map((textBox) => structuredClone(textBox)),
+        tables: (elements.tables ?? []).map((table) => structuredClone(table)),
       },
       bounds: { ...bounds },
     };
@@ -93,7 +101,12 @@ export class InkClipboard {
   canPaste(withImages = true): boolean {
     const e = this.entry?.elements;
     if (!e) return false;
-    return e.strokes.length > 0 || e.textBoxes.length > 0 || (withImages && e.images.length > 0);
+    return (
+      e.strokes.length > 0 ||
+      e.textBoxes.length > 0 ||
+      (e.tables?.length ?? 0) > 0 ||
+      (withImages && e.images.length > 0)
+    );
   }
 
   /**
@@ -141,9 +154,9 @@ export function pasteCopies(
   dy: number,
   withImages = true,
 ): ElementLists {
-  const { strokes, images, textBoxes } = entry.elements;
+  const { strokes, images, textBoxes, tables } = entry.elements;
   const copies = copyElements(
-    { strokes, images: withImages ? images : [], textBoxes },
+    { strokes, images: withImages ? images : [], textBoxes, tables },
     ids,
     dx,
     dy,
@@ -225,7 +238,15 @@ export function sameSpotTaken(
         near(e.pts[last + 1], c.pts[last + 1] + dy),
     );
   };
+  const tableTaken = (c: TableElement): boolean =>
+    (page.tables ?? []).some(
+      (e) =>
+        JSON.stringify(e.cells) === JSON.stringify(c.cells) &&
+        near(e.x, c.x + dx) &&
+        near(e.y, c.y + dy),
+    );
   return (
+    (copies.tables ?? []).some(tableTaken) ||
     copies.images.some(imageTaken) ||
     copies.textBoxes.some(textTaken) ||
     copies.strokes.some(strokeTaken)

@@ -38,6 +38,7 @@ import { readDash, readFill, readHeads, readRadius } from "./shape-style";
 import { readPalette } from "./palette";
 import { readFurniture } from "./furniture";
 import { readTabColor } from "./page-tabs";
+import { normalizeTable } from "./table";
 import {
   type AttachmentFolders,
   type Backdrop,
@@ -54,6 +55,7 @@ import {
   type ShapeKind,
   type Stroke,
   type TextAlign,
+  type TableElement,
   type TextBoxElement,
   type TextFont,
   type ViewState,
@@ -165,6 +167,7 @@ interface StoredPage {
   links?: InkLink[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
+  tables?: TableElement[];
   strokes: StoredStroke[];
 }
 
@@ -271,6 +274,7 @@ function storePage(page: Page): StoredPage {
     links: page.links && page.links.length > 0 ? page.links : undefined,
     images: page.images,
     textBoxes: page.textBoxes,
+    tables: page.tables && page.tables.length > 0 ? page.tables : undefined,
     strokes: page.strokes.map(storeStroke),
   };
 }
@@ -896,6 +900,13 @@ function normalizePage(
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
     if (normalized) textBoxes.push(normalized);
   });
+  const tables: TableElement[] = [];
+  const tablesRaw = Array.isArray(page.tables) ? page.tables : [];
+  let lastTableId = maxNumericId(tablesRaw, "g");
+  tablesRaw.forEach((table) => {
+    const normalized = normalizeTable(table, () => `g${++lastTableId}`);
+    if (normalized) tables.push(normalized);
+  });
   const strokes = readStrokes(page.strokes);
   return {
     id: typeof page.id === "string" ? page.id : `p${index + 1}`,
@@ -912,6 +923,7 @@ function normalizePage(
     ...titleOf(page.title),
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
+    ...(tables.length > 0 ? { tables } : {}),
   };
 }
 

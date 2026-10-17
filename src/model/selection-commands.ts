@@ -17,10 +17,13 @@ import {
   type InkDocument,
   type Page,
   type Stroke,
+  type TableElement,
   type TextBoxElement,
   POINT_STRIDE,
   pageById,
 } from "./document";
+import { scaleTable, tableFloorSize } from "./table";
+import { restoreTable } from "./table-commands";
 import { MAX_BORDER_WIDTH, MAX_CORNER_RADIUS, MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
 import {
   type ShapeStyle,
@@ -35,6 +38,8 @@ export interface PageElements {
   strokes: readonly Stroke[];
   images: readonly ImageElement[];
   textBoxes: readonly TextBoxElement[];
+  /** Absent: none. Older callers that know no tables leave it out. */
+  tables?: readonly TableElement[];
 }
 
 /** The same elements as fresh, mutable lists. */
@@ -42,6 +47,7 @@ export interface ElementLists {
   strokes: Stroke[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
+  tables?: TableElement[];
 }
 
 /** Which of `elements` are on `page` right now, in page order. */
@@ -50,13 +56,17 @@ export function elementsOnPage(page: Page, elements: PageElements): ElementLists
     strokes: present(page.strokes, elements.strokes),
     images: present(page.images, elements.images),
     textBoxes: present(page.textBoxes, elements.textBoxes),
+    tables: present(page.tables ?? [], elements.tables ?? []),
   };
 }
 
 /** Whether a selection holds nothing. */
 export function isEmptySelection(elements: PageElements): boolean {
   return (
-    elements.strokes.length === 0 && elements.images.length === 0 && elements.textBoxes.length === 0
+    elements.strokes.length === 0 &&
+    elements.images.length === 0 &&
+    elements.textBoxes.length === 0 &&
+    (elements.tables?.length ?? 0) === 0
   );
 }
 
@@ -82,6 +92,7 @@ export class TranslateElements implements Command {
     strokes: Array<{ stroke: Stroke; pts: number[] }>;
     images: Array<{ image: ImageElement; x: number; y: number }>;
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
+    tables: Array<{ table: TableElement; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -115,6 +126,12 @@ export class TranslateElements implements Command {
         textBox.y += dy;
         return saved;
       }),
+      tables: (on.tables ?? []).map((table) => {
+        const saved = { table, x: table.x, y: table.y };
+        table.x += dx;
+        table.y += dy;
+        return saved;
+      }),
     };
   }
 
@@ -129,6 +146,10 @@ export class TranslateElements implements Command {
     for (const { textBox, x, y } of moved.textBoxes) {
       textBox.x = x;
       textBox.y = y;
+    }
+    for (const { table, x, y } of moved.tables) {
+      table.x = x;
+      table.y = y;
     }
     this.moved = null;
   }
@@ -199,6 +220,7 @@ export class ScaleElements implements Command {
       border: TextBoxElement["border"];
       radius: number | undefined;
     }>;
+    tables: Array<{ table: TableElement; saved: TableElement }>;
   } | null = null;
 
   constructor(
@@ -247,6 +269,13 @@ export class ScaleElements implements Command {
         if (radius !== undefined) textBox.radius = radius * k;
         return { textBox, x, y, w, h, fontSize, border, radius };
       }),
+      // A table's columns, rows, lines and font scale together, so its
+      // cells wrap at the same words.
+      tables: (on.tables ?? []).map((table) => {
+        const saved = structuredClone(table);
+        scaleTable(table, ax, ay, k);
+        return { table, saved };
+      }),
     };
   }
 
@@ -275,6 +304,7 @@ export class ScaleElements implements Command {
       if (border) textBox.border = border;
       if (radius !== undefined) textBox.radius = radius;
     }
+    for (const { table, saved } of scaled.tables) restoreTable(table, saved);
     this.scaled = null;
   }
 }
@@ -354,6 +384,7 @@ export class ReorientElements implements Command {
     strokes: Array<{ stroke: Stroke; pts: number[] }>;
     images: Array<{ image: ImageElement; saved: ImageElement }>;
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
+    tables: Array<{ table: TableElement; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -362,7 +393,7 @@ export class ReorientElements implements Command {
     private readonly motion: Reorientation,
     private readonly cx: number,
     private readonly cy: number,
-    private readonly heights?: ReadonlyMap<TextBoxElement, number>,
+    private readonly heights?: ReadonlyMap<TextBoxElement | TableElement, number>,
   ) {
     this.label =
       motion.kind === "rotate"
@@ -418,6 +449,16 @@ export class ReorientElements implements Command {
         textBox.y = c.y - h / 2;
         return { textBox, x, y };
       }),
+      // A table stays upright, as a text box does: only its middle moves.
+      tables: (on.tables ?? []).map((table) => {
+        const { x, y } = table;
+        const floor = tableFloorSize(table);
+        const h = this.heights?.get(table) ?? floor.h;
+        const c = reorientPoint(motion, cx, cy, x + floor.w / 2, y + h / 2);
+        table.x = c.x - floor.w / 2;
+        table.y = c.y - h / 2;
+        return { table, x, y };
+      }),
     };
   }
 
@@ -434,6 +475,10 @@ export class ReorientElements implements Command {
       textBox.x = x;
       textBox.y = y;
     }
+    for (const { table, x, y } of saved.tables) {
+      table.x = x;
+      table.y = y;
+    }
     this.saved = null;
   }
 }
@@ -447,6 +492,7 @@ export class RemoveElements implements Command {
     strokes: Array<Removed<Stroke>>;
     images: Array<Removed<ImageElement>>;
     textBoxes: Array<Removed<TextBoxElement>>;
+    tables: Array<Removed<TableElement>>;
   } | null = null;
 
   constructor(
@@ -463,6 +509,7 @@ export class RemoveElements implements Command {
       strokes: removeFrom(page.strokes, this.elements.strokes),
       images: removeFrom(page.images, this.elements.images),
       textBoxes: removeFrom(page.textBoxes, this.elements.textBoxes),
+      tables: page.tables ? removeFrom(page.tables, this.elements.tables ?? []) : [],
     };
   }
 
@@ -473,6 +520,7 @@ export class RemoveElements implements Command {
     restoreTo(page.strokes, removed.strokes);
     restoreTo(page.images, removed.images);
     restoreTo(page.textBoxes, removed.textBoxes);
+    if (page.tables) restoreTo(page.tables, removed.tables);
     this.removed = null;
   }
 }
@@ -482,6 +530,9 @@ export class RemoveElements implements Command {
  * duplicated selection. Undo takes exactly those objects away again.
  */
 export class AddElements implements Command {
+  /** Whether the page had no `tables` list before, so undo leaves it without one. */
+  private created = false;
+
   constructor(
     readonly pageId: string,
     private readonly elements: PageElements,
@@ -494,6 +545,11 @@ export class AddElements implements Command {
     page.strokes.push(...this.elements.strokes);
     page.images.push(...this.elements.images);
     page.textBoxes.push(...this.elements.textBoxes);
+    const tables = this.elements.tables ?? [];
+    if (tables.length > 0) {
+      this.created = page.tables === undefined;
+      (page.tables ??= []).push(...tables);
+    }
   }
 
   invert(doc: InkDocument): void {
@@ -502,6 +558,11 @@ export class AddElements implements Command {
     removeFrom(page.strokes, this.elements.strokes);
     removeFrom(page.images, this.elements.images);
     removeFrom(page.textBoxes, this.elements.textBoxes);
+    if (page.tables) {
+      removeFrom(page.tables, this.elements.tables ?? []);
+      if (this.created && page.tables.length === 0) delete page.tables;
+    }
+    this.created = false;
   }
 }
 
@@ -575,6 +636,7 @@ export interface IdSource {
   stroke: () => string;
   image: () => string;
   textBox: () => string;
+  table: () => string;
 }
 
 /**
@@ -607,6 +669,13 @@ export function copyElements(
     textBoxes: elements.textBoxes.map((textBox) => {
       const copy = structuredClone(textBox);
       copy.id = ids.textBox();
+      copy.x += dx;
+      copy.y += dy;
+      return copy;
+    }),
+    tables: (elements.tables ?? []).map((table) => {
+      const copy = structuredClone(table);
+      copy.id = ids.table();
       copy.x += dx;
       copy.y += dy;
       return copy;
