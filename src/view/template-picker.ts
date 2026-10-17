@@ -28,6 +28,7 @@ import { renderColorMixer } from "./color-picker";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document";
 import type { InsertPosition } from "../model/page-commands";
+import type { PaperEntry } from "../model/paper-library";
 import {
   PAGE_SIZES,
   PAPER_COLORS,
@@ -401,9 +402,20 @@ export class TemplateGrid {
     else if (box.bottom > panel.bottom) this.el.scrollTop += box.bottom - panel.bottom + 8;
   }
 
+  /**
+   * Show no card as chosen (a paper from My templates is), or (`false`) the
+   * chosen ruling again.
+   */
+  setDimmed(dimmed: boolean): void {
+    this.dimmed = dimmed;
+    this.sync();
+  }
+
+  private dimmed = false;
+
   private sync(): void {
     for (const card of this.cards) {
-      const active = card.ruling === this.selected;
+      const active = !this.dimmed && card.ruling === this.selected;
       card.root.toggleClass("is-selected", active);
       card.root.setAttribute("aria-pressed", String(active));
     }
@@ -418,8 +430,30 @@ export interface TemplateChoice {
   geometry: PageGeometry | null;
 }
 
+/**
+ * "My templates" (`model/paper-library.ts`): the papers a user imported, a
+ * card per PDF page, offered above the built-in papers. The host lists and
+ * paints them, and imports more.
+ */
+export interface PaperLibraryHost {
+  list(): Promise<PaperEntry[]>;
+  /** Paint `entry` as a preview `cssWidth` wide; called again when its PDF page has rendered. */
+  paint(canvas: HTMLCanvasElement, entry: PaperEntry, cssWidth: number): void;
+  /**
+   * Import a PDF or picture from the device. Must start its picker inside the
+   * tap (iPadOS opens one only then). True when papers were added.
+   */
+  importFile(host: HTMLElement): Promise<boolean>;
+  /** Import a PDF or picture already in the vault. True when papers were added. */
+  importFromVault(): Promise<boolean>;
+}
+
 export interface TemplatePickerOptions {
   mode: "add" | "change";
+  /** My templates, when the host has a library. */
+  papers?: PaperLibraryHost;
+  /** A paper from My templates was applied (instead of `onApply`). */
+  onApplyPaper?: (entry: PaperEntry) => void;
   /** Preselected template (the reference page's). */
   initial: SyntheticBackdrop;
   /** The reference page's geometry: preselects size and orientation. */
@@ -439,6 +473,11 @@ export class TemplatePickerModal extends Modal {
   private sizeId: string;
   private landscape: boolean;
   private grid: TemplateGrid | null = null;
+  /** The paper from My templates chosen, if one is (it wins over the ruling). */
+  private paper: PaperEntry | null = null;
+  private papersEl: HTMLElement | null = null;
+  private paperCards: Array<{ entry: PaperEntry; root: HTMLElement; canvas: HTMLCanvasElement }> =
+    [];
 
   constructor(
     app: App,
@@ -485,12 +524,19 @@ export class TemplatePickerModal extends Modal {
       selected: this.ruling,
       onSelect: (ruling) => {
         this.ruling = ruling;
+        this.choosePaper(null);
       },
       onActivate: (ruling) => {
         this.ruling = ruling;
         this.apply();
       },
     });
+    // My templates first, in the same scrolling list as the built-in papers.
+    if (this.options.papers) {
+      this.papersEl = createDiv({ cls: "goodobsidian-my-papers" });
+      this.grid.el.prepend(this.papersEl);
+      void this.renderPapers();
+    }
 
     const footer = contentEl.createDiv({ cls: "goodobsidian-templates-footer" });
     const cancel = footer.createEl("button", { text: "Cancel" });
@@ -505,6 +551,8 @@ export class TemplatePickerModal extends Modal {
 
   override onClose(): void {
     this.grid = null;
+    this.papersEl = null;
+    this.paperCards = [];
     this.styleEl = null;
     this.contentEl.empty();
   }
@@ -641,7 +689,100 @@ export class TemplatePickerModal extends Modal {
     return button;
   }
 
+  /**
+   * My templates: a section like the built-in ones, with a card for each
+   * paper and two to bring more in, from the device or from the vault.
+   */
+  private async renderPapers(): Promise<void> {
+    const host = this.options.papers;
+    const el = this.papersEl;
+    if (!host || !el) return;
+    const entries = await host.list().catch(() => [] as PaperEntry[]);
+    if (this.papersEl !== el) return;
+    el.empty();
+    this.paperCards = [];
+    const details = el.createEl("details", { cls: "goodobsidian-templates-section" });
+    details.open = true;
+    const summary = details.createEl("summary");
+    setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
+    summary.createSpan({ text: "My templates" });
+    const row = details.createDiv({ cls: "goodobsidian-templates-row" });
+    const action = (icon: string, label: string, run: (button: HTMLElement) => void): void => {
+      const button = row.createEl("button", {
+        cls: "goodobsidian-template-card is-large is-import clickable-icon",
+        attr: { "aria-label": label },
+      });
+      setIcon(button.createDiv({ cls: "goodobsidian-template-import-icon" }), icon);
+      button.createDiv({ cls: "goodobsidian-template-name", text: label });
+      // Straight from the tap: iPadOS opens a file picker only inside one.
+      button.addEventListener("click", () => run(button));
+    };
+    const refresh = (added: boolean): void => {
+      if (added) void this.renderPapers();
+    };
+    action("file-up", "From files…", (button) => {
+      void host.importFile(button).then(refresh);
+    });
+    action("folder-open", "From vault…", () => {
+      void host.importFromVault().then(refresh);
+    });
+    for (const entry of entries) {
+      const root = row.createEl("button", {
+        cls: "goodobsidian-template-card is-large clickable-icon",
+        attr: { "aria-label": entry.name, title: entry.name },
+      });
+      const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
+      root.createDiv({ cls: "goodobsidian-template-name", text: entry.name });
+      root.addEventListener("click", () => this.choosePaper(entry));
+      root.addEventListener("dblclick", () => {
+        this.choosePaper(entry);
+        this.apply();
+      });
+      this.paperCards.push({ entry, root, canvas });
+      host.paint(canvas, entry, PREVIEW_WIDTH);
+    }
+    if (entries.length === 0) {
+      row.createDiv({
+        cls: "goodobsidian-my-papers-empty",
+        text: "Bring in a PDF or a picture once, and every page of it is a paper here.",
+      });
+    }
+    this.syncPapers();
+  }
+
+  /** Repaint the previews of `path`'s pages: one of its PDF pages has rendered. */
+  paperReady(path: string): void {
+    const host = this.options.papers;
+    if (!host) return;
+    for (const card of this.paperCards) {
+      if (card.entry.path === path) host.paint(card.canvas, card.entry, PREVIEW_WIDTH);
+    }
+  }
+
+  private choosePaper(entry: PaperEntry | null): void {
+    this.paper = entry;
+    this.grid?.setDimmed(entry !== null);
+    this.syncPapers();
+  }
+
+  private syncPapers(): void {
+    for (const card of this.paperCards) {
+      const on =
+        this.paper !== null &&
+        card.entry.path === this.paper.path &&
+        card.entry.page === this.paper.page;
+      card.root.toggleClass("is-selected", on);
+      card.root.setAttribute("aria-pressed", String(on));
+    }
+  }
+
   private apply(): void {
+    const paper = this.paper;
+    if (paper && this.options.onApplyPaper) {
+      this.close();
+      this.options.onApplyPaper(paper);
+      return;
+    }
     const choice: TemplateChoice = {
       backdrop: styledBackdrop(this.ruling, this.color, this.style),
       geometry: this.sizeId === KEEP_SIZE ? null : sizeGeometry(this.sizeId, this.landscape),

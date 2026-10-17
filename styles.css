@@ -8845,3 +8845,29 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
   padding: 0 var(--size-4-3);
   color: var(--text-error);
 }
+
+/* My templates (template-picker.ts renderPapers): two cards to bring papers
+   in, the size of a template card, then the user's own papers. */
+.goodobsidian-template-card.is-import {
+  justify-content: flex-start;
+}
+
+.goodobsidian-template-import-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  aspect-ratio: 210 / 297;
+  border: 1.5px dashed var(--background-modifier-border-hover);
+  border-radius: var(--gob-radius-s, 6px);
+  color: var(--text-muted);
+  --icon-size: 28px;
+}
+
+.goodobsidian-my-papers-empty {
+  align-self: center;
+  max-width: 220px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}

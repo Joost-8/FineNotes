@@ -18,6 +18,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **My templates.** Bring in a PDF or a picture once (From files… or From
+  vault… at the top of the template picker) and every page of it is a paper,
+  next to the built-in ones: a 12-page planner is twelve papers. A notebook
+  that uses one keeps its own copy beside it.
 - **A notebook's folder is the notebook.** A new or imported notebook gets
   `Physics/` with the notebook inside, next to Images, Recordings,
   Transcripts, AI chats and Exports (Settings → "Give new notebooks their own

@@ -85,6 +85,16 @@ import { PdfTextCache } from "./pdf-text-source";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
+import { VaultPaperLibrary } from "./paper-library-host";
+import { renderPageThumbnail } from "../canvas/renderer";
+import {
+  PAPER_COPY_PREFIX,
+  type PaperEntry,
+  existingCopy,
+  paperBackdrop,
+  paperGeometry,
+  paperName,
+} from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
@@ -2090,6 +2100,8 @@ export class InkView extends TextFileView {
     this.pdfCache.onReady = (path, page, area) => {
       this.surface?.pdfPageReady(path, page, area);
       if (!area?.region) this.sidebar?.invalidatePdfPage(path, page);
+      // My templates' previews in an open template picker.
+      if (!area?.region) this.templatePicker?.paperReady(path);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
@@ -3158,10 +3170,12 @@ export class InkView extends TextFileView {
     if (!page) return;
     // Adding next to a cover preselects the notebook's paper, never the cover.
     const reference = mode === "add" ? paperTemplateFor(this.doc.pages, ref) : page.backdrop;
-    new TemplatePickerModal(this.app, {
+    const picker = new TemplatePickerModal(this.app, {
       mode,
       initial: reference.kind === "pdf" ? { kind: "blank" } : reference,
       geometry: page.geometry,
+      papers: this.paperLibrary(),
+      onApplyPaper: (entry) => void this.applyPaper(entry, mode, position, ref),
       onApply: ({ backdrop, geometry }) => {
         if (mode === "add") {
           this.addTemplatePage(backdrop, geometry ?? page.geometry, position, ref);
@@ -3172,7 +3186,114 @@ export class InkView extends TextFileView {
         this.rememberTemplate(backdrop);
         this.requestSave();
       },
-    }).open();
+    });
+    this.templatePicker = picker;
+    picker.open();
+  }
+
+  /** The template picker open now, for its previews to follow PDF pages as they render. */
+  private templatePicker: TemplatePickerModal | null = null;
+
+  /** My templates (`model/paper-library.ts`), drawn by the thumbnails' painter. */
+  private paperLibrary(): VaultPaperLibrary | undefined {
+    const painter = this.thumbBackdrops;
+    if (!painter) return undefined;
+    return new VaultPaperLibrary(
+      this.app,
+      () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+      (canvas, backdrop, geometry, cssWidth) => {
+        const page: Page = {
+          id: "paper",
+          kind: "ink",
+          geometry,
+          backdrop,
+          strokes: [],
+          images: [],
+          textBoxes: [],
+        };
+        renderPageThumbnail(canvas, page, painter, cssWidth, window.devicePixelRatio || 1, {
+          usePressure: false,
+          highlighterAlpha: this.settings.highlighterAlpha,
+        });
+      },
+    );
+  }
+
+  /**
+   * Put a paper from My templates on a new page (`add`) or on page `ref`
+   * (`change`). The notebook gets its own copy of the paper's PDF beside it,
+   * once (`existingCopy`), and the page takes the paper's shape at the
+   * notebook's width.
+   */
+  private async applyPaper(
+    entry: PaperEntry,
+    mode: "add" | "change",
+    position: InsertPosition,
+    ref: number,
+  ): Promise<void> {
+    const note = this.file;
+    const surface = this.surface;
+    if (!note || !surface || this.isProtected()) return;
+    if (mode === "add" && this.refuseSinglePage()) return;
+    const source = this.app.vault.getFileByPath(entry.path);
+    if (!source) {
+      new Notice("FineNotes: that template's file is gone from the vault.");
+      return;
+    }
+    let path: string;
+    try {
+      const name = paperName(entry.path);
+      const shown = [
+        ...new Set(
+          surface.document.pages.flatMap((p) =>
+            p.backdrop.kind === "pdf" ? [p.backdrop.path] : [],
+          ),
+        ),
+      ].map((shownPath) => ({
+        path: shownPath,
+        size: this.app.vault.getFileByPath(shownPath)?.stat.size ?? -1,
+      }));
+      path =
+        existingCopy(shown, name, source.stat.size) ??
+        (
+          await saveImageAttachment(
+            this.app,
+            {
+              bytes: await this.app.vault.readBinary(source),
+              mime: "application/pdf",
+              ext: "pdf",
+              width: 0,
+              height: 0,
+            },
+            `${PAPER_COPY_PREFIX}${name}`,
+            note.path,
+            this.attachmentFolder("images"),
+          )
+        ).path;
+    } catch (error) {
+      new Notice(`FineNotes: couldn't use that template — ${errorMessage(error)}`, 8000);
+      return;
+    }
+    // The view may have changed while the copy saved.
+    if (this.surface !== surface || this.file !== note || this.isProtected()) return;
+    const page = surface.document.pages[ref];
+    if (!page) return;
+    const backdrop = paperBackdrop(path, entry.page);
+    const geometry = paperGeometry(entry, page.geometry.width);
+    if (mode === "add") {
+      const doc = surface.document;
+      const insert = pageFromTemplate(
+        doc,
+        insertIndexFor(position, ref, doc.pages.length),
+        backdrop,
+        geometry,
+      );
+      surface.applyCommand(new AddPage(insert.index, insert.page));
+      surface.goToPage(insert.index, true);
+    } else {
+      surface.applyCommand(new SetPageTemplate(page, backdrop, geometry));
+    }
+    this.requestSave();
   }
 
   /**
