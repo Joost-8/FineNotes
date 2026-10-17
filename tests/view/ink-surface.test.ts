@@ -21,6 +21,7 @@ import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequ
 import { PointerHud } from "../../src/view/pointer-hud";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
+import { type SelectionAction, menuLayout } from "../../src/view/selection-bar-model";
 
 vi.mock("obsidian", () => ({
   Notice: class {},
@@ -996,6 +997,36 @@ describe("Add to contents on a selection", () => {
     add?.run?.();
     expect(added).toEqual([[1, { x: 100, y: 115 }, ["h"]]]);
     expect(cleared).toBe(1);
+  });
+
+  it("sits above Link to in the menu, with Comment after it and the flips last", () => {
+    const p = page("p1", [line("h", 100, 300, 115)]);
+    const comments: unknown[] = [];
+    const surface = surfaceWith({
+      doc: documentOf(p),
+      palette: [],
+      toolState: {},
+      callbacks: {
+        onAddSection: () => undefined,
+        onLinkStrokes: () => undefined,
+        onAddComment: (...args: unknown[]) => comments.push(args),
+      },
+      groupBounds: () => ({ minX: 100, minY: 105, maxX: 300, maxY: 125 }),
+      pasteAction: () => ({ id: "paste", icon: "", label: "Paste", group: "edit" }),
+      shapeStyleActions: () => [],
+      clearSelection: () => undefined,
+    });
+    const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const actions = run<SelectionAction[]>(surface, "groupActions", sel);
+    const rows = menuLayout(actions)
+      .rows.filter((r) => r.kind === "action")
+      .map((r) => (r.kind === "action" ? r.action.id : ""));
+    expect(rows.indexOf("contents")).toBeLessThan(rows.indexOf("link"));
+    expect(rows.indexOf("link")).toBeLessThan(rows.indexOf("comment"));
+    expect(rows.slice(-3)).toEqual(["delete", "flip-x", "flip-y"]);
+    // A comment is pinned at the selection's top-right corner.
+    actions.find((a) => a.id === "comment")?.run?.();
+    expect(comments).toEqual([[0, { x: 300, y: 105 }]]);
   });
 
   it("is not offered when the host takes no sections", () => {

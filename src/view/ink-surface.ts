@@ -7219,8 +7219,6 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
-    actions.push(...this.linkActions(sel, index));
-    actions.push(...flipActions((axis) => this.flipSelection(axis)));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -7239,6 +7237,22 @@ export class InkSurface {
         },
       });
     }
+    actions.push(...this.linkActions(sel, index));
+    const comment = this.callbacks.onAddComment;
+    if (heading && index >= 0 && comment) {
+      actions.push({
+        id: "comment",
+        icon: "message-square-plus",
+        label: "Comment",
+        group: "comment",
+        run: () => {
+          // Pinned at the selection's top-right corner, beside what it is about.
+          const at = { x: heading.maxX, y: heading.minY };
+          this.clearSelection();
+          comment(index, at);
+        },
+      });
+    }
     actions.push({
       id: "delete",
       icon: "trash-2",
@@ -7249,6 +7263,8 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
+    // Last in the menu, below Delete.
+    actions.push(...flipActions((axis) => this.flipSelection(axis)));
     return actions;
   }
 
@@ -7398,7 +7414,7 @@ export class InkSurface {
         icon: "message-square-plus",
         label: "Comment",
         group: "press-text",
-        ...inBar,
+        // In the bar's "…" menu, so the bar keeps to its three words.
         enabled: this.callbacks.onAddComment !== undefined,
         run: () => {
           const box = this.boxForPage(press.pageId);
