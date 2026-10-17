@@ -82,8 +82,11 @@ import {
   DEFAULT_TEXT_STYLE,
   LINE_HEIGHTS,
   TEXT_ALIGN_LABELS,
-  TEXT_BORDER_WIDTHS,
-  TEXT_CORNER_RADIUS,
+  TEXT_BORDER_CHOICES,
+  TEXT_CORNER_CHOICES,
+  TEXT_PADDINGS,
+  TEXT_PRESETS,
+  presetOf,
   TEXT_FILLS,
   TEXT_FONT_LABELS,
   TEXT_SIZES,
@@ -1729,6 +1732,16 @@ export class Toolbar {
   private buildTextOptions(): void {
     const style = this.shownTextStyle();
 
+    // Named styles (Title, Heading, …): the preset the box matches, or "Style".
+    const preset = presetOf(style);
+    const styles = this.textControl(
+      "is-drop is-preset",
+      `Text style: ${preset?.name ?? "custom"}`,
+      (b) => this.toggleTextPopover("preset", b, (body) => this.renderTextPresets(body)),
+    );
+    styles.createSpan({ cls: "goodobsidian-text-drop-label", text: preset?.name ?? "Style" });
+    caretIn(styles);
+
     const color = this.textControl("is-color", "Text colour", (b) =>
       this.toggleTextPopover("color", b, (body) => this.renderTextColors(body)),
     );
@@ -1968,6 +1981,32 @@ export class Toolbar {
     }
   }
 
+  /** The named styles, each shown in its own look; a pick applies it and closes. */
+  private renderTextPresets(body: HTMLElement): void {
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Text style" });
+    const list = body.createDiv({ cls: "goodobsidian-text-presets" });
+    const current = presetOf(this.shownTextStyle());
+    for (const preset of TEXT_PRESETS) {
+      const look = withTextStyle(DEFAULT_TEXT_STYLE, preset.patch);
+      const button = list.createEl("button", {
+        cls: "goodobsidian-text-preset clickable-icon",
+        text: preset.name,
+        attr: { "aria-label": preset.name, "aria-pressed": String(current?.id === preset.id) },
+      });
+      button.toggleClass("is-active", current?.id === preset.id);
+      // Shown as it will look, capped so the list stays a list.
+      button.setCssStyles({
+        fontFamily: TEXT_FONT_STACKS[fontOf(look)],
+        fontSize: `${Math.min(26, Math.max(12, look.fontSize * 0.7))}px`,
+        fontWeight: look.bold ? "700" : "400",
+        fontStyle: look.italic ? "italic" : "normal",
+        textTransform: look.caps ? "uppercase" : "none",
+        letterSpacing: look.caps ? "0.06em" : "normal",
+      });
+      button.addEventListener("click", () => this.pickText(preset.patch));
+    }
+  }
+
   private renderTextFormat(body: HTMLElement): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Text style" });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
@@ -1977,6 +2016,7 @@ export class Toolbar {
       { key: "italic", glyph: "I", label: "Italic" },
       { key: "underline", glyph: "U", label: "Underline" },
       { key: "strike", glyph: "S", label: "Strikethrough" },
+      { key: "caps", glyph: "AA", label: "All capitals" },
     ] as const;
     for (const flag of flags) {
       const on = style[flag.key] === true;
@@ -2046,7 +2086,10 @@ export class Toolbar {
     const style = this.shownTextStyle();
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Border" });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
-    const widths = [{ label: "None", width: null }, ...TEXT_BORDER_WIDTHS];
+    const widths = [
+      { label: "None", width: null },
+      ...TEXT_BORDER_CHOICES.map((width) => ({ label: `${width} px`, width })),
+    ];
     for (const { label, width } of widths) {
       const button = this.textOption(row, "is-flag", "", () =>
         this.applyTextPatch({ borderWidth: width }),
@@ -2059,13 +2102,30 @@ export class Toolbar {
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
-    const rounded = style.radius !== undefined;
-    this.switchRow(
-      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
-      "Rounded corners",
-      rounded,
-      (on) => this.applyTextPatch({ radius: on ? TEXT_CORNER_RADIUS : null }),
-    );
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Corners" });
+    const corners = body.createDiv({ cls: "goodobsidian-text-row" });
+    for (const { label, radius } of TEXT_CORNER_CHOICES) {
+      const on = radius === 0 ? style.radius === undefined : style.radius === radius;
+      const button = this.textOption(corners, "is-flag", "", () =>
+        this.applyTextPatch({ radius: radius === 0 ? null : radius }),
+      );
+      button.append(cornerGlyph(radius));
+      button.setAttribute("aria-label", `${label} corners`);
+      button.setAttribute("title", `${label} corners`);
+      button.setAttribute("aria-pressed", String(on));
+      button.toggleClass("is-active", on);
+    }
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Padding" });
+    const paddings = body.createDiv({ cls: "goodobsidian-text-row" });
+    for (const { label, padding } of TEXT_PADDINGS) {
+      const on = padding === 0 ? style.padding === undefined : style.padding === padding;
+      const button = this.textOption(paddings, "is-flag is-padding", label, () =>
+        this.applyTextPatch({ padding: padding === 0 ? null : padding }),
+      );
+      button.setAttribute("aria-label", padding === 0 ? "No padding" : `Padding ${label}`);
+      button.setAttribute("aria-pressed", String(on));
+      button.toggleClass("is-active", on);
+    }
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Border colour" });
     const current = style.border?.color ?? style.color;
     // A colour picked with no border adds a thin one in that colour.
@@ -3553,6 +3613,14 @@ function headGlyph(end: "start" | "end", head: ArrowHead | undefined): SVGElemen
   });
 }
 
+/** A corner of a box at radius `radius` (0 is square), as the corner choices show it. */
+function cornerGlyph(radius: number): SVGElement {
+  return textGlyph((add) => {
+    const r = Math.min(12, radius * 0.5);
+    add("path", { d: r > 0 ? `M5 19V${5 + r}a${r} ${r} 0 0 1 ${r} -${r}H19` : "M5 19V5H19" });
+  });
+}
+
 /** A list: three lines, each led by a dot or a number. */
 function listGlyph(kind: ListKind): SVGElement {
   return textGlyph((add) => {
@@ -3584,7 +3652,7 @@ function formatLineHeight(value: number): string {
 }
 
 function flagPatch(
-  key: "bold" | "italic" | "underline" | "strike",
+  key: "bold" | "italic" | "underline" | "strike" | "caps",
   value: boolean,
 ): TextStylePatch {
   const patch: TextStylePatch = {};

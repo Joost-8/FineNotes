@@ -7821,6 +7821,35 @@ button.goodobsidian-color-eyedropper .svg-icon {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------ text style menu */
+/* Named styles, each set in its own look, one per row. */
+.goodobsidian-text-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+}
+
+button.goodobsidian-text-preset.clickable-icon {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+button.goodobsidian-text-preset.clickable-icon.is-active {
+  background: var(--background-modifier-hover);
+  box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+
+button.goodobsidian-text-option.is-padding {
+  min-width: 36px;
+  font-size: var(--font-ui-small);
+}
+
 /* ------------------------------------------------------------ stickers */
 /* The sticker picker: category chips, a colour row, a grid of previews. */
 .goodobsidian-sticker-modal {

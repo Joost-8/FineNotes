@@ -32,7 +32,7 @@ import {
 import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
-import { MIN_TEXT_BOX_WIDTH, isCornerRadius, normalizeBorder } from "./text-style";
+import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
 import {
@@ -826,6 +826,8 @@ function normalizeTextStyle(raw: Record<string, unknown>): Partial<TextBoxElemen
   const border = normalizeBorder(raw.border);
   if (border) style.border = border;
   if (isCornerRadius(raw.radius)) style.radius = raw.radius;
+  if (isTextPadding(raw.padding)) style.padding = raw.padding;
+  if (raw.caps === true) style.caps = true;
   return style;
 }
 

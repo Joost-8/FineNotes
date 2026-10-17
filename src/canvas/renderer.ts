@@ -70,7 +70,7 @@ import {
   traceBoxPath,
 } from "./text-layout";
 import { displayText } from "../model/text-links";
-import { normalizeBorder } from "../model/text-style";
+import { normalizeBorder, shownCase } from "../model/text-style";
 import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
 import {
   HEAD_MAX,
@@ -1656,7 +1656,7 @@ export function paintTextBox(
   night = false,
 ): void {
   // Links in the text show as their text, brackets hidden, as on the page.
-  const box = { ...typed, text: displayText(typed.text) };
+  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
   const border = normalizeBorder(box.border);
   if (!box.text && !box.fill && !border) return;
   ctx.save();

@@ -31,6 +31,7 @@ import {
   type TextStyle,
   fontFamilyOf,
   isBorderWidth,
+  isTextPadding,
   isCornerRadius,
   lineHeightOf,
 } from "../model/text-style";
@@ -44,10 +45,11 @@ export const TEXT_PAD_Y = 2;
  * Space between a box's edge and its text, page px: the padding, plus the
  * border's width, which is drawn inside the edge.
  */
-export function textInset(style: Pick<TextStyle, "border">): { x: number; y: number } {
+export function textInset(style: Pick<TextStyle, "border" | "padding">): { x: number; y: number } {
   const width = style.border?.width;
   const border = isBorderWidth(width) ? width : 0;
-  return { x: TEXT_PAD_X + border, y: TEXT_PAD_Y + border };
+  const padding = isTextPadding(style.padding) ? style.padding : 0;
+  return { x: TEXT_PAD_X + border + padding, y: TEXT_PAD_Y + border + padding };
 }
 
 /**

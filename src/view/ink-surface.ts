@@ -304,6 +304,7 @@ import {
   fontFamilyOf,
   lineHeightOf,
   normalizeBorder,
+  shownCase,
   textStyleOf,
 } from "../model/text-style";
 import { type ListKind, type TextEdit, continueList, toggleList } from "../model/text-list";
@@ -3305,6 +3306,8 @@ export class InkSurface {
           fontWeight: textBox.bold ? "700" : "400",
           fontStyle: textBox.italic ? "italic" : "normal",
           textDecoration: textDecorationOf(textBox),
+          // Capitals as the canvas draws them (`shownCase`), the typed text unchanged.
+          textTransform: textBox.caps === true ? "uppercase" : "",
           textAlign: textBox.align ?? "left",
           lineHeight: String(lineHeight),
           padding: `${(inset.y * unit).toFixed(2)}px ${(inset.x * unit).toFixed(2)}px`,
@@ -3464,7 +3467,8 @@ export class InkSurface {
     const font = canvasFont(textBox, textBox.fontSize);
     const room = pageWidth - x;
     const inset = textInset(textBox).x;
-    const key = `${font}|${room}|${inset}|${textBox.text}`;
+    const shown = shownCase(textBox.text, textBox);
+    const key = `${font}|${room}|${inset}|${shown}`;
     if (view.fitKey === key) return view.fitW;
     this.measureCtx ??= createEl("canvas").getContext("2d");
     const ctx = this.measureCtx;
@@ -3473,7 +3477,7 @@ export class InkSurface {
     if (!ctx) return Math.max(min, textBox.w);
     ctx.font = font;
     view.fitKey = key;
-    view.fitW = fitTextWidth(textBox.text, min, room, (text) => ctx.measureText(text).width, inset);
+    view.fitW = fitTextWidth(shown, min, room, (text) => ctx.measureText(text).width, inset);
     return view.fitW;
   }
 

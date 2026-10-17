@@ -113,6 +113,8 @@ export interface TextStyle {
   fill?: string;
   border?: TextBorder;
   radius?: number;
+  padding?: number;
+  caps?: true;
 }
 
 /**
@@ -140,6 +142,10 @@ export interface TextStylePatch {
   borderColor?: string;
   /** Corner radius, page px; `null` squares the corners. */
   radius?: number | null;
+  /** Extra room round the text, page px; `null` or 0 takes it away. */
+  padding?: number | null;
+  /** Show the text in capitals. */
+  caps?: boolean;
 }
 
 /** The style a Text tool starts with, and "Reset to default" returns to. */
@@ -233,6 +239,107 @@ export function applyTextStyle(target: TextStyle, patch: TextStylePatch): void {
   applyBorder(target, patch);
   if (patch.radius === null) delete target.radius;
   else if (isCornerRadius(patch.radius)) target.radius = patch.radius;
+  if (patch.padding === null || patch.padding === 0) delete target.padding;
+  else if (isTextPadding(patch.padding)) target.padding = patch.padding;
+  if (patch.caps === true) target.caps = true;
+  else if (patch.caps === false) delete target.caps;
+}
+
+/**
+ * Named text styles, GoodNotes' "one default" grown into a set: each is a
+ * patch of font, size, weight, case and spacing, leaving the colour and the
+ * box (fill, border) as they are. Picked from the Text tool's Style menu.
+ */
+export interface TextPreset {
+  id: string;
+  name: string;
+  patch: TextStylePatch;
+}
+
+export const TEXT_PRESETS: readonly TextPreset[] = [
+  {
+    id: "title",
+    name: "Title",
+    patch: {
+      font: "serif",
+      fontSize: 44,
+      bold: true,
+      italic: false,
+      caps: false,
+      lineHeight: 1.15,
+    },
+  },
+  {
+    id: "heading",
+    name: "Heading",
+    patch: { font: "sans", fontSize: 30, bold: true, italic: false, caps: false, lineHeight: 1.15 },
+  },
+  {
+    id: "subheading",
+    name: "Subheading",
+    patch: { font: "sans", fontSize: 22, bold: true, italic: false, caps: false, lineHeight: 1.25 },
+  },
+  {
+    id: "body",
+    name: "Body",
+    patch: {
+      font: "sans",
+      fontSize: 18,
+      bold: false,
+      italic: false,
+      caps: false,
+      lineHeight: DEFAULT_LINE_HEIGHT,
+    },
+  },
+  {
+    id: "caption",
+    name: "Caption",
+    patch: { font: "sans", fontSize: 14, bold: false, italic: true, caps: false, lineHeight: 1.25 },
+  },
+  {
+    id: "label",
+    name: "Label",
+    patch: { font: "sans", fontSize: 12, bold: true, italic: false, caps: true, lineHeight: 1.25 },
+  },
+];
+
+/** The preset a style matches (font, size, weight, slant and case all equal), if any. */
+export function presetOf(style: TextStyle): TextPreset | undefined {
+  return TEXT_PRESETS.find((preset) => !changesTextStyle(style, preset.patch));
+}
+
+/** The most padding a box keeps, page px. */
+export const MAX_TEXT_PADDING = 120;
+
+/** The padding choices the Text tool offers, page px (0 is none). */
+export const TEXT_PADDINGS: ReadonlyArray<{ label: string; padding: number }> = [
+  { label: "None", padding: 0 },
+  { label: "S", padding: 4 },
+  { label: "M", padding: 10 },
+  { label: "L", padding: 18 },
+];
+
+/** The border widths the Text tool offers, page px, past the thin ones. */
+export const TEXT_BORDER_CHOICES: readonly number[] = [1, 2, 4, 8, 16];
+
+/** The corner radii the Text tool offers, page px (0 is square). */
+export const TEXT_CORNER_CHOICES: ReadonlyArray<{ label: string; radius: number }> = [
+  { label: "Square", radius: 0 },
+  { label: "Small", radius: 6 },
+  { label: "Medium", radius: 12 },
+  { label: "Large", radius: 24 },
+];
+
+/** A padding the loader keeps: finite, above 0, at most {@link MAX_TEXT_PADDING}. */
+export function isTextPadding(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_TEXT_PADDING
+  );
+}
+
+/** A box's text as it is shown: in capitals when the box says so. */
+export function shownCase(text: string, style: Pick<TextStyle, "caps">): string {
+  return style.caps === true ? text.toUpperCase() : text;
 }
 
 function applyBorder(target: TextStyle, patch: TextStylePatch): void {
@@ -263,6 +370,8 @@ export function textStyleOf(source: TextStyle): TextStyle {
   if (source.fill !== undefined) style.fill = source.fill;
   if (source.border !== undefined) style.border = { ...source.border };
   if (source.radius !== undefined) style.radius = source.radius;
+  if (source.padding !== undefined) style.padding = source.padding;
+  if (source.caps === true) style.caps = true;
   return style;
 }
 
@@ -289,6 +398,8 @@ export function textStyleKey(style: TextStyle): string {
     s.fill ?? "",
     s.border ? `${s.border.width}/${s.border.color}` : "",
     s.radius ?? 0,
+    s.padding ?? 0,
+    s.caps ? "C" : "",
   ].join("|");
 }
 
@@ -312,6 +423,8 @@ export function resetTextStylePatch(): TextStylePatch {
     fill: null,
     borderWidth: null,
     radius: null,
+    padding: null,
+    caps: false,
   };
 }
 
@@ -335,6 +448,8 @@ export function sanitizeTextStyle(raw: unknown): TextStyle {
     lineHeight: typeof r.lineHeight === "number" ? r.lineHeight : undefined,
     fill: typeof r.fill === "string" ? r.fill : undefined,
     radius: typeof r.radius === "number" ? r.radius : undefined,
+    padding: typeof r.padding === "number" ? r.padding : undefined,
+    caps: r.caps === true ? true : undefined,
   });
   const border = normalizeBorder(r.border);
   if (border) style.border = border;

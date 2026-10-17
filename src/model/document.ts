@@ -430,6 +430,10 @@ export interface TextBoxElement {
   border?: TextBorder;
   /** Corner radius of the fill and border, page px; absent means square corners. */
   radius?: number;
+  /** Extra room between the text and the box's edge, page px; absent is none. */
+  padding?: number;
+  /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
+  caps?: true;
 }
 
 /** A text box's border: its width in page px and its colour (hex, as `fill`). */
