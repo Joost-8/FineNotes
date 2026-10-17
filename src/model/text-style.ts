@@ -158,6 +158,37 @@ export function isHexColor(value: unknown): value is string {
   return typeof value === "string" && HEX_COLOR.test(value);
 }
 
+/**
+ * A text size to one decimal, inside the sizes the loader keeps: what a
+ * lasso resize or the size slider stores, so the size menu never shows a
+ * long tail of digits.
+ */
+export function roundTextSize(size: number): number {
+  return Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, Math.round(size * 10) / 10));
+}
+
+/** The size slider's positions, end to end. */
+export const SIZE_SLIDER_STEPS = 1000;
+
+/**
+ * The text size at slider position `t` (0 to {@link SIZE_SLIDER_STEPS}):
+ * logarithmic from the smallest size to the largest, so each part of the
+ * slider changes the size by the same proportion and the small sizes, where
+ * most text is, get room. To one decimal.
+ */
+export function sizeAtSlider(t: number): number {
+  const f = Math.min(1, Math.max(0, t / SIZE_SLIDER_STEPS));
+  return roundTextSize(MIN_TEXT_SIZE * (MAX_TEXT_SIZE / MIN_TEXT_SIZE) ** f);
+}
+
+/** The slider position that shows `size` (the inverse of {@link sizeAtSlider}). */
+export function sliderAtSize(size: number): number {
+  const s = Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, size));
+  return Math.round(
+    (Math.log(s / MIN_TEXT_SIZE) / Math.log(MAX_TEXT_SIZE / MIN_TEXT_SIZE)) * SIZE_SLIDER_STEPS,
+  );
+}
+
 function isTextSize(value: unknown): value is number {
   return (
     typeof value === "number" &&

@@ -19,7 +19,7 @@ import {
   type TextFont,
 } from "./document";
 import { readDash, readFill, withAlpha } from "./shape-style";
-import { isHexColor, MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
+import { isHexColor, MAX_TEXT_SIZE, MIN_TEXT_SIZE, roundTextSize } from "./text-style";
 
 /** A column is never narrower than this, page px: room for a letter and the cell's padding. */
 export const TABLE_MIN_COL = 24;
@@ -187,7 +187,7 @@ export function scaleTable(table: TableElement, ax: number, ay: number, k: numbe
   table.cols = table.cols.map((w) => Math.max(TABLE_MIN_COL, w * k));
   table.rows = table.rows.map((h) => Math.max(TABLE_MIN_ROW, h * k));
   table.size = Math.min(TABLE_MAX_LINE, table.size * k);
-  table.fontSize = Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, table.fontSize * k));
+  table.fontSize = roundTextSize(table.fontSize * k);
 }
 
 /**

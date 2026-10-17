@@ -5156,7 +5156,7 @@ textarea.goodobsidian-chat-input:focus-visible {
   gap: 4px;
 }
 
-.goodobsidian-popover button.goodobsidian-table-cell {
+.goodobsidian-popover button.goodobsidian-table-pick {
   width: 100%;
   min-width: 0;
   height: auto;
@@ -5170,7 +5170,7 @@ textarea.goodobsidian-chat-input:focus-visible {
   opacity: 1;
 }
 
-.goodobsidian-popover button.goodobsidian-table-cell.is-picked {
+.goodobsidian-popover button.goodobsidian-table-pick.is-picked {
   border-color: var(--interactive-accent);
   background: var(--interactive-accent);
 }
@@ -8696,4 +8696,15 @@ button.goodobsidian-learn-stop.is-hidden {
 
 .goodobsidian-chat-figure .goodobsidian-chat-action {
   margin-left: -8px;
+}
+
+/* The text size slider's readout, beside "Size" (toolbar.ts renderTextSizes). */
+.goodobsidian-text-size-readout {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-text-size-slider {
+  min-width: 200px;
 }

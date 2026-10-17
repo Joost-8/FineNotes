@@ -90,6 +90,9 @@ import {
   TEXT_FILLS,
   TEXT_FONT_LABELS,
   TEXT_SIZES,
+  SIZE_SLIDER_STEPS,
+  sizeAtSlider,
+  sliderAtSize,
   type TextStyle,
   type TextStylePatch,
   fontOf,
@@ -471,6 +474,12 @@ export interface ToolbarCallbacks {
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
+  /**
+   * The size slider is being dragged: show the box at `fontSize` without a
+   * step of undo (`null`: back to its own size). The size is stored, as one
+   * step, through `onTextStyle` when the slider is let go.
+   */
+  onTextSizePreview?: (fontSize: number | null) => void;
   /** The Text tool's own state changed (style for new boxes, pin, drag to size). Hosts persist it. */
   onTextToolChange?: (style: TextStyle, pinned: boolean, dragSize: boolean) => void;
   /** Bullets or numbering for the lines under the caret of the box being edited. */
@@ -1615,7 +1624,7 @@ export class Toolbar {
       for (let cols = 1; cols <= TABLE_MAX_COLS; cols++) {
         const size = { rows, cols };
         const button = grid.createEl("button", {
-          cls: "goodobsidian-table-cell clickable-icon",
+          cls: "goodobsidian-table-pick clickable-icon",
         });
         button.setAttribute("aria-label", `${tableSizeLabel(size)} table`);
         button.addEventListener("pointerenter", () => show(size));
@@ -1781,10 +1790,12 @@ export class Toolbar {
     color.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: style.color });
     caretIn(color);
 
-    const size = this.textControl("is-drop is-size", `Font size ${style.fontSize}`, (b) =>
+    // To one decimal: a box resized before sizes were rounded may hold more.
+    const shownSize = String(Math.round(style.fontSize * 10) / 10);
+    const size = this.textControl("is-drop is-size", `Font size ${shownSize}`, (b) =>
       this.toggleTextPopover("size", b, (body) => this.renderTextSizes(body)),
     );
-    size.createSpan({ cls: "goodobsidian-text-drop-label", text: String(style.fontSize) });
+    size.createSpan({ cls: "goodobsidian-text-drop-label", text: shownSize });
     caretIn(size);
 
     // The font's name, set in that font, as GoodNotes shows it.
@@ -1992,9 +2003,40 @@ export class Toolbar {
   }
 
   private renderTextSizes(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Size" });
-    const grid = body.createDiv({ cls: "goodobsidian-text-grid" });
     const current = this.shownTextStyle().fontSize;
+    // Any size between the smallest and the largest, to one decimal, on a
+    // slider above the usual sizes; the box follows it as it moves.
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Size" });
+    const readout = head.createDiv({
+      cls: "goodobsidian-text-size-readout",
+      text: String(Math.round(current * 10) / 10),
+    });
+    const slider = body.createDiv({
+      cls: "goodobsidian-width-slider goodobsidian-text-size-slider",
+    });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": "Font size" },
+    });
+    range.min = "0";
+    range.max = String(SIZE_SLIDER_STEPS);
+    range.step = "1";
+    range.value = String(sliderAtSize(current));
+    syncRangeFill(range);
+    range.addEventListener("input", () => {
+      const fontSize = sizeAtSlider(Number(range.value));
+      readout.setText(String(fontSize));
+      syncRangeFill(range);
+      this.callbacks.onTextSizePreview?.(fontSize);
+    });
+    range.addEventListener("change", () => {
+      const fontSize = sizeAtSlider(Number(range.value));
+      this.callbacks.onTextSizePreview?.(null);
+      if (fontSize !== this.shownTextStyle().fontSize) this.applyTextPatch({ fontSize });
+    });
+    const grid = body.createDiv({ cls: "goodobsidian-text-grid" });
     for (const fontSize of TEXT_SIZES) {
       this.textOption(grid, "is-size", String(fontSize), () =>
         this.pickText({ fontSize }),

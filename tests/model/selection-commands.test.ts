@@ -314,6 +314,17 @@ describe("ScaleElements", () => {
     expect(s[0].size).toBe(2);
   });
 
+  it("keeps a resized text box's size to one decimal", () => {
+    const { doc, s, i, t } = fixture();
+    new ScaleElements("p1", { strokes: s, images: i, textBoxes: t }, 7.3, 9.1, 1.2345678).apply(
+      doc,
+    );
+    for (const box of t) {
+      expect(box.fontSize).toBe(Math.round(box.fontSize * 10) / 10);
+      expect(String(box.fontSize).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("keeps the anchor where it is and moves everything else away from it", () => {
     const { doc, s } = fixture();
     const before = s[0].pts.slice();

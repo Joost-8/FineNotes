@@ -736,6 +736,14 @@ interface TextBoxView {
   /** Text, font and room a fitted box's width was last measured for, and that width. */
   fitKey: string;
   fitW: number;
+  /**
+   * The page scale the box was last laid out at (0: never). Mid-zoom the box
+   * keeps that layout and is scaled whole from it (`zoomScaled`), so its
+   * text cannot re-wrap or shift glyph by glyph as the font size passes
+   * through fractional sizes: that read as the text wiggling.
+   */
+  laidAt: number;
+  zoomScaled: boolean;
 }
 
 /** A text-tool drag shorter than this (page px) is a tap: a box that fits its text. */
@@ -3338,6 +3346,32 @@ export class InkSurface {
         if (document.activeElement !== input && input.value !== textBox.text)
           input.value = textBox.text;
         this.renderShownText(view, textBox.text);
+        // Mid-zoom a box keeps the layout it last had and is scaled whole from
+        // it; it is laid out again once the zoom rests. Not the box being typed
+        // in or framed, nor during a lasso resize (which scales boxes itself).
+        if (
+          zooming &&
+          view.laidAt > 0 &&
+          document.activeElement !== input &&
+          this.frameDraft?.key !== key &&
+          this.groupDrag === null
+        ) {
+          const shift = this.dragShift(page.id, textBox);
+          root.setCssStyles({
+            left: `${((box.x + textBox.x + shift.x) * scale).toFixed(2)}px`,
+            top: `${((box.y + textBox.y + shift.y) * scale).toFixed(2)}px`,
+            transform: `scale(${(scale / view.laidAt).toFixed(5)})`,
+            transformOrigin: "0 0",
+          });
+          view.zoomScaled = true;
+          this.textBoxesProvisional = true;
+          continue;
+        }
+        if (view.zoomScaled) {
+          view.zoomScaled = false;
+          root.setCssStyles({ transform: "", transformOrigin: "" });
+        }
+        view.laidAt = scale;
         const frame = this.frameDraft?.key === key ? this.frameDraft.frame : textBox;
         // A fitted box is as wide as its text, up to the page's edge. The
         // width is written back, so the file and the thumbnails wrap it
@@ -3616,6 +3650,8 @@ export class InkSurface {
       styleKey: "",
       fitKey: "",
       fitW: textBox.w,
+      laidAt: 0,
+      zoomScaled: false,
     };
 
     // Text editing must never start an ink gesture on the scroll overlay
@@ -9821,7 +9857,37 @@ export class InkSurface {
    * Returns false when no box is being edited (the pill then only changed the
    * style new boxes get). A change that alters nothing records nothing.
    */
+  /**
+   * Show the box being styled at `fontSize` while the size slider moves,
+   * outside the history; `null` puts its own size back. The slider's
+   * release stores the size through {@link applyTextStyle}, one step of undo.
+   */
+  previewTextSize(fontSize: number | null): void {
+    const preview = this.textSizePreview;
+    if (fontSize === null) {
+      this.textSizePreview = null;
+      if (!preview) return;
+      const before = this.liveTextBox(preview.pageId, preview.id);
+      if (before) before.fontSize = preview.fontSize;
+      this.syncTextBoxes();
+      return;
+    }
+    const view = this.textTargetView();
+    const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
+    if (!view || !live || this.callbacks.isLocked?.()) return;
+    if (!preview || preview.pageId !== view.pageId || preview.id !== view.id) {
+      this.textSizePreview = { pageId: view.pageId, id: view.id, fontSize: live.fontSize };
+    }
+    live.fontSize = fontSize;
+    this.syncTextBoxes();
+  }
+
+  /** The box the size slider is previewing on, and its own size. */
+  private textSizePreview: { pageId: string; id: string; fontSize: number } | null = null;
+
   applyTextStyle(patch: TextStylePatch): boolean {
+    // A size still previewed goes back first, so the step undoes to the size it had.
+    if (this.textSizePreview) this.previewTextSize(null);
     const view = this.textTargetView();
     const live = view ? this.liveTextBox(view.pageId, view.id) : undefined;
     if (!view || !live) return false;
@@ -9846,6 +9912,8 @@ export class InkSurface {
    * when focus went straight into another box.
    */
   private endTextEditing(view: TextBoxView): void {
+    // A size slider let go of elsewhere: the box keeps its stored size.
+    if (this.textSizePreview) this.previewTextSize(null);
     this.watchTypingKeyboard(false);
     this.releaseTextEditingClass();
     this.removeIfEmpty(view);

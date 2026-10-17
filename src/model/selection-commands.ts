@@ -24,7 +24,13 @@ import {
 } from "./document";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
-import { MAX_BORDER_WIDTH, MAX_CORNER_RADIUS, MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "./text-style";
+import {
+  MAX_BORDER_WIDTH,
+  MAX_CORNER_RADIUS,
+  MAX_TEXT_SIZE,
+  MIN_TEXT_SIZE,
+  roundTextSize,
+} from "./text-style";
 import {
   type ShapeStyle,
   type StyleFields,
@@ -263,7 +269,8 @@ export class ScaleElements implements Command {
         textBox.y = sy(y);
         textBox.w = w * k;
         if (h !== undefined) textBox.h = h * k;
-        textBox.fontSize = fontSize * k;
+        // To one decimal: the size menu shows it, and 23.4000000001 is noise.
+        textBox.fontSize = roundTextSize(fontSize * k);
         // The border and corners grow with the box, as a stroke's width does.
         if (border) textBox.border = { ...border, width: border.width * k };
         if (radius !== undefined) textBox.radius = radius * k;

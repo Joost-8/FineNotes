@@ -1629,6 +1629,7 @@ export class InkView extends TextFileView {
         },
         onToggleThumbnails: () => this.toggleSidebar(),
         onTextStyle: (patch) => this.surface?.applyTextStyle(patch),
+        onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
         onPenAutoShapeChange: (enabled) => this.plugin.savePenAutoShape(enabled),
