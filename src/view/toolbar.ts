@@ -321,9 +321,13 @@ const LASSO_FILTER_LABELS: Record<keyof LassoFilter, string> = {
   textBoxes: "Text boxes",
 };
 
-/** The Shape tool's mode a toolbar state implies. `undefined` counts as auto. */
+/**
+ * The Shape tool's mode a toolbar state implies. The tool no longer offers
+ * auto-shape (the pen's Auto shape does that), so a mode remembered as
+ * "auto", or none, is the rectangle.
+ */
 export function shapeModeFor(state: ToolbarState): ShapeMode {
-  return isShapeMode(state.shapeMode) ? state.shapeMode : "auto";
+  return isShapeMode(state.shapeMode) && state.shapeMode !== "auto" ? state.shapeMode : "rect";
 }
 
 const SHAPE_LABELS: Record<ShapeMode, string> = {
@@ -382,7 +386,7 @@ export interface ToolbarState {
    * `penColors`.
    */
   penInks?: PenInks;
-  /** The Shape tool's mode. `undefined` counts as "auto". */
+  /** The Shape tool's mode. `undefined` (or a remembered "auto") counts as the rectangle. */
   shapeMode?: ShapeMode;
   /** The Shape tool's fill, line, corners and arrowheads. `undefined`: plain outlines. */
   shapeStyle?: ShapeToolStyle;
@@ -1417,9 +1421,9 @@ export class Toolbar {
   }
 
   private buildShapeOptions(): void {
-    // Auto-shape stands apart from the presets, as in the reference, the
-    // connectors apart from the closed shapes, and the table on its own.
-    const groups: ShapeMode[][] = [["auto"], [...SHAPE_PRESETS], [...CONNECTOR_PRESETS], ["table"]];
+    // The connectors apart from the closed shapes, and the table on its own.
+    // (Auto-shape is the pen's switch now, not a mode here.)
+    const groups: ShapeMode[][] = [[...SHAPE_PRESETS], [...CONNECTOR_PRESETS], ["table"]];
     this.tableCaption = null;
     groups.forEach((modes, g) => {
       if (g > 0) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });

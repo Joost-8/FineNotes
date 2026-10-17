@@ -10,6 +10,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **The Shape tool starts at the square.** Its auto-shape button is gone;
+  the pen's Auto shape switch still turns a drawn shape clean.
 - **Everything new is a notebook.** The New notebook dialog no longer offers
   a single page. Pages you already have still open, and their page menu can
   still turn one into a notebook.
