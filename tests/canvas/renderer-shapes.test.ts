@@ -135,6 +135,23 @@ describe("a styled shape", () => {
     expect(hashOf(lines[fill])).toBe(hashOf(lines[outline]));
   });
 
+  it("lies under a text box in a thumbnail, as on the page", () => {
+    // A filled card with its text on top (the welcome notebook's cards):
+    // painted the other way round, the fill would cover the text in the
+    // sidebar, the PDF export and the AI's page render.
+    const p = page([card]);
+    p.textBoxes = [
+      { id: "t1", x: 56, y: 56, w: 168, text: "On the card", color: "#343a40", fontSize: 21 },
+    ];
+    renderPageThumbnail(log.canvas("thumb"), p, backdrop, 400, 1, { usePressure: false });
+    const fill = log.lines.findIndex(
+      (l) => l.startsWith("thumb fill") && l.includes("fillStyle=#e03131"),
+    );
+    const text = log.lines.findIndex((l) => l.startsWith("thumb fillText"));
+    expect(fill).toBeGreaterThanOrEqual(0);
+    expect(text).toBeGreaterThan(fill);
+  });
+
   it("draws a filled head as a filled triangle, an open one as a V, the line between", () => {
     renderPageThumbnail(log.canvas("thumb"), page([pointer]), backdrop, 400, 1, {
       usePressure: false,

@@ -39,6 +39,23 @@ describe("estimateLines", () => {
     const long = `[[#page=3|Go]]`;
     expect(estimateLines(long, 40, 20)).toBe(1);
   });
+
+  it("measures by Arial's widths: narrow letters fit more to a line than wide ones", () => {
+    // Thirty "i" (0.222 em each) are one 15 em line; thirty spaced "m" (0.833 em) take three.
+    expect(estimateLines("i".repeat(30), 300, 20)).toBe(1);
+    expect(estimateLines("m ".repeat(30).trim(), 300, 20)).toBeGreaterThanOrEqual(3);
+    expect(estimateLines("m ".repeat(30).trim(), 300, 20, true)).toBeGreaterThanOrEqual(
+      estimateLines("m ".repeat(30).trim(), 300, 20),
+    );
+  });
+
+  it("wraps a little early, never late", () => {
+    // Four "abcd" and three spaces are 4 × 2.168 + 3 × 0.278 = 9.506 em: in
+    // 9.6 em they would just fit, but the estimate keeps a margin and wraps.
+    const text = "abcd abcd abcd abcd";
+    expect(estimateLines(text, 9.6 * 20, 20)).toBe(2);
+    expect(estimateLines(text, 9.8 * 20, 20)).toBe(1);
+  });
 });
 
 describe("buildWelcomeNotebook", () => {
@@ -165,6 +182,51 @@ describe("buildWelcomeNotebook", () => {
       expect(kinds.has(kind as never), kind).toBe(true);
     }
     expect(strokes.some((s) => s.tool === "highlighter")).toBe(true);
+  });
+
+  it("draws its cards as filled, rounded shapes with plain text on them", () => {
+    const tour = doc.pages.slice(1);
+    // No text box pads itself with a thick border, and only the Text boxes
+    // page's own example of a styled box has a fill.
+    const boxes = tour.flatMap((page) => page.textBoxes.map((box) => ({ page, box })));
+    expect(boxes.filter(({ box }) => (box.border?.width ?? 0) > 4)).toEqual([]);
+    expect(boxes.filter(({ box }) => box.fill).map(({ page }) => page.title)).toEqual([
+      "Text boxes",
+    ]);
+    // Every card (a filled, rounded, solid-lined rectangle) carries a text
+    // box inside it, whose estimated lines end inside it too.
+    const cards = tour.flatMap((page) =>
+      page.strokes
+        .filter((s) => s.shape === "rect" && s.fill && (s.radius ?? 0) > 0 && !s.dash)
+        .map((s) => ({ page, stroke: s })),
+    );
+    expect(cards.length).toBeGreaterThan(40);
+    for (const { page, stroke } of cards) {
+      const b = strokeBounds(stroke);
+      if (!b) throw new Error("a card without bounds");
+      const on = page.textBoxes.find(
+        (box) => box.x > b.minX && box.x + box.w < b.maxX && box.y > b.minY && box.y < b.maxY,
+      );
+      expect(on, `${page.title}: card at y ${b.minY}`).toBeDefined();
+      if (!on) continue;
+      const lines = estimateLines(on.text, on.w - 8, on.fontSize, on.bold);
+      expect(on.y + lines * on.fontSize * (on.lineHeight ?? 1.25)).toBeLessThan(b.maxY);
+    }
+  });
+
+  it("marks practice areas as dashed, softly filled frames", () => {
+    const zones = doc.pages.flatMap((page) =>
+      page.strokes.filter((s) => s.shape === "rect" && s.dash === "dash"),
+    );
+    expect(zones.length).toBeGreaterThanOrEqual(10);
+    for (const zone of zones) expect(zone.fill).toMatch(/^#[0-9a-f]{8}$/);
+  });
+
+  it("draws sync as arrows with a filled head at both ends", () => {
+    const both = doc.pages
+      .flatMap((page) => page.strokes)
+      .filter((s) => s.shape === "line" && s.heads?.start === "filled" && s.heads.end === "filled");
+    expect(both).toHaveLength(2);
   });
 
   it("is the same notebook every time", () => {
