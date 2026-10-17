@@ -11,11 +11,12 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 const { PEN_MENU_TYPES, penTypeFor } = await import("../../src/view/toolbar");
 
 describe("the pen-type menu", () => {
-  it("offers the highlighter as well as the three pens", () => {
+  it("offers the highlighter as well as the four pens", () => {
     expect(PEN_MENU_TYPES.map((spec) => spec.id)).toEqual([
       "fountain",
       "ball",
       "brush",
+      "calligraphy",
       "highlighter",
     ]);
   });

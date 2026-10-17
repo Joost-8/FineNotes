@@ -344,6 +344,7 @@ import {
   eraserSizeFor,
   lassoFilterFor,
   lassoModeFor,
+  penTypeFor,
   shapeModeFor,
   strokeWidthFor,
   tableSizeFor,
@@ -4072,11 +4073,14 @@ export class InkSurface {
   private currentStyle(): StrokeStyle {
     const tool: Tool = this.toolState.tool === "highlighter" ? "highlighter" : "pen";
     const { pressureEnabled } = this.toolState;
+    // A calligraphy pen's flat nib, for the pen only (never a shape or the highlighter).
+    const nib = this.toolState.tool === "pen" ? penTypeFor(this.toolState).nib : undefined;
     return {
       color: this.strokeColor(),
       size: this.strokeSize(),
       tool,
       usePressure: pressureEnabled,
+      ...(nib !== undefined ? { nib } : {}),
     };
   }
 
@@ -5357,7 +5361,7 @@ export class InkSurface {
     );
 
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
-    const { color, size, tool } = this.currentStyle();
+    const { color, size, tool, nib } = this.currentStyle();
     const samples = builder.recorded();
     const stroke: Stroke = {
       id: this.strokeIds.next(),
@@ -5367,6 +5371,8 @@ export class InkSurface {
       pts: shape ? shape.pts : (this.highlightLine(tool, builder.points()) ?? builder.points()),
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
+      // A snapped shape is clean geometry, drawn at one width: no nib.
+      ...(nib !== undefined && !shape ? { nib } : {}),
     };
     if (shape) this.styleShape(stroke);
     this.notePracticeInput();

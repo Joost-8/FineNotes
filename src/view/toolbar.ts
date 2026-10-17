@@ -186,7 +186,7 @@ export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | 
  * not a top-level tool, so tier 1 shows one "pen" button and the type is chosen
  * in tier 2. Each type is expressed with knobs the ink engine already has.
  */
-export type PenType = "fountain" | "ball" | "brush" | "highlighter";
+export type PenType = "fountain" | "ball" | "brush" | "calligraphy" | "highlighter";
 
 export interface PenTypeSpec {
   id: PenType;
@@ -196,12 +196,24 @@ export interface PenTypeSpec {
   pressure: boolean;
   /** Multiplier on the chosen stroke width. */
   sizeScale: number;
+  /** A flat nib at this angle, degrees: the width follows the direction (calligraphy). */
+  nib?: number;
 }
 
 export const PEN_TYPES: readonly PenTypeSpec[] = [
   { id: "fountain", label: "Fountain pen", tool: "pen", pressure: true, sizeScale: 1 },
   { id: "ball", label: "Ball pen", tool: "pen", pressure: false, sizeScale: 1 },
   { id: "brush", label: "Brush pen", tool: "pen", pressure: true, sizeScale: 1.8 },
+  // A broad italic nib held at 40°, as calligraphy is taught: thick on the
+  // downstrokes, hairline on the upstrokes. Width by direction, not pressure.
+  {
+    id: "calligraphy",
+    label: "Calligraphy pen",
+    tool: "pen",
+    pressure: false,
+    sizeScale: 2.6,
+    nib: 40,
+  },
   { id: "highlighter", label: "Highlighter", tool: "highlighter", pressure: false, sizeScale: 4 },
 ];
 

@@ -955,6 +955,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       "fountain",
       "ball",
       "brush",
+      "calligraphy",
       "highlighter",
     ]);
     expect(setting.colors[0].value).toBe("#e03131");

@@ -32,6 +32,28 @@ export interface PenOptions {
   size: number;
   /** How far pressure thins or thickens the line, 0..1; 0 keeps one width. */
   thinning: number;
+  /**
+   * A flat nib's angle, radians from the x axis: the line is full width
+   * moving across the nib and a hairline moving along it, as a broad-edged
+   * calligraphy pen writes. Absent: a round nib, the same in every direction.
+   */
+  nib?: number;
+}
+
+/** The narrowest a flat nib writes, as a share of its full width (moving along its edge). */
+export const NIB_HAIRLINE = 0.18;
+
+/**
+ * How wide a flat nib at `nib` radians writes moving in direction `dx, dy`,
+ * as a share of its full width: 1 across the nib, {@link NIB_HAIRLINE}
+ * along it. Depends only on the segment just drawn, so a stroke's width at
+ * a point is known when the point arrives and never changes after.
+ */
+export function nibFactor(nib: number, dx: number, dy: number): number {
+  const length = Math.hypot(dx, dy);
+  if (!(length > 0) || !Number.isFinite(nib)) return 1;
+  const across = Math.abs(Math.sin(Math.atan2(dy, dx) - nib));
+  return NIB_HAIRLINE + (1 - NIB_HAIRLINE) * across;
 }
 
 /**
@@ -40,8 +62,12 @@ export interface PenOptions {
  * nib at 0.5, 1.6 of it at full. Without, one width. (These are the widths
  * notes have been drawn at since the first release.)
  */
-export function penOptions(size: number, pressure: boolean): PenOptions {
-  return { size, thinning: pressure ? 0.6 : 0 };
+export function penOptions(size: number, pressure: boolean, nibDegrees?: number): PenOptions {
+  const pen: PenOptions = { size, thinning: pressure ? 0.6 : 0 };
+  if (typeof nibDegrees === "number" && Number.isFinite(nibDegrees)) {
+    pen.nib = (nibDegrees * Math.PI) / 180;
+  }
+  return pen;
 }
 
 /** Half the line's width at `pressure` (0..1; anything else reads as 0.5). */
@@ -106,8 +132,14 @@ export class InkTracer {
   push(x: number, y: number, pressure: number): void {
     this.pushed++;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const dab: Dab = { x, y, r: radiusAt(pressure, this.pen) };
     const { prev, last } = this;
+    let r = radiusAt(pressure, this.pen);
+    // A flat nib: as wide as the direction it arrived from allows. The first
+    // point has no direction yet and starts at the nib's middle width.
+    if (this.pen.nib !== undefined) {
+      r *= last ? nibFactor(this.pen.nib, x - last.x, y - last.y) : (1 + NIB_HAIRLINE) / 2;
+    }
+    const dab: Dab = { x, y, r };
     if (last && Math.hypot(x - last.x, y - last.y) < SAME_POINT) {
       // The pen pressed harder where it stood: a wider dot there, and the
       // line goes on from the wider point.

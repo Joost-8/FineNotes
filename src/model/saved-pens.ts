@@ -16,7 +16,7 @@ import { FINE_PEN_MIN } from "./pen-widths";
 import { mmToPage, pageToMm } from "./units";
 
 /** The pen types, as `toolbar.ts` names them. */
-export const SAVED_PEN_TYPES = ["fountain", "ball", "brush", "highlighter"] as const;
+export const SAVED_PEN_TYPES = ["fountain", "ball", "brush", "calligraphy", "highlighter"] as const;
 export type SavedPenType = (typeof SAVED_PEN_TYPES)[number];
 
 /** A pen: its type, its ink as `#rrggbb`, and its width in page px before the type's multiplier. */
@@ -168,6 +168,7 @@ export function savedPenLabel(pen: SavedPen): string {
     fountain: "Fountain pen",
     ball: "Ball pen",
     brush: "Brush pen",
+    calligraphy: "Calligraphy pen",
     highlighter: "Highlighter",
   };
   return `${names[pen.type]}, ${mmText(pen.size)} mm`;

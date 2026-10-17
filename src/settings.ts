@@ -151,6 +151,7 @@ const PEN_TYPE_NAMES: Record<SavedPenType, string> = {
   fountain: "Fountain pen",
   ball: "Ball pen",
   brush: "Brush pen",
+  calligraphy: "Calligraphy pen",
   highlighter: "Highlighter",
 };
 

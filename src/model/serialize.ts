@@ -147,6 +147,7 @@ interface StoredStroke {
   dash?: string;
   radius?: number;
   heads?: { start?: string; end?: string };
+  nib?: number;
   t0?: number;
   samples?: number[];
 }
@@ -207,6 +208,7 @@ function storeStroke(stroke: Stroke): StoredStroke {
     dash: stroke.dash,
     radius: stroke.radius,
     heads: stroke.heads ? { start: stroke.heads.start, end: stroke.heads.end } : undefined,
+    nib: typeof stroke.nib === "number" && Number.isFinite(stroke.nib) ? stroke.nib : undefined,
     // Absent means "unknown", which is not the same as 0 (ledger: clamping
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
@@ -646,6 +648,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   if (radius) stroke.radius = radius;
   const heads = readHeads(raw.heads);
   if (heads) stroke.heads = heads;
+  if (typeof raw.nib === "number" && Number.isFinite(raw.nib)) stroke.nib = raw.nib;
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;

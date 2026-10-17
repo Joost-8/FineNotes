@@ -114,6 +114,8 @@ export interface StrokeStyle {
   shape?: boolean;
   /** A shape's fill, dash, corners and arrowheads, when it has any. */
   decor?: ShapeDecor | null;
+  /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
+  nib?: number;
 }
 
 /** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
@@ -408,8 +410,13 @@ function pressureFor(tool: Tool, usePressure: boolean): boolean {
 }
 
 /** The pen a stroke of this style is traced with. */
-export function penFor(style: { size: number; tool: Tool; usePressure: boolean }): PenOptions {
-  return penOptions(style.size, pressureFor(style.tool, style.usePressure));
+export function penFor(style: {
+  size: number;
+  tool: Tool;
+  usePressure: boolean;
+  nib?: number;
+}): PenOptions {
+  return penOptions(style.size, pressureFor(style.tool, style.usePressure), style.nib);
 }
 
 /** Give the backing store back now; iOS holds canvas memory until then. */
@@ -1198,13 +1205,17 @@ export class Renderer {
     const pressure = pressureFor(stroke.tool, usePressure);
     const pts = stroke.pts;
     const n = pts.length;
-    const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
+    const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${stroke.nib ?? ""}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
     if (cached && cached.pts === pts && cached.fingerprint === fingerprint) return cached;
     let runs: InkRun[] = [];
     let bounds: Bounds | null = null;
     if (n >= 3) {
-      runs = inkRuns(pts, penOptions(stroke.size, pressure), stroke.shape !== undefined);
+      runs = inkRuns(
+        pts,
+        penOptions(stroke.size, pressure, stroke.nib),
+        stroke.shape !== undefined,
+      );
       const b = strokeBounds(stroke);
       if (b) {
         // Arrowheads reach sideways past the line's ends.
@@ -1487,6 +1498,7 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
     usePressure: pressure,
     shape: shape !== undefined,
     decor: decorOf(stroke),
+    ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
   };
 }
 

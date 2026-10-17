@@ -107,6 +107,12 @@ export interface Stroke {
   /** Arrowheads drawn on a `line`'s ends. A stored `arrow` keeps its head in its points. */
   heads?: ArrowHeads;
   /**
+   * Written with a flat calligraphy nib at this angle, degrees from the x
+   * axis: the line's width follows the direction it was drawn in
+   * (`ink/freehand` nibFactor). Absent: a round nib.
+   */
+  nib?: number;
+  /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds
    * since the stroke's first sample, and so on. Kept only in practice files,

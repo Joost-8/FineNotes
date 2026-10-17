@@ -11,7 +11,7 @@
 import { relativeLuminance } from "../model/cover";
 
 /** The pen types a glyph exists for (`PenTypeSpec.id`). */
-export type GlyphPen = "fountain" | "ball" | "brush" | "highlighter";
+export type GlyphPen = "fountain" | "ball" | "brush" | "calligraphy" | "highlighter";
 
 /**
  * One SVG element of a glyph. `ink`: painted in the pen's ink colour, not the
@@ -71,6 +71,13 @@ export function penIconParts(pen: string): GlyphPart[] {
         // The ferrule, then the bristles.
         path("M9.6 10.5h4.8v3H9.6z"),
         inkFill("M9.6 13.5h4.8c0 3.6-1.4 6.2-2.4 9-1-2.8-2.4-5.4-2.4-9z"),
+      ];
+    case "calligraphy":
+      return [
+        // The holder, then the broad, square-cut nib.
+        path("M10.6 1.5h2.8v9.5h-2.8z"),
+        path("M9.8 11h4.4v2.5H9.8z"),
+        inkFill("M9.2 13.5h5.6l-.4 6.5-4.8 2z"),
       ];
     case "highlighter":
       return [
@@ -188,6 +195,9 @@ function profile(pen: string): ((t: number) => number) | null {
     case "ball":
     case "highlighter":
       return null;
+    case "calligraphy":
+      // A flat nib on a curve: thick across it, thin along it, twice over.
+      return (t) => 0.2 + 0.8 * Math.abs(Math.sin(Math.PI * 2 * t + 0.6));
     case "brush":
       // Pressed down at the start, lifting off to a point.
       return (t) => (t < 0.12 ? 0.6 + (0.4 * t) / 0.12 : 1 - (0.9 * (t - 0.12)) / 0.88);
