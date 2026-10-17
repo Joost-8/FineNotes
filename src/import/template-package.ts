@@ -228,6 +228,13 @@ export const GALLERY_CATEGORIES: ReadonlyArray<{ id: string; label: string }> = 
   { id: "other", label: "Other" },
 ];
 
+/**
+ * FineNotes' own gallery (github.com/Joost-8/FineNotes-templates): what an
+ * empty gallery address in the settings means.
+ */
+export const DEFAULT_GALLERY_URL =
+  "https://raw.githubusercontent.com/Joost-8/FineNotes-templates/main/index.json";
+
 /** One template in a gallery index. */
 export interface GalleryEntry {
   id: string;

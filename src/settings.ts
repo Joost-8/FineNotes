@@ -840,8 +840,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ),
       controlRow(
         "Template gallery",
-        "The web address of a template gallery's index (a JSON file listing templates). Empty: no gallery.",
-        { type: "text", key: "templateGalleryUrl", placeholder: "https://…/index.json" },
+        "Where Browse template gallery looks. Empty: FineNotes' own gallery on GitHub. Or the address of another gallery's index (a JSON file listing templates).",
+        { type: "text", key: "templateGalleryUrl", placeholder: "FineNotes' own gallery" },
         ["template", "gallery", "community", "share"],
       ),
       toggle(

@@ -24,6 +24,11 @@ extracted from the matching section of this file by `release.yml`.
   is on, including papers from My templates.
 - **Save page as template**, in the ⋯ panel and the command palette: the
   page as it looks becomes a paper in My templates.
+- **FineNotes' own template gallery**, on GitHub
+  ([Joost-8/FineNotes-templates](https://github.com/Joost-8/FineNotes-templates)):
+  Browse template gallery opens it unless another gallery is set, with a
+  Cornell notes page and a linked weekly planner to start. Anyone can add
+  theirs with a pull request; each is checked and reviewed.
 - **The template gallery takes papers.** A gallery entry can be a PDF, PNG or
   JPEG paper (added to My templates) or a notebook; it can also link to its
   creator's own shop. Search and categories in the gallery; only PDF and

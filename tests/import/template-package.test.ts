@@ -10,6 +10,7 @@ import { importNotebooks, isImportFileName } from "../../src/import/import-noteb
 import {
   TEMPLATE_EXTENSION,
   buildTemplatePackage,
+  DEFAULT_GALLERY_URL,
   galleryKindOf,
   galleryMatches,
   readGalleryIndex,
@@ -234,6 +235,12 @@ describe("a gallery index", () => {
     expect(galleryMatches(entry, "weekly ana")).toBe(true);
     expect(galleryMatches(entry, "HYPERLINKED monday")).toBe(true);
     expect(galleryMatches(entry, "weekly daily")).toBe(false);
+  });
+
+  it("has FineNotes' own gallery as the default: an https index on GitHub", () => {
+    expect(DEFAULT_GALLERY_URL).toBe(
+      "https://raw.githubusercontent.com/Joost-8/FineNotes-templates/main/index.json",
+    );
   });
 
   it("reads a download's kind from its extension only", () => {

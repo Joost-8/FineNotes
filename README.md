@@ -496,7 +496,9 @@ learns from them stay in your vault.
 The network is used in two cases, both optional.
 
 **The template gallery.** It downloads only when you open it (Browse
-template gallery), from the address set in Settings → Pages and notebooks:
+template gallery), from FineNotes' own gallery on GitHub
+([Joost-8/FineNotes-templates](https://github.com/Joost-8/FineNotes-templates)),
+or from another address set in Settings → Pages and notebooks:
 its list of templates, their preview pictures, and the one template you
 choose to add. Nothing about you or your vault is sent. A template is only
 accepted if it is a PDF, PNG, JPEG or WebP file of at most 40 MB, or a

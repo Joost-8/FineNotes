@@ -1,4 +1,9 @@
-import { type GalleryEntry, TEMPLATE_EXTENSION, readGalleryIndex } from "./import/template-package";
+import {
+  DEFAULT_GALLERY_URL,
+  type GalleryEntry,
+  TEMPLATE_EXTENSION,
+  readGalleryIndex,
+} from "./import/template-package";
 import { TemplateFileSuggestModal, TemplateGalleryModal } from "./view/template-ui";
 import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
@@ -1296,14 +1301,17 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * The gallery its index URL names: fetched, listed, and a chosen template
-   * downloaded into the templates folder and opened as a new notebook.
+   * The template gallery: FineNotes' own (`DEFAULT_GALLERY_URL`), or the one
+   * whose index the settings name. Fetched only now, when it is opened, and
+   * listed; a chosen paper goes into My templates, a notebook template opens
+   * as a new notebook.
    */
   async openTemplateGallery(): Promise<void> {
-    const url = this.settings.templateGalleryUrl.trim();
+    // Empty means FineNotes' own gallery; another address is another gallery.
+    const url = this.settings.templateGalleryUrl.trim() || DEFAULT_GALLERY_URL;
     if (!/^https:\/\//i.test(url)) {
       new Notice(
-        "FineNotes: set a template gallery's address in Settings → Pages and notebooks.",
+        "FineNotes: a template gallery's address must start with https:// (Settings → Pages and notebooks).",
         8000,
       );
       return;
