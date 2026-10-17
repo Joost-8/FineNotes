@@ -156,7 +156,7 @@ import {
   collectPageText,
   pageFromSubpath,
   pageInThisNotebook,
-  filesFolderSidecarPath,
+  folderNotebookSidecarPath,
   transcriptSidecarPath,
 } from "../search/notebook-search";
 import { pageLinkLabel } from "./page-embed-model";
@@ -1814,9 +1814,9 @@ export class InkView extends TextFileView {
     const note = this.file;
     if (!note || !this.surface) return;
     // Beside the note first (where the server keeps a sidecar it already
-    // has), then in the note's files folder.
+    // has), then in the Transcripts of the notebook's own folder.
     const sidecarFile =
-      [transcriptSidecarPath(note.path), filesFolderSidecarPath(note.path)]
+      [transcriptSidecarPath(note.path), folderNotebookSidecarPath(note.path)]
         .map((path) => (path ? this.app.vault.getFileByPath(path) : null))
         .find((file) => file !== null) ?? null;
     let sidecar: string | null = null;

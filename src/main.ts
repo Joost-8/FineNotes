@@ -6,7 +6,8 @@ import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
-import { ExplorerFilesOrder } from "./view/explorer-files-order";
+import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
+import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
@@ -17,6 +18,7 @@ import {
   Plugin,
   type RequestUrlResponse,
   requestUrl,
+  type TAbstractFile,
   TFile,
   TFolder,
   type ViewState,
@@ -141,7 +143,13 @@ export default class GoodObsidianPlugin extends Plugin {
     this.openNewNotebookDialog(),
   );
 
-  private readonly explorerFilesOrder = new ExplorerFilesOrder();
+  private readonly explorerFolderNotebooks = new ExplorerFolderNotebooks({
+    folder: (path) => this.app.vault.getFolderByPath(path),
+    open: (file, newTab) => {
+      const tab = this.app.workspace.getLeaf(newTab);
+      void tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+    },
+  });
 
   private syncExplorerNotebookButton(): void {
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
@@ -149,7 +157,7 @@ export default class GoodObsidianPlugin extends Plugin {
       explorers.map((view) => view.containerEl),
       this.settings.showNewNotebookInExplorer,
     );
-    this.explorerFilesOrder.sync(explorers, this.settings.filesFolderUnderNotebook);
+    this.explorerFolderNotebooks.sync(explorers, this.settings.folderNotebooks);
   }
 
   override settings!: GoodObsidianSettings;
@@ -361,7 +369,10 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => this.fileMoves.renamed(file, oldPath)),
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.fileMoves.renamed(file, oldPath);
+        this.keepFolderNotebookPaired(file, oldPath);
+      }),
     );
     this.register(() => this.fileMoves.destroy());
     // The reader's and the learner's workers end with the plugin.
@@ -371,7 +382,7 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.register(() => this.explorerNotebookButton.destroy());
-    this.register(() => this.explorerFilesOrder.destroy());
+    this.register(() => this.explorerFolderNotebooks.destroy());
     this.registerEvent(
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );
@@ -1351,6 +1362,30 @@ export default class GoodObsidianPlugin extends Plugin {
         void this.createNotebook(title, choices, folder);
       },
     }).open();
+  }
+
+  /**
+   * A notebook and its own folder keep one name: renaming either renames
+   * the other (`followPairRename`). Run after Obsidian's own rename has
+   * finished, through `fileManager.renameFile` so links follow too.
+   */
+  private keepFolderNotebookPaired(file: TAbstractFile, oldPath: string): void {
+    if (!this.settings.folderNotebooks) return;
+    const folder = file instanceof TFolder ? file : file.parent;
+    if (!folder) return;
+    const entries = folder.children.map((child) => ({
+      name: child.name,
+      folder: child instanceof TFolder,
+    }));
+    const pair = followPairRename(oldPath, file.path, file instanceof TFolder, entries);
+    if (!pair) return;
+    window.setTimeout(() => {
+      const from = this.app.vault.getAbstractFileByPath(pair.from);
+      if (!from || this.app.vault.getAbstractFileByPath(pair.to)) return;
+      this.app.fileManager.renameFile(from, pair.to).catch((error: unknown) => {
+        new Notice(`FineNotes: could not rename ${pair.from} — ${errorMessage(error)}`, 8000);
+      });
+    }, 0);
   }
 
   /** The setting's folder, or the active file's (the behaviour before the setting existed). */

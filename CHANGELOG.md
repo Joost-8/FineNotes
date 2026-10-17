@@ -8,25 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
-### Changed
-
-- **A notebook's files sit beside it, not around it.** With "Keep its files
-  in a folder" on (New notebook and the importer), the notebook is saved in
-  the folder you picked, and a "<Title> files" folder next to it holds its
-  Images, Recordings, Transcripts, AI chats and Exports. Notebooks made before keep
-  their folders.
-
 ### Added
 
-- **Files folders sit under their notebook in the file explorer.** Obsidian
-  lists folders before files, which put "Physics files" at the top, away
-  from "Physics.notebook.md". FineNotes now lists it right below the
-  notebook (Settings → "List files folders under their notebook", on by
-  default). Search also reads a transcript-server sidecar from the files
-  folder's Transcripts.
+- **A notebook's folder is the notebook.** "Give it its own folder" (New
+  notebook and the importer) makes `Physics/` with the notebook inside, next
+  to Images, Recordings, Transcripts, AI chats and Exports. In the file
+  explorer that folder shows as the notebook: tap its name to open it, or
+  its arrow to see its files. Renaming the folder renames the notebook, and
+  the other way round. Notebooks get a notebook icon, and the folders inside
+  one an icon for what they hold (Settings → "Show notebook folders as
+  notebooks", on by default).
 - **A folder for recording transcripts.** Notebook settings has a
   "Recording transcripts" row; empty, a transcript still goes next to its
-  recording.
+  recording. Search also reads a transcript-server sidecar from a notebook
+  folder's Transcripts.
 
 ## [2.2.1] - 2026-10-17
 

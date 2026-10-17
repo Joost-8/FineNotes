@@ -269,6 +269,11 @@ export function requireApiVersion(_version: string): boolean {
 
 export function setIcon(): void {}
 
+export const Keymap = {
+  isModEvent: (event?: { ctrlKey?: boolean; metaKey?: boolean }): boolean =>
+    Boolean(event?.ctrlKey || event?.metaKey),
+};
+
 /** Icons the plugin registered with `addIcon`, by id. */
 export const addedIcons = new Map<string, string>();
 

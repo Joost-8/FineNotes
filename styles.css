@@ -8301,3 +8301,23 @@ button.goodobsidian-learn-stop.is-hidden {
   font-size: inherit;
   text-decoration: underline;
 }
+
+/* File explorer: a notebook's icon, and icons on the folders inside its own folder (explorer-folder-notebooks.ts). */
+.goodobsidian-explorer-icon {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-inline-end: var(--size-4-1);
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+}
+
+.goodobsidian-explorer-icon svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.nav-folder-title.goodobsidian-folder-notebook .goodobsidian-explorer-icon {
+  color: var(--interactive-accent);
+  opacity: 1;
+}

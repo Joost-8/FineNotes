@@ -848,10 +848,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ["toolbar", "file explorer", "new notebook"],
       ),
       toggle(
-        "filesFolderUnderNotebook",
-        "List files folders under their notebook",
-        "In the file explorer, show a notebook's “<Title> files” folder right below the notebook instead of at the top with the other folders.",
-        ["file explorer", "files folder", "sort", "order"],
+        "folderNotebooks",
+        "Show notebook folders as notebooks",
+        "In the file explorer, a notebook with its own folder shows as that folder: tap its name to open the notebook, or its arrow for its pictures, recordings and other files. Renaming one renames the other.",
+        ["file explorer", "folder", "folder note", "icons"],
       ),
     ]);
   }

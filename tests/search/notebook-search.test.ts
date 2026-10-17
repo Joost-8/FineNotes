@@ -8,7 +8,7 @@ import {
   pageInThisNotebook,
   queryTerms,
   searchPages,
-  filesFolderSidecarPath,
+  folderNotebookSidecarPath,
   transcriptSidecarPath,
   transcriptsByKey,
 } from "../../src/search/notebook-search";
@@ -186,17 +186,18 @@ describe("transcriptSidecarPath", () => {
   });
 });
 
-describe("filesFolderSidecarPath", () => {
-  it("sits in the note's files folder, under Transcripts", () => {
-    expect(filesFolderSidecarPath("School/Bio.notebook.md")).toBe(
-      "School/Bio files/Transcripts/Bio.transcript.md",
+describe("folderNotebookSidecarPath", () => {
+  it("sits in the Transcripts of the notebook's own folder", () => {
+    expect(folderNotebookSidecarPath("School/Bio/Bio.notebook.md")).toBe(
+      "School/Bio/Transcripts/Bio.transcript.md",
     );
-    expect(filesFolderSidecarPath("Q.page.md")).toBe("Q files/Transcripts/Q.transcript.md");
+    expect(folderNotebookSidecarPath("Q/Q.page.md")).toBe("Q/Transcripts/Q.transcript.md");
   });
 
-  it("is null for a manifest notebook or a file that is not a handwritten note", () => {
-    expect(filesFolderSidecarPath("Bio/_notebook.md")).toBeNull();
-    expect(filesFolderSidecarPath("notes/plain.md")).toBeNull();
+  it("is null for a note without a folder of its own", () => {
+    expect(folderNotebookSidecarPath("School/Bio.notebook.md")).toBeNull();
+    expect(folderNotebookSidecarPath("Bio/_notebook.md")).toBeNull();
+    expect(folderNotebookSidecarPath("notes/plain.md")).toBeNull();
   });
 });
 

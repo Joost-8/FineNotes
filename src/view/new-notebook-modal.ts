@@ -7,7 +7,7 @@
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
  *   Folder  Lectures/Analysis  ›
- *           Keep its files in a folder beside it              [ toggle ]
+ *           Give it its own folder                        [ toggle ]
  *
  * Laid out for an iPad in either orientation, and usable with the on-screen
  * keyboard up: Create sits in the header, Return in the title creates, and
@@ -25,7 +25,6 @@ import {
   type CoverChoice,
   type NotebookChoices,
   type NotebookType,
-  FILES_FOLDER_SUFFIX,
   OWN_FOLDER_AUDIO,
   OWN_FOLDER_CHATS,
   OWN_FOLDER_EXPORTS,
@@ -326,18 +325,18 @@ export class NewNotebookModal extends Modal {
     });
     this.syncFolder();
 
-    // A "<Title> files" folder beside the notebook, with its pictures,
+    // A folder of its own, named after it and shown as the notebook, with its pictures,
     // recordings, transcripts, AI chats and exports in folders inside. The whole row
     // toggles: the switch alone is small.
     const own = section.createDiv({ cls: "goodobsidian-newnb-own-folder" });
     const text = own.createDiv({ cls: "goodobsidian-newnb-own-folder-text" });
-    text.createDiv({ text: "Keep its files in a folder" });
+    text.createDiv({ text: "Give it its own folder" });
     this.ownFolderDesc = text.createDiv({ cls: "goodobsidian-newnb-own-folder-desc" });
     this.syncOwnFolderDesc();
     const toggle = new ToggleComponent(own).setValue(this.choices.ownFolder).onChange((on) => {
       this.choices.ownFolder = on;
     });
-    toggle.toggleEl.setAttribute("aria-label", "Keep its files in a folder");
+    toggle.toggleEl.setAttribute("aria-label", "Give it its own folder");
     own.addEventListener("click", (event) => {
       if (toggle.toggleEl.contains(event.target as Node)) return;
       toggle.setValue(!toggle.getValue());
@@ -411,7 +410,7 @@ export class NewNotebookModal extends Modal {
   private syncOwnFolderDesc(): void {
     const name = notebookBaseName(this.titleInput?.value ?? "", this.choices.type);
     this.ownFolderDesc?.setText(
-      `A "${name}${FILES_FOLDER_SUFFIX}" folder beside it, with ${OWN_FOLDER_IMAGES}, ` +
+      `A "${name}" folder that opens as the notebook, with ${OWN_FOLDER_IMAGES}, ` +
         `${OWN_FOLDER_AUDIO}, ${OWN_FOLDER_TRANSCRIPTS}, ${OWN_FOLDER_CHATS} and ${OWN_FOLDER_EXPORTS} inside.`,
     );
   }

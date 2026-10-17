@@ -69,8 +69,11 @@ export interface GoodObsidianSettings {
   showNewNotebookInContextMenu: boolean;
   /** Show New notebook beside the file explorer creation buttons. */
   showNewNotebookInExplorer: boolean;
-  /** List each notebook's "<Title> files" folder right under it in the file explorer. */
-  filesFolderUnderNotebook: boolean;
+  /**
+   * In the file explorer, show a notebook's own folder as the notebook: its
+   * file hidden inside, the folder's name opening it, icons on its folders.
+   */
+  folderNotebooks: boolean;
   /**
    * The dialog's last choices (type, cover, paper, size, orientation). May
    * hold anything, so it is only read through `parseNotebookChoices`.
@@ -267,7 +270,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
-  filesFolderUnderNotebook: true,
+  folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
 

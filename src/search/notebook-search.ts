@@ -18,7 +18,8 @@
  */
 
 import type { Page } from "../model/document";
-import { FILES_FOLDER_SUFFIX, OWN_FOLDER_TRANSCRIPTS, inkFileSuffix } from "../model/new-notebook";
+import { isFolderNotebook } from "../model/folder-notebook";
+import { OWN_FOLDER_TRANSCRIPTS, inkFileSuffix } from "../model/new-notebook";
 import { pageKeys, parsePageTranscripts } from "../recognition/page-transcripts";
 
 export type SourceKind = "handwriting" | "text";
@@ -66,19 +67,19 @@ export function transcriptSidecarPath(notePath: string): string | null {
 }
 
 /**
- * Where the transcript server puts a new sidecar for a note that has a
- * `<Title> files` folder beside it: `<Title> files/Transcripts/<Title>.transcript.md`.
- * A sidecar already beside the note (`transcriptSidecarPath`) stays the one
- * in use, so read that first. `null` for a file that is not a single-file note.
+ * Where the transcript server puts a new sidecar for a notebook with a folder
+ * of its own (`X/X.notebook.md`): its folder's Transcripts,
+ * `X/Transcripts/X.transcript.md`. A sidecar already beside the note
+ * (`transcriptSidecarPath`) stays the one in use, so read that first.
+ * `null` for a note without a folder of its own.
  */
-export function filesFolderSidecarPath(notePath: string): string | null {
+export function folderNotebookSidecarPath(notePath: string): string | null {
+  if (!isFolderNotebook(notePath)) return null;
   const slash = notePath.lastIndexOf("/");
-  const dir = slash >= 0 ? notePath.slice(0, slash + 1) : "";
   const name = notePath.slice(slash + 1);
-  const suffix = inkFileSuffix(name);
-  if (!suffix) return null;
+  const suffix = inkFileSuffix(name) ?? "";
   const title = name.slice(0, -suffix.length);
-  return `${dir}${title}${FILES_FOLDER_SUFFIX}/${OWN_FOLDER_TRANSCRIPTS}/${title}.transcript.md`;
+  return `${notePath.slice(0, slash)}/${OWN_FOLDER_TRANSCRIPTS}/${title}.transcript.md`;
 }
 
 /**

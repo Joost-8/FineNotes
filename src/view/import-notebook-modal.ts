@@ -51,7 +51,7 @@ import { measurePdfPages, rasterizePdfFirstPage } from "./pdf-pages";
 export interface ImportNotebookOptions {
   /** Where new notebooks go (vault-relative, "" for the root). */
   folder: string;
-  /** Give each notebook a `<Title> files` folder beside it, as "New notebook" does. */
+  /** Give each notebook a folder of its own, as "New notebook" does. */
   ownFolder: boolean;
   /** Open a notebook the import wrote. */
   open: (file: TFile) => Promise<void>;
