@@ -322,6 +322,7 @@ const LASSO_FILTER_LABELS: Record<keyof LassoFilter, string> = {
   shapes: "Shapes",
   arrows: "Arrows",
   textBoxes: "Text boxes",
+  tables: "Tables",
 };
 
 /**
@@ -1747,7 +1748,16 @@ export class Toolbar {
     row.createSpan({ cls: "goodobsidian-switch-label", text: label });
     row.createSpan({ cls: "goodobsidian-switch" }).createSpan({ cls: "goodobsidian-switch-thumb" });
     row.toggleClass("is-on", on);
-    row.addEventListener("click", () => onChange(!on));
+    // The row keeps its own state: a popover that does not redraw after a
+    // change (the table picker's Header row) still shows the flip, and a
+    // second tap flips it back rather than sending the same value again.
+    let current = on;
+    row.addEventListener("click", () => {
+      current = !current;
+      row.toggleClass("is-on", current);
+      row.setAttribute("aria-checked", String(current));
+      onChange(current);
+    });
     return row;
   }
 

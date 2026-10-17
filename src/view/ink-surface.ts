@@ -6158,7 +6158,9 @@ export class InkSurface {
             boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
-      tables: (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly)),
+      tables: filter.tables
+        ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
+        : [],
     };
   }
 
@@ -6529,7 +6531,9 @@ export class InkSurface {
             framed(frameBounds(this.textBoxFrameOf(page.id, textBox))),
           )
         : [],
-      tables: (page.tables ?? []).filter((table) => framed(frameBounds(this.tableFrameOf(table)))),
+      tables: filter.tables
+        ? (page.tables ?? []).filter((table) => framed(frameBounds(this.tableFrameOf(table))))
+        : [],
     });
   }
 
@@ -6565,7 +6569,9 @@ export class InkSurface {
             boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
-      tables: (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly)),
+      tables: filter.tables
+        ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
+        : [],
     });
   }
 
@@ -6612,7 +6618,7 @@ export class InkSurface {
     // A table lies under the ink and over the pictures. It is picked up with
     // the handwriting in its cells, which stays ink of its own but goes
     // where the table goes.
-    const table = this.tableAt(page, p)?.table;
+    const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
     if (table) {
       const f = this.tableFrameOf(table);
       const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };

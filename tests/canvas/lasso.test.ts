@@ -78,6 +78,13 @@ describe("lasso settings", () => {
     expect(lassoFilterOf(Object.create({ images: false }))).toEqual(DEFAULT_LASSO_FILTER);
   });
 
+  it("has a switch for tables, kept from a stored filter", () => {
+    expect(LASSO_FILTER_KEYS).toContain("tables");
+    expect(lassoFilterOf({ tables: false }).tables).toBe(false);
+    // A filter stored before tables existed takes them, as before.
+    expect(lassoFilterOf({ images: false }).tables).toBe(true);
+  });
+
   it("names every switch, all on by default", () => {
     expect([...LASSO_FILTER_KEYS].sort()).toEqual(Object.keys(DEFAULT_LASSO_FILTER).sort());
     for (const key of LASSO_FILTER_KEYS) expect(DEFAULT_LASSO_FILTER[key]).toBe(true);
