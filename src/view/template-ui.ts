@@ -9,7 +9,13 @@
  * Saving, downloading and importing are the host's; these only ask.
  */
 
-import { type App, FuzzySuggestModal, Modal, Setting, type TFile } from "obsidian";
+import { type App, FuzzySuggestModal, Modal, Notice, Setting, type TFile } from "obsidian";
+import {
+  SHARE_CATEGORIES,
+  type ShareDetails,
+  shareProblems,
+  submissionUrl,
+} from "../model/gallery-share";
 import {
   GALLERY_CATEGORIES,
   type GalleryEntry,
@@ -145,6 +151,8 @@ export class TemplateGalleryModal extends Modal {
     private readonly openShop: (url: string) => void = (url) => window.open(url),
     /** The gallery closed, after an install or without one. */
     private readonly onClosed?: () => void,
+    /** Share one of your own templates with the gallery. */
+    private readonly onShare?: () => void,
   ) {
     super(app);
   }
@@ -152,6 +160,19 @@ export class TemplateGalleryModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-template-gallery");
     this.titleEl.setText("Template gallery");
+    const onShare = this.onShare;
+    if (onShare) {
+      const head = this.contentEl.createDiv({ cls: "goodobsidian-gallery-head" });
+      head.createSpan({
+        cls: "setting-item-description",
+        text: "Templates shared by people who use FineNotes.",
+      });
+      const share = head.createEl("button", { text: "Share yours…" });
+      share.addEventListener("click", () => {
+        this.close();
+        onShare();
+      });
+    }
     const shown = this.entries.filter((entry) => !entry.retired);
     if (shown.length === 0) {
       this.contentEl.createDiv({
@@ -241,5 +262,137 @@ export class TemplateGalleryModal extends Modal {
     this.listEl = null;
     this.contentEl.empty();
     this.onClosed?.();
+  }
+}
+
+/** A template in My templates that can be shared: its file and how it shows. */
+export interface ShareableTemplate {
+  path: string;
+  name: string;
+  pages: number;
+}
+
+/**
+ * "Share…": a template from My templates to the community gallery. Asks
+ * the few things the gallery's form needs, then opens that form on GitHub
+ * already filled in (`model/gallery-share.ts`) and says which file to drag
+ * in there; a bot does the rest. Opens nothing until asked.
+ */
+export class ShareTemplateModal extends Modal {
+  private details: ShareDetails;
+  private chosen: ShareableTemplate | null;
+
+  constructor(
+    app: App,
+    private readonly templates: readonly ShareableTemplate[],
+    initial: string | undefined,
+    private readonly openForm: (url: string, template: ShareableTemplate, author: string) => void,
+    author: string,
+  ) {
+    super(app);
+    this.chosen = templates.find((t) => t.path === initial) ?? templates[0] ?? null;
+    this.details = {
+      name: this.chosen?.name ?? "",
+      author,
+      category: "planner",
+      licence: "cc-by",
+    };
+  }
+
+  override onOpen(): void {
+    this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-share-template");
+    this.titleEl.setText("Share a template");
+    const el = this.contentEl;
+    el.empty();
+    if (!this.chosen) {
+      el.createDiv({
+        cls: "setting-item-description",
+        text: "My templates is empty. Bring in a PDF or picture, or save a page as a template, then share it.",
+      });
+      return;
+    }
+    el.createDiv({
+      cls: "setting-item-description goodobsidian-share-intro",
+      text:
+        "Everyone who uses FineNotes can find it in the template gallery once it is reviewed. " +
+        "FineNotes opens the submission form on GitHub with this filled in; you attach the file " +
+        "there and send it. You need a free GitHub account.",
+    });
+    let nameField: { setValue(value: string): unknown } | null = null;
+    new Setting(el).setName("Template").addDropdown((dropdown) => {
+      for (const t of this.templates) {
+        dropdown.addOption(t.path, `${t.name} (${t.pages} page${t.pages === 1 ? "" : "s"})`);
+      }
+      dropdown.setValue(this.chosen?.path ?? "");
+      dropdown.onChange((path) => {
+        this.chosen = this.templates.find((t) => t.path === path) ?? this.chosen;
+        if (this.chosen) {
+          this.details.name = this.chosen.name;
+          nameField?.setValue(this.chosen.name);
+        }
+        this.renderFile();
+      });
+    });
+    new Setting(el).setName("Name").addText((text) => {
+      nameField = text;
+      text.setValue(this.details.name).onChange((v) => (this.details.name = v));
+    });
+    new Setting(el)
+      .setName("Your name, as it shows")
+      .addText((text) =>
+        text.setValue(this.details.author).onChange((v) => (this.details.author = v)),
+      );
+    new Setting(el).setName("Category").addDropdown((dropdown) => {
+      for (const c of SHARE_CATEGORIES) dropdown.addOption(c.id, c.label);
+      dropdown.setValue(this.details.category);
+      dropdown.onChange((v) => (this.details.category = v));
+    });
+    new Setting(el).setName("Licence").addDropdown((dropdown) => {
+      for (const l of TEMPLATE_LICENCES) dropdown.addOption(l.id, l.label);
+      dropdown.setValue(this.details.licence);
+      dropdown.onChange((v) => (this.details.licence = v as TemplateLicence));
+    });
+    new Setting(el)
+      .setName("Description")
+      .addTextArea((text) => text.onChange((v) => (this.details.description = v)));
+    new Setting(el)
+      .setName("Tags")
+      .setDesc("A few words, separated by commas.")
+      .addText((text) => text.onChange((v) => (this.details.tags = v)));
+    this.fileEl = el.createDiv({ cls: "goodobsidian-share-file" });
+    this.renderFile();
+    new Setting(el)
+      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) =>
+        b
+          .setCta()
+          .setButtonText("Open the form on GitHub")
+          .onClick(() => {
+            const problems = shareProblems(this.details);
+            if (problems.length > 0 || !this.chosen) {
+              new Notice(problems.join(" ") || "Choose a template.");
+              return;
+            }
+            const chosen = this.chosen;
+            this.close();
+            this.openForm(submissionUrl(this.details), chosen, this.details.author.trim());
+          }),
+      );
+  }
+
+  private fileEl: HTMLElement | null = null;
+
+  /** Which file to drag into the form, and where it is. */
+  private renderFile(): void {
+    const el = this.fileEl;
+    if (!el || !this.chosen) return;
+    el.empty();
+    el.createDiv({ cls: "goodobsidian-share-file-label", text: "On GitHub, attach this file:" });
+    el.createDiv({ cls: "goodobsidian-share-file-path", text: this.chosen.path });
+  }
+
+  override onClose(): void {
+    this.fileEl = null;
+    this.contentEl.empty();
   }
 }

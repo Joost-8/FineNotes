@@ -448,6 +448,8 @@ export interface PaperLibraryHost {
   importFromVault(): Promise<boolean>;
   /** Browse the community template gallery. True when papers were added from it. */
   browseCommunity?(): Promise<boolean>;
+  /** Share a template with the community gallery. */
+  shareTemplate?(): void;
 }
 
 export interface MyTemplatesOptions {
@@ -543,6 +545,8 @@ export class MyTemplatesSection {
     action("folder-open", "From vault…", () => {
       void host.importFromVault().then(refresh);
     });
+    const share = host.shareTemplate?.bind(host);
+    if (share && entries.length > 0) action("share-2", "Share…", () => share());
     for (const entry of entries) {
       const pages = counts.get(entry.path) ?? 1;
       const name =

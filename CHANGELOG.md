@@ -32,6 +32,11 @@ extracted from the matching section of this file by `release.yml`.
   is on, including papers from My templates.
 - **Save page as template**, in the ⋯ panel and the command palette: the
   page as it looks becomes a paper in My templates.
+- **Share a template with everyone.** Share… in My templates, Share yours…
+  in the gallery, or the command: give it a name, category and licence, and
+  the gallery's submission form opens on GitHub filled in. Attach the file
+  there; a bot checks it, makes its preview and opens the submission, and
+  once reviewed it is in every FineNotes gallery.
 - **Community templates where you choose paper.** My templates, in the
   template picker and now also in the New notebook dialog, opens with a
   Community… card for the gallery. In New notebook a template is a whole

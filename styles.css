@@ -8893,3 +8893,38 @@ button.goodobsidian-gallery-chip.clickable-icon.is-active {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* The template gallery's line above the search, with Share yours… (template-ui.ts). */
+.goodobsidian-gallery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+/* Share a template: the file to attach on GitHub. */
+.goodobsidian-share-file {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--gob-radius-m, 8px);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-share-file-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-share-file-path {
+  margin-top: 2px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.goodobsidian-share-intro {
+  margin-bottom: 8px;
+}

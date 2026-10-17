@@ -4,7 +4,11 @@ import {
   TEMPLATE_EXTENSION,
   readGalleryIndex,
 } from "./import/template-package";
-import { TemplateFileSuggestModal, TemplateGalleryModal } from "./view/template-ui";
+import {
+  ShareTemplateModal,
+  TemplateFileSuggestModal,
+  TemplateGalleryModal,
+} from "./view/template-ui";
 import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
@@ -114,6 +118,9 @@ import { VaultBackdropRenderer } from "./view/backdrop-renderer";
 import { thumbnailRasterScale } from "./view/page-sidebar";
 import { renderPageThumbnail } from "./canvas/renderer";
 import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-library";
+
+/** Where the name a user shares templates under is remembered, on this device. */
+const SHARE_AUTHOR_KEY = "finenotes:share-author";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -495,6 +502,11 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "template-gallery",
       name: "Browse template gallery…",
       callback: () => void this.openTemplateGallery(),
+    });
+    this.addCommand({
+      id: "share-template",
+      name: "Share a template with the community…",
+      callback: () => void this.openShareTemplate(),
     });
 
     this.addCommand({
@@ -1345,6 +1357,7 @@ export default class GoodObsidianPlugin extends Plugin {
             else resolve(false);
           }, 0);
         },
+        () => void this.openShareTemplate(),
       ).open();
     });
   }
@@ -1487,7 +1500,36 @@ export default class GoodObsidianPlugin extends Plugin {
       () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
       paint,
       () => this.openTemplateGallery(),
+      () => void this.openShareTemplate(),
     );
+  }
+
+  /**
+   * "Share…": one of My templates to the community gallery. The share
+   * dialog asks for its details, then GitHub's submission form opens filled
+   * in, and a notice says which file to attach there.
+   */
+  async openShareTemplate(initial?: string): Promise<void> {
+    const entries = await this.paperLibrary().list();
+    const counts = new Map<string, number>();
+    for (const entry of entries) counts.set(entry.path, (counts.get(entry.path) ?? 0) + 1);
+    const templates = [...counts].map(([path, pages]) => ({ path, name: paperName(path), pages }));
+    const saved: unknown = this.app.loadLocalStorage(SHARE_AUTHOR_KEY);
+    new ShareTemplateModal(
+      this.app,
+      templates,
+      initial,
+      (url, template, author) => {
+        this.app.saveLocalStorage(SHARE_AUTHOR_KEY, author);
+        window.open(url);
+        new Notice(
+          `FineNotes: in the form on GitHub, attach “${template.path}” under Files, then submit. ` +
+            "A bot replies there in a minute or two.",
+          15000,
+        );
+      },
+      typeof saved === "string" ? saved : "",
+    ).open();
   }
 
   /**

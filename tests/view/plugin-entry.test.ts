@@ -449,6 +449,7 @@ describe("registration", () => {
         "scan-document",
         "save-as-template",
         "save-page-as-template",
+        "share-template",
         "search-notebook",
         "show-keyboard-shortcuts",
         "show-welcome",
