@@ -257,6 +257,7 @@ describe("the rows", () => {
       [PAGES, "Stickers folder", "text:stickerFolder"],
       [PAGES, "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
+      [PAGES, "List files folders under their notebook", "toggle:filesFolderUnderNotebook"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
       [HANDWRITING, "Learn my handwriting", "render"],
       [AI, "Set up an AI service", "render"],
@@ -328,6 +329,7 @@ describe("the rows", () => {
       "Stickers folder": ["sticker", "collection", "folder"],
       "Show New notebook in right-click menu": ["context menu", "file explorer", "new notebook"],
       "Show New notebook in file explorer bar": ["toolbar", "file explorer", "new notebook"],
+      "List files folders under their notebook": ["file explorer", "files folder", "sort", "order"],
       "Default ink color": ["pen color"],
       "Default tool": [],
       "Default stroke size": ["pen size", "line width"],
@@ -458,6 +460,7 @@ describe("which rows show", () => {
       "Stickers folder",
       "Show New notebook in right-click menu",
       "Show New notebook in file explorer bar",
+      "List files folders under their notebook",
       "Read handwriting on this device (beta)",
       "Learn my handwriting",
       "Set up an AI service",
@@ -482,7 +485,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${31 + PEN_ROWS.length})`,
+      `(block ${32 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });

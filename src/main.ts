@@ -3,6 +3,7 @@ import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
+import { ExplorerFilesOrder } from "./view/explorer-files-order";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
@@ -136,11 +137,15 @@ export default class GoodObsidianPlugin extends Plugin {
     this.openNewNotebookDialog(),
   );
 
+  private readonly explorerFilesOrder = new ExplorerFilesOrder();
+
   private syncExplorerNotebookButton(): void {
+    const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
-      this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view.containerEl),
+      explorers.map((view) => view.containerEl),
       this.settings.showNewNotebookInExplorer,
     );
+    this.explorerFilesOrder.sync(explorers, this.settings.filesFolderUnderNotebook);
   }
 
   override settings!: GoodObsidianSettings;
@@ -362,6 +367,7 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.register(() => this.explorerNotebookButton.destroy());
+    this.register(() => this.explorerFilesOrder.destroy());
     this.registerEvent(
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );

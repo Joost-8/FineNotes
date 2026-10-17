@@ -83,6 +83,7 @@ const FRESH_INSTALL = {
   handwritingOnDevice: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
+  filesFolderUnderNotebook: true,
   pageAppearance: "light",
   invertPdfPages: true,
 
@@ -126,6 +127,7 @@ const USED_VAULT = {
   handwritingOnDevice: false,
   showNewNotebookInContextMenu: false,
   showNewNotebookInExplorer: false,
+  filesFolderUnderNotebook: false,
   lastNotebookChoices: { type: "notebook", cover: "plain", paper: "dotted", size: "a4" },
   recognitionProviderId: "llm-byok",
   twoFileStorage: true,

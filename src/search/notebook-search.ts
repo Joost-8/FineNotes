@@ -18,7 +18,7 @@
  */
 
 import type { Page } from "../model/document";
-import { inkFileSuffix } from "../model/new-notebook";
+import { FILES_FOLDER_SUFFIX, OWN_FOLDER_TRANSCRIPTS, inkFileSuffix } from "../model/new-notebook";
 import { pageKeys, parsePageTranscripts } from "../recognition/page-transcripts";
 
 export type SourceKind = "handwriting" | "text";
@@ -63,6 +63,22 @@ export function transcriptSidecarPath(notePath: string): string | null {
   const suffix = inkFileSuffix(name);
   if (!suffix) return null;
   return `${dir}${name.slice(0, -suffix.length)}.transcript.md`;
+}
+
+/**
+ * Where the transcript server puts a new sidecar for a note that has a
+ * `<Title> files` folder beside it: `<Title> files/Transcripts/<Title>.transcript.md`.
+ * A sidecar already beside the note (`transcriptSidecarPath`) stays the one
+ * in use, so read that first. `null` for a file that is not a single-file note.
+ */
+export function filesFolderSidecarPath(notePath: string): string | null {
+  const slash = notePath.lastIndexOf("/");
+  const dir = slash >= 0 ? notePath.slice(0, slash + 1) : "";
+  const name = notePath.slice(slash + 1);
+  const suffix = inkFileSuffix(name);
+  if (!suffix) return null;
+  const title = name.slice(0, -suffix.length);
+  return `${dir}${title}${FILES_FOLDER_SUFFIX}/${OWN_FOLDER_TRANSCRIPTS}/${title}.transcript.md`;
 }
 
 /**

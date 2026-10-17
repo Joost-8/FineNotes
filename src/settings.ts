@@ -835,6 +835,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "Add a New notebook button beside New note and New folder in the file explorer.",
         ["toolbar", "file explorer", "new notebook"],
       ),
+      toggle(
+        "filesFolderUnderNotebook",
+        "List files folders under their notebook",
+        "In the file explorer, show a notebook's “<Title> files” folder right below the notebook instead of at the top with the other folders.",
+        ["file explorer", "files folder", "sort", "order"],
+      ),
     ]);
   }
 

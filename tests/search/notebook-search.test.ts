@@ -8,6 +8,7 @@ import {
   pageInThisNotebook,
   queryTerms,
   searchPages,
+  filesFolderSidecarPath,
   transcriptSidecarPath,
   transcriptsByKey,
 } from "../../src/search/notebook-search";
@@ -182,6 +183,20 @@ describe("transcriptSidecarPath", () => {
 
   it("is null for a file that is not a handwritten note", () => {
     expect(transcriptSidecarPath("notes/plain.md")).toBeNull();
+  });
+});
+
+describe("filesFolderSidecarPath", () => {
+  it("sits in the note's files folder, under Transcripts", () => {
+    expect(filesFolderSidecarPath("School/Bio.notebook.md")).toBe(
+      "School/Bio files/Transcripts/Bio.transcript.md",
+    );
+    expect(filesFolderSidecarPath("Q.page.md")).toBe("Q files/Transcripts/Q.transcript.md");
+  });
+
+  it("is null for a manifest notebook or a file that is not a handwritten note", () => {
+    expect(filesFolderSidecarPath("Bio/_notebook.md")).toBeNull();
+    expect(filesFolderSidecarPath("notes/plain.md")).toBeNull();
   });
 });
 

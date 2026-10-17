@@ -18,6 +18,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Files folders sit under their notebook in the file explorer.** Obsidian
+  lists folders before files, which put "Physics files" at the top, away
+  from "Physics.notebook.md". FineNotes now lists it right below the
+  notebook (Settings → "List files folders under their notebook", on by
+  default). Search also reads a transcript-server sidecar from the files
+  folder's Transcripts.
 - **A folder for recording transcripts.** Notebook settings has a
   "Recording transcripts" row; empty, a transcript still goes next to its
   recording.
