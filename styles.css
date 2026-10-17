@@ -7834,6 +7834,8 @@ button.goodobsidian-color-eyedropper .svg-icon {
   align-items: flex-end;
   gap: 6px;
   max-height: calc(100% - 128px);
+  /* The stubs reach past the edge: clip them there, never scroll sideways. */
+  overflow-x: hidden;
   overflow-y: auto;
   pointer-events: none;
 }
@@ -7842,22 +7844,29 @@ button.goodobsidian-color-eyedropper .svg-icon {
   display: none;
 }
 
+/* Off the current page a tab is a coloured stub at the edge, so the writing
+   area stays clear; the current one shows its label. Moved by transform only. */
 button.goodobsidian-page-tab.clickable-icon {
   justify-content: flex-start;
-  width: 96px;
+  width: 108px;
   min-height: 34px;
   padding: 0 10px 0 12px;
   border-radius: 10px 0 0 10px;
   box-shadow: -1px 1px 4px rgba(0, 0, 0, 0.18);
   color: #ffffff;
   pointer-events: auto;
-  transform: translateX(14px);
+  transform: translateX(88px);
   transition: transform 0.25s var(--gob-ease-out, ease-out);
 }
 
-button.goodobsidian-page-tab.clickable-icon:hover,
 button.goodobsidian-page-tab.clickable-icon.is-current {
   transform: translateX(0);
+}
+
+@media (hover: hover) {
+  button.goodobsidian-page-tab.clickable-icon:hover {
+    transform: translateX(0);
+  }
 }
 
 button.goodobsidian-page-tab.is-current {
