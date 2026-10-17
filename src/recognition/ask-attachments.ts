@@ -155,3 +155,15 @@ export function pdfsBehind(
 export function fileNameOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
+
+/** 1-based pages as runs: "3", "3–5", "2, 4–6, 9". */
+export function pageRanges(pages: readonly number[]): string {
+  const sorted = [...new Set(pages)].sort((a, b) => a - b);
+  const runs: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const start = sorted[i];
+    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) i++;
+    runs.push(sorted[i] === start ? String(start) : `${start}–${sorted[i]}`);
+  }
+  return runs.join(", ");
+}

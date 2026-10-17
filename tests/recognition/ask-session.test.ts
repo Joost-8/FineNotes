@@ -175,7 +175,6 @@ describe("AskSession files", () => {
     const { deps, asked } = setup();
     const session = open(deps);
     session.attach(note);
-    session.dismissSuggestion("L/Week 3.pdf");
     session.load(
       {
         notebook: "N.notebook.md",
@@ -195,21 +194,12 @@ describe("AskSession files", () => {
       "AI chats/old.md",
     );
     expect(session.attachments).toEqual([]);
-    expect(session.dismissed.size).toBe(0);
     await session.send("New?");
     expect(deps.readFile).toHaveBeenCalledWith("L/Week 2.pdf");
     expect(asked[0][0].files).toEqual([
       { name: "L/Week 2.pdf", mimeType: "application/pdf", base64: "AGAIN", path: "L/Week 2.pdf" },
     ]);
     expect(asked[0][2].files).toEqual([]);
-  });
-
-  it("remembers which suggestions were waved away until a new chat", () => {
-    const session = open(setup().deps);
-    session.dismissSuggestion("L/Week 2.pdf");
-    expect(session.dismissed.has("L/Week 2.pdf")).toBe(true);
-    session.newChat(3);
-    expect(session.dismissed.size).toBe(0);
   });
 });
 

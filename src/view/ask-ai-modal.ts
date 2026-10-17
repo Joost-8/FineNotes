@@ -1,15 +1,16 @@
 /**
- * "Transcribe and ask", laid out as a chat: the pages to send and the chat's
- * controls on top (Save chat, Chats, New chat), the conversation in the
- * middle (your questions as bubbles on the right, the answers rendered as
- * markdown on the left, each with Copy and Insert as text box), and the
- * question field at the bottom with a round send button. Before the first
- * question, suggestions fill the empty thread.
+ * "Ask", laid out as a chat: the pages to send and the chat's controls on
+ * top (Save chat, Chats, New chat), the conversation in the middle (your
+ * questions as bubbles on the right, the answers rendered as markdown on the
+ * left, each with Copy and Insert as text box), and the question field at the
+ * bottom with a paperclip and a round send button. Before the first question,
+ * suggestions fill the empty thread.
  *
  * Top left is the page picker: a thumbnail of the page being read, picked
- * when the dialog opens. Tapped, it opens a grid of every page to pick up to
- * `ASK_MAX_PAGES`. Each question sends the picked pages the chat has not seen
- * yet, so pages can be added in the middle of a conversation.
+ * when the dialog opens. Tapped, it opens the notebook's own PDFs (any of
+ * them can be attached, whichever pages are picked) above a grid of every
+ * page to pick up to `ASK_MAX_PAGES`. Each question sends the picked pages
+ * the chat has not seen yet, so pages can be added mid-conversation.
  *
  * The conversation itself is an `AskSession` owned by the notebook's view:
  * this dialog only draws it. Closing the dialog loses nothing — reopened, it
@@ -46,6 +47,7 @@ import {
   attachmentBytes,
   attachmentFromBytes,
   fileNameOf,
+  pageRanges,
   sizeLabel,
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
@@ -67,8 +69,8 @@ export interface AskAiHost {
   paintThumbnail: (canvas: HTMLCanvasElement, page: number, cssWidth: number) => Promise<void>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
-  /** The notebook's own PDFs behind these 1-based pages. */
-  pdfsBehind: (pages: readonly number[]) => PdfBehind[];
+  /** The notebook's own PDFs, each with the 1-based pages printed on it. */
+  notebookPdfs: () => PdfBehind[];
   /** This notebook's saved chats, newest first. */
   savedChats: () => Promise<SavedChatEntry[]>;
   /** Continue a saved chat in the session. */
@@ -114,9 +116,8 @@ export class AskAiModal extends Modal {
   private fileInput: HTMLInputElement | null = null;
   /** The files on the next question, inside the field. */
   private filesEl: HTMLElement | null = null;
-  /** The card offering the notebook's own PDF, above the field. */
-  private suggestEl: HTMLElement | null = null;
-  private suggestKey = "";
+  /** The notebook's PDFs in the picker, by vault path. */
+  private readonly pdfRows = new Map<string, { row: HTMLButtonElement; state: HTMLElement }>();
   private saveButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
@@ -153,7 +154,7 @@ export class AskAiModal extends Modal {
     this.component.load();
     this.modalEl.addClass("goodobsidian-ask-modal", "goodobsidian-dialog");
     this.keyboard = new DialogKeyboard(this.modalEl, { fit: true });
-    this.titleEl.setText("Transcribe and ask");
+    this.titleEl.setText("Ask");
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-chat");
@@ -181,7 +182,6 @@ export class AskAiModal extends Modal {
     this.buildPicker(contentEl);
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
 
-    this.suggestEl = contentEl.createDiv({ cls: "goodobsidian-chat-suggest is-hidden" });
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
     this.filesEl = composer.createDiv({ cls: "goodobsidian-chat-files is-hidden" });
     const row = composer.createDiv({ cls: "goodobsidian-chat-compose-row" });
@@ -220,7 +220,7 @@ export class AskAiModal extends Modal {
     });
     setIcon(this.sendButton, "arrow-up");
     this.sendButton.addEventListener("click", () => this.submit());
-    this.keyboard.watch(input, composer, this.suggestEl);
+    this.keyboard.watch(input, composer);
 
     this.unsubscribe = this.session.onChange(() => this.render());
     this.render();
@@ -285,6 +285,7 @@ export class AskAiModal extends Modal {
     const done = head.createEl("button", { cls: "mod-cta clickable-icon", text: "Done" });
     done.addEventListener("click", () => this.closePicker());
 
+    this.buildPdfList(picker);
     const grid = picker.createDiv({ cls: "goodobsidian-chat-picker-grid" });
     const current = this.host.currentPage();
     for (let page = 1; page <= this.session.totalPages; page++) {
@@ -492,43 +493,62 @@ export class AskAiModal extends Modal {
   }
 
   /**
-   * The card above the field offering the notebook's own PDF behind the
-   * pages picked: with the file, the AI reads the slides' text, not only a
-   * picture of each page. One at a time; gone once attached, sent or waved away.
+   * The notebook's own PDFs, at the top of the page picker: attaching one
+   * lets the AI read the slides' text, not only a picture of each page. All
+   * of them are offered, whichever pages are picked; tap one to attach it,
+   * again to take it off.
    */
-  private renderSuggestion(): void {
-    const el = this.suggestEl;
-    if (!el) return;
+  private buildPdfList(picker: HTMLElement): void {
+    const pdfs = this.host.notebookPdfs();
+    if (pdfs.length === 0) return;
+    const section = picker.createDiv({ cls: "goodobsidian-chat-pdfs" });
+    const head = section.createDiv({ cls: "goodobsidian-chat-pdfs-head" });
+    head.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: "PDFs in this notebook" });
+    head.createSpan({
+      cls: "goodobsidian-chat-pdfs-hint",
+      text: "Attach one and the AI reads its text, not only pictures of the pages.",
+    });
+    const list = section.createDiv({ cls: "goodobsidian-chat-pdfs-list" });
+    for (const pdf of pdfs) {
+      const row = list.createEl("button", { cls: "goodobsidian-chat-pdf clickable-icon" });
+      setIcon(row.createSpan({ cls: "goodobsidian-chat-pdf-icon" }), "file-text");
+      const text = row.createSpan({ cls: "goodobsidian-chat-pdf-text" });
+      text.createSpan({ cls: "goodobsidian-chat-pdf-name", text: fileNameOf(pdf.path) });
+      text.createSpan({
+        cls: "goodobsidian-chat-pdf-pages",
+        text: `${pdf.pages.length === 1 ? "Page" : "Pages"} ${pageRanges(pdf.pages)}`,
+      });
+      const state = row.createSpan({ cls: "goodobsidian-chat-pdf-state" });
+      row.addEventListener("click", () => {
+        const attached = this.session.attachments.find((f) => f.path === pdf.path);
+        if (attached) this.session.detach(attached);
+        else void this.attachVaultFile(pdf.path);
+      });
+      this.pdfRows.set(pdf.path, { row, state });
+    }
+  }
+
+  /** Each PDF row: Attach, Attached, or In chat. */
+  private renderPdfs(): void {
     const session = this.session;
-    const held = [...session.attachments, ...session.sentFiles];
-    const offer = this.host
-      .pdfsBehind(session.selected)
-      .find((pdf) => !session.dismissed.has(pdf.path) && !held.some((f) => f.path === pdf.path));
-    const key = offer ? `${offer.path}|${offer.pages.join(",")}|${String(session.busy)}` : "";
-    if (key === this.suggestKey) return;
-    this.suggestKey = key;
-    el.empty();
-    el.toggleClass("is-hidden", !offer);
-    if (!offer) return;
-    const name = fileNameOf(offer.path);
-    setIcon(el.createDiv({ cls: "goodobsidian-chat-suggest-icon" }), "file-text");
-    const text = el.createDiv({ cls: "goodobsidian-chat-suggest-text" });
-    text.createDiv({ cls: "goodobsidian-chat-suggest-title", text: `Attach ${name}?` });
-    const on =
-      offer.pages.length === 1 ? `Page ${offer.pages[0]} is` : `Pages ${listOf(offer.pages)} are`;
-    text.createDiv({
-      cls: "goodobsidian-chat-suggest-detail",
-      text: `${on} printed on it. With the file, the AI reads its text, not only a picture of the page.`,
-    });
-    const attach = el.createEl("button", { cls: "mod-cta clickable-icon", text: "Attach" });
-    attach.disabled = session.busy;
-    attach.addEventListener("click", () => void this.attachVaultFile(offer.path));
-    const close = el.createEl("button", {
-      cls: "goodobsidian-chat-suggest-close clickable-icon",
-      attr: { "aria-label": "Not this time" },
-    });
-    setIcon(close, "x");
-    close.addEventListener("click", () => session.dismissSuggestion(offer.path));
+    const sent = session.sentFiles;
+    for (const [path, { row, state }] of this.pdfRows) {
+      const inChat = sent.some((f) => f.path === path);
+      const attached = session.attachments.some((f) => f.path === path);
+      row.toggleClass("is-attached", attached || inChat);
+      row.disabled = session.busy || inChat;
+      row.setAttribute("aria-pressed", String(attached));
+      state.empty();
+      if (inChat) {
+        state.setText("In chat");
+      } else if (attached) {
+        setIcon(state.createSpan(), "check");
+        state.createSpan({ text: "Attached" });
+      } else {
+        setIcon(state.createSpan(), "paperclip");
+        state.createSpan({ text: "Attach" });
+      }
+    }
   }
 
   // --- Conversation ---------------------------------------------------------
@@ -573,7 +593,7 @@ export class AskAiModal extends Modal {
     }
     this.renderPages();
     this.renderAttachments();
-    this.renderSuggestion();
+    this.renderPdfs();
     this.noteEl?.setText(this.noteText());
     if (this.input) {
       this.input.placeholder =
@@ -809,12 +829,6 @@ function fileIcon(file: { name: string; mimeType: string }): string {
   if (file.mimeType === PDF_MIME) return "file-text";
   if (file.mimeType.startsWith("image/")) return "image";
   return attachKind(file.name) === "text" ? "file-code" : "file";
-}
-
-/** "3", "3 and 4", "3, 4 and 7". */
-function listOf(pages: readonly number[]): string {
-  if (pages.length <= 1) return String(pages[0] ?? "");
-  return `${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
 }
 
 /** Search the vault for a file to attach: PDFs, pictures and text files, newest first. */

@@ -958,7 +958,6 @@ export class InkView extends TextFileView {
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
       pageTranscribable: !!page && hasTranscribableContent(page),
-      notebookTranscribable: doc.pages.some(hasTranscribableContent),
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
@@ -994,29 +993,11 @@ export class InkView extends TextFileView {
       learn: () => void this.plugin.learner.start(),
       practice: () => void writePracticePage(this.plugin.learningHost()),
       "device-settings": () => this.plugin.openSettingsTab(),
-      "transcribe-page": () => void this.transcribeFromMenu("page"),
-      "transcribe-notebook": () => void this.transcribeFromMenu("notebook"),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       ask: () => this.openAsk(),
       "generate-image": () => this.openGenerateImage(),
       settings: () => this.plugin.openSettingsTab(),
     };
-  }
-
-  private async transcribeFromMenu(scope: "page" | "notebook"): Promise<void> {
-    const provider = this.plugin.aiTranscriber();
-    if (provider.requiresNetwork) {
-      const confirmed = await this.plugin.confirmAiSend(
-        this.plugin.textAiConfig(),
-        scope === "page" ? "Transcribing this page" : "Transcribing the notebook",
-        scope === "page"
-          ? "an image of the page (its ink, typed text and paper)"
-          : "an image of each page that changed since it was last transcribed, one page " +
-              "per request,",
-      );
-      if (!confirmed) return;
-    }
-    await this.transcribe(provider, scope);
   }
 
   // --- Ask AI ---------------------------------------------------------------
@@ -1062,10 +1043,10 @@ export class InkView extends TextFileView {
         }
       },
       insert: (text) => this.insertAnswer(text),
-      pdfsBehind: (pages) =>
+      notebookPdfs: () =>
         pdfsBehind(
           this.doc.pages.map((page) => page.backdrop),
-          pages,
+          this.doc.pages.map((_, i) => i + 1),
         ),
       savedChats: () =>
         this.file ? listChats(this.app, this.file.path, this.chatsFolder()) : Promise.resolve([]),

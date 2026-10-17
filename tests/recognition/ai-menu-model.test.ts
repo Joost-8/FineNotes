@@ -27,7 +27,6 @@ function context(fields: Partial<AiMenuContext> = {}): AiMenuContext {
   return {
     setup: setup({ keys: ["anthropic"] }),
     pageTranscribable: true,
-    notebookTranscribable: true,
     notebookAskable: true,
     multiPage: true,
     ...fields,
@@ -88,58 +87,30 @@ describe("availability", () => {
 describe("buildAiMenu", () => {
   it("lists every entry in order, settings last below the divider", () => {
     const items = buildAiMenu(context()).filter((i) => i.section !== "device");
-    expect(items.map((i) => i.id)).toEqual([
-      "transcribe-page",
-      "transcribe-notebook",
-      "ask",
-      "generate-image",
-      "settings",
-    ]);
-    expect(byId(items).ask.label).toBe("Transcribe and ask…");
+    expect(items.map((i) => i.id)).toEqual(["ask", "generate-image", "settings"]);
+    expect(byId(items).ask).toMatchObject({ label: "Ask…", enabled: true });
     expect(items.filter((i) => i.footer).map((i) => i.id)).toEqual(["settings"]);
     expect(byId(items).settings.label).toBe("AI settings…");
-    expect(byId(items)["transcribe-page"].enabled).toBe(true);
     expect(byId(items)["generate-image"].enabled).toBe(false);
   });
 
-  it("offers 'Set up AI…' and gives every AI entry the same reason when nothing is set up", () => {
+  it("offers 'Set up AI…' and says what Ask needs when nothing is set up", () => {
     const items = byId(buildAiMenu(context({ setup: setup() })));
     expect(items.settings).toMatchObject({ label: "Set up AI…", enabled: true });
-    for (const id of ["transcribe-page", "transcribe-notebook", "ask"]) {
-      expect(items[id], id).toMatchObject({ enabled: false, reason: "Needs an Anthropic key" });
-    }
-  });
-
-  it("gates transcription on the same setup as questions", () => {
-    const items = byId(buildAiMenu(context({ setup: setup() })));
-    expect(items["transcribe-page"]).toMatchObject({
-      enabled: false,
-      reason: "Needs an Anthropic key",
-    });
-    expect(items.ask.enabled).toBe(false);
+    expect(items.ask).toMatchObject({ enabled: false, reason: "Needs an Anthropic key" });
   });
 
   it("says when a page or notebook has nothing on it", () => {
-    const items = byId(
-      buildAiMenu(
-        context({
-          pageTranscribable: false,
-          notebookTranscribable: false,
-          notebookAskable: false,
-        }),
-      ),
-    );
-    expect(items["transcribe-page"].reason).toBe("Nothing written on this page yet");
-    expect(items["transcribe-notebook"].reason).toBe("Nothing written in this notebook yet");
+    const items = byId(buildAiMenu(context({ notebookAskable: false })));
     expect(items.ask.reason).toBe("This notebook is empty");
     const single = byId(buildAiMenu(context({ multiPage: false, notebookAskable: false })));
     expect(single.ask.reason).toBe("This page is empty");
   });
 
-  it("leaves out the notebook entries for a single page", () => {
-    const ids = buildAiMenu(context({ multiPage: false })).map((i) => i.id);
+  it("has no transcription entries; the chat does that", () => {
+    const ids = buildAiMenu(context()).map((i) => i.id);
+    expect(ids).not.toContain("transcribe-page");
     expect(ids).not.toContain("transcribe-notebook");
-    expect(ids).toContain("ask");
   });
 
   it("offers 'Transcribe recording…' last, after images, only where recording exists", () => {
@@ -148,14 +119,7 @@ describe("buildAiMenu", () => {
     const ids = buildAiMenu(context({ setup: withAudio, recordings: 2 }))
       .filter((i) => i.section !== "device")
       .map((i) => i.id);
-    expect(ids).toEqual([
-      "transcribe-page",
-      "transcribe-notebook",
-      "ask",
-      "generate-image",
-      "transcribe-recording",
-      "settings",
-    ]);
+    expect(ids).toEqual(["ask", "generate-image", "transcribe-recording", "settings"]);
     const entry = byId(buildAiMenu(context({ setup: withAudio, recordings: 2 })))[
       "transcribe-recording"
     ];

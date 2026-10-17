@@ -80,8 +80,6 @@ export class AskSession {
   totalPages: number;
   /** Files attached to the next question. */
   attachments: ChatFile[] = [];
-  /** Vault paths of suggested PDFs the user waved away, for this chat. */
-  readonly dismissed = new Set<string>();
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;
@@ -129,13 +127,6 @@ export class AskSession {
     const next = this.attachments.filter((f) => f !== file);
     if (next.length === this.attachments.length) return;
     this.attachments = next;
-    this.changed();
-  }
-
-  /** Stop suggesting the PDF at `path` for this chat. */
-  dismissSuggestion(path: string): void {
-    if (this.dismissed.has(path)) return;
-    this.dismissed.add(path);
     this.changed();
   }
 
@@ -188,7 +179,6 @@ export class AskSession {
     this.savedPath = null;
     this.created = null;
     this.attachments = [];
-    this.dismissed.clear();
     this.selected = page >= 1 && page <= this.totalPages ? [page] : [];
     this.changed();
   }
@@ -208,7 +198,6 @@ export class AskSession {
     }));
     this.outstanding = null;
     this.attachments = [];
-    this.dismissed.clear();
     this.save = true;
     this.savedPath = path;
     this.created = chat.created || null;

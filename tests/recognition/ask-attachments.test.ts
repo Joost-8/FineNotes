@@ -8,6 +8,7 @@ import {
   attachmentBytes,
   attachmentFromBytes,
   fileNameOf,
+  pageRanges,
   pdfsBehind,
   sameAttachment,
   sizeLabel,
@@ -77,5 +78,8 @@ describe("attachments", () => {
     expect(pdfsBehind(backdrops, [1])).toEqual([]);
     expect(fileNameOf("L/Week 2.pdf")).toBe("Week 2.pdf");
     expect(fileNameOf("top.pdf")).toBe("top.pdf");
+    expect(pageRanges([5, 3, 4, 9, 2])).toBe("2–5, 9");
+    expect(pageRanges([7])).toBe("7");
+    expect(pageRanges([])).toBe("");
   });
 });

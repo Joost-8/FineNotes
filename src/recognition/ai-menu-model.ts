@@ -96,8 +96,6 @@ export type AiMenuId =
   | "learn"
   | "practice"
   | "device-settings"
-  | "transcribe-page"
-  | "transcribe-notebook"
   | "transcribe-recording"
   | "ask"
   | "generate-image"
@@ -130,9 +128,8 @@ export interface DeviceReading {
 
 export interface AiMenuContext {
   setup: AiSetup;
-  /** The page being read has ink or typed text. */
+  /** The page being read has ink or typed text (for reading it on the device). */
   pageTranscribable: boolean;
-  notebookTranscribable: boolean;
   /** Some page has anything at all to ask about (the chat picks which). */
   notebookAskable: boolean;
   /** More than one page (otherwise the notebook entries say nothing new). */
@@ -233,26 +230,11 @@ export function buildAiMenu(ctx: AiMenuContext): AiMenuItem[] {
 /** The features that need the user's own AI key. */
 function keyItems(ctx: AiMenuContext): AiMenuItem[] {
   const text = textAvailability(ctx.setup);
-  const items: AiMenuItem[] = [
-    {
-      id: "transcribe-page",
-      label: "Transcribe this page",
-      icon: "file-text",
-      ...gate(text, ctx.pageTranscribable, "Nothing written on this page yet"),
-    },
-  ];
-  if (ctx.multiPage) {
-    items.push({
-      id: "transcribe-notebook",
-      label: "Transcribe whole notebook",
-      icon: "book-open",
-      ...gate(text, ctx.notebookTranscribable, "Nothing written in this notebook yet"),
-    });
-  }
+  const items: AiMenuItem[] = [];
   // One way into the chat, whose page picker chooses what it is about.
   items.push({
     id: "ask",
-    label: "Transcribe and ask…",
+    label: "Ask…",
     icon: "messages-square",
     ...gate(
       text,
