@@ -16,6 +16,7 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { SetNotebookPalette, paletteOf } from "../model/palette";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { readShapeToolStyle } from "../model/shape-style";
@@ -1420,6 +1421,7 @@ export class InkView extends TextFileView {
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        notebookColors: () => paletteOf(this.doc).colors,
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
           if (this.surface) this.surface.pickColorFromPage(done);
@@ -1726,6 +1728,8 @@ export class InkView extends TextFileView {
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
+      palette: () => paletteOf(this.doc),
+      setPalette: (palette) => apply(new SetNotebookPalette(palette)),
     }).open();
   }
 

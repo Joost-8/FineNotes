@@ -575,6 +575,12 @@ export interface InkDocument {
    * "Scroll direction" setting). Only ever stored as `"horizontal"`.
    */
   scroll?: "horizontal";
+  /**
+   * The notebook's colours (`model/palette`): offered first in every colour
+   * picker; choosing another recolours the notebook. Absent: the classic pen
+   * colours.
+   */
+  palette?: { id: string; name: string; colors: string[] };
 }
 
 /** Which way a notebook's pages run: a column (the default) or a row. */

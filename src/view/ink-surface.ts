@@ -6959,8 +6959,11 @@ export class InkSurface {
         label: "Colour",
         group: "style",
         swatches: {
-          // The palette, then the custom colours picked lately anywhere.
+          // The notebook's colours, the palette, then the custom colours picked lately.
           colors: [
+            ...(this.doc.palette?.colors ?? []).filter(
+              (color) => !this.palette.some((p) => sameColor(p, color)),
+            ),
             ...this.palette,
             ...(this.toolState.recentColors ?? []).filter(
               (color) => !this.palette.some((p) => sameColor(p, color)),

@@ -35,6 +35,7 @@ import { normalizeLinks } from "./links";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
+import { readPalette } from "./palette";
 import {
   type AttachmentFolders,
   type Backdrop,
@@ -170,6 +171,7 @@ interface StoredMeta {
   folders?: AttachmentFolders;
   scroll?: "horizontal";
   practice?: PracticeInfo;
+  palette?: { id: string; name: string; colors: string[] };
 }
 
 interface StoredDocument {
@@ -274,6 +276,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
     practice: normalizePractice(doc.practice),
+    palette: readPalette(doc.palette),
   };
   return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
@@ -990,6 +993,8 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
   const practice = normalizePractice(meta.practice);
   if (practice) doc.practice = practice;
+  const palette = readPalette(meta.palette);
+  if (palette) doc.palette = palette;
   return doc;
 }
 

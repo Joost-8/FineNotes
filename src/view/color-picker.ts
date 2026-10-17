@@ -41,6 +41,8 @@ export interface ColorPickerOptions {
   extra?: readonly string[];
   /** Recent custom colours, newest first. */
   recent: readonly string[];
+  /** The notebook's palette: a row of its own above the common colours. */
+  notebook?: readonly string[];
   /** A swatch or "none" was tapped. */
   onPick: (color: string | null) => void;
   /** A custom colour was chosen with its add button. The host records it as recent. */
@@ -76,6 +78,18 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
   const tap = options.tap ?? clickTap;
   // Everything the custom colour replaces while it shows.
   const presets: HTMLElement[] = [];
+  const offered: string[] = [];
+  const notebook = (options.notebook ?? []).flatMap((c) => parseHexColor(c) ?? []);
+  if (notebook.length > 0) {
+    presets.push(body.createDiv({ cls: "goodobsidian-popover-label", text: "This notebook" }));
+    const row = body.createDiv({ cls: "goodobsidian-color-grid is-notebook" });
+    presets.push(row);
+    for (const hex of notebook) {
+      if (offered.includes(hex)) continue;
+      offered.push(hex);
+      swatch(row, hex, sameColor(hex, options.current), tap, () => options.onPick(hex));
+    }
+  }
   const grid = body.createDiv({ cls: "goodobsidian-color-grid" });
   presets.push(grid);
   if (options.allowNone) {
@@ -84,7 +98,6 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     none.setAttribute("aria-label", "None");
     none.setAttribute("title", "None");
   }
-  const offered: string[] = [];
   for (const color of [...COMMON_COLORS, ...(options.extra ?? [])]) {
     const hex = parseHexColor(color);
     if (!hex || offered.includes(hex)) continue;

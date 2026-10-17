@@ -21,6 +21,7 @@
  * dialog.
  */
 
+import { type NotebookPalette, PALETTES } from "../model/palette";
 import { type App, Modal, Setting } from "obsidian";
 import { cleanFolder, suggestFolders } from "../model/attachment-folders";
 import type { AttachmentFolders, AttachmentKind, ScrollDirection } from "../model/document";
@@ -41,6 +42,9 @@ export interface NoteSettingsHost {
   setScrollDirection: (direction: ScrollDirection) => void;
   /** Open FineNotes' own tab in Obsidian's settings. */
   openPluginSettings: () => void;
+  /** The notebook's palette now, and setting another (which recolours it). */
+  palette?: () => NotebookPalette;
+  setPalette?: (palette: NotebookPalette) => void;
 }
 
 /** A row per kind; `empty` is what an empty row does, `reset` its button's tooltip. */
@@ -118,6 +122,7 @@ export class NoteSettingsModal extends Modal {
     contentEl.empty();
     // A single page has nowhere to scroll to.
     if (!this.host.single) this.renderScroll(contentEl);
+    this.renderPalette(contentEl);
     new Setting(contentEl).setName("Where new files are saved").setHeading();
     contentEl.createDiv({
       cls: "setting-item-description goodobsidian-note-settings-intro",
@@ -140,6 +145,45 @@ export class NoteSettingsModal extends Modal {
           this.host.openPluginSettings();
         }),
       );
+  }
+
+  /**
+   * The notebook's colours: a chip per curated palette, its six colours over
+   * its name. A pick recolours what is in the old palette's colours, as one
+   * step of undo.
+   */
+  private renderPalette(parent: HTMLElement): void {
+    const current = this.host.palette?.();
+    const setPalette = this.host.setPalette;
+    if (!current || !setPalette) return;
+    new Setting(parent).setName("Colours").setHeading();
+    parent.createDiv({
+      cls: "setting-item-description goodobsidian-note-settings-intro",
+      text:
+        "The colours offered first in every colour picker. Choosing other colours " +
+        "recolours the ink, shapes and text that use this notebook's colours; undo takes it back.",
+    });
+    const row = parent.createDiv({ cls: "goodobsidian-palette-chips" });
+    for (const palette of PALETTES) {
+      const on = palette.id === current.id;
+      const chip = row.createEl("button", {
+        cls: "goodobsidian-palette-chip clickable-icon",
+        attr: { "aria-label": `${palette.name} colours`, "aria-pressed": String(on) },
+      });
+      chip.toggleClass("is-active", on);
+      const dots = chip.createDiv({ cls: "goodobsidian-palette-dots" });
+      for (const color of palette.colors) {
+        dots
+          .createSpan({ cls: "goodobsidian-palette-dot" })
+          .setCssStyles({ backgroundColor: color });
+      }
+      chip.createDiv({ cls: "goodobsidian-palette-name", text: palette.name });
+      chip.addEventListener("click", () => {
+        if (on) return;
+        setPalette(palette);
+        this.render();
+      });
+    }
   }
 
   private renderScroll(parent: HTMLElement): void {

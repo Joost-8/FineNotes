@@ -465,6 +465,8 @@ export interface ToolbarCallbacks {
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
+  /** The notebook's palette, offered first in every colour picker. */
+  notebookColors?: () => readonly string[];
   /** The Shape tool's style changed. Hosts persist it. */
   onShapeStyleChange?: (style: ShapeToolStyle) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
@@ -1175,6 +1177,7 @@ export class Toolbar {
       current,
       extra: this.pickerExtras(current),
       recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
       onPick: (color) => {
         this.closePopover();
         if (color) pick(color);
@@ -1947,6 +1950,7 @@ export class Toolbar {
       current: this.shownTextStyle().color,
       extra: this.pickerExtras(this.shownTextStyle().color),
       recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
       onPick: (color) => {
         if (color) this.pickText({ color });
       },
@@ -2068,6 +2072,7 @@ export class Toolbar {
       // The soft fills first-class: they are what a box is usually filled with.
       extra: TEXT_FILLS,
       recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
       onPick: (fill) => this.pickText({ fill }),
       onCustom: (fill) => {
         this.rememberColor(fill);
@@ -2133,6 +2138,7 @@ export class Toolbar {
       current: style.border ? current : null,
       extra: this.pickerExtras(current),
       recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
       onPick: (color) => {
         if (color) this.applyTextPatch({ borderColor: color });
       },
