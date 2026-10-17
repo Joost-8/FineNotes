@@ -436,8 +436,10 @@ export class AskChat {
     if (session.selected.length === 0 && sent.size === 0) {
       return `Pick the pages to ask about.${saved}`;
     }
-    if (fresh.length === 0) return `Asking ${this.host.target}.${saved}`;
-    return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${saved}`;
+    // Saying it can use the notebook also tells which build is running.
+    const tools = " It can use your notebook.";
+    if (fresh.length === 0) return `Asking ${this.host.target}.${tools}${saved}`;
+    return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${tools}${saved}`;
   }
 
   // --- Files ----------------------------------------------------------------
