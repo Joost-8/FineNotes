@@ -664,6 +664,13 @@ interface TextBoxView {
   measuredAt: string;
   /** Visual shrink applied to the textarea so its computed font stays >= 16px. */
   shrink: number;
+  /**
+   * The auto height last measured, in page px, and the text it was measured
+   * for: a pinch scales it instead of measuring (the box wraps at the same
+   * words at every zoom), and the box is measured again once the zoom rests.
+   */
+  pageH: number;
+  pageHText: string;
   /** Whether the box had a fixed height at the last sync. */
   fixed: boolean;
   /** The style that changes a box's height (font, weight, line height…) at the last sync. */
@@ -2921,6 +2928,8 @@ export class InkSurface {
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
+    // The zoom has ended (a fling may carry on): place the boxes it hid or scaled.
+    if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     this.trackTextPillMotion(busy);
     this.dropTextOutOfSight();
     this.reportTextAnchor();
@@ -2967,8 +2976,15 @@ export class InkSurface {
     }, REST_MS + 16);
   }
 
+  /**
+   * Text boxes a zoom only scaled or hid (`syncTextBoxes`): measured and
+   * placed for real, once the zoom has come to rest.
+   */
+  private textBoxesProvisional = false;
+
   /** The zoom came to rest: rasterise at the live scale from now on. */
   private settleIfIdle(): void {
+    if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     if (!this.renderer || this.zoomTransient || !this.renderer.isTransient) return;
     this.renderer.settle();
     this.paint(Infinity);
@@ -3163,10 +3179,25 @@ export class InkSurface {
   private syncTextBoxes(): void {
     const expected = new Set<string>();
     const scale = this.unitScale;
+    // Mid-zoom only the pages within a screen of the view are kept in step:
+    // re-styling every box of a long notebook each frame of a pinch made it
+    // crawl. The rest are hidden until the zoom rests and are placed then.
+    const zooming = this.zoomTransient;
+    this.textBoxesProvisional = false;
+    const seen = zooming ? this.visiblePaperRect() : null;
+    const marginX = this.cssW;
+    const marginY = this.cssH;
+    const measure: TextBoxView[] = [];
 
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
       if (!page) continue;
+      const parked =
+        seen !== null &&
+        (box.x * scale > seen.maxX + marginX ||
+          (box.x + box.width) * scale < seen.minX - marginX ||
+          box.y * scale > seen.maxY + marginY ||
+          (box.y + box.height) * scale < seen.minY - marginY);
       // Dark pages show a box's colours as its ink is shown (`./night`).
       const night = pageLook(page.backdrop, this.paper).night;
       for (const textBox of page.textBoxes) {
@@ -3175,6 +3206,13 @@ export class InkSurface {
         let view = this.textBoxInputs.get(key);
         if (!view) view = this.createTextBoxView(page.id, textBox, key);
         const { input, root } = view;
+        // Never the box being typed in or held: hiding it would blur it.
+        const park = parked && !root.contains(document.activeElement) && this.heldText !== view;
+        root.toggleClass("is-parked", park);
+        if (park) {
+          this.textBoxesProvisional = true;
+          continue;
+        }
         if (document.activeElement !== input && input.value !== textBox.text)
           input.value = textBox.text;
         this.renderShownText(view, textBox.text);
@@ -3195,7 +3233,9 @@ export class InkSurface {
         // is under 16px, which threw the view off the page when the keyboard
         // opened. So the field always *computes* >= 16px, and a transform
         // shrinks it back to the size the page scale calls for.
-        const fontPx = Math.max(8, textBox.fontSize * scale);
+        // No floor: a floored font stops shrinking with the page, so small
+        // labels re-wrapped zoomed out and grew over what sits under them.
+        const fontPx = textBox.fontSize * scale;
         const shrink = Math.min(1, fontPx / IOS_MIN_INPUT_FONT_PX);
         view.shrink = shrink;
         // Page px -> the textarea's own px, before its shrink transform.
@@ -3262,9 +3302,10 @@ export class InkSurface {
         // The shown text lies exactly over the textarea, the frame's full height.
         view.shown.setCssStyles({ ...typeStyle, height: `${100 / shrink}%` });
         view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}`;
-        if (!fixedHeight) this.autoSize(view, heightModeChanged);
+        if (!fixedHeight && this.needsMeasure(view, heightModeChanged, zooming)) measure.push(view);
       }
     }
+    this.measureBoxes(measure);
 
     // Take stale views out of the map before touching them: blurring a
     // focused one runs the end-of-editing handlers, which may sync again.
@@ -3336,17 +3377,53 @@ export class InkSurface {
     });
   }
 
-  /** Grow an auto-height box to fit its text. Measures only when something changed. */
+  /**
+   * Grow an auto-height box to fit its text. Measures only when something
+   * changed; mid-zoom it scales the last measured height instead, since a
+   * measure forces a layout and a pinch would force one per box per frame.
+   */
   private autoSize(view: TextBoxView, force: boolean): void {
+    if (this.needsMeasure(view, force, false)) this.measureBoxes([view]);
+  }
+
+  /**
+   * Whether an auto-height box must be measured. Mid-zoom (`zooming`) it is
+   * not: its last height is scaled instead, and it is measured once the zoom
+   * ends (`textBoxesProvisional`).
+   */
+  private needsMeasure(view: TextBoxView, force: boolean, zooming: boolean): boolean {
     const { input, root } = view;
     const key = `${root.style.width}|${input.style.fontSize}|${view.shrink}|${view.styleKey}`;
-    if (!force && view.measuredAt === key) return;
+    if (!force && view.measuredAt === key) return false;
+    if (zooming && !force && view.pageH > 0 && view.pageHText === input.value) {
+      const scale = this.unitScale;
+      input.setCssStyles({ height: `${((view.pageH * scale) / view.shrink).toFixed(2)}px` });
+      root.setCssStyles({ height: `${Math.ceil(view.pageH * scale)}px` });
+      view.measuredAt = "";
+      this.textBoxesProvisional = true;
+      return false;
+    }
     view.measuredAt = key;
-    input.setCssStyles({ height: "auto" });
-    const h = input.scrollHeight;
-    input.setCssStyles({ height: `${h}px` });
-    // The transform does not affect layout, so the frame is sized explicitly.
-    root.setCssStyles({ height: `${Math.ceil(h * view.shrink)}px` });
+    return true;
+  }
+
+  /**
+   * Fit auto-height boxes to their text: every write, then every read, then
+   * every write, so the browser lays out once for all of them, not once per box.
+   */
+  private measureBoxes(views: readonly TextBoxView[]): void {
+    if (views.length === 0) return;
+    const scale = this.unitScale;
+    for (const view of views) view.input.setCssStyles({ height: "auto" });
+    const heights = views.map((view) => view.input.scrollHeight);
+    views.forEach((view, i) => {
+      const h = heights[i];
+      view.input.setCssStyles({ height: `${h}px` });
+      // The transform does not affect layout, so the frame is sized explicitly.
+      view.root.setCssStyles({ height: `${Math.ceil(h * view.shrink)}px` });
+      view.pageH = (h * view.shrink) / scale;
+      view.pageHText = view.input.value;
+    });
   }
 
   /** Canvas used only to measure the text of boxes that fit their text. */
@@ -3406,6 +3483,8 @@ export class InkSurface {
       pageId,
       id: textBox.id,
       measuredAt: "",
+      pageH: 0,
+      pageHText: "",
       shrink: 1,
       fixed: textBox.h !== undefined,
       styleKey: "",

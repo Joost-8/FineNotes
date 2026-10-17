@@ -1695,6 +1695,11 @@ body,
   pointer-events: auto;
 }
 
+/* Off screen mid-zoom: placed again when the zoom ends (syncTextBoxes). */
+.goodobsidian-page-textbox.is-parked {
+  display: none;
+}
+
 .goodobsidian-page-textbox:focus-within,
 .goodobsidian-page-textbox.is-dragging,
 .goodobsidian-page-textbox.is-held {
