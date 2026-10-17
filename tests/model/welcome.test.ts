@@ -6,6 +6,9 @@
 
 import { describe, expect, it } from "vitest";
 import { strokeBounds } from "../../src/model/document";
+import { furnitureText } from "../../src/model/furniture";
+import { PALETTES, SetNotebookPalette, paletteOf } from "../../src/model/palette";
+import { stickerById } from "../../src/model/stickers";
 import { newNoteBody } from "../../src/model/new-notebook";
 import { buildInkFile, parseInkFile } from "../../src/model/serialize";
 import { isExternalTarget, textLinkTargets } from "../../src/model/text-links";
@@ -13,8 +16,10 @@ import { pageInThisNotebook } from "../../src/search/notebook-search";
 import {
   WELCOME_COVER,
   WELCOME_PAGE_TITLES,
+  WELCOME_STICKERS,
   WELCOME_TITLE,
   buildWelcomeNotebook,
+  welcomeStickerFiles,
   estimateLines,
   shouldShowWelcome,
 } from "../../src/model/welcome";
@@ -242,5 +247,88 @@ describe("buildWelcomeNotebook", () => {
   it("carries the notebook's own folders, as a new notebook does", () => {
     const withFolders = buildWelcomeNotebook("Welcome", { images: "Welcome/Images" });
     expect(withFolders.folders).toEqual({ images: "Welcome/Images" });
+  });
+
+  it("numbers its pages at the foot, counting from the contents page", () => {
+    expect(doc.furniture).toEqual({ numbers: "center" });
+    expect(furnitureText(doc, 0)).toEqual({});
+    expect(furnitureText(doc, 1)).toMatchObject({ footer: "1", align: "center" });
+    expect(furnitureText(doc, doc.pages.length - 1).footer).toBe(String(doc.pages.length - 1));
+  });
+
+  it("puts tabs on the contents and where each section starts, each a colour of its own", () => {
+    const tabbed = doc.pages.filter((page) => page.tab);
+    expect(tabbed.map((page) => page.title)).toEqual([
+      "Contents",
+      "Write, scroll and zoom",
+      "Shapes",
+      "Text boxes",
+      "Links, contents and search",
+      "Recordings",
+    ]);
+    expect(new Set(tabbed.map((page) => page.tab)).size).toBe(tabbed.length);
+  });
+
+  it("writes on ivory paper with sepia rules, the cover aside", () => {
+    for (const page of doc.pages.slice(1)) {
+      const backdrop = page.backdrop;
+      if (backdrop.kind === "pdf") throw new Error("no PDF pages in the tour");
+      expect(backdrop.paperColor).toBe("#fbf8ed");
+      if (backdrop.kind !== "blank") expect(backdrop.color).toBe("#d9c7a8");
+    }
+  });
+
+  it("draws in the notebook palette's colours, so another palette recolours the pen drawings", () => {
+    const classic = paletteOf(doc).colors;
+    const inks = doc.pages.flatMap((page) => page.strokes.map((s) => s.color));
+    for (const color of classic) expect(inks).toContain(color);
+    const copy = buildWelcomeNotebook();
+    const ocean = PALETTES.find((p) => p.id === "ocean");
+    if (!ocean) throw new Error("no Ocean palette");
+    new SetNotebookPalette(ocean).apply(copy);
+    const after = copy.pages.flatMap((page) => page.strokes.map((s) => s.color));
+    for (const color of classic) expect(after).not.toContain(color);
+  });
+
+  it("shows text box capitals and padding, a table with a header row, and a calligraphy nib", () => {
+    const boxes = doc.pages.flatMap((page) => page.textBoxes);
+    expect(boxes.some((b) => b.caps === true)).toBe(true);
+    expect(boxes.some((b) => b.padding === 10)).toBe(true);
+    const strokes = doc.pages.flatMap((page) => page.strokes);
+    expect(strokes.some((s) => s.nib === 40)).toBe(true);
+    // A header row is a filled rect drawn just before its table's outline.
+    const shapes = doc.pages.find((page) => page.title === "Shapes")?.strokes ?? [];
+    const header = shapes.findIndex((s) => s.shape === "rect" && s.fill?.endsWith("29"));
+    expect(header).toBeGreaterThanOrEqual(0);
+  });
+
+  it("places no stickers when none were saved", () => {
+    expect(doc.pages.flatMap((page) => page.images)).toEqual([]);
+  });
+
+  it("places each saved sticker at its own size, in front of the ink where it tapes or pins", () => {
+    const files = welcomeStickerFiles();
+    expect(files.map((f) => f.key)).toEqual(WELCOME_STICKERS.map((s) => s.key));
+    for (const file of files) expect(file.svg.startsWith("<svg")).toBe(true);
+    const paths = Object.fromEntries(files.map((f) => [f.key, `Images/${f.name}.svg`]));
+    const withStickers = buildWelcomeNotebook(WELCOME_TITLE, undefined, paths);
+    const images = withStickers.pages.flatMap((page) => page.images);
+    expect(images.length).toBeGreaterThanOrEqual(WELCOME_STICKERS.length);
+    for (const image of images) expect(Object.values(paths)).toContain(image.path);
+    expect(images.some((i) => i.front === true && i.opacity === 0.85)).toBe(true);
+    const banner = stickerById("label-banner");
+    const placed = images.find((i) => i.path === paths.banner);
+    expect(placed && banner && placed.w / placed.h).toBeCloseTo(
+      (banner?.w ?? 0) / (banner?.h ?? 1),
+    );
+    // Ids are unique across the notebook, and the file reads back the same.
+    expect(new Set(images.map((i) => i.id)).size).toBe(images.length);
+    const file = buildInkFile(newNoteBody(WELCOME_TITLE, "2026-10-17T00:00:00.000Z"), withStickers);
+    expect(parseInkFile(file).doc?.pages).toEqual(withStickers.pages);
+  });
+
+  it("leaves out a sticker whose file is missing", () => {
+    const one = buildWelcomeNotebook(WELCOME_TITLE, undefined, { pin: "Images/pin.svg" });
+    expect(one.pages.flatMap((page) => page.images).map((i) => i.path)).toEqual(["Images/pin.svg"]);
   });
 });

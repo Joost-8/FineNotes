@@ -798,7 +798,7 @@ export class Toolbar {
     keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
     keep(this.barButton(tools, "image", "Insert image", cb.onInsertImage));
     keep(this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf));
-    // The note's recordings live in the page sidebar's Audio tab, as in
+    // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = this.barButton(tools, "mic", "Record audio", cb.onRecord);
     keep(this.recordButton);

@@ -93,8 +93,15 @@ import {
 } from "./model/new-notebook";
 import { NewNotebookModal } from "./view/new-notebook-modal";
 import { openImportNotebookModal } from "./view/import-notebook-modal";
-import { WELCOME_TITLE, buildWelcomeNotebook, shouldShowWelcome } from "./model/welcome";
+import {
+  type StickerPaths,
+  WELCOME_TITLE,
+  buildWelcomeNotebook,
+  shouldShowWelcome,
+  welcomeStickerFiles,
+} from "./model/welcome";
 import { WelcomeModal } from "./view/welcome-modal";
+import { saveImageAttachment } from "./view/image-import";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -1348,14 +1355,34 @@ export default class GoodObsidianPlugin extends Plugin {
       await this.app.workspace.revealLeaf(tab);
       return;
     }
+    const folder = normalizeFolder(this.newNotebookFolder());
+    const stickers = await this.saveWelcomeStickers(joinVaultPath(folder, name));
     await this.createNotebook(
       WELCOME_TITLE,
       { ...DEFAULT_NOTEBOOK_CHOICES },
-      undefined,
-      (heading, attachments) => buildWelcomeNotebook(heading, attachments),
-      // A tour saves no pictures or recordings of its own: just the file.
+      folder,
+      (heading, attachments) => buildWelcomeNotebook(heading, attachments, stickers),
+      // The tour's only files of its own are its stickers: no folder for it.
       false,
     );
+  }
+
+  /**
+   * The welcome tour's stickers, saved where a picture added to a note at
+   * `notePath` would go. One that cannot be saved is left off its page.
+   */
+  private async saveWelcomeStickers(notePath: string): Promise<StickerPaths> {
+    const paths: Record<string, string> = {};
+    for (const { key, name, svg } of welcomeStickerFiles()) {
+      try {
+        const bytes = new TextEncoder().encode(svg).buffer;
+        const prepared = { bytes, mime: "image/svg+xml", ext: "svg", width: 0, height: 0 };
+        paths[key] = (await saveImageAttachment(this.app, prepared, name, notePath)).path;
+      } catch (error) {
+        console.warn(`FineNotes: could not save the welcome sticker ${name}`, error);
+      }
+    }
+    return paths;
   }
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
