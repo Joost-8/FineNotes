@@ -40,6 +40,7 @@ import type { PdfRenderArea } from "../canvas/pdf-raster";
 
 import { Notice, Platform, setIcon } from "obsidian";
 import {
+  DEFAULT_HIGHLIGHTER_ALPHA,
   FALLBACK_PRESSURE,
   HOLD_MS,
   HOLD_RADIUS,
@@ -119,6 +120,7 @@ import {
   shownColor,
   writingLines,
 } from "../canvas/backdrop";
+import { nightHighlighter } from "../canvas/night";
 import {
   type LineSpan,
   RuledEraser,
@@ -353,6 +355,7 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
+import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
 const ZOOM_STEP = 1.25;
@@ -1148,8 +1151,10 @@ export class InkSurface {
   private zoomDrag: { from: number; x: number; y: number } | null = null;
   /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
   private stylusMenuUntil = 0;
-  /** The small crosshair over the page for the pens, on a computer (FineNotes#25). */
-  private penCursor = false;
+  /** The cursor over the page for the pens, on a computer (FineNotes#25, #27). */
+  private penCursor: PenCursorStyle = "arrow";
+  /** What the ink cursor was last drawn for, so an unchanged one is not set again. */
+  private inkCursorKey = "";
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
   private palmUndo: {
     t: number;
@@ -2134,6 +2139,7 @@ export class InkSurface {
     this.renderer.paper = theme;
     this.renderer.invalidateAll();
     this.syncTextBoxes();
+    this.syncInkCursor();
     this.requestFrame();
   }
 
@@ -2441,17 +2447,63 @@ export class InkSurface {
     if (page) this.select(page.id, selectablesOf(page));
   }
 
-  /** Show the small crosshair over the page while a pen is in hand, or never (FineNotes#25). */
-  setPenCursor(on: boolean): void {
-    this.penCursor = on;
+  /**
+   * What the cursor over the page is while a pen is in hand: the ink dot
+   * (FineNotes#27), the small crosshair (FineNotes#25) or the arrow. The
+   * view passes the arrow on a tablet.
+   */
+  setPenCursor(style: PenCursorStyle): void {
+    this.penCursor = style;
+    this.inkCursorKey = "";
+    this.surfaceEl.removeClass("is-drawing");
     this.syncPenCursor();
+  }
+
+  /** The pen's colour, width or type changed in the toolbar: the ink cursor follows. */
+  refreshPenCursor(): void {
+    this.syncInkCursor();
   }
 
   private syncPenCursor(): void {
     const tool = this.toolState.tool;
-    const pen = tool === "pen" || tool === "highlighter" || tool === "shape" || tool === "laser";
-    this.surfaceEl.toggleClass("is-pen-cursor", this.penCursor === true && pen);
+    const pen = cursorToolOf(tool) !== null;
+    this.surfaceEl.toggleClass("is-pen-cursor", this.penCursor === "crosshair" && pen);
+    this.surfaceEl.toggleClass("is-ink-cursor", this.penCursor === "ink" && pen);
     this.surfaceEl.toggleClass("is-laser", tool === "laser");
+    this.syncInkCursor();
+  }
+
+  /**
+   * Draw the ink cursor for the pen in hand: its colour as this page shows
+   * it (dark pages show ink lighter), and its width on screen at this zoom,
+   * in whole px. Cheap when nothing changed, so it is called after every
+   * zoom step; skipped during a pinch, and drawn once it ends.
+   */
+  private syncInkCursor(): void {
+    if (this.penCursor !== "ink" || this.pinch) return;
+    const tool = cursorToolOf(this.toolState.tool);
+    if (!tool) return;
+    const page = this.doc.pages[this.pageIndex];
+    const night = page ? pageLook(page.backdrop, this.paper).night : false;
+    const color = this.strokeColor();
+    const shown =
+      night && tool === "highlighter" ? nightHighlighter(color) : shownColor(color, night);
+    const width = cursorSize(this.strokeSize() * this.unitScale);
+    const highlighterAlpha = this.renderer?.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
+    const key = `${tool} ${shown} ${width} ${highlighterAlpha}`;
+    if (key === this.inkCursorKey) return;
+    this.inkCursorKey = key;
+    const hover = cursorFor(tool, shown, width, { highlighterAlpha });
+    const down = cursorFor(tool, shown, width, { highlighterAlpha, drawing: true });
+    this.surfaceEl.setCssProps({
+      "--goodobsidian-pen-cursor": cursorCss(hover, "crosshair"),
+      "--goodobsidian-pen-cursor-drawing": cursorCss(down, "crosshair"),
+    });
+  }
+
+  /** A pen or mouse is down on the page, or lifted: the ink cursor shrinks to a dot meanwhile. */
+  private markDrawing(on: boolean): void {
+    if (this.penCursor === "ink") this.surfaceEl.toggleClass("is-drawing", on);
   }
 
   /** A key let go anywhere: space ends the hand (FineNotes#7). */
@@ -2621,6 +2673,7 @@ export class InkSurface {
 
     renderer.resize(cssW, cssH, backingScale(window.devicePixelRatio));
     this.syncViewport();
+    this.syncInkCursor();
     this.settleIfIdle();
     this.renderAll();
     this.schedulePrefetch();
@@ -2759,6 +2812,8 @@ export class InkSurface {
       this.callbacks.onPageChange?.(index, total);
       this.reportStatus();
       this.prefetchText();
+      // A page of its own paper may show the ink in another colour.
+      this.syncInkCursor();
     }
   }
 
@@ -2982,6 +3037,7 @@ export class InkSurface {
     const delta = anchorScrollDelta(before, after, this.scale);
     this.scroller.nudge(delta.x, delta.y);
     this.syncViewport();
+    this.syncInkCursor();
     this.syncTextBoxes();
     this.syncImageOverlay();
     this.syncSelectionOverlay();
@@ -3909,6 +3965,7 @@ export class InkSurface {
         this.startZoomDrag(sample);
         return;
       }
+      this.markDrawing(true);
       this.penDown(sample);
     },
     onMove: (coalesced) => {
@@ -3922,6 +3979,7 @@ export class InkSurface {
     },
     onEnd: (sample) => {
       this.callbacks.onPen?.(false);
+      this.markDrawing(false);
       if (this.endZoomDrag()) return;
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
@@ -3929,6 +3987,7 @@ export class InkSurface {
     },
     onCancel: () => {
       this.callbacks.onPen?.(false);
+      this.markDrawing(false);
       if (this.endZoomDrag()) return;
       if (this.finishTextDismiss()) return;
       this.finishToolGesture(this.activePage, null);
@@ -4037,6 +4096,7 @@ export class InkSurface {
       const pinch = this.pinch;
       this.pinch = null;
       if (!pinch) return;
+      this.syncInkCursor();
       const target = this.clampZoom(this.userZoom);
       // Pinched back out to where a row turns pages: settle on the page being
       // read, centred, once any zoom spring is done.

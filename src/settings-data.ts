@@ -29,6 +29,7 @@ import type { ImageVendorChoice } from "./recognition/ai-menu-model";
 import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
+import type { PenCursorStyle } from "./view/pen-cursor";
 
 /** The tools an ink note can open with (`defaultTool`). */
 export type ToolId = "pen" | "highlighter" | "eraser" | "select";
@@ -178,8 +179,12 @@ export interface GoodObsidianSettings {
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
   barrelButton: BarrelAction;
-  /** A small crosshair over the page for the pens, on a computer. */
-  penCursor: boolean;
+  /**
+   * The cursor over the page for the pens, on a computer: the ink dot, a
+   * small crosshair or the arrow. A boolean before FineNotes#27 (on is the
+   * ink dot now); checked where read.
+   */
+  penCursor: PenCursorStyle;
   /**
    * Highlighter strokes are drawn as straight runs that bend only where the
    * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
@@ -249,7 +254,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   barrelButton: "erase",
-  penCursor: true,
+  penCursor: "ink",
   straightHighlighter: true,
 
   foldedSettingsSections: ["pens", "shortcuts"],

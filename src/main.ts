@@ -23,6 +23,7 @@ import {
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { type PageAppearance, shownPaperTheme } from "./settings-data";
+import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { buildInkFile } from "./model/serialize";
 import type { RecognitionProvider } from "./recognition/provider";
 import { createProviderRegistry, resolveProvider } from "./recognition/registry";
@@ -515,6 +516,8 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.trocrModel;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
+    // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
+    this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
     // once, so the carry-over happens exactly one time.
     if (own === null && saved !== null) await this.saveSettings();
@@ -852,11 +855,11 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** The pen cursor setting changed: every open notebook shows the crosshair, or not. */
-  async setPenCursor(on: boolean): Promise<void> {
-    this.settings.penCursor = on;
+  /** "Cursor over the page" changed: every open notebook shows the new cursor. */
+  async setPenCursor(style: PenCursorStyle): Promise<void> {
+    this.settings.penCursor = style;
     await this.saveSettings();
-    for (const view of this.openNotebooks()) view.setPenCursor(on);
+    for (const view of this.openNotebooks()) view.setPenCursor(style);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

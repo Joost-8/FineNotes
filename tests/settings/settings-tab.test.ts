@@ -114,9 +114,9 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       calls.push(`pens:${pens.length}`);
       settings.savedPens = pens.map((pen) => ({ ...pen }));
     }),
-    setPenCursor: vi.fn((on: boolean) => {
-      calls.push(`penCursor:${on}`);
-      settings.penCursor = on;
+    setPenCursor: vi.fn((style: Settings["penCursor"]) => {
+      calls.push(`penCursor:${style}`);
+      settings.penCursor = style;
       return Promise.resolve();
     }),
   };
@@ -247,7 +247,7 @@ describe("the rows", () => {
       [PENS, "Save the pen in hand", "render"],
       [PENS, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
-      [PENS, "Crosshair cursor", "toggle:penCursor"],
+      [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard and stylus shortcuts", "render"],
       [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Dark PDF pages", "toggle:invertPdfPages"],
@@ -341,7 +341,7 @@ describe("the rows", () => {
       "Save the pen in hand": ["favorite pen", "preset"],
       "Straighten highlighter strokes": ["highlighter", "straight", "line"],
       "Stylus side button": ["barrel button", "pen tablet", "wacom", "stylus"],
-      "Crosshair cursor": ["cursor", "pointer"],
+      "Cursor over the page": ["cursor", "pointer", "crosshair"],
       "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
       "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
@@ -416,7 +416,7 @@ const PEN_ROWS = [
   "Save the pen in hand",
   "Straighten highlighter strokes",
   "Stylus side button",
-  "Crosshair cursor",
+  "Cursor over the page",
   "Keyboard and stylus shortcuts",
 ];
 
@@ -1008,7 +1008,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(save.button("Save pen").disabled).toBe(true);
   });
 
-  it("offers the barrel's four choices, and the cursor only on a computer", () => {
+  it("offers the barrel's four choices, and the cursor's three only on a computer", () => {
     const all = rows(makeTab(makePlugin()).tab);
     expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
       "erase",
@@ -1016,10 +1016,17 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       "pan",
       "none",
     ]);
-    expect(shown(named(all, "Crosshair cursor"))).toBe(true);
+    const cursor = named(all, "Cursor over the page");
+    expect(cursor.control?.options).toEqual({
+      ink: "Ink dot",
+      crosshair: "Crosshair",
+      arrow: "Arrow",
+    });
+    expect(cursor.aliases).toEqual(expect.arrayContaining(["cursor", "pointer", "crosshair"]));
+    expect(shown(cursor)).toBe(true);
     Platform.isMobile = true;
     try {
-      expect(shown(named(rows(makeTab(makePlugin()).tab), "Crosshair cursor"))).toBe(false);
+      expect(shown(named(rows(makeTab(makePlugin()).tab), "Cursor over the page"))).toBe(false);
     } finally {
       Platform.isMobile = false;
     }
@@ -1027,8 +1034,9 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
 
   it("hands the cursor switch to the plugin, which updates every notebook", async () => {
     const plugin = makePlugin();
-    await makeTab(plugin).tab.setControlValue("penCursor", false);
-    expect(plugin.calls).toEqual(["penCursor:false"]);
+    await makeTab(plugin).tab.setControlValue("penCursor", "crosshair");
+    await makeTab(plugin).tab.setControlValue("penCursor", "arrow");
+    expect(plugin.calls).toEqual(["penCursor:crosshair", "penCursor:arrow"]);
   });
 
   it("lists the shortcuts in groups, each key a key cap, Ctrl or ⌘ by platform", () => {

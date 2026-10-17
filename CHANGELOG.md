@@ -41,6 +41,15 @@ extracted from the matching section of this file by `release.yml`.
   "How do I export?" with each app's own steps (Goodnotes' several notebooks
   or whole folders as one .zip, Notability's Auto-backup, and the rest).
 
+- **An ink-coloured cursor on a computer.** Over the page, the pen now
+  shows a dot in its ink colour, as wide as it writes at the zoom in use,
+  with a thin white rim so it shows on any paper. While you write it
+  shrinks to a tiny point, so it never hides the ink. The highlighter shows
+  a slim see-through bar in its colour, and the laser pointer a glowing red
+  point. The "Crosshair cursor" setting is now "Cursor over the page": Ink
+  dot, Crosshair or Arrow. If you had the crosshair on, you get the ink dot;
+  if you had it off, you keep the arrow (FineNotes#27).
+
 ## [2.2.0] - 2026-10-15
 
 ### Added

@@ -854,6 +854,17 @@ describe("loading settings", () => {
     expect(registered.saved.at(-1)).not.toHaveProperty("pressureEnabled");
   });
 
+  it("carries the old crosshair toggle over to the cursor choice (FineNotes#27)", async () => {
+    await load({ penCursor: true, lastSeenVersion: VERSION });
+    expect(plugin.settings.penCursor).toBe("ink");
+    await load({ penCursor: false, lastSeenVersion: VERSION });
+    expect(plugin.settings.penCursor).toBe("arrow");
+    await load({ penCursor: "crosshair", lastSeenVersion: VERSION });
+    expect(plugin.settings.penCursor).toBe("crosshair");
+    await plugin.saveSettings();
+    expect(registered.saved.at(-1)?.penCursor).toBe("crosshair");
+  });
+
   it("keeps the cloud AI provider", async () => {
     await load({ recognitionProviderId: "llm-byok" });
     expect(plugin.settings.recognitionProviderId).toBe("llm-byok");

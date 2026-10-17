@@ -1714,22 +1714,124 @@ describe("pens and shortcuts (FineNotes#25)", () => {
     expect(run(surface, "endZoomDrag")).toBe(false);
   });
 
-  it("shows the crosshair for the pens only, and only when it is on", () => {
+  it("shows the crosshair for the pens only, and only when it is picked", () => {
     const classes = new Map<string, boolean>();
     const surface = surfaceWith({
       toolState: { tool: "pen" },
-      surfaceEl: { toggleClass: (name: string, on: boolean) => classes.set(name, on) },
+      surfaceEl: {
+        toggleClass: (name: string, on: boolean) => classes.set(name, on),
+        removeClass: (name: string) => classes.set(name, false),
+      },
     });
-    run(surface, "setPenCursor", true);
+    run(surface, "setPenCursor", "crosshair");
     expect(classes.get("is-pen-cursor")).toBe(true);
+    expect(classes.get("is-ink-cursor")).toBe(false);
     (surface.toolState as { tool: string }).tool = "eraser";
     run(surface, "syncPenCursor");
     expect(classes.get("is-pen-cursor")).toBe(false);
     (surface.toolState as { tool: string }).tool = "laser";
     run(surface, "syncPenCursor");
     expect(classes.get("is-laser")).toBe(true);
-    run(surface, "setPenCursor", false);
+    run(surface, "setPenCursor", "arrow");
     expect(classes.get("is-pen-cursor")).toBe(false);
+    expect(classes.get("is-ink-cursor")).toBe(false);
+  });
+
+  describe("the ink cursor (FineNotes#27)", () => {
+    function inkSurface(state: State = {}) {
+      const classes = new Map<string, boolean>();
+      const props: Array<Record<string, string>> = [];
+      const surface = surfaceWith({
+        toolState: { tool: "pen", penType: "ball", color: "#2563eb", size: 4 },
+        doc: { pages: [{ backdrop: { kind: "blank" } }] },
+        pageIndex: 0,
+        paper: { night: false, paper: "#ffffff" },
+        baseScale: 2,
+        userZoom: 1,
+        pinch: null,
+        renderer: { highlighterAlpha: 0.4 },
+        surfaceEl: {
+          toggleClass: (name: string, on: boolean) => classes.set(name, on),
+          removeClass: (name: string) => classes.set(name, false),
+          setCssProps: (p: Record<string, string>) => props.push(p),
+        },
+        ...state,
+      });
+      return { surface, classes, props };
+    }
+
+    it("sets the pen's own cursor and its drawing dot as properties", () => {
+      const { surface, classes, props } = inkSurface();
+      run(surface, "setPenCursor", "ink");
+      expect(classes.get("is-ink-cursor")).toBe(true);
+      expect(classes.get("is-pen-cursor")).toBe(false);
+      expect(props).toHaveLength(1);
+      const hover = props[0]["--goodobsidian-pen-cursor"];
+      const down = props[0]["--goodobsidian-pen-cursor-drawing"];
+      expect(hover).toMatch(/^url\("data:image\/svg\+xml,.*"\) \d+ \d+, crosshair$/);
+      expect(decodeURIComponent(hover)).toContain("fill='#2563eb'");
+      expect(decodeURIComponent(down)).toContain("r='1'");
+    });
+
+    it("draws again only when the tool, colour, width or zoom changes it", () => {
+      const { surface, props } = inkSurface();
+      run(surface, "setPenCursor", "ink");
+      run(surface, "refreshPenCursor");
+      run(surface, "syncInkCursor");
+      expect(props).toHaveLength(1);
+      (surface.toolState as { color: string }).color = "#e03131";
+      run(surface, "refreshPenCursor");
+      expect(props).toHaveLength(2);
+      surface.userZoom = 3;
+      run(surface, "syncInkCursor");
+      expect(props).toHaveLength(3);
+      // Not mid-pinch: the cursor is drawn once the pinch ends.
+      surface.pinch = { raw: 4, centerX: 0, centerY: 0 };
+      surface.userZoom = 4;
+      run(surface, "syncInkCursor");
+      expect(props).toHaveLength(3);
+      surface.pinch = null;
+      run(surface, "syncInkCursor");
+      expect(props).toHaveLength(4);
+      (surface.toolState as { tool: string }).tool = "laser";
+      run(surface, "syncPenCursor");
+      expect(props).toHaveLength(5);
+      expect(decodeURIComponent(props[4]["--goodobsidian-pen-cursor"])).toContain("#ff3b30");
+    });
+
+    it("shows the ink as a dark page shows it", () => {
+      const { surface, props } = inkSurface({
+        toolState: { tool: "pen", penType: "ball", color: "#1a1a1a", size: 4 },
+        paper: { night: true, paper: "#383838", keepPdf: false },
+      });
+      run(surface, "setPenCursor", "ink");
+      const svg = decodeURIComponent(props[0]["--goodobsidian-pen-cursor"]);
+      expect(svg).not.toContain("fill='#1a1a1a'");
+    });
+
+    it("draws nothing for the eraser, nor with another style", () => {
+      const eraser = inkSurface({ toolState: { tool: "eraser" } });
+      run(eraser.surface, "setPenCursor", "ink");
+      expect(eraser.classes.get("is-ink-cursor")).toBe(false);
+      expect(eraser.props).toHaveLength(0);
+      const crosshair = inkSurface();
+      run(crosshair.surface, "setPenCursor", "crosshair");
+      expect(crosshair.props).toHaveLength(0);
+    });
+
+    it("marks the page while the pen is down, with the ink cursor only", () => {
+      const { surface, classes } = inkSurface();
+      run(surface, "setPenCursor", "ink");
+      run(surface, "markDrawing", true);
+      expect(classes.get("is-drawing")).toBe(true);
+      run(surface, "markDrawing", false);
+      expect(classes.get("is-drawing")).toBe(false);
+      run(surface, "markDrawing", true);
+      run(surface, "setPenCursor", "arrow");
+      expect(classes.get("is-drawing")).toBe(false);
+      run(surface, "markDrawing", true);
+      expect(classes.get("is-drawing")).toBe(false);
+    });
   });
 });
 
