@@ -38,6 +38,7 @@ export default defineConfig({
         "src/canvas/pdf-raster.ts",
         "src/canvas/pdf-tiles.ts",
         "src/canvas/pdf-text.ts",
+        "src/canvas/pdf-links.ts",
         "src/canvas/text-layout.ts",
         "src/canvas/table-layout.ts",
         "src/canvas/shape-decor.ts",

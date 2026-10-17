@@ -25,6 +25,13 @@ import {
   layoutText,
   pdfToPage,
 } from "../canvas/pdf-text";
+import {
+  type LinkAnnotationLike,
+  type PageLink,
+  type PdfLink,
+  linksOnPage,
+  readLinks,
+} from "../canvas/pdf-links";
 import type { PageGeometry, PdfBackdrop } from "../model/document";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
@@ -42,12 +49,15 @@ interface TextContentLike {
 interface PdfPageLike {
   getViewport(params: { scale: number }): { width: number; height: number; transform: number[] };
   getTextContent(): Promise<TextContentLike>;
+  getAnnotations?: () => Promise<LinkAnnotationLike[]>;
   cleanup?: () => void;
 }
 
 interface PdfDocumentLike {
   numPages: number;
   getPage(pageNumber: number): Promise<PdfPageLike>;
+  getDestination?: (name: string) => Promise<unknown>;
+  getPageIndex?: (ref: unknown) => Promise<number>;
   destroy(): Promise<void>;
 }
 
@@ -58,6 +68,8 @@ interface PdfJsLike {
 /** A page's text as pdf.js gave it, before it is laid out on a page of some size. */
 interface PageText {
   items: PdfTextItem[];
+  /** Its links (a planner's tabs, web addresses), in PDF space. */
+  links: PdfLink[];
   viewport: Matrix;
   source: { width: number; height: number };
 }
@@ -67,6 +79,7 @@ const MAX_PAGES = 200;
 
 const EMPTY: PageText = {
   items: [],
+  links: [],
   viewport: [1, 0, 0, 1, 0, 0],
   source: { width: 1, height: 1 },
 };
@@ -130,6 +143,18 @@ export class PdfTextCache {
       this.layouts.set(layoutKey, layout);
     }
     return layout;
+  }
+
+  /**
+   * The page's links placed on a page of `geometry`, or null when the page
+   * is not read yet (ask with {@link request}). Never waits.
+   */
+  peekLinks(backdrop: PdfBackdrop, geometry: PageGeometry): PageLink[] | null {
+    const text = this.pages.get(pageKey(backdrop.path, backdrop.page));
+    if (!text) return null;
+    return text.links.length === 0
+      ? []
+      : linksOnPage(text.links, text.viewport, text.source, geometry);
   }
 
   /** Read the page's text in the background, unless it is read or being read. */
@@ -206,14 +231,32 @@ export class PdfTextCache {
       const t = viewport.transform;
       if (t.length < 6 || !(viewport.width > 0) || !(viewport.height > 0)) return EMPTY;
       const content = await page.getTextContent();
+      const links = await this.readPageLinks(doc, page).catch(() => [] as PdfLink[]);
       return {
         items: readTextItems(content),
+        links,
         viewport: [t[0], t[1], t[2], t[3], t[4], t[5]],
         source: { width: viewport.width, height: viewport.height },
       };
     } finally {
       page.cleanup?.();
     }
+  }
+
+  /** A page's links, each destination resolved to a page of the same PDF. */
+  private async readPageLinks(doc: PdfDocumentLike, page: PdfPageLike): Promise<PdfLink[]> {
+    if (!page.getAnnotations) return [];
+    const annotations = await page.getAnnotations();
+    return readLinks(annotations, async (dest) => {
+      let explicit: unknown = dest;
+      if (typeof dest === "string") explicit = await doc.getDestination?.(dest);
+      if (!Array.isArray(explicit) || explicit.length === 0) return null;
+      const ref: unknown = explicit[0];
+      // A destination names its page by reference, or (rarely) by index.
+      if (typeof ref === "number") return ref;
+      if (!doc.getPageIndex || typeof ref !== "object" || ref === null) return null;
+      return doc.getPageIndex(ref);
+    });
   }
 
   private document(path: string): Promise<PdfDocumentLike | null> {

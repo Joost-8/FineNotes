@@ -11,8 +11,10 @@
 
 import { type App, FuzzySuggestModal, Modal, Setting, type TFile } from "obsidian";
 import {
+  GALLERY_CATEGORIES,
   type GalleryEntry,
   TEMPLATE_EXTENSION,
+  galleryMatches,
   TEMPLATE_LICENCES,
   type TemplateLicence,
 } from "../import/template-package";
@@ -131,10 +133,16 @@ export class TemplateFileSuggestModal extends FuzzySuggestModal<TFile> {
 
 /** A gallery's templates: preview, name, author, licence; Install starts a notebook from one. */
 export class TemplateGalleryModal extends Modal {
+  private query = "";
+  private category = "all";
+  private listEl: HTMLElement | null = null;
+
   constructor(
     app: App,
     private readonly entries: readonly GalleryEntry[],
     private readonly install: (entry: GalleryEntry) => void,
+    /** Open a creator's shop, for a template sold there. */
+    private readonly openShop: (url: string) => void = (url) => window.open(url),
   ) {
     super(app);
   }
@@ -150,14 +158,57 @@ export class TemplateGalleryModal extends Modal {
       });
       return;
     }
-    const grid = this.contentEl.createDiv({ cls: "goodobsidian-template-grid" });
-    for (const entry of shown) {
+    // Search, then a chip per category that has templates.
+    const search = this.contentEl.createEl("input", {
+      cls: "goodobsidian-gallery-search",
+      type: "search",
+      attr: { placeholder: "Search templates", "aria-label": "Search templates" },
+    });
+    search.addEventListener("input", () => {
+      this.query = search.value;
+      this.renderList(shown);
+    });
+    const chips = this.contentEl.createDiv({ cls: "goodobsidian-gallery-chips" });
+    const used = GALLERY_CATEGORIES.filter((c) => shown.some((e) => e.category === c.id));
+    const chipButtons: HTMLElement[] = [];
+    for (const category of [{ id: "all", label: "All" }, ...used]) {
+      const chip = chips.createEl("button", {
+        cls: "goodobsidian-gallery-chip clickable-icon",
+        text: category.label,
+      });
+      chip.toggleClass("is-active", category.id === this.category);
+      chip.addEventListener("click", () => {
+        this.category = category.id;
+        for (const other of chipButtons) other.toggleClass("is-active", other === chip);
+        this.renderList(shown);
+      });
+      chipButtons.push(chip);
+    }
+    this.listEl = this.contentEl.createDiv({ cls: "goodobsidian-template-grid" });
+    this.renderList(shown);
+  }
+
+  private renderList(shown: readonly GalleryEntry[]): void {
+    const grid = this.listEl;
+    if (!grid) return;
+    grid.empty();
+    const matching = shown.filter(
+      (entry) =>
+        (this.category === "all" || entry.category === this.category) &&
+        galleryMatches(entry, this.query),
+    );
+    if (matching.length === 0) {
+      grid.createDiv({ cls: "setting-item-description", text: "No templates match." });
+      return;
+    }
+    for (const entry of matching) {
       const card = grid.createDiv({ cls: "goodobsidian-template-entry" });
       const frame = card.createDiv({ cls: "goodobsidian-template-entry-preview" });
       if (entry.preview)
         frame.createEl("img", { attr: { src: entry.preview, alt: "", loading: "lazy" } });
       card.createDiv({ cls: "goodobsidian-template-entry-name", text: entry.name });
-      const meta = [entry.author, `${entry.pages} page${entry.pages === 1 ? "" : "s"}`]
+      const what = entry.kind === "notebook" ? "Notebook" : "Paper";
+      const meta = [what, entry.author, `${entry.pages} page${entry.pages === 1 ? "" : "s"}`]
         .filter(Boolean)
         .join(" · ");
       card.createDiv({ cls: "goodobsidian-template-entry-meta", text: meta });
@@ -166,15 +217,26 @@ export class TemplateGalleryModal extends Modal {
       if (entry.description) {
         card.createDiv({ cls: "goodobsidian-template-entry-desc", text: entry.description });
       }
-      const button = card.createEl("button", { cls: "mod-cta", text: "Use template" });
-      button.addEventListener("click", () => {
-        this.close();
-        this.install(entry);
-      });
+      if (entry.download) {
+        const button = card.createEl("button", {
+          cls: "mod-cta",
+          text: entry.kind === "notebook" ? "Use template" : "Add to My templates",
+        });
+        button.addEventListener("click", () => {
+          this.close();
+          this.install(entry);
+        });
+      }
+      if (entry.shop) {
+        // Sold by its creator in their own shop; FineNotes only links there.
+        const shop = card.createEl("button", { text: "Get it from the creator" });
+        shop.addEventListener("click", () => this.openShop(entry.shop));
+      }
     }
   }
 
   override onClose(): void {
+    this.listEl = null;
     this.contentEl.empty();
   }
 }

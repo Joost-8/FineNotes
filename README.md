@@ -493,7 +493,16 @@ telemetry, no ads and no account. Your handwriting is read by Grape
 (handwriting recognizer model) on the device; practice files and what Grape
 learns from them stay in your vault.
 
-The network is only used by the optional AI features, and only after you:
+The network is used in two cases, both optional.
+
+**The template gallery.** It downloads only when you open it (Browse
+template gallery), from the address set in Settings → Pages and notebooks:
+its list of templates, their preview pictures, and the one template you
+choose to add. Nothing about you or your vault is sent. A template is only
+accepted if it is a PDF, PNG, JPEG or WebP file of at most 40 MB, or a
+FineNotes template file, so nothing in it can run.
+
+**The AI features**, only after you:
 
 1. choose an AI service in the settings and give it your own API key;
 2. agree to a one-time prompt before the first request to that service.

@@ -10,6 +10,8 @@ import { importNotebooks, isImportFileName } from "../../src/import/import-noteb
 import {
   TEMPLATE_EXTENSION,
   buildTemplatePackage,
+  galleryKindOf,
+  galleryMatches,
   readGalleryIndex,
   readManifest,
   templateId,
@@ -190,5 +192,55 @@ describe("a gallery index", () => {
     expect(entries[2]).toMatchObject({ id: "zen-journal", licence: "cc0", pages: 30 });
     expect(readGalleryIndex(null)).toEqual([]);
     expect(readGalleryIndex({ templates: "no" })).toEqual([]);
+  });
+
+  it("says what each entry installs, and offers only safe file types", () => {
+    const entries = readGalleryIndex({
+      templates: [
+        { name: "A planner", download: "https://x.org/t/planner.pdf?raw=1", category: "planner" },
+        { name: "B grid", download: "https://x.org/t/grid.PNG", tags: ["Grid", " dots ", 4] },
+        { name: "C notebook", download: "https://x.org/t/c.finetemplate" },
+        { name: "D vector", download: "https://x.org/t/d.svg" },
+        { name: "E archive", download: "https://x.org/t/e.zip" },
+        { name: "F sold", shop: "https://shop.example/f", category: "journal" },
+        { name: "G odd", download: "https://x.org/g.jpg", category: "spaceships" },
+      ],
+    });
+    expect(entries.map((e) => [e.name, e.kind, e.category])).toEqual([
+      ["A planner", "paper", "planner"],
+      ["B grid", "paper", "other"],
+      ["C notebook", "notebook", "other"],
+      ["F sold", "paper", "journal"],
+      ["G odd", "paper", "other"],
+    ]);
+    expect(entries[1].tags).toEqual(["grid", "dots"]);
+    // A shop-only entry has nothing to download, only the creator's shop.
+    expect(entries[3]).toMatchObject({ download: "", shop: "https://shop.example/f" });
+  });
+
+  it("finds entries by every word typed, in name, author, description or tags", () => {
+    const [entry] = readGalleryIndex({
+      templates: [
+        {
+          name: "Weekly planner",
+          author: "Ana",
+          description: "Monday start",
+          tags: ["hyperlinked"],
+          download: "https://x.org/w.pdf",
+        },
+      ],
+    });
+    expect(galleryMatches(entry, "")).toBe(true);
+    expect(galleryMatches(entry, "weekly ana")).toBe(true);
+    expect(galleryMatches(entry, "HYPERLINKED monday")).toBe(true);
+    expect(galleryMatches(entry, "weekly daily")).toBe(false);
+  });
+
+  it("reads a download's kind from its extension only", () => {
+    expect(galleryKindOf("https://a.b/x.jpeg")).toBe("paper");
+    expect(galleryKindOf("https://a.b/x.pdf#page=2")).toBe("paper");
+    expect(galleryKindOf("https://a.b/x.finetemplate")).toBe("notebook");
+    expect(galleryKindOf("https://a.b/x.pdf.exe")).toBeNull();
+    expect(galleryKindOf("https://a.b/x")).toBeNull();
   });
 });

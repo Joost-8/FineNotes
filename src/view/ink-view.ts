@@ -2063,6 +2063,8 @@ export class InkView extends TextFileView {
     this.surface.setInkPressure(this.settings.pressureWidth);
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app);
+    // A finger tap on a PDF link that waited for the page to be read.
+    this.pdfText.onReady = (path, page) => this.surface?.pdfTextReady(path, page);
     this.surface.setTextSource(this.pdfText);
     // Audio (0.5). Strokes are stamped on the recorder's clock, so ink and
     // audio share one timeline even if the wall clock jumps mid-recording.
@@ -3081,6 +3083,7 @@ export class InkView extends TextFileView {
         copyLink: (at) => act("copy-link", at),
         duplicate: (at) => act("duplicate", at),
         // A cover opens its picker on ⋯ itself: the row it was chosen from is gone.
+        saveAsTemplate: (at) => void this.savePageAsTemplate(at),
         changeTemplate: (at) => {
           const target = doc.pages[at];
           const cover =
@@ -3189,6 +3192,28 @@ export class InkView extends TextFileView {
     });
     this.templatePicker = picker;
     picker.open();
+  }
+
+  /**
+   * "Save page as template": the page as it looks (paper, ink, text and
+   * pictures) made into a PDF by the export, kept in My templates, named
+   * after its title in the contents or the notebook and page number.
+   */
+  async savePageAsTemplate(index: number): Promise<void> {
+    const note = this.file;
+    const page = this.surface?.document.pages[index];
+    const library = this.paperLibrary();
+    if (!note || !page || !library) return;
+    const name = page.title?.trim() || `${stripInkSuffix(note.basename)} page ${index + 1}`;
+    const progress = new Notice("FineNotes: saving the page as a template…", 0);
+    try {
+      const bytes = await exportPagesToPdf([page], this.previewSources(), { title: name });
+      await library.addPdf(bytes, name);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't save the page as a template — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
+    }
   }
 
   /** The template picker open now, for its previews to follow PDF pages as they render. */

@@ -10,8 +10,10 @@ import { type App, FuzzySuggestModal, Notice, type TFile, normalizePath } from "
 import { picturePdf, rgbFromRgba } from "../import/image-pdf";
 import type { PageGeometry, PdfBackdrop } from "../model/document";
 import {
+  MAX_PAPER_BYTES,
   type PaperEntry,
   isPaperSource,
+  paperFileKind,
   paperBackdrop,
   paperEntries,
   paperGeometry,
@@ -115,12 +117,28 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     });
   }
 
-  /** Save `bytes` (a PDF, or a picture made into one) in the library. */
+  /** Keep a PDF made here (a page saved as a template) in the library, as `name`. */
+  addPdf(bytes: Uint8Array, name: string): Promise<boolean> {
+    const copy = bytes.slice();
+    return this.add(copy.buffer, `${name}.pdf`, "application/pdf");
+  }
+
+  /** Keep a downloaded file (a gallery template) in the library, if it is a PDF or picture. */
+  addFile(bytes: ArrayBuffer, fileName: string): Promise<boolean> {
+    return this.add(bytes, fileName, "");
+  }
+
+  /**
+   * Save `bytes` (a PDF, or a picture made into one) in the library. What
+   * the bytes are decides, never the name: anything but a PDF, PNG, JPEG or
+   * WebP is refused (`paperFileKind`), and so is anything too large.
+   */
   private async add(bytes: ArrayBuffer, name: string, label: string): Promise<boolean> {
     try {
-      const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
-      const isPdf = String.fromCharCode(...head) === "%PDF-";
-      const pdf = isPdf ? new Uint8Array(bytes) : await pictureAsPdf(bytes, label);
+      if (bytes.byteLength > MAX_PAPER_BYTES) throw new Error("the file is larger than 40 MB");
+      const kind = paperFileKind(new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 16)));
+      if (!kind) throw new Error("only PDF, PNG, JPEG and WebP files can be templates");
+      const pdf = kind === "pdf" ? new Uint8Array(bytes) : await pictureAsPdf(bytes, label);
       const pages = await measurePdfPages(pdf.slice().buffer);
       if (pages.length === 0) throw new Error("it has no pages");
       const folder = this.folder;

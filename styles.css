@@ -8871,3 +8871,33 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
   font-size: var(--font-ui-small);
   white-space: normal;
 }
+
+/* The template gallery's search and category chips (template-ui.ts). */
+.goodobsidian-template-gallery input.goodobsidian-gallery-search {
+  width: 100%;
+  margin-bottom: 10px;
+  font-size: max(16px, var(--font-ui-small));
+}
+
+.goodobsidian-gallery-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+button.goodobsidian-gallery-chip.clickable-icon {
+  width: auto;
+  height: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+button.goodobsidian-gallery-chip.clickable-icon.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}

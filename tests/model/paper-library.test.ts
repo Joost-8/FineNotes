@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   existingCopy,
+  paperFileKind,
   isPaperSource,
   paperBackdrop,
   paperEntries,
@@ -70,5 +71,20 @@ describe("the paper library", () => {
     // Another file that happens to share the name is not the same paper.
     expect(existingCopy(shown, "Planner", 901)).toBeNull();
     expect(existingCopy(shown, "Lecture 4", 1200)).toBeNull();
+  });
+
+  it("tells a file's kind by its bytes, refusing anything but PDF and pictures", () => {
+    const bytes = (...b: number[]) => new Uint8Array(b);
+    const text = (t: string) => new TextEncoder().encode(t);
+    expect(paperFileKind(text("%PDF-1.7"))).toBe("pdf");
+    expect(paperFileKind(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a))).toBe("png");
+    expect(paperFileKind(bytes(0xff, 0xd8, 0xff, 0xe0))).toBe("jpeg");
+    const riff = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0];
+    expect(paperFileKind(bytes(...riff, 0x57, 0x45, 0x42, 0x50))).toBe("webp");
+    expect(paperFileKind(bytes(...riff, 0x41, 0x56, 0x49, 0x20))).toBeNull();
+    expect(paperFileKind(text("<svg xmlns="))).toBeNull();
+    expect(paperFileKind(bytes(0x50, 0x4b, 3, 4))).toBeNull();
+    expect(paperFileKind(text("<html><script>"))).toBeNull();
+    expect(paperFileKind(bytes())).toBeNull();
   });
 });

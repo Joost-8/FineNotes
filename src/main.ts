@@ -103,6 +103,7 @@ import {
 } from "./model/welcome";
 import { WelcomeModal } from "./view/welcome-modal";
 import { saveImageAttachment } from "./view/image-import";
+import { VaultPaperLibrary } from "./view/paper-library-host";
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -466,6 +467,10 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("save-as-template", "Save notebook as template…", (view) =>
       view.saveAsTemplate(),
     );
+    this.notebookCommand("save-page-as-template", "Save page as template", (view) => {
+      const shown = view.currentPageInk();
+      if (shown) void view.savePageAsTemplate(shown.number - 1);
+    });
     this.addCommand({
       id: "new-from-template",
       name: "New notebook from template…",
@@ -1317,6 +1322,18 @@ export default class GoodObsidianPlugin extends Plugin {
     const progress = new Notice(`FineNotes: downloading “${entry.name}”…`, 0);
     try {
       const bytes = (await requestUrl({ url: entry.download })).arrayBuffer;
+      // A paper goes into My templates, checked by its bytes there (PDF,
+      // PNG, JPEG or WebP only, 40 MB at most); no previews are drawn here.
+      if (entry.kind === "paper") {
+        const library = new VaultPaperLibrary(
+          this.app,
+          () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+          () => undefined,
+        );
+        const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
+        await library.addFile(bytes, `${entry.name}.${ext}`);
+        return;
+      }
       const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;

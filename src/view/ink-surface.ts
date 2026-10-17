@@ -245,6 +245,7 @@ import {
   type PageComment,
 } from "../model/document";
 import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
+import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
@@ -681,6 +682,8 @@ export interface InkSurfaceCallbacks {
 export interface PdfTextSource {
   peek(backdrop: PdfBackdrop, geometry: PageGeometry): TextLayout | null;
   request(backdrop: PdfBackdrop): void;
+  /** The page's links placed on the page, or null while it is not read. */
+  peekLinks?(backdrop: PdfBackdrop, geometry: PageGeometry): PageLink[] | null;
 }
 
 /**
@@ -804,6 +807,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const PEN_TAP_TOLERANCE_PX = 6;
 /** The same for a fingertip, which covers more of the glass. */
 const FINGER_TAP_TOLERANCE_PX = 12;
+/** How long a tap on a PDF page waits for its links to be read, ms. */
+const PDF_LINK_WAIT_MS = 1500;
 /** A finger that lifts within this long of landing, having barely moved, tapped. */
 const FINGER_TAP_MS = 350;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
@@ -8005,6 +8010,54 @@ export class InkSurface {
   }
 
   /**
+   * A finger tapped page point `p` of page `index`: follow the link of the
+   * page's PDF there (a planner's tab, an index entry, a web address), if
+   * any. A link to another page of the PDF goes to the notebook page that
+   * shows it. A page whose links are not read yet has them read, and the
+   * tap is followed once they are, if that comes soon (`pdfTextReady`).
+   */
+  private followPdfLink(index: number, p: Pt, tolerance: number): boolean {
+    const page = this.pageAt(index);
+    const source = this.textSource;
+    if (!page || page.backdrop.kind !== "pdf" || !source?.peekLinks) return false;
+    const links = source.peekLinks(page.backdrop, page.geometry);
+    if (links === null) {
+      this.pendingLinkTap = { page, p, tolerance, at: now() };
+      source.request(page.backdrop);
+      return false;
+    }
+    const link = linkAt(links, p, tolerance);
+    if (!link) return false;
+    if ("url" in link.target) {
+      this.callbacks.onOpenLink?.(link.target.url);
+      return true;
+    }
+    const to = notebookPageOf(this.doc.pages, page.backdrop.path, link.target.page, index);
+    if (to < 0) return false;
+    this.goToPage(to, true);
+    return true;
+  }
+
+  /** A tap on a PDF page whose links were still being read, to follow once they are. */
+  private pendingLinkTap: { page: Page; p: Pt; tolerance: number; at: number } | null = null;
+
+  /**
+   * A PDF page's text and links were read: a tap that waited on them is
+   * followed now, if it was moments ago and the page is still there.
+   */
+  pdfTextReady(path: string, pdfPage: number): void {
+    const tap = this.pendingLinkTap;
+    const backdrop = tap?.page.backdrop;
+    if (!tap || backdrop?.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) {
+      return;
+    }
+    this.pendingLinkTap = null;
+    const index = this.doc.pages.indexOf(tap.page);
+    if (index < 0 || now() - tap.at > PDF_LINK_WAIT_MS) return;
+    this.followPdfLink(index, tap.p, tap.tolerance);
+  }
+
+  /**
    * A finger tapped page point `p`: open the link whose ink is there, if
    * any. `tolerance` is page px, around the ink and down to its underline.
    */
@@ -8770,6 +8823,7 @@ export class InkSurface {
     if (box && tapped) {
       const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
+      if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
     }
     if (box && this.offerStrokeTap(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX)) {
       this.clearSelection();

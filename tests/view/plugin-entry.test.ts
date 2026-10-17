@@ -448,6 +448,7 @@ describe("registration", () => {
         "recognize-handwriting",
         "scan-document",
         "save-as-template",
+        "save-page-as-template",
         "search-notebook",
         "show-keyboard-shortcuts",
         "show-welcome",

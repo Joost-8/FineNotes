@@ -212,6 +212,22 @@ export function readTemplatePackage(
   return { source: "template", title: manifest.name || title, doc, attachments, warnings };
 }
 
+/**
+ * What a gallery entry installs: a paper (a PDF or picture, every page of it
+ * into My templates) or a whole notebook (a `.finetemplate`).
+ */
+export type GalleryKind = "paper" | "notebook";
+
+/** The categories a gallery groups templates under; anything else is "other". */
+export const GALLERY_CATEGORIES: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "planner", label: "Planners" },
+  { id: "study", label: "Study" },
+  { id: "journal", label: "Journals" },
+  { id: "work", label: "Work" },
+  { id: "paper", label: "Papers" },
+  { id: "other", label: "Other" },
+];
+
 /** One template in a gallery index. */
 export interface GalleryEntry {
   id: string;
@@ -220,10 +236,15 @@ export interface GalleryEntry {
   description: string;
   version: string;
   licence: TemplateLicence;
+  kind: GalleryKind;
+  category: string;
+  tags: string[];
   /** HTTPS URL of a preview image. */
   preview: string;
-  /** HTTPS URL of the `.finetemplate` file. */
+  /** HTTPS URL of the file: a PDF, PNG or JPEG paper, or a `.finetemplate`. Empty for a shop-only entry. */
   download: string;
+  /** HTTPS URL of the creator's own shop, for a template sold there. FineNotes sells nothing. */
+  shop: string;
   pages: number;
   /** Kept in the index so links still resolve, but no longer offered. */
   retired: boolean;
@@ -231,10 +252,18 @@ export interface GalleryEntry {
 
 const HTTPS = /^https:\/\/[^\s]+$/i;
 
+/** What a download URL installs, by its file's extension; null for anything else. */
+export function galleryKindOf(url: string): GalleryKind | null {
+  const path = url.split(/[?#]/)[0].toLowerCase();
+  if (/\.(pdf|png|jpe?g)$/.test(path)) return "paper";
+  if (path.endsWith(`.${TEMPLATE_EXTENSION}`)) return "notebook";
+  return null;
+}
+
 /**
  * A gallery index: `{ "format": 1, "templates": [ … ] }`. Entries that are
- * not usable (no name, no HTTPS download) are dropped; retired ones are kept
- * and flagged, and the rest come in name order.
+ * not usable (no name; neither a download of a known kind nor a shop) are
+ * dropped; retired ones are kept and flagged, and the rest come in name order.
  */
 export function readGalleryIndex(raw: unknown): GalleryEntry[] {
   if (typeof raw !== "object" || raw === null) return [];
@@ -245,7 +274,14 @@ export function readGalleryIndex(raw: unknown): GalleryEntry[] {
     if (typeof item !== "object" || item === null) continue;
     const r = item as Record<string, unknown>;
     if (typeof r.name !== "string" || !r.name.trim()) continue;
-    if (typeof r.download !== "string" || !HTTPS.test(r.download)) continue;
+    const download = typeof r.download === "string" && HTTPS.test(r.download) ? r.download : "";
+    const kind = download ? galleryKindOf(download) : null;
+    const shop = typeof r.shop === "string" && HTTPS.test(r.shop) ? r.shop : "";
+    if (!kind && !shop) continue;
+    const category =
+      typeof r.category === "string" && GALLERY_CATEGORIES.some((c) => c.id === r.category)
+        ? r.category
+        : "other";
     out.push({
       id: typeof r.id === "string" && r.id ? templateId(r.id) : templateId(r.name),
       name: r.name.trim(),
@@ -255,11 +291,28 @@ export function readGalleryIndex(raw: unknown): GalleryEntry[] {
       licence: TEMPLATE_LICENCES.some((l) => l.id === r.licence)
         ? (r.licence as TemplateLicence)
         : "personal",
+      kind: kind ?? "paper",
+      category,
+      tags: Array.isArray(r.tags)
+        ? r.tags
+            .filter((t): t is string => typeof t === "string" && t.trim() !== "")
+            .map((t) => t.trim().toLowerCase())
+            .slice(0, 12)
+        : [],
       preview: typeof r.preview === "string" && HTTPS.test(r.preview) ? r.preview : "",
-      download: r.download,
+      download: kind ? download : "",
+      shop,
       pages: typeof r.pages === "number" && r.pages > 0 ? Math.round(r.pages) : 1,
       retired: r.retired === true,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Whether `entry` matches a search: every word in its name, author, description or tags. */
+export function galleryMatches(entry: GalleryEntry, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const hay = [entry.name, entry.author, entry.description, ...entry.tags].join(" ").toLowerCase();
+  return words.every((word) => hay.includes(word));
 }

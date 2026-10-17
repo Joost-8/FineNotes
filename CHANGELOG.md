@@ -18,6 +18,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Links in PDFs work.** Tap a link on a PDF page with a finger: a
+  planner's month tab or index entry goes to the notebook page showing that
+  page of the PDF, and a web address opens. Links stay on every page the PDF
+  is on, including papers from My templates.
+- **Save page as template**, in the ⋯ panel and the command palette: the
+  page as it looks becomes a paper in My templates.
+- **The template gallery takes papers.** A gallery entry can be a PDF, PNG or
+  JPEG paper (added to My templates) or a notebook; it can also link to its
+  creator's own shop. Search and categories in the gallery; only PDF and
+  picture files are accepted, checked by their contents, 40 MB at most.
 - **My templates.** Bring in a PDF or a picture once (From files… or From
   vault… at the top of the template picker) and every page of it is a paper,
   next to the built-in ones: a 12-page planner is twelve papers. A notebook

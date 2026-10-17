@@ -21,6 +21,26 @@ export const PAPERS_FOLDER = "Papers";
 /** What may be imported as paper: a PDF, or a picture made into one. */
 export const PAPER_SOURCE_EXTENSIONS: readonly string[] = ["pdf", "png", "jpg", "jpeg", "webp"];
 
+/** The most a downloaded or imported paper file may weigh, bytes. */
+export const MAX_PAPER_BYTES = 40 * 1024 * 1024;
+
+/**
+ * What a file is, by its first bytes, never by its name: only these may
+ * become paper. Everything else (SVG, zip, HTML, scripts) is refused, so a
+ * template from anyone carries nothing that can run.
+ */
+export function paperFileKind(head: Uint8Array): "pdf" | "png" | "jpeg" | "webp" | null {
+  const at = (i: number): number => head[i] ?? -1;
+  if (at(0) === 0x25 && at(1) === 0x50 && at(2) === 0x44 && at(3) === 0x46 && at(4) === 0x2d) {
+    return "pdf";
+  }
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return "png";
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return "jpeg";
+  const riff = at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46;
+  if (riff && at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return "webp";
+  return null;
+}
+
 /** The prefix a notebook's own copy of a library paper is saved under. */
 export const PAPER_COPY_PREFIX = "Paper ";
 

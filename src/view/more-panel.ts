@@ -10,6 +10,7 @@
  *   │ Copy link to page                   │
  *   │ Duplicate page                      │
  *   │ Change template (or cover)          │
+ *   │ Save page as template               │
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
  *   ┌ Dark pages / Light pages            ┐
@@ -58,6 +59,8 @@ export interface MorePanelActions {
   copyLink: (index: number) => void;
   duplicate: (index: number) => void;
   changeTemplate: (index: number, anchor: HTMLElement) => void;
+  /** Keep the page as a paper in My templates (not offered on a cover). */
+  saveAsTemplate?: (index: number) => void;
   goToPage: (index: number) => void;
   clear: (index: number) => void;
   remove: (index: number) => void;
@@ -162,6 +165,14 @@ export class MorePanel {
       text: page.cover ? "Change cover" : "Change template",
       run: (button) => actions.changeTemplate(page.index, button),
     });
+    const save = actions.saveAsTemplate;
+    if (save && !page.cover) {
+      this.row(card, {
+        icon: "file-plus-2",
+        text: "Save page as template",
+        run: () => save(page.index),
+      });
+    }
     if (page.total > 1) this.goToRow(card);
 
     // The quick switch for the page appearance setting, for writing at night,
