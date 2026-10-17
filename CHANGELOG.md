@@ -32,6 +32,9 @@ extracted from the matching section of this file by `release.yml`.
   is on, including papers from My templates.
 - **Save page as template**, in the ⋯ panel and the command palette: the
   page as it looks becomes a paper in My templates.
+- **Delete a template** from My templates: its ⋯ has Delete template (and
+  Share…). It goes to the trash; notebooks that use it keep their own copy.
+  The New notebook dialog shows every built-in paper section open.
 - **Share a template with everyone.** Share… in My templates, Share yours…
   in the gallery, or the command: give it a name, category and licence, and
   the gallery's submission form opens on GitHub filled in. Attach the file

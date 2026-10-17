@@ -396,3 +396,42 @@ export class ShareTemplateModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/** A yes-or-no question before something is removed: Cancel, or the red button. */
+export class ConfirmModal extends Modal {
+  private answered = false;
+
+  constructor(
+    app: App,
+    private readonly title: string,
+    private readonly message: string,
+    private readonly confirmLabel: string,
+    private readonly onAnswer: (yes: boolean) => void,
+  ) {
+    super(app);
+  }
+
+  override onOpen(): void {
+    this.modalEl.addClass("goodobsidian-dialog");
+    this.titleEl.setText(this.title);
+    this.contentEl.createEl("p", { text: this.message });
+    new Setting(this.contentEl)
+      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) =>
+        b
+          .setButtonText(this.confirmLabel)
+          .setDestructive()
+          .setCta()
+          .onClick(() => {
+            this.answered = true;
+            this.close();
+            this.onAnswer(true);
+          }),
+      );
+  }
+
+  override onClose(): void {
+    this.contentEl.empty();
+    if (!this.answered) this.onAnswer(false);
+  }
+}

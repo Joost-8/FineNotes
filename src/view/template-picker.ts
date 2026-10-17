@@ -23,7 +23,7 @@ import {
   paperStyleOf,
   styledBackdrop,
 } from "../canvas/paper-style";
-import { type App, Modal, setIcon } from "obsidian";
+import { type App, Menu, Modal, setIcon } from "obsidian";
 import { renderColorMixer } from "./color-picker";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document";
@@ -448,8 +448,10 @@ export interface PaperLibraryHost {
   importFromVault(): Promise<boolean>;
   /** Browse the community template gallery. True when papers were added from it. */
   browseCommunity?(): Promise<boolean>;
-  /** Share a template with the community gallery. */
-  shareTemplate?(): void;
+  /** Share a template with the community gallery; `path` preselects it. */
+  shareTemplate?(path?: string): void;
+  /** Delete a template from My templates, once the user agrees. True when it went. */
+  deleteTemplate?(path: string): Promise<boolean>;
 }
 
 export interface MyTemplatesOptions {
@@ -462,6 +464,8 @@ export interface MyTemplatesOptions {
   previewWidth?: number;
   onChoose: (entry: PaperEntry) => void;
   onActivate?: (entry: PaperEntry) => void;
+  /** A template was deleted; a dialog that had it chosen lets go of it. */
+  onRemoved?: (path: string) => void;
 }
 
 /**
@@ -553,10 +557,13 @@ export class MyTemplatesSection {
         this.options.wholeFiles && pages > 1
           ? `${entry.name.replace(/ · 1$/, "")} · ${pages} pages`
           : entry.name;
-      const root = row.createEl("button", {
+      // The card and its ⋯ side by side in a frame: a button cannot hold a button.
+      const frame = row.createDiv({ cls: "goodobsidian-template-card-frame" });
+      const root = frame.createEl("button", {
         cls: "goodobsidian-template-card is-large clickable-icon",
         attr: { "aria-label": name, title: name },
       });
+      this.cardMenu(frame, entry.path, pages);
       const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
       root.createDiv({ cls: "goodobsidian-template-name", text: name });
       root.addEventListener("click", () => this.options.onChoose(entry));
@@ -573,6 +580,49 @@ export class MyTemplatesSection {
       });
     }
     this.sync();
+  }
+
+  /** The ⋯ on a card: share the template, or delete it (the whole file, every page). */
+  private cardMenu(frame: HTMLElement, path: string, pages: number): void {
+    const { host } = this.options;
+    const share = host.shareTemplate?.bind(host);
+    const remove = host.deleteTemplate?.bind(host);
+    if (!share && !remove) return;
+    const more = frame.createEl("button", {
+      cls: "goodobsidian-template-card-more clickable-icon",
+      attr: { "aria-label": "Template options", title: "Template options" },
+    });
+    setIcon(more, "more-horizontal");
+    more.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const menu = new Menu();
+      if (share) {
+        menu.addItem((item) =>
+          item
+            .setTitle("Share…")
+            .setIcon("share-2")
+            .onClick(() => share(path)),
+        );
+      }
+      if (remove) {
+        menu.addItem((item) =>
+          item
+            .setTitle(pages > 1 ? `Delete template (${pages} pages)` : "Delete template")
+            .setIcon("trash-2")
+            .setWarning(true)
+            .onClick(() => {
+              void remove(path).then((gone) => {
+                if (!gone || !this.alive) return;
+                if (this.chosen?.path === path) this.chosen = null;
+                this.options.onRemoved?.(path);
+                void this.render();
+              });
+            }),
+        );
+      }
+      const box = more.getBoundingClientRect();
+      menu.showAtPosition({ x: box.left, y: box.bottom });
+    });
   }
 
   private sync(): void {
@@ -675,6 +725,9 @@ export class TemplatePickerModal extends Modal {
         onActivate: (entry) => {
           this.choosePaper(entry);
           this.apply();
+        },
+        onRemoved: (path) => {
+          if (this.paper?.path === path) this.choosePaper(null);
         },
       });
       this.grid.el.prepend(this.papers.el);

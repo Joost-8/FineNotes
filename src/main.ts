@@ -1500,7 +1500,7 @@ export default class GoodObsidianPlugin extends Plugin {
       () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
       paint,
       () => this.openTemplateGallery(),
-      () => void this.openShareTemplate(),
+      (path) => void this.openShareTemplate(path),
     );
   }
 

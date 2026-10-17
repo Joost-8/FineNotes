@@ -8928,3 +8928,23 @@ button.goodobsidian-gallery-chip.clickable-icon.is-active {
 .goodobsidian-share-intro {
   margin-bottom: 8px;
 }
+
+/* My templates: a card and its ⋯ (template-picker.ts cardMenu). */
+.goodobsidian-template-card-frame {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+button.goodobsidian-template-card-more.clickable-icon {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--background-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  color: var(--text-muted);
+  --icon-size: 16px;
+}

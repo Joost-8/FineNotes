@@ -3281,7 +3281,7 @@ export class InkView extends TextFileView {
         });
       },
       () => this.plugin.openTemplateGallery(),
-      () => void this.plugin.openShareTemplate(),
+      (path) => void this.plugin.openShareTemplate(path),
     );
   }
 

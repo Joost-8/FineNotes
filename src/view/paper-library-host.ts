@@ -23,6 +23,7 @@ import {
 import { imageMimeOf, loadImage, pickImageFile, releaseCanvas } from "./image-import";
 import { measurePdfPages } from "./pdf-pages";
 import type { PaperLibraryHost } from "./template-picker";
+import { ConfirmModal } from "./template-ui";
 
 /** What the system file picker offers. */
 const ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
@@ -48,15 +49,53 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     ) => void,
     /** Open the community gallery; true when it added papers. */
     browse?: () => Promise<boolean>,
-    /** Share a template with the community gallery. */
-    share?: () => void,
+    /** Share a template with the community gallery; `path` preselects it. */
+    share?: (path?: string) => void,
   ) {
     if (browse) this.browseCommunity = browse;
     if (share) this.shareTemplate = share;
   }
 
   browseCommunity?: () => Promise<boolean>;
-  shareTemplate?: () => void;
+  shareTemplate?: (path?: string) => void;
+
+  /**
+   * Delete library template `path` (every page of it), after asking. It goes
+   * to the trash Obsidian is set to use, so it can be got back; notebooks
+   * that use it keep their own copy and are unchanged.
+   */
+  deleteTemplate(path: string): Promise<boolean> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return Promise.resolve(false);
+    const pages = this.sizes.get(path)?.entries.length ?? 1;
+    const name = paperName(path);
+    return new Promise((resolve) => {
+      new ConfirmModal(
+        this.app,
+        "Delete template",
+        `Delete “${name}”${pages > 1 ? ` and its ${pages} pages` : ""} from My templates? ` +
+          "It goes to the trash. Notebooks that use it keep their own copy.",
+        "Delete",
+        (yes) => {
+          if (!yes) {
+            resolve(false);
+            return;
+          }
+          void this.app.fileManager.trashFile(file).then(
+            () => {
+              this.sizes.delete(path);
+              new Notice(`FineNotes: “${name}” was deleted from My templates.`);
+              resolve(true);
+            },
+            (error: unknown) => {
+              new Notice(`FineNotes: couldn't delete that template — ${String(error)}`);
+              resolve(false);
+            },
+          );
+        },
+      ).open();
+    });
+  }
 
   get folder(): string {
     return normalizePath(papersFolderOf(this.templateFolder()));

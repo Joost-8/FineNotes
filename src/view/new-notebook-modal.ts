@@ -288,11 +288,13 @@ export class NewNotebookModal extends Modal {
           this.chooseTemplate(entry);
           this.create();
         },
+        onRemoved: (path) => {
+          if (this.template?.path === path) this.chooseTemplate(null);
+        },
       });
     }
     this.grid = new TemplateGrid(section, {
       selected: this.choices.ruling,
-      open: "selected",
       previewWidth: PREVIEW_WIDTH,
       onSelect: (ruling: Ruling) => {
         this.choices.ruling = ruling;
