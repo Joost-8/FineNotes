@@ -83,7 +83,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   const out: NotebookChoices = { ...DEFAULT_NOTEBOOK_CHOICES };
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
   const r = raw as Record<string, unknown>;
-  if (r.type === "notebook" || r.type === "single") out.type = r.type;
+  // Only notebooks are made now: a remembered "single" page reads as a notebook.
+  if (r.type === "notebook") out.type = r.type;
   // Only a design the picker still offers: a remembered classic one reads as the default.
   if (r.cover === "none" || COVER_TEMPLATES.some((t) => t.ruling === r.cover)) {
     out.cover = r.cover as CoverChoice;

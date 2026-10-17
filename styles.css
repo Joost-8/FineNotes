@@ -3397,11 +3397,6 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-size: max(16px, var(--font-ui-small));
 }
 
-.goodobsidian-segmented.goodobsidian-newnb-type button {
-  height: var(--gob-touch);
-  font-size: max(15px, var(--font-ui-medium));
-}
-
 .goodobsidian-newnb-section {
   display: flex;
   flex-direction: column;

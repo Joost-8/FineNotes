@@ -3,7 +3,6 @@
  *
  *   [Cancel]        New notebook        [Create]    (sticky: never scrolls away)
  *   Title ______________________________            (focused on open)
- *   ( Notebook | Single page )
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
  *   Folder  Lectures/Analysis  ›
@@ -23,7 +22,6 @@ import type { PageGeometry, Ruling } from "../model/document";
 import {
   type CoverChoice,
   type NotebookChoices,
-  type NotebookType,
   defaultTitle,
   normalizeFolder,
 } from "../model/new-notebook";
@@ -78,12 +76,9 @@ export class NewNotebookModal extends Modal {
   private created = false;
 
   private titleInput: HTMLInputElement | null = null;
-  private heading: HTMLElement | null = null;
-  private coverSection: HTMLElement | null = null;
   private coverPicker: CoverPicker | null = null;
   private grid: TemplateGrid | null = null;
   private folderLabel: HTMLElement | null = null;
-  private readonly typeButtons = new Map<NotebookType, HTMLButtonElement>();
   /** Scroll offsets before the title first took focus: what closing puts back. */
   private openScroll: ScrollSnapshot | null = null;
   /** Offsets captured as a finger lands on the title, before WebKit moves anything. */
@@ -119,12 +114,10 @@ export class NewNotebookModal extends Modal {
     this.buildHeader(contentEl.createDiv({ cls: "goodobsidian-newnb-header" }));
     const body = contentEl.createDiv({ cls: "goodobsidian-newnb-body" });
     this.buildTitle(body);
-    this.buildType(body);
     this.buildCover(body);
     this.buildPaper(body);
     this.buildFolder(body);
 
-    this.syncType();
     this.repaint();
     // Focus inside the gesture that opened the dialog: iPadOS raises the
     // keyboard only for a focus made during a user gesture. Without
@@ -170,7 +163,7 @@ export class NewNotebookModal extends Modal {
   private buildHeader(header: HTMLElement): void {
     const cancel = header.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
-    this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading" });
+    header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
     create.addEventListener("click", () => this.create());
   }
@@ -179,7 +172,12 @@ export class NewNotebookModal extends Modal {
     const input = body.createEl("input", {
       cls: "goodobsidian-newnb-title",
       type: "text",
-      attr: { "aria-label": "Title", enterkeyhint: "done", autocapitalize: "sentences" },
+      attr: {
+        "aria-label": "Title",
+        enterkeyhint: "done",
+        autocapitalize: "sentences",
+        placeholder: defaultTitle("notebook"),
+      },
     });
     input.addEventListener("keydown", (event) => {
       // Not while an IME is composing: its Return confirms the characters.
@@ -230,27 +228,8 @@ export class NewNotebookModal extends Modal {
     });
   }
 
-  private buildType(body: HTMLElement): void {
-    const seg = body.createDiv({ cls: "goodobsidian-segmented goodobsidian-newnb-type" });
-    seg.setAttribute("role", "group");
-    seg.setAttribute("aria-label", "Type");
-    const types: Array<[NotebookType, string]> = [
-      ["notebook", "Notebook"],
-      ["single", "Single page"],
-    ];
-    for (const [type, label] of types) {
-      const button = seg.createEl("button", { cls: "clickable-icon", text: label });
-      button.addEventListener("click", () => {
-        this.choices.type = type;
-        this.syncType();
-      });
-      this.typeButtons.set(type, button);
-    }
-  }
-
   private buildCover(body: HTMLElement): void {
     const section = this.section(body, "Cover");
-    this.coverSection = section;
     const color = COVER_COLORS.find((c) => c.id === this.choices.coverColor) ?? COVER_COLORS[0];
     this.coverPicker = new CoverPicker(section, {
       design: this.choices.cover,
@@ -364,19 +343,6 @@ export class NewNotebookModal extends Modal {
     const geometry = this.geometry();
     this.grid?.repaint(this.choices.paper, geometry);
     this.coverPicker?.setGeometry(geometry);
-  }
-
-  private syncType(): void {
-    const single = this.choices.type === "single";
-    for (const [type, button] of this.typeButtons) {
-      const active = type === this.choices.type;
-      button.toggleClass("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
-    }
-    // A single page has no cover: it is one sheet, not a book.
-    this.coverSection?.toggle(!single);
-    this.heading?.setText(single ? "New page" : "New notebook");
-    if (this.titleInput) this.titleInput.placeholder = defaultTitle(this.choices.type);
   }
 
   private syncFolder(): void {

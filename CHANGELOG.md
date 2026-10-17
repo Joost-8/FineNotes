@@ -8,6 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Everything new is a notebook.** The New notebook dialog no longer offers
+  a single page. Pages you already have still open, and their page menu can
+  still turn one into a notebook.
+
 ### Added
 
 - **A notebook's folder is the notebook.** A new or imported notebook gets
