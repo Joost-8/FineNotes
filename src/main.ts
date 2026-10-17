@@ -882,6 +882,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember whether new tables get a header row, for the next session. */
+  saveTableHeader(on: boolean): void {
+    this.settings.tableHeader = on;
+    void this.saveSettings();
+  }
+
   /** Remember the Shape tool's fill, line, corners and arrowheads, for the next session. */
   saveShapeStyle(style: ShapeToolStyle): void {
     this.settings.shapeStyle = readShapeToolStyle(style);

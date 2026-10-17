@@ -22,6 +22,7 @@
  */
 
 import { type NotebookPalette, PALETTES } from "../model/palette";
+import type { NotebookFurniture } from "../model/furniture";
 import { type App, Modal, Setting } from "obsidian";
 import { cleanFolder, suggestFolders } from "../model/attachment-folders";
 import type { AttachmentFolders, AttachmentKind, ScrollDirection } from "../model/document";
@@ -45,6 +46,9 @@ export interface NoteSettingsHost {
   /** The notebook's palette now, and setting another (which recolours it). */
   palette?: () => NotebookPalette;
   setPalette?: (palette: NotebookPalette) => void;
+  /** The notebook's header and page numbers, and setting them. */
+  furniture?: () => NotebookFurniture;
+  setFurniture?: (furniture: NotebookFurniture | undefined) => void;
 }
 
 /** A row per kind; `empty` is what an empty row does, `reset` its button's tooltip. */
@@ -203,6 +207,47 @@ export class NoteSettingsModal extends Modal {
             this.host.setScrollDirection(value === "horizontal" ? "horizontal" : "vertical");
           }),
       );
+    this.renderFurniture(parent);
+  }
+
+  /** Page numbers and a header, printed on every page but the cover. */
+  private renderFurniture(parent: HTMLElement): void {
+    const get = this.host.furniture;
+    const set = this.host.setFurniture;
+    if (!get || !set) return;
+    const current = get();
+    new Setting(parent)
+      .setName("Page numbers")
+      .setDesc("Printed at the foot of every page but the cover, in exports too.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("none", "None")
+          .addOption("center", "Bottom centre")
+          .addOption("right", "Bottom right")
+          .setValue(current.numbers ?? "none")
+          .onChange((value) => {
+            const next = { ...get() };
+            if (value === "center" || value === "right") next.numbers = value;
+            else delete next.numbers;
+            set(next);
+          }),
+      );
+    new Setting(parent)
+      .setName("Header")
+      .setDesc(
+        "Printed at the top of every page but the cover. {title}, {page} and {pages} are filled in.",
+      )
+      .addText((text) => {
+        text.setPlaceholder("{title}").setValue(current.header ?? "");
+        // Set when the field is left, not on every key: each change is a step of undo.
+        text.inputEl.addEventListener("change", () => {
+          const next = { ...get() };
+          const header = text.getValue().trim();
+          if (header) next.header = header;
+          else delete next.header;
+          set(next);
+        });
+      });
   }
 
   private renderRow(

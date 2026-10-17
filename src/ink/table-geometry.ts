@@ -86,6 +86,31 @@ export function tableStrokes(from: Pt, to: Pt, size: TableSize, pressure: number
 }
 
 /**
+ * The first row of a table made by {@link tableStrokes}, as a closed rect
+ * (`[x, y, p, …]`, clockwise from the top-left): what a header row's fill
+ * covers. `null` when `strokes` is not a table.
+ */
+export function tableHeaderRow(strokes: readonly TableStroke[]): number[] | null {
+  const outline = strokes[0];
+  if (!outline || outline.shape !== "rect" || outline.pts.length < 15) return null;
+  const xs = [0, 3, 6, 9].map((i) => outline.pts[i]);
+  const ys = [1, 4, 7, 10].map((i) => outline.pts[i]);
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+  const y0 = Math.min(...ys);
+  // The first row line below the top, else the bottom (a one-row table).
+  const rowLines = strokes
+    .slice(1)
+    .filter((s) => s.shape === "line" && s.pts[1] === s.pts[4])
+    .map((s) => s.pts[1])
+    .filter((y) => y > y0);
+  const y1 = rowLines.length > 0 ? Math.min(...rowLines) : Math.max(...ys);
+  if (!(x1 > x0) || !(y1 > y0)) return null;
+  const p = outline.pts[2];
+  return [x0, y0, p, x1, y0, p, x1, y1, p, x0, y1, p, x0, y0, p];
+}
+
+/**
  * The box a table dragged from `from` to `to` fills. Too small a drag is
  * grown, away from the press in the drag's direction, until every cell is at
  * least {@link TABLE_MIN_CELL} square — a nearly flat drag still makes a

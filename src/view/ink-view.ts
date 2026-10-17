@@ -17,6 +17,8 @@
  */
 
 import { SetNotebookPalette, paletteOf } from "../model/palette";
+import { SetFurniture, furnitureText } from "../model/furniture";
+import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { readShapeToolStyle } from "../model/shape-style";
@@ -246,6 +248,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
+    tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
@@ -1018,7 +1021,14 @@ export class InkView extends TextFileView {
       paper: paperTheme(false),
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
+      furniture: (page) =>
+        furnitureText(this.doc, this.doc.pages.indexOf(page), this.notebookTitle()),
     };
+  }
+
+  /** The notebook's name, as a header's `{title}`. */
+  private notebookTitle(): string {
+    return this.file ? stripInkSuffix(this.file.basename) : "";
   }
 
   private openAsk(): void {
@@ -1423,6 +1433,7 @@ export class InkView extends TextFileView {
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
         notebookColors: () => paletteOf(this.doc).colors,
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
@@ -1560,6 +1571,7 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.surface.setNotebookTitle(this.notebookTitle());
     this.setPenCursor(this.settings.penCursor);
     this.surface.setInkPressure(this.settings.pressureWidth);
     this.pdfText?.destroy();
@@ -1798,6 +1810,11 @@ export class InkView extends TextFileView {
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
+      furniture: () => ({ ...this.doc.furniture }),
+      setFurniture: (furniture) => {
+        apply(new SetFurniture(furniture));
+        this.sidebar?.setDocument(this.doc);
+      },
       palette: () => paletteOf(this.doc),
       setPalette: (palette) => apply(new SetNotebookPalette(palette)),
     }).open();
@@ -2124,6 +2141,7 @@ export class InkView extends TextFileView {
       paper: this.surface?.paperTheme ?? this.shownPaper(),
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
+      notebookTitle: this.notebookTitle(),
     };
   }
 
@@ -2315,6 +2333,11 @@ export class InkView extends TextFileView {
         return;
       case "bookmark":
         surface.applyCommand(new SetPageBookmark(page, page.bookmarked !== true));
+        break;
+      case "tab":
+        surface.applyCommand(
+          new SetPageTab(page, page.tab ? null : nextTabColor(surface.document)),
+        );
         break;
       case "contents":
         // By identity: the page may move or go while the dialog is open.

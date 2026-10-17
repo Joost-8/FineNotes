@@ -72,6 +72,7 @@ import {
 import { displayText } from "../model/text-links";
 import { normalizeBorder, shownCase } from "../model/text-style";
 import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
+import { type PageTexts, furnitureText } from "../model/furniture";
 import {
   HEAD_MAX,
   type OutlineOp,
@@ -147,6 +148,44 @@ export function decorOf(stroke: {
     ...(radius ? { radius } : {}),
     ...(heads ? { heads } : {}),
   };
+}
+
+/** Header and page-number type: a real family list (canvas reads no CSS variables). */
+const FURNITURE_FONT = '13px "Helvetica Neue", Helvetica, Arial, sans-serif';
+/** How far the header and footer sit from the page's top and bottom edges, page px. */
+const FURNITURE_MARGIN = 26;
+
+/**
+ * Print a page's header and page number (`model/furniture`) in a quiet
+ * grey, in page space: the header top left, the number bottom centre or
+ * right. Paper furniture, so it is drawn under the ink.
+ */
+export function paintFurniture(
+  ctx: CanvasRenderingContext2D,
+  geometry: PageGeometry,
+  texts: PageTexts,
+  night: boolean,
+): void {
+  if (!texts.header && !texts.footer) return;
+  ctx.save();
+  ctx.font = FURNITURE_FONT;
+  ctx.fillStyle = night ? "#8b8f97" : "#9aa0a8";
+  ctx.textBaseline = "middle";
+  const side = Math.max(24, geometry.width * 0.06);
+  if (texts.header) {
+    ctx.textAlign = "left";
+    ctx.fillText(texts.header, side, FURNITURE_MARGIN, geometry.width - 2 * side);
+  }
+  if (texts.footer) {
+    const right = texts.align === "right";
+    ctx.textAlign = right ? "right" : "center";
+    ctx.fillText(
+      texts.footer,
+      right ? geometry.width - side : geometry.width / 2,
+      geometry.height - FURNITURE_MARGIN,
+    );
+  }
+  ctx.restore();
 }
 
 /** A selection box, together with the page it belongs to. */
@@ -412,6 +451,8 @@ export class Renderer {
   private layout: DocumentLayout = EMPTY_LAYOUT;
   /** The document last painted: the wet layer reads its pages' look from it. */
   private doc: InkDocument | null = null;
+  /** What a header's `{title}` becomes: the notebook's name. */
+  notebookTitle = "";
   private painter: BackdropPainter | null = null;
   private imagePainter: ImagePainter | null = null;
   /**
@@ -1072,6 +1113,10 @@ export class Renderer {
       paper: this.paper,
       ...(Number.isFinite(region.minX) ? { region } : {}),
     });
+    if (this.doc) {
+      const texts = furnitureText(this.doc, box.index, this.notebookTitle);
+      paintFurniture(ctx, page.geometry, texts, pageLook(page.backdrop, this.paper).night);
+    }
     this.paintImages(ctx, page, region, level);
     // Inset by half a device pixel so the hairline lies inside the clip.
     const hair = 1 / level;
@@ -1572,6 +1617,8 @@ export interface ThumbnailOptions {
   paper?: PaperTheme;
   /** Draws the page's placed images; without one they are left out. */
   images?: ImagePainter;
+  /** The page's header and page number, when the notebook has them. */
+  furniture?: PageTexts;
 }
 
 /**
@@ -1617,6 +1664,7 @@ export function renderPageThumbnail(
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
     });
+    if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
   }
   const pictures = (front: boolean): void => {
     if (!options.images) return;

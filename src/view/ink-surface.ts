@@ -57,6 +57,7 @@ import {
   penFor,
   renderPageThumbnail,
 } from "../canvas/renderer";
+import { pageTabs } from "../model/page-tabs";
 import {
   ROUND_RADIUS,
   type ShapeStyle,
@@ -64,6 +65,7 @@ import {
   readShapeToolStyle,
   splitFill,
   styleNewShape,
+  withAlpha,
 } from "../model/shape-style";
 import {
   type BoxFrame,
@@ -221,6 +223,7 @@ import {
 import {
   type TableStroke,
   draggedTableBox,
+  tableHeaderRow,
   tableStrokes,
   tappedTableBox,
 } from "../ink/table-geometry";
@@ -382,6 +385,8 @@ const ZOOM_STEP = 1.25;
  * the budget skips is drawn from the page preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
+/** How strong a table's header row fill is: a tint of the table's colour. */
+const TABLE_HEADER_ALPHA = 0.16;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -1520,6 +1525,9 @@ export class InkSurface {
     // touch on a text box, which that guard lets through.)
     this.surfaceEl.dataset.ignoreSwipe = "true";
     this.indicatorEl = this.surfaceEl.createDiv({ cls: "goodobsidian-pageindicator is-idle" });
+    // Page tabs along the right edge, a binder's dividers: chrome, not ink.
+    this.tabStripEl = this.surfaceEl.createDiv({ cls: "goodobsidian-page-tabs is-hidden" });
+    this.tabStripEl.dataset.ignoreSwipe = "true";
     // A readout, not a control: a button there would sit under a resting palm
     // the moment a two-finger zoom gives way to writing.
     this.zoomReadoutEl = this.surfaceEl.createDiv({ cls: "goodobsidian-zoomreadout is-idle" });
@@ -1970,6 +1978,60 @@ export class InkSurface {
    * Stroke edits go through the surface's own tools instead. Any selection
    * is dropped; to select an image just placed, call {@link selectImage}.
    */
+  /** The strip of page tabs at the view's right edge. */
+  private tabStripEl!: HTMLElement;
+  /** The tabs shown, with the page each opens. */
+  private tabEls: Array<{ el: HTMLElement; index: number }> = [];
+  /** The strip as last built, to skip rebuilding it when nothing changed. */
+  private tabKey = "";
+
+  /**
+   * Rebuild the page tabs when the notebook's tabs changed: one per tabbed
+   * page, in page order, in its colour, labelled with its title. A tap opens
+   * the page (pointer events: a Pencil tap over the page is never a click).
+   */
+  private syncPageTabs(): void {
+    // Not built yet (a change can come before the strip exists).
+    if (!this.tabStripEl) return;
+    const tabs = pageTabs(this.doc);
+    const key = tabs.map((t) => `${t.index}|${t.color}|${t.label}`).join(";");
+    if (key === this.tabKey) return;
+    this.tabKey = key;
+    this.tabStripEl.empty();
+    this.tabEls = [];
+    for (const tab of tabs) {
+      const el = this.tabStripEl.createEl("button", {
+        cls: "goodobsidian-page-tab clickable-icon",
+        attr: { "aria-label": `Open ${tab.label}`, title: tab.label },
+      });
+      el.setCssStyles({ backgroundColor: tab.color });
+      el.createSpan({ cls: "goodobsidian-page-tab-label", text: tab.label });
+      onTap(el, () => this.goToPage(tab.index));
+      this.tabEls.push({ el, index: tab.index });
+    }
+    this.tabStripEl.toggleClass("is-hidden", tabs.length === 0);
+    this.markCurrentTab();
+  }
+
+  /** Pull out the tab of the page being read, as a divider in use stands out. */
+  private markCurrentTab(): void {
+    if (!this.tabEls) return;
+    // The tab of the page being read, or of the last tabbed page before it.
+    let current = -1;
+    for (const tab of this.tabEls) if (tab.index <= this.pageIndex) current = tab.index;
+    for (const tab of this.tabEls) tab.el.toggleClass("is-current", tab.index === current);
+  }
+
+  /** The notebook's name, which a page header's `{title}` shows. */
+  setNotebookTitle(title: string): void {
+    if (!this.renderer || this.renderer.notebookTitle === title) return;
+    this.renderer.notebookTitle = title;
+    if (this.doc.furniture?.header?.includes("{title}")) {
+      this.renderer.invalidateAll();
+      this.requestFrame();
+    }
+  }
+
   applyCommand(command: Command): void {
     this.dropSelection();
     const place = this.readingPlace();
@@ -2141,6 +2203,7 @@ export class InkSurface {
    */
   private changed(pages?: readonly string[]): void {
     this.reportStatus();
+    this.syncPageTabs();
     // Ink moved or went: the underlines and ribbons follow it.
     this.syncSectionRibbons();
     // A page's template may have changed: its lines, and their markers.
@@ -2838,6 +2901,7 @@ export class InkSurface {
     this.indicatorEl.toggleClass("is-hidden", total === 0);
     if (index !== this.pageIndex) {
       this.pageIndex = index;
+      this.markCurrentTab();
       this.callbacks.onPageChange?.(index, total);
       this.reportStatus();
       this.prefetchText();
@@ -3195,6 +3259,7 @@ export class InkSurface {
     this.syncLockBadges();
     this.syncSectionRibbons();
     this.syncSpaceHandles();
+    this.syncPageTabs();
   }
 
   /** Keep typed page elements aligned with the canvas across pan and zoom. */
@@ -5494,6 +5559,20 @@ export class InkSurface {
       pts: part.pts,
       shape: part.shape,
     }));
+    // A header row: a soft fill of the table's colour behind the first row,
+    // first in the list so the lines are drawn over it.
+    const header = this.toolState.tableHeader === true ? tableHeaderRow(parts) : null;
+    if (header) {
+      strokes.unshift({
+        id: this.strokeIds.next(),
+        color: style.color,
+        size: style.size,
+        tool: "pen",
+        pts: header,
+        shape: "rect",
+        fill: withAlpha(style.color, TABLE_HEADER_ALPHA),
+      });
+    }
     // One undo step, every line sharing the gesture's pen-down time.
     this.history.push(this.doc, addStrokesTimed(page, strokes, this.penDownAt, "Add table"));
     for (const stroke of strokes) {

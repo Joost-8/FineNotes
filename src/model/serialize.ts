@@ -36,6 +36,8 @@ import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } fr
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
 import { readPalette } from "./palette";
+import { readFurniture } from "./furniture";
+import { readTabColor } from "./page-tabs";
 import {
   type AttachmentFolders,
   type Backdrop,
@@ -156,6 +158,7 @@ interface StoredPage {
   backdrop: Backdrop;
   epoch?: number;
   bookmarked?: boolean;
+  tab?: string;
   title?: string;
   sections?: PageSection[];
   links?: InkLink[];
@@ -172,6 +175,7 @@ interface StoredMeta {
   scroll?: "horizontal";
   practice?: PracticeInfo;
   palette?: { id: string; name: string; colors: string[] };
+  furniture?: { header?: string; numbers?: "center" | "right" };
 }
 
 interface StoredDocument {
@@ -259,6 +263,7 @@ function storePage(page: Page): StoredPage {
     backdrop: page.backdrop,
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
+    tab: readTabColor(page.tab),
     title: normalizePageTitle(page.title),
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
@@ -277,6 +282,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
     practice: normalizePractice(doc.practice),
     palette: readPalette(doc.palette),
+    furniture: readFurniture(doc.furniture),
   };
   return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
@@ -899,6 +905,7 @@ function normalizePage(
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
+    ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
     ...titleOf(page.title),
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
@@ -995,6 +1002,8 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (practice) doc.practice = practice;
   const palette = readPalette(meta.palette);
   if (palette) doc.palette = palette;
+  const furniture = readFurniture(meta.furniture);
+  if (furniture) doc.furniture = furniture;
   return doc;
 }
 

@@ -144,6 +144,8 @@ export interface GoodObsidianSettings {
   shapeColor: string;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
+  /** New tables get a header row. */
+  tableHeader?: boolean;
   /** Vault folder "Save as template" writes `.finetemplate` files to. */
   templateFolder: string;
   /** URL of a template gallery's JSON index; empty: no gallery. */

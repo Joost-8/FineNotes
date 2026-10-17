@@ -66,6 +66,7 @@ import {
 import type { PageSection } from "../model/document";
 import type { BackdropPainter, ImagePainter } from "../canvas/renderer";
 import { renderPageThumbnail } from "../canvas/renderer";
+import { type PageTexts, furnitureText } from "../model/furniture";
 import type { PaperTheme } from "../canvas/backdrop";
 import { type InkDocument, type Page, isCoverRuling } from "../model/document";
 import { releaseCanvas } from "./image-import";
@@ -89,7 +90,9 @@ export type PageAction =
   | "copy-link"
   /** Add the page to the contents, or rename its entry: the host asks for the title. */
   | "contents"
-  | "contents-remove";
+  | "contents-remove"
+  /** Give the page a tab, or take it off. */
+  | "tab";
 
 /** What a section's ⌄ menu can do. */
 export type SectionAction = "rename" | "remove";
@@ -136,6 +139,8 @@ export interface PageSidebarRenderOptions {
   paper: PaperTheme;
   usePressure: boolean;
   highlighterAlpha: number;
+  /** What a header's `{title}` becomes. */
+  notebookTitle?: string;
 }
 
 /** The sidebar's panes: the page thumbnails, the contents, or the note's recordings. */
@@ -642,7 +647,13 @@ export class PageSidebar {
       highlighterAlpha: this.render.highlighterAlpha,
       paper: this.render.paper,
       images: this.render.images,
+      furniture: this.furnitureOf(index),
     });
+  }
+
+  /** Page `index`'s header and number, as the page itself prints them. */
+  private furnitureOf(index: number): PageTexts {
+    return this.doc ? furnitureText(this.doc, index, this.render.notebookTitle ?? "") : {};
   }
 
   private showFilterMenu(): void {
@@ -1086,6 +1097,7 @@ export class PageSidebar {
         highlighterAlpha: this.render.highlighterAlpha,
         paper: this.render.paper,
         images: this.render.images,
+        furniture: this.furnitureOf(index),
       });
       view.painted = signature;
       view.held = true;
@@ -1350,6 +1362,15 @@ export class PageSidebar {
     if (titled) {
       menu.addItem((item) =>
         item.setTitle("Remove from contents").setIcon("list-x").onClick(act("contents-remove")),
+      );
+    }
+    if (!this.single) {
+      const tabbed = this.doc?.pages[index]?.tab !== undefined;
+      menu.addItem((item) =>
+        item
+          .setTitle(tabbed ? "Remove page tab" : "Add page tab")
+          .setIcon("tag")
+          .onClick(act("tab")),
       );
     }
     menu.addItem((item) =>

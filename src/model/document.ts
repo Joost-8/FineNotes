@@ -464,6 +464,8 @@ export interface Page {
    * bookmarked pages only. Stored only as `true`; absent means not.
    */
   bookmarked?: true;
+  /** A coloured tab the notebook can be opened at (`model/page-tabs`), `#rrggbb`. */
+  tab?: string;
   /**
    * The page's line in the notebook's contents (the sidebar's Contents tab),
    * which starts a section there. Trimmed, one line, at most
@@ -581,6 +583,8 @@ export interface InkDocument {
    * colours.
    */
   palette?: { id: string; name: string; colors: string[] };
+  /** A header and page numbers on every page (`model/furniture`). */
+  furniture?: { header?: string; numbers?: "center" | "right" };
 }
 
 /** Which way a notebook's pages run: a column (the default) or a row. */

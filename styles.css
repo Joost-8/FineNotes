@@ -7821,6 +7821,63 @@ button.goodobsidian-color-eyedropper .svg-icon {
   white-space: nowrap;
 }
 
+/* -------------------------------------------------------------- page tabs */
+/* Tabs along the view's right edge, a binder's dividers: each in its page's
+   colour, the one being read pulled out a little. */
+.goodobsidian-page-tabs {
+  position: absolute;
+  top: 64px;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-height: calc(100% - 128px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.goodobsidian-page-tabs.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-page-tab.clickable-icon {
+  justify-content: flex-start;
+  width: 96px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border-radius: 10px 0 0 10px;
+  box-shadow: -1px 1px 4px rgba(0, 0, 0, 0.18);
+  color: #ffffff;
+  pointer-events: auto;
+  transform: translateX(14px);
+  transition: transform 0.25s var(--gob-ease-out, ease-out);
+}
+
+button.goodobsidian-page-tab.clickable-icon:hover,
+button.goodobsidian-page-tab.clickable-icon.is-current {
+  transform: translateX(0);
+}
+
+button.goodobsidian-page-tab.is-current {
+  font-weight: 600;
+}
+
+.goodobsidian-page-tab-label {
+  overflow: hidden;
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.goodobsidian-page-tab.clickable-icon {
+    transition: none;
+  }
+}
+
 /* -------------------------------------------------------------- templates */
 /* The template gallery: a card per template, its first page on top. */
 .goodobsidian-template-gallery {

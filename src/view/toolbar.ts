@@ -376,6 +376,8 @@ export interface ToolbarState {
   shapeStyle?: ShapeToolStyle;
   /** The Table tool's size. `undefined` counts as the last one picked. */
   tableSize?: TableSize;
+  /** New tables get a header row, a soft fill behind the first row. */
+  tableHeader?: boolean;
   /** Active pen type. `undefined` counts as "fountain". */
   penType?: PenType;
   /** Scribble to erase and Circle to lasso. `undefined` counts as GoodNotes' defaults. */
@@ -465,6 +467,8 @@ export interface ToolbarCallbacks {
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
+  /** "Header row" for new tables changed. Hosts persist it. */
+  onTableHeaderChange?: (on: boolean) => void;
   /** The notebook's palette, offered first in every colour picker. */
   notebookColors?: () => readonly string[];
   /** The Shape tool's style changed. Hosts persist it. */
@@ -1605,6 +1609,15 @@ export class Toolbar {
       }
     }
     grid.addEventListener("pointerleave", () => show(tableSizeFor(this.state)));
+    this.switchRow(
+      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
+      "Header row",
+      this.state.tableHeader === true,
+      (on) => {
+        this.state.tableHeader = on;
+        this.callbacks.onTableHeaderChange?.(on);
+      },
+    );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
       text: "Then drag it out on the page, or tap to place it",

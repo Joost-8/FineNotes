@@ -16,6 +16,7 @@ import { annotationLayers } from "../export/annotation-layers";
 import { type PdfAnnotationRaster, PdfComposer } from "../export/pdf-composer";
 import type { PaperTheme } from "../canvas/backdrop";
 import { renderPageThumbnail } from "../canvas/renderer";
+import type { PageTexts } from "../model/furniture";
 import {
   POINTS_PER_PAGE_PX,
   type PdfImagePage,
@@ -41,6 +42,8 @@ export interface PdfExportSources {
   paper: PaperTheme;
   usePressure: boolean;
   highlighterAlpha: number;
+  /** A page's header and page number, when the notebook has them. */
+  furniture?: (page: Page) => PageTexts;
 }
 
 export interface PdfExportOptions {
@@ -97,6 +100,7 @@ export async function renderPageJpeg(page: Page, sources: PdfExportSources): Pro
       highlighterAlpha: sources.highlighterAlpha,
       paper: sources.paper,
       ...(sources.images ? { images: sources.images } : {}),
+      ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
     });
     const jpeg = await canvasToJpeg(canvas);
     return {
@@ -130,6 +134,7 @@ export async function paintPagePreview(
     highlighterAlpha: sources.highlighterAlpha,
     paper: sources.paper,
     ...(sources.images ? { images: sources.images } : {}),
+    ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
   });
 }
 
@@ -196,6 +201,7 @@ async function renderAnnotationPng(page: Page, sources: PdfExportSources): Promi
       usePressure: sources.usePressure,
       highlighterAlpha: sources.highlighterAlpha,
       ...(sources.images ? { images: sources.images } : {}),
+      ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
     });
     return await new Promise<Uint8Array>((resolve, reject) => {
       canvas.toBlob((blob) => {
