@@ -20,7 +20,14 @@
  * dependency, so the whole conversation is testable.
  */
 
-import { ASK_MAX_PAGES, type ChatImage, type ChatTurn, buildAskFirstTurn } from "./ai-chat";
+import {
+  ASK_MAX_PAGES,
+  type ChatFile,
+  type ChatImage,
+  type ChatTurn,
+  buildAskFirstTurn,
+} from "./ai-chat";
+import { attachRefusal } from "./ask-attachments";
 import type { SavedChat } from "./ask-chat-file";
 import { errorMessage } from "../util/errors";
 
@@ -44,6 +51,8 @@ export interface AskSessionDeps {
   save: (chat: SavedChat, path: string | null) => Promise<string>;
   /** Remove a saved chat's file. */
   unsave: (path: string) => Promise<void>;
+  /** Read an attached file from the vault again (a reloaded chat's); null when it is gone. */
+  readFile: (path: string) => Promise<ChatFile | null>;
   now: () => Date;
 }
 
@@ -69,6 +78,10 @@ export class AskSession {
   selected: number[];
   /** The notebook's page count, for the line naming the pages and for saving. */
   totalPages: number;
+  /** Files attached to the next question. */
+  attachments: ChatFile[] = [];
+  /** Vault paths of suggested PDFs the user waved away, for this chat. */
+  readonly dismissed = new Set<string>();
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;
@@ -95,6 +108,35 @@ export class AskSession {
   /** 1-based pages whose images the conversation already has. */
   get sentPages(): Set<number> {
     return new Set(this.turns.flatMap((turn) => turn.pages ?? []));
+  }
+
+  /** Files the conversation already has. */
+  get sentFiles(): ChatFile[] {
+    return this.turns.flatMap((turn) => [...(turn.files ?? [])]);
+  }
+
+  /** Attach `file` to the next question; resolves to why it cannot be, or null once it is. */
+  attach(file: ChatFile): string | null {
+    const refusal = attachRefusal(file, [...this.attachments, ...this.sentFiles]);
+    if (refusal) return refusal;
+    this.attachments = [...this.attachments, file];
+    this.changed();
+    return null;
+  }
+
+  /** Take a file off the next question. */
+  detach(file: ChatFile): void {
+    const next = this.attachments.filter((f) => f !== file);
+    if (next.length === this.attachments.length) return;
+    this.attachments = next;
+    this.changed();
+  }
+
+  /** Stop suggesting the PDF at `path` for this chat. */
+  dismissSuggestion(path: string): void {
+    if (this.dismissed.has(path)) return;
+    this.dismissed.add(path);
+    this.changed();
   }
 
   /** Call `listener` on every change; returns the unsubscribe. */
@@ -145,6 +187,8 @@ export class AskSession {
     this.outstanding = null;
     this.savedPath = null;
     this.created = null;
+    this.attachments = [];
+    this.dismissed.clear();
     this.selected = page >= 1 && page <= this.totalPages ? [page] : [];
     this.changed();
   }
@@ -157,8 +201,14 @@ export class AskSession {
       role: turn.role,
       text: turn.text,
       ...(turn.pages?.length ? { pages: [...turn.pages] } : {}),
+      // Names only, for now: the next question reads them again (`withImages`).
+      ...(turn.files?.length
+        ? { files: turn.files.map((f) => ({ name: f.name, mimeType: "", path: f.path })) }
+        : {}),
     }));
     this.outstanding = null;
+    this.attachments = [];
+    this.dismissed.clear();
     this.save = true;
     this.savedPath = path;
     this.created = chat.created || null;
@@ -177,14 +227,21 @@ export class AskSession {
     const first = this.turns.length === 0;
     const sent = this.sentPages;
     const newPages = this.selected.filter((p) => !sent.has(p));
+    const files = [...this.attachments];
+    const reading = [
+      ...(newPages.length ? [pagesPhrase(newPages)] : []),
+      ...files.map((f) => f.name),
+    ];
     this.outstanding = {
       question: text,
-      status: newPages.length ? `Reading ${pagesPhrase(newPages)}…` : "",
+      status: reading.length ? `Reading ${listPhrase(reading)}…` : "",
     };
     this.changed();
     const stale = (): boolean => generation !== this.generation;
     try {
-      if (first && newPages.length === 0) throw new Error("pick a page to ask about first.");
+      if (first && newPages.length === 0 && files.length === 0) {
+        throw new Error("pick a page or attach a file to ask about first.");
+      }
       if (!(await this.deps.confirm())) {
         if (!stale()) {
           this.outstanding = null;
@@ -199,19 +256,23 @@ export class AskSession {
         const pages = await this.deps.preparePages(newPages);
         if (stale()) return;
         if (pages.images.length === 0) {
-          if (first) throw new Error("there is nothing on these pages to send.");
+          if (first && files.length === 0) {
+            throw new Error("there is nothing on these pages to send.");
+          }
         } else {
           turn = this.questionWithPages(text, pages, first);
         }
         this.outstanding = { question: text, status: "" };
         this.changed();
       }
+      if (files.length) turn = { ...turn, files };
       const answer = await this.deps.ask([...history, turn]);
       if (stale()) return;
       this.created ??= this.deps.now().toISOString();
       // Only a question that was answered joins the history, so a failed one
       // can simply be asked again.
       this.turns = [...history, turn, { role: "assistant", text: answer }];
+      this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;
       this.changed();
       await this.persist();
@@ -255,6 +316,11 @@ export class AskSession {
         role: turn.role,
         text: shownText(turn),
         ...(turn.pages?.length ? { pages: [...turn.pages] } : {}),
+        ...(turn.files?.length
+          ? {
+              files: turn.files.map((f) => ({ name: f.name, ...(f.path ? { path: f.path } : {}) })),
+            }
+          : {}),
       })),
     };
   }
@@ -284,24 +350,50 @@ export class AskSession {
    * chat was loaded from a file (which keeps no images).
    */
   private async withImages(): Promise<ChatTurn[]> {
-    const missing = this.turns.some((t) => t.pages?.length && !t.images?.length);
+    const missing = this.turns.some(
+      (t) => (t.pages?.length && !t.images?.length) || t.files?.some((f) => !hasData(f)),
+    );
     if (!missing) return this.turns;
     const rebuilt: ChatTurn[] = [];
     for (const [i, turn] of this.turns.entries()) {
-      if (!turn.pages?.length || turn.images?.length) {
-        rebuilt.push(turn);
-        continue;
-      }
-      const pages = await this.deps.preparePages(turn.pages);
-      rebuilt.push(
-        pages.images.length
+      let next = turn;
+      if (turn.pages?.length && !turn.images?.length) {
+        const pages = await this.deps.preparePages(turn.pages);
+        next = pages.images.length
           ? this.questionWithPages(shownText(turn), pages, i === 0)
-          : { ...turn, text: shownText(turn) },
-      );
+          : { ...turn, text: shownText(turn) };
+      }
+      if (turn.files?.some((f) => !hasData(f))) {
+        // A file from the vault is read again; one from the device, or one
+        // that is gone, cannot be, and the question goes without it.
+        const files: ChatFile[] = [];
+        for (const file of turn.files) {
+          if (hasData(file)) files.push(file);
+          else if (file.path) {
+            const read = await this.deps.readFile(file.path);
+            if (read) files.push(read);
+          }
+        }
+        next = { ...next, files };
+      } else if (turn.files?.length) {
+        next = { ...next, files: turn.files };
+      }
+      rebuilt.push(next);
     }
     this.turns = rebuilt;
     return rebuilt;
   }
+}
+
+/** Whether a file still holds its contents (a reloaded chat's hold only names). */
+function hasData(file: ChatFile): boolean {
+  return file.base64 !== undefined || file.text !== undefined;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listPhrase(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /** A turn as the user sees it: the question as typed, or the answer. */

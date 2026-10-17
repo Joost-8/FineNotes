@@ -22,10 +22,34 @@
  * stays in view.
  */
 
-import { type App, Component, MarkdownRenderer, Menu, Modal, Notice, setIcon } from "obsidian";
-import { ASK_MAX_PAGES, markdownToPlainText } from "../recognition/ai-chat";
+import {
+  type App,
+  Component,
+  FuzzySuggestModal,
+  MarkdownRenderer,
+  Menu,
+  Modal,
+  Notice,
+  type TFile,
+  setIcon,
+} from "obsidian";
+import {
+  ASK_MAX_PAGES,
+  type ChatFile,
+  PDF_MIME,
+  markdownToPlainText,
+} from "../recognition/ai-chat";
+import {
+  ATTACH_ACCEPT,
+  type PdfBehind,
+  attachKind,
+  attachmentBytes,
+  attachmentFromBytes,
+  fileNameOf,
+  sizeLabel,
+} from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
-import type { SavedChatEntry } from "./ask-chats-io";
+import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { writeSystemText } from "./system-clipboard";
 
@@ -43,6 +67,8 @@ export interface AskAiHost {
   paintThumbnail: (canvas: HTMLCanvasElement, page: number, cssWidth: number) => Promise<void>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
+  /** The notebook's own PDFs behind these 1-based pages. */
+  pdfsBehind: (pages: readonly number[]) => PdfBehind[];
   /** This notebook's saved chats, newest first. */
   savedChats: () => Promise<SavedChatEntry[]>;
   /** Continue a saved chat in the session. */
@@ -84,6 +110,13 @@ export class AskAiModal extends Modal {
   private noteEl: HTMLElement | null = null;
   private input: HTMLTextAreaElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
+  private attachButton: HTMLButtonElement | null = null;
+  private fileInput: HTMLInputElement | null = null;
+  /** The files on the next question, inside the field. */
+  private filesEl: HTMLElement | null = null;
+  /** The card offering the notebook's own PDF, above the field. */
+  private suggestEl: HTMLElement | null = null;
+  private suggestKey = "";
   private saveButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
@@ -148,8 +181,23 @@ export class AskAiModal extends Modal {
     this.buildPicker(contentEl);
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
 
+    this.suggestEl = contentEl.createDiv({ cls: "goodobsidian-chat-suggest is-hidden" });
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
-    const input = composer.createEl("textarea", { cls: "goodobsidian-chat-input" });
+    this.filesEl = composer.createDiv({ cls: "goodobsidian-chat-files is-hidden" });
+    const row = composer.createDiv({ cls: "goodobsidian-chat-compose-row" });
+    this.attachButton = row.createEl("button", {
+      cls: "goodobsidian-chat-attach clickable-icon",
+      attr: { "aria-label": "Attach a file" },
+    });
+    setIcon(this.attachButton, "paperclip");
+    this.attachButton.addEventListener("click", () => this.showAttachMenu());
+    // The device's own picker (Files and Photos on the iPad), behind "From Files…".
+    this.fileInput = row.createEl("input", {
+      cls: "goodobsidian-chat-file-input",
+      attr: { type: "file", accept: ATTACH_ACCEPT, multiple: "" },
+    });
+    this.fileInput.addEventListener("change", () => void this.attachPicked());
+    const input = row.createEl("textarea", { cls: "goodobsidian-chat-input" });
     this.input = input;
     input.rows = 1;
     input.value = this.session.draft;
@@ -166,13 +214,13 @@ export class AskAiModal extends Modal {
         this.submit();
       }
     });
-    this.sendButton = composer.createEl("button", {
+    this.sendButton = row.createEl("button", {
       cls: "goodobsidian-chat-send clickable-icon",
       attr: { "aria-label": "Send" },
     });
     setIcon(this.sendButton, "arrow-up");
     this.sendButton.addEventListener("click", () => this.submit());
-    this.keyboard.watch(input, composer);
+    this.keyboard.watch(input, composer, this.suggestEl);
 
     this.unsubscribe = this.session.onChange(() => this.render());
     this.render();
@@ -360,6 +408,129 @@ export class AskAiModal extends Modal {
     return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${saved}`;
   }
 
+  // --- Files ----------------------------------------------------------------
+
+  /** Where a file comes from: the vault, or the device. */
+  private showAttachMenu(): void {
+    this.closePicker();
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("From your vault…")
+        .setIcon("vault")
+        .onClick(() => {
+          new VaultFileModal(this.app, attachableFiles(this.app), (file) => {
+            void this.attachVaultFile(file.path);
+          }).open();
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("From Files…")
+        .setIcon("folder-open")
+        .onClick(() => this.fileInput?.click()),
+    );
+    const anchor = this.attachButton?.getBoundingClientRect();
+    if (anchor) menu.showAtPosition({ x: anchor.left, y: anchor.top - 4 });
+  }
+
+  private async attachVaultFile(path: string): Promise<void> {
+    const file = await readAttachment(this.app, path);
+    if (!file) {
+      new Notice(`FineNotes: ${fileNameOf(path)} could not be read.`);
+      return;
+    }
+    this.attachOrSay(file);
+  }
+
+  /** Files picked on the device. */
+  private async attachPicked(): Promise<void> {
+    const input = this.fileInput;
+    if (!input?.files) return;
+    for (const picked of Array.from(input.files)) {
+      const file = attachmentFromBytes(picked.name, new Uint8Array(await picked.arrayBuffer()));
+      if (file) this.attachOrSay(file);
+      else {
+        new Notice(
+          `FineNotes: the AI cannot read ${picked.name}. Attach a PDF, a picture or a text file.`,
+        );
+      }
+    }
+    // The same file can be picked again after it was taken off.
+    input.value = "";
+  }
+
+  private attachOrSay(file: ChatFile): void {
+    const refusal = this.session.attach(file);
+    if (refusal) new Notice(`FineNotes: ${refusal}`);
+  }
+
+  /** The files on the next question, as chips in the field, each with a ✕. */
+  private renderAttachments(): void {
+    const el = this.filesEl;
+    if (!el) return;
+    el.empty();
+    const files = this.session.attachments;
+    el.toggleClass("is-hidden", files.length === 0);
+    for (const file of files) {
+      const chip = el.createDiv({ cls: "goodobsidian-chat-file" });
+      setIcon(chip.createSpan({ cls: "goodobsidian-chat-file-icon" }), fileIcon(file));
+      const text = chip.createDiv({ cls: "goodobsidian-chat-file-text" });
+      text.createDiv({ cls: "goodobsidian-chat-file-name", text: file.name });
+      text.createDiv({
+        cls: "goodobsidian-chat-file-size",
+        text: sizeLabel(attachmentBytes(file)),
+      });
+      const remove = chip.createEl("button", {
+        cls: "goodobsidian-chat-file-remove clickable-icon",
+        attr: { "aria-label": `Remove ${file.name}` },
+      });
+      setIcon(remove, "x");
+      remove.disabled = this.session.busy;
+      remove.addEventListener("click", () => this.session.detach(file));
+    }
+  }
+
+  /**
+   * The card above the field offering the notebook's own PDF behind the
+   * pages picked: with the file, the AI reads the slides' text, not only a
+   * picture of each page. One at a time; gone once attached, sent or waved away.
+   */
+  private renderSuggestion(): void {
+    const el = this.suggestEl;
+    if (!el) return;
+    const session = this.session;
+    const held = [...session.attachments, ...session.sentFiles];
+    const offer = this.host
+      .pdfsBehind(session.selected)
+      .find((pdf) => !session.dismissed.has(pdf.path) && !held.some((f) => f.path === pdf.path));
+    const key = offer ? `${offer.path}|${offer.pages.join(",")}|${String(session.busy)}` : "";
+    if (key === this.suggestKey) return;
+    this.suggestKey = key;
+    el.empty();
+    el.toggleClass("is-hidden", !offer);
+    if (!offer) return;
+    const name = fileNameOf(offer.path);
+    setIcon(el.createDiv({ cls: "goodobsidian-chat-suggest-icon" }), "file-text");
+    const text = el.createDiv({ cls: "goodobsidian-chat-suggest-text" });
+    text.createDiv({ cls: "goodobsidian-chat-suggest-title", text: `Attach ${name}?` });
+    const on =
+      offer.pages.length === 1 ? `Page ${offer.pages[0]} is` : `Pages ${listOf(offer.pages)} are`;
+    text.createDiv({
+      cls: "goodobsidian-chat-suggest-detail",
+      text: `${on} printed on it. With the file, the AI reads its text, not only a picture of the page.`,
+    });
+    const attach = el.createEl("button", { cls: "mod-cta clickable-icon", text: "Attach" });
+    attach.disabled = session.busy;
+    attach.addEventListener("click", () => void this.attachVaultFile(offer.path));
+    const close = el.createEl("button", {
+      cls: "goodobsidian-chat-suggest-close clickable-icon",
+      attr: { "aria-label": "Not this time" },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => session.dismissSuggestion(offer.path));
+  }
+
   // --- Conversation ---------------------------------------------------------
 
   private submit(question?: string): void {
@@ -395,11 +566,14 @@ export class AskAiModal extends Modal {
     }
     if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
+    if (this.attachButton) this.attachButton.disabled = busy;
     if (this.newChatButton) {
       this.newChatButton.disabled = busy;
       this.newChatButton.toggleClass("is-hidden", session.empty);
     }
     this.renderPages();
+    this.renderAttachments();
+    this.renderSuggestion();
     this.noteEl?.setText(this.noteText());
     if (this.input) {
       this.input.placeholder =
@@ -448,7 +622,7 @@ export class AskAiModal extends Modal {
     let lastAnswer: HTMLElement | null = null;
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
-      if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages);
+      if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
       else lastAnswer = this.answerRow(thread, texts[i]);
     }
     this.shownTexts = texts;
@@ -498,7 +672,12 @@ export class AskAiModal extends Modal {
   }
 
   /** A question's bubble, with the pages it sent under it. */
-  private questionRow(parent: HTMLElement, text: string, pages?: readonly number[]): void {
+  private questionRow(
+    parent: HTMLElement,
+    text: string,
+    pages?: readonly number[],
+    files?: readonly ChatFile[],
+  ): void {
     const row = parent.createDiv({ cls: "goodobsidian-chat-msg is-user" });
     const column = row.createDiv({ cls: "goodobsidian-chat-question" });
     column.createDiv({ cls: "goodobsidian-chat-bubble", text });
@@ -507,6 +686,11 @@ export class AskAiModal extends Modal {
       const meta = column.createDiv({ cls: "goodobsidian-chat-question-pages" });
       setIcon(meta.createSpan(), "file-image");
       meta.createSpan({ text: label });
+    }
+    if (files?.length) {
+      const meta = column.createDiv({ cls: "goodobsidian-chat-question-pages" });
+      setIcon(meta.createSpan(), "paperclip");
+      meta.createSpan({ text: files.map((f) => f.name).join(", ") });
     }
   }
 
@@ -618,4 +802,41 @@ function shortDate(iso: string): string {
     month: "short",
     ...(sameYear ? {} : { year: "numeric" }),
   });
+}
+
+/** The icon for an attached file's kind. */
+function fileIcon(file: { name: string; mimeType: string }): string {
+  if (file.mimeType === PDF_MIME) return "file-text";
+  if (file.mimeType.startsWith("image/")) return "image";
+  return attachKind(file.name) === "text" ? "file-code" : "file";
+}
+
+/** "3", "3 and 4", "3, 4 and 7". */
+function listOf(pages: readonly number[]): string {
+  if (pages.length <= 1) return String(pages[0] ?? "");
+  return `${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+}
+
+/** Search the vault for a file to attach: PDFs, pictures and text files, newest first. */
+class VaultFileModal extends FuzzySuggestModal<TFile> {
+  constructor(
+    app: App,
+    private readonly files: TFile[],
+    private readonly onPick: (file: TFile) => void,
+  ) {
+    super(app);
+    this.setPlaceholder("Attach a PDF, a picture or a text file…");
+  }
+
+  getItems(): TFile[] {
+    return this.files;
+  }
+
+  getItemText(file: TFile): string {
+    return file.path;
+  }
+
+  onChooseItem(file: TFile): void {
+    this.onPick(file);
+  }
 }

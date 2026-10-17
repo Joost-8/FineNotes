@@ -98,7 +98,8 @@ import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
 import { AskAiModal } from "./ask-ai-modal";
-import { listChats, readChat, trashChat, writeChat } from "./ask-chats-io";
+import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
+import { pdfsBehind } from "../recognition/ask-attachments";
 import { chatsFolderFor } from "../recognition/ask-chat-file";
 import { type AskPagesResult, AskSession } from "../recognition/ask-session";
 import { GenerateImageModal } from "./generate-image-modal";
@@ -1058,6 +1059,11 @@ export class InkView extends TextFileView {
         }
       },
       insert: (text) => this.insertAnswer(text),
+      pdfsBehind: (pages) =>
+        pdfsBehind(
+          this.doc.pages.map((page) => page.backdrop),
+          pages,
+        ),
       savedChats: () =>
         this.file ? listChats(this.app, this.file.path, this.chatsFolder()) : Promise.resolve([]),
       openSaved: async (path) => {
@@ -1100,6 +1106,7 @@ export class InkView extends TextFileView {
           ask: (turns) => askAi(this.plugin.textAiConfig(), buildAskSystemPrompt(), turns),
           save: (chat, path) => writeChat(this.app, chat, path, this.chatsFolder()),
           unsave: (path) => trashChat(this.app, path),
+          readFile: (path) => readAttachment(this.app, path),
           now: () => new Date(),
         },
         { page: current, totalPages: this.doc.pages.length, save: this.settings.askSaveChats },

@@ -6,6 +6,8 @@
 
 import { type App, TFile, normalizePath } from "obsidian";
 import { availablePath } from "../canvas/image-raster";
+import type { ChatFile } from "../recognition/ai-chat";
+import { attachKind, attachmentFromBytes } from "../recognition/ask-attachments";
 import {
   type SavedChat,
   buildChatFile,
@@ -86,4 +88,20 @@ export async function listChats(
     entries.push({ path: child.path, title: chatTitle(chat.turns), created: chat.created });
   }
   return entries.sort((a, b) => b.created.localeCompare(a.created));
+}
+
+/** A vault file as an attachment, or null when it is gone or is a kind the AI cannot read. */
+export async function readAttachment(app: App, path: string): Promise<ChatFile | null> {
+  const file = app.vault.getFileByPath(path);
+  if (!file || !attachKind(file.name)) return null;
+  const bytes = new Uint8Array(await app.vault.readBinary(file));
+  return attachmentFromBytes(file.name, bytes, file.path);
+}
+
+/** Every vault file a chat can attach, newest first. */
+export function attachableFiles(app: App): TFile[] {
+  return app.vault
+    .getFiles()
+    .filter((file) => attachKind(file.name) !== null)
+    .sort((a, b) => b.stat.mtime - a.stat.mtime);
 }

@@ -29,11 +29,29 @@ export interface ChatImage {
   mimeType: "image/png" | "image/jpeg";
 }
 
+export const PDF_MIME = "application/pdf";
+
+/**
+ * A file the user attached: a PDF or a picture as base64, or a text file
+ * (markdown, code, …) as its text. Exactly one of `base64` and `text` is set.
+ */
+export interface ChatFile {
+  name: string;
+  /** `application/pdf`, `image/png|jpeg|gif|webp`, or `text/plain` for text. */
+  mimeType: string;
+  base64?: string;
+  text?: string;
+  /** Its vault path, when it came from the vault, so a saved chat can read it again. Never sent. */
+  path?: string;
+}
+
 export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
   /** Only meaningful on user turns; the model's turns are text. */
   images?: readonly ChatImage[];
+  /** Files attached to a question; sent before its page images. */
+  files?: readonly ChatFile[];
   /**
    * The question as the user typed it, where `text` adds to it (the first
    * question's line naming its pages). Shown and saved; never sent.
@@ -81,10 +99,11 @@ const DIALECT_CHAT_BODIES: Record<
   (input: ChatRequestInput, maxTokens: number) => unknown
 > = {
   // https://docs.anthropic.com/en/api/messages — `system` is top level, and
-  // user content is a block list with the images before the text. A top-level
-  // `cache_control` caches up to the last block, so each follow-up reads the
-  // pages back from the cache (a tenth of the price, for 5 minutes) and moves
-  // the cache on to include its own question.
+  // user content is a block list: attached files, then page images, then the
+  // text. A PDF is a `document` block (the model reads its text and its
+  // pages). A top-level `cache_control` caches up to the last block, so each
+  // follow-up reads the pages and files back from the cache (a tenth of the
+  // price, for 5 minutes) and moves the cache on to include its own question.
   anthropic: (input, maxTokens) => ({
     model: input.model,
     max_tokens: maxTokens,
@@ -96,6 +115,14 @@ const DIALECT_CHAT_BODIES: Record<
         : {
             role: "user",
             content: [
+              ...(turn.files ?? []).map((file) =>
+                file.text !== undefined
+                  ? { type: "text", text: textFileBlock(file) }
+                  : {
+                      type: file.mimeType === PDF_MIME ? "document" : "image",
+                      source: { type: "base64", media_type: file.mimeType, data: file.base64 },
+                    },
+              ),
               ...(turn.images ?? []).map((image) => ({
                 type: "image",
                 source: { type: "base64", media_type: image.mimeType, data: image.base64 },
@@ -108,19 +135,36 @@ const DIALECT_CHAT_BODIES: Record<
 
   // Chat Completions — the same endpoint transcription uses, so OpenRouter and
   // self-hosted servers work unchanged. A text-only user turn stays a plain
-  // string, which the oldest compatible servers insist on.
+  // string, which the oldest compatible servers insist on. A PDF is a `file`
+  // part with its bytes as a data URL.
   openai: (input, maxTokens) => ({
     model: input.model,
     max_completion_tokens: maxTokens,
     messages: [
       ...(input.system ? [{ role: "system", content: input.system }] : []),
       ...input.turns.map((turn) =>
-        turn.role === "assistant" || !turn.images?.length
+        turn.role === "assistant" || (!turn.images?.length && !turn.files?.length)
           ? { role: turn.role, content: turn.text }
           : {
               role: "user",
               content: [
-                ...turn.images.map((image) => ({
+                ...(turn.files ?? []).map((file) =>
+                  file.text !== undefined
+                    ? { type: "text", text: textFileBlock(file) }
+                    : file.mimeType === PDF_MIME
+                      ? {
+                          type: "file",
+                          file: {
+                            filename: file.name,
+                            file_data: `data:${PDF_MIME};base64,${file.base64 ?? ""}`,
+                          },
+                        }
+                      : {
+                          type: "image_url",
+                          image_url: { url: `data:${file.mimeType};base64,${file.base64 ?? ""}` },
+                        },
+                ),
+                ...(turn.images ?? []).map((image) => ({
                   type: "image_url",
                   image_url: { url: `data:${image.mimeType};base64,${image.base64}` },
                 })),
@@ -132,12 +176,18 @@ const DIALECT_CHAT_BODIES: Record<
   }),
 
   // https://ai.google.dev/api/generate-content — the model's role is "model",
-  // and the system prompt is its own `systemInstruction` content.
+  // and the system prompt is its own `systemInstruction` content. A PDF is
+  // inline data like an image.
   google: (input, maxTokens) => ({
     ...(input.system ? { systemInstruction: { parts: [{ text: input.system }] } } : {}),
     contents: input.turns.map((turn) => ({
       role: turn.role === "assistant" ? "model" : "user",
       parts: [
+        ...(turn.role === "user" ? (turn.files ?? []) : []).map((file) =>
+          file.text !== undefined
+            ? { text: textFileBlock(file) }
+            : { inline_data: { mime_type: file.mimeType, data: file.base64 } },
+        ),
         ...(turn.role === "user" ? (turn.images ?? []) : []).map((image) => ({
           inline_data: { mime_type: image.mimeType, data: image.base64 },
         })),
@@ -147,6 +197,11 @@ const DIALECT_CHAT_BODIES: Record<
     generationConfig: { maxOutputTokens: maxTokens },
   }),
 };
+
+/** A text file as the model reads it: its name, then its text. */
+function textFileBlock(file: ChatFile): string {
+  return `<file name="${file.name.replace(/"/g, "'")}">\n${file.text ?? ""}\n</file>`;
+}
 
 /** Build the vendor's HTTP request for a conversation. Throws on a missing key or a malformed history. */
 export function buildChatRequest(input: ChatRequestInput): LlmHttpRequest {

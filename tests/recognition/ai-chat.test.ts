@@ -132,6 +132,58 @@ describe("buildChatRequest", () => {
     expect(body.generationConfig.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS);
   });
 
+  it("sends attached files before the page images, in each vendor's shape", () => {
+    const files = [
+      { name: "Slides.pdf", mimeType: "application/pdf", base64: "PDF", path: "L/Slides.pdf" },
+      { name: "photo.jpg", mimeType: "image/jpeg", base64: "JPG" },
+      { name: "notes.md", mimeType: "text/plain", text: "# Notes" },
+    ];
+    const turns: ChatTurn[] = [{ role: "user", text: "Q", images: [png], files }];
+
+    const anthropic = buildChatRequest({ ...base, turns, vendor: "anthropic" }).body as {
+      messages: Array<{ content: unknown[] }>;
+    };
+    expect(anthropic.messages[0].content).toEqual([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "PDF" } },
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "JPG" } },
+      { type: "text", text: '<file name="notes.md">\n# Notes\n</file>' },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+      { type: "text", text: "Q" },
+    ]);
+
+    const openai = buildChatRequest({ ...base, turns, vendor: "openai" }).body as OpenAiBody;
+    expect(openai.messages[1].content).toEqual([
+      {
+        type: "file",
+        file: { filename: "Slides.pdf", file_data: "data:application/pdf;base64,PDF" },
+      },
+      { type: "image_url", image_url: { url: "data:image/jpeg;base64,JPG" } },
+      { type: "text", text: '<file name="notes.md">\n# Notes\n</file>' },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      { type: "text", text: "Q" },
+    ]);
+    // A question with only a file is still a list, not a plain string.
+    const fileOnly = buildChatRequest({
+      ...base,
+      turns: [{ role: "user", text: "Q", files: [files[2]] }],
+      vendor: "openai",
+    }).body as OpenAiBody;
+    expect(Array.isArray(fileOnly.messages[1].content)).toBe(true);
+
+    const google = buildChatRequest({ ...base, turns, vendor: "google" }).body as GoogleBody;
+    expect(google.contents[0].parts.slice(0, 3)).toEqual([
+      { inline_data: { mime_type: "application/pdf", data: "PDF" } },
+      { inline_data: { mime_type: "image/jpeg", data: "JPG" } },
+      { text: '<file name="notes.md">\n# Notes\n</file>' },
+    ]);
+    // The vault path is never sent.
+    for (const vendor of ["anthropic", "openai", "google"] as const) {
+      expect(JSON.stringify(buildChatRequest({ ...base, turns, vendor }).body)).not.toContain(
+        "L/Slides.pdf",
+      );
+    }
+  });
+
   it("never attaches images to the model's own turns", () => {
     const turns: ChatTurn[] = [
       { role: "user", text: "q" },

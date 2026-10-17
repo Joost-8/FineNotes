@@ -14,7 +14,15 @@ const chat: SavedChat = {
   totalPages: 20,
   created: "2026-10-17T13:02:00.000Z",
   turns: [
-    { role: "user", text: "What is a group homomorphism?", pages: [13] },
+    {
+      role: "user",
+      text: "What is a group homomorphism?",
+      pages: [13],
+      files: [
+        { name: "Week 2, part 1.pdf", path: "Computer Science/Week 2, part 1.pdf" },
+        { name: "photo@home.jpg" },
+      ],
+    },
     {
       role: "assistant",
       text: "## Definition\n\nA map with $f(ab) = f(a)f(b)$.\n\n### You\n\n- kernel\n- image",
@@ -39,7 +47,11 @@ describe("chat files", () => {
     expect(text.startsWith("---\nfinenotes-chat: 1\n")).toBe(true);
     expect(text).toContain('notebook: "[[Computer Science/Algebra/Lectures.notebook]]"');
     expect(text).toContain("\n# What is a group homomorphism?\n");
-    expect(text).toContain("### You\n\nWhat is a group homomorphism?");
+    expect(text).toContain(
+      "<!-- finenotes-chat: user pages=13 files=Week%202%2C%20part%201.pdf@" +
+        "Computer%20Science%2FWeek%202%2C%20part%201.pdf,photo%40home.jpg -->\n" +
+        "### You\n\nWhat is a group homomorphism?",
+    );
     expect(text).toContain("### AI\n\nThe determinant.");
   });
 

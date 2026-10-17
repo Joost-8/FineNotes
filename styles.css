@@ -4674,13 +4674,168 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 .goodobsidian-chat-composer {
   flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 6px 6px 6px 14px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
   border: 1px solid var(--gob-line);
   border-radius: 22px;
   background: var(--background-primary);
   box-shadow: var(--gob-shadow-raised);
+}
+
+/* Paperclip, the question, Send. */
+.goodobsidian-chat-compose-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-attach.clickable-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.goodobsidian-chat-file-input {
+  display: none;
+}
+
+/* The files on the next question: chips inside the field, above the text. */
+.goodobsidian-chat-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 104px;
+  overflow-y: auto;
+}
+
+.goodobsidian-chat-files.is-hidden {
+  display: none;
+}
+
+.goodobsidian-chat-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--gob-radius-l);
+  background: var(--gob-well);
+}
+
+.goodobsidian-chat-file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: var(--gob-accent-tint);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-chat-file-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-chat-file-text {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.goodobsidian-chat-file-name {
+  overflow: hidden;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-chat-file-size {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-file-remove.clickable-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+/* The notebook's own PDF, offered above the field. */
+.goodobsidian-chat-suggest {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px 10px 12px;
+  border: 1px solid hsla(var(--interactive-accent-hsl), 0.35);
+  border-radius: var(--gob-radius-l);
+  background: hsla(var(--interactive-accent-hsl), 0.08);
+  animation: goodobsidian-chat-picker-in 0.16s ease-out;
+}
+
+.goodobsidian-chat-suggest.is-hidden {
+  display: none;
+}
+
+.goodobsidian-chat-suggest-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: var(--gob-accent-tint);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-chat-suggest-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.goodobsidian-chat-suggest-title {
+  font-weight: var(--font-semibold, 600);
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-chat-suggest-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-ask-modal .goodobsidian-chat-suggest button.mod-cta.clickable-icon {
+  flex: 0 0 auto;
+  width: auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-suggest-close.clickable-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-chat-suggest {
+    animation: none;
+  }
 }
 
 .goodobsidian-chat-composer:focus-within {

@@ -17,7 +17,8 @@ export const ASK_CHATS_FOLDER = "AI chats";
 
 /** Marks a note as a FineNotes chat, and its format version. */
 const CHAT_MARK = "finenotes-chat";
-const TURN_RE = /^<!-- finenotes-chat: (user|assistant)(?: pages=([0-9,]+))? -->$/;
+const TURN_RE =
+  /^<!-- finenotes-chat: (user|assistant)(?: pages=([0-9,]+))?(?: files=([^\s]+))? -->$/;
 const LABEL = { user: "### You", assistant: "### AI" } as const;
 
 export interface SavedTurn {
@@ -25,6 +26,14 @@ export interface SavedTurn {
   text: string;
   /** 1-based: the pages whose images went with this question. */
   pages?: number[];
+  /** Files attached to this question. */
+  files?: SavedFile[];
+}
+
+/** An attached file, as a saved chat remembers it: by vault path when it has one. */
+export interface SavedFile {
+  name: string;
+  path?: string;
 }
 
 export interface SavedChat {
@@ -37,10 +46,35 @@ export interface SavedChat {
   turns: SavedTurn[];
 }
 
-/** A turn's marker; a question that sent pages lists them (`pages=2,5`). */
+/**
+ * A turn's marker; a question that sent pages or files lists them
+ * (`pages=2,5 files=Week%202.pdf@L%2FWeek%202.pdf`). Names and paths are
+ * URI-encoded, so they hold no space, comma or `-->`.
+ */
 function turnMark(turn: SavedTurn): string {
   const pages = turn.pages?.length ? ` pages=${turn.pages.join(",")}` : "";
-  return `<!-- ${CHAT_MARK}: ${turn.role}${pages} -->`;
+  const files = turn.files?.length
+    ? ` files=${turn.files
+        .map((f) => encodeURIComponent(f.name) + (f.path ? `@${encodeURIComponent(f.path)}` : ""))
+        .join(",")}`
+    : "";
+  return `<!-- ${CHAT_MARK}: ${turn.role}${pages}${files} -->`;
+}
+
+function parseFiles(raw: string | undefined): SavedFile[] {
+  const files: SavedFile[] = [];
+  for (const entry of (raw ?? "").split(",")) {
+    if (!entry) continue;
+    const [name, path] = entry.split("@");
+    try {
+      const file: SavedFile = { name: decodeURIComponent(name) };
+      if (path) file.path = decodeURIComponent(path);
+      if (file.name) files.push(file);
+    } catch {
+      // A hand edit broke the encoding: leave that file out.
+    }
+  }
+  return files;
 }
 
 /** A chat's title: its first question, on one line, cut at a word near 60 characters. */
@@ -127,7 +161,12 @@ export function parseChatFile(text: string): (SavedChat & { notebookLink: string
   const created = props.get("created");
 
   const turns: SavedTurn[] = [];
-  let current: { role: SavedTurn["role"]; pages: number[]; lines: string[] } | null = null;
+  let current: {
+    role: SavedTurn["role"];
+    pages: number[];
+    files: SavedFile[];
+    lines: string[];
+  } | null = null;
   const close = (): void => {
     if (!current) return;
     const body = current.lines.slice();
@@ -138,6 +177,7 @@ export function parseChatFile(text: string): (SavedChat & { notebookLink: string
     if (!text) return;
     const turn: SavedTurn = { role: current.role, text };
     if (current.role === "user" && current.pages.length) turn.pages = current.pages;
+    if (current.role === "user" && current.files.length) turn.files = current.files;
     turns.push(turn);
   };
   for (const line of lines.slice(end + 1)) {
@@ -148,7 +188,12 @@ export function parseChatFile(text: string): (SavedChat & { notebookLink: string
         .split(",")
         .map(Number)
         .filter((n) => Number.isInteger(n) && n > 0);
-      current = { role: mark[1] as SavedTurn["role"], pages, lines: [] };
+      current = {
+        role: mark[1] as SavedTurn["role"],
+        pages,
+        files: parseFiles(mark[3]),
+        lines: [],
+      };
     } else if (current) {
       current.lines.push(line);
     }
@@ -177,6 +222,7 @@ function alternating(turns: readonly SavedTurn[]): SavedTurn[] {
     if (last && last.role === turn.role) {
       last.text = `${last.text}\n\n${turn.text}`;
       if (turn.pages) last.pages = [...new Set([...(last.pages ?? []), ...turn.pages])];
+      if (turn.files) last.files = [...(last.files ?? []), ...turn.files];
     } else {
       out.push({ ...turn });
     }

@@ -42,6 +42,13 @@ function setup(over: Partial<AskSessionDeps> = {}) {
       return Promise.resolve(path ?? "AI chats/c.md");
     },
     unsave: vi.fn(() => Promise.resolve()),
+    readFile: vi.fn((path: string) =>
+      Promise.resolve(
+        path === "gone.pdf"
+          ? null
+          : { name: path, mimeType: "application/pdf", base64: "AGAIN", path },
+      ),
+    ),
     now: () => new Date("2026-10-17T13:00:00Z"),
     ...over,
   };
@@ -108,6 +115,101 @@ describe("AskSession pages", () => {
   it("names pages in prose", () => {
     expect(pagesPhrase([4])).toBe("page 4");
     expect(pagesPhrase([2, 5, 7])).toBe("pages 2, 5 and 7");
+  });
+});
+
+describe("AskSession files", () => {
+  const pdf = {
+    name: "Week 2.pdf",
+    mimeType: "application/pdf",
+    base64: "PDF",
+    path: "L/Week 2.pdf",
+  };
+  const note = { name: "notes.md", mimeType: "text/plain", text: "# N" };
+
+  it("sends attached files with the next question only, then clears them", async () => {
+    const { deps, asked, saved } = setup();
+    const session = open(deps, true);
+    expect(session.attach(pdf)).toBeNull();
+    expect(session.attach({ ...pdf })).toMatch(/already attached/);
+    expect(session.attach(note)).toBeNull();
+    session.detach(note);
+    expect(session.attachments).toEqual([pdf]);
+    const sent = session.send("Explain slide 4");
+    expect(session.outstanding?.status).toBe("Reading page 3 and Week 2.pdf…");
+    await sent;
+    expect(asked[0][0].files).toEqual([pdf]);
+    expect(session.attachments).toEqual([]);
+    // Already in the chat: not again.
+    expect(session.attach(pdf)).toMatch(/already attached/);
+    await session.send("And slide 5?");
+    expect(asked[1][2].files).toBeUndefined();
+    expect(asked[1][0].files).toEqual([pdf]);
+    expect(saved[1].chat.turns[0].files).toEqual([{ name: "Week 2.pdf", path: "L/Week 2.pdf" }]);
+  });
+
+  it("can ask about a file alone, and keeps the files when the question fails", async () => {
+    const fail = setup({ ask: () => Promise.reject(new Error("HTTP 400")) });
+    const a = open(fail.deps);
+    a.setSelection([]);
+    a.attach(note);
+    await a.send("Summarise");
+    expect(a.outstanding?.error).toBe("HTTP 400");
+    expect(a.attachments).toEqual([note]);
+
+    const { deps, asked } = setup();
+    const b = open(deps);
+    b.setSelection([]);
+    b.attach(note);
+    await b.send("Summarise");
+    expect(asked[0][0]).toEqual({
+      role: "user",
+      text: "Summarise",
+      shown: "Summarise",
+      files: [note],
+    });
+    expect(deps.preparePages).not.toHaveBeenCalled();
+  });
+
+  it("reads a reloaded chat's vault files again, and goes on without the rest", async () => {
+    const { deps, asked } = setup();
+    const session = open(deps);
+    session.attach(note);
+    session.dismissSuggestion("L/Week 3.pdf");
+    session.load(
+      {
+        notebook: "N.notebook.md",
+        totalPages: 9,
+        created: "2026-10-01T10:00:00.000Z",
+        turns: [
+          {
+            role: "user",
+            text: "Old?",
+            files: [{ name: "Week 2.pdf", path: "L/Week 2.pdf" }, { name: "photo.jpg" }],
+          },
+          { role: "assistant", text: "Yes." },
+          { role: "user", text: "Gone?", files: [{ name: "gone.pdf", path: "gone.pdf" }] },
+          { role: "assistant", text: "No." },
+        ],
+      },
+      "AI chats/old.md",
+    );
+    expect(session.attachments).toEqual([]);
+    expect(session.dismissed.size).toBe(0);
+    await session.send("New?");
+    expect(deps.readFile).toHaveBeenCalledWith("L/Week 2.pdf");
+    expect(asked[0][0].files).toEqual([
+      { name: "L/Week 2.pdf", mimeType: "application/pdf", base64: "AGAIN", path: "L/Week 2.pdf" },
+    ]);
+    expect(asked[0][2].files).toEqual([]);
+  });
+
+  it("remembers which suggestions were waved away until a new chat", () => {
+    const session = open(setup().deps);
+    session.dismissSuggestion("L/Week 2.pdf");
+    expect(session.dismissed.has("L/Week 2.pdf")).toBe(true);
+    session.newChat(3);
+    expect(session.dismissed.size).toBe(0);
   });
 });
 
