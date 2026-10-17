@@ -1273,7 +1273,7 @@ export default class GoodObsidianPlugin extends Plugin {
     openImportNotebookModal(this.app, {
       ...(preset ? { preset } : {}),
       folder: folder || this.newNotebookFolder(),
-      ownFolder: parseNotebookChoices(this.settings.lastNotebookChoices).ownFolder,
+      ownFolder: this.settings.notebookOwnFolder,
       open: async (file) => {
         const tab = this.app.workspace.getLeaf(false);
         await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
@@ -1353,6 +1353,8 @@ export default class GoodObsidianPlugin extends Plugin {
       { ...DEFAULT_NOTEBOOK_CHOICES },
       undefined,
       (heading, attachments) => buildWelcomeNotebook(heading, attachments),
+      // A tour saves no pictures or recordings of its own: just the file.
+      false,
     );
   }
 
@@ -1404,10 +1406,11 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * Write `<folder>/<title>.notebook.md` (`.page.md` for a single page) — a
    * unique, sanitised name, the folder
-   * created if it does not exist — and open it. With `choices.ownFolder` a
-   * `<folder>/<title> files/` folder beside it holds `Images/`, `Recordings/`,
-   * `Transcripts/`, `AI chats/` and `Exports/`, where those then go. `folder` undefined means the
-   * default one.
+   * created if it does not exist — and open it. With the "own folder" setting
+   * it is `<folder>/<title>/<title>.notebook.md` beside `Images/`,
+   * `Recordings/`, `Transcripts/`, `AI chats/` and `Exports/`, where those
+   * then go (`ownFolder`, the setting unless given). `folder` undefined
+   * means the default one.
    */
   async createNotebook(
     title: string,
@@ -1417,12 +1420,13 @@ export default class GoodObsidianPlugin extends Plugin {
       heading,
       attachments,
     ) => buildNewDocument(choices, heading, attachments),
+    ownFolder = this.settings.notebookOwnFolder,
   ): Promise<TFile | null> {
     const dir = normalizeFolder(folder ?? this.newNotebookFolder());
     try {
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
       const taken = new Set(parent?.children.map((child) => child.name) ?? []);
-      const paths = notebookPaths(dir, title, choices.type, choices.ownFolder, taken);
+      const paths = notebookPaths(dir, title, choices.type, ownFolder, taken);
       for (const path of paths.folders) {
         if (!this.app.vault.getFolderByPath(path)) await this.app.vault.createFolder(path);
       }

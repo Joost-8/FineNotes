@@ -254,6 +254,7 @@ describe("the rows", () => {
       [PAGES, "Paper width", "render"],
       [PAGES, "(block)", "render"],
       [PAGES, "Default folder for new notebooks", "render"],
+      [PAGES, "Give new notebooks their own folder", "toggle:notebookOwnFolder"],
       [PAGES, "Stickers folder", "text:stickerFolder"],
       [PAGES, "Templates folder", "text:templateFolder"],
       [PAGES, "Template gallery", "text:templateGalleryUrl"],
@@ -328,6 +329,12 @@ describe("the rows", () => {
       "Dark PDF pages": ["dark mode", "invert", "slides"],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
+      "Give new notebooks their own folder": [
+        "folder",
+        "own folder",
+        "new notebook",
+        "attachments",
+      ],
       "Stickers folder": ["sticker", "collection", "folder"],
       "Templates folder": ["template", "folder", "share"],
       "Template gallery": ["template", "gallery", "community", "share"],
@@ -461,6 +468,7 @@ describe("which rows show", () => {
       "Page appearance",
       "Paper width",
       "Default folder for new notebooks",
+      "Give new notebooks their own folder",
       "Stickers folder",
       "Templates folder",
       "Template gallery",
@@ -491,7 +499,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${34 + PEN_ROWS.length})`,
+      `(block ${35 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });

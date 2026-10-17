@@ -65,6 +65,12 @@ export interface GoodObsidianSettings {
   // The "New notebook" dialog (0.5).
   /** Where new notebooks and pages go; empty for the folder of the open note. */
   newNotebookFolder: string;
+  /**
+   * New notebooks and pages get a folder of their own, named after them,
+   * holding the note and the folders its pictures, recordings, transcripts,
+   * AI chats and exports go in. The file explorer shows it as the notebook.
+   */
+  notebookOwnFolder: boolean;
   /** Show New notebook in the file explorer context menu. */
   showNewNotebookInContextMenu: boolean;
   /** Show New notebook beside the file explorer creation buttons. */
@@ -270,6 +276,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   returnToPenAfterUse: false,
   fingerTapUndo: true,
   handwritingOnDevice: true,
+  notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
   folderNotebooks: true,

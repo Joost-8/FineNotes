@@ -3453,8 +3453,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   cursor: pointer;
 }
 
-.goodobsidian-newnb-folder.clickable-icon,
-.goodobsidian-newnb-own-folder {
+.goodobsidian-newnb-folder.clickable-icon {
   border-radius: var(--gob-radius-l);
   background: var(--gob-group-bg);
 }
@@ -3469,30 +3468,6 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 .goodobsidian-newnb-folder-icon {
   display: inline-flex;
   color: var(--text-muted);
-}
-
-/* "Create a folder for it": a settings-style row, the whole of it a target. */
-.goodobsidian-newnb-own-folder {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: var(--gob-touch);
-  margin-top: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-medium);
-  cursor: pointer;
-}
-
-.goodobsidian-newnb-own-folder-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.goodobsidian-newnb-own-folder-desc {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
 }
 
 /* The cover picker: designs, previewed in the chosen colour, then colours. */

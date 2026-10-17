@@ -60,12 +60,6 @@ export interface NotebookChoices {
   /** A {@link PAGE_SIZES} id. */
   size: string;
   landscape: boolean;
-  /**
-   * Give it a folder of its own, named after it, holding the notebook and
-   * the folders its pictures, recordings, transcripts, AI chats and exports
-   * are saved in.
-   */
-  ownFolder: boolean;
 }
 
 export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
@@ -77,7 +71,6 @@ export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   paper: "white",
   size: PAGE_SIZES[0].id,
   landscape: false,
-  ownFolder: false,
 };
 
 /**
@@ -107,7 +100,6 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
   if (typeof r.landscape === "boolean") out.landscape = r.landscape;
-  if (typeof r.ownFolder === "boolean") out.ownFolder = r.ownFolder;
   return out;
 }
 

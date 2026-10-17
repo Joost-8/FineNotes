@@ -7,7 +7,6 @@
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
  *   Folder  Lectures/Analysis  ›
- *           Give it its own folder                        [ toggle ]
  *
  * Laid out for an iPad in either orientation, and usable with the on-screen
  * keyboard up: Create sits in the header, Return in the title creates, and
@@ -18,21 +17,15 @@
  * It only reports the choice; the plugin writes the file.
  */
 
-import { type App, Modal, ToggleComponent, setIcon } from "obsidian";
+import { type App, Modal, setIcon } from "obsidian";
 import { ICON_IMPORT_NOTEBOOK } from "../constants";
 import type { PageGeometry, Ruling } from "../model/document";
 import {
   type CoverChoice,
   type NotebookChoices,
   type NotebookType,
-  OWN_FOLDER_AUDIO,
-  OWN_FOLDER_CHATS,
-  OWN_FOLDER_EXPORTS,
-  OWN_FOLDER_IMAGES,
-  OWN_FOLDER_TRANSCRIPTS,
   defaultTitle,
   normalizeFolder,
-  notebookBaseName,
 } from "../model/new-notebook";
 import { COVER_COLORS, sizeGeometry } from "../model/templates";
 import { CoverPicker } from "./cover-picker";
@@ -85,8 +78,6 @@ export class NewNotebookModal extends Modal {
   private created = false;
 
   private titleInput: HTMLInputElement | null = null;
-  /** The files-folder row's description, which names the folder after the title. */
-  private ownFolderDesc: HTMLElement | null = null;
   private heading: HTMLElement | null = null;
   private coverSection: HTMLElement | null = null;
   private coverPicker: CoverPicker | null = null;
@@ -215,7 +206,6 @@ export class NewNotebookModal extends Modal {
       this.containerEl.removeClass("is-typing");
       this.releaseCap();
     });
-    input.addEventListener("input", () => this.syncOwnFolderDesc());
     this.titleInput = input;
     this.buildImportLink(body);
   }
@@ -324,23 +314,6 @@ export class NewNotebookModal extends Modal {
       ).open();
     });
     this.syncFolder();
-
-    // A folder of its own, named after it and shown as the notebook, with its pictures,
-    // recordings, transcripts, AI chats and exports in folders inside. The whole row
-    // toggles: the switch alone is small.
-    const own = section.createDiv({ cls: "goodobsidian-newnb-own-folder" });
-    const text = own.createDiv({ cls: "goodobsidian-newnb-own-folder-text" });
-    text.createDiv({ text: "Give it its own folder" });
-    this.ownFolderDesc = text.createDiv({ cls: "goodobsidian-newnb-own-folder-desc" });
-    this.syncOwnFolderDesc();
-    const toggle = new ToggleComponent(own).setValue(this.choices.ownFolder).onChange((on) => {
-      this.choices.ownFolder = on;
-    });
-    toggle.toggleEl.setAttribute("aria-label", "Give it its own folder");
-    own.addEventListener("click", (event) => {
-      if (toggle.toggleEl.contains(event.target as Node)) return;
-      toggle.setValue(!toggle.getValue());
-    });
   }
 
   private section(body: HTMLElement, title: string): HTMLElement {
@@ -404,15 +377,6 @@ export class NewNotebookModal extends Modal {
     this.coverSection?.toggle(!single);
     this.heading?.setText(single ? "New page" : "New notebook");
     if (this.titleInput) this.titleInput.placeholder = defaultTitle(this.choices.type);
-    this.syncOwnFolderDesc();
-  }
-
-  private syncOwnFolderDesc(): void {
-    const name = notebookBaseName(this.titleInput?.value ?? "", this.choices.type);
-    this.ownFolderDesc?.setText(
-      `A "${name}" folder that opens as the notebook, with ${OWN_FOLDER_IMAGES}, ` +
-        `${OWN_FOLDER_AUDIO}, ${OWN_FOLDER_TRANSCRIPTS}, ${OWN_FOLDER_CHATS} and ${OWN_FOLDER_EXPORTS} inside.`,
-    );
   }
 
   private syncFolder(): void {

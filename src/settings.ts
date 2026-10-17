@@ -818,6 +818,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         (s) => this.drawNotebookFolder(s),
         ["folder", "location", "new notebook", "new page"],
       ),
+      toggle(
+        "notebookOwnFolder",
+        "Give new notebooks their own folder",
+        "A folder named after the notebook, holding it and the folders its pictures, recordings, transcripts, AI chats and exports go in. Off: just the notebook file. Notebooks you already have stay as they are.",
+        ["folder", "own folder", "new notebook", "attachments"],
+      ),
       controlRow(
         "Stickers folder",
         "Where your own stickers live, one folder per collection. Stickers you save from a selection go into “My stickers” there.",

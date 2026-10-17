@@ -10,9 +10,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **A notebook's folder is the notebook.** "Give it its own folder" (New
-  notebook and the importer) makes `Physics/` with the notebook inside, next
-  to Images, Recordings, Transcripts, AI chats and Exports. In the file
+- **A notebook's folder is the notebook.** A new or imported notebook gets
+  `Physics/` with the notebook inside, next to Images, Recordings,
+  Transcripts, AI chats and Exports (Settings → "Give new notebooks their own
+  folder", on by default; the New notebook dialog no longer asks). In the file
   explorer that folder shows as the notebook: tap its name to open it, or
   its arrow to see its files. Renaming the folder renames the notebook, and
   the other way round. Notebooks get a notebook icon, and the folders inside
