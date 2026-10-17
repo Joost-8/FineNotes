@@ -75,3 +75,21 @@ export function toolAfterUse(
     (use === "selection" && tool === "select");
   return done ? drawingToolOf(back, back) : tool;
 }
+
+/**
+ * Whether a tool's options pill shows once the tool is switched to:
+ * Notability's "first tap selects, second tap opens options", so a switch
+ * never opens a pill, though it may tuck one away. `shown`: the pill
+ * showing before the switch. `remembered`: the next tool's own memory (it
+ * was not left tucked, and it does not start tucked). While a second tap
+ * on a tool hands back to the pen (`selectedTool`, enabled) that tap cannot
+ * open anything, so the switch shows the remembered pill as before.
+ */
+export function optionsAfterSwitch(
+  shown: boolean,
+  remembered: boolean,
+  secondTapReturns: boolean,
+): boolean {
+  if (!remembered) return false;
+  return shown || secondTapReturns;
+}

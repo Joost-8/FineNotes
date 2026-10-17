@@ -121,6 +121,16 @@ body,
   --gob-t-grow: 0.2s;
   --gob-t-fade: 0.16s;
   --gob-t-press: 0.35s;
+  /* House springs, from Apple's model (src/view/springs.ts generates them,
+     and a test keeps these equal). Run each for its own length: a spring
+     outlasts its perceived duration. The cubic-beziers stand in where
+     linear() is unsupported; the @supports block below swaps the springs in. */
+  --gob-spring-popover-in: var(--gob-ease-out);
+  --gob-spring-popover-out: var(--gob-ease-out);
+  --gob-spring-tool: var(--gob-spring);
+  --gob-t-popover-in: 355ms;
+  --gob-t-popover-out: 237ms;
+  --gob-t-tool: 305ms;
 
   /* The page presentation, not chrome. The desk mirrors LIGHT_PAPER.desk in
      src/canvas/backdrop.ts and only covers the first frame (the backdrop
@@ -132,6 +142,78 @@ body,
   --gob-mark: #ffffff;
   --gob-bookmark: var(--color-red);
   --gob-ribbon-outline: rgba(40, 44, 52, 0.42);
+}
+
+/* The house springs proper: popovers grow in over 0.3 s and close over
+   0.2 s without bounce; the selected-tool indicator slides with bounce 0.1. */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --gob-spring-popover-in: linear(
+      0,
+      0.046,
+      0.147,
+      0.269,
+      0.391,
+      0.504,
+      0.601,
+      0.684,
+      0.752,
+      0.807,
+      0.851,
+      0.885,
+      0.912,
+      0.933,
+      0.949,
+      0.962,
+      0.971,
+      0.978,
+      0.984,
+      0.988,
+      0.991,
+      0.993,
+      1
+    );
+    --gob-spring-popover-out: linear(
+      0,
+      0.089,
+      0.262,
+      0.439,
+      0.59,
+      0.709,
+      0.798,
+      0.861,
+      0.906,
+      0.937,
+      0.958,
+      0.973,
+      0.982,
+      0.988,
+      0.992,
+      1
+    );
+    --gob-spring-tool: linear(
+      0,
+      0.035,
+      0.118,
+      0.224,
+      0.337,
+      0.447,
+      0.548,
+      0.637,
+      0.714,
+      0.778,
+      0.83,
+      0.872,
+      0.905,
+      0.931,
+      0.951,
+      0.966,
+      0.977,
+      0.985,
+      0.991,
+      1
+    );
+  }
 }
 
 /* Where the browser can mix colours, tints follow the variables exactly:
@@ -289,6 +371,35 @@ body,
   height: 22px;
   margin: 0 2px;
   background: var(--gob-line);
+}
+
+/* The pen button is its own preview (toolbar.ts, drawPenPreview): the pen
+   type in hand with its nib in the ink colour, lifted a little over a mark
+   as thick as the width it writes. */
+.goodobsidian-toolbar button.goodobsidian-tool-pen .goodobsidian-tool-pen-glyph {
+  transform: translateY(-3px);
+}
+
+.goodobsidian-tool-pen-width {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 16px;
+  height: var(--gob-ink-width, 2px);
+  border-radius: 999px;
+  background: var(--gob-ink, currentColor);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.goodobsidian-tool-pen-width.is-highlighter {
+  border-radius: 1px;
+  opacity: 0.55;
+}
+
+/* Ink that would vanish into the bar keeps an outline in the icon's colour. */
+.goodobsidian-tool-pen-width.is-rimmed {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 /* --------------------------------------------------- toolbar, tier 2 */
@@ -594,13 +705,21 @@ body,
   box-shadow: var(--gob-shadow-sheet);
 }
 
-/* Menus and popovers fade in over 0.16 s. */
+/* Menus fade in over 0.16 s. The toolbar's popovers grow from their anchor
+   instead (toolbar.ts, growPopover), about the point their arrow marks. */
 
-.goodobsidian-popover,
 .goodobsidian-addpage,
 .goodobsidian-more,
 .goodobsidian-selection-bar {
   animation: goodobsidian-fade-in var(--gob-t-fade) ease-out;
+}
+
+.goodobsidian-popover {
+  transform-origin: calc(50% + var(--gob-popover-arrow, 0px)) top;
+}
+
+.goodobsidian-popover.opens-up {
+  transform-origin: calc(50% + var(--gob-popover-arrow, 0px)) bottom;
 }
 
 .goodobsidian-popover-body {
@@ -1898,6 +2017,8 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   border-radius: var(--gob-radius-pill);
   background: var(--background-primary);
   font-variant-numeric: tabular-nums;
+  /* A phrase too ("Undid: Change shape style"), on one line. */
+  white-space: nowrap;
   pointer-events: none;
   opacity: 0.85;
 }
@@ -2383,7 +2504,6 @@ kbd.goodobsidian-key.is-glyph {
   }
 }
 
-.goodobsidian-popover,
 .goodobsidian-addpage,
 .goodobsidian-selection-bar,
 .goodobsidian-selection-menu {
@@ -4996,12 +5116,11 @@ textarea.goodobsidian-chat-input:focus-visible {
 /* The caret sits in the button's right margin, out of the flow, so the lasso
    itself stays centred like every other tool icon. */
 /* GoodNotes: the selected tool widens and a ▾ fades in, and only then, since
-   only then does a tap open its menu. The icon moves left to make room. */
+   only then does a tap open its menu. The icon moves left to make room. The
+   width changes at once; what moves on screen glides by transform with the
+   tool indicator (toolbar.ts, placeIndicator). */
 .goodobsidian-toolbar button.has-caret {
   position: relative;
-  transition:
-    min-width 0.3s ease,
-    padding 0.3s ease;
 }
 
 .goodobsidian-toolbar button.has-caret.is-active {
@@ -7890,4 +8009,42 @@ button.goodobsidian-learn-stop.is-hidden {
   .goodobsidian-text-copy {
     animation: none;
   }
+}
+
+/*
+ * The selected tool's square, one element that slides between the tool
+ * buttons on the house spring (toolbar.ts, placeIndicator), by translate
+ * and scale only. While it is shown the active button's own square steps
+ * aside; without it (no bar button for the tool, or a bar not laid out
+ * yet) the button keeps its square.
+ */
+.goodobsidian-tool-indicator {
+  position: absolute;
+  border-radius: var(--gob-tool-radius);
+  background: var(--gob-active-bg);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.goodobsidian-tool-indicator.is-hidden {
+  display: none;
+}
+
+.goodobsidian-toolbar .goodobsidian-bar-group.is-tools.has-indicator button.is-active,
+.goodobsidian-toolbar
+  .goodobsidian-bar-group.is-tools.has-indicator
+  button.is-active:hover:not(:disabled) {
+  background: transparent;
+}
+
+/* A popover growing in or closing has no blur: a blurred layer is never
+   faded (its paper is opaque, so nothing shows the difference). The blur
+   comes back on a timer once it rests. Closing, it takes no taps. */
+.goodobsidian-popover.is-moving {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.goodobsidian-popover.is-leaving {
+  pointer-events: none;
 }

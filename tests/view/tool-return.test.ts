@@ -4,6 +4,7 @@ import { REJOIN_MS, REJOIN_PX } from "../../src/input/pen-rejoin";
 import {
   continuesUse,
   drawingToolOf,
+  optionsAfterSwitch,
   selectedTool,
   toolAfterUse,
   type ToolUse,
@@ -51,5 +52,20 @@ describe("optional tool return", () => {
     expect(toolAfterUse("text", "text", true, "highlighter")).toBe("highlighter");
     expect(toolAfterUse("select", "selection", true, "select")).toBe("pen");
     expect(toolAfterUse("pen", "gesture", true, "highlighter")).toBe("pen");
+  });
+});
+
+describe("first tap selects, second tap opens options", () => {
+  it("never opens a pill on a tool switch", () => {
+    expect(optionsAfterSwitch(false, true, false)).toBe(false);
+    expect(optionsAfterSwitch(false, false, false)).toBe(false);
+  });
+  it("keeps a showing pill showing, unless the next tool was left tucked", () => {
+    expect(optionsAfterSwitch(true, true, false)).toBe(true);
+    expect(optionsAfterSwitch(true, false, false)).toBe(false);
+  });
+  it("shows the remembered pill when the second tap returns to the pen", () => {
+    expect(optionsAfterSwitch(false, true, true)).toBe(true);
+    expect(optionsAfterSwitch(false, false, true)).toBe(false);
   });
 });
