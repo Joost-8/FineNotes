@@ -41,6 +41,7 @@ import {
 import { isSaber, isSaberArchive, readSaber, readSaberArchive } from "./saber";
 import { isSupernote, readSupernote } from "./supernote";
 import { isXournal, readXournal } from "./xournal";
+import { TEMPLATE_EXTENSION, isTemplatePackage, readTemplatePackage } from "./template-package";
 
 export type { ImportAttachment, ImportResult, ImportSource } from "./import-types";
 export { relinkAttachments } from "./import-types";
@@ -64,6 +65,7 @@ export const IMPORT_EXTENSIONS: readonly string[] = [
   "rm",
   "rmdoc",
   "freenotes",
+  TEMPLATE_EXTENSION,
 ];
 
 /** Whether a file name has one of {@link IMPORT_EXTENSIONS}. */
@@ -239,6 +241,7 @@ async function collect(
     names.some((name) => name.endsWith(".content")) &&
     safely(() => isRemarkableDocument(readEntries(bytes, (n) => n.endsWith(".content"))));
   if (
+    isTemplatePackage(index) ||
     isGoodnotes(index) ||
     isNotability(index) ||
     isSaberArchive(index) ||
@@ -308,7 +311,9 @@ async function convert(
   const title = baseName(fileName);
   let result: ImportResult;
   try {
-    if (isGoodnotes(files)) {
+    if (isTemplatePackage(files)) {
+      result = readTemplatePackage(files, title || "Template");
+    } else if (isGoodnotes(files)) {
       result = readGoodnotes(files, title);
     } else if (isFreenotes(files)) {
       result = readFreenotes(files, title || "Imported notebook");

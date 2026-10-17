@@ -823,6 +823,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
         ["sticker", "collection", "folder"],
       ),
+      controlRow(
+        "Templates folder",
+        "Where Save as template puts .finetemplate files, and New notebook from template looks first.",
+        { type: "text", key: "templateFolder", placeholder: "FineNotes templates" },
+        ["template", "folder", "share"],
+      ),
+      controlRow(
+        "Template gallery",
+        "The web address of a template gallery's index (a JSON file listing templates). Empty: no gallery.",
+        { type: "text", key: "templateGalleryUrl", placeholder: "https://…/index.json" },
+        ["template", "gallery", "community", "share"],
+      ),
       toggle(
         "showNewNotebookInContextMenu",
         "Show New notebook in right-click menu",

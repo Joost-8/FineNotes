@@ -5,7 +5,7 @@
      An agent that finds this contract wrong does NOT edit it — it finishes
      what it can and requests the change in its final report. -->
 
-Version: 9
+Version: 10
 
 ## Scope of this contract
 
@@ -975,3 +975,21 @@ The classic designs (`cover-plain`, `cover-label`, `cover-band`,
 notebooks made before keep their covers; a remembered classic choice in the
 "New notebook" settings reads as the default, `cover-gradient`. Older builds
 load the seven new designs as `blank`. No migration.
+
+## Templates (v10)
+
+A `.finetemplate` file is a zip (`src/import/template-package.ts`):
+
+| Entry           | Holds                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifest.json` | `{ format: 1, id, name, author?, description?, version, licence, pages, created }`; `licence` is `personal`, `commercial`, `cc-by` or `cc0` |
+| `notebook.fn`   | the notebook in the note payload format (`v2:<base64 deflate>`), pictures and PDF pages pointing at `assets/…`                              |
+| `preview.png`   | the first page, for galleries (optional)                                                                                                    |
+| `assets/…`      | each picture and PDF the pages use                                                                                                          |
+
+Recordings, attachment folders and practice data are never packed. Opening
+one goes through the importer: the assets are saved beside the new notebook
+and relinked. A gallery index is `{ format: 1, templates: [{ id, name,
+author, description, version, licence, preview, download, pages, retired }] }`,
+`download` and `preview` HTTPS only; a retired entry stays listed in the file
+but is not offered.

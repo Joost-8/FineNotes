@@ -1,0 +1,194 @@
+/**
+ * FineNotes templates (`src/import/template-package.ts`): a notebook and
+ * its pictures packed into one `.finetemplate` file, opened again through
+ * the importer as a new notebook, and a gallery index read.
+ */
+
+import { strToU8, unzipSync, zipSync } from "fflate";
+import { describe, expect, it } from "vitest";
+import { importNotebooks, isImportFileName } from "../../src/import/import-notebook";
+import {
+  TEMPLATE_EXTENSION,
+  buildTemplatePackage,
+  readGalleryIndex,
+  readManifest,
+  templateId,
+} from "../../src/import/template-package";
+import { type InkDocument, blankPage, emptyDocument } from "../../src/model/document";
+import { PALETTES, SetNotebookPalette } from "../../src/model/palette";
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+function notebook(): InkDocument {
+  const doc = emptyDocument();
+  doc.pages = [
+    {
+      ...blankPage("p1", { width: 400, height: 500 }),
+      backdrop: { kind: "ruled-wide", paperColor: "#fbf8ed", spacing: 50 },
+      strokes: [
+        {
+          id: "s",
+          color: "#1971c2",
+          size: 2,
+          tool: "pen",
+          shape: "rect",
+          fill: "#1971c24d",
+          pts: [0, 0, 0.5, 10, 0, 0.5, 10, 10, 0.5, 0, 0, 0.5],
+        },
+      ],
+      images: [
+        { id: "i1", path: "Art/sticker star.png", x: 10, y: 10, w: 50, h: 50, front: true },
+        { id: "i2", path: "Art/gone.png", x: 70, y: 10, w: 50, h: 50 },
+      ],
+      textBoxes: [
+        {
+          id: "t",
+          x: 0,
+          y: 100,
+          w: 200,
+          text: "Week 1",
+          color: "#1a1a1a",
+          fontSize: 30,
+          caps: true,
+        },
+      ],
+    },
+    { ...blankPage("p2", { width: 400, height: 500 }) },
+  ];
+  doc.recordings = [{ id: "r", path: "Audio/x.m4a", started: 1, duration: 2 } as never];
+  doc.folders = { images: "Mine/Images" };
+  new SetNotebookPalette(PALETTES[1], false).apply(doc);
+  return doc;
+}
+
+function pack(doc = notebook()): { bytes: Uint8Array; missing: string[] } {
+  return buildTemplatePackage({
+    doc,
+    name: "Weekly Planner",
+    author: "Joost",
+    description: "A week a page.",
+    licence: "cc-by",
+    files: new Map([["Art/sticker star.png", PNG]]),
+    preview: PNG,
+    created: "2026-10-17T00:00:00.000Z",
+  });
+}
+
+describe("a template file", () => {
+  it("holds a manifest, the notebook, a preview and the pictures it uses", () => {
+    const { bytes, missing } = pack();
+    const files = unzipSync(bytes);
+    expect(Object.keys(files).sort()).toEqual([
+      "assets/sticker star.png",
+      "manifest.json",
+      "notebook.fn",
+      "preview.png",
+    ]);
+    expect(missing).toEqual(["Art/gone.png"]);
+    const manifest = readManifest(JSON.parse(new TextDecoder().decode(files["manifest.json"])));
+    expect(manifest).toMatchObject({
+      id: "weekly-planner",
+      name: "Weekly Planner",
+      author: "Joost",
+      licence: "cc-by",
+      pages: 2,
+      version: "1",
+    });
+  });
+
+  it("is the same bytes every time it is made from the same notebook", () => {
+    expect(pack().bytes).toEqual(pack().bytes);
+  });
+
+  it("never carries personal fields: recordings, its folders", () => {
+    const files = unzipSync(pack().bytes);
+    const payload = new TextDecoder().decode(files["notebook.fn"]);
+    expect(payload.startsWith("v")).toBe(true);
+    expect(payload).not.toContain("Mine/Images");
+  });
+});
+
+describe("opening a template", () => {
+  it("is offered by the importer, and gives the notebook back with its picture and style", async () => {
+    expect(isImportFileName(`Weekly.${TEMPLATE_EXTENSION}`)).toBe(true);
+    const batch = await importNotebooks(pack().bytes, `Weekly.${TEMPLATE_EXTENSION}`);
+    expect(batch.failures).toEqual([]);
+    const [result] = batch.results;
+    expect(result.source).toBe("template");
+    expect(result.title).toBe("Weekly Planner");
+    expect(result.doc.pages).toHaveLength(2);
+    const [page] = result.doc.pages;
+    expect(page.backdrop).toEqual({ kind: "ruled-wide", paperColor: "#fbf8ed", spacing: 50 });
+    expect(page.images).toHaveLength(1);
+    expect(page.images[0]).toMatchObject({ path: "assets/sticker star.png", front: true });
+    expect(page.strokes[0].fill).toBe("#1971c24d");
+    expect(page.textBoxes[0].caps).toBe(true);
+    expect(result.doc.palette?.id).toBe("ocean");
+    expect(result.doc.recordings).toBeUndefined();
+    expect(result.attachments.map((a) => [a.name, a.mime])).toEqual([
+      ["assets/sticker star.png", "image/png"],
+    ]);
+  });
+
+  it("warns when a template is for personal use only", async () => {
+    const { bytes } = buildTemplatePackage({
+      doc: notebook(),
+      name: "Mine",
+      licence: "personal",
+      files: new Map(),
+    });
+    const [result] = (await importNotebooks(bytes, "Mine.finetemplate")).results;
+    expect(result.warnings.join(" ")).toContain("personal use only");
+  });
+
+  it("reports a template whose manifest is broken", async () => {
+    const bytes = zipSync({ "manifest.json": strToU8("{"), "notebook.fn": strToU8("v2:") });
+    const batch = await importNotebooks(bytes, "Broken.finetemplate");
+    expect(batch.results).toEqual([]);
+    expect(batch.failures).toHaveLength(1);
+  });
+});
+
+describe("manifests and ids", () => {
+  it("make ids from names, and refuse what is not a manifest", () => {
+    expect(templateId("Ça va — Planner 2027!")).toBe("ca-va-planner-2027");
+    expect(templateId("!!!")).toBe("template");
+    expect(readManifest({ format: 1 })).toBeNull();
+    expect(readManifest({ format: 99, name: "Future" })).toBeNull();
+    expect(readManifest({ format: 1, name: "X", licence: "whatever" })?.licence).toBe("personal");
+  });
+});
+
+describe("a gallery index", () => {
+  it("keeps usable entries in name order, flags retired ones, drops the rest", () => {
+    const entries = readGalleryIndex({
+      format: 1,
+      templates: [
+        {
+          name: "Zen journal",
+          download: "https://x.org/zen.finetemplate",
+          licence: "cc0",
+          pages: 30,
+        },
+        { name: "Old planner", download: "https://x.org/old.finetemplate", retired: true },
+        { name: "Insecure", download: "http://x.org/a.finetemplate" },
+        { download: "https://x.org/noname.finetemplate" },
+        {
+          name: "Bad preview",
+          download: "https://x.org/b.finetemplate",
+          preview: "javascript:alert(1)",
+        },
+        "junk",
+      ],
+    });
+    expect(entries.map((e) => [e.name, e.retired])).toEqual([
+      ["Bad preview", false],
+      ["Old planner", true],
+      ["Zen journal", false],
+    ]);
+    expect(entries[0].preview).toBe("");
+    expect(entries[2]).toMatchObject({ id: "zen-journal", licence: "cc0", pages: 30 });
+    expect(readGalleryIndex(null)).toEqual([]);
+    expect(readGalleryIndex({ templates: "no" })).toEqual([]);
+  });
+});

@@ -141,6 +141,10 @@ export interface GoodObsidianSettings {
   shapeColor: string;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
+  /** Vault folder "Save as template" writes `.finetemplate` files to. */
+  templateFolder: string;
+  /** URL of a template gallery's JSON index; empty: no gallery. */
+  templateGalleryUrl: string;
   /** The Shape tool's fill, line, corners and arrowheads (`model/shape-style`). */
   shapeStyle?: ShapeToolStyle;
   /** Colours picked lately, newest first. Checked where it is read. */
@@ -253,6 +257,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
   stickerFolder: DEFAULT_STICKER_FOLDER,
+  templateFolder: "FineNotes templates",
+  templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
   returnToPenOnReselect: false,

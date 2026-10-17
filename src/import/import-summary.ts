@@ -23,6 +23,7 @@ export const SOURCE_NAMES: Readonly<Record<ImportSource, string>> = {
   remarkable: "reMarkable",
   supernote: "Supernote",
   freenotes: "FreeNotes",
+  template: "FineNotes template",
   pdf: "a PDF",
 };
 

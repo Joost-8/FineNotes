@@ -15,6 +15,7 @@ export type ImportSource =
   | "remarkable"
   | "supernote"
   | "freenotes"
+  | "template"
   | "pdf";
 
 /** A file the notebook uses: a paper or annotated PDF, a picture, a recording. */

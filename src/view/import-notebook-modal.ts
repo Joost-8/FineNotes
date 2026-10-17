@@ -55,6 +55,8 @@ export interface ImportNotebookOptions {
   ownFolder: boolean;
   /** Open a notebook the import wrote. */
   open: (file: TFile) => Promise<void>;
+  /** Files already chosen (a template from the vault or a gallery): imported at once. */
+  preset?: readonly PickedFile[];
 }
 
 /** Whether a drag carries files from outside the app. */
@@ -63,10 +65,11 @@ function carriesFiles(event: DragEvent): boolean {
 }
 
 /** A picked file before it is read. */
-interface Picked {
+export interface PickedFile {
   name: string;
   read: () => Promise<ArrayBuffer>;
 }
+type Picked = PickedFile;
 
 export class ImportNotebookModal extends Modal {
   private busy = false;
@@ -86,7 +89,8 @@ export class ImportNotebookModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog");
     this.keepDropsInside();
-    this.showPicker();
+    if (this.options.preset && this.options.preset.length > 0) void this.run(this.options.preset);
+    else this.showPicker();
   }
 
   /**

@@ -1,3 +1,6 @@
+import { type GalleryEntry, TEMPLATE_EXTENSION, readGalleryIndex } from "./import/template-package";
+import { TemplateFileSuggestModal, TemplateGalleryModal } from "./view/template-ui";
+import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
@@ -13,6 +16,7 @@ import {
   Platform,
   Plugin,
   type RequestUrlResponse,
+  requestUrl,
   TFile,
   TFolder,
   type ViewState,
@@ -440,6 +444,24 @@ export default class GoodObsidianPlugin extends Plugin {
       view.copyHighlightedText(),
     );
     this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
+    this.notebookCommand("save-as-template", "Save notebook as template…", (view) =>
+      view.saveAsTemplate(),
+    );
+    this.addCommand({
+      id: "new-from-template",
+      name: "New notebook from template…",
+      callback: () =>
+        new TemplateFileSuggestModal(this.app, (file) =>
+          this.openImportNotebook("", [
+            { name: file.name, read: () => this.app.vault.readBinary(file) },
+          ]),
+        ).open(),
+    });
+    this.addCommand({
+      id: "template-gallery",
+      name: "Browse template gallery…",
+      callback: () => void this.openTemplateGallery(),
+    });
 
     this.addCommand({
       id: "toggle-canvas-markdown-view",
@@ -1230,8 +1252,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * relative; undefined means the default notebook folder). Called from the
    * file explorer's right-click menu and the New notebook dialog.
    */
-  openImportNotebook(folder = ""): void {
+  openImportNotebook(folder = "", preset?: readonly PickedFile[]): void {
     openImportNotebookModal(this.app, {
+      ...(preset ? { preset } : {}),
       folder: folder || this.newNotebookFolder(),
       ownFolder: parseNotebookChoices(this.settings.lastNotebookChoices).ownFolder,
       open: async (file) => {
@@ -1240,6 +1263,48 @@ export default class GoodObsidianPlugin extends Plugin {
         await this.app.workspace.revealLeaf(tab);
       },
     });
+  }
+
+  /**
+   * The gallery its index URL names: fetched, listed, and a chosen template
+   * downloaded into the templates folder and opened as a new notebook.
+   */
+  async openTemplateGallery(): Promise<void> {
+    const url = this.settings.templateGalleryUrl.trim();
+    if (!/^https:\/\//i.test(url)) {
+      new Notice(
+        "FineNotes: set a template gallery's address in Settings → Pages and notebooks.",
+        8000,
+      );
+      return;
+    }
+    let entries: GalleryEntry[];
+    try {
+      entries = readGalleryIndex((await requestUrl({ url })).json);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't read the template gallery — ${errorMessage(error)}`, 8000);
+      return;
+    }
+    new TemplateGalleryModal(this.app, entries, (entry) => void this.installTemplate(entry)).open();
+  }
+
+  private async installTemplate(entry: GalleryEntry): Promise<void> {
+    const progress = new Notice(`FineNotes: downloading “${entry.name}”…`, 0);
+    try {
+      const bytes = (await requestUrl({ url: entry.download })).arrayBuffer;
+      const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
+      if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
+      const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;
+      const path = normalizePath(`${folder}/${name}`);
+      const existing = this.app.vault.getFileByPath(path);
+      if (existing) await this.app.vault.modifyBinary(existing, bytes);
+      else await this.app.vault.createBinary(path, bytes);
+      this.openImportNotebook("", [{ name, read: () => Promise.resolve(bytes) }]);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't download that template — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
+    }
   }
 
   /** Whether the vault holds any notebook or page yet. */

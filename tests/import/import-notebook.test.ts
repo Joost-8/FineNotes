@@ -150,6 +150,7 @@ describe("importNotebooks", () => {
       "rm",
       "rmdoc",
       "freenotes",
+      "finetemplate",
     ]);
   });
 

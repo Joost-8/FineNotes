@@ -162,7 +162,9 @@ import {
 import { pageLinkLabel } from "./page-embed-model";
 import { type PdfExportSources, exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
-import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
+import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
+import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
+import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
@@ -1705,6 +1707,74 @@ export class InkView extends TextFileView {
   }
 
   // --- Note settings ----------------------------------------------------------
+
+  // --- Save as template ---------------------------------------------------------
+
+  /** "Save notebook as template": the notebook and its pictures as one `.finetemplate` file. */
+  saveAsTemplate(): void {
+    const note = this.file;
+    if (!note || !this.surface) return;
+    new SaveTemplateModal(this.app, { name: stripInkSuffix(note.basename) }, (details) => {
+      void this.writeTemplate(details);
+    }).open();
+  }
+
+  private async writeTemplate(details: TemplateDetails): Promise<void> {
+    const doc = this.surface?.document;
+    if (!doc) return;
+    const progress = new Notice("FineNotes: saving the template…", 0);
+    try {
+      const paths = new Set<string>();
+      for (const page of doc.pages) {
+        for (const image of page.images) paths.add(image.path);
+        if (page.backdrop.kind === "pdf") paths.add(page.backdrop.path);
+      }
+      const files = new Map<string, Uint8Array>();
+      for (const path of paths) {
+        const file = this.app.vault.getFileByPath(path);
+        if (file) files.set(path, new Uint8Array(await this.app.vault.readBinary(file)));
+      }
+      const preview = await this.templatePreview(doc.pages[0]);
+      const { bytes, missing } = buildTemplatePackage({
+        doc,
+        ...details,
+        files,
+        ...(preview ? { preview } : {}),
+      });
+      const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
+      if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
+      const taken = new Set(
+        this.app.vault.getFolderByPath(folder)?.children.map((child) => child.name) ?? [],
+      );
+      const safe = details.name.replace(/[^\w .()-]+/g, " ").trim() || "Template";
+      const name = uniqueFileName(safe, `.${TEMPLATE_EXTENSION}`, taken);
+      // A buffer of its own: the vault takes an ArrayBuffer, not a view on one.
+      const buffer = new Uint8Array(bytes).buffer;
+      const file = await this.app.vault.createBinary(normalizePath(`${folder}/${name}`), buffer);
+      const left = missing.length ? ` ${missing.length} missing picture(s) were left out.` : "";
+      new Notice(`FineNotes: saved the template as ${file.path}.${left}`, 8000);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't save the template — ${errorMessage(error)}`, 8000);
+    } finally {
+      progress.hide();
+    }
+  }
+
+  /** The template's first page as a PNG for galleries, drawn as an export draws it. */
+  private async templatePreview(page: Page | undefined): Promise<Uint8Array | undefined> {
+    if (!page) return undefined;
+    const canvas = createEl("canvas");
+    try {
+      await paintPagePreview(canvas, page, this.previewSources(), 480, 1);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      return blob ? new Uint8Array(await blob.arrayBuffer()) : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }
 
   /** Where this note saves new files of `kind`; `undefined` = Obsidian's default. */
   private attachmentFolder(kind: AttachmentKind): string | undefined {

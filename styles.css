@@ -7821,6 +7821,55 @@ button.goodobsidian-color-eyedropper .svg-icon {
   white-space: nowrap;
 }
 
+/* -------------------------------------------------------------- templates */
+/* The template gallery: a card per template, its first page on top. */
+.goodobsidian-template-gallery {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.goodobsidian-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+
+.goodobsidian-template-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.goodobsidian-template-entry-preview {
+  aspect-ratio: 3 / 4;
+  border-radius: var(--gob-radius-m);
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.goodobsidian-template-entry-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.goodobsidian-template-entry-name {
+  font-weight: 600;
+}
+
+.goodobsidian-template-entry-meta,
+.goodobsidian-template-entry-licence,
+.goodobsidian-template-entry-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-template-entry button {
+  margin-top: 6px;
+}
+
 /* --------------------------------------------------------- notebook colours */
 /* Notebook settings' palettes: six dots over a name, the current one marked. */
 .goodobsidian-palette-chips {
