@@ -1524,8 +1524,9 @@ export default class GoodObsidianPlugin extends Plugin {
         window.open(url);
         new Notice(
           `FineNotes: in the form on GitHub, attach “${template.path}” under Files, then submit. ` +
-            "A bot replies there in a minute or two.",
-          15000,
+            "A bot replies there in a minute or two. If GitHub's app shows a plain issue " +
+            "instead of the form, open the link in Safari.",
+          20000,
         );
       },
       typeof saved === "string" ? saved : "",
