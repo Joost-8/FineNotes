@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-17
+
 ### Added
 
 - **A welcome for new users.** The first time FineNotes runs in a vault with
