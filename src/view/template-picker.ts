@@ -15,6 +15,14 @@
  * are exported for the "New notebook" dialog, which asks the same questions.
  */
 
+import {
+  PAPER_SWATCHES,
+  type PaperStyle,
+  RULE_SWATCHES,
+  SPACING_STEPS,
+  paperStyleOf,
+  styledBackdrop,
+} from "../canvas/paper-style";
 import { type App, Modal, setIcon } from "obsidian";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document";
@@ -29,7 +37,6 @@ import {
   popoverTemplates,
   sizeGeometry,
   sizeOf,
-  templateBackdrop,
 } from "../model/templates";
 
 /** Paint a template preview into `canvas`, `cssWidth` CSS px wide. */
@@ -368,11 +375,11 @@ export class TemplateGrid {
     this.sync();
   }
 
-  /** Paint every preview on `color` paper at `geometry`. */
-  repaint(color: PaperColorId, geometry: PageGeometry): void {
+  /** Paint every preview on `color` paper at `geometry`, in `style` when given. */
+  repaint(color: PaperColorId, geometry: PageGeometry, style: PaperStyle = {}): void {
     const width = this.options.previewWidth ?? PREVIEW_WIDTH;
     for (const card of this.cards) {
-      paintTemplatePreview(card.canvas, templateBackdrop(card.ruling, color), geometry, width);
+      paintTemplatePreview(card.canvas, styledBackdrop(card.ruling, color, style), geometry, width);
     }
   }
 
@@ -424,6 +431,8 @@ const PREVIEW_WIDTH = 96;
 export class TemplatePickerModal extends Modal {
   private ruling: Ruling;
   private color: PaperColorId;
+  private style: PaperStyle;
+  private styleEl: HTMLElement | null = null;
   private sizeId: string;
   private landscape: boolean;
   private grid: TemplateGrid | null = null;
@@ -435,6 +444,7 @@ export class TemplatePickerModal extends Modal {
     super(app);
     this.ruling = options.initial.kind;
     this.color = paperColorOf(options.initial);
+    this.style = paperStyleOf(options.initial);
     const size = sizeOf(options.geometry);
     this.sizeId = size?.sizeId ?? KEEP_SIZE;
     this.landscape = size?.landscape ?? options.geometry.width > options.geometry.height;
@@ -457,11 +467,16 @@ export class TemplatePickerModal extends Modal {
       landscape: this.landscape,
       onChange: (state) => {
         this.sizeId = state.sizeId;
+        // A paper colour picked in the list replaces a custom one.
+        if (state.color !== this.color) delete this.style.paper;
         this.color = state.color;
         this.landscape = state.landscape;
+        this.renderStyle();
         this.repaint();
       },
     });
+    this.styleEl = contentEl.createDiv({ cls: "goodobsidian-paper-style" });
+    this.renderStyle();
 
     this.grid = new TemplateGrid(contentEl, {
       selected: this.ruling,
@@ -487,6 +502,7 @@ export class TemplatePickerModal extends Modal {
 
   override onClose(): void {
     this.grid = null;
+    this.styleEl = null;
     this.contentEl.empty();
   }
 
@@ -498,12 +514,90 @@ export class TemplatePickerModal extends Modal {
   }
 
   private repaint(): void {
-    this.grid?.repaint(this.color, this.geometry());
+    this.grid?.repaint(this.color, this.geometry(), this.style);
+  }
+
+  /**
+   * Paper colour, line colour and spacing: rows of swatches and steps under
+   * the size and orientation, each choice repainting the previews at once.
+   */
+  private renderStyle(): void {
+    const el = this.styleEl;
+    if (!el) return;
+    el.empty();
+    const set = (patch: PaperStyle): void => {
+      this.style = { ...this.style, ...patch };
+      for (const key of Object.keys(this.style) as Array<keyof PaperStyle>) {
+        if (this.style[key] === undefined) delete this.style[key];
+      }
+      this.renderStyle();
+      this.repaint();
+    };
+    const shownPaper = (
+      this.style.paper ??
+      styledBackdrop("blank", this.color).paperColor ??
+      "#ffffff"
+    ).toLowerCase();
+
+    const paperRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
+    paperRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Paper" });
+    for (const swatch of PAPER_SWATCHES) {
+      this.swatch(paperRow, swatch.label, swatch.color, swatch.color === shownPaper, () =>
+        set({ paper: swatch.color }),
+      );
+    }
+    const custom = paperRow.createEl("input", {
+      cls: "goodobsidian-paper-style-custom",
+      type: "color",
+      attr: { "aria-label": "Any paper colour" },
+    });
+    custom.value = shownPaper;
+    custom.addEventListener("input", () => set({ paper: custom.value }));
+
+    const ruleRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
+    ruleRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Lines" });
+    for (const swatch of RULE_SWATCHES) {
+      const on = (swatch.color ?? undefined) === this.style.rule;
+      const button = this.swatch(ruleRow, swatch.label, swatch.color ?? shownPaper, on, () =>
+        set({ rule: swatch.color ?? undefined }),
+      );
+      if (swatch.color === null) button.addClass("is-default");
+    }
+
+    const spacingRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
+    spacingRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Spacing" });
+    const steps = spacingRow.createDiv({ cls: "goodobsidian-segmented" });
+    for (const step of SPACING_STEPS) {
+      const on = (this.style.spacing ?? 1) === step.k;
+      const button = steps.createEl("button", { cls: "clickable-icon", text: step.label });
+      button.toggleClass("is-active", on);
+      button.setAttribute("aria-pressed", String(on));
+      button.addEventListener("click", () => set({ spacing: step.k === 1 ? undefined : step.k }));
+    }
+  }
+
+  private swatch(
+    row: HTMLElement,
+    label: string,
+    color: string,
+    on: boolean,
+    pick: () => void,
+  ): HTMLButtonElement {
+    const button = row.createEl("button", {
+      cls: "goodobsidian-paper-swatch clickable-icon",
+      attr: { "aria-label": label, title: label, "aria-pressed": String(on) },
+    });
+    button
+      .createSpan({ cls: "goodobsidian-paper-swatch-disc" })
+      .setCssStyles({ backgroundColor: color });
+    button.toggleClass("is-active", on);
+    button.addEventListener("click", pick);
+    return button;
   }
 
   private apply(): void {
     const choice: TemplateChoice = {
-      backdrop: templateBackdrop(this.ruling, this.color),
+      backdrop: styledBackdrop(this.ruling, this.color, this.style),
       geometry: this.sizeId === KEEP_SIZE ? null : sizeGeometry(this.sizeId, this.landscape),
     };
     this.close();

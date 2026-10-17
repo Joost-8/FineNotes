@@ -7821,6 +7821,67 @@ button.goodobsidian-color-eyedropper .svg-icon {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------------ paper style */
+/* The template picker's paper colour, line colour and spacing rows. */
+.goodobsidian-paper-style {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 10px;
+}
+
+.goodobsidian-paper-style-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.goodobsidian-paper-style-label {
+  min-width: 64px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+button.goodobsidian-paper-swatch.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.goodobsidian-paper-swatch-disc {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--background-modifier-border-hover);
+}
+
+/* The template's own rules: a disc of the paper with a slash. */
+button.goodobsidian-paper-swatch.is-default .goodobsidian-paper-swatch-disc {
+  background-image: linear-gradient(
+    135deg,
+    transparent 45%,
+    var(--text-faint) 45%,
+    var(--text-faint) 55%,
+    transparent 55%
+  );
+}
+
+button.goodobsidian-paper-swatch.is-active .goodobsidian-paper-swatch-disc {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 3px;
+}
+
+input.goodobsidian-paper-style-custom {
+  width: 32px;
+  height: 28px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
 /* ------------------------------------------------------ text style menu */
 /* Named styles, each set in its own look, one per row. */
 .goodobsidian-text-presets {
