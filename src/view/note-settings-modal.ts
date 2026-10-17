@@ -1,11 +1,12 @@
 /**
  * The toolbar's settings button: this notebook's (or single page's) own
  * settings — which way its pages run (a notebook only), and where its new
- * pictures, recordings and PDF exports are saved. Each row takes a typed
+ * pictures, recordings, recording transcripts and PDF exports are saved. Each row takes a typed
  * path (with type-ahead, and a folder that does not exist yet is created on
  * the first save) or a pick from the full folder list, which is what a
  * finger on an iPad wants. An empty row means Obsidian's own "Default
- * location for new attachments" — or, for exports, the note's own folder.
+ * location for new attachments" — or, for transcripts, the recording's
+ * folder, and for exports, the note's own folder.
  *
  * The modal only reports choices; the host applies them as undoable commands
  * and the modal re-reads the note, so what it shows is always what is stored.
@@ -65,6 +66,13 @@ const ROWS: ReadonlyArray<{
     reset: "Use Obsidian's default",
   },
   {
+    kind: "transcripts",
+    name: "Recording transcripts",
+    desc: "Notes made by transcribing a recording.",
+    empty: "Next to the recording",
+    reset: "Save next to the recording",
+  },
+  {
     kind: "exports",
     name: "PDF exports",
     desc: "PDFs made with the share button.",
@@ -109,7 +117,8 @@ export class NoteSettingsModal extends Modal {
       text:
         `Choose a folder for this ${this.host.single ? "page" : "notebook"}'s new ` +
         "files. Empty: pictures, PDFs and recordings follow Obsidian's attachment " +
-        "setting, and exports go next to the note. Files already saved stay " +
+        "setting, transcripts go next to their recording, and exports next to " +
+        "the note. Files already saved stay " +
         "where they are.",
     });
     const folders = this.host.folders();

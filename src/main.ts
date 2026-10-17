@@ -1252,9 +1252,9 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * Write `<folder>/<title>.notebook.md` (`.page.md` for a single page) — a
    * unique, sanitised name, the folder
-   * created if it does not exist — and open it. With `choices.ownFolder` it is
-   * `<folder>/<title>/<title>.notebook.md` beside `Images/` and `Recordings/`,
-   * where its pictures and recordings then go. `folder` undefined means the
+   * created if it does not exist — and open it. With `choices.ownFolder` a
+   * `<folder>/<title> files/` folder beside it holds `Images/`, `Recordings/`,
+   * `Transcripts/` and `Exports/`, where those then go. `folder` undefined means the
    * default one.
    */
   async createNotebook(

@@ -8,6 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **A notebook's files sit beside it, not around it.** With "Keep its files
+  in a folder" on (New notebook and the importer), the notebook is saved in
+  the folder you picked, and a "<Title> files" folder next to it holds its
+  Images, Recordings, Transcripts and Exports. Notebooks made before keep
+  their folders.
+
+### Added
+
+- **A folder for recording transcripts.** Notebook settings has a
+  "Recording transcripts" row; empty, a transcript still goes next to its
+  recording.
+
 ## [2.2.1] - 2026-10-17
 
 ### Added

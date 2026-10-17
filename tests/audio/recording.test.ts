@@ -131,6 +131,11 @@ describe("names and labels", () => {
       "Lectures/audio/Recording 2026-09-22 14-05 transcript.md",
     );
     expect(transcriptPathFor("Recording.m4a")).toBe("Recording transcript.md");
+    // Or in the note's transcript folder, when it has one.
+    expect(transcriptPathFor("A/Recordings/R.m4a", "A/Transcripts")).toBe(
+      "A/Transcripts/R transcript.md",
+    );
+    expect(transcriptPathFor("A/Recordings/R.m4a", "")).toBe("A/Recordings/R transcript.md");
     expect(baseNameOf("a/b/.hidden")).toBe(".hidden");
     expect(baseNameOf("a/b/c.d.m4a")).toBe("c.d");
   });

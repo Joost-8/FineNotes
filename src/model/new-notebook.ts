@@ -5,8 +5,8 @@
  *
  * A notebook is still one `*.notebook.md` file holding every page; the
  * folder-per-notebook layout of contracts/api.md §1b is separate work. (The
- * dialog's "own folder" only puts that one file in a folder named after it,
- * next to the folders its pictures and recordings go in.) Pure:
+ * dialog's "files folder" only adds a `<Title> files` folder beside that one
+ * file, for its pictures, recordings, transcripts and exports.) Pure:
  * the view supplies what exists on disk and does the writing.
  */
 
@@ -60,8 +60,8 @@ export interface NotebookChoices {
   size: string;
   landscape: boolean;
   /**
-   * Give it a folder of its own, named after it, holding the notebook and
-   * the folders its pictures and recordings are saved in.
+   * Give it a `<Title> files` folder beside it, holding the folders its
+   * pictures, recordings, transcripts and exports are saved in.
    */
   ownFolder: boolean;
 }
@@ -231,9 +231,16 @@ export function joinVaultPath(folder: string, name: string): string {
   return dir ? `${dir}/${name}` : name;
 }
 
-/** The folders inside a notebook's own folder, for its pictures, recordings and PDF exports. */
+/**
+ * The name of a notebook's files folder, after the notebook's base name:
+ * "Physics" -> "Physics files", as a browser saves "Page_files" beside a page.
+ */
+export const FILES_FOLDER_SUFFIX = " files";
+
+/** The folders inside a notebook's files folder. */
 export const OWN_FOLDER_IMAGES = "Images";
 export const OWN_FOLDER_AUDIO = "Recordings";
+export const OWN_FOLDER_TRANSCRIPTS = "Transcripts";
 export const OWN_FOLDER_EXPORTS = "Exports";
 
 /** Where a new notebook goes on disk. */
@@ -244,20 +251,22 @@ export interface NotebookPaths {
   fileName: string;
   /** Every folder the notebook needs, parents first; the caller creates the missing ones. */
   folders: string[];
-  /** Where its pictures, recordings and exports go, when it has a folder of its own. */
+  /** Where its pictures, recordings, transcripts and exports go, when it has a files folder. */
   attachments?: AttachmentFolders;
 }
 
 /**
  * Where a notebook titled `title` goes in `dir`, whose entries (files and
- * folders) are `taken`. Without a folder of its own it is
- * `<dir>/<Title>.notebook.md` (`.page.md` for a single page).
- * With one, the folder takes the unique name and everything inside is new:
+ * folders) are `taken`. The notebook is always `<dir>/<Title>.notebook.md`
+ * (`.page.md` for a single page). With `ownFolder`, a files folder beside it
+ * holds everything it saves, and the number that makes one name free makes
+ * both free, so the two always pair up:
  *
- *   <dir>/<Title>/<Title>.notebook.md
- *   <dir>/<Title>/Images/
- *   <dir>/<Title>/Recordings/
- *   <dir>/<Title>/Exports/
+ *   <dir>/<Title>.notebook.md
+ *   <dir>/<Title> files/Images/
+ *   <dir>/<Title> files/Recordings/
+ *   <dir>/<Title> files/Transcripts/
+ *   <dir>/<Title> files/Exports/
  */
 export function notebookPaths(
   dir: string,
@@ -284,16 +293,25 @@ export function notebookPaths(
       folders: parent ? [parent] : [],
     };
   }
-  const name = uniqueFileName(base, "", clash);
-  const folder = joinVaultPath(parent, name);
-  const images = joinVaultPath(folder, OWN_FOLDER_IMAGES);
-  const audio = joinVaultPath(folder, OWN_FOLDER_AUDIO);
-  const exports = joinVaultPath(folder, OWN_FOLDER_EXPORTS);
+  const lower = new Set([...clash].map((entry) => entry.toLowerCase()));
+  let name = base;
+  for (let i = 1; ; i++) {
+    const free = [`${name}${suffix}`, `${name}${FILES_FOLDER_SUFFIX}`].every(
+      (entry) => !lower.has(entry.toLowerCase()),
+    );
+    if (free) break;
+    name = `${base} ${i}`;
+  }
+  const files = joinVaultPath(parent, `${name}${FILES_FOLDER_SUFFIX}`);
+  const images = joinVaultPath(files, OWN_FOLDER_IMAGES);
+  const audio = joinVaultPath(files, OWN_FOLDER_AUDIO);
+  const transcripts = joinVaultPath(files, OWN_FOLDER_TRANSCRIPTS);
+  const exports = joinVaultPath(files, OWN_FOLDER_EXPORTS);
   return {
-    folder,
+    folder: parent,
     fileName: `${name}${suffix}`,
-    folders: [...(parent ? [parent] : []), folder, images, audio, exports],
-    attachments: { images, audio, exports },
+    folders: [...(parent ? [parent] : []), files, images, audio, transcripts, exports],
+    attachments: { images, audio, transcripts, exports },
   };
 }
 
@@ -346,7 +364,7 @@ export function buildNewDocument(
     view: { scrollY: 0, width: geometry.width, scale: 1 },
     pages: [],
   };
-  // Its own folder's Images, Recordings and Exports, as if set in the note's settings.
+  // Its files folder's Images, Recordings, Transcripts and Exports, as if set in the note's settings.
   if (attachments && Object.keys(attachments).length > 0) doc.folders = { ...attachments };
   if (choices.type === "single") {
     doc.pages.push(page("p1", geometry, paper));

@@ -344,9 +344,12 @@ export function baseNameOf(path: string): string {
   return dot > 0 ? name.slice(0, dot) : name;
 }
 
-/** Where a recording's transcript goes: beside the audio, `<audio name> transcript.md`. */
-export function transcriptPathFor(audioPath: string): string {
-  const { folder } = splitPath(audioPath);
+/**
+ * Where a recording's transcript goes, `<audio name> transcript.md`: in
+ * `folder` (the note's transcript folder) when one is set, else beside the audio.
+ */
+export function transcriptPathFor(audioPath: string, folder?: string): string {
+  folder = folder || splitPath(audioPath).folder;
   const name = `${baseNameOf(audioPath)} transcript.md`;
   return folder ? `${folder}/${name}` : name;
 }

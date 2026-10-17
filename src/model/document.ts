@@ -525,11 +525,12 @@ export interface InkDocument {
 export type ScrollDirection = "vertical" | "horizontal";
 
 /** The kinds of file a note saves beside itself. */
-export type AttachmentKind = "images" | "audio" | "exports";
+export type AttachmentKind = "images" | "audio" | "transcripts" | "exports";
 
 /**
  * Vault folder paths (`""` never stored). Absent: Obsidian's default for
- * pictures and recordings; next to the note for PDF exports.
+ * pictures and recordings; beside the recording for its transcript; next to
+ * the note for PDF exports.
  */
 export type AttachmentFolders = Partial<Record<AttachmentKind, string>>;
 

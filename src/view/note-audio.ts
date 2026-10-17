@@ -19,8 +19,9 @@
  *   seconds before that ink was written — on any page, since every page's
  *   `epoch` is wall-clock time.
  * - **Transcribe** through `plugin.transcribeAudioFile`, the one
- *   consent-gated way audio leaves the device, into a note of its own beside
- *   the audio file. The notebook's markdown is never touched.
+ *   consent-gated way audio leaves the device, into a note of its own in the
+ *   note's transcript folder, or beside the audio file when none is set. The
+ *   notebook's markdown is never touched.
  */
 
 import { type App, Notice, Platform, type TFile, normalizePath } from "obsidian";
@@ -584,7 +585,11 @@ export class NoteAudio {
   private async writeTranscript(recording: Recording, audio: TFile, text: string): Promise<string> {
     const { app } = this.host;
     const exists = (path: string): boolean => app.vault.getAbstractFileByPath(path) !== null;
-    let path = normalizePath(transcriptPathFor(audio.path));
+    let path = normalizePath(
+      transcriptPathFor(audio.path, attachmentFolder(this.doc(), "transcripts")),
+    );
+    const folder = parentFolder(path);
+    if (folder && !app.vault.getFolderByPath(folder)) await app.vault.createFolder(folder);
     if (exists(path)) {
       path = normalizePath(availablePath(parentFolder(path), baseNameOf(path), "md", exists));
     }

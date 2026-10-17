@@ -1,9 +1,9 @@
 /**
- * Per-note destinations for new pictures, recordings and PDF exports: the
- * toolbar's settings button lets a notebook (or a single page) send its
- * images to one vault folder, its audio to another and its exported PDFs to
- * a third, instead of Obsidian's "Default location for new attachments"
- * (pictures, recordings) or the note's own folder (exports). Stored in the
+ * Per-note destinations for new pictures, recordings, recording transcripts
+ * and PDF exports: the toolbar's settings button lets a notebook (or a single
+ * page) send each kind to its own vault folder, instead of Obsidian's
+ * "Default location for new attachments" (pictures, recordings), the
+ * recording's folder (transcripts) or the note's own folder (exports). Stored in the
  * document as `meta.folders`, so the choice travels with the note to every
  * device.
  *
@@ -15,11 +15,17 @@ import type { Command } from "./commands";
 import type { AttachmentFolders, AttachmentKind, InkDocument } from "./document";
 import { normalizeFolder } from "./new-notebook";
 
-export const ATTACHMENT_KINDS: readonly AttachmentKind[] = ["images", "audio", "exports"];
+export const ATTACHMENT_KINDS: readonly AttachmentKind[] = [
+  "images",
+  "audio",
+  "transcripts",
+  "exports",
+];
 
 const LABELS: Record<AttachmentKind, string> = {
   images: "Set image folder",
   audio: "Set recording folder",
+  transcripts: "Set transcript folder",
   exports: "Set export folder",
 };
 

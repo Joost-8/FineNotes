@@ -42,11 +42,12 @@ describe("normalizeAttachmentFolders", () => {
       normalizeAttachmentFolders({
         images: "A/Img",
         audio: "/B/",
+        transcripts: "B/Text/",
         exports: "C/PDF/",
         video: "C",
         toString: "x",
       }),
-    ).toEqual({ images: "A/Img", audio: "B", exports: "C/PDF" });
+    ).toEqual({ images: "A/Img", audio: "B", transcripts: "B/Text", exports: "C/PDF" });
   });
 
   it("is undefined when nothing usable is set", () => {
@@ -122,10 +123,16 @@ describe("meta.folders on disk", () => {
   it("round-trips, and is absent when nothing is set", () => {
     const doc = emptyDocument();
     expect("folders" in decodeDocument(encodeDocument(doc))).toBe(false);
-    doc.folders = { images: "Notes/Img", audio: "Notes/Rec", exports: "Notes/PDF" };
+    doc.folders = {
+      images: "Notes/Img",
+      audio: "Notes/Rec",
+      transcripts: "Notes/Text",
+      exports: "Notes/PDF",
+    };
     expect(decodeDocument(encodeDocument(doc)).folders).toEqual({
       images: "Notes/Img",
       audio: "Notes/Rec",
+      transcripts: "Notes/Text",
       exports: "Notes/PDF",
     });
   });
