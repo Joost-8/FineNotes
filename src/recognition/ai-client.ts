@@ -150,6 +150,7 @@ async function sendChat(
   config: AiVendorConfig,
   system: string,
   turns: readonly ChatTurn[],
+  cache = false,
 ): Promise<ChatReply> {
   assertConfigured(config);
   const request = buildChatRequest({
@@ -159,6 +160,7 @@ async function sendChat(
     baseUrl: config.baseUrl,
     system,
     turns,
+    cache,
   });
   const json = await sendVendorRequest(config, () =>
     postJson(request.url, request.headers, request.body),
@@ -212,7 +214,8 @@ export async function askAi(
   system: string,
   turns: readonly ChatTurn[],
 ): Promise<string> {
-  const { json, text, cutOff } = await sendChat(config, system, turns);
+  // Every follow-up resends the pages, so the conversation is worth caching.
+  const { json, text, cutOff } = await sendChat(config, system, turns, true);
   const label = targetLabel(config);
   const refusal = extractRefusal(config.vendor, json);
   if (refusal) throw new Error(`${label}: ${refusal}.`);

@@ -63,6 +63,8 @@ describe("askAi", () => {
     expect(body.messages).toEqual([
       { role: "user", content: [{ type: "text", text: "What is this?" }] },
     ]);
+    // Follow-ups resend the pages, so the conversation is cached.
+    expect(body.cache_control).toEqual({ type: "ephemeral" });
   });
 
   it("reports a refusal in the vendor's words", async () => {

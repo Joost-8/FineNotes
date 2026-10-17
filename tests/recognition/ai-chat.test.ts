@@ -75,6 +75,18 @@ describe("buildChatRequest", () => {
     expect(last).toEqual([{ type: "text", text: "Is it correct?" }]);
   });
 
+  it("asks Anthropic to cache the conversation only when told to", () => {
+    const cached = buildChatRequest({ ...base, vendor: "anthropic", cache: true }).body;
+    expect((cached as Record<string, unknown>).cache_control).toEqual({ type: "ephemeral" });
+    const plain = buildChatRequest({ ...base, vendor: "anthropic" }).body;
+    expect(plain).not.toHaveProperty("cache_control");
+    // The other dialects cache on their own and would reject the field.
+    for (const vendor of ["openai", "openrouter", "google"] as const) {
+      const body = JSON.stringify(buildChatRequest({ ...base, vendor, cache: true }).body);
+      expect(body, vendor).not.toContain("cache_control");
+    }
+  });
+
   it("omits the system prompt when there is none", () => {
     const req = buildChatRequest({ ...base, system: undefined, vendor: "anthropic" });
     expect((req.body as AnthropicBody).system).toBeUndefined();

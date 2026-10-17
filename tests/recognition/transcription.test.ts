@@ -119,6 +119,7 @@ describe("the request a transcription sends", () => {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     });
+    // The whole body, so no `cache_control`: one question has no follow-up to read it.
     expect(request.json).toEqual({
       model: "claude-opus-4-8",
       max_tokens: 8192,

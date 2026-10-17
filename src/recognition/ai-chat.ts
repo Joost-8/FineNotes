@@ -42,6 +42,13 @@ export interface ChatRequestInput extends VendorTarget {
   /** Oldest first. Must start with a user turn and alternate. */
   turns: readonly ChatTurn[];
   maxTokens?: number;
+  /**
+   * Ask the vendor to keep the conversation so far, for a follow-up that
+   * resends it. Only Anthropic needs telling (OpenAI and Google cache on
+   * their own); a one-question transcription leaves it off, since writing
+   * the cache costs a quarter more and nothing would read it.
+   */
+  cache?: boolean;
 }
 
 /**
@@ -67,10 +74,14 @@ const DIALECT_CHAT_BODIES: Record<
   (input: ChatRequestInput, maxTokens: number) => unknown
 > = {
   // https://docs.anthropic.com/en/api/messages — `system` is top level, and
-  // user content is a block list with the images before the text.
+  // user content is a block list with the images before the text. A top-level
+  // `cache_control` caches up to the last block, so each follow-up reads the
+  // pages back from the cache (a tenth of the price, for 5 minutes) and moves
+  // the cache on to include its own question.
   anthropic: (input, maxTokens) => ({
     model: input.model,
     max_tokens: maxTokens,
+    ...(input.cache ? { cache_control: { type: "ephemeral" } } : {}),
     ...(input.system ? { system: input.system } : {}),
     messages: input.turns.map((turn) =>
       turn.role === "assistant"
