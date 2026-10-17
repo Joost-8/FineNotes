@@ -43,11 +43,18 @@ describe("normalizeAttachmentFolders", () => {
         images: "A/Img",
         audio: "/B/",
         transcripts: "B/Text/",
+        chats: "B/Chats",
         exports: "C/PDF/",
         video: "C",
         toString: "x",
       }),
-    ).toEqual({ images: "A/Img", audio: "B", transcripts: "B/Text", exports: "C/PDF" });
+    ).toEqual({
+      images: "A/Img",
+      audio: "B",
+      transcripts: "B/Text",
+      chats: "B/Chats",
+      exports: "C/PDF",
+    });
   });
 
   it("is undefined when nothing usable is set", () => {

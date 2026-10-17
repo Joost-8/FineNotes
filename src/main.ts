@@ -1254,7 +1254,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * unique, sanitised name, the folder
    * created if it does not exist — and open it. With `choices.ownFolder` a
    * `<folder>/<title> files/` folder beside it holds `Images/`, `Recordings/`,
-   * `Transcripts/` and `Exports/`, where those then go. `folder` undefined means the
+   * `Transcripts/`, `AI chats/` and `Exports/`, where those then go. `folder` undefined means the
    * default one.
    */
   async createNotebook(

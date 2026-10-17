@@ -1,7 +1,7 @@
 /**
  * The toolbar's settings button: this notebook's (or single page's) own
  * settings — which way its pages run (a notebook only), and where its new
- * pictures, recordings, recording transcripts and PDF exports are saved. Each row takes a typed
+ * pictures, recordings, recording transcripts, AI chats and PDF exports are saved. Each row takes a typed
  * path (with type-ahead, and a folder that does not exist yet is created on
  * the first save) or a pick from the full folder list, which is what a
  * finger on an iPad wants. An empty row means Obsidian's own "Default
@@ -73,6 +73,13 @@ const ROWS: ReadonlyArray<{
     reset: "Save next to the recording",
   },
   {
+    kind: "chats",
+    name: "AI chats",
+    desc: "Ask AI conversations you save.",
+    empty: "AI chats, next to the note",
+    reset: "Save in AI chats, next to the note",
+  },
+  {
     kind: "exports",
     name: "PDF exports",
     desc: "PDFs made with the share button.",
@@ -117,8 +124,9 @@ export class NoteSettingsModal extends Modal {
       text:
         `Choose a folder for this ${this.host.single ? "page" : "notebook"}'s new ` +
         "files. Empty: pictures, PDFs and recordings follow Obsidian's attachment " +
-        "setting, transcripts go next to their recording, and exports next to " +
-        "the note. Files already saved stay " +
+        "setting, transcripts go next to their recording, AI chats in an AI " +
+        "chats folder next to the note, and exports next to the note. Files " +
+        "already saved stay " +
         "where they are.",
     });
     const folders = this.host.folders();

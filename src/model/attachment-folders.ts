@@ -3,7 +3,8 @@
  * and PDF exports: the toolbar's settings button lets a notebook (or a single
  * page) send each kind to its own vault folder, instead of Obsidian's
  * "Default location for new attachments" (pictures, recordings), the
- * recording's folder (transcripts) or the note's own folder (exports). Stored in the
+ * recording's folder (transcripts), an "AI chats" folder beside the note
+ * (saved Ask AI chats) or the note's own folder (exports). Stored in the
  * document as `meta.folders`, so the choice travels with the note to every
  * device.
  *
@@ -19,6 +20,7 @@ export const ATTACHMENT_KINDS: readonly AttachmentKind[] = [
   "images",
   "audio",
   "transcripts",
+  "chats",
   "exports",
 ];
 
@@ -26,6 +28,7 @@ const LABELS: Record<AttachmentKind, string> = {
   images: "Set image folder",
   audio: "Set recording folder",
   transcripts: "Set transcript folder",
+  chats: "Set AI chat folder",
   exports: "Set export folder",
 };
 

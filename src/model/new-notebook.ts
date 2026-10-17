@@ -6,7 +6,7 @@
  * A notebook is still one `*.notebook.md` file holding every page; the
  * folder-per-notebook layout of contracts/api.md §1b is separate work. (The
  * dialog's "files folder" only adds a `<Title> files` folder beside that one
- * file, for its pictures, recordings, transcripts and exports.) Pure:
+ * file, for its pictures, recordings, transcripts, AI chats and exports.) Pure:
  * the view supplies what exists on disk and does the writing.
  */
 
@@ -61,7 +61,7 @@ export interface NotebookChoices {
   landscape: boolean;
   /**
    * Give it a `<Title> files` folder beside it, holding the folders its
-   * pictures, recordings, transcripts and exports are saved in.
+   * pictures, recordings, transcripts, AI chats and exports are saved in.
    */
   ownFolder: boolean;
 }
@@ -241,6 +241,7 @@ export const FILES_FOLDER_SUFFIX = " files";
 export const OWN_FOLDER_IMAGES = "Images";
 export const OWN_FOLDER_AUDIO = "Recordings";
 export const OWN_FOLDER_TRANSCRIPTS = "Transcripts";
+export const OWN_FOLDER_CHATS = "AI chats";
 export const OWN_FOLDER_EXPORTS = "Exports";
 
 /** Where a new notebook goes on disk. */
@@ -251,7 +252,7 @@ export interface NotebookPaths {
   fileName: string;
   /** Every folder the notebook needs, parents first; the caller creates the missing ones. */
   folders: string[];
-  /** Where its pictures, recordings, transcripts and exports go, when it has a files folder. */
+  /** Where its pictures, recordings, transcripts, AI chats and exports go, with a files folder. */
   attachments?: AttachmentFolders;
 }
 
@@ -266,6 +267,7 @@ export interface NotebookPaths {
  *   <dir>/<Title> files/Images/
  *   <dir>/<Title> files/Recordings/
  *   <dir>/<Title> files/Transcripts/
+ *   <dir>/<Title> files/AI chats/
  *   <dir>/<Title> files/Exports/
  */
 export function notebookPaths(
@@ -306,12 +308,13 @@ export function notebookPaths(
   const images = joinVaultPath(files, OWN_FOLDER_IMAGES);
   const audio = joinVaultPath(files, OWN_FOLDER_AUDIO);
   const transcripts = joinVaultPath(files, OWN_FOLDER_TRANSCRIPTS);
+  const chats = joinVaultPath(files, OWN_FOLDER_CHATS);
   const exports = joinVaultPath(files, OWN_FOLDER_EXPORTS);
   return {
     folder: parent,
     fileName: `${name}${suffix}`,
-    folders: [...(parent ? [parent] : []), files, images, audio, transcripts, exports],
-    attachments: { images, audio, transcripts, exports },
+    folders: [...(parent ? [parent] : []), files, images, audio, transcripts, chats, exports],
+    attachments: { images, audio, transcripts, chats, exports },
   };
 }
 
@@ -364,7 +367,7 @@ export function buildNewDocument(
     view: { scrollY: 0, width: geometry.width, scale: 1 },
     pages: [],
   };
-  // Its files folder's Images, Recordings, Transcripts and Exports, as if set in the note's settings.
+  // Its files folder's subfolders, as if set in the note's settings.
   if (attachments && Object.keys(attachments).length > 0) doc.folders = { ...attachments };
   if (choices.type === "single") {
     doc.pages.push(page("p1", geometry, paper));

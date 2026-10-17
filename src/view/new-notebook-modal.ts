@@ -27,6 +27,7 @@ import {
   type NotebookType,
   FILES_FOLDER_SUFFIX,
   OWN_FOLDER_AUDIO,
+  OWN_FOLDER_CHATS,
   OWN_FOLDER_EXPORTS,
   OWN_FOLDER_IMAGES,
   OWN_FOLDER_TRANSCRIPTS,
@@ -326,7 +327,7 @@ export class NewNotebookModal extends Modal {
     this.syncFolder();
 
     // A "<Title> files" folder beside the notebook, with its pictures,
-    // recordings, transcripts and exports in folders inside. The whole row
+    // recordings, transcripts, AI chats and exports in folders inside. The whole row
     // toggles: the switch alone is small.
     const own = section.createDiv({ cls: "goodobsidian-newnb-own-folder" });
     const text = own.createDiv({ cls: "goodobsidian-newnb-own-folder-text" });
@@ -411,7 +412,7 @@ export class NewNotebookModal extends Modal {
     const name = notebookBaseName(this.titleInput?.value ?? "", this.choices.type);
     this.ownFolderDesc?.setText(
       `A "${name}${FILES_FOLDER_SUFFIX}" folder beside it, with ${OWN_FOLDER_IMAGES}, ` +
-        `${OWN_FOLDER_AUDIO}, ${OWN_FOLDER_TRANSCRIPTS} and ${OWN_FOLDER_EXPORTS} inside.`,
+        `${OWN_FOLDER_AUDIO}, ${OWN_FOLDER_TRANSCRIPTS}, ${OWN_FOLDER_CHATS} and ${OWN_FOLDER_EXPORTS} inside.`,
     );
   }
 

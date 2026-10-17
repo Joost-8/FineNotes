@@ -13,7 +13,7 @@ extracted from the matching section of this file by `release.yml`.
 - **A notebook's files sit beside it, not around it.** With "Keep its files
   in a folder" on (New notebook and the importer), the notebook is saved in
   the folder you picked, and a "<Title> files" folder next to it holds its
-  Images, Recordings, Transcripts and Exports. Notebooks made before keep
+  Images, Recordings, Transcripts, AI chats and Exports. Notebooks made before keep
   their folders.
 
 ### Added
