@@ -98,6 +98,7 @@ export default defineConfig({
         "src/recognition/ask-chat-file.ts",
         "src/recognition/ask-session.ts",
         "src/recognition/ask-attachments.ts",
+        "src/recognition/ask-tools.ts",
         "src/recognition/ai-image.ts",
         "src/recognition/ai-menu-model.ts",
         "src/recognition/ai-placement.ts",

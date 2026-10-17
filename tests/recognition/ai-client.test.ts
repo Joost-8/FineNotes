@@ -7,12 +7,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
+import type { AskToolCall } from "../../src/recognition/ask-tools";
 
 vi.mock("obsidian", () => ({ requestUrl: vi.fn() }));
 
 const obsidian = await import("obsidian");
-const { askAi, sendVendorRequest, targetLabel, assertConfigured } =
+const { askAi, askAiWithTools, sendVendorRequest, targetLabel, assertConfigured } =
   await import("../../src/recognition/ai-client");
+const { ASK_MAX_TOOL_ROUNDS } = await import("../../src/recognition/ask-tools");
 const { ConnectionError } = await import("../../src/recognition/http");
 
 const requestUrl = vi.mocked(obsidian.requestUrl);
@@ -92,6 +94,133 @@ describe("askAi", () => {
   it("says so when there is no answer", async () => {
     answer = () => Promise.resolve(response(200, { choices: [] }));
     await expect(askAi(openai, "", question)).rejects.toThrow("OpenAI (GPT) returned no answer.");
+  });
+});
+
+describe("askAiWithTools", () => {
+  const thinking = { type: "thinking", thinking: "", signature: "sig-1" };
+  const readPages = { type: "tool_use", id: "t1", name: "read_pages", input: { pages: [3] } };
+  const page = { base64: "P3", mimeType: "image/png" as const };
+  const bodies = (): Array<Record<string, unknown>> =>
+    sent.map((s) => JSON.parse(s.body as string) as Record<string, unknown>);
+
+  it("runs Claude's tool calls and sends the results back, history unchanged, until it answers", async () => {
+    const replies = [
+      { content: [thinking, readPages], stop_reason: "tool_use" },
+      {
+        content: [
+          { type: "tool_use", id: "t2", name: "add_text_box", input: { page: 3, text: "Note" } },
+        ],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "Done: wrote it on page 3." }], stop_reason: "end_turn" },
+    ];
+    answer = () => Promise.resolve(response(200, replies.shift()));
+    const statuses: string[] = [];
+    const run = vi.fn((call: AskToolCall) =>
+      Promise.resolve(
+        call.tool === "read_pages"
+          ? { text: "Page 3 of 9.", images: [page] }
+          : { text: "Added.", done: "Added a text box on page 3" },
+      ),
+    );
+    const result = await askAiWithTools(anthropic, "sys", question, {
+      totalPages: () => 9,
+      run,
+      onStatus: (s) => statuses.push(s),
+    });
+    expect(result).toEqual({
+      text: "Done: wrote it on page 3.",
+      actions: ["Added a text box on page 3"],
+    });
+    expect(statuses).toEqual(["Reading page 3…", "Writing on page 3…"]);
+    const [first, second, third] = bodies();
+    // Same system and tools on every round; cached; messages only ever appended.
+    for (const body of [first, second, third]) {
+      expect(body.system).toBe("sys");
+      expect(body.tools).toEqual(bodies()[0].tools);
+      expect(body.cache_control).toEqual({ type: "ephemeral" });
+    }
+    expect((first.messages as unknown[]).length).toBe(1);
+    const m2 = second.messages as Array<{ role: string; content: unknown }>;
+    expect(m2[0]).toEqual((first.messages as unknown[])[0]);
+    // The reply goes back exactly as it came, its thinking included.
+    expect(m2[1]).toEqual({ role: "assistant", content: [thinking, readPages] });
+    expect(m2[2]).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "t1",
+          content: [
+            { type: "text", text: "Page 3 of 9." },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "P3" } },
+          ],
+        },
+      ],
+    });
+    expect((third.messages as unknown[]).slice(0, 3)).toEqual(m2);
+  });
+
+  it("answers a bad call with an error the model can fix, without running it", async () => {
+    const replies = [
+      {
+        content: [{ type: "tool_use", id: "t1", name: "go_to_page", input: { page: 40 } }],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "There is no page 40." }], stop_reason: "end_turn" },
+    ];
+    answer = () => Promise.resolve(response(200, replies.shift()));
+    const run = vi.fn();
+    await askAiWithTools(anthropic, "", question, {
+      totalPages: () => 9,
+      run,
+      onStatus: () => undefined,
+    });
+    expect(run).not.toHaveBeenCalled();
+    const results = (bodies()[1].messages as Array<{ content: unknown }>)[2].content;
+    expect(results).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "t1",
+        content: [{ type: "text", text: "There is no page 40: the notebook has 9 pages." }],
+        is_error: true,
+      },
+    ]);
+  });
+
+  it("makes Claude answer once the rounds run out", async () => {
+    answer = () => {
+      const last = sent.length > ASK_MAX_TOOL_ROUNDS;
+      return Promise.resolve(
+        response(
+          200,
+          last
+            ? { content: [{ type: "text", text: "With what I found: …" }], stop_reason: "end_turn" }
+            : {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: `t${sent.length}`,
+                    name: "go_to_page",
+                    input: { page: 1 },
+                  },
+                ],
+                stop_reason: "tool_use",
+              },
+        ),
+      );
+    };
+    const result = await askAiWithTools(anthropic, "", question, {
+      totalPages: () => 2,
+      run: () => Promise.resolve({ text: "ok", done: "Went to page 1" }),
+      onStatus: () => undefined,
+    });
+    expect(result.text).toBe("With what I found: …");
+    const all = bodies();
+    expect(all).toHaveLength(ASK_MAX_TOOL_ROUNDS + 1);
+    expect(all[ASK_MAX_TOOL_ROUNDS - 1].tool_choice).toBeUndefined();
+    expect(all[ASK_MAX_TOOL_ROUNDS].tool_choice).toEqual({ type: "none" });
   });
 });
 

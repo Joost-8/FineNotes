@@ -45,8 +45,15 @@ export interface AskSessionDeps {
   confirm: () => Promise<boolean>;
   /** Render these 1-based pages; pages with nothing on them are left out. */
   preparePages: (pageNumbers: readonly number[]) => Promise<AskPagesResult>;
-  /** Send the conversation; resolves to the answer's markdown. */
-  ask: (turns: readonly ChatTurn[]) => Promise<string>;
+  /**
+   * Send the conversation; resolves to the answer's markdown and what was
+   * done in the notebook on the way (Claude's tools). `onStatus` says what
+   * is happening meanwhile ("Reading page 3…").
+   */
+  ask: (
+    turns: readonly ChatTurn[],
+    onStatus: (status: string) => void,
+  ) => Promise<{ text: string; actions?: readonly string[] }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
   save: (chat: SavedChat, path: string | null) => Promise<string>;
   /** Remove a saved chat's file. */
@@ -257,12 +264,23 @@ export class AskSession {
         this.changed();
       }
       if (files.length) turn = { ...turn, files };
-      const answer = await this.deps.ask([...history, turn]);
+      const answer = await this.deps.ask([...history, turn], (status) => {
+        if (stale() || !this.outstanding || this.outstanding.error !== undefined) return;
+        this.outstanding = { ...this.outstanding, status };
+        this.changed();
+      });
       if (stale()) return;
+      const actions = answer.actions ?? [];
+      // An answer is never empty in the history: the API refuses an empty turn.
+      const said = answer.text.trim() || actions.join("\n") || "Done.";
       this.created ??= this.deps.now().toISOString();
       // Only a question that was answered joins the history, so a failed one
       // can simply be asked again.
-      this.turns = [...history, turn, { role: "assistant", text: answer }];
+      this.turns = [
+        ...history,
+        turn,
+        { role: "assistant", text: said, ...(actions.length ? { actions } : {}) },
+      ];
       this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;
       this.changed();

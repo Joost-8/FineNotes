@@ -22,9 +22,18 @@ import {
   describeLlmTarget,
   extractLlmErrorMessage,
   extractLlmText,
+  isRecord,
   isTruncatedLlmResponse,
 } from "./llm-request";
-import { type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
+import { type ChatImage, type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
+import {
+  ASK_MAX_TOOL_ROUNDS,
+  ASK_TOOLS,
+  type AskToolCall,
+  parseToolCall,
+  toolStatus,
+  toolUsesOf,
+} from "./ask-tools";
 import {
   DEFAULT_IMAGE_MODELS,
   type ImageAspect,
@@ -230,6 +239,130 @@ export async function askAi(
   }
   if (!text) throw new Error(`${label} returned no answer.`);
   return text;
+}
+
+// --- Ask, with the notebook's tools ----------------------------------------------
+
+/** What running one tool call gave back, for the model and for the chat. */
+export interface AskToolOutcome {
+  /** For the model: what happened, or what was found. */
+  text: string;
+  /** For the model: page images, for `read_pages`. */
+  images?: ChatImage[];
+  /** The call could not be done; `text` says why. */
+  isError?: boolean;
+  /** For the chat, once done: "Added a text box on page 3". */
+  done?: string;
+}
+
+/** An answer, and what Claude did in the notebook on the way to it. */
+export interface AskAnswer {
+  text: string;
+  actions: string[];
+}
+
+/**
+ * One answer from Claude with the notebook tools (`ask-tools.ts`): the
+ * question goes with the tools; while Claude asks for tool calls, each is
+ * run (`run`) and the results go back, until it answers in words, or after
+ * `ASK_MAX_TOOL_ROUNDS` rounds, when it is asked to answer with what it has.
+ *
+ * Append-only, as the API requires once a reply holds thinking: every round
+ * sends the same `system`, the same tools and the same history, with each
+ * reply passed back exactly as it came (its thinking and tool calls
+ * included) and the results after it.
+ */
+export async function askAiWithTools(
+  config: AiVendorConfig,
+  system: string,
+  turns: readonly ChatTurn[],
+  options: {
+    totalPages: () => number;
+    run: (call: AskToolCall) => Promise<AskToolOutcome>;
+    onStatus: (status: string) => void;
+  },
+): Promise<AskAnswer> {
+  assertConfigured(config);
+  const base = buildChatRequest({
+    vendor: config.vendor,
+    model: config.model.trim() || defaultModelFor(config.vendor),
+    apiKey: config.apiKey.trim(),
+    baseUrl: config.baseUrl,
+    system,
+    turns,
+    cache: true,
+  });
+  const baseBody = base.body as { messages: unknown[] };
+  const label = targetLabel(config);
+  const more: unknown[] = [];
+  const actions: string[] = [];
+  for (let round = 0; ; round++) {
+    const body = {
+      ...baseBody,
+      tools: ASK_TOOLS,
+      // Out of rounds: answer now, with what has been found.
+      ...(round >= ASK_MAX_TOOL_ROUNDS ? { tool_choice: { type: "none" } } : {}),
+      messages: [...baseBody.messages, ...more],
+    };
+    const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
+    const refusal = extractRefusal(config.vendor, json);
+    if (refusal) throw new Error(`${label}: ${refusal}.`);
+    const uses = toolUsesOf(json);
+    const stop = isRecord(json) ? json.stop_reason : undefined;
+    if (stop !== "tool_use" || uses.length === 0) {
+      const text = cleanTranscription(extractLlmText(config.vendor, json));
+      if (isTruncatedLlmResponse(config.vendor, json)) {
+        if (text) {
+          return {
+            text: `${text}\n\n*(The answer was cut off at ${MAX_OUTPUT_TOKENS} tokens.)*`,
+            actions,
+          };
+        }
+        throw new Error(
+          `${label} used up FineNotes's ${MAX_OUTPUT_TOKENS}-token output limit before ` +
+            "answering. Ask about fewer pages, or pick a model that does not spend its output " +
+            "budget on reasoning.",
+        );
+      }
+      if (!text && actions.length === 0) throw new Error(`${label} returned no answer.`);
+      return { text, actions };
+    }
+    more.push({ role: "assistant", content: (json as { content: unknown }).content });
+    const results: unknown[] = [];
+    for (const use of uses) {
+      const call = parseToolCall(use.name, use.input, options.totalPages());
+      let outcome: AskToolOutcome;
+      if ("error" in call) {
+        outcome = { text: call.error, isError: true };
+      } else {
+        options.onStatus(toolStatus(call));
+        try {
+          outcome = await options.run(call);
+        } catch (error) {
+          outcome = { text: `It failed: ${errorMessage(error)}`, isError: true };
+        }
+      }
+      if (outcome.done) actions.push(outcome.done);
+      results.push(toolResultBlock(use.id, outcome));
+    }
+    more.push({ role: "user", content: results });
+  }
+}
+
+/** A tool's outcome as the `tool_result` block that answers its `tool_use`. */
+function toolResultBlock(id: string, outcome: AskToolOutcome): unknown {
+  return {
+    type: "tool_result",
+    tool_use_id: id,
+    content: [
+      { type: "text", text: outcome.text },
+      ...(outcome.images ?? []).map((image) => ({
+        type: "image",
+        source: { type: "base64", media_type: image.mimeType, data: image.base64 },
+      })),
+    ],
+    ...(outcome.isError ? { is_error: true } : {}),
+  };
 }
 
 // --- Generate image ---------------------------------------------------------------

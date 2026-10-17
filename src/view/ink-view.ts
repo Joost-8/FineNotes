@@ -61,10 +61,23 @@ import {
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
 import { practiceFiles, writePracticePage } from "./handwriting-learning";
-import { type ChatImage, buildAskSystemPrompt } from "../recognition/ai-chat";
+import {
+  type ChatImage,
+  type ChatTurn,
+  buildAskSystemPrompt,
+  buildAskToolsPrompt,
+} from "../recognition/ai-chat";
+import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
-import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
+import {
+  type AskToolOutcome,
+  type GeneratedPicture,
+  askAi,
+  askAiWithTools,
+  generateImage,
+  targetLabel,
+} from "../recognition/ai-client";
 import { InkSurface } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
@@ -155,7 +168,9 @@ import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
 import {
+  type PageText,
   collectPageText,
+  searchPages,
   pageFromSubpath,
   pageInThisNotebook,
   folderNotebookSidecarPath,
@@ -1103,6 +1118,15 @@ export class InkView extends TextFileView {
         }
       },
       insert: (text) => this.insertAnswer(text),
+      insertDrawing: async (svg) => {
+        const bytes = new TextEncoder().encode(svg);
+        const placed = await this.insertImageBytes(
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          "image/svg+xml",
+          "Drawing.svg",
+        );
+        return placed !== null;
+      },
       notebookPdfs: () =>
         pdfsBehind(
           this.doc.pages.map((page) => page.backdrop),
@@ -1147,7 +1171,7 @@ export class InkView extends TextFileView {
             this.collectAskPages(
               numbers.map((n) => n - 1).filter((i) => i >= 0 && i < this.doc.pages.length),
             ),
-          ask: (turns) => askAi(this.plugin.textAiConfig(), buildAskSystemPrompt(), turns),
+          ask: (turns, onStatus) => this.askWithTools(turns, onStatus),
           save: (chat, path) => writeChat(this.app, chat, path, this.chatsFolder()),
           unsave: (path) => trashChat(this.app, path),
           readFile: (path) => readAttachment(this.app, path),
@@ -1161,6 +1185,139 @@ export class InkView extends TextFileView {
       if (session.empty) session.newChat(current);
     }
     return session;
+  }
+
+  /**
+   * Ask's answer: with Anthropic, Claude may use the notebook's tools on the
+   * way (`askAiWithTools`); the other vendors answer from what was sent.
+   */
+  private askWithTools(
+    turns: readonly ChatTurn[],
+    onStatus: (status: string) => void,
+  ): Promise<{ text: string; actions?: readonly string[] }> {
+    const config = this.plugin.textAiConfig();
+    const system = buildAskSystemPrompt();
+    if (config.vendor !== "anthropic") {
+      return askAi(config, system, turns).then((text) => ({ text }));
+    }
+    return askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
+      totalPages: () => this.doc.pages.length,
+      run: (call) => this.runAskTool(call),
+      onStatus,
+    });
+  }
+
+  /** Run one of Claude's notebook tools (`ask-tools.ts`). */
+  private async runAskTool(call: AskToolCall): Promise<AskToolOutcome> {
+    const surface = this.surface;
+    const editRefused = (): AskToolOutcome | null =>
+      !surface || this.isProtected()
+        ? { text: "The notebook cannot be changed right now.", isError: true }
+        : null;
+    switch (call.tool) {
+      case "read_pages": {
+        const pages = await this.collectAskPages(call.pages.map((n) => n - 1));
+        if (pages.images.length === 0) return { text: "Those pages are empty." };
+        const which = pages.pageNumbers.join(", ");
+        return {
+          text: `Page${pages.pageNumbers.length === 1 ? "" : "s"} ${which} of ${pages.totalPages}, in that order.`,
+          images: pages.images,
+        };
+      }
+      case "search_notebook": {
+        const hits = searchPages(await this.notebookTextIndex(), call.query);
+        return {
+          text: searchResultText(
+            call.query,
+            hits.map((hit) => ({
+              page: hit.pageIndex + 1,
+              snippets: hit.snippets.map((s) => `${s.before}${s.match}${s.after}`),
+            })),
+          ),
+        };
+      }
+      case "add_text_box": {
+        const refused = editRefused();
+        if (refused || !surface) return refused ?? { text: "", isError: true };
+        const index = call.page - 1;
+        const page = surface.document.pages[index];
+        if (!page) return { text: `There is no page ${call.page}.`, isError: true };
+        const frame = textBoxFrame(page.geometry, null);
+        surface.applyCommand(
+          new AddTextBoxToPage(page.id, {
+            id: nextElementId(surface.document, "t"),
+            x: frame.x,
+            y: frame.y,
+            w: frame.w,
+            text: call.text,
+            color: "#1a1a1a",
+            fontSize: 22,
+          }),
+        );
+        this.requestSave();
+        return {
+          text: `Added the text box near the top of page ${call.page}.`,
+          done: `Added a text box on page ${call.page}`,
+        };
+      }
+      case "add_page": {
+        const refused = editRefused();
+        if (refused) return refused;
+        if (this.isSinglePage) {
+          return { text: "This note is a single page; it cannot have more.", isError: true };
+        }
+        const before = this.doc.pages.length;
+        this.addPage(call.after - 1, true);
+        if (this.doc.pages.length === before) return { text: "No page was added.", isError: true };
+        return {
+          text: `Added page ${call.after + 1} after page ${call.after}. Pages after it moved up by one.`,
+          done: `Added page ${call.after + 1}`,
+        };
+      }
+      case "go_to_page":
+        surface?.goToPage(call.page - 1, true);
+        return { text: `Showing page ${call.page}.`, done: `Went to page ${call.page}` };
+      case "insert_drawing": {
+        const refused = editRefused();
+        if (refused) return refused;
+        const bytes = new TextEncoder().encode(call.svg);
+        const placed = await this.insertImageBytes(
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          "image/svg+xml",
+          `${call.title}.svg`,
+          { pageIndex: call.page - 1, select: false },
+        );
+        if (!placed) return { text: "The drawing could not be placed.", isError: true };
+        return {
+          text: `Placed the drawing on page ${call.page}, saved as ${placed.path}.`,
+          done: `Drew on page ${call.page}`,
+        };
+      }
+    }
+  }
+
+  /**
+   * The notebook's text, page by page, for searching: its text boxes, the
+   * note's text layer, and the transcript sidecar, beside the note first
+   * (where the server keeps one) and then in the notebook's Transcripts.
+   */
+  private async notebookTextIndex(): Promise<PageText[]> {
+    const note = this.file;
+    let sidecar: string | null = null;
+    const sidecarFile = note
+      ? ([transcriptSidecarPath(note.path), folderNotebookSidecarPath(note.path)]
+          .map((path) => (path ? this.app.vault.getFileByPath(path) : null))
+          .find((file) => file !== null) ?? null)
+      : null;
+    if (sidecarFile) {
+      try {
+        sidecar = await this.app.vault.cachedRead(sidecarFile);
+      } catch {
+        // Not synced yet or unreadable: search what the note itself holds.
+      }
+    }
+    const doc = this.surface?.document ?? this.doc;
+    return collectPageText(doc.pages, readTextSection(this.noteBody), sidecar);
   }
 
   /**
@@ -1955,25 +2112,10 @@ export class InkView extends TextFileView {
    * turns to its page. Read-only, so a protected note may be searched too.
    */
   async openSearch(): Promise<void> {
-    const note = this.file;
-    if (!note || !this.surface) return;
-    // Beside the note first (where the server keeps a sidecar it already
-    // has), then in the Transcripts of the notebook's own folder.
-    const sidecarFile =
-      [transcriptSidecarPath(note.path), folderNotebookSidecarPath(note.path)]
-        .map((path) => (path ? this.app.vault.getFileByPath(path) : null))
-        .find((file) => file !== null) ?? null;
-    let sidecar: string | null = null;
-    if (sidecarFile) {
-      try {
-        sidecar = await this.app.vault.cachedRead(sidecarFile);
-      } catch {
-        // Not synced yet or unreadable: search what the note itself holds.
-      }
-    }
-    const doc = this.surface?.document ?? this.doc;
+    if (!this.file || !this.surface) return;
+    const pages = await this.notebookTextIndex();
     new NotebookSearchModal(this.app, {
-      index: collectPageText(doc.pages, readTextSection(this.noteBody), sidecar),
+      index: pages,
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index) => this.surface?.goToPage(index, true),

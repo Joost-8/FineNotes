@@ -51,6 +51,7 @@ import {
   sizeLabel,
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
+import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { keyboardHeight } from "./keyboard";
@@ -70,6 +71,8 @@ export interface AskAiHost {
   paintThumbnail: (canvas: HTMLCanvasElement, page: number, cssWidth: number) => Promise<void>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
+  /** Place an SVG drawing from an answer on the page being read. */
+  insertDrawing: (svg: string) => Promise<boolean>;
   /** The notebook's own PDFs, each with the 1-based pages printed on it. */
   notebookPdfs: () => PdfBehind[];
   /** This notebook's saved chats, newest first. */
@@ -720,7 +723,7 @@ export class AskChat {
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
       if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
-      else lastAnswer = this.answerRow(thread, texts[i]);
+      else lastAnswer = this.answerRow(thread, texts[i], turn.actions);
     }
     this.shownTexts = texts;
 
@@ -817,11 +820,26 @@ export class AskChat {
     retry.addEventListener("click", () => this.submit(question));
   }
 
-  private answerRow(parent: HTMLElement, markdown: string): HTMLElement {
+  private answerRow(parent: HTMLElement, markdown: string, done?: readonly string[]): HTMLElement {
     const { row, body } = this.aiRow(parent);
+    // What Claude did in the notebook on the way to the answer.
+    if (done?.length) {
+      const list = body.createDiv({ cls: "goodobsidian-chat-done" });
+      for (const action of done) {
+        const item = list.createDiv({ cls: "goodobsidian-chat-done-item" });
+        setIcon(item.createSpan(), "check");
+        item.createSpan({ text: action });
+      }
+    }
     const text = body.createDiv({ cls: "goodobsidian-chat-markdown markdown-rendered" });
     if (this.component) {
-      void MarkdownRenderer.render(this.app, markdown, text, this.host.sourcePath, this.component);
+      void MarkdownRenderer.render(
+        this.app,
+        markdown,
+        text,
+        this.host.sourcePath,
+        this.component,
+      ).then(() => this.showDrawings(text));
     } else {
       text.setText(markdown);
     }
@@ -846,6 +864,38 @@ export class AskChat {
       }
     });
     return row;
+  }
+
+  /**
+   * An answer's ```svg code blocks, drawn as pictures with an "Insert on
+   * page" button. Drawn through an `<img>`, so nothing in the SVG runs.
+   */
+  private showDrawings(container: HTMLElement): void {
+    for (const code of Array.from(container.querySelectorAll<HTMLElement>("pre > code"))) {
+      if (!/\blanguage-svg\b/.test(code.className)) continue;
+      const svg = code.textContent?.trim() ?? "";
+      const pre = code.parentElement;
+      if (!pre?.parentElement || !/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(svg)) continue;
+      const figure = pre.parentElement.createDiv({ cls: "goodobsidian-chat-figure" });
+      pre.replaceWith(figure);
+      figure.createEl("img", {
+        cls: "goodobsidian-chat-figure-img",
+        attr: {
+          alt: "A drawing",
+          src: `data:image/svg+xml;base64,${bytesToBase64(new TextEncoder().encode(svg))}`,
+        },
+      });
+      const insert = figure.createEl("button", {
+        cls: "goodobsidian-chat-action clickable-icon",
+      });
+      setIcon(insert.createSpan(), "image-plus");
+      insert.createSpan({ text: "Insert on page" });
+      insert.addEventListener("click", () => {
+        void this.host.insertDrawing(svg).then((placed) => {
+          if (placed) new Notice("Drawing added to the page. Undo removes it.");
+        });
+      });
+    }
   }
 
   /** The saved chats of this notebook, as a menu; picking one continues it. */

@@ -35,7 +35,7 @@ function setup(over: Partial<AskSessionDeps> = {}) {
     ),
     ask: (turns) => {
       asked.push([...turns]);
-      return Promise.resolve(`answer ${asked.length}`);
+      return Promise.resolve({ text: `answer ${asked.length}` });
     },
     save: (chat, path) => {
       saved.push({ chat, path });
@@ -203,9 +203,34 @@ describe("AskSession files", () => {
   });
 });
 
+describe("AskSession tools", () => {
+  it("shows what the tools are doing, and keeps what they did with the answer", async () => {
+    const seen: string[] = [];
+    const holder: { session?: AskSession } = {};
+    const { deps, asked } = setup({
+      ask: (turns, onStatus) => {
+        asked.push([...turns]);
+        onStatus("Reading page 5…");
+        seen.push(holder.session?.outstanding?.status ?? "");
+        return Promise.resolve({ text: "", actions: ["Added a text box on page 5"] });
+      },
+    });
+    const session = open(deps);
+    holder.session = session;
+    await session.send("Write a summary on page 5");
+    expect(seen).toEqual(["Reading page 5…"]);
+    // An answer that is only actions still has words in the history.
+    expect(session.turns[1]).toEqual({
+      role: "assistant",
+      text: "Added a text box on page 5",
+      actions: ["Added a text box on page 5"],
+    });
+  });
+});
+
 describe("AskSession conversation", () => {
   it("shows the question while it waits, and reports a failure without keeping it", async () => {
-    const answer = deferred<string>();
+    const answer = deferred<{ text: string }>();
     const { deps } = setup({ ask: () => answer.promise });
     const session = open(deps);
     const changes = vi.fn();
@@ -270,14 +295,14 @@ describe("AskSession conversation", () => {
   });
 
   it("refuses a new chat while busy, and starts the next on the given page", async () => {
-    const answer = deferred<string>();
+    const answer = deferred<{ text: string }>();
     const { deps } = setup({ ask: () => answer.promise });
     const session = open(deps);
     const sent = session.send("Old");
     await Promise.resolve();
     session.newChat(6);
     expect(session.outstanding?.question).toBe("Old");
-    answer.resolve("late");
+    answer.resolve({ text: "late" });
     await sent;
     session.newChat(6);
     expect(session.turns).toEqual([]);

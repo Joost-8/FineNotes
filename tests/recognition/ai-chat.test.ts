@@ -357,6 +357,23 @@ describe("the first question", () => {
 });
 
 describe("markdownToPlainText", () => {
+  it("leaves drawings out of a text box, and keeps other code", () => {
+    const md = [
+      "A sketch:",
+      "```svg",
+      "<svg><circle/></svg>",
+      "```",
+      "```mermaid",
+      "graph TD; A-->B",
+      "```",
+      "```python",
+      "print(1)",
+      "```",
+      "Done.",
+    ].join("\n");
+    expect(markdownToPlainText(md)).toBe("A sketch:\nprint(1)\nDone.");
+  });
+
   it("drops markdown syntax but keeps structure", () => {
     const md = [
       "## Summary",

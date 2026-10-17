@@ -59,6 +59,8 @@ export interface ChatTurn {
   shown?: string;
   /** 1-based: the pages `images` show, on a question that sent some. Never sent. */
   pages?: readonly number[];
+  /** On an answer: what Claude did in the notebook to give it. Shown; never sent. */
+  actions?: readonly string[];
 }
 
 /** A conversation for one vendor. A transcription is one of these, one question long. */
@@ -270,6 +272,18 @@ export function buildAskSystemPrompt(): string {
     "Answer from what the pages show; when you add something the pages do not say, say so.",
     "Answer in the language of the question, in concise markdown. Use $...$ LaTeX for mathematics.",
     "Refer to pages by the numbers you are given.",
+    "To draw something (a graph, a diagram, geometry, a labelled sketch), write a complete SVG document in a ```svg code block: it is shown as a picture the user can put on a page. Mermaid code blocks are drawn too.",
+  ].join("\n");
+}
+
+/**
+ * Added to the system prompt when Claude has the notebook's tools
+ * (`ask-tools.ts`): when to use them, and when not to.
+ */
+export function buildAskToolsPrompt(): string {
+  return [
+    "You can use tools on the user's notebook: read other pages, search its text, add a text box or a page, go to a page, and put a drawing on a page.",
+    "Read or search when the question needs pages you were not given. Change the notebook (text boxes, pages, drawings) only when the user asks for it, and say what you did.",
   ].join("\n");
 }
 
@@ -304,8 +318,15 @@ export function buildAskFirstTurn(
  */
 export function markdownToPlainText(markdown: string): string {
   const out: string[] = [];
+  // Inside a drawing (```svg, ```mermaid): its code is a picture, not text.
+  let drawing = false;
   for (const raw of markdown.replace(/\r\n?/g, "\n").split("\n")) {
-    if (/^\s*(```|~~~)/.test(raw)) continue;
+    const fence = /^\s*(```|~~~)\s*([\w-]*)/.exec(raw);
+    if (fence) {
+      drawing = !drawing && /^(svg|mermaid)$/i.test(fence[2]);
+      continue;
+    }
+    if (drawing) continue;
     // A thematic break (--- / *** / ___) is decoration, not content.
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw)) {
       out.push("");
