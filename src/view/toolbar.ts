@@ -3048,8 +3048,17 @@ export class Toolbar {
   setThumbnailsOpen(open: boolean, width: number): void {
     this.thumbnailsButton?.toggleClass("is-active", open);
     this.thumbnailsButton?.setAttribute("aria-pressed", String(open));
+    this.setLeftInset(open ? width : 0);
+  }
+
+  /**
+   * Keep the pill right of whatever panel holds the left of the page: the
+   * page sidebar, or the Ask chat in its sidebar.
+   */
+  setLeftInset(width: number): void {
+    if (width === this.leftInset) return;
     const before = this.pillBox();
-    this.leftInset = open ? width : 0;
+    this.leftInset = width;
     this.applyPosition();
     // The pill moves with the page as the panel slides, not ahead of it.
     this.morphPill(before, PANEL_SLIDE_MS, false);

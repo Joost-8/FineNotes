@@ -124,6 +124,8 @@ export interface GoodObsidianSettings {
   imageAspect: ImageAspect;
   /** "Save chat" as last left in Ask AI: new chats start saved to the notebook's AI chats folder. */
   askSaveChats: boolean;
+  /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
+  askLayout: "window" | "sidebar";
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -256,6 +258,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageModel: "",
   imageAspect: "square",
   askSaveChats: false,
+  askLayout: "window",
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,

@@ -19,6 +19,11 @@
  * keyboard is up, `--goodobsidian-keyboard-room` holds the height left above
  * it, for the dialog's CSS to shrink to, so the whole dialog rises into view
  * instead of only its lower part.
+ *
+ * A panel that cannot move (the Ask sidebar, which fills the notebook's
+ * height) passes `pad` instead: nothing is lifted, and while the keyboard
+ * covers the panel's foot, `--goodobsidian-keyboard-pad` holds how much it
+ * covers, for the panel's CSS to pad its foot by.
  */
 
 import { keyboardHeight } from "./keyboard";
@@ -45,12 +50,14 @@ export class DialogKeyboard {
 
   /** The room last written to `--goodobsidian-keyboard-room`, px; 0 while unset. */
   private room = 0;
+  /** The pad last written to `--goodobsidian-keyboard-pad`, px; 0 while unset. */
+  private pad = 0;
 
   constructor(
     private readonly modalEl: HTMLElement,
-    private readonly options: { fit?: boolean } = {},
+    private readonly options: { fit?: boolean; pad?: boolean } = {},
   ) {
-    modalEl.addClass("goodobsidian-keyboard-lift");
+    if (!options.pad) modalEl.addClass("goodobsidian-keyboard-lift");
   }
 
   /**
@@ -101,6 +108,7 @@ export class DialogKeyboard {
     this.followTimer = 0;
     this.setLift(0);
     this.setRoom(0);
+    this.setPad(0);
     this.releaseCap();
   }
 
@@ -117,6 +125,14 @@ export class DialogKeyboard {
     if (keyboard === 0) {
       this.setLift(0);
       this.setRoom(0);
+      this.setPad(0);
+      return;
+    }
+    if (this.options.pad) {
+      // The panel's own bottom does not move with its padding, so this reads
+      // the same on every poll.
+      const covered = this.modalEl.getBoundingClientRect().bottom - (window.innerHeight - keyboard);
+      this.setPad(covered > 0 ? covered + KEYBOARD_GAP_PX : 0);
       return;
     }
     // Shrink first, then measure: reading the boxes below lays out the
@@ -158,6 +174,15 @@ export class DialogKeyboard {
     this.room = next;
     if (next === 0) this.modalEl.style.removeProperty("--goodobsidian-keyboard-room");
     else this.modalEl.setCssProps({ "--goodobsidian-keyboard-room": `${next}px` });
+  }
+
+  /** How much of a `pad` panel's foot the keyboard covers; 0 lets it have its height again. */
+  private setPad(px: number): void {
+    const next = Math.max(0, Math.round(px));
+    if (next === this.pad) return;
+    this.pad = next;
+    if (next === 0) this.modalEl.style.removeProperty("--goodobsidian-keyboard-pad");
+    else this.modalEl.setCssProps({ "--goodobsidian-keyboard-pad": `${next}px` });
   }
 
   /** Undo the window scrolling iPadOS does to "reveal" a field, while the keyboard comes up. */

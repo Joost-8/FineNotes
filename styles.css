@@ -4212,7 +4212,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 /* The page chip, top left: a thumbnail of the first page picked (a second
    card behind it when there are more), what is picked, and a chevron. */
-.goodobsidian-ask-modal button.goodobsidian-chat-pages.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-pages.clickable-icon {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -4227,8 +4227,8 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-weight: var(--font-semibold, 600);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-pages.clickable-icon:hover,
-.goodobsidian-ask-modal button.goodobsidian-chat-pages[aria-expanded="true"] {
+.goodobsidian-ask-frame button.goodobsidian-chat-pages.clickable-icon:hover,
+.goodobsidian-ask-frame button.goodobsidian-chat-pages[aria-expanded="true"] {
   border-color: hsla(var(--interactive-accent-hsl), 0.6);
   background: var(--gob-card-bg);
 }
@@ -4284,7 +4284,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 }
 
 /* The picker takes the thread's place while it is open. */
-.goodobsidian-ask-modal.is-picking .goodobsidian-chat-thread {
+.goodobsidian-chat.is-picking .goodobsidian-chat-thread {
   display: none;
 }
 
@@ -4341,7 +4341,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-weight: normal;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-picker-link.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-picker-link.clickable-icon {
   width: auto;
   height: 36px;
   padding: 0 10px;
@@ -4349,7 +4349,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-ask-modal .goodobsidian-chat-picker-head button.mod-cta.clickable-icon {
+.goodobsidian-ask-frame .goodobsidian-chat-picker-head button.mod-cta.clickable-icon {
   width: auto;
   height: 36px;
   padding: 0 16px;
@@ -4371,7 +4371,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   overscroll-behavior: contain;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-tile.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-tile.clickable-icon {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -4470,7 +4470,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 }
 
 /* Nothing on it, or past the limit: still visible, not pickable. */
-.goodobsidian-ask-modal button.goodobsidian-chat-tile.clickable-icon:disabled {
+.goodobsidian-ask-frame button.goodobsidian-chat-tile.clickable-icon:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -4514,7 +4514,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   margin-left: auto;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-tool.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-tool.clickable-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4526,12 +4526,12 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-tool.is-active {
+.goodobsidian-ask-frame button.goodobsidian-chat-tool.is-active {
   background: var(--gob-accent-tint);
   color: var(--interactive-accent);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-tool.is-hidden {
+.goodobsidian-ask-frame button.goodobsidian-chat-tool.is-hidden {
   display: none;
 }
 
@@ -4612,7 +4612,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   max-width: 480px;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-suggestion.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-suggestion.clickable-icon {
   width: auto;
   min-height: var(--gob-touch-compact);
   padding: 0 14px;
@@ -4624,7 +4624,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   white-space: normal;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-suggestion.clickable-icon:hover {
+.goodobsidian-ask-frame button.goodobsidian-chat-suggestion.clickable-icon:hover {
   background: var(--background-modifier-hover);
 }
 
@@ -4744,7 +4744,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   margin: 6px 0 0 -8px;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-action.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-action.clickable-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4780,7 +4780,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   gap: 4px;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-attach.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-attach.clickable-icon {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
@@ -4851,7 +4851,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-size: var(--font-ui-smaller);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-file-remove.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-file-remove.clickable-icon {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
@@ -4898,7 +4898,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   -webkit-overflow-scrolling: touch;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-pdf.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-pdf.clickable-icon {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -4974,7 +4974,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   color: var(--text-on-accent);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-pdf.clickable-icon:disabled {
+.goodobsidian-ask-frame button.goodobsidian-chat-pdf.clickable-icon:disabled {
   opacity: 0.7;
   cursor: default;
 }
@@ -5013,7 +5013,7 @@ textarea.goodobsidian-chat-input:focus-visible {
   box-shadow: none;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon {
+.goodobsidian-ask-frame button.goodobsidian-chat-send.clickable-icon {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -5026,22 +5026,81 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--text-on-accent);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon:hover {
+.goodobsidian-ask-frame button.goodobsidian-chat-send.clickable-icon:hover {
   background: var(--interactive-accent-hover);
   color: var(--text-on-accent);
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon:disabled {
+.goodobsidian-ask-frame button.goodobsidian-chat-send.clickable-icon:disabled {
   background: var(--gob-well-strong);
   color: var(--text-faint);
   opacity: 1;
   cursor: default;
 }
 
-.goodobsidian-ask-modal button.goodobsidian-chat-send svg {
+.goodobsidian-ask-frame button.goodobsidian-chat-send svg {
   width: 20px;
   height: 20px;
   stroke-width: 2.4px;
+}
+
+/* Ask in its sidebar, beside the page (AskChatPanel, ask-ai-modal.ts): the
+   same chat as the window, in a column between the page sidebar and the page.
+   While the iPad keyboard covers its foot, `--goodobsidian-keyboard-pad`
+   (DialogKeyboard `pad`) lifts the field above it. */
+.goodobsidian-chatpanel {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: 50%;
+  min-height: 0;
+  padding-bottom: var(--goodobsidian-keyboard-pad, 0px);
+  border-right: 1px solid var(--gob-line);
+  background: var(--gob-side-bg);
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-chatpanel.is-hidden {
+  display: none;
+}
+
+.goodobsidian-chatpanel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 10px 8px 4px 16px;
+}
+
+.goodobsidian-chatpanel-title {
+  margin-right: auto;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-ask-frame button.goodobsidian-chatpanel-close.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.goodobsidian-chatpanel-body.goodobsidian-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+/* The narrow column keeps the tools to their icons. */
+.goodobsidian-chatpanel .goodobsidian-chat-tool-label,
+.goodobsidian-chat-layout .goodobsidian-chat-tool-label {
+  display: none;
 }
 
 /* A phone draws the dialog as a sheet from the bottom edge, full width. */

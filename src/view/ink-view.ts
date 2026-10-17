@@ -95,7 +95,7 @@ import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
-import { AskAiModal } from "./ask-ai-modal";
+import { type AskAiHost, AskAiModal, AskChatPanel } from "./ask-ai-modal";
 import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
 import {
   type FileKind,
@@ -334,6 +334,8 @@ export class InkView extends TextFileView {
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
+  /** Ask in its sidebar, beside the page (the other layout is a window). */
+  private chatPanel: AskChatPanel | null = null;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
   /** Recording, replay and audio transcription (0.5); see note-audio.ts. */
   private audio: NoteAudio | null = null;
@@ -577,6 +579,7 @@ export class InkView extends TextFileView {
    */
   override async onUnloadFile(file: TFile): Promise<void> {
     // The conversation was about this notebook's pages.
+    this.chatPanel?.close();
     this.askSession = null;
     if (await this.audio?.finishForUnload()) {
       this.encoder.touchAll();
@@ -657,6 +660,8 @@ export class InkView extends TextFileView {
     this.toolbar?.destroy();
     this.toolbar = null;
     this.sidebar?.destroy();
+    this.chatPanel?.destroy();
+    this.chatPanel = null;
     this.sidebar = null;
     this.morePanel?.close();
     this.morePanel = null;
@@ -1034,10 +1039,49 @@ export class InkView extends TextFileView {
     return this.file ? stripInkSuffix(this.file.basename) : "";
   }
 
+  /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
     if (this.isProtected()) return;
+    if (this.settings.askLayout === "sidebar" && this.chatPanel) {
+      this.setChatPanel(true);
+      return;
+    }
+    new AskAiModal(this.app, this.askHost(), () => {
+      this.setAskLayout("sidebar");
+      this.setChatPanel(true);
+    }).open();
+  }
+
+  private setAskLayout(layout: "window" | "sidebar"): void {
+    if (this.settings.askLayout === layout) return;
+    this.settings.askLayout = layout;
+    void this.plugin.saveSettings();
+  }
+
+  /**
+   * Open or close the Ask sidebar. It takes the left of the page, as the page
+   * sidebar does, so opening it closes that one; the page glides aside as
+   * it does for the page sidebar.
+   */
+  private setChatPanel(open: boolean): void {
+    const panel = this.chatPanel;
+    if (!panel || panel.isOpen === open) return;
+    const before = this.surface?.pageClientRect() ?? null;
+    if (open) {
+      if (this.sidebar?.isOpen) this.sidebar.setOpen(false);
+      panel.open();
+    } else {
+      panel.close();
+    }
+    this.syncSidebarInset();
+    this.surface?.layout();
+    if (before) this.surface?.glideFrom(before, PANEL_SLIDE_MS);
+  }
+
+  /** What the chat needs from this notebook, in either layout. */
+  private askHost(): AskAiHost {
     const session = this.askConversation();
-    new AskAiModal(this.app, {
+    return {
       session,
       sourcePath: this.file?.path ?? "",
       target: targetLabel(this.plugin.textAiConfig()),
@@ -1078,7 +1122,7 @@ export class InkView extends TextFileView {
         this.settings.askSaveChats = save;
         void this.plugin.saveSettings();
       },
-    }).open();
+    };
   }
 
   /**
@@ -1509,6 +1553,16 @@ export class InkView extends TextFileView {
     );
     this.sidebar.setFileKind(lastFileKind);
     this.sidebar.setDocument(this.doc);
+    // Between the page sidebar and the page, which it pushes aside.
+    this.chatPanel = new AskChatPanel(this.app, body, {
+      host: () => this.askHost(),
+      onClose: () => this.setChatPanel(false),
+      switchLayout: () => {
+        this.setChatPanel(false);
+        this.setAskLayout("window");
+        this.openAsk();
+      },
+    });
 
     this.surface = new InkSurface(
       body,
@@ -2189,6 +2243,8 @@ export class InkView extends TextFileView {
     if (!this.sidebar) return;
     // Where the page is now, so it can glide from there to its new place.
     const before = this.surface?.pageClientRect() ?? null;
+    // The pages take the left of the page from the Ask sidebar.
+    if (!this.sidebar.isOpen) this.chatPanel?.close();
     const open = this.sidebar.toggle(true);
     if (open) this.sidebar.setCurrentPage(this.surface?.currentPage ?? 0);
     this.syncSidebarInset();
@@ -2204,6 +2260,7 @@ export class InkView extends TextFileView {
   private syncSidebarInset(): void {
     const open = this.sidebar?.isOpen ?? false;
     this.toolbar?.setThumbnailsOpen(open, open ? (this.sidebar?.el.offsetWidth ?? 0) : 0);
+    if (this.chatPanel?.isOpen) this.toolbar?.setLeftInset(this.chatPanel.el.offsetWidth);
   }
 
   private sidebarRendering(painter: VaultBackdropRenderer): PageSidebarRenderOptions {

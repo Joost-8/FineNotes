@@ -101,11 +101,15 @@ const INPUT_MAX_PX = 160;
 const GRID_THUMB_PX = 96;
 const CHIP_THUMB_PX = 26;
 
-export class AskAiModal extends Modal {
+/**
+ * The chat itself, drawn into a frame: a window (`AskAiModal`) or the
+ * sidebar beside the page (`AskChatPanel`). Both show the same `AskSession`,
+ * so switching between them keeps the chat and the draft.
+ */
+export class AskChat {
   private readonly session: AskSession;
   /** Owns the markdown render children of every answer; unloaded on close. */
   private component: Component | null = null;
-  private keyboard: DialogKeyboard | null = null;
   private unsubscribe: (() => void) | null = null;
 
   private threadEl: HTMLElement | null = null;
@@ -141,21 +145,22 @@ export class AskAiModal extends Modal {
   /** Whether the empty thread's suggestions are for one page. */
   private emptyForOne: boolean | null = null;
 
+  private readonly keyboard: DialogKeyboard;
+
   constructor(
-    app: App,
+    private readonly app: App,
     private readonly host: AskAiHost,
+    private readonly frame: AskChatFrame,
   ) {
-    super(app);
     this.session = host.session;
+    this.keyboard = frame.keyboard;
   }
 
-  override onOpen(): void {
+  /** Build the chat into the frame. */
+  mount(): void {
     this.component = new Component();
     this.component.load();
-    this.modalEl.addClass("goodobsidian-ask-modal", "goodobsidian-dialog");
-    this.keyboard = new DialogKeyboard(this.modalEl, { fit: true });
-    this.titleEl.setText("Ask");
-    const { contentEl } = this;
+    const contentEl = this.frame.content;
     contentEl.empty();
     contentEl.addClass("goodobsidian-chat");
 
@@ -172,6 +177,14 @@ export class AskAiModal extends Modal {
     this.chatsButton = this.toolButton(tools, "history", "Chats", (event) => {
       void this.showChats(event);
     });
+    const other = this.frame.layout === "window" ? "sidebar" : "window";
+    this.toolButton(
+      tools,
+      other === "sidebar" ? "panel-left" : "app-window",
+      other === "sidebar" ? "Show in the sidebar" : "Show as a window",
+      () => this.frame.switchLayout(),
+      "goodobsidian-chat-layout",
+    );
     this.newChatButton = this.toolButton(tools, "square-pen", "New chat", () => {
       this.closePicker();
       this.session.newChat(this.host.currentPage());
@@ -228,14 +241,14 @@ export class AskAiModal extends Modal {
     window.setTimeout(() => this.input?.focus(), 0);
   }
 
-  override onClose(): void {
+  /** Take the chat down; the session, and so the chat and the draft, live on. */
+  destroy(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
-    this.keyboard?.end();
-    this.keyboard = null;
+    this.keyboard.end();
     this.component?.unload();
     this.component = null;
-    this.contentEl.empty();
+    this.frame.content.empty();
   }
 
   private toolButton(
@@ -243,9 +256,10 @@ export class AskAiModal extends Modal {
     icon: string,
     label: string,
     onClick: (event: MouseEvent) => void,
+    cls = "",
   ): HTMLButtonElement {
     const button = parent.createEl("button", {
-      cls: "goodobsidian-chat-tool clickable-icon",
+      cls: `goodobsidian-chat-tool clickable-icon ${cls}`.trim(),
       attr: { "aria-label": label },
     });
     setIcon(button.createSpan({ cls: "goodobsidian-chat-tool-icon" }), icon);
@@ -327,7 +341,7 @@ export class AskAiModal extends Modal {
     this.input?.blur();
     picker.removeClass("is-hidden");
     this.pagesButton?.setAttribute("aria-expanded", "true");
-    this.modalEl.addClass("is-picking");
+    this.frame.content.addClass("is-picking");
     // Bring the page being read into view (by scrolling the grid itself, as
     // `scrollToEnd` does the thread), then paint the thumbnails.
     const tile = this.tiles.get(this.host.currentPage());
@@ -343,7 +357,7 @@ export class AskAiModal extends Modal {
     if (!this.pickerEl || this.pickerEl.hasClass("is-hidden")) return;
     this.pickerEl.addClass("is-hidden");
     this.pagesButton?.setAttribute("aria-expanded", "false");
-    this.modalEl.removeClass("is-picking");
+    this.frame.content.removeClass("is-picking");
   }
 
   /** Paint every tile, the page being read and its neighbours first, one at a time. */
@@ -822,6 +836,128 @@ function shortDate(iso: string): string {
     month: "short",
     ...(sameYear ? {} : { year: "numeric" }),
   });
+}
+
+/** Where the chat is shown: a window over the notebook, or a sidebar beside the page. */
+export type AskLayout = "window" | "sidebar";
+
+/** The frame an `AskChat` is drawn in, and what it can ask of it. */
+export interface AskChatFrame {
+  /** The window or the panel; carries `goodobsidian-ask-frame`. */
+  el: HTMLElement;
+  /** Where the chat's own elements go. */
+  content: HTMLElement;
+  keyboard: DialogKeyboard;
+  layout: AskLayout;
+  /** Show the same chat in the other layout. */
+  switchLayout: () => void;
+}
+
+/** The chat as a window over the notebook. */
+export class AskAiModal extends Modal {
+  private chat: AskChat | null = null;
+
+  constructor(
+    app: App,
+    private readonly host: AskAiHost,
+    private readonly switchLayout: () => void,
+  ) {
+    super(app);
+  }
+
+  override onOpen(): void {
+    this.modalEl.addClass(
+      "goodobsidian-ask-modal",
+      "goodobsidian-dialog",
+      "goodobsidian-ask-frame",
+    );
+    this.titleEl.setText("Ask");
+    this.contentEl.empty();
+    this.chat = new AskChat(this.app, this.host, {
+      el: this.modalEl,
+      content: this.contentEl,
+      keyboard: new DialogKeyboard(this.modalEl, { fit: true }),
+      layout: "window",
+      switchLayout: () => {
+        this.close();
+        this.switchLayout();
+      },
+    });
+    this.chat.mount();
+  }
+
+  override onClose(): void {
+    this.chat?.destroy();
+    this.chat = null;
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * The chat as a sidebar beside the page, as Goodnotes shows its AI: the page
+ * stays in view and can be written on while the chat is open. It takes the
+ * left of the notebook's body, so it and the page sidebar are never open
+ * together (the view closes one when the other opens).
+ *
+ * On the iPad the keyboard covers its lower part: `DialogKeyboard` with `pad`
+ * pads the panel's foot by the part the keyboard covers, so the field rises
+ * above it and the thread gets shorter.
+ */
+export class AskChatPanel {
+  readonly el: HTMLElement;
+  private chat: AskChat | null = null;
+
+  constructor(
+    private readonly app: App,
+    parent: HTMLElement,
+    private readonly callbacks: {
+      host: () => AskAiHost;
+      onClose: () => void;
+      switchLayout: () => void;
+    },
+  ) {
+    this.el = parent.createDiv({ cls: "goodobsidian-chatpanel goodobsidian-ask-frame is-hidden" });
+  }
+
+  get isOpen(): boolean {
+    return !this.el.hasClass("is-hidden");
+  }
+
+  open(): void {
+    if (this.isOpen) return;
+    this.el.empty();
+    const head = this.el.createDiv({ cls: "goodobsidian-chatpanel-head" });
+    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: "Ask" });
+    const close = head.createEl("button", {
+      cls: "goodobsidian-chatpanel-close clickable-icon",
+      attr: { "aria-label": "Close" },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => this.callbacks.onClose());
+    const content = this.el.createDiv({ cls: "goodobsidian-chatpanel-body" });
+    this.el.removeClass("is-hidden");
+    this.chat = new AskChat(this.app, this.callbacks.host(), {
+      el: this.el,
+      content,
+      keyboard: new DialogKeyboard(this.el, { pad: true }),
+      layout: "sidebar",
+      switchLayout: () => this.callbacks.switchLayout(),
+    });
+    this.chat.mount();
+  }
+
+  close(): void {
+    if (!this.isOpen) return;
+    this.chat?.destroy();
+    this.chat = null;
+    this.el.empty();
+    this.el.addClass("is-hidden");
+  }
+
+  destroy(): void {
+    this.close();
+    this.el.remove();
+  }
 }
 
 /** The icon for an attached file's kind. */
