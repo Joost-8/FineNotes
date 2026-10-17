@@ -170,6 +170,8 @@ function decorate(item: ExplorerItem, inNotebook: boolean): void {
     el.empty();
     setIcon(el, icon);
   }
+  // Every notebook in the accent colour, a file or a folder; its folders stay grey.
+  el.toggleClass("is-notebook", icon === NOTEBOOK_ICON);
 }
 
 function sortAgain(view: ExplorerView): void {

@@ -8430,7 +8430,7 @@ button.goodobsidian-learn-stop.is-hidden {
   height: var(--icon-xs);
 }
 
-.nav-folder-title.goodobsidian-folder-notebook .goodobsidian-explorer-icon {
+.goodobsidian-explorer-icon.is-notebook {
   color: var(--interactive-accent);
   opacity: 1;
 }
