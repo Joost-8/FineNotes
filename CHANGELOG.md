@@ -18,6 +18,11 @@ extracted from the matching section of this file by `release.yml`.
   the other way round. Notebooks get a notebook icon, and the folders inside
   one an icon for what they hold (Settings → "Show notebook folders as
   notebooks", on by default).
+- **A Files tab in the page sidebar**, in place of Audio. A dropdown picks
+  what to list: Recordings (play and transcribe, as before), Pictures and
+  PDFs (each with its pages; a tap turns to it), Transcripts, AI chats or
+  Exports. Only the kind picked is listed, and only while the tab is open;
+  pictures are listed by name, never decoded.
 - **A folder for recording transcripts.** Notebook settings has a
   "Recording transcripts" row; empty, a transcript still goes next to its
   recording. Search also reads a transcript-server sidecar from a notebook

@@ -4,9 +4,9 @@
  *
  *   .goodobsidian-pagesidebar          (.is-overview: the full-pane grid; .is-selecting)
  *     .goodobsidian-pagesidebar-top
- *       .goodobsidian-pagesidebar-head  (⤢ · Pages / Contents / Audio · ✕;
+ *       .goodobsidian-pagesidebar-head  (⤢ · Pages / Contents / Files · ✕;
  *                                         overview: ⤡ or Select all · Pages · Select or Done)
- *       .goodobsidian-pagesidebar-tabs  (Pages | Contents | Audio)
+ *       .goodobsidian-pagesidebar-tabs  (Pages | Contents | Files)
  *     .goodobsidian-pagesidebar-pages
  *       .goodobsidian-pagesidebar-filter ("All pages ⌄" / "Bookmarks only ⌄" / "In the contents ⌄")
  *       .goodobsidian-pagesidebar-grid
@@ -20,7 +20,10 @@
  *           .is-sub: one under its page's title, folding with it
  *       .goodobsidian-contents-empty
  *       .goodobsidian-contents-add  ("Add page N to contents")
- *     .goodobsidian-pagesidebar-audio (filled by the note's audio controller)
+ *     .goodobsidian-pagesidebar-files
+ *       .goodobsidian-files-kind      (the dropdown: Recordings, Pictures and PDFs, …)
+ *       .goodobsidian-pagesidebar-audio (Recordings: filled by the note's audio controller)
+ *       .goodobsidian-files-list      (any other kind: a row per file, built when shown)
  *     .goodobsidian-pagesidebar-selectbar (overview, Select: Move · Duplicate · Bookmark · Export · Delete)
  *   .goodobsidian-pagesidebar-spacer  (holds the panel's width while the overview covers the page)
  *
@@ -56,6 +59,15 @@
  */
 
 import { Menu, setIcon } from "obsidian";
+import {
+  FILE_KINDS,
+  FILE_KIND_EMPTY,
+  FILE_KIND_ICONS,
+  FILE_KIND_LABELS,
+  type FileKind,
+  type FileRow,
+  fileName,
+} from "../model/notebook-files";
 import {
   type ContentsEntry,
   contentsEntries,
@@ -130,6 +142,15 @@ export interface PageSidebarCallbacks {
   onSelectionAction?: (action: SelectionAction, indexes: number[], anchor: HTMLElement) => void;
   /** The overview opened or closed. */
   onOverviewChange?: (open: boolean) => void;
+  /**
+   * The Files tab's rows for `kind` (never Recordings, which has its own
+   * panel). Asked only while the tab is shown, once per showing or pick.
+   */
+  listFiles?: (kind: FileKind) => Promise<FileRow[]>;
+  /** A file row was tapped. */
+  onOpenFile?: (kind: FileKind, row: FileRow) => void;
+  /** The Files tab's dropdown was changed. */
+  onFileKind?: (kind: FileKind) => void;
 }
 
 export interface PageSidebarRenderOptions {
@@ -143,13 +164,13 @@ export interface PageSidebarRenderOptions {
   notebookTitle?: string;
 }
 
-/** The sidebar's panes: the page thumbnails, the contents, or the note's recordings. */
-export type SidebarTab = "pages" | "contents" | "audio";
+/** The sidebar's panes: the page thumbnails, the contents, or the note's files. */
+export type SidebarTab = "pages" | "contents" | "files";
 
 const TAB_TITLES: Record<SidebarTab, string> = {
   pages: "Pages",
   contents: "Contents",
-  audio: "Audio",
+  files: "Files",
 };
 
 /**
@@ -250,8 +271,14 @@ interface ThumbView {
 
 export class PageSidebar {
   readonly el: HTMLElement;
-  /** The Audio tab's pane, for the audio controller to fill. */
+  /** The Files tab's Recordings pane, for the audio controller to fill. */
   readonly audioEl: HTMLElement;
+  private readonly filesEl: HTMLElement;
+  private readonly kindSelect: HTMLSelectElement;
+  private readonly filesList: HTMLElement;
+  private fileKind: FileKind = "recordings";
+  /** Counts list requests, so a slow answer for an older pick is dropped. */
+  private filesRequest = 0;
   private readonly titleEl: HTMLElement;
   private readonly pagesEl: HTMLElement;
   private readonly filterChip: HTMLButtonElement;
@@ -354,7 +381,7 @@ export class PageSidebar {
     for (const [tab, icon] of [
       ["pages", "file"],
       ["contents", "table-of-contents"],
-      ["audio", "mic"],
+      ["files", "folder"],
     ] as const) {
       const label = TAB_TITLES[tab];
       const button = tabs.createEl("button", {
@@ -396,7 +423,23 @@ export class PageSidebar {
     this.contentsAdd.addEventListener("click", () =>
       this.callbacks.onPageAction("contents", this.current, this.contentsAdd),
     );
-    this.audioEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-audio" });
+    this.filesEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-files" });
+    this.kindSelect = this.filesEl.createEl("select", {
+      cls: "dropdown goodobsidian-files-kind",
+      attr: { "aria-label": "Kind of file" },
+    });
+    for (const kind of FILE_KINDS) {
+      this.kindSelect.createEl("option", { value: kind, text: FILE_KIND_LABELS[kind] });
+    }
+    this.kindSelect.addEventListener("change", () => {
+      this.setFileKind(this.kindSelect.value as FileKind);
+      this.callbacks.onFileKind?.(this.fileKind);
+    });
+    this.audioEl = this.filesEl.createDiv({ cls: "goodobsidian-pagesidebar-audio" });
+    this.filesList = this.filesEl.createDiv({
+      cls: "goodobsidian-files-list is-hidden",
+      attr: { role: "list" },
+    });
     this.selectBar = this.el.createDiv({
       cls: "goodobsidian-pagesidebar-selectbar is-hidden",
       attr: { role: "toolbar", "aria-label": "Selected pages" },
@@ -490,6 +533,7 @@ export class PageSidebar {
       this.el.removeClass("is-hidden");
       this.sync();
       this.revealCurrent();
+      if (this.tab === "files") this.refreshFiles();
       if (motion) {
         this.slide = this.el.animate(
           [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
@@ -608,7 +652,7 @@ export class PageSidebar {
     this.tab = tab;
     this.pagesEl.toggleClass("is-hidden", tab !== "pages");
     this.contentsEl.toggleClass("is-hidden", tab !== "contents");
-    this.audioEl.toggleClass("is-hidden", tab !== "audio");
+    this.filesEl.toggleClass("is-hidden", tab !== "files");
     const title = TAB_TITLES[tab];
     this.el.setAttribute("aria-label", title);
     this.titleEl.setText(title);
@@ -622,6 +666,62 @@ export class PageSidebar {
       this.revealCurrent();
     }
     if (tab === "contents" && this.open) this.revealCurrentEntry();
+    if (tab === "files" && this.open) this.refreshFiles();
+  }
+
+  /** Which kind the Files tab lists. */
+  setFileKind(kind: FileKind): void {
+    this.fileKind = kind;
+    this.kindSelect.value = kind;
+    if (this.tab === "files" && this.open) this.refreshFiles();
+  }
+
+  /**
+   * Fill the Files tab for its kind: Recordings shows the audio panel; any
+   * other kind asks the host for its rows, now and not before, so an unopened
+   * tab costs nothing. Rows show an icon, a name and a line under it, never a
+   * preview, so a list of photos decodes none of them.
+   */
+  refreshFiles(): void {
+    const kind = this.fileKind;
+    const recordings = kind === "recordings";
+    this.audioEl.toggleClass("is-hidden", !recordings);
+    this.filesList.toggleClass("is-hidden", recordings);
+    if (recordings || !this.callbacks.listFiles) return;
+    const request = ++this.filesRequest;
+    void this.callbacks.listFiles(kind).then(
+      (rows) => {
+        if (request === this.filesRequest) this.renderFiles(kind, rows);
+      },
+      () => {
+        if (request === this.filesRequest) this.renderFiles(kind, []);
+      },
+    );
+  }
+
+  private renderFiles(kind: FileKind, rows: readonly FileRow[]): void {
+    this.filesList.empty();
+    if (rows.length === 0) {
+      this.filesList.createDiv({
+        cls: "goodobsidian-files-empty",
+        text: FILE_KIND_EMPTY[kind],
+      });
+      return;
+    }
+    for (const row of rows) {
+      // `clickable-icon` keeps Obsidian's button styling (and its iPad padding) off the row.
+      const button = this.filesList.createEl("button", {
+        cls: "goodobsidian-files-row clickable-icon",
+        attr: { role: "listitem", title: row.path },
+      });
+      setIcon(button.createSpan({ cls: "goodobsidian-files-row-icon" }), FILE_KIND_ICONS[kind]);
+      const text = button.createSpan({ cls: "goodobsidian-files-row-text" });
+      text.createSpan({ cls: "goodobsidian-files-row-name", text: fileName(row.path) });
+      if (row.detail) {
+        text.createSpan({ cls: "goodobsidian-files-row-detail", text: row.detail });
+      }
+      button.addEventListener("click", () => this.callbacks.onOpenFile?.(kind, row));
+    }
   }
 
   toggle(animate = false): boolean {

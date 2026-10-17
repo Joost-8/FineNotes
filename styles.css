@@ -8378,3 +8378,81 @@ button.goodobsidian-learn-stop.is-hidden {
   color: var(--interactive-accent);
   opacity: 1;
 }
+
+/* The page sidebar's Files tab: a dropdown of kinds, then the Recordings
+   panel or a grouped list of rows (icon, name, a line under it). */
+.goodobsidian-pagesidebar-files {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100% - 100px);
+}
+
+.goodobsidian-pagesidebar-files.is-hidden,
+.goodobsidian-files-list.is-hidden {
+  display: none;
+}
+
+.goodobsidian-pagesidebar-files .goodobsidian-files-kind {
+  margin: 12px 16px 0;
+}
+
+.goodobsidian-files-list {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 16px 32px;
+  border-radius: var(--gob-radius-l);
+  background: var(--gob-card-bg);
+  overflow: hidden;
+}
+
+.goodobsidian-pagesidebar button.goodobsidian-files-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 0;
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-files-row + .goodobsidian-files-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.goodobsidian-files-row-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.goodobsidian-files-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goodobsidian-files-row-name {
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-files-row-detail {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-files-empty {
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

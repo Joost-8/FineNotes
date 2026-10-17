@@ -23,14 +23,7 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
-import {
-  Notice,
-  Platform,
-  TextFileView,
-  type TFile,
-  type WorkspaceLeaf,
-  normalizePath,
-} from "obsidian";
+import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
   DEVICE_READ_IDLE_MS,
@@ -104,6 +97,13 @@ import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-com
 import { AiMenuPopover } from "./ai-menu";
 import { AskAiModal } from "./ask-ai-modal";
 import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
+import {
+  type FileKind,
+  type FileRow,
+  folderRows,
+  notebookImages,
+  recordingTranscripts,
+} from "../model/notebook-files";
 import { pdfsBehind } from "../recognition/ask-attachments";
 import { chatsFolderFor } from "../recognition/ask-chat-file";
 import { type AskPagesResult, AskSession } from "../recognition/ask-session";
@@ -265,6 +265,9 @@ function deviceKind(): string {
   if (Platform.isLinux) return "linux";
   return "unknown";
 }
+
+/** The Files tab's kind, for every notebook opened in this session. */
+let lastFileKind: FileKind = "recordings";
 
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
@@ -1118,7 +1121,7 @@ export class InkView extends TextFileView {
 
   /**
    * Where this notebook keeps saved chats: its own setting (a new notebook
-   * with a files folder sets it there), else "AI chats" beside it.
+   * with its own folder sets it to that folder's AI chats), else "AI chats" beside it.
    */
   private chatsFolder(): string {
     return this.attachmentFolder("chats") ?? chatsFolderFor(this.file?.path ?? "");
@@ -1498,9 +1501,13 @@ export class InkView extends TextFileView {
         onSelectionAction: (action, indexes) => this.selectionAction(action, indexes),
         // The options pill floats over the page, which the overview covers.
         onOverviewChange: (open) => root.toggleClass("goodobsidian-overview-open", open),
+        listFiles: (kind) => this.listNotebookFiles(kind),
+        onOpenFile: (kind, row) => this.openNotebookFile(kind, row),
+        onFileKind: (kind) => (lastFileKind = kind),
       },
       this.sidebarRendering(this.thumbBackdrops),
     );
+    this.sidebar.setFileKind(lastFileKind);
     this.sidebar.setDocument(this.doc);
 
     this.surface = new InkSurface(
@@ -1818,6 +1825,72 @@ export class InkView extends TextFileView {
       palette: () => paletteOf(this.doc),
       setPalette: (palette) => apply(new SetNotebookPalette(palette)),
     }).open();
+  }
+
+  // --- The Files tab ----------------------------------------------------------------
+
+  /**
+   * The page sidebar's rows for one kind of file. Pictures, PDFs and
+   * recording transcripts are read from the notebook (no folder is scanned);
+   * chats and exports from their folders. Asked only when the tab shows them.
+   */
+  private async listNotebookFiles(kind: FileKind): Promise<FileRow[]> {
+    const note = this.file;
+    if (!note) return [];
+    const doc = this.surface?.document ?? this.doc;
+    const { vault } = this.app;
+    const exists = (row: FileRow) => vault.getFileByPath(row.path) !== null;
+    switch (kind) {
+      case "images":
+        return notebookImages(doc);
+      case "transcripts": {
+        const sidecars = [transcriptSidecarPath(note.path), folderNotebookSidecarPath(note.path)]
+          .filter((path): path is string => path !== null)
+          .map((path) => ({ path, detail: "Handwriting, from the transcript server" }));
+        return [...recordingTranscripts(doc), ...sidecars].filter(exists);
+      }
+      case "chats": {
+        const chats = await listChats(this.app, note.path, this.chatsFolder());
+        return chats.map((chat) => ({ path: chat.path, detail: chat.title }));
+      }
+      case "exports": {
+        const set = this.attachmentFolder("exports");
+        const dir = set === undefined ? note.parent : vault.getFolderByPath(set);
+        // Without a folder of their own, exports sit beside the note among
+        // other PDFs: keep the ones named after the notebook.
+        const title = stripInkSuffix(note.basename).toLowerCase();
+        const files = (dir?.children ?? []).filter(
+          (child): child is TFile =>
+            child instanceof TFile &&
+            (set !== undefined || child.name.toLowerCase().startsWith(title)),
+        );
+        return folderRows(
+          files.map((file) => ({
+            path: file.path,
+            extension: file.extension,
+            mtime: file.stat.mtime,
+          })),
+          ["pdf"],
+          (mtime) => new Date(mtime).toLocaleDateString(),
+        );
+      }
+      default:
+        return [];
+    }
+  }
+
+  /** A tapped file row: a picture or PDF turns to its page; anything else opens in a new tab. */
+  private openNotebookFile(kind: FileKind, row: FileRow): void {
+    if (kind === "images" && row.page !== undefined) {
+      this.surface?.goToPage(row.page, true);
+      return;
+    }
+    const file = this.app.vault.getFileByPath(row.path);
+    if (!file) {
+      new Notice(`FineNotes: ${row.path} is not in the vault any more.`);
+      return;
+    }
+    void this.app.workspace.getLeaf("tab").openFile(file);
   }
 
   // --- Search and links to a page -----------------------------------------------
