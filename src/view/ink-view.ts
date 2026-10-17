@@ -63,13 +63,7 @@ import {
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
 import { practiceFiles, writePracticePage } from "./handwriting-learning";
-import {
-  type AskScope,
-  type ChatImage,
-  ASK_MAX_PAGES,
-  buildAskSystemPrompt,
-  selectAskPages,
-} from "../recognition/ai-chat";
+import { type ChatImage, buildAskSystemPrompt } from "../recognition/ai-chat";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
 import { type GeneratedPicture, askAi, generateImage, targetLabel } from "../recognition/ai-client";
@@ -161,7 +155,7 @@ import {
   transcriptSidecarPath,
 } from "../search/notebook-search";
 import { pageLinkLabel } from "./page-embed-model";
-import { exportPagesToPdf, paintPagePreview } from "./pdf-export";
+import { type PdfExportSources, exportPagesToPdf, paintPagePreview } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
 import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { MorePanel } from "./more-panel";
@@ -960,7 +954,6 @@ export class InkView extends TextFileView {
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
       pageTranscribable: !!page && hasTranscribableContent(page),
-      pageAskable: !!page && hasAskableContent(page),
       notebookTranscribable: doc.pages.some(hasTranscribableContent),
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
@@ -1000,8 +993,7 @@ export class InkView extends TextFileView {
       "transcribe-page": () => void this.transcribeFromMenu("page"),
       "transcribe-notebook": () => void this.transcribeFromMenu("notebook"),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
-      "ask-page": () => this.openAsk("page"),
-      "ask-notebook": () => this.openAsk("notebook"),
+      ask: () => this.openAsk(),
       "generate-image": () => this.openGenerateImage(),
       settings: () => this.plugin.openSettingsTab(),
     };
@@ -1025,15 +1017,46 @@ export class InkView extends TextFileView {
 
   // --- Ask AI ---------------------------------------------------------------
 
-  private openAsk(scope: AskScope): void {
+  /** What page previews are painted from (the export dialog's, Ask AI's page picker). */
+  private previewSources(): PdfExportSources {
+    return {
+      readPdf: async (path: string) => {
+        const file = this.app.vault.getFileByPath(path);
+        if (!file) throw new Error(`Missing PDF source — ${path}`);
+        return this.app.vault.readBinary(file);
+      },
+      pdf: this.pdfCache,
+      images: this.images,
+      paper: paperTheme(false),
+      usePressure: this.settings.pressureWidth,
+      highlighterAlpha: this.settings.highlighterAlpha,
+    };
+  }
+
+  private openAsk(): void {
     if (this.isProtected()) return;
-    const multiPage = this.doc.pages.length > 1;
-    const session = this.askConversation(multiPage ? scope : "page");
+    const session = this.askConversation();
     new AskAiModal(this.app, {
       session,
-      multiPage,
       sourcePath: this.file?.path ?? "",
-      describe: (s) => this.describeAsk(s),
+      target: targetLabel(this.plugin.textAiConfig()),
+      currentPage: () => (this.surface?.currentPage ?? 0) + 1,
+      pageHasContent: (n) => {
+        const page = this.doc.pages[n - 1];
+        return !!page && hasAskableContent(page);
+      },
+      paintThumbnail: async (canvas, n, cssWidth) => {
+        const page = this.doc.pages[n - 1];
+        if (page) {
+          await paintPagePreview(
+            canvas,
+            page,
+            this.previewSources(),
+            cssWidth,
+            window.devicePixelRatio || 1,
+          );
+        }
+      },
       insert: (text) => this.insertAnswer(text),
       savedChats: () =>
         this.file ? listChats(this.app, this.file.path, this.chatsFolder()) : Promise.resolve([]),
@@ -1054,10 +1077,11 @@ export class InkView extends TextFileView {
 
   /**
    * This notebook's conversation, kept while the notebook is open so closing
-   * the dialog loses neither the chat nor the draft. Asked about another
-   * scope before anything was asked, it switches to it.
+   * the dialog loses neither the chat nor the draft. Before anything is
+   * asked, it follows the page being read.
    */
-  private askConversation(scope: AskScope): AskSession {
+  private askConversation(): AskSession {
+    const current = (this.surface?.currentPage ?? 0) + 1;
     let session = this.askSession;
     if (!session) {
       session = new AskSession(
@@ -1067,9 +1091,8 @@ export class InkView extends TextFileView {
             this.plugin.confirmAiSend(
               this.plugin.textAiConfig(),
               "Asking about your notes",
-              "images of the pages you ask about, together with your question,",
+              "images of the pages you pick, together with your question,",
             ),
-          prepare: (s) => this.collectAskPages(this.askPageIndexes(s)),
           preparePages: (numbers) =>
             this.collectAskPages(
               numbers.map((n) => n - 1).filter((i) => i >= 0 && i < this.doc.pages.length),
@@ -1079,12 +1102,12 @@ export class InkView extends TextFileView {
           unsave: (path) => trashChat(this.app, path),
           now: () => new Date(),
         },
-        scope,
-        this.settings.askSaveChats,
+        { page: current, totalPages: this.doc.pages.length, save: this.settings.askSaveChats },
       );
       this.askSession = session;
-    } else if (session.turns.length === 0 && !session.outstanding && session.scope !== scope) {
-      session.newChat(scope);
+    } else {
+      session.setTotalPages(this.doc.pages.length);
+      if (session.empty) session.newChat(current);
     }
     return session;
   }
@@ -1095,30 +1118,6 @@ export class InkView extends TextFileView {
    */
   private chatsFolder(): string {
     return this.attachmentFolder("chats") ?? chatsFolderFor(this.file?.path ?? "");
-  }
-
-  /** Which pages a question sends, as indexes. */
-  private askPageIndexes(scope: AskScope): number[] {
-    const current = this.surface?.currentPage ?? 0;
-    if (scope === "page") return this.doc.pages[current] ? [current] : [];
-    return selectAskPages(this.doc.pages.map(hasAskableContent), current);
-  }
-
-  private describeAsk(scope: AskScope): string {
-    const target = targetLabel(this.plugin.textAiConfig());
-    const indexes = this.askPageIndexes(scope);
-    if (scope === "page") {
-      return `Sends page ${indexes[0] + 1} as an image, with your question, to ${target}.`;
-    }
-    const withContent = this.doc.pages.filter(hasAskableContent).length;
-    const limit =
-      withContent > indexes.length
-        ? ` At most ${ASK_MAX_PAGES} pages go with a question — the ones nearest this page.`
-        : "";
-    return (
-      `Sends ${indexes.length} page${indexes.length === 1 ? "" : "s"} as images, with your ` +
-      `question, to ${target}.${limit}`
-    );
   }
 
   private async collectAskPages(indexes: readonly number[]): Promise<AskPagesResult> {
@@ -1900,18 +1899,7 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = {
-      readPdf: async (path: string) => {
-        const file = this.app.vault.getFileByPath(path);
-        if (!file) throw new Error(`Missing PDF source — ${path}`);
-        return this.app.vault.readBinary(file);
-      },
-      pdf: this.pdfCache,
-      images: this.images,
-      paper: paperTheme(false),
-      usePressure: this.settings.pressureWidth,
-      highlighterAlpha: this.settings.highlighterAlpha,
-    };
+    const sources = this.previewSources();
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,

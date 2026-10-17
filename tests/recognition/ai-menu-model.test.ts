@@ -27,7 +27,6 @@ function context(fields: Partial<AiMenuContext> = {}): AiMenuContext {
   return {
     setup: setup({ keys: ["anthropic"] }),
     pageTranscribable: true,
-    pageAskable: true,
     notebookTranscribable: true,
     notebookAskable: true,
     multiPage: true,
@@ -92,11 +91,11 @@ describe("buildAiMenu", () => {
     expect(items.map((i) => i.id)).toEqual([
       "transcribe-page",
       "transcribe-notebook",
-      "ask-page",
-      "ask-notebook",
+      "ask",
       "generate-image",
       "settings",
     ]);
+    expect(byId(items).ask.label).toBe("Transcribe and ask…");
     expect(items.filter((i) => i.footer).map((i) => i.id)).toEqual(["settings"]);
     expect(byId(items).settings.label).toBe("AI settings…");
     expect(byId(items)["transcribe-page"].enabled).toBe(true);
@@ -106,7 +105,7 @@ describe("buildAiMenu", () => {
   it("offers 'Set up AI…' and gives every AI entry the same reason when nothing is set up", () => {
     const items = byId(buildAiMenu(context({ setup: setup() })));
     expect(items.settings).toMatchObject({ label: "Set up AI…", enabled: true });
-    for (const id of ["transcribe-page", "transcribe-notebook", "ask-page", "ask-notebook"]) {
+    for (const id of ["transcribe-page", "transcribe-notebook", "ask"]) {
       expect(items[id], id).toMatchObject({ enabled: false, reason: "Needs an Anthropic key" });
     }
   });
@@ -117,7 +116,7 @@ describe("buildAiMenu", () => {
       enabled: false,
       reason: "Needs an Anthropic key",
     });
-    expect(items["ask-page"].enabled).toBe(false);
+    expect(items.ask.enabled).toBe(false);
   });
 
   it("says when a page or notebook has nothing on it", () => {
@@ -125,7 +124,6 @@ describe("buildAiMenu", () => {
       buildAiMenu(
         context({
           pageTranscribable: false,
-          pageAskable: false,
           notebookTranscribable: false,
           notebookAskable: false,
         }),
@@ -133,17 +131,18 @@ describe("buildAiMenu", () => {
     );
     expect(items["transcribe-page"].reason).toBe("Nothing written on this page yet");
     expect(items["transcribe-notebook"].reason).toBe("Nothing written in this notebook yet");
-    expect(items["ask-page"].reason).toBe("This page is empty");
-    expect(items["ask-notebook"].reason).toBe("This notebook is empty");
+    expect(items.ask.reason).toBe("This notebook is empty");
+    const single = byId(buildAiMenu(context({ multiPage: false, notebookAskable: false })));
+    expect(single.ask.reason).toBe("This page is empty");
   });
 
   it("leaves out the notebook entries for a single page", () => {
     const ids = buildAiMenu(context({ multiPage: false })).map((i) => i.id);
     expect(ids).not.toContain("transcribe-notebook");
-    expect(ids).not.toContain("ask-notebook");
+    expect(ids).toContain("ask");
   });
 
-  it("offers 'Transcribe recording…' after the ink entries, only where recording exists", () => {
+  it("offers 'Transcribe recording…' last, after images, only where recording exists", () => {
     expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-recording");
     const withAudio = setup({ vendor: "openai", keys: ["openai"] });
     const ids = buildAiMenu(context({ setup: withAudio, recordings: 2 }))
@@ -152,10 +151,9 @@ describe("buildAiMenu", () => {
     expect(ids).toEqual([
       "transcribe-page",
       "transcribe-notebook",
-      "transcribe-recording",
-      "ask-page",
-      "ask-notebook",
+      "ask",
       "generate-image",
+      "transcribe-recording",
       "settings",
     ]);
     const entry = byId(buildAiMenu(context({ setup: withAudio, recordings: 2 })))[

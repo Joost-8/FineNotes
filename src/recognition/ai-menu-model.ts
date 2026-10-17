@@ -99,8 +99,7 @@ export type AiMenuId =
   | "transcribe-page"
   | "transcribe-notebook"
   | "transcribe-recording"
-  | "ask-page"
-  | "ask-notebook"
+  | "ask"
   | "generate-image"
   | "settings";
 
@@ -133,9 +132,8 @@ export interface AiMenuContext {
   setup: AiSetup;
   /** The page being read has ink or typed text. */
   pageTranscribable: boolean;
-  /** The page being read has anything at all to ask about. */
-  pageAskable: boolean;
   notebookTranscribable: boolean;
+  /** Some page has anything at all to ask about (the chat picks which). */
   notebookAskable: boolean;
   /** More than one page (otherwise the notebook entries say nothing new). */
   multiPage: boolean;
@@ -251,8 +249,25 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
       ...gate(text, ctx.notebookTranscribable, "Nothing written in this notebook yet"),
     });
   }
+  // One way into the chat, whose page picker chooses what it is about.
+  items.push({
+    id: "ask",
+    label: "Transcribe and ask…",
+    icon: "messages-square",
+    ...gate(
+      text,
+      ctx.notebookAskable,
+      ctx.multiPage ? "This notebook is empty" : "This page is empty",
+    ),
+  });
+  items.push({
+    id: "generate-image",
+    label: "Generate image…",
+    icon: "image-plus",
+    ...imageAvailability(ctx.setup),
+  });
+  // Last: it needs a speech-capable vendor, which the rest do not.
   if (ctx.recordings !== undefined) {
-    // Speech needs a speech-capable vendor, whatever transcribes the ink.
     items.push({
       id: "transcribe-recording",
       label: "Transcribe recording…",
@@ -264,26 +279,6 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
       ),
     });
   }
-  items.push({
-    id: "ask-page",
-    label: "Ask about this page…",
-    icon: "message-square",
-    ...gate(text, ctx.pageAskable, "This page is empty"),
-  });
-  if (ctx.multiPage) {
-    items.push({
-      id: "ask-notebook",
-      label: "Ask about this notebook…",
-      icon: "messages-square",
-      ...gate(text, ctx.notebookAskable, "This notebook is empty"),
-    });
-  }
-  items.push({
-    id: "generate-image",
-    label: "Generate image…",
-    icon: "image-plus",
-    ...imageAvailability(ctx.setup),
-  });
   items.push({
     id: "settings",
     label: text.enabled ? "AI settings…" : "Set up AI…",

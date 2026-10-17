@@ -1,14 +1,20 @@
 /**
- * "Ask about this page / notebook", laid out as a chat: the scope and the
- * chat's controls on top (Save chat, Chats, New chat), the conversation in
- * the middle (your questions as bubbles on the right, the answers rendered as
+ * "Transcribe and ask", laid out as a chat: the pages to send and the chat's
+ * controls on top (Save chat, Chats, New chat), the conversation in the
+ * middle (your questions as bubbles on the right, the answers rendered as
  * markdown on the left, each with Copy and Insert as text box), and the
  * question field at the bottom with a round send button. Before the first
  * question, suggestions fill the empty thread.
  *
+ * Top left is the page picker: a thumbnail of the page being read, picked
+ * when the dialog opens. Tapped, it opens a grid of every page to pick up to
+ * `ASK_MAX_PAGES`. Each question sends the picked pages the chat has not seen
+ * yet, so pages can be added in the middle of a conversation.
+ *
  * The conversation itself is an `AskSession` owned by the notebook's view:
  * this dialog only draws it. Closing the dialog loses nothing — reopened, it
- * shows the same chat, an answer that arrived meanwhile, and the draft.
+ * shows the same chat, an answer that arrived meanwhile, the draft and the
+ * pages picked.
  *
  * On the iPad the field sits at the bottom of a tall dialog, under the
  * keyboard: `DialogKeyboard` with `fit` shrinks the dialog to the room above
@@ -17,20 +23,24 @@
  */
 
 import { type App, Component, MarkdownRenderer, Menu, Modal, Notice, setIcon } from "obsidian";
-import { type AskScope, markdownToPlainText } from "../recognition/ai-chat";
-import { type AskSession, shownText } from "../recognition/ask-session";
+import { ASK_MAX_PAGES, markdownToPlainText } from "../recognition/ai-chat";
+import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
 import type { SavedChatEntry } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { writeSystemText } from "./system-clipboard";
 
 export interface AskAiHost {
   session: AskSession;
-  /** Offer the notebook scope at all (more than one page). */
-  multiPage: boolean;
   /** Markdown links in answers resolve against this note. */
   sourcePath: string;
-  /** One line under the scope: what a question sends, and where. */
-  describe: (scope: AskScope) => string;
+  /** Who answers ("Anthropic (Claude)"), for the line under the pages. */
+  target: string;
+  /** The page being read, 1-based. */
+  currentPage: () => number;
+  /** Whether a page (1-based) has anything on it to ask about. */
+  pageHasContent: (page: number) => boolean;
+  /** Paint page `page` (1-based) into `canvas`, `cssWidth` wide. */
+  paintThumbnail: (canvas: HTMLCanvasElement, page: number, cssWidth: number) => Promise<void>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
   /** This notebook's saved chats, newest first. */
@@ -41,29 +51,27 @@ export interface AskAiHost {
   rememberSave: (save: boolean) => void;
 }
 
-const SCOPES: ReadonlyArray<{ id: AskScope; label: string }> = [
-  { id: "page", label: "This page" },
-  { id: "notebook", label: "Whole notebook" },
-];
-
-/** What the empty thread offers to ask; a tap sends it. */
-const SUGGESTIONS: Record<AskScope, readonly string[]> = {
-  page: [
+/** What the empty thread offers to ask, for one page or several; a tap sends it. */
+const SUGGESTIONS = {
+  one: [
     "Summarise this page",
     "Explain this step by step",
     "Check my work for mistakes",
     "Quiz me on this page",
   ],
-  notebook: [
+  many: [
     "Summarise these pages",
     "What are the key ideas?",
     "Make practice questions",
     "What should I review?",
   ],
-};
+} as const;
 
 /** Tallest the question field grows before it scrolls, px. */
 const INPUT_MAX_PX = 160;
+/** Width of a page in the picker's grid, and of the chip's thumbnail, CSS px. */
+const GRID_THUMB_PX = 96;
+const CHIP_THUMB_PX = 26;
 
 export class AskAiModal extends Modal {
   private readonly session: AskSession;
@@ -79,13 +87,25 @@ export class AskAiModal extends Modal {
   private saveButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
-  private readonly scopeButtons = new Map<AskScope, HTMLButtonElement>();
 
-  /** What the thread shows: each turn's text, in order, and the scope it is drawn for. */
-  private shown: { scope: AskScope | null; texts: string[] } = { scope: null, texts: [] };
+  /** The page picker: its chip, and the grid it opens. */
+  private pagesButton: HTMLButtonElement | null = null;
+  private chipThumb: HTMLCanvasElement | null = null;
+  private chipLabel: HTMLElement | null = null;
+  private chipPage = 0;
+  private pickerEl: HTMLElement | null = null;
+  private pickerCount: HTMLElement | null = null;
+  /** Each page's tile in the grid, by 1-based page. */
+  private readonly tiles = new Map<number, HTMLButtonElement>();
+  private paintedThumbs = false;
+
+  /** What the thread shows: each turn's text, in order. */
+  private shownTexts: string[] = [];
   /** The question waiting for its answer (or failed), drawn after the turns. */
   private outstandingEl: HTMLElement | null = null;
   private outstandingKey = "";
+  /** Whether the empty thread's suggestions are for one page. */
+  private emptyForOne: boolean | null = null;
 
   constructor(
     app: App,
@@ -100,20 +120,13 @@ export class AskAiModal extends Modal {
     this.component.load();
     this.modalEl.addClass("goodobsidian-ask-modal", "goodobsidian-dialog");
     this.keyboard = new DialogKeyboard(this.modalEl, { fit: true });
-    this.titleEl.setText("Ask AI");
+    this.titleEl.setText("Transcribe and ask");
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-chat");
 
     const top = contentEl.createDiv({ cls: "goodobsidian-chat-top" });
-    if (this.host.multiPage) {
-      const seg = top.createDiv({ cls: "goodobsidian-segmented goodobsidian-chat-scope" });
-      for (const { id, label } of SCOPES) {
-        const button = seg.createEl("button", { cls: "clickable-icon", text: label });
-        button.addEventListener("click", () => this.setScope(id));
-        this.scopeButtons.set(id, button);
-      }
-    }
+    this.buildPagesChip(top);
     const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
     this.saveButton = this.toolButton(tools, "bookmark", "Save chat", () => {
       const save = !this.session.save;
@@ -126,11 +139,13 @@ export class AskAiModal extends Modal {
       void this.showChats(event);
     });
     this.newChatButton = this.toolButton(tools, "square-pen", "New chat", () => {
-      this.session.newChat();
+      this.closePicker();
+      this.session.newChat(this.host.currentPage());
       this.input?.focus();
     });
 
     this.noteEl = contentEl.createDiv({ cls: "goodobsidian-chat-note" });
+    this.buildPicker(contentEl);
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
 
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
@@ -142,6 +157,7 @@ export class AskAiModal extends Modal {
       this.session.draft = input.value;
       this.syncInput();
     });
+    input.addEventListener("focus", () => this.closePicker());
     input.addEventListener("keydown", (event) => {
       // Return sends, as in any chat; Shift+Return is a new line. Not while
       // an input method is still composing a character.
@@ -190,16 +206,166 @@ export class AskAiModal extends Modal {
     return button;
   }
 
-  private setScope(scope: AskScope): void {
-    if (scope === this.session.scope || this.session.busy) return;
-    // The first question's images define the conversation; a new scope needs
-    // new images, so it is a new conversation.
-    this.session.newChat(scope);
+  // --- Pages ----------------------------------------------------------------
+
+  /** The chip top left: a thumbnail of the first picked page, and what is picked. */
+  private buildPagesChip(parent: HTMLElement): void {
+    const chip = parent.createEl("button", {
+      cls: "goodobsidian-chat-pages clickable-icon",
+      attr: { "aria-haspopup": "true", "aria-expanded": "false" },
+    });
+    const stack = chip.createDiv({ cls: "goodobsidian-chat-pages-stack" });
+    this.chipThumb = stack.createEl("canvas", { cls: "goodobsidian-chat-pages-thumb" });
+    this.chipLabel = chip.createSpan({ cls: "goodobsidian-chat-pages-label" });
+    setIcon(chip.createSpan({ cls: "goodobsidian-chat-pages-chevron" }), "chevron-down");
+    chip.addEventListener("click", () => this.togglePicker());
+    this.pagesButton = chip;
   }
+
+  /** The grid of every page, hidden until the chip is tapped. */
+  private buildPicker(parent: HTMLElement): void {
+    const picker = parent.createDiv({ cls: "goodobsidian-chat-picker is-hidden" });
+    const head = picker.createDiv({ cls: "goodobsidian-chat-picker-head" });
+    const title = head.createDiv({ cls: "goodobsidian-chat-picker-title" });
+    title.createSpan({ text: "Pages to send" });
+    this.pickerCount = title.createSpan({ cls: "goodobsidian-chat-picker-count" });
+    const only = head.createEl("button", {
+      cls: "goodobsidian-chat-picker-link clickable-icon",
+      text: "Only this page",
+    });
+    only.addEventListener("click", () => this.session.setSelection([this.host.currentPage()]));
+    const done = head.createEl("button", { cls: "mod-cta clickable-icon", text: "Done" });
+    done.addEventListener("click", () => this.closePicker());
+
+    const grid = picker.createDiv({ cls: "goodobsidian-chat-picker-grid" });
+    const current = this.host.currentPage();
+    for (let page = 1; page <= this.session.totalPages; page++) {
+      const tile = grid.createEl("button", {
+        cls: "goodobsidian-chat-tile clickable-icon",
+        attr: { "aria-label": `Page ${page}` },
+      });
+      const frame = tile.createDiv({ cls: "goodobsidian-chat-tile-frame" });
+      frame.createEl("canvas", { cls: "goodobsidian-chat-tile-thumb" });
+      setIcon(frame.createDiv({ cls: "goodobsidian-chat-tile-check" }), "check");
+      const caption = tile.createDiv({ cls: "goodobsidian-chat-tile-caption" });
+      caption.createSpan({ text: String(page) });
+      if (page === current)
+        caption.createSpan({ cls: "goodobsidian-chat-tile-tag", text: "This page" });
+      caption.createSpan({ cls: "goodobsidian-chat-tile-sent", text: "In chat" });
+      if (!this.host.pageHasContent(page)) {
+        tile.addClass("is-empty");
+        tile.disabled = true;
+        tile.setAttribute("aria-label", `Page ${page}, empty`);
+      }
+      tile.addEventListener("click", () => this.session.togglePage(page));
+      this.tiles.set(page, tile);
+    }
+    picker.createDiv({
+      cls: "goodobsidian-chat-picker-foot",
+      text: `Up to ${ASK_MAX_PAGES} pages. Pages already in the chat stay in it.`,
+    });
+    this.pickerEl = picker;
+  }
+
+  private togglePicker(): void {
+    if (this.pickerEl?.hasClass("is-hidden")) this.openPicker();
+    else this.closePicker();
+  }
+
+  private openPicker(): void {
+    const picker = this.pickerEl;
+    if (!picker) return;
+    this.input?.blur();
+    picker.removeClass("is-hidden");
+    this.pagesButton?.setAttribute("aria-expanded", "true");
+    this.modalEl.addClass("is-picking");
+    // Bring the page being read into view (by scrolling the grid itself, as
+    // `scrollToEnd` does the thread), then paint the thumbnails.
+    const tile = this.tiles.get(this.host.currentPage());
+    const grid = tile?.parentElement;
+    if (tile && grid) grid.scrollTop = tile.offsetTop - (grid.clientHeight - tile.offsetHeight) / 2;
+    if (!this.paintedThumbs) {
+      this.paintedThumbs = true;
+      void this.paintTiles();
+    }
+  }
+
+  private closePicker(): void {
+    if (!this.pickerEl || this.pickerEl.hasClass("is-hidden")) return;
+    this.pickerEl.addClass("is-hidden");
+    this.pagesButton?.setAttribute("aria-expanded", "false");
+    this.modalEl.removeClass("is-picking");
+  }
+
+  /** Paint every tile, the page being read and its neighbours first, one at a time. */
+  private async paintTiles(): Promise<void> {
+    const current = this.host.currentPage();
+    const order = [...this.tiles.keys()].sort(
+      (a, b) => Math.abs(a - current) - Math.abs(b - current) || a - b,
+    );
+    for (const page of order) {
+      const canvas = this.tiles.get(page)?.querySelector("canvas");
+      if (!canvas || !this.component) return;
+      try {
+        await this.host.paintThumbnail(canvas, page, GRID_THUMB_PX);
+      } catch {
+        // A page that cannot be drawn keeps its blank paper.
+      }
+    }
+  }
+
+  /** The chip and the grid, in line with the session's pick. */
+  private renderPages(): void {
+    const session = this.session;
+    const picked = session.selected;
+    const sent = session.sentPages;
+    const full = picked.length >= ASK_MAX_PAGES;
+    for (const [page, tile] of this.tiles) {
+      const on = picked.includes(page);
+      tile.toggleClass("is-selected", on);
+      tile.toggleClass("is-sent", sent.has(page));
+      tile.setAttribute("aria-pressed", String(on));
+      if (!tile.hasClass("is-empty")) tile.disabled = session.busy || (!on && full);
+    }
+    this.pickerCount?.setText(`${picked.length} of ${ASK_MAX_PAGES}`);
+    if (this.chipLabel) {
+      this.chipLabel.setText(
+        picked.length === 0
+          ? "Pick pages"
+          : picked.length <= 3
+            ? `${picked.length === 1 ? "Page" : "Pages"} ${picked.join(", ")}`
+            : `${picked.length} pages`,
+      );
+    }
+    this.pagesButton?.toggleClass("is-many", picked.length > 1);
+    this.pagesButton?.toggleClass("is-none", picked.length === 0);
+    const first = picked[0] ?? 0;
+    if (first !== this.chipPage && this.chipThumb) {
+      this.chipPage = first;
+      const canvas = this.chipThumb;
+      if (first) void this.host.paintThumbnail(canvas, first, CHIP_THUMB_PX).catch(() => undefined);
+    }
+  }
+
+  /** The line under the top bar: what the next question sends, and to whom. */
+  private noteText(): string {
+    const session = this.session;
+    const sent = session.sentPages;
+    const fresh = session.selected.filter((p) => !sent.has(p));
+    const saved = session.save ? " Saved in AI chats." : "";
+    if (session.selected.length === 0 && sent.size === 0) {
+      return `Pick the pages to ask about.${saved}`;
+    }
+    if (fresh.length === 0) return `Asking ${this.host.target}.${saved}`;
+    return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${saved}`;
+  }
+
+  // --- Conversation ---------------------------------------------------------
 
   private submit(question?: string): void {
     const text = (question ?? this.input?.value ?? "").trim();
     if (!text || this.session.busy) return;
+    this.closePicker();
     if (question === undefined && this.input) {
       this.input.value = "";
       this.session.draft = "";
@@ -213,11 +379,6 @@ export class AskAiModal extends Modal {
   private render(): void {
     const session = this.session;
     const busy = session.busy;
-    for (const [id, button] of this.scopeButtons) {
-      button.toggleClass("is-active", id === session.scope);
-      button.setAttribute("aria-pressed", String(id === session.scope));
-      button.disabled = busy;
-    }
     const saved = session.save;
     if (this.saveButton) {
       this.saveButton.toggleClass("is-active", saved);
@@ -232,18 +393,14 @@ export class AskAiModal extends Modal {
         .querySelector(".goodobsidian-chat-tool-label")
         ?.setText(saved ? "Saved" : "Save chat");
     }
+    if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
     if (this.newChatButton) {
       this.newChatButton.disabled = busy;
-      this.newChatButton.toggleClass(
-        "is-hidden",
-        session.turns.length === 0 && !session.outstanding,
-      );
+      this.newChatButton.toggleClass("is-hidden", session.empty);
     }
-    this.noteEl?.setText(
-      this.host.describe(session.scope) +
-        (saved ? " The chat is saved in the notebook's AI chats folder." : ""),
-    );
+    this.renderPages();
+    this.noteEl?.setText(this.noteText());
     if (this.input) {
       this.input.placeholder =
         session.turns.length > 0 ? "Ask a follow-up…" : "Ask about your notes…";
@@ -275,37 +432,42 @@ export class AskAiModal extends Modal {
     const session = this.session;
     const texts = session.turns.map(shownText);
     const same =
-      this.shown.scope === session.scope &&
-      this.shown.texts.length <= texts.length &&
-      this.shown.texts.every((text, i) => text === texts[i]);
+      this.shownTexts.length <= texts.length &&
+      this.shownTexts.every((text, i) => text === texts[i]);
     if (!same) {
       thread.empty();
       this.outstandingEl = null;
       this.outstandingKey = "";
-      this.shown = { scope: session.scope, texts: [] };
+      this.emptyForOne = null;
+      this.shownTexts = [];
     }
-    const added = texts.length > this.shown.texts.length;
+    const added = texts.length > this.shownTexts.length;
     // New turns go before the outstanding question, which is redrawn below.
     this.outstandingEl?.remove();
     this.outstandingEl = null;
     let lastAnswer: HTMLElement | null = null;
-    for (let i = this.shown.texts.length; i < texts.length; i++) {
+    for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
-      if (turn.role === "user") this.questionRow(thread, texts[i]);
+      if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages);
       else lastAnswer = this.answerRow(thread, texts[i]);
     }
-    this.shown.texts = texts;
+    this.shownTexts = texts;
 
-    const empty = texts.length === 0 && !session.outstanding;
-    if (empty) {
-      if (!thread.querySelector(".goodobsidian-chat-empty")) this.renderEmpty(thread);
-    } else {
+    if (session.empty) {
+      const one = session.selected.length <= 1;
+      if (this.emptyForOne !== one) {
+        thread.querySelector(".goodobsidian-chat-empty")?.remove();
+        this.renderEmpty(thread, one);
+        this.emptyForOne = one;
+      }
+    } else if (this.emptyForOne !== null) {
       thread.querySelector(".goodobsidian-chat-empty")?.remove();
+      this.emptyForOne = null;
     }
 
     const outstanding = session.outstanding;
     const key = outstanding
-      ? `${outstanding.question}\u0000${outstanding.status}\u0000${outstanding.error ?? ""}`
+      ? `${outstanding.question}|${outstanding.status}|${outstanding.error ?? ""}`
       : "";
     if (outstanding) {
       const row = thread.createDiv({ cls: "goodobsidian-chat-outstanding" });
@@ -320,24 +482,32 @@ export class AskAiModal extends Modal {
   }
 
   /** The thread before the first question: what this is, and a few questions to start with. */
-  private renderEmpty(thread: HTMLElement): void {
+  private renderEmpty(thread: HTMLElement, one: boolean): void {
     const empty = thread.createDiv({ cls: "goodobsidian-chat-empty" });
     setIcon(empty.createDiv({ cls: "goodobsidian-chat-empty-icon" }), "sparkles");
     empty.createDiv({
       cls: "goodobsidian-chat-empty-title",
-      text: this.session.scope === "page" ? "Ask about this page" : "Ask about this notebook",
+      text: one ? "Ask about this page" : "Ask about these pages",
     });
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
-    for (const text of SUGGESTIONS[this.session.scope]) {
+    for (const text of one ? SUGGESTIONS.one : SUGGESTIONS.many) {
       const chip = chips.createEl("button", { cls: "goodobsidian-chat-suggestion clickable-icon" });
       chip.setText(text);
       chip.addEventListener("click", () => this.submit(text));
     }
   }
 
-  private questionRow(parent: HTMLElement, text: string): void {
+  /** A question's bubble, with the pages it sent under it. */
+  private questionRow(parent: HTMLElement, text: string, pages?: readonly number[]): void {
     const row = parent.createDiv({ cls: "goodobsidian-chat-msg is-user" });
-    row.createDiv({ cls: "goodobsidian-chat-bubble", text });
+    const column = row.createDiv({ cls: "goodobsidian-chat-question" });
+    column.createDiv({ cls: "goodobsidian-chat-bubble", text });
+    if (pages?.length) {
+      const label = pages.length === 1 ? `Page ${pages[0]}` : `Pages ${pages.join(", ")}`;
+      const meta = column.createDiv({ cls: "goodobsidian-chat-question-pages" });
+      setIcon(meta.createSpan(), "file-image");
+      meta.createSpan({ text: label });
+    }
   }
 
   /** An answer's row: the assistant's mark and a body. */
@@ -399,6 +569,7 @@ export class AskAiModal extends Modal {
 
   /** The saved chats of this notebook, as a menu; picking one continues it. */
   private async showChats(event: MouseEvent): Promise<void> {
+    this.closePicker();
     const anchor = this.chatsButton?.getBoundingClientRect();
     const chats = await this.host.savedChats();
     const menu = new Menu();

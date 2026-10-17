@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ChatTurn } from "../../src/recognition/ai-chat";
+import { ASK_MAX_PAGES, type ChatTurn } from "../../src/recognition/ai-chat";
 import type { SavedChat } from "../../src/recognition/ask-chat-file";
-import { AskSession, type AskSessionDeps } from "../../src/recognition/ask-session";
+import {
+  AskSession,
+  type AskSessionDeps,
+  pagesPhrase,
+  shownText,
+} from "../../src/recognition/ask-session";
 
-const png = { base64: "PAGE", mimeType: "image/png" as const };
+const img = (page: number) => ({ base64: `P${page}`, mimeType: "image/png" as const });
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -25,8 +30,9 @@ function setup(over: Partial<AskSessionDeps> = {}) {
   const deps: AskSessionDeps = {
     notebookPath: () => "N.notebook.md",
     confirm: () => Promise.resolve(true),
-    prepare: () => Promise.resolve({ images: [png], pageNumbers: [3], totalPages: 9 }),
-    preparePages: vi.fn(() => Promise.resolve({ images: [png], pageNumbers: [3], totalPages: 9 })),
+    preparePages: vi.fn((pages: readonly number[]) =>
+      Promise.resolve({ images: pages.map(img), pageNumbers: [...pages], totalPages: 9 }),
+    ),
     ask: (turns) => {
       asked.push([...turns]);
       return Promise.resolve(`answer ${asked.length}`);
@@ -42,29 +48,80 @@ function setup(over: Partial<AskSessionDeps> = {}) {
   return { deps, asked, saved };
 }
 
-describe("AskSession", () => {
-  it("sends the pages with the first question only, and keeps the draft untouched", async () => {
+const open = (deps: AskSessionDeps, save = false) =>
+  new AskSession(deps, { page: 3, totalPages: 9, save });
+
+describe("AskSession pages", () => {
+  it("starts on the page being read and caps the pick at the limit", () => {
+    const session = open(setup().deps);
+    expect(session.selected).toEqual([3]);
+    session.setSelection([9, 2, 2, 0, 12, 5]);
+    expect(session.selected).toEqual([2, 5, 9]);
+    session.setSelection(Array.from({ length: 9 }, (_, i) => i + 1));
+    session.setTotalPages(20);
+    for (let p = 10; p <= 20; p++) session.togglePage(p);
+    expect(session.selected).toHaveLength(ASK_MAX_PAGES);
+    session.togglePage(1);
+    expect(session.selected).not.toContain(1);
+    session.setTotalPages(4);
+    expect(session.selected).toEqual([2, 3, 4]);
+  });
+
+  it("sends the picked pages with the first question, and only new ones later", async () => {
     const { deps, asked } = setup();
-    const session = new AskSession(deps, "page", false);
+    const session = open(deps);
     session.draft = "half a thought";
+    session.setSelection([2, 3]);
     await session.send("What is this?");
+    expect(asked[0][0].images).toEqual([img(2), img(3)]);
+    expect(asked[0][0].text).toBe(
+      "The images are pages 2, 3 of 9, in that order.\n" +
+        "The other pages of the notebook were not sent.\n\nWhat is this?",
+    );
+    expect(shownText(asked[0][0])).toBe("What is this?");
+
     await session.send("And this?");
-    expect(asked[0][0].images).toEqual([png]);
-    expect(asked[1].map((t) => t.role)).toEqual(["user", "assistant", "user"]);
-    expect(asked[1][2]).toEqual({ role: "user", text: "And this?" });
-    expect(session.turns).toHaveLength(4);
+    expect(asked[1][2]).toEqual({ role: "user", text: "And this?", shown: "And this?" });
+
+    session.togglePage(7);
+    await session.send("Now with 7?");
+    expect(asked[2][4].images).toEqual([img(7)]);
+    expect(asked[2][4].text).toBe("Another image: page 7 of 9.\n\nNow with 7?");
+    expect([...session.sentPages].sort()).toEqual([2, 3, 7]);
     expect(session.draft).toBe("half a thought");
   });
 
+  it("needs a page with something on it for the first question", async () => {
+    const none = setup();
+    const a = open(none.deps);
+    a.setSelection([]);
+    await a.send("x");
+    expect(a.outstanding?.error).toMatch(/pick a page/);
+    const blank = setup({
+      preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 9 }),
+    });
+    const b = open(blank.deps);
+    await b.send("x");
+    expect(b.outstanding?.error).toMatch(/nothing on these pages/);
+  });
+
+  it("names pages in prose", () => {
+    expect(pagesPhrase([4])).toBe("page 4");
+    expect(pagesPhrase([2, 5, 7])).toBe("pages 2, 5 and 7");
+  });
+});
+
+describe("AskSession conversation", () => {
   it("shows the question while it waits, and reports a failure without keeping it", async () => {
     const answer = deferred<string>();
     const { deps } = setup({ ask: () => answer.promise });
-    const session = new AskSession(deps, "page", false);
+    const session = open(deps);
     const changes = vi.fn();
     session.onChange(changes);
     const sent = session.send("Why?");
     await Promise.resolve();
     expect(session.busy).toBe(true);
+    expect(session.empty).toBe(false);
     expect(session.outstanding?.question).toBe("Why?");
     answer.reject(new Error("HTTP 529"));
     await sent;
@@ -73,44 +130,41 @@ describe("AskSession", () => {
     expect(session.turns).toEqual([]);
     expect(changes).toHaveBeenCalled();
     session.dismissError();
+    expect(session.empty).toBe(true);
+  });
+
+  it("drops a declined question quietly", async () => {
+    const { deps, asked } = setup({ confirm: () => Promise.resolve(false) });
+    const session = open(deps);
+    await session.send("x");
     expect(session.outstanding).toBeNull();
+    expect(asked).toHaveLength(0);
   });
 
-  it("refuses an empty page set, and drops a declined question quietly", async () => {
-    const empty = setup({
-      prepare: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 2 }),
-    });
-    const a = new AskSession(empty.deps, "page", false);
-    await a.send("x");
-    expect(a.outstanding?.error).toMatch(/nothing on these pages/);
-    const declined = setup({ confirm: () => Promise.resolve(false) });
-    const b = new AskSession(declined.deps, "page", false);
-    await b.send("x");
-    expect(b.outstanding).toBeNull();
-    expect(declined.asked).toHaveLength(0);
-  });
-
-  it("saves after every answer when asked to, at the same path", async () => {
+  it("saves after every answer when asked to, at the same path, pages per question", async () => {
     const { deps, saved } = setup();
-    const session = new AskSession(deps, "notebook", true);
+    const session = open(deps, true);
     await session.send("One");
+    session.togglePage(5);
     await session.send("Two");
     expect(saved.map((s) => s.path)).toEqual([null, "AI chats/c.md"]);
-    expect(saved[1].chat).toMatchObject({
+    expect(saved[1].chat).toEqual({
       notebook: "N.notebook.md",
-      scope: "notebook",
-      pageNumbers: [3],
       totalPages: 9,
       created: "2026-10-17T13:00:00.000Z",
+      turns: [
+        { role: "user", text: "One", pages: [3] },
+        { role: "assistant", text: "answer 1" },
+        { role: "user", text: "Two", pages: [5] },
+        { role: "assistant", text: "answer 2" },
+      ],
     });
-    expect(saved[1].chat.turns.map((t) => t.text)).toEqual(["One", "answer 1", "Two", "answer 2"]);
-    // The saved text is the question as typed, not the line naming the pages.
     expect(session.savedPath).toBe("AI chats/c.md");
   });
 
   it("can be switched to saving after the fact, and back off, which removes the file", async () => {
     const { deps, saved } = setup();
-    const session = new AskSession(deps, "page", false);
+    const session = open(deps);
     await session.setSave(true); // nothing to save yet
     await session.setSave(false);
     expect(saved).toHaveLength(0);
@@ -123,50 +177,57 @@ describe("AskSession", () => {
     expect(session.savedPath).toBeNull();
   });
 
-  it("drops an answer to a chat that was replaced meanwhile", async () => {
+  it("refuses a new chat while busy, and starts the next on the given page", async () => {
     const answer = deferred<string>();
     const { deps } = setup({ ask: () => answer.promise });
-    const session = new AskSession(deps, "page", false);
+    const session = open(deps);
     const sent = session.send("Old");
     await Promise.resolve();
-    session.newChat(); // refused while busy
+    session.newChat(6);
     expect(session.outstanding?.question).toBe("Old");
     answer.resolve("late");
     await sent;
-    session.newChat("notebook");
-    expect(session.scope).toBe("notebook");
+    session.newChat(6);
     expect(session.turns).toEqual([]);
+    expect(session.selected).toEqual([6]);
+    session.newChat(40);
+    expect(session.selected).toEqual([]);
   });
 
-  it("continues a loaded chat, rendering its pages again for the follow-up", async () => {
+  it("continues a loaded chat, rendering each question's pages again once", async () => {
     const { deps, asked, saved } = setup();
-    const session = new AskSession(deps, "page", false);
+    const session = open(deps);
     session.load(
       {
         notebook: "N.notebook.md",
-        scope: "notebook",
-        pageNumbers: [2, 5],
         totalPages: 9,
         created: "2026-10-01T10:00:00.000Z",
         turns: [
-          { role: "user", text: "Old?" },
+          { role: "user", text: "Old?", pages: [2, 5] },
           { role: "assistant", text: "Yes." },
+          { role: "user", text: "More?", pages: [8] },
+          { role: "assistant", text: "No." },
         ],
       },
       "AI chats/old.md",
     );
     expect(session.save).toBe(true);
-    expect(session.scope).toBe("notebook");
+    expect(session.selected).toEqual([2, 5, 8]);
     await session.send("New?");
     expect(deps.preparePages).toHaveBeenCalledWith([2, 5]);
-    expect(asked[0][0].images).toEqual([png]);
-    // The page line is rebuilt for the model, and stays out of what is shown and saved.
-    expect(asked[0][0].text).toBe("The image is page 3 of 9.\n\nOld?");
-    expect(saved[0].chat.turns[0].text).toBe("Old?");
+    expect(deps.preparePages).toHaveBeenCalledWith([8]);
+    expect(asked[0][0].images).toEqual([img(2), img(5)]);
+    // The page lines are rebuilt for the model, and stay out of what is shown and saved.
+    expect(asked[0][0].text).toBe(
+      "The images are pages 2, 5 of 9, in that order.\n" +
+        "The other pages of the notebook were not sent.\n\nOld?",
+    );
+    expect(asked[0][2].text).toBe("Another image: page 8 of 9.\n\nMore?");
+    expect(asked[0][4]).toEqual({ role: "user", text: "New?", shown: "New?" });
+    expect(saved[0].chat.turns[0]).toEqual({ role: "user", text: "Old?", pages: [2, 5] });
     expect(saved[0].path).toBe("AI chats/old.md");
     expect(saved[0].chat.created).toBe("2026-10-01T10:00:00.000Z");
-    // Rendered once: the images stay on the first question for the next follow-up.
     await session.send("Again?");
-    expect(deps.preparePages).toHaveBeenCalledTimes(1);
+    expect(deps.preparePages).toHaveBeenCalledTimes(2);
   });
 });

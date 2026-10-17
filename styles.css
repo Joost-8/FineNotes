@@ -4120,8 +4120,300 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   gap: 8px;
 }
 
-.goodobsidian-chat-scope.goodobsidian-segmented {
-  flex: 0 1 340px;
+/* The page chip, top left: a thumbnail of the first page picked (a second
+   card behind it when there are more), what is picked, and a chevron. */
+.goodobsidian-ask-modal button.goodobsidian-chat-pages.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  height: 46px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-l);
+  background: var(--gob-card-bg);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-pages.clickable-icon:hover,
+.goodobsidian-ask-modal button.goodobsidian-chat-pages[aria-expanded="true"] {
+  border-color: hsla(var(--interactive-accent-hsl), 0.6);
+  background: var(--gob-card-bg);
+}
+
+.goodobsidian-chat-pages-stack {
+  position: relative;
+  width: 26px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.goodobsidian-chat-pages-thumb {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 26px;
+  height: 34px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: var(--gob-shadow-paper);
+  object-fit: contain;
+}
+
+.goodobsidian-chat-pages.is-many .goodobsidian-chat-pages-stack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: var(--gob-shadow-paper);
+  transform: translate(4px, -3px) rotate(6deg);
+  opacity: 0.75;
+}
+
+.goodobsidian-chat-pages.is-none .goodobsidian-chat-pages-thumb {
+  background: var(--gob-well);
+  box-shadow: none;
+}
+
+.goodobsidian-chat-pages-chevron {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.goodobsidian-chat-pages-chevron svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease-out;
+}
+
+.goodobsidian-chat-pages[aria-expanded="true"] .goodobsidian-chat-pages-chevron svg {
+  transform: rotate(180deg);
+}
+
+/* The picker takes the thread's place while it is open. */
+.goodobsidian-ask-modal.is-picking .goodobsidian-chat-thread {
+  display: none;
+}
+
+.goodobsidian-chat-picker {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 -16px;
+  padding: 12px 16px 4px;
+  border-top: 1px solid var(--gob-line);
+  animation: goodobsidian-chat-picker-in 0.16s ease-out;
+}
+
+.goodobsidian-chat-picker.is-hidden {
+  display: none;
+}
+
+@keyframes goodobsidian-chat-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-chat-picker {
+    animation: none;
+  }
+}
+
+.goodobsidian-chat-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goodobsidian-chat-picker-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-right: auto;
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-chat-picker-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: normal;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-picker-link.clickable-icon {
+  width: auto;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-ask-modal .goodobsidian-chat-picker-head button.mod-cta.clickable-icon {
+  width: auto;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--gob-radius-pill);
+}
+
+/* `position: relative`, so a tile's `offsetTop` is measured in the grid. */
+.goodobsidian-chat-picker-grid {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  align-content: start;
+  gap: 14px 12px;
+  padding: 4px 2px 8px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-tile.clickable-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--text-muted);
+}
+
+.goodobsidian-chat-tile-frame {
+  position: relative;
+  aspect-ratio: 210 / 297;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--gob-shadow-paper);
+  overflow: hidden;
+  transition:
+    border-color 0.12s,
+    transform 0.12s;
+}
+
+.goodobsidian-chat-tile-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.goodobsidian-chat-tile.is-selected .goodobsidian-chat-tile-frame {
+  border-color: var(--interactive-accent);
+}
+
+.goodobsidian-chat-tile:active .goodobsidian-chat-tile-frame {
+  transform: scale(0.97);
+}
+
+/* A round check, top right: empty until the page is picked. */
+.goodobsidian-chat-tile-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: transparent;
+}
+
+.goodobsidian-chat-tile-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3px;
+}
+
+.goodobsidian-chat-tile.is-selected .goodobsidian-chat-tile-check {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-chat-tile-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-chat-tile.is-selected .goodobsidian-chat-tile-caption {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-chat-tile-tag,
+.goodobsidian-chat-tile-sent {
+  padding: 1px 6px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well-strong);
+  font-weight: normal;
+}
+
+.goodobsidian-chat-tile-sent {
+  display: none;
+}
+
+.goodobsidian-chat-tile.is-sent .goodobsidian-chat-tile-sent {
+  display: inline;
+}
+
+/* Nothing on it, or past the limit: still visible, not pickable. */
+.goodobsidian-ask-modal button.goodobsidian-chat-tile.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-chat-picker-foot {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Under a question's bubble: the pages it sent. */
+.goodobsidian-chat-question {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 80%;
+}
+
+.goodobsidian-chat-question .goodobsidian-chat-bubble {
+  max-width: 100%;
+}
+
+.goodobsidian-chat-question-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-chat-question-pages svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* Save chat, Chats, New chat: quiet text buttons at the end of the row. */

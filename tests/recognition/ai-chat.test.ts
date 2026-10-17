@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ASK_MAX_PAGES,
   type ChatTurn,
   assertAlternating,
   buildAskFirstTurn,
@@ -8,7 +7,6 @@ import {
   buildChatRequest,
   extractRefusal,
   markdownToPlainText,
-  selectAskPages,
 } from "../../src/recognition/ai-chat";
 import {
   MAX_OUTPUT_TOKENS,
@@ -303,28 +301,6 @@ describe("the first question", () => {
 
   it("has a system prompt that grounds answers in the pages", () => {
     expect(buildAskSystemPrompt()).toMatch(/pages/);
-  });
-});
-
-describe("selectAskPages", () => {
-  it("keeps only pages with content, in document order", () => {
-    expect(selectAskPages([true, false, true, true], 0)).toEqual([0, 2, 3]);
-  });
-
-  it("caps at the limit, nearest the current page first", () => {
-    const forty = Array.from({ length: 40 }, () => true);
-    const chosen = selectAskPages(forty, 29);
-    expect(chosen).toHaveLength(ASK_MAX_PAGES);
-    // Four before, five after: the one tie (distance 5) goes to the later page.
-    expect(chosen).toEqual([25, 26, 27, 28, 29, 30, 31, 32, 33, 34]);
-    expect(selectAskPages(forty, 0, 3)).toEqual([0, 1, 2]);
-    expect(selectAskPages(forty, 39, 2)).toEqual([38, 39]);
-  });
-
-  it("prefers the later page on a tie and handles an empty notebook", () => {
-    expect(selectAskPages([true, true, true], 1, 2)).toEqual([1, 2]);
-    expect(selectAskPages([false, false], 0)).toEqual([]);
-    expect(selectAskPages([true], 0, 0)).toEqual([]);
   });
 });
 

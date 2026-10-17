@@ -11,12 +11,10 @@ import {
 
 const chat: SavedChat = {
   notebook: "Computer Science/Algebra/Lectures.notebook.md",
-  scope: "page",
-  pageNumbers: [13],
   totalPages: 20,
   created: "2026-10-17T13:02:00.000Z",
   turns: [
-    { role: "user", text: "What is a group homomorphism?" },
+    { role: "user", text: "What is a group homomorphism?", pages: [13] },
     {
       role: "assistant",
       text: "## Definition\n\nA map with $f(ab) = f(a)f(b)$.\n\n### You\n\n- kernel\n- image",
@@ -55,14 +53,15 @@ describe("chat files", () => {
 
   it("survives hand edits: CRLF, junk properties, two answers in a row", () => {
     const text = buildChatFile(chat)
-      .replace('scope: "page"', "scope: not json")
+      .replace('created: "', "created: not json")
       .replace(
         "<!-- finenotes-chat: user -->\n### You\n\nGive an example",
         "<!-- finenotes-chat: assistant -->\n### AI\n\nAlso this.",
       )
       .replace(/\n/g, "\r\n");
     const back = parseChatFile(text)!;
-    expect(back.scope).toBe("page");
+    expect(back.created).toBe("");
+    expect(back.totalPages).toBe(20);
     expect(back.turns.map((t) => t.role)).toEqual(["user", "assistant"]);
     expect(back.turns[1].text).toContain("Also this.");
   });

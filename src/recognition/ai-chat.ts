@@ -39,6 +39,8 @@ export interface ChatTurn {
    * question's line naming its pages). Shown and saved; never sent.
    */
   shown?: string;
+  /** 1-based: the pages `images` show, on a question that sent some. Never sent. */
+  pages?: readonly number[];
 }
 
 /** A conversation for one vendor. A transcription is one of these, one question long. */
@@ -57,9 +59,9 @@ export interface ChatRequestInput extends VendorTarget {
 }
 
 /**
- * Most pages one question sends as images. Every page is roughly 1,500 input
- * tokens at the render size `page-render.ts` uses, and every follow-up
- * resends them all, so a 40-page notebook would cost 60k tokens a question.
+ * Most pages the Ask AI page picker takes at once. Every page is roughly
+ * 1,500 input tokens at the render size `page-render.ts` uses, and every
+ * follow-up resends them, so 40 pages would cost 60k tokens a question.
  */
 export const ASK_MAX_PAGES = 10;
 
@@ -205,8 +207,6 @@ const GOOGLE_BLOCKED = new Set([
   "IMAGE_SAFETY",
 ]);
 
-export type AskScope = "page" | "notebook";
-
 /** The standing instructions for a question about notebook pages. */
 export function buildAskSystemPrompt(): string {
   return [
@@ -240,28 +240,6 @@ export function buildAskFirstTurn(
   }
   lines.push("", question.trim());
   return { role: "user", text: lines.join("\n").trim(), images };
-}
-
-/**
- * Which pages a question about the whole notebook sends, as 0-based indexes in
- * document order: pages with something on them, nearest to the page being
- * read first, at most `max`. A 40-page notebook asked about from page 30 sends
- * pages 26–35, not pages 1–10.
- */
-export function selectAskPages(
-  hasContent: readonly boolean[],
-  current: number,
-  max = ASK_MAX_PAGES,
-): number[] {
-  const candidates = hasContent.flatMap((has, index) => (has ? [index] : []));
-  const chosen = candidates
-    .map((index) => ({ index, distance: Math.abs(index - current) }))
-    // Ties (one page either side) prefer the later page: a question is more
-    // often about what follows than what came before.
-    .sort((a, b) => a.distance - b.distance || b.index - a.index)
-    .slice(0, Math.max(0, max))
-    .map((c) => c.index);
-  return chosen.sort((a, b) => a - b);
 }
 
 /**

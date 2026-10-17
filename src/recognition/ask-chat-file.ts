@@ -1,10 +1,9 @@
 /**
- * A saved Ask AI conversation as a markdown note, in an "AI chats" folder
- * beside the notebook. It reads as a normal note in Obsidian (each turn under
- * "You" or "AI"), links back to its notebook in the properties, and carries
- * what reopening it needs: which pages the conversation is about, so a
- * follow-up can send their images again (the images themselves are not
- * stored).
+ * A saved Ask AI conversation as a markdown note, in the notebook's AI chats
+ * folder. It reads as a normal note in Obsidian (each turn under "You" or
+ * "AI"), links back to its notebook in the properties, and carries what
+ * reopening it needs: which pages each question sent, so a follow-up can send
+ * their images again (the images themselves are not stored).
  *
  * Each turn starts with an HTML comment, invisible when the note is read,
  * which is what `parseChatFile` splits on: an answer's own headings can never
@@ -13,32 +12,35 @@
  * Pure: no DOM, no Obsidian, no network.
  */
 
-import type { AskScope } from "./ai-chat";
-
-/** The folder beside a notebook that its saved chats go in. */
+/** The folder beside a notebook that its saved chats go in, when it sets none. */
 export const ASK_CHATS_FOLDER = "AI chats";
 
 /** Marks a note as a FineNotes chat, and its format version. */
 const CHAT_MARK = "finenotes-chat";
-const TURN_MARK = (role: "user" | "assistant"): string => `<!-- ${CHAT_MARK}: ${role} -->`;
-const TURN_RE = /^<!-- finenotes-chat: (user|assistant) -->$/;
+const TURN_RE = /^<!-- finenotes-chat: (user|assistant)(?: pages=([0-9,]+))? -->$/;
 const LABEL = { user: "### You", assistant: "### AI" } as const;
 
 export interface SavedTurn {
   role: "user" | "assistant";
   text: string;
+  /** 1-based: the pages whose images went with this question. */
+  pages?: number[];
 }
 
 export interface SavedChat {
   /** The notebook's vault path, `.md` included. */
   notebook: string;
-  scope: AskScope;
-  /** 1-based, the pages the first question sent. */
-  pageNumbers: number[];
+  /** The notebook's page count when the chat was saved. */
   totalPages: number;
   /** ISO time of the first question. */
   created: string;
   turns: SavedTurn[];
+}
+
+/** A turn's marker; a question that sent pages lists them (`pages=2,5`). */
+function turnMark(turn: SavedTurn): string {
+  const pages = turn.pages?.length ? ` pages=${turn.pages.join(",")}` : "";
+  return `<!-- ${CHAT_MARK}: ${turn.role}${pages} -->`;
 }
 
 /** A chat's title: its first question, on one line, cut at a word near 60 characters. */
@@ -73,7 +75,7 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** The vault path of the AI chats folder for the notebook at `notebookPath`. */
+/** The vault path of the AI chats folder beside the notebook at `notebookPath`. */
 export function chatsFolderFor(notebookPath: string): string {
   const slash = notebookPath.lastIndexOf("/");
   return slash <= 0 ? ASK_CHATS_FOLDER : `${notebookPath.slice(0, slash)}/${ASK_CHATS_FOLDER}`;
@@ -87,14 +89,12 @@ export function buildChatFile(chat: SavedChat): string {
     "---",
     `${CHAT_MARK}: 1`,
     `notebook: ${JSON.stringify(`[[${link}]]`)}`,
-    `scope: ${JSON.stringify(chat.scope)}`,
-    `pages: ${JSON.stringify(chat.pageNumbers)}`,
     `total-pages: ${chat.totalPages}`,
     `created: ${JSON.stringify(chat.created)}`,
     "---",
   ];
   const body = chat.turns.map((turn) =>
-    [TURN_MARK(turn.role), LABEL[turn.role], "", turn.text.trim()].join("\n"),
+    [turnMark(turn), LABEL[turn.role], "", turn.text.trim()].join("\n"),
   );
   return `${front.join("\n")}\n\n# ${chatTitle(chat.turns)}\n\n${body.join("\n\n")}\n`;
 }
@@ -123,16 +123,11 @@ export function parseChatFile(text: string): (SavedChat & { notebookLink: string
   const notebook = props.get("notebook");
   const link =
     typeof notebook === "string" ? (/^\[\[([^\]|#]+)/.exec(notebook)?.[1]?.trim() ?? "") : "";
-  const scope = props.get("scope") === "notebook" ? "notebook" : "page";
-  const pages = props.get("pages");
-  const pageNumbers = Array.isArray(pages)
-    ? pages.filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
-    : [];
   const total = props.get("total-pages");
   const created = props.get("created");
 
   const turns: SavedTurn[] = [];
-  let current: { role: SavedTurn["role"]; lines: string[] } | null = null;
+  let current: { role: SavedTurn["role"]; pages: number[]; lines: string[] } | null = null;
   const close = (): void => {
     if (!current) return;
     const body = current.lines.slice();
@@ -140,26 +135,32 @@ export function parseChatFile(text: string): (SavedChat & { notebookLink: string
     while (body.length && !body[0].trim()) body.shift();
     if (body[0]?.trim() === LABEL[current.role]) body.shift();
     const text = body.join("\n").trim();
-    if (text) turns.push({ role: current.role, text });
+    if (!text) return;
+    const turn: SavedTurn = { role: current.role, text };
+    if (current.role === "user" && current.pages.length) turn.pages = current.pages;
+    turns.push(turn);
   };
   for (const line of lines.slice(end + 1)) {
     const mark = TURN_RE.exec(line.trim());
     if (mark) {
       close();
-      current = { role: mark[1] as SavedTurn["role"], lines: [] };
+      const pages = (mark[2] ?? "")
+        .split(",")
+        .map(Number)
+        .filter((n) => Number.isInteger(n) && n > 0);
+      current = { role: mark[1] as SavedTurn["role"], pages, lines: [] };
     } else if (current) {
       current.lines.push(line);
     }
   }
   close();
   if (turns.length === 0 || turns[0].role !== "user") return null;
+  const highest = Math.max(0, ...turns.flatMap((turn) => turn.pages ?? []));
 
   return {
     notebook: link ? `${link}.md` : "",
     notebookLink: link,
-    scope,
-    pageNumbers,
-    totalPages: typeof total === "number" && total > 0 ? total : pageNumbers.length,
+    totalPages: typeof total === "number" && total >= highest ? total : highest,
     created: typeof created === "string" ? created : "",
     turns: alternating(turns),
   };
@@ -173,8 +174,12 @@ function alternating(turns: readonly SavedTurn[]): SavedTurn[] {
   const out: SavedTurn[] = [];
   for (const turn of turns) {
     const last = out[out.length - 1];
-    if (last && last.role === turn.role) last.text = `${last.text}\n\n${turn.text}`;
-    else out.push({ ...turn });
+    if (last && last.role === turn.role) {
+      last.text = `${last.text}\n\n${turn.text}`;
+      if (turn.pages) last.pages = [...new Set([...(last.pages ?? []), ...turn.pages])];
+    } else {
+      out.push({ ...turn });
+    }
   }
   return out;
 }

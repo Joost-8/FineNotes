@@ -1,20 +1,26 @@
 /**
  * One Ask AI conversation, owned by the notebook's view rather than the
  * dialog, so closing the dialog loses nothing: the chat, a question still
- * waiting for its answer, and the half-typed draft are all here when it opens
- * again. The dialog only draws this and listens for `onChange`.
+ * waiting for its answer, the half-typed draft and the pages picked are all
+ * here when it opens again. The dialog only draws this and listens for
+ * `onChange`.
+ *
+ * Pages: the user picks up to `ASK_MAX_PAGES`, starting with the page being
+ * read. A question sends the images of the picked pages the conversation has
+ * not seen yet, so pages can be added mid-chat; pages already sent stay in
+ * the history.
  *
  * Saving is optional and can be switched either way at any time: on, the chat
  * is written to the notebook's AI chats folder after every answer; off, a file
- * it already wrote is removed. A saved chat can be loaded back; its first
- * question has no images then (they are not stored), so the next follow-up
- * renders the same pages again before it is sent.
+ * it already wrote is removed. A saved chat can be loaded back; its questions
+ * have no images then (they are not stored), so the next follow-up renders
+ * the same pages again before it is sent.
  *
  * No DOM, no Obsidian, no network: everything with a side effect is a
  * dependency, so the whole conversation is testable.
  */
 
-import { type AskScope, type ChatImage, type ChatTurn, buildAskFirstTurn } from "./ai-chat";
+import { ASK_MAX_PAGES, type ChatImage, type ChatTurn, buildAskFirstTurn } from "./ai-chat";
 import type { SavedChat } from "./ask-chat-file";
 import { errorMessage } from "../util/errors";
 
@@ -30,9 +36,7 @@ export interface AskSessionDeps {
   notebookPath: () => string;
   /** The one-time consent. False = the user declined. */
   confirm: () => Promise<boolean>;
-  /** Render the pages a question about `scope` sends. */
-  prepare: (scope: AskScope) => Promise<AskPagesResult>;
-  /** Render exactly these 1-based pages (a reloaded chat's follow-up). */
+  /** Render these 1-based pages; pages with nothing on them are left out. */
   preparePages: (pageNumbers: readonly number[]) => Promise<AskPagesResult>;
   /** Send the conversation; resolves to the answer's markdown. */
   ask: (turns: readonly ChatTurn[]) => Promise<string>;
@@ -46,14 +50,13 @@ export interface AskSessionDeps {
 /** A question sent and not yet answered, or one that failed. */
 export interface AskOutstanding {
   question: string;
-  /** What is happening, for the dots ("Reading the pages…"); "" while waiting for the answer. */
+  /** What is happening, for the dots ("Reading pages 2, 3…"); "" while waiting for the answer. */
   status: string;
   /** Set when it failed. */
   error?: string;
 }
 
 export class AskSession {
-  scope: AskScope;
   /** Oldest first; only answered questions are in it. */
   turns: ChatTurn[] = [];
   draft = "";
@@ -62,8 +65,10 @@ export class AskSession {
   save: boolean;
   /** Where it is saved, once written. */
   savedPath: string | null = null;
-  /** The pages the first question sent, kept for saving and for reloading. */
-  private pages: { pageNumbers: number[]; totalPages: number } | null = null;
+  /** 1-based, ascending: the pages picked for the next question. */
+  selected: number[];
+  /** The notebook's page count, for the line naming the pages and for saving. */
+  totalPages: number;
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;
@@ -71,15 +76,25 @@ export class AskSession {
 
   constructor(
     private readonly deps: AskSessionDeps,
-    scope: AskScope,
-    save: boolean,
+    options: { page: number; totalPages: number; save: boolean },
   ) {
-    this.scope = scope;
-    this.save = save;
+    this.selected = [options.page];
+    this.totalPages = options.totalPages;
+    this.save = options.save;
   }
 
   get busy(): boolean {
     return this.outstanding !== null && this.outstanding.error === undefined;
+  }
+
+  /** Nothing asked yet, and nothing on its way. */
+  get empty(): boolean {
+    return this.turns.length === 0 && this.outstanding === null;
+  }
+
+  /** 1-based pages whose images the conversation already has. */
+  get sentPages(): Set<number> {
+    return new Set(this.turns.flatMap((turn) => turn.pages ?? []));
   }
 
   /** Call `listener` on every change; returns the unsubscribe. */
@@ -92,30 +107,65 @@ export class AskSession {
     for (const listener of [...this.listeners]) listener();
   }
 
-  /** Start over, optionally about another scope. The saved file of the old chat stays. */
-  newChat(scope: AskScope = this.scope): void {
-    if (this.busy) return;
-    this.generation++;
-    this.scope = scope;
-    this.turns = [];
-    this.outstanding = null;
-    this.savedPath = null;
-    this.pages = null;
-    this.created = null;
+  /**
+   * Pick these pages (1-based) for the next question: in range, no repeats,
+   * ascending, at most `ASK_MAX_PAGES` (the first ones given win).
+   */
+  setSelection(pages: readonly number[]): void {
+    const valid = pages.filter((p) => Number.isInteger(p) && p >= 1 && p <= this.totalPages);
+    const next = [...new Set(valid)].slice(0, ASK_MAX_PAGES).sort((a, b) => a - b);
+    if (next.length === this.selected.length && next.every((p, i) => p === this.selected[i])) {
+      return;
+    }
+    this.selected = next;
     this.changed();
   }
 
-  /** Continue a saved chat. */
+  /** Add or remove one page; adding past the limit does nothing. */
+  togglePage(page: number): void {
+    if (this.selected.includes(page)) {
+      this.setSelection(this.selected.filter((p) => p !== page));
+    } else if (this.selected.length < ASK_MAX_PAGES) {
+      this.setSelection([...this.selected, page]);
+    }
+  }
+
+  /** The notebook gained or lost pages: keep the selection in range. */
+  setTotalPages(total: number): void {
+    if (total === this.totalPages) return;
+    this.totalPages = total;
+    this.setSelection(this.selected);
+  }
+
+  /** Start over on `page`. The saved file of the old chat stays. */
+  newChat(page: number): void {
+    if (this.busy) return;
+    this.generation++;
+    this.turns = [];
+    this.outstanding = null;
+    this.savedPath = null;
+    this.created = null;
+    this.selected = page >= 1 && page <= this.totalPages ? [page] : [];
+    this.changed();
+  }
+
+  /** Continue a saved chat. The pages its questions sent stay picked. */
   load(chat: SavedChat, path: string): void {
     if (this.busy) return;
     this.generation++;
-    this.scope = chat.scope;
-    this.turns = chat.turns.map((turn) => ({ role: turn.role, text: turn.text }));
+    this.turns = chat.turns.map((turn) => ({
+      role: turn.role,
+      text: turn.text,
+      ...(turn.pages?.length ? { pages: [...turn.pages] } : {}),
+    }));
     this.outstanding = null;
     this.save = true;
     this.savedPath = path;
-    this.pages = { pageNumbers: [...chat.pageNumbers], totalPages: chat.totalPages };
     this.created = chat.created || null;
+    this.selected = [...this.sentPages]
+      .filter((p) => p <= this.totalPages)
+      .sort((a, b) => a - b)
+      .slice(0, ASK_MAX_PAGES);
     this.changed();
   }
 
@@ -125,10 +175,16 @@ export class AskSession {
     if (!text || this.busy) return;
     const generation = this.generation;
     const first = this.turns.length === 0;
-    this.outstanding = { question: text, status: first ? "Reading the pages…" : "" };
+    const sent = this.sentPages;
+    const newPages = this.selected.filter((p) => !sent.has(p));
+    this.outstanding = {
+      question: text,
+      status: newPages.length ? `Reading ${pagesPhrase(newPages)}…` : "",
+    };
     this.changed();
     const stale = (): boolean => generation !== this.generation;
     try {
+      if (first && newPages.length === 0) throw new Error("pick a page to ask about first.");
       if (!(await this.deps.confirm())) {
         if (!stale()) {
           this.outstanding = null;
@@ -136,23 +192,19 @@ export class AskSession {
         }
         return;
       }
-      let history = this.turns;
-      let turn: ChatTurn;
-      if (first) {
-        const pages = await this.deps.prepare(this.scope);
+      const history = await this.withImages();
+      if (stale()) return;
+      let turn: ChatTurn = { role: "user", text, shown: text };
+      if (newPages.length) {
+        const pages = await this.deps.preparePages(newPages);
         if (stale()) return;
-        if (pages.images.length === 0) throw new Error("there is nothing on these pages to send.");
-        this.pages = { pageNumbers: pages.pageNumbers, totalPages: pages.totalPages };
-        turn = {
-          ...buildAskFirstTurn(text, pages.images, pages.pageNumbers, pages.totalPages),
-          shown: text,
-        };
+        if (pages.images.length === 0) {
+          if (first) throw new Error("there is nothing on these pages to send.");
+        } else {
+          turn = this.questionWithPages(text, pages, first);
+        }
         this.outstanding = { question: text, status: "" };
         this.changed();
-      } else {
-        history = await this.withImages();
-        if (stale()) return;
-        turn = { role: "user", text };
       }
       const answer = await this.deps.ask([...history, turn]);
       if (stale()) return;
@@ -194,14 +246,16 @@ export class AskSession {
 
   /** The chat as it would be saved, or null before its first answer. */
   snapshot(): SavedChat | null {
-    if (this.turns.length === 0 || !this.pages) return null;
+    if (this.turns.length === 0) return null;
     return {
       notebook: this.deps.notebookPath(),
-      scope: this.scope,
-      pageNumbers: this.pages.pageNumbers,
-      totalPages: this.pages.totalPages,
+      totalPages: this.totalPages,
       created: this.created ?? this.deps.now().toISOString(),
-      turns: this.turns.map((turn) => ({ role: turn.role, text: shownText(turn) })),
+      turns: this.turns.map((turn) => ({
+        role: turn.role,
+        text: shownText(turn),
+        ...(turn.pages?.length ? { pages: [...turn.pages] } : {}),
+      })),
     };
   }
 
@@ -216,24 +270,54 @@ export class AskSession {
     }
   }
 
+  /** A question carrying page images, with the line that names them. */
+  private questionWithPages(question: string, pages: AskPagesResult, first: boolean): ChatTurn {
+    const total = pages.totalPages || this.totalPages;
+    const text = first
+      ? buildAskFirstTurn(question, pages.images, pages.pageNumbers, total).text
+      : `${addedLine(pages.pageNumbers, total)}\n\n${question}`;
+    return { role: "user", text, shown: question, images: pages.images, pages: pages.pageNumbers };
+  }
+
   /**
-   * The history with its first question's images, rendering them again when
-   * the chat was loaded from a file (which keeps no images).
+   * The history with every question's images, rendering them again where the
+   * chat was loaded from a file (which keeps no images).
    */
   private async withImages(): Promise<ChatTurn[]> {
-    const [first, ...rest] = this.turns;
-    if (!first || first.images?.length || !this.pages?.pageNumbers.length) return this.turns;
-    const pages = await this.deps.preparePages(this.pages.pageNumbers);
-    if (pages.images.length === 0) return this.turns;
-    const question = shownText(first);
-    const rebuilt = buildAskFirstTurn(question, pages.images, pages.pageNumbers, pages.totalPages);
-    const withImages = [{ ...rebuilt, shown: question }, ...rest];
-    this.turns = withImages;
-    return withImages;
+    const missing = this.turns.some((t) => t.pages?.length && !t.images?.length);
+    if (!missing) return this.turns;
+    const rebuilt: ChatTurn[] = [];
+    for (const [i, turn] of this.turns.entries()) {
+      if (!turn.pages?.length || turn.images?.length) {
+        rebuilt.push(turn);
+        continue;
+      }
+      const pages = await this.deps.preparePages(turn.pages);
+      rebuilt.push(
+        pages.images.length
+          ? this.questionWithPages(shownText(turn), pages, i === 0)
+          : { ...turn, text: shownText(turn) },
+      );
+    }
+    this.turns = rebuilt;
+    return rebuilt;
   }
 }
 
 /** A turn as the user sees it: the question as typed, or the answer. */
 export function shownText(turn: ChatTurn): string {
   return turn.shown ?? turn.text;
+}
+
+/** "page 3", "pages 2, 5 and 7". */
+export function pagesPhrase(pages: readonly number[]): string {
+  if (pages.length === 1) return `page ${pages[0]}`;
+  return `pages ${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+}
+
+/** The line in front of a follow-up that brings more pages into the chat. */
+function addedLine(pageNumbers: readonly number[], total: number): string {
+  return pageNumbers.length === 1
+    ? `Another image: page ${pageNumbers[0]} of ${total}.`
+    : `More images: pages ${pageNumbers.join(", ")} of ${total}, in that order.`;
 }
