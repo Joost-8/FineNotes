@@ -369,14 +369,22 @@ describe("secondary tool integration", () => {
     state.tool = "pen";
     run(bar, "setState", state);
     expect(bar.optionsVisible).toBe(false);
-    // Other tools remember: the eraser tucked away comes back tucked, shown comes back shown.
+    // Without the return, first tap selects and second tap opens: a switch
+    // never opens a pill, though one showing stays for the next tool.
     bar.callbacks.returnToPenOnReselect = () => false;
     run(bar, "tapTool", "eraser", {});
-    expect(bar.optionsVisible).toBe(true);
-    run(bar, "tapTool", "eraser", {});
     expect(bar.optionsVisible).toBe(false);
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.optionsVisible).toBe(true);
     run(bar, "tapTool", "shape", {});
     expect(bar.optionsVisible).toBe(true);
+    // The eraser left showing comes back showing; tucked away, it comes back tucked.
+    run(bar, "tapTool", "eraser", {});
+    expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "eraser", {});
+    run(bar, "tapTool", "shape", {});
+    expect(bar.optionsVisible).toBe(false);
+    run(bar, "tapTool", "shape", {});
     run(bar, "tapTool", "eraser", {});
     expect(bar.optionsVisible).toBe(false);
   });

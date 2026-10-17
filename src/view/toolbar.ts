@@ -16,8 +16,9 @@
  *   two connector tools, line · arrow (added 2026-09-22). Auto-shape snaps
  *   whatever is drawn; a preset is dragged out corner to corner, a connector
  *   from start to end, and either tapped drops a default-size one. Last,
- *   Table: tapping it opens a rows × columns picker; the table is then
- *   dragged out like a preset and placed as ordinary ink strokes.
+ *   Table: tapping it picks the size it shows, tapping it again opens a
+ *   rows × columns picker; the table is then dragged out like a preset
+ *   and placed as ordinary ink strokes.
  *   Draw-and-hold with the ordinary pen is a setting, not a toolbar control.
  * - **Tier 2 — the active tool's options.** A floating rounded pill directly
  *   below tier 1 holding only what the current tool needs. For the pen: its
@@ -57,7 +58,7 @@
  *   "3 / 18" readout are chrome-level, because discrete pages are the fix.
  */
 
-import { drawingToolOf, selectedTool } from "./tool-return";
+import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
 import {
@@ -875,11 +876,12 @@ export class Toolbar {
   }
 
   /**
-   * A tap on a tool. Another tool becomes the active one, with its options
-   * showing. The active tool's own button instead shows or tucks away its
-   * options (it stays selected), so the Pencil can write on without a large
-   * control over the page; the lasso's button opens its popover instead
-   * (GoodNotes: the chevron on it says so).
+   * A tap on a tool: Notability's "first tap selects, second tap opens
+   * options". Another tool becomes the active one and nothing opens
+   * (`leaveToolFor`). The active tool's own button instead shows or tucks
+   * away its options (it stays selected), so the Pencil can write on without
+   * a large control over the page; the lasso's button opens its popover
+   * instead (GoodNotes: the chevron on it says so).
    */
   private tapTool(tool: ActiveTool, button: HTMLElement): void {
     // The pen button stands for every pen type, the highlighter included:
@@ -912,17 +914,24 @@ export class Toolbar {
   }
 
   /**
-   * Remember whether the tool being left had its options showing, and show
-   * the next tool's options as it was last left (showing, the first time).
-   * The pen's start tucked away every time it is picked ({@link STARTS_TUCKED}).
-   * Highlighter is a pen type, so the two share one memory.
+   * Remember whether the tool being left had its options showing. A switch
+   * never opens the next tool's options (`optionsAfterSwitch`): a pill that
+   * was showing stays, with the next tool's controls, unless that tool was
+   * last left tucked away. The pen's start tucked away every time it is
+   * picked ({@link STARTS_TUCKED}). Highlighter is a pen type, so the two
+   * share one memory.
    */
   private leaveToolFor(next: ActiveTool): void {
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
     else this.tuckedTools.add(optionsKey(this.optionsTool));
-    this.optionsVisible =
+    const remembered =
       !this.tuckedTools.has(optionsKey(next)) && !STARTS_TUCKED.has(optionsKey(next));
+    this.optionsVisible = optionsAfterSwitch(
+      this.optionsVisible,
+      remembered,
+      this.callbacks.returnToPenOnReselect?.() === true,
+    );
     this.optionsTool = next;
   }
 
@@ -1364,9 +1373,12 @@ export class Toolbar {
         button.setAttribute("aria-label", SHAPE_LABELS[mode]);
         button.setAttribute("title", SHAPE_LABELS[mode]);
         button.addEventListener("click", () => {
+          // First tap selects (the remembered size is on the button), a
+          // second opens the picker, as every tool button does.
+          const again = shapeModeFor(this.state) === mode;
           this.state.shapeMode = mode;
           this.syncActive();
-          if (mode === "table") this.toggleTablePicker(button);
+          if (mode === "table" && again) this.toggleTablePicker(button);
         });
         this.shapeButtons.set(mode, button);
         if (mode === "table") {
