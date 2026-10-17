@@ -323,6 +323,21 @@ export interface ImageElement {
   flipY?: true;
   /** A locked image cannot be selected, moved or erased until unlocked. Stored only as `true`. */
   locked?: boolean;
+  /**
+   * How see-through the picture is drawn, from {@link MIN_IMAGE_OPACITY} up
+   * to but not including 1. Absent is fully opaque.
+   */
+  opacity?: number;
+}
+
+/** The faintest a picture may be drawn: fainter would be a picture nobody can find. */
+export const MIN_IMAGE_OPACITY = 0.1;
+
+/** A stored opacity as the model keeps it: absent when it is not a real one below 1. */
+export function readImageOpacity(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value < MIN_IMAGE_OPACITY || value >= 1) return undefined;
+  return value;
 }
 
 /** A crop rectangle in fractions of the source picture: `0 ≤ x < x + w ≤ 1`, same for y. */

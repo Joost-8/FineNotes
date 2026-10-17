@@ -254,6 +254,7 @@ describe("the rows", () => {
       [PAGES, "Paper width", "render"],
       [PAGES, "(block)", "render"],
       [PAGES, "Default folder for new notebooks", "render"],
+      [PAGES, "Stickers folder", "text:stickerFolder"],
       [PAGES, "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
@@ -324,6 +325,7 @@ describe("the rows", () => {
       "Dark PDF pages": ["dark mode", "invert", "slides"],
       "Paper width": ["canvas size", "page width"],
       "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
+      "Stickers folder": ["sticker", "collection", "folder"],
       "Show New notebook in right-click menu": ["context menu", "file explorer", "new notebook"],
       "Show New notebook in file explorer bar": ["toolbar", "file explorer", "new notebook"],
       "Default ink color": ["pen color"],
@@ -453,6 +455,7 @@ describe("which rows show", () => {
       "Page appearance",
       "Paper width",
       "Default folder for new notebooks",
+      "Stickers folder",
       "Show New notebook in right-click menu",
       "Show New notebook in file explorer bar",
       "Read handwriting on this device (beta)",
@@ -479,7 +482,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${30 + PEN_ROWS.length})`,
+      `(block ${31 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });

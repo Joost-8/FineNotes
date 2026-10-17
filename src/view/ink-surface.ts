@@ -55,6 +55,7 @@ import {
   type StrokeStyle,
   decorOf,
   penFor,
+  renderPageThumbnail,
 } from "../canvas/renderer";
 import {
   ROUND_RADIUS,
@@ -225,6 +226,7 @@ import {
 } from "../ink/table-geometry";
 import {
   type Bounds,
+  blankPage,
   type ImageCrop,
   type ImageElement,
   type InkDocument,
@@ -265,7 +267,9 @@ import {
   FlipImage,
   type ImageLayer,
   ReorderImage,
+  IMAGE_OPACITIES,
   SetImageLocked,
+  SetImageOpacity,
   canReorderImage,
 } from "../model/image-commands";
 import { InkClipboard, pasteCopies, pastePlacement, sameSpotTaken } from "../model/clipboard";
@@ -376,6 +380,8 @@ const ZOOM_STEP = 1.25;
  * the budget skips is drawn from the page preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
+/** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
+const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
 const PREFETCH_BUDGET_MS = 5;
 /** How long the zoom takes to spring back inside its limits after a pinch. */
@@ -527,6 +533,8 @@ export interface InkSurfaceCallbacks {
   isLocked?: () => boolean;
   /** A custom colour was picked (the lasso's recolour): the new recent list. */
   onRecentColors?: (colors: string[]) => void;
+  /** "Save as sticker": the selection drawn as a transparent PNG, its size in page px. */
+  onSaveSticker?: (png: ArrayBuffer, width: number, height: number) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
   /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
@@ -3897,6 +3905,7 @@ export class InkSurface {
    */
   setImagePainter(painter: ImagePainter | null): void {
     this.imagesShown = painter !== null;
+    this.imagePainter = painter;
     this.renderer?.setImagePainter(painter);
     this.requestFrame();
   }
@@ -6875,6 +6884,14 @@ export class InkSurface {
         run: () => this.startCrop(),
       },
       ...flipActions((axis) => this.flipSelectedImage(axis)),
+      ...IMAGE_OPACITIES.map((opacity): SelectionAction => ({
+        id: `opacity-${opacity}`,
+        icon: opacity === 1 ? "circle" : "circle-dashed",
+        label: `Opacity ${Math.round(opacity * 100)} %`,
+        group: "opacity",
+        checked: Math.abs((sel.image.opacity ?? 1) - opacity) < 0.005,
+        run: () => this.setSelectedImageOpacity(opacity),
+      })),
       {
         id: "delete",
         icon: "trash-2",
@@ -6914,6 +6931,15 @@ export class InkSurface {
       },
       this.pasteAction(sel.pageId),
     ];
+    if (this.callbacks.onSaveSticker) {
+      actions.push({
+        id: "save-sticker",
+        icon: "sticker",
+        label: "Save as sticker",
+        group: "edit",
+        run: () => void this.saveSelectionAsSticker(),
+      });
+    }
     if (sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
       actions.push({
@@ -7432,6 +7458,53 @@ export class InkSurface {
 
   /** Bring the selected picture to the front of the page's pictures, or send it to the back. */
   /** Mirror the selected picture in its own frame; it stays selected, its box unchanged. */
+  /** The painter pictures are drawn with, for drawing a selection off the page. */
+  private imagePainter: ImagePainter | null = null;
+
+  /**
+   * "Save as sticker": draw what is selected, and only that, on a transparent
+   * canvas cut to its bounds (the painter the thumbnails use), and hand the
+   * PNG to the host, which files it in the stickers folder.
+   */
+  private async saveSelectionAsSticker(): Promise<void> {
+    const sel = this.liveSelection();
+    const bounds = sel ? this.groupBounds(sel) : null;
+    const save = this.callbacks.onSaveSticker;
+    if (!sel || !bounds || !save) return;
+    const pad = STICKER_PAD;
+    const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
+    const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
+    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t" };
+    const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
+    const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
+    const canvas = createEl("canvas");
+    // Sharp at three times its size, but no side past 2048 px.
+    const dpr = Math.min(3, 2048 / Math.max(width, height));
+    renderPageThumbnail(canvas, page, { paint: () => undefined }, width, dpr, {
+      transparent: true,
+      usePressure: this.inkPressure,
+      ...(this.imagePainter ? { images: this.imagePainter } : {}),
+    });
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    canvas.width = 0;
+    canvas.height = 0;
+    if (!blob) return;
+    save(await blob.arrayBuffer(), width, height);
+  }
+
+  /** Draw the selected picture see-through, or opaque again, as one undo step. */
+  private setSelectedImageOpacity(opacity: number): void {
+    const sel = this.liveImageSelection();
+    if (!sel || this.callbacks.isLocked?.()) return;
+    if (Math.abs((sel.image.opacity ?? 1) - opacity) < 0.005) return;
+    this.history.push(this.doc, new SetImageOpacity(sel.pageId, sel.image, opacity));
+    const box = this.boxForPage(sel.pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(sel.image)));
+    this.renderDry();
+    this.syncActionBar();
+    this.changed();
+  }
+
   private flipSelectedImage(axis: FlipAxis): void {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return;

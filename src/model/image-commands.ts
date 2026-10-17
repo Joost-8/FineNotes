@@ -23,7 +23,11 @@ import {
   type InkDocument,
   type Page,
   pageById,
+  readImageOpacity,
 } from "./document";
+
+/** The opacities a picture's menu offers, opaque first. */
+export const IMAGE_OPACITIES: readonly number[] = [1, 0.75, 0.5, 0.25];
 
 /** Where a picture can be moved in its page's stack. */
 export type ImageLayer = "front" | "back";
@@ -122,6 +126,39 @@ export class SetImageLocked implements Command {
     this.previous = { image, saved: snapshot(image) };
     if (this.locked) image.locked = true;
     else delete image.locked;
+  }
+
+  invert(doc: InkDocument): void {
+    const previous = this.previous;
+    if (!previous || !pageById(doc, this.pageId)) return;
+    restore(previous.image, previous.saved);
+    this.previous = null;
+  }
+}
+
+/**
+ * Draw a picture see-through (`opacity` below 1) or opaque again (the key
+ * deleted, for 1 or anything the model would not keep).
+ */
+export class SetImageOpacity implements Command {
+  readonly label = "Change image opacity";
+  private previous: { image: ImageElement; saved: ImageElement } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly image: ImageElement,
+    private readonly opacity: number,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    const image = page ? findImage(page, this.image) : null;
+    if (!image) return;
+    this.previous = { image, saved: snapshot(image) };
+    const opacity = readImageOpacity(this.opacity);
+    if (opacity === undefined) delete image.opacity;
+    else image.opacity = opacity;
   }
 
   invert(doc: InkDocument): void {

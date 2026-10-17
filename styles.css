@@ -7651,6 +7651,94 @@ button.goodobsidian-color-eyedropper .svg-icon {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------------ stickers */
+/* The sticker picker: category chips, a colour row, a grid of previews. */
+.goodobsidian-sticker-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.goodobsidian-sticker-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+button.goodobsidian-sticker-tab.clickable-icon {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+button.goodobsidian-sticker-tab.clickable-icon.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-sticker-colors {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+button.goodobsidian-sticker-swatch.clickable-icon {
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border-radius: 999px;
+}
+
+.goodobsidian-sticker-swatch-disc {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  /* A ring from the theme, so near-black reads on a dark dialog too. */
+  box-shadow: 0 0 0 1px var(--background-modifier-border-hover);
+}
+
+button.goodobsidian-sticker-swatch.is-active .goodobsidian-sticker-swatch-disc {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 3px;
+}
+
+.goodobsidian-sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+
+/* Previews on paper white whatever the theme: that is where they go. */
+button.goodobsidian-sticker-cell.clickable-icon {
+  height: 96px;
+  padding: 10px;
+  border-radius: var(--gob-radius-m);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+button.goodobsidian-sticker-cell.clickable-icon:hover {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+.goodobsidian-sticker-cell img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.goodobsidian-sticker-hint {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 /* ------------------------------------------------------- frosted chrome */
 
 /*

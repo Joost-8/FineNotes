@@ -26,6 +26,7 @@ import {
   type SettingDefinitionItem,
 } from "obsidian";
 import { SIZES } from "./constants";
+import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
 import {
@@ -815,6 +816,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         DESC.notebookFolder,
         (s) => this.drawNotebookFolder(s),
         ["folder", "location", "new notebook", "new page"],
+      ),
+      controlRow(
+        "Stickers folder",
+        "Where your own stickers live, one folder per collection. Stickers you save from a selection go into “My stickers” there.",
+        { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
+        ["sticker", "collection", "folder"],
       ),
       toggle(
         "showNewNotebookInContextMenu",

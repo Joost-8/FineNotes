@@ -16,6 +16,8 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
+import { stickerFolderOf } from "../model/stickers";
 import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
 import {
@@ -1517,6 +1519,7 @@ export class InkView extends TextFileView {
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
+        onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
           // Undoing or redoing "Convert to notebook" flips `single`.
@@ -2779,6 +2782,23 @@ export class InkView extends TextFileView {
     surface.applyCommand(new InsertImage(page.id, image));
     if (options.select !== false) surface.selectImage(page.id, image.id);
     return image;
+  }
+
+  /**
+   * File a sticker saved from a selection in the stickers folder's "My
+   * stickers" collection, under a free name, and say where it went.
+   */
+  private async saveSticker(png: ArrayBuffer, width: number, height: number): Promise<void> {
+    const note = this.file;
+    if (!note) return;
+    const folder = `${stickerFolderOf(this.settings.stickerFolder)}/${SAVED_STICKERS_COLLECTION}`;
+    try {
+      const prepared = { bytes: png, mime: "image/png", ext: "png", width, height };
+      const file = await saveImageAttachment(this.app, prepared, "Sticker", note.path, folder);
+      new Notice(`FineNotes: saved as a sticker in ${folder} (${file.basename}).`);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't save the sticker — ${errorMessage(error)}`, 8000);
+    }
   }
 
   /** Import an unchanged PDF attachment or reference an existing vault PDF. */

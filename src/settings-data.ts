@@ -24,6 +24,7 @@ import type { BarrelAction } from "./input/pen-modifiers";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR } from "./model/colors";
+import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
@@ -136,6 +137,8 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Vault folder of the user's sticker collections: one subfolder per collection. */
+  stickerFolder: string;
   /** The Shape tool's fill, line, corners and arrowheads (`model/shape-style`). */
   shapeStyle?: ShapeToolStyle;
   /** Colours picked lately, newest first. Checked where it is read. */
@@ -247,6 +250,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
+  stickerFolder: DEFAULT_STICKER_FOLDER,
   recentColors: [],
   pressureWidth: false,
   returnToPenOnReselect: false,

@@ -58,6 +58,7 @@ import {
   RULINGS,
   SAMPLE_STRIDE,
   SHAPE_KINDS,
+  readImageOpacity,
   TEXT_ALIGNS,
   TEXT_FONTS,
   strokeBounds,
@@ -749,6 +750,9 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
     ...(raw.flipX === true ? { flipX: true } : {}),
     ...(raw.flipY === true ? { flipY: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
+    ...(readImageOpacity(raw.opacity) !== undefined
+      ? { opacity: readImageOpacity(raw.opacity) }
+      : {}),
   };
 }
 

@@ -221,6 +221,7 @@ export function drawPlacedImage(
 ): void {
   if (!(image.w > 0) || !(image.h > 0)) return;
   ctx.save();
+  if (image.opacity !== undefined) ctx.globalAlpha *= image.opacity;
   ctx.translate(image.x + image.w / 2, image.y + image.h / 2);
   const rotation = rotationOf(image);
   if (rotation !== 0) ctx.rotate(rotation);

@@ -1,3 +1,6 @@
+import { mimeForExtension } from "./canvas/image-raster";
+import { StickerModal } from "./view/sticker-modal";
+import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
@@ -252,6 +255,36 @@ export default class GoodObsidianPlugin extends Plugin {
         order: 50,
         isAvailable: () => this.imageAiConfig() !== null,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.openGenerateImage(),
+      }),
+    );
+    // "Stickers": the built-in pack and the user's own collections. A pick is
+    // saved beside the notebook (a copy, never a link to the stickers folder)
+    // and placed like any picture.
+    this.register(
+      registerImageMenuEntry({
+        id: "stickers",
+        icon: "sticker",
+        label: "Stickers",
+        order: 35,
+        run: (ctx) => {
+          new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
+            void (async () => {
+              if (choice.kind === "builtin") {
+                const svg = stickerSvg(choice.sticker, choice.color);
+                const bytes = new TextEncoder().encode(svg).buffer;
+                await ctx.insertBytes(
+                  bytes,
+                  "image/svg+xml",
+                  stickerFileName(choice.sticker, choice.color),
+                );
+                return;
+              }
+              const bytes = await this.app.vault.readBinary(choice.file);
+              const mime = mimeForExtension(choice.file.extension) ?? "image/png";
+              await ctx.insertBytes(bytes, mime, choice.file.basename);
+            })();
+          }).open();
+        },
       }),
     );
     // "Scan document": straight into the camera from the tap that chose it
