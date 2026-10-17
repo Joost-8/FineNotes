@@ -528,13 +528,26 @@ export class AskChat {
    */
   private buildPdfList(picker: HTMLElement): void {
     const pdfs = this.host.notebookPdfs();
-    if (pdfs.length === 0) return;
+    // Closed with its ✕, it stays closed while the notebook is open, and the
+    // pages get its room. The paperclip still attaches any PDF.
+    if (pdfs.length === 0 || this.session.pdfListClosed) return;
     const section = picker.createDiv({ cls: "goodobsidian-chat-pdfs" });
     const head = section.createDiv({ cls: "goodobsidian-chat-pdfs-head" });
-    head.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: "PDFs in this notebook" });
-    head.createSpan({
+    const words = head.createDiv({ cls: "goodobsidian-chat-pdfs-words" });
+    words.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: "PDFs in this notebook" });
+    words.createSpan({
       cls: "goodobsidian-chat-pdfs-hint",
       text: "Attach one and the AI reads its text, not only pictures of the pages.",
+    });
+    const close = head.createEl("button", {
+      cls: "goodobsidian-chat-pdfs-close clickable-icon",
+      attr: { "aria-label": "Hide the PDFs" },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => {
+      this.session.pdfListClosed = true;
+      section.remove();
+      this.pdfRows.clear();
     });
     const list = section.createDiv({ cls: "goodobsidian-chat-pdfs-list" });
     for (const pdf of pdfs) {

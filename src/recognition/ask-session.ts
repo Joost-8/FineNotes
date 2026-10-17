@@ -80,6 +80,8 @@ export class AskSession {
   totalPages: number;
   /** Files attached to the next question. */
   attachments: ChatFile[] = [];
+  /** The page picker's list of the notebook's PDFs was closed; it stays closed. */
+  pdfListClosed = false;
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;

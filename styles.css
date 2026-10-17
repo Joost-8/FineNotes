@@ -4874,9 +4874,27 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-chat-pdfs-head {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.goodobsidian-chat-pdfs-words {
+  display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 8px;
+  min-width: 0;
+}
+
+.goodobsidian-ask-frame button.goodobsidian-chat-pdfs-close.clickable-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px 0 0;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
 }
 
 .goodobsidian-chat-pdfs-title {
