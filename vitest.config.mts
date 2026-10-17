@@ -57,6 +57,7 @@ export default defineConfig({
         "src/view/scroll-thumb-drag.ts",
         "src/view/tool-return.ts",
         "src/view/pen-glyphs.ts",
+        "src/view/springs.ts",
         "src/view/pen-cursor.ts",
         "src/view/pointer-hud.ts",
         "src/view/surface-size.ts",

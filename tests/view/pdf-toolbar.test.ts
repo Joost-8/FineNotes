@@ -12,7 +12,8 @@ describe("PDF toolbar button", () => {
     }> = [];
     const state = Object.assign(Object.create(Toolbar.prototype) as object, {
       callbacks: { onInsertImage: vi.fn(), onInsertPdf: importPdf },
-      barEl: { createDiv: () => ({}) },
+      // A group makes the tool indicator as its first child.
+      barEl: { createDiv: () => ({ createDiv: () => ({}) }) },
       addToolButton: vi.fn(),
       watchCrowding: vi.fn(),
       barButton: (

@@ -127,7 +127,16 @@ import {
   eraserStops,
   quickEraserSizes,
 } from "../model/eraser-sizes";
-import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
+import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
+import {
+  EASE_OUT_FALLBACK,
+  POPOVER_IN,
+  POPOVER_OUT,
+  SPRING_FALLBACK,
+  type Spring,
+  TOOL_INDICATOR,
+  springMs,
+} from "./springs";
 import {
   DEFAULT_TABLE_SIZE,
   TABLE_MAX_COLS,
@@ -529,6 +538,18 @@ const PILL_MORPH_MS = 300;
 /** A new tool's controls fading in. */
 const PILL_FADE_MS = 150;
 
+/** Under Reduce Motion a slide or a grow becomes this fade. */
+const REDUCED_FADE_MS = 150;
+
+/** How far a popover travels as it grows from its anchor, px. */
+const POPOVER_RISE = 6;
+
+/** Where the tool indicator and each tool button's contents are on screen, before a pick. */
+interface ToolPlaces {
+  indicator: DOMRect;
+  contents: Map<Element, number>;
+}
+
 /** The options pill's box in host px, for gliding it from one place to the next. */
 interface PillBox {
   left: number;
@@ -558,6 +579,12 @@ export class Toolbar {
   private penPreviewKey = "";
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
+  /** The selected tool's square: one element sliding between the tool buttons. */
+  private toolIndicator: HTMLElement | null = null;
+  /** The tool the indicator stands under, so a pick of the same tool does not slide. */
+  private indicatorTool: ActiveTool | null = null;
+  /** The indicator's and the buttons' slides in flight; the next pick cancels them. */
+  private toolSlides: Animation[] = [];
   /** The record button (0.5). */
   private recordButton: HTMLButtonElement | null = null;
   /** The add-page button. */
@@ -583,6 +610,11 @@ export class Toolbar {
 
   private popover: HTMLElement | null = null;
   private popoverKind: string | null = null;
+  /** The open popover growing in, and the timer that ends it (and gives back its blur). */
+  private popoverGrow: Animation | null = null;
+  private popoverGrowTimer = 0;
+  /** Popovers still closing, each removed by its own timer, never on `finish`. */
+  private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
   /**
@@ -736,6 +768,8 @@ export class Toolbar {
     // The writing tools, centred on the bar (styles.css), as GoodNotes has them.
     const tools = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-tools" });
     this.toolsGroup = tools;
+    // First, so every button paints over it.
+    this.toolIndicator = tools.createDiv({ cls: "goodobsidian-tool-indicator is-hidden" });
     keep(this.addToolButton(tools, "select", "lasso", "Lasso select (V)"));
     this.addToolButton(tools, "pen", "pen-tool", "Pen (P or W)");
     this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
@@ -791,6 +825,8 @@ export class Toolbar {
     const measure = (): void => {
       this.barEl.removeClass("is-crowded");
       check();
+      // The buttons moved with the bar: the indicator follows, without a slide.
+      this.placeIndicator(this.indicatorTool, null);
     };
     if (typeof ResizeObserver === "function") {
       const observer = new ResizeObserver(measure);
@@ -2538,16 +2574,84 @@ export class Toolbar {
 
     this.popover = popover;
     this.popoverKind = kind;
+    this.growPopover(popover);
     return body;
   }
 
   private closePopover(): void {
     this.popoverKeyboard?.end();
     this.popoverKeyboard = null;
-    this.popover?.remove();
+    if (this.popover) this.shrinkPopover(this.popover);
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+  }
+
+  /**
+   * A popover grows from its anchor: scale 0.96 to 1, a fade and a 6 px
+   * drop, on the house spring (0.3 s, no bounce). Its blur is off while it
+   * moves (`is-moving`; a blurred layer is never faded) and comes back on a
+   * timer as long as the spring. Under Reduce Motion it only fades.
+   */
+  private growPopover(popover: HTMLElement): void {
+    if (typeof popover.animate !== "function") return;
+    popover.addClass("is-moving");
+    const reduced = prefersReducedMotion();
+    const duration = reduced ? REDUCED_FADE_MS : springMs(POPOVER_IN);
+    this.popoverGrow = reduced
+      ? popover.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out" })
+      : popover.animate(
+          [
+            { opacity: 0, scale: "0.96", translate: `0 ${-POPOVER_RISE}px` },
+            { opacity: 1, scale: "1", translate: "0 0" },
+          ],
+          { duration, easing: this.curve(POPOVER_IN) },
+        );
+    window.clearTimeout(this.popoverGrowTimer);
+    this.popoverGrowTimer = window.setTimeout(() => {
+      this.popoverGrowTimer = 0;
+      // At rest by now, whatever the animation clock says (it can lag).
+      this.popoverGrow?.cancel();
+      this.popoverGrow = null;
+      if (this.popover === popover) popover.removeClass("is-moving");
+    }, duration);
+  }
+
+  /**
+   * A closing popover shrinks back towards its anchor in 0.2 s, starting
+   * from wherever its grow had got to, so a quick close never jumps. It
+   * takes no taps meanwhile and is removed on a timer, never on `finish`.
+   */
+  private shrinkPopover(popover: HTMLElement): void {
+    const grow = this.popoverGrow;
+    this.popoverGrow = null;
+    window.clearTimeout(this.popoverGrowTimer);
+    this.popoverGrowTimer = 0;
+    if (typeof popover.animate !== "function") {
+      popover.remove();
+      return;
+    }
+    // Read before cancelling: mid-grow, these are the values on screen.
+    const seen = getComputedStyle(popover);
+    const from = { opacity: seen.opacity, scale: seen.scale, translate: seen.translate };
+    grow?.cancel();
+    popover.addClass("is-moving");
+    popover.addClass("is-leaving");
+    const reduced = prefersReducedMotion();
+    const duration = reduced ? REDUCED_FADE_MS : springMs(POPOVER_OUT);
+    const to = reduced
+      ? { opacity: 0 }
+      : { opacity: 0, scale: "0.96", translate: `0 ${-POPOVER_RISE}px` };
+    popover.animate([reduced ? { opacity: from.opacity } : from, to], {
+      duration,
+      easing: reduced ? "ease-in" : this.curve(POPOVER_OUT),
+      fill: "forwards",
+    });
+    const timer = window.setTimeout(() => {
+      this.leavingPopovers.delete(popover);
+      popover.remove();
+    }, duration);
+    this.leavingPopovers.set(popover, timer);
   }
 
   /**
@@ -2891,17 +2995,110 @@ export class Toolbar {
     this.closePopover();
     this.buildOptions();
     this.syncActive();
+    // Buttons came or went beside the tool in hand.
+    this.placeIndicator(this.indicatorTool, null);
   }
 
   private activePenType(): PenTypeSpec {
     return penTypeFor(this.state);
   }
 
+  /**
+   * Where the indicator and the tool buttons' contents are now, as seen
+   * (mid-slide included, so a quick second pick carries on from there), or
+   * `null` while the indicator is not shown.
+   */
+  private toolPlaces(): ToolPlaces | null {
+    const indicator = this.toolIndicator;
+    if (!indicator || indicator.hasClass("is-hidden") || !this.toolsGroup) return null;
+    const box = indicator.getBoundingClientRect();
+    if (box.width === 0) return null;
+    const contents = new Map<Element, number>();
+    for (const button of Array.from(this.toolsGroup.children)) {
+      if (button === indicator) continue;
+      for (const child of Array.from(button.children)) {
+        contents.set(child, child.getBoundingClientRect().left);
+      }
+    }
+    return { indicator: box, contents };
+  }
+
+  /**
+   * Put the indicator under `tool`'s button. Given where things were
+   * (`from`), it slides there on the house spring (0.35 s, bounce 0.1),
+   * as `translate` and `scale` only, and the buttons' contents glide to
+   * their new places too, since the lasso widens when it is picked and the
+   * centred group shifts. Interrupted, a slide restarts from where it was
+   * seen. Under Reduce Motion it fades in at its new place instead.
+   */
+  private placeIndicator(tool: ActiveTool | null, from: ToolPlaces | null): void {
+    const indicator = this.toolIndicator;
+    if (!indicator) return;
+    for (const slide of this.toolSlides) slide.cancel();
+    this.toolSlides = [];
+    this.indicatorTool = tool;
+    const target = tool === null ? undefined : this.toolButtons.get(tool);
+    // A tool with no bar button (the laser), or a bar not laid out yet: no
+    // indicator, and the button's own active square shows (styles.css).
+    const shown = target !== undefined && target.offsetWidth > 0;
+    indicator.toggleClass("is-hidden", !shown);
+    this.toolsGroup?.toggleClass("has-indicator", shown);
+    if (!target || !shown) return;
+    indicator.setCssStyles({
+      left: `${target.offsetLeft}px`,
+      top: `${target.offsetTop}px`,
+      width: `${target.offsetWidth}px`,
+      height: `${target.offsetHeight}px`,
+    });
+    if (!from || typeof indicator.animate !== "function") return;
+    if (prefersReducedMotion()) {
+      this.toolSlides = [
+        indicator.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: REDUCED_FADE_MS,
+          easing: "ease-out",
+        }),
+      ];
+      return;
+    }
+    const to = indicator.getBoundingClientRect();
+    if (to.width === 0) return;
+    const timing = { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) };
+    const dx = from.indicator.left - to.left;
+    const sx = from.indicator.width / to.width;
+    if (Math.abs(dx) >= 0.5 || Math.abs(sx - 1) > 0.01) {
+      this.toolSlides.push(
+        indicator.animate(
+          [
+            { translate: `${dx}px 0`, scale: `${sx} 1` },
+            { translate: "0 0", scale: "1 1" },
+          ],
+          timing,
+        ),
+      );
+    }
+    for (const [child, left] of from.contents) {
+      if (!child.isConnected) continue;
+      const shift = left - child.getBoundingClientRect().left;
+      if (Math.abs(shift) < 0.5) continue;
+      this.toolSlides.push(
+        child.animate([{ translate: `${shift}px 0` }, { translate: "0 0" }], timing),
+      );
+    }
+  }
+
+  /** A house spring as this browser can run it; the bouncy one falls back to `--gob-spring`. */
+  private curve(spring: Spring): string {
+    return springCurve(spring, spring.bounce > 0 ? SPRING_FALLBACK : EASE_OUT_FALLBACK);
+  }
+
   /** Mark every choice button that matches the state, and unmark the rest. */
   syncActive(): void {
     const { state } = this;
     // Highlighter is a pen type, so the pen button stands for both.
-    markChosen(this.toolButtons, state.tool === "highlighter" ? "pen" : state.tool, true);
+    const tool = state.tool === "highlighter" ? "pen" : state.tool;
+    const from = tool === this.indicatorTool ? null : this.toolPlaces();
+    markChosen(this.toolButtons, tool, true);
+    this.placeIndicator(tool, from);
     markChosen(this.colorSwatches, state.color);
     markChosen(this.widthButtons, state.size);
     markChosen(this.eraserSizeButtons, eraserSizeFor(state));
@@ -2939,6 +3136,13 @@ export class Toolbar {
   /** Close what is open, drop every listener outside the toolbar, and take both tiers away. */
   destroy(): void {
     this.closePopover();
+    for (const [popover, timer] of this.leavingPopovers) {
+      window.clearTimeout(timer);
+      popover.remove();
+    }
+    this.leavingPopovers.clear();
+    for (const slide of this.toolSlides) slide.cancel();
+    this.toolSlides = [];
     this.stopPillMorph();
     this.watchKeyboard(false);
     const disposers = this.disposers.splice(0);
