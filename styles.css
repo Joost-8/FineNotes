@@ -4044,8 +4044,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   font-size: 16px;
 }
 
-/* Ask AI, Generate image and Export as PDF. */
-.goodobsidian-ask-modal,
+/* Generate image and Export as PDF (Ask AI has its own, below). */
 .goodobsidian-genimage-modal {
   width: min(640px, calc(100vw - 32px));
 }
@@ -4074,68 +4073,6 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   color: var(--text-error);
 }
 
-.goodobsidian-ask-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 50vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.goodobsidian-ask-thread:empty {
-  display: none;
-}
-
-.goodobsidian-ask-question {
-  align-self: flex-end;
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: var(--gob-radius-l);
-  background: var(--background-secondary);
-  white-space: pre-wrap;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.goodobsidian-ask-answer {
-  padding: 4px 2px;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.goodobsidian-ask-answer.is-pending {
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.goodobsidian-ask-answer.is-error {
-  color: var(--text-error);
-}
-
-.goodobsidian-ask-markdown > :first-child {
-  margin-top: 0;
-}
-
-.goodobsidian-ask-answer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.goodobsidian-ask-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--gob-touch);
-  padding: 0 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--gob-radius-m);
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-}
-
 .goodobsidian-ask-input {
   min-height: 88px;
   resize: vertical;
@@ -4150,6 +4087,351 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-ask-actions button {
   min-height: var(--gob-touch);
+}
+
+/* ---------------------------------------------------------- Ask AI: the chat */
+
+/* A fixed height, so the dialog does not jump as answers arrive; with the
+   iPad keyboard up, the room above it (DialogKeyboard `fit`). The thread
+   scrolls, the scope and the field stay put. */
+.modal.goodobsidian-ask-modal {
+  width: min(720px, calc(100vw - 32px));
+  height: min(700px, 86vh, var(--goodobsidian-keyboard-room, 100vh));
+  max-height: none;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+
+.goodobsidian-ask-modal .modal-header {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-ask-modal .modal-content.goodobsidian-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-chat-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goodobsidian-chat-scope.goodobsidian-segmented {
+  flex: 0 1 340px;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-new.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 38px;
+  margin-left: auto;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-new.is-hidden {
+  display: none;
+}
+
+.goodobsidian-chat-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* `position: relative`, so an answer's `offsetTop` is measured in the thread. */
+.goodobsidian-chat-thread {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0 -16px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--gob-line);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Before the first question. */
+.goodobsidian-chat-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.goodobsidian-chat-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--gob-accent-tint);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-chat-empty-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.goodobsidian-chat-empty-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 480px;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-suggestion.clickable-icon {
+  width: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 14px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-card-bg);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-suggestion.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Messages. */
+.goodobsidian-chat-msg {
+  display: flex;
+  gap: 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-chat-msg.is-user {
+  justify-content: flex-end;
+}
+
+.goodobsidian-chat-bubble {
+  max-width: 80%;
+  padding: 9px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--gob-accent-tint);
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-chat-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--gob-accent-tint);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-chat-avatar svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-chat-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.goodobsidian-chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.goodobsidian-chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.goodobsidian-chat-status {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-chat-status:empty {
+  display: none;
+}
+
+.goodobsidian-chat-error {
+  color: var(--text-error);
+}
+
+/* Three dots, one after another. */
+.goodobsidian-chat-typing {
+  display: flex;
+  gap: 5px;
+  padding: 8px 0 4px;
+}
+
+.goodobsidian-chat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: goodobsidian-chat-dot 1.2s ease-in-out infinite;
+}
+
+.goodobsidian-chat-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.goodobsidian-chat-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes goodobsidian-chat-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-chat-dot {
+    animation: none;
+  }
+}
+
+.goodobsidian-chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 6px 0 0 -8px;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-action.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-chat-error + button.goodobsidian-chat-action {
+  margin: 6px 0 0 -8px;
+}
+
+/* The field: a rounded box with the send button inside it, bottom right. */
+.goodobsidian-chat-composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--gob-line);
+  border-radius: 22px;
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-raised);
+}
+
+.goodobsidian-chat-composer:focus-within {
+  border-color: hsla(var(--interactive-accent-hsl), 0.6);
+}
+
+/* 16px or iPadOS zooms the page into the field when it takes focus. Its
+   height follows its text (AskAiModal.syncInput). */
+textarea.goodobsidian-chat-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--goodobsidian-chat-input-h, auto);
+  min-height: 32px;
+  max-height: 160px;
+  margin: 0;
+  padding: 6px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 16px;
+  line-height: 1.35;
+  resize: none;
+  overflow-y: hidden;
+}
+
+textarea.goodobsidian-chat-input.is-scrolling {
+  overflow-y: auto;
+}
+
+textarea.goodobsidian-chat-input:focus,
+textarea.goodobsidian-chat-input:focus-visible {
+  border: none;
+  box-shadow: none;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon:hover {
+  background: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-send.clickable-icon:disabled {
+  background: var(--gob-well-strong);
+  color: var(--text-faint);
+  opacity: 1;
+  cursor: default;
+}
+
+.goodobsidian-ask-modal button.goodobsidian-chat-send svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4px;
+}
+
+/* A phone draws the dialog as a sheet from the bottom edge, full width. */
+.is-phone .modal.goodobsidian-ask-modal {
+  height: min(100%, var(--goodobsidian-keyboard-room, 100vh));
+  padding: 0 12px 12px;
 }
 
 /* ------------------------------------------------ Shape tool: table picker (0.5) */

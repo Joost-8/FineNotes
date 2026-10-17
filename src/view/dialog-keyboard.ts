@@ -13,6 +13,12 @@
  *
  * The dialog's `modalEl` gets `goodobsidian-keyboard-lift`, whose CSS turns
  * the lift into a `translate`.
+ *
+ * A dialog taller than the room above the keyboard (the Ask AI chat, whose
+ * field sits at the bottom under a scrolling thread) passes `fit`: while the
+ * keyboard is up, `--goodobsidian-keyboard-room` holds the height left above
+ * it, for the dialog's CSS to shrink to, so the whole dialog rises into view
+ * instead of only its lower part.
  */
 
 import { keyboardHeight } from "./keyboard";
@@ -37,7 +43,13 @@ export class DialogKeyboard {
   private capTimer = 0;
   private stopHold: (() => void) | null = null;
 
-  constructor(private readonly modalEl: HTMLElement) {
+  /** The room last written to `--goodobsidian-keyboard-room`, px; 0 while unset. */
+  private room = 0;
+
+  constructor(
+    private readonly modalEl: HTMLElement,
+    private readonly options: { fit?: boolean } = {},
+  ) {
     modalEl.addClass("goodobsidian-keyboard-lift");
   }
 
@@ -88,6 +100,7 @@ export class DialogKeyboard {
     window.clearInterval(this.followTimer);
     this.followTimer = 0;
     this.setLift(0);
+    this.setRoom(0);
     this.releaseCap();
   }
 
@@ -103,7 +116,13 @@ export class DialogKeyboard {
     const keyboard = keyboardHeight();
     if (keyboard === 0) {
       this.setLift(0);
+      this.setRoom(0);
       return;
+    }
+    // Shrink first, then measure: reading the boxes below lays out the
+    // dialog at its new height.
+    if (this.options.fit) {
+      this.setRoom(window.innerHeight - keyboard - 2 * KEYBOARD_GAP_PX);
     }
     // Measured where the dialog would sit unlifted, never where it is now: the
     // lift glides (a CSS transition), and reading a half-moved dialog every
@@ -130,6 +149,15 @@ export class DialogKeyboard {
     if (next === this.lift) return;
     this.lift = next;
     this.modalEl.setCssProps({ "--goodobsidian-dialog-lift": `${next}px` });
+  }
+
+  /** The height the dialog may take above the keyboard; 0 lets it have the screen again. */
+  private setRoom(px: number): void {
+    const next = Math.max(0, Math.round(px));
+    if (next === this.room) return;
+    this.room = next;
+    if (next === 0) this.modalEl.style.removeProperty("--goodobsidian-keyboard-room");
+    else this.modalEl.setCssProps({ "--goodobsidian-keyboard-room": `${next}px` });
   }
 
   /** Undo the window scrolling iPadOS does to "reveal" a field, while the keyboard comes up. */
