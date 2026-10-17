@@ -1,11 +1,12 @@
 /**
  * Sharing a template with the community gallery: the address of the
  * gallery's "Submit a template" form on GitHub, filled in from what the
- * user typed in FineNotes. GitHub issue forms take each field's value from
- * a query parameter named after its id, and a dropdown's by its option's
- * label, so these match `.github/ISSUE_TEMPLATE/submit-template.yml` in
- * Joost-8/FineNotes-templates. The file itself is dragged in on GitHub: a
- * web address cannot carry it.
+ * user typed in FineNotes. GitHub fills an issue form's text fields from
+ * query parameters named after their ids, but leaves dropdowns empty, so
+ * every field of `.github/ISSUE_TEMPLATE/submit-template.yml` in
+ * Joost-8/FineNotes-templates is a text field; category and licence are
+ * sent as their labels, which the gallery's bot reads. The file itself is
+ * attached on GitHub: a web address cannot carry it.
  *
  * Pure: no DOM, no Obsidian, no network.
  */
