@@ -750,6 +750,7 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
     ...(raw.flipX === true ? { flipX: true } : {}),
     ...(raw.flipY === true ? { flipY: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
+    ...(raw.front === true ? { front: true as const } : {}),
     ...(readImageOpacity(raw.opacity) !== undefined
       ? { opacity: readImageOpacity(raw.opacity) }
       : {}),

@@ -269,6 +269,7 @@ import {
   ReorderImage,
   IMAGE_OPACITIES,
   SetImageLocked,
+  SetImageFront,
   SetImageOpacity,
   canReorderImage,
 } from "../model/image-commands";
@@ -6882,6 +6883,14 @@ export class InkSurface {
         run: () => this.startCrop(),
       },
       ...flipActions((axis) => this.flipSelectedImage(axis)),
+      {
+        id: "in-front",
+        icon: "layers",
+        label: "In front of ink",
+        group: "opacity",
+        checked: sel.image.front === true,
+        run: () => this.setSelectedImageFront(sel.image.front !== true),
+      },
       ...IMAGE_OPACITIES.map((opacity): SelectionAction => ({
         id: `opacity-${opacity}`,
         icon: opacity === 1 ? "circle" : "circle-dashed",
@@ -7488,6 +7497,18 @@ export class InkSurface {
     canvas.height = 0;
     if (!blob) return;
     save(await blob.arrayBuffer(), width, height);
+  }
+
+  /** Put the selected picture in front of the ink, or back under it, as one undo step. */
+  private setSelectedImageFront(front: boolean): void {
+    const sel = this.liveImageSelection();
+    if (!sel || this.callbacks.isLocked?.()) return;
+    this.history.push(this.doc, new SetImageFront(sel.pageId, sel.image, front));
+    const box = this.boxForPage(sel.pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(sel.image)));
+    this.renderDry();
+    this.syncActionBar();
+    this.changed();
   }
 
   /** Draw the selected picture see-through, or opaque again, as one undo step. */

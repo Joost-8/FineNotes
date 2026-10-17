@@ -169,6 +169,40 @@ export class SetImageOpacity implements Command {
   }
 }
 
+/**
+ * Put a picture in front of the ink (`front: true`) or back under it (the
+ * key deleted). Text boxes stay above either way.
+ */
+export class SetImageFront implements Command {
+  readonly label: string;
+  private previous: { image: ImageElement; saved: ImageElement } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly image: ImageElement,
+    private readonly front: boolean,
+  ) {
+    this.label = front ? "Put image in front of ink" : "Put image behind ink";
+  }
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    const image = page ? findImage(page, this.image) : null;
+    if (!image) return;
+    this.previous = { image, saved: snapshot(image) };
+    if (this.front) image.front = true;
+    else delete image.front;
+  }
+
+  invert(doc: InkDocument): void {
+    const previous = this.previous;
+    if (!previous || !pageById(doc, this.pageId)) return;
+    restore(previous.image, previous.saved);
+    this.previous = null;
+  }
+}
+
 /** A picture's box and crop after cropping; `crop` absent means the whole picture. */
 export interface ImageCropGeometry {
   x: number;

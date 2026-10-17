@@ -324,6 +324,11 @@ export interface ImageElement {
   /** A locked image cannot be selected, moved or erased until unlocked. Stored only as `true`. */
   locked?: boolean;
   /**
+   * Drawn in front of the ink rather than under it: a sticker on
+   * handwriting. Stored only as `true`. Text boxes stay above everything.
+   */
+  front?: true;
+  /**
    * How see-through the picture is drawn, from {@link MIN_IMAGE_OPACITY} up
    * to but not including 1. Absent is fully opaque.
    */

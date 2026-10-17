@@ -972,6 +972,7 @@ export class Renderer {
       maxY: (tr.y + tr.h) / level + INK_PAD,
     };
     this.paintStrokes(ctx, page, region, usePressure, hidden, replaced);
+    this.paintImages(ctx, page, region, level, true);
     const tile: Tile = { canvas, pageId: page.id, level, rect: tr };
     this.tiles.set(tileKey(page.id, level, tr.col, tr.row), tile, tr.w * tr.h * 4);
     return tile;
@@ -1016,6 +1017,7 @@ export class Renderer {
         maxY: region.maxY + INK_PAD,
       };
       this.paintStrokes(ctx, page, inked, usePressure);
+      this.paintImages(ctx, page, region, level, true);
     } finally {
       this.paper = theme;
     }
@@ -1039,6 +1041,7 @@ export class Renderer {
     const all: Bounds = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
     this.paintPage(ctx, page, box, scale, all);
     this.paintStrokes(ctx, page, all, usePressure);
+    this.paintImages(ctx, page, all, scale, true);
     const preview: Preview = { canvas, scale };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
@@ -1077,16 +1080,22 @@ export class Renderer {
     ctx.strokeRect(hair / 2, hair / 2, box.width - hair, box.height - hair);
   }
 
-  /** The page's images that overlap `region`, bottom to top, at `level` device px per page px. */
+  /**
+   * The page's images that overlap `region`, bottom to top, at `level`
+   * device px per page px: those under the ink, or with `front` those in
+   * front of it.
+   */
   private paintImages(
     ctx: CanvasRenderingContext2D,
     page: Page,
     region: Bounds,
     level: number,
+    front = false,
   ): void {
     const painter = this.imagePainter;
     if (!painter) return;
     for (const image of page.images) {
+      if ((image.front === true) !== front) continue;
       if (this.hiddenImages.has(image)) continue;
       if (!overlaps(imageBounds(image), region)) continue;
       drawPlacedImage(ctx, image, painter, level);
@@ -1237,16 +1246,20 @@ export class Renderer {
       ctx.rotate(turn.angle);
       ctx.translate(-turn.x, -turn.y);
     }
-    if (this.imagePainter) {
+    const pictures = (front: boolean): void => {
+      if (!this.imagePainter) return;
       for (const image of images) {
+        if ((image.front === true) !== front) continue;
         drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale);
       }
-    }
+    };
+    pictures(false);
     const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
       const entry = this.pathEntry(stroke, usePressure);
       paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
     }
+    pictures(true);
     ctx.restore();
     this.setWetVisible(true);
   }
@@ -1263,6 +1276,16 @@ export class Renderer {
     if (!box) return;
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds) return;
+    // Under a picture in front of the ink, the stroke cannot simply be drawn
+    // on top of the cached tiles: redraw that part of the page instead.
+    const bounds = entry.bounds;
+    const page = this.doc?.pages[pageIndex];
+    if (
+      page?.images.some((image) => image.front === true && overlaps(imageBounds(image), bounds))
+    ) {
+      this.invalidateRegion(pageIndex, bounds);
+      return;
+    }
     const night = this.nightAt(pageIndex);
     for (const tile of this.tiles.values()) {
       if (tile.pageId !== box.id || tile.level !== this.level) continue;
@@ -1595,14 +1618,20 @@ export function renderPageThumbnail(
       paper: options.paper ?? LIGHT_PAPER,
     });
   }
-  if (options.images) {
-    for (const image of page.images) drawPlacedImage(ctx, image, options.images, k);
-  }
+  const pictures = (front: boolean): void => {
+    if (!options.images) return;
+    for (const image of page.images) {
+      if ((image.front === true) === front) drawPlacedImage(ctx, image, options.images, k);
+    }
+  };
+  pictures(false);
 
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
+  // A picture in front of the ink (a sticker on handwriting), under the text.
+  pictures(true);
 
   // Over the ink, as on the page, where the text boxes are DOM above the ink
   // canvas: a filled shape is a ground the text sits on, and a filled box
