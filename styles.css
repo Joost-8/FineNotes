@@ -8708,3 +8708,49 @@ button.goodobsidian-learn-stop.is-hidden {
 .goodobsidian-text-size-slider {
   min-width: 200px;
 }
+
+/* New notebook: under the title, the import link on the left and the folder
+   as a chip on the right (new-notebook-modal.ts). A long path is cut short
+   at its start, so its last folder shows; the whole path is the tooltip. */
+.goodobsidian-newnb-under-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.goodobsidian-newnb-under-title button.goodobsidian-newnb-import.clickable-icon {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+/* On a narrow sheet the link's words give way before the folder does. */
+.goodobsidian-newnb-under-title .goodobsidian-newnb-import > span:not([class]) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-newnb-under-title .goodobsidian-newnb-folder.clickable-icon {
+  gap: 6px;
+  width: auto;
+  max-width: 55%;
+  min-height: var(--gob-touch-compact);
+  margin-left: auto;
+  padding: 0 8px 0 10px;
+  border-radius: var(--gob-radius-m);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-newnb-under-title .goodobsidian-newnb-folder-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.goodobsidian-newnb-under-title .goodobsidian-newnb-folder-icon {
+  --icon-size: 16px;
+}

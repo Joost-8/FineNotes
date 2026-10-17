@@ -3,9 +3,9 @@
  *
  *   [Cancel]        New notebook        [Create]    (sticky: never scrolls away)
  *   Title ______________________________            (focused on open)
+ *   Import from another app…      [📁 Lectures/Analysis ›]
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
- *   Folder  Lectures/Analysis  ›
  *
  * Laid out for an iPad in either orientation, and usable with the on-screen
  * keyboard up: Create sits in the header, Return in the title creates, and
@@ -116,7 +116,6 @@ export class NewNotebookModal extends Modal {
     this.buildTitle(body);
     this.buildCover(body);
     this.buildPaper(body);
-    this.buildFolder(body);
 
     this.repaint();
     // Focus inside the gesture that opened the dialog: iPadOS raises the
@@ -205,7 +204,10 @@ export class NewNotebookModal extends Modal {
       this.releaseCap();
     });
     this.titleInput = input;
-    this.buildImportLink(body);
+    // Under the title: importing instead on the left, where it goes on the right.
+    const row = body.createDiv({ cls: "goodobsidian-newnb-under-title" });
+    this.buildImportLink(row);
+    this.buildFolder(row);
   }
 
   /** A quiet link under the title: bring a notebook in from another app instead. */
@@ -274,9 +276,9 @@ export class NewNotebookModal extends Modal {
     this.grid.el.addClass("is-inline");
   }
 
-  private buildFolder(body: HTMLElement): void {
-    const section = this.section(body, "Folder");
-    const row = section.createEl("button", { cls: "goodobsidian-newnb-folder clickable-icon" });
+  /** The folder it is made in, as a chip beside the import link: tap to choose another. */
+  private buildFolder(parent: HTMLElement): void {
+    const row = parent.createEl("button", { cls: "goodobsidian-newnb-folder clickable-icon" });
     row.setAttribute("aria-label", "Choose folder");
     setIcon(row.createSpan({ cls: "goodobsidian-newnb-folder-icon" }), "folder");
     this.folderLabel = row.createSpan({ cls: "goodobsidian-newnb-folder-path" });
@@ -347,6 +349,7 @@ export class NewNotebookModal extends Modal {
 
   private syncFolder(): void {
     this.folderLabel?.setText(this.folder || "Vault root");
+    this.folderLabel?.parentElement?.setAttribute("title", this.folder || "Vault root");
   }
 
   private create(): void {
