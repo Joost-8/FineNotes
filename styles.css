@@ -6866,6 +6866,12 @@ input[type="range"].goodobsidian-player-scrubber {
   overflow: hidden;
 }
 
+/* The panel scrolls when it is taller than the screen. Its cards must not
+   shrink to fit instead: a shrunk card hides its last rows (seen on the iPad). */
+.goodobsidian-more > * {
+  flex-shrink: 0;
+}
+
 .goodobsidian-more-pagehead {
   display: flex;
   align-items: center;
