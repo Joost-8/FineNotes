@@ -106,3 +106,14 @@ export class History {
     return command;
   }
 }
+
+/**
+ * What the readout says after an undo or redo, naming the step by its
+ * command's `label`, as Procreate's notice does: "Undid: Change shape
+ * style", "Redid: Add page". A step with no label says only what happened.
+ */
+export function historyNotice(redo: boolean, label: string): string {
+  const verb = redo ? "Redid" : "Undid";
+  const what = label.trim();
+  return what === "" ? verb : `${verb}: ${what}`;
+}

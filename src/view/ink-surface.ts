@@ -306,7 +306,7 @@ import { keyboardHeight } from "./keyboard";
 import { revealDelta } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
 import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
-import { History } from "../model/history";
+import { History, historyNotice } from "../model/history";
 import {
   PointerController,
   type PointerControllerCallbacks,
@@ -427,6 +427,8 @@ const LINK_UNDERLINE_GAP_PX = 3;
 const SECTION_LEAD_PX = 96;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
 const READOUT_WORD_HOLD_MS = 900;
+/** An undo or redo's notice ("Undid: Move selection") is a phrase: held longer. */
+const READOUT_NOTICE_HOLD_MS = 1600;
 /** Gap between a scroll thumb and the edges of the surface, CSS px. */
 const THUMB_INSET = 4;
 
@@ -4266,22 +4268,18 @@ export class InkSurface {
     if (this.callbacks.isLocked?.() === true) return;
     const redo = fingers >= 3;
     const can = redo ? this.history.canRedo() : this.history.canUndo();
-    if (can) {
-      if (redo) this.redo();
-      else this.undo();
-    }
-    this.flashReadout(
-      can ? (redo ? "Redo" : "Undo") : redo ? "Nothing to redo" : "Nothing to undo",
-    );
+    // A step names itself in the readout (`stepHistory`).
+    if (!can) this.flashReadout(redo ? "Nothing to redo" : "Nothing to undo");
+    else if (redo) this.redo();
+    else this.undo();
   }
 
-  /** Show a word in the readout pill, faded on the zoom readout's clock. */
-  private flashReadout(text: string): void {
+  /** Show a word in the readout pill for `holdMs`, faded on the zoom readout's clock. */
+  private flashReadout(text: string, holdMs = READOUT_WORD_HOLD_MS): void {
     this.zoomReadoutEl.setText(text);
     this.zoomReadoutEl.removeClass("is-idle");
-    this.chromeUntil.zoom = now() + READOUT_WORD_HOLD_MS;
-    if (!this.chromeTimer)
-      this.chromeTimer = window.setTimeout(this.fadeChrome, READOUT_WORD_HOLD_MS);
+    this.chromeUntil.zoom = now() + holdMs;
+    if (!this.chromeTimer) this.chromeTimer = window.setTimeout(this.fadeChrome, holdMs);
   }
 
   /**
@@ -8906,19 +8904,20 @@ export class InkSurface {
   // --- Undo and redo ----------------------------------------------------------------
 
   undo(): void {
-    this.stepHistory((doc) => this.history.undo(doc));
+    this.stepHistory(false, (doc) => this.history.undo(doc));
   }
 
   redo(): void {
-    this.stepHistory((doc) => this.history.redo(doc));
+    this.stepHistory(true, (doc) => this.history.redo(doc));
   }
 
   /**
    * One step back or forward. A drag or crop in progress is dropped first,
    * since the step may take its element away; afterwards everything the
-   * surface derives from the document is rebuilt, and the change is shown.
+   * surface derives from the document is rebuilt, and the change is shown,
+   * with the readout naming it ("Undid: Change shape style").
    */
-  private stepHistory(step: (doc: InkDocument) => Command | null): void {
+  private stepHistory(redo: boolean, step: (doc: InkDocument) => Command | null): void {
     this.parkedText = null;
     this.endCrop(false);
     this.cancelImageDrag();
@@ -8936,6 +8935,7 @@ export class InkSurface {
     this.reportTextEditing();
     this.changed();
     this.revealChange(command);
+    this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
   }
 
   /** Whether Undo would do anything. */

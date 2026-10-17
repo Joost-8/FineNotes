@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { Command } from "../../src/model/commands";
 import { type InkDocument, emptyDocument } from "../../src/model/document";
-import { History } from "../../src/model/history";
+import { History, historyNotice } from "../../src/model/history";
 
 class Logged implements Command {
   readonly label: string;
@@ -252,5 +252,17 @@ describe("History: taking back the latest steps", () => {
     history.undo(doc);
     expect(history.isLatest(b)).toBe(false);
     expect(history.isLatest(a)).toBe(true);
+  });
+});
+
+describe("historyNotice", () => {
+  it("names the step undone or redone by its label", () => {
+    expect(historyNotice(false, "Change shape style")).toBe("Undid: Change shape style");
+    expect(historyNotice(true, "Add page")).toBe("Redid: Add page");
+  });
+
+  it("says only what happened for a step without a label", () => {
+    expect(historyNotice(false, "")).toBe("Undid");
+    expect(historyNotice(true, "  ")).toBe("Redid");
   });
 });

@@ -2017,6 +2017,8 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   border-radius: var(--gob-radius-pill);
   background: var(--background-primary);
   font-variant-numeric: tabular-nums;
+  /* A phrase too ("Undid: Change shape style"), on one line. */
+  white-space: nowrap;
   pointer-events: none;
   opacity: 0.85;
 }
