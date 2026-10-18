@@ -219,6 +219,28 @@ describe("a gallery index", () => {
     expect(entries[3]).toMatchObject({ download: "", shop: "https://shop.example/f" });
   });
 
+  it("keeps a picture of every page, safe addresses only, in order", () => {
+    const [entry] = readGalleryIndex({
+      templates: [
+        {
+          name: "Planner",
+          download: "https://x.org/p.pdf",
+          previews: [
+            "https://x.org/p/page-1.png",
+            "javascript:alert(1)",
+            42,
+            "https://x.org/p/page-2.png",
+          ],
+        },
+      ],
+    });
+    expect(entry.previews).toEqual(["https://x.org/p/page-1.png", "https://x.org/p/page-2.png"]);
+    const [bare] = readGalleryIndex({
+      templates: [{ name: "B", download: "https://x.org/b.pdf" }],
+    });
+    expect(bare.previews).toEqual([]);
+  });
+
   it("finds entries by every word typed, in name, author, description or tags", () => {
     const [entry] = readGalleryIndex({
       templates: [

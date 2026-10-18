@@ -32,6 +32,9 @@ extracted from the matching section of this file by `release.yml`.
   is on, including papers from My templates.
 - **Save page as template**, in the ⋯ panel and the command palette: the
   page as it looks becomes a paper in My templates.
+- **A gallery to browse, like Goodnotes'.** Covers in a grid, with search and
+  categories; a tap opens the template's own page, with every page of it to
+  swipe through, its description, tags and licence, and Add to My templates.
 - **Delete a template** from My templates: its ⋯ has Delete template (and
   Share…). It goes to the trash; notebooks that use it keep their own copy.
   The New notebook dialog shows every built-in paper section open.

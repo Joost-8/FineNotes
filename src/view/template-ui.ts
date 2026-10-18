@@ -9,7 +9,7 @@
  * Saving, downloading and importing are the host's; these only ask.
  */
 
-import { type App, FuzzySuggestModal, Modal, Notice, Setting, type TFile } from "obsidian";
+import { type App, FuzzySuggestModal, Modal, Notice, Setting, type TFile, setIcon } from "obsidian";
 import {
   SHARE_CATEGORIES,
   type ShareDetails,
@@ -142,6 +142,8 @@ export class TemplateGalleryModal extends Modal {
   private query = "";
   private category = "all";
   private listEl: HTMLElement | null = null;
+  /** Where the browse view was scrolled, kept while a template's page shows. */
+  private browseScroll = 0;
 
   constructor(
     app: App,
@@ -160,38 +162,49 @@ export class TemplateGalleryModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-template-gallery");
     this.titleEl.setText("Template gallery");
+    this.showBrowse();
+  }
+
+  /**
+   * Browsing, as Goodnotes' gallery: a search, a chip per category, and a
+   * grid of covers. A tap opens the template's own page.
+   */
+  private showBrowse(): void {
+    const el = this.contentEl;
+    el.empty();
+    el.removeClass("is-detail");
+    const shown = this.entries.filter((entry) => !entry.retired);
+    const head = el.createDiv({ cls: "goodobsidian-gallery-head" });
+    head.createSpan({
+      cls: "setting-item-description",
+      text: "Free templates shared by people who use FineNotes.",
+    });
     const onShare = this.onShare;
     if (onShare) {
-      const head = this.contentEl.createDiv({ cls: "goodobsidian-gallery-head" });
-      head.createSpan({
-        cls: "setting-item-description",
-        text: "Templates shared by people who use FineNotes.",
-      });
       const share = head.createEl("button", { text: "Share yours…" });
       share.addEventListener("click", () => {
         this.close();
         onShare();
       });
     }
-    const shown = this.entries.filter((entry) => !entry.retired);
     if (shown.length === 0) {
-      this.contentEl.createDiv({
+      el.createDiv({
         cls: "setting-item-description",
         text: "This gallery lists no templates yet.",
       });
       return;
     }
-    // Search, then a chip per category that has templates.
-    const search = this.contentEl.createEl("input", {
+    const search = el.createEl("input", {
       cls: "goodobsidian-gallery-search",
       type: "search",
       attr: { placeholder: "Search templates", "aria-label": "Search templates" },
     });
+    search.value = this.query;
     search.addEventListener("input", () => {
       this.query = search.value;
       this.renderList(shown);
     });
-    const chips = this.contentEl.createDiv({ cls: "goodobsidian-gallery-chips" });
+    const chips = el.createDiv({ cls: "goodobsidian-gallery-chips" });
     const used = GALLERY_CATEGORIES.filter((c) => shown.some((e) => e.category === c.id));
     const chipButtons: HTMLElement[] = [];
     for (const category of [{ id: "all", label: "All" }, ...used]) {
@@ -207,8 +220,9 @@ export class TemplateGalleryModal extends Modal {
       });
       chipButtons.push(chip);
     }
-    this.listEl = this.contentEl.createDiv({ cls: "goodobsidian-template-grid" });
+    this.listEl = el.createDiv({ cls: "goodobsidian-gallery-grid" });
     this.renderList(shown);
+    this.listEl.scrollTop = this.browseScroll;
   }
 
   private renderList(shown: readonly GalleryEntry[]): void {
@@ -225,36 +239,103 @@ export class TemplateGalleryModal extends Modal {
       return;
     }
     for (const entry of matching) {
-      const card = grid.createDiv({ cls: "goodobsidian-template-entry" });
-      const frame = card.createDiv({ cls: "goodobsidian-template-entry-preview" });
-      if (entry.preview)
-        frame.createEl("img", { attr: { src: entry.preview, alt: "", loading: "lazy" } });
-      card.createDiv({ cls: "goodobsidian-template-entry-name", text: entry.name });
-      const what = entry.kind === "notebook" ? "Notebook" : "Paper";
-      const meta = [what, entry.author, `${entry.pages} page${entry.pages === 1 ? "" : "s"}`]
-        .filter(Boolean)
-        .join(" · ");
-      card.createDiv({ cls: "goodobsidian-template-entry-meta", text: meta });
-      const licence = TEMPLATE_LICENCES.find((l) => l.id === entry.licence)?.label ?? "";
-      card.createDiv({ cls: "goodobsidian-template-entry-licence", text: licence });
-      if (entry.description) {
-        card.createDiv({ cls: "goodobsidian-template-entry-desc", text: entry.description });
+      const card = grid.createEl("button", {
+        cls: "goodobsidian-gallery-card clickable-icon",
+        attr: { "aria-label": entry.name },
+      });
+      const cover = card.createDiv({ cls: "goodobsidian-gallery-cover" });
+      const src = entry.preview || entry.previews[0];
+      if (src) cover.createEl("img", { attr: { src, alt: "", loading: "lazy" } });
+      if (entry.pages > 1) {
+        cover.createSpan({ cls: "goodobsidian-gallery-badge", text: `${entry.pages} pages` });
       }
-      if (entry.download) {
-        const button = card.createEl("button", {
-          cls: "mod-cta",
-          text: entry.kind === "notebook" ? "Use template" : "Add to My templates",
+      card.createDiv({ cls: "goodobsidian-gallery-card-name", text: entry.name });
+      const where = entry.shop && !entry.download ? "In the creator's shop" : "Free";
+      card.createDiv({
+        cls: "goodobsidian-gallery-card-meta",
+        text: [entry.author, where].filter(Boolean).join(" · "),
+      });
+      card.addEventListener("click", () => this.showDetail(entry));
+    }
+  }
+
+  /**
+   * A template's own page, as Goodnotes' gallery has: its name and maker,
+   * the button that adds it, every page side by side to swipe through, then
+   * what it is (description, tags, licence).
+   */
+  private showDetail(entry: GalleryEntry): void {
+    this.browseScroll = this.listEl?.scrollTop ?? 0;
+    this.listEl = null;
+    const el = this.contentEl;
+    el.empty();
+    el.addClass("is-detail");
+    const back = el.createEl("button", {
+      cls: "goodobsidian-gallery-back clickable-icon",
+      attr: { "aria-label": "Back to the gallery" },
+    });
+    setIcon(back.createSpan({ cls: "goodobsidian-gallery-back-icon" }), "chevron-left");
+    back.createSpan({ text: "Gallery" });
+    back.addEventListener("click", () => this.showBrowse());
+
+    const head = el.createDiv({ cls: "goodobsidian-gallery-detail-head" });
+    const titles = head.createDiv({ cls: "goodobsidian-gallery-detail-titles" });
+    titles.createDiv({ cls: "goodobsidian-gallery-detail-name", text: entry.name });
+    if (entry.author) {
+      titles.createDiv({ cls: "goodobsidian-gallery-detail-author", text: `by ${entry.author}` });
+    }
+    const actions = head.createDiv({ cls: "goodobsidian-gallery-detail-actions" });
+    if (entry.download) {
+      const add = actions.createEl("button", {
+        cls: "mod-cta",
+        text: entry.kind === "notebook" ? "Use template" : "Add to My templates",
+      });
+      add.addEventListener("click", () => {
+        this.close();
+        this.install(entry);
+      });
+    }
+    if (entry.shop) {
+      const shop = actions.createEl("button", { text: "Get it from the creator" });
+      shop.addEventListener("click", () => this.openShop(entry.shop));
+    }
+
+    // Every page, side by side, to swipe through.
+    const pages = entry.previews.length > 0 ? entry.previews : entry.preview ? [entry.preview] : [];
+    if (pages.length > 0) {
+      const strip = el.createDiv({ cls: "goodobsidian-gallery-pages" });
+      pages.forEach((src, i) => {
+        const page = strip.createDiv({ cls: "goodobsidian-gallery-page" });
+        // The first few at once, so the page never opens empty; the rest as swiped to.
+        page.createDiv({ cls: "goodobsidian-gallery-page-frame" }).createEl("img", {
+          attr: { src, alt: `Page ${i + 1}`, loading: i < 4 ? "eager" : "lazy" },
         });
-        button.addEventListener("click", () => {
-          this.close();
-          this.install(entry);
+        page.createDiv({ cls: "goodobsidian-gallery-page-number", text: String(i + 1) });
+      });
+      if (entry.pages > pages.length) {
+        el.createDiv({
+          cls: "goodobsidian-gallery-more",
+          text: `The first ${pages.length} of ${entry.pages} pages.`,
         });
       }
-      if (entry.shop) {
-        // Sold by its creator in their own shop; FineNotes only links there.
-        const shop = card.createEl("button", { text: "Get it from the creator" });
-        shop.addEventListener("click", () => this.openShop(entry.shop));
-      }
+    }
+
+    const about = el.createDiv({ cls: "goodobsidian-gallery-about" });
+    if (entry.description) about.createEl("p", { text: entry.description });
+    const facts = about.createDiv({ cls: "goodobsidian-gallery-facts" });
+    const fact = (label: string, value: string): void => {
+      const row = facts.createDiv({ cls: "goodobsidian-gallery-fact" });
+      row.createSpan({ cls: "goodobsidian-gallery-fact-label", text: label });
+      row.createSpan({ text: value });
+    };
+    fact("Pages", String(entry.pages));
+    fact("Kind", entry.kind === "notebook" ? "A whole notebook" : "Paper: every page to use");
+    const category = GALLERY_CATEGORIES.find((c) => c.id === entry.category)?.label;
+    if (category) fact("Category", category);
+    fact("Licence", TEMPLATE_LICENCES.find((l) => l.id === entry.licence)?.label ?? "");
+    if (entry.tags.length > 0) {
+      const tags = about.createDiv({ cls: "goodobsidian-gallery-tags" });
+      for (const tag of entry.tags) tags.createSpan({ cls: "goodobsidian-gallery-tag", text: tag });
     }
   }
 

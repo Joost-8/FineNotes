@@ -248,6 +248,8 @@ export interface GalleryEntry {
   tags: string[];
   /** HTTPS URL of a preview image. */
   preview: string;
+  /** HTTPS URLs of a small picture of every page, in order (the gallery's template page). */
+  previews: string[];
   /** HTTPS URL of the file: a PDF, PNG or JPEG paper, or a `.finetemplate`. Empty for a shop-only entry. */
   download: string;
   /** HTTPS URL of the creator's own shop, for a template sold there. FineNotes sells nothing. */
@@ -307,6 +309,9 @@ export function readGalleryIndex(raw: unknown): GalleryEntry[] {
             .slice(0, 12)
         : [],
       preview: typeof r.preview === "string" && HTTPS.test(r.preview) ? r.preview : "",
+      previews: Array.isArray(r.previews)
+        ? r.previews.filter((p): p is string => typeof p === "string" && HTTPS.test(p)).slice(0, 60)
+        : [],
       download: kind ? download : "",
       shop,
       pages: typeof r.pages === "number" && r.pages > 0 ? Math.round(r.pages) : 1,

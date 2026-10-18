@@ -7946,49 +7946,6 @@ button.goodobsidian-page-tab.is-current {
   width: min(760px, calc(100vw - 32px));
 }
 
-.goodobsidian-template-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-  max-height: min(70vh, 640px);
-  overflow-y: auto;
-}
-
-.goodobsidian-template-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.goodobsidian-template-entry-preview {
-  aspect-ratio: 3 / 4;
-  border-radius: var(--gob-radius-m);
-  background: #ffffff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
-}
-
-.goodobsidian-template-entry-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.goodobsidian-template-entry-name {
-  font-weight: 600;
-}
-
-.goodobsidian-template-entry-meta,
-.goodobsidian-template-entry-licence,
-.goodobsidian-template-entry-desc {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.goodobsidian-template-entry button {
-  margin-top: 6px;
-}
-
 /* -------------------------------------------------------- notebook info */
 /* Notebook settings' facts: label left, value right, as a settings row reads. */
 .goodobsidian-note-info {
@@ -9009,4 +8966,206 @@ button.goodobsidian-my-papers-add-item.clickable-icon {
   display: inline-flex;
   color: var(--text-muted);
   --icon-size: 16px;
+}
+
+/* ------------------------------------------------- the template gallery */
+/* After Goodnotes' gallery: covers to browse, then a template's own page
+   with every page to swipe through (template-ui.ts TemplateGalleryModal). */
+.modal.goodobsidian-template-gallery {
+  width: min(880px, calc(100vw - 32px));
+}
+
+.goodobsidian-template-gallery .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: min(70vh, 640px);
+}
+
+.goodobsidian-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 22px 18px;
+  padding: 4px 2px 12px;
+  max-height: min(64vh, 620px);
+  overflow-y: auto;
+}
+
+button.goodobsidian-gallery-card.clickable-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: none;
+  text-align: left;
+  white-space: normal;
+}
+
+.goodobsidian-gallery-cover {
+  position: relative;
+  aspect-ratio: 210 / 297;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  transition: transform 160ms ease;
+}
+
+button.goodobsidian-gallery-card:hover .goodobsidian-gallery-cover {
+  transform: translateY(-2px);
+}
+
+.goodobsidian-gallery-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.goodobsidian-gallery-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #ffffff;
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-gallery-card-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.goodobsidian-gallery-card-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* A template's page. */
+button.goodobsidian-gallery-back.clickable-icon {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  height: auto;
+  min-height: var(--gob-touch-compact);
+  padding: 0 8px 0 2px;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-gallery-back-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-gallery-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 14px;
+}
+
+.goodobsidian-gallery-detail-name {
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.goodobsidian-gallery-detail-author {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-gallery-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.goodobsidian-gallery-pages {
+  display: flex;
+  gap: 16px;
+  padding: 6px 4px 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.goodobsidian-gallery-page {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.goodobsidian-gallery-page-frame {
+  width: 220px;
+  aspect-ratio: 210 / 297;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.goodobsidian-gallery-page-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.goodobsidian-gallery-page-number {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.goodobsidian-gallery-more {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-gallery-about p {
+  margin: 4px 0 12px;
+}
+
+.goodobsidian-gallery-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-gallery-fact {
+  display: contents;
+}
+
+.goodobsidian-gallery-fact-label {
+  color: var(--text-muted);
+}
+
+.goodobsidian-gallery-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.goodobsidian-gallery-tag {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  font-size: var(--font-ui-smaller);
 }
