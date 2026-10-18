@@ -230,6 +230,7 @@ import {
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import { penInksOf } from "../model/pen-inks";
+import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS } from "./motion";
 import {
@@ -298,6 +299,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
     penInks: inks,
+    penStabilization: penStabilizationOf(s.penStabilization),
   };
 }
 
@@ -1912,6 +1914,7 @@ export class InkView extends TextFileView {
         },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
+        onPenStabilization: (all) => this.plugin.savePenStabilization(all),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),

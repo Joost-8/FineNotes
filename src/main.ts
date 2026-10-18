@@ -142,6 +142,7 @@ import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
+import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
 import { writeSystemText } from "./view/system-clipboard";
 
@@ -939,6 +940,19 @@ export default class GoodObsidianPlugin extends Plugin {
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
     void this.saveSettings();
+  }
+
+  /**
+   * Remember each pen type's stroke stabilization, for every notebook. Saved
+   * once the slider rests: it reports every step of a drag.
+   */
+  savePenStabilization(all: PenStabilization): void {
+    this.settings.penStabilization = penStabilizationOf(all);
+    window.clearTimeout(this.lastPenTimer);
+    this.lastPenTimer = window.setTimeout(() => {
+      this.lastPenTimer = 0;
+      void this.saveSettings();
+    }, LAST_PEN_SAVE_MS);
   }
 
   /**
