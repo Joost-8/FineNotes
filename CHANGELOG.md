@@ -41,6 +41,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Correct what Grape misread (test).** Settings → Handwriting → "Underline
+  words it may have misread": after a page is read on the device, words not in
+  a word list get a wavy underline. Tap one with a finger to type what it says,
+  confirm it, or ignore the word. Each answer, ink included, is kept in the
+  plugin's handwriting folder, and Learn my handwriting learns from it. Needs a
+  word list (`handwriting/words.txt`); off by default.
 - **Tables you type in.** Pick Table in the Shape tool and drag one out.
   With the Text tool, tap a cell to type; Tab moves to the next cell (past
   the last, it adds a row). A bar above the table adds and deletes rows and

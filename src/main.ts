@@ -16,6 +16,7 @@ import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
+import { WordCheck } from "./view/word-check";
 import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
@@ -226,6 +227,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Learning the user's handwriting, in the background; one run at a time. */
   readonly learner = new HandwritingLearner(() => this.learningHost());
+
+  /** Checking words read on the device, and the answers to learn from. */
+  readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
   /** This plugin's folder in the vault. */
   get pluginDir(): string {

@@ -640,6 +640,11 @@ export interface InkSurfaceCallbacks {
    */
   onSuggestedLink?: (index: number, strokeIds: string[], target: string) => void;
   /**
+   * A finger tapped a word underlined as maybe misread (`setWordFlags`):
+   * the host asks what it says. `at` is the tap, in client px.
+   */
+  onFlaggedWord?: (index: number, strokeIds: string[], at: { x: number; y: number }) => void;
+  /**
    * The user asked for a new page after `afterIndex`.
    *
    * The host decides what the new page looks like (it knows the notebook's
@@ -1405,6 +1410,11 @@ export class InkSurface {
   private readonly linkMarks: HTMLElement[] = [];
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
+  /** Words Grape may have misread, by page id: a wavy underline each. */
+  private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
+  private readonly wordMarks: HTMLElement[] = [];
+  /** The client point of the finger tap being handled, for `onFlaggedWord`. */
+  private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
   private pressMenu: PressMenu | null = null;
   private pressTimer = 0;
@@ -7927,7 +7937,7 @@ export class InkSurface {
     for (let i = used; i < this.sectionRibbons.length; i++) {
       this.sectionRibbons[i].addClass("is-hidden");
     }
-    const linked = this.syncLinkMarks();
+    const linked = this.syncLinkMarks() + this.syncWordMarks();
     this.sectionRibbonsEl.toggleClass("is-hidden", used === 0 && linked === 0);
   }
 
@@ -7977,6 +7987,45 @@ export class InkSurface {
     if (found.length > 0) this.linkSuggestions.set(pageId, found);
     else this.linkSuggestions.delete(pageId);
     this.syncSectionRibbons();
+  }
+
+  /**
+   * Underline words on a page that Grape may have misread; a finger tap on
+   * one calls `onFlaggedWord`. Replaces the page's earlier flags.
+   */
+  setWordFlags(pageId: string, flags: ReadonlyArray<readonly string[]>): void {
+    if (flags.length > 0) this.wordFlags.set(pageId, flags);
+    else this.wordFlags.delete(pageId);
+    this.syncSectionRibbons();
+  }
+
+  /** A wavy underline under each flagged word whose ink is still there. Returns how many. */
+  private syncWordMarks(): number {
+    let used = 0;
+    const scale = this.unitScale;
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      const flags = page ? this.wordFlags.get(page.id) : undefined;
+      if (!page || !flags) continue;
+      for (const strokes of flags) {
+        const bounds = this.linkBounds(page, strokes);
+        if (!bounds) continue;
+        let mark = this.wordMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-word-flag" });
+          this.wordMarks.push(mark);
+        }
+        mark.removeClass("is-hidden");
+        mark.setCssStyles({
+          left: `${(box.x + bounds.minX) * scale}px`,
+          top: `${(box.y + bounds.maxY) * scale + LINK_UNDERLINE_GAP_PX}px`,
+          width: `${Math.max(8, (bounds.maxX - bounds.minX) * scale)}px`,
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.wordMarks.length; i++) this.wordMarks[i].addClass("is-hidden");
+    return used;
   }
 
   /** A page's suggestions, less any whose ink has since been linked or erased. */
@@ -8081,6 +8130,13 @@ export class InkSurface {
     for (const suggestion of this.suggestionsOn(page)) {
       if (offer && index >= 0 && hit(suggestion.strokes)) {
         offer(index, suggestion.strokes, suggestion.target);
+        return true;
+      }
+    }
+    const ask = this.callbacks.onFlaggedWord;
+    for (const strokes of this.wordFlags.get(page.id) ?? []) {
+      if (ask && index >= 0 && hit(strokes)) {
+        ask(index, [...strokes], this.tapClient);
         return true;
       }
     }
@@ -8818,6 +8874,7 @@ export class InkSurface {
     }
     const at = this.toLayout(clientX, clientY);
     const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    this.tapClient = { x: clientX, y: clientY };
     // A finger on linked ink opens the link; the pen keeps writing over it.
     const tapped = box ? this.pageAt(box.index) : null;
     if (box && tapped) {

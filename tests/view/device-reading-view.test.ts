@@ -56,6 +56,7 @@ function view(readPage: (strokes: unknown) => Promise<unknown>, guard: ReadingGu
     file: { path: "A.notebook.md" },
     deviceRead: new Map<string, string>(),
     deviceBusy: false,
+    checkedWords: new Map(),
     penIsDown: false,
     deviceTimer: 0,
     plugin: {

@@ -196,6 +196,11 @@ export interface GoodObsidianSettings {
   /** Read handwriting on this device: search, titles and links from ink. */
   handwritingOnDevice: boolean;
   /**
+   * Underline words read on this device that may be misread; a tap corrects
+   * them, and learning uses the answers (view/word-check.ts).
+   */
+  checkHandwrittenWords: boolean;
+  /**
    * The vault path of a handwriting model file to read with instead of the
    * bundled one (a model tuned to one writer). Blank for the bundled model.
    */
@@ -296,6 +301,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   returnToPenAfterUse: false,
   fingerTapUndo: true,
   handwritingOnDevice: true,
+  checkHandwrittenWords: false,
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,

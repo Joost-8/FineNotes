@@ -14,6 +14,8 @@
  */
 
 import { type App, Notice, type TFile, normalizePath } from "obsidian";
+import { correctionLines, parseCorrections } from "../recognition/hwr/corrections";
+import { correctionsPath } from "./word-check";
 import { PRACTICE_FILE_SUFFIX } from "../constants";
 import { DEFAULT_PAGE_GEOMETRY, type InkDocument } from "../model/document";
 import { parseInkFile } from "../model/serialize";
@@ -130,6 +132,17 @@ export async function readPracticeLines(
   }));
 }
 
+/**
+ * The words answered under "Underline words it may have misread", as
+ * labelled lines (`recognition/hwr/corrections.ts`).
+ */
+export async function readCorrectionLines(host: LearningHost): Promise<LabelledLine[]> {
+  const adapter = host.app.vault.adapter;
+  const file = correctionsPath(host.pluginDir);
+  if (!(await adapter.exists(file))) return [];
+  return correctionLines(parseCorrections(await adapter.read(file)));
+}
+
 /** Every practice file's copied lines, in one list. */
 export async function readAllPracticeLines(host: LearningHost): Promise<LabelledLine[]> {
   const out: LabelledLine[] = [];
@@ -213,10 +226,12 @@ export class HandwritingLearner {
   async start(): Promise<void> {
     if (this.current) return;
     const host = this.host();
-    const lines = await readAllPracticeLines(host);
+    // Practice lines first, then corrected words: every fifth is held out
+    // for the gate, so both kinds are tested.
+    const lines = [...(await readAllPracticeLines(host)), ...(await readCorrectionLines(host))];
     if (lines.length < MIN_PRACTICE_LINES) {
       new Notice(
-        `FineNotes: copy at least ${MIN_PRACTICE_LINES} practice lines first; ${lines.length} so far.`,
+        `FineNotes: copy or correct at least ${MIN_PRACTICE_LINES} lines or words first; ${lines.length} so far.`,
         8000,
       );
       return;

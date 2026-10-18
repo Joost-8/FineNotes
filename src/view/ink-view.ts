@@ -181,6 +181,7 @@ import { LinkSuggestModal } from "./link-modal";
 import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
+import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
@@ -256,6 +257,8 @@ const LAST_PAGE_DEBOUNCE_MS = 500;
 
 /** Shown when an edit is refused because the note's load was held. */
 const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink loads cleanly.";
+/** How long the page in view must stay before it is checked for misread words, ms. */
+const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
 const READ_ONLY_NOTICE_MS = 4000;
 
@@ -400,6 +403,13 @@ export class InkView extends TextFileView {
   private deviceTimer = 0;
   /** A page is being read on the device right now. */
   private deviceBusy = false;
+  /**
+   * Words read on each page, by page id, with the page hash they were read
+   * at: what an underlined word's tap looks up (`checkWords`).
+   */
+  private readonly checkedWords = new Map<string, { hash: string; words: ReadWord[] }>();
+  /** The wait before the page in view is checked for misread words. */
+  private wordCheckTimer = 0;
   /** Pages read on the device this session, by key, at the hash they were read at. */
   private readonly deviceRead = new Map<string, string>();
   /** The pen is on the page. */
@@ -699,6 +709,8 @@ export class InkView extends TextFileView {
     window.clearTimeout(this.transcribeTimer);
     window.clearTimeout(this.deviceTimer);
     this.deviceTimer = 0;
+    window.clearTimeout(this.wordCheckTimer);
+    this.wordCheckTimer = 0;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
     this.saver.stop();
@@ -1759,6 +1771,7 @@ export class InkView extends TextFileView {
         this.writeTranscripts([{ page: step.page, text, hash: step.hash, device: true }]);
       }
       await this.offerHandwrittenLinks(step.page, reading);
+      await this.checkWords(step.page, step.hash, reading);
       this.scheduleDeviceReading(DEVICE_READ_NEXT_MS);
     } finally {
       guard.end();
@@ -1771,6 +1784,94 @@ export class InkView extends TextFileView {
    * a bracket in it is read again word by word, and the links found are
    * offered on the page (`handwritten-links.ts`).
    */
+  // --- Words it may have misread ------------------------------------------------
+
+  /** Whether misread words are underlined (needs reading on the device). */
+  private get wordsChecked(): boolean {
+    const settings = this.plugin.settings as GoodObsidianSettings | undefined;
+    return settings?.checkHandwrittenWords === true && settings.handwritingOnDevice !== false;
+  }
+
+  /** Check the page in view once the reader has settled on it. */
+  private scheduleWordCheck(): void {
+    if (!this.wordsChecked) return;
+    window.clearTimeout(this.wordCheckTimer);
+    this.wordCheckTimer = window.setTimeout(() => void this.checkPageInView(), WORD_CHECK_WAIT_MS);
+  }
+
+  /**
+   * Read the page in view and underline its doubtful words, unless it was
+   * checked at this content already. Never while the pen is down or the
+   * background reader is busy: then it waits for the next settle.
+   */
+  private async checkPageInView(): Promise<void> {
+    this.wordCheckTimer = 0;
+    const surface = this.surface;
+    const page = surface?.document.pages[surface.currentPage];
+    if (!surface || !page || !this.wordsChecked || this.guard.locked) return;
+    const hash = pageContentHash(page);
+    if (this.checkedWords.get(page.id)?.hash === hash) return;
+    if (this.deviceBusy || this.penIsDown) {
+      this.scheduleWordCheck();
+      return;
+    }
+    this.deviceBusy = true;
+    try {
+      const reading = await this.plugin.handwriting.readPage(page.strokes);
+      if (this.surface === surface && surface.document.pages.includes(page)) {
+        await this.checkWords(page, hash, reading);
+      }
+    } catch {
+      // The model failed to load, or the page could not be read: nothing to underline.
+    } finally {
+      this.deviceBusy = false;
+    }
+  }
+
+  /** Underline the words of a page just read that Grape may have misread. */
+  private async checkWords(page: Page, hash: string, reading: PageReading): Promise<void> {
+    const file = this.file;
+    const surface = this.surface;
+    if (!file || !surface) return;
+    if (!this.wordsChecked) {
+      // Turned off since this page was checked: take its underlines away.
+      if (this.checkedWords.delete(page.id)) surface.setWordFlags(page.id, []);
+      return;
+    }
+    const words = readWords(reading.lines);
+    this.checkedWords.set(page.id, { hash, words });
+    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words);
+    if (this.surface === surface)
+      surface.setWordFlags(
+        page.id,
+        flagged.map((w) => w.strokeIds),
+      );
+  }
+
+  /** A finger tapped an underlined word: ask what it says. */
+  private askAboutWord(index: number, strokeIds: string[], at: { x: number; y: number }): void {
+    const file = this.file;
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!file || !surface || !page) return;
+    const key = strokeKey(strokeIds);
+    const word = this.checkedWords.get(page.id)?.words.find((w) => strokeKey(w.strokeIds) === key);
+    if (!word) return;
+    const ids = new Set(strokeIds);
+    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
+    this.plugin.wordCheck.ask({ note: file.path, pageId: page.id, word, strokes }, at, () => {
+      // Answered: underline the page's words again, without this one.
+      const checked = this.checkedWords.get(page.id);
+      if (!checked || this.surface !== surface) return;
+      void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
+        surface.setWordFlags(
+          page.id,
+          flagged.map((w) => w.strokeIds),
+        ),
+      );
+    });
+  }
+
   private async offerHandwrittenLinks(page: Page, reading: PageReading): Promise<void> {
     const surface = this.surface;
     if (!surface) return;
@@ -2034,7 +2135,9 @@ export class InkView extends TextFileView {
         onPageChange: (index) => {
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
+          this.scheduleWordCheck();
         },
+        onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),

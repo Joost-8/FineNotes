@@ -9183,3 +9183,19 @@ button.goodobsidian-gallery-back.clickable-icon {
 .goodobsidian-gallery-filters .goodobsidian-gallery-chips {
   margin-bottom: 0;
 }
+
+/* A word Grape may have misread: a wavy underline, as a spelling checker
+   draws, in the theme's red; a finger tap asks what it says (word-check.ts). */
+.goodobsidian-word-flag {
+  position: absolute;
+  height: 4px;
+  background-color: var(--color-red);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 2 Q1.5 0 3 2 T6 2' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")
+    repeat-x left center / 6px 4px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 2 Q1.5 0 3 2 T6 2' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")
+    repeat-x left center / 6px 4px;
+}
+
+.goodobsidian-word-flag.is-hidden {
+  display: none;
+}

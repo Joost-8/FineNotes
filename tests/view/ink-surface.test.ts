@@ -1059,6 +1059,7 @@ describe("handwritten links", () => {
       baseScale: 1,
       userZoom: 1,
       linkSuggestions: new Map(),
+      wordFlags: new Map(),
       callbacks: {
         onLinkStrokes: (...args: unknown[]) => asked.push(args),
         onOpenLink: (target: string) => opened.push(target),

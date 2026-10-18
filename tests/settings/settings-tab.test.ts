@@ -262,6 +262,7 @@ describe("the rows", () => {
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
+      [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
       [HANDWRITING, "Learn my handwriting", "render"],
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
@@ -364,6 +365,13 @@ describe("the rows", () => {
       "Cursor over the page": ["cursor", "pointer", "crosshair"],
       "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
       "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
+      "Underline words it may have misread (test)": [
+        "handwriting",
+        "spelling",
+        "correct",
+        "misread",
+        "underline",
+      ],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
@@ -486,6 +494,7 @@ describe("which rows show", () => {
       "Show New notebook in file explorer bar",
       "Show notebook folders as notebooks",
       "Read handwriting on this device (beta)",
+      "Underline words it may have misread (test)",
       "Learn my handwriting",
       "Set up an AI service",
       "Desynchronized canvas",
@@ -514,7 +523,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${35 + PEN_ROWS.length})`,
+      `(block ${36 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });

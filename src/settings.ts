@@ -951,6 +951,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "what it reads before relying on it.",
         ["handwriting", "recognition", "search", "offline"],
       ),
+      {
+        ...toggle(
+          "checkHandwrittenWords",
+          "Underline words it may have misread (test)",
+          "After a page is read, words Grape is not sure of get a wavy underline. Tap one " +
+            "with a finger to correct the reading, confirm it, or ignore the word; Learn my " +
+            "handwriting learns from your answers. Needs a word list in the plugin's " +
+            "handwriting folder.",
+          ["handwriting", "spelling", "correct", "misread", "underline"],
+        ),
+        visible: () => settings.handwritingOnDevice !== false,
+      },
       drawnRow(
         "Learn my handwriting",
         learnedSummary(settings.handwritingModel),
