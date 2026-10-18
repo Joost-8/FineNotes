@@ -255,6 +255,10 @@ export interface GalleryEntry {
   /** HTTPS URL of the creator's own shop, for a template sold there. FineNotes sells nothing. */
   shop: string;
   pages: number;
+  /** Downloads so far, all versions together (counted by GitHub, synced a few times a day). */
+  downloads: number;
+  /** When it came into the gallery, ISO 8601; empty when unknown. */
+  added: string;
   /** Kept in the index so links still resolve, but no longer offered. */
   retired: boolean;
 }
@@ -315,10 +319,47 @@ export function readGalleryIndex(raw: unknown): GalleryEntry[] {
       download: kind ? download : "",
       shop,
       pages: typeof r.pages === "number" && r.pages > 0 ? Math.round(r.pages) : 1,
+      downloads:
+        typeof r.downloads === "number" && Number.isFinite(r.downloads) && r.downloads > 0
+          ? Math.floor(r.downloads)
+          : 0,
+      added: typeof r.added === "string" && !Number.isNaN(Date.parse(r.added)) ? r.added : "",
       retired: r.retired === true,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** How the gallery orders templates. */
+export type GallerySort = "popular" | "new" | "name";
+
+export const GALLERY_SORTS: ReadonlyArray<{ id: GallerySort; label: string }> = [
+  { id: "popular", label: "Popular" },
+  { id: "new", label: "New" },
+  { id: "name", label: "A–Z" },
+];
+
+/**
+ * `entries` in `sort` order: most downloaded first, newest first, or by
+ * name; ties (and templates with no date) by name, so the order is stable.
+ */
+export function sortGallery(entries: readonly GalleryEntry[], sort: GallerySort): GalleryEntry[] {
+  const byName = (a: GalleryEntry, b: GalleryEntry): number => a.name.localeCompare(b.name);
+  const time = (e: GalleryEntry): number => (e.added ? Date.parse(e.added) : 0);
+  return [...entries].sort((a, b) => {
+    if (sort === "popular") return b.downloads - a.downloads || byName(a, b);
+    if (sort === "new") return time(b) - time(a) || byName(a, b);
+    return byName(a, b);
+  });
+}
+
+/** A download count as the gallery shows it: 7, 980, 1.2k, 12k, 1.4M. */
+export function formatDownloads(n: number): string {
+  const count = Math.max(0, Math.floor(n));
+  if (count < 1000) return String(count);
+  const short = (value: number, unit: string): string =>
+    `${value < 10 ? (Math.floor(value * 10) / 10).toString() : Math.floor(value).toString()}${unit}`;
+  return count < 1_000_000 ? short(count / 1000, "k") : short(count / 1_000_000, "M");
 }
 
 /** Whether `entry` matches a search: every word in its name, author, description or tags. */

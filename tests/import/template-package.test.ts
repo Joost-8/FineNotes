@@ -11,9 +11,11 @@ import {
   TEMPLATE_EXTENSION,
   buildTemplatePackage,
   DEFAULT_GALLERY_URL,
+  formatDownloads,
   galleryKindOf,
   galleryMatches,
   readGalleryIndex,
+  sortGallery,
   readManifest,
   templateId,
 } from "../../src/import/template-package";
@@ -263,6 +265,54 @@ describe("a gallery index", () => {
     expect(DEFAULT_GALLERY_URL).toBe(
       "https://raw.githubusercontent.com/Joost-8/FineNotes-templates/main/index.json",
     );
+  });
+
+  it("reads download counts and dates, ignoring nonsense", () => {
+    const entries = readGalleryIndex({
+      templates: [
+        {
+          name: "A",
+          download: "https://x.org/a.pdf",
+          downloads: 41.7,
+          added: "2026-10-01T10:00:00Z",
+        },
+        { name: "B", download: "https://x.org/b.pdf", downloads: -3, added: "yesterday" },
+        { name: "C", download: "https://x.org/c.pdf", downloads: "many" },
+      ],
+    });
+    expect(entries.map((e) => [e.downloads, e.added])).toEqual([
+      [41, "2026-10-01T10:00:00Z"],
+      [0, ""],
+      [0, ""],
+    ]);
+  });
+
+  it("sorts by downloads, by newest, or by name, ties by name", () => {
+    const entries = readGalleryIndex({
+      templates: [
+        { name: "Cornell", download: "https://x.org/c.pdf", downloads: 5, added: "2026-09-01" },
+        { name: "Planner", download: "https://x.org/p.pdf", downloads: 90, added: "2026-08-01" },
+        { name: "Dots", download: "https://x.org/d.pdf", downloads: 5, added: "2026-10-10" },
+        { name: "Grid", download: "https://x.org/g.pdf" },
+      ],
+    });
+    const names = (sort: Parameters<typeof sortGallery>[1]) =>
+      sortGallery(entries, sort).map((e) => e.name);
+    expect(names("popular")).toEqual(["Planner", "Cornell", "Dots", "Grid"]);
+    expect(names("new")).toEqual(["Dots", "Cornell", "Planner", "Grid"]);
+    expect(names("name")).toEqual(["Cornell", "Dots", "Grid", "Planner"]);
+    // A copy: the list it was given keeps its order.
+    expect(entries.map((e) => e.name)).toEqual(["Cornell", "Dots", "Grid", "Planner"]);
+  });
+
+  it("shortens big download counts", () => {
+    expect(formatDownloads(0)).toBe("0");
+    expect(formatDownloads(980)).toBe("980");
+    expect(formatDownloads(1234)).toBe("1.2k");
+    expect(formatDownloads(9999)).toBe("9.9k");
+    expect(formatDownloads(12_345)).toBe("12k");
+    expect(formatDownloads(1_450_000)).toBe("1.4M");
+    expect(formatDownloads(-5)).toBe("0");
   });
 
   it("reads a download's kind from its extension only", () => {

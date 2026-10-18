@@ -9169,3 +9169,17 @@ button.goodobsidian-gallery-back.clickable-icon {
   background: var(--background-modifier-hover);
   font-size: var(--font-ui-smaller);
 }
+
+/* The gallery's categories and its Popular · New · A–Z, on one line. */
+.goodobsidian-gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.goodobsidian-gallery-filters .goodobsidian-gallery-chips {
+  margin-bottom: 0;
+}

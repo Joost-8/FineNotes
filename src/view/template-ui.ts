@@ -18,7 +18,11 @@ import {
 } from "../model/gallery-share";
 import {
   GALLERY_CATEGORIES,
+  GALLERY_SORTS,
   type GalleryEntry,
+  type GallerySort,
+  formatDownloads,
+  sortGallery,
   TEMPLATE_EXTENSION,
   galleryMatches,
   TEMPLATE_LICENCES,
@@ -138,9 +142,16 @@ export class TemplateFileSuggestModal extends FuzzySuggestModal<TFile> {
 }
 
 /** A gallery's templates: preview, name, author, licence; Install starts a notebook from one. */
+/** "1.2k downloads", "1 download", "No downloads yet". */
+function downloadsLabel(n: number): string {
+  if (n <= 0) return "No downloads yet";
+  return `${formatDownloads(n)} download${n === 1 ? "" : "s"}`;
+}
+
 export class TemplateGalleryModal extends Modal {
   private query = "";
   private category = "all";
+  private sort: GallerySort = "popular";
   private listEl: HTMLElement | null = null;
   /** Where the browse view was scrolled, kept while a template's page shows. */
   private browseScroll = 0;
@@ -204,7 +215,8 @@ export class TemplateGalleryModal extends Modal {
       this.query = search.value;
       this.renderList(shown);
     });
-    const chips = el.createDiv({ cls: "goodobsidian-gallery-chips" });
+    const filters = el.createDiv({ cls: "goodobsidian-gallery-filters" });
+    const chips = filters.createDiv({ cls: "goodobsidian-gallery-chips" });
     const used = GALLERY_CATEGORIES.filter((c) => shown.some((e) => e.category === c.id));
     const chipButtons: HTMLElement[] = [];
     for (const category of [{ id: "all", label: "All" }, ...used]) {
@@ -220,6 +232,23 @@ export class TemplateGalleryModal extends Modal {
       });
       chipButtons.push(chip);
     }
+    // Popular (most downloaded) · New · A–Z.
+    const sorts = filters.createDiv({ cls: "goodobsidian-segmented goodobsidian-gallery-sort" });
+    const sortButtons: HTMLElement[] = [];
+    for (const sort of GALLERY_SORTS) {
+      const button = sorts.createEl("button", { cls: "clickable-icon", text: sort.label });
+      button.toggleClass("is-active", sort.id === this.sort);
+      button.setAttribute("aria-pressed", String(sort.id === this.sort));
+      button.addEventListener("click", () => {
+        this.sort = sort.id;
+        for (const other of sortButtons) {
+          other.toggleClass("is-active", other === button);
+          other.setAttribute("aria-pressed", String(other === button));
+        }
+        this.renderList(shown);
+      });
+      sortButtons.push(button);
+    }
     this.listEl = el.createDiv({ cls: "goodobsidian-gallery-grid" });
     this.renderList(shown);
     this.listEl.scrollTop = this.browseScroll;
@@ -229,10 +258,13 @@ export class TemplateGalleryModal extends Modal {
     const grid = this.listEl;
     if (!grid) return;
     grid.empty();
-    const matching = shown.filter(
-      (entry) =>
-        (this.category === "all" || entry.category === this.category) &&
-        galleryMatches(entry, this.query),
+    const matching = sortGallery(
+      shown.filter(
+        (entry) =>
+          (this.category === "all" || entry.category === this.category) &&
+          galleryMatches(entry, this.query),
+      ),
+      this.sort,
     );
     if (matching.length === 0) {
       grid.createDiv({ cls: "setting-item-description", text: "No templates match." });
@@ -250,10 +282,13 @@ export class TemplateGalleryModal extends Modal {
         cover.createSpan({ cls: "goodobsidian-gallery-badge", text: `${entry.pages} pages` });
       }
       card.createDiv({ cls: "goodobsidian-gallery-card-name", text: entry.name });
+      card.createDiv({ cls: "goodobsidian-gallery-card-meta", text: entry.author });
       const where = entry.shop && !entry.download ? "In the creator's shop" : "Free";
       card.createDiv({
         cls: "goodobsidian-gallery-card-meta",
-        text: [entry.author, where].filter(Boolean).join(" · "),
+        text: [where, entry.download ? downloadsLabel(entry.downloads) : ""]
+          .filter(Boolean)
+          .join(" · "),
       });
       card.addEventListener("click", () => this.showDetail(entry));
     }
@@ -329,6 +364,7 @@ export class TemplateGalleryModal extends Modal {
       row.createSpan({ text: value });
     };
     fact("Pages", String(entry.pages));
+    if (entry.download) fact("Downloads", downloadsLabel(entry.downloads));
     fact("Kind", entry.kind === "notebook" ? "A whole notebook" : "Paper: every page to use");
     const category = GALLERY_CATEGORIES.find((c) => c.id === entry.category)?.label;
     if (category) fact("Category", category);
