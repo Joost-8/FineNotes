@@ -8,15 +8,30 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-18
+
 ### Changed
 
+- **The toolbar moves like an Apple app.** The selected tool's square slides
+  between tools on a spring, and option pills grow out of their button. A
+  first tap on a tool picks it; a second tap opens its options, for every
+  tool (the Table button too). The pen button is its own preview: the pen in
+  hand, its nib in the ink colour, over a mark as thick as it writes.
+- **Undo and redo say what they took back**: "Undid: Change shape style",
+  "Redid: Add page".
+- **Text holds still while zooming.** Text boxes no longer wiggle during a
+  pinch, and a notebook with hundreds of text boxes pinches smoothly. A
+  lasso resize keeps text sizes to one decimal, and the text size menu has
+  a slider over every size from 12 to 400.
+- **Ask… is one entry in the AI menu**, in place of the two Transcribe
+  entries (transcription stays as commands).
 - **Notebook settings (the gear) are this notebook's own.** Pages (scroll
   direction, page numbers, header), a new **Read-only** switch (nothing
   writes, erases or changes the pages; you can still scroll, search and
   export), and the notebook's name (renaming it, and its own folder) with its
-  pages, size, dates and folder. Notebook colour themes are gone. Where new
-  files are saved moved to FineNotes' settings, Advanced, for every notebook
-  without a folder of its own.
+  pages, size, dates and folder. Where new files are saved moved to
+  FineNotes' settings, Advanced, for every notebook without a folder of its
+  own.
 - **The More panel scrolls instead of cutting off rows** on a short screen.
 - **The Shape tool starts at the square.** Its auto-shape button is gone;
   the pen's Auto shape switch still turns a drawn shape clean.
@@ -26,6 +41,47 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Tables you type in.** Pick Table in the Shape tool and drag one out.
+  With the Text tool, tap a cell to type; Tab moves to the next cell (past
+  the last, it adds a row). A bar above the table adds and deletes rows and
+  columns and turns the header row on or off, and the cell edges drag to
+  resize. The lasso takes a table whole (move, resize, turn, copy), and its
+  "what to include" list can leave tables out.
+- **Shapes with style**: a fill, dashed or dotted lines, rounded corners,
+  and open or filled arrowheads on lines.
+- **Text styles**: Title, Heading, Subheading, Body, Caption and Label from
+  a Style menu in the Text pill; padding inside a box, capitals, and more
+  border widths and corner shapes.
+- **Stickers.** A built-in pack of 28 (arrows, labels, washi tape, icons,
+  doodles) that takes any colour, and your own collections from a stickers
+  folder in the vault. "Save as sticker" turns a lasso selection into one.
+  A picture, sticker or not, can sit in front of the ink and be made
+  see-through.
+- **A calligraphy pen**: a flat nib whose line is broad across it and a
+  hairline along it, as an italic hand is written.
+- **Paper in any colour.** The template picker sets the paper colour, the
+  line colour (both from FineNotes' own colour mixer, or a swatch) and the
+  line spacing, from Tight to Wide.
+- **Page tabs, a header and page numbers.** Add page tab in a page's menu
+  puts a coloured tab on the notebook's edge that opens the page. Notebook
+  settings prints a header (with the title and page number if you like) and
+  page numbers on every page but the cover, in exports too.
+- **Comments on pages.** Hold on a page (or use the lasso's ⋯) and pick
+  Comment: a note pinned to that spot, to read, edit, resolve or delete.
+  Comments stay out of thumbnails and exports.
+- **Ask is a chat, beside the page or over it.** Questions and answers in a
+  thread, with Copy and Insert as text box under each answer. Pick up to 10
+  pages with thumbnails, attach PDFs, pictures and text files (the
+  notebook's own PDFs are offered), save a chat to the notebook's AI chats
+  folder and open it again later. A chat survives closing it. On the iPad
+  the field stays above the keyboard.
+- **Ask can work in the notebook.** With Anthropic, OpenAI, Gemini,
+  OpenRouter or a custom endpoint that supports tools, the AI can read and
+  search the notebook, add text boxes, tables, pages and practice pages,
+  draw on a page, title, bookmark and move pages, and mark or comment on
+  your work. Each change is one undo step, and the chat lists what it did.
+- **Recordings show Transcribe only when your AI set up can transcribe
+  speech**, and say what is needed otherwise.
 - **Links in PDFs work.** Tap a link on a PDF page with a finger: a
   planner's month tab or index entry goes to the notebook page showing that
   page of the PDF, and a web address opens. Links stay on every page the PDF
