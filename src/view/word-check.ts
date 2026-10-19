@@ -176,6 +176,11 @@ export class WordCheck {
     );
   }
 
+  /** Record an answer given elsewhere (a lassoed title corrected in its dialog). */
+  record(word: CheckedWord, kind: CorrectionKind, text: string): Promise<void> {
+    return this.answer(word, kind, text);
+  }
+
   private async answer(word: CheckedWord, kind: CorrectionKind, text: string): Promise<void> {
     const strokes = word.strokes.map((s) => ({
       id: s.id,

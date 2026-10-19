@@ -85,8 +85,11 @@ export type HwrResult =
   | { type: "page"; reading: PageReading }
   | { type: "lines"; readings: LineReading[] }
   | { type: "lexicon"; size: number }
-  /** One per item; all null when the page is no longer kept or there is no list. */
-  | { type: "suggest"; results: SuggestResult[] }
+  /**
+   * One per item (null: no near list word, or no list); `results` is null
+   * itself when the page is no longer kept, so the caller may read it again.
+   */
+  | { type: "suggest"; results: SuggestResult[] | null }
   | { type: "tune"; tuned: HwrTuned | null };
 
 export type HwrReply = { id: number } & (

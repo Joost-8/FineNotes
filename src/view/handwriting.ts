@@ -126,14 +126,15 @@ export class HandwritingReader {
   }
 
   /**
-   * List words for words of a page read with `keep` (lexicon.ts). The word
-   * list goes to the worker when its `version` is new to it.
+   * List words for words of a page read with `keep` (lexicon.ts); null when
+   * the worker no longer keeps that page. The word list goes to the worker
+   * when its `version` is new to it.
    */
   async suggest(
     reading: number,
     items: SuggestItem[],
     lexicon: { version: number; words: () => string[] },
-  ): Promise<SuggestResult[]> {
+  ): Promise<SuggestResult[] | null> {
     await this.model();
     const client = this.client;
     if (!client) throw new Error("the recogniser stopped");

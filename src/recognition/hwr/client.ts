@@ -112,8 +112,11 @@ export class HwrWorkerClient {
     return result.size;
   }
 
-  /** List words for words of a page read with `keep` (its `PageReading.id`). */
-  async suggest(reading: number, items: SuggestItem[]): Promise<SuggestResult[]> {
+  /**
+   * List words for words of a page read with `keep` (its `PageReading.id`);
+   * null when the worker no longer keeps that page.
+   */
+  async suggest(reading: number, items: SuggestItem[]): Promise<SuggestResult[] | null> {
     const result = await this.send({ type: "suggest", reading, items }, READ_TIMEOUT_MS);
     if (result.type !== "suggest") throw new Error("unexpected reply");
     return result.results;

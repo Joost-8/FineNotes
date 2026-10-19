@@ -102,10 +102,11 @@ function handle(request: HwrRequest, id: number): HwrResult {
     const list = lexicon;
     const model = bundle;
     const alpha = model.meta.decoder.alpha;
+    if (!lines) return { type: "suggest", results: null };
     return {
       type: "suggest",
       results: request.items.map((item) => {
-        const line = lines?.[item.line];
+        const line = lines[item.line];
         if (!line || !list) return null;
         const t0 = now();
         const found = suggest(line, model.meta.alphabet, model.lm, alpha, item, list);

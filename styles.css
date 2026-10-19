@@ -9272,6 +9272,33 @@ button.goodobsidian-wordcheck-chip.clickable-icon.is-first {
   text-align: start;
 }
 
+/* "Did you mean Rationals?" under a field lassoed ink filled in (spelling-row.ts). */
+.goodobsidian-spelling {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.goodobsidian-spelling.is-hidden {
+  display: none;
+}
+
+.goodobsidian-spelling-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+button.goodobsidian-wordcheck-chip.goodobsidian-spelling-chip.clickable-icon {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--font-ui-small);
+}
+
 /* ------------------------------------------------------------ calculator */
 
 /* The calculator reuses the Add Page sheet (`.goodobsidian-addpage`). Every

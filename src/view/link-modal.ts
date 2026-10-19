@@ -18,6 +18,7 @@
 import { type App, SuggestModal, setIcon } from "obsidian";
 import { type LinkChoice, type LinkableNote, linkChoices } from "../search/link-choices";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 type PickerItem = LinkChoice | { kind: "remove"; target: string };
 
@@ -28,6 +29,8 @@ export interface LinkPickerHost {
   current: string | null;
   /** A target was picked, or (null) the link removed. */
   choose: (target: string | null) => void;
+  /** What the field said when a target was picked (for corrections of the ink's reading). */
+  chosenFrom?: (query: string) => void;
 }
 
 const ICONS: Record<PickerItem["kind"], string> = {
@@ -71,14 +74,17 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
   /**
    * Where the ink seems to lead, read from it after the list opens: typed
    * into the field, selected so typing replaces it, unless something is
-   * typed there already.
+   * typed there already. `fixes`: words the ink may say otherwise, offered
+   * under the field (spelling-row.ts).
    */
-  suggest(text: string): void {
+  suggest(text: string, fixes: readonly SpellingFix[] = []): void {
     const query = text.trim();
     if (query === "" || this.inputEl.value.trim() !== "") return;
     this.inputEl.value = query;
     this.inputEl.dispatchEvent(new Event("input"));
     this.inputEl.select();
+    const box = this.inputEl.parentElement;
+    if (fixes.length > 0 && box) new SpellingRows(box, this.inputEl, fixes);
   }
 
   getSuggestions(query: string): PickerItem[] {
@@ -120,6 +126,7 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
   }
 
   onChooseSuggestion(item: PickerItem): void {
+    this.host.chosenFrom?.(this.inputEl.value);
     this.host.choose(item.kind === "remove" ? null : item.target);
   }
 }
