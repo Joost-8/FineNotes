@@ -456,6 +456,44 @@ export function typeInto(entry: Entry, insert: string, continues: boolean): Entr
   return { expr, cursor: after(insert, at), fresh: false };
 }
 
+/**
+ * A key typed as a person means it: `,`, `)` or `=` typed where the template
+ * already has one steps over it (onto the next box), and `,` typed in an
+ * empty box goes to the next box; anything else is {@link typeInto}.
+ */
+export function typeKey(entry: Entry, insert: string, continues: boolean): Entry {
+  if (!entry.fresh && (insert === "," || insert === ")" || insert === "=")) {
+    const at = cursorOf(entry);
+    if (insert === "," && entry.expr[at] === BOX) {
+      const next = boxes(entry.expr).find((i) => i > at);
+      if (next !== undefined) return { ...entry, cursor: next };
+    }
+    // Over spaces, the sign itself, and spaces after it (no regex built from text: ledger).
+    let i = at;
+    while (entry.expr[i] === " ") i++;
+    if (entry.expr[i] === insert) {
+      i++;
+      while (entry.expr[i] === " ") i++;
+      return { ...entry, cursor: i };
+    }
+  }
+  return typeInto(entry, insert, continues);
+}
+
+/**
+ * The cursor into box `k` (0-based, in display order) of the expression as
+ * drawn, where `ending` is what the display added to read it (its boxes are
+ * not typed yet): those are added first, so the box can be filled.
+ */
+export function moveToBox(entry: Entry, k: number, ending = ""): Entry {
+  const real = boxes(entry.expr);
+  if (k < real.length) return { ...entry, cursor: real[k], fresh: false };
+  const expr = entry.expr + ending;
+  const all = boxes(expr);
+  if (k >= all.length) return { ...entry, cursor: entry.expr.length, fresh: false };
+  return { expr, cursor: all[k], fresh: false };
+}
+
 /** The positions of the boxes still to fill. */
 export function boxes(expr: string): number[] {
   const out: number[] = [];
@@ -492,13 +530,14 @@ export function backspace(entry: Entry, deleteLast: (expr: string) => string): E
   if (at === 0) return entry;
   let expr = entry.expr.slice(0, at - 1) + entry.expr.slice(at);
   const cursor = at - 1;
-  const left = expr[cursor - 1];
-  const right = expr[cursor];
-  const opens = left === "(" || left === ",";
-  const closes =
-    right === ")" || right === "," || right === undefined || expr.startsWith(" =", cursor);
-  const seps = left === " " && expr.slice(cursor - 2, cursor) === "= ";
-  if ((opens && closes) || (seps && (right === "," || right === ")"))) {
+  // An input left empty between its separators (spaces aside) gets its box back.
+  let l = cursor - 1;
+  while (expr[l] === " ") l--;
+  let r = cursor;
+  while (expr[r] === " ") r++;
+  const opens = l < 0 ? false : "(,=".includes(expr[l]);
+  const closes = r >= expr.length || "),=".includes(expr[r]);
+  if (opens && closes && !(expr[l] === "=" && expr[r] === "=")) {
     expr = expr.slice(0, cursor) + BOX + expr.slice(cursor);
   }
   return { expr, cursor, fresh: false };

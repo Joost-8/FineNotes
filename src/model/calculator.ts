@@ -1022,7 +1022,8 @@ function baseLiteral(digits: string, radix: number): CalcValue {
 /** A parsed expression, evaluated as many times as needed (graphs, calculus). */
 export type CalcNode =
   | { k: "num"; v: CalcValue; text?: string }
-  | { k: "name"; name: string }
+  /** `slot`: for a box (▢ or ▣), which box it is in the text, counting from 0. */
+  | { k: "name"; name: string; slot?: number }
   | { k: "neg"; a: CalcNode }
   | {
       k: "bin";
@@ -1042,6 +1043,8 @@ const RELATIONS: readonly string[] = ["=", "<", ">", "<=", ">="];
 class Parser {
   private i = 0;
   private depth = 0;
+  /** Boxes met so far, in the order they are written. */
+  private slots = 0;
 
   constructor(
     private readonly tokens: readonly Token[],
@@ -1175,7 +1178,11 @@ class Parser {
     const name = ALIASES[t.name] ?? t.name;
     const fn = FUNCTIONS.get(name);
     const calculus = Object.prototype.hasOwnProperty.call(CALCULUS, name) ? CALCULUS[name] : null;
-    if (!fn && !calculus) return { k: "name", name };
+    if (!fn && !calculus) {
+      if (name === PLACEHOLDER || name === ACTIVE_BOX)
+        return { k: "name", name, slot: this.slots++ };
+      return { k: "name", name };
+    }
     const args: CalcNode[] = [];
     let bracketed = false;
     if (this.peekOp() === "(") {

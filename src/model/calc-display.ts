@@ -23,7 +23,7 @@ export type MathBox =
   | { t: "row"; items: MathBox[] }
   | { t: "text"; s: string; role: "num" | "op" | "fn" | "var" }
   /** An operand not typed yet; `active` while the cursor is on it. */
-  | { t: "slot"; active?: true }
+  | { t: "slot"; active?: true; index?: number }
   /** Where the next key types. */
   | { t: "caret" }
   | { t: "frac"; num: MathBox; den: MathBox }
@@ -92,8 +92,8 @@ function box(node: CalcNode): MathBox {
     case "num":
       return text(node.text ?? "", "num");
     case "name":
-      if (node.name === PLACEHOLDER) return { t: "slot" };
-      if (node.name === ACTIVE_BOX) return { t: "slot", active: true };
+      if (node.name === PLACEHOLDER) return { t: "slot", index: node.slot };
+      if (node.name === ACTIVE_BOX) return { t: "slot", active: true, index: node.slot };
       if (node.name === CARET) return { t: "caret" };
       return text(NAMES[node.name] ?? node.name, node.name === "ans" ? "fn" : "var");
     case "neg":
@@ -174,12 +174,27 @@ export function layoutExpression(
   base: NumberBase = 10,
   options: { graph?: boolean } = {},
 ): MathBox | null {
+  return layoutWithEnding(expression, base, options)?.box ?? null;
+}
+
+/**
+ * {@link layoutExpression}, and the text it had to add at the end to read
+ * (`▢,▢,▢` for a bare `Σ(`): the boxes drawn for it are not in the typed
+ * text, so a tap on one must add them before the cursor can go there.
+ */
+export function layoutWithEnding(
+  expression: string,
+  base: NumberBase = 10,
+  options: { graph?: boolean } = {},
+): { box: MathBox; ending: string } | null {
   if (!expression.trim()) return null;
   // A graph line's restriction, {0 < x < 5}, is shown as typed after its curve.
   const brace = options.graph ? expression.indexOf("{") : -1;
   if (brace > 0) {
     const main = layoutExpression(expression.slice(0, brace), base, options);
-    return main ? row(main, text(` ${expression.slice(brace).trim()}`, "op")) : null;
+    return main
+      ? { box: row(main, text(` ${expression.slice(brace).trim()}`, "op")), ending: "" }
+      : null;
   }
   // A graph line: run-together letters (ax), and = or < at the top.
   const parse = options.graph
@@ -191,7 +206,7 @@ export function layoutExpression(
   for (const ending of endings) {
     attempt += ending;
     const parsed = parseExpression(attempt, base, parse);
-    if (parsed.ok) return box(parsed.node);
+    if (parsed.ok) return { box: box(parsed.node), ending: attempt.slice(expression.length) };
   }
   return null;
 }

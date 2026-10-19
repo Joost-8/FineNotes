@@ -9511,6 +9511,10 @@ button.clickable-icon.goodobsidian-calc-icon {
   color: var(--gob-icon);
 }
 
+button.clickable-icon.goodobsidian-calc-icon.is-hidden {
+  display: none;
+}
+
 button.clickable-icon.goodobsidian-calc-icon.is-active {
   background: var(--gob-active-bg);
   color: var(--gob-active-fg);
@@ -9588,8 +9592,10 @@ button.clickable-icon.goodobsidian-calc-chip.is-hidden,
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 50px;
-  padding-right: 4px;
+  /* Tall enough for Σ and ∫ with their limits at full size, and clear of
+     the icon row above, so a finger reaching a limit's box lands on it. */
+  height: 62px;
+  padding: 4px 4px 0 0;
   overflow: hidden;
   color: var(--text-normal);
   font-size: 21px;
@@ -9796,6 +9802,14 @@ button.clickable-icon.goodobsidian-calc-chip.is-hidden,
   vertical-align: middle;
 }
 
+/* In the live display a box is never smaller than this, even in a limit's
+   small type: it is what a finger aims at (the tap target reaches 22 px
+   further, nearest box wins). */
+.goodobsidian-calc-expr .gob-m-slot {
+  min-width: 13px;
+  min-height: 17px;
+}
+
 .gob-m-slot.is-active {
   border-style: solid;
   border-color: var(--interactive-accent);
@@ -9985,9 +9999,9 @@ button.clickable-icon.goodobsidian-calc-key:disabled {
   height: 436px;
 }
 
-/* The keypad's height plus the expression's and the result's (50 + 40). */
+/* The keypad's height plus the expression's and the result's (62 + 40). */
 .goodobsidian-calc-body.is-graph {
-  height: 526px;
+  height: 538px;
 }
 
 .goodobsidian-calc-history {

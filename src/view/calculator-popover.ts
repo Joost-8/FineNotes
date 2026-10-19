@@ -33,7 +33,7 @@
  */
 
 import { setIcon } from "obsidian";
-import { type MathBox, layoutExpression } from "../model/calc-display";
+import { type MathBox, layoutWithEnding } from "../model/calc-display";
 import {
   type AngleMode,
   BASE_LABELS,
@@ -62,10 +62,12 @@ import {
   keyEnabled,
   keyboardKey,
   moveCursor,
+  moveToBox,
   nextBox,
   shownKey,
   spellAns,
   typeInto,
+  typeKey,
   withCursor,
 } from "../model/calculator-keys";
 import {
@@ -217,6 +219,23 @@ export class CalculatorPopover {
       "Stop editing this graph line",
     );
     flags.createDiv({ cls: "goodobsidian-calc-flags-gap" });
+    for (const [icon, by, label] of [
+      ["chevron-left", -1, "Cursor left"],
+      ["chevron-right", 1, "Cursor right"],
+    ] as const) {
+      const move = this.button(
+        flags,
+        "",
+        () => {
+          this.entry = moveCursor(this.entry, by);
+          this.refresh();
+        },
+        "goodobsidian-calc-icon is-cursor",
+        `${label}: a box counts as one sign`,
+      );
+      setIcon(move, icon);
+      move.setAttribute("aria-label", label);
+    }
     this.paneButton(flags, "graph", "chart-spline", "Graph");
     this.paneButton(flags, "history", "history", "History");
     this.exprEl = display.createDiv({ cls: "goodobsidian-calc-expr" });
@@ -546,16 +565,23 @@ export class CalculatorPopover {
     this.graph.paintNow();
   }
 
-  /** Lay `expression` out as math into `parent`; the text as typed when it cannot be read. */
-  private drawMath(parent: HTMLElement, expression: string, graph = false): boolean {
-    const box = layoutExpression(expression, graph ? 10 : this.data.prefs.base, { graph });
-    if (!box) {
+  /**
+   * Lay `expression` out as math into `parent`; the text as typed when it
+   * cannot be read. The display keeps what the layout had to add at the end
+   * (its boxes), so a tap on one of those can add them to the text.
+   */
+  private drawMath(parent: HTMLElement, expression: string, graph = false, live = false): boolean {
+    const laid = layoutWithEnding(expression, graph ? 10 : this.data.prefs.base, { graph });
+    if (live) this.displayEnding = laid?.ending ?? "";
+    if (!laid) {
       parent.createSpan({ cls: "goodobsidian-calc-raw", text: expression.replace(/[‸]/g, "") });
       return false;
     }
-    renderBox(parent, box);
+    renderBox(parent, laid.box);
     return true;
   }
+  /** What the display added at the end of the expression to lay it out. */
+  private displayEnding = "";
 
   // --- Behaviour --------------------------------------------------------------
 
@@ -577,7 +603,7 @@ export class CalculatorPopover {
     if (key.insert !== undefined) {
       const wasFresh = this.entry.fresh;
       // A graph line never carries a result on: an operator just types.
-      this.entry = typeInto(
+      this.entry = typeKey(
         this.entry,
         key.insert,
         key.continues === true && this.editingLine === null,
@@ -858,6 +884,9 @@ export class CalculatorPopover {
       this.editingLine === "new" ? "New graph line  ✕" : `Graph line ${index + 1}  ✕`,
     );
     this.editChip.toggleClass("is-hidden", !editing || graphing);
+    for (const move of Array.from(this.el.querySelectorAll(".is-cursor"))) {
+      move.toggleClass("is-hidden", graphing);
+    }
     const clear = this.bodyEl.querySelector<HTMLElement>("[data-clear]");
     if (clear) clear.setText(this.clearsAll() ? "AC" : "C");
     const equalsKey = this.bodyEl.querySelector<HTMLElement>("[data-equals]");
@@ -868,7 +897,7 @@ export class CalculatorPopover {
     const typing = !this.entry.fresh;
     const marked = typing ? withCursor(this.entry) : expr;
     let laid = true;
-    if (marked) laid = this.drawMath(this.mathEl, marked, editing);
+    if (marked) laid = this.drawMath(this.mathEl, marked, editing, true);
     if (!laid && typing) this.mathEl.createSpan({ cls: "goodobsidian-calc-caret" });
     if (!marked && typing) this.mathEl.createSpan({ cls: "goodobsidian-calc-caret" });
     this.mathEl.toggleClass("is-raw", !laid);
@@ -973,22 +1002,34 @@ export class CalculatorPopover {
     display.addEventListener("pointerup", (event) => {
       const tapped = from !== null && !swiped;
       from = null;
-      if (!tapped || this.entry.fresh) return;
-      const slot = (event.target as Element | null)?.closest(".gob-m-slot");
-      const all = Array.from(this.mathEl.querySelectorAll(".gob-m-slot"));
-      const at = slot ? all.indexOf(slot) : -1;
-      const positions = boxes(this.entry.expr);
-      this.entry = {
-        ...this.entry,
-        cursor: at >= 0 && at < positions.length ? positions[at] : this.entry.expr.length,
-      };
+      if (!tapped || this.entry.fresh || this.tapSlot(event)) return;
+      // A tap on the display away from every box: the cursor to the end.
+      this.entry = { ...this.entry, cursor: this.entry.expr.length };
       this.refresh();
     });
+    // A box's 44 px target reaches past the display's edge onto the card.
+    const onCard = (event: PointerEvent): void => {
+      const target = event.target as Element | null;
+      if (display.contains(target) || target?.closest("button, input, canvas")) return;
+      if (!this.entry.fresh) this.tapSlot(event);
+    };
+    this.el.addEventListener("pointerup", onCard);
+    this.dispose.push(() => this.el.removeEventListener("pointerup", onCard));
     const end = (): void => {
       from = null;
     };
     display.addEventListener("pointercancel", end);
     display.addEventListener("pointerleave", end);
+  }
+
+  /** Move the cursor into the box nearest a tap, if one is within reach; false when none is. */
+  private tapSlot(event: PointerEvent): boolean {
+    const slot = nearestSlot(this.mathEl, event.clientX, event.clientY);
+    const index = slot ? Number(slot.dataset.slot) : NaN;
+    if (!Number.isInteger(index)) return false;
+    this.entry = moveToBox(this.entry, index, this.displayEnding);
+    this.refresh();
+    return true;
   }
 
   /**
@@ -1001,7 +1042,9 @@ export class CalculatorPopover {
     const guard = (event: TouchEvent): void => {
       const target = event.target as Element | null;
       if (
-        target?.closest(".goodobsidian-calc-key, .goodobsidian-calc-tab, .goodobsidian-calc-chip")
+        target?.closest(
+          ".goodobsidian-calc-key, .goodobsidian-calc-tab, .goodobsidian-calc-chip, .goodobsidian-calc-display",
+        )
       ) {
         event.preventDefault();
       }
@@ -1081,6 +1124,26 @@ export class CalculatorPopover {
   }
 }
 
+/** Reach of a tap around a box, px: 22 each way makes a 44 px target of a 13 px glyph. */
+const SLOT_REACH = 22;
+
+/** The box nearest a tap at (x, y), within {@link SLOT_REACH}; null when none is that close. */
+function nearestSlot(root: HTMLElement, x: number, y: number): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let bestDistance = SLOT_REACH;
+  for (const slot of Array.from(root.querySelectorAll<HTMLElement>(".gob-m-slot"))) {
+    const r = slot.getBoundingClientRect();
+    const dx = Math.max(r.left - x, 0, x - r.right);
+    const dy = Math.max(r.top - y, 0, y - r.bottom);
+    const distance = Math.hypot(dx, dy);
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = slot;
+    }
+  }
+  return best;
+}
+
 /** A {@link MathBox} as spans (styles.css, `.gob-m-*`). */
 function renderBox(parent: HTMLElement, box: MathBox): void {
   switch (box.t) {
@@ -1091,7 +1154,9 @@ function renderBox(parent: HTMLElement, box: MathBox): void {
       parent.createSpan({ cls: `gob-m-${box.role}`, text: box.s });
       return;
     case "slot":
-      parent.createSpan({ cls: box.active ? "gob-m-slot is-active" : "gob-m-slot" });
+      parent
+        .createSpan({ cls: box.active ? "gob-m-slot is-active" : "gob-m-slot" })
+        .setAttribute("data-slot", String(box.index ?? ""));
       return;
     case "caret":
       parent.createSpan({ cls: "goodobsidian-calc-caret" });

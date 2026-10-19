@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { type MathBox, layoutWithEnding } from "../../src/model/calc-display";
 import { calculate, deleteLast } from "../../src/model/calculator";
 import {
   ACTIVE_BOX,
   CARET,
   type CalcKey,
+  type Entry,
   KEY_TABS,
   NUMBER_ROWS,
   TAB_ROWS,
@@ -16,10 +18,12 @@ import {
   keyEnabled,
   keyboardKey,
   moveCursor,
+  moveToBox,
   nextBox,
   shownKey,
   spellAns,
   typeInto,
+  typeKey,
   withCursor,
 } from "../../src/model/calculator-keys";
 
@@ -197,6 +201,15 @@ describe("typing", () => {
     expect(backspace({ expr: "solve(x = ▢, 1)", cursor: 7, fresh: false }, deleteLast).expr).toBe(
       "solve(▢ = ▢, 1)",
     );
+    // A bound typed into a spaced template, then deleted: its box comes back.
+    expect(backspace({ expr: "Σ(x, 5, ▢)", cursor: 6, fresh: false }, deleteLast)).toEqual({
+      expr: "Σ(x, ▢, ▢)",
+      cursor: 5,
+      fresh: false,
+    });
+    expect(backspace({ expr: "solve(x = 4, 1)", cursor: 11, fresh: false }, deleteLast).expr).toBe(
+      "solve(x = ▢, 1)",
+    );
     const start = { expr: "12", cursor: 0, fresh: false };
     expect(backspace(start, deleteLast)).toBe(start);
   });
@@ -267,5 +280,72 @@ describe("keyboard and the rest", () => {
       y: 900,
     });
     expect(centredOrigin(null, page, 1000, 20)).toEqual({ x: 0, y: 490 });
+  });
+});
+
+describe("boxes the display adds, and keys that step over a template", () => {
+  it("moves into a box only the display drew, adding it to the text", () => {
+    // A bare Σ( is drawn as Σ(▢, ▢, ▢); a tap on its third box adds them.
+    const laid = layoutWithEnding(withCursor({ expr: "Σ(", fresh: false }));
+    expect(laid?.ending).toBe("▢,▢,▢");
+    const e = moveToBox({ expr: "Σ(", fresh: false }, 2, laid!.ending);
+    expect(e.expr).toBe("Σ(▢,▢,▢");
+    expect(e.expr[e.cursor!]).toBe("▢");
+    expect(e.cursor).toBe(6);
+    // A box already typed is moved to as it is.
+    expect(moveToBox({ expr: "f(▢, ▢)", fresh: false }, 1)).toEqual({
+      expr: "f(▢, ▢)",
+      cursor: 5,
+      fresh: false,
+    });
+    // Past every box: the end.
+    expect(moveToBox({ expr: "1+2", fresh: false }, 3, "")).toEqual({
+      expr: "1+2",
+      cursor: 3,
+      fresh: false,
+    });
+  });
+
+  it("fills Σ's bounds from a bare Σ(, as a finger would", () => {
+    let e: Entry = { expr: "Σ(", fresh: false };
+    e = moveToBox(e, 0, layoutWithEnding(withCursor(e))!.ending);
+    e = typeKey(e, "x", false);
+    e = typeKey(e, "²", false);
+    e = typeKey(e, ",", false);
+    e = typeKey(e, "1", false);
+    e = typeKey(e, ",", false);
+    e = typeKey(e, "1", false);
+    e = typeKey(e, "0", false);
+    expect(e.expr).toBe("Σ(x²,1,10");
+    expect(calculate(e.expr)).toMatchObject({ ok: true, text: "385" });
+  });
+
+  it("steps over , ) and = the template already has", () => {
+    let e = typeInto({ expr: "", fresh: false }, "solve(▢ = ▢, ▢)", false);
+    e = typeKey(e, "x", false);
+    e = typeKey(e, "=", false);
+    expect(e.expr[e.cursor!]).toBe("▢");
+    e = typeKey(e, "4", false);
+    e = typeKey(e, ",", false);
+    e = typeKey(e, "1", false);
+    e = typeKey(e, ")", false);
+    expect(e.expr).toBe("solve(x = 4, 1)");
+    expect(e.cursor).toBe(e.expr.length);
+    // A comma typed in an empty box goes to the next box.
+    const two = typeInto({ expr: "", fresh: false }, "nCr(▢, ▢)", false);
+    expect(typeKey(two, ",", false).cursor).toBe(7);
+    // Nothing to step over: the sign is typed.
+    expect(typeKey({ expr: "log(8", fresh: false }, ",", false).expr).toBe("log(8,");
+    expect(typeKey({ expr: "2", fresh: true }, ")", false).expr).toBe(")");
+  });
+
+  it("numbers ∫'s boxes in the order they are written, not drawn", () => {
+    // ∫(body, from, to) is drawn upper bound, lower bound, then body.
+    const box = layoutWithEnding("∫(▢, ▢, ▣)")!.box;
+    if (box.t !== "bigop") throw new Error(box.t);
+    const slot = (b: MathBox | undefined): MathBox | undefined => b;
+    expect(slot(box.hi)).toEqual({ t: "slot", active: true, index: 2 });
+    expect(slot(box.lo)).toEqual({ t: "slot", index: 1 });
+    expect(slot(box.body)).toEqual({ t: "slot", index: 0 });
   });
 });
