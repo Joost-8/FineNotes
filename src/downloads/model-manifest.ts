@@ -49,6 +49,8 @@ export interface ModelAsset {
    */
   prefix?: string;
   suffix?: string;
+  /** Bytes per range request; `CHUNK_BYTES` when unset (a large model wants a few MB). */
+  chunkBytes?: number;
 }
 
 /** The model's total size in bytes. */

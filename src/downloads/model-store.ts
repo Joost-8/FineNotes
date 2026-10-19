@@ -263,7 +263,7 @@ export class AssetStore {
       this.emit({ type: "progress", received: before + this.partialBytes, total });
     progress();
     for (;;) {
-      const range = nextRange(this.partialBytes, file.bytes);
+      const range = nextRange(this.partialBytes, file.bytes, this.asset.chunkBytes);
       if (!range) break;
       const answer = await this.getWithRetry(file.url, range);
       if (answer.status === 200) {

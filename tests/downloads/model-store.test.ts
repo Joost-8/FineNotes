@@ -341,4 +341,14 @@ describe("AssetStore", () => {
     expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(false);
     expect(store.state.kind).toBe("missing");
   });
+
+  it("asks in the model's own chunk size when it sets one", async () => {
+    const { deps, srv } = fakes();
+    expect(await new AssetStore({ ...ASSET, chunkBytes: 700 }, deps).download()).toBe(true);
+    expect(srv.requests).toEqual([
+      { start: 0, end: 699 },
+      { start: 700, end: 1399 },
+      { start: 1400, end: 1999 },
+    ]);
+  });
 });
