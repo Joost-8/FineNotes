@@ -39,7 +39,7 @@ import { readPalette } from "./palette";
 import { readFurniture } from "./furniture";
 import { readTabColor } from "./page-tabs";
 import { normalizeTable } from "./table";
-import { normalizeGraph } from "./graph";
+import { normalizeGraph } from "./graph-element";
 import { normalizeComment } from "./comments";
 import {
   type AttachmentFolders,

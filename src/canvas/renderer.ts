@@ -71,7 +71,7 @@ import {
 } from "./table-layout";
 import { imageBounds, rotationOf } from "./image-geometry";
 import { paintGraph } from "./graph-paint";
-import { graphBounds } from "../model/graph";
+import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import {
   baselineOffset,

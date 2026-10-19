@@ -263,7 +263,7 @@ import {
   stepCell,
   tableScaleRange,
 } from "../model/table";
-import { EditGraph, graphBounds, nextGraphId } from "../model/graph";
+import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
 import {
   AddTable,
   InsertTableColumn,

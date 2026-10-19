@@ -14,7 +14,7 @@
  */
 
 import type { GraphElement } from "../model/document";
-import { graphContentKey } from "../model/graph";
+import { graphContentKey } from "../model/graph-element";
 import { shownColor } from "./backdrop";
 import {
   type FrameMap,

@@ -13,7 +13,7 @@
  */
 
 import type { GraphElement } from "../model/document";
-import { type GraphView, panView, sameView, valueAt, zoomView } from "../model/graph";
+import { type GraphView, panView, sameView, valueAt, zoomView } from "../model/graph-element";
 import { paintGraph, sampleExpressionAt } from "../canvas/graph-paint";
 import { frameX, frameY } from "../canvas/graph-geometry";
 import { shownColor } from "../canvas/backdrop";

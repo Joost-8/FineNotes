@@ -25,7 +25,7 @@ import {
 } from "./document";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
-import { restoreGraph, scaleGraph } from "./graph";
+import { restoreGraph, scaleGraph } from "./graph-element";
 import {
   MAX_BORDER_WIDTH,
   MAX_CORNER_RADIUS,

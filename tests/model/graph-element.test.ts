@@ -41,7 +41,7 @@ import {
   scaleGraph,
   valueAt,
   zoomView,
-} from "../../src/model/graph";
+} from "../../src/model/graph-element";
 
 function sine(id = "f1"): GraphElement {
   return makeGraph({
