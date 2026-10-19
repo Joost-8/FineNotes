@@ -43,9 +43,8 @@ function page(): Page {
         y: 40,
         w: 300,
         h: 200,
-        expressions: [{ text: "sin(x)", color: CURVE }],
-        xRange: [-5, 5],
-        yRange: [-2, 2],
+        spec: { expressions: ["sin(x)"], xMin: -5, xMax: 5, yMin: -2, yMax: 2 },
+        colors: [CURVE],
       }),
     ],
   };
@@ -121,7 +120,7 @@ describe("a graph on a page", () => {
     p.graphs![0].x += 30;
     draw();
     expect(graphStats.samplings).toBe(before + 1);
-    p.graphs![0].xRange = [-6, 6];
+    p.graphs![0].spec.xMax = 6;
     draw();
     expect(graphStats.samplings).toBe(before + 2);
   });

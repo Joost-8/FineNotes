@@ -251,7 +251,7 @@ export function sameSpotTaken(
   const graphTaken = (c: GraphElement): boolean =>
     (page.graphs ?? []).some(
       (e) =>
-        JSON.stringify(e.expressions) === JSON.stringify(c.expressions) &&
+        JSON.stringify(e.spec) === JSON.stringify(c.spec) &&
         near(e.x, c.x + dx) &&
         near(e.y, c.y + dy),
     );

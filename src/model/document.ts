@@ -486,18 +486,29 @@ export interface TableElement {
   dash?: ShapeDash;
 }
 
-/** One curve of a graph: the right-hand side of y = f(x), as typed, and its colour. */
-export interface GraphExpression {
-  text: string;
-  /** Hex, as a stroke's colour. */
-  color: string;
+/**
+ * The calculator's graph (`model/graph`'s `GraphSpec`) as a page keeps it:
+ * kept whole, every field it has, so whatever the calculator's graphs learn
+ * later is saved, copied and undone without this file knowing. Only what the
+ * page itself relies on is checked when a note is read: the expressions are
+ * a list, and the view (`xMin < xMax`, `yMin < yMax`) is finite.
+ */
+export interface GraphSpecData {
+  expressions: string[];
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  /** Trig in degrees or radians; absent means radians. */
+  angle?: "deg" | "rad";
+  [field: string]: unknown;
 }
 
 /**
- * A y = f(x) graph on a page (`model/graph`), from the calculator: only what
+ * A graph on a page (`model/graph-element`), from the calculator: only what
  * it shows is stored, never sampled points, so the curve is drawn again at
- * whatever resolution it is shown or printed at. Drawn under the ink, like a
- * table, and kept upright.
+ * whatever resolution it is shown or printed at, by the calculator's own
+ * sampler and painter. Drawn under the ink, like a table, and kept upright.
  */
 export interface GraphElement {
   /** `f<N>`, unique on the page. */
@@ -507,17 +518,14 @@ export interface GraphElement {
   y: number;
   w: number;
   h: number;
-  /** Bottom to top; at least one. */
-  expressions: GraphExpression[];
-  /** The x and y values at the frame's left and right, bottom and top; `lo < hi`. */
-  xRange: [number, number];
-  yRange: [number, number];
+  /** What is plotted and the view, as the calculator gave it. */
+  spec: GraphSpecData;
+  /** Each expression's curve colour, hex, by position; a missing one takes the palette's. */
+  colors: string[];
   /** Grid lines off. Only stored as `false`; absent means on. */
   grid?: false;
   /** Axis numbers off. Only stored as `false`; absent means on. */
   labels?: false;
-  /** Trig functions take degrees (the calculator's DEG). Only stored as `"deg"`; absent means radians. */
-  angle?: "deg";
 }
 
 export type PageKind = "ink";

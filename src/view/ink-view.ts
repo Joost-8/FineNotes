@@ -1201,7 +1201,7 @@ export class InkView extends TextFileView {
     const h = graphFrameHeight(spec, GRAPH_DEFAULT_W, GRAPH_DEFAULT_H);
     const at = centredOrigin(surface.visiblePageRect(index), page.geometry, GRAPH_DEFAULT_W, h);
     const graph = graphFromSpec(nextGraphId(surface.document), at.x, at.y, spec);
-    if (graph.expressions.length === 0) return false;
+    if (graph.spec.expressions.length === 0) return false;
     graph.h = h;
     surface.applyCommand(new AddGraph(page.id, graph));
     surface.selectGraph(page.id, graph.id);
@@ -1209,21 +1209,15 @@ export class InkView extends TextFileView {
     return true;
   }
 
-  /** What Edit graph gave back for `graph`: its new expressions, colours and view, one undo step. */
+  /** What Edit graph gave back for `graph`: its whole new spec, one undo step. */
   applyGraphEdit(pageId: string, graph: GraphElement, spec: GraphSpec): boolean {
     const surface = this.surface;
     if (!surface || this.isProtected()) return false;
     // Each curve keeps its colour by position; a new one takes the palette's next.
-    const colors = graph.expressions.map((expression) => expression.color);
-    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec, colors);
-    if (edited.expressions.length === 0) return false;
+    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec, graph.colors);
+    if (edited.spec.expressions.length === 0) return false;
     surface.applyCommand(
-      new EditGraph(pageId, graph, {
-        expressions: edited.expressions,
-        xRange: edited.xRange,
-        yRange: edited.yRange,
-        angle: edited.angle ?? "rad",
-      }),
+      new EditGraph(pageId, graph, { spec: edited.spec, colors: edited.colors }),
     );
     this.requestSave();
     return true;
