@@ -92,7 +92,7 @@ export interface CalculatorOptions {
   /**
    * Open on the graph pane to edit this graph (a graph on a page); its Done
    * hands the edited graph to `done` and closes. The calculator's own graph
-   * of the notebook is left as it was.
+   * of the notebook is left as it was. Its button reads Update graph.
    */
   editGraph?: { spec: GraphSpec; done: (spec: GraphSpec) => void };
 }
@@ -126,7 +126,7 @@ export class CalculatorPopover {
   private readonly graphState: GraphState;
   /** The angle of a graph being edited ({@link CalculatorOptions.editGraph}); its own, not the calculator's. */
   private editAngle: AngleMode | null = null;
-  /** Insert graph, or Done while editing one: shown in the graph pane in place of Insert. */
+  /** Insert graph, or Update graph while editing one: shown in the graph pane in place of Insert. */
   private readonly graphAction: HTMLButtonElement | null;
 
   private readonly angleChip: HTMLButtonElement;
@@ -202,11 +202,11 @@ export class CalculatorPopover {
     if (options.editGraph) {
       this.graphAction = this.button(
         actions,
-        "Done",
+        "Update graph",
         () => this.finishGraph(),
         "goodobsidian-calc-insert",
       );
-      this.graphAction.setAttribute("aria-label", "Done: put the edited graph back on the page");
+      this.graphAction.setAttribute("aria-label", "Update the graph on the page");
     } else if (host.insertGraph) {
       this.graphAction = this.button(
         actions,
