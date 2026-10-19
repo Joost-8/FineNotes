@@ -241,6 +241,12 @@ export interface GoodObsidianSettings {
    * ones), so everyone starts again from the new default.
    */
   foldedSettingsSections: string[];
+
+  /**
+   * The calculator's switches and its history per notebook path. Checked
+   * where read (`parseCalculatorData`, model/calculator-store.ts).
+   */
+  calculator?: unknown;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

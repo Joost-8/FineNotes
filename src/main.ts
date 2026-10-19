@@ -144,6 +144,11 @@ import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
+import {
+  type CalculatorData,
+  parseCalculatorData,
+  renameCalculatorHistory,
+} from "./model/calculator-store";
 import { writeSystemText } from "./view/system-clipboard";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
@@ -402,6 +407,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        this.calculatorFileMoved(oldPath, file.path);
       }),
     );
     this.register(() => this.fileMoves.destroy());
@@ -662,6 +668,18 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.checkHandwrittenWords = on;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.wordCheckingChanged();
+  }
+
+  /** Keep the calculator's switches and history (model/calculator-store.ts). */
+  saveCalculator(data: CalculatorData): void {
+    this.settings.calculator = data;
+    void this.saveSettings();
+  }
+
+  /** A notebook's calculator history follows it when it is renamed or moved. */
+  private calculatorFileMoved(from: string, to: string): void {
+    const moved = renameCalculatorHistory(parseCalculatorData(this.settings.calculator), from, to);
+    if (moved) this.saveCalculator(moved);
   }
 
   async saveSettings(): Promise<void> {
