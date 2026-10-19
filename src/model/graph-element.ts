@@ -1,20 +1,24 @@
 /**
- * Graphs as one page element (`GraphElement`): a y = f(x) plot from the
- * calculator, placed on a page and kept there. Only what it shows is stored
- * (the expressions, their colours, the ranges, a frame); the curve itself is
- * sampled again whenever it is drawn, at the resolution it is drawn at, so a
- * graph costs a few hundred bytes of JSON however sharp it is printed.
+ * Graphs as one page element (`GraphElement`): a plot from the calculator,
+ * placed on a page and kept there. What is stored is the calculator's own
+ * graph (`GraphSpec`, kept whole as plain JSON), the curves' colours and a
+ * frame; the curves are sampled again whenever they are drawn, at the
+ * resolution they are drawn at, so a graph costs a few hundred bytes however
+ * sharp it is printed. Because the spec is kept whole, a field the
+ * calculator adds later (sliders, points, other kinds of curve) survives a
+ * save, a lasso copy and an undo here unchanged, and is drawn by the
+ * calculator's code.
  *
  * Like a table it is drawn under the ink, stays upright and is moved,
  * resized, copied and deleted by the lasso with every other element. Its
- * own edits (the range after exploring, the expressions after editing) are
+ * own edits (the view after exploring, the spec after editing) are
  * {@link EditGraph}, one undo step each.
  *
  * Pure: no DOM, no Obsidian.
  */
 
 import type { Command } from "./commands";
-import { type GraphElement, type GraphExpression, type InkDocument, pageById } from "./document";
+import { type GraphElement, type GraphSpecData, type InkDocument, pageById } from "./document";
 import { isHexColor } from "./text-style";
 import type { GraphSpec } from "./graph";
 
@@ -22,10 +26,8 @@ import type { GraphSpec } from "./graph";
 export const GRAPH_MIN_SIDE = 40;
 /** Nor larger: a page is at most a few thousand px. */
 export const GRAPH_MAX_SIDE = 4000;
-/** The most expressions one graph keeps. */
-export const GRAPH_MAX_EXPRESSIONS = 8;
-/** The longest expression kept, characters: past it, a file is not something anyone typed. */
-export const GRAPH_MAX_EXPRESSION_LENGTH = 500;
+/** The largest spec kept, as JSON characters: past it, a file is not a graph anyone made. */
+export const GRAPH_MAX_SPEC_CHARS = 65536;
 /** The narrowest and widest a range may be: past either, a double can no longer tell its ticks apart. */
 export const GRAPH_MIN_SPAN = 1e-9;
 export const GRAPH_MAX_SPAN = 1e9;
@@ -34,62 +36,12 @@ const GRAPH_MAX_ABS = 1e12;
 /** The size a graph is placed at, page px. */
 export const GRAPH_DEFAULT_W = 320;
 export const GRAPH_DEFAULT_H = 240;
-/** The colour an expression is drawn in when the file has none to give. */
-export const GRAPH_DEFAULT_COLOR = "#2d70b3";
 /** The ranges a graph opens at when nothing better is known. */
 const DEFAULT_RANGE: readonly [number, number] = [-10, 10];
 
-/** What a new graph is made from. */
-export interface NewGraph {
-  id: string;
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-  expressions: readonly GraphExpression[];
-  xRange: readonly [number, number];
-  yRange: readonly [number, number];
-  grid?: boolean;
-  labels?: boolean;
-  angle?: "deg" | "rad";
-}
-
-/** A graph ready to go on a page, its fields as the loader would keep them. */
-export function makeGraph(spec: NewGraph): GraphElement {
-  const graph = normalizeGraph(
-    {
-      id: spec.id,
-      x: spec.x,
-      y: spec.y,
-      w: spec.w ?? GRAPH_DEFAULT_W,
-      h: spec.h ?? GRAPH_DEFAULT_H,
-      expressions: spec.expressions,
-      xRange: spec.xRange,
-      yRange: spec.yRange,
-      ...(spec.grid === false ? { grid: false } : {}),
-      ...(spec.labels === false ? { labels: false } : {}),
-      ...(spec.angle === "deg" ? { angle: "deg" } : {}),
-    },
-    () => spec.id,
-  );
-  // `normalizeGraph` only refuses a graph with no expression; keep an empty one placeable.
-  return (
-    graph ?? {
-      id: spec.id,
-      x: finite(spec.x, 0),
-      y: finite(spec.y, 0),
-      w: side(spec.w, GRAPH_DEFAULT_W),
-      h: side(spec.h, GRAPH_DEFAULT_H),
-      expressions: [],
-      xRange: readRange(spec.xRange),
-      yRange: readRange(spec.yRange),
-    }
-  );
-}
-
 /**
- * Curve colours when the calculator gives none: the calculator's own order
- * (Desmos'), so a graph on the page reads as it did in the pop-up.
+ * Curve colours when none is stored: the calculator's own order (Desmos'),
+ * so a graph on the page reads as it did in the pop-up.
  */
 export const GRAPH_COLORS: readonly string[] = [
   "#2d70b3",
@@ -100,11 +52,44 @@ export const GRAPH_COLORS: readonly string[] = [
   "#1a1a1a",
 ];
 
+/** What a new graph is made from. */
+export interface NewGraph {
+  id: string;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  spec: GraphSpec | GraphSpecData;
+  colors?: readonly string[];
+  grid?: boolean;
+  labels?: boolean;
+}
+
 /**
- * A graph element at (x, y) from the calculator's `GraphSpec` (its
- * expressions as typed, its view, its angle mode). Blank expressions are
- * left out. `colors` gives each expression's colour by position (Edit passes
- * the graph's own, so a curve keeps its colour); the rest take the palette's.
+ * A graph ready to go on a page, its fields as the loader would keep them.
+ * A spec the loader would refuse (no expression list) still makes a graph,
+ * with an empty one, so a caller can test `spec.expressions.length`.
+ */
+export function makeGraph(spec: NewGraph): GraphElement {
+  const stored = readSpec(spec.spec) ?? { ...defaultView(), expressions: [] };
+  const graph: GraphElement = {
+    id: spec.id,
+    x: finite(spec.x, 0),
+    y: finite(spec.y, 0),
+    w: side(spec.w, GRAPH_DEFAULT_W),
+    h: side(spec.h, GRAPH_DEFAULT_H),
+    spec: stored,
+    colors: colorsFor(stored, spec.colors ?? []),
+  };
+  if (spec.grid === false) graph.grid = false;
+  if (spec.labels === false) graph.labels = false;
+  return graph;
+}
+
+/**
+ * A graph element at (x, y) from the calculator's `GraphSpec`, kept whole.
+ * `colors` gives each expression's colour by position (Edit passes the
+ * graph's own, so a curve keeps its colour); the rest take the palette's.
  */
 export function graphFromSpec(
   id: string,
@@ -113,24 +98,18 @@ export function graphFromSpec(
   spec: GraphSpec,
   colors: readonly string[] = [],
 ): GraphElement {
-  const expressions: GraphExpression[] = [];
-  spec.expressions.forEach((text, i) => {
-    if (typeof text !== "string" || text.trim().length === 0) return;
-    const color = colors[i];
-    expressions.push({
-      text,
-      color: isHexColor(color) ? color : GRAPH_COLORS[expressions.length % GRAPH_COLORS.length],
-    });
-  });
-  return makeGraph({
-    id,
-    x,
-    y,
-    expressions,
-    xRange: [spec.xMin, spec.xMax],
-    yRange: [spec.yMin, spec.yMax],
-    angle: spec.angle,
-  });
+  return makeGraph({ id, x, y, spec, colors });
+}
+
+/** A graph's spec for the calculator again (Edit): a copy, every field it holds. */
+export function specOfGraph(graph: GraphElement): GraphSpec {
+  return structuredClone(graph.spec);
+}
+
+/** The colour of expression `index`: its own, else the palette's. */
+export function curveColor(graph: Pick<GraphElement, "colors">, index: number): string {
+  const own = graph.colors[index];
+  return isHexColor(own) ? own : GRAPH_COLORS[index % GRAPH_COLORS.length];
 }
 
 /**
@@ -143,18 +122,6 @@ export function graphFrameHeight(spec: GraphSpec, w: number, fallback: number): 
   const ratio = (spec.yMax - spec.yMin) / (spec.xMax - spec.xMin);
   if (!(ratio > 0) || !Number.isFinite(ratio)) return fallback;
   return Math.round(w * Math.min(1, Math.max(0.5, ratio)));
-}
-
-/** A graph as the calculator's `GraphSpec` again, for Edit: what it plots, its view and its angle mode. */
-export function specOfGraph(graph: GraphElement): GraphSpec {
-  return {
-    expressions: graph.expressions.map((e) => e.text),
-    xMin: graph.xRange[0],
-    xMax: graph.xRange[1],
-    yMin: graph.yRange[0],
-    yMax: graph.yRange[1],
-    angle: graph.angle === "deg" ? "deg" : "rad",
-  };
 }
 
 /** A graph id not yet used anywhere in `doc`: one above the highest `f<N>`. */
@@ -170,21 +137,19 @@ export function nextGraphId(doc: InkDocument): string {
 }
 
 /**
- * What a graph's drawing depends on, as one string: its expressions,
- * colours, ranges, size and options. A cached curve or raster is good
- * while this is unchanged. Its place on the page is not in it: moving a
- * graph moves the same picture.
+ * What a graph's drawing depends on, as one string: its whole spec, its
+ * colours, its size and options. A cached curve or raster is good while
+ * this is unchanged. Its place on the page is not in it: moving a graph
+ * moves the same picture.
  */
 export function graphContentKey(graph: GraphElement): string {
   return JSON.stringify([
-    graph.expressions.map((e) => [e.text, e.color]),
-    graph.xRange,
-    graph.yRange,
+    graph.spec,
+    graph.colors,
     round2(graph.w),
     round2(graph.h),
     graph.grid === false ? 0 : 1,
     graph.labels === false ? 0 : 1,
-    graph.angle === "deg" ? "deg" : "rad",
   ]);
 }
 
@@ -200,7 +165,7 @@ export function graphBounds(graph: Pick<GraphElement, "x" | "y" | "w" | "h">): {
 
 /**
  * Scale a graph by `k` (a lasso resize) about (ax, ay): its place and its
- * frame. Its ranges stay, so the same curve is shown larger.
+ * frame. Its view stays, so the same curve is shown larger.
  */
 export function scaleGraph(graph: GraphElement, ax: number, ay: number, k: number): void {
   if (!(k > 0) || !Number.isFinite(k)) return;
@@ -216,6 +181,20 @@ export function scaleGraph(graph: GraphElement, ax: number, ay: number, k: numbe
 export interface GraphView {
   xRange: [number, number];
   yRange: [number, number];
+}
+
+/** The view a graph shows now. */
+export function viewOf(graph: Pick<GraphElement, "spec">): GraphView {
+  const s = graph.spec;
+  return { xRange: [s.xMin, s.xMax], yRange: [s.yMin, s.yMax] };
+}
+
+/** Show `view` in `graph`: only the spec's four view fields change. */
+export function setView(graph: Pick<GraphElement, "spec">, view: GraphView): void {
+  graph.spec.xMin = view.xRange[0];
+  graph.spec.xMax = view.xRange[1];
+  graph.spec.yMin = view.yRange[0];
+  graph.spec.yMax = view.yRange[1];
 }
 
 /**
@@ -236,8 +215,8 @@ export function panView(view: GraphView, dx: number, dy: number, w: number, h: n
 /**
  * The view after zooming by `k` (> 1 in) about the frame point (fx, fy),
  * page px from the frame's top-left: that point keeps the same value. `kx`
- * and `ky` may differ (a pinch along one axis). A span past
- * {@link GRAPH_MIN_SPAN} or {@link GRAPH_MAX_SPAN} stops there.
+ * and `ky` may differ. A span past {@link GRAPH_MIN_SPAN} or
+ * {@link GRAPH_MAX_SPAN} stops there.
  */
 export function zoomView(
   view: GraphView,
@@ -311,21 +290,20 @@ export class AddGraph implements Command {
   }
 }
 
-/** What a graph edit may change: its view, its expressions, its options. */
+/** What a graph edit may change: its whole spec (Edit), its view alone (Explore), colours, options. */
 export interface GraphChanges {
-  xRange?: readonly [number, number];
-  yRange?: readonly [number, number];
-  expressions?: readonly GraphExpression[];
+  spec?: GraphSpec | GraphSpecData;
+  view?: GraphView;
+  colors?: readonly string[];
   grid?: boolean;
   labels?: boolean;
-  angle?: "deg" | "rad";
 }
 
 /**
- * A change to one graph (the range Explore left it at, the expressions Edit
- * gave it), undone by putting back the exact object it was, key order
- * included. The graph is held by identity, as every selection command holds
- * its elements.
+ * A change to one graph (the view Explore left it at, the spec Edit gave
+ * it), undone by putting back the exact object it was, key order included.
+ * The graph is held by identity, as every selection command holds its
+ * elements. A spec that cannot be read changes nothing.
  */
 export class EditGraph implements Command {
   private before: GraphElement | null = null;
@@ -334,7 +312,7 @@ export class EditGraph implements Command {
     readonly pageId: string,
     private readonly graph: GraphElement,
     private readonly changes: GraphChanges,
-    readonly label = changes.expressions ? "Edit graph" : "Move graph view",
+    readonly label = changes.spec ? "Edit graph" : "Move graph view",
   ) {}
 
   apply(doc: InkDocument): void {
@@ -343,15 +321,22 @@ export class EditGraph implements Command {
     if (!page?.graphs?.includes(this.graph)) return;
     this.before = structuredClone(this.graph);
     const c = this.changes;
-    if (c.xRange) this.graph.xRange = readRange(c.xRange, this.graph.xRange);
-    if (c.yRange) this.graph.yRange = readRange(c.yRange, this.graph.yRange);
-    if (c.expressions) this.graph.expressions = readExpressions(c.expressions);
+    if (c.spec) {
+      const spec = readSpec(c.spec);
+      if (spec) this.graph.spec = spec;
+    }
+    if (c.view) {
+      const now = viewOf(this.graph);
+      setView(this.graph, {
+        xRange: readRange(c.view.xRange, now.xRange),
+        yRange: readRange(c.view.yRange, now.yRange),
+      });
+    }
+    if (c.colors) this.graph.colors = colorsFor(this.graph.spec, c.colors);
     if (c.grid === false) this.graph.grid = false;
     else if (c.grid === true) delete this.graph.grid;
     if (c.labels === false) this.graph.labels = false;
     else if (c.labels === true) delete this.graph.labels;
-    if (c.angle === "deg") this.graph.angle = "deg";
-    else if (c.angle === "rad") delete this.graph.angle;
   }
 
   invert(doc: InkDocument): void {
@@ -374,44 +359,97 @@ export function restoreGraph(graph: GraphElement, before: GraphElement): void {
 
 /**
  * A stored graph as the model keeps it, or `null` when it is not one (no
- * expression to draw). A range that is reversed, empty or not finite reads
- * as the default; a frame out of range is clamped to a size that can be
- * seen and grabbed, since the expressions are the user's.
+ * spec with an expression list). The spec is kept whole; a view that is
+ * reversed, empty or not finite reads as the default; a frame out of range
+ * is clamped to a size that can be seen and grabbed, since what it plots is
+ * the user's. A graph saved before the spec was kept whole (expressions as
+ * `{ text, color }`, `xRange`, `yRange`, `angle`) reads into the same shape.
  */
 export function normalizeGraph(raw: unknown, mintId: () => string): GraphElement | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const expressions = readExpressions(r.expressions);
-  if (expressions.length === 0) return null;
+  const early = r.spec === undefined ? earlyShape(r) : null;
+  const spec = readSpec(early?.spec ?? r.spec);
+  if (!spec || spec.expressions.length === 0) return null;
+  const colors = early?.colors ?? (Array.isArray(r.colors) ? (r.colors as unknown[]) : []);
   const graph: GraphElement = {
     id: typeof r.id === "string" && r.id.length > 0 ? r.id : mintId(),
     x: finite(r.x, 0),
     y: finite(r.y, 0),
     w: side(r.w, GRAPH_DEFAULT_W),
     h: side(r.h, GRAPH_DEFAULT_H),
-    expressions,
-    xRange: readRange(r.xRange),
-    yRange: readRange(r.yRange),
+    spec,
+    colors: colorsFor(spec, colors),
   };
   if (r.grid === false) graph.grid = false;
   if (r.labels === false) graph.labels = false;
-  if (r.angle === "deg") graph.angle = "deg";
   return graph;
 }
 
-function readExpressions(raw: unknown): GraphExpression[] {
-  if (!Array.isArray(raw)) return [];
-  const out: GraphExpression[] = [];
-  for (const item of raw) {
-    if (out.length >= GRAPH_MAX_EXPRESSIONS) break;
-    if (typeof item !== "object" || item === null) continue;
-    const e = item as Record<string, unknown>;
-    if (typeof e.text !== "string") continue;
-    const text = e.text.trim().slice(0, GRAPH_MAX_EXPRESSION_LENGTH);
-    if (text.length === 0) continue;
-    out.push({ text, color: isHexColor(e.color) ? e.color : GRAPH_DEFAULT_COLOR });
+/** A graph as the first builds stored it, as a spec and colours; null when it is not one. */
+function earlyShape(r: Record<string, unknown>): { spec: unknown; colors: unknown[] } | null {
+  if (!Array.isArray(r.expressions)) return null;
+  const items = (r.expressions as unknown[]).filter(
+    (e): e is { text: string; color?: unknown } =>
+      typeof e === "object" && e !== null && typeof (e as { text?: unknown }).text === "string",
+  );
+  const x = Array.isArray(r.xRange) ? (r.xRange as unknown[]) : [];
+  const y = Array.isArray(r.yRange) ? (r.yRange as unknown[]) : [];
+  return {
+    spec: {
+      expressions: items.map((e) => e.text),
+      xMin: x[0],
+      xMax: x[1],
+      yMin: y[0],
+      yMax: y[1],
+      ...(r.angle === "deg" ? { angle: "deg" } : {}),
+    },
+    colors: items.map((e) => e.color),
+  };
+}
+
+/**
+ * A spec as the page keeps it: a deep copy through JSON (so nothing but
+ * plain data is stored, and nothing shared with the caller), every field
+ * kept. Null when it is not an object with an expression list, cannot be
+ * written as JSON, or is too large. The view is repaired per axis.
+ */
+function readSpec(raw: unknown): GraphSpecData | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  let text: string;
+  try {
+    text = JSON.stringify(raw);
+  } catch {
+    return null;
   }
-  return out;
+  if (typeof text !== "string" || text.length > GRAPH_MAX_SPEC_CHARS) return null;
+  const spec = JSON.parse(text) as Record<string, unknown>;
+  if (!Array.isArray(spec.expressions)) return null;
+  const x = readRange([spec.xMin, spec.xMax]);
+  const y = readRange([spec.yMin, spec.yMax]);
+  spec.xMin = x[0];
+  spec.xMax = x[1];
+  spec.yMin = y[0];
+  spec.yMax = y[1];
+  if (spec.angle !== undefined && spec.angle !== "deg" && spec.angle !== "rad") delete spec.angle;
+  return spec as GraphSpecData;
+}
+
+/** One colour per expression of `spec`: the given one by position when it is a colour, else the palette's. */
+function colorsFor(spec: GraphSpecData, colors: readonly unknown[]): string[] {
+  return spec.expressions.map((_, i) => {
+    const color = colors[i];
+    return isHexColor(color) ? color : GRAPH_COLORS[i % GRAPH_COLORS.length];
+  });
+}
+
+function defaultView(): { xMin: number; xMax: number; yMin: number; yMax: number } {
+  return {
+    xMin: DEFAULT_RANGE[0],
+    xMax: DEFAULT_RANGE[1],
+    yMin: DEFAULT_RANGE[0],
+    yMax: DEFAULT_RANGE[1],
+  };
 }
 
 /** A range as `[lo, hi]` with `lo < hi`, both finite and the span inside the limits; else `fallback`. */

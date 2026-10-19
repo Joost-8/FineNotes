@@ -21,7 +21,14 @@
  */
 
 import type { GraphElement } from "../model/document";
-import { type GraphView, panView, sameView, zoomView } from "../model/graph-element";
+import {
+  type GraphView,
+  panView,
+  sameView,
+  setView,
+  viewOf,
+  zoomView,
+} from "../model/graph-element";
 import { traceAt } from "../model/graph";
 import { graphFunctions, paintGraph, rangeOf } from "../canvas/graph-paint";
 import {
@@ -91,7 +98,7 @@ export class GraphExplorer {
     private readonly options: GraphExploreOptions,
   ) {
     this.draft = structuredClone(graph);
-    this.start = { xRange: [...graph.xRange], yRange: [...graph.yRange] };
+    this.start = viewOf(graph);
     this.root = host.createDiv({ cls: "goodobsidian-graph-explore" });
     // Obsidian's swipes stay out of the plot, as they do of the page.
     this.root.dataset.ignoreSwipe = "true";
@@ -124,7 +131,7 @@ export class GraphExplorer {
 
   /** The view now, as Done would commit it. */
   get view(): GraphView {
-    return { xRange: [...this.draft.xRange], yRange: [...this.draft.yRange] };
+    return viewOf(this.draft);
   }
 
   /** The point a tap pinned, if any: the harness reads this. */
@@ -178,8 +185,7 @@ export class GraphExplorer {
 
   private reset(): void {
     this.coast = null;
-    this.draft.xRange = [...this.start.xRange];
-    this.draft.yRange = [...this.start.yRange];
+    setView(this.draft, this.start);
     this.gesture = null;
     this.moving = false;
     this.draw();
@@ -352,8 +358,7 @@ export class GraphExplorer {
   }
 
   private setView(view: GraphView): void {
-    this.draft.xRange = view.xRange;
-    this.draft.yRange = view.yRange;
+    setView(this.draft, view);
     this.requestDraw();
   }
 
@@ -378,8 +383,10 @@ export class GraphExplorer {
     c.vy *= decay;
     const k = this.scale > 0 ? 1 / this.scale : 1;
     this.moving = true;
-    this.draft.xRange = panView(this.view, c.vx * dt * k, 0, this.draft.w, this.draft.h).xRange;
-    this.draft.yRange = panView(this.view, 0, c.vy * dt * k, this.draft.w, this.draft.h).yRange;
+    setView(
+      this.draft,
+      panView(this.view, c.vx * dt * k, c.vy * dt * k, this.draft.w, this.draft.h),
+    );
     if (Math.hypot(c.vx, c.vy) < REST_SPEED) {
       this.coast = null;
       this.moving = false;
@@ -414,8 +421,10 @@ export class GraphExplorer {
     const fn = pin ? graphFunctions(this.draft)[pin.index] : null;
     if (!pin || !fn) return null;
     const y = fn(pin.x);
-    const [y0, y1] = this.draft.yRange;
-    const [x0, x1] = this.draft.xRange;
+    const {
+      xRange: [x0, x1],
+      yRange: [y0, y1],
+    } = this.view;
     if (!Number.isFinite(y) || y < y0 || y > y1 || pin.x < x0 || pin.x > x1) return null;
     const label = `(${formatNumber(pin.x)}, ${formatNumber(y)})`;
     this.readout.setText(label);
@@ -423,8 +432,10 @@ export class GraphExplorer {
   }
 
   private showReadout(): void {
-    const [x0, x1] = this.draft.xRange;
-    const [y0, y1] = this.draft.yRange;
+    const {
+      xRange: [x0, x1],
+      yRange: [y0, y1],
+    } = this.view;
     this.readout.setText(
       `x ${formatNumber(x0)} … ${formatNumber(x1)}   y ${formatNumber(y0)} … ${formatNumber(y1)}`,
     );

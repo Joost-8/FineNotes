@@ -9298,7 +9298,7 @@ export class InkSurface {
         this.renderer?.setHiddenGraphs(NO_GRAPHS);
         const at = this.boxForPage(pageId);
         if (view && page.graphs?.includes(graph)) {
-          this.history.push(this.doc, new EditGraph(pageId, graph, view));
+          this.history.push(this.doc, new EditGraph(pageId, graph, { view }));
         }
         if (at) this.renderer?.invalidateRegion(at.index, graphBounds(graph));
         this.renderDry();

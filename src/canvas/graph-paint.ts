@@ -6,8 +6,8 @@
  * page render and Explore's live canvas all draw a graph with, so they agree.
  *
  * Sampling a curve is the expensive part, so each graph keeps its sampled
- * curves, keyed by what they depend on (`graphContentKey`: expressions,
- * ranges, size, options, angle) and by the resolution they were sampled for
+ * curves, keyed by what they depend on (`graphContentKey`: the whole
+ * spec, colours, size, options) and by the resolution they were sampled for
  * (`sampleCount`: device px across, a power of two). A tile, a thumbnail and
  * a printed page at the same resolution share one sampling; moving a graph
  * reuses it; any edit makes a new key, and so a new sampling (ledger: a
@@ -16,44 +16,38 @@
  */
 
 import type { GraphElement } from "../model/document";
-import { graphContentKey } from "../model/graph-element";
+import { curveColor, graphContentKey } from "../model/graph-element";
 import {
   type GraphRange,
   type Polyline,
   type RealFn,
   compileGraph,
-  sampleCurve,
+  sampleGraph,
 } from "../model/graph";
 import { type GraphColors, paintGraph as paintPlot } from "./graph-painter";
 import { shownColor } from "./backdrop";
 import { sampleCount } from "./graph-geometry";
 
 /** A graph's view as the calculator's maths takes it. */
-export function rangeOf(graph: Pick<GraphElement, "xRange" | "yRange">): GraphRange {
-  return {
-    xMin: graph.xRange[0],
-    xMax: graph.xRange[1],
-    yMin: graph.yRange[0],
-    yMax: graph.yRange[1],
-  };
+export function rangeOf(graph: Pick<GraphElement, "spec">): GraphRange {
+  const { xMin, xMax, yMin, yMax } = graph.spec;
+  return { xMin, xMax, yMin, yMax };
 }
 
-/** Compiled expressions, by their text and angle mode: compiling is cheap but not free. */
+/** Compiled specs, by the spec as JSON: compiling is cheap but not free. */
 const compiledByKey = new Map<string, Array<RealFn | null>>();
 /** The most compilations kept: a notebook has a handful of graphs. */
 const MAX_COMPILED = 64;
 
 /** Each expression of `graph` as a function of x (null where it cannot be read). */
 export function graphFunctions(graph: GraphElement): Array<RealFn | null> {
-  const angle = graph.angle === "deg" ? "deg" : "rad";
-  const expressions = graph.expressions.map((expression) => expression.text);
-  const key = JSON.stringify([angle, expressions]);
+  const key = JSON.stringify(graph.spec);
   let fns = compiledByKey.get(key);
   if (!fns) {
     try {
-      fns = compileGraph({ expressions, angle }).fns;
+      fns = compileGraph(graph.spec).fns;
     } catch {
-      fns = expressions.map(() => null);
+      fns = graph.spec.expressions.map(() => null);
     }
     if (compiledByKey.size >= MAX_COMPILED) compiledByKey.clear();
     compiledByKey.set(key, fns);
@@ -83,17 +77,15 @@ function sampledCurves(graph: GraphElement, resolution: number): Polyline[][] {
   const hit = list.find((entry) => entry.key === key && entry.resolution === resolution);
   if (hit) return hit.curves;
   const start = performance.now();
-  const range = rangeOf(graph);
   const heightPx = (resolution * graph.h) / graph.w;
-  const curves = graphFunctions(graph).map((fn) => {
-    if (!fn) return [];
-    try {
-      return sampleCurve(fn, range, resolution, heightPx);
-    } catch {
-      // A curve that cannot be sampled is left out, never the page.
-      return [];
-    }
-  });
+  let curves: Polyline[][] = [];
+  try {
+    // The whole spec goes to the calculator's sampler, so what it learns to
+    // plot later is plotted here too.
+    curves = sampleGraph(graph.spec, resolution, heightPx).curves;
+  } catch {
+    // A spec that cannot be sampled draws no curves, never no page.
+  }
   graphStats.samplings++;
   graphStats.sampleMs += performance.now() - start;
   const fresh = list.filter((entry) => entry.key === key);
@@ -129,7 +121,7 @@ export function graphColors(graph: GraphElement, night: boolean, paper: string):
     grid: shownColor(GRID_COLOR, night),
     axis: shownColor(AXIS_COLOR, night),
     label: shownColor(LABEL_COLOR, night),
-    curves: graph.expressions.map((expression) => shownColor(expression.color, night)),
+    curves: graph.spec.expressions.map((_, i) => shownColor(curveColor(graph, i), night)),
   };
 }
 
