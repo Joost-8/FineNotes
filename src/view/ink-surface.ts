@@ -260,6 +260,7 @@ import {
   stepCell,
   tableScaleRange,
 } from "../model/table";
+import { nextGraphId } from "../model/graph";
 import {
   AddTable,
   InsertTableColumn,
@@ -7667,11 +7668,13 @@ export class InkSurface {
   private freshIds(): IdSource {
     let imageSeq = Number(nextImageId(this.doc).slice(1)) - 1;
     let tableSeq = Number(nextTableId(this.doc).slice(1)) - 1;
+    let graphSeq = Number(nextGraphId(this.doc).slice(1)) - 1;
     return {
       stroke: () => this.strokeIds.next(),
       image: () => `i${++imageSeq}`,
       textBox: () => this.textBoxIds.next(),
       table: () => `g${++tableSeq}`,
+      graph: () => `f${++graphSeq}`,
     };
   }
 
@@ -7764,7 +7767,7 @@ export class InkSurface {
     const pad = STICKER_PAD;
     const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
     const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
-    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t", table: () => "g" };
+    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t", table: () => "g", graph: () => "f" };
     const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
     const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
     const canvas = createEl("canvas");

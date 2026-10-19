@@ -78,6 +78,12 @@ describe("lasso settings", () => {
     expect(lassoFilterOf(Object.create({ images: false }))).toEqual(DEFAULT_LASSO_FILTER);
   });
 
+  it("has a switch for graphs, on in a filter stored before graphs existed", () => {
+    expect(LASSO_FILTER_KEYS).toContain("graphs");
+    expect(lassoFilterOf({ graphs: false }).graphs).toBe(false);
+    expect(lassoFilterOf({ tables: false }).graphs).toBe(true);
+  });
+
   it("has a switch for tables, kept from a stored filter", () => {
     expect(LASSO_FILTER_KEYS).toContain("tables");
     expect(lassoFilterOf({ tables: false }).tables).toBe(false);

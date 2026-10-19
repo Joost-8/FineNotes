@@ -283,7 +283,7 @@ describe("shapes through the other commands", () => {
 
   it("copies every style field with a duplicate", () => {
     const a = rect("a", { fill: "#ff0000", dash: "dash", radius: 5 });
-    const ids = { stroke: () => "c", image: () => "ci", textBox: () => "ct", table: () => "cg" };
+    const ids = { stroke: () => "c", image: () => "ci", textBox: () => "ct", table: () => "cg", graph: () => "cf" };
     const [copy] = copyElements({ strokes: [a], images: [], textBoxes: [] }, ids, 5, 5).strokes;
     expect(copy).toMatchObject({ fill: "#ff0000", dash: "dash", radius: 5 });
   });

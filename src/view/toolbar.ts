@@ -323,6 +323,7 @@ const LASSO_FILTER_LABELS: Record<keyof LassoFilter, string> = {
   arrows: "Arrows",
   textBoxes: "Text boxes",
   tables: "Tables",
+  graphs: "Graphs",
 };
 
 /**
