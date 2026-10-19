@@ -41,6 +41,7 @@ export default defineConfig({
         "src/canvas/pdf-links.ts",
         "src/canvas/text-layout.ts",
         "src/canvas/table-layout.ts",
+        "src/canvas/graph-geometry.ts",
         "src/canvas/shape-decor.ts",
         "src/canvas/paper-style.ts",
         "src/canvas/lasso.ts",

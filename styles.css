@@ -4009,6 +4009,61 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   -webkit-user-select: none;
 }
 
+/* Explore: a live canvas over one graph, its bar just above it. The graph
+   itself is left out of the tiles while this is open. */
+
+.goodobsidian-graph-explore {
+  position: absolute;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1.5px var(--interactive-accent);
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.goodobsidian-graph-explore-canvas {
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-graph-explore-bar {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: var(--gob-gap);
+  padding: 2px 4px 2px 10px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  white-space: nowrap;
+  touch-action: none;
+}
+
+.goodobsidian-graph-explore-readout {
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+button.goodobsidian-graph-explore-button {
+  min-width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0 8px;
+  border-radius: var(--gob-radius-pill);
+}
+
+button.goodobsidian-graph-explore-button.mod-done {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  font-weight: var(--font-semibold);
+}
+
 /* The Insert image menu borrows the Add Page sheet's look; its rows are full
    44 px touch targets. */
 
