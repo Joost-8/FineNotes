@@ -5,7 +5,8 @@
  *
  * It renders whatever list of `AiMenuItem`s it is given — what is offered and
  * why an entry is greyed out is decided in `recognition/ai-menu-model.ts`, and
- * what each entry does is the host's `run(id)`. A disabled entry stays in the
+ * what each entry does is the host's `run(id)`; a switch (`on` set) calls
+ * `toggle(id, on)` and leaves the menu open. A disabled entry stays in the
  * list with its reason underneath, because a feature that silently vanishes is
  * harder to understand than one that says what it needs.
  *
@@ -30,6 +31,7 @@ export class AiMenuPopover {
     items: readonly AiMenuItem[],
     private readonly run: (id: string) => void,
     keyFolded = false,
+    private readonly toggle: (id: string, on: boolean) => void = () => {},
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
     this.el.setAttribute("role", "menu");
@@ -104,6 +106,10 @@ export class AiMenuPopover {
         parent.createDiv({ cls: "goodobsidian-addpage-divider" });
         dividerDrawn = true;
       }
+      if (item.on !== undefined) {
+        this.switchRow(parent, item, item.on);
+        continue;
+      }
       // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
       const row = parent.createEl("button", {
         cls: "goodobsidian-addpage-row goodobsidian-aimenu-row clickable-icon",
@@ -127,6 +133,27 @@ export class AiMenuPopover {
         this.run(item.id);
       });
     }
+  }
+
+  /** A row that is a switch: its line under the label always shows, and a tap flips it in place. */
+  private switchRow(parent: HTMLElement, item: AiMenuItem, on: boolean): void {
+    const row = parent.createEl("button", {
+      cls: "goodobsidian-addpage-row goodobsidian-aimenu-row goodobsidian-switch-row clickable-icon",
+      attr: { role: "menuitemcheckbox", "aria-checked": String(on), "aria-label": item.label },
+    });
+    setIcon(row.createSpan({ cls: "goodobsidian-addpage-row-icon" }), item.icon);
+    const text = row.createSpan({ cls: "goodobsidian-aimenu-text" });
+    text.createSpan({ cls: "goodobsidian-aimenu-label", text: item.label });
+    if (item.reason) text.createSpan({ cls: "goodobsidian-aimenu-reason", text: item.reason });
+    row.createSpan({ cls: "goodobsidian-switch" }).createSpan({ cls: "goodobsidian-switch-thumb" });
+    row.toggleClass("is-on", on);
+    let current = on;
+    row.addEventListener("click", () => {
+      current = !current;
+      row.toggleClass("is-on", current);
+      row.setAttribute("aria-checked", String(current));
+      this.toggle(item.id, current);
+    });
   }
 
   /** Below the anchor, left-aligned to it, kept inside the window. */

@@ -26,7 +26,6 @@ function setup(fields: Partial<AiSetup> & { keys?: LlmVendor[] } = {}): AiSetup 
 function context(fields: Partial<AiMenuContext> = {}): AiMenuContext {
   return {
     setup: setup({ keys: ["anthropic"] }),
-    pageTranscribable: true,
     notebookAskable: true,
     multiPage: true,
     ...fields,
@@ -148,6 +147,7 @@ describe("the handwriting section, on this device", () => {
     learned: false,
     practiceFiles: 0,
     learning: null,
+    checkingWords: false,
     ...fields,
   });
   const deviceIds = (ctx: AiMenuContext) =>
@@ -157,13 +157,18 @@ describe("the handwriting section, on this device", () => {
 
   it("comes first, and works without any key", () => {
     const items = buildAiMenu(context({ setup: setup(), device: device() }));
-    expect(items[0]).toMatchObject({ id: "read-page-device", enabled: true, section: "device" });
+    expect(items[0]).toMatchObject({
+      id: "check-words",
+      enabled: true,
+      on: false,
+      section: "device",
+    });
     expect(items[1]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
   });
 
   it("learns once there is a practice file, again once learned, and shows a run in progress", () => {
     expect(deviceIds(context({ device: device({ practiceFiles: 1 }) }))).toEqual([
-      "read-page-device",
+      "check-words",
       "learn",
       "practice",
     ]);
@@ -182,12 +187,12 @@ describe("the handwriting section, on this device", () => {
     expect(running.practice).toBeUndefined();
   });
 
-  it("says nothing is written on an empty page", () => {
-    const item = byId(buildAiMenu(context({ pageTranscribable: false, device: device() })));
-    expect(item["read-page-device"]).toMatchObject({
-      enabled: false,
-      reason: "Nothing written on this page yet",
-    });
+  it("offers corrections as a switch showing the setting, not reading the page", () => {
+    const on = byId(buildAiMenu(context({ device: device({ checkingWords: true }) })));
+    expect(on["check-words"]).toMatchObject({ label: "Corrections", enabled: true, on: true });
+    const off = byId(buildAiMenu(context({ device: device() })));
+    expect(off["check-words"].on).toBe(false);
+    expect(off["read-page-device"]).toBeUndefined();
   });
 
   it("points to the setting when the reader is off", () => {

@@ -657,6 +657,13 @@ export default class GoodObsidianPlugin extends Plugin {
     }
   }
 
+  /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */
+  async setWordChecking(on: boolean): Promise<void> {
+    this.settings.checkHandwrittenWords = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.wordCheckingChanged();
+  }
+
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();

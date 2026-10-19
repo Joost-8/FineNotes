@@ -1,8 +1,9 @@
 /**
  * What the AI menu offers, and why an entry is greyed out.
  *
- * Two sections: the handwriting reader on this device first (reading a
- * page, learning the user's handwriting), which works for everyone; then
+ * Two sections: the handwriting reader on this device first (underlining
+ * words it may have misread, learning the user's handwriting), which works
+ * for everyone; then
  * the features that need the user's own AI key. Without a key that second
  * section is folded into one row ({@link aiKeyFolded}), so it does not get
  * in the way of someone who never set one up.
@@ -92,7 +93,7 @@ export function audioAvailability(setup: AiSetup): Availability {
 }
 
 export type AiMenuId =
-  | "read-page-device"
+  | "check-words"
   | "learn"
   | "practice"
   | "device-settings"
@@ -114,6 +115,8 @@ export interface AiMenuItem {
   footer?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
   section?: "device" | "key";
+  /** A switch rather than an action: its state. A tap flips it and leaves the menu open. */
+  on?: boolean;
 }
 
 /** The on-device reader's state, for its section of the menu. */
@@ -124,12 +127,12 @@ export interface DeviceReading {
   practiceFiles: number;
   /** A learning run's progress, 0..100, or null when none is running. */
   learning: number | null;
+  /** Words it may have misread are underlined, to correct with a tap. */
+  checkingWords: boolean;
 }
 
 export interface AiMenuContext {
   setup: AiSetup;
-  /** The page being read has ink or typed text (for reading it on the device). */
-  pageTranscribable: boolean;
   /** Some page has anything at all to ask about (the chat picks which). */
   notebookAskable: boolean;
   /** More than one page (otherwise the notebook entries say nothing new). */
@@ -152,7 +155,11 @@ export function aiKeyFolded(setup: AiSetup): boolean {
   return !textAvailability(setup).enabled && !imageAvailability(setup).enabled;
 }
 
-/** The on-device section: read this page, and learn the user's handwriting. */
+/**
+ * The on-device section: the corrections switch, and learning the user's
+ * handwriting. Reading a page to see what Grape made of it is a command
+ * ("Show this page read on this device"), not an entry here.
+ */
 function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
   const device = ctx.device;
   if (!device) {
@@ -169,11 +176,13 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
   }
   const items: AiMenuItem[] = [
     {
-      id: "read-page-device",
-      label: "Read this page",
-      icon: "scan-text",
+      id: "check-words",
+      label: "Corrections",
+      icon: "spell-check",
+      enabled: true,
+      reason: "Underline words it may have misread; tap one to correct it",
       section: "device",
-      ...gate(OK, ctx.pageTranscribable, "Nothing written on this page yet"),
+      on: device.checkingWords,
     },
   ];
   if (device.learning !== null) {

@@ -1041,10 +1041,8 @@ export class InkView extends TextFileView {
       if (open.anchorEl === anchor) return;
     }
     const doc = this.doc;
-    const page = doc.pages[this.surface?.currentPage ?? 0];
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
-      pageTranscribable: !!page && hasTranscribableContent(page),
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
@@ -1056,6 +1054,9 @@ export class InkView extends TextFileView {
       items,
       (id) => this.aiActions()[id]?.(),
       aiKeyFolded(setup),
+      (id, on) => {
+        if (id === "check-words") void this.plugin.setWordChecking(on);
+      },
     );
   }
 
@@ -1067,6 +1068,7 @@ export class InkView extends TextFileView {
       learned: this.settings.handwritingModel !== undefined,
       practiceFiles: practiceFiles(this.plugin.learningHost()).length,
       learning: progress ? (100 * progress.step) / progress.steps : null,
+      checkingWords: this.settings.checkHandwrittenWords === true,
     };
   }
 
@@ -1076,7 +1078,6 @@ export class InkView extends TextFileView {
    */
   private aiActions(): Record<string, () => void> {
     return {
-      "read-page-device": () => void this.plugin.readOnDevice(this),
       learn: () => void this.plugin.learner.start(),
       practice: () => void writePracticePage(this.plugin.learningHost()),
       "device-settings": () => this.plugin.openSettingsTab(),
@@ -1804,6 +1805,22 @@ export class InkView extends TextFileView {
   private get wordsChecked(): boolean {
     const settings = this.plugin.settings as GoodObsidianSettings | undefined;
     return settings?.checkHandwrittenWords === true && settings.handwritingOnDevice !== false;
+  }
+
+  /**
+   * Corrections were switched on or off (the AI menu, the settings): check
+   * the page in view now, or take every underline away at once.
+   */
+  wordCheckingChanged(): void {
+    if (this.wordsChecked) {
+      this.scheduleWordCheck();
+      return;
+    }
+    window.clearTimeout(this.wordCheckTimer);
+    this.wordCheckTimer = 0;
+    this.wordPopover?.close();
+    for (const id of this.checkedWords.keys()) this.surface?.setWordFlags(id, []);
+    this.checkedWords.clear();
   }
 
   /** Check the page in view once the reader has settled on it. */

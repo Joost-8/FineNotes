@@ -955,7 +955,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ...toggle(
           "checkHandwrittenWords",
           "Underline words it may have misread (test)",
-          "After a page is read, words Grape is not sure of get a wavy underline. Tap one " +
+          "After a page is read, words Grape is not sure of get a dotted underline. Tap one " +
             "with a finger to correct the reading, confirm it, or ignore the word; Learn my " +
             "handwriting learns from your answers. Needs a word list in the plugin's " +
             "handwriting folder.",

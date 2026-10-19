@@ -4100,6 +4100,11 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   display: none;
 }
 
+/* A switch row (Corrections): the switch sits at the row's right edge. */
+.goodobsidian-aimenu .goodobsidian-aimenu-row .goodobsidian-switch {
+  margin-left: auto;
+}
+
 .goodobsidian-aimenu .goodobsidian-aimenu-row:disabled {
   cursor: default;
   background: transparent;

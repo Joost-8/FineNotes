@@ -1702,7 +1702,7 @@ const TOUR: readonly TourPage[] = [
         TONES.find,
       );
       s.tryIt(
-        "Write a word below, wait a moment, then tap AI › Read this page to see how Grape reads it.",
+        "Write a word below, wait a moment, then run the command “Show this page read on this device” to see how Grape reads it.",
       );
       s.foot({ page: 17, title: "Keyboards and pen tablets" });
     },
