@@ -245,3 +245,26 @@ The MIT License text (Faker, GSM8K):
   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+QUADPACK (Gauss-Kronrod 7-15 nodes and weights)
+-----------------------------------------------
+
+The calculator's integral (src/model/calculus.ts) uses the 15-point
+Gauss-Kronrod nodes and weights of QUADPACK's qk15 routine, rounded to
+double precision. QUADPACK (R. Piessens, E. de Doncker-Kapenga,
+C. Ueberhuber, D. Kahaner, 1983) is in the public domain; no notice is
+required, and this one is given as attribution.
+
+Brent's root-finding method in the same file is written from the published
+algorithm (R. P. Brent, "Algorithms for Minimization without Derivatives",
+1973), not copied from an implementation.
+
+
+Test-only dependencies (not bundled)
+------------------------------------
+
+math.js (Apache-2.0) and fraction.js (MIT) are development dependencies
+used only by the calculator's differential tests
+(tests/model/calculator-differential.test.ts). No code from either is in
+the released plugin.

@@ -9596,6 +9596,11 @@ button.clickable-icon.goodobsidian-calc-insert:disabled {
   opacity: 0.4;
 }
 
+/* Insert graph (or Done) takes the place of the two Insert buttons in the graph pane. */
+button.clickable-icon.goodobsidian-calc-insert.is-hidden {
+  display: none;
+}
+
 /* The keypad: functions above, iOS's number pad below. */
 .goodobsidian-calc-body {
   display: flex;

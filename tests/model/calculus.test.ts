@@ -230,3 +230,61 @@ describe("compileFunction", () => {
     expect(usesVariable("2+")).toBe(false);
   });
 });
+
+describe("closed forms", () => {
+  const ok = (r: { ok: true; value: number } | { ok: false; error: string }): number => {
+    if (!r.ok) throw new Error(r.error);
+    return r.value;
+  };
+
+  it("integrates x^n over [0, 1] to 1/(n+1)", () => {
+    for (let n = 0; n <= 12; n++) {
+      expect(Math.abs(ok(integrate((x) => x ** n, 0, 1)) - 1 / (n + 1)), `n = ${n}`).toBeLessThan(
+        1e-14,
+      );
+    }
+  });
+
+  it("is exact for polynomials up to the Kronrod rule's degree on one piece", () => {
+    // K15 integrates degree ≤ 22 exactly, G7 degree ≤ 13: so a degree-13
+    // polynomial needs no subdivision and lands on the closed form.
+    const p = (x: number): number => 3 * x ** 13 - x ** 7 + 2 * x - 5;
+    const P = (x: number): number => (3 * x ** 14) / 14 - x ** 8 / 8 + x * x - 5 * x;
+    expect(Math.abs(ok(integrate(p, -1, 2)) - (P(2) - P(-1)))).toBeLessThan(1e-9);
+  });
+
+  it("integrates exp, trig and a Gaussian to their closed forms", () => {
+    expect(Math.abs(ok(integrate(Math.exp, 0, 1)) - (Math.E - 1))).toBeLessThan(1e-14);
+    expect(Math.abs(ok(integrate(Math.cos, 0, Math.PI / 2)) - 1)).toBeLessThan(1e-14);
+    expect(Math.abs(ok(integrate((x) => 1 / (1 + x * x), 0, 1)) - Math.PI / 4)).toBeLessThan(1e-14);
+    expect(Math.abs(ok(integrate(Math.log, 1, Math.E)) - 1)).toBeLessThan(1e-14);
+  });
+
+  it("finds the roots of known polynomials", () => {
+    const cubic = (x: number): number => x ** 3 - 6 * x * x + 11 * x - 6; // (x−1)(x−2)(x−3)
+    expect(ok(solveIn(cubic, 0.5, 1.5))).toBe(1);
+    expect(ok(solveIn(cubic, 1.5, 2.5))).toBe(2);
+    expect(ok(solveIn(cubic, 2.5, 3.5))).toBe(3);
+    expect(ok(solveNear(cubic, 2.9))).toBe(3);
+    const quartic = (x: number): number => x ** 4 - 10 * x * x + 9; // roots ±1, ±3
+    expect([-3, -1, 1, 3].map((g) => ok(solveNear(quartic, g + 0.2)))).toEqual([-3, -1, 1, 3]);
+    expect(Math.abs(ok(solveNear((x) => x * x - 2, 1)) - Math.SQRT2)).toBeLessThan(1e-15);
+    expect(Math.abs(ok(solveNear((x) => Math.exp(x) - 10, 0)) - Math.log(10))).toBeLessThan(1e-14);
+  });
+
+  it("differentiates polynomials, exp and trig", () => {
+    const poly = (x: number): number => 4 * x ** 5 - 3 * x ** 2 + 7;
+    const dpoly = (x: number): number => 20 * x ** 4 - 6 * x;
+    for (const x of [-2, -0.5, 0, 1, 3]) {
+      expect(
+        Math.abs(ok(derivative(poly, x)) - dpoly(x)) / Math.max(1, Math.abs(dpoly(x))),
+      ).toBeLessThan(1e-10);
+    }
+    for (const x of [-1, 0, 0.5, 2]) {
+      expect(Math.abs(ok(derivative(Math.exp, x)) - Math.exp(x))).toBeLessThan(1e-10);
+      expect(Math.abs(ok(derivative(Math.sin, x)) - Math.cos(x))).toBeLessThan(1e-10);
+      expect(Math.abs(ok(derivative(Math.cos, x)) + Math.sin(x))).toBeLessThan(1e-10);
+    }
+    expect(Math.abs(ok(derivative(Math.tan, 1)) - 1 / Math.cos(1) ** 2)).toBeLessThan(1e-9);
+  });
+});
