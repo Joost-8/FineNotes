@@ -21,6 +21,8 @@ import type { Command } from "./commands";
 import { type GraphElement, type GraphSpecData, type InkDocument, pageById } from "./document";
 import { isHexColor } from "./text-style";
 import type { GraphSpec } from "./graph";
+import { normalizeGraphSpec } from "./graph-lines";
+import { LINE_COLORS } from "./graph-sample";
 
 /** A graph is never smaller than this a side, page px: room for its axes. */
 export const GRAPH_MIN_SIDE = 40;
@@ -40,17 +42,10 @@ export const GRAPH_DEFAULT_H = 240;
 const DEFAULT_RANGE: readonly [number, number] = [-10, 10];
 
 /**
- * Curve colours when none is stored: the calculator's own order (Desmos'),
- * so a graph on the page reads as it did in the pop-up.
+ * Curve colours for lines without their own: the calculator's palette
+ * (Desmos' order), so a graph on the page reads as it did in the pop-up.
  */
-export const GRAPH_COLORS: readonly string[] = [
-  "#2d70b3",
-  "#c74440",
-  "#388c46",
-  "#6042a6",
-  "#e07400",
-  "#1a1a1a",
-];
+export const GRAPH_COLORS: readonly string[] = LINE_COLORS;
 
 /** What a new graph is made from. */
 export interface NewGraph {
@@ -410,9 +405,11 @@ function earlyShape(r: Record<string, unknown>): { spec: unknown; colors: unknow
 
 /**
  * A spec as the page keeps it: a deep copy through JSON (so nothing but
- * plain data is stored, and nothing shared with the caller), every field
- * kept. Null when it is not an object with an expression list, cannot be
- * written as JSON, or is too large. The view is repaired per axis.
+ * plain data is stored, and nothing shared with the caller), read by the
+ * calculator's own `normalizeGraphSpec` (a version 1 spec becomes lines,
+ * known fields are checked, unknown ones kept at every level). Null when
+ * it is not an object, holds no lines or expressions, cannot be written as
+ * JSON, or is too large. The view is repaired per axis first.
  */
 function readSpec(raw: unknown): GraphSpecData | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
@@ -424,7 +421,7 @@ function readSpec(raw: unknown): GraphSpecData | null {
   }
   if (typeof text !== "string" || text.length > GRAPH_MAX_SPEC_CHARS) return null;
   const spec = JSON.parse(text) as Record<string, unknown>;
-  if (!Array.isArray(spec.expressions)) return null;
+  if (!Array.isArray(spec.lines) && !Array.isArray(spec.expressions)) return null;
   const x = readRange([spec.xMin, spec.xMax]);
   const y = readRange([spec.yMin, spec.yMax]);
   spec.xMin = x[0];
@@ -432,7 +429,13 @@ function readSpec(raw: unknown): GraphSpecData | null {
   spec.yMin = y[0];
   spec.yMax = y[1];
   if (spec.angle !== undefined && spec.angle !== "deg" && spec.angle !== "rad") delete spec.angle;
-  return spec as GraphSpecData;
+  try {
+    return normalizeGraphSpec(
+      spec as Record<string, unknown> & { xMin: number; xMax: number; yMin: number; yMax: number },
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** One colour per expression of `spec`: the given one by position when it is a colour, else the palette's. */

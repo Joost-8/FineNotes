@@ -29,8 +29,8 @@ import {
   viewOf,
   zoomView,
 } from "../model/graph-element";
-import { traceAt } from "../model/graph";
-import { graphFunctions, paintGraph, rangeOf } from "../canvas/graph-paint";
+import { lineValue, paintGraph, traceNear } from "../canvas/graph-paint";
+import { shownColor } from "../canvas/backdrop";
 import {
   DECELERATION_RATE,
   MAX_STEP_MS,
@@ -77,7 +77,7 @@ export class GraphExplorer {
     points: Map<number, { x: number; y: number }>;
   } | null = null;
   /** The traced point: its x value and which expression (a tap, or the Pencil). */
-  private pinned: { x: number; index: number } | null = null;
+  private pinned: { x: number; line: string; color: string } | null = null;
   /** The press that may become a tap, in client px. */
   private tap: { id: number; x: number; y: number; t: number } | null = null;
   private readonly velocity = new VelocityTracker();
@@ -135,7 +135,7 @@ export class GraphExplorer {
   }
 
   /** The point a tap pinned, if any: the harness reads this. */
-  get pinnedPoint(): { x: number; index: number } | null {
+  get pinnedPoint(): { x: number; line: string } | null {
     return this.pinned;
   }
 
@@ -315,8 +315,8 @@ export class GraphExplorer {
    */
   private traceTo(p: { x: number; y: number }, reach: number): void {
     const g = this.draft;
-    const hit = traceAt(graphFunctions(g), rangeOf(g), g.w, g.h, p.x, p.y, reach);
-    this.pinned = hit ? { x: hit.x, index: hit.index } : null;
+    const hit = traceNear(g, p.x, p.y, reach);
+    this.pinned = hit ? { x: hit.x, line: hit.line, color: hit.color } : null;
     this.requestDraw();
   }
 
@@ -411,16 +411,16 @@ export class GraphExplorer {
       level,
       night: this.options.night,
       paper: this.options.paper,
+      moving: this.moving,
       ...(trace ? { trace } : {}),
     });
   }
 
   /** The traced point as the painter marks it, or null when it is undefined or out of view. */
-  private traced(): { x: number; y: number; curve: number; label: string } | null {
+  private traced(): { x: number; y: number; color: string; label: string } | null {
     const pin = this.pinned;
-    const fn = pin ? graphFunctions(this.draft)[pin.index] : null;
-    if (!pin || !fn) return null;
-    const y = fn(pin.x);
+    if (!pin) return null;
+    const y = lineValue(this.draft, pin.line, pin.x);
     const {
       xRange: [x0, x1],
       yRange: [y0, y1],
@@ -428,7 +428,7 @@ export class GraphExplorer {
     if (!Number.isFinite(y) || y < y0 || y > y1 || pin.x < x0 || pin.x > x1) return null;
     const label = `(${formatNumber(pin.x)}, ${formatNumber(y)})`;
     this.readout.setText(label);
-    return { x: pin.x, y, curve: pin.index, label };
+    return { x: pin.x, y, color: shownColor(pin.color, this.options.night), label };
   }
 
   private showReadout(): void {
