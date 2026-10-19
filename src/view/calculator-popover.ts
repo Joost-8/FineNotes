@@ -90,7 +90,7 @@ export interface CalculatorHost {
 
 export interface CalculatorOptions {
   /**
-   * Open on the graph pane to edit this graph (a graph on a page); its Done
+   * Open on the graph pane to edit this graph (a graph on a page); its Update graph
    * hands the edited graph to `done` and closes. The calculator's own graph
    * of the notebook is left as it was. Its button reads Update graph.
    */
@@ -248,7 +248,7 @@ export class CalculatorPopover {
     return this.editAngle ?? this.data.prefs.angle;
   }
 
-  /** Insert graph, or Done: hand the graph over and close. */
+  /** Insert graph, or Update graph: hand the graph over and close. */
   private finishGraph(): void {
     const spec = this.graphSpec();
     if (!spec) return;
