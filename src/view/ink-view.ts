@@ -126,11 +126,11 @@ import {
   EditGraph,
   GRAPH_DEFAULT_H,
   GRAPH_DEFAULT_W,
-  type GraphSpec,
   graphFromSpec,
   nextGraphId,
 } from "../model/graph-element";
 import type { GraphElement } from "../model/document";
+import type { GraphSpec } from "../model/graph";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
 import { AddTable } from "../model/table-commands";
@@ -1184,13 +1184,16 @@ export class InkView extends TextFileView {
   applyGraphEdit(pageId: string, graph: GraphElement, spec: GraphSpec): boolean {
     const surface = this.surface;
     if (!surface || this.isProtected()) return false;
-    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec);
+    // Each curve keeps its colour by position; a new one takes the palette's next.
+    const colors = graph.expressions.map((expression) => expression.color);
+    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec, colors);
     if (edited.expressions.length === 0) return false;
     surface.applyCommand(
       new EditGraph(pageId, graph, {
         expressions: edited.expressions,
         xRange: edited.xRange,
         yRange: edited.yRange,
+        angle: edited.angle ?? "rad",
       }),
     );
     this.requestSave();

@@ -516,6 +516,8 @@ export interface GraphElement {
   grid?: false;
   /** Axis numbers off. Only stored as `false`; absent means on. */
   labels?: false;
+  /** Trig functions take degrees (the calculator's DEG). Only stored as `"deg"`; absent means radians. */
+  angle?: "deg";
 }
 
 export type PageKind = "ink";

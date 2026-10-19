@@ -462,12 +462,13 @@ describe("saving and loading", () => {
 
 describe("graphFromSpec and specOfGraph", () => {
   it("makes a graph from the calculator's spec, colouring in the palette's order", () => {
-    const graph = graphFromSpec("f3", 10, 20, {
-      expressions: ["y = sin(x)", "  ", "x^2"],
-      xRange: [-3, 3],
-      yRange: [-1, 9],
-      colors: ["#123456", "#abcdef", "not a colour"],
-    });
+    const graph = graphFromSpec(
+      "f3",
+      10,
+      20,
+      { expressions: ["y = sin(x)", "  ", "x^2"], xMin: -3, xMax: 3, yMin: -1, yMax: 9 },
+      ["#123456", "#abcdef", "not a colour"],
+    );
     expect(graph.id).toBe("f3");
     expect([graph.x, graph.y]).toEqual([10, 20]);
     expect(graph.expressions).toEqual([
@@ -476,31 +477,48 @@ describe("graphFromSpec and specOfGraph", () => {
     ]);
     expect(graph.xRange).toEqual([-3, 3]);
     expect(graph.yRange).toEqual([-1, 9]);
+    expect("angle" in graph).toBe(false);
   });
 
-  it("gives Edit back what the graph plots, and round-trips", () => {
-    const graph = sine();
-    const spec = specOfGraph(graph);
-    expect(spec).toEqual({
+  it("keeps degrees, and gives Edit back the spec it came from", () => {
+    const spec = {
       expressions: ["sin(x)"],
-      xRange: [-5, 5],
-      yRange: [-2, 2],
-      colors: ["#cc3333"],
-    });
-    // Edit keeps the frame; what comes back carries the same curves and view.
-    const back = graphFromSpec(graph.id, graph.x, graph.y, spec);
-    expect([back.expressions, back.xRange, back.yRange]).toEqual([
-      graph.expressions,
-      graph.xRange,
-      graph.yRange,
-    ]);
+      xMin: -360,
+      xMax: 360,
+      yMin: -2,
+      yMax: 2,
+      angle: "deg" as const,
+    };
+    const graph = graphFromSpec("f1", 0, 0, spec);
+    expect(graph.angle).toBe("deg");
+    expect(specOfGraph(graph)).toEqual(spec);
+    expect(specOfGraph(sine()).angle).toBe("rad");
+    const back = decodeDocument(encodeDocument(withGraph(graph)));
+    expect(back.pages[0].graphs![0].angle).toBe("deg");
+  });
+
+  it("changes the content key with the angle mode, and EditGraph switches it", () => {
+    const doc = withGraph();
+    const graph = doc.pages[0].graphs![0];
+    const key = graphContentKey(graph);
+    const before = JSON.stringify(doc);
+    const edit = new EditGraph("p1", graph, { angle: "deg" });
+    edit.apply(doc);
+    expect(graph.angle).toBe("deg");
+    expect(graphContentKey(graph)).not.toBe(key);
+    new EditGraph("p1", graph, { angle: "rad" }).apply(doc);
+    expect("angle" in graph).toBe(false);
+    edit.invert(doc);
+    expect(JSON.stringify(doc)).toBe(before);
   });
 
   it("falls back to the default view for a range it cannot use", () => {
     const graph = graphFromSpec("f1", 0, 0, {
       expressions: ["x"],
-      xRange: [1, 1],
-      yRange: [0, Infinity],
+      xMin: 1,
+      xMax: 1,
+      yMin: 0,
+      yMax: Infinity,
     });
     expect(graph.xRange).toEqual([-10, 10]);
     expect(graph.yRange).toEqual([-10, 10]);

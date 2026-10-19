@@ -16,6 +16,7 @@
 import type { Command } from "./commands";
 import { type GraphElement, type GraphExpression, type InkDocument, pageById } from "./document";
 import { isHexColor } from "./text-style";
+import type { GraphSpec } from "./graph";
 
 /** A graph is never smaller than this a side, page px: room for its axes. */
 export const GRAPH_MIN_SIDE = 40;
@@ -50,6 +51,7 @@ export interface NewGraph {
   yRange: readonly [number, number];
   grid?: boolean;
   labels?: boolean;
+  angle?: "deg" | "rad";
 }
 
 /** A graph ready to go on a page, its fields as the loader would keep them. */
@@ -66,6 +68,7 @@ export function makeGraph(spec: NewGraph): GraphElement {
       yRange: spec.yRange,
       ...(spec.grid === false ? { grid: false } : {}),
       ...(spec.labels === false ? { labels: false } : {}),
+      ...(spec.angle === "deg" ? { angle: "deg" } : {}),
     },
     () => spec.id,
   );
@@ -85,48 +88,60 @@ export function makeGraph(spec: NewGraph): GraphElement {
 }
 
 /**
- * What the calculator hands over to put a graph on a page: its expressions
- * as typed (`y = …` or just `…`), the view, and optionally a colour for each
- * expression (else the graph palette's, in order).
+ * Curve colours when the calculator gives none: the calculator's own order
+ * (Desmos'), so a graph on the page reads as it did in the pop-up.
  */
-export interface GraphSpec {
-  expressions: readonly string[];
-  xRange: readonly [number, number];
-  yRange: readonly [number, number];
-  colors?: readonly string[];
-}
-
-/** Curve colours when the calculator gives none: Desmos's order, so a graph reads the same in both. */
 export const GRAPH_COLORS: readonly string[] = [
-  "#c74440",
   "#2d70b3",
+  "#c74440",
   "#388c46",
   "#6042a6",
-  "#fa7e19",
-  "#000000",
+  "#e07400",
+  "#1a1a1a",
 ];
 
-/** A graph element at (x, y) from a calculator spec; blank expressions are left out. */
-export function graphFromSpec(id: string, x: number, y: number, spec: GraphSpec): GraphElement {
+/**
+ * A graph element at (x, y) from the calculator's `GraphSpec` (its
+ * expressions as typed, its view, its angle mode). Blank expressions are
+ * left out. `colors` gives each expression's colour by position (Edit passes
+ * the graph's own, so a curve keeps its colour); the rest take the palette's.
+ */
+export function graphFromSpec(
+  id: string,
+  x: number,
+  y: number,
+  spec: GraphSpec,
+  colors: readonly string[] = [],
+): GraphElement {
   const expressions: GraphExpression[] = [];
   spec.expressions.forEach((text, i) => {
     if (typeof text !== "string" || text.trim().length === 0) return;
-    const color = spec.colors?.[i];
+    const color = colors[i];
     expressions.push({
       text,
       color: isHexColor(color) ? color : GRAPH_COLORS[expressions.length % GRAPH_COLORS.length],
     });
   });
-  return makeGraph({ id, x, y, expressions, xRange: spec.xRange, yRange: spec.yRange });
+  return makeGraph({
+    id,
+    x,
+    y,
+    expressions,
+    xRange: [spec.xMin, spec.xMax],
+    yRange: [spec.yMin, spec.yMax],
+    angle: spec.angle,
+  });
 }
 
-/** A graph as a calculator spec again, for Edit: what it plots, its view and its colours. */
+/** A graph as the calculator's `GraphSpec` again, for Edit: what it plots, its view and its angle mode. */
 export function specOfGraph(graph: GraphElement): GraphSpec {
   return {
     expressions: graph.expressions.map((e) => e.text),
-    xRange: [graph.xRange[0], graph.xRange[1]],
-    yRange: [graph.yRange[0], graph.yRange[1]],
-    colors: graph.expressions.map((e) => e.color),
+    xMin: graph.xRange[0],
+    xMax: graph.xRange[1],
+    yMin: graph.yRange[0],
+    yMax: graph.yRange[1],
+    angle: graph.angle === "deg" ? "deg" : "rad",
   };
 }
 
@@ -157,6 +172,7 @@ export function graphContentKey(graph: GraphElement): string {
     round2(graph.h),
     graph.grid === false ? 0 : 1,
     graph.labels === false ? 0 : 1,
+    graph.angle === "deg" ? "deg" : "rad",
   ]);
 }
 
@@ -290,6 +306,7 @@ export interface GraphChanges {
   expressions?: readonly GraphExpression[];
   grid?: boolean;
   labels?: boolean;
+  angle?: "deg" | "rad";
 }
 
 /**
@@ -321,6 +338,8 @@ export class EditGraph implements Command {
     else if (c.grid === true) delete this.graph.grid;
     if (c.labels === false) this.graph.labels = false;
     else if (c.labels === true) delete this.graph.labels;
+    if (c.angle === "deg") this.graph.angle = "deg";
+    else if (c.angle === "rad") delete this.graph.angle;
   }
 
   invert(doc: InkDocument): void {
@@ -364,6 +383,7 @@ export function normalizeGraph(raw: unknown, mintId: () => string): GraphElement
   };
   if (r.grid === false) graph.grid = false;
   if (r.labels === false) graph.labels = false;
+  if (r.angle === "deg") graph.angle = "deg";
   return graph;
 }
 

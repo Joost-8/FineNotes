@@ -10,19 +10,18 @@
  * the page scroll's own deceleration (`scroll-physics`), so both feel alike;
  * two fingers pinch it (each axis by its own spread, so a plot can be
  * stretched one way); the wheel zooms about the pointer. A tap on a curve
- * pins a point there with its coordinates, a tap beside the curves lets it
- * go; the Pencil traces: a marker follows it with each curve's value at
- * that x.
+ * traces it there (the calculator's marker and coordinates), a tap beside
+ * the curves lets it go; the Pencil traces as it moves, along the curve
+ * nearest it.
  *
  * Its bar is the selection bar's dark pill (the same classes), so it reads
  * as one of FineNotes' own bars.
  */
 
 import type { GraphElement } from "../model/document";
-import { type GraphView, panView, sameView, valueAt, zoomView } from "../model/graph-element";
-import { paintGraph, sampleExpressionAt } from "../canvas/graph-paint";
-import { frameX, frameY } from "../canvas/graph-geometry";
-import { shownColor } from "../canvas/backdrop";
+import { type GraphView, panView, sameView, zoomView } from "../model/graph-element";
+import { traceAt } from "../model/graph";
+import { graphFunctions, paintGraph, rangeOf } from "../canvas/graph-paint";
 import {
   DECELERATION_RATE,
   MAX_STEP_MS,
@@ -50,9 +49,6 @@ const TAP_SLOP_PX = 8;
 const TAP_MS = 350;
 /** How far from a curve (CSS px) a tap still lands on it. */
 const CURVE_HIT_PX = 22;
-/** The pinned point's radius and its label's text size, CSS px. */
-const POINT_RADIUS_PX = 5;
-const POINT_LABEL_PX = 13;
 
 type Pointer = { x: number; y: number; type: string };
 
@@ -71,9 +67,7 @@ export class GraphExplorer {
     view: GraphView;
     points: Map<number, { x: number; y: number }>;
   } | null = null;
-  /** The Pencil's frame x while it traces. */
-  private trace: number | null = null;
-  /** A point pinned on a curve by a tap: its x value and which expression. */
+  /** The traced point: its x value and which expression (a tap, or the Pencil). */
   private pinned: { x: number; index: number } | null = null;
   /** The press that may become a tap, in client px. */
   private tap: { id: number; x: number; y: number; t: number } | null = null;
@@ -212,8 +206,7 @@ export class GraphExplorer {
         ? { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp }
         : null;
     if (event.pointerType === "pen") {
-      this.trace = p.x;
-      this.draw();
+      this.traceTo(p, Infinity);
       return;
     }
     this.velocity.reset();
@@ -235,8 +228,7 @@ export class GraphExplorer {
     known.x = p.x;
     known.y = p.y;
     if (known.type === "pen") {
-      this.trace = p.x;
-      this.requestDraw();
+      this.traceTo(p, Infinity);
       return;
     }
     this.velocity.add(event.timeStamp, event.clientX, event.clientY);
@@ -250,17 +242,15 @@ export class GraphExplorer {
     this.pointers.delete(event.pointerId);
     const tap = this.tap;
     this.tap = null;
-    if (tap && tap.id === event.pointerId && event.timeStamp - tap.t <= TAP_MS) {
-      this.trace = null;
-      this.gesture = null;
-      this.moving = false;
-      this.pinAt(this.framePoint(event.clientX, event.clientY));
+    if (known.type === "pen") {
+      // The point the Pencil left stays traced, as a tap's does.
+      this.settle();
       return;
     }
-    if (known.type === "pen") {
-      this.trace = null;
-      this.showReadout();
-      this.draw();
+    if (tap && tap.id === event.pointerId && event.timeStamp - tap.t <= TAP_MS) {
+      this.gesture = null;
+      this.traceTo(this.framePoint(event.clientX, event.clientY), CURVE_HIT_PX / this.scale);
+      this.settle();
       return;
     }
     const wasPan = this.gesture?.points.size === 1;
@@ -279,7 +269,6 @@ export class GraphExplorer {
   private readonly onCancel = (event: PointerEvent): void => {
     if (!this.pointers.delete(event.pointerId)) return;
     this.tap = null;
-    this.trace = null;
     this.beginGesture();
     if (!this.gesture) this.settle();
   };
@@ -303,24 +292,14 @@ export class GraphExplorer {
   }
 
   /**
-   * A tap at frame point `p`: pin the point on the nearest curve at that x
-   * when one passes within reach, else let a pinned point go.
+   * Trace the curve nearest frame point `p` (page px) at its x, when one
+   * passes within `reach` page px of it; else let the traced point go.
    */
-  private pinAt(p: { x: number; y: number }): void {
+  private traceTo(p: { x: number; y: number }, reach: number): void {
     const g = this.draft;
-    const x = valueAt(this.view, p.x, p.y, g.w, g.h).x;
-    const map = { xRange: g.xRange, yRange: g.yRange, w: g.w, h: g.h };
-    const reach = CURVE_HIT_PX / this.scale;
-    let best: { index: number; d: number } | null = null;
-    g.expressions.forEach((expression, index) => {
-      const y = sampleExpressionAt(expression.text, x);
-      if (!Number.isFinite(y)) return;
-      const d = Math.abs(frameY(map, y) - p.y);
-      if (d <= reach && (!best || d < best.d)) best = { index, d };
-    });
-    const hit = best as { index: number; d: number } | null;
-    this.pinned = hit ? { x, index: hit.index } : null;
-    this.settle();
+    const hit = traceAt(graphFunctions(g), rangeOf(g), g.w, g.h, p.x, p.y, reach);
+    this.pinned = hit ? { x: hit.x, index: hit.index } : null;
+    this.requestDraw();
   }
 
   /** Start (or restart) a drag or pinch from the fingers down now. */
@@ -396,7 +375,7 @@ export class GraphExplorer {
     this.requestDraw();
   }
 
-  /** Paint the plot, the trace and the pinned point, at full resolution once at rest. */
+  /** Paint the plot and the traced point, at full resolution once at rest. */
   draw(): void {
     const ctx = this.ctx;
     if (!ctx || this.closed) return;
@@ -406,91 +385,27 @@ export class GraphExplorer {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(k, 0, 0, k, -this.draft.x * k, -this.draft.y * k);
     const level = this.moving ? k * MOVING_RESOLUTION : k;
-    paintGraph(ctx, this.draft, { level, night: this.options.night, paper: this.options.paper });
-    if (this.trace !== null) this.drawTrace(ctx, k);
-    if (this.pinned) this.drawPinned(ctx);
+    const trace = this.traced();
+    paintGraph(ctx, this.draft, {
+      level,
+      night: this.options.night,
+      paper: this.options.paper,
+      ...(trace ? { trace } : {}),
+    });
   }
 
-  private drawTrace(ctx: CanvasRenderingContext2D, k: number): void {
-    const g = this.draft;
-    const fx = Math.min(g.w, Math.max(0, this.trace ?? 0));
-    const x = valueAt(this.view, fx, 0, g.w, g.h).x;
-    const map = { xRange: g.xRange, yRange: g.yRange, w: g.w, h: g.h };
-    ctx.save();
-    ctx.translate(g.x, g.y);
-    ctx.strokeStyle = shownColor("#5b6270", this.options.night);
-    ctx.lineWidth = 1 / k;
-    ctx.setLineDash([4 / k, 4 / k]);
-    ctx.beginPath();
-    ctx.moveTo(fx, 0);
-    ctx.lineTo(fx, g.h);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    const parts: string[] = [`x = ${formatNumber(x)}`];
-    for (const expression of g.expressions) {
-      const y = sampleExpressionAt(expression.text, x);
-      if (!Number.isFinite(y)) continue;
-      parts.push(`y = ${formatNumber(y)}`);
-      const fy = frameY(map, y);
-      if (fy < 0 || fy > g.h) continue;
-      ctx.fillStyle = shownColor(expression.color, this.options.night);
-      ctx.beginPath();
-      ctx.arc(frameX(map, x), fy, POINT_RADIUS_PX / this.scale, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-    this.readout.setText(parts.join("   "));
-  }
-
-  /** The pinned point, Desmos style: a dot on the curve and its coordinates on a card beside it. */
-  private drawPinned(ctx: CanvasRenderingContext2D): void {
+  /** The traced point as the painter marks it, or null when it is undefined or out of view. */
+  private traced(): { x: number; y: number; curve: number; label: string } | null {
     const pin = this.pinned;
-    const g = this.draft;
-    const expression = pin ? g.expressions[pin.index] : undefined;
-    if (!pin || !expression) return;
-    const y = sampleExpressionAt(expression.text, pin.x);
-    if (!Number.isFinite(y)) return;
-    const map = { xRange: g.xRange, yRange: g.yRange, w: g.w, h: g.h };
-    const fx = frameX(map, pin.x);
-    const fy = frameY(map, y);
-    if (fx < 0 || fx > g.w || fy < 0 || fy > g.h) return;
-    const u = 1 / this.scale;
-    const night = this.options.night;
-    ctx.save();
-    ctx.translate(g.x, g.y);
-    ctx.beginPath();
-    ctx.rect(0, 0, g.w, g.h);
-    ctx.clip();
-    ctx.fillStyle = shownColor(expression.color, night);
-    ctx.strokeStyle = this.options.paper;
-    ctx.lineWidth = 2 * u;
-    ctx.beginPath();
-    ctx.arc(fx, fy, POINT_RADIUS_PX * u, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    const text = `(${formatNumber(pin.x)}, ${formatNumber(y)})`;
-    ctx.font = `${POINT_LABEL_PX * u}px -apple-system, "Segoe UI", Roboto, sans-serif`;
-    const tw = ctx.measureText(text).width;
-    const pad = 5 * u;
-    const bw = tw + 2 * pad;
-    const bh = (POINT_LABEL_PX + 8) * u;
-    // Beside the point, flipped to the other side near the frame's right or top edge.
-    let bx = fx + 8 * u;
-    if (bx + bw > g.w) bx = fx - 8 * u - bw;
-    let by = fy - 8 * u - bh;
-    if (by < 0) by = fy + 8 * u;
-    ctx.fillStyle = this.options.paper;
-    ctx.strokeStyle = shownColor("#c3c8d0", night);
-    ctx.lineWidth = u;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 4 * u);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = shownColor("#2b2f36", night);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, bx + pad, by + bh / 2);
-    ctx.restore();
+    const fn = pin ? graphFunctions(this.draft)[pin.index] : null;
+    if (!pin || !fn) return null;
+    const y = fn(pin.x);
+    const [y0, y1] = this.draft.yRange;
+    const [x0, x1] = this.draft.xRange;
+    if (!Number.isFinite(y) || y < y0 || y > y1 || pin.x < x0 || pin.x > x1) return null;
+    const label = `(${formatNumber(pin.x)}, ${formatNumber(y)})`;
+    this.readout.setText(label);
+    return { x: pin.x, y, curve: pin.index, label };
   }
 
   private showReadout(): void {
