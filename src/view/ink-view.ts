@@ -118,6 +118,9 @@ import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
+import { CalculatorPopover } from "./calculator-popover";
+import { parseCalculatorData } from "../model/calculator-store";
+import { centredOrigin } from "../model/calculator-keys";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
 import { AddTable } from "../model/table-commands";
@@ -216,7 +219,7 @@ import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
-import { sanitizeTextStyle } from "../model/text-style";
+import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
@@ -349,6 +352,7 @@ export class InkView extends TextFileView {
   private addPagePopover: { popover: AddPagePopover; anchor: HTMLElement } | null = null;
   private coverPopover: { popover: CoverPopover; anchor: HTMLElement } | null = null;
   private aiMenu: AiMenuPopover | null = null;
+  private calculator: CalculatorPopover | null = null;
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
   private transcription: { cancelled: boolean } | null = null;
   private pdfCache: PdfBackdropCache | null = null;
@@ -748,6 +752,8 @@ export class InkView extends TextFileView {
     this.imageMenu = null;
     this.aiMenu?.close();
     this.aiMenu = null;
+    this.calculator?.close();
+    this.calculator = null;
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
@@ -1058,6 +1064,56 @@ export class InkView extends TextFileView {
         if (id === "check-words") void this.plugin.setWordChecking(on);
       },
     );
+  }
+
+  /** Open the calculator under `anchor`, or close it when it is open there. */
+  private toggleCalculator(anchor: HTMLElement): void {
+    const open = this.calculator;
+    this.calculator = null;
+    if (open?.isOpen) {
+      open.close();
+      if (open.anchorEl === anchor) return;
+    }
+    this.calculator = new CalculatorPopover(anchor, {
+      path: this.file?.path ?? "",
+      load: () => parseCalculatorData(this.settings.calculator),
+      save: (data) => this.plugin.saveCalculator(data),
+      insert: (text) => this.insertCalculation(text),
+    });
+  }
+
+  /**
+   * A calculation as a text box in the middle of what is in view of the
+   * current page, in the Text tool's style, sized to its text: one undo step.
+   */
+  private insertCalculation(text: string): boolean {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return false;
+    const index = surface.currentPage;
+    const page = surface.document.pages[index];
+    if (!page) return false;
+    const style = textStyleOf(sanitizeTextStyle(this.settings.textStyle));
+    // A first guess at the box's size, to centre it; the box fits its text.
+    const w = Math.max(80, text.length * style.fontSize * 0.55);
+    const at = centredOrigin(
+      surface.visiblePageRect(index),
+      page.geometry,
+      w,
+      style.fontSize * 1.4,
+    );
+    surface.applyCommand(
+      new AddTextBoxToPage(page.id, {
+        id: nextElementId(surface.document, "t"),
+        x: at.x,
+        y: at.y,
+        w: 80,
+        fit: true,
+        text,
+        ...style,
+      }),
+    );
+    this.requestSave();
+    return true;
   }
 
   /** The on-device reader's state for the AI menu; undefined when it is off. */
@@ -2090,6 +2146,7 @@ export class InkView extends TextFileView {
         onInsertImage: (anchor) => this.openImageMenu(anchor),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
+        onCalculator: (anchor) => this.toggleCalculator(anchor),
         // Inside the tap: the microphone is only granted from a user gesture.
         onRecord: () => this.audio?.toggleRecording(),
         onSettings: () => this.openNoteSettings(),

@@ -464,6 +464,8 @@ export interface ToolbarCallbacks {
   onInsertPdf?: (anchor: HTMLElement) => void;
   /** Open the AI menu (transcribe, ask, generate an image); `anchor` is the button. */
   onAi?: (anchor: HTMLElement) => void;
+  /** Open the calculator; `anchor` is the button. */
+  onCalculator?: (anchor: HTMLElement) => void;
   /** Start or stop an audio recording, or open its controls; `anchor` is the button. */
   onRecord?: (anchor: HTMLElement) => void;
   /** Open this note's settings (where its pictures and recordings go); `anchor` is the gear. */
@@ -791,6 +793,7 @@ export class Toolbar {
     };
     keep(this.barButton(left, "search", "Search this notebook", cb.onSearch));
     keep(this.barButton(left, "sparkles", "AI", cb.onAi));
+    keep(this.barButton(left, "calculator", "Calculator", cb.onCalculator));
 
     const history = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-centre" });
     this.undoButton = this.barButton(history, "undo-2", "Undo (Cmd/Ctrl+Z)", () =>
