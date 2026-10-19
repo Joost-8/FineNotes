@@ -3,10 +3,10 @@
  * background, and the learned model's file (research/
  * PERSONAL_HANDWRITING_MODEL.md, the practice-page version).
  *
- * A run starts from the built-in model every time, in a worker of its own
+ * A run starts from Grape as downloaded every time, in a worker of its own
  * (reading goes on meanwhile), learns from every practice file in the vault,
  * and keeps its result only when it reads the held-out practice lines better
- * than the built-in model. It belongs to the plugin, not to a dialog: the
+ * than Grape itself. It belongs to the plugin, not to a dialog: the
  * settings show its progress on the Learn now button and can stop it, and
  * closing them leaves it running. The learned model is a file in the
  * plugin's folder, `handwriting/personal.bin`; the one it replaced is kept
@@ -24,7 +24,6 @@ import type { HwrProgress, HwrTuned } from "../recognition/hwr/protocol";
 import type { LabelledLine } from "../recognition/hwr/tune";
 import { PRACTICE_SETS, practiceLines } from "../recognition/practice";
 import { errorMessage } from "../util/errors";
-import { bundledModel } from "./handwriting";
 
 /** Fewer copied lines than this, and there is not enough to learn from. */
 export const MIN_PRACTICE_LINES = 10;
@@ -38,7 +37,7 @@ export interface LearnedModel {
   /** Lines it learned from, and lines it was tested on. */
   lines: number;
   tested: number;
-  /** Characters wrong on the test lines, in %, with the built-in model and with it. */
+  /** Characters wrong on the test lines, in %, with Grape and with it. */
   before: number;
   after: number;
 }
@@ -58,6 +57,8 @@ export interface LearningHost {
   createPracticeFile(set: number): Promise<TFile | null>;
   /** The reader should load its model again (a new one was saved, or reset). */
   reloadReader(): void;
+  /** Grape's bytes, to learn from; null (after offering the download) when it is not here. */
+  baseModel(): Promise<ArrayBuffer | null>;
   /** The notebook at `path` as it is now, when it is open (unsaved ink included). */
   openNotebook(path: string): InkDocument | null;
 }
@@ -236,6 +237,11 @@ export class HandwritingLearner {
       );
       return;
     }
+    const base = await host.baseModel();
+    if (!base) {
+      new Notice("FineNotes: learning starts from Grape, which is not downloaded yet.", 8000);
+      return;
+    }
     this.stopped = false;
     this.current = { step: 0, steps: LEARN_STEPS, startedAt: Date.now() };
     this.emit();
@@ -245,7 +251,7 @@ export class HandwritingLearner {
       const client = new HwrWorkerClient();
       this.client = client;
       tuned = await client.tune(
-        await bundledModel(),
+        base,
         lines,
         LEARN_STEPS,
         "grape-1.0, learned",

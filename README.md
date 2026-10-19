@@ -38,8 +38,9 @@ Hope you guys enjoy this and give me some
 **Handwriting recognition on your device: Grape (handwriting recognizer model)**
 
 - FineNotes reads your handwriting with its own model, Grape, on your
-  device and offline. Nothing leaves the device, and no account or key is
-  needed.
+  device and offline. Grape is a one-time 3.5 MB download the first time
+  you use it; after that nothing leaves the device, and no account or key
+  is needed.
 - Notebook search and Obsidian's search find your handwriting; lassoed
   headings and words fill in titles and links; a handwritten `[[Note]]`
   becomes a link with a tap.
@@ -368,10 +369,16 @@ audio.
 
 ### Reading your handwriting (Grape)
 
-Grape (handwriting recognizer model), built into FineNotes, reads your ink on the device a few
+Grape (handwriting recognizer model) reads your ink on the device a few
 seconds after you stop writing: notebook search and Obsidian's search then
 find it. Nothing leaves the device. Switch it off under Settings → FineNotes
 → Handwriting → **Read handwriting on this device**.
+
+Grape is not built into the plugin: the first time a handwriting feature
+needs it, FineNotes offers a one-time 3.5 MB download (with **Not now**).
+It is saved in the plugin's `handwriting` folder, so vault sync brings it
+to your other devices. Settings → Handwriting shows it, with **Re-download**
+and **Remove**.
 
 To make it read your own handwriting much better:
 
@@ -493,7 +500,26 @@ telemetry, no ads and no account. Your handwriting is read by Grape
 (handwriting recognizer model) on the device; practice files and what Grape
 learns from them stay in your vault.
 
-The network is used in two cases, both optional.
+The network is used in three cases, all optional.
+
+**Grape (handwriting recognizer model) and its word list.** These are not
+built into the plugin, to keep it small:
+
+- **What is downloaded:** the Grape model file (`grape-1.0.bin`, 3.5 MB) and
+  the word list the misread-word underlining uses (`words-1.txt`, 222 KB, a
+  list of common words). Nothing is uploaded.
+- **From where:** the public GitHub releases of
+  [Joost-8/Grape](https://github.com/Joost-8/Grape/releases)
+  (`github.com`, which redirects to GitHub's file host).
+- **Why:** reading handwriting on the device needs the model; without it,
+  every other feature works.
+- **When:** once, after you tap **Download** on the card that appears the
+  first time a handwriting feature needs it, or in Settings → Handwriting.
+  A file already in your vault (synced from another device) is checked and
+  used, not downloaded again. FineNotes checks each file's size and SHA-256
+  checksum before using it, and an update to Grape arrives the same way,
+  with a plugin update.
+- **What GitHub sees:** like any download, your IP address, once per file.
 
 **The template gallery.** It downloads only when you open it (Browse
 template gallery), from FineNotes' own gallery on GitHub
@@ -670,5 +696,6 @@ FineNotes is licensed under the
 
 Versions before 2.0.0 were released under the MIT licence, and code
 contributed before 2.0.0 was contributed under it; its notice is kept in
-[LICENSE-MIT](LICENSE-MIT). The bundled handwriting model, Grape, is licensed
-separately under the Apache License 2.0 ([models/LICENSE](models/LICENSE)).
+[LICENSE-MIT](LICENSE-MIT). The handwriting model, Grape, which FineNotes
+downloads on first use, is licensed separately under the Apache License 2.0
+([models/LICENSE](models/LICENSE)).

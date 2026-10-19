@@ -9,6 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Asset, AssetState } from "../../src/recognition/hwr/model-manifest";
 
 vi.mock("obsidian", () => import("../fakes/obsidian"));
 
@@ -58,11 +59,43 @@ const { DEFAULT_IMAGE_MODELS, imageUnsupportedReason } =
   await import("../../src/recognition/ai-image");
 const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
+const { GRAPE_MODEL, WORD_LIST } = await import("../../src/recognition/hwr/model-manifest");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
 
 // --- A fake plugin ------------------------------------------------------------
+
+/** A downloaded file's store, holding one state and logging what is asked of it. */
+function fakeStore(asset: Asset, calls: string[]) {
+  const listeners = new Set<() => void>();
+  const store = {
+    asset,
+    state: { kind: "ready" } as AssetState,
+    set(state: AssetState) {
+      store.state = state;
+      for (const l of listeners) l();
+    },
+    subscribe: (l: () => void) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    check: vi.fn(() => Promise.resolve(store.state)),
+    download: vi.fn(() => {
+      calls.push(`${asset.id}:download`);
+      return Promise.resolve(true);
+    }),
+    redownload: vi.fn(() => {
+      calls.push(`${asset.id}:redownload`);
+      return Promise.resolve(true);
+    }),
+    remove: vi.fn(() => {
+      calls.push(`${asset.id}:remove`);
+      return Promise.resolve();
+    }),
+  };
+  return store;
+}
 
 function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, string> = {}) {
   const calls: string[] = [];
@@ -89,6 +122,16 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
+    grape: {
+      model: fakeStore(GRAPE_MODEL, calls),
+      words: fakeStore(WORD_LIST, calls),
+      downloadAll: vi.fn(() => {
+        calls.push("grape:downloadAll");
+        return Promise.resolve(true);
+      }),
+      offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
+    },
+    handwriting: { dispose: vi.fn(() => calls.push("reader:dispose")) },
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
     startOpenRouterConnect: vi.fn(() => {
       calls.push("startConnect");
@@ -263,6 +306,8 @@ describe("the rows", () => {
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
       [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
+      [HANDWRITING, "Grape (handwriting recognizer model)", "render"],
+      [HANDWRITING, "Word list", "render"],
       [HANDWRITING, "Learn my handwriting", "render"],
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
@@ -372,6 +417,14 @@ describe("the rows", () => {
         "misread",
         "underline",
       ],
+      "Grape (handwriting recognizer model)": [
+        "handwriting",
+        "model",
+        "download",
+        "grape",
+        "recognizer",
+      ],
+      "Word list": ["words", "dictionary", "download", "spelling"],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
@@ -495,6 +548,7 @@ describe("which rows show", () => {
       "Show notebook folders as notebooks",
       "Read handwriting on this device (beta)",
       "Underline words it may have misread (test)",
+      "Grape (handwriting recognizer model)",
       "Learn my handwriting",
       "Set up an AI service",
       "Desynchronized canvas",
@@ -523,7 +577,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${36 + PEN_ROWS.length})`,
+      `(block ${38 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1299,5 +1353,72 @@ describe("folding sections", () => {
     expect(plugin.settings.foldedSettingsSections).toEqual(["shortcuts"]);
     writing.chevron?.dispatch("keydown", { key: "a" });
     expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+  });
+});
+
+describe("Grape and the word list (downloaded on first use)", () => {
+  /** The buttons the row shows now (the fake keeps every one ever added). */
+  const current = (setting: FakeSetting) =>
+    setting.buttons.filter((b) => setting.controlEl.children.includes(b.buttonEl));
+
+  it("shows a downloaded model with Re-download and Remove", async () => {
+    const plugin = makePlugin();
+    const { tab } = makeTab(plugin);
+    const setting = renderRow(named(rows(tab), "Grape (handwriting recognizer model)"));
+    expect(setting.descEl.text).toBe("Version 1.0, 3.5 MB, on this device.");
+    expect(current(setting).map((b) => b.text)).toEqual(["Re-download", "Remove"]);
+    await current(setting)[1].click();
+    expect(plugin.calls).toEqual(expect.arrayContaining(["reader:dispose", "grape:remove"]));
+    await current(setting)[0].click();
+    expect(plugin.calls).toContain("grape:redownload");
+  });
+
+  it("offers the download when the model is missing, and again after a failure", async () => {
+    const plugin = makePlugin();
+    plugin.grape.model.state = { kind: "missing" };
+    const { tab } = makeTab(plugin);
+    const row = named(rows(tab), "Grape (handwriting recognizer model)");
+    let setting = renderRow(row);
+    expect(setting.descEl.text).toBe("Not downloaded yet (3.5 MB).");
+    expect(current(setting).map((b) => [b.text, b.cta])).toEqual([["Download", true]]);
+    await current(setting)[0].click();
+    expect(plugin.calls).toContain("grape:downloadAll");
+    plugin.grape.model.state = { kind: "failed", reason: "offline", detail: "" };
+    setting = renderRow(row);
+    expect(setting.descEl.text).toBe("Downloads when you're online.");
+    expect(current(setting).map((b) => b.text)).toEqual(["Try again"]);
+  });
+
+  it("shows no buttons while a download runs", () => {
+    const plugin = makePlugin();
+    plugin.grape.model.state = { kind: "downloading", received: 0, total: 0 };
+    const setting = renderRow(
+      named(rows(makeTab(plugin).tab), "Grape (handwriting recognizer model)"),
+    );
+    expect(current(setting)).toHaveLength(0);
+    expect(setting.descEl.text).toMatch(/^Downloading/);
+  });
+
+  it("downloads the word list on its own from its row, shown with underlining on", async () => {
+    const plugin = makePlugin({ checkHandwrittenWords: true });
+    plugin.grape.words.state = { kind: "missing" };
+    const all = rows(makeTab(plugin).tab);
+    expect(shown(named(all, "Word list"))).toBe(true);
+    const setting = renderRow(named(all, "Word list"));
+    await current(setting)[0].click();
+    expect(plugin.calls).toContain("words:download");
+    expect(shown(named(rows(makeTab(makePlugin()).tab), "Word list"))).toBe(false);
+  });
+
+  it("offers Grape when reading or underlining is switched on", async () => {
+    const plugin = makePlugin({ handwritingOnDevice: false });
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("handwritingOnDevice", true);
+    await tab.setControlValue("checkHandwrittenWords", true);
+    await tab.setControlValue("checkHandwrittenWords", false);
+    expect(plugin.calls.filter((c) => c.startsWith("grape:offer"))).toEqual([
+      "grape:offer:ask",
+      "grape:offer:ask",
+    ]);
   });
 });

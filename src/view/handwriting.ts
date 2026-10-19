@@ -1,8 +1,8 @@
 /**
  * The on-device handwriting reader, shared by every open notebook: one
- * worker (src/recognition/hwr/), loaded once with the model bundled in the
- * plugin, or with a model file the user picked in the settings. Nothing it
- * reads leaves the device.
+ * worker (src/recognition/hwr/), loaded once with Grape (downloaded on first
+ * use, grape-files.ts), or with a model file the user picked in the settings.
+ * Nothing it reads leaves the device.
  *
  * It reads a page (its lines, for search and the text layer) or a handful of
  * strokes (a lassoed heading or word, to prefill a title or a link).
@@ -17,7 +17,7 @@ import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
 
 /**
  * Where the model comes from: a file the user picked, else the model learned
- * from their handwriting, else the one built in.
+ * from their handwriting, else Grape as downloaded.
  */
 export interface ModelSource {
   /** A vault path the user set; blank for none. */
@@ -26,11 +26,21 @@ export interface ModelSource {
   learnedPath: string;
 }
 
-/** The bundled model's bytes (a fresh copy), read only when first needed. */
-export async function bundledModel(): Promise<ArrayBuffer> {
-  const { default: bytes } = await import("../../models/grape-1.0.bin");
-  // The worker takes the buffer it is given: hand it a copy.
-  return bytes.slice().buffer;
+/** Grape as stored on this device: a key that changes with the file, and its bytes. */
+export interface StoredModel {
+  key: string;
+  read: () => Promise<ArrayBuffer>;
+}
+
+/** Grape is not on this device yet; the download has been offered. */
+export class ModelNotDownloadedError extends Error {
+  constructor() {
+    super(
+      "Grape (handwriting recognizer model) is not on this device yet. It downloads when " +
+        "you're online, from Settings › Handwriting.",
+    );
+    this.name = "ModelNotDownloadedError";
+  }
 }
 
 /** The strokes the recogniser reads: pen ink, not highlighter, snapped shapes or tables. */
@@ -66,6 +76,8 @@ export class HandwritingReader {
   constructor(
     private readonly app: App,
     private readonly source: () => ModelSource,
+    /** Grape, or null when it is not here (grape-files.ts then offers the download). */
+    private readonly grape: () => Promise<StoredModel | null>,
   ) {}
 
   /** The model, loaded into the worker if it is not there yet (or its file changed). */
@@ -79,11 +91,17 @@ export class HandwritingReader {
       if (learned?.type === "file") path = source.learnedPath;
     }
     const file = path ? normalizePath(path) : "";
-    let key = "bundled";
+    let key: string;
+    let read: () => Promise<ArrayBuffer>;
     if (file) {
       const stat = await this.app.vault.adapter.stat(file);
       if (!stat || stat.type !== "file") throw new Error(`no model file at "${file}"`);
       key = `${file}|${stat.mtime}|${stat.size}`;
+      read = () => this.app.vault.adapter.readBinary(file);
+    } else {
+      const grape = await this.grape();
+      if (!grape) throw new ModelNotDownloadedError();
+      ({ key, read } = grape);
     }
     if (this.loaded?.key === key) return this.loaded.info;
     if (this.loading) return this.loading;
@@ -93,7 +111,7 @@ export class HandwritingReader {
         const { HwrWorkerClient } = await import("../recognition/hwr/client");
         this.client = new HwrWorkerClient();
       }
-      const bytes = file ? await this.app.vault.adapter.readBinary(file) : await bundledModel();
+      const bytes = await read();
       const info = await this.client.load(bytes);
       this.loaded = { key, info };
       return info;

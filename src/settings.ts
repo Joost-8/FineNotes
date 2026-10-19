@@ -64,6 +64,8 @@ import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
+import { GRAPE_MODEL, WORD_LIST, isBusy, stateText } from "./recognition/hwr/model-manifest";
+import type { AssetStore } from "./recognition/hwr/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import {
   MAX_SAVED_PENS,
@@ -571,6 +573,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
     if (changesTabLayout(key)) this.update();
+    // Turned on: Grape is needed now, so offer it if it is not here.
+    if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
+      await this.plugin.grape.model.check();
+      this.plugin.grape.offer("ask");
+    }
   }
 
   // --- Sections --------------------------------------------------------------
@@ -921,7 +928,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       callout(CALLOUTS.pressure, () => this.plugin.settings.pressureWidth),
       controlRow(
         "Handwriting model file",
-        "Leave blank to use the model built into FineNotes. Or give the vault path of " +
+        "Leave blank to use Grape (handwriting recognizer model). Or give the vault path of " +
           "another model file, such as one tuned to your handwriting. It is read on this " +
           "device only.",
         { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
@@ -944,8 +951,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       toggle(
         "handwritingOnDevice",
         "Read handwriting on this device (beta)",
-        "Reads your handwriting with Grape (handwriting recognizer model), built into " +
-          "FineNotes, on this device: notebook search and Obsidian's search find it, and a " +
+        "Reads your handwriting with Grape (handwriting recognizer model), downloaded " +
+          "once, on this device: notebook search and Obsidian's search find it, and a " +
           "lassoed heading or word fills in its title or link. Nothing leaves the device. " +
           "In beta: it misreads some words, more so in small or hurried writing, so check " +
           "what it reads before relying on it.",
@@ -957,12 +964,25 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "Underline words it may have misread (test)",
           "After a page is read, words Grape is not sure of get a dotted underline. Tap one " +
             "with a finger to correct the reading, confirm it, or ignore the word; Learn my " +
-            "handwriting learns from your answers. Needs a word list in the plugin's " +
-            "handwriting folder.",
+            "handwriting learns from your answers. Uses the word list that downloads with " +
+            "Grape, plus your own words.txt in the plugin's handwriting folder.",
           ["handwriting", "spelling", "correct", "misread", "underline"],
         ),
         visible: () => settings.handwritingOnDevice !== false,
       },
+      drawnRow(
+        GRAPE_MODEL.label,
+        stateText(GRAPE_MODEL, this.plugin.grape.model.state),
+        (setting) => this.drawDownload(setting, this.plugin.grape.model),
+        ["handwriting", "model", "download", "grape", "recognizer"],
+      ),
+      drawnRow(
+        "Word list",
+        stateText(WORD_LIST, this.plugin.grape.words.state),
+        (setting) => this.drawDownload(setting, this.plugin.grape.words),
+        ["words", "dictionary", "download", "spelling"],
+        () => settings.checkHandwrittenWords === true,
+      ),
       drawnRow(
         "Learn my handwriting",
         learnedSummary(settings.handwritingModel),
@@ -1138,6 +1158,52 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * model. While a run is on, Learn now shows its progress, filling up as
    * a bar, and Stop ends it; closing the settings leaves it running.
    */
+  /**
+   * A downloaded file's row: its state, with Download, or Re-download and
+   * Remove; the progress while it downloads.
+   */
+  private drawDownload(setting: Setting, store: AssetStore): void {
+    const grape = this.plugin.grape;
+    const show = (): void => {
+      const state = store.state;
+      setting.setDesc(stateText(store.asset, state));
+      setting.controlEl.empty();
+      if (isBusy(state)) return;
+      if (state.kind === "ready") {
+        setting.addButton((b) =>
+          b.setButtonText("Re-download").onClick(() => {
+            this.plugin.handwriting.dispose();
+            void store.redownload();
+          }),
+        );
+        setting.addButton((b) =>
+          b.setButtonText("Remove").onClick(() => {
+            this.plugin.handwriting.dispose();
+            void store.remove();
+          }),
+        );
+        return;
+      }
+      if (state.kind === "unknown") return;
+      setting.addButton((b) =>
+        b
+          .setButtonText(state.kind === "failed" ? "Try again" : "Download")
+          .setCta()
+          .onClick(() => void (store === grape.model ? grape.downloadAll() : store.download())),
+      );
+    };
+    const unsubscribe = store.subscribe(() => {
+      // The tab was closed or redrawn: this row is gone.
+      if (!setting.settingEl.isConnected) {
+        unsubscribe();
+        return;
+      }
+      show();
+    });
+    show();
+    void store.check(true);
+  }
+
   private drawLearning(setting: Setting): void {
     const host = this.plugin.learningHost();
     const learner = this.plugin.learner;
@@ -1190,7 +1256,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     if (this.plugin.settings.handwritingModel) {
       setting.addButton((b) =>
-        b.setButtonText("Use built-in model").onClick(async () => {
+        b.setButtonText("Use Grape").onClick(async () => {
           await resetLearnedModel(host);
           this.update();
         }),

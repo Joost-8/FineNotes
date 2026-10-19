@@ -128,6 +128,7 @@ import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
 import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
+import { GrapeFiles } from "./view/grape-files";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -218,11 +219,18 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
 
+  /** Grape and its word list, downloaded on first use (grape-files.ts). */
+  readonly grape = new GrapeFiles(this.app, () => this.pluginDir);
+
   /** The on-device handwriting reader, started on first use. */
-  readonly handwriting = new HandwritingReader(this.app, () => ({
-    customPath: this.settings.hwrModelPath ?? "",
-    learnedPath: this.settings.handwritingModel ? learnedModelPath(this.pluginDir) : "",
-  }));
+  readonly handwriting = new HandwritingReader(
+    this.app,
+    () => ({
+      customPath: this.settings.hwrModelPath ?? "",
+      learnedPath: this.settings.handwritingModel ? learnedModelPath(this.pluginDir) : "",
+    }),
+    () => this.grape.source(),
+  );
 
   /**
    * Keeps a page that took the app down while it was read on this device
@@ -234,7 +242,11 @@ export default class GoodObsidianPlugin extends Plugin {
   readonly learner = new HandwritingLearner(() => this.learningHost());
 
   /** Checking words read on the device, and the answers to learn from. */
-  readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
+  readonly wordCheck = new WordCheck(
+    this.app,
+    () => this.pluginDir,
+    () => this.grape.wordList(),
+  );
 
   /** This plugin's folder in the vault. */
   get pluginDir(): string {
@@ -250,6 +262,10 @@ export default class GoodObsidianPlugin extends Plugin {
       saveSettings: () => this.saveSettings(),
       createPracticeFile: (set) => this.createPracticeFile(set),
       reloadReader: () => this.handwriting.dispose(),
+      baseModel: async () => {
+        const grape = await this.grape.source("ask");
+        return grape ? grape.read() : null;
+      },
       openNotebook: (path) => {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_INK)) {
           const view = leaf.view;
@@ -415,7 +431,14 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
+      this.grape.dispose();
     });
+    // A word list that arrives later (with the model, or by sync) is read again.
+    this.register(
+      this.grape.words.subscribe(() => {
+        if (this.grape.words.state.kind === "ready") void this.wordCheck.reload();
+      }),
+    );
 
     this.register(() => this.explorerNotebookButton.destroy());
     this.register(() => this.explorerFolderNotebooks.destroy());

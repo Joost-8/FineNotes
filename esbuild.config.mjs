@@ -92,9 +92,10 @@ const context = await esbuild.context({
   ],
   format: "cjs",
   target: "es2020",
-  // CHANGELOG.md is bundled as text for the in-app "What's new" modal; the
-  // handwriting model (models/, Apache 2.0) as bytes, so reading works offline.
-  loader: { ".md": "text", ".bin": "binary" },
+  // CHANGELOG.md is bundled as text for the in-app "What's new" modal. The
+  // handwriting model is not bundled: it downloads on first use
+  // (src/recognition/hwr/model-manifest.ts).
+  loader: { ".md": "text" },
   logLevel: "info",
   sourcemap: production ? false : "inline",
   treeShaking: true,

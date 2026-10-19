@@ -14,6 +14,20 @@ import { CharLm } from "./char-lm";
 const MAGIC = 0x57484e46; // "FNHW", little-endian
 const VERSION = 1;
 
+/** The file format version this build reads. */
+export const BUNDLE_FORMAT = VERSION;
+
+/**
+ * The format version in a model file's header, without reading the rest;
+ * null when it is not a FineNotes handwriting model at all.
+ */
+export function bundleFormatOf(bytes: ArrayBuffer | Uint8Array): number | null {
+  const src = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (src.byteLength < 8) return null;
+  const view = new DataView(src.buffer, src.byteOffset, 8);
+  return view.getUint32(0, true) === MAGIC ? view.getUint32(4, true) : null;
+}
+
 /** What the header says about the model and how to run it. */
 export interface HwrMeta {
   format: string;

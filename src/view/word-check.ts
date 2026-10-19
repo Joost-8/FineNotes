@@ -6,9 +6,11 @@
  * - `flags` says which words of a page's reading to underline;
  * - `ask` shows the card for a tapped word (word-popover.ts) and records the answer.
  *
- * Files, both in `<plugin>/handwriting/`:
- * - `words.txt`, the words not to underline, one a line. Without it nothing
- *   is underlined (every word would be).
+ * Files, all in `<plugin>/handwriting/`:
+ * - `words-<version>.txt`, the public word list, downloaded with Grape
+ *   (grape-files.ts): the words not to underline, one a line. Without a list
+ *   nothing is underlined (every word would be).
+ * - `words.txt`, the user's own words, added to it when it is there.
  * - `corrections.json`, the answers, ink included; "Learn my handwriting"
  *   and the nightly loop learn from them.
  */
@@ -64,6 +66,8 @@ export class WordCheck {
   constructor(
     private readonly app: App,
     private readonly pluginDir: () => string,
+    /** The downloaded word list's text, or null when it is not here yet. */
+    private readonly downloaded: () => Promise<string | null> = () => Promise.resolve(null),
   ) {}
 
   /** Read the word list and the corrections, once (`reload` to read them again). */
@@ -80,7 +84,10 @@ export class WordCheck {
   private async read(): Promise<void> {
     const adapter = this.app.vault.adapter;
     const list = wordListPath(this.pluginDir());
-    this.words = (await adapter.exists(list)) ? parseWordList(await adapter.read(list)) : null;
+    const own = (await adapter.exists(list)) ? parseWordList(await adapter.read(list)) : null;
+    const text = await this.downloaded().catch(() => null);
+    const shared = text === null ? null : parseWordList(text);
+    this.words = own && shared ? new Set([...shared, ...own]) : (own ?? shared);
     this.version++;
     const file = correctionsPath(this.pluginDir());
     this.corrections = (await adapter.exists(file))
@@ -95,7 +102,8 @@ export class WordCheck {
       if (!this.toldNoList) {
         this.toldNoList = true;
         new Notice(
-          `FineNotes: checking words needs a word list at ${wordListPath(this.pluginDir())}.`,
+          "FineNotes: underlining words needs the word list, which downloads with Grape " +
+            "(handwriting recognizer model) when you're online.",
           10000,
         );
       }

@@ -202,7 +202,7 @@ export interface GoodObsidianSettings {
   checkHandwrittenWords: boolean;
   /**
    * The vault path of a handwriting model file to read with instead of the
-   * bundled one (a model tuned to one writer). Blank for the bundled model.
+   * downloaded Grape (a model tuned to one writer). Blank for Grape.
    */
   hwrModelPath?: string;
   /** The model learned from the user's practice page, when there is one. */

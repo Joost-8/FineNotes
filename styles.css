@@ -3979,6 +3979,124 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   }
 }
 
+/* "Grape needs a one-time download" (view/grape-files.ts): bottom centre over
+   the workspace, above the keyboard when it is up, rising like the toast. */
+.goodobsidian-download-card {
+  position: fixed;
+  z-index: var(--layer-notice, 60);
+  left: 50%;
+  bottom: calc(24px + var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 14px 14px 12px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-card-bg);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.35;
+  animation: goodobsidian-card-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+@keyframes goodobsidian-card-in {
+  from {
+    opacity: 0.5;
+    transform: translate(-50%, 60%) scale(0.9);
+  }
+}
+
+.goodobsidian-download-card-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-download-card.is-failed .goodobsidian-download-card-icon {
+  color: var(--color-orange);
+}
+
+.goodobsidian-download-card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.goodobsidian-download-card-title {
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-download-card-detail {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-download-card-track {
+  display: none;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.goodobsidian-download-card.is-busy .goodobsidian-download-card-track {
+  display: block;
+}
+
+.goodobsidian-download-card-bar {
+  width: var(--gob-download-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--interactive-accent);
+  transition: width 0.2s ease-out;
+}
+
+.goodobsidian-download-card-actions {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-self: center;
+}
+
+.goodobsidian-download-card-actions:empty {
+  display: none;
+}
+
+.goodobsidian-download-card .goodobsidian-download-card-button.clickable-icon {
+  justify-content: center;
+  height: var(--gob-touch);
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-normal);
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+  opacity: 1;
+}
+
+.goodobsidian-download-card .goodobsidian-download-card-button.clickable-icon.is-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-download-card .goodobsidian-download-card-button.clickable-icon.is-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-download-card {
+    animation: none;
+  }
+
+  .goodobsidian-download-card-bar {
+    transition: none;
+  }
+}
+
 /* ------------------------------------------------ images on the page (0.5) */
 
 /* The selected image's chrome: a frame turned with the image, square corner
