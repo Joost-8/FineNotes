@@ -14,6 +14,7 @@
  */
 
 import { type AngleMode, compileFunction } from "./calculator";
+import type { GraphLine, GraphSlider } from "./graph-lines";
 
 export interface GraphRange {
   xMin: number;
@@ -22,11 +23,31 @@ export interface GraphRange {
   yMax: number;
 }
 
-/** A whole graph: what is plotted and what is in view. */
+/**
+ * A whole graph: what is plotted and what is in view, as one plain object
+ * to store and draw anywhere. Version 2 adds `lines` (each line's text and
+ * look, `model/graph-lines.ts`), `sliders` and the view switches; fields a
+ * version does not know are kept. `expressions` mirrors the lines' text for
+ * readers of version 1.
+ */
 export interface GraphSpec extends GraphRange {
   expressions: string[];
   /** Angles of trig functions; radians when absent. */
   angle?: AngleMode;
+  version?: number;
+  lines?: GraphLine[];
+  sliders?: GraphSlider[];
+  /** Grid lines (default on). */
+  grid?: boolean;
+  /** Axis numbers (default on). */
+  labels?: boolean;
+  /** x and y at the same scale. */
+  square?: boolean;
+  /** x ticks at multiples of π. */
+  piTicks?: boolean;
+  /** Points pinned on function lines, kept with their labels. */
+  pins?: Array<{ line: string; x: number }>;
+  [key: string]: unknown;
 }
 
 /** A run of curve in value space, flat: [x0, y0, x1, y1, …]. */

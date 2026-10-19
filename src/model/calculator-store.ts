@@ -10,6 +10,7 @@
  */
 
 import { type AngleMode, NUMBER_BASES, type NumberBase } from "./calculator";
+import { type KeyTab, isKeyTab } from "./calculator-keys";
 
 /** One line of history: what was typed and what it came to, as shown. */
 export interface CalcEntry {
@@ -21,6 +22,8 @@ export interface CalcPrefs {
   angle: AngleMode;
   fractions: boolean;
   base: NumberBase;
+  /** The function keys' tab last used (Graph is never remembered: it belongs to editing a line). */
+  tab: Exclude<KeyTab, "graph">;
 }
 
 export interface CalculatorData {
@@ -33,7 +36,12 @@ export const HISTORY_MAX = 30;
 export const HISTORY_NOTEBOOKS_MAX = 100;
 const TEXT_MAX = 500;
 
-export const DEFAULT_CALC_PREFS: Readonly<CalcPrefs> = { angle: "deg", fractions: false, base: 10 };
+export const DEFAULT_CALC_PREFS: Readonly<CalcPrefs> = {
+  angle: "deg",
+  fractions: false,
+  base: 10,
+  tab: "basic",
+};
 
 function isRecord(raw: unknown): raw is Record<string, unknown> {
   return typeof raw === "object" && raw !== null && !Array.isArray(raw);
@@ -55,7 +63,8 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
   };
   if (!isRecord(raw)) return data;
   if (isRecord(raw.prefs)) {
-    const { angle, fractions, base } = raw.prefs;
+    const { angle, fractions, base, tab } = raw.prefs;
+    if (isKeyTab(tab) && tab !== "graph") data.prefs.tab = tab;
     if (angle === "deg" || angle === "rad") data.prefs.angle = angle;
     if (typeof fractions === "boolean") data.prefs.fractions = fractions;
     if (NUMBER_BASES.includes(base as NumberBase)) data.prefs.base = base as NumberBase;

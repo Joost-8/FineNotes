@@ -9491,35 +9491,21 @@ button.goodobsidian-wordcheck-chip.goodobsidian-spelling-chip.clickable-icon {
 
 /* The calculator reuses the Add Page sheet (`.goodobsidian-addpage`). Keys
    are at least --gob-touch tall; at the sheet's 360 px a function key is
-   51 px wide and a number key 62. Nothing changes height while typing.
-   `button.` prefixes hold these against Obsidian's `.clickable-icon` rules. */
+   51 px wide and a number key 62. Nothing changes height while typing: the
+   display's lines are fixed, every tab has three rows, and the history and
+   graph take the keypad's height. `button.` prefixes hold these against
+   Obsidian's `.clickable-icon` rules. */
 .goodobsidian-addpage.goodobsidian-calc {
   gap: 8px;
   padding: 12px;
   touch-action: manipulation;
-}
-
-.goodobsidian-calc-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.goodobsidian-calc-bases {
-  flex: 1 1 auto;
-  margin-right: 4px;
-}
-
-.goodobsidian-calc-bases button.clickable-icon {
-  height: 38px;
-  padding: 0 4px;
-  font-variant-numeric: tabular-nums;
+  -webkit-touch-callout: none;
 }
 
 button.clickable-icon.goodobsidian-calc-icon {
   flex: 0 0 auto;
-  width: var(--gob-touch);
-  height: var(--gob-touch);
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: var(--gob-radius-m);
   color: var(--gob-icon);
@@ -9530,11 +9516,12 @@ button.clickable-icon.goodobsidian-calc-icon.is-active {
   color: var(--gob-active-fg);
 }
 
-/* The display: switches, the expression as a textbook sets it, the result. */
+/* The display: switches and panes, the expression as a textbook sets it,
+   the result, and a line of help. */
 .goodobsidian-calc-display {
   display: flex;
   flex-direction: column;
-  padding: 6px 12px 4px;
+  padding: 4px 8px 4px 12px;
   border-radius: var(--gob-radius-l);
   background: var(--gob-well);
   font-variant-numeric: tabular-nums;
@@ -9545,11 +9532,17 @@ button.clickable-icon.goodobsidian-calc-icon.is-active {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 36px;
+  min-width: 0;
+}
+
+.goodobsidian-calc-flags-gap {
+  flex: 1 1 auto;
 }
 
 button.clickable-icon.goodobsidian-calc-chip {
-  height: 24px;
+  flex: 0 0 auto;
+  height: 26px;
   padding: 0 9px;
   border-radius: var(--gob-radius-pill);
   box-shadow: inset 0 0 0 1px var(--gob-line);
@@ -9557,6 +9550,7 @@ button.clickable-icon.goodobsidian-calc-chip {
   font-size: 11px;
   font-weight: var(--font-semibold, 600);
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 button.clickable-icon.goodobsidian-calc-chip.is-active {
@@ -9569,15 +9563,25 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
   opacity: 0.35;
 }
 
-.goodobsidian-calc-memory {
-  margin-left: auto;
+button.clickable-icon.goodobsidian-calc-chip.is-memory,
+button.clickable-icon.goodobsidian-calc-chip.is-editing {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gob-active-fg);
+  letter-spacing: 0;
+}
+
+button.clickable-icon.goodobsidian-calc-chip.is-hidden,
+.goodobsidian-calc-flag.is-hidden {
+  display: none;
+}
+
+.goodobsidian-calc-flag {
   color: var(--gob-active-fg);
   font-size: 11px;
   font-weight: var(--font-bold, 700);
-}
-
-.goodobsidian-calc-memory.is-hidden {
-  display: none;
+  letter-spacing: 0.04em;
 }
 
 .goodobsidian-calc-expr {
@@ -9585,6 +9589,7 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
   align-items: center;
   justify-content: flex-end;
   height: 50px;
+  padding-right: 4px;
   overflow: hidden;
   color: var(--text-normal);
   font-size: 21px;
@@ -9593,6 +9598,13 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
 .goodobsidian-calc-expr.is-done {
   color: var(--text-muted);
   font-size: 17px;
+}
+
+/* In the graph pane the display keeps only its top row and its hint; the
+   graph takes the height of the expression and the result. */
+.goodobsidian-calc-expr.is-hidden-expr,
+.goodobsidian-calc-expr.is-hidden-expr + .goodobsidian-calc-result {
+  display: none;
 }
 
 .goodobsidian-calc-math {
@@ -9605,6 +9617,7 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
 
 .goodobsidian-calc-result {
   height: 40px;
+  padding-right: 4px;
   overflow: hidden;
   color: var(--text-normal);
   font-size: 32px;
@@ -9621,6 +9634,40 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
 
 .goodobsidian-calc-result.is-error {
   color: var(--text-error);
+}
+
+.goodobsidian-calc-hint {
+  height: 16px;
+  padding-right: 4px;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What a key does, on a long press. */
+.goodobsidian-calc-tip {
+  position: absolute;
+  z-index: 2;
+  padding: 7px 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--text-normal);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--background-primary);
+  font-size: var(--font-ui-small);
+  line-height: 1.35;
+  pointer-events: none;
+  animation: goodobsidian-calc-tip 120ms ease-out;
+}
+
+@keyframes goodobsidian-calc-tip {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 /* Natural math (model/calc-display.ts). */
@@ -9737,7 +9784,8 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
   margin-left: 0.2em;
 }
 
-/* An operand still to type, as Casio's natural display boxes it. */
+/* An input still to fill, as Casio's natural display boxes it; the one the
+   cursor is on is drawn in the accent. */
 .gob-m-slot {
   display: inline-block;
   width: 0.62em;
@@ -9748,11 +9796,17 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
   vertical-align: middle;
 }
 
+.gob-m-slot.is-active {
+  border-style: solid;
+  border-color: var(--interactive-accent);
+  background: var(--gob-active-bg);
+}
+
 .goodobsidian-calc-caret {
   display: inline-block;
   width: 2px;
   height: 1.1em;
-  margin-left: 2px;
+  margin: 0 1px;
   border-radius: 1px;
   background: var(--interactive-accent);
   animation: goodobsidian-calc-caret 1.1s steps(1) infinite;
@@ -9762,6 +9816,10 @@ button.clickable-icon.goodobsidian-calc-chip:disabled {
   50% {
     opacity: 0;
   }
+}
+
+.goodobsidian-calc-raw {
+  white-space: pre;
 }
 
 .goodobsidian-calc-actions {
@@ -9784,16 +9842,43 @@ button.clickable-icon.goodobsidian-calc-insert:disabled {
   opacity: 0.4;
 }
 
-/* Insert graph (or Done) takes the place of the two Insert buttons in the graph pane. */
+/* Insert graph (or Update graph) takes the place of the two Insert buttons in the graph pane. */
 button.clickable-icon.goodobsidian-calc-insert.is-hidden {
   display: none;
 }
 
-/* The keypad: functions above, iOS's number pad below. */
+/* The keypad: tabs of functions above, iOS's number pad below. */
 .goodobsidian-calc-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.goodobsidian-calc-tabs {
+  display: flex;
+  gap: 2px;
+  height: 32px;
+  padding: 2px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well);
+}
+
+button.clickable-icon.goodobsidian-calc-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 2px;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+button.clickable-icon.goodobsidian-calc-tab.is-active {
+  background: var(--gob-seg-active-bg);
+  box-shadow: var(--gob-shadow-raised);
+  color: var(--text-normal);
+  font-weight: var(--font-semibold, 600);
 }
 
 .goodobsidian-calc-keys {
@@ -9803,6 +9888,7 @@ button.clickable-icon.goodobsidian-calc-insert.is-hidden {
 
 .goodobsidian-calc-keys.is-science {
   grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: var(--gob-touch);
 }
 
 .goodobsidian-calc-keys.is-numbers {
@@ -9859,7 +9945,8 @@ button.clickable-icon.goodobsidian-calc-key.is-equals {
   border-radius: var(--gob-radius-pill);
   background: var(--interactive-accent);
   color: var(--text-on-accent);
-  font-size: 25px;
+  font-size: 22px;
+  font-weight: var(--font-semibold, 600);
 }
 
 button.clickable-icon.goodobsidian-calc-key.is-active {
@@ -9871,6 +9958,11 @@ button.clickable-icon.goodobsidian-calc-key.is-active {
 button.clickable-icon.goodobsidian-calc-key:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* An empty place in a tab: it keeps the rows the same height. */
+.goodobsidian-calc-spacer {
+  height: var(--gob-touch);
 }
 
 /* Pressed: the key gives, quickly (set from pointer events: iPadOS gives
@@ -9887,11 +9979,15 @@ button.clickable-icon.goodobsidian-calc-key:disabled {
   filter: brightness(1.35);
 }
 
-/* History and graph take the keypad's place at its height, so the sheet
-   does not jump: 3 function rows and 5 number rows of 44 px, gaps between. */
-.goodobsidian-calc-body.is-history,
+/* History and graph take the keypad's place at its height (a tab row, three
+   function rows, five number rows), so the sheet does not jump. */
+.goodobsidian-calc-body.is-history {
+  height: 436px;
+}
+
+/* The keypad's height plus the expression's and the result's (50 + 40). */
 .goodobsidian-calc-body.is-graph {
-  height: 396px;
+  height: 526px;
 }
 
 .goodobsidian-calc-history {
@@ -9947,30 +10043,57 @@ button.clickable-icon.goodobsidian-calc-clear {
   font-size: var(--font-ui-small);
 }
 
-/* The graph: Desmos' expression list above its canvas. */
+/* The graph: Desmos' list above its canvas. */
+.goodobsidian-calc-graph {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
 .goodobsidian-calc-functions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 2px;
-  max-height: 128px;
+  max-height: 200px;
+  min-height: 40px;
   overflow-y: auto;
   touch-action: pan-y;
 }
 
 .goodobsidian-calc-function {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 40px;
 }
 
-.goodobsidian-calc-swatch {
+.goodobsidian-calc-function.is-hidden-line .goodobsidian-calc-function-text {
+  opacity: 0.45;
+}
+
+/* The line's colour as a dot: filled when shown, a ring when hidden. */
+button.clickable-icon.goodobsidian-calc-swatch {
   flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
-  margin: 0 4px 0 8px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+button.clickable-icon.goodobsidian-calc-swatch::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
   border-radius: 50%;
+  background: currentColor;
+}
+
+.goodobsidian-calc-function.is-hidden-line button.clickable-icon.goodobsidian-calc-swatch::before {
+  background: transparent;
 }
 
 button.clickable-icon.goodobsidian-calc-function-text {
@@ -9982,7 +10105,7 @@ button.clickable-icon.goodobsidian-calc-function-text {
   min-width: 0;
   height: auto;
   min-height: 40px;
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: var(--gob-radius-m);
   color: var(--text-normal);
   font-size: 17px;
@@ -9994,13 +10117,14 @@ button.clickable-icon.goodobsidian-calc-function-text {
   font-size: 12px;
 }
 
-button.clickable-icon.goodobsidian-calc-remove {
+button.clickable-icon.goodobsidian-calc-more,
+button.clickable-icon.goodobsidian-calc-play {
   flex: 0 0 auto;
   width: 40px;
   height: 40px;
   padding: 0;
   border-radius: var(--gob-radius-m);
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 button.clickable-icon.goodobsidian-calc-function.goodobsidian-calc-add {
@@ -10024,16 +10148,117 @@ button.clickable-icon.goodobsidian-calc-add:disabled {
   display: inline-flex;
 }
 
-.goodobsidian-calc-graph {
+.goodobsidian-calc-chips {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.goodobsidian-calc-options {
+  flex: 0 0 auto;
+  padding: 4px 4px 8px 44px;
+}
+
+.goodobsidian-calc-options button.clickable-icon.goodobsidian-calc-chip,
+.goodobsidian-calc-view button.clickable-icon.goodobsidian-calc-chip {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+button.clickable-icon.goodobsidian-calc-chip.is-danger {
+  color: var(--text-error);
+}
+
+.goodobsidian-calc-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Obsidian's mobile field rules outrank one class: the sheet and the type lift these over them. */
+.goodobsidian-calc input[type="text"].goodobsidian-calc-number {
+  width: 64px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: var(--gob-radius-s);
+  /* 16 px: iPadOS zooms the page into a smaller field. */
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-calc-table {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 8px 6px 44px;
+  border-radius: var(--gob-radius-s);
+  box-shadow: inset 0 0 0 1px var(--gob-line);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-calc-table-row {
+  display: contents;
+}
+
+.goodobsidian-calc-table-row > span {
+  padding: 2px 8px;
+  border-top: 1px solid var(--gob-line);
+  text-align: right;
+}
+
+.goodobsidian-calc-table-row.is-head > span {
+  border-top: none;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.goodobsidian-calc-slider {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  padding: 0 4px 4px 12px;
+}
+
+.goodobsidian-calc-slider-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.goodobsidian-calc-slider-value {
+  flex: 0 0 auto;
+  min-width: 64px;
+  font-style: italic;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Obsidian's `input[type='range']` (0,1,1) outranks one class (ledger). */
+input[type="range"].goodobsidian-calc-slider-range {
   flex: 1 1 auto;
-  min-height: 0;
+  width: auto;
+  min-width: 0;
+}
+
+.goodobsidian-calc-slider-bounds {
+  display: flex;
+  gap: 8px;
+  padding-left: 2px;
+}
+
+.goodobsidian-calc-slider-bounds input[type="text"].goodobsidian-calc-number {
+  width: 52px;
 }
 
 .goodobsidian-calc-canvas {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 200px;
   overflow: hidden;
   border-radius: var(--gob-radius-m);
   box-shadow: inset 0 0 0 1px var(--gob-line);
@@ -10048,10 +10273,9 @@ button.clickable-icon.goodobsidian-calc-add:disabled {
   font-family: var(--font-interface);
 }
 
-button.clickable-icon.goodobsidian-calc-fit {
+button.clickable-icon.goodobsidian-calc-overlay {
   position: absolute;
   right: 6px;
-  bottom: 6px;
   width: 36px;
   height: 36px;
   padding: 0;
@@ -10059,4 +10283,56 @@ button.clickable-icon.goodobsidian-calc-fit {
   background: var(--gob-pop-bg);
   box-shadow: var(--gob-shadow-raised);
   color: var(--gob-icon);
+}
+
+button.clickable-icon.goodobsidian-calc-overlay.is-view {
+  top: 6px;
+}
+
+button.clickable-icon.goodobsidian-calc-overlay.is-fit {
+  bottom: 6px;
+}
+
+.goodobsidian-calc-view {
+  position: absolute;
+  top: 48px;
+  right: 6px;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-float);
+}
+
+.goodobsidian-calc-view.is-hidden {
+  display: none;
+}
+
+.goodobsidian-calc-range {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 6px 12px;
+}
+
+.goodobsidian-calc-range .goodobsidian-calc-field > span {
+  min-width: 38px;
+}
+
+button.clickable-icon.goodobsidian-calc-apply {
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+  font-size: 12px;
+  font-weight: var(--font-semibold, 600);
+}
+
+button.clickable-icon.goodobsidian-calc-apply.is-error {
+  color: var(--text-error);
 }

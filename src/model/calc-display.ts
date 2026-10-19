@@ -10,13 +10,22 @@
  * plain text show.
  */
 
-import { type CalcNode, type NumberBase, PLACEHOLDER, parseExpression } from "./calculator";
+import {
+  ACTIVE_BOX,
+  CARET,
+  type CalcNode,
+  type NumberBase,
+  PLACEHOLDER,
+  parseExpression,
+} from "./calculator";
 
 export type MathBox =
   | { t: "row"; items: MathBox[] }
   | { t: "text"; s: string; role: "num" | "op" | "fn" | "var" }
-  /** An operand not typed yet. */
-  | { t: "slot" }
+  /** An operand not typed yet; `active` while the cursor is on it. */
+  | { t: "slot"; active?: true }
+  /** Where the next key types. */
+  | { t: "caret" }
   | { t: "frac"; num: MathBox; den: MathBox }
   | { t: "sup"; base: MathBox; exp: MathBox }
   | { t: "root"; body: MathBox; index?: MathBox }
@@ -84,6 +93,8 @@ function box(node: CalcNode): MathBox {
       return text(node.text ?? "", "num");
     case "name":
       if (node.name === PLACEHOLDER) return { t: "slot" };
+      if (node.name === ACTIVE_BOX) return { t: "slot", active: true };
+      if (node.name === CARET) return { t: "caret" };
       return text(NAMES[node.name] ?? node.name, node.name === "ans" ? "fn" : "var");
     case "neg":
       return row(text("−", "op"), box(node.a));
@@ -164,6 +175,12 @@ export function layoutExpression(
   options: { graph?: boolean } = {},
 ): MathBox | null {
   if (!expression.trim()) return null;
+  // A graph line's restriction, {0 < x < 5}, is shown as typed after its curve.
+  const brace = options.graph ? expression.indexOf("{") : -1;
+  if (brace > 0) {
+    const main = layoutExpression(expression.slice(0, brace), base, options);
+    return main ? row(main, text(` ${expression.slice(brace).trim()}`, "op")) : null;
+  }
   // A graph line: run-together letters (ax), and = or < at the top.
   const parse = options.graph
     ? { letters: true, relations: true }
@@ -187,7 +204,9 @@ export function boxText(b: MathBox): string {
     case "text":
       return b.s;
     case "slot":
-      return "□";
+      return b.active ? "■" : "□";
+    case "caret":
+      return "|";
     case "frac":
       return `[${boxText(b.num)}/${boxText(b.den)}]`;
     case "sup":

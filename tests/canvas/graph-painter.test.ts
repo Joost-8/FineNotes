@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { type GraphColors, paintGraph } from "../../src/canvas/graph-painter";
+import {
+  type GraphColors,
+  formatPi,
+  paintGraph,
+  paintGraphGeometry,
+  pointLabel,
+  preparedOf,
+  renderGraphSpec,
+} from "../../src/canvas/graph-painter";
+import type { LineGeometry } from "../../src/model/graph-sample";
 import { sampleCurve } from "../../src/model/graph";
 
 interface Call {
@@ -118,5 +127,144 @@ describe("paintGraph", () => {
     const { ctx, calls } = recorder();
     paintGraph(ctx, { x: 0, y: 0, w: 0, h: 10 }, RANGE, [], { colors: COLORS });
     expect(calls).toEqual([]);
+  });
+});
+
+describe("paintGraphGeometry and renderGraphSpec", () => {
+  const geometry = (extra: Partial<LineGeometry> = {}): LineGeometry => ({
+    id: "l1",
+    color: "#c74440",
+    dashed: false,
+    width: 2.25,
+    strokes: [[0, 0, 5, 5]],
+    fills: [],
+    dots: [],
+    ...extra,
+  });
+
+  it("fills regions lightly under dashed strokes, and draws dots, derivatives and tangents", () => {
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(
+      ctx,
+      FRAME,
+      RANGE,
+      [
+        geometry({
+          dashed: true,
+          fills: [[0, 0, 5, 0, 5, 5]],
+          dots: [1, 1, 2, 2],
+          derivative: [[0, 1, 1, 2]],
+          tangent: { stroke: [-10, -1, 10, 1], x: 0, y: 0, slope: 0.1 },
+          area: { fills: [[0, 0, 1, 1, 1, 0]], value: 0.5, from: 0, to: 1 },
+        }),
+      ],
+      { colors: COLORS },
+    );
+    const fills = calls.filter((c) => c.name === "fill");
+    expect(fills.some((c) => c.state.globalAlpha === 0.2)).toBe(true);
+    expect(fills.some((c) => c.state.globalAlpha === 0.3)).toBe(true);
+    const dashes = calls.filter((c) => c.name === "setLineDash").map((c) => c.args[0]);
+    expect(dashes).toContainEqual([7, 5]);
+    expect(dashes).toContainEqual([3, 4]);
+    expect(calls.filter((c) => c.name === "arc").length).toBeGreaterThanOrEqual(3);
+    expect(calls.some((c) => c.name === "fillText" && c.args[0] === "∫ = 0.5")).toBe(true);
+  });
+
+  it("says when an area does not converge", () => {
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(
+      ctx,
+      FRAME,
+      RANGE,
+      [geometry({ area: { fills: [[0, 0, 1, 1, 1, 0]], value: null, from: 0, to: 1 } })],
+      { colors: COLORS },
+    );
+    expect(calls.some((c) => c.name === "fillText" && c.args[0] === "∫ does not converge")).toBe(
+      true,
+    );
+  });
+
+  it("draws an implicit region through a small canvas, or as rectangles without one", () => {
+    const mask = { cols: 2, rows: 2, alpha: new Uint8Array([255, 0, 0, 255]) };
+    const puts: unknown[] = [];
+    const small = {
+      getContext: () => ({
+        createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+        putImageData: (image: { data: Uint8ClampedArray }) => puts.push(Array.from(image.data)),
+      }),
+    };
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(ctx, FRAME, RANGE, [geometry({ mask })], {
+      colors: COLORS,
+      makeCanvas: () => small as unknown as HTMLCanvasElement,
+    });
+    expect(calls.find((c) => c.name === "drawImage")?.args.slice(1)).toEqual([20, 30, 400, 200]);
+    expect((puts[0] as number[]).slice(0, 4)).toEqual([0xc7, 0x44, 0x40, 255]);
+    const plain = recorder();
+    paintGraphGeometry(plain.ctx, FRAME, RANGE, [geometry({ mask, color: "red" })], {
+      colors: COLORS,
+      makeCanvas: () => null,
+    });
+    expect(plain.calls.filter((c) => c.name === "rect").length).toBe(3);
+  });
+
+  it("draws points of interest, pins and π ticks", () => {
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(ctx, { x: 0, y: 0, w: 800, h: 400 }, RANGE, [], {
+      colors: COLORS,
+      piTicks: true,
+      pois: [{ x: 1, y: 1, kind: "root", lines: ["l1"] }],
+      pins: [{ x: 2, y: 1, color: "#00f", label: "(2, 1)" }],
+    });
+    const labels = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
+    expect(labels).toContain("π");
+    expect(labels).toContain("−2π");
+    expect(labels).toContain("(2, 1)");
+    expect(calls.filter((c) => c.name === "arc").length).toBe(2);
+  });
+
+  it("names multiples of π", () => {
+    expect(formatPi(0)).toBe("0");
+    expect(formatPi(Math.PI)).toBe("π");
+    expect(formatPi(-Math.PI)).toBe("−π");
+    expect(formatPi(Math.PI / 2)).toBe("π/2");
+    expect(formatPi((3 * Math.PI) / 4)).toBe("3π/4");
+    expect(formatPi(-2 * Math.PI)).toBe("−2π");
+    expect(formatPi(0.123 * Math.PI)).toBe("0.12π");
+  });
+
+  it("renders a whole spec, version 1 or 2, pins included, and caches its compilation", () => {
+    const { ctx, calls } = recorder();
+    const spec = {
+      ...RANGE,
+      expressions: [],
+      lines: [
+        { id: "a", text: "y = kx" },
+        { id: "b", text: "x^2+y^2<4", color: "#00ff00" },
+      ],
+      sliders: [{ name: "k", value: 0.5, min: 0, max: 1, step: 0.1 }],
+      pins: [
+        { line: "a", x: 2 },
+        { line: "nope", x: 1 },
+      ],
+      grid: false,
+    };
+    const geo = renderGraphSpec(ctx, FRAME, spec, { colors: COLORS, resolution: 2, unit: 1 });
+    expect(geo).toHaveLength(2);
+    expect(geo[1].mask).toBeDefined();
+    expect(calls.some((c) => c.name === "fillText" && c.args[0] === "(2, 1)")).toBe(true);
+    expect(preparedOf(spec)).toBe(preparedOf({ ...spec }));
+    const old = recorder();
+    expect(
+      renderGraphSpec(old.ctx, FRAME, { ...RANGE, expressions: ["sin(x)"] }, { colors: COLORS }),
+    ).toHaveLength(1);
+    expect(renderGraphSpec(old.ctx, { x: 0, y: 0, w: 0, h: 0 }, spec, { colors: COLORS })).toEqual(
+      [],
+    );
+  });
+
+  it("labels points briefly", () => {
+    expect(pointLabel(1.23456789, -0.000012)).toBe("(1.2346, −1.200e-5)");
+    expect(pointLabel(0, 2e7)).toBe("(0, 2.000e+7)");
   });
 });

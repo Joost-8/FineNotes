@@ -202,7 +202,8 @@ describe("differential: the engine against math.js", () => {
     expect(failures.slice(0, 10), `${failures.length} disagreements`).toEqual([]);
     // Not vacuous: most expressions have an answer to compare.
     expect(answered).toBeGreaterThan(2400);
-  });
+    // math.js on 64-digit BigNumbers is slow: 2 s alone, more under coverage.
+  }, 60_000);
 
   it.each([
     // Precedence and associativity, as math.js reads them.

@@ -852,6 +852,9 @@ type Token =
 const OPERATORS = "+-*/^(),!%√=°";
 /** Stands for an operand not typed yet, in the natural display (a box). */
 export const PLACEHOLDER = "▢";
+/** The typing cursor, and the box it is on, marked for the natural display only. */
+export const CARET = "‸";
+export const ACTIVE_BOX = "▣";
 
 /** Typographic forms (the keypad's, or a recogniser's) to the ones the tokenizer reads. */
 function normalise(source: string): string {
@@ -937,8 +940,8 @@ function tokenize(source: string, base: NumberBase, letters = false): Token[] {
       i++;
       continue;
     }
-    if (c === PLACEHOLDER) {
-      tokens.push({ kind: "name", name: PLACEHOLDER });
+    if (c === PLACEHOLDER || c === CARET || c === ACTIVE_BOX) {
+      tokens.push({ kind: "name", name: c });
       i++;
       continue;
     }
@@ -1289,6 +1292,8 @@ function lookup(name: string, env: Env): CalcValue {
     case "m":
       return env.memory;
     case PLACEHOLDER:
+    case CARET:
+    case ACTIVE_BOX:
       return fail("Syntax error");
   }
   return fail(`Unknown name: ${name}`);
@@ -1718,4 +1723,52 @@ export function deleteLast(expression: string): string {
     /(?:asin|acos|atan|sin|cos|tan|ln|log|sqrt|root|abs|round|mod|nCr|nPr)\($|Ans$/i.exec(trimmed);
   if (match) return trimmed.slice(0, match.index);
   return Array.from(trimmed).slice(0, -1).join("");
+}
+
+// --- For graphs -----------------------------------------------------------------
+
+/** A compiled expression of named variables (x, y, t, θ as `theta`, slider letters): NaN where undefined. */
+export type VarFn = (vars: Map<string, number>) => number;
+
+/** `node` as a float function of the variables in the map; constants π and e built in. */
+export function compileVars(node: CalcNode, angle: AngleMode): VarFn {
+  return compileNode(node, { angle, ans: 0, memory: 0 });
+}
+
+/** Names an expression reads, besides π, e and ∞ (a Σ or Π index is its own, not read). */
+export function namesIn(node: CalcNode): string[] {
+  const found = new Set<string>();
+  const walk = (n: CalcNode, bound: ReadonlySet<string>): void => {
+    switch (n.k) {
+      case "num":
+        return;
+      case "name":
+        if (!bound.has(n.name) && !["pi", "e", "inf"].includes(n.name)) found.add(n.name);
+        return;
+      case "neg":
+      case "post":
+        walk(n.a, bound);
+        return;
+      case "bin":
+      case "rel":
+        walk(n.a, bound);
+        walk(n.b, bound);
+        return;
+      case "call": {
+        const counted = (n.fn === "sum" || n.fn === "prod") && n.args.length === 4;
+        const index = counted && n.args[1].k === "name" ? n.args[1].name : null;
+        const calc = Object.prototype.hasOwnProperty.call(CALCULUS, n.fn);
+        n.args.forEach((arg, i) => {
+          if (index !== null && i === 1) return;
+          // d/dx, ∫, solve and lim bind x in their first input.
+          const inner = new Set(bound);
+          if (i === 0 && calc) inner.add(index ?? VARIABLE);
+          walk(arg, inner);
+        });
+        return;
+      }
+    }
+  };
+  walk(node, new Set());
+  return [...found];
 }

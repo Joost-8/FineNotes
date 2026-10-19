@@ -22,7 +22,7 @@ describe("calculator store", () => {
 
   it("keeps well-formed data and drops the rest", () => {
     const data = parseCalculatorData({
-      prefs: { angle: "rad", fractions: true, base: 16 },
+      prefs: { angle: "rad", fractions: true, base: 16, tab: "trig" },
       history: {
         "a.notebook.md": {
           entries: [
@@ -41,7 +41,7 @@ describe("calculator store", () => {
         toString: { entries: [{ expr: "1", result: "1" }], at: 1 },
       },
     });
-    expect(data.prefs).toEqual({ angle: "rad", fractions: true, base: 16 });
+    expect(data.prefs).toEqual({ angle: "rad", fractions: true, base: 16, tab: "trig" });
     expect(historyOf(data, "a.notebook.md")).toEqual([{ expr: "1+1", result: "2" }]);
     expect(data.history["c.md"].at).toBe(0);
     expect(historyOf(data, "b.md")).toEqual([]);
@@ -51,7 +51,9 @@ describe("calculator store", () => {
   });
 
   it("ignores bad switches", () => {
-    const data = parseCalculatorData({ prefs: { angle: "grad", fractions: 1, base: 3 } });
+    const data = parseCalculatorData({
+      prefs: { angle: "grad", fractions: 1, base: 3, tab: "graph" },
+    });
     expect(data.prefs).toEqual(DEFAULT_CALC_PREFS);
   });
 
