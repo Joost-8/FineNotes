@@ -18,11 +18,13 @@
 import { type App, Modal } from "obsidian";
 import { MAX_PAGE_TITLE_LENGTH, normalizePageTitle } from "../model/contents";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 export class ContentsTitleModal extends Modal {
   private readonly keyboard: DialogKeyboard;
   /** The title field, once open; and whether the user has typed in it. */
   private field: HTMLInputElement | null = null;
+  private fieldRow: HTMLElement | null = null;
   private typed = false;
 
   constructor(
@@ -68,6 +70,7 @@ export class ContentsTitleModal extends Modal {
     });
     field.value = this.current ?? "";
     this.field = field;
+    this.fieldRow = row;
     const count = row.createDiv({ cls: "goodobsidian-contents-count" });
     const updateCount = (): void => {
       count.setText(`${field.value.length}/${MAX_PAGE_TITLE_LENGTH}`);
@@ -108,19 +111,22 @@ export class ContentsTitleModal extends Modal {
   /**
    * A title read from the heading's ink, which arrives after the dialog
    * opens: it fills the field, selected so typing replaces it, unless the
-   * user has typed already or the dialog is renaming.
+   * user has typed already or the dialog is renaming. `fixes`: words the
+   * ink may say otherwise, offered under the field (spelling-row.ts).
    */
-  suggest(title: string): void {
+  suggest(title: string, fixes: readonly SpellingFix[] = []): void {
     const field = this.field;
     const text = normalizePageTitle(title);
     if (!field || this.typed || this.current !== undefined || text === undefined) return;
     field.value = text.slice(0, MAX_PAGE_TITLE_LENGTH);
     this.updateCount();
     field.select();
+    if (fixes.length > 0 && this.fieldRow) new SpellingRows(this.fieldRow, field, fixes);
   }
 
   override onClose(): void {
     this.field = null;
+    this.fieldRow = null;
     this.keyboard.end();
     this.contentEl.empty();
   }

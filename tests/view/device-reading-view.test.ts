@@ -58,6 +58,7 @@ function view(readPage: (strokes: unknown) => Promise<unknown>, guard: ReadingGu
     deviceRead: new Map<string, string>(),
     deviceBusy: false,
     checkedWords: new Map(),
+    pageReadings: new Map(),
     penIsDown: false,
     deviceTimer: 0,
     plugin: {

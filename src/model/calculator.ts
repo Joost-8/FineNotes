@@ -27,6 +27,8 @@
  * no NaN or Infinity ever leaves this module as a value.
  */
 
+import { derivative, integrate, solveIn, solveNear } from "./calculus";
+
 export type AngleMode = "deg" | "rad";
 export type NumberBase = 2 | 8 | 10 | 16;
 export const NUMBER_BASES: readonly NumberBase[] = [10, 16, 2, 8];
@@ -416,18 +418,112 @@ interface CalcFunction {
   min: number;
   max: number;
   apply: (args: CalcValue[], angle: AngleMode) => CalcValue;
+  /** The same in floats, for graphs and numerical calculus: NaN where it is undefined. */
+  float: (args: number[], angle: AngleMode) => number;
 }
 
 const HALF = rational(1n, 2n);
+const toRad = (x: number, angle: AngleMode): number => (angle === "deg" ? (x * Math.PI) / 180 : x);
+const fromRad = (x: number, angle: AngleMode): number =>
+  angle === "deg" ? (x * 180) / Math.PI : x;
+
+/** x^y in floats, real where an odd root makes it so ((−8)^(1/3) = −2). */
+function floatPower(x: number, y: number): number {
+  if (x >= 0 || Number.isInteger(y)) return Math.pow(x, y);
+  const q = 1 / y;
+  const k = Math.round(q);
+  if (Math.abs(q - k) < 1e-9 && k % 2 !== 0) return -Math.pow(-x, y);
+  return NaN;
+}
+
+function floatFactorial(n: number): number {
+  if (!Number.isInteger(n) || n < 0 || n > 170) return NaN;
+  let p = 1;
+  for (let i = 2; i <= n; i++) p *= i;
+  return p;
+}
+
+function floatPermutations(n: number, r: number, choose: boolean): number {
+  if (!Number.isInteger(n) || !Number.isInteger(r) || n < 0 || r < 0) return NaN;
+  if (r > n) return 0;
+  if (choose && n - r < r) r = n - r;
+  if (r > MAX_COMBINATION_STEPS) return NaN;
+  let p = 1;
+  for (let i = 0; i < r; i++) p *= choose ? (n - i) / (i + 1) : n - i;
+  return choose ? Math.round(p) : p;
+}
 
 const FUNCTIONS: ReadonlyMap<string, CalcFunction> = new Map<string, CalcFunction>([
-  ["sin", { label: "sin", min: 1, max: 1, apply: ([x], a) => trig("sin", x, a) }],
-  ["cos", { label: "cos", min: 1, max: 1, apply: ([x], a) => trig("cos", x, a) }],
-  ["tan", { label: "tan", min: 1, max: 1, apply: ([x], a) => trig("tan", x, a) }],
-  ["asin", { label: "asin", min: 1, max: 1, apply: ([x], a) => inverseTrig("sin", x, a) }],
-  ["acos", { label: "acos", min: 1, max: 1, apply: ([x], a) => inverseTrig("cos", x, a) }],
-  ["atan", { label: "atan", min: 1, max: 1, apply: ([x], a) => inverseTrig("tan", x, a) }],
-  ["ln", { label: "ln", min: 1, max: 1, apply: ([x]) => finite(naturalLog(x)) }],
+  [
+    "sin",
+    {
+      label: "sin",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => trig("sin", x, a),
+      float: ([x], a) => Math.sin(toRad(x, a)),
+    },
+  ],
+  [
+    "cos",
+    {
+      label: "cos",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => trig("cos", x, a),
+      float: ([x], a) => Math.cos(toRad(x, a)),
+    },
+  ],
+  [
+    "tan",
+    {
+      label: "tan",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => trig("tan", x, a),
+      float: ([x], a) => Math.tan(toRad(x, a)),
+    },
+  ],
+  [
+    "asin",
+    {
+      label: "asin",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => inverseTrig("sin", x, a),
+      float: ([x], a) => fromRad(Math.asin(x), a),
+    },
+  ],
+  [
+    "acos",
+    {
+      label: "acos",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => inverseTrig("cos", x, a),
+      float: ([x], a) => fromRad(Math.acos(x), a),
+    },
+  ],
+  [
+    "atan",
+    {
+      label: "atan",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => inverseTrig("tan", x, a),
+      float: ([x], a) => fromRad(Math.atan(x), a),
+    },
+  ],
+  [
+    "ln",
+    {
+      label: "ln",
+      min: 1,
+      max: 1,
+      apply: ([x]) => finite(naturalLog(x)),
+      float: ([x]) => Math.log(x),
+    },
+  ],
   [
     "log",
     {
@@ -435,10 +531,23 @@ const FUNCTIONS: ReadonlyMap<string, CalcFunction> = new Map<string, CalcFunctio
       min: 1,
       max: 2,
       apply: ([x, b]) => logarithm(x, b ?? rational(10n)),
+      float: ([x, b]) => (b === undefined ? Math.log10(x) : Math.log(x) / Math.log(b)),
     },
   ],
-  ["sqrt", { label: "√", min: 1, max: 1, apply: ([x]) => power(x, HALF) }],
-  ["root", { label: "root", min: 2, max: 2, apply: ([x, n]) => power(x, divide(ONE, n)) }],
+  [
+    "sqrt",
+    { label: "√", min: 1, max: 1, apply: ([x]) => power(x, HALF), float: ([x]) => Math.sqrt(x) },
+  ],
+  [
+    "root",
+    {
+      label: "root",
+      min: 2,
+      max: 2,
+      apply: ([x, n]) => power(x, divide(ONE, n)),
+      float: ([x, n]) => floatPower(x, 1 / n),
+    },
+  ],
   [
     "abs",
     {
@@ -446,31 +555,94 @@ const FUNCTIONS: ReadonlyMap<string, CalcFunction> = new Map<string, CalcFunctio
       min: 1,
       max: 1,
       apply: ([x]) => (sign(x) < 0 ? negate(x) : x),
+      float: ([x]) => Math.abs(x),
     },
   ],
-  ["round", { label: "round", min: 1, max: 2, apply: ([x, p]) => roundTo(x, p ?? ZERO) }],
-  ["mod", { label: "mod", min: 2, max: 2, apply: ([a, b]) => modulo(a, b) }],
-  ["ncr", { label: "nCr", min: 2, max: 2, apply: ([n, r]) => permutations(n, r, true) }],
-  ["npr", { label: "nPr", min: 2, max: 2, apply: ([n, r]) => permutations(n, r, false) }],
+  [
+    "round",
+    {
+      label: "round",
+      min: 1,
+      max: 2,
+      apply: ([x, p]) => roundTo(x, p ?? ZERO),
+      float: ([x, p]) => {
+        const scale = 10 ** (p ?? 0);
+        return (Math.sign(x) * Math.round(Math.abs(x) * scale)) / scale;
+      },
+    },
+  ],
+  [
+    "mod",
+    {
+      label: "mod",
+      min: 2,
+      max: 2,
+      apply: ([a, b]) => modulo(a, b),
+      float: ([a, b]) => a - b * Math.floor(a / b),
+    },
+  ],
+  [
+    "ncr",
+    {
+      label: "nCr",
+      min: 2,
+      max: 2,
+      apply: ([n, r]) => permutations(n, r, true),
+      float: ([n, r]) => floatPermutations(n, r, true),
+    },
+  ],
+  [
+    "npr",
+    {
+      label: "nPr",
+      min: 2,
+      max: 2,
+      apply: ([n, r]) => permutations(n, r, false),
+      float: ([n, r]) => floatPermutations(n, r, false),
+    },
+  ],
 ]);
+
+/** The calculus functions take an expression in a variable, so they see their first argument unevaluated. */
+const CALCULUS: Readonly<Record<string, { label: string; min: number; max: number }>> = {
+  deriv: { label: "d/dx", min: 2, max: 2 },
+  integral: { label: "∫", min: 3, max: 3 },
+  sum: { label: "Σ", min: 3, max: 4 },
+  solve: { label: "solve", min: 2, max: 3 },
+};
 
 const ALIASES: Readonly<Record<string, string>> = {
   arcsin: "asin",
   arccos: "acos",
   arctan: "atan",
   rnd: "round",
+  diff: "deriv",
+  int: "integral",
 };
+
+/** The variable of graphs and of d/dx, ∫ and solve. */
+export const VARIABLE = "x";
+/** Most terms Σ adds: exactly up to {@link SUM_EXACT_TERMS}, in floats beyond. */
+const SUM_MAX_TERMS = 1_000_000;
+const SUM_EXACT_TERMS = 2000;
 
 // --- Tokens -------------------------------------------------------------------
 
 type Token =
-  { kind: "num"; value: CalcValue } | { kind: "name"; name: string } | { kind: "op"; op: string };
+  | { kind: "num"; value: CalcValue; text: string }
+  | { kind: "name"; name: string }
+  | { kind: "op"; op: string };
 
 const OPERATORS = "+-*/^(),!%√";
+/** Stands for an operand not typed yet, in the natural display (a box). */
+export const PLACEHOLDER = "▢";
 
 /** Typographic forms (the keypad's, or a recogniser's) to the ones the tokenizer reads. */
 function normalise(source: string): string {
   return source
+    .replace(/d\/dx/g, " deriv")
+    .replace(/∫/g, " integral")
+    .replace(/[Σ∑]/g, " sum")
     .replace(/[×·∗⋅]/g, "*")
     .replace(/[÷∕]/g, "/")
     .replace(/[−–]/g, "-")
@@ -506,13 +678,21 @@ function tokenize(source: string, base: NumberBase): Token[] {
       i++;
       continue;
     }
+    if (c === PLACEHOLDER) {
+      tokens.push({ kind: "name", name: PLACEHOLDER });
+      i++;
+      continue;
+    }
     if (base === 10 && (isDigit(c) || (c === "." && isDigit(s[i + 1])))) {
       if (c === "0" && /[xbo]/.test(s[i + 1] ?? "") && isHexDigit(s[i + 2])) {
         const radix = s[i + 1] === "x" ? 16 : s[i + 1] === "b" ? 2 : 8;
+        const start = i;
         i += 2;
-        tokens.push({ kind: "num", value: baseLiteral(readWhile(isHexDigit), radix) });
+        const value = baseLiteral(readWhile(isHexDigit), radix);
+        tokens.push({ kind: "num", value, text: s.slice(start, i) });
         continue;
       }
+      const start = i;
       const int = readWhile(isDigit);
       let frac = "";
       if (s[i] === ".") {
@@ -528,18 +708,18 @@ function tokenize(source: string, base: NumberBase): Token[] {
         if (negative) exp = -exp;
       }
       if (s[i] === ".") fail("Syntax error");
-      tokens.push({ kind: "num", value: decimalLiteral(int, frac, exp) });
+      tokens.push({ kind: "num", value: decimalLiteral(int, frac, exp), text: s.slice(start, i) });
       continue;
     }
     if (base !== 10 && isDigit(c)) {
       const digits = readWhile(base === 16 ? isHexDigit : isDigit);
-      tokens.push({ kind: "num", value: baseLiteral(digits, base) });
+      tokens.push({ kind: "num", value: baseLiteral(digits, base), text: digits.toUpperCase() });
       continue;
     }
     if (isLetter(c)) {
       const word = readWhile(isLetter);
       if (base === 16 && /^[0-9A-Fa-f]+$/.test(word)) {
-        tokens.push({ kind: "num", value: baseLiteral(word, 16) });
+        tokens.push({ kind: "num", value: baseLiteral(word, 16), text: word.toUpperCase() });
       } else {
         tokens.push({ kind: "name", name: word.toLowerCase() });
       }
@@ -567,23 +747,29 @@ function baseLiteral(digits: string, radix: number): CalcValue {
   return rational(n);
 }
 
-// --- Parser -------------------------------------------------------------------
+// --- Syntax tree --------------------------------------------------------------
+
+/** A parsed expression, evaluated as many times as needed (graphs, calculus). */
+export type CalcNode =
+  | { k: "num"; v: CalcValue; text?: string }
+  | { k: "name"; name: string }
+  | { k: "neg"; a: CalcNode }
+  | { k: "bin"; op: "+" | "-" | "*" | "/" | "^"; a: CalcNode; b: CalcNode; implicit?: true }
+  | { k: "post"; op: "!" | "%"; a: CalcNode }
+  | { k: "call"; fn: string; args: CalcNode[]; bracketed: boolean };
 
 class Parser {
   private i = 0;
   private depth = 0;
 
-  constructor(
-    private readonly tokens: readonly Token[],
-    private readonly ctx: Required<EvalContext>,
-  ) {}
+  constructor(private readonly tokens: readonly Token[]) {}
 
-  parse(): CalcValue {
+  parse(): CalcNode {
     if (this.tokens.length === 0) fail("Nothing to calculate");
-    const value = this.expression();
+    const node = this.expression();
     const left = this.tokens[this.i];
     if (left) fail(left.kind === "op" && left.op === ")" ? "Missing bracket" : "Syntax error");
-    return value;
+    return node;
   }
 
   private peekOp(): string | null {
@@ -595,16 +781,15 @@ class Parser {
     if (++this.depth > MAX_DEPTH) fail("Too complex");
   }
 
-  private expression(): CalcValue {
+  private expression(): CalcNode {
     this.enter();
-    let value = this.term();
+    let node = this.term();
     for (let op = this.peekOp(); op === "+" || op === "-"; op = this.peekOp()) {
       this.i++;
-      const right = this.term();
-      value = op === "+" ? add(value, right) : subtract(value, right);
+      node = { k: "bin", op, a: node, b: this.term() };
     }
     this.depth--;
-    return value;
+    return node;
   }
 
   /** Whether the next token can start an operand, for implicit multiplication. */
@@ -614,51 +799,50 @@ class Parser {
     return t.kind !== "op" || t.op === "(" || t.op === "√";
   }
 
-  private term(): CalcValue {
-    let value = this.unary();
+  private term(): CalcNode {
+    let node = this.unary();
     for (;;) {
       const op = this.peekOp();
       if (op === "*" || op === "/") {
         this.i++;
-        const right = this.unary();
-        value = op === "*" ? multiply(value, right) : divide(value, right);
+        node = { k: "bin", op, a: node, b: this.unary() };
       } else if (this.startsOperand()) {
-        value = multiply(value, this.power());
+        node = { k: "bin", op: "*", a: node, b: this.power(), implicit: true };
       } else {
-        return value;
+        return node;
       }
     }
   }
 
-  private unary(): CalcValue {
+  private unary(): CalcNode {
     const op = this.peekOp();
     if (op === "-" || op === "+") {
       this.i++;
       this.enter();
-      const value = this.unary();
+      const a = this.unary();
       this.depth--;
-      return op === "-" ? negate(value) : value;
+      return op === "-" ? { k: "neg", a } : a;
     }
     return this.power();
   }
 
-  private power(): CalcValue {
+  private power(): CalcNode {
     const base = this.postfix();
     if (this.peekOp() !== "^") return base;
     this.i++;
     this.enter();
     const exponent = this.unary();
     this.depth--;
-    return power(base, exponent);
+    return { k: "bin", op: "^", a: base, b: exponent };
   }
 
-  private postfix(): CalcValue {
-    let value = this.primary();
+  private postfix(): CalcNode {
+    let node = this.primary();
     for (let op = this.peekOp(); op === "!" || op === "%"; op = this.peekOp()) {
       this.i++;
-      value = op === "!" ? factorial(value) : divide(value, rational(100n));
+      node = { k: "post", op, a: node };
     }
-    return value;
+    return node;
   }
 
   /** `)` closes; the end of the input closes too (brackets left open are forgiven). */
@@ -667,37 +851,31 @@ class Parser {
     else if (this.i < this.tokens.length) fail("Syntax error");
   }
 
-  private primary(): CalcValue {
+  private primary(): CalcNode {
     const t = this.tokens[this.i];
     if (!t) fail("Syntax error");
     this.i++;
-    if (t.kind === "num") return t.value;
+    if (t.kind === "num") return { k: "num", v: t.value, text: t.text };
     if (t.kind === "op") {
       if (t.op === "(") {
-        const value = this.expression();
+        const node = this.expression();
         this.close();
-        return value;
+        // A bracket the user wrote is kept, for the natural display.
+        return { k: "call", fn: "(", args: [node], bracketed: true };
       }
-      if (t.op === "√") return power(this.unary(), HALF);
+      if (t.op === "√") return { k: "call", fn: "sqrt", args: [this.unary()], bracketed: false };
       const after = this.tokens[this.i - 2];
       const empty = after?.kind === "op" && after.op === "(";
       fail(t.op === ")" && !empty ? "Missing bracket" : "Syntax error");
     }
     const name = ALIASES[t.name] ?? t.name;
-    switch (name) {
-      case "pi":
-        return Math.PI;
-      case "e":
-        return Math.E;
-      case "ans":
-        return this.ctx.ans;
-      case "m":
-        return this.ctx.memory;
-    }
     const fn = FUNCTIONS.get(name);
-    if (!fn) fail(`Unknown name: ${t.name}`);
-    const args: CalcValue[] = [];
+    const calculus = Object.prototype.hasOwnProperty.call(CALCULUS, name) ? CALCULUS[name] : null;
+    if (!fn && !calculus) return { k: "name", name };
+    const args: CalcNode[] = [];
+    let bracketed = false;
     if (this.peekOp() === "(") {
+      bracketed = true;
       this.i++;
       if (this.peekOp() !== ")") {
         args.push(this.expression());
@@ -710,12 +888,376 @@ class Parser {
     } else {
       args.push(this.unary());
     }
-    if (args.length < fn.min || args.length > fn.max) {
-      const count = fn.min === fn.max ? `${fn.min}` : `${fn.min} or ${fn.max}`;
-      fail(`${fn.label} takes ${count} number${fn.max === 1 ? "" : "s"}`);
+    const spec = fn ?? calculus!;
+    if (args.length < spec.min || args.length > spec.max) {
+      const count = spec.min === spec.max ? `${spec.min}` : `${spec.min} or ${spec.max}`;
+      fail(`${spec.label} takes ${count} input${spec.max === 1 ? "" : "s"}`);
     }
-    return fn.apply(args, this.ctx.angle);
+    return { k: "call", fn: name, args, bracketed };
   }
+}
+
+/** Parse `expression` into a tree; null with the error when it is not one. */
+export function parseExpression(
+  expression: string,
+  base: NumberBase = 10,
+): { ok: true; node: CalcNode } | { ok: false; error: string } {
+  try {
+    if (expression.length > MAX_LENGTH) fail("Too long");
+    return { ok: true, node: new Parser(tokenize(expression, base)).parse() };
+  } catch (error) {
+    if (error instanceof CalcError) return { ok: false, error: error.message };
+    if (error instanceof RangeError) return { ok: false, error: "Too large" };
+    throw error;
+  }
+}
+
+// --- Exact evaluation ---------------------------------------------------------
+
+interface Env {
+  angle: AngleMode;
+  ans: CalcValue;
+  memory: CalcValue;
+  /** Bound variables (x inside d/dx, Σ's index). */
+  vars: ReadonlyMap<string, CalcValue>;
+}
+
+function evalExact(node: CalcNode, env: Env): CalcValue {
+  switch (node.k) {
+    case "num":
+      return node.v;
+    case "name":
+      return lookup(node.name, env);
+    case "neg":
+      return negate(evalExact(node.a, env));
+    case "post": {
+      const a = evalExact(node.a, env);
+      return node.op === "!" ? factorial(a) : divide(a, rational(100n));
+    }
+    case "bin": {
+      const a = evalExact(node.a, env);
+      const b = evalExact(node.b, env);
+      switch (node.op) {
+        case "+":
+          return add(a, b);
+        case "-":
+          return subtract(a, b);
+        case "*":
+          return multiply(a, b);
+        case "/":
+          return divide(a, b);
+        default:
+          return power(a, b);
+      }
+    }
+    case "call": {
+      if (node.fn === "(") return evalExact(node.args[0], env);
+      const fn = FUNCTIONS.get(node.fn);
+      if (fn)
+        return fn.apply(
+          node.args.map((arg) => evalExact(arg, env)),
+          env.angle,
+        );
+      return calculus(node.fn, node.args, env);
+    }
+  }
+}
+
+function lookup(name: string, env: Env): CalcValue {
+  const bound = env.vars.get(name);
+  if (bound !== undefined) return bound;
+  switch (name) {
+    case "pi":
+      return Math.PI;
+    case "e":
+      return Math.E;
+    case "ans":
+      return env.ans;
+    case "m":
+      return env.memory;
+    case PLACEHOLDER:
+      return fail("Syntax error");
+  }
+  return fail(`Unknown name: ${name}`);
+}
+
+/** `node` as a real function of `variable`, every other name taken from `env`. */
+function realFunction(node: CalcNode, env: Env, variable: string): (x: number) => number {
+  const unknown = unknownName(node, new Set([...env.vars.keys(), variable]));
+  if (unknown !== null) fail(`Unknown name: ${unknown}`);
+  const vars = new Map<string, number>();
+  for (const [name, value] of env.vars) vars.set(name, toFloat(value));
+  const compiled = compileNode(node, {
+    angle: env.angle,
+    ans: toFloat(env.ans),
+    memory: toFloat(env.memory),
+  });
+  return (x) => {
+    vars.set(variable, x);
+    return compiled(vars);
+  };
+}
+
+function numeric(result: { ok: true; value: number } | { ok: false; error: string }): CalcValue {
+  if (!result.ok) fail(result.error);
+  return exactIfWhole(finite(result.value));
+}
+
+function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
+  const value = (node: CalcNode): number => toFloat(evalExact(node, env));
+  switch (name) {
+    case "deriv":
+      return numeric(derivative(realFunction(args[0], env, VARIABLE), value(args[1])));
+    case "integral":
+      return numeric(
+        integrate(realFunction(args[0], env, VARIABLE), value(args[1]), value(args[2])),
+      );
+    case "solve": {
+      const f = realFunction(args[0], env, VARIABLE);
+      return numeric(
+        args.length === 2
+          ? solveNear(f, value(args[1]))
+          : solveIn(f, value(args[1]), value(args[2])),
+      );
+    }
+    default:
+      return sumOver(args, env);
+  }
+}
+
+/** Σ(expr, i, a, b) or Σ(expr, a, b) in x: exact over a short range, floats over a long one. */
+function sumOver(args: CalcNode[], env: Env): CalcValue {
+  let variable = VARIABLE;
+  let bounds = args.slice(1);
+  if (args.length === 4) {
+    const index = args[1];
+    if (index.k !== "name" || index.name === PLACEHOLDER) fail("Σ needs a letter to count with");
+    variable = index.name;
+    bounds = args.slice(2);
+  }
+  const from = exactIfWhole(evalExact(bounds[0], env));
+  const to = exactIfWhole(evalExact(bounds[1], env));
+  if (!isInteger(from) || !isInteger(to)) fail("Σ counts in whole numbers");
+  if (to.n < from.n) return ZERO;
+  const terms = to.n - from.n + 1n;
+  if (terms > BigInt(SUM_MAX_TERMS)) fail("Too many terms");
+  if (terms <= BigInt(SUM_EXACT_TERMS)) {
+    let total: CalcValue = ZERO;
+    const vars = new Map(env.vars);
+    const inner: Env = { ...env, vars };
+    for (let i = from.n; i <= to.n; i++) {
+      vars.set(variable, rational(i));
+      total = add(total, evalExact(args[0], inner));
+    }
+    return total;
+  }
+  const f = realFunction(args[0], env, variable);
+  let total = 0;
+  let carry = 0;
+  for (let i = Number(from.n); i <= Number(to.n); i++) {
+    // Kahan summation: a million small terms keep their digits.
+    const y = f(i) - carry;
+    const t = total + y;
+    carry = t - total - y;
+    total = t;
+  }
+  return finite(total);
+}
+
+// --- Float evaluation (graphs, calculus) -------------------------------------
+
+interface FloatEnv {
+  angle: AngleMode;
+  ans: number;
+  memory: number;
+}
+
+type Compiled = (vars: Map<string, number>) => number;
+
+/** `node` as a fast float function of the bound variables: NaN where it is undefined. */
+function compileNode(node: CalcNode, env: FloatEnv): Compiled {
+  switch (node.k) {
+    case "num": {
+      const v = toFloat(node.v);
+      return () => v;
+    }
+    case "name": {
+      const { name } = node;
+      const constant =
+        name === "pi"
+          ? Math.PI
+          : name === "e"
+            ? Math.E
+            : name === "ans"
+              ? env.ans
+              : name === "m"
+                ? env.memory
+                : undefined;
+      return (vars) => vars.get(name) ?? constant ?? NaN;
+    }
+    case "neg": {
+      const a = compileNode(node.a, env);
+      return (vars) => -a(vars);
+    }
+    case "post": {
+      const a = compileNode(node.a, env);
+      return node.op === "!" ? (vars) => floatFactorial(a(vars)) : (vars) => a(vars) / 100;
+    }
+    case "bin": {
+      const a = compileNode(node.a, env);
+      const b = compileNode(node.b, env);
+      switch (node.op) {
+        case "+":
+          return (vars) => a(vars) + b(vars);
+        case "-":
+          return (vars) => a(vars) - b(vars);
+        case "*":
+          return (vars) => a(vars) * b(vars);
+        case "/":
+          return (vars) => a(vars) / b(vars);
+        default:
+          return (vars) => floatPower(a(vars), b(vars));
+      }
+    }
+    case "call": {
+      if (node.fn === "(") return compileNode(node.args[0], env);
+      const args = node.args.map((arg) => compileNode(arg, env));
+      const fn = FUNCTIONS.get(node.fn);
+      if (fn)
+        return (vars) =>
+          fn.float(
+            args.map((arg) => arg(vars)),
+            env.angle,
+          );
+      return compileCalculus(node, args);
+    }
+  }
+}
+
+function compileCalculus(node: Extract<CalcNode, { k: "call" }>, args: Compiled[]): Compiled {
+  const inner = args[0];
+  const bind =
+    (vars: Map<string, number>, variable: string) =>
+    (x: number): number => {
+      const scoped = new Map(vars);
+      scoped.set(variable, x);
+      return inner(scoped);
+    };
+  const value = (r: { ok: true; value: number } | { ok: false; error: string }): number =>
+    r.ok ? r.value : NaN;
+  switch (node.fn) {
+    case "deriv":
+      return (vars) => value(derivative(bind(vars, VARIABLE), args[1](vars)));
+    case "integral":
+      return (vars) => value(integrate(bind(vars, VARIABLE), args[1](vars), args[2](vars)));
+    case "solve":
+      return (vars) =>
+        value(
+          args.length === 2
+            ? solveNear(bind(vars, VARIABLE), args[1](vars))
+            : solveIn(bind(vars, VARIABLE), args[1](vars), args[2](vars)),
+        );
+    default: {
+      const index = node.args[1];
+      const variable = node.args.length === 4 && index.k === "name" ? index.name : VARIABLE;
+      const [from, to] = node.args.length === 4 ? [args[2], args[3]] : [args[1], args[2]];
+      return (vars) => {
+        const a = from(vars);
+        const b = to(vars);
+        if (!Number.isInteger(a) || !Number.isInteger(b) || b - a > SUM_MAX_TERMS) return NaN;
+        const f = bind(vars, variable);
+        let total = 0;
+        for (let i = a; i <= b; i++) total += f(i);
+        return total;
+      };
+    }
+  }
+}
+
+/**
+ * `expression` as a real function of x, for a graph: "y = …" and "f(x) = …"
+ * are read as the right-hand side. The function returns NaN where it is
+ * undefined; it never throws.
+ */
+export function compileFunction(
+  expression: string,
+  ctx: { angle?: AngleMode; ans?: CalcValue; memory?: CalcValue } = {},
+): { ok: true; fn: (x: number) => number } | { ok: false; error: string } {
+  const rhs = expression.replace(/^\s*(?:y|[a-z]\s*\(\s*x\s*\))\s*=/i, "");
+  const parsed = parseExpression(rhs);
+  if (!parsed.ok) return parsed;
+  const compiled = compileNode(parsed.node, {
+    angle: ctx.angle ?? "rad",
+    ans: toFloat(ctx.ans ?? ZERO),
+    memory: toFloat(ctx.memory ?? ZERO),
+  });
+  const vars = new Map<string, number>();
+  const fn = (x: number): number => {
+    vars.set(VARIABLE, x);
+    return compiled(vars);
+  };
+  // An unknown name surfaces now, not as a blank graph.
+  const unknown = unknownName(parsed.node);
+  if (unknown !== null) return { ok: false, error: `Unknown name: ${unknown}` };
+  return { ok: true, fn };
+}
+
+/** A name in `node` that nothing defines (a bound index of Σ counts as defined inside it). */
+function unknownName(
+  node: CalcNode,
+  bound: ReadonlySet<string> = new Set([VARIABLE]),
+): string | null {
+  switch (node.k) {
+    case "num":
+      return null;
+    case "name":
+      return bound.has(node.name) || ["pi", "e", "ans", "m"].includes(node.name) ? null : node.name;
+    case "neg":
+    case "post":
+      return unknownName(node.a, bound);
+    case "bin":
+      return unknownName(node.a, bound) ?? unknownName(node.b, bound);
+    case "call": {
+      if (node.fn === "sum" && node.args.length === 4 && node.args[1].k === "name") {
+        const inner = new Set(bound).add(node.args[1].name);
+        return (
+          unknownName(node.args[0], inner) ??
+          unknownName(node.args[2], bound) ??
+          unknownName(node.args[3], bound)
+        );
+      }
+      for (const arg of node.args) {
+        const found = unknownName(arg, bound);
+        if (found !== null) return found;
+      }
+      return null;
+    }
+  }
+}
+
+/** Whether `expression` reads x outside a calculus function's own use of it: something to plot. */
+export function usesVariable(expression: string): boolean {
+  const parsed = parseExpression(expression);
+  if (!parsed.ok) return false;
+  const free = (node: CalcNode): boolean => {
+    switch (node.k) {
+      case "num":
+        return false;
+      case "name":
+        return node.name === VARIABLE;
+      case "neg":
+      case "post":
+        return free(node.a);
+      case "bin":
+        return free(node.a) || free(node.b);
+      case "call":
+        if (Object.prototype.hasOwnProperty.call(CALCULUS, node.fn)) {
+          return node.args.slice(1).some(free);
+        }
+        return node.args.some(free);
+    }
+  };
+  return free(parsed.node);
 }
 
 /**
@@ -723,16 +1265,15 @@ class Parser {
  * back as `{ ok: false, error }` with a short message for the display.
  */
 export function evaluate(expression: string, ctx: EvalContext = {}): EvalResult {
+  const parsed = parseExpression(expression, ctx.base ?? 10);
+  if (!parsed.ok) return parsed;
   try {
-    if (expression.length > MAX_LENGTH) fail("Too long");
-    const base = ctx.base ?? 10;
-    const full: Required<EvalContext> = {
+    let value = evalExact(parsed.node, {
       angle: ctx.angle ?? "deg",
-      base,
       ans: ctx.ans ?? ZERO,
       memory: ctx.memory ?? ZERO,
-    };
-    let value = new Parser(tokenize(expression, base), full).parse();
+      vars: new Map(),
+    });
     if (typeof value === "number") value = finite(value);
     return { ok: true, value };
   } catch (error) {
