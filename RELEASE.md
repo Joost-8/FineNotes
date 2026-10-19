@@ -67,6 +67,33 @@ touches `main`.
    Until then, never push `main` with the beta's `manifest.json`: that would
    update every user.
 
+## Grape bundle: the bridge, then the switch
+
+Grape (models/grape-1.0.bin, 3.5 MB) is downloaded on first use, but
+people who already have FineNotes must not have to download it. So it
+leaves `main.js` in two releases, from the same code:
+
+1. **The bridge release** (the next one after 2.3.0): `BUNDLE_GRAPE` in
+   `esbuild.config.mjs` is on (the default). The plugin still carries
+   Grape, and 8 s after the layout is ready it writes the bundled copy to
+   `<plugin>/handwriting/grape-1.0.bin`, verified against the pinned
+   SHA-256, when no verified file is there. No prompt; vault sync carries
+   the file to the user's other devices. `main.js` is about 6.7 MB.
+2. **The switch release**: set `BUNDLE_GRAPE` to `false` (one line). Only
+   do it once the bridge release has been out for a while (a month, or two
+   releases), so most users have opened the bridge build at least once.
+   `main.js` drops to about 2 MB. Before tagging, check the bundle:
+   `grep -c Rk5IV main.js` must print 0 (Grape's header in base64).
+
+Users who skip the bridge release, and fresh installs, see the download
+card once. `FINENOTES_BUNDLE_GRAPE=0 npm run build` builds the switch
+release's `main.js` locally for a test, without touching the constant.
+
+A newer Grape: publish it as a release asset on Joost-8/Grape, then pin it
+in `src/recognition/hwr/grape-model.ts` (version, URL, size, SHA-256). A
+format change also bumps `BUNDLE_FORMAT`; older files then read as "needs
+update".
+
 ## History
 
 FineNotes 1.0.0 (2026-09-26) is the root commit of this repository.
