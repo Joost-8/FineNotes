@@ -9148,10 +9148,6 @@ button.goodobsidian-gallery-back.clickable-icon {
   font-size: var(--font-ui-small);
 }
 
-.goodobsidian-gallery-fact {
-  display: contents;
-}
-
 .goodobsidian-gallery-fact-label {
   color: var(--text-muted);
 }

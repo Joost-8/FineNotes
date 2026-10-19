@@ -359,9 +359,11 @@ export class TemplateGalleryModal extends Modal {
     if (entry.description) about.createEl("p", { text: entry.description });
     const facts = about.createDiv({ cls: "goodobsidian-gallery-facts" });
     const fact = (label: string, value: string): void => {
-      const row = facts.createDiv({ cls: "goodobsidian-gallery-fact" });
-      row.createSpan({ cls: "goodobsidian-gallery-fact-label", text: label });
-      row.createSpan({ text: value });
+      // Label and value are the grid's own cells: a row wrapper would need
+      // `display: contents`, which the directory's review flags as only
+      // partly supported.
+      facts.createSpan({ cls: "goodobsidian-gallery-fact-label", text: label });
+      facts.createSpan({ text: value });
     };
     fact("Pages", String(entry.pages));
     if (entry.download) fact("Downloads", downloadsLabel(entry.downloads));
