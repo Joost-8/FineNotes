@@ -8,8 +8,10 @@
  *
  * One finger or a mouse drags the plot and lets it coast on release, with
  * the page scroll's own deceleration (`scroll-physics`), so both feel alike;
- * two fingers pinch it (each axis by its own spread, so a plot can be
- * stretched one way); the wheel zooms about the pointer. A tap on a curve
+ * two fingers pinch it about their midpoint, both axes alike, so the plot
+ * keeps its shape; the wheel zooms about the pointer. A pinch never ends in
+ * a coast: it ends with one finger still moving, and that finger's speed is
+ * not a fling (the page's own ledger entry, "Two animations behind one ||"). A tap on a curve
  * traces it there (the calculator's marker and coordinates), a tap beside
  * the curves lets it go; the Pencil traces as it moves, along the curve
  * nearest it.
@@ -40,8 +42,8 @@ export interface GraphExploreOptions {
   onClose: (view: GraphView | null) => void;
 }
 
-/** The fewest page px a spread of two fingers must have before it scales that axis. */
-const MIN_SPREAD = 24;
+/** Two fingers closer than this (CSS px) are too close to measure a pinch by. */
+const MIN_SPREAD_PX = 24;
 /** The plot is drawn at this share of full resolution while it moves. */
 const MOVING_RESOLUTION = 0.5;
 /** A press that moves less than this (CSS px) and lifts within TAP_MS is a tap. */
@@ -72,6 +74,8 @@ export class GraphExplorer {
   /** The press that may become a tap, in client px. */
   private tap: { id: number; x: number; y: number; t: number } | null = null;
   private readonly velocity = new VelocityTracker();
+  /** Two fingers have been down since the last time none was: no coast on release. */
+  private pinched = false;
   /** A pan coasting after release: client px per ms. */
   private coast: { vx: number; vy: number; last: number } | null = null;
   private frame = 0;
@@ -209,9 +213,10 @@ export class GraphExplorer {
       this.traceTo(p, Infinity);
       return;
     }
-    this.velocity.reset();
-    this.velocity.add(event.timeStamp, event.clientX, event.clientY);
     this.beginGesture();
+    if (this.gesture?.points.size === 1) {
+      this.velocity.add(event.timeStamp, event.clientX, event.clientY);
+    }
   };
 
   private readonly onMove = (event: PointerEvent): void => {
@@ -231,7 +236,11 @@ export class GraphExplorer {
       this.traceTo(p, Infinity);
       return;
     }
-    this.velocity.add(event.timeStamp, event.clientX, event.clientY);
+    // Only a one-finger pan's own finger says how fast the plot was thrown.
+    const g = this.gesture;
+    if (g && g.points.size === 1 && g.points.has(event.pointerId)) {
+      this.velocity.add(event.timeStamp, event.clientX, event.clientY);
+    }
     this.applyGesture();
   };
 
@@ -253,11 +262,12 @@ export class GraphExplorer {
       this.settle();
       return;
     }
-    const wasPan = this.gesture?.points.size === 1;
+    const wasPan = this.gesture?.points.size === 1 && !this.pinched;
+    const v = this.velocity.velocity(event.timeStamp);
     // The fingers left continue from where the view is now.
     this.beginGesture();
     if (this.gesture) return;
-    const v = this.velocity.velocity(event.timeStamp);
+    this.pinched = false;
     if (wasPan && Math.hypot(v.x, v.y) >= MIN_FLING_SPEED) {
       this.coast = { vx: v.x, vy: v.y, last: performance.now() };
       this.requestDraw();
@@ -270,7 +280,9 @@ export class GraphExplorer {
     if (!this.pointers.delete(event.pointerId)) return;
     this.tap = null;
     this.beginGesture();
-    if (!this.gesture) this.settle();
+    if (this.gesture) return;
+    this.pinched = false;
+    this.settle();
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -307,6 +319,9 @@ export class GraphExplorer {
     const points = new Map<number, { x: number; y: number }>();
     for (const [id, p] of this.pointers) if (p.type !== "pen") points.set(id, { x: p.x, y: p.y });
     this.gesture = points.size > 0 ? { view: this.view, points } : null;
+    if (points.size >= 2) this.pinched = true;
+    // A gesture that starts again starts its velocity again too.
+    this.velocity.reset();
   }
 
   private applyGesture(): void {
@@ -324,10 +339,9 @@ export class GraphExplorer {
       const [a, b] = now;
       const fromMid = { x: (a.from.x + b.from.x) / 2, y: (a.from.y + b.from.y) / 2 };
       const toMid = { x: (a.to.x + b.to.x) / 2, y: (a.to.y + b.to.y) / 2 };
-      const kx = spreadRatio(a.from.x, b.from.x, a.to.x, b.to.x);
-      const ky = spreadRatio(a.from.y, b.from.y, a.to.y, b.to.y);
+      const k = spreadRatio(a.from, b.from, a.to, b.to, MIN_SPREAD_PX / this.scale);
       // Zoom about where the fingers started, then carry that point to where they are.
-      view = zoomView(view, kx, ky, fromMid.x, fromMid.y, w, h);
+      view = zoomView(view, k, k, fromMid.x, fromMid.y, w, h);
       view = panView(view, toMid.x - fromMid.x, toMid.y - fromMid.y, w, h);
     } else {
       const { from, to } = now[0];
@@ -437,11 +451,17 @@ function barButton(
   return button;
 }
 
-/** How much two fingers' spread along one axis grew; 1 when they are too close on it to say. */
-function spreadRatio(a0: number, b0: number, a1: number, b1: number): number {
-  const before = Math.abs(a0 - b0);
-  const after = Math.abs(a1 - b1);
-  if (before < MIN_SPREAD || after < MIN_SPREAD) return 1;
+/** How much the distance between two fingers grew; 1 when they are too close (`least`) to say. */
+function spreadRatio(
+  a0: { x: number; y: number },
+  b0: { x: number; y: number },
+  a1: { x: number; y: number },
+  b1: { x: number; y: number },
+  least: number,
+): number {
+  const before = Math.hypot(a0.x - b0.x, a0.y - b0.y);
+  const after = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+  if (before < least || after < least) return 1;
   return after / before;
 }
 
