@@ -27,7 +27,7 @@
  * no NaN or Infinity ever leaves this module as a value.
  */
 
-import { derivative, integrate, solveIn, solveNear } from "./calculus";
+import { derivative, integrate, limit, solveIn, solveNear } from "./calculus";
 
 export type AngleMode = "deg" | "rad";
 export type NumberBase = 2 | 8 | 10 | 16;
@@ -603,12 +603,224 @@ const FUNCTIONS: ReadonlyMap<string, CalcFunction> = new Map<string, CalcFunctio
   ],
 ]);
 
+/** A whole number for the bitwise functions, or a clear refusal. */
+function wholeNumber(value: CalcValue): bigint {
+  const v = exactIfWhole(value);
+  if (!isInteger(v)) fail("Whole numbers only");
+  return v.n;
+}
+
+/** 1 / f(x), "Undefined" where f is 0 (sec 90°). */
+function reciprocal(value: CalcValue): CalcValue {
+  if (sign(value) === 0) fail("Undefined");
+  return divide(ONE, value);
+}
+
+const hyperbolic =
+  (f: (x: number) => number): CalcFunction["apply"] =>
+  ([x]) =>
+    sign(x) === 0 && f(0) === 0 ? ZERO : finite(f(toFloat(x)));
+
+/** Shifts stop here: a bigint of more bits than the engine keeps is no use to anyone. */
+const MAX_SHIFT = 4096;
+
+const MORE_FUNCTIONS: Array<[string, CalcFunction]> = [
+  [
+    "sinh",
+    { label: "sinh", min: 1, max: 1, apply: hyperbolic(Math.sinh), float: ([x]) => Math.sinh(x) },
+  ],
+  [
+    "cosh",
+    {
+      label: "cosh",
+      min: 1,
+      max: 1,
+      apply: ([x]) => finite(Math.cosh(toFloat(x))),
+      float: ([x]) => Math.cosh(x),
+    },
+  ],
+  [
+    "tanh",
+    { label: "tanh", min: 1, max: 1, apply: hyperbolic(Math.tanh), float: ([x]) => Math.tanh(x) },
+  ],
+  [
+    "asinh",
+    {
+      label: "asinh",
+      min: 1,
+      max: 1,
+      apply: hyperbolic(Math.asinh),
+      float: ([x]) => Math.asinh(x),
+    },
+  ],
+  [
+    "acosh",
+    {
+      label: "acosh",
+      min: 1,
+      max: 1,
+      apply: ([x]) => finite(Math.acosh(toFloat(x))),
+      float: ([x]) => Math.acosh(x),
+    },
+  ],
+  [
+    "atanh",
+    {
+      label: "atanh",
+      min: 1,
+      max: 1,
+      apply: hyperbolic(Math.atanh),
+      float: ([x]) => Math.atanh(x),
+    },
+  ],
+  [
+    "sec",
+    {
+      label: "sec",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => reciprocal(trig("cos", x, a)),
+      float: ([x], a) => 1 / Math.cos(toRad(x, a)),
+    },
+  ],
+  [
+    "csc",
+    {
+      label: "csc",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => reciprocal(trig("sin", x, a)),
+      float: ([x], a) => 1 / Math.sin(toRad(x, a)),
+    },
+  ],
+  [
+    "cot",
+    {
+      label: "cot",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => reciprocal(trig("tan", x, a)),
+      float: ([x], a) => 1 / Math.tan(toRad(x, a)),
+    },
+  ],
+  [
+    "asec",
+    {
+      label: "asec",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => inverseTrig("cos", reciprocal(x), a),
+      float: ([x], a) => fromRad(Math.acos(1 / x), a),
+    },
+  ],
+  [
+    "acsc",
+    {
+      label: "acsc",
+      min: 1,
+      max: 1,
+      apply: ([x], a) => inverseTrig("sin", reciprocal(x), a),
+      float: ([x], a) => fromRad(Math.asin(1 / x), a),
+    },
+  ],
+  [
+    "acot",
+    {
+      label: "acot",
+      min: 1,
+      max: 1,
+      apply: ([x], a) =>
+        sign(x) === 0
+          ? a === "deg"
+            ? rational(90n)
+            : Math.PI / 2
+          : inverseTrig("tan", reciprocal(x), a),
+      float: ([x], a) => fromRad(x === 0 ? Math.PI / 2 : Math.atan(1 / x), a),
+    },
+  ],
+  [
+    "and",
+    {
+      label: "AND",
+      min: 2,
+      max: 2,
+      apply: ([a, b]) => rational(wholeNumber(a) & wholeNumber(b)),
+      float: ([a, b]) =>
+        Number.isInteger(a) && Number.isInteger(b) ? Number(BigInt(a) & BigInt(b)) : NaN,
+    },
+  ],
+  [
+    "or",
+    {
+      label: "OR",
+      min: 2,
+      max: 2,
+      apply: ([a, b]) => rational(wholeNumber(a) | wholeNumber(b)),
+      float: ([a, b]) =>
+        Number.isInteger(a) && Number.isInteger(b) ? Number(BigInt(a) | BigInt(b)) : NaN,
+    },
+  ],
+  [
+    "xor",
+    {
+      label: "XOR",
+      min: 2,
+      max: 2,
+      apply: ([a, b]) => rational(wholeNumber(a) ^ wholeNumber(b)),
+      float: ([a, b]) =>
+        Number.isInteger(a) && Number.isInteger(b) ? Number(BigInt(a) ^ BigInt(b)) : NaN,
+    },
+  ],
+  [
+    "not",
+    {
+      label: "NOT",
+      min: 1,
+      max: 1,
+      apply: ([a]) => rational(-wholeNumber(a) - 1n),
+      float: ([a]) => (Number.isInteger(a) ? -a - 1 : NaN),
+    },
+  ],
+  [
+    "shl",
+    {
+      label: "<<",
+      min: 2,
+      max: 2,
+      apply: ([a, n]) => {
+        const k = wholeNumber(n);
+        if (k < 0n || k > BigInt(MAX_SHIFT)) fail("Shift by 0 to 4096");
+        return rational(wholeNumber(a) << k);
+      },
+      float: ([a, n]) => (Number.isInteger(a) && Number.isInteger(n) && n >= 0 ? a * 2 ** n : NaN),
+    },
+  ],
+  [
+    "shr",
+    {
+      label: ">>",
+      min: 2,
+      max: 2,
+      apply: ([a, n]) => {
+        const k = wholeNumber(n);
+        if (k < 0n || k > BigInt(MAX_SHIFT)) fail("Shift by 0 to 4096");
+        return rational(wholeNumber(a) >> k);
+      },
+      float: ([a, n]) =>
+        Number.isInteger(a) && Number.isInteger(n) && n >= 0 ? Math.floor(a / 2 ** n) : NaN,
+    },
+  ],
+];
+for (const [name, fn] of MORE_FUNCTIONS) (FUNCTIONS as Map<string, CalcFunction>).set(name, fn);
+
 /** The calculus functions take an expression in a variable, so they see their first argument unevaluated. */
 const CALCULUS: Readonly<Record<string, { label: string; min: number; max: number }>> = {
   deriv: { label: "d/dx", min: 2, max: 2 },
   integral: { label: "∫", min: 3, max: 3 },
   sum: { label: "Σ", min: 3, max: 4 },
+  prod: { label: "Π", min: 3, max: 4 },
   solve: { label: "solve", min: 2, max: 3 },
+  lim: { label: "lim", min: 2, max: 2 },
 };
 
 const ALIASES: Readonly<Record<string, string>> = {
@@ -618,6 +830,10 @@ const ALIASES: Readonly<Record<string, string>> = {
   rnd: "round",
   diff: "deriv",
   int: "integral",
+  product: "prod",
+  arcsinh: "asinh",
+  arccosh: "acosh",
+  arctanh: "atanh",
 };
 
 /** The variable of graphs and of d/dx, ∫ and solve. */
@@ -633,7 +849,7 @@ type Token =
   | { kind: "name"; name: string }
   | { kind: "op"; op: string };
 
-const OPERATORS = "+-*/^(),!%√";
+const OPERATORS = "+-*/^(),!%√=°";
 /** Stands for an operand not typed yet, in the natural display (a box). */
 export const PLACEHOLDER = "▢";
 
@@ -643,6 +859,11 @@ function normalise(source: string): string {
     .replace(/d\/dx/g, " deriv")
     .replace(/∫/g, " integral")
     .replace(/[Σ∑]/g, " sum")
+    .replace(/[Π∏]/g, " prod")
+    .replace(/θ/g, " theta ")
+    .replace(/∞/g, " inf ")
+    .replace(/[≤]/g, "<=")
+    .replace(/[≥]/g, ">=")
     .replace(/[×·∗⋅]/g, "*")
     .replace(/[÷∕]/g, "/")
     .replace(/[−–]/g, "-")
@@ -663,7 +884,45 @@ function decimalLiteral(int: string, frac: string, exp: number): CalcValue {
   return scale >= 0 ? rational(n * pow10(scale)) : rational(n, pow10(-scale));
 }
 
-function tokenize(source: string, base: NumberBase): Token[] {
+/** Every name a word can begin with, longest first, for splitting run-together letters (`sinx`, `ax`). */
+let knownNames: string[] | null = null;
+function namesLongestFirst(): string[] {
+  if (!knownNames) {
+    knownNames = [
+      ...FUNCTIONS.keys(),
+      ...Object.keys(CALCULUS),
+      ...Object.keys(ALIASES),
+      ...LETTER_CONSTANTS,
+    ].sort((a, b) => b.length - a.length);
+  }
+  return knownNames;
+}
+
+/** Constants a graph's letters may spell, besides single letters. */
+const LETTER_CONSTANTS = ["pi", "theta", "inf"];
+
+/**
+ * A run of letters as names, Desmos-style: a known function or constant
+ * where one starts, single letters (each a variable, multiplied) elsewhere.
+ * So `ax` is a·x and `sinx` is sin x.
+ */
+function splitLetters(word: string): string[] {
+  const out: string[] = [];
+  let rest = word.toLowerCase();
+  while (rest.length > 0) {
+    const name = namesLongestFirst().find((n) => n.length > 1 && rest.startsWith(n));
+    if (name) {
+      out.push(name);
+      rest = rest.slice(name.length);
+    } else {
+      out.push(rest[0]);
+      rest = rest.slice(1);
+    }
+  }
+  return out;
+}
+
+function tokenize(source: string, base: NumberBase, letters = false): Token[] {
   const s = normalise(source);
   const tokens: Token[] = [];
   let i = 0;
@@ -720,6 +979,8 @@ function tokenize(source: string, base: NumberBase): Token[] {
       const word = readWhile(isLetter);
       if (base === 16 && /^[0-9A-Fa-f]+$/.test(word)) {
         tokens.push({ kind: "num", value: baseLiteral(word, 16), text: word.toUpperCase() });
+      } else if (letters) {
+        for (const name of splitLetters(word)) tokens.push({ kind: "name", name });
       } else {
         tokens.push({ kind: "name", name: word.toLowerCase() });
       }
@@ -728,6 +989,12 @@ function tokenize(source: string, base: NumberBase): Token[] {
     if (OPERATORS.includes(c)) {
       tokens.push({ kind: "op", op: c });
       i++;
+      continue;
+    }
+    if (c === "<" || c === ">") {
+      const op = s[i + 1] === "=" ? `${c}=` : c;
+      tokens.push({ kind: "op", op });
+      i += op.length;
       continue;
     }
     fail(c === "." ? "Syntax error" : `Unknown sign: ${c}`);
@@ -754,19 +1021,34 @@ export type CalcNode =
   | { k: "num"; v: CalcValue; text?: string }
   | { k: "name"; name: string }
   | { k: "neg"; a: CalcNode }
-  | { k: "bin"; op: "+" | "-" | "*" | "/" | "^"; a: CalcNode; b: CalcNode; implicit?: true }
-  | { k: "post"; op: "!" | "%"; a: CalcNode }
+  | {
+      k: "bin";
+      op: "+" | "-" | "*" | "/" | "^" | "mod";
+      a: CalcNode;
+      b: CalcNode;
+      implicit?: true;
+    }
+  | { k: "post"; op: "!" | "%" | "°"; a: CalcNode }
+  /** An equation or inequality: only inside solve's first input, or at the top of a graph's line. */
+  | { k: "rel"; op: Relation; a: CalcNode; b: CalcNode }
   | { k: "call"; fn: string; args: CalcNode[]; bracketed: boolean };
+
+export type Relation = "=" | "<" | ">" | "<=" | ">=";
+const RELATIONS: readonly string[] = ["=", "<", ">", "<=", ">="];
 
 class Parser {
   private i = 0;
   private depth = 0;
 
-  constructor(private readonly tokens: readonly Token[]) {}
+  constructor(
+    private readonly tokens: readonly Token[],
+    /** A relation (=, <, …) is allowed at the top: a graph's line. */
+    private readonly relations = false,
+  ) {}
 
   parse(): CalcNode {
     if (this.tokens.length === 0) fail("Nothing to calculate");
-    const node = this.expression();
+    const node = this.relations ? this.relation() : this.expression();
     const left = this.tokens[this.i];
     if (left) fail(left.kind === "op" && left.op === ")" ? "Missing bracket" : "Syntax error");
     return node;
@@ -779,6 +1061,21 @@ class Parser {
 
   private enter(): void {
     if (++this.depth > MAX_DEPTH) fail("Too complex");
+  }
+
+  /** `a = b`, `a < b`, or a plain expression. */
+  private relation(): CalcNode {
+    const a = this.expression();
+    const op = this.peekOp();
+    if (op === null || !RELATIONS.includes(op)) return a;
+    this.i++;
+    return { k: "rel", op: op as Relation, a, b: this.expression() };
+  }
+
+  /** The name `mod` used between two operands (17 mod 5), not as mod(a, b). */
+  private atInfixMod(): boolean {
+    const t = this.tokens[this.i];
+    return t?.kind === "name" && t.name === "mod";
   }
 
   private expression(): CalcNode {
@@ -806,6 +1103,10 @@ class Parser {
       if (op === "*" || op === "/") {
         this.i++;
         node = { k: "bin", op, a: node, b: this.unary() };
+      } else if (this.atInfixMod()) {
+        // Same precedence as × and ÷, as math.js has it: 2 + 17 mod 5 × 2 = 2 + ((17 mod 5) × 2).
+        this.i++;
+        node = { k: "bin", op: "mod", a: node, b: this.unary() };
       } else if (this.startsOperand()) {
         node = { k: "bin", op: "*", a: node, b: this.power(), implicit: true };
       } else {
@@ -838,7 +1139,7 @@ class Parser {
 
   private postfix(): CalcNode {
     let node = this.primary();
-    for (let op = this.peekOp(); op === "!" || op === "%"; op = this.peekOp()) {
+    for (let op = this.peekOp(); op === "!" || op === "%" || op === "°"; op = this.peekOp()) {
       this.i++;
       node = { k: "post", op, a: node };
     }
@@ -878,7 +1179,7 @@ class Parser {
       bracketed = true;
       this.i++;
       if (this.peekOp() !== ")") {
-        args.push(this.expression());
+        args.push(name === "solve" ? this.relation() : this.expression());
         while (this.peekOp() === ",") {
           this.i++;
           args.push(this.expression());
@@ -893,6 +1194,9 @@ class Parser {
       const count = spec.min === spec.max ? `${spec.min}` : `${spec.min} or ${spec.max}`;
       fail(`${spec.label} takes ${count} input${spec.max === 1 ? "" : "s"}`);
     }
+    if (name === "solve" && args[0].k === "rel" && args[0].op !== "=")
+      fail("solve needs an equation");
+    for (const arg of args.slice(1)) if (arg.k === "rel") fail("Syntax error");
     return { k: "call", fn: name, args, bracketed };
   }
 }
@@ -901,10 +1205,12 @@ class Parser {
 export function parseExpression(
   expression: string,
   base: NumberBase = 10,
+  options: { letters?: boolean; relations?: boolean } = {},
 ): { ok: true; node: CalcNode } | { ok: false; error: string } {
   try {
     if (expression.length > MAX_LENGTH) fail("Too long");
-    return { ok: true, node: new Parser(tokenize(expression, base)).parse() };
+    const tokens = tokenize(expression, base, options.letters === true);
+    return { ok: true, node: new Parser(tokens, options.relations === true).parse() };
   } catch (error) {
     if (error instanceof CalcError) return { ok: false, error: error.message };
     if (error instanceof RangeError) return { ok: false, error: "Too large" };
@@ -932,12 +1238,17 @@ function evalExact(node: CalcNode, env: Env): CalcValue {
       return negate(evalExact(node.a, env));
     case "post": {
       const a = evalExact(node.a, env);
+      if (node.op === "°") return env.angle === "deg" ? a : multiply(a, Math.PI / 180);
       return node.op === "!" ? factorial(a) : divide(a, rational(100n));
     }
+    case "rel":
+      return fail("Syntax error");
     case "bin": {
       const a = evalExact(node.a, env);
       const b = evalExact(node.b, env);
       switch (node.op) {
+        case "mod":
+          return modulo(a, b);
         case "+":
           return add(a, b);
         case "-":
@@ -971,6 +1282,8 @@ function lookup(name: string, env: Env): CalcValue {
       return Math.PI;
     case "e":
       return Math.E;
+    case "inf":
+      return fail("∞ only as a limit's target");
     case "ans":
       return env.ans;
     case "m":
@@ -1003,9 +1316,24 @@ function numeric(result: { ok: true; value: number } | { ok: false; error: strin
   return exactIfWhole(finite(result.value));
 }
 
+/** An equation `a = b` as `a − b`, whose zero is its solution. */
+function difference(node: CalcNode): CalcNode {
+  return node.k === "rel" ? { k: "bin", op: "-", a: node.a, b: node.b } : node;
+}
+
 function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
   const value = (node: CalcNode): number => toFloat(evalExact(node, env));
   switch (name) {
+    case "lim": {
+      const target = args[1];
+      const to =
+        target.k === "name" && target.name === "inf"
+          ? Infinity
+          : target.k === "neg" && target.a.k === "name" && target.a.name === "inf"
+            ? -Infinity
+            : value(target);
+      return numeric(limit(realFunction(args[0], env, VARIABLE), to));
+    }
     case "deriv":
       return numeric(derivative(realFunction(args[0], env, VARIABLE), value(args[1])));
     case "integral":
@@ -1013,7 +1341,7 @@ function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
         integrate(realFunction(args[0], env, VARIABLE), value(args[1]), value(args[2])),
       );
     case "solve": {
-      const f = realFunction(args[0], env, VARIABLE);
+      const f = realFunction(difference(args[0]), env, VARIABLE);
       return numeric(
         args.length === 2
           ? solveNear(f, value(args[1]))
@@ -1021,37 +1349,45 @@ function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
       );
     }
     default:
-      return sumOver(args, env);
+      return sumOver(args, env, name === "prod");
   }
 }
 
-/** Σ(expr, i, a, b) or Σ(expr, a, b) in x: exact over a short range, floats over a long one. */
-function sumOver(args: CalcNode[], env: Env): CalcValue {
+/** Σ(expr, i, a, b) or Σ(expr, a, b) in x (Π likewise): exact over a short range, floats over a long one. */
+function sumOver(args: CalcNode[], env: Env, product = false): CalcValue {
+  const sym = product ? "Π" : "Σ";
   let variable = VARIABLE;
   let bounds = args.slice(1);
   if (args.length === 4) {
     const index = args[1];
-    if (index.k !== "name" || index.name === PLACEHOLDER) fail("Σ needs a letter to count with");
+    if (index.k !== "name" || index.name === PLACEHOLDER)
+      fail(`${sym} needs a letter to count with`);
     variable = index.name;
     bounds = args.slice(2);
   }
   const from = exactIfWhole(evalExact(bounds[0], env));
   const to = exactIfWhole(evalExact(bounds[1], env));
-  if (!isInteger(from) || !isInteger(to)) fail("Σ counts in whole numbers");
-  if (to.n < from.n) return ZERO;
+  if (!isInteger(from) || !isInteger(to)) fail(`${sym} counts in whole numbers`);
+  if (to.n < from.n) return product ? ONE : ZERO;
   const terms = to.n - from.n + 1n;
   if (terms > BigInt(SUM_MAX_TERMS)) fail("Too many terms");
   if (terms <= BigInt(SUM_EXACT_TERMS)) {
-    let total: CalcValue = ZERO;
+    let total: CalcValue = product ? ONE : ZERO;
     const vars = new Map(env.vars);
     const inner: Env = { ...env, vars };
     for (let i = from.n; i <= to.n; i++) {
       vars.set(variable, rational(i));
-      total = add(total, evalExact(args[0], inner));
+      const term = evalExact(args[0], inner);
+      total = product ? multiply(total, term) : add(total, term);
     }
     return total;
   }
   const f = realFunction(args[0], env, variable);
+  if (product) {
+    let total = 1;
+    for (let i = Number(from.n); i <= Number(to.n); i++) total *= f(i);
+    return finite(total);
+  }
   let total = 0;
   let carry = 0;
   for (let i = Number(from.n); i <= Number(to.n); i++) {
@@ -1088,11 +1424,13 @@ function compileNode(node: CalcNode, env: FloatEnv): Compiled {
           ? Math.PI
           : name === "e"
             ? Math.E
-            : name === "ans"
-              ? env.ans
-              : name === "m"
-                ? env.memory
-                : undefined;
+            : name === "inf"
+              ? Infinity
+              : name === "ans"
+                ? env.ans
+                : name === "m"
+                  ? env.memory
+                  : undefined;
       return (vars) => vars.get(name) ?? constant ?? NaN;
     }
     case "neg": {
@@ -1101,7 +1439,14 @@ function compileNode(node: CalcNode, env: FloatEnv): Compiled {
     }
     case "post": {
       const a = compileNode(node.a, env);
+      if (node.op === "°") return env.angle === "deg" ? a : (vars) => (a(vars) * Math.PI) / 180;
       return node.op === "!" ? (vars) => floatFactorial(a(vars)) : (vars) => a(vars) / 100;
+    }
+    case "rel": {
+      // A relation as a number: its difference (an equation's zero is its curve).
+      const a = compileNode(node.a, env);
+      const b = compileNode(node.b, env);
+      return (vars) => a(vars) - b(vars);
     }
     case "bin": {
       const a = compileNode(node.a, env);
@@ -1115,6 +1460,12 @@ function compileNode(node: CalcNode, env: FloatEnv): Compiled {
           return (vars) => a(vars) * b(vars);
         case "/":
           return (vars) => a(vars) / b(vars);
+        case "mod":
+          return (vars) => {
+            const x = a(vars);
+            const y = b(vars);
+            return y === 0 ? NaN : x - y * Math.floor(x / y);
+          };
         default:
           return (vars) => floatPower(a(vars), b(vars));
       }
@@ -1157,6 +1508,8 @@ function compileCalculus(node: Extract<CalcNode, { k: "call" }>, args: Compiled[
             ? solveNear(bind(vars, VARIABLE), args[1](vars))
             : solveIn(bind(vars, VARIABLE), args[1](vars), args[2](vars)),
         );
+    case "lim":
+      return (vars) => value(limit(bind(vars, VARIABLE), args[1](vars)));
     default: {
       const index = node.args[1];
       const variable = node.args.length === 4 && index.k === "name" ? index.name : VARIABLE;
@@ -1166,8 +1519,9 @@ function compileCalculus(node: Extract<CalcNode, { k: "call" }>, args: Compiled[
         const b = to(vars);
         if (!Number.isInteger(a) || !Number.isInteger(b) || b - a > SUM_MAX_TERMS) return NaN;
         const f = bind(vars, variable);
-        let total = 0;
-        for (let i = a; i <= b; i++) total += f(i);
+        const product = node.fn === "prod";
+        let total = product ? 1 : 0;
+        for (let i = a; i <= b; i++) total = product ? total * f(i) : total + f(i);
         return total;
       };
     }
@@ -1211,14 +1565,21 @@ function unknownName(
     case "num":
       return null;
     case "name":
-      return bound.has(node.name) || ["pi", "e", "ans", "m"].includes(node.name) ? null : node.name;
+      return bound.has(node.name) || ["pi", "e", "ans", "m", "inf"].includes(node.name)
+        ? null
+        : node.name;
     case "neg":
     case "post":
       return unknownName(node.a, bound);
     case "bin":
+    case "rel":
       return unknownName(node.a, bound) ?? unknownName(node.b, bound);
     case "call": {
-      if (node.fn === "sum" && node.args.length === 4 && node.args[1].k === "name") {
+      if (
+        (node.fn === "sum" || node.fn === "prod") &&
+        node.args.length === 4 &&
+        node.args[1].k === "name"
+      ) {
         const inner = new Set(bound).add(node.args[1].name);
         return (
           unknownName(node.args[0], inner) ??
@@ -1249,6 +1610,7 @@ export function usesVariable(expression: string): boolean {
       case "post":
         return free(node.a);
       case "bin":
+      case "rel":
         return free(node.a) || free(node.b);
       case "call":
         if (Object.prototype.hasOwnProperty.call(CALCULUS, node.fn)) {

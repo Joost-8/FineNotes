@@ -130,6 +130,9 @@ function generate(rand: () => number, depth: number, tame = false): Pair {
       return pick([
         // A dividend of at least 1: math.js snaps mod(1e-29, -2) to 1e-29 (pinned below).
         pair(`mod(abs(${t.ours})+1, ${b})`, `mod(abs(${t.theirs})+1, ${b})`),
+        // The operator form, with a dividend of either sign.
+        pair(`(abs(${t.ours})+1) mod ${b}`, `(abs(${t.theirs})+1) mod ${b}`),
+        pair(`(-abs(${t.ours})-1) mod ${b}`, `(-abs(${t.theirs})-1) mod ${b}`),
         pair(`round(${a.ours})`, `round(${a.theirs})`),
         pair(`round(${a.ours}, 2)`, `round(${a.theirs}, 2)`),
         pair(`root(abs(${a.ours}), ${-b})`, `nthRoot(abs(${a.theirs}), ${-b})`),
@@ -222,6 +225,13 @@ describe("differential: the engine against math.js", () => {
     ["mod(-7, 3)", "mod(-7, 3)"],
     ["mod(7, -3)", "mod(7, -3)"],
     ["mod(7.5, 2)", "mod(7.5, 2)"],
+    ["17 mod 5", "17 mod 5"],
+    ["-17 mod 5", "-17 mod 5"],
+    ["17 mod -5", "17 mod -5"],
+    ["-17 mod -5", "-17 mod -5"],
+    ["2+17 mod 5×2", "2+17 mod 5*2"],
+    ["10 mod 3 mod 2", "10 mod 3 mod 2"],
+    ["2^5 mod 7", "2^5 mod 7"],
     // Magnitudes.
     ["1E300×1E8", "1e300*1e8"],
     ["3E-300÷7", "3e-300/7"],

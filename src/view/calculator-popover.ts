@@ -871,7 +871,7 @@ function renderBox(parent: HTMLElement, box: MathBox): void {
     case "bigop": {
       const op = parent.createSpan({ cls: "gob-m-bigop" });
       const limits = op.createSpan({ cls: "gob-m-limits" });
-      renderBox(limits.createSpan({ cls: "gob-m-hi" }), box.hi);
+      if (box.hi) renderBox(limits.createSpan({ cls: "gob-m-hi" }), box.hi);
       limits.createSpan({ cls: "gob-m-sym", text: box.sym });
       renderBox(limits.createSpan({ cls: "gob-m-lo" }), box.lo);
       renderBox(op.createSpan({ cls: "gob-m-body" }), box.body);

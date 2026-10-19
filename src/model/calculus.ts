@@ -261,3 +261,66 @@ export function solveIn(f: Real, a: number, b: number): Numeric {
   const r = scan(f, a, b, 400) ?? newton(f, (a + b) / 2);
   return r !== null && r >= a && r <= b ? ok(snap(r)) : no("No root found in range");
 }
+
+// --- Limit --------------------------------------------------------------------
+
+/** The value at h = 0 of the polynomial through the points (h, v): Neville's algorithm. */
+function extrapolate(hs: readonly number[], vs: readonly number[]): number {
+  const p = [...vs];
+  for (let m = 1; m < p.length; m++) {
+    for (let i = 0; i < p.length - m; i++) {
+      p[i] = (hs[i + m] * p[i] - hs[i] * p[i + 1]) / (hs[i + m] - hs[i]);
+    }
+  }
+  return p[0];
+}
+
+/**
+ * The limit of v(h) as h → 0, from samples at h = 10⁻²…10⁻⁶ by default: Richardson's
+ * idea carried to a polynomial in h (Neville), checked by extrapolating
+ * again without the coarsest sample. Null when the two disagree (it does
+ * not settle); ±Infinity when the samples grow without bound.
+ */
+function sequenceLimit(
+  v: (h: number) => number,
+  hs: readonly number[] = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6],
+): number | null {
+  const vs = hs.map(v);
+  if (vs.some((x) => Number.isNaN(x))) return null;
+  const last = vs[vs.length - 1];
+  if (!Number.isFinite(last)) return last;
+  const grows = vs.every((x, i) => i === 0 || Math.abs(x) > 3 * Math.abs(vs[i - 1]));
+  if (grows && Math.abs(last) > 1e4) return Math.sign(last) * Infinity;
+  const all = extrapolate(hs, vs);
+  const fine = extrapolate(hs.slice(1), vs.slice(1));
+  const scale = Math.max(1, Math.abs(all));
+  return Math.abs(all - fine) <= 1e-7 * scale ? fine : null;
+}
+
+/**
+ * lim f(x) as x → a (a may be ±Infinity): both sides must settle on the same
+ * value. "Limit does not exist" when they do not, or keep moving; a limit
+ * that runs off to infinity says so.
+ */
+export function limit(f: Real, a: number): Numeric {
+  if (Number.isNaN(a)) return no("Not a real number");
+  if (!Number.isFinite(a)) {
+    // x up to 10⁵ only: (1 + 1/x)^x at 10⁶ has already lost 10 digits to rounding.
+    const l = sequenceLimit((h) => f(Math.sign(a) / h), [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]);
+    if (l === null) return no("Limit does not exist");
+    if (!Number.isFinite(l)) return no(l > 0 ? "Tends to ∞" : "Tends to −∞");
+    return ok(snap(l));
+  }
+  const scale = Math.max(1, Math.abs(a));
+  const right = sequenceLimit((h) => f(a + scale * h));
+  const left = sequenceLimit((h) => f(a - scale * h));
+  if (right === null || left === null) return no("Limit does not exist");
+  if (!Number.isFinite(right) || !Number.isFinite(left)) {
+    if (right === left) return no(right > 0 ? "Tends to ∞" : "Tends to −∞");
+    return no("Limit does not exist");
+  }
+  if (Math.abs(right - left) > 1e-6 * Math.max(1, Math.abs(right), Math.abs(left))) {
+    return no("Limit does not exist");
+  }
+  return ok(snap((right + left) / 2));
+}
