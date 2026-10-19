@@ -365,6 +365,8 @@ export interface TranscriptNoteInput {
   /** An embed of the audio file (`![[…]]` or `![](…)`), so it plays in the note. */
   audioEmbed: string;
   text: string;
+  /** How it was transcribed, as a sentence ("Transcribed on this device with Whisper base."); omitted when absent. */
+  via?: string;
 }
 
 /**
@@ -376,7 +378,7 @@ export function buildTranscriptNote(input: TranscriptNoteInput): string {
   return (
     `# ${input.title} — transcript\n\n` +
     `Recorded ${formatRecordingDate(input.start)} (${formatClock(input.duration)}) with ` +
-    `${input.notebookLink}.\n\n` +
+    `${input.notebookLink}.${input.via ? ` ${input.via}` : ""}\n\n` +
     `${input.audioEmbed}\n\n` +
     `${input.text.trim()}\n`
   );

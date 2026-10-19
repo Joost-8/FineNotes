@@ -14,3 +14,7 @@ tests/recognition/fixtures/hwr-golden.json
 # Promo videos and their working files (gitignored; not the plugin).
 content creation/
 marketing/
+
+# The speech runtime build (generated).
+scripts/whisper-runtime/.build/
+scripts/whisper-runtime/out/

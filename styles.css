@@ -6108,6 +6108,41 @@ input[type="range"].goodobsidian-player-scrubber {
   overflow-wrap: anywhere;
 }
 
+/* Transcribing on this device: the recording's progress, with Stop. */
+.goodobsidian-recordings-device {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-recordings-device-text {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The notice that follows an on-device transcription. */
+.goodobsidian-speech-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* On the notice's own colours, whatever the theme gives it. */
+.goodobsidian-speech-notice button.goodobsidian-speech-notice-stop.clickable-icon {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-ui-small);
+  opacity: 0.9;
+}
+
 .goodobsidian-recordings-empty {
   padding: 24px 0;
   color: var(--text-muted);

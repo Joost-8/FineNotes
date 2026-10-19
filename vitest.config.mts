@@ -125,6 +125,8 @@ export default defineConfig({
         "src/recognition/hwr/lines.ts",
         "src/recognition/hwr/recognizer.ts",
         "src/audio/recording.ts",
+        "src/audio/speech-chunks.ts",
+        "src/audio/speech-models.ts",
         "src/export/pdf-writer.ts",
         "src/export/pdf-composer.ts",
         "src/export/annotation-layers.ts",

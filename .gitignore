@@ -56,3 +56,7 @@ scripts/ui-gallery/pulled/
 
 # Scale benchmark bundle and generated stress files (npm run bench:scale)
 scripts/scale/out/
+
+# The speech runtime build (scripts/whisper-runtime/build.sh); published as a release asset.
+scripts/whisper-runtime/.build/
+scripts/whisper-runtime/out/

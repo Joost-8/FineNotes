@@ -281,6 +281,21 @@ describe("buildTranscriptNote", () => {
         "Good morning.\n\nToday: limits.\n",
     );
   });
+
+  it("says how it was transcribed after the link, when told", () => {
+    const note = buildTranscriptNote({
+      title: "R",
+      start: new Date(2026, 8, 22, 14, 5).getTime(),
+      duration: 1000,
+      notebookLink: "[[N]]",
+      audioEmbed: "![[R.m4a]]",
+      text: "[0:00] Hi.",
+      via: "Transcribed on this device with Whisper base.",
+    });
+    expect(note).toContain(
+      "with [[N]]. Transcribed on this device with Whisper base.\n\n![[R.m4a]]",
+    );
+  });
 });
 
 describe("concatChunks", () => {

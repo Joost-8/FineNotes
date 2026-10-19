@@ -129,6 +129,7 @@ import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
+import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
@@ -227,6 +228,16 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Models downloaded on first use, listed under Settings › Models (model-downloads.ts). */
   readonly models = new ModelRegistry(this.app, () => this.pluginDir);
 
+  /** Transcribing recordings on this device: one job at a time (device-transcriber.ts). */
+  readonly speech = new DeviceTranscriber({
+    app: this.app,
+    models: this.models,
+    speechSettings: () => ({
+      model: this.settings.speechModel,
+      language: this.settings.speechLanguage,
+    }),
+  });
+
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
 
@@ -305,6 +316,8 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
+    // The chosen speech model shows under Settings › Models from the start.
+    this.speech.store();
     await this.setUpKeyStore();
     // A pen picked just before the plugin stops is still kept.
     this.register(() => {
@@ -435,6 +448,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
+      this.speech.dispose();
       this.models.dispose();
     });
     // A release that still bundles Grape writes it to the handwriting folder,
@@ -696,6 +710,7 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   modelReleased(id: string): void {
     if (id === "grape") this.handwriting.dispose();
+    if (id.startsWith("whisper-")) this.speech.release();
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

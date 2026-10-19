@@ -13,7 +13,7 @@
  * Pencil's touchstart, and a Pencil tap then never becomes a click.
  */
 
-import { type App, FuzzySuggestModal, setIcon } from "obsidian";
+import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
 import { describeRecording, formatClock } from "../audio/recording";
 import type { Recording } from "../model/document";
 import { syncRangeFill } from "./range-fill";
@@ -333,12 +333,18 @@ export interface RecordingEntry {
   available: boolean;
   /** Whether its transcript note is (only then is there a Transcript button). */
   hasTranscript: boolean;
+  /** What an on-device transcription of it is doing now, when one runs. */
+  deviceStatus?: string;
 }
 
 export interface RecordingsActions {
   // Properties holding functions, not methods (CLAUDE.md: a callback is a value).
   play: (recording: Recording) => void;
   transcribe: (recording: Recording) => void;
+  /** Transcribe with the speech model on this device (no key, nothing sent). */
+  transcribeOnDevice: (recording: Recording) => void;
+  /** Stop the on-device transcription running now. */
+  stopDevice: () => void;
   openTranscript: (recording: Recording) => void;
   remove: (recording: Recording) => void;
   /** The Record / Stop button at the foot of the panel. Called inside the tap. */
@@ -392,16 +398,10 @@ export class RecordingsPanel {
 
   /** Redraw with the note's recordings as they are now (after an undo, say). */
   render(entries: readonly RecordingEntry[], transcribe: TranscribeState): void {
+    // Transcribing on this device needs no key, so nothing here needs setting
+    // up any more; the line stays for a future requirement.
     this.needsEl.empty();
-    this.needsEl.toggleClass("is-hidden", transcribe.enabled || entries.length === 0);
-    if (!transcribe.enabled && entries.length > 0) {
-      this.needsEl.createSpan({ text: `To transcribe recordings: ${transcribe.reason}. ` });
-      const link = this.needsEl.createEl("button", {
-        cls: "goodobsidian-recordings-needs-link clickable-icon",
-        text: "AI settings",
-      });
-      link.addEventListener("click", () => this.actions.openAiSettings());
-    }
+    this.needsEl.addClass("is-hidden");
     this.list.empty();
     if (entries.length === 0) {
       this.list.createDiv({
@@ -459,14 +459,43 @@ export class RecordingsPanel {
       });
     };
     act("play", "Play", "Play", () => this.actions.play(recording), entry.available);
-    if (canTranscribe) {
+    if (entry.deviceStatus !== undefined) {
+      const status = block.createDiv({ cls: "goodobsidian-recordings-device" });
+      status.createSpan({ cls: "goodobsidian-recordings-device-text", text: entry.deviceStatus });
+      act("square", "Stop transcribing", "Stop", () => this.actions.stopDevice(), true, status);
+    } else {
+      // On this device always works; with a key set up as well, ask which.
+      const label = entry.hasTranscript ? "Transcribe again" : "Transcribe";
       act(
         "file-text",
-        entry.hasTranscript ? "Transcribe again" : "Transcribe",
+        label,
         "Transcribe",
-        () => this.actions.transcribe(recording),
+        () => {
+          if (!canTranscribe) {
+            this.actions.transcribeOnDevice(recording);
+            return;
+          }
+          const menu = new Menu();
+          menu.addItem((item) =>
+            item
+              .setTitle("On this device")
+              .setIcon("audio-waveform")
+              .onClick(() => this.actions.transcribeOnDevice(recording)),
+          );
+          menu.addItem((item) =>
+            item
+              .setTitle("With your AI key")
+              .setIcon("cloud")
+              .onClick(() => this.actions.transcribe(recording)),
+          );
+          const button = block.querySelector<HTMLElement>(".goodobsidian-recordings-transcribe");
+          const rect = button?.getBoundingClientRect();
+          if (rect) menu.showAtPosition({ x: rect.left, y: rect.bottom });
+          else menu.showAtPosition({ x: 0, y: 0 });
+        },
         entry.available,
       );
+      row.lastElementChild?.addClass("goodobsidian-recordings-transcribe");
     }
     if (entry.hasTranscript) {
       act("external-link", "Open transcript", "Transcript", () =>

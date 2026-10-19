@@ -98,6 +98,8 @@ export type AiMenuId =
   | "practice"
   | "device-settings"
   | "transcribe-recording"
+  | "transcribe-device"
+  | "transcribe-device-cancel"
   | "ask"
   | "generate-image"
   | "settings";
@@ -145,6 +147,8 @@ export interface AiMenuContext {
   recordings?: number;
   /** The on-device reader; absent when it is switched off in the settings. */
   device?: DeviceReading;
+  /** Progress of an on-device transcription running now, 0..100; absent when none runs. */
+  transcribing?: number;
 }
 
 /**
@@ -233,7 +237,37 @@ function gate(base: Availability, contentOk: boolean, emptyReason: string): Avai
 
 /** The AI menu's entries, in order, with availability: the device's section, then the key's. */
 export function buildAiMenu(ctx: AiMenuContext): AiMenuItem[] {
-  return [...deviceItems(ctx), ...keyItems(ctx)];
+  return [...deviceItems(ctx), ...speechItems(ctx), ...keyItems(ctx)];
+}
+
+/**
+ * Transcribing a recording on this device: no key, so it sits in the
+ * device's section; while one runs, the entry cancels it.
+ */
+function speechItems(ctx: AiMenuContext): AiMenuItem[] {
+  if (ctx.transcribing !== undefined) {
+    return [
+      {
+        id: "transcribe-device-cancel",
+        label: `Stop transcribing · ${Math.round(ctx.transcribing)} %`,
+        icon: "square",
+        enabled: true,
+        reason: "Transcribing a recording on this device",
+        section: "device",
+      },
+    ];
+  }
+  if (ctx.recordings === undefined) return [];
+  return [
+    {
+      id: "transcribe-device",
+      label: "Transcribe on this device…",
+      icon: "audio-waveform",
+      enabled: ctx.recordings > 0,
+      reason: ctx.recordings > 0 ? "" : "No recordings in this note yet — tap the mic to record",
+      section: "device",
+    },
+  ];
 }
 
 /** The features that need the user's own AI key. */

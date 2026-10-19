@@ -1094,6 +1094,7 @@ export class InkView extends TextFileView {
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
+      transcribing: this.plugin.speech.running?.percent,
     });
     const setup = this.plugin.aiSetup();
     this.aiMenu = new AiMenuPopover(
@@ -1251,6 +1252,8 @@ export class InkView extends TextFileView {
       practice: () => void writePracticePage(this.plugin.learningHost()),
       "device-settings": () => this.plugin.openSettingsTab(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
+      "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),
+      "transcribe-device-cancel": () => this.plugin.speech.cancel(),
       ask: () => this.openAsk(),
       "generate-image": () => this.openGenerateImage(),
       settings: () => this.plugin.openSettingsTab(),

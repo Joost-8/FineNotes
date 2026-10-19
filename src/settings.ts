@@ -64,7 +64,8 @@ import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
-import { isBusy, stateText } from "./downloads/model-manifest";
+import { formatSize, isBusy, stateText, totalBytes } from "./downloads/model-manifest";
+import { SPEECH_LANGUAGES, speechAsset, speechModelsFor } from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import {
@@ -528,6 +529,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.pensGroup(),
       this.pagesGroup(),
       this.handwritingGroup(),
+      this.recordingsGroup(),
       this.modelsGroup(),
       this.aiGroup(),
       this.advancedGroup(),
@@ -573,6 +575,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
+    // A newly chosen speech model joins Models (registered) before the tab is rebuilt.
+    if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
     // Turned on: Grape is needed now, so offer it if it is not here.
     if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
@@ -977,6 +981,41 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         (setting) => this.drawLearning(setting),
         ["handwriting", "practice", "fine-tune", "personal", "recognition"],
         () => settings.handwritingOnDevice !== false,
+      ),
+    ]);
+  }
+
+  /**
+   * Transcribing recordings on this device: which speech model, and the
+   * language spoken. The model itself is listed under Models once chosen.
+   */
+  private recordingsGroup(): SettingDefinitionItem {
+    const mobile = Platform.isMobile;
+    const models: Record<string, string> = {};
+    for (const m of speechModelsFor(mobile)) {
+      models[m.id] = `${m.label} (${formatSize(totalBytes(speechAsset(m.id)))})`;
+    }
+    const languages: Record<string, string> = {};
+    for (const l of SPEECH_LANGUAGES) languages[l.code] = l.name;
+    return this.section("recordings", "Recordings", [
+      dropdown(
+        "speechModel",
+        "Speech model on this device",
+        "Transcribe on this device uses this model, downloaded the first time. Tiny is " +
+          "quickest; base is more accurate and the default." +
+          (mobile
+            ? " Small is offered on desktop only: it needs more memory than an iPad has to spare."
+            : " Small is the most accurate and about three times slower than base.") +
+          " For long lectures an AI key or your own server is faster.",
+        models,
+        ["audio", "speech", "whisper", "transcribe", "offline", "model"],
+      ),
+      dropdown(
+        "speechLanguage",
+        "Spoken language",
+        "Detect works for most recordings; choosing the language helps with short ones.",
+        languages,
+        ["audio", "speech", "language", "transcribe"],
       ),
     ]);
   }

@@ -210,6 +210,12 @@ export interface GoodObsidianSettings {
   /** Where the practice notebook was written. */
   practiceNotebookPath?: string;
 
+  // Transcribing recordings on this device (audio/speech-models.ts).
+  /** The speech model: "whisper-tiny", "whisper-base" or (not on mobile) "whisper-small". */
+  speechModel?: string;
+  /** The spoken language as an ISO 639-1 code, or "auto" to detect it. */
+  speechLanguage?: string;
+
   // Dark pages (#25): a view setting. What is stored never changes.
   /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */
   pageAppearance: PageAppearance;
@@ -308,6 +314,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   fingerTapUndo: true,
   handwritingOnDevice: true,
   checkHandwrittenWords: false,
+  speechModel: "whisper-base",
+  speechLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: false,
@@ -336,6 +344,7 @@ export const SETTINGS_SECTIONS = [
   "shortcuts",
   "pages",
   "handwriting",
+  "recordings",
   "models",
   "ai",
   "advanced",
@@ -507,6 +516,7 @@ export function changesTabLayout(key: string): boolean {
     key === "recognitionProviderId" ||
     key === "llmVendor" ||
     key === "imageVendor" ||
-    key === "pressureWidth"
+    key === "pressureWidth" ||
+    key === "speechModel"
   );
 }

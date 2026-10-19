@@ -253,6 +253,7 @@ const COMMUNITY = "Feedback and community";
 const WRITING = "Writing and tools";
 const PAGES = "Pages and notebooks";
 const HANDWRITING = "Handwriting";
+const RECORDINGS = "Recordings";
 const ADVANCED = "Advanced";
 const PENS = "Pens and shortcuts";
 
@@ -305,6 +306,8 @@ describe("the rows", () => {
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
       [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
       [HANDWRITING, "Learn my handwriting", "render"],
+      [RECORDINGS, "Speech model on this device", "dropdown:speechModel"],
+      [RECORDINGS, "Spoken language", "dropdown:speechLanguage"],
       [MODELS, "Grape (handwriting recognizer model)", "render"],
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
@@ -415,6 +418,15 @@ describe("the rows", () => {
         "underline",
       ],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
+      "Speech model on this device": [
+        "audio",
+        "speech",
+        "whisper",
+        "transcribe",
+        "offline",
+        "model",
+      ],
+      "Spoken language": ["audio", "speech", "language", "transcribe"],
       "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
@@ -539,6 +551,8 @@ describe("which rows show", () => {
       "Read handwriting on this device (beta)",
       "Underline words it may have misread (test)",
       "Learn my handwriting",
+      "Speech model on this device",
+      "Spoken language",
       "Grape (handwriting recognizer model)",
       "Set up an AI service",
       "Desynchronized canvas",
@@ -567,7 +581,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${37 + PEN_ROWS.length})`,
+      `(block ${39 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1263,6 +1277,7 @@ describe("folding sections", () => {
       [PENS, "goodobsidian-section is-folded"],
       [PAGES, "goodobsidian-section"],
       [HANDWRITING, "goodobsidian-section"],
+      [RECORDINGS, "goodobsidian-section"],
       [MODELS, "goodobsidian-section"],
       [AI, "goodobsidian-section"],
       [ADVANCED, "goodobsidian-section"],
@@ -1281,6 +1296,7 @@ describe("folding sections", () => {
         "writing",
         "pages",
         "handwriting",
+        "recordings",
         "models",
         "ai",
         "advanced",

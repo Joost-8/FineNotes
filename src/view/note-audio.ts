@@ -22,6 +22,10 @@
  *   consent-gated way audio leaves the device, into a note of its own in the
  *   note's transcript folder, or beside the audio file when none is set. The
  *   notebook's markdown is never touched.
+ * - **Transcribe on this device** through `plugin.speech` (device-transcriber.ts):
+ *   no key, nothing sent, the same transcript note with times. The job
+ *   belongs to the plugin, so it goes on when this note closes; the
+ *   recording is linked to its transcript only if the note is still open.
  */
 
 import { type App, Notice, Platform, type TFile, normalizePath } from "obsidian";
@@ -45,6 +49,8 @@ import type { InkDocument, Page, Recording, Stroke } from "../model/document";
 import { stripInkSuffix } from "../model/new-notebook";
 import { AddRecording, RemoveRecording, SetRecordingTranscript } from "../model/recording-commands";
 import { audioAvailability } from "../recognition/ai-menu-model";
+import { buildTimedTranscript } from "../audio/speech-chunks";
+import { speechModelInfo } from "../audio/speech-models";
 import { ConfirmModal } from "../ui/confirm-modal";
 import type GoodObsidianPlugin from "../main";
 import { AudioRecorder, type RecorderInterruption, type RecorderResult } from "./audio-recorder";
@@ -104,8 +110,11 @@ export class NoteAudio {
   private panel: RecordingsPanel | null = null;
   private transcribing = false;
   private alive = true;
+  private readonly unsubscribeSpeech: () => void;
 
-  constructor(private readonly host: NoteAudioHost) {}
+  constructor(private readonly host: NoteAudioHost) {
+    this.unsubscribeSpeech = host.plugin.speech.subscribe(() => this.syncChrome());
+  }
 
   /** Now, in wall-clock ms, on the clock strokes are stamped with. */
   now(): number {
@@ -369,6 +378,7 @@ export class NoteAudio {
   /** The view is closing. A recording still running is saved but can no longer join the note. */
   destroy(): void {
     this.alive = false;
+    this.unsubscribeSpeech();
     if (this.recorder) void this.stopRecording("closed");
     this.hidePill();
     this.closePlayer();
@@ -381,6 +391,8 @@ export class NoteAudio {
     this.panel = new RecordingsPanel(container, {
       play: (recording) => this.play(recording),
       transcribe: (recording) => void this.transcribe(recording),
+      transcribeOnDevice: (recording) => void this.transcribeOnDevice(recording),
+      stopDevice: () => this.host.plugin.speech.cancel(),
       openTranscript: (recording) => this.openTranscript(recording),
       remove: (recording) => this.remove(recording),
       record: () => this.toggleRecording(),
@@ -408,6 +420,7 @@ export class NoteAudio {
 
   private entries(): RecordingEntry[] {
     const vault = this.host.app.vault;
+    const job = this.host.plugin.speech.running;
     return [...this.recordings()]
       .sort((a, b) => b.start - a.start)
       .map((recording) => ({
@@ -415,6 +428,7 @@ export class NoteAudio {
         available: vault.getFileByPath(recording.path) !== null,
         hasTranscript:
           recording.transcript !== undefined && vault.getFileByPath(recording.transcript) !== null,
+        deviceStatus: job && job.path === recording.path ? job.status : undefined,
       }));
   }
 
@@ -536,6 +550,71 @@ export class NoteAudio {
     }).open();
   }
 
+  /** The AI menu's "Transcribe on this device…": the one there is, or a choice. */
+  transcribeOnDeviceFromMenu(): void {
+    const recordings = this.recordings();
+    if (recordings.length === 0) {
+      new Notice("FineNotes: this note has no recordings yet — tap the mic to record.");
+      return;
+    }
+    if (recordings.length === 1) {
+      void this.transcribeOnDevice(recordings[0]);
+      return;
+    }
+    new RecordingSuggestModal(this.host.app, recordings, (recording) => {
+      void this.transcribeOnDevice(recording);
+    }).open();
+  }
+
+  /**
+   * Transcribe a recording with the speech model on this device into a note
+   * of its own, with times. Where it goes is settled now, so the job can
+   * finish after this note has closed.
+   */
+  async transcribeOnDevice(recording: Recording): Promise<void> {
+    const { app, plugin } = this.host;
+    if (this.host.isLocked()) {
+      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      return;
+    }
+    const audio = app.vault.getFileByPath(recording.path);
+    if (!audio) {
+      new Notice(`FineNotes: the audio file is missing — ${recording.path}.`);
+      return;
+    }
+    if (recording.transcript && app.vault.getFileByPath(recording.transcript)) {
+      const again = await ConfirmModal.confirm(app, {
+        title: "Transcribe again?",
+        message:
+          "This recording already has a transcript. A new one is written as a separate " +
+          "note; the old one stays.",
+        cta: "Transcribe",
+      });
+      if (!again) return;
+    }
+    const note = this.host.file();
+    const folder = this.folderFor("transcripts");
+    const model = speechModelInfo(plugin.speech.modelId()).label;
+    await plugin.speech.start({
+      path: recording.path,
+      durationMs: recording.duration,
+      read: () => app.vault.readBinary(audio),
+      finish: async (segments, language) => {
+        const text = buildTimedTranscript(segments);
+        const named = language && language !== "auto" ? ` (${language})` : "";
+        const via = `Transcribed on this device with ${model}${named}.`;
+        const path = await this.writeTranscript(recording, audio, text, note, folder, via);
+        // Linked only while this note is open and still holds the recording.
+        const surface = this.alive ? this.host.surface() : null;
+        const held = surface?.document.recordings?.some((r) => sameRecording(r, recording));
+        if (surface && held && !this.host.isLocked()) {
+          surface.applyCommand(new SetRecordingTranscript(recording, path));
+        }
+        return path;
+      },
+    });
+  }
+
   /**
    * Transcribe a recording into a note of its own beside the audio, and
    * point the recording at it. Everything that can be refused is refused
@@ -591,7 +670,13 @@ export class NoteAudio {
         (message) => progress.setMessage(`FineNotes: ${message}`),
       );
       if (text === null) return; // They declined to send it.
-      const path = await this.writeTranscript(recording, audio, text);
+      const path = await this.writeTranscript(
+        recording,
+        audio,
+        text,
+        this.host.file(),
+        this.folderFor("transcripts"),
+      );
       const surface = this.alive ? this.host.surface() : null;
       if (surface && !this.host.isLocked()) {
         surface.applyCommand(new SetRecordingTranscript(recording, path));
@@ -606,16 +691,22 @@ export class NoteAudio {
   }
 
   /** Write the transcript note; returns its path. A name already taken gets ` 1`, ` 2` … */
-  private async writeTranscript(recording: Recording, audio: TFile, text: string): Promise<string> {
+  private async writeTranscript(
+    recording: Recording,
+    audio: TFile,
+    text: string,
+    note: TFile | null,
+    transcriptFolder: string | undefined,
+    via?: string,
+  ): Promise<string> {
     const { app } = this.host;
     const exists = (path: string): boolean => app.vault.getAbstractFileByPath(path) !== null;
-    let path = normalizePath(transcriptPathFor(audio.path, this.folderFor("transcripts")));
+    let path = normalizePath(transcriptPathFor(audio.path, transcriptFolder));
     const folder = parentFolder(path);
     if (folder && !app.vault.getFolderByPath(folder)) await app.vault.createFolder(folder);
     if (exists(path)) {
       path = normalizePath(availablePath(parentFolder(path), baseNameOf(path), "md", exists));
     }
-    const note = this.host.file();
     const notebookLink = note
       ? app.fileManager.generateMarkdownLink(note, path, undefined, stripInkSuffix(note.basename))
       : "its notebook";
@@ -626,6 +717,7 @@ export class NoteAudio {
       notebookLink,
       audioEmbed: `!${app.fileManager.generateMarkdownLink(audio, path)}`,
       text,
+      via,
     });
     const created = await app.vault.create(path, content);
     return created.path;

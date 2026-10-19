@@ -140,6 +140,24 @@ describe("buildAiMenu", () => {
     expect(none.enabled).toBe(false);
     expect(none.reason).toMatch(/^No recordings in this note yet/);
   });
+
+  it("offers 'Transcribe on this device…' with no key at all, in the device's section", () => {
+    expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-device");
+    const items = byId(buildAiMenu(context({ setup: setup(), recordings: 1 })));
+    expect(items["transcribe-device"]).toMatchObject({ enabled: true, section: "device" });
+    const none = byId(buildAiMenu(context({ recordings: 0 })))["transcribe-device"];
+    expect(none.enabled).toBe(false);
+    expect(none.reason).toMatch(/^No recordings/);
+  });
+
+  it("turns the entry into Stop while a transcription runs, even outside a note with recordings", () => {
+    const items = byId(buildAiMenu(context({ transcribing: 33.6 })));
+    expect(items["transcribe-device"]).toBeUndefined();
+    expect(items["transcribe-device-cancel"]).toMatchObject({
+      label: "Stop transcribing · 34 %",
+      enabled: true,
+    });
+  });
 });
 
 describe("the handwriting section, on this device", () => {
