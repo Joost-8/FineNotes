@@ -32,7 +32,10 @@ import {
   GRAPH_MIN_SIDE,
   GRAPH_MIN_SPAN,
   graphBounds,
+  GRAPH_COLORS,
   graphContentKey,
+  graphFromSpec,
+  specOfGraph,
   makeGraph,
   nextGraphId,
   normalizeGraph,
@@ -454,5 +457,52 @@ describe("saving and loading", () => {
     const g2 = sine();
     scaleGraph(g2, 0, 0, Number.NaN);
     expect(g2).toEqual(sine());
+  });
+});
+
+describe("graphFromSpec and specOfGraph", () => {
+  it("makes a graph from the calculator's spec, colouring in the palette's order", () => {
+    const graph = graphFromSpec("f3", 10, 20, {
+      expressions: ["y = sin(x)", "  ", "x^2"],
+      xRange: [-3, 3],
+      yRange: [-1, 9],
+      colors: ["#123456", "#abcdef", "not a colour"],
+    });
+    expect(graph.id).toBe("f3");
+    expect([graph.x, graph.y]).toEqual([10, 20]);
+    expect(graph.expressions).toEqual([
+      { text: "y = sin(x)", color: "#123456" },
+      { text: "x^2", color: GRAPH_COLORS[1] },
+    ]);
+    expect(graph.xRange).toEqual([-3, 3]);
+    expect(graph.yRange).toEqual([-1, 9]);
+  });
+
+  it("gives Edit back what the graph plots, and round-trips", () => {
+    const graph = sine();
+    const spec = specOfGraph(graph);
+    expect(spec).toEqual({
+      expressions: ["sin(x)"],
+      xRange: [-5, 5],
+      yRange: [-2, 2],
+      colors: ["#cc3333"],
+    });
+    // Edit keeps the frame; what comes back carries the same curves and view.
+    const back = graphFromSpec(graph.id, graph.x, graph.y, spec);
+    expect([back.expressions, back.xRange, back.yRange]).toEqual([
+      graph.expressions,
+      graph.xRange,
+      graph.yRange,
+    ]);
+  });
+
+  it("falls back to the default view for a range it cannot use", () => {
+    const graph = graphFromSpec("f1", 0, 0, {
+      expressions: ["x"],
+      xRange: [1, 1],
+      yRange: [0, Infinity],
+    });
+    expect(graph.xRange).toEqual([-10, 10]);
+    expect(graph.yRange).toEqual([-10, 10]);
   });
 });

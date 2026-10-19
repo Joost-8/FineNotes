@@ -121,6 +121,16 @@ import { AiMenuPopover } from "./ai-menu";
 import { CalculatorPopover } from "./calculator-popover";
 import { parseCalculatorData } from "../model/calculator-store";
 import { centredOrigin } from "../model/calculator-keys";
+import {
+  AddGraph,
+  EditGraph,
+  GRAPH_DEFAULT_H,
+  GRAPH_DEFAULT_W,
+  type GraphSpec,
+  graphFromSpec,
+  nextGraphId,
+} from "../model/graph-element";
+import type { GraphElement } from "../model/document";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
 import { AddTable } from "../model/table-commands";
@@ -1110,6 +1120,48 @@ export class InkView extends TextFileView {
         fit: true,
         text,
         ...style,
+      }),
+    );
+    this.requestSave();
+    return true;
+  }
+
+  /**
+   * A graph from the calculator, in the middle of what is in view of the
+   * current page, selected so its bar (Explore, Edit) is right there: one
+   * undo step.
+   */
+  insertGraph(spec: GraphSpec): boolean {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return false;
+    const index = surface.currentPage;
+    const page = surface.document.pages[index];
+    if (!page) return false;
+    const at = centredOrigin(
+      surface.visiblePageRect(index),
+      page.geometry,
+      GRAPH_DEFAULT_W,
+      GRAPH_DEFAULT_H,
+    );
+    const graph = graphFromSpec(nextGraphId(surface.document), at.x, at.y, spec);
+    if (graph.expressions.length === 0) return false;
+    surface.applyCommand(new AddGraph(page.id, graph));
+    surface.selectGraph(page.id, graph.id);
+    this.requestSave();
+    return true;
+  }
+
+  /** What Edit graph gave back for `graph`: its new expressions, colours and view, one undo step. */
+  applyGraphEdit(pageId: string, graph: GraphElement, spec: GraphSpec): boolean {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return false;
+    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec);
+    if (edited.expressions.length === 0) return false;
+    surface.applyCommand(
+      new EditGraph(pageId, graph, {
+        expressions: edited.expressions,
+        xRange: edited.xRange,
+        yRange: edited.yRange,
       }),
     );
     this.requestSave();

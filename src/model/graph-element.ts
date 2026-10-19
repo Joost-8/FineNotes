@@ -34,7 +34,7 @@ const GRAPH_MAX_ABS = 1e12;
 export const GRAPH_DEFAULT_W = 320;
 export const GRAPH_DEFAULT_H = 240;
 /** The colour an expression is drawn in when the file has none to give. */
-export const GRAPH_DEFAULT_COLOR = "#2f6fdf";
+export const GRAPH_DEFAULT_COLOR = "#2d70b3";
 /** The ranges a graph opens at when nothing better is known. */
 const DEFAULT_RANGE: readonly [number, number] = [-10, 10];
 
@@ -82,6 +82,52 @@ export function makeGraph(spec: NewGraph): GraphElement {
       yRange: readRange(spec.yRange),
     }
   );
+}
+
+/**
+ * What the calculator hands over to put a graph on a page: its expressions
+ * as typed (`y = …` or just `…`), the view, and optionally a colour for each
+ * expression (else the graph palette's, in order).
+ */
+export interface GraphSpec {
+  expressions: readonly string[];
+  xRange: readonly [number, number];
+  yRange: readonly [number, number];
+  colors?: readonly string[];
+}
+
+/** Curve colours when the calculator gives none: Desmos's order, so a graph reads the same in both. */
+export const GRAPH_COLORS: readonly string[] = [
+  "#c74440",
+  "#2d70b3",
+  "#388c46",
+  "#6042a6",
+  "#fa7e19",
+  "#000000",
+];
+
+/** A graph element at (x, y) from a calculator spec; blank expressions are left out. */
+export function graphFromSpec(id: string, x: number, y: number, spec: GraphSpec): GraphElement {
+  const expressions: GraphExpression[] = [];
+  spec.expressions.forEach((text, i) => {
+    if (typeof text !== "string" || text.trim().length === 0) return;
+    const color = spec.colors?.[i];
+    expressions.push({
+      text,
+      color: isHexColor(color) ? color : GRAPH_COLORS[expressions.length % GRAPH_COLORS.length],
+    });
+  });
+  return makeGraph({ id, x, y, expressions, xRange: spec.xRange, yRange: spec.yRange });
+}
+
+/** A graph as a calculator spec again, for Edit: what it plots, its view and its colours. */
+export function specOfGraph(graph: GraphElement): GraphSpec {
+  return {
+    expressions: graph.expressions.map((e) => e.text),
+    xRange: [graph.xRange[0], graph.xRange[1]],
+    yRange: [graph.yRange[0], graph.yRange[1]],
+    colors: graph.expressions.map((e) => e.color),
+  };
 }
 
 /** A graph id not yet used anywhere in `doc`: one above the highest `f<N>`. */

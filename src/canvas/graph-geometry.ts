@@ -92,40 +92,39 @@ export function frameY(map: FrameMap, y: number): number {
 
 /**
  * A row of samples (`ys[i]` at `xs[i]`; NaN or ±Infinity where undefined) as
- * polylines in frame px, flat `[x0, y0, x1, y1, …]`. A run breaks at an
- * undefined sample, and between two samples that leap from far above the
- * frame to far below it, or back (tan at π/2, 1/x at 0), which a straight
- * line would join across the whole frame. Points far outside are clamped a
- * frame height beyond the edge, so lines that leave the frame still do so
- * at the right angle and canvas never sees a huge coordinate.
+ * polylines in value space, flat `[x0, y0, x1, y1, …]`, the form the graph
+ * engine hands back. A run breaks at an undefined sample, and between two
+ * samples that leap from well above the view to well below it, or back (tan
+ * at π/2, 1/x at 0), which a straight line would join across the whole plot.
+ * A lone defined sample between gaps is dropped: it has no length to draw.
  */
-export function curveRuns(xs: ArrayLike<number>, ys: ArrayLike<number>, map: FrameMap): number[][] {
+export function valueRuns(
+  xs: ArrayLike<number>,
+  ys: ArrayLike<number>,
+  yRange: readonly [number, number],
+): number[][] {
   const runs: number[][] = [];
   let run: number[] = [];
-  let prevY = Number.NaN;
-  const limit = map.h * 2;
+  let prev = Number.NaN;
+  const span = yRange[1] - yRange[0];
+  const high = yRange[1] + span;
+  const low = yRange[0] - span;
   const n = Math.min(xs.length, ys.length);
   for (let i = 0; i < n; i++) {
     const y = ys[i];
     if (!Number.isFinite(y)) {
       if (run.length >= 4) runs.push(run);
       run = [];
-      prevY = Number.NaN;
+      prev = Number.NaN;
       continue;
     }
-    const fy = frameY(map, y);
-    if (run.length > 0 && leaps(prevY, fy, map.h)) {
+    if (run.length > 0 && ((prev > high && y < low) || (prev < low && y > high))) {
       if (run.length >= 4) runs.push(run);
       run = [];
     }
-    run.push(frameX(map, xs[i]), Math.max(-limit, Math.min(map.h + limit, fy)));
-    prevY = fy;
+    run.push(xs[i], y);
+    prev = y;
   }
   if (run.length >= 4) runs.push(run);
   return runs;
-}
-
-/** Whether a step from frame y `a` to `b` crosses the frame from beyond one edge to beyond the other. */
-function leaps(a: number, b: number, h: number): boolean {
-  return (a < -h && b > 2 * h) || (b < -h && a > 2 * h);
 }

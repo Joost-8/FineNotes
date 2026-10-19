@@ -6,11 +6,17 @@
  *
  * Sampling a curve is the expensive part, so each graph keeps its sampled
  * paths, keyed by what they depend on (`graphContentKey`: expressions,
- * ranges, size, options) and by the sample count the resolution asks for
- * (`sampleCount`, a power of two). A tile, a thumbnail and a printed page at
- * the same count share one sampling; moving a graph reuses it; any edit
- * makes a new key, and so a new sampling (ledger: a cache fingerprint must
- * change under every command that changes what is drawn).
+ * ranges, size, options) and by the resolution they were sampled for
+ * (`sampleCount`: device px across, a power of two). A tile, a thumbnail and
+ * a printed page at the same resolution share one sampling; moving a graph
+ * reuses it; any edit makes a new key, and so a new sampling (ledger: a
+ * cache fingerprint must change under every command that changes what is
+ * drawn).
+ *
+ * The sampling itself is the calculator's (`setGraphEngine`, set once by the
+ * plugin): curves come back as polylines in value space, already broken at
+ * gaps and asymptotes, one list per expression. Until an engine is set a
+ * graph draws its card and axes, and no curve.
  */
 
 import type { GraphElement } from "../model/document";
@@ -18,7 +24,6 @@ import { graphContentKey } from "../model/graph-element";
 import { shownColor } from "./backdrop";
 import {
   type FrameMap,
-  curveRuns,
   frameX,
   frameY,
   niceStep,
@@ -26,30 +31,82 @@ import {
   sampleXs,
   tickLabel,
   ticks,
+  valueRuns,
 } from "./graph-geometry";
 
-/**
- * The values of `expression` at each of `xs`: NaN where it is undefined or
- * cannot be read. Pure. The calculator's sampler, set once by the plugin
- * (`setGraphSampler`); until then a graph draws its frame and no curve.
- */
-export type GraphSampler = (expression: string, xs: Float64Array) => Float64Array;
+/** A graph's view, as the calculator's graph engine takes it. */
+export interface GraphRange {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+}
 
-let sampler: GraphSampler = (_expression, xs) => new Float64Array(xs.length).fill(Number.NaN);
+/** A curve piece in value space, flat `[x0, y0, x1, y1, …]`. */
+export type Polyline = number[];
 
-/** Use `next` to sample every graph from now on; cached curves are dropped. */
-export function setGraphSampler(next: GraphSampler): void {
-  sampler = next;
+/** What graphs are sampled with: the calculator's engine, or a stand-in. */
+export interface GraphEngine {
+  /**
+   * Each expression's curve over `range`, as polylines in value space,
+   * sampled to be drawn `widthPx` x `heightPx` device px. An expression that
+   * cannot be read gives no polylines.
+   */
+  sample(
+    expressions: readonly string[],
+    range: GraphRange,
+    widthPx: number,
+    heightPx: number,
+  ): Polyline[][];
+  /** `expression` as a function of x (NaN where undefined), or null when it cannot be read. */
+  compile(expression: string): ((x: number) => number) | null;
+}
+
+const NO_ENGINE: GraphEngine = {
+  sample: (expressions) => expressions.map(() => []),
+  compile: () => null,
+};
+
+let engine: GraphEngine = NO_ENGINE;
+
+/** Sample every graph with `next` from now on; cached curves are dropped. */
+export function setGraphEngine(next: GraphEngine): void {
+  engine = next;
+  compiled.clear();
   generation++;
 }
 
-/** Bumped when the sampler changes, so no curve sampled by the old one is drawn. */
+/**
+ * An engine from a compiler alone: evenly spaced samples, one a device
+ * pixel, broken where a value is undefined or leaps across the view. For
+ * the harness and the tests; the plugin uses the calculator's adaptive one.
+ */
+export function uniformEngine(compile: GraphEngine["compile"]): GraphEngine {
+  return {
+    compile,
+    sample: (expressions, range, widthPx) => {
+      const xs = sampleXs([range.xMin, range.xMax], Math.max(2, Math.ceil(widthPx)));
+      return expressions.map((expression) => {
+        const fn = compile(expression);
+        if (!fn) return [];
+        const ys = new Float64Array(xs.length);
+        for (let i = 0; i < xs.length; i++) ys[i] = fn(xs[i]);
+        return valueRuns(xs, ys, [range.yMin, range.yMax]);
+      });
+    },
+  };
+}
+
+/** Bumped when the engine changes, so no curve sampled by the old one is drawn. */
 let generation = 0;
 
-/** A graph's sampled curves at one count, as paths in frame px. */
+/** Compiled expressions for trace and pin, by text. */
+const compiled = new Map<string, ((x: number) => number) | null>();
+
+/** A graph's sampled curves at one resolution, as paths in frame px. */
 interface Sampled {
   key: string;
-  count: number;
+  resolution: number;
   generation: number;
   curves: Path2D[];
 }
@@ -62,35 +119,54 @@ const sampledByGraph = new WeakMap<GraphElement, Sampled[]>();
 /** How many samplings have been made since the page opened: the harness reads this. */
 export const graphStats = { samplings: 0, sampleMs: 0 };
 
-/** The graph's curves at `count` samples, sampled now if no cached ones fit. */
-function sampledCurves(graph: GraphElement, count: number): Path2D[] {
+/** The graph's curves sampled `resolution` device px across, now if no cached ones fit. */
+function sampledCurves(graph: GraphElement, resolution: number): Path2D[] {
   const key = graphContentKey(graph);
   const list = sampledByGraph.get(graph) ?? [];
   const hit = list.find(
-    (entry) => entry.key === key && entry.count === count && entry.generation === generation,
+    (entry) =>
+      entry.key === key && entry.resolution === resolution && entry.generation === generation,
   );
   if (hit) return hit.curves;
   const start = performance.now();
   const map: FrameMap = { xRange: graph.xRange, yRange: graph.yRange, w: graph.w, h: graph.h };
-  const xs = sampleXs(graph.xRange, count);
-  const curves = graph.expressions.map((expression) => {
+  const range: GraphRange = {
+    xMin: graph.xRange[0],
+    xMax: graph.xRange[1],
+    yMin: graph.yRange[0],
+    yMax: graph.yRange[1],
+  };
+  let sampled: Polyline[][] = [];
+  try {
+    sampled = engine.sample(
+      graph.expressions.map((expression) => expression.text),
+      range,
+      resolution,
+      (resolution * graph.h) / graph.w,
+    );
+  } catch {
+    // An engine that throws draws no curves rather than no page.
+  }
+  // Far points are held a frame height past the edge, so lines still leave
+  // at the right angle and canvas never sees a huge coordinate.
+  const limit = graph.h * 2;
+  const curves = graph.expressions.map((_, i) => {
     const path = new Path2D();
-    let ys: Float64Array;
-    try {
-      ys = sampler(expression.text, xs);
-    } catch {
-      return path;
-    }
-    for (const run of curveRuns(xs, ys, map)) {
-      path.moveTo(run[0], run[1]);
-      for (let i = 2; i < run.length; i += 2) path.lineTo(run[i], run[i + 1]);
+    for (const run of sampled[i] ?? []) {
+      for (let j = 0; j + 1 < run.length; j += 2) {
+        const x = frameX(map, run[j]);
+        const y = Math.max(-limit, Math.min(graph.h + limit, frameY(map, run[j + 1])));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (j === 0) path.moveTo(x, y);
+        else path.lineTo(x, y);
+      }
     }
     return path;
   });
   graphStats.samplings++;
   graphStats.sampleMs += performance.now() - start;
   const fresh = list.filter((entry) => entry.key === key && entry.generation === generation);
-  fresh.push({ key, count, generation, curves });
+  fresh.push({ key, resolution, generation, curves });
   sampledByGraph.set(graph, fresh.slice(-KEPT_PER_GRAPH));
   return curves;
 }
@@ -223,10 +299,21 @@ function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
 }
 
-/** One value of `expression` at `x` with the current sampler: NaN where it has none. */
+/** One value of `expression` at `x` with the current engine: NaN where it has none. */
 export function sampleExpressionAt(expression: string, x: number): number {
+  let fn = compiled.get(expression);
+  if (fn === undefined) {
+    try {
+      fn = engine.compile(expression);
+    } catch {
+      fn = null;
+    }
+    compiled.set(expression, fn);
+  }
+  if (!fn) return Number.NaN;
   try {
-    return sampler(expression, Float64Array.of(x))[0] ?? Number.NaN;
+    const y = fn(x);
+    return typeof y === "number" ? y : Number.NaN;
   } catch {
     return Number.NaN;
   }

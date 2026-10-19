@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   GRAPH_MAX_SAMPLES,
   GRAPH_MIN_SAMPLES,
-  curveRuns,
   frameX,
   frameY,
   niceStep,
@@ -12,6 +11,7 @@ import {
   sampleXs,
   tickLabel,
   ticks,
+  valueRuns,
 } from "../../src/canvas/graph-geometry";
 
 const MINUS = String.fromCharCode(0x2212);
@@ -72,7 +72,7 @@ describe("niceStep, ticks and tickLabel", () => {
   });
 });
 
-describe("curveRuns", () => {
+describe("frame mapping and valueRuns", () => {
   const map = {
     xRange: [-1, 1] as [number, number],
     yRange: [-1, 1] as [number, number],
@@ -85,27 +85,30 @@ describe("curveRuns", () => {
     expect(frameX(map, 1)).toBe(200);
     expect(frameY(map, 1)).toBe(0);
     expect(frameY(map, -1)).toBe(100);
-    const runs = curveRuns([-1, 0, 1], [-1, 0, 1], map);
-    expect(runs).toEqual([[0, 100, 100, 50, 200, 0]]);
+  });
+
+  it("keeps a defined curve as one run in value space", () => {
+    expect(valueRuns([-1, 0, 1], [-1, 0, 1], [-1, 1])).toEqual([[-1, -1, 0, 0, 1, 1]]);
   });
 
   it("breaks at an undefined value, and drops lone points", () => {
-    const runs = curveRuns([-1, -0.5, 0, 0.5, 1], [0, 0, Number.NaN, 0, Infinity], map);
-    expect(runs).toEqual([[0, 50, 50, 50]]);
+    const runs = valueRuns([-1, -0.5, 0, 0.5, 1], [0, 0, Number.NaN, 0, Infinity], [-1, 1]);
+    expect(runs).toEqual([[-1, 0, -0.5, 0]]);
   });
 
   it("breaks across an asymptote instead of joining it", () => {
-    // 1/x sampled either side of 0: from far below to far above the frame.
+    // 1/x sampled either side of 0: from far below to far above the view.
     const xs = [-0.5, -0.01, 0.01, 0.5];
-    const ys = xs.map((x) => 1 / x);
-    const runs = curveRuns(xs, ys, map);
-    expect(runs).toHaveLength(2);
+    expect(
+      valueRuns(
+        xs,
+        xs.map((x) => 1 / x),
+        [-1, 1],
+      ),
+    ).toHaveLength(2);
   });
 
-  it("keeps a steep but continuous curve whole, and clamps far points", () => {
-    const xs = [-1, 0, 1];
-    const runs = curveRuns(xs, [0, 1e9, 0], map);
-    expect(runs).toHaveLength(1);
-    expect(Math.min(...runs[0].filter((_, i) => i % 2 === 1))).toBe(-200);
+  it("keeps a steep but continuous curve whole", () => {
+    expect(valueRuns([-1, 0, 1], [0, 1e9, 0], [-1, 1])).toHaveLength(1);
   });
 });
