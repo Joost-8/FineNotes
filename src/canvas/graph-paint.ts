@@ -113,7 +113,7 @@ const FRAME_COLOR = "#c3c8d0";
 /** The curve's width, page px. */
 const CURVE_WIDTH = 2;
 /** The numbers' size, page px. */
-const LABEL_SIZE = 10;
+const LABEL_SIZE = 13;
 /** Roughly how far apart grid lines are, page px. */
 const GRID_SPACING = 40;
 
