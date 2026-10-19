@@ -13,6 +13,7 @@ import { deflateToBase64, inflateFromBase64 } from "../../src/model/compress";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 import { History } from "../../src/model/history";
 import { InkClipboard, pasteCopies } from "../../src/model/clipboard";
+import { normalizeGraphSpec } from "../../src/model/graph-lines";
 import { duplicatePageAfter } from "../../src/model/page-commands";
 import { pageSignature } from "../../src/model/page-signature";
 import {
@@ -52,7 +53,10 @@ import {
   zoomView,
 } from "../../src/model/graph-element";
 
-/** A spec as the calculator gives it, plus a field from a future calculator. */
+/**
+ * A version 2 spec as the calculator gives it, with a field on a line and a
+ * field on the spec that no version of this code has heard of.
+ */
 function futureSpec(): Record<string, unknown> & {
   expressions: string[];
   xMin: number;
@@ -61,14 +65,29 @@ function futureSpec(): Record<string, unknown> & {
   yMax: number;
 } {
   return {
+    version: 2,
+    lines: [{ id: "l1", text: "sin(a·x)", color: "#cc3333", glow: true }],
+    sliders: [{ name: "a", value: 1.5, min: 0, max: 3, step: 0.5 }],
     expressions: ["sin(a·x)"],
     xMin: -5,
     xMax: 5,
     yMin: -2,
     yMax: 2,
     angle: "rad",
-    sliders: [{ name: "a", value: 1.5, min: 0, max: 3 }],
+    futureField: { keep: true },
   };
+}
+
+/** What the calculator's own reader makes of `raw`: what the page must store. */
+function asRead(raw: Record<string, unknown>): Record<string, unknown> {
+  return normalizeGraphSpec(
+    structuredClone(raw) as Record<string, unknown> & {
+      xMin: number;
+      xMax: number;
+      yMin: number;
+      yMax: number;
+    },
+  );
 }
 
 function sine(id = "f1"): GraphElement {
@@ -175,7 +194,7 @@ describe("makeGraph and normalizeGraph", () => {
       y: 0,
       w: GRAPH_MIN_SIDE,
       h: GRAPH_MAX_SIDE,
-      spec: { expressions: ["x^2"], xMin: -10, xMax: 10, yMin: 0, yMax: 2, z: 1 },
+      spec: asRead({ expressions: ["x^2"], xMin: -10, xMax: 10, yMin: 0, yMax: 2, z: 1 }),
       colors: [GRAPH_COLORS[0]],
     });
   });
@@ -214,14 +233,14 @@ describe("makeGraph and normalizeGraph", () => {
       y: 20,
       w: 300,
       h: 200,
-      spec: {
+      spec: asRead({
         expressions: ["sin(x)", "x"],
         xMin: -360,
         xMax: 360,
         yMin: -2,
         yMax: 2,
         angle: "deg",
-      },
+      }),
       colors: ["#cc3333", GRAPH_COLORS[1]],
       labels: false,
     });
@@ -273,7 +292,7 @@ describe("Explore's view edits", () => {
     const graph = sine();
     expect(viewOf(graph)).toEqual(view);
     setView(graph, { xRange: [0, 1], yRange: [2, 3] });
-    expect(graph.spec).toEqual({ ...futureSpec(), xMin: 0, xMax: 1, yMin: 2, yMax: 3 });
+    expect(graph.spec).toEqual(asRead({ ...futureSpec(), xMin: 0, xMax: 1, yMin: 2, yMax: 3 }));
   });
 
   it("moves the curve with the finger", () => {
@@ -335,7 +354,7 @@ describe("AddGraph and EditGraph", () => {
     const edit = new EditGraph("p1", graph, { view: { xRange: [0, 1], yRange: [2, 3] } });
     expect(edit.label).toBe("Move graph view");
     history.push(doc, edit);
-    expect(graph.spec).toEqual({ ...futureSpec(), xMin: 0, xMax: 1, yMin: 2, yMax: 3 });
+    expect(graph.spec).toEqual(asRead({ ...futureSpec(), xMin: 0, xMax: 1, yMin: 2, yMax: 3 }));
     history.undo(doc);
     expect(JSON.stringify(doc)).toBe(before);
     history.redo(doc);
@@ -357,11 +376,11 @@ describe("AddGraph and EditGraph", () => {
     const edit = new EditGraph("p1", graph, { spec: next, colors: ["#000000"], grid: false });
     expect(edit.label).toBe("Edit graph");
     edit.apply(doc);
-    expect(graph.spec).toEqual(next);
+    expect(graph.spec).toEqual(asRead(next));
     expect(graph.colors).toEqual(["#000000", GRAPH_COLORS[1]]);
     expect(graph.grid).toBe(false);
     new EditGraph("p1", graph, { spec: "nonsense" as never, grid: true, labels: false }).apply(doc);
-    expect(graph.spec).toEqual(next);
+    expect(graph.spec).toEqual(asRead(next));
     expect("grid" in graph).toBe(false);
     expect(graph.labels).toBe(false);
     edit.invert(doc);
@@ -500,8 +519,9 @@ describe("saving and loading", () => {
     ).pages[0];
     expect(JSON.stringify(page.graphs)).toBe(
       '[{"id":"f1","x":100,"y":200,"w":300,"h":200,' +
-        '"spec":{"expressions":["sin(a·x)"],"xMin":-5,"xMax":5,"yMin":-2,"yMax":2,' +
-        '"angle":"rad","sliders":[{"name":"a","value":1.5,"min":0,"max":3}]},' +
+        '"spec":{"version":2,"lines":[{"id":"l1","text":"sin(a·x)","color":"#cc3333","glow":true}],' +
+        '"sliders":[{"name":"a","value":1.5,"min":0,"max":3,"step":0.5}],"expressions":["sin(a·x)"],' +
+        '"xMin":-5,"xMax":5,"yMin":-2,"yMax":2,"angle":"rad","futureField":{"keep":true}},' +
         '"colors":["#cc3333"]}]',
     );
     expect(Object.keys(page)).toEqual([
