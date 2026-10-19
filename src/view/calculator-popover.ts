@@ -3,21 +3,31 @@
  * attached to <body> below its button, as the Add Page and AI menus are,
  * closed by a tap outside, Escape or a second tap on the button.
  *
- * It has its own keypad, so the iPad keyboard never comes up, and it listens
- * to a hardware keyboard while open. The keys act on `pointerup` after a
- * `pointerdown` on the same key (the card floats over the page, and a Pencil
- * tap there may never become a click: CLAUDE.md, "A Pencil tap on a button
- * over the page never becomes a click"); `click` serves keyboard activation
- * only. Every button carries `clickable-icon`, or Obsidian pads it 20 px on
- * the iPad.
+ * What it borrows, and from where (Joost's brief, 2026-10-19): iOS's keys
+ * (round number keys, the operators in an accent column, a press that
+ * visibly gives, AC that becomes C while there is something to clear, a
+ * swipe across the display to delete); NumWorks' and Casio's natural
+ * display (the expression set as a textbook would, the result under it,
+ * the history as pairs to tap); Google's and Windows' 2nd key in place of
+ * a wall of keys; and Desmos' graph (`calculator-graph.ts`). It wears
+ * Obsidian's variables and FineNotes' chrome, so it looks native in both
+ * themes. Nothing in it moves while typing: the display's lines have fixed
+ * heights, and a long expression or result is scaled down to fit.
  *
- * The arithmetic is `model/calculator.ts`, the keypad and typing rules are
- * `model/calculator-keys.ts`, and what is remembered (the switches, a short
- * history per notebook) is `model/calculator-store.ts`; this file only
- * draws them and routes input.
+ * It has its own keypad, so the iPad keyboard never comes up, and it hears
+ * a hardware keyboard while open. Keys act on `pointerup` after a
+ * `pointerdown` on the same key (a Pencil tap over the page may never
+ * become a click: CLAUDE.md); `click` serves keyboard activation only.
+ * Every button carries `clickable-icon`, or Obsidian pads it 20 px on the
+ * iPad.
+ *
+ * The arithmetic is `model/calculator.ts`, the layout of the expression
+ * `model/calc-display.ts`, the keypad `model/calculator-keys.ts`, and what
+ * is remembered `model/calculator-store.ts`.
  */
 
 import { setIcon } from "obsidian";
+import { type MathBox, layoutExpression } from "../model/calc-display";
 import {
   BASE_LABELS,
   type CalcValue,
@@ -29,17 +39,19 @@ import {
   formatValue,
   rational,
   subtract,
+  usesVariable,
 } from "../model/calculator";
 import {
   type CalcAction,
   type CalcKey,
   type Entry,
   HEX_ROW,
-  MEMORY_ROW,
   NUMBER_ROWS,
   SCIENTIFIC_ROWS,
+  fittedFontSize,
   keyEnabled,
   keyboardKey,
+  shownKey,
   spellAns,
   typeInto,
 } from "../model/calculator-keys";
@@ -51,8 +63,14 @@ import {
   withPrefs,
   withoutHistory,
 } from "../model/calculator-store";
+import { type GraphSpec, defaultRange } from "../model/graph";
+import { GraphPanel, type GraphState } from "./calculator-graph";
 
 const POPOVER_WIDTH = 360;
+const RESULT_MAX_PX = 32;
+const RESULT_MIN_PX = 15;
+/** A swipe across the display this far deletes one sign, as on iOS. */
+const SWIPE_PX = 36;
 
 /** What the calculator needs from the notebook view. */
 export interface CalculatorHost {
@@ -65,7 +83,14 @@ export interface CalculatorHost {
 }
 
 /** The answer and the memory outlive the sheet, as on a pocket calculator. */
-const session: { ans: CalcValue; memory: CalcValue } = { ans: rational(0n), memory: rational(0n) };
+const session: { ans: CalcValue; memory: CalcValue } = {
+  ans: rational(0n),
+  memory: rational(0n),
+};
+/** Each notebook's graph, while the app runs. */
+const graphs = new Map<string, GraphState>();
+
+type Pane = "keys" | "history" | "graph";
 
 export class CalculatorPopover {
   private readonly el: HTMLElement;
@@ -80,13 +105,19 @@ export class CalculatorPopover {
   /** The line the result on show came from, for Insert. */
   private shownLine: CalcEntry | null = null;
   private error = "";
-  private showingHistory = false;
+  private pane: Pane = "keys";
+  private shifted = false;
+  private graph: GraphPanel | null = null;
+  private readonly graphState: GraphState;
 
+  private readonly angleChip: HTMLButtonElement;
+  private readonly fractionChip: HTMLButtonElement;
+  private readonly memoryFlag: HTMLElement;
   private readonly exprEl: HTMLElement;
+  private readonly mathEl: HTMLElement;
   private readonly resultEl: HTMLElement;
-  private readonly memoryEl: HTMLElement;
   private readonly baseEl: HTMLElement;
-  private readonly historyButton: HTMLButtonElement;
+  private readonly paneButtons = new Map<Pane, HTMLButtonElement>();
   private readonly bodyEl: HTMLElement;
   private readonly insertButtons: HTMLButtonElement[] = [];
 
@@ -95,6 +126,9 @@ export class CalculatorPopover {
     private readonly host: CalculatorHost,
   ) {
     this.data = host.load();
+    const kept = graphs.get(host.path);
+    this.graphState = kept ?? { expressions: [], range: null };
+    if (!kept) graphs.set(host.path, this.graphState);
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-calc" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", "Calculator");
@@ -108,20 +142,26 @@ export class CalculatorPopover {
       button.dataset.base = String(base);
       button.setAttribute("role", "radio");
     }
-    this.historyButton = this.button(
-      head,
-      "",
-      () => this.toggleHistory(),
-      "goodobsidian-calc-icon",
-    );
-    setIcon(this.historyButton, "history");
-    this.historyButton.setAttribute("aria-label", "History");
+    this.paneButton(head, "graph", "chart-spline", "Graph");
+    this.paneButton(head, "history", "history", "History");
 
     const display = this.el.createDiv({ cls: "goodobsidian-calc-display" });
-    this.memoryEl = display.createDiv({ cls: "goodobsidian-calc-flags" });
+    const flags = display.createDiv({ cls: "goodobsidian-calc-flags" });
+    this.angleChip = this.button(flags, "DEG", () => this.toggleAngle(), "goodobsidian-calc-chip");
+    this.angleChip.setAttribute("aria-label", "Degrees or radians");
+    this.fractionChip = this.button(
+      flags,
+      "a/b",
+      () => this.toggleFractions(),
+      "goodobsidian-calc-chip",
+    );
+    this.fractionChip.setAttribute("aria-label", "Show fractions");
+    this.memoryFlag = flags.createSpan({ cls: "goodobsidian-calc-memory", text: "M" });
     this.exprEl = display.createDiv({ cls: "goodobsidian-calc-expr" });
+    this.mathEl = this.exprEl.createDiv({ cls: "goodobsidian-calc-math" });
     this.resultEl = display.createDiv({ cls: "goodobsidian-calc-result" });
     this.resultEl.setAttribute("aria-live", "polite");
+    this.installSwipe(display);
 
     const actions = this.el.createDiv({ cls: "goodobsidian-calc-actions" });
     this.insertButtons.push(
@@ -145,9 +185,27 @@ export class CalculatorPopover {
     return this.anchor;
   }
 
+  /** The graph as a plain object (expressions and range), for a graph on a page to store; null when empty. */
+  graphSpec(): GraphSpec | null {
+    if (this.graphState.expressions.length === 0) return null;
+    if (this.graph) return this.graph.spec();
+    const range = this.graphState.range ?? defaultRange(1, 1);
+    return {
+      expressions: [...this.graphState.expressions],
+      ...range,
+      angle: this.data.prefs.angle,
+    };
+  }
+
+  /** The graph panel while it shows (the gallery measures its frames). */
+  get graphPanel(): GraphPanel | null {
+    return this.graph;
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.graph?.destroy();
     for (const d of this.dispose) d();
     this.el.remove();
   }
@@ -192,47 +250,67 @@ export class CalculatorPopover {
     return button;
   }
 
+  private paneButton(parent: HTMLElement, pane: Pane, icon: string, label: string): void {
+    const button = this.button(parent, "", () => this.showPane(pane), "goodobsidian-calc-icon");
+    setIcon(button, icon);
+    button.setAttribute("aria-label", label);
+    this.paneButtons.set(pane, button);
+  }
+
   private render(): void {
+    this.graph?.destroy();
+    this.graph = null;
     this.bodyEl.empty();
-    this.bodyEl.toggleClass("is-history", this.showingHistory);
-    this.historyButton.toggleClass("is-active", this.showingHistory);
-    this.historyButton.setAttribute("aria-pressed", String(this.showingHistory));
-    if (this.showingHistory) this.renderHistory();
+    this.bodyEl.className = `goodobsidian-calc-body is-${this.pane}`;
+    for (const [pane, button] of this.paneButtons) {
+      const on = pane === this.pane;
+      button.toggleClass("is-active", on);
+      button.setAttribute("aria-pressed", String(on));
+    }
+    if (this.pane === "history") this.renderHistory();
+    else if (this.pane === "graph") this.renderGraph();
     else this.renderKeys();
     this.refresh();
   }
 
   private renderKeys(): void {
     const { base } = this.data.prefs;
-    const grid = this.bodyEl.createDiv({ cls: "goodobsidian-calc-keys" });
-    const rows: (readonly CalcKey[])[] = [...SCIENTIFIC_ROWS];
-    if (base === 16) rows.push(HEX_ROW);
-    rows.push(MEMORY_ROW, ...NUMBER_ROWS);
-    for (const row of rows) {
-      for (const key of row) this.key(grid, key, base);
-    }
+    const science = this.bodyEl.createDiv({ cls: "goodobsidian-calc-keys is-science" });
+    const rows = base === 16 ? [SCIENTIFIC_ROWS[0], SCIENTIFIC_ROWS[1], HEX_ROW] : SCIENTIFIC_ROWS;
+    for (const row of rows) for (const key of row) this.key(science, key, base);
+    const numbers = this.bodyEl.createDiv({ cls: "goodobsidian-calc-keys is-numbers" });
+    for (const row of NUMBER_ROWS) for (const key of row) this.key(numbers, key, base);
   }
 
-  private key(grid: HTMLElement, key: CalcKey, base: NumberBase): void {
+  private key(grid: HTMLElement, face: CalcKey, base: NumberBase): void {
+    const key = shownKey(face, this.shifted);
     const button = this.button(
       grid,
       this.keyLabel(key),
       () => this.press(key),
       "goodobsidian-calc-key",
     );
-    if (key.tone) button.addClass(`is-${key.tone}`);
+    const digit = key.digit !== undefined && key.digit < 10;
+    button.addClass(digit ? "is-digit" : `is-${key.tone ?? "plain"}`);
+    if (key !== face) button.addClass("is-second");
     if (key.span && key.span > 1) button.setCssStyles({ gridColumn: `span ${key.span}` });
     button.setAttribute("aria-label", key.aria ?? key.label);
-    if (key.action === "fractions") {
-      button.toggleClass("is-active", this.data.prefs.fractions);
-      button.setAttribute("aria-pressed", String(this.data.prefs.fractions));
+    if (key.action === "shift") {
+      button.toggleClass("is-active", this.shifted);
+      button.setAttribute("aria-pressed", String(this.shifted));
     }
+    if (key.action === "clear") button.dataset.clear = "";
     button.disabled = !keyEnabled(key, base);
   }
 
   private keyLabel(key: CalcKey): string {
-    if (key.action === "angle") return this.data.prefs.angle === "deg" ? "DEG" : "RAD";
+    if (key.action === "clear") return this.clearsAll() ? "AC" : "C";
     return key.label;
+  }
+
+  /** AC clears everything; C, while something is typed, only the expression. */
+  private clearsAll(): boolean {
+    return this.entry.fresh || this.entry.expr === "";
   }
 
   private renderHistory(): void {
@@ -247,7 +325,8 @@ export class CalculatorPopover {
     }
     for (const line of entries) {
       const row = this.button(list, "", () => this.useHistory(line), "goodobsidian-calc-line");
-      row.createSpan({ cls: "goodobsidian-calc-line-expr", text: line.expr });
+      const expr = row.createDiv({ cls: "goodobsidian-calc-line-expr goodobsidian-calc-math" });
+      this.drawMath(expr, line.expr);
       row.createSpan({ cls: "goodobsidian-calc-line-result", text: `= ${line.result}` });
       row.setAttribute("aria-label", `${line.expr} equals ${line.result}`);
     }
@@ -260,6 +339,67 @@ export class CalculatorPopover {
       },
       "goodobsidian-calc-clear",
     );
+  }
+
+  private renderGraph(): void {
+    const list = this.bodyEl.createDiv({ cls: "goodobsidian-calc-functions" });
+    const graph = new GraphPanel(this.bodyEl, this.graphState, () => this.data.prefs.angle);
+    this.graph = graph;
+    const errors = graph.errors();
+    this.graphState.expressions.forEach((expression, index) => {
+      const row = list.createDiv({ cls: "goodobsidian-calc-function" });
+      row.createSpan({ cls: "goodobsidian-calc-swatch" }).setCssStyles({
+        backgroundColor: graph.colorOf(index),
+      });
+      const edit = this.button(
+        row,
+        "",
+        () => this.editFunction(index),
+        "goodobsidian-calc-function-text",
+      );
+      edit.setAttribute("aria-label", `Edit y = ${expression}`);
+      const math = edit.createDiv({ cls: "goodobsidian-calc-math" });
+      math.createSpan({ cls: "gob-m-var", text: "y" });
+      math.createSpan({ cls: "gob-m-op", text: " = " });
+      this.drawMath(math.createSpan(), expression);
+      const error = errors[index];
+      if (error) edit.createDiv({ cls: "goodobsidian-calc-function-error", text: error });
+      const remove = this.button(
+        row,
+        "",
+        () => this.removeFunction(index),
+        "goodobsidian-calc-remove",
+      );
+      setIcon(remove, "x");
+      remove.setAttribute("aria-label", `Remove y = ${expression}`);
+    });
+    const typed = this.entry.fresh ? "" : this.entry.expr;
+    const plottable = typed !== "" && usesVariable(typed);
+    if (this.graphState.expressions.length === 0 || plottable) {
+      const addRow = this.button(
+        list,
+        "",
+        () => this.addFunction(),
+        "goodobsidian-calc-function goodobsidian-calc-add",
+      );
+      setIcon(addRow.createSpan({ cls: "goodobsidian-calc-add-icon" }), "plus");
+      addRow.createSpan({
+        text: plottable ? `Plot y = ${typed}` : "Type an expression in x, then plot it here",
+      });
+      addRow.disabled = !plottable;
+    }
+    graph.paintNow();
+  }
+
+  /** Lay out `expression` as math into `parent`; the text as typed when it cannot be read. */
+  private drawMath(parent: HTMLElement, expression: string): boolean {
+    const box = layoutExpression(expression, this.data.prefs.base);
+    if (!box) {
+      parent.createSpan({ text: expression });
+      return false;
+    }
+    renderBox(parent, box);
+    return true;
   }
 
   // --- Behaviour --------------------------------------------------------------
@@ -280,25 +420,42 @@ export class CalculatorPopover {
       this.entry = typeInto(this.entry, key.insert, key.continues === true);
       if (wasFresh) this.exprAns = session.ans;
       this.error = "";
-      this.refresh();
+      this.afterKey();
       return;
     }
     if (key.action) this.act(key.action);
   }
 
+  /** A typed key turns 2nd off: one-shot, as on a pocket calculator. */
+  private afterKey(): void {
+    if (this.shifted) {
+      this.shifted = false;
+      this.render();
+      return;
+    }
+    this.refresh();
+  }
+
   private act(action: CalcAction): void {
     switch (action) {
       case "equals":
-        this.equals();
+        if (this.pane === "graph" && usesVariable(this.entry.expr)) this.addFunction();
+        else this.equals();
+        return;
+      case "shift":
+        this.shifted = !this.shifted;
+        this.render();
         return;
       case "back":
         this.entry = { expr: this.entry.fresh ? "" : deleteLast(this.entry.expr), fresh: false };
         this.error = "";
         break;
       case "clear":
+        if (this.clearsAll()) {
+          this.shown = null;
+          this.shownLine = null;
+        }
         this.entry = { expr: "", fresh: false };
-        this.shown = null;
-        this.shownLine = null;
         this.error = "";
         break;
       case "mc":
@@ -315,16 +472,8 @@ export class CalculatorPopover {
           action === "m+" ? add(session.memory, value) : subtract(session.memory, value);
         break;
       }
-      case "angle":
-        this.save(withPrefs(this.data, { angle: this.data.prefs.angle === "deg" ? "rad" : "deg" }));
-        this.render();
-        return;
-      case "fractions":
-        this.save(withPrefs(this.data, { fractions: !this.data.prefs.fractions }));
-        this.render();
-        return;
     }
-    this.refresh();
+    this.afterKey();
   }
 
   /** The value on show or of the expression typed; null (with the error shown) when there is none. */
@@ -343,7 +492,8 @@ export class CalculatorPopover {
     if (!expr.trim()) return false;
     const result = calculate(expr, this.ctx(), this.data.prefs);
     if (!result.ok) {
-      this.error = result.error;
+      this.error =
+        result.error === "Unknown name: x" ? "Has x: open the graph to plot it" : result.error;
       this.refresh();
       return false;
     }
@@ -361,16 +511,53 @@ export class CalculatorPopover {
   }
 
   private useHistory(line: CalcEntry): void {
-    this.showingHistory = false;
+    this.pane = "keys";
     if (this.entry.fresh) this.exprAns = session.ans;
     this.entry = typeInto(this.entry, line.result, false);
     this.render();
   }
 
-  private toggleHistory(): void {
-    this.showingHistory = !this.showingHistory;
+  private showPane(pane: Pane): void {
+    this.pane = this.pane === pane ? "keys" : pane;
+    // Opening the graph with an expression in x plots it.
+    const typed = this.entry.fresh ? "" : this.entry.expr;
+    if (this.pane === "graph" && typed && usesVariable(typed)) {
+      if (!this.graphState.expressions.includes(typed)) this.graphState.expressions.push(typed);
+      this.entry = { expr: "", fresh: false };
+    }
     this.render();
     this.place();
+  }
+
+  private addFunction(): void {
+    const typed = this.entry.expr;
+    if (!usesVariable(typed)) return;
+    if (!this.graphState.expressions.includes(typed)) this.graphState.expressions.push(typed);
+    this.entry = { expr: "", fresh: false };
+    this.render();
+  }
+
+  private editFunction(index: number): void {
+    const [expression] = this.graphState.expressions.splice(index, 1);
+    this.entry = { expr: expression, fresh: false };
+    this.pane = "keys";
+    this.render();
+  }
+
+  private removeFunction(index: number): void {
+    this.graphState.expressions.splice(index, 1);
+    this.render();
+  }
+
+  private toggleAngle(): void {
+    this.save(withPrefs(this.data, { angle: this.data.prefs.angle === "deg" ? "rad" : "deg" }));
+    if (this.graph) this.render();
+    else this.refresh();
+  }
+
+  private toggleFractions(): void {
+    this.save(withPrefs(this.data, { fractions: !this.data.prefs.fractions }));
+    this.refresh();
   }
 
   /**
@@ -421,34 +608,90 @@ export class CalculatorPopover {
       button.toggleClass("is-active", active);
       button.setAttribute("aria-checked", String(active));
     }
-    const flags: string[] = [];
-    if (base === 10) flags.push(angle === "deg" ? "DEG" : "RAD");
-    if (base === 10 && fractions) flags.push("a/b");
-    if (formatValue(session.memory) !== "0") flags.push("M");
-    this.memoryEl.setText(flags.join("  "));
+    this.angleChip.setText(angle === "deg" ? "DEG" : "RAD");
+    this.angleChip.disabled = base !== 10;
+    this.fractionChip.toggleClass("is-active", fractions);
+    this.fractionChip.setAttribute("aria-pressed", String(fractions));
+    this.fractionChip.disabled = base !== 10;
+    this.memoryFlag.toggleClass("is-hidden", formatValue(session.memory) === "0");
+    const clear = this.bodyEl.querySelector<HTMLElement>("[data-clear]");
+    if (clear) clear.setText(this.clearsAll() ? "AC" : "C");
 
-    this.exprEl.setText(this.entry.expr);
-    this.exprEl.toggleClass("is-empty", this.entry.expr === "");
+    this.mathEl.empty();
+    const expr = this.entry.expr;
+    let laid = true;
+    if (expr) laid = this.drawMath(this.mathEl, expr);
+    this.mathEl.toggleClass("is-raw", !laid);
+    if (!this.entry.fresh) this.mathEl.createSpan({ cls: "goodobsidian-calc-caret" });
+    this.exprEl.toggleClass("is-done", this.entry.fresh);
+    this.fitExpression();
+
     this.resultEl.removeClass("is-error", "is-preview");
+    let text: string;
     if (this.error) {
-      this.resultEl.setText(this.error);
+      text = this.error;
       this.resultEl.addClass("is-error");
     } else if (this.entry.fresh && this.shown !== null) {
-      this.resultEl.setText(this.format(this.shown) ?? "Not a whole number");
-      if (this.format(this.shown) === null) this.resultEl.addClass("is-error");
+      const shown = this.format(this.shown);
+      text = shown ?? "Not a whole number";
+      if (shown === null) this.resultEl.addClass("is-error");
     } else {
       // A quiet preview while typing; errors wait for =.
-      const result = this.entry.expr.trim()
-        ? calculate(this.entry.expr, this.ctx(), this.data.prefs)
-        : null;
-      this.resultEl.setText(result?.ok ? result.text : this.entry.expr ? "" : "0");
+      const result = expr.trim() ? calculate(expr, this.ctx(), this.data.prefs) : null;
+      text = result?.ok ? result.text : expr ? "" : "0";
       this.resultEl.addClass("is-preview");
     }
-    const canInsert = this.entry.fresh || this.entry.expr.trim() !== "";
+    this.resultEl.setText(text);
+    this.fitResult();
+    const canInsert = this.entry.fresh || expr.trim() !== "";
     for (const button of this.insertButtons) button.disabled = !canInsert;
   }
 
-  // --- Placement and dismissal ------------------------------------------------
+  /** Scale the expression down to its line instead of letting the display grow. */
+  private fitExpression(): void {
+    this.mathEl.setCssStyles({ transform: "" });
+    const room = this.exprEl.clientWidth;
+    const height = this.exprEl.clientHeight;
+    const w = this.mathEl.scrollWidth;
+    const h = this.mathEl.scrollHeight;
+    if (!room || !w) return;
+    const scale = Math.min(1, room / w, height / Math.max(1, h));
+    if (scale < 1) this.mathEl.setCssStyles({ transform: `scale(${scale})` });
+  }
+
+  /** The result's font shrinks to fit its line, as iOS's does. */
+  private fitResult(): void {
+    this.resultEl.setCssStyles({ fontSize: `${RESULT_MAX_PX}px` });
+    const size = fittedFontSize(
+      this.resultEl.scrollWidth,
+      this.resultEl.clientWidth,
+      RESULT_MAX_PX,
+      RESULT_MIN_PX,
+    );
+    if (size !== RESULT_MAX_PX) this.resultEl.setCssStyles({ fontSize: `${size}px` });
+  }
+
+  // --- Gestures, placement and dismissal --------------------------------------
+
+  /** A finger drawn across the display deletes a sign per {@link SWIPE_PX}, as on iOS. */
+  private installSwipe(display: HTMLElement): void {
+    let from: number | null = null;
+    display.addEventListener("pointerdown", (event) => {
+      if ((event.target as Element | null)?.closest("button")) return;
+      from = event.clientX;
+    });
+    display.addEventListener("pointermove", (event) => {
+      if (from === null || Math.abs(event.clientX - from) < SWIPE_PX) return;
+      from = event.clientX;
+      this.act("back");
+    });
+    const end = (): void => {
+      from = null;
+    };
+    display.addEventListener("pointerup", end);
+    display.addEventListener("pointercancel", end);
+    display.addEventListener("pointerleave", end);
+  }
 
   /** Below the anchor, left-aligned to it, kept inside the window. */
   private place(): void {
@@ -485,8 +728,8 @@ export class CalculatorPopover {
         this.act(mapped.action);
         return;
       }
-      if (this.showingHistory) {
-        this.showingHistory = false;
+      if (this.pane === "history") {
+        this.pane = "keys";
         this.render();
       }
       this.press({ label: mapped.insert, insert: mapped.insert, continues: mapped.continues });
@@ -505,5 +748,58 @@ export class CalculatorPopover {
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", onResize);
     });
+  }
+}
+
+/** A {@link MathBox} as spans (styles.css, `.gob-m-*`). */
+function renderBox(parent: HTMLElement, box: MathBox): void {
+  switch (box.t) {
+    case "row":
+      for (const item of box.items) renderBox(parent, item);
+      return;
+    case "text":
+      parent.createSpan({ cls: `gob-m-${box.role}`, text: box.s });
+      return;
+    case "slot":
+      parent.createSpan({ cls: "gob-m-slot" });
+      return;
+    case "frac": {
+      const frac = parent.createSpan({ cls: "gob-m-frac" });
+      renderBox(frac.createSpan({ cls: "gob-m-numer" }), box.num);
+      renderBox(frac.createSpan({ cls: "gob-m-denom" }), box.den);
+      return;
+    }
+    case "sup": {
+      const sup = parent.createSpan({ cls: "gob-m-pow" });
+      renderBox(sup.createSpan({ cls: "gob-m-base" }), box.base);
+      renderBox(sup.createSpan({ cls: "gob-m-sup" }), box.exp);
+      return;
+    }
+    case "root": {
+      const root = parent.createSpan({ cls: "gob-m-root" });
+      if (box.index) renderBox(root.createSpan({ cls: "gob-m-index" }), box.index);
+      root.createSpan({ cls: "gob-m-radical", text: "√" });
+      renderBox(root.createSpan({ cls: "gob-m-radicand" }), box.body);
+      return;
+    }
+    case "paren":
+    case "abs": {
+      const [open, close] = box.t === "paren" ? ["(", ")"] : ["|", "|"];
+      const group = parent.createSpan({ cls: "gob-m-group" });
+      group.createSpan({ cls: "gob-m-fence", text: open });
+      renderBox(group.createSpan(), box.body);
+      group.createSpan({ cls: "gob-m-fence", text: close });
+      return;
+    }
+    case "bigop": {
+      const op = parent.createSpan({ cls: "gob-m-bigop" });
+      const limits = op.createSpan({ cls: "gob-m-limits" });
+      renderBox(limits.createSpan({ cls: "gob-m-hi" }), box.hi);
+      limits.createSpan({ cls: "gob-m-sym", text: box.sym });
+      renderBox(limits.createSpan({ cls: "gob-m-lo" }), box.lo);
+      renderBox(op.createSpan({ cls: "gob-m-body" }), box.body);
+      if (box.tail) op.createSpan({ cls: "gob-m-var gob-m-tail", text: box.tail });
+      return;
+    }
   }
 }

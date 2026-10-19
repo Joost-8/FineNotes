@@ -23,6 +23,7 @@ export default defineConfig({
         "src/ink/pen-gestures.ts",
         "src/ink/straighten.ts",
         "src/canvas/backdrop.ts",
+        "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",
         "src/canvas/cover-patterns.ts",
         "src/canvas/page-layout.ts",
