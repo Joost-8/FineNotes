@@ -118,8 +118,14 @@ import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
 import { AiMenuPopover } from "./ai-menu";
-import { CalculatorPopover } from "./calculator-popover";
-import { parseCalculatorData } from "../model/calculator-store";
+import {
+  type CalculatorHost,
+  CalculatorPopover,
+  drawGraphMath,
+  graphStateFor,
+} from "./calculator-popover";
+import { parseCalculatorData, windowOf, withWindow } from "../model/calculator-store";
+import { GraphWindow } from "./graph-window";
 import { centredOrigin } from "../model/calculator-keys";
 import {
   AddGraph,
@@ -392,6 +398,8 @@ export class InkView extends TextFileView {
   private coverPopover: { popover: CoverPopover; anchor: HTMLElement } | null = null;
   private aiMenu: AiMenuPopover | null = null;
   private calculator: CalculatorPopover | null = null;
+  /** The graph popped out of the calculator, floating over the notebook. */
+  private graphWindow: GraphWindow | null = null;
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
   private transcription: { cancelled: boolean } | null = null;
   private pdfCache: PdfBackdropCache | null = null;
@@ -795,6 +803,8 @@ export class InkView extends TextFileView {
     this.aiMenu = null;
     this.calculator?.close();
     this.calculator = null;
+    this.graphWindow?.close();
+    this.graphWindow = null;
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
@@ -1116,13 +1126,56 @@ export class InkView extends TextFileView {
       open.close();
       if (open.anchorEl === anchor) return;
     }
-    this.calculator = new CalculatorPopover(anchor, {
+    this.calculator = new CalculatorPopover(anchor, this.calculatorHost());
+  }
+
+  /** What the calculator needs from this notebook. */
+  private calculatorHost(): CalculatorHost {
+    return {
       path: this.file?.path ?? "",
       load: () => parseCalculatorData(this.settings.calculator),
       save: (data) => this.plugin.saveCalculator(data),
       insert: (text) => this.insertCalculation(text),
       insertGraph: (spec) => this.insertGraph(spec),
+      popOutGraph: () => this.openGraphWindow(),
+    };
+  }
+
+  /**
+   * The calculator's graph, popped out to float over the notebook
+   * (`graph-window.ts`); raised again when it is already open.
+   */
+  private openGraphWindow(): void {
+    if (this.graphWindow?.isOpen) {
+      this.graphWindow.raise();
+      return;
+    }
+    const path = this.file?.path ?? "";
+    const data = (): ReturnType<typeof parseCalculatorData> =>
+      parseCalculatorData(this.settings.calculator);
+    this.graphWindow = new GraphWindow({
+      container: this.contentEl,
+      state: graphStateFor(path),
+      angle: () => data().prefs.angle,
+      editLine: (id) => this.calculatorOnLine(id),
+      insertGraph: (spec) => this.insertGraph(spec),
+      drawMath: drawGraphMath,
+      place: () => windowOf(data(), path),
+      savePlace: (place) => this.plugin.saveCalculator(withWindow(data(), path, place)),
+      closed: () => {
+        this.graphWindow = null;
+      },
     });
+  }
+
+  /** The calculator on its keys, typing a line of the graph (from the graph window). */
+  private calculatorOnLine(id: string | null): void {
+    const anchor = this.contentEl.querySelector<HTMLElement>(
+      'button.goodobsidian-tool[aria-label="Calculator"]',
+    );
+    if (!anchor) return;
+    this.calculator?.close();
+    this.calculator = new CalculatorPopover(anchor, this.calculatorHost(), { editLine: id });
   }
 
   /**

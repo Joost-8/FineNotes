@@ -9,6 +9,12 @@ import {
   withEntry,
   withPrefs,
   withoutHistory,
+  WINDOW_MIN,
+  WINDOW_PILL,
+  clampPlace,
+  defaultPlace,
+  windowOf,
+  withWindow,
 } from "../../src/model/calculator-store";
 
 describe("calculator store", () => {
@@ -97,5 +103,82 @@ describe("calculator store", () => {
     expect(historyOf(data, "a")).toEqual([]);
     data = withPrefs(data, { base: 2 });
     expect(data.prefs).toEqual({ ...DEFAULT_CALC_PREFS, base: 2 });
+  });
+});
+
+describe("graph window places", () => {
+  it("keeps a place per notebook, through a rename and a reload", () => {
+    let data = withWindow(parseCalculatorData(undefined), "a.md", {
+      x: 10,
+      y: 20,
+      w: 300,
+      h: 250,
+      minimised: true,
+    });
+    expect(windowOf(data, "a.md")).toEqual({ x: 10, y: 20, w: 300, h: 250, minimised: true });
+    expect(windowOf(data, "b.md")).toBeNull();
+    const again = parseCalculatorData(JSON.parse(JSON.stringify(data)));
+    expect(windowOf(again, "a.md")).toEqual(windowOf(data, "a.md"));
+    data = renameCalculatorHistory(data, "a.md", "c.md")!;
+    expect(windowOf(data, "c.md")?.w).toBe(300);
+    expect(windowOf(data, "a.md")).toBeNull();
+    expect(withPrefs(data, { base: 2 }).windows).toBe(data.windows);
+  });
+
+  it("drops a malformed place", () => {
+    const data = parseCalculatorData({
+      windows: {
+        a: { x: 1, y: 2, w: 0, h: 5 },
+        b: "x",
+        c: { x: 1, y: "2", w: 3, h: 4 },
+        d: { x: 1, y: 2, w: 300, h: 300, minimised: "no" },
+      },
+    });
+    expect(Object.keys(data.windows)).toEqual(["d"]);
+    expect(data.windows.d.minimised).toBeUndefined();
+  });
+
+  it("opens top right, and stays inside the view whatever happens to it", () => {
+    const first = defaultPlace({ w: 1200, h: 800 });
+    expect(first).toEqual({ x: 1200 - 400 - 16, y: 64, w: 400, h: 380 });
+    // A split view narrower than the window: it shrinks to fit, never below its minimum.
+    expect(clampPlace({ x: 900, y: 50, w: 400, h: 300 }, { w: 500, h: 800 })).toEqual({
+      x: 92,
+      y: 50,
+      w: 400,
+      h: 300,
+    });
+    expect(clampPlace({ x: 900, y: 50, w: 400, h: 300 }, { w: 300, h: 800 })).toEqual({
+      x: 8,
+      y: 50,
+      w: 284,
+      h: 300,
+    });
+    expect(clampPlace({ x: 0, y: 0, w: 100, h: 100 }, { w: 1000, h: 1000 })).toMatchObject({
+      w: WINDOW_MIN.w,
+      h: WINDOW_MIN.h,
+    });
+    // Rotated to portrait: dragged back inside.
+    expect(clampPlace({ x: 1100, y: 700, w: 300, h: 300 }, { w: 820, h: 1180 })).toEqual({
+      x: 512,
+      y: 700,
+      w: 300,
+      h: 300,
+    });
+    // Off the top or left.
+    expect(clampPlace({ x: -50, y: -50, w: 300, h: 300 }, { w: 800, h: 800 })).toMatchObject({
+      x: 8,
+      y: 8,
+    });
+    // A pill keeps its window size and needs only its own room.
+    expect(
+      clampPlace({ x: 790, y: 790, w: 300, h: 300, minimised: true }, { w: 800, h: 800 }),
+    ).toEqual({
+      x: 800 - WINDOW_PILL.w - 8,
+      y: 800 - WINDOW_PILL.h - 8,
+      w: 300,
+      h: 300,
+      minimised: true,
+    });
   });
 });

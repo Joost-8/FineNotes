@@ -63,11 +63,25 @@ export interface GraphState {
   spec: GraphSpec;
   /** False until the canvas first has a size (the default view needs it). */
   placed: boolean;
+  /**
+   * The canvas size the view was last drawn at, in any panel: a new size
+   * (the window resized, the graph popped out) keeps units per pixel, as
+   * Desmos does, rather than stretching the graph.
+   */
+  drawn?: { w: number; h: number };
 }
 
 export function newGraphState(spec?: GraphSpec): GraphState {
   const base = spec ?? { xMin: -10, xMax: 10, yMin: -10, yMax: 10, expressions: [] };
   return { spec: normalizeGraphSpec(base), placed: spec !== undefined };
+}
+
+/** Panels showing a graph (the pop-up's pane and the graph window), told when another changes it. */
+const watchers = new WeakMap<GraphState, Set<(source: unknown) => void>>();
+
+/** Tell every panel showing `state` except `source` that it changed. */
+export function graphChanged(state: GraphState, source?: unknown): void {
+  for (const watch of watchers.get(state) ?? []) watch(source);
 }
 
 export interface GraphPanelHost {
@@ -136,6 +150,9 @@ export class GraphPanel {
   } | null = null;
   private lastTap = { time: 0, x: 0, y: 0 };
   private readonly dispose: Array<() => void> = [];
+  /** No sampling while the pen writes on the page; what was asked for meanwhile is painted after. */
+  private paused = false;
+  private pending = false;
 
   constructor(
     parent: HTMLElement,
@@ -156,6 +173,13 @@ export class GraphPanel {
     this.recompile();
     this.renderList();
     this.installGestures();
+    const watch = (source: unknown): void => {
+      if (source !== this) this.refresh();
+    };
+    const set = watchers.get(state) ?? new Set();
+    set.add(watch);
+    watchers.set(state, set);
+    this.dispose.push(() => set.delete(watch));
     if (typeof ResizeObserver === "function") {
       const observer = new ResizeObserver(() => this.schedule());
       observer.observe(this.wrap);
@@ -184,6 +208,25 @@ export class GraphPanel {
     this.schedule();
   }
 
+  /**
+   * Hold sampling and painting (the pen is down on the page): nothing runs
+   * until it is released, and then one paint catches up if one was asked for.
+   */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (!paused && this.pending) {
+      this.pending = false;
+      this.schedule();
+    }
+  }
+
+  /** The graph changed here: the host's own reaction, and every other panel showing it. */
+  private changed(): void {
+    this.host.changed();
+    graphChanged(this.state, this);
+  }
+
   colorOf(index: number): string {
     const line = this.state.spec.lines?.[index];
     const palette = this.palette();
@@ -195,6 +238,10 @@ export class GraphPanel {
   /** Paint now, skipping the animation frame (and timing it). */
   paintNow(): void {
     this.frame = 0;
+    if (this.paused) {
+      this.pending = true;
+      return;
+    }
     const started = performance.now();
     const w = this.wrap.clientWidth;
     const h = this.wrap.clientHeight;
@@ -213,6 +260,26 @@ export class GraphPanel {
       // Equal scales, as Desmos opens; fitting is the double tap's and the fit button's.
       this.setView(defaultRange(w, h, this.host.angle()), false);
     }
+    // A new canvas size (the window resized, the pane rotated) keeps units
+    // per pixel about the same middle, rather than stretching the graph.
+    const last = this.state.drawn;
+    if (last && (last.w !== w || last.h !== h)) {
+      const r = this.range();
+      const kx = (r.xMax - r.xMin) / last.w;
+      const ky = (r.yMax - r.yMin) / last.h;
+      const cx = (r.xMin + r.xMax) / 2;
+      const cy = (r.yMin + r.yMax) / 2;
+      this.setView(
+        {
+          xMin: cx - (kx * w) / 2,
+          xMax: cx + (kx * w) / 2,
+          yMin: cy - (ky * h) / 2,
+          yMax: cy + (ky * h) / 2,
+        },
+        false,
+      );
+    }
+    this.state.drawn = { w, h };
     if (spec.square) this.squareUp(w, h);
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
@@ -267,6 +334,10 @@ export class GraphPanel {
   }
 
   private schedule(): void {
+    if (this.paused) {
+      this.pending = true;
+      return;
+    }
     if (this.frame) return;
     this.frame = window.requestAnimationFrame(() => this.paintNow());
   }
@@ -351,7 +422,7 @@ export class GraphPanel {
     const w = this.wrap.clientWidth;
     const h = this.wrap.clientHeight;
     this.setView(this.fitted(defaultRange(w, h, this.host.angle())));
-    this.host.changed();
+    this.changed();
   }
 
   private overlayButton(icon: string, label: string, cls: string, run: () => void): void {
@@ -399,7 +470,7 @@ export class GraphPanel {
         set(!on);
         this.renderView();
         this.schedule();
-        this.host.changed();
+        this.changed();
       });
     }
     const fields = panel.createDiv({ cls: "goodobsidian-calc-range" });
@@ -438,7 +509,7 @@ export class GraphPanel {
       apply.toggleClass("is-error", !valid);
       if (!valid) return;
       this.setView(next);
-      this.host.changed();
+      this.changed();
     });
   }
 
@@ -660,7 +731,7 @@ export class GraphPanel {
     this.recompile();
     if (list) this.renderList();
     this.schedule();
-    this.host.changed();
+    this.changed();
   }
 
   private renderSlider(list: HTMLElement, slider: GraphSlider): void {
@@ -713,7 +784,7 @@ export class GraphPanel {
         slider.value = Math.min(slider.max, Math.max(slider.min, slider.value));
         this.renderList();
         this.schedule();
-        this.host.changed();
+        this.changed();
       });
     }
   }
@@ -727,7 +798,7 @@ export class GraphPanel {
   private settled(): void {
     this.moving = false;
     this.schedule();
-    this.host.changed();
+    this.changed();
   }
 
   /** Play a slider: it sweeps between its min and max, to and fro, until stopped. */
@@ -749,6 +820,10 @@ export class GraphPanel {
 
   /** One frame of a playing slider (exposed for the gallery's timer-driven measurement). */
   playStep(now: number): void {
+    if (this.paused) {
+      this.lastPlay = now;
+      return;
+    }
     const slider = this.state.spec.sliders?.find((s) => s.name === this.playing);
     if (!slider || !this.el.isConnected) {
       this.playing = null;
@@ -871,7 +946,7 @@ export class GraphPanel {
       if (this.moving) {
         this.moving = false;
         this.schedule();
-        this.host.changed();
+        this.changed();
       }
       if (!gesture || gesture.moved || gesture.held || event.type === "pointercancel") return;
       if (event.timeStamp - gesture.startTime > TAP_MS) return;
@@ -966,7 +1041,7 @@ export class GraphPanel {
       pins.splice(onPin, 1);
       this.marker = null;
       this.schedule();
-      this.host.changed();
+      this.changed();
       return;
     }
     this.marker = this.hit(p);
@@ -981,7 +1056,7 @@ export class GraphPanel {
     spec.pins = [...(spec.pins ?? []), { line: hit.line, x: hit.x }].slice(-12);
     this.marker = null;
     this.schedule();
-    this.host.changed();
+    this.changed();
   }
 }
 

@@ -80,7 +80,7 @@ import {
 } from "../model/calculator-store";
 import type { GraphSpec } from "../model/graph";
 import { MAX_LINES, newLineId, normalizeGraphSpec } from "../model/graph-lines";
-import { GraphPanel, type GraphState, newGraphState } from "./calculator-graph";
+import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
 
 const POPOVER_WIDTH = 360;
 const RESULT_MAX_PX = 32;
@@ -105,9 +105,13 @@ export interface CalculatorHost {
    * not. Absent: the graph pane offers no Insert graph.
    */
   insertGraph?(spec: GraphSpec): boolean;
+  /** Pop the graph out into its floating window; absent hides the button. */
+  popOutGraph?(): void;
 }
 
 export interface CalculatorOptions {
+  /** Open on the keys typing this graph line of the notebook's graph (null: a new line). */
+  editLine?: string | null;
   /**
    * Open on the graph pane to edit this graph (a graph on a page); its
    * Update graph button hands the edited graph to `done` and closes. The
@@ -123,6 +127,23 @@ const session: { ans: CalcValue; memory: CalcValue } = {
 };
 /** Each notebook's graph, while the app runs. */
 const graphs = new Map<string, GraphState>();
+
+/** The notebook's graph while the app runs: the pop-up's graph pane and the graph window share it. */
+export function graphStateFor(path: string): GraphState {
+  let state = graphs.get(path);
+  if (!state) {
+    state = newGraphState();
+    graphs.set(path, state);
+  }
+  return state;
+}
+
+/** A graph line laid out as math into `parent` (the graph window's list uses it too). */
+export function drawGraphMath(parent: HTMLElement, text: string): void {
+  const laid = layoutWithEnding(text, 10, { graph: true });
+  if (laid) renderBox(parent, laid.box);
+  else parent.createSpan({ cls: "goodobsidian-calc-raw", text });
+}
 
 type Pane = "keys" | "history" | "graph";
 
@@ -177,9 +198,7 @@ export class CalculatorPopover {
       this.editAngle = edited.angle ?? "rad";
       this.pane = "graph";
     } else {
-      const kept = graphs.get(host.path);
-      this.graphState = kept ?? newGraphState();
-      if (!kept) graphs.set(host.path, this.graphState);
+      this.graphState = graphStateFor(host.path);
     }
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-calc" });
     this.el.setAttribute("role", "dialog");
@@ -236,6 +255,20 @@ export class CalculatorPopover {
       setIcon(move, icon);
       move.setAttribute("aria-label", label);
     }
+    if (host.popOutGraph && !options.editGraph) {
+      const out = this.button(
+        flags,
+        "",
+        () => {
+          host.popOutGraph?.();
+          this.close();
+        },
+        "goodobsidian-calc-icon is-popout",
+        "Pop the graph out into a window that stays open while you write",
+      );
+      setIcon(out, "picture-in-picture-2");
+      out.setAttribute("aria-label", "Pop out the graph");
+    }
     this.paneButton(flags, "graph", "chart-spline", "Graph");
     this.paneButton(flags, "history", "history", "History");
     this.exprEl = display.createDiv({ cls: "goodobsidian-calc-expr" });
@@ -288,6 +321,7 @@ export class CalculatorPopover {
     this.place();
     this.installDismiss();
     this.installTouchGuard();
+    if (options.editLine !== undefined) this.editLine(options.editLine);
   }
 
   get isOpen(): boolean {
@@ -746,6 +780,7 @@ export class CalculatorPopover {
     if (lines.length >= MAX_LINES || lines.some((l) => l.text === text)) return;
     lines.push({ id: newLineId(lines), text });
     this.graphState.spec.expressions = lines.map((l) => l.text);
+    graphChanged(this.graphState);
   }
 
   /** Type a graph line on the keys: an existing one (by id), or a new one. */
@@ -776,6 +811,7 @@ export class CalculatorPopover {
       this.addLine(text);
     }
     this.graphState.spec.expressions = lines.map((l) => l.text);
+    graphChanged(this.graphState);
     this.editingLine = null;
     this.entry = { expr: "", cursor: 0, fresh: false };
     this.pane = "graph";
@@ -887,6 +923,7 @@ export class CalculatorPopover {
     for (const move of Array.from(this.el.querySelectorAll(".is-cursor"))) {
       move.toggleClass("is-hidden", graphing);
     }
+    this.el.querySelector(".is-popout")?.toggleClass("is-hidden", !graphing);
     const clear = this.bodyEl.querySelector<HTMLElement>("[data-clear]");
     if (clear) clear.setText(this.clearsAll() ? "AC" : "C");
     const equalsKey = this.bodyEl.querySelector<HTMLElement>("[data-equals]");

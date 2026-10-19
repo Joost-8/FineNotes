@@ -26,10 +26,21 @@ export interface CalcPrefs {
   tab: Exclude<KeyTab, "graph">;
 }
 
+/** Where a notebook's graph window sat: px from the view's top-left, its size, minimised. */
+export interface WindowPlace {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minimised?: true;
+}
+
 export interface CalculatorData {
   prefs: CalcPrefs;
   /** Notebook path → its history, newest first, and when it was last added to. */
   history: Record<string, { entries: CalcEntry[]; at: number }>;
+  /** Notebook path → where its graph window was. */
+  windows: Record<string, WindowPlace>;
 }
 
 export const HISTORY_MAX = 30;
@@ -60,6 +71,7 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
   const data: CalculatorData = {
     prefs: { ...DEFAULT_CALC_PREFS },
     history: Object.create(null) as CalculatorData["history"],
+    windows: Object.create(null) as CalculatorData["windows"],
   };
   if (!isRecord(raw)) return data;
   if (isRecord(raw.prefs)) {
@@ -68,6 +80,14 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
     if (angle === "deg" || angle === "rad") data.prefs.angle = angle;
     if (typeof fractions === "boolean") data.prefs.fractions = fractions;
     if (NUMBER_BASES.includes(base as NumberBase)) data.prefs.base = base as NumberBase;
+  }
+  if (isRecord(raw.windows)) {
+    for (const [path, value] of Object.entries(raw.windows)) {
+      const place = parsePlace(value);
+      if (path && place && Object.keys(data.windows).length < HISTORY_NOTEBOOKS_MAX) {
+        data.windows[path] = place;
+      }
+    }
   }
   if (isRecord(raw.history)) {
     for (const [path, value] of Object.entries(raw.history)) {
@@ -81,6 +101,27 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
     }
   }
   return data;
+}
+
+function parsePlace(raw: unknown): WindowPlace | null {
+  if (!isRecord(raw)) return null;
+  const { x, y, w, h, minimised } = raw;
+  const ok = [x, y, w, h].every((v) => typeof v === "number" && Number.isFinite(v));
+  if (!ok || (w as number) <= 0 || (h as number) <= 0) return null;
+  const place: WindowPlace = { x: x as number, y: y as number, w: w as number, h: h as number };
+  if (minimised === true) place.minimised = true;
+  return place;
+}
+
+/** `path`'s graph window placed at `place`. */
+export function withWindow(data: CalculatorData, path: string, place: WindowPlace): CalculatorData {
+  const windows = Object.assign(Object.create(null) as CalculatorData["windows"], data.windows);
+  windows[path] = { ...place };
+  return { ...data, windows };
+}
+
+export function windowOf(data: CalculatorData, path: string): WindowPlace | null {
+  return Object.prototype.hasOwnProperty.call(data.windows, path) ? data.windows[path] : null;
 }
 
 export function historyOf(data: CalculatorData, path: string): CalcEntry[] {
@@ -112,17 +153,17 @@ export function withEntry(
     paths.sort((a, b) => history[b].at - history[a].at);
     for (const stale of paths.slice(HISTORY_NOTEBOOKS_MAX)) delete history[stale];
   }
-  return { prefs: data.prefs, history };
+  return { prefs: data.prefs, history, windows: data.windows };
 }
 
 export function withoutHistory(data: CalculatorData, path: string): CalculatorData {
   const history = copyHistory(data);
   delete history[path];
-  return { prefs: data.prefs, history };
+  return { prefs: data.prefs, history, windows: data.windows };
 }
 
 export function withPrefs(data: CalculatorData, patch: Partial<CalcPrefs>): CalculatorData {
-  return { prefs: { ...data.prefs, ...patch }, history: data.history };
+  return { ...data, prefs: { ...data.prefs, ...patch } };
 }
 
 /** The history follows a renamed or moved notebook; null when there was none to move. */
@@ -131,9 +172,54 @@ export function renameCalculatorHistory(
   from: string,
   to: string,
 ): CalculatorData | null {
-  if (from === to || !Object.prototype.hasOwnProperty.call(data.history, from)) return null;
+  const own = (record: object): boolean => Object.prototype.hasOwnProperty.call(record, from);
+  if (from === to || (!own(data.history) && !own(data.windows))) return null;
   const history = copyHistory(data);
-  history[to] = history[from];
-  delete history[from];
-  return { prefs: data.prefs, history };
+  if (own(history)) {
+    history[to] = history[from];
+    delete history[from];
+  }
+  const windows = Object.assign(Object.create(null) as CalculatorData["windows"], data.windows);
+  if (own(windows)) {
+    windows[to] = windows[from];
+    delete windows[from];
+  }
+  return { prefs: data.prefs, history, windows };
+}
+
+/** A graph window is never smaller than this (room for its title bar, a line and a graph). */
+export const WINDOW_MIN = { w: 240, h: 200 };
+/** A minimised window: the pill it shrinks to. */
+export const WINDOW_PILL = { w: 132, h: 40 };
+const WINDOW_MARGIN = 8;
+
+/** Where a graph window first opens: the top right of the view, a third of its width. */
+export function defaultPlace(bounds: { w: number; h: number }): WindowPlace {
+  const w = Math.max(WINDOW_MIN.w, Math.min(420, Math.round(bounds.w / 3)));
+  const h = Math.max(WINDOW_MIN.h, Math.min(380, Math.round(bounds.h / 2)));
+  return clampPlace({ x: bounds.w - w - 16, y: 64, w, h }, bounds);
+}
+
+/**
+ * `place` kept inside a view `bounds` (a split view, a rotation): no
+ * smaller than {@link WINDOW_MIN}, no larger than the view, and with its
+ * title bar (or the pill) wholly inside.
+ */
+export function clampPlace(place: WindowPlace, bounds: { w: number; h: number }): WindowPlace {
+  const roomW = Math.max(WINDOW_MIN.w, bounds.w - 2 * WINDOW_MARGIN);
+  const roomH = Math.max(WINDOW_MIN.h, bounds.h - 2 * WINDOW_MARGIN);
+  const w = Math.min(roomW, Math.max(WINDOW_MIN.w, place.w));
+  const h = Math.min(roomH, Math.max(WINDOW_MIN.h, place.h));
+  const shownW = place.minimised ? WINDOW_PILL.w : w;
+  const shownH = place.minimised ? WINDOW_PILL.h : h;
+  const clamp = (v: number, size: number, room: number): number =>
+    Math.max(WINDOW_MARGIN, Math.min(room - size - WINDOW_MARGIN, v));
+  const next: WindowPlace = {
+    x: Math.round(clamp(place.x, shownW, bounds.w)),
+    y: Math.round(clamp(place.y, shownH, bounds.h)),
+    w: Math.round(w),
+    h: Math.round(h),
+  };
+  if (place.minimised) next.minimised = true;
+  return next;
 }

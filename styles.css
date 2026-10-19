@@ -10194,7 +10194,8 @@ button.clickable-icon.goodobsidian-calc-chip.is-danger {
 }
 
 /* Obsidian's mobile field rules outrank one class: the sheet and the type lift these over them. */
-.goodobsidian-calc input[type="text"].goodobsidian-calc-number {
+.goodobsidian-calc input[type="text"].goodobsidian-calc-number,
+.goodobsidian-graph-window input[type="text"].goodobsidian-calc-number {
   width: 64px;
   height: 32px;
   padding: 0 6px;
@@ -10349,4 +10350,105 @@ button.clickable-icon.goodobsidian-calc-apply {
 
 button.clickable-icon.goodobsidian-calc-apply.is-error {
   color: var(--text-error);
+}
+
+/* ------------------------------------------------------- graph window */
+
+/* The calculator's graph popped out over the notebook (view/graph-window.ts):
+   above the page, below pop-ups; moved by its bar, sized by its corner. */
+.goodobsidian-graph-window {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 120ms ease-out;
+}
+
+.goodobsidian-graph-window.is-raised {
+  transform: scale(1.02);
+}
+
+.goodobsidian-graph-window-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px 0 14px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.goodobsidian-graph-window-title {
+  flex: 1 1 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+}
+
+button.clickable-icon.goodobsidian-graph-window-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-graph-window-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 8px 8px;
+}
+
+.goodobsidian-graph-window .goodobsidian-calc-functions {
+  max-height: 34%;
+}
+
+.goodobsidian-graph-window .goodobsidian-calc-canvas {
+  min-height: 120px;
+}
+
+/* The corner to resize from: a 28 px target over the graph's corner. */
+.goodobsidian-graph-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-faint);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.goodobsidian-graph-window-grip svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Minimised: only the bar, as a pill. */
+.goodobsidian-graph-window.is-minimised {
+  border-radius: var(--gob-radius-pill);
+}
+
+/* A tap on the pill opens it again; only Close stays as a button. */
+.goodobsidian-graph-window.is-minimised .goodobsidian-graph-window-body,
+.goodobsidian-graph-window.is-minimised .goodobsidian-graph-window-grip,
+.goodobsidian-graph-window.is-minimised
+  button.clickable-icon.goodobsidian-graph-window-button:not(.is-close) {
+  display: none;
 }
