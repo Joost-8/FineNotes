@@ -67,6 +67,7 @@ import {
   shownKey,
   spellAns,
   typeInto,
+  toEnd,
   typeKey,
   withCursor,
 } from "../model/calculator-keys";
@@ -1040,8 +1041,9 @@ export class CalculatorPopover {
       const tapped = from !== null && !swiped;
       from = null;
       if (!tapped || this.entry.fresh || this.tapSlot(event)) return;
-      // A tap on the display away from every box: the cursor to the end.
-      this.entry = { ...this.entry, cursor: this.entry.expr.length };
+      // A tap on the display away from every box: the cursor after
+      // everything shown, past the brackets the display draws closed.
+      this.entry = toEnd(this.entry);
       this.refresh();
     });
     // A box's 44 px target reaches past the display's edge onto the card.

@@ -69,6 +69,17 @@ export function isKeyTab(value: unknown): value is KeyTab {
 
 const BOX = PLACEHOLDER;
 
+/**
+ * A function key types its bracket closed with a box inside (`sin(▢)`), as
+ * natural-display calculators do: the cursor sits in the box, ▶ or `)`
+ * steps out past the bracket, and an operator typed inside stays inside
+ * (sin(30+2) is a real sum). Before 2026-10-19 the key typed `sin(` and the
+ * bracket was only drawn, so there was no way past it (Joost, iPad).
+ */
+function closed(insert: string): string {
+  return insert.endsWith("(") ? `${insert}${BOX})` : insert;
+}
+
 const fn = (
   label: string,
   insert: string,
@@ -76,7 +87,7 @@ const fn = (
   extra: Partial<CalcKey> = {},
 ): CalcKey => ({
   label,
-  insert,
+  insert: closed(insert),
   help,
   tone: "fn",
   decimalOnly: true,
@@ -115,7 +126,7 @@ export type KeyRows = ReadonlyArray<ReadonlyArray<CalcKey | null>>;
 const BASIC: KeyRows = [
   [
     fn("x²", "²", "Square what is before it", { aria: "squared", continues: true, ...anyBase }),
-    fn("xʸ", "^", "To the power of what follows: 2^10", {
+    fn("xʸ", `^(${BOX})`, "To the power of what goes in the box; ▶ comes back down", {
       aria: "to the power",
       continues: true,
       ...anyBase,
@@ -522,6 +533,15 @@ export function backspace(entry: Entry, deleteLast: (expr: string) => string): E
     const expr = deleteLast(entry.expr);
     return { expr, cursor: expr.length, fresh: false };
   }
+  // An empty function, sin(▢) with the cursor in its box: ⌫ takes it whole.
+  if (entry.expr[at] === BOX && entry.expr[at + 1] === ")" && entry.expr[at - 1] === "(") {
+    const name = /(?:[a-zA-Z]+|√|d\/dx|∫|Σ|Π|\^|e\^|10\^)\($/.exec(entry.expr.slice(0, at));
+    const onlyBox = name && !entry.expr.slice(name.index, at).includes(",");
+    if (onlyBox && name) {
+      const expr = entry.expr.slice(0, name.index) + entry.expr.slice(at + 2);
+      return { expr, cursor: name.index, fresh: false };
+    }
+  }
   // At a box: go back to the box before, if any, rather than eat the template.
   if (entry.expr[at] === BOX) {
     const before = boxes(entry.expr).filter((i) => i < at);
@@ -594,8 +614,35 @@ export function keyboardKey(
 /** The cursor moved one sign left or right (a box counts as one sign). */
 export function moveCursor(entry: Entry, by: -1 | 1): Entry {
   if (entry.fresh) return entry;
-  const at = cursorOf(entry) + by;
-  return { ...entry, cursor: Math.max(0, Math.min(entry.expr.length, at)) };
+  const at = cursorOf(entry);
+  // ▶ at the very end with a bracket still open: close it and step past,
+  // as the display already draws it closed.
+  if (by === 1 && at === entry.expr.length && openBrackets(entry.expr) > 0) {
+    const expr = `${entry.expr})`;
+    return { ...entry, expr, cursor: expr.length };
+  }
+  return { ...entry, cursor: Math.max(0, Math.min(entry.expr.length, at + by)) };
+}
+
+/** Brackets opened and not yet closed in `expr`. */
+export function openBrackets(expr: string): number {
+  let depth = 0;
+  for (const c of expr) {
+    if (c === "(") depth++;
+    else if (c === ")" && depth > 0) depth--;
+  }
+  return depth;
+}
+
+/**
+ * The cursor after everything shown: every bracket the display draws
+ * closed is closed in the text, and the cursor goes past them all (a tap
+ * on the display's tail, right of the last bracket).
+ */
+export function toEnd(entry: Entry): Entry {
+  if (entry.fresh) return entry;
+  const expr = entry.expr + ")".repeat(openBrackets(entry.expr));
+  return { ...entry, expr, cursor: expr.length };
 }
 
 // --- Hints --------------------------------------------------------------------

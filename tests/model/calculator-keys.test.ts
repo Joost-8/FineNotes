@@ -20,8 +20,10 @@ import {
   moveCursor,
   moveToBox,
   nextBox,
+  openBrackets,
   shownKey,
   spellAns,
+  toEnd,
   typeInto,
   typeKey,
   withCursor,
@@ -39,7 +41,15 @@ const key = (label: string): CalcKey => {
 
 /** A key's text with its boxes filled, so it calculates. */
 function exercise(k: CalcKey): string {
-  const text = (k.insert ?? "").replace(/▢ = ▢/, "x = 2").replace(/▢/g, "2");
+  const raw = k.insert ?? "";
+  // A one-box function, name(▢): an input in its domain.
+  const single = /^(.*)\(▢\)$/.exec(raw);
+  if (single && !raw.slice(0, -3).includes("▢")) {
+    const name = single[1];
+    const input = ["acosh", "asec", "acsc"].includes(name) ? "2" : name === "not" ? "5" : "0.5";
+    return k.continues ? `4${name}(${input})` : `${name}(${input})`;
+  }
+  const text = raw.replace(/▢ = ▢/, "x = 2").replace(/▢/g, "2");
   if (k.continues) return `4${text}2`;
   if (text === "x") return "solve(x = 2, 0)";
   if (text === "E") return "2E3";
@@ -47,22 +57,7 @@ function exercise(k: CalcKey): string {
   if (text === ")") return "(1)";
   if (text === "Ans") return "Ans+1";
   if (text === "∞") return "lim(1/x, ∞)";
-  if (/^(asec|acsc)\($/.test(text)) return `${text}2)`;
-  if (
-    /^(sin|cos|tan|sec|csc|cot|asin|acos|atan|asec|acsc|acot|sinh|cosh|tanh|asinh|atanh|ln|log|abs|√|e\^|10\^)\($/.test(
-      text,
-    )
-  ) {
-    return `${text}0.5)`;
-  }
-  if (text === "acosh(") return "acosh(2)";
-  if (
-    text.startsWith("d/dx(") ||
-    text.startsWith("∫(") ||
-    text.startsWith("Σ(") ||
-    text.startsWith("Π(") ||
-    text.startsWith("lim(")
-  ) {
+  if (["d/dx(", "∫(", "Σ(", "Π(", "lim("].some((p) => text.startsWith(p))) {
     return text.replace(/\(2/, "(x");
   }
   return text.endsWith("(") ? `${text}1)` : `${text}1`;
@@ -347,5 +342,99 @@ describe("boxes the display adds, and keys that step over a template", () => {
     expect(slot(box.hi)).toEqual({ t: "slot", active: true, index: 2 });
     expect(slot(box.lo)).toEqual({ t: "slot", index: 1 });
     expect(slot(box.body)).toEqual({ t: "slot", index: 0 });
+  });
+});
+
+describe("getting out of a bracket, an exponent, a root", () => {
+  const key = (label: string): CalcKey => {
+    const found = allKeys.find((k) => k.label === label);
+    if (!found) throw new Error(label);
+    return found;
+  };
+  const press = (e: Entry, label: string): Entry => {
+    const k = key(label);
+    return typeKey(e, k.insert ?? "", k.continues === true);
+  };
+  const empty: Entry = { expr: "", cursor: 0, fresh: false };
+
+  it("sin(30), then ▶, then + 2 gives sin(30)+2", () => {
+    let e = press(empty, "sin");
+    expect(e).toEqual({ expr: "sin(▢)", cursor: 4, fresh: false });
+    e = press(press(e, "3"), "0");
+    expect(e.expr).toBe("sin(30)");
+    e = moveCursor(e, 1);
+    e = press(press(e, "+"), "2");
+    expect(e.expr).toBe("sin(30)+2");
+    expect(calculate(e.expr)).toMatchObject({ ok: true, text: "2.5" });
+  });
+
+  it("an operator typed inside stays inside: sin(30+2) is a real sum", () => {
+    let e = press(empty, "sin");
+    for (const k of ["3", "0", "+", "2"]) e = press(e, k);
+    expect(e.expr).toBe("sin(30+2)");
+  });
+
+  it("types ) over the bracket the key put there, not a second one", () => {
+    let e = press(empty, "cos");
+    e = press(press(e, "6"), "0");
+    e = press(e, ")");
+    expect(e).toEqual({ expr: "cos(60)", cursor: 7, fresh: false });
+    e = press(press(e, "×"), "2");
+    expect(calculate(e.expr)).toMatchObject({ ok: true, text: "1" });
+  });
+
+  it("comes back down from an exponent", () => {
+    let e = press(press(empty, "2"), "xʸ");
+    expect(e).toEqual({ expr: "2^(▢)", cursor: 3, fresh: false });
+    e = press(press(press(e, "3"), "+"), "1");
+    e = moveCursor(e, 1);
+    e = press(press(e, "+"), "1");
+    expect(e.expr).toBe("2^(3+1)+1");
+    expect(calculate(e.expr)).toMatchObject({ ok: true, text: "17" });
+    // x² needs no way out: it is one sign.
+    const sq = press(press(press(press(empty, "3"), "x²"), "+"), "1");
+    expect(calculate(sq.expr)).toMatchObject({ ok: true, text: "10" });
+  });
+
+  it("comes out from under a root and a log", () => {
+    let e = press(empty, "√");
+    expect(e.expr).toBe("√(▢)");
+    e = press(press(e, "1"), "6");
+    e = moveCursor(e, 1);
+    e = press(press(e, "+"), "1");
+    expect(calculate(e.expr)).toMatchObject({ ok: true, text: "5" });
+    let l = press(press(press(empty, "ln"), "1"), ")");
+    l = press(press(l, "+"), "1");
+    expect(l.expr).toBe("ln(1)+1");
+  });
+
+  it("closes a bracket typed open with ▶ or a tap on the tail", () => {
+    const open = { expr: "2×(3+4", fresh: false };
+    expect(moveCursor(open, 1)).toEqual({ expr: "2×(3+4)", cursor: 7, fresh: false });
+    expect(toEnd({ expr: "sin(cos(1", cursor: 2, fresh: false })).toEqual({
+      expr: "sin(cos(1))",
+      cursor: 11,
+      fresh: false,
+    });
+    expect(toEnd({ expr: "1+2", fresh: false })).toEqual({ expr: "1+2", cursor: 3, fresh: false });
+    const shown = { expr: "7", fresh: true };
+    expect(toEnd(shown)).toBe(shown);
+    expect(openBrackets("((1)")).toBe(1);
+    expect(openBrackets("1)(")).toBe(1);
+  });
+
+  it("deletes an empty function whole", () => {
+    expect(backspace({ expr: "2+sin(▢)", cursor: 6, fresh: false }, deleteLast)).toEqual({
+      expr: "2+",
+      cursor: 2,
+      fresh: false,
+    });
+    expect(backspace({ expr: "e^(▢)", cursor: 3, fresh: false }, deleteLast)).toEqual({
+      expr: "",
+      cursor: 0,
+      fresh: false,
+    });
+    // A template with more inputs keeps its boxes: ⌫ goes back a box instead.
+    expect(backspace({ expr: "root(▢, ▢)", cursor: 8, fresh: false }, deleteLast).cursor).toBe(5);
   });
 });
