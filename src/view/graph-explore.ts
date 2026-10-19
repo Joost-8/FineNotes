@@ -132,7 +132,7 @@ export class GraphExplorer {
   close(commit: boolean): void {
     if (this.closed) return;
     this.closed = true;
-    if (this.frame) cancelAnimationFrame(this.frame);
+    if (this.frame) window.cancelAnimationFrame(this.frame);
     this.root.remove();
     const view = this.view;
     this.options.onClose(commit && !sameView(view, this.start) ? view : null);
@@ -261,7 +261,7 @@ export class GraphExplorer {
 
   private requestDraw(): void {
     if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
+    this.frame = window.requestAnimationFrame(() => {
       this.frame = 0;
       this.draw();
     });

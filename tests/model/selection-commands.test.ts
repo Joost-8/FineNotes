@@ -239,7 +239,13 @@ describe("AddElements and copyElements", () => {
     const before = snap(doc);
     const copies = copyElements(
       { strokes: s, images: i, textBoxes: t },
-      { stroke: () => "s1", image: () => "i1", textBox: () => "t1", table: () => "g1", graph: () => "f1" },
+      {
+        stroke: () => "s1",
+        image: () => "i1",
+        textBox: () => "t1",
+        table: () => "g1",
+        graph: () => "f1",
+      },
       0,
       0,
     );
