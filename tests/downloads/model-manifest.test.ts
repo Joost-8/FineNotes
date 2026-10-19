@@ -1,12 +1,7 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BUNDLE_FORMAT, bundleFormatOf } from "../../src/recognition/hwr/bundle";
 import {
   type AssetState,
-  ASSETS,
-  GRAPE_MODEL,
-  WORD_LIST,
+  type ModelAsset,
   compareVersions,
   failureText,
   formatSize,
@@ -16,59 +11,55 @@ import {
   stateText,
   storedVersions,
   toHex,
+  totalBytes,
   transition,
   usableFile,
   versionOf,
-} from "../../src/recognition/hwr/model-manifest";
+} from "../../src/downloads/model-manifest";
 
-describe("the pinned files", () => {
-  it("pins the published Grape file", () => {
-    const bytes = readFileSync("models/grape-1.0.bin");
-    expect(bytes.byteLength).toBe(GRAPE_MODEL.bytes);
-    expect(createHash("sha256").update(bytes).digest("hex")).toBe(GRAPE_MODEL.sha256);
-    expect(bundleFormatOf(bytes)).toBe(GRAPE_MODEL.format);
-    expect(GRAPE_MODEL.format).toBe(BUNDLE_FORMAT);
-  });
-
-  it("names each file after its version, downloads it from GitHub over https", () => {
-    for (const asset of ASSETS) {
-      expect(asset.file).toBe(`${asset.prefix}${asset.version}${asset.suffix}`);
-      expect(asset.url.startsWith("https://github.com/Joost-8/Grape/releases/download/")).toBe(
-        true,
-      );
-      expect(asset.url.endsWith(`/${asset.file}`)).toBe(true);
-      expect(asset.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(asset.bytes).toBeGreaterThan(0);
-    }
-  });
-
-  it("does not take the user's own words.txt or learned models for its files", () => {
-    expect(versionOf(WORD_LIST, "words.txt")).toBeNull();
-    expect(versionOf(GRAPE_MODEL, "personal.bin")).toBeNull();
-    expect(versionOf(GRAPE_MODEL, "nightly.bin")).toBeNull();
-    expect(versionOf(GRAPE_MODEL, "grape-1.0.bin.download")).toBeNull();
-    expect(versionOf(GRAPE_MODEL, "grape-2.0.bin")).toBe("2.0");
-  });
+const file = (name: string, bytes: number) => ({
+  name,
+  url: `https://example.test/${name}`,
+  bytes,
+  sha256: "0".repeat(64),
 });
 
-describe("bundleFormatOf", () => {
-  it("is null for a file that is not a model", () => {
-    expect(bundleFormatOf(new Uint8Array([1, 2, 3]))).toBeNull();
-    expect(bundleFormatOf(new TextEncoder().encode("# words\nthe\n"))).toBeNull();
+const MODEL: ModelAsset = {
+  id: "test",
+  label: "Test model",
+  purpose: "It tests.",
+  version: "1.0",
+  format: 1,
+  folder: "models",
+  files: [file("test-1.0.bin", 3_500_236)],
+  prefix: "test-",
+  suffix: ".bin",
+};
+
+const PAIR: ModelAsset = {
+  ...MODEL,
+  id: "pair",
+  files: [file("enc-1.0.bin", 2_000_000), file("dec-1.0.bin", 1_000_000)],
+  prefix: "enc-",
+};
+
+describe("a model's files", () => {
+  it("adds up its sizes", () => {
+    expect(totalBytes(MODEL)).toBe(3_500_236);
+    expect(totalBytes(PAIR)).toBe(3_000_000);
   });
 
-  it("reads the version from a header", () => {
-    const header = new Uint8Array(12);
-    const view = new DataView(header.buffer);
-    view.setUint32(0, 0x57484e46, true);
-    view.setUint32(4, 7, true);
-    expect(bundleFormatOf(header.buffer)).toBe(7);
-    expect(bundleFormatOf(header.subarray(0, 8))).toBe(7);
+  it("names other versions only with a prefix and suffix", () => {
+    expect(versionOf(MODEL, "test-2.0.bin")).toBe("2.0");
+    expect(versionOf(MODEL, "test-1.0.bin.download")).toBeNull();
+    expect(versionOf(MODEL, "personal.bin")).toBeNull();
+    expect(versionOf(MODEL, "test-.bin")).toBeNull();
+    expect(versionOf({ ...MODEL, prefix: undefined }, "test-2.0.bin")).toBeNull();
   });
 });
 
 describe("transition", () => {
-  const older = { version: "0.9", file: "grape-0.9.bin", usable: true };
+  const older = { version: "0.9", file: "test-0.9.bin", usable: true };
 
   it("goes missing → downloading → verifying → ready", () => {
     let s: AssetState = { kind: "unknown" };
@@ -83,10 +74,11 @@ describe("transition", () => {
     expect(s).toEqual({ kind: "verifying" });
     s = transition(s, { type: "verified" });
     expect(s).toEqual({ kind: "ready" });
-    expect(usableFile(GRAPE_MODEL, s)).toBe("grape-1.0.bin");
+    expect(usableFile(MODEL, s)).toBe("test-1.0.bin");
+    expect(usableFile(PAIR, s)).toBe("enc-1.0.bin");
   });
 
-  it("finds a verified file as ready", () => {
+  it("finds a verified model as ready", () => {
     expect(transition({ kind: "unknown" }, { type: "found", found: "current" })).toEqual({
       kind: "ready",
     });
@@ -95,12 +87,12 @@ describe("transition", () => {
   it("carries an older readable file through a download and a failure", () => {
     let s: AssetState = transition({ kind: "unknown" }, { type: "found", found: older });
     expect(s).toEqual({ kind: "outdated", older });
-    expect(usableFile(GRAPE_MODEL, s)).toBe("grape-0.9.bin");
+    expect(usableFile(MODEL, s)).toBe("test-0.9.bin");
     s = transition(s, { type: "start" });
-    expect(usableFile(GRAPE_MODEL, s)).toBe("grape-0.9.bin");
+    expect(usableFile(MODEL, s)).toBe("test-0.9.bin");
     s = transition(s, { type: "failed", reason: "offline", detail: "no connection" });
     expect(s).toEqual({ kind: "failed", reason: "offline", detail: "no connection", older });
-    expect(usableFile(GRAPE_MODEL, s)).toBe("grape-0.9.bin");
+    expect(usableFile(MODEL, s)).toBe("test-0.9.bin");
     s = transition(s, { type: "start" });
     s = transition(s, { type: "received" });
     expect(s).toEqual({ kind: "verifying", older });
@@ -108,11 +100,12 @@ describe("transition", () => {
     expect(s.kind).toBe("failed");
   });
 
-  it("an older file in a format this build cannot read is not used", () => {
+  it("does not use an older file in a format this build cannot read", () => {
     const stale = { ...older, usable: false };
     const s = transition({ kind: "unknown" }, { type: "found", found: stale });
-    expect(usableFile(GRAPE_MODEL, s)).toBeNull();
-    expect(usableFile(GRAPE_MODEL, { kind: "missing" })).toBeNull();
+    expect(usableFile(MODEL, s)).toBeNull();
+    expect(usableFile(MODEL, { kind: "missing" })).toBeNull();
+    expect(usableFile({ ...MODEL, files: [] }, { kind: "ready" })).toBeNull();
   });
 
   it("ignores events that make no sense in a state", () => {
@@ -135,16 +128,22 @@ describe("transition", () => {
 
 describe("storedVersions", () => {
   it("finds the current file and the others, newest first", () => {
-    const found = storedVersions(GRAPE_MODEL, [
-      "grape-0.9.bin",
+    const found = storedVersions(MODEL, [
+      "test-0.9.bin",
       "personal.bin",
-      "grape-1.0.bin",
-      "grape-0.10.bin",
+      "test-1.0.bin",
+      "test-0.10.bin",
       "words.txt",
     ]);
     expect(found.current).toBe(true);
     expect(found.others.map((o) => o.version)).toEqual(["0.10", "0.9"]);
-    expect(storedVersions(GRAPE_MODEL, []).current).toBe(false);
+    expect(storedVersions(MODEL, []).current).toBe(false);
+  });
+
+  it("is current only with every file of the model", () => {
+    expect(storedVersions(PAIR, ["enc-1.0.bin"]).current).toBe(false);
+    expect(storedVersions(PAIR, ["enc-1.0.bin", "dec-1.0.bin"]).current).toBe(true);
+    expect(storedVersions({ ...PAIR, files: [] }, []).current).toBe(false);
   });
 
   it("compares versions numerically", () => {
@@ -158,28 +157,28 @@ describe("storedVersions", () => {
 
 describe("what the user is told", () => {
   it("sizes", () => {
-    expect(formatSize(GRAPE_MODEL.bytes)).toBe("3.5 MB");
-    expect(formatSize(WORD_LIST.bytes)).toBe("222 KB");
+    expect(formatSize(3_500_236)).toBe("3.5 MB");
+    expect(formatSize(221_681)).toBe("222 KB");
     expect(formatSize(10)).toBe("1 KB");
   });
 
   it("each state", () => {
-    const older = { version: "0.9", file: "grape-0.9.bin", usable: true };
-    expect(stateText(GRAPE_MODEL, { kind: "unknown" })).toBe("Checking…");
-    expect(stateText(GRAPE_MODEL, { kind: "missing" })).toBe("Not downloaded yet (3.5 MB).");
-    expect(stateText(GRAPE_MODEL, { kind: "ready" })).toBe("Version 1.0, 3.5 MB, on this device.");
-    expect(stateText(GRAPE_MODEL, { kind: "verifying" })).toBe("Checking the download…");
-    expect(
-      stateText(GRAPE_MODEL, { kind: "downloading", received: 1_750_118, total: 3_500_236 }),
-    ).toBe("Downloading… 50% of 3.5 MB");
-    expect(stateText(GRAPE_MODEL, { kind: "downloading", received: 0, total: 0 })).toBe(
+    const older = { version: "0.9", file: "test-0.9.bin", usable: true };
+    expect(stateText(MODEL, { kind: "unknown" })).toBe("Checking…");
+    expect(stateText(MODEL, { kind: "missing" })).toBe("Not downloaded yet (3.5 MB).");
+    expect(stateText(MODEL, { kind: "ready" })).toBe("Version 1.0, 3.5 MB, on this device.");
+    expect(stateText(MODEL, { kind: "verifying" })).toBe("Checking the download…");
+    expect(stateText(MODEL, { kind: "downloading", received: 1_750_118, total: 3_500_236 })).toBe(
+      "Downloading… 50% of 3.5 MB",
+    );
+    expect(stateText(MODEL, { kind: "downloading", received: 0, total: 0 })).toBe(
       "Downloading… 0% of 3.5 MB",
     );
-    expect(stateText(GRAPE_MODEL, { kind: "outdated", older })).toContain("ready to download");
-    expect(
-      stateText(GRAPE_MODEL, { kind: "outdated", older: { ...older, usable: false } }),
-    ).toContain("no longer works");
-    expect(stateText(GRAPE_MODEL, { kind: "failed", reason: "offline", detail: "" })).toBe(
+    expect(stateText(MODEL, { kind: "outdated", older })).toContain("ready to download");
+    expect(stateText(MODEL, { kind: "outdated", older: { ...older, usable: false } })).toContain(
+      "no longer works",
+    );
+    expect(stateText(MODEL, { kind: "failed", reason: "offline", detail: "" })).toBe(
       "Downloads when you're online.",
     );
   });

@@ -69,6 +69,17 @@ const inlineWorker = {
   },
 };
 
+/**
+ * Whether Grape (models/grape-1.0.bin) is bundled into main.js. The plugin
+ * downloads it on first use (src/view/grape-files.ts); while it is bundled,
+ * the plugin also writes the bundled copy to <plugin>/handwriting/ in the
+ * background, so people who update never download it. The bridge release
+ * ships with `true`; a later release, once that one has been out a while,
+ * flips it to `false` (RELEASE.md, "Grape bundle"). FINENOTES_BUNDLE_GRAPE=0
+ * builds without it for a test.
+ */
+const BUNDLE_GRAPE = process.env.FINENOTES_BUNDLE_GRAPE !== "0";
+
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
@@ -92,10 +103,11 @@ const context = await esbuild.context({
   ],
   format: "cjs",
   target: "es2020",
-  // CHANGELOG.md is bundled as text for the in-app "What's new" modal. The
-  // handwriting model is not bundled: it downloads on first use
-  // (src/recognition/hwr/model-manifest.ts).
-  loader: { ".md": "text" },
+  // CHANGELOG.md is bundled as text for the in-app "What's new" modal, and
+  // the word list (models/words.txt) for the misread-word underlining; the
+  // handwriting model as bytes while BUNDLE_GRAPE is on.
+  loader: { ".md": "text", ".txt": "text", ".bin": "binary" },
+  define: { __FINENOTES_BUNDLE_GRAPE__: JSON.stringify(BUNDLE_GRAPE) },
   logLevel: "info",
   sourcemap: production ? false : "inline",
   treeShaking: true,

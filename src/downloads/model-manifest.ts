@@ -1,76 +1,65 @@
 /**
- * The files FineNotes downloads on first use instead of bundling them: Grape
- * (the handwriting recognizer model) and the word list that "Underline words
- * it may have misread" checks against. Each is pinned here by URL, byte size
- * and SHA-256, so a file is used only when it is exactly the one this build
- * was made with, wherever it came from (a download, or vault sync from
+ * Models FineNotes downloads on first use instead of bundling them (Grape,
+ * the handwriting recognizer; later Whisper for audio). Each is pinned by
+ * the build that uses it: every file's URL, byte size and SHA-256, and the
+ * format version that build reads. A file is used only when it is exactly
+ * the pinned one, wherever it came from (a download, or vault sync from
  * another device).
  *
- * Also here: the state each file is in (`AssetState`, moved on by
- * `transition`), what the settings row says about it, and the byte ranges a
- * download asks for.
+ * Also here: the state a model is in (`AssetState`, moved on by
+ * `transition`), what the settings say about it, and the byte ranges a
+ * download asks for. The model-specific entries live with their features
+ * (recognition/hwr/grape-model.ts); this module knows none of them.
  *
  * PURE: no DOM, no Obsidian, no network.
  */
 
-/** A downloadable file, as this build expects it. */
-export interface Asset {
-  id: "grape" | "words";
-  /** What the user is told it is. */
-  label: string;
-  version: string;
+/** One file of a model. */
+export interface ModelFile {
+  /** Its name in the model's folder. */
+  name: string;
   url: string;
   /** Size in bytes. */
   bytes: number;
   /** Lower-case hex. */
   sha256: string;
-  /**
-   * The file format this build reads. A stored file of another version is
-   * still used while its format matches; once it does not, it must be
-   * downloaded again.
-   */
-  format: number;
-  /** The stored file's name, in the plugin's `handwriting/` folder. */
-  file: string;
-  /** Names of this asset's other versions: `prefix<version>suffix`. */
-  prefix: string;
-  suffix: string;
 }
 
-/** Grape 1.0, as published at Joost-8/Grape (Apache 2.0). */
-export const GRAPE_MODEL: Asset = {
-  id: "grape",
-  label: "Grape (handwriting recognizer model)",
-  version: "1.0",
-  url: "https://github.com/Joost-8/Grape/releases/download/v1.0/grape-1.0.bin",
-  bytes: 3_500_236,
-  sha256: "87a9ddd56b6bcf01e66a027ff74f1b8ba9a58fe0d4b0077e6abb6455710d21f9",
-  format: 1,
-  file: "grape-1.0.bin",
-  prefix: "grape-",
-  suffix: ".bin",
-};
+/** A downloadable model, as the build that uses it expects it. */
+export interface ModelAsset {
+  /** Stable id ("grape", "whisper-base"). */
+  id: string;
+  /** What the user is told it is. */
+  label: string;
+  /** One sentence: what it is for, shown on the download card. */
+  purpose: string;
+  version: string;
+  /**
+   * The file format this build reads. A stored older version is still used
+   * while its format matches; once it does not, it must be downloaded again.
+   */
+  format: number;
+  /** Its folder, relative to the plugin's folder ("handwriting"). */
+  folder: string;
+  /** Its files, at least one. The first is the main one: other versions are recognised by it. */
+  files: readonly ModelFile[];
+  /**
+   * Other versions' main file is named `prefix<version>suffix`
+   * ("grape-1.0.bin"); without these, other versions are not looked for.
+   */
+  prefix?: string;
+  suffix?: string;
+}
 
-/** The public word list, built by scripts/build-words.mjs from the rig's LM text only. */
-export const WORD_LIST: Asset = {
-  id: "words",
-  label: "Word list",
-  version: "1",
-  url: "https://github.com/Joost-8/Grape/releases/download/words-1/words-1.txt",
-  bytes: 221_681,
-  sha256: "2d1520ac9f674c520c53f4928b9bab3874a33e1ebf9a702e4cb6ad3e4c62ed01",
-  format: 1,
-  file: "words-1.txt",
-  prefix: "words-",
-  suffix: ".txt",
-};
-
-export const ASSETS: readonly Asset[] = [GRAPE_MODEL, WORD_LIST];
+/** The model's total size in bytes. */
+export function totalBytes(asset: ModelAsset): number {
+  return asset.files.reduce((sum, file) => sum + file.bytes, 0);
+}
 
 /** Why a download did not finish. */
 export type FailReason = "offline" | "http" | "damaged" | "storage";
 
-/** An older version on disk: its version, and whether this build can still read it. */
+/** An older version on disk: its version, its main file, and whether this build can still read it. */
 export interface OlderFile {
   version: string;
   file: string;
@@ -83,13 +72,14 @@ export type AssetState =
   | { kind: "missing" }
   /** Only another version is there: "needs update". */
   | { kind: "outdated"; older: OlderFile }
+  /** `received` and `total` count every file of the model. */
   | { kind: "downloading"; received: number; total: number; older?: OlderFile }
   | { kind: "verifying"; older?: OlderFile }
   | { kind: "ready" }
   | { kind: "failed"; reason: FailReason; detail: string; older?: OlderFile };
 
 export type AssetEvent =
-  /** What a look at the folder found: the verified file, an older one, or nothing. */
+  /** What a look at the folder found: every file verified, an older version, or nothing. */
   | { type: "found"; found: "current" | "none" | OlderFile }
   | { type: "start" }
   | { type: "progress"; received: number; total: number }
@@ -143,9 +133,9 @@ function withOlder<T extends AssetState>(state: T, older: OlderFile | undefined)
   return older ? { ...state, older } : state;
 }
 
-/** The file to read in this state: the current one, an older readable one, or none. */
-export function usableFile(asset: Asset, state: AssetState): string | null {
-  if (state.kind === "ready") return asset.file;
+/** The main file to read in this state: the current one, an older readable one, or none. */
+export function usableFile(asset: ModelAsset, state: AssetState): string | null {
+  if (state.kind === "ready") return asset.files[0]?.name ?? null;
   const older = olderOf(state);
   return older?.usable ? older.file : null;
 }
@@ -155,30 +145,32 @@ export function isBusy(state: AssetState): boolean {
   return state.kind === "downloading" || state.kind === "verifying";
 }
 
-/** The version in a stored name of this asset ("grape-1.0.bin" → "1.0"), or null. */
-export function versionOf(asset: Asset, name: string): string | null {
-  if (!name.startsWith(asset.prefix) || !name.endsWith(asset.suffix)) return null;
-  const version = name.slice(asset.prefix.length, name.length - asset.suffix.length);
+/** The version in another version's main file name ("grape-0.9.bin" → "0.9"), or null. */
+export function versionOf(asset: ModelAsset, name: string): string | null {
+  const { prefix, suffix } = asset;
+  if (prefix === undefined || suffix === undefined) return null;
+  if (!name.startsWith(prefix) || !name.endsWith(suffix)) return null;
+  const version = name.slice(prefix.length, name.length - suffix.length);
   return /^[0-9][0-9A-Za-z.-]*$/.test(version) ? version : null;
 }
 
 /**
- * What the folder holds of this asset, from its file names: the current file
- * (still to be verified), and the other versions, newest first by name.
+ * What the folder holds of this model, from its file names: whether every
+ * current file is there (still to be verified), and the other versions,
+ * newest first.
  */
 export function storedVersions(
-  asset: Asset,
+  asset: ModelAsset,
   names: readonly string[],
 ): { current: boolean; others: { version: string; file: string }[] } {
-  let current = false;
+  const present = new Set(names);
+  const current = asset.files.length > 0 && asset.files.every((f) => present.has(f.name));
+  const main = asset.files[0]?.name;
   const others: { version: string; file: string }[] = [];
   for (const name of names) {
-    if (name === asset.file) {
-      current = true;
-      continue;
-    }
+    if (name === main) continue;
     const version = versionOf(asset, name);
-    if (version !== null) others.push({ version, file: name });
+    if (version !== null && version !== asset.version) others.push({ version, file: name });
   }
   others.sort((a, b) => compareVersions(b.version, a.version));
   return { current, others };
@@ -219,9 +211,9 @@ export function failureText(reason: FailReason, detail: string): string {
   }
 }
 
-/** The settings row's line about an asset in this state. */
-export function stateText(asset: Asset, state: AssetState): string {
-  const size = formatSize(asset.bytes);
+/** The settings line about a model in this state. */
+export function stateText(asset: ModelAsset, state: AssetState): string {
+  const size = formatSize(totalBytes(asset));
   switch (state.kind) {
     case "unknown":
       return "Checking…";
@@ -232,7 +224,7 @@ export function stateText(asset: Asset, state: AssetState): string {
         ? `Version ${state.older.version} is on this device; ${asset.version} is ready to download (${size}).`
         : `Version ${state.older.version} no longer works with this FineNotes: download ${asset.version} (${size}).`;
     case "downloading":
-      return `Downloading… ${percent(state.received, state.total || asset.bytes)}% of ${size}`;
+      return `Downloading… ${percent(state.received, state.total || totalBytes(asset))}% of ${size}`;
     case "verifying":
       return "Checking the download…";
     case "ready":

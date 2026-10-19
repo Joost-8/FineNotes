@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset, AssetState } from "../../src/recognition/hwr/model-manifest";
+import type { AssetState, ModelAsset } from "../../src/downloads/model-manifest";
 
 vi.mock("obsidian", () => import("../fakes/obsidian"));
 
@@ -59,7 +59,7 @@ const { DEFAULT_IMAGE_MODELS, imageUnsupportedReason } =
   await import("../../src/recognition/ai-image");
 const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
-const { GRAPE_MODEL, WORD_LIST } = await import("../../src/recognition/hwr/model-manifest");
+const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
@@ -67,7 +67,7 @@ type FakeSetting = InstanceType<typeof Setting>;
 // --- A fake plugin ------------------------------------------------------------
 
 /** A downloaded file's store, holding one state and logging what is asked of it. */
-function fakeStore(asset: Asset, calls: string[]) {
+function fakeStore(asset: ModelAsset, calls: string[]) {
   const listeners = new Set<() => void>();
   const store = {
     asset,
@@ -100,6 +100,7 @@ function fakeStore(asset: Asset, calls: string[]) {
 function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, string> = {}) {
   const calls: string[] = [];
   const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+  const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const plugin = {
     settings,
     calls,
@@ -122,16 +123,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
+    models: { all: () => [grapeStore] },
     grape: {
-      model: fakeStore(GRAPE_MODEL, calls),
-      words: fakeStore(WORD_LIST, calls),
-      downloadAll: vi.fn(() => {
-        calls.push("grape:downloadAll");
-        return Promise.resolve(true);
-      }),
+      model: grapeStore,
       offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
     },
-    handwriting: { dispose: vi.fn(() => calls.push("reader:dispose")) },
+    modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
     startOpenRouterConnect: vi.fn(() => {
       calls.push("startConnect");
@@ -250,6 +247,7 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 }
 
 const AI = "AI with your own key";
+const MODELS = "Models";
 const SUPPORT = "Support and diagnostics";
 const COMMUNITY = "Feedback and community";
 const WRITING = "Writing and tools";
@@ -306,9 +304,8 @@ describe("the rows", () => {
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
       [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
-      [HANDWRITING, "Grape (handwriting recognizer model)", "render"],
-      [HANDWRITING, "Word list", "render"],
       [HANDWRITING, "Learn my handwriting", "render"],
+      [MODELS, "Grape (handwriting recognizer model)", "render"],
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
@@ -417,15 +414,8 @@ describe("the rows", () => {
         "misread",
         "underline",
       ],
-      "Grape (handwriting recognizer model)": [
-        "handwriting",
-        "model",
-        "download",
-        "grape",
-        "recognizer",
-      ],
-      "Word list": ["words", "dictionary", "download", "spelling"],
       "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
+      "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
       "Folder for recordings": ["folder", "attachments", "where files are saved"],
@@ -548,8 +538,8 @@ describe("which rows show", () => {
       "Show notebook folders as notebooks",
       "Read handwriting on this device (beta)",
       "Underline words it may have misread (test)",
-      "Grape (handwriting recognizer model)",
       "Learn my handwriting",
+      "Grape (handwriting recognizer model)",
       "Set up an AI service",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
@@ -577,7 +567,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${38 + PEN_ROWS.length})`,
+      `(block ${37 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1273,6 +1263,7 @@ describe("folding sections", () => {
       [PENS, "goodobsidian-section is-folded"],
       [PAGES, "goodobsidian-section"],
       [HANDWRITING, "goodobsidian-section"],
+      [MODELS, "goodobsidian-section"],
       [AI, "goodobsidian-section"],
       [ADVANCED, "goodobsidian-section"],
       [SUPPORT, "goodobsidian-section"],
@@ -1286,7 +1277,15 @@ describe("folding sections", () => {
 
   it("shows the rows of the sections that are open", () => {
     const plugin = makePlugin({
-      foldedSettingsSections: ["writing", "pages", "handwriting", "ai", "advanced", "support"],
+      foldedSettingsSections: [
+        "writing",
+        "pages",
+        "handwriting",
+        "models",
+        "ai",
+        "advanced",
+        "support",
+      ],
     });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
@@ -1356,33 +1355,34 @@ describe("folding sections", () => {
   });
 });
 
-describe("Grape and the word list (downloaded on first use)", () => {
+describe("Models (downloaded on first use)", () => {
   /** The buttons the row shows now (the fake keeps every one ever added). */
   const current = (setting: FakeSetting) =>
     setting.buttons.filter((b) => setting.controlEl.children.includes(b.buttonEl));
+  const GRAPE = "Grape (handwriting recognizer model)";
 
   it("shows a downloaded model with Re-download and Remove", async () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin);
-    const setting = renderRow(named(rows(tab), "Grape (handwriting recognizer model)"));
+    const setting = renderRow(named(rows(tab), GRAPE));
     expect(setting.descEl.text).toBe("Version 1.0, 3.5 MB, on this device.");
     expect(current(setting).map((b) => b.text)).toEqual(["Re-download", "Remove"]);
     await current(setting)[1].click();
-    expect(plugin.calls).toEqual(expect.arrayContaining(["reader:dispose", "grape:remove"]));
+    expect(plugin.calls).toEqual(expect.arrayContaining(["released:grape", "grape:remove"]));
     await current(setting)[0].click();
     expect(plugin.calls).toContain("grape:redownload");
   });
 
-  it("offers the download when the model is missing, and again after a failure", async () => {
+  it("offers the download when a model is missing, and again after a failure", async () => {
     const plugin = makePlugin();
     plugin.grape.model.state = { kind: "missing" };
     const { tab } = makeTab(plugin);
-    const row = named(rows(tab), "Grape (handwriting recognizer model)");
+    const row = named(rows(tab), GRAPE);
     let setting = renderRow(row);
     expect(setting.descEl.text).toBe("Not downloaded yet (3.5 MB).");
     expect(current(setting).map((b) => [b.text, b.cta])).toEqual([["Download", true]]);
     await current(setting)[0].click();
-    expect(plugin.calls).toContain("grape:downloadAll");
+    expect(plugin.calls).toContain("grape:download");
     plugin.grape.model.state = { kind: "failed", reason: "offline", detail: "" };
     setting = renderRow(row);
     expect(setting.descEl.text).toBe("Downloads when you're online.");
@@ -1392,22 +1392,19 @@ describe("Grape and the word list (downloaded on first use)", () => {
   it("shows no buttons while a download runs", () => {
     const plugin = makePlugin();
     plugin.grape.model.state = { kind: "downloading", received: 0, total: 0 };
-    const setting = renderRow(
-      named(rows(makeTab(plugin).tab), "Grape (handwriting recognizer model)"),
-    );
+    const setting = renderRow(named(rows(makeTab(plugin).tab), GRAPE));
     expect(current(setting)).toHaveLength(0);
     expect(setting.descEl.text).toMatch(/^Downloading/);
   });
 
-  it("downloads the word list on its own from its row, shown with underlining on", async () => {
-    const plugin = makePlugin({ checkHandwrittenWords: true });
-    plugin.grape.words.state = { kind: "missing" };
-    const all = rows(makeTab(plugin).tab);
-    expect(shown(named(all, "Word list"))).toBe(true);
-    const setting = renderRow(named(all, "Word list"));
-    await current(setting)[0].click();
-    expect(plugin.calls).toContain("words:download");
-    expect(shown(named(rows(makeTab(makePlugin()).tab), "Word list"))).toBe(false);
+  it("lists every registered model", () => {
+    const plugin = makePlugin();
+    const other = fakeStore({ ...GRAPE_MODEL, id: "whisper", label: "Whisper" }, plugin.calls);
+    plugin.models.all = () => [plugin.grape.model, other];
+    const names = rows(makeTab(plugin).tab)
+      .filter((r) => r.heading === MODELS)
+      .map((r) => r.def.name);
+    expect(names).toEqual([GRAPE, "Whisper"]);
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {

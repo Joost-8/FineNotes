@@ -1,34 +1,38 @@
 /**
- * Keeps one downloadable file (model-manifest.ts) in the plugin's
- * `handwriting/` folder: finds it, verifies it, downloads it when asked, and
- * says which file to read.
+ * Keeps one downloadable model (model-manifest.ts) in its folder: finds it,
+ * verifies it, downloads it when asked, and says which files to read.
  *
  * - A file is used only once its size and SHA-256 match the manifest, also
  *   when it arrived by vault sync; a verified file is never downloaded again.
- * - A download goes to `<file>.download` and is renamed into place only
- *   after it is verified, so a half-written file is never read.
- * - It is asked for in byte ranges; a failed range is retried, and a retry
- *   of the whole download goes on from the bytes already in.
+ * - Each file goes to `<name>.download` and is renamed into place only after
+ *   it is verified, so a half-written file is never read.
+ * - Files are asked for in byte ranges; a failed range is retried, and a
+ *   retry of the whole download goes on from the bytes already in (and skips
+ *   the files already stored).
+ * - `adopt` stores bytes the plugin already has (a bundled copy), verified
+ *   the same way, so an update that stops bundling a model needs no download.
  *
  * The folder, the network, the hash and the clock are passed in
  * (`AssetStoreDeps`), so this module needs neither Obsidian nor a DOM.
  */
 
 import {
-  type Asset,
   type AssetEvent,
   type AssetState,
   type FailReason,
+  type ModelAsset,
+  type ModelFile,
   type OlderFile,
   isBusy,
   nextRange,
   storedVersions,
+  totalBytes,
   transition,
   usableFile,
 } from "./model-manifest";
 
 export interface AssetStoreDeps {
-  /** The names of the files in the folder ([] when it does not exist). */
+  /** The names of the files in the model's folder ([] when it does not exist). */
   list(): Promise<string[]>;
   read(name: string): Promise<ArrayBuffer>;
   /** Write a file, creating the folder when needed. */
@@ -45,7 +49,7 @@ export interface AssetStoreDeps {
     range?: { start: number; end: number },
   ): Promise<{ status: number; body: ArrayBuffer }>;
   sha256(data: ArrayBuffer): Promise<string>;
-  /** The format version a stored file says it is in, or null when it is not this asset. */
+  /** The format version a stored main file says it is in, or null when it is not this model. */
   formatOf(data: ArrayBuffer): number | null;
   sleep(ms: number): Promise<void>;
 }
@@ -67,12 +71,13 @@ export class AssetStore {
   private readonly listeners = new Set<() => void>();
   private checking: Promise<AssetState> | null = null;
   private downloading: Promise<boolean> | null = null;
-  /** Bytes of an interrupted download, kept for the retry. */
+  /** Bytes of an interrupted download of `partialFile`, kept for the retry. */
+  private partialFile: string | null = null;
   private partial: Uint8Array[] = [];
   private partialBytes = 0;
 
   constructor(
-    readonly asset: Asset,
+    readonly asset: ModelAsset,
     private readonly deps: AssetStoreDeps,
   ) {}
 
@@ -83,7 +88,9 @@ export class AssetStore {
   /** Called on every change of state; returns the unsubscribe. */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   private emit(event: AssetEvent): void {
@@ -106,14 +113,9 @@ export class AssetStore {
 
   private async look(): Promise<AssetState> {
     const { asset, deps } = this;
-    let names: string[] = [];
-    try {
-      names = await deps.list();
-    } catch {
-      names = [];
-    }
+    const names = await this.names();
     const stored = storedVersions(asset, names);
-    if (stored.current && (await this.verifies(asset.file))) {
+    if (stored.current && (await this.allVerify())) {
       this.emit({ type: "found", found: "current" });
       return this.current;
     }
@@ -132,32 +134,76 @@ export class AssetStore {
     return this.current;
   }
 
-  /** True when the stored file is exactly the pinned one. */
-  private async verifies(name: string): Promise<boolean> {
+  private async names(): Promise<string[]> {
     try {
-      const data = await this.deps.read(name);
-      if (data.byteLength !== this.asset.bytes) return false;
-      return (await this.deps.sha256(data)) === this.asset.sha256;
+      return await this.deps.list();
+    } catch {
+      return [];
+    }
+  }
+
+  private async allVerify(): Promise<boolean> {
+    for (const file of this.asset.files) if (!(await this.verifies(file))) return false;
+    return true;
+  }
+
+  /** True when the stored file is exactly the pinned one. */
+  private async verifies(file: ModelFile): Promise<boolean> {
+    try {
+      const data = await this.deps.read(file.name);
+      if (data.byteLength !== file.bytes) return false;
+      return (await this.deps.sha256(data)) === file.sha256;
     } catch {
       return false;
     }
   }
 
-  /** The file to read now, or null (missing, or only an unreadable older version). */
+  /** The main file to read now, or null (missing, or only an unreadable older version). */
   async file(): Promise<string | null> {
     await this.check();
     return usableFile(this.asset, this.current);
   }
 
-  /** The bytes of the file to read; null when there is none. */
-  async bytes(): Promise<ArrayBuffer | null> {
-    const file = await this.file();
-    return file ? this.deps.read(file) : null;
+  /**
+   * The bytes of a file of the model (the main one by default); null when
+   * the model is not usable. An older version has only its main file.
+   */
+  async bytes(name?: string): Promise<ArrayBuffer | null> {
+    const main = await this.file();
+    if (!main) return null;
+    if (name === undefined || name === this.asset.files[0]?.name) return this.deps.read(main);
+    if (this.current.kind !== "ready" || !this.asset.files.some((f) => f.name === name))
+      return null;
+    return this.deps.read(name);
   }
 
   /**
-   * Download, verify and store the file; true when it is ready. A second
-   * call while one runs joins it; once the file is ready, nothing is fetched.
+   * Store bytes the plugin already has for file `name` (a bundled copy),
+   * when they are exactly the pinned file and that file is not stored yet.
+   * True when the model is ready afterwards.
+   */
+  async adopt(name: string, data: ArrayBuffer): Promise<boolean> {
+    const file = this.asset.files.find((f) => f.name === name);
+    if (!file || isBusy(this.current) || this.downloading) return false;
+    await this.check();
+    if (this.current.kind === "ready") return true;
+    if (data.byteLength !== file.bytes || (await this.deps.sha256(data)) !== file.sha256)
+      return false;
+    if (!(await this.verifies(file))) {
+      try {
+        await this.store(file.name, data);
+      } catch {
+        return false;
+      }
+    }
+    const after = await this.check(true);
+    if (after.kind === "ready") await this.removeOlder();
+    return after.kind === "ready";
+  }
+
+  /**
+   * Download, verify and store every file; true when the model is ready. A
+   * second call while one runs joins it; once it is ready, nothing is fetched.
    */
   download(): Promise<boolean> {
     if (this.downloading) return this.downloading;
@@ -166,17 +212,24 @@ export class AssetStore {
       if (this.current.kind === "ready") return true;
       this.emit({ type: "start" });
       try {
-        const data = await this.fetchAll();
-        this.emit({ type: "received" });
-        if (
-          data.byteLength !== this.asset.bytes ||
-          (await this.deps.sha256(data)) !== this.asset.sha256
-        ) {
+        const total = totalBytes(this.asset);
+        let done = 0;
+        for (const file of this.asset.files) {
+          // Stored and verified by an earlier, interrupted run: keep it.
+          if (await this.verifies(file)) {
+            done += file.bytes;
+            continue;
+          }
+          const data = await this.fetchFile(file, done, total);
+          if (data.byteLength !== file.bytes || (await this.deps.sha256(data)) !== file.sha256) {
+            this.dropPartial();
+            throw new DownloadError("damaged", "size or checksum differs");
+          }
+          await this.store(file.name, data);
           this.dropPartial();
-          throw new DownloadError("damaged", "size or checksum differs");
+          done += file.bytes;
         }
-        await this.store(data);
-        this.dropPartial();
+        this.emit({ type: "received" });
         this.emit({ type: "verified" });
         await this.removeOlder();
         return true;
@@ -195,23 +248,29 @@ export class AssetStore {
   }
 
   private dropPartial(): void {
+    this.partialFile = null;
     this.partial = [];
     this.partialBytes = 0;
   }
 
-  /** Every byte, in ranges, going on from an earlier attempt's. */
-  private async fetchAll(): Promise<ArrayBuffer> {
-    const total = this.asset.bytes;
-    this.emit({ type: "progress", received: this.partialBytes, total });
+  /** Every byte of one file, in ranges, going on from an earlier attempt's. */
+  private async fetchFile(file: ModelFile, before: number, total: number): Promise<ArrayBuffer> {
+    if (this.partialFile !== file.name) {
+      this.dropPartial();
+      this.partialFile = file.name;
+    }
+    const progress = () =>
+      this.emit({ type: "progress", received: before + this.partialBytes, total });
+    progress();
     for (;;) {
-      const range = nextRange(this.partialBytes, total);
+      const range = nextRange(this.partialBytes, file.bytes);
       if (!range) break;
-      const answer = await this.getWithRetry(range);
+      const answer = await this.getWithRetry(file.url, range);
       if (answer.status === 200) {
         // The server ignored the range and sent the whole file.
         this.partial = [new Uint8Array(answer.body)];
         this.partialBytes = answer.body.byteLength;
-        this.emit({ type: "progress", received: this.partialBytes, total });
+        progress();
         break;
       }
       const expected = range.end - range.start + 1;
@@ -221,7 +280,7 @@ export class AssetStore {
       }
       this.partial.push(new Uint8Array(answer.body));
       this.partialBytes += expected;
-      this.emit({ type: "progress", received: this.partialBytes, total });
+      progress();
     }
     const out = new Uint8Array(this.partialBytes);
     let o = 0;
@@ -232,16 +291,16 @@ export class AssetStore {
     return out.buffer;
   }
 
-  private async getWithRetry(range: {
-    start: number;
-    end: number;
-  }): Promise<{ status: number; body: ArrayBuffer }> {
+  private async getWithRetry(
+    url: string,
+    range: { start: number; end: number },
+  ): Promise<{ status: number; body: ArrayBuffer }> {
     let last: DownloadError | null = null;
     for (let attempt = 0; attempt <= RETRY_WAITS_MS.length; attempt++) {
       if (attempt > 0) await this.deps.sleep(RETRY_WAITS_MS[attempt - 1] ?? 0);
       let answer: { status: number; body: ArrayBuffer };
       try {
-        answer = await this.deps.get(this.asset.url, range);
+        answer = await this.deps.get(url, range);
       } catch {
         last = new DownloadError("offline", "no connection");
         continue;
@@ -249,42 +308,38 @@ export class AssetStore {
       if (answer.status === 200 || answer.status === 206) return answer;
       last = new DownloadError("http", `HTTP ${answer.status}`);
       // A missing file stays missing: no point asking again.
-      if (
-        answer.status >= 400 &&
-        answer.status < 500 &&
-        answer.status !== 408 &&
-        answer.status !== 429
-      )
-        break;
+      const status = answer.status;
+      if (status >= 400 && status < 500 && status !== 408 && status !== 429) break;
     }
     throw last ?? new DownloadError("offline", "no connection");
   }
 
   /** Write through a temporary name, then move it into place. */
-  private async store(data: ArrayBuffer): Promise<void> {
-    const { deps, asset } = this;
-    const temp = `${asset.file}.download`;
+  private async store(name: string, data: ArrayBuffer): Promise<void> {
+    const { deps } = this;
+    const temp = `${name}.download`;
     await deps.write(temp, data);
     const names = await deps.list();
-    if (names.includes(asset.file)) await deps.remove(asset.file);
-    await deps.rename(temp, asset.file);
+    if (names.includes(name)) await deps.remove(name);
+    await deps.rename(temp, name);
   }
 
-  /** Other versions of this file: superseded once the current one is in. */
+  /** Other versions of the main file: superseded once the current model is in. */
   private async removeOlder(): Promise<void> {
-    const names = await this.deps.list().catch(() => []);
+    const names = await this.names();
     for (const other of storedVersions(this.asset, names).others) {
       await this.deps.remove(other.file).catch(() => {});
     }
   }
 
-  /** Remove the file and its other versions from this device. */
+  /** Remove the model's files and its other versions from this device. */
   async remove(): Promise<void> {
     if (isBusy(this.current)) return;
-    const names = await this.deps.list().catch(() => []);
-    const stored = storedVersions(this.asset, names);
-    if (stored.current) await this.deps.remove(this.asset.file);
-    for (const other of stored.others) await this.deps.remove(other.file).catch(() => {});
+    const names = new Set(await this.names());
+    for (const file of this.asset.files)
+      if (names.has(file.name)) await this.deps.remove(file.name);
+    for (const other of storedVersions(this.asset, [...names]).others)
+      await this.deps.remove(other.file).catch(() => {});
     this.dropPartial();
     this.emit({ type: "removed" });
   }

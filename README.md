@@ -374,11 +374,11 @@ seconds after you stop writing: notebook search and Obsidian's search then
 find it. Nothing leaves the device. Switch it off under Settings → FineNotes
 → Handwriting → **Read handwriting on this device**.
 
-Grape is not built into the plugin: the first time a handwriting feature
-needs it, FineNotes offers a one-time 3.5 MB download (with **Not now**).
-It is saved in the plugin's `handwriting` folder, so vault sync brings it
-to your other devices. Settings → Handwriting shows it, with **Re-download**
-and **Remove**.
+Grape is kept in the plugin's `handwriting` folder, so vault sync brings it
+to your other devices. If you already used FineNotes, it puts its built-in
+copy there by itself. On a new install, the first time a handwriting
+feature needs it, FineNotes offers a one-time 3.5 MB download (with **Not
+now**). Settings → Models shows it, with **Re-download** and **Remove**.
 
 To make it read your own handwriting much better:
 
@@ -502,24 +502,23 @@ learns from them stay in your vault.
 
 The network is used in three cases, all optional.
 
-**Grape (handwriting recognizer model) and its word list.** These are not
-built into the plugin, to keep it small:
+**Grape (handwriting recognizer model).** It is downloaded rather than built
+into the plugin, to keep the plugin small:
 
-- **What is downloaded:** the Grape model file (`grape-1.0.bin`, 3.5 MB) and
-  the word list the misread-word underlining uses (`words-1.txt`, 222 KB, a
-  list of common words). Nothing is uploaded.
+- **What is downloaded:** the Grape model file (`grape-1.0.bin`, 3.5 MB).
+  Nothing is uploaded.
 - **From where:** the public GitHub releases of
   [Joost-8/Grape](https://github.com/Joost-8/Grape/releases)
   (`github.com`, which redirects to GitHub's file host).
 - **Why:** reading handwriting on the device needs the model; without it,
   every other feature works.
 - **When:** once, after you tap **Download** on the card that appears the
-  first time a handwriting feature needs it, or in Settings → Handwriting.
-  A file already in your vault (synced from another device) is checked and
-  used, not downloaded again. FineNotes checks each file's size and SHA-256
-  checksum before using it, and an update to Grape arrives the same way,
-  with a plugin update.
-- **What GitHub sees:** like any download, your IP address, once per file.
+  first time a handwriting feature needs it, or in Settings → Models. A file
+  already in your vault (written by an earlier FineNotes, or synced from
+  another device) is checked and used, not downloaded again. FineNotes checks
+  the file's size and SHA-256 checksum before using it, and a newer Grape
+  arrives the same way, with a plugin update.
+- **What GitHub sees:** like any download, your IP address, once.
 
 **The template gallery.** It downloads only when you open it (Browse
 template gallery), from FineNotes' own gallery on GitHub

@@ -336,6 +336,7 @@ export const SETTINGS_SECTIONS = [
   "shortcuts",
   "pages",
   "handwriting",
+  "models",
   "ai",
   "advanced",
   "support",

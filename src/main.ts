@@ -129,6 +129,7 @@ import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
+import { ModelRegistry } from "./view/model-downloads";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -157,6 +158,10 @@ const TEXT_HINT_SHOWS = 3;
 
 /** The pen in hand is saved once it has been left alone this long, ms: a width slider drags. */
 const LAST_PEN_SAVE_MS = 600;
+
+/** How long after the layout is ready a bundled Grape is written to disk: off the startup path. */
+const GRAPE_BRIDGE_DELAY_MS = 8000;
+
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
 
@@ -219,8 +224,11 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
 
-  /** Grape and its word list, downloaded on first use (grape-files.ts). */
-  readonly grape = new GrapeFiles(this.app, () => this.pluginDir);
+  /** Models downloaded on first use, listed under Settings › Models (model-downloads.ts). */
+  readonly models = new ModelRegistry(this.app, () => this.pluginDir);
+
+  /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
+  readonly grape = new GrapeFiles(this.models);
 
   /** The on-device handwriting reader, started on first use. */
   readonly handwriting = new HandwritingReader(
@@ -242,11 +250,7 @@ export default class GoodObsidianPlugin extends Plugin {
   readonly learner = new HandwritingLearner(() => this.learningHost());
 
   /** Checking words read on the device, and the answers to learn from. */
-  readonly wordCheck = new WordCheck(
-    this.app,
-    () => this.pluginDir,
-    () => this.grape.wordList(),
-  );
+  readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
   /** This plugin's folder in the vault. */
   get pluginDir(): string {
@@ -431,14 +435,14 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
-      this.grape.dispose();
+      this.models.dispose();
     });
-    // A word list that arrives later (with the model, or by sync) is read again.
-    this.register(
-      this.grape.words.subscribe(() => {
-        if (this.grape.words.state.kind === "ready") void this.wordCheck.reload();
-      }),
-    );
+    // A release that still bundles Grape writes it to the handwriting folder,
+    // once, in the background and well after startup (grape-files.ts).
+    this.app.workspace.onLayoutReady(() => {
+      const timer = window.setTimeout(() => void this.grape.bridge(), GRAPE_BRIDGE_DELAY_MS);
+      this.register(() => window.clearTimeout(timer));
+    });
 
     this.register(() => this.explorerNotebookButton.destroy());
     this.register(() => this.explorerFolderNotebooks.destroy());
@@ -684,6 +688,14 @@ export default class GoodObsidianPlugin extends Plugin {
       // Unreadable or not JSON: start from the defaults, as a new install does.
       return null;
     }
+  }
+
+  /**
+   * A model's files are about to be removed or replaced (Settings › Models):
+   * whatever holds it in memory lets go, and loads it again when next needed.
+   */
+  modelReleased(id: string): void {
+    if (id === "grape") this.handwriting.dispose();
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

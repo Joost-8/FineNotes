@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { type Asset } from "../../src/recognition/hwr/model-manifest";
-import { AssetStore, type AssetStoreDeps } from "../../src/recognition/hwr/model-store";
+import { type ModelAsset } from "../../src/downloads/model-manifest";
+import { AssetStore, type AssetStoreDeps } from "../../src/downloads/model-store";
 
 /** A 2,000-byte "model" with a 4-byte header naming its format. */
 function makeFile(format = 1, size = 2000): Uint8Array {
   const out = new Uint8Array(size);
-  for (let i = 0; i < size; i++) out[i] = (i * 31 + 7) & 255;
+  for (let i = 0; i < size; i++) out[i] = (i * 31 + 7 + format) & 255;
   new DataView(out.buffer).setUint32(0, format, true);
   return out;
 }
@@ -15,29 +15,48 @@ const FILE = makeFile();
 const sha = (data: ArrayBuffer | Uint8Array): string =>
   createHash("sha256").update(new Uint8Array(data)).digest("hex");
 
-const ASSET: Asset = {
+const ASSET: ModelAsset = {
   id: "grape",
   label: "Test model",
+  purpose: "It tests.",
   version: "1.0",
-  url: "https://example.test/grape-1.0.bin",
-  bytes: FILE.byteLength,
-  sha256: sha(FILE),
   format: 1,
-  file: "grape-1.0.bin",
+  folder: "handwriting",
+  files: [
+    {
+      name: "grape-1.0.bin",
+      url: "https://example.test/grape-1.0.bin",
+      bytes: FILE.byteLength,
+      sha256: sha(FILE),
+    },
+  ],
   prefix: "grape-",
   suffix: ".bin",
+};
+
+/** A model of two files, as Whisper's encoder and decoder might be. */
+const SECOND = makeFile(9, 1500);
+const PAIR: ModelAsset = {
+  ...ASSET,
+  id: "pair",
+  files: [
+    ASSET.files[0],
+    { name: "dec-1.0.bin", url: "https://example.test/dec.bin", bytes: 1500, sha256: sha(SECOND) },
+  ],
 };
 
 interface Server {
   /** Answer for each request, in turn; "fail" rejects (offline). "ok" and afterwards: the range asked for. */
   script: ("ok" | "fail" | number | "full" | "short")[];
   body: Uint8Array;
+  /** Bodies of other URLs. */
+  others: Map<string, Uint8Array>;
   requests: { start: number; end: number }[];
 }
 
 function fakes(server: Partial<Server> = {}) {
   const files = new Map<string, Uint8Array>();
-  const srv: Server = { script: [], body: FILE, requests: [], ...server };
+  const srv: Server = { script: [], body: FILE, others: new Map(), requests: [], ...server };
   const writes: string[] = [];
   const deps: AssetStoreDeps = {
     list: () => Promise.resolve([...files.keys()]),
@@ -62,15 +81,16 @@ function fakes(server: Partial<Server> = {}) {
       files.delete(name);
       return Promise.resolve();
     },
-    get: (_url, range) => {
-      const r = range ?? { start: 0, end: srv.body.byteLength - 1 };
+    get: (url, range) => {
+      const body = srv.others.get(url) ?? srv.body;
+      const r = range ?? { start: 0, end: body.byteLength - 1 };
       srv.requests.push(r);
       const step = srv.script.shift();
       if (step === "fail") return Promise.reject(new Error("offline"));
       if (typeof step === "number")
         return Promise.resolve({ status: step, body: new ArrayBuffer(0) });
-      if (step === "full") return Promise.resolve({ status: 200, body: srv.body.slice().buffer });
-      const piece = srv.body.slice(r.start, r.end + 1);
+      if (step === "full") return Promise.resolve({ status: 200, body: body.slice().buffer });
+      const piece = body.slice(r.start, r.end + 1);
       if (step === "short") return Promise.resolve({ status: 206, body: piece.slice(1).buffer });
       return Promise.resolve({ status: 206, body: piece.buffer });
     },
@@ -96,7 +116,7 @@ describe("AssetStore", () => {
     expect(seen).toEqual(["missing", "downloading", "verifying", "ready"]);
     expect(writes).toEqual(["grape-1.0.bin.download"]);
     expect([...files.keys()]).toEqual(["grape-1.0.bin"]);
-    expect(sha((await store.bytes()) ?? new ArrayBuffer(0))).toBe(ASSET.sha256);
+    expect(sha((await store.bytes()) ?? new ArrayBuffer(0))).toBe(ASSET.files[0].sha256);
   });
 
   it("never downloads when a verified file is there (as after vault sync)", async () => {
@@ -119,12 +139,15 @@ describe("AssetStore", () => {
     expect((await store.check(true)).kind).toBe("missing");
     // The download replaces it.
     expect(await store.download()).toBe(true);
-    expect(sha(files.get("grape-1.0.bin") ?? new Uint8Array())).toBe(ASSET.sha256);
+    expect(sha(files.get("grape-1.0.bin") ?? new Uint8Array())).toBe(ASSET.files[0].sha256);
   });
 
   it("is offline when no answer comes, and a retry goes on from the bytes already in", async () => {
     const big = makeFile(1, 1_200_000);
-    const asset = { ...ASSET, bytes: big.byteLength, sha256: sha(big) };
+    const asset = {
+      ...ASSET,
+      files: [{ ...ASSET.files[0], bytes: big.byteLength, sha256: sha(big) }],
+    };
     // First range arrives, then the second range fails three times.
     const { deps, srv } = fakes({ body: big, script: ["ok", "fail", "fail", "fail"] });
     const store = new AssetStore(asset, deps);
@@ -252,5 +275,70 @@ describe("AssetStore", () => {
     off();
     expect((await store.check(true)).kind).toBe("ready");
     expect(calls).toBe(1);
+  });
+
+  it("downloads every file of a model, skipping one already stored", async () => {
+    const { deps, files, srv } = fakes({
+      others: new Map([["https://example.test/dec.bin", SECOND]]),
+    });
+    files.set("grape-1.0.bin", FILE.slice());
+    const store = new AssetStore(PAIR, deps);
+    expect((await store.check()).kind).toBe("missing");
+    const progress: number[] = [];
+    store.subscribe(() => {
+      if (store.state.kind === "downloading") progress.push(store.state.received);
+    });
+    expect(await store.download()).toBe(true);
+    expect(srv.requests).toHaveLength(1);
+    expect(progress[progress.length - 1]).toBe(FILE.byteLength + SECOND.byteLength);
+    expect(sha((await store.bytes("dec-1.0.bin")) ?? new ArrayBuffer(0))).toBe(sha(SECOND));
+    expect(await store.bytes("other.bin")).toBeNull();
+    await store.remove();
+    expect(files.size).toBe(0);
+  });
+
+  it("has only the main file of an older version", async () => {
+    const { deps, files } = fakes();
+    files.set("grape-0.9.bin", makeFile(1, 100));
+    const store = new AssetStore(PAIR, deps);
+    expect(await store.file()).toBe("grape-0.9.bin");
+    expect(await store.bytes()).not.toBeNull();
+    expect(await store.bytes("dec-1.0.bin")).toBeNull();
+  });
+
+  it("adopts the exact bundled bytes without a download, and removes an older version", async () => {
+    const { deps, files, srv, writes } = fakes();
+    files.set("grape-0.9.bin", makeFile(1, 100));
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(true);
+    expect(store.state.kind).toBe("ready");
+    expect(writes).toEqual(["grape-1.0.bin.download"]);
+    expect([...files.keys()]).toEqual(["grape-1.0.bin"]);
+    expect(srv.requests).toHaveLength(0);
+    // Once it is there, nothing is written again.
+    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(true);
+    expect(writes).toHaveLength(1);
+  });
+
+  it("refuses to adopt other bytes, an unknown file, or during a download", async () => {
+    const { deps, files } = fakes();
+    const store = new AssetStore(ASSET, deps);
+    const wrong = FILE.slice();
+    wrong[9] ^= 1;
+    expect(await store.adopt("grape-1.0.bin", wrong.buffer)).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", FILE.slice(1).buffer)).toBe(false);
+    expect(await store.adopt("other.bin", FILE.slice().buffer)).toBe(false);
+    expect(files.size).toBe(0);
+    const running = store.download();
+    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(false);
+    expect(await running).toBe(true);
+  });
+
+  it("reports a failed write while adopting as not adopted", async () => {
+    const { deps } = fakes();
+    deps.write = () => Promise.reject(new Error("read-only"));
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(false);
+    expect(store.state.kind).toBe("missing");
   });
 });

@@ -64,8 +64,8 @@ import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
-import { GRAPE_MODEL, WORD_LIST, isBusy, stateText } from "./recognition/hwr/model-manifest";
-import type { AssetStore } from "./recognition/hwr/model-store";
+import { isBusy, stateText } from "./downloads/model-manifest";
+import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import {
   MAX_SAVED_PENS,
@@ -528,6 +528,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.pensGroup(),
       this.pagesGroup(),
       this.handwritingGroup(),
+      this.modelsGroup(),
       this.aiGroup(),
       this.advancedGroup(),
       this.supportGroup(),
@@ -964,25 +965,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "Underline words it may have misread (test)",
           "After a page is read, words Grape is not sure of get a dotted underline. Tap one " +
             "with a finger to correct the reading, confirm it, or ignore the word; Learn my " +
-            "handwriting learns from your answers. Uses the word list that downloads with " +
-            "Grape, plus your own words.txt in the plugin's handwriting folder.",
+            "handwriting learns from your answers. Uses the word list built into FineNotes, " +
+            "plus your own words.txt in the plugin's handwriting folder.",
           ["handwriting", "spelling", "correct", "misread", "underline"],
         ),
         visible: () => settings.handwritingOnDevice !== false,
       },
-      drawnRow(
-        GRAPE_MODEL.label,
-        stateText(GRAPE_MODEL, this.plugin.grape.model.state),
-        (setting) => this.drawDownload(setting, this.plugin.grape.model),
-        ["handwriting", "model", "download", "grape", "recognizer"],
-      ),
-      drawnRow(
-        "Word list",
-        stateText(WORD_LIST, this.plugin.grape.words.state),
-        (setting) => this.drawDownload(setting, this.plugin.grape.words),
-        ["words", "dictionary", "download", "spelling"],
-        () => settings.checkHandwrittenWords === true,
-      ),
       drawnRow(
         "Learn my handwriting",
         learnedSummary(settings.handwritingModel),
@@ -1159,11 +1147,31 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * a bar, and Stop ends it; closing the settings leaves it running.
    */
   /**
-   * A downloaded file's row: its state, with Download, or Re-download and
-   * Remove; the progress while it downloads.
+   * "Models": every model a feature downloads on first use
+   * (view/model-downloads.ts), one row each, whatever feature registered it.
+   */
+  private modelsGroup(): SettingDefinitionItem {
+    return this.section(
+      "models",
+      "Models",
+      this.plugin.models
+        .all()
+        .map((store) =>
+          drawnRow(
+            store.asset.label,
+            stateText(store.asset, store.state),
+            (setting) => this.drawDownload(setting, store),
+            ["model", "download", "offline", store.asset.id],
+          ),
+        ),
+    );
+  }
+
+  /**
+   * A downloaded model's row: its state and size, with Download, or
+   * Re-download and Remove; the progress while it downloads.
    */
   private drawDownload(setting: Setting, store: AssetStore): void {
-    const grape = this.plugin.grape;
     const show = (): void => {
       const state = store.state;
       setting.setDesc(stateText(store.asset, state));
@@ -1172,13 +1180,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       if (state.kind === "ready") {
         setting.addButton((b) =>
           b.setButtonText("Re-download").onClick(() => {
-            this.plugin.handwriting.dispose();
+            this.plugin.modelReleased(store.asset.id);
             void store.redownload();
           }),
         );
         setting.addButton((b) =>
           b.setButtonText("Remove").onClick(() => {
-            this.plugin.handwriting.dispose();
+            this.plugin.modelReleased(store.asset.id);
             void store.remove();
           }),
         );
@@ -1189,7 +1197,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         b
           .setButtonText(state.kind === "failed" ? "Try again" : "Download")
           .setCta()
-          .onClick(() => void (store === grape.model ? grape.downloadAll() : store.download())),
+          .onClick(() => void store.download()),
       );
     };
     const unsubscribe = store.subscribe(() => {
