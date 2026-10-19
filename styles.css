@@ -4029,39 +4029,19 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   -webkit-user-select: none;
 }
 
-.goodobsidian-graph-explore-bar {
-  position: absolute;
+/* Its bar is the selection bar (same classes, same dark pill), placed just
+   above the plot instead of floated by the selection model. */
+.goodobsidian-graph-explore-bar.goodobsidian-selection-bar {
   left: 0;
   bottom: calc(100% + 8px);
-  display: flex;
-  align-items: center;
-  gap: var(--gob-gap);
-  padding: 2px 4px 2px 10px;
-  border-radius: var(--gob-radius-pill);
-  background: var(--background-primary);
-  box-shadow: var(--shadow-s);
   white-space: nowrap;
-  touch-action: none;
 }
 
 .goodobsidian-graph-explore-readout {
+  padding: 0 6px 0 4px;
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  margin-right: 4px;
-}
-
-button.goodobsidian-graph-explore-button {
-  min-width: var(--gob-touch-compact);
-  height: var(--gob-touch-compact);
-  padding: 0 8px;
-  border-radius: var(--gob-radius-pill);
-}
-
-button.goodobsidian-graph-explore-button.mod-done {
-  color: var(--text-on-accent);
-  background: var(--interactive-accent);
-  font-weight: var(--font-semibold);
+  color: var(--color-base-70);
 }
 
 /* The Insert image menu borrows the Add Page sheet's look; its rows are full

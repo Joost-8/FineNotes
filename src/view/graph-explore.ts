@@ -1,15 +1,21 @@
 /**
  * Explore: a live canvas laid over one graph on the page, where the curve
- * can be dragged, pinched and traced. While it is open the graph is left out
- * of the page's tiles (the surface hides it) and only this canvas redraws;
- * the page itself costs nothing more per frame. Done hands back the view it
- * ended at, which the surface commits as one undo step, and the graph goes
- * back to the static tile drawing.
+ * can be dragged, pinched and traced, as in Desmos. While it is open the
+ * graph is left out of the page's tiles (the surface hides it) and only this
+ * canvas redraws; the page itself costs nothing more per frame. Done hands
+ * back the view it ended at, which the surface commits as one undo step, and
+ * the graph goes back to the static tile drawing.
  *
- * One finger or a mouse drags the plot, two fingers pinch it (each axis by
- * its own spread, so a plot can be stretched one way), the wheel zooms about
- * the pointer, and the Pencil traces: a marker follows it with each curve's
- * value at that x.
+ * One finger or a mouse drags the plot and lets it coast on release, with
+ * the page scroll's own deceleration (`scroll-physics`), so both feel alike;
+ * two fingers pinch it (each axis by its own spread, so a plot can be
+ * stretched one way); the wheel zooms about the pointer. A tap on a curve
+ * pins a point there with its coordinates, a tap beside the curves lets it
+ * go; the Pencil traces: a marker follows it with each curve's value at
+ * that x.
+ *
+ * Its bar is the selection bar's dark pill (the same classes), so it reads
+ * as one of FineNotes' own bars.
  */
 
 import type { GraphElement } from "../model/document";
@@ -17,6 +23,13 @@ import { type GraphView, panView, sameView, valueAt, zoomView } from "../model/g
 import { paintGraph, sampleExpressionAt } from "../canvas/graph-paint";
 import { frameX, frameY } from "../canvas/graph-geometry";
 import { shownColor } from "../canvas/backdrop";
+import {
+  DECELERATION_RATE,
+  MAX_STEP_MS,
+  MIN_FLING_SPEED,
+  REST_SPEED,
+  VelocityTracker,
+} from "../canvas/scroll-physics";
 import { onTap } from "./selection-bar";
 import { setIcon } from "obsidian";
 
@@ -30,8 +43,18 @@ export interface GraphExploreOptions {
 
 /** The fewest page px a spread of two fingers must have before it scales that axis. */
 const MIN_SPREAD = 24;
-/** A pinch is drawn at this share of full resolution while it moves. */
+/** The plot is drawn at this share of full resolution while it moves. */
 const MOVING_RESOLUTION = 0.5;
+/** A press that moves less than this (CSS px) and lifts within TAP_MS is a tap. */
+const TAP_SLOP_PX = 8;
+const TAP_MS = 350;
+/** How far from a curve (CSS px) a tap still lands on it. */
+const CURVE_HIT_PX = 22;
+/** The pinned point's radius and its label's text size, CSS px. */
+const POINT_RADIUS_PX = 5;
+const POINT_LABEL_PX = 13;
+
+type Pointer = { x: number; y: number; type: string };
 
 export class GraphExplorer {
   readonly root: HTMLElement;
@@ -43,12 +66,20 @@ export class GraphExplorer {
   private readonly start: GraphView;
   private scale = 1;
   private dpr = 1;
-  private readonly pointers = new Map<number, { x: number; y: number; type: string }>();
+  private readonly pointers = new Map<number, Pointer>();
   private gesture: {
     view: GraphView;
     points: Map<number, { x: number; y: number }>;
   } | null = null;
+  /** The Pencil's frame x while it traces. */
   private trace: number | null = null;
+  /** A point pinned on a curve by a tap: its x value and which expression. */
+  private pinned: { x: number; index: number } | null = null;
+  /** The press that may become a tap, in client px. */
+  private tap: { id: number; x: number; y: number; t: number } | null = null;
+  private readonly velocity = new VelocityTracker();
+  /** A pan coasting after release: client px per ms. */
+  private coast: { vx: number; vy: number; last: number } | null = null;
   private frame = 0;
   private moving = false;
   private closed = false;
@@ -68,26 +99,24 @@ export class GraphExplorer {
     this.root.dataset.ignoreSwipe = "true";
     this.canvas = this.root.createEl("canvas", { cls: "goodobsidian-graph-explore-canvas" });
     this.ctx = this.canvas.getContext("2d");
-    const bar = this.root.createDiv({ cls: "goodobsidian-graph-explore-bar" });
+    const bar = this.root.createDiv({
+      cls: "goodobsidian-selection-bar theme-dark goodobsidian-graph-explore-bar",
+      attr: { role: "toolbar", "aria-label": "Explore graph" },
+    });
     this.readout = bar.createSpan({ cls: "goodobsidian-graph-explore-readout" });
-    const reset = bar.createEl("button", {
-      cls: "clickable-icon goodobsidian-graph-explore-button",
-      attr: { "aria-label": "Reset view" },
-    });
-    setIcon(reset, "rotate-ccw");
+    bar.createDiv({ cls: "goodobsidian-selection-divider" });
+    const reset = barButton(bar, "Reset view", "rotate-ccw");
     onTap(reset, () => this.reset());
-    const done = bar.createEl("button", {
-      cls: "clickable-icon goodobsidian-graph-explore-button mod-done",
-      text: "Done",
-    });
+    const done = barButton(bar, "Done", "check", true);
     onTap(done, () => this.close(true));
-    for (const el of [bar]) {
-      el.addEventListener("pointerdown", (event) => event.stopPropagation());
-    }
+    bar.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+    });
     this.canvas.addEventListener("pointerdown", this.onDown);
     this.canvas.addEventListener("pointermove", this.onMove);
     this.canvas.addEventListener("pointerup", this.onUp);
-    this.canvas.addEventListener("pointercancel", this.onUp);
+    this.canvas.addEventListener("pointercancel", this.onCancel);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     // WebKit's long press and Scribble must not claim a held Pencil or finger.
     this.canvas.addEventListener("touchstart", stopTouch, { passive: false });
@@ -98,6 +127,16 @@ export class GraphExplorer {
   /** The view now, as Done would commit it. */
   get view(): GraphView {
     return { xRange: [...this.draft.xRange], yRange: [...this.draft.yRange] };
+  }
+
+  /** The point a tap pinned, if any: the harness reads this. */
+  get pinnedPoint(): { x: number; index: number } | null {
+    return this.pinned;
+  }
+
+  /** Whether the plot is still coasting after a release. */
+  get coasting(): boolean {
+    return this.coast !== null;
   }
 
   /**
@@ -132,6 +171,7 @@ export class GraphExplorer {
   close(commit: boolean): void {
     if (this.closed) return;
     this.closed = true;
+    this.coast = null;
     if (this.frame) window.cancelAnimationFrame(this.frame);
     this.root.remove();
     const view = this.view;
@@ -139,9 +179,11 @@ export class GraphExplorer {
   }
 
   private reset(): void {
+    this.coast = null;
     this.draft.xRange = [...this.start.xRange];
     this.draft.yRange = [...this.start.yRange];
     this.gesture = null;
+    this.moving = false;
     this.draw();
     this.showReadout();
   }
@@ -161,13 +203,21 @@ export class GraphExplorer {
     } catch {
       // A synthetic pointer (a harness) cannot be captured.
     }
+    // A press stops a coast where it is, as a finger stops a scroll.
+    this.coast = null;
     const p = this.framePoint(event.clientX, event.clientY);
     this.pointers.set(event.pointerId, { ...p, type: event.pointerType });
+    this.tap =
+      this.pointers.size === 1
+        ? { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp }
+        : null;
     if (event.pointerType === "pen") {
       this.trace = p.x;
       this.draw();
       return;
     }
+    this.velocity.reset();
+    this.velocity.add(event.timeStamp, event.clientX, event.clientY);
     this.beginGesture();
   };
 
@@ -175,6 +225,12 @@ export class GraphExplorer {
     const known = this.pointers.get(event.pointerId);
     if (!known) return;
     event.stopPropagation();
+    if (
+      this.tap?.id === event.pointerId &&
+      Math.hypot(event.clientX - this.tap.x, event.clientY - this.tap.y) > TAP_SLOP_PX
+    ) {
+      this.tap = null;
+    }
     const p = this.framePoint(event.clientX, event.clientY);
     known.x = p.x;
     known.y = p.y;
@@ -183,6 +239,7 @@ export class GraphExplorer {
       this.requestDraw();
       return;
     }
+    this.velocity.add(event.timeStamp, event.clientX, event.clientY);
     this.applyGesture();
   };
 
@@ -191,29 +248,80 @@ export class GraphExplorer {
     if (!known) return;
     event.stopPropagation();
     this.pointers.delete(event.pointerId);
+    const tap = this.tap;
+    this.tap = null;
+    if (tap && tap.id === event.pointerId && event.timeStamp - tap.t <= TAP_MS) {
+      this.trace = null;
+      this.gesture = null;
+      this.moving = false;
+      this.pinAt(this.framePoint(event.clientX, event.clientY));
+      return;
+    }
     if (known.type === "pen") {
       this.trace = null;
       this.showReadout();
       this.draw();
       return;
     }
+    const wasPan = this.gesture?.points.size === 1;
     // The fingers left continue from where the view is now.
     this.beginGesture();
-    if (!this.gesture) {
-      this.moving = false;
-      this.draw();
+    if (this.gesture) return;
+    const v = this.velocity.velocity(event.timeStamp);
+    if (wasPan && Math.hypot(v.x, v.y) >= MIN_FLING_SPEED) {
+      this.coast = { vx: v.x, vy: v.y, last: performance.now() };
+      this.requestDraw();
+      return;
     }
+    this.settle();
+  };
+
+  private readonly onCancel = (event: PointerEvent): void => {
+    if (!this.pointers.delete(event.pointerId)) return;
+    this.tap = null;
+    this.trace = null;
+    this.beginGesture();
+    if (!this.gesture) this.settle();
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();
     event.stopPropagation();
+    this.coast = null;
     const p = this.framePoint(event.clientX, event.clientY);
     const k = Math.exp(-event.deltaY * 0.002);
     const next = zoomView(this.view, k, k, p.x, p.y, this.draft.w, this.draft.h);
     this.setView(next);
     this.showReadout();
   };
+
+  /** Nothing moves any more: draw at full resolution. */
+  private settle(): void {
+    this.moving = false;
+    this.showReadout();
+    this.draw();
+  }
+
+  /**
+   * A tap at frame point `p`: pin the point on the nearest curve at that x
+   * when one passes within reach, else let a pinned point go.
+   */
+  private pinAt(p: { x: number; y: number }): void {
+    const g = this.draft;
+    const x = valueAt(this.view, p.x, p.y, g.w, g.h).x;
+    const map = { xRange: g.xRange, yRange: g.yRange, w: g.w, h: g.h };
+    const reach = CURVE_HIT_PX / this.scale;
+    let best: { index: number; d: number } | null = null;
+    g.expressions.forEach((expression, index) => {
+      const y = sampleExpressionAt(expression.text, x);
+      if (!Number.isFinite(y)) return;
+      const d = Math.abs(frameY(map, y) - p.y);
+      if (d <= reach && (!best || d < best.d)) best = { index, d };
+    });
+    const hit = best as { index: number; d: number } | null;
+    this.pinned = hit ? { x, index: hit.index } : null;
+    this.settle();
+  }
 
   /** Start (or restart) a drag or pinch from the fingers down now. */
   private beginGesture(): void {
@@ -225,14 +333,11 @@ export class GraphExplorer {
   private applyGesture(): void {
     const g = this.gesture;
     if (!g) return;
-    const now = [...g.points.keys()]
-      .map((id) => ({ from: g.points.get(id)!, to: this.pointers.get(id) }))
-      .filter(
-        (
-          pair,
-        ): pair is { from: { x: number; y: number }; to: { x: number; y: number; type: string } } =>
-          pair.to !== undefined,
-      );
+    const now: Array<{ from: { x: number; y: number }; to: Pointer }> = [];
+    for (const [id, from] of g.points) {
+      const to = this.pointers.get(id);
+      if (to) now.push({ from, to });
+    }
     if (now.length === 0) return;
     const { w, h } = this.draft;
     let view = g.view;
@@ -263,11 +368,35 @@ export class GraphExplorer {
     if (this.frame) return;
     this.frame = window.requestAnimationFrame(() => {
       this.frame = 0;
+      if (this.coast) this.stepCoast();
       this.draw();
     });
   }
 
-  /** Paint the plot (and the trace) into the canvas, at full resolution once at rest. */
+  /** One frame of a coast: move by the velocity, slow it as a page scroll slows. */
+  private stepCoast(): void {
+    const c = this.coast;
+    if (!c) return;
+    const now = performance.now();
+    const dt = Math.min(MAX_STEP_MS, Math.max(0, now - c.last));
+    c.last = now;
+    const decay = Math.pow(DECELERATION_RATE, dt);
+    c.vx *= decay;
+    c.vy *= decay;
+    const k = this.scale > 0 ? 1 / this.scale : 1;
+    this.moving = true;
+    this.draft.xRange = panView(this.view, c.vx * dt * k, 0, this.draft.w, this.draft.h).xRange;
+    this.draft.yRange = panView(this.view, 0, c.vy * dt * k, this.draft.w, this.draft.h).yRange;
+    if (Math.hypot(c.vx, c.vy) < REST_SPEED) {
+      this.coast = null;
+      this.moving = false;
+      this.showReadout();
+      return;
+    }
+    this.requestDraw();
+  }
+
+  /** Paint the plot, the trace and the pinned point, at full resolution once at rest. */
   draw(): void {
     const ctx = this.ctx;
     if (!ctx || this.closed) return;
@@ -279,6 +408,7 @@ export class GraphExplorer {
     const level = this.moving ? k * MOVING_RESOLUTION : k;
     paintGraph(ctx, this.draft, { level, night: this.options.night, paper: this.options.paper });
     if (this.trace !== null) this.drawTrace(ctx, k);
+    if (this.pinned) this.drawPinned(ctx);
   }
 
   private drawTrace(ctx: CanvasRenderingContext2D, k: number): void {
@@ -305,11 +435,62 @@ export class GraphExplorer {
       if (fy < 0 || fy > g.h) continue;
       ctx.fillStyle = shownColor(expression.color, this.options.night);
       ctx.beginPath();
-      ctx.arc(frameX(map, x), fy, 4, 0, Math.PI * 2);
+      ctx.arc(frameX(map, x), fy, POINT_RADIUS_PX / this.scale, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
     this.readout.setText(parts.join("   "));
+  }
+
+  /** The pinned point, Desmos style: a dot on the curve and its coordinates on a card beside it. */
+  private drawPinned(ctx: CanvasRenderingContext2D): void {
+    const pin = this.pinned;
+    const g = this.draft;
+    const expression = pin ? g.expressions[pin.index] : undefined;
+    if (!pin || !expression) return;
+    const y = sampleExpressionAt(expression.text, pin.x);
+    if (!Number.isFinite(y)) return;
+    const map = { xRange: g.xRange, yRange: g.yRange, w: g.w, h: g.h };
+    const fx = frameX(map, pin.x);
+    const fy = frameY(map, y);
+    if (fx < 0 || fx > g.w || fy < 0 || fy > g.h) return;
+    const u = 1 / this.scale;
+    const night = this.options.night;
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.beginPath();
+    ctx.rect(0, 0, g.w, g.h);
+    ctx.clip();
+    ctx.fillStyle = shownColor(expression.color, night);
+    ctx.strokeStyle = this.options.paper;
+    ctx.lineWidth = 2 * u;
+    ctx.beginPath();
+    ctx.arc(fx, fy, POINT_RADIUS_PX * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    const text = `(${formatNumber(pin.x)}, ${formatNumber(y)})`;
+    ctx.font = `${POINT_LABEL_PX * u}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+    const tw = ctx.measureText(text).width;
+    const pad = 5 * u;
+    const bw = tw + 2 * pad;
+    const bh = (POINT_LABEL_PX + 8) * u;
+    // Beside the point, flipped to the other side near the frame's right or top edge.
+    let bx = fx + 8 * u;
+    if (bx + bw > g.w) bx = fx - 8 * u - bw;
+    let by = fy - 8 * u - bh;
+    if (by < 0) by = fy + 8 * u;
+    ctx.fillStyle = this.options.paper;
+    ctx.strokeStyle = shownColor("#c3c8d0", night);
+    ctx.lineWidth = u;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 4 * u);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = shownColor("#2b2f36", night);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, bx + pad, by + bh / 2);
+    ctx.restore();
   }
 
   private showReadout(): void {
@@ -319,6 +500,26 @@ export class GraphExplorer {
       `x ${formatNumber(x0)} … ${formatNumber(x1)}   y ${formatNumber(y0)} … ${formatNumber(y1)}`,
     );
   }
+}
+
+/** A selection-bar button: `clickable-icon` keeps Obsidian's iPad padding off it. */
+function barButton(
+  bar: HTMLElement,
+  label: string,
+  icon: string,
+  withLabel = false,
+): HTMLButtonElement {
+  const button = bar.createEl("button", {
+    cls: `goodobsidian-selection-button clickable-icon${withLabel ? " has-label" : ""}`,
+    attr: { "aria-label": label, title: label },
+  });
+  if (withLabel) {
+    setIcon(button.createSpan({ cls: "goodobsidian-selection-button-icon" }), icon);
+    button.createSpan({ cls: "goodobsidian-selection-button-label", text: label });
+  } else {
+    setIcon(button, icon);
+  }
+  return button;
 }
 
 /** How much two fingers' spread along one axis grew; 1 when they are too close on it to say. */
