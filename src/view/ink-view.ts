@@ -126,8 +126,10 @@ import {
   EditGraph,
   GRAPH_DEFAULT_H,
   GRAPH_DEFAULT_W,
+  graphFrameHeight,
   graphFromSpec,
   nextGraphId,
+  specOfGraph,
 } from "../model/graph-element";
 import type { GraphElement } from "../model/document";
 import type { GraphSpec } from "../model/graph";
@@ -1118,7 +1120,36 @@ export class InkView extends TextFileView {
       load: () => parseCalculatorData(this.settings.calculator),
       save: (data) => this.plugin.saveCalculator(data),
       insert: (text) => this.insertCalculation(text),
+      insertGraph: (spec) => this.insertGraph(spec),
     });
+  }
+
+  /**
+   * Edit graph on a selected graph: the calculator opens on its graph pane
+   * with this graph's expressions, view and angle, under the toolbar's
+   * calculator button; its Done commits the edit as one undo step.
+   */
+  private editGraph(pageId: string, graph: GraphElement): void {
+    const anchor = this.contentEl.querySelector<HTMLElement>(
+      'button.goodobsidian-tool[aria-label="Calculator"]',
+    );
+    if (!anchor || this.isProtected()) return;
+    this.calculator?.close();
+    this.calculator = new CalculatorPopover(
+      anchor,
+      {
+        path: this.file?.path ?? "",
+        load: () => parseCalculatorData(this.settings.calculator),
+        save: (data) => this.plugin.saveCalculator(data),
+        insert: (text) => this.insertCalculation(text),
+      },
+      {
+        editGraph: {
+          spec: specOfGraph(graph),
+          done: (spec) => this.applyGraphEdit(pageId, graph, spec),
+        },
+      },
+    );
   }
 
   /**
@@ -1166,14 +1197,12 @@ export class InkView extends TextFileView {
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return false;
-    const at = centredOrigin(
-      surface.visiblePageRect(index),
-      page.geometry,
-      GRAPH_DEFAULT_W,
-      GRAPH_DEFAULT_H,
-    );
+    // The frame takes the view's shape, as the pop-up showed it, within bounds.
+    const h = graphFrameHeight(spec, GRAPH_DEFAULT_W, GRAPH_DEFAULT_H);
+    const at = centredOrigin(surface.visiblePageRect(index), page.geometry, GRAPH_DEFAULT_W, h);
     const graph = graphFromSpec(nextGraphId(surface.document), at.x, at.y, spec);
     if (graph.expressions.length === 0) return false;
+    graph.h = h;
     surface.applyCommand(new AddGraph(page.id, graph));
     surface.selectGraph(page.id, graph.id);
     this.requestSave();
@@ -2329,6 +2358,7 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
+        onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
           // Undoing or redoing "Convert to notebook" flips `single`.

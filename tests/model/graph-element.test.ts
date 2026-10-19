@@ -34,6 +34,7 @@ import {
   graphBounds,
   GRAPH_COLORS,
   graphContentKey,
+  graphFrameHeight,
   graphFromSpec,
   specOfGraph,
   makeGraph,
@@ -522,5 +523,26 @@ describe("graphFromSpec and specOfGraph", () => {
     });
     expect(graph.xRange).toEqual([-10, 10]);
     expect(graph.yRange).toEqual([-10, 10]);
+  });
+});
+
+describe("graphFrameHeight", () => {
+  const spec = (xMin: number, xMax: number, yMin: number, yMax: number) => ({
+    expressions: ["x"],
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+  });
+
+  it("keeps the view's shape between half and the whole of the width", () => {
+    expect(graphFrameHeight(spec(-10, 10, -7.5, 7.5), 320, 240)).toBe(240);
+    expect(graphFrameHeight(spec(-360, 360, -2, 2), 320, 240)).toBe(160);
+    expect(graphFrameHeight(spec(-1, 1, -10, 10), 320, 240)).toBe(320);
+  });
+
+  it("falls back when the view has no shape", () => {
+    expect(graphFrameHeight(spec(0, 0, 0, 1), 320, 240)).toBe(240);
+    expect(graphFrameHeight(spec(0, 1, 0, Number.NaN), 320, 240)).toBe(240);
   });
 });

@@ -133,6 +133,18 @@ export function graphFromSpec(
   });
 }
 
+/**
+ * The height a graph `w` page px wide is placed at: the shape of its view,
+ * so a plot that had equal x and y scales in the pop-up keeps them on the
+ * page, between half and the whole of its width. `fallback` when the view
+ * has no usable shape.
+ */
+export function graphFrameHeight(spec: GraphSpec, w: number, fallback: number): number {
+  const ratio = (spec.yMax - spec.yMin) / (spec.xMax - spec.xMin);
+  if (!(ratio > 0) || !Number.isFinite(ratio)) return fallback;
+  return Math.round(w * Math.min(1, Math.max(0.5, ratio)));
+}
+
 /** A graph as the calculator's `GraphSpec` again, for Edit: what it plots, its view and its angle mode. */
 export function specOfGraph(graph: GraphElement): GraphSpec {
   return {
