@@ -29,6 +29,7 @@
 import { setIcon } from "obsidian";
 import { type MathBox, layoutExpression } from "../model/calc-display";
 import {
+  type AngleMode,
   BASE_LABELS,
   type CalcValue,
   NUMBER_BASES,
@@ -80,6 +81,20 @@ export interface CalculatorHost {
   save(data: CalculatorData): void;
   /** Put `text` on the page in view as a text box (one undo step); false when it could not. */
   insert(text: string): boolean;
+  /**
+   * Put a graph on the page in view (one undo step); false when it could
+   * not. Absent: the graph pane offers no Insert graph.
+   */
+  insertGraph?(spec: GraphSpec): boolean;
+}
+
+export interface CalculatorOptions {
+  /**
+   * Open on the graph pane to edit this graph (a graph on a page); its Done
+   * hands the edited graph to `done` and closes. The calculator's own graph
+   * of the notebook is left as it was.
+   */
+  editGraph?: { spec: GraphSpec; done: (spec: GraphSpec) => void };
 }
 
 /** The answer and the memory outlive the sheet, as on a pocket calculator. */
@@ -109,6 +124,10 @@ export class CalculatorPopover {
   private shifted = false;
   private graph: GraphPanel | null = null;
   private readonly graphState: GraphState;
+  /** The angle of a graph being edited ({@link CalculatorOptions.editGraph}); its own, not the calculator's. */
+  private editAngle: AngleMode | null = null;
+  /** Insert graph, or Done while editing one: shown in the graph pane in place of Insert. */
+  private readonly graphAction: HTMLButtonElement | null;
 
   private readonly angleChip: HTMLButtonElement;
   private readonly fractionChip: HTMLButtonElement;
@@ -124,11 +143,20 @@ export class CalculatorPopover {
   constructor(
     private readonly anchor: HTMLElement,
     private readonly host: CalculatorHost,
+    private readonly options: CalculatorOptions = {},
   ) {
     this.data = host.load();
-    const kept = graphs.get(host.path);
-    this.graphState = kept ?? { expressions: [], range: null };
-    if (!kept) graphs.set(host.path, this.graphState);
+    const edited = options.editGraph?.spec;
+    if (edited) {
+      const { xMin, xMax, yMin, yMax } = edited;
+      this.graphState = { expressions: [...edited.expressions], range: { xMin, xMax, yMin, yMax } };
+      this.editAngle = edited.angle ?? "rad";
+      this.pane = "graph";
+    } else {
+      const kept = graphs.get(host.path);
+      this.graphState = kept ?? { expressions: [], range: null };
+      if (!kept) graphs.set(host.path, this.graphState);
+    }
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-calc" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", "Calculator");
@@ -170,6 +198,24 @@ export class CalculatorPopover {
     );
     this.insertButtons[0].setAttribute("aria-label", "Insert the sum and its answer on the page");
     this.insertButtons[1].setAttribute("aria-label", "Insert only the answer on the page");
+    this.graphAction = null;
+    if (options.editGraph) {
+      this.graphAction = this.button(
+        actions,
+        "Done",
+        () => this.finishGraph(),
+        "goodobsidian-calc-insert",
+      );
+      this.graphAction.setAttribute("aria-label", "Done: put the edited graph back on the page");
+    } else if (host.insertGraph) {
+      this.graphAction = this.button(
+        actions,
+        "Insert graph",
+        () => this.finishGraph(),
+        "goodobsidian-calc-insert",
+      );
+      this.graphAction.setAttribute("aria-label", "Insert the graph on the page");
+    }
 
     this.bodyEl = this.el.createDiv({ cls: "goodobsidian-calc-body" });
     this.render();
@@ -193,8 +239,26 @@ export class CalculatorPopover {
     return {
       expressions: [...this.graphState.expressions],
       ...range,
-      angle: this.data.prefs.angle,
+      angle: this.graphAngle(),
     };
+  }
+
+  /** The angle the graph is drawn in: the edited graph's own, else the calculator's. */
+  private graphAngle(): AngleMode {
+    return this.editAngle ?? this.data.prefs.angle;
+  }
+
+  /** Insert graph, or Done: hand the graph over and close. */
+  private finishGraph(): void {
+    const spec = this.graphSpec();
+    if (!spec) return;
+    const edit = this.options.editGraph;
+    if (edit) {
+      edit.done(spec);
+      this.close();
+    } else if (this.host.insertGraph?.(spec)) {
+      this.close();
+    }
   }
 
   /** The graph panel while it shows (the gallery measures its frames). */
@@ -343,7 +407,7 @@ export class CalculatorPopover {
 
   private renderGraph(): void {
     const list = this.bodyEl.createDiv({ cls: "goodobsidian-calc-functions" });
-    const graph = new GraphPanel(this.bodyEl, this.graphState, () => this.data.prefs.angle);
+    const graph = new GraphPanel(this.bodyEl, this.graphState, () => this.graphAngle());
     this.graph = graph;
     const errors = graph.errors();
     this.graphState.expressions.forEach((expression, index) => {
@@ -550,6 +614,11 @@ export class CalculatorPopover {
   }
 
   private toggleAngle(): void {
+    if (this.editAngle !== null) {
+      this.editAngle = this.editAngle === "deg" ? "rad" : "deg";
+      this.render();
+      return;
+    }
     this.save(withPrefs(this.data, { angle: this.data.prefs.angle === "deg" ? "rad" : "deg" }));
     if (this.graph) this.render();
     else this.refresh();
@@ -608,7 +677,7 @@ export class CalculatorPopover {
       button.toggleClass("is-active", active);
       button.setAttribute("aria-checked", String(active));
     }
-    this.angleChip.setText(angle === "deg" ? "DEG" : "RAD");
+    this.angleChip.setText((this.editAngle ?? angle) === "deg" ? "DEG" : "RAD");
     this.angleChip.disabled = base !== 10;
     this.fractionChip.toggleClass("is-active", fractions);
     this.fractionChip.setAttribute("aria-pressed", String(fractions));
@@ -644,7 +713,15 @@ export class CalculatorPopover {
     this.resultEl.setText(text);
     this.fitResult();
     const canInsert = this.entry.fresh || expr.trim() !== "";
-    for (const button of this.insertButtons) button.disabled = !canInsert;
+    const graphing = this.pane === "graph" && this.graphAction !== null;
+    for (const button of this.insertButtons) {
+      button.disabled = !canInsert;
+      button.toggleClass("is-hidden", graphing);
+    }
+    if (this.graphAction) {
+      this.graphAction.toggleClass("is-hidden", !graphing);
+      this.graphAction.disabled = this.graphState.expressions.length === 0;
+    }
   }
 
   /** Scale the expression down to its line instead of letting the display grow. */
