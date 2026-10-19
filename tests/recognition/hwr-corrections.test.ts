@@ -103,11 +103,14 @@ describe("readWords", () => {
       line("the prime factors", [["a"], ["b", "c"], ["d"]]),
       line("joined up", [["e"]]),
       line("  ", []),
+      line(" two  words", [["f"], ["g"]]),
     ]);
     expect(words).toEqual([
-      { text: "the", strokeIds: ["a"] },
-      { text: "prime", strokeIds: ["b", "c"] },
-      { text: "factors", strokeIds: ["d"] },
+      { text: "the", strokeIds: ["a"], at: { line: 0, start: 0, end: 3 } },
+      { text: "prime", strokeIds: ["b", "c"], at: { line: 0, start: 4, end: 9 } },
+      { text: "factors", strokeIds: ["d"], at: { line: 0, start: 10, end: 17 } },
+      { text: "two", strokeIds: ["f"], at: { line: 3, start: 1, end: 4 } },
+      { text: "words", strokeIds: ["g"], at: { line: 3, start: 6, end: 11 } },
     ]);
   });
 });

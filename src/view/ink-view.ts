@@ -182,6 +182,8 @@ import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import type { LexiconSuggestion } from "../recognition/hwr/lexicon";
+import type { WordPopover } from "./word-popover";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
@@ -317,6 +319,14 @@ function deviceKind(): string {
 /** The Files tab's kind, for every notebook opened in this session. */
 let lastFileKind: FileKind = "recordings";
 
+/** A page's words as last read, for its underlines (`checkWords`). */
+interface CheckedPage {
+  hash: string;
+  words: ReadWord[];
+  /** By stroke key: the list words a flagged word's ink fits best. */
+  suggestions?: Map<string, LexiconSuggestion | null>;
+}
+
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
   private doc: InkDocument;
@@ -407,7 +417,9 @@ export class InkView extends TextFileView {
    * Words read on each page, by page id, with the page hash they were read
    * at: what an underlined word's tap looks up (`checkWords`).
    */
-  private readonly checkedWords = new Map<string, { hash: string; words: ReadWord[] }>();
+  private readonly checkedWords = new Map<string, CheckedPage>();
+  /** The card of the underlined word last tapped, while it is open. */
+  private wordPopover: WordPopover | null = null;
   /** The wait before the page in view is checked for misread words. */
   private wordCheckTimer = 0;
   /** Pages read on the device this session, by key, at the hash they were read at. */
@@ -711,6 +723,8 @@ export class InkView extends TextFileView {
     this.deviceTimer = 0;
     window.clearTimeout(this.wordCheckTimer);
     this.wordCheckTimer = 0;
+    this.wordPopover?.close();
+    this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
     this.saver.stop();
@@ -1751,7 +1765,7 @@ export class InkView extends TextFileView {
     try {
       let reading: PageReading;
       try {
-        reading = await this.plugin.handwriting.readPage(step.page.strokes);
+        reading = await this.plugin.handwriting.readPage(step.page.strokes, this.wordsChecked);
       } catch {
         // An error or a timeout: skip this page until it changes, and go on.
         guard.fail(mark);
@@ -1817,7 +1831,7 @@ export class InkView extends TextFileView {
     }
     this.deviceBusy = true;
     try {
-      const reading = await this.plugin.handwriting.readPage(page.strokes);
+      const reading = await this.plugin.handwriting.readPage(page.strokes, true);
       if (this.surface === surface && surface.document.pages.includes(page)) {
         await this.checkWords(page, hash, reading);
       }
@@ -1839,13 +1853,41 @@ export class InkView extends TextFileView {
       return;
     }
     const words = readWords(reading.lines);
-    this.checkedWords.set(page.id, { hash, words });
+    const checked: CheckedPage = { hash, words };
+    this.checkedWords.set(page.id, checked);
     const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words);
     if (this.surface === surface)
       surface.setWordFlags(
         page.id,
         flagged.map((w) => w.strokeIds),
       );
+    checked.suggestions = await this.suggestFor(reading, flagged);
+  }
+
+  /**
+   * The list words each flagged word's ink fits best (lexicon.ts), worked
+   * out now so a tap opens its menu at once. Empty when there is no list or
+   * the page was not kept.
+   */
+  private async suggestFor(
+    reading: PageReading,
+    flagged: readonly ReadWord[],
+  ): Promise<Map<string, LexiconSuggestion | null>> {
+    const out = new Map<string, LexiconSuggestion | null>();
+    const lexicon = this.plugin.wordCheck.lexicon();
+    const located = flagged.filter((w) => w.at);
+    if (reading.id === undefined || !lexicon || located.length === 0) return out;
+    const items = located.map((w) => {
+      const at = w.at as NonNullable<ReadWord["at"]>;
+      return { line: at.line, text: reading.lines[at.line].text, start: at.start, end: at.end };
+    });
+    try {
+      const results = await this.plugin.handwriting.suggest(reading.id, items, lexicon);
+      located.forEach((w, i) => out.set(strokeKey(w.strokeIds), results[i] ?? null));
+    } catch {
+      // No suggestions: the menu offers the other answers.
+    }
+    return out;
   }
 
   /** A finger tapped an underlined word: ask what it says. */
@@ -1859,17 +1901,30 @@ export class InkView extends TextFileView {
     if (!word) return;
     const ids = new Set(strokeIds);
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
-    this.plugin.wordCheck.ask({ note: file.path, pageId: page.id, word, strokes }, at, () => {
-      // Answered: underline the page's words again, without this one.
-      const checked = this.checkedWords.get(page.id);
-      if (!checked || this.surface !== surface) return;
-      void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
-        surface.setWordFlags(
-          page.id,
-          flagged.map((w) => w.strokeIds),
-        ),
-      );
-    });
+    const suggestion = this.checkedWords.get(page.id)?.suggestions?.get(key) ?? null;
+    const asked = { note: file.path, pageId: page.id, word, strokes, suggestion };
+    // Its underline turns red while the card is open.
+    surface.setActiveWordFlag(page.id, strokeIds);
+    const closed = () => {
+      if (this.surface === surface) surface.setActiveWordFlag(null);
+    };
+    this.wordPopover?.close();
+    this.wordPopover = this.plugin.wordCheck.ask(
+      asked,
+      at,
+      () => {
+        // Answered: underline the page's words again, without this one.
+        const checked = this.checkedWords.get(page.id);
+        if (!checked || this.surface !== surface) return;
+        void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
+          surface.setWordFlags(
+            page.id,
+            flagged.map((w) => w.strokeIds),
+          ),
+        );
+      },
+      closed,
+    );
   }
 
   private async offerHandwrittenLinks(page: Page, reading: PageReading): Promise<void> {

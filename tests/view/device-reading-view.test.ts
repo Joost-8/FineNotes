@@ -14,9 +14,10 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 
 let InkView: typeof InkViewClass;
 
+// The whole view loads here: under a full parallel run that can pass 10 s.
 beforeAll(async () => {
   ({ InkView } = await import("../../src/view/ink-view"));
-});
+}, 60_000);
 
 const ink = (id: string): Stroke => ({
   id,
@@ -111,7 +112,8 @@ describe("reading pages on the device", () => {
     expect(JSON.parse(store.value as string).reading).toBeNull();
     read.mockResolvedValueOnce(reading);
     await next();
-    expect(read).toHaveBeenLastCalledWith(v.doc.pages[1].strokes);
+    // Not kept for suggestions: checking words is off.
+    expect(read).toHaveBeenLastCalledWith(v.doc.pages[1].strokes, false);
   });
 
   it("blames no page when the model fails to load", async () => {

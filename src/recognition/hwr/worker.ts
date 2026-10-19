@@ -10,6 +10,7 @@
 
 import { simdAvailable } from "./blstm";
 import { type HwrBundle, parseBundle } from "./bundle";
+import { type LineLogp, Lexicon, suggest } from "./lexicon";
 import { HWR_TAG, type HwrReply, type HwrRequest, type HwrResult } from "./protocol";
 import { readLine, readPage } from "./recognizer";
 import { writeBundle } from "./bundle-write";
@@ -23,6 +24,12 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 let bundle: HwrBundle | null = null;
 const now = (): number => performance.now();
+let lexicon: Lexicon | null = null;
+/** The log-probabilities of the last pages read with `keep`, by reading id. */
+const kept = new Map<number, LineLogp[]>();
+/** Pages kept: the one just checked, and the one before (a few MB each). */
+const KEEP_PAGES = 2;
+let nextReading = 1;
 
 function handle(request: HwrRequest, id: number): HwrResult {
   if (request.type === "load") {
@@ -67,11 +74,43 @@ function handle(request: HwrRequest, id: number): HwrResult {
       },
     };
   }
+  if (request.type === "lexicon") {
+    lexicon = new Lexicon(request.words);
+    return { type: "lexicon", size: lexicon.size };
+  }
   if (!bundle) throw new Error("no model loaded");
   if (request.type === "page") {
+    if (!request.keep) {
+      return {
+        type: "page",
+        reading: readPage(bundle, request.strokes, { useLm: request.useLm, now }),
+      };
+    }
+    const lines: LineLogp[] = [];
+    const reading = readPage(bundle, request.strokes, {
+      useLm: request.useLm,
+      now,
+      logp: (line, logp, frames) => (lines[line] = { logp, frames }),
+    });
+    const readingId = nextReading++;
+    kept.set(readingId, lines);
+    for (const old of kept.keys()) if (kept.size > KEEP_PAGES) kept.delete(old);
+    return { type: "page", reading: { ...reading, id: readingId } };
+  }
+  if (request.type === "suggest") {
+    const lines = kept.get(request.reading);
+    const list = lexicon;
+    const model = bundle;
+    const alpha = model.meta.decoder.alpha;
     return {
-      type: "page",
-      reading: readPage(bundle, request.strokes, { useLm: request.useLm, now }),
+      type: "suggest",
+      results: request.items.map((item) => {
+        const line = lines?.[item.line];
+        if (!line || !list) return null;
+        const t0 = now();
+        const found = suggest(line, model.meta.alphabet, model.lm, alpha, item, list);
+        return found && { ...found, ms: now() - t0 };
+      }),
     };
   }
   const model = bundle;

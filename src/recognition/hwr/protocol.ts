@@ -6,6 +6,7 @@
  */
 
 import type { InkStroke } from "./features";
+import type { LexiconSuggestion } from "./lexicon";
 import type { PageInk } from "./lines";
 import type { LineReading, PageReading } from "./recognizer";
 import type { LabelledLine } from "./tune";
@@ -16,8 +17,15 @@ export const HWR_TAG = "fineNotesHwr";
 export type HwrRequest =
   /** Parse a recogniser file (the bytes are transferred). */
   | { type: "load"; bytes: ArrayBuffer }
-  /** Find a page's lines and read them. */
-  | { type: "page"; strokes: PageInk[]; useLm: boolean }
+  /**
+   * Find a page's lines and read them. `keep`: hold on to the lines'
+   * log-probabilities (the last few pages only), for `suggest`.
+   */
+  | { type: "page"; strokes: PageInk[]; useLm: boolean; keep?: boolean }
+  /** The word list to suggest from (`handwriting/words.txt`). */
+  | { type: "lexicon"; words: string[] }
+  /** List words for words of a kept page (`PageReading.id`). */
+  | { type: "suggest"; reading: number; items: SuggestItem[] }
   /** Read lines given as strokes (benchmarks, tests). */
   | { type: "lines"; lines: InkStroke[][]; useLm: boolean }
   /**
@@ -26,6 +34,17 @@ export type HwrRequest =
    * the held-out lines. Progress comes as messages along the way.
    */
   | { type: "tune"; bytes: ArrayBuffer; lines: LabelledLine[]; steps: number; name: string };
+
+/** A word of a kept page's line: the token's `[start, end)` in the line's text. */
+export interface SuggestItem {
+  line: number;
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** What `suggest` found for an item; `ms` is the time it took. */
+export type SuggestResult = (LexiconSuggestion & { ms: number }) | null;
 
 /** A tuning run's progress, sent after each step. */
 export interface HwrProgress {
@@ -65,6 +84,9 @@ export type HwrResult =
   | { type: "load"; info: HwrModelInfo }
   | { type: "page"; reading: PageReading }
   | { type: "lines"; readings: LineReading[] }
+  | { type: "lexicon"; size: number }
+  /** One per item; all null when the page is no longer kept or there is no list. */
+  | { type: "suggest"; results: SuggestResult[] }
   | { type: "tune"; tuned: HwrTuned | null };
 
 export type HwrReply = { id: number } & (

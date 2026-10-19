@@ -323,6 +323,7 @@ import {
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
+import { strokeKey } from "../recognition/hwr/corrections";
 import {
   type Command,
   type ImageTransform,
@@ -469,6 +470,8 @@ const COUNTER_HOLD_MS = 1800;
 const ZOOM_READOUT_HOLD_MS = 2000;
 /** The gap between linked ink and its underline, screen px. */
 const LINK_UNDERLINE_GAP_PX = 3;
+/** Below a flagged word's ink, in screen px, to its dotted underline. */
+const WORD_FLAG_GAP_PX = 5;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
 const SECTION_LEAD_PX = 96;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
@@ -1413,6 +1416,8 @@ export class InkSurface {
   /** Words Grape may have misread, by page id: a wavy underline each. */
   private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
   private readonly wordMarks: HTMLElement[] = [];
+  /** The flagged word whose menu is open (page id, stroke key): drawn red. */
+  private activeWordFlag: { pageId: string; key: string } | null = null;
   /** The client point of the finger tap being handled, for `onFlaggedWord`. */
   private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
@@ -7999,7 +8004,19 @@ export class InkSurface {
     this.syncSectionRibbons();
   }
 
-  /** A wavy underline under each flagged word whose ink is still there. Returns how many. */
+  /**
+   * Mark the flagged word whose menu is open (its underline turns red), or
+   * none with `null`.
+   */
+  setActiveWordFlag(pageId: string | null, strokeIds: readonly string[] = []): void {
+    this.activeWordFlag = pageId === null ? null : { pageId, key: strokeKey(strokeIds) };
+    this.syncSectionRibbons();
+  }
+
+  /**
+   * A dotted underline under each flagged word whose ink is still there, red
+   * and wavy for the one whose menu is open. Returns how many.
+   */
   private syncWordMarks(): number {
     let used = 0;
     const scale = this.unitScale;
@@ -8016,9 +8033,14 @@ export class InkSurface {
           this.wordMarks.push(mark);
         }
         mark.removeClass("is-hidden");
+        const active = this.activeWordFlag;
+        mark.toggleClass(
+          "is-active",
+          active !== null && active.pageId === page.id && active.key === strokeKey(strokes),
+        );
         mark.setCssStyles({
           left: `${(box.x + bounds.minX) * scale}px`,
-          top: `${(box.y + bounds.maxY) * scale + LINK_UNDERLINE_GAP_PX}px`,
+          top: `${(box.y + bounds.maxY) * scale + WORD_FLAG_GAP_PX}px`,
           width: `${Math.max(8, (bounds.maxX - bounds.minX) * scale)}px`,
         });
         used++;

@@ -4,7 +4,7 @@
  * file, shared by every open notebook.
  *
  * - `flags` says which words of a page's reading to underline;
- * - `ask` shows the menu for a tapped word and records the answer.
+ * - `ask` shows the card for a tapped word (word-popover.ts) and records the answer.
  *
  * Files, both in `<plugin>/handwriting/`:
  * - `words.txt`, the words not to underline, one a line. Without it nothing
@@ -13,7 +13,7 @@
  *   and the nightly loop learn from them.
  */
 
-import { type App, Menu, Modal, Notice, normalizePath } from "obsidian";
+import { type App, Modal, Notice, normalizePath } from "obsidian";
 import {
   type CorrectionKind,
   type CorrectionsFile,
@@ -27,8 +27,10 @@ import {
   parseWordList,
   serializeCorrections,
 } from "../recognition/hwr/corrections";
+import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
 import type { Stroke } from "../model/document";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { WordPopover, type WordPopoverRow } from "./word-popover";
 import { errorMessage } from "../util/errors";
 
 export function wordListPath(pluginDir: string): string {
@@ -46,10 +48,14 @@ export interface CheckedWord {
   word: ReadWord;
   /** The word's strokes as they are on the page now. */
   strokes: readonly Stroke[];
+  /** The list words its ink fits best (lexicon.ts), when they were worked out. */
+  suggestion?: LexiconSuggestion | null;
 }
 
 export class WordCheck {
   private words: Set<string> | null = null;
+  /** Counts the times the word list was read, so the reader knows when to send it again. */
+  private version = 0;
   private corrections: CorrectionsFile = emptyCorrections();
   private loading: Promise<void> | null = null;
   /** Said once a session: there is no word list, so nothing is underlined. */
@@ -75,6 +81,7 @@ export class WordCheck {
     const adapter = this.app.vault.adapter;
     const list = wordListPath(this.pluginDir());
     this.words = (await adapter.exists(list)) ? parseWordList(await adapter.read(list)) : null;
+    this.version++;
     const file = correctionsPath(this.pluginDir());
     this.corrections = (await adapter.exists(file))
       ? parseCorrections(await adapter.read(file))
@@ -102,42 +109,71 @@ export class WordCheck {
     );
   }
 
+  /** The word list, for suggestions (lexicon.ts); null without one. */
+  lexicon(): { version: number; words: () => string[] } | null {
+    const words = this.words;
+    if (!words || words.size === 0) return null;
+    return { version: this.version, words: () => [...words] };
+  }
+
   /** How many answers there are, for the settings. */
   get count(): number {
     return this.corrections.corrections.length;
   }
 
   /**
-   * The menu for a tapped word: what Grape read, then the three answers.
-   * `done` runs after an answer is saved, to take the underline away.
+   * The card for a tapped word (word-popover.ts): what Grape read, then the
+   * answers. Nothing is changed without a tap.
+   *
+   * - When its ink fits list words about as well as the reading (margin
+   *   under `SUGGEST_MARGIN`), it is probably a misread: the best list words
+   *   come first, as chips ("Did you mean"), then Correct the reading, That's
+   *   what I wrote, and Add to dictionary.
+   * - Otherwise the ink really shows this word: That's what I wrote (with the
+   *   closest list spelling under it), Add to dictionary, then Correct.
+   *
+   * `done` runs after an answer is saved, to take the underline away;
+   * `closed` whenever the card closes, answered or not.
    */
-  ask(word: CheckedWord, at: { x: number; y: number }, done: () => void): void {
+  ask(
+    word: CheckedWord,
+    at: { x: number; y: number },
+    done: () => void,
+    closed: () => void = () => {},
+  ): WordPopover {
     const read = word.word.text;
-    const menu = new Menu();
-    menu.addItem((item) => item.setTitle(`Read as “${read}”`).setIsLabel(true));
-    menu.addItem((item) =>
-      item
-        .setTitle("Correct the reading…")
-        .setIcon("pencil")
-        .onClick(() => {
-          new WordCorrectionModal(this.app, read, (text) => {
-            void this.answer(word, "misread", text).then(done);
-          }).open();
-        }),
+    const found = word.suggestion;
+    const misread = !!found && found.words.length > 0 && found.margin < SUGGEST_MARGIN;
+    const reply = (kind: CorrectionKind, text: string) =>
+      void this.answer(word, kind, text).then(done);
+    const correct: WordPopoverRow = {
+      icon: "pencil",
+      label: "Correct the reading…",
+      run: () => new WordCorrectionModal(this.app, read, (text) => reply("misread", text)).open(),
+    };
+    const wrote: WordPopoverRow = {
+      icon: "check",
+      label: "That's what I wrote",
+      sub: !misread && found?.words[0] ? `Closest word: ${found.words[0]}` : undefined,
+      run: () => reply("mistake", read),
+    };
+    // Stored as "ignore", the kind's name since the first corrections files.
+    const add: WordPopoverRow = {
+      icon: "eye-off",
+      label: "Add to dictionary",
+      sub: "Never underline it again",
+      run: () => reply("ignore", read),
+    };
+    return new WordPopover(
+      at,
+      {
+        read,
+        chips: misread ? found.words : [],
+        onChip: (w) => reply("misread", replaceCore(read, w)),
+        rows: misread ? [correct, wrote, add] : [wrote, add, correct],
+      },
+      closed,
     );
-    menu.addItem((item) =>
-      item
-        .setTitle("That's what I wrote")
-        .setIcon("check")
-        .onClick(() => void this.answer(word, "mistake", read).then(done)),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle(`Ignore “${read}”`)
-        .setIcon("eye-off")
-        .onClick(() => void this.answer(word, "ignore", read).then(done)),
-    );
-    menu.showAtPosition(at);
   }
 
   private async answer(word: CheckedWord, kind: CorrectionKind, text: string): Promise<void> {

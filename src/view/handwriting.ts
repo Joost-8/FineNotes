@@ -12,7 +12,7 @@ import { type App, normalizePath } from "obsidian";
 import type { Stroke } from "../model/document";
 import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { PageInk } from "../recognition/hwr/lines";
-import type { HwrModelInfo } from "../recognition/hwr/protocol";
+import type { HwrModelInfo, SuggestItem, SuggestResult } from "../recognition/hwr/protocol";
 import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
 
 /**
@@ -60,6 +60,8 @@ export class HandwritingReader {
   /** The model in the worker, and where it came from. */
   private loaded: { key: string; info: HwrModelInfo } | null = null;
   private loading: Promise<HwrModelInfo> | null = null;
+  /** The version of the word list the worker has (`suggest`). */
+  private lexiconVersion: number | null = null;
 
   constructor(
     private readonly app: App,
@@ -107,17 +109,39 @@ export class HandwritingReader {
     }
   }
 
-  /** Find the lines in these strokes and read them. */
-  async readPage(strokes: readonly Stroke[]): Promise<PageReading> {
+  /**
+   * Find the lines in these strokes and read them. `keep`: the worker keeps
+   * the lines' log-probabilities (the last two pages), for `suggest`.
+   */
+  async readPage(strokes: readonly Stroke[], keep = false): Promise<PageReading> {
     await this.model();
     const client = this.client;
     if (!client) throw new Error("the recogniser stopped");
     try {
-      return await client.readPage(inkForReading(strokes), true);
+      return await client.readPage(inkForReading(strokes), true, keep);
     } catch (error) {
       this.dispose();
       throw error;
     }
+  }
+
+  /**
+   * List words for words of a page read with `keep` (lexicon.ts). The word
+   * list goes to the worker when its `version` is new to it.
+   */
+  async suggest(
+    reading: number,
+    items: SuggestItem[],
+    lexicon: { version: number; words: () => string[] },
+  ): Promise<SuggestResult[]> {
+    await this.model();
+    const client = this.client;
+    if (!client) throw new Error("the recogniser stopped");
+    if (this.lexiconVersion !== lexicon.version) {
+      await client.setLexicon(lexicon.words());
+      this.lexiconVersion = lexicon.version;
+    }
+    return client.suggest(reading, items);
   }
 
   /** Read groups of strokes, each as one line (words, for the bracket test). */
@@ -146,5 +170,6 @@ export class HandwritingReader {
     this.client?.terminate();
     this.client = null;
     this.loaded = null;
+    this.lexiconVersion = null;
   }
 }

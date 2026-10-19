@@ -16,6 +16,8 @@ import {
   type HwrRequest,
   type HwrResult,
   type HwrTuned,
+  type SuggestItem,
+  type SuggestResult,
 } from "./protocol";
 import type { LabelledLine } from "./tune";
 import type { LineReading, PageReading } from "./recognizer";
@@ -96,11 +98,25 @@ export class HwrWorkerClient {
     return result.info;
   }
 
-  /** Find the page's lines and read them. */
-  async readPage(strokes: PageInk[], useLm = true): Promise<PageReading> {
-    const result = await this.send({ type: "page", strokes, useLm }, READ_TIMEOUT_MS);
+  /** Find the page's lines and read them; `keep` for `suggest` afterwards. */
+  async readPage(strokes: PageInk[], useLm = true, keep = false): Promise<PageReading> {
+    const result = await this.send({ type: "page", strokes, useLm, keep }, READ_TIMEOUT_MS);
     if (result.type !== "page") throw new Error("unexpected reply");
     return result.reading;
+  }
+
+  /** Give the worker the word list to suggest from. */
+  async setLexicon(words: string[]): Promise<number> {
+    const result = await this.send({ type: "lexicon", words }, LOAD_TIMEOUT_MS);
+    if (result.type !== "lexicon") throw new Error("unexpected reply");
+    return result.size;
+  }
+
+  /** List words for words of a page read with `keep` (its `PageReading.id`). */
+  async suggest(reading: number, items: SuggestItem[]): Promise<SuggestResult[]> {
+    const result = await this.send({ type: "suggest", reading, items }, READ_TIMEOUT_MS);
+    if (result.type !== "suggest") throw new Error("unexpected reply");
+    return result.results;
   }
 
   /** Read lines given as strokes. */

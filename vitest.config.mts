@@ -115,6 +115,7 @@ export default defineConfig({
         "src/recognition/hwr/blstm.ts",
         "src/recognition/hwr/simd.ts",
         "src/recognition/hwr/ctc.ts",
+        "src/recognition/hwr/lexicon.ts",
         "src/recognition/hwr/lines.ts",
         "src/recognition/hwr/recognizer.ts",
         "src/audio/recording.ts",

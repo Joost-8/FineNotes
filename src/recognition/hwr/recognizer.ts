@@ -41,6 +41,8 @@ export interface PageLineReading extends LineReading {
 
 export interface PageReading {
   lines: PageLineReading[];
+  /** Set when the worker kept the lines' log-probabilities, to ask about their words. */
+  id?: number;
   /** Milliseconds to find the lines. */
   segment: number;
   wordGap: number;
@@ -53,6 +55,11 @@ export interface ReadOptions {
   beam?: Partial<BeamOptions>;
   /** A clock in milliseconds (`performance.now` in the worker). */
   now?: () => number;
+  /**
+   * Handed each line's CTC log-probabilities (`frames × classes`), for a
+   * second look at its words (lexicon.ts). `line` is its index on the page.
+   */
+  logp?: (line: number, logp: Float32Array, frames: number) => void;
 }
 
 /**
@@ -79,6 +86,7 @@ export function readLine(
   const t1 = now();
   const logp = forward(bundle.net, features, frames);
   const t2 = now();
+  options.logp?.(0, logp, frames);
   const alphabet = bundle.meta.alphabet;
   const greedy = greedyDecode(logp, frames, alphabet);
   const t3 = now();
@@ -109,10 +117,14 @@ export function readPage(
   return {
     segment,
     wordGap,
-    lines: lines.map((line) => {
+    lines: lines.map((line, index) => {
       const ink = lineStrokes(line);
+      const keep = options.logp;
       return {
-        ...readLine(bundle, ink, options),
+        ...readLine(bundle, ink, {
+          ...options,
+          logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
+        }),
         strokeIds: ink.map((s) => s.id),
         words: line.words.map((word) => word.strokes.map((s) => s.id)),
         box: line.box,

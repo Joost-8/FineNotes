@@ -9186,9 +9186,19 @@ button.goodobsidian-gallery-back.clickable-icon {
 
 /* A word Grape may have misread: a wavy underline, as a spelling checker
    draws, in the theme's red; a finger tap asks what it says (word-check.ts). */
+/* A word Grape may have misread: a quiet dotted line, red and wavy while its menu is open. */
 .goodobsidian-word-flag {
   position: absolute;
+  height: 0;
+  border-bottom: 2px dotted var(--text-muted);
+  opacity: 0.8;
+}
+
+.goodobsidian-word-flag.is-active {
   height: 4px;
+  margin-top: -1px;
+  border-bottom: none;
+  opacity: 1;
   background-color: var(--color-red);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 2 Q1.5 0 3 2 T6 2' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")
     repeat-x left center / 6px 4px;
@@ -9198,4 +9208,65 @@ button.goodobsidian-gallery-back.clickable-icon {
 
 .goodobsidian-word-flag.is-hidden {
   display: none;
+}
+
+/* The card a tapped underlined word opens (word-popover.ts). */
+.goodobsidian-addpage.goodobsidian-wordcheck {
+  gap: 6px;
+  padding: 10px 8px 8px;
+}
+
+.goodobsidian-wordcheck-read {
+  padding: 0 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-wordcheck-caption {
+  padding: 4px 10px 0;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-muted);
+}
+
+.goodobsidian-wordcheck-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 6px 4px;
+}
+
+button.goodobsidian-wordcheck-chip.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--gob-touch-compact, 36px);
+  padding: 0 14px;
+  border: 1px solid var(--gob-line);
+  border-radius: 999px;
+  background: var(--gob-well);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  white-space: nowrap;
+}
+
+button.goodobsidian-wordcheck-chip.clickable-icon.is-first {
+  border-color: hsla(var(--interactive-accent-hsl), 0.45);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-wordcheck .goodobsidian-addpage-divider {
+  margin: 2px -8px;
+}
+
+.goodobsidian-wordcheck-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.goodobsidian-wordcheck .goodobsidian-aimenu-text {
+  align-items: flex-start;
+  text-align: start;
 }

@@ -57,6 +57,8 @@ export interface CorrectionsFile {
 export interface ReadWord {
   text: string;
   strokeIds: string[];
+  /** Where it is in the reading: its line, and the token's `[start, end)` in the line's text. */
+  at?: { line: number; start: number; end: number };
 }
 
 /** A word to underline, from `flagWords`. */
@@ -161,11 +163,17 @@ export function correctionLines(
  */
 export function readWords(lines: readonly PageLineReading[]): ReadWord[] {
   const out: ReadWord[] = [];
-  for (const line of lines) {
-    const texts = line.text.trim().split(/\s+/).filter(Boolean);
-    if (texts.length === 0 || texts.length !== line.words.length) continue;
-    texts.forEach((text, i) => out.push({ text, strokeIds: [...line.words[i]] }));
-  }
+  lines.forEach((line, index) => {
+    const tokens = [...line.text.matchAll(/\S+/g)];
+    if (tokens.length === 0 || tokens.length !== line.words.length) return;
+    tokens.forEach((m, i) =>
+      out.push({
+        text: m[0],
+        strokeIds: [...line.words[i]],
+        at: { line: index, start: m.index, end: m.index + m[0].length },
+      }),
+    );
+  });
   return out;
 }
 
