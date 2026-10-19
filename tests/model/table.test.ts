@@ -433,7 +433,13 @@ describe("tables in a lasso selection", () => {
     const fresh = emptyDocument();
     const copies = copyElements(
       { strokes: [], images: [], textBoxes: [], tables: [t] },
-      { stroke: () => "s", image: () => "i", textBox: () => "t", table: () => "g9" },
+      {
+        stroke: () => "s",
+        image: () => "i",
+        textBox: () => "t",
+        table: () => "g9",
+        graph: () => "f9",
+      },
       10,
       10,
     );

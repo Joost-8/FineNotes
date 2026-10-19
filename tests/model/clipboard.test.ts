@@ -43,6 +43,7 @@ function ids(): IdSource {
     image: () => `i${++n}`,
     textBox: () => `t${++n}`,
     table: () => `g${++n}`,
+    graph: () => `f${++n}`,
   };
 }
 

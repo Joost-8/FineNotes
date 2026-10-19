@@ -55,6 +55,7 @@ import {
   type ShapeDash,
   type ShapeKind,
   type Stroke,
+  type GraphElement,
   type TableElement,
   type TextBoxElement,
   type Tool,
@@ -69,6 +70,8 @@ import {
   tableLayoutKey,
 } from "./table-layout";
 import { imageBounds, rotationOf } from "./image-geometry";
+import { paintGraph } from "./graph-paint";
+import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import {
   baselineOffset,
@@ -482,6 +485,8 @@ export class Renderer {
   private hiddenStrokes: ReadonlySet<string> = new Set();
   /** Tables left out of tiles and previews: a lasso selection being dragged. */
   private hiddenTables: ReadonlySet<TableElement> = new Set();
+  /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
+  private hiddenGraphs: ReadonlySet<GraphElement> = new Set();
   /** The cell being typed in, whose text its textarea shows instead. */
   private editingCell: { table: TableElement; cell: CellRef } | null = null;
 
@@ -588,6 +593,11 @@ export class Renderer {
   /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
   setHiddenTables(tables: ReadonlySet<TableElement>): void {
     this.hiddenTables = tables;
+  }
+
+  /** Leave these graphs out of tiles and previews; as above, the caller invalidates. */
+  setHiddenGraphs(graphs: ReadonlySet<GraphElement>): void {
+    this.hiddenGraphs = graphs;
   }
 
   /**
@@ -1155,6 +1165,7 @@ export class Renderer {
     }
     this.paintImages(ctx, page, region, level);
     this.paintTables(ctx, page, region);
+    this.paintGraphs(ctx, page, region, level);
     // Inset by half a device pixel so the hairline lies inside the clip.
     const hair = 1 / level;
     ctx.strokeStyle = this.paper.edge;
@@ -1201,6 +1212,27 @@ export class Renderer {
       if (!overlaps(bounds, region)) continue;
       const editing = this.editingCell?.table === table ? this.editingCell.cell : null;
       paintTable(ctx, table, night, editing, layout);
+    }
+  }
+
+  /**
+   * The page's graphs that overlap `region`, over the tables and under the
+   * ink. Each draws from its cached curves (`graph-paint`), so a tile costs
+   * a few path strokes once a graph has been sampled at this level.
+   */
+  private paintGraphs(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    region: Bounds,
+    level: number,
+  ): void {
+    if (!page.graphs || page.graphs.length === 0) return;
+    const night = pageLook(page.backdrop, this.paper).night;
+    const paper = paperColorOf(page, this.paper);
+    for (const graph of page.graphs) {
+      if (this.hiddenGraphs.has(graph)) continue;
+      if (!overlaps(padBounds(graphBounds(graph), 1), region)) continue;
+      paintGraph(ctx, graph, { level, night, paper });
     }
   }
 
@@ -1335,6 +1367,7 @@ export class Renderer {
     scale?: { x: number; y: number; k: number },
     turn?: { x: number; y: number; angle: number },
     tables: readonly TableElement[] = [],
+    graphs: readonly GraphElement[] = [],
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
@@ -1345,6 +1378,33 @@ export class Renderer {
     // A table stays upright under a turn (its middle goes round, as
     // `ReorientElements` commits), so it is drawn before the turn is applied.
     const night = this.nightAt(pageIndex);
+    if (graphs.length > 0) {
+      // Upright as well, like a table: its middle goes round under a turn.
+      const page = this.doc?.pages[pageIndex];
+      const paper = page ? paperColorOf(page, this.paper) : this.paper.paper;
+      ctx.save();
+      ctx.translate(dx, dy);
+      if (scale && scale.k > 0 && Number.isFinite(scale.k)) {
+        ctx.translate(scale.x, scale.y);
+        ctx.scale(scale.k, scale.k);
+        ctx.translate(-scale.x, -scale.y);
+      }
+      for (const graph of graphs) {
+        ctx.save();
+        if (turn && Number.isFinite(turn.angle) && turn.angle !== 0) {
+          const cx = graph.x + graph.w / 2;
+          const cy = graph.y + graph.h / 2;
+          const c = Math.cos(turn.angle);
+          const s = Math.sin(turn.angle);
+          const tx = turn.x + (cx - turn.x) * c - (cy - turn.y) * s;
+          const ty = turn.y + (cx - turn.x) * s + (cy - turn.y) * c;
+          ctx.translate(tx - cx, ty - cy);
+        }
+        paintGraph(ctx, graph, { level: this.deviceScale, night, paper });
+        ctx.restore();
+      }
+      ctx.restore();
+    }
     if (tables.length > 0) {
       ctx.save();
       ctx.translate(dx, dy);
@@ -1765,6 +1825,10 @@ export function renderPageThumbnail(
   pictures(false);
   // Tables lie under the ink, so handwriting in a cell shows over its lines.
   for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
+  // So do graphs: a note written over a curve shows over it.
+  for (const graph of page.graphs ?? []) {
+    paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
+  }
 
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
@@ -1963,4 +2027,9 @@ export function paintTable(
 
 function finiteOr(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** `b` grown by `pad` on every side. */
+function padBounds(b: Bounds, pad: number): Bounds {
+  return { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
 }

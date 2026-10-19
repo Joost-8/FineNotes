@@ -29,6 +29,7 @@ import type {
   ImageElement,
   PageGeometry,
   Stroke,
+  GraphElement,
   TableElement,
   TextBoxElement,
 } from "./document";
@@ -78,6 +79,7 @@ export class InkClipboard {
         images: elements.images.map((image) => structuredClone(image)),
         textBoxes: elements.textBoxes.map((textBox) => structuredClone(textBox)),
         tables: (elements.tables ?? []).map((table) => structuredClone(table)),
+        graphs: (elements.graphs ?? []).map((graph) => structuredClone(graph)),
       },
       bounds: { ...bounds },
     };
@@ -105,6 +107,7 @@ export class InkClipboard {
       e.strokes.length > 0 ||
       e.textBoxes.length > 0 ||
       (e.tables?.length ?? 0) > 0 ||
+      (e.graphs?.length ?? 0) > 0 ||
       (withImages && e.images.length > 0)
     );
   }
@@ -154,9 +157,9 @@ export function pasteCopies(
   dy: number,
   withImages = true,
 ): ElementLists {
-  const { strokes, images, textBoxes, tables } = entry.elements;
+  const { strokes, images, textBoxes, tables, graphs } = entry.elements;
   const copies = copyElements(
-    { strokes, images: withImages ? images : [], textBoxes, tables },
+    { strokes, images: withImages ? images : [], textBoxes, tables, graphs },
     ids,
     dx,
     dy,
@@ -245,8 +248,16 @@ export function sameSpotTaken(
         near(e.x, c.x + dx) &&
         near(e.y, c.y + dy),
     );
+  const graphTaken = (c: GraphElement): boolean =>
+    (page.graphs ?? []).some(
+      (e) =>
+        JSON.stringify(e.expressions) === JSON.stringify(c.expressions) &&
+        near(e.x, c.x + dx) &&
+        near(e.y, c.y + dy),
+    );
   return (
     (copies.tables ?? []).some(tableTaken) ||
+    (copies.graphs ?? []).some(graphTaken) ||
     copies.images.some(imageTaken) ||
     copies.textBoxes.some(textTaken) ||
     copies.strokes.some(strokeTaken)

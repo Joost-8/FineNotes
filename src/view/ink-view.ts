@@ -121,6 +121,18 @@ import { AiMenuPopover } from "./ai-menu";
 import { CalculatorPopover } from "./calculator-popover";
 import { parseCalculatorData } from "../model/calculator-store";
 import { centredOrigin } from "../model/calculator-keys";
+import {
+  AddGraph,
+  EditGraph,
+  GRAPH_DEFAULT_H,
+  GRAPH_DEFAULT_W,
+  graphFrameHeight,
+  graphFromSpec,
+  nextGraphId,
+  specOfGraph,
+} from "../model/graph-element";
+import type { GraphElement } from "../model/document";
+import type { GraphSpec } from "../model/graph";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
 import { AddTable } from "../model/table-commands";
@@ -1108,7 +1120,36 @@ export class InkView extends TextFileView {
       load: () => parseCalculatorData(this.settings.calculator),
       save: (data) => this.plugin.saveCalculator(data),
       insert: (text) => this.insertCalculation(text),
+      insertGraph: (spec) => this.insertGraph(spec),
     });
+  }
+
+  /**
+   * Edit graph on a selected graph: the calculator opens on its graph pane
+   * with this graph's expressions, view and angle, under the toolbar's
+   * calculator button; its Done commits the edit as one undo step.
+   */
+  private editGraph(pageId: string, graph: GraphElement): void {
+    const anchor = this.contentEl.querySelector<HTMLElement>(
+      'button.goodobsidian-tool[aria-label="Calculator"]',
+    );
+    if (!anchor || this.isProtected()) return;
+    this.calculator?.close();
+    this.calculator = new CalculatorPopover(
+      anchor,
+      {
+        path: this.file?.path ?? "",
+        load: () => parseCalculatorData(this.settings.calculator),
+        save: (data) => this.plugin.saveCalculator(data),
+        insert: (text) => this.insertCalculation(text),
+      },
+      {
+        editGraph: {
+          spec: specOfGraph(graph),
+          done: (spec) => this.applyGraphEdit(pageId, graph, spec),
+        },
+      },
+    );
   }
 
   /**
@@ -1139,6 +1180,49 @@ export class InkView extends TextFileView {
         fit: true,
         text,
         ...style,
+      }),
+    );
+    this.requestSave();
+    return true;
+  }
+
+  /**
+   * A graph from the calculator, in the middle of what is in view of the
+   * current page, selected so its bar (Explore, Edit) is right there: one
+   * undo step.
+   */
+  insertGraph(spec: GraphSpec): boolean {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return false;
+    const index = surface.currentPage;
+    const page = surface.document.pages[index];
+    if (!page) return false;
+    // The frame takes the view's shape, as the pop-up showed it, within bounds.
+    const h = graphFrameHeight(spec, GRAPH_DEFAULT_W, GRAPH_DEFAULT_H);
+    const at = centredOrigin(surface.visiblePageRect(index), page.geometry, GRAPH_DEFAULT_W, h);
+    const graph = graphFromSpec(nextGraphId(surface.document), at.x, at.y, spec);
+    if (graph.expressions.length === 0) return false;
+    graph.h = h;
+    surface.applyCommand(new AddGraph(page.id, graph));
+    surface.selectGraph(page.id, graph.id);
+    this.requestSave();
+    return true;
+  }
+
+  /** What Edit graph gave back for `graph`: its new expressions, colours and view, one undo step. */
+  applyGraphEdit(pageId: string, graph: GraphElement, spec: GraphSpec): boolean {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return false;
+    // Each curve keeps its colour by position; a new one takes the palette's next.
+    const colors = graph.expressions.map((expression) => expression.color);
+    const edited = graphFromSpec(graph.id, graph.x, graph.y, spec, colors);
+    if (edited.expressions.length === 0) return false;
+    surface.applyCommand(
+      new EditGraph(pageId, graph, {
+        expressions: edited.expressions,
+        xRange: edited.xRange,
+        yRange: edited.yRange,
+        angle: edited.angle ?? "rad",
       }),
     );
     this.requestSave();
@@ -2274,6 +2358,7 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
+        onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
           // Undoing or redoing "Convert to notebook" flips `single`.

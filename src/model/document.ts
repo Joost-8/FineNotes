@@ -486,6 +486,40 @@ export interface TableElement {
   dash?: ShapeDash;
 }
 
+/** One curve of a graph: the right-hand side of y = f(x), as typed, and its colour. */
+export interface GraphExpression {
+  text: string;
+  /** Hex, as a stroke's colour. */
+  color: string;
+}
+
+/**
+ * A y = f(x) graph on a page (`model/graph`), from the calculator: only what
+ * it shows is stored, never sampled points, so the curve is drawn again at
+ * whatever resolution it is shown or printed at. Drawn under the ink, like a
+ * table, and kept upright.
+ */
+export interface GraphElement {
+  /** `f<N>`, unique on the page. */
+  id: string;
+  /** The frame's top-left and size, page px. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Bottom to top; at least one. */
+  expressions: GraphExpression[];
+  /** The x and y values at the frame's left and right, bottom and top; `lo < hi`. */
+  xRange: [number, number];
+  yRange: [number, number];
+  /** Grid lines off. Only stored as `false`; absent means on. */
+  grid?: false;
+  /** Axis numbers off. Only stored as `false`; absent means on. */
+  labels?: false;
+  /** Trig functions take degrees (the calculator's DEG). Only stored as `"deg"`; absent means radians. */
+  angle?: "deg";
+}
+
 export type PageKind = "ink";
 
 export interface Page {
@@ -498,6 +532,8 @@ export interface Page {
   textBoxes: TextBoxElement[];
   /** Tables, bottom to top. Absent when the page has none. */
   tables?: TableElement[];
+  /** Graphs, bottom to top, drawn over the tables. Absent when the page has none. */
+  graphs?: GraphElement[];
   /** Comments pinned to the page (`model/comments`). Absent when it has none. */
   comments?: PageComment[];
   /**

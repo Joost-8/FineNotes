@@ -209,6 +209,7 @@ describe("AddElements and copyElements", () => {
       image: () => `i${100 + ++n}`,
       textBox: () => `t${100 + ++n}`,
       table: () => `g${100 + ++n}`,
+      graph: () => `f${100 + ++n}`,
     };
     const copies = copyElements(
       { strokes: [s[1]], images: [i[1]], textBoxes: [t[1]] },
@@ -238,7 +239,13 @@ describe("AddElements and copyElements", () => {
     const before = snap(doc);
     const copies = copyElements(
       { strokes: s, images: i, textBoxes: t },
-      { stroke: () => "s1", image: () => "i1", textBox: () => "t1", table: () => "g1" },
+      {
+        stroke: () => "s1",
+        image: () => "i1",
+        textBox: () => "t1",
+        table: () => "g1",
+        graph: () => "f1",
+      },
       0,
       0,
     );

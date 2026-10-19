@@ -46,5 +46,7 @@ export function pageSignature(page: Page): string {
   // A table is small next to its picture: every field, cells included. Left
   // out when there is none, so a page without tables keeps its signature.
   if (page.tables?.length) parts.push(JSON.stringify(page.tables));
+  // A graph is a few expressions and four numbers: every field, likewise.
+  if (page.graphs?.length) parts.push(JSON.stringify(page.graphs));
   return parts.join("#");
 }

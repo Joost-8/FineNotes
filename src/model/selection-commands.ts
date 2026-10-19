@@ -17,6 +17,7 @@ import {
   type InkDocument,
   type Page,
   type Stroke,
+  type GraphElement,
   type TableElement,
   type TextBoxElement,
   POINT_STRIDE,
@@ -24,6 +25,7 @@ import {
 } from "./document";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
+import { restoreGraph, scaleGraph } from "./graph-element";
 import {
   MAX_BORDER_WIDTH,
   MAX_CORNER_RADIUS,
@@ -46,6 +48,8 @@ export interface PageElements {
   textBoxes: readonly TextBoxElement[];
   /** Absent: none. Older callers that know no tables leave it out. */
   tables?: readonly TableElement[];
+  /** Absent: none, as for tables. */
+  graphs?: readonly GraphElement[];
 }
 
 /** The same elements as fresh, mutable lists. */
@@ -54,6 +58,7 @@ export interface ElementLists {
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
+  graphs?: GraphElement[];
 }
 
 /** Which of `elements` are on `page` right now, in page order. */
@@ -63,6 +68,7 @@ export function elementsOnPage(page: Page, elements: PageElements): ElementLists
     images: present(page.images, elements.images),
     textBoxes: present(page.textBoxes, elements.textBoxes),
     tables: present(page.tables ?? [], elements.tables ?? []),
+    graphs: present(page.graphs ?? [], elements.graphs ?? []),
   };
 }
 
@@ -72,7 +78,8 @@ export function isEmptySelection(elements: PageElements): boolean {
     elements.strokes.length === 0 &&
     elements.images.length === 0 &&
     elements.textBoxes.length === 0 &&
-    (elements.tables?.length ?? 0) === 0
+    (elements.tables?.length ?? 0) === 0 &&
+    (elements.graphs?.length ?? 0) === 0
   );
 }
 
@@ -99,6 +106,7 @@ export class TranslateElements implements Command {
     images: Array<{ image: ImageElement; x: number; y: number }>;
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
+    graphs: Array<{ graph: GraphElement; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -138,6 +146,12 @@ export class TranslateElements implements Command {
         table.y += dy;
         return saved;
       }),
+      graphs: (on.graphs ?? []).map((graph) => {
+        const saved = { graph, x: graph.x, y: graph.y };
+        graph.x += dx;
+        graph.y += dy;
+        return saved;
+      }),
     };
   }
 
@@ -156,6 +170,10 @@ export class TranslateElements implements Command {
     for (const { table, x, y } of moved.tables) {
       table.x = x;
       table.y = y;
+    }
+    for (const { graph, x, y } of moved.graphs) {
+      graph.x = x;
+      graph.y = y;
     }
     this.moved = null;
   }
@@ -227,6 +245,7 @@ export class ScaleElements implements Command {
       radius: number | undefined;
     }>;
     tables: Array<{ table: TableElement; saved: TableElement }>;
+    graphs: Array<{ graph: GraphElement; saved: GraphElement }>;
   } | null = null;
 
   constructor(
@@ -283,6 +302,12 @@ export class ScaleElements implements Command {
         scaleTable(table, ax, ay, k);
         return { table, saved };
       }),
+      // A graph's frame grows; its ranges stay, so the same curve shows larger.
+      graphs: (on.graphs ?? []).map((graph) => {
+        const saved = structuredClone(graph);
+        scaleGraph(graph, ax, ay, k);
+        return { graph, saved };
+      }),
     };
   }
 
@@ -312,6 +337,7 @@ export class ScaleElements implements Command {
       if (radius !== undefined) textBox.radius = radius;
     }
     for (const { table, saved } of scaled.tables) restoreTable(table, saved);
+    for (const { graph, saved } of scaled.graphs) restoreGraph(graph, saved);
     this.scaled = null;
   }
 }
@@ -392,6 +418,7 @@ export class ReorientElements implements Command {
     images: Array<{ image: ImageElement; saved: ImageElement }>;
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
+    graphs: Array<{ graph: GraphElement; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -466,6 +493,14 @@ export class ReorientElements implements Command {
         table.y = c.y - h / 2;
         return { table, x, y };
       }),
+      // So does a graph: its axes stay level.
+      graphs: (on.graphs ?? []).map((graph) => {
+        const { x, y } = graph;
+        const c = reorientPoint(motion, cx, cy, x + graph.w / 2, y + graph.h / 2);
+        graph.x = c.x - graph.w / 2;
+        graph.y = c.y - graph.h / 2;
+        return { graph, x, y };
+      }),
     };
   }
 
@@ -486,6 +521,10 @@ export class ReorientElements implements Command {
       table.x = x;
       table.y = y;
     }
+    for (const { graph, x, y } of saved.graphs) {
+      graph.x = x;
+      graph.y = y;
+    }
     this.saved = null;
   }
 }
@@ -500,6 +539,7 @@ export class RemoveElements implements Command {
     images: Array<Removed<ImageElement>>;
     textBoxes: Array<Removed<TextBoxElement>>;
     tables: Array<Removed<TableElement>>;
+    graphs: Array<Removed<GraphElement>>;
   } | null = null;
 
   constructor(
@@ -517,6 +557,7 @@ export class RemoveElements implements Command {
       images: removeFrom(page.images, this.elements.images),
       textBoxes: removeFrom(page.textBoxes, this.elements.textBoxes),
       tables: page.tables ? removeFrom(page.tables, this.elements.tables ?? []) : [],
+      graphs: page.graphs ? removeFrom(page.graphs, this.elements.graphs ?? []) : [],
     };
   }
 
@@ -528,6 +569,7 @@ export class RemoveElements implements Command {
     restoreTo(page.images, removed.images);
     restoreTo(page.textBoxes, removed.textBoxes);
     if (page.tables) restoreTo(page.tables, removed.tables);
+    if (page.graphs) restoreTo(page.graphs, removed.graphs);
     this.removed = null;
   }
 }
@@ -539,6 +581,8 @@ export class RemoveElements implements Command {
 export class AddElements implements Command {
   /** Whether the page had no `tables` list before, so undo leaves it without one. */
   private created = false;
+  /** The same for `graphs`. */
+  private createdGraphs = false;
 
   constructor(
     readonly pageId: string,
@@ -557,6 +601,11 @@ export class AddElements implements Command {
       this.created = page.tables === undefined;
       (page.tables ??= []).push(...tables);
     }
+    const graphs = this.elements.graphs ?? [];
+    if (graphs.length > 0) {
+      this.createdGraphs = page.graphs === undefined;
+      (page.graphs ??= []).push(...graphs);
+    }
   }
 
   invert(doc: InkDocument): void {
@@ -569,7 +618,12 @@ export class AddElements implements Command {
       removeFrom(page.tables, this.elements.tables ?? []);
       if (this.created && page.tables.length === 0) delete page.tables;
     }
+    if (page.graphs) {
+      removeFrom(page.graphs, this.elements.graphs ?? []);
+      if (this.createdGraphs && page.graphs.length === 0) delete page.graphs;
+    }
     this.created = false;
+    this.createdGraphs = false;
   }
 }
 
@@ -644,6 +698,7 @@ export interface IdSource {
   image: () => string;
   textBox: () => string;
   table: () => string;
+  graph: () => string;
 }
 
 /**
@@ -683,6 +738,14 @@ export function copyElements(
     tables: (elements.tables ?? []).map((table) => {
       const copy = structuredClone(table);
       copy.id = ids.table();
+      copy.x += dx;
+      copy.y += dy;
+      return copy;
+    }),
+    // A full copy, so any field added later comes along (ledger: picked fields).
+    graphs: (elements.graphs ?? []).map((graph) => {
+      const copy = structuredClone(graph);
+      copy.id = ids.graph();
       copy.x += dx;
       copy.y += dy;
       return copy;

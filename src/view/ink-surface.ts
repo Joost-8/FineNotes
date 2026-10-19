@@ -55,9 +55,11 @@ import {
   type StrokeStyle,
   decorOf,
   penFor,
+  paperColorOf,
   renderPageThumbnail,
   tableLayoutOf,
 } from "../canvas/renderer";
+import { GraphExplorer } from "./graph-explore";
 import { pageTabs } from "../model/page-tabs";
 import {
   ROUND_RADIUS,
@@ -237,6 +239,7 @@ import {
   type PdfBackdrop,
   type ShapeKind,
   type Stroke,
+  type GraphElement,
   type TableElement,
   type TextBoxElement,
   type Tool,
@@ -260,6 +263,7 @@ import {
   stepCell,
   tableScaleRange,
 } from "../model/table";
+import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
 import {
   AddTable,
   InsertTableColumn,
@@ -580,6 +584,12 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** "Save as sticker": the selection drawn as a transparent PNG, its size in page px. */
   onSaveSticker?: (png: ArrayBuffer, width: number, height: number) => void;
+  /**
+   * "Edit graph" on a selected graph: the host opens the calculator with its
+   * expressions, and commits what comes back (`EditGraph`). Without it the
+   * selection bar offers Explore only.
+   */
+  onEditGraph?: (pageId: string, graph: GraphElement) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
   /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
@@ -931,6 +941,7 @@ interface PressMenu {
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
 const NO_TABLES: ReadonlySet<TableElement> = new Set();
+const NO_GRAPHS: ReadonlySet<GraphElement> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
 interface GroupSelection extends ElementLists {
@@ -1386,6 +1397,8 @@ export class InkSurface {
   private imageSel: { pageId: string; image: ImageElement } | null = null;
   private imageDrag: ImageDrag | null = null;
   private readonly imageUiEl: HTMLElement;
+  /** The graph being explored on a live canvas, if any: only one at a time. */
+  private explorer: { pageId: string; explorer: GraphExplorer } | null = null;
   private readonly imageFrameEl: HTMLElement;
   /**
    * Crop mode on the selected picture, and its DOM: a box over the whole
@@ -2029,6 +2042,7 @@ export class InkSurface {
    * history starts empty, and new ids count on from the ones `doc` holds.
    */
   setDocument(doc: InkDocument): void {
+    this.endExplore(false);
     this.doc = doc;
     this.parkedText = null;
     this.strokeIds.restart(strokeIdsOf(doc));
@@ -2109,6 +2123,7 @@ export class InkSurface {
   }
 
   applyCommand(command: Command): void {
+    this.endExplore(true);
     this.dropSelection();
     const place = this.readingPlace();
     this.history.push(this.doc, command);
@@ -2443,6 +2458,8 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // Another tool ends exploring a graph, keeping where it was left.
+    this.endExplore(true);
     // Another tool: a box scrolled out of sight is forgotten.
     this.parkedText = null;
     // "The pen" means the pen type in hand: with the highlighter as the type,
@@ -6176,7 +6193,7 @@ export class InkSurface {
   /** What `loop` encloses on `page`, as far as the lasso's switches allow; never `except`. */
   private enclosedBy(page: Page, loop: readonly number[], except: Stroke): ElementLists {
     const poly = polygonOf(loop);
-    if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [] };
+    if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
@@ -6197,6 +6214,9 @@ export class InkSurface {
         : [],
       tables: filter.tables
         ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
+        : [],
+      graphs: filter.graphs
+        ? (page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
         : [],
     };
   }
@@ -6571,6 +6591,9 @@ export class InkSurface {
       tables: filter.tables
         ? (page.tables ?? []).filter((table) => framed(frameBounds(this.tableFrameOf(table))))
         : [],
+      graphs: filter.graphs
+        ? (page.graphs ?? []).filter((graph) => framed(frameBounds(graphFrame(graph))))
+        : [],
     });
   }
 
@@ -6608,6 +6631,9 @@ export class InkSurface {
         : [],
       tables: filter.tables
         ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
+        : [],
+      graphs: filter.graphs
+        ? (page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
         : [],
     });
   }
@@ -6650,6 +6676,12 @@ export class InkSurface {
     const stroke = this.strokeAt(page, p, tolerance, filter);
     if (stroke) {
       this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+      return;
+    }
+    // A graph lies under the ink and over the tables; it is picked up on its own.
+    const graph = filter.graphs ? graphAt(page, p) : null;
+    if (graph) {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], graphs: [graph] });
       return;
     }
     // A table lies under the ink and over the pictures. It is picked up with
@@ -6809,13 +6841,15 @@ export class InkSurface {
     this.deselectImage();
     const { strokes, textBoxes } = elements;
     const tables = elements.tables ?? [];
+    const graphs = elements.graphs ?? [];
     const images = elements.images.filter((image) => image.locked !== true);
-    if (isEmptySelection({ strokes, images, textBoxes, tables })) return;
+    if (isEmptySelection({ strokes, images, textBoxes, tables, graphs })) return;
     if (this.toolState.tool === "select") this.selectionToolUsed = true;
     if (
       strokes.length === 0 &&
       textBoxes.length === 0 &&
       tables.length === 0 &&
+      graphs.length === 0 &&
       images.length === 1
     ) {
       this.setImageSelection(pageId, images[0]);
@@ -6833,6 +6867,7 @@ export class InkSurface {
       images: [...images],
       textBoxes: [...textBoxes],
       tables: [...tables],
+      graphs: [...graphs],
     };
     this.syncSelectionOverlay();
   }
@@ -6890,6 +6925,7 @@ export class InkSurface {
     return selectionBounds(sel.strokes, sel.images, [
       ...sel.textBoxes.map((textBox) => this.textBoxFrameOf(sel.pageId, textBox)),
       ...(sel.tables ?? []).map((table) => this.tableFrameOf(table)),
+      ...(sel.graphs ?? []).map(graphFrame),
     ]);
   }
 
@@ -7185,6 +7221,33 @@ export class InkSurface {
       },
       this.pasteAction(sel.pageId),
     ];
+    // One graph on its own: look around in it, or change what it plots.
+    const graphs = sel.graphs ?? [];
+    if (graphs.length === 1 && selectedCount(sel) === 1) {
+      const graph = graphs[0];
+      actions.unshift({
+        id: "explore-graph",
+        icon: "move",
+        label: "Explore",
+        group: "graph",
+        bar: true,
+        run: () => this.exploreGraph(sel.pageId, graph),
+      });
+      const edit = this.callbacks.onEditGraph;
+      if (edit) {
+        actions.splice(1, 0, {
+          id: "edit-graph",
+          icon: "function-square",
+          label: "Edit graph",
+          group: "graph",
+          bar: true,
+          run: () => {
+            this.clearSelection();
+            edit(sel.pageId, graph);
+          },
+        });
+      }
+    }
     if (this.callbacks.onSaveSticker) {
       actions.push({
         id: "save-sticker",
@@ -7551,6 +7614,7 @@ export class InkSurface {
       images: sel.images.filter((image) => image.locked !== true),
       textBoxes: sel.textBoxes,
       tables: sel.tables,
+      graphs: sel.graphs,
     };
     this.clearSelection();
     this.history.push(this.doc, new RemoveElements(sel.pageId, elements, label));
@@ -7588,6 +7652,7 @@ export class InkSurface {
           images: group.images.filter((image) => image.locked !== true),
           textBoxes: group.textBoxes,
           tables: group.tables,
+          graphs: group.graphs,
         },
         bounds,
       );
@@ -7643,6 +7708,7 @@ export class InkSurface {
       images: withImages ? entry.elements.images : [],
       textBoxes: entry.elements.textBoxes,
       tables: entry.elements.tables,
+      graphs: entry.elements.graphs,
     };
     const d = pastePlacement({
       bounds: entry.bounds,
@@ -7667,11 +7733,13 @@ export class InkSurface {
   private freshIds(): IdSource {
     let imageSeq = Number(nextImageId(this.doc).slice(1)) - 1;
     let tableSeq = Number(nextTableId(this.doc).slice(1)) - 1;
+    let graphSeq = Number(nextGraphId(this.doc).slice(1)) - 1;
     return {
       stroke: () => this.strokeIds.next(),
       image: () => `i${++imageSeq}`,
       textBox: () => this.textBoxIds.next(),
       table: () => `g${++tableSeq}`,
+      graph: () => `f${++graphSeq}`,
     };
   }
 
@@ -7764,7 +7832,13 @@ export class InkSurface {
     const pad = STICKER_PAD;
     const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
     const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
-    const ids = { stroke: () => "s", image: () => "i", textBox: () => "t", table: () => "g" };
+    const ids = {
+      stroke: () => "s",
+      image: () => "i",
+      textBox: () => "t",
+      table: () => "g",
+      graph: () => "f",
+    };
     const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
     const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
     const canvas = createEl("canvas");
@@ -8695,6 +8769,7 @@ export class InkSurface {
     this.renderer?.setHiddenStrokes(new Set(drag.selection.strokes.map((stroke) => stroke.id)));
     this.renderer?.setHiddenImages(new Set(drag.selection.images));
     this.renderer?.setHiddenTables(new Set(drag.selection.tables ?? []));
+    this.renderer?.setHiddenGraphs(new Set(drag.selection.graphs ?? []));
     this.renderer?.invalidateRegion(box.index, drag.bounds);
     this.renderDry();
   }
@@ -8717,6 +8792,7 @@ export class InkSurface {
         ? { x: drag.turn.centre.x, y: drag.turn.centre.y, angle: drag.turn.angle }
         : undefined,
       drag.selection.tables ?? [],
+      drag.selection.graphs ?? [],
     );
   }
 
@@ -8761,6 +8837,7 @@ export class InkSurface {
     this.renderer?.setHiddenStrokes(NO_STROKES);
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.setHiddenTables(NO_TABLES);
+    this.renderer?.setHiddenGraphs(NO_GRAPHS);
     this.renderer?.clearWet();
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
@@ -8918,7 +8995,9 @@ export class InkSurface {
       if (box && tapped) {
         const p = this.toPage(box, at);
         // Typed text sits above the pictures, so a box is tried first.
-        if (!this.fingerHoldsTextBox(tapped, p)) this.fingerPicksPicture(tapped, p);
+        if (!this.fingerHoldsTextBox(tapped, p) && !this.fingerPicksGraph(tapped, p)) {
+          this.fingerPicksPicture(tapped, p);
+        }
       }
       return;
     }
@@ -9167,6 +9246,97 @@ export class InkSurface {
    * Not with the Text tool (a finger places and focuses boxes there), in a
    * practice file, or on a locked picture. Returns whether it did.
    */
+  /**
+   * A finger tapped a graph with a pen (or any tool but the lasso and Text):
+   * the lasso is picked and the graph selected, its bar offering Explore and
+   * Edit, as a tap on a picture does. The Pencil keeps writing over it.
+   */
+  private fingerPicksGraph(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const graph = graphAt(page, p);
+    if (!graph) return false;
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], graphs: [graph] });
+    return true;
+  }
+
+  // --- Graphs: exploring one on a live canvas ---------------------------------------
+
+  /** Select a graph by id (after the host placed it). Returns whether it is there. */
+  selectGraph(pageId: string, graphId: string): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const graph = page?.graphs?.find((candidate) => candidate.id === graphId);
+    if (!page || !graph) return false;
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], graphs: [graph] });
+    return true;
+  }
+
+  /** Whether a graph is being explored: the harness reads this. */
+  get exploring(): GraphExplorer | null {
+    return this.explorer?.explorer ?? null;
+  }
+
+  /**
+   * Open Explore on `graph`: it leaves the tiles (repainted once without it)
+   * and a canvas over just its frame draws it live. Done commits the view as
+   * one undo step; the graph then goes back into the tiles.
+   */
+  exploreGraph(pageId: string, graph: GraphElement): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const box = this.boxForPage(pageId);
+    if (!page || !box || !page.graphs?.includes(graph) || this.callbacks.isLocked?.()) return false;
+    this.endExplore(true);
+    this.clearSelection();
+    this.deselectImage();
+    const explorer = new GraphExplorer(this.paperEl, graph, {
+      paper: paperColorOf(page, this.paper),
+      night: pageLook(page.backdrop, this.paper).night,
+      onClose: (view) => {
+        if (this.explorer?.explorer !== explorer) return;
+        this.explorer = null;
+        this.renderer?.setHiddenGraphs(NO_GRAPHS);
+        const at = this.boxForPage(pageId);
+        if (view && page.graphs?.includes(graph)) {
+          this.history.push(this.doc, new EditGraph(pageId, graph, view));
+        }
+        if (at) this.renderer?.invalidateRegion(at.index, graphBounds(graph));
+        this.renderDry();
+        if (view) this.changed([pageId]);
+      },
+    });
+    this.explorer = { pageId, explorer };
+    this.renderer?.setHiddenGraphs(new Set([graph]));
+    this.renderer?.invalidateRegion(box.index, graphBounds(graph));
+    this.syncExplore();
+    this.renderDry();
+    return true;
+  }
+
+  /** Close Explore if it is open: `commit` keeps the view it was left at (one undo step). */
+  private endExplore(commit: boolean): void {
+    this.explorer?.explorer.close(commit);
+  }
+
+  /** Keep the live canvas over its graph as the page zooms or lays out again. */
+  private syncExplore(): void {
+    const open = this.explorer;
+    if (!open) return;
+    const box = this.boxForPage(open.pageId);
+    if (!box) {
+      open.explorer.cancel();
+      return;
+    }
+    const scale = this.unitScale;
+    const g = open.explorer.graph;
+    open.explorer.place(
+      (box.x + g.x) * scale,
+      (box.y + g.y) * scale,
+      scale,
+      window.devicePixelRatio || 1,
+    );
+  }
+
   private fingerPicksPicture(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const image = topImageAt(
@@ -9276,6 +9446,7 @@ export class InkSurface {
    * In crop mode the crop frame stands in for all of it.
    */
   private syncImageOverlay(): void {
+    this.syncExplore();
     const sel = this.liveImageSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
     this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null);
@@ -9466,6 +9637,8 @@ export class InkSurface {
     this.endCrop(false);
     this.cancelImageDrag();
     this.cancelGroupDrag();
+    // An open Explore is committed first, so the undo takes back its view.
+    this.endExplore(true);
     const place = this.readingPlace();
     const command = step(this.doc);
     if (!command) return;
@@ -10275,12 +10448,19 @@ function selectablesOf(page: Page): ElementLists {
     images: page.images.filter((image) => image.locked !== true),
     textBoxes: page.textBoxes,
     tables: page.tables ?? [],
+    graphs: page.graphs ?? [],
   };
 }
 
 /** How many elements a selection holds. */
 function selectedCount(sel: ElementLists): number {
-  return sel.strokes.length + sel.images.length + sel.textBoxes.length + (sel.tables?.length ?? 0);
+  return (
+    sel.strokes.length +
+    sel.images.length +
+    sel.textBoxes.length +
+    (sel.tables?.length ?? 0) +
+    (sel.graphs?.length ?? 0)
+  );
 }
 
 function onSelectionMenu(target: EventTarget | null): boolean {
@@ -10365,4 +10545,19 @@ export function spaceReadout(plan: SpacePlan): string {
   if (plan.spilled > 0) parts.push("some ink moves to the next page");
   if (plan.addedPages > 0) parts.push(plan.addedPages === 1 ? "adds a page" : "adds pages");
   return parts.join(" · ");
+}
+
+/** A graph's frame, page px: where it is drawn and where it is picked up. */
+function graphFrame(graph: GraphElement): { x: number; y: number; w: number; h: number } {
+  return { x: graph.x, y: graph.y, w: graph.w, h: graph.h };
+}
+
+/** The topmost graph whose frame holds `p` (page px), or null. */
+function graphAt(page: Page, p: Pt): GraphElement | null {
+  const graphs = page.graphs ?? [];
+  for (let i = graphs.length - 1; i >= 0; i--) {
+    const g = graphs[i];
+    if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) return g;
+  }
+  return null;
 }

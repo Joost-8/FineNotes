@@ -39,6 +39,7 @@ import { readPalette } from "./palette";
 import { readFurniture } from "./furniture";
 import { readTabColor } from "./page-tabs";
 import { normalizeTable } from "./table";
+import { normalizeGraph } from "./graph-element";
 import { normalizeComment } from "./comments";
 import {
   type AttachmentFolders,
@@ -56,6 +57,7 @@ import {
   type ShapeKind,
   type Stroke,
   type TextAlign,
+  type GraphElement,
   type TableElement,
   type PageComment,
   type TextBoxElement,
@@ -170,6 +172,7 @@ interface StoredPage {
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
+  graphs?: GraphElement[];
   comments?: PageComment[];
   strokes: StoredStroke[];
 }
@@ -279,6 +282,7 @@ function storePage(page: Page): StoredPage {
     images: page.images,
     textBoxes: page.textBoxes,
     tables: page.tables && page.tables.length > 0 ? page.tables : undefined,
+    graphs: page.graphs && page.graphs.length > 0 ? page.graphs : undefined,
     comments: page.comments && page.comments.length > 0 ? page.comments : undefined,
     strokes: page.strokes.map(storeStroke),
   };
@@ -913,6 +917,13 @@ function normalizePage(
     const normalized = normalizeTable(table, () => `g${++lastTableId}`);
     if (normalized) tables.push(normalized);
   });
+  const graphs: GraphElement[] = [];
+  const graphsRaw = Array.isArray(page.graphs) ? page.graphs : [];
+  let lastGraphId = maxNumericId(graphsRaw, "f");
+  graphsRaw.forEach((graph) => {
+    const normalized = normalizeGraph(graph, () => `f${++lastGraphId}`);
+    if (normalized) graphs.push(normalized);
+  });
   const comments: PageComment[] = [];
   const commentsRaw = Array.isArray(page.comments) ? page.comments : [];
   let lastCommentId = maxNumericId(commentsRaw, "cm");
@@ -937,6 +948,7 @@ function normalizePage(
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...(tables.length > 0 ? { tables } : {}),
+    ...(graphs.length > 0 ? { graphs } : {}),
     ...(comments.length > 0 ? { comments } : {}),
   };
 }

@@ -4009,6 +4009,41 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   -webkit-user-select: none;
 }
 
+/* Explore: a live canvas over one graph, its bar just above it. The graph
+   itself is left out of the tiles while this is open. */
+
+.goodobsidian-graph-explore {
+  position: absolute;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1.5px var(--interactive-accent);
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.goodobsidian-graph-explore-canvas {
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Its bar is the selection bar (same classes, same dark pill), placed just
+   above the plot instead of floated by the selection model. */
+.goodobsidian-graph-explore-bar.goodobsidian-selection-bar {
+  left: 0;
+  bottom: calc(100% + 8px);
+  white-space: nowrap;
+}
+
+.goodobsidian-graph-explore-readout {
+  padding: 0 6px 0 4px;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-base-70);
+}
+
 /* The Insert image menu borrows the Add Page sheet's look; its rows are full
    44 px touch targets. */
 
