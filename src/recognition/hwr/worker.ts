@@ -54,7 +54,10 @@ function handle(request: HwrRequest, id: number): HwrResult {
   }
   if (request.type === "tune") {
     const base = new Uint8Array(request.bytes);
-    const result = tune(base, request.lines, { steps: request.steps }, (step, loss) => {
+    // Chromium says how much memory the device has; WebKit does not (tuneRoom).
+    const deviceMemory = (navigator as { deviceMemory?: number }).deviceMemory;
+    const options = { steps: request.steps, deviceMemory };
+    const result = tune(base, request.lines, options, (step, loss) => {
       scope.postMessage({ [HWR_TAG]: true, id, progress: { step, steps: request.steps, loss } });
     });
     if (!result) return { type: "tune", tuned: null };

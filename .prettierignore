@@ -10,6 +10,8 @@ SPECIFICATION.md
 
 # Generated golden fixtures (research/handwriting-rig/export_port_fixtures.py).
 tests/recognition/fixtures/hwr-golden.json
+# (research/handwriting-rig/export_curve_fixtures.py)
+tests/recognition/fixtures/hwr-curves-golden.json
 
 # Promo videos and their working files (gitignored; not the plugin).
 content creation/

@@ -8,10 +8,13 @@
  * like a download: people who update then have the file before the release
  * that stops bundling it, and vault sync carries it to their other devices.
  * Only a fresh install of a release without the bundle sees the download card.
+ *
+ * Grape 2 (preview) is opt-in (Settings › Handwriting): when it is chosen,
+ * it is registered and read instead, from its own folder. It is never bundled.
  */
 
 import { bundleFormatOf } from "../recognition/hwr/bundle";
-import { GRAPE_MODEL } from "../recognition/hwr/grape-model";
+import { GRAPE_MODEL, type GrapeChoice, grapeAsset } from "../recognition/hwr/grape-model";
 import type { AssetStore } from "../downloads/model-store";
 import type { ModelRegistry } from "./model-downloads";
 import { bundledGrape } from "./grape-bundle";
@@ -20,12 +23,23 @@ import { bundledGrape } from "./grape-bundle";
 const RECHECK_MS = 30_000;
 
 export class GrapeFiles {
-  readonly model: AssetStore;
+  /** Grape 1.0, always registered (the default, and the bundle's). */
+  private readonly first: AssetStore;
   private lastCheck = 0;
   private bridging: Promise<boolean> | null = null;
 
-  constructor(private readonly registry: ModelRegistry) {
-    this.model = registry.register(GRAPE_MODEL, { formatOf: bundleFormatOf });
+  constructor(
+    private readonly registry: ModelRegistry,
+    private readonly choice: () => GrapeChoice | undefined = () => "grape",
+  ) {
+    this.first = registry.register(GRAPE_MODEL, { formatOf: bundleFormatOf });
+  }
+
+  /** The chosen Grape's store (registered on first use, so Models lists it once chosen). */
+  get model(): AssetStore {
+    const asset = grapeAsset(this.choice());
+    if (asset.id === GRAPE_MODEL.id) return this.first;
+    return this.registry.register(asset, { formatOf: bundleFormatOf });
   }
 
   /** Look at the folder again when the last look found nothing usable a while ago. */
@@ -43,7 +57,7 @@ export class GrapeFiles {
     this.bridging ??= (async () => {
       const bytes = await bundledGrape();
       if (!bytes) return false;
-      return this.model.adopt(GRAPE_MODEL.files[0].name, bytes);
+      return this.first.adopt(GRAPE_MODEL.files[0].name, bytes);
     })().finally(() => {
       this.bridging = null;
     });
@@ -58,27 +72,33 @@ export class GrapeFiles {
     how: "auto" | "ask" = "auto",
   ): Promise<{ key: string; read: () => Promise<ArrayBuffer> } | null> {
     await this.fresh();
-    let file = await this.model.file();
+    const model = this.model;
+    let file = await model.file();
     // Asked for before the background bridge ran: write the bundled copy now.
-    if (!file && (await this.bridge())) file = await this.model.file();
+    if (!file && model === this.first && (await this.bridge())) file = await model.file();
     if (!file) {
-      this.registry.offer(GRAPE_MODEL.id, how);
+      this.registry.offer(model.asset.id, how);
       return null;
     }
     return {
-      key: `grape:${file}`,
+      key: `${model.asset.id}:${file}`,
       read: async () => {
-        const bytes = await this.model.bytes();
+        const bytes = await model.bytes();
         if (bytes) return bytes;
         // Gone since it was found: look again next time.
-        await this.model.check(true);
-        throw new Error("Grape is not on this device");
+        await model.check(true);
+        throw new Error(`${model.asset.label} is not on this device`);
       },
     };
   }
 
   /** Offer the download (the settings switches call this with "ask"). */
   offer(how: "auto" | "ask"): void {
-    this.registry.offer(GRAPE_MODEL.id, how);
+    this.registry.offer(this.model.asset.id, how);
+  }
+
+  /** The chosen Grape's id ("grape", "grape-2"): a learned model is used only with its own base. */
+  get id(): string {
+    return this.model.asset.id;
   }
 }

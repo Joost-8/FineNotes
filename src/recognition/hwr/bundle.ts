@@ -10,12 +10,18 @@
  */
 
 import { CharLm } from "./char-lm";
+import { CURVE_RAW, type CurveInput } from "./curves";
 
 const MAGIC = 0x57484e46; // "FNHW", little-endian
-const VERSION = 1;
 
-/** The file format version this build reads. */
-export const BUNDLE_FORMAT = VERSION;
+/**
+ * File format versions: 1 reads point frames (Grape 1.0); 2 adds `input` to
+ * the header, which says what the network reads (Grape 2 reads Bézier
+ * curves). A build that reads only 1 refuses a version 2 file, rather than
+ * feeding a curve network points.
+ */
+export const BUNDLE_FORMAT_POINTS = 1;
+export const BUNDLE_FORMAT_INPUT = 2;
 
 /**
  * The format version in a model file's header, without reading the rest;
@@ -53,6 +59,13 @@ export interface HwrMeta {
     coreUnits: number;
   };
   decoder: { alpha: number; beta: number; beam: number; topk: number; prune: number };
+  /**
+   * What the network reads, from format 2: absent means point frames (the
+   * features above). Curves are fitted to those frames (curves.ts); the
+   * network's inputs may be wider than a curve's CURVE_RAW values, padded
+   * with zeros to a multiple of four for the SIMD kernels.
+   */
+  input?: CurveInput;
   lm?: {
     order: number;
     chars: string[];
@@ -163,6 +176,21 @@ function readNet(meta: HwrMeta, buffer: ArrayBuffer, start: number, end: number)
   return { inputs, hidden: H, classes, mean, std, layers: out, out: weights, outScale, outBias };
 }
 
+/** A format 2 header must say what the network reads, in a way this build computes. */
+function checkInput(meta: HwrMeta): void {
+  const input = meta.input;
+  if (!input) throw new HwrFormatError("a version 2 model file must say what its network reads");
+  if (input.kind !== "curves" || input.encoding !== "raw") {
+    throw new HwrFormatError(
+      `the model reads ${String(input.kind)} (${String(input.encoding)}); this build computes raw curves`,
+    );
+  }
+  if (!(input.tol > 0 && Number.isFinite(input.tol)))
+    throw new HwrFormatError(`curve tolerance ${input.tol}`);
+  if (meta.net.inputs < CURVE_RAW)
+    throw new HwrFormatError(`${meta.net.inputs} network inputs for ${CURVE_RAW} curve values`);
+}
+
 /**
  * Parse a recogniser file. The bytes are copied once into an aligned buffer
  * the typed arrays then view, so the caller's buffer may be reused.
@@ -176,8 +204,10 @@ export function parseBundle(bytes: ArrayBuffer | Uint8Array): HwrBundle {
     throw new HwrFormatError("not a FineNotes handwriting model (no FNHW header)");
   }
   const version = view.getUint32(4, true);
-  if (version !== VERSION)
-    throw new HwrFormatError(`model file version ${version}; this build reads ${VERSION}`);
+  if (version !== BUNDLE_FORMAT_POINTS && version !== BUNDLE_FORMAT_INPUT)
+    throw new HwrFormatError(
+      `model file version ${version}; this build reads ${BUNDLE_FORMAT_POINTS} and ${BUNDLE_FORMAT_INPUT}`,
+    );
   const metaLength = view.getUint32(8, true);
   if (12 + metaLength > buffer.byteLength)
     throw new HwrFormatError("the file ends inside its header");
@@ -189,6 +219,8 @@ export function parseBundle(bytes: ArrayBuffer | Uint8Array): HwrBundle {
       `the model expects ${meta.features?.version} features with "${meta.features?.norm}"; this build computes v2 with core scaling only`,
     );
   }
+  if (version === BUNDLE_FORMAT_POINTS) delete meta.input;
+  else checkInput(meta);
   if (meta.net.classes !== meta.alphabet.length + 1) {
     throw new HwrFormatError(`${meta.net.classes} classes for ${meta.alphabet.length} characters`);
   }

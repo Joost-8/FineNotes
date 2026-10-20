@@ -10,6 +10,7 @@
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
 import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
+import { networkInput } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
 
@@ -76,7 +77,8 @@ export function readLine(
   const t0 = now();
   let line: { features: Float32Array; frames: number };
   try {
-    line = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+    line = networkInput(bundle.meta.input, bundle.net.inputs, points.features, points.frames);
   } catch (error) {
     if (!(error instanceof LineTooLongError)) throw error;
     const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };

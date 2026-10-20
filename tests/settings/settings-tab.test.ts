@@ -305,6 +305,7 @@ describe("the rows", () => {
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
+      [HANDWRITING, "Handwriting model", "dropdown:grapeModel"],
       [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
       [HANDWRITING, "Learn my handwriting", "render"],
       [RECORDINGS, "Speech model on this device", "dropdown:speechModel"],
@@ -411,6 +412,7 @@ describe("the rows", () => {
       "Cursor over the page": ["cursor", "pointer", "crosshair"],
       "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
       "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
+      "Handwriting model": ["handwriting", "recognition", "model", "Grape 2", "preview"],
       "Underline words it may have misread (test)": [
         "handwriting",
         "spelling",
@@ -549,6 +551,7 @@ describe("which rows show", () => {
       "Show New notebook in file explorer bar",
       "Show notebook folders as notebooks",
       "Read handwriting on this device (beta)",
+      "Handwriting model",
       "Underline words it may have misread (test)",
       "Learn my handwriting",
       "Speech model on this device",
@@ -581,7 +584,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${39 + PEN_ROWS.length})`,
+      `(block ${40 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });

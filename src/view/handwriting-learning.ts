@@ -40,6 +40,8 @@ export interface LearnedModel {
   /** Characters wrong on the test lines, in %, with Grape and with it. */
   before: number;
   after: number;
+  /** The Grape it was learned from ("grape-2"); absent for Grape 1.0. */
+  base?: string;
 }
 
 /** What the learning code needs from the plugin. */
@@ -59,6 +61,8 @@ export interface LearningHost {
   reloadReader(): void;
   /** Grape's bytes, to learn from; null (after offering the download) when it is not here. */
   baseModel(): Promise<ArrayBuffer | null>;
+  /** The chosen Grape's id ("grape", "grape-2"), recorded with what is learned from it. */
+  baseId: string;
   /** The notebook at `path` as it is now, when it is open (unsaved ink included). */
   openNotebook(path: string): InkDocument | null;
 }
@@ -311,6 +315,7 @@ export class HandwritingLearner {
       tested: tuned.heldOut,
       before,
       after,
+      ...(host.baseId === "grape" ? {} : { base: host.baseId }),
     };
     await host.saveSettings();
     host.reloadReader();

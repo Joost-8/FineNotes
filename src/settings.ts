@@ -66,6 +66,7 @@ import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { formatSize, isBusy, stateText, totalBytes } from "./downloads/model-manifest";
+import { GRAPE2_MODEL, GRAPE_MODEL } from "./recognition/hwr/grape-model";
 import { SPEECH_LANGUAGES, speechAsset, speechModelsFor } from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
@@ -581,8 +582,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     // A newly chosen speech model joins Models (registered) before the tab is rebuilt.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
-    // Turned on: Grape is needed now, so offer it if it is not here.
-    if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
+    // Another Grape: the reader loads it on its next page (and Models lists it).
+    if (key === "grapeModel") {
+      this.plugin.handwriting.dispose();
+      this.update();
+    }
+    // Turned on or switched: Grape is needed now, so offer it if it is not here.
+    if (
+      ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) ||
+      (key === "grapeModel" && this.plugin.settings.handwritingOnDevice !== false)
+    ) {
       await this.plugin.grape.model.check();
       this.plugin.grape.offer("ask");
     }
@@ -970,6 +979,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "what it reads before relying on it.",
         ["handwriting", "recognition", "search", "offline"],
       ),
+      {
+        ...dropdown(
+          "grapeModel",
+          "Handwriting model",
+          "Grape 1.0 is the default. Grape 2 is a preview: a larger model that reads small, " +
+            "quick note writing better, takes about half as long again to read a page, and " +
+            "needs more memory to learn your handwriting. Downloaded once when chosen. What " +
+            "you learned with one Grape is used with that Grape only.",
+          {
+            grape: `Grape 1.0 (${formatSize(totalBytes(GRAPE_MODEL))})`,
+            "grape-2": `Grape 2, preview (${formatSize(totalBytes(GRAPE2_MODEL))})`,
+          },
+          ["handwriting", "recognition", "model", "Grape 2", "preview"],
+        ),
+        visible: () => settings.handwritingOnDevice !== false,
+      },
       {
         ...toggle(
           "checkHandwrittenWords",

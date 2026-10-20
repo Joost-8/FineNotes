@@ -240,14 +240,18 @@ export default class GoodObsidianPlugin extends Plugin {
   });
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
-  readonly grape = new GrapeFiles(this.models);
+  readonly grape = new GrapeFiles(this.models, () => this.settings.grapeModel);
 
   /** The on-device handwriting reader, started on first use. */
   readonly handwriting = new HandwritingReader(
     this.app,
     () => ({
       customPath: this.settings.hwrModelPath ?? "",
-      learnedPath: this.settings.handwritingModel ? learnedModelPath(this.pluginDir) : "",
+      // A learned model is read only with the Grape it was learned from.
+      learnedPath:
+        (this.settings.handwritingModel?.base ?? "grape") === this.grape.id
+          ? learnedModelPath(this.pluginDir)
+          : "",
     }),
     () => this.grape.source(),
   );
@@ -278,6 +282,7 @@ export default class GoodObsidianPlugin extends Plugin {
       saveSettings: () => this.saveSettings(),
       createPracticeFile: (set) => this.createPracticeFile(set),
       reloadReader: () => this.handwriting.dispose(),
+      baseId: this.grape.id,
       baseModel: async () => {
         const grape = await this.grape.source("ask");
         return grape ? grape.read() : null;
@@ -710,7 +715,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * whatever holds it in memory lets go, and loads it again when next needed.
    */
   modelReleased(id: string): void {
-    if (id === "grape") this.handwriting.dispose();
+    if (id === "grape" || id === "grape-2") this.handwriting.dispose();
     if (id.startsWith("whisper-")) this.speech.release();
   }
 

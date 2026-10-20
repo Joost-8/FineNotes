@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseBundle } from "../../src/recognition/hwr/bundle";
+import { BUNDLE_FORMAT_INPUT, bundleFormatOf, parseBundle } from "../../src/recognition/hwr/bundle";
 import { writeBundle } from "../../src/recognition/hwr/bundle-write";
 import {
   type LabelledLine,
@@ -17,7 +17,9 @@ import {
   prepareLine,
   seededRandom,
   splitHoldout,
+  TUNE_MAX_CURVES,
   tune,
+  tuneRoom,
 } from "../../src/recognition/hwr/tune";
 
 const BYTES = new Uint8Array(readFileSync("models/grape-1.0.bin"));
@@ -138,4 +140,46 @@ describe("tune", () => {
     expect(tune(BYTES, lines, { steps: 5, batch: 1 }, () => false)).toBeNull();
     expect(tune(BYTES, [line("é", 1)], { steps: 1 })).toBeNull();
   }, 60000);
+});
+
+describe("the engine's room on a device short of memory", () => {
+  it("is 2.5 times the longest line on a roomy device, 1.3 times elsewhere or when unknown", () => {
+    expect(tuneRoom(400, 8)).toBe(1016);
+    expect(tuneRoom(400, 16)).toBe(1016);
+    expect(tuneRoom(400, 4)).toBe(536);
+    expect(tuneRoom(400)).toBe(536);
+  });
+
+  it("learns exactly the same network in the smaller room", () => {
+    const lines = ["hello", "world", "notes", "ink", "pages", "lines"].map((t, i) => line(t, i));
+    const roomy = tune(BYTES, lines, { steps: 2, batch: 3, deviceMemory: 16 });
+    const lean = tune(BYTES, lines, { steps: 2, batch: 3 });
+    expect(lean!.net).toEqual(roomy!.net);
+    expect(lean!.after).toEqual(roomy!.after);
+  }, 120000);
+});
+
+describe("tuning a curve model (Grape 2)", () => {
+  const golden = JSON.parse(
+    readFileSync("tests/recognition/fixtures/hwr-curves-golden.json", "utf8"),
+  ) as { bundle: string };
+  const CURVES = new Uint8Array(Buffer.from(golden.bundle, "base64"));
+
+  it("learns from its curves and writes a curve model back", () => {
+    const texts = ["a long road", "go on", "no one", "an old log", "along", "dog"];
+    const lines = texts.map((t, i) => line(t, i));
+    const model = parseBundle(CURVES);
+    const m = { input: model.meta.input, inputs: model.net.inputs };
+    const points = prepareLine(lines[0], model.meta.alphabet, seededRandom(1), false)!;
+    const curves = prepareLine(lines[0], model.meta.alphabet, seededRandom(1), false, m)!;
+    expect(curves.frames).toBeLessThan(points.frames);
+    expect(curves.features.length).toBe(curves.frames * 12);
+    const result = tune(CURVES, lines, { steps: 2, batch: 2 });
+    expect(result!.trained).toBe(5);
+    expect(result!.net.layers[0][0].bias).not.toEqual(model.net.layers[0][0].bias);
+    const written = writeBundle(CURVES, result!.net, { name: "personal" });
+    expect(bundleFormatOf(written)).toBe(BUNDLE_FORMAT_INPUT);
+    expect(parseBundle(written).meta.input).toEqual(model.meta.input);
+    expect(TUNE_MAX_CURVES).toBeLessThan(TUNE_MAX_FRAMES);
+  }, 120000);
 });

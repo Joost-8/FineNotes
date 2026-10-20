@@ -9,7 +9,6 @@
 import { type HwrMeta, type NetWeights } from "./bundle";
 
 const MAGIC = 0x57484e46; // "FNHW", little-endian
-const VERSION = 1;
 
 /** Bytes padded with zeros (or `fill`) to a multiple of 4. */
 function pad4(bytes: Uint8Array, fill = 0): Uint8Array {
@@ -67,13 +66,15 @@ export function writeBundle(
   if (original.byteLength < 12 || view.getUint32(0, true) !== MAGIC) {
     throw new Error("not a FineNotes handwriting model");
   }
+  // The version says how the header is read (bundle.ts), so it is kept.
+  const version = view.getUint32(4, true);
   const metaLength = view.getUint32(8, true);
   const header = JSON.parse(
     new TextDecoder().decode(original.subarray(12, 12 + metaLength)),
   ) as HwrMeta;
   const json = new TextEncoder().encode(JSON.stringify({ ...header, ...meta }));
   const metaBytes = pad4(json, 0x20);
-  const parts: Uint8Array[] = [u32(MAGIC), u32(VERSION), u32(metaBytes.length), metaBytes];
+  const parts: Uint8Array[] = [u32(MAGIC), u32(version), u32(metaBytes.length), metaBytes];
   let o = 12 + metaLength;
   while (o + 8 <= original.byteLength) {
     const tag = original.subarray(o, o + 4);

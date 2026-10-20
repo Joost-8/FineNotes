@@ -112,6 +112,7 @@ export default defineConfig({
         "src/recognition/page-transcripts.ts",
         "src/recognition/hwr/numeric.ts",
         "src/recognition/hwr/features.ts",
+        "src/recognition/hwr/curves.ts",
         "src/recognition/hwr/bundle.ts",
         "src/recognition/hwr/grape-model.ts",
         "src/downloads/model-manifest.ts",

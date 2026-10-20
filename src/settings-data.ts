@@ -10,6 +10,7 @@
 
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./view/handwriting-learning";
+import type { GrapeChoice } from "./recognition/hwr/grape-model";
 import {
   DEFAULT_ERASER_SIZE,
   DEFAULT_HIGHLIGHTER_ALPHA,
@@ -213,6 +214,8 @@ export interface GoodObsidianSettings {
   hwrModelPath?: string;
   /** The model learned from the user's practice page, when there is one. */
   handwritingModel?: LearnedModel;
+  /** Which Grape reads handwriting: Grape 1.0 ("grape", the default) or "grape-2" (preview). */
+  grapeModel: GrapeChoice;
   /** Where the practice notebook was written. */
   practiceNotebookPath?: string;
 
@@ -320,6 +323,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   fingerTapUndo: true,
   handwritingOnDevice: true,
   checkHandwrittenWords: false,
+  grapeModel: "grape",
   speechModel: "whisper-base",
   speechLanguage: "auto",
   notebookOwnFolder: true,
