@@ -149,12 +149,7 @@ export class NoteSettingsModal extends Modal {
       const value = field.value.trim();
       if (!value || value === info.name) {
         field.value = info.name;
-        // As wide as the name, so the pencil sits right after it.
-        const fit = (): void => {
-          field.size = Math.max(4, Array.from(field.value).length + 1);
-        };
         fit();
-        field.addEventListener("input", fit);
         return;
       }
       void this.host.rename(value).then(() => this.render());
