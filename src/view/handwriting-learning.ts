@@ -40,8 +40,6 @@ export interface LearnedModel {
   /** Characters wrong on the test lines, in %, with Grape and with it. */
   before: number;
   after: number;
-  /** The Grape it was learned from ("grape-2"); absent for Grape 1.0. */
-  base?: string;
 }
 
 /** What the learning code needs from the plugin. */
@@ -51,6 +49,7 @@ export interface LearningHost {
   pluginDir: string;
   settings: {
     handwritingModel?: LearnedModel;
+    grape2Model?: LearnedModel;
     /** The practice notebook made before practice files, if any. */
     practiceNotebookPath?: string;
   };
@@ -67,9 +66,29 @@ export interface LearningHost {
   openNotebook(path: string): InkDocument | null;
 }
 
-/** Where the learned model is kept, in the vault. */
-export function learnedModelPath(pluginDir: string, previous = false): string {
-  return normalizePath(`${pluginDir}/handwriting/personal${previous ? "-prev" : ""}.bin`);
+/**
+ * Each Grape has its own learned model (learned from it, read only with it):
+ * the setting that describes it.
+ */
+export function learnedKey(base: string): "handwritingModel" | "grape2Model" {
+  return base === "grape-2" ? "grape2Model" : "handwritingModel";
+}
+
+/** The learned model of the Grape `base` ("grape", "grape-2"), if there is one. */
+export function learnedRecord(
+  settings: LearningHost["settings"],
+  base: string,
+): LearnedModel | undefined {
+  return settings[learnedKey(base)];
+}
+
+/** Where the learned model of Grape `base` is kept, in the vault: Grape 2's in its own folder. */
+export function learnedModelPath(pluginDir: string, previous = false, base = "grape"): string {
+  return normalizePath(`${learnedFolder(pluginDir, base)}/personal${previous ? "-prev" : ""}.bin`);
+}
+
+function learnedFolder(pluginDir: string, base: string): string {
+  return normalizePath(`${pluginDir}/handwriting${base === "grape-2" ? "/grape-2" : ""}`);
 }
 
 /** A share of characters wrong, in %, to one decimal. */
@@ -161,10 +180,10 @@ export async function readAllPracticeLines(host: LearningHost): Promise<Labelled
 export async function resetLearnedModel(host: LearningHost): Promise<void> {
   const adapter = host.app.vault.adapter;
   for (const previous of [false, true]) {
-    const file = learnedModelPath(host.pluginDir, previous);
+    const file = learnedModelPath(host.pluginDir, previous, host.baseId);
     if (await adapter.exists(file)) await adapter.remove(file);
   }
-  delete host.settings.handwritingModel;
+  delete host.settings[learnedKey(host.baseId)];
   await host.saveSettings();
   host.reloadReader();
   new Notice("FineNotes: reading with the built-in handwriting model again.");
@@ -173,9 +192,9 @@ export async function resetLearnedModel(host: LearningHost): Promise<void> {
 /** Save a tuned model: the old one becomes the previous one. */
 async function saveLearned(host: LearningHost, tuned: HwrTuned): Promise<void> {
   const adapter = host.app.vault.adapter;
-  const file = learnedModelPath(host.pluginDir);
-  const previous = learnedModelPath(host.pluginDir, true);
-  const folder = normalizePath(`${host.pluginDir}/handwriting`);
+  const file = learnedModelPath(host.pluginDir, false, host.baseId);
+  const previous = learnedModelPath(host.pluginDir, true, host.baseId);
+  const folder = learnedFolder(host.pluginDir, host.baseId);
   if (!(await adapter.exists(folder))) await adapter.mkdir(folder);
   if (await adapter.exists(file)) {
     if (await adapter.exists(previous)) await adapter.remove(previous);
@@ -309,13 +328,12 @@ export class HandwritingLearner {
       new Notice(`FineNotes: could not save the learned model — ${errorMessage(error)}`, 10000);
       return;
     }
-    host.settings.handwritingModel = {
+    host.settings[learnedKey(host.baseId)] = {
       learnedAt: new Date().toISOString(),
       lines: tuned.trained,
       tested: tuned.heldOut,
       before,
       after,
-      ...(host.baseId === "grape" ? {} : { base: host.baseId }),
     };
     await host.saveSettings();
     host.reloadReader();

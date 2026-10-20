@@ -60,7 +60,7 @@ import {
 } from "../recognition/page-transcripts";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
-import { practiceFiles, writePracticePage } from "./handwriting-learning";
+import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
 import {
   type ChatImage,
   type ChatTurn,
@@ -1291,7 +1291,7 @@ export class InkView extends TextFileView {
     if (this.settings.handwritingOnDevice === false) return undefined;
     const progress = this.plugin.learner.progress;
     return {
-      learned: this.settings.handwritingModel !== undefined,
+      learned: learnedRecord(this.settings, this.plugin.grape.id) !== undefined,
       practiceFiles: practiceFiles(this.plugin.learningHost()).length,
       learning: progress ? (100 * progress.step) / progress.steps : null,
       checkingWords: this.settings.checkHandwrittenWords === true,

@@ -10,7 +10,9 @@ import { DEFAULT_PAGE_GEOMETRY } from "../../src/model/document";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const {
+  learnedKey,
   learnedModelPath,
+  learnedRecord,
   learnedSummary,
   readPracticeLines,
   nextPracticeSet,
@@ -29,6 +31,17 @@ describe("the learned model", () => {
     expect(learnedModelPath(".obsidian/plugins/finenotes", true)).toBe(
       ".obsidian/plugins/finenotes/handwriting/personal-prev.bin",
     );
+  });
+
+  it("is kept apart per Grape: learned from one, read only with that one", () => {
+    expect(learnedModelPath(".obsidian/plugins/finenotes", false, "grape-2")).toBe(
+      ".obsidian/plugins/finenotes/handwriting/grape-2/personal.bin",
+    );
+    expect(learnedKey("grape")).toBe("handwritingModel");
+    expect(learnedKey("grape-2")).toBe("grape2Model");
+    const one = { learnedAt: "2026-10-13", lines: 16, tested: 4, before: 15.2, after: 7.6 };
+    expect(learnedRecord({ handwritingModel: one }, "grape")).toBe(one);
+    expect(learnedRecord({ handwritingModel: one }, "grape-2")).toBeUndefined();
   });
 
   it("is described in one sentence, or invited when there is none", () => {

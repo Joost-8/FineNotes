@@ -214,6 +214,8 @@ export interface GoodObsidianSettings {
   hwrModelPath?: string;
   /** The model learned from the user's practice page, when there is one. */
   handwritingModel?: LearnedModel;
+  /** The model learned from Grape 2 (preview), kept apart from Grape 1.0's. */
+  grape2Model?: LearnedModel;
   /** Which Grape reads handwriting: Grape 1.0 ("grape", the default) or "grape-2" (preview). */
   grapeModel: GrapeChoice;
   /** Where the practice notebook was written. */

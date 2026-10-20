@@ -137,6 +137,7 @@ import {
   HandwritingLearner,
   type LearningHost,
   learnedModelPath,
+  learnedRecord,
   writePracticePage,
 } from "./view/handwriting-learning";
 import { buildPracticeFile } from "./recognition/practice";
@@ -247,11 +248,10 @@ export default class GoodObsidianPlugin extends Plugin {
     this.app,
     () => ({
       customPath: this.settings.hwrModelPath ?? "",
-      // A learned model is read only with the Grape it was learned from.
-      learnedPath:
-        (this.settings.handwritingModel?.base ?? "grape") === this.grape.id
-          ? learnedModelPath(this.pluginDir)
-          : "",
+      // Each Grape reads with the model learned from it, when there is one.
+      learnedPath: learnedRecord(this.settings, this.grape.id)
+        ? learnedModelPath(this.pluginDir, false, this.grape.id)
+        : "",
     }),
     () => this.grape.source(),
   );

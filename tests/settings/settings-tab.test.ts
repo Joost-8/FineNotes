@@ -127,6 +127,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     models: { all: () => [grapeStore] },
     grape: {
       model: grapeStore,
+      id: "grape",
       offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
     },
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),

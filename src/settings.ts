@@ -9,6 +9,7 @@
  */
 
 import {
+  learnedRecord,
   learnedSummary,
   practiceFiles,
   progressLabel,
@@ -1009,7 +1010,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       },
       drawnRow(
         "Learn my handwriting",
-        learnedSummary(settings.handwritingModel),
+        learnedSummary(learnedRecord(settings, this.plugin.grape.id)),
         (setting) => this.drawLearning(setting),
         ["handwriting", "practice", "fine-tune", "personal", "recognition"],
         () => settings.handwritingOnDevice !== false,
@@ -1337,7 +1338,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         show();
       });
     }
-    if (this.plugin.settings.handwritingModel) {
+    if (learnedRecord(this.plugin.settings, this.plugin.grape.id)) {
       setting.addButton((b) =>
         b.setButtonText("Use Grape").onClick(async () => {
           await resetLearnedModel(host);
