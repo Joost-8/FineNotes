@@ -15,7 +15,7 @@
  * The text fields follow the iPad keyboard (`DialogKeyboard`).
  */
 
-import { type App, Modal, Setting } from "obsidian";
+import { type App, type EventRef, Modal, Setting } from "obsidian";
 import type { ScrollDirection } from "../model/document";
 import type { NotebookFurniture } from "../model/furniture";
 import { formatFileSize } from "../model/notebook-info";
@@ -57,6 +57,9 @@ export interface NoteSettingsHost {
 export class NoteSettingsModal extends Modal {
   /** Keeps the field being typed in above the keyboard. */
   private readonly keyboard: DialogKeyboard;
+  /** The name and folder the Notebook section was drawn with. */
+  private shown: { name: string; folder: string } | undefined;
+  private renameRef: EventRef | undefined;
 
   constructor(
     app: App,
@@ -70,9 +73,19 @@ export class NoteSettingsModal extends Modal {
     this.modalEl.addClass("goodobsidian-note-settings", "goodobsidian-dialog");
     this.titleEl.setText(this.host.single ? "Page settings" : "Notebook settings");
     this.render();
+    // A rename is not done when `rename` resolves: a notebook with its own
+    // folder renames the folder, and the note follows it a tick later
+    // (main.ts `keepFolderNotebookPaired`). A rename from the file explorer
+    // behind the dialog lands here too. Redraw once what it shows is stale.
+    this.renameRef = this.app.vault.on("rename", () => {
+      const info = this.host.info();
+      if (info.name !== this.shown?.name || info.folder !== this.shown?.folder) this.render();
+    });
   }
 
   override onClose(): void {
+    if (this.renameRef) this.app.vault.offref(this.renameRef);
+    this.renameRef = undefined;
     this.keyboard.end();
     this.contentEl.empty();
   }
@@ -170,6 +183,7 @@ export class NoteSettingsModal extends Modal {
 
   private renderInfo(parent: HTMLElement): void {
     const info = this.host.info();
+    this.shown = { name: info.name, folder: info.folder };
     new Setting(parent).setName(this.host.single ? "Page" : "Notebook").setHeading();
     const name = new Setting(parent)
       .setName("Name")

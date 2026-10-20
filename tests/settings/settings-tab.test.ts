@@ -60,6 +60,7 @@ const { DEFAULT_IMAGE_MODELS, imageUnsupportedReason } =
 const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
+const { savedPenLabel } = await import("../../src/model/saved-pens");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
@@ -282,7 +283,7 @@ describe("the rows", () => {
       [WRITING, "Default tool", "dropdown:defaultTool"],
       [WRITING, "Default stroke size", "dropdown:defaultSize"],
       [WRITING, "Default ink color", "color:defaultColor"],
-      [WRITING, "Custom colors", "text:customColors"],
+      [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [PENS, "Saved pens", "render"],
       ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [PENS, `Saved pen ${n}`, "render"]),
@@ -476,7 +477,6 @@ describe("the rows", () => {
     ]);
     const slider = named(all, "Highlighter opacity").control;
     expect([slider?.min, slider?.max, slider?.step]).toEqual([10, 100, 5]);
-    expect(named(all, "Custom colors").control?.placeholder).toBe("#ff8800, #00ccaa");
   });
 
   it("names the vendor's default model where a model can be typed", () => {
@@ -833,6 +833,24 @@ describe("paper width", () => {
   });
 });
 
+describe("custom colors", () => {
+  it("keeps the hex colours, marks the rest, and shows what was kept once left", async () => {
+    const plugin = makePlugin({ customColors: ["#0ca"] });
+    const field = renderRow(named(rows(makeTab(plugin).tab), "Custom colors")).texts[0];
+    expect([field.value, field.placeholder]).toEqual(["#0ca", "#ff8800, #00ccaa"]);
+    await field.type("#ff8800, red, #12345");
+    expect(plugin.settings.customColors).toEqual(["#ff8800"]);
+    expect(field.inputEl.hasClass("is-invalid")).toBe(true);
+    await field.type("#ff8800, #00ccaa, ");
+    expect(plugin.settings.customColors).toEqual(["#ff8800", "#00ccaa"]);
+    expect(field.inputEl.hasClass("is-invalid")).toBe(false);
+    await field.type("#ff8800, nope");
+    field.inputEl.dispatch("blur");
+    expect(field.value).toBe("#ff8800");
+    expect(field.inputEl.hasClass("is-invalid")).toBe(false);
+  });
+});
+
 describe("endpoint URL", () => {
   it("stores the URL trimmed and re-checks the warnings", async () => {
     const plugin = makePlugin({ llmVendor: "custom", llmBaseUrl: "http://old/v1" });
@@ -1102,6 +1120,27 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     const restore = renderRow(named(all, "Saved pens"));
     await restore.button("Restore defaults").click();
     expect(plugin.settings.savedPens).toHaveLength(8);
+  });
+
+  it("keeps a saved pen's label and the pen-in-hand row true while it is edited", async () => {
+    const plugin = makePlugin();
+    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 3);
+    const second = plugin.settings.savedPens[1];
+    plugin.settings.lastPen = { ...second, color: "#00aa00" };
+    const tab = makeTab(plugin).tab;
+    const all = rows(tab);
+    const save = renderRow(named(all, "Save the pen in hand"));
+    expect(save.button("Save pen").disabled).toBe(false);
+    const pen = renderRow(named(all, "Saved pen 2"));
+    // The pen in hand is saved pen 2 in another colour: picking that colour makes it saved.
+    await pen.colors[0].pick("#00AA00");
+    expect(save.button("Save pen").disabled).toBe(true);
+    expect(save.descEl.textContent).toMatch(/saved already/);
+    await pen.texts[0].type("1");
+    expect(pen.descEl.textContent).toBe(savedPenLabel(plugin.settings.savedPens[1]));
+    expect(pen.descEl.textContent).not.toBe(savedPenLabel(second));
+    expect(save.button("Save pen").disabled).toBe(false);
+    expect(plugin.calls).not.toContain("update");
   });
 
   it("asks for a pen first when none was written with", () => {

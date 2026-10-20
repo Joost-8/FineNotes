@@ -226,6 +226,10 @@ export class TextFileView extends Component {
     return Promise.resolve();
   }
 
+  onRename(_file: TFile): Promise<void> {
+    return Promise.resolve();
+  }
+
   setEphemeralState(_state: unknown): void {}
 
   getEphemeralState(): Record<string, unknown> {

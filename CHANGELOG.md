@@ -17,6 +17,16 @@ extracted from the matching section of this file by `release.yml`.
   small letters; higher settings let the settled ink trail the pen by up to
   ~2 mm and round off small loops. Ink already on the page is never changed.
 
+### Fixed
+
+- Renaming a notebook in its settings showed the old name in the dialog when
+  the notebook has its own folder; a page header with `{title}` and the
+  thumbnails also kept the old name until the notebook was reopened.
+- Settings: changing a saved pen's width or colour now updates its label and
+  the "Save the pen in hand" row; "Write practice page" brings up "Learn now"
+  without reopening the settings; Custom colors marks entries that are not
+  hex colours instead of dropping them silently.
+
 ## [2.3.0] - 2026-10-18
 
 ### Changed

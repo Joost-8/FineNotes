@@ -55,6 +55,7 @@ import {
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
+  parseColorList,
   sectionOpen,
   shownValue,
   storeShownValue,
@@ -415,6 +416,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private paperWidthRejected = false;
   /** The AI group, opened by hand when no AI service is set up. */
   private aiOpen = false;
+  /** Redraws "Save the pen in hand" for these saved pens, without rebuilding the tab. */
+  private savePenRow: ((pens: readonly SavedPen[]) => void) | undefined;
 
   constructor(
     app: App,
@@ -633,12 +636,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       controlRow("Default ink color", DESC.inkColor, { type: "color", key: "defaultColor" }, [
         "pen color",
       ]),
-      controlRow(
-        "Custom colors",
-        DESC.customColors,
-        { type: "text", key: "customColors", placeholder: "#ff8800, #00ccaa" },
-        ["palette"],
-      ),
+      drawnRow("Custom colors", DESC.customColors, (s) => this.drawCustomColors(s), ["palette"]),
       controlRow(
         "Highlighter opacity",
         DESC.highlighter,
@@ -724,10 +722,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const swatch = setting.nameEl.createSpan({ cls: "goodobsidian-saved-pen-swatch" });
     swatch.setCssStyles({ backgroundColor: pen.color });
     // A colour or a width is saved as it changes, without rebuilding the tab
-    // under the picker or the field being typed in.
+    // under the picker or the field being typed in; this row's label and the
+    // "Save the pen in hand" row (the edit may make it match) follow.
     const edit = (patch: Partial<SavedPen>): SavedPen => {
       const edited = editSavedPen(savedPensOf(this.plugin.settings.savedPens), index, patch);
       this.plugin.saveSavedPens(edited);
+      setting.setDesc(savedPenLabel(edited[index]));
+      this.savePenRow?.(edited);
       return edited[index];
     };
     setting.addDropdown((dropdown) => {
@@ -781,12 +782,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   private drawSavePen(setting: Setting, pens: readonly SavedPen[]): void {
     const last = savedPenOf(this.plugin.settings.lastPen);
-    const can = last !== null && savedPenIndex(pens, last) < 0 && pens.length < MAX_SAVED_PENS;
     setting.addButton((button) => {
-      button.setButtonText("Save pen").setDisabled(!can);
+      button.setButtonText("Save pen");
       button.onClick(() => {
         if (last) this.savePens(addSavedPen(savedPensOf(this.plugin.settings.savedPens), last));
       });
+      const show = (now: readonly SavedPen[]): void => {
+        const can = last !== null && savedPenIndex(now, last) < 0 && now.length < MAX_SAVED_PENS;
+        button.setDisabled(!can);
+        setting.setDesc(this.lastPenDesc(now));
+      };
+      show(pens);
+      this.savePenRow = show;
     });
   }
 
@@ -1258,7 +1265,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addButton((b) =>
       b
         .setButtonText(files > 0 ? "Write another practice set" : "Write practice page")
-        .onClick(() => void writePracticePage(host)),
+        .onClick(async () => {
+          await writePracticePage(host);
+          // The first practice file brings "Learn now"; the button's wording changes too.
+          if (setting.settingEl.isConnected) this.update();
+        }),
     );
     if (files > 0 || learner.progress) {
       setting.addButton((learn) => {
@@ -1319,6 +1330,30 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         this.aiOpen = !this.aiOpen;
         b.setButtonText(this.aiOpen ? "Hide" : "Show");
         this.refreshDomState();
+      });
+    });
+  }
+
+  /**
+   * Only hex colours are kept (`parseColorList`): the field is marked while it
+   * holds anything else, and shows what was kept once it is left.
+   */
+  private drawCustomColors(setting: Setting): void {
+    setting.addText((text) => {
+      text.inputEl.addClass("goodobsidian-color-list");
+      text
+        .setPlaceholder("#ff8800, #00ccaa")
+        .setValue(shownValue(this.plugin.settings, "customColors") as string);
+      text.onChange(async (typed) => {
+        const kept = parseColorList(typed);
+        const entries = typed.split(",").filter((part) => part.trim() !== "");
+        text.inputEl.toggleClass("is-invalid", kept.length < entries.length);
+        storeShownValue(this.plugin.settings, "customColors", typed);
+        await this.plugin.saveSettings();
+      });
+      text.inputEl.addEventListener("blur", () => {
+        text.setValue(shownValue(this.plugin.settings, "customColors") as string);
+        text.inputEl.removeClass("is-invalid");
       });
     });
   }

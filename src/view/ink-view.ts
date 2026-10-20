@@ -539,6 +539,13 @@ export class InkView extends TextFileView {
     return this.file?.basename ?? "Notebook";
   }
 
+  /** The note was renamed or moved: a header's `{title}` and the thumbnails follow. */
+  override async onRename(file: TFile): Promise<void> {
+    await super.onRename(file);
+    this.surface?.setNotebookTitle(this.notebookTitle());
+    this.updateSidebarRendering();
+  }
+
   // --- Reading and writing the file ------------------------------------------
 
   /** What Obsidian writes to the file: the note rebuilt, unless its load was held. */

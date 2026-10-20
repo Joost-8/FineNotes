@@ -2237,7 +2237,8 @@ body.is-mobile .goodobsidian-scrollthumb {
   text-align: end;
 }
 
-.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width.is-invalid {
+.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width.is-invalid,
+input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
 
