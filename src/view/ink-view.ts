@@ -222,7 +222,7 @@ import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
 import { SetReadOnly, isReadOnly } from "../model/read-only";
-import { notebookName, renamePlan } from "../model/notebook-info";
+import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
@@ -2723,6 +2723,20 @@ export class InkView extends TextFileView {
       setReadOnly: (on) => apply(new SetReadOnly(on)),
       info: () => this.notebookInfo(),
       rename: (name) => this.renameNotebook(name),
+      // The first page as the sidebar shows it: the cover with its title.
+      paintCover: async (canvas, cssWidth) => {
+        const doc = this.surface?.document ?? this.doc;
+        const page = doc.pages[0];
+        if (!page || !coverColorOfDocument(doc)) return false;
+        await paintPagePreview(
+          canvas,
+          page,
+          this.previewSources(),
+          cssWidth,
+          window.devicePixelRatio || 1,
+        );
+        return true;
+      },
     }).open();
   }
 
@@ -2737,6 +2751,7 @@ export class InkView extends TextFileView {
       created: file?.stat.ctime ?? 0,
       modified: file?.stat.mtime ?? 0,
       folder: file?.parent?.path === "/" ? "" : (file?.parent?.path ?? ""),
+      cover: coverColorOfDocument(doc),
     };
   }
 

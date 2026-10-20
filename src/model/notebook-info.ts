@@ -6,6 +6,17 @@
 
 import { inkFileSuffix, sanitizeFileName, stripInkSuffix } from "./new-notebook";
 import { baseName, isFolderNotebook, parentPath } from "./folder-notebook";
+import { type InkDocument, isCoverRuling } from "./document";
+
+/**
+ * The cover colour a notebook shows in its settings: the first page's colour
+ * when that page is a cover, else `undefined` (no cover, a PDF, a plain page).
+ */
+export function coverColorOfDocument(doc: InkDocument): string | undefined {
+  const first = doc.pages[0]?.backdrop;
+  if (!first || first.kind === "pdf" || !isCoverRuling(first.kind)) return undefined;
+  return first.paperColor;
+}
 
 /** A byte count as people read it: "812 B", "14 KB", "3.4 MB". */
 export function formatFileSize(bytes: number): string {
