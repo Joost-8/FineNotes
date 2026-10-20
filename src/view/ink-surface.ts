@@ -201,7 +201,9 @@ import {
   type Smoothing,
   StrokeBuilder,
   type StrokeBuilderOptions,
+  stabilizationReach,
 } from "../ink/stroke-builder";
+import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { lineOfHighlight } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
@@ -4244,6 +4246,14 @@ export class InkSurface {
     // 26.2) is smoothed; one that reports fractions is kept exact.
     const rounded = this.pointerInput?.strokeRounded ?? false;
     const smoothing: Smoothing = rounded ? "centred" : "off";
+    // The pen in hand's stroke stabilization, on screen like the spacing.
+    // Not for the Shape tool, whose strokes become clean shapes, nor for a
+    // practice file's training data.
+    const { tool } = this.toolState;
+    const pen = (tool === "pen" || tool === "highlighter") && this.practice === null;
+    const percent = pen
+      ? stabilizationOf(this.toolState.penStabilization, penTypeFor(this.toolState).id)
+      : 0;
     return {
       // On screen, not on the page: at 5x zoom 1.4 page px is 7 screen px,
       // and small handwriting lost most of its samples.
@@ -4263,6 +4273,7 @@ export class InkSurface {
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
       smoothing,
+      stabilize: this.atFitZoom(stabilizationReach(percent / 100)),
       // A practice file is training data: keep the pen's samples as they came.
       record: this.practice !== null,
     };

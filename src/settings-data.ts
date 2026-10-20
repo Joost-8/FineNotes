@@ -182,6 +182,12 @@ export interface GoodObsidianSettings {
    */
   penInks?: Record<string, unknown>;
   /**
+   * Each pen type's stroke stabilization, whole percent
+   * (`model/pen-stabilization.ts`); a pen left out is off. Checked where it
+   * is read.
+   */
+  penStabilization?: Record<string, unknown>;
+  /**
    * Advanced: the pressure pens (Fountain, Brush) widen with pen pressure.
    * Off, every pen draws one width. It replaced `pressureEnabled`
    * (2026-09-30), which was on by default and is dropped on load.

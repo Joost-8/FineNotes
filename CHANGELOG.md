@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Stroke stabilization, per pen**, as in Goodnotes: a 0-100% slider in the
+  pen menu, under "Pen settings" (tap the pen in the pen pill), steadies a
+  shaky hand while you write. Each pen keeps its own setting, and every pen
+  starts at 0%, off. Around 5-20% already smooths a wobble without rounding
+  small letters; higher settings let the settled ink trail the pen by up to
+  ~2 mm and round off small loops. Ink already on the page is never changed.
+
 ## [2.3.0] - 2026-10-18
 
 ### Changed

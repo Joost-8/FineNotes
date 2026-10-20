@@ -48,6 +48,13 @@ export interface StrokeBuilderOptions {
   /** How the positions are smoothed first; `"off"` by default. */
   smoothing?: Smoothing;
   /**
+   * Stroke stabilization, the pen's own setting: the centred window reaches
+   * at least this far along the stroke on each side of a sample, page px
+   * ({@link stabilizationReach}). With `"centred"` the window is the wider of
+   * the two. 0 or absent: none.
+   */
+  stabilize?: number;
+  /**
    * Keep every sample offered as it came, with its time ({@link recorded}):
    * a practice file's training data. Off by default.
    */
@@ -82,16 +89,64 @@ const MAX_FILL = 64;
 export const CENTRED_HALF = 3;
 
 /**
- * Quadratic Savitzky-Golay weights by half window: 0 (the sample itself), 1,
- * 2 and 3. A sample near either end of the stroke uses the widest window
- * that fits, so the stroke starts and ends exactly where the pen did.
+ * The widest the centred window gets, samples each side: stabilization on a
+ * slow, dense stroke would otherwise hold back ever more of it.
  */
-const CENTRED_WEIGHTS: readonly (readonly number[])[] = [
+export const MAX_CENTRED_HALF = 24;
+
+/** The narrowest window stabilization uses, samples each side: the smallest quadratic one. */
+const MIN_STABILIZE_HALF = 2;
+
+/**
+ * Stroke stabilization at 100%: the window's reach each side, screen px. It
+ * is also how far the settled ink trails the pen. Goodnotes at 100% revises
+ * the last ~2 mm of a stroke (about 10 px on an iPad), measured from Joost's
+ * recording, 2026-10-18.
+ */
+export const STABILIZE_MAX_PX = 10;
+
+/** The reach of the setting's lowest step, screen px. */
+const STABILIZE_MIN_PX = 1.5;
+
+/**
+ * The reach each side, screen px, of stroke stabilization at `strength`
+ * (0..1): 0 is none; then from {@link STABILIZE_MIN_PX} up to
+ * {@link STABILIZE_MAX_PX}, rising fastest at the low end, where the
+ * settings people use are (Goodnotes users report 5-10% for a ball pen,
+ * ~20% for fountain-pen cursive).
+ */
+export function stabilizationReach(strength: number): number {
+  if (!(strength > 0)) return 0;
+  const s = Math.min(1, strength);
+  return STABILIZE_MIN_PX + (STABILIZE_MAX_PX - STABILIZE_MIN_PX) * Math.sqrt(s);
+}
+
+/**
+ * Quadratic Savitzky-Golay weights by half window: 0 (the sample itself), 1,
+ * 2 and 3; wider ones are made by {@link centredWeights}. A sample near
+ * either end of the stroke uses the widest window that fits, so the stroke
+ * starts and ends exactly where the pen did.
+ */
+const CENTRED_WEIGHTS: (readonly number[])[] = [
   [1],
   [1, 1, 1],
   [-3, 12, 17, 12, -3],
   [-2, 3, 6, 7, 6, 3, -2],
 ];
+
+/**
+ * The weights of the quadratic Savitzky-Golay window `half` samples each
+ * side: 3h² + 3h − 1 − 5j² at offset j. The first four are written out, so
+ * the ink they made stays the same to the last bit.
+ */
+function centredWeights(half: number): readonly number[] {
+  for (let h = CENTRED_WEIGHTS.length; h <= half; h++) {
+    const weights: number[] = [];
+    for (let j = -h; j <= h; j++) weights.push(3 * h * h + 3 * h - 1 - 5 * j * j);
+    CENTRED_WEIGHTS.push(weights);
+  }
+  return CENTRED_WEIGHTS[half];
+}
 
 /**
  * The pressure to store for one raw reading, taken on its own: the reading,
@@ -162,6 +217,8 @@ export class StrokeBuilder {
   private waiting: number[] | null = null;
   /** With `"centred"`: the samples kept, `[x, y, p]`, as the pen reported them. */
   private held: number[][] = [];
+  /** Centred: the length of the stroke up to each of {@link held}, page px. */
+  private along: number[] = [];
   /** With `"centred"`: how many of {@link held} have been smoothed and passed on. */
   private passed = 0;
   /** The pen's last real pressure reading; NaN until the first arrives. */
@@ -173,6 +230,11 @@ export class StrokeBuilder {
 
   constructor(overrides: Partial<StrokeBuilderOptions> = {}) {
     this.options = { ...DEFAULTS, ...overrides };
+  }
+
+  /** The samples are placed by a centred window: rounded input, or stabilization. */
+  private get centred(): boolean {
+    return this.options.smoothing === "centred" || (this.options.stabilize ?? 0) > 0;
   }
 
   /** Offer a sample; true if it was kept. */
@@ -291,7 +353,7 @@ export class StrokeBuilder {
     // Read the pressure first, even for a sample about to be dropped: the
     // pen's first real reading still fills in the points before it.
     const pressure = this.pressureFor(sample.pressure);
-    if (this.options.smoothing === "centred") return this.offerCentred(sample, pressure, final);
+    if (this.centred) return this.offerCentred(sample, pressure, final);
     const n = this.flat.length;
     if (n > 0 && !final) {
       const from = this.waiting ?? this.last;
@@ -351,32 +413,62 @@ export class StrokeBuilder {
       const dy = raw.y - prev[1];
       if (dx * dx + dy * dy < min * min) return false;
     }
+    const along = this.along;
+    along.push(prev ? along[along.length - 1] + Math.hypot(raw.x - prev[0], raw.y - prev[1]) : 0);
     held.push([raw.x, raw.y, pressure]);
     if (final) {
       this.settle();
       return true;
     }
     while (this.passed < held.length) {
-      const reach = Math.min(CENTRED_HALF, this.passed);
-      if (this.passed + reach >= held.length) break;
+      const reach = this.reachAt(this.passed, false);
+      if (reach < 0) break;
       this.passOn(this.passed, reach);
       this.passed++;
     }
     return true;
   }
 
-  /** `"centred"`: pass on every held sample, each with the widest window that fits. */
-  private flushHeld(): void {
+  /**
+   * How many samples each side place held sample `i`: {@link CENTRED_HALF}
+   * with `"centred"`, or enough to span `stabilize` both ways, whichever is
+   * more; never more than {@link MAX_CENTRED_HALF}, nor than the stroke has
+   * before it. Mid-stroke, -1 while the samples after it do not reach that
+   * far yet; at the pen-up (`final`), never more than the stroke has after it.
+   */
+  private reachAt(i: number, final: boolean): number {
     const n = this.held.length;
-    for (; this.passed < n; this.passed++) {
-      const i = this.passed;
-      this.passOn(i, Math.min(CENTRED_HALF, i, n - 1 - i));
+    let half = this.options.smoothing === "centred" ? CENTRED_HALF : 0;
+    const span = this.options.stabilize ?? 0;
+    if (span > 0) {
+      const along = this.along;
+      let back = 0;
+      while (back < i && back < MAX_CENTRED_HALF && along[i] - along[i - back] < span) back++;
+      let ahead = 0;
+      while (ahead < MAX_CENTRED_HALF && i + ahead < n - 1 && along[i + ahead] - along[i] < span) {
+        ahead++;
+      }
+      const short = ahead < MAX_CENTRED_HALF && along[i + ahead] - along[i] < span;
+      if (short && !final) return -1;
+      // One sample each side could only average the three, which pulls a
+      // curve inward (a 4 px loop by 15%); the quadratic needs two.
+      half = Math.max(half, MIN_STABILIZE_HALF, back, ahead);
+    }
+    const reach = Math.min(half, MAX_CENTRED_HALF, i);
+    if (final) return Math.min(reach, n - 1 - i);
+    return i + reach < n ? reach : -1;
+  }
+
+  /** Centred: pass on every held sample, each with the widest window that fits. */
+  private flushHeld(): void {
+    for (; this.passed < this.held.length; this.passed++) {
+      this.passOn(this.passed, this.reachAt(this.passed, true));
     }
   }
 
   /** The held sample `i`, placed from the `reach` samples on each side of it. */
   private passOn(i: number, reach: number): void {
-    const weights = CENTRED_WEIGHTS[reach];
+    const weights = centredWeights(reach);
     let x = 0;
     let y = 0;
     let sum = 0;
@@ -397,6 +489,7 @@ export class StrokeBuilder {
     copy.last = this.last && [...this.last];
     copy.waiting = this.waiting && [...this.waiting];
     copy.held = this.held.map((s) => [...s]);
+    copy.along = [...this.along];
     copy.passed = this.passed;
     copy.lastReading = this.lastReading;
     copy.rewrites = this.rewrites;

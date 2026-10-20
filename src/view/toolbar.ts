@@ -169,6 +169,11 @@ import {
   savedPenLabel,
   widthFromMm,
 } from "../model/saved-pens";
+import {
+  type PenStabilization,
+  stabilizationOf,
+  withStabilization,
+} from "../model/pen-stabilization";
 import { DialogKeyboard } from "./dialog-keyboard";
 import {
   DEFAULT_ARROW_HEADS,
@@ -391,6 +396,11 @@ export interface ToolbarState {
    * `penColors`.
    */
   penInks?: PenInks;
+  /**
+   * Each pen type's stroke stabilization, whole percent
+   * (`model/pen-stabilization.ts`). `undefined`: every pen at 0%, off.
+   */
+  penStabilization?: PenStabilization;
   /** The Shape tool's mode. `undefined` (or a remembered "auto") counts as the rectangle. */
   shapeMode?: ShapeMode;
   /** The Shape tool's fill, line, corners and arrowheads. `undefined`: plain outlines. */
@@ -494,6 +504,8 @@ export interface ToolbarCallbacks {
   onPenAutoShapeChange?: (enabled: boolean) => void;
   /** A pen gesture was switched on or off. Hosts persist it. */
   onPenGesturesChange?: (gestures: PenGestures) => void;
+  /** A pen type's stroke stabilization changed (every step of a drag). Hosts persist it. */
+  onPenStabilization?: (all: PenStabilization) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
   /** "Header row" for new tables changed. Hosts persist it. */
@@ -2596,18 +2608,22 @@ export class Toolbar {
     }
     const anchor = this.penTypeButtons.get(this.activePenType().id) ?? this.optionsEl;
     const body = this.openPopover("pens", anchor);
-    // One popover, two pages, as in GoodNotes: the pen types, and behind a
-    // row at their foot the pen gestures, with a way back.
-    let gestures = false;
+    // One popover, three pages, as in GoodNotes: the pen types, and behind
+    // rows at their foot the pen in hand's settings and the pen gestures,
+    // each with a way back.
+    let page: "types" | "settings" | "gestures" = "types";
     this.popoverRender = () => {
       body.empty();
-      this.popover?.toggleClass("is-pen-gestures", gestures);
-      const flip = (): void => {
-        gestures = !gestures;
-        this.popoverRender?.();
-      };
-      if (gestures) this.renderPenGestures(body, flip);
-      else this.renderPenTypes(body, flip);
+      this.popover?.toggleClass("is-pen-gestures", page !== "types");
+      const go =
+        (to: typeof page): (() => void) =>
+        () => {
+          page = to;
+          this.popoverRender?.();
+        };
+      if (page === "gestures") this.renderPenGestures(body, go("types"));
+      else if (page === "settings") this.renderPenSettings(body, go("types"));
+      else this.renderPenTypes(body, go("settings"), go("gestures"));
       this.keepPopoverInside(anchor);
     };
     this.popoverRender();
@@ -2619,7 +2635,11 @@ export class Toolbar {
     return penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand()).color;
   }
 
-  private renderPenTypes(body: HTMLElement, openGestures: () => void): void {
+  private renderPenTypes(
+    body: HTMLElement,
+    openSettings: () => void,
+    openGestures: () => void,
+  ): void {
     this.penMenuRows.clear();
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
     for (const spec of PEN_MENU_TYPES) {
@@ -2651,12 +2671,88 @@ export class Toolbar {
       this.syncActive();
     });
     body.createDiv({ cls: "goodobsidian-popover-divider" });
+    this.popoverLink(body, "Pen settings", "sliders-horizontal", openSettings);
+    this.popoverLink(body, "Pen gestures", "signature", openGestures);
+  }
+
+  /** A row that opens another page of the popover: an icon, its name, and a chevron. */
+  private popoverLink(body: HTMLElement, label: string, icon: string, open: () => void): void {
     const link = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
     });
-    link.createSpan({ text: "Pen gestures" });
+    const name = link.createSpan({ cls: "goodobsidian-popover-link-name" });
+    iconOrText(name.createSpan({ cls: "goodobsidian-popover-link-icon" }), icon, "");
+    name.createSpan({ text: label });
     iconOrText(link.createSpan({ cls: "goodobsidian-popover-link-icon" }), "chevron-right", ">");
-    link.addEventListener("click", openGestures);
+    link.addEventListener("click", open);
+  }
+
+  /** A popover page's head: a back arrow, and the page's title centred. */
+  private popoverPageHead(
+    body: HTMLElement,
+    title: string,
+    backLabel: string,
+    back: () => void,
+  ): void {
+    const head = body.createDiv({ cls: "goodobsidian-popover-head" });
+    const backButton = head.createEl("button", {
+      cls: "goodobsidian-popover-back clickable-icon",
+    });
+    iconOrText(backButton, "arrow-left", "Back");
+    backButton.setAttribute("aria-label", backLabel);
+    backButton.addEventListener("click", back);
+    head.createDiv({ cls: "goodobsidian-popover-title", text: title });
+  }
+
+  /** The pen in hand's own settings, behind "Pen settings" in the pen type menu. */
+  private renderPenSettings(body: HTMLElement, back: () => void): void {
+    this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
+    this.renderStabilization(body);
+  }
+
+  /**
+   * The pen in hand's "Stroke stabilization", 0-100%, which Goodnotes keeps
+   * per pen (FineNotes discussion #30). It shapes only the strokes written
+   * next (`ink/stroke-builder.ts`, `stabilizationReach`).
+   */
+  private renderStabilization(body: HTMLElement): void {
+    const spec = this.activePenType();
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Stroke stabilization" });
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": `Stroke stabilization, ${spec.label}` },
+    });
+    range.min = "0";
+    range.max = "100";
+    range.step = "1";
+    const show = (percent: number): void => {
+      range.value = String(percent);
+      range.setAttribute("aria-valuetext", `${percent}%`);
+      readout.setText(`${percent}%`);
+      syncRangeFill(range);
+    };
+    show(stabilizationOf(this.state.penStabilization, spec.id));
+    const save = this.callbacks.onPenStabilization;
+    // A host that keeps no setting gets a slider that does nothing, greyed.
+    range.disabled = !save;
+    range.addEventListener("input", () => {
+      const percent = Number(range.value);
+      this.state.penStabilization = withStabilization(
+        this.state.penStabilization,
+        spec.id,
+        percent,
+      );
+      save?.(this.state.penStabilization);
+      show(percent);
+    });
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "Steadies a shaky hand as you write. Higher settings trail the pen a little and round off small loops.",
+    });
   }
 
   /**
@@ -2665,14 +2761,7 @@ export class Toolbar {
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
-    const head = body.createDiv({ cls: "goodobsidian-popover-head" });
-    const backButton = head.createEl("button", {
-      cls: "goodobsidian-popover-back clickable-icon",
-    });
-    iconOrText(backButton, "arrow-left", "Back");
-    backButton.setAttribute("aria-label", "Back to pen types");
-    backButton.addEventListener("click", back);
-    head.createDiv({ cls: "goodobsidian-popover-title", text: "Pen gestures" });
+    this.popoverPageHead(body, "Pen gestures", "Back to pen types", back);
 
     const gestures = penGesturesOf(this.state.penGestures);
     const set = (patch: Partial<PenGestures>): void => {

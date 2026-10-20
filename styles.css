@@ -7857,7 +7857,8 @@ button.goodobsidian-color-eyedropper .svg-icon {
 
 /* ------------------------------------------ pen gestures (pen type menu) */
 
-/* The pen type menu's second page: GoodNotes' Pen Gestures. */
+/* The pen type menu's other pages: the pen's settings, and GoodNotes' Pen
+   Gestures. */
 .goodobsidian-popover.is-pen-gestures {
   width: min(320px, calc(100vw - 24px));
 }
@@ -7881,6 +7882,13 @@ button.goodobsidian-color-eyedropper .svg-icon {
 .goodobsidian-popover-link-icon {
   display: flex;
   color: var(--text-muted);
+}
+
+/* A link row's icon and name, before its chevron. */
+.goodobsidian-popover-link-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* A title with a back arrow before it, the title centred over the page. */
