@@ -3077,7 +3077,9 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
    from the DOM: on the iPad this rule alone did not hide it.) */
 .goodobsidian-newnb-modal .modal-header,
 .goodobsidian-newnb-modal .modal-title,
-.modal-container .modal.goodobsidian-newnb-modal > .modal-close-button {
+/* Obsidian's own cross: modal-close-button before 1.14, modal-header-button since. */
+.modal-container .modal.goodobsidian-newnb-modal > .modal-close-button,
+.modal-container .modal.goodobsidian-newnb-modal > .modal-header-button {
   display: none;
 }
 
@@ -3110,6 +3112,21 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
 
 .goodobsidian-newnb-header > button:last-child {
   justify-self: end;
+}
+
+/* The header's ✕: a round button that closes the dialog. */
+.goodobsidian-newnb-header > button.goodobsidian-newnb-close.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  --icon-size: 18px;
+}
+
+.goodobsidian-newnb-header > button.goodobsidian-newnb-close.clickable-icon:hover {
+  color: var(--text-normal);
 }
 
 .goodobsidian-newnb-heading {

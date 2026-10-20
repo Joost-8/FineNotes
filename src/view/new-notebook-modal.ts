@@ -1,7 +1,7 @@
 /**
  * The "New notebook" dialog, after GoodNotes' "Create notebook" sheet:
  *
- *   [Cancel]        New notebook        [Create]    (sticky: never scrolls away)
+ *   [Create]        New notebook             (✕)    (sticky: never scrolls away)
  *   Title ______________________________            (focused on open)
  *   Import from another app…      [📁 Lectures/Analysis ›]
  *   Cover   No cover and the classic designs, the patterns, then the colours
@@ -112,9 +112,10 @@ export class NewNotebookModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-newnb-modal", "goodobsidian-dialog");
     this.containerEl.addClass("goodobsidian-newnb-container");
-    // Cancel is our way out. The stylesheet hides Obsidian's ✕ too, but on
-    // the iPad it still showed, on top of Create: remove it outright — and
-    // again whenever it comes back, in case Obsidian adds it after onOpen.
+    // Our own ✕ in the header is the way out. The stylesheet hides Obsidian's
+    // ✕ too, but on the iPad it still showed, on top of the header: remove it
+    // outright, and again whenever it comes back, in case Obsidian adds it
+    // after onOpen.
     this.removeCloseButton();
     this.closeWatch?.disconnect();
     this.closeWatch = new MutationObserver(() => this.removeCloseButton());
@@ -142,8 +143,14 @@ export class NewNotebookModal extends Modal {
     }
   }
 
+  /**
+   * Obsidian's own ✕, a direct child of the dialog: `modal-close-button`
+   * before 1.14, `modal-header-button` since (read from app.js). Only direct
+   * children, so nothing inside our own header is touched.
+   */
   private removeCloseButton(): void {
-    for (const el of Array.from(this.modalEl.querySelectorAll(".modal-close-button"))) el.remove();
+    const selector = ":scope > .modal-close-button, :scope > .modal-header-button";
+    for (const el of Array.from(this.modalEl.querySelectorAll(selector))) el.remove();
   }
 
   override onClose(): void {
@@ -174,12 +181,17 @@ export class NewNotebookModal extends Modal {
 
   // --- Sections ---------------------------------------------------------------
 
+  /** Create on the left, the title in the middle, a round ✕ on the right that closes. */
   private buildHeader(header: HTMLElement): void {
-    const cancel = header.createEl("button", { text: "Cancel" });
-    cancel.addEventListener("click", () => this.close());
-    header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
     create.addEventListener("click", () => this.create());
+    header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
+    const close = header.createEl("button", {
+      cls: "goodobsidian-newnb-close clickable-icon",
+      attr: { type: "button", "aria-label": "Close" },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => this.close());
   }
 
   private buildTitle(body: HTMLElement): void {
