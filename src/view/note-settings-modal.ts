@@ -2,26 +2,29 @@
  * The toolbar's settings button: this notebook's own settings, the ones that
  * belong to one notebook rather than to every one.
  *
+ *   [cover] Name (tap to rename)          the notebook itself, first
+ *           23 pages · 911 KB · edited 19 Oct
+ *           folder
  *   Pages         Scroll direction · Page numbers · Header
  *   Editing       Read-only
- *   Notebook      Name (renames it) · pages · size · created · edited · folder
- *                 All FineNotes settings  [Open]
+ *   Created …                    All FineNotes settings ›
  *
- * Where new files are saved is in FineNotes' own settings (Advanced), for
- * every notebook without a folder of its own.
+ * Settings sit in rounded groups with one-line hints; scroll direction is a
+ * two-way switch. Where new files are saved is in FineNotes' own settings
+ * (Advanced), for every notebook without a folder of its own.
  *
  * The modal only reports choices; the host applies them as undoable commands
  * and the modal re-reads the note, so what it shows is always what is stored.
  * The text fields follow the iPad keyboard (`DialogKeyboard`).
  */
 
-import { type App, Modal, Setting } from "obsidian";
+import { type App, Modal, Setting, setIcon } from "obsidian";
 import type { ScrollDirection } from "../model/document";
 import type { NotebookFurniture } from "../model/furniture";
 import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
 
-/** What the Notebook section shows. */
+/** What the summary card shows. */
 export interface NotebookInfo {
   /** The name it shows as (its file name without the suffix). */
   name: string;
@@ -32,6 +35,8 @@ export interface NotebookInfo {
   modified: number;
   /** The vault folder it is in ("" is the vault root). */
   folder: string;
+  /** The cover's colour, when its first page is a cover. */
+  cover?: string;
 }
 
 export interface NoteSettingsHost {
@@ -52,7 +57,15 @@ export interface NoteSettingsHost {
   rename: (name: string) => Promise<void>;
   /** Open FineNotes' own tab in Obsidian's settings. */
   openPluginSettings: () => void;
+  /**
+   * Paint the cover page, title and all, into `canvas` at `cssWidth`.
+   * Resolves `false` when there is no cover to paint.
+   */
+  paintCover?: (canvas: HTMLCanvasElement, cssWidth: number) => Promise<boolean>;
 }
+
+/** The summary card's cover, in CSS px. */
+const COVER_WIDTH = 96;
 
 export class NoteSettingsModal extends Modal {
   /** Keeps the field being typed in above the keyboard. */
@@ -82,43 +95,126 @@ export class NoteSettingsModal extends Modal {
     // Re-rendering drops the field being typed in.
     this.keyboard.end();
     contentEl.empty();
+    const info = this.host.info();
+    this.renderSummary(contentEl, info);
     this.renderPages(contentEl);
     this.renderEditing(contentEl);
-    this.renderInfo(contentEl);
+    this.renderFooter(contentEl, info);
+  }
+
+  /** A titled group of rows: the title above, the rows in one rounded frame. */
+  private group(parent: HTMLElement, title: string): HTMLElement {
+    parent.createDiv({ cls: "goodobsidian-ns-group-title", text: title });
+    return parent.createDiv({ cls: "goodobsidian-ns-group" });
+  }
+
+  /**
+   * The notebook first: its cover colour, its name (a field that reads as a
+   * title until tapped, which renames it), and its facts on two lines.
+   */
+  private renderSummary(parent: HTMLElement, info: NotebookInfo): void {
+    const card = parent.createDiv({ cls: "goodobsidian-ns-summary" });
+    // The cover in its colour at once; then the real page, title and all, over it.
+    const swatch = card.createDiv({ cls: "goodobsidian-ns-cover" });
+    if (info.cover) swatch.setCssStyles({ backgroundColor: info.cover });
+    else swatch.addClass("is-plain");
+    const paint = this.host.paintCover;
+    if (info.cover && paint) {
+      const canvas = swatch.createEl("canvas", { cls: "goodobsidian-ns-cover-page" });
+      void paint(canvas, COVER_WIDTH)
+        .then((painted) => swatch.toggleClass("is-painted", painted))
+        .catch(() => canvas.remove());
+    }
+
+    const body = card.createDiv({ cls: "goodobsidian-ns-summary-body" });
+    const nameRow = body.createEl("label", { cls: "goodobsidian-ns-name" });
+    const field = nameRow.createEl("input", {
+      cls: "goodobsidian-ns-name-input",
+      attr: {
+        type: "text",
+        "aria-label": this.host.single ? "Rename the page" : "Rename the notebook",
+        spellcheck: "false",
+      },
+    });
+    field.value = info.name;
+    // As wide as the name, so the pencil sits right after it.
+    const fit = (): void => {
+      field.size = Math.max(4, Array.from(field.value).length + 1);
+    };
+    fit();
+    field.addEventListener("input", fit);
+    setIcon(nameRow.createSpan({ cls: "goodobsidian-ns-name-icon" }), "pencil");
+    // Renamed when the field is left or Enter is pressed, not on every key.
+    field.addEventListener("change", () => {
+      const value = field.value.trim();
+      if (!value || value === info.name) {
+        field.value = info.name;
+        // As wide as the name, so the pencil sits right after it.
+        const fit = (): void => {
+          field.size = Math.max(4, Array.from(field.value).length + 1);
+        };
+        fit();
+        field.addEventListener("input", fit);
+        return;
+      }
+      void this.host.rename(value).then(() => this.render());
+    });
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") field.blur();
+    });
+    this.keyboard.watch(field, card);
+
+    const facts: string[] = [];
+    if (!this.host.single) facts.push(info.pages === 1 ? "1 page" : `${info.pages} pages`);
+    const size = formatFileSize(info.bytes);
+    if (size) facts.push(size);
+    const edited = shortDate(info.modified);
+    if (edited) facts.push(`edited ${edited}`);
+    body.createDiv({ cls: "goodobsidian-ns-facts", text: facts.join(" · ") });
+    const folder = body.createDiv({ cls: "goodobsidian-ns-facts" });
+    setIcon(folder.createSpan({ cls: "goodobsidian-ns-facts-icon" }), "folder");
+    folder.createSpan({ text: info.folder || "Vault's top folder" });
   }
 
   private renderPages(parent: HTMLElement): void {
-    new Setting(parent).setName("Pages").setHeading();
+    const group = this.group(parent, "Pages");
     // A single page has nowhere to scroll to.
     if (!this.host.single) {
-      new Setting(parent)
-        .setName("Scroll direction")
-        .setDesc(
-          "Vertical scrolls through the pages; horizontal turns them one at a time. " +
-            "Either way, pull past the last page to add one.",
-        )
-        .addDropdown((dropdown) =>
-          dropdown
-            .addOption("vertical", "Vertical")
-            .addOption("horizontal", "Horizontal")
-            .setValue(this.host.scrollDirection())
-            .onChange((value) => {
-              this.host.setScrollDirection(value === "horizontal" ? "horizontal" : "vertical");
-            }),
-        );
+      const row = new Setting(group).setName("Scroll direction");
+      const seg = row.controlEl.createDiv({
+        cls: "goodobsidian-ns-segmented",
+        attr: { role: "radiogroup", "aria-label": "Scroll direction" },
+      });
+      const current = this.host.scrollDirection();
+      for (const [value, label] of [
+        ["vertical", "Vertical"],
+        ["horizontal", "Horizontal"],
+      ] as const) {
+        const button = seg.createEl("button", {
+          cls: "goodobsidian-ns-segment clickable-icon",
+          text: label,
+          attr: { type: "button", role: "radio", "aria-checked": String(value === current) },
+        });
+        button.toggleClass("is-active", value === current);
+        button.addEventListener("click", () => {
+          if (value === this.host.scrollDirection()) return;
+          this.host.setScrollDirection(value);
+          this.render();
+        });
+      }
     }
-    this.renderFurniture(parent);
+    this.renderFurniture(group);
   }
 
   /** Page numbers and a header, printed on every page but the cover. */
-  private renderFurniture(parent: HTMLElement): void {
+  private renderFurniture(group: HTMLElement): void {
     const get = this.host.furniture;
     const set = this.host.setFurniture;
     if (!get || !set) return;
     const current = get();
-    new Setting(parent)
+    new Setting(group)
       .setName("Page numbers")
-      .setDesc("Printed at the foot of every page but the cover, in exports too.")
+      .setDesc("Not on the cover; in exports too.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("none", "None")
@@ -132,11 +228,9 @@ export class NoteSettingsModal extends Modal {
             set(next);
           }),
       );
-    const header = new Setting(parent)
+    const header = new Setting(group)
       .setName("Header")
-      .setDesc(
-        "Printed at the top of every page but the cover. {title}, {page} and {pages} are filled in.",
-      )
+      .setDesc("{title}, {page} and {pages} are filled in.")
       .addText((text) => {
         text.setPlaceholder("{title}").setValue(current.header ?? "");
         // Set when the field is left, not on every key: each change is a step of undo.
@@ -153,13 +247,10 @@ export class NoteSettingsModal extends Modal {
   }
 
   private renderEditing(parent: HTMLElement): void {
-    new Setting(parent).setName("Editing").setHeading();
-    new Setting(parent)
+    const group = this.group(parent, "Editing");
+    new Setting(group)
       .setName("Read-only")
-      .setDesc(
-        "Nothing can write, erase or change the pages, so a stray Pencil or palm leaves " +
-          "them alone. You can still scroll, zoom, search and export.",
-      )
+      .setDesc("Scroll, zoom, search and export still work.")
       .addToggle((toggle) =>
         toggle.setValue(this.host.readOnly()).onChange((on) => {
           this.host.setReadOnly(on);
@@ -168,49 +259,33 @@ export class NoteSettingsModal extends Modal {
       );
   }
 
-  private renderInfo(parent: HTMLElement): void {
-    const info = this.host.info();
-    new Setting(parent).setName(this.host.single ? "Page" : "Notebook").setHeading();
-    const name = new Setting(parent)
-      .setName("Name")
-      .setDesc("Renames the notebook, and its folder when it has one of its own.")
-      .addText((text) => {
-        text.setValue(info.name);
-        text.inputEl.addEventListener("change", () => {
-          const value = text.getValue().trim();
-          if (!value || value === info.name) return;
-          void this.host.rename(value).then(() => this.render());
-        });
-      });
-    const field = name.controlEl.querySelector("input");
-    if (field) this.keyboard.watch(field, name.settingEl);
-    const facts = parent.createDiv({ cls: "goodobsidian-note-info" });
-    const fact = (label: string, value: string) => {
-      const row = facts.createDiv({ cls: "goodobsidian-note-info-row" });
-      row.createSpan({ cls: "goodobsidian-note-info-label", text: label });
-      row.createSpan({ cls: "goodobsidian-note-info-value", text: value });
-    };
-    if (!this.host.single) fact("Pages", String(info.pages));
-    fact("Size", formatFileSize(info.bytes));
-    fact("Created", dateTime(info.created));
-    fact("Last edited", dateTime(info.modified));
-    fact("Folder", info.folder || "Vault root");
-    new Setting(parent)
-      .setName("All FineNotes settings")
-      .setDesc(
-        "Pens and tools, pages, handwriting, AI, and where new files are saved, for every notebook.",
-      )
-      .addButton((button) =>
-        button.setButtonText("Open").onClick(() => {
-          this.close();
-          this.host.openPluginSettings();
-        }),
-      );
+  /** When it was made, and the way to every other setting. */
+  private renderFooter(parent: HTMLElement, info: NotebookInfo): void {
+    const footer = parent.createDiv({ cls: "goodobsidian-ns-footer" });
+    const created = shortDate(info.created, true);
+    footer.createSpan({
+      cls: "goodobsidian-ns-footer-text",
+      text: created ? `Created ${created}` : "",
+    });
+    const all = footer.createEl("button", {
+      cls: "goodobsidian-ns-all clickable-icon",
+      attr: { type: "button" },
+    });
+    all.createSpan({ text: "All FineNotes settings" });
+    setIcon(all.createSpan({ cls: "goodobsidian-ns-all-icon" }), "chevron-right");
+    all.addEventListener("click", () => {
+      this.close();
+      this.host.openPluginSettings();
+    });
   }
 }
 
-/** A date and time in the reader's own format; "" when unknown. */
-function dateTime(ms: number): string {
+/** A date in the reader's own format, "19 Oct" (with the year if asked); "" when unknown. */
+function shortDate(ms: number, withYear = false): string {
   if (!Number.isFinite(ms) || ms <= 0) return "";
-  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(ms).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
 }

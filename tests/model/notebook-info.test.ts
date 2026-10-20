@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatFileSize, notebookName, renamePlan } from "../../src/model/notebook-info";
+import {
+  formatFileSize,
+  notebookName,
+  renamePlan,
+  coverColorOfDocument,
+} from "../../src/model/notebook-info";
+import type { InkDocument } from "../../src/model/document";
 
 describe("formatFileSize", () => {
   it("reads as people read sizes", () => {
@@ -47,5 +53,22 @@ describe("renamePlan", () => {
     expect(renamePlan("A.notebook.md", "  ")).toBeUndefined();
     expect(renamePlan("A.notebook.md", "A")).toBeUndefined();
     expect(renamePlan("plain.md", "B")).toBeUndefined();
+  });
+});
+
+describe("coverColorOfDocument", () => {
+  const page = (backdrop: unknown) => ({ backdrop }) as unknown as InkDocument["pages"][number];
+  const doc = (...pages: unknown[]) => ({ pages: pages.map(page) }) as unknown as InkDocument;
+
+  it("is the cover's colour when the first page is a cover", () => {
+    expect(coverColorOfDocument(doc({ kind: "cover-plain", paperColor: "#2f5d46" }))).toBe(
+      "#2f5d46",
+    );
+  });
+
+  it("is undefined without a cover: paper, a PDF, or no pages", () => {
+    expect(coverColorOfDocument(doc({ kind: "ruled-wide" }))).toBeUndefined();
+    expect(coverColorOfDocument(doc({ kind: "pdf", path: "a.pdf", page: 1 }))).toBeUndefined();
+    expect(coverColorOfDocument(doc())).toBeUndefined();
   });
 });
