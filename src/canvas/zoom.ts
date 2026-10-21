@@ -83,6 +83,20 @@ export function nextZoomFloor(options: {
 }
 
 /**
+ * How far a pinch must close past the zoom floor, as a multiple of the floor,
+ * for letting go to open the page overview (every page in a grid) instead of
+ * springing back to the page. At half the fit the rubber-banded page shows at
+ * about 0.8 of it: well past a zoom-out that only overshoots the fit on its
+ * way back (Joost, 2026-10-21).
+ */
+export const OVERVIEW_PINCH_ZOOM = 0.5;
+
+/** Whether a pinch whose fingers ask for zoom `raw` (unstretched) opens the overview. */
+export function pinchOpensOverview(raw: number, floor: number): boolean {
+  return floor > 0 && raw > 0 && raw <= floor * OVERVIEW_PINCH_ZOOM;
+}
+
+/**
  * The scroll, in screen px, that puts the layout point a pinch started on
  * back under the fingers. `was` is the layout point that was under them,
  * `now` the one under them at the new `scale`. One screen px of scroll

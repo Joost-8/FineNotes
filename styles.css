@@ -2056,6 +2056,18 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   opacity: 0.85;
 }
 
+/* A pinch closed far enough that letting go shows every page: the overview's grid, in the accent. */
+.goodobsidian-zoomreadout.is-overview {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-zoomreadout.is-overview svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* A thin thumb on the right edge (and the bottom one when zoomed in wide). */
 .goodobsidian-scrollthumb {
   position: absolute;

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { PAGE_MARGIN_Y } from "../../src/canvas/page-layout";
 import {
   MIN_SCALE,
+  OVERVIEW_PINCH_ZOOM,
   anchorScrollDelta,
+  pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
   wheelZoomFactor,
@@ -112,5 +114,29 @@ describe("nextZoomFloor", () => {
     expect(up).toEqual({ floor: 0.6, zoom: 0.6 });
     // Keyboard down, pane back to full height: still on the floor.
     expect(nextZoomFloor({ ...base, ...up, newFloor: 0.6 })).toEqual({ floor: 0.6, zoom: 0.6 });
+  });
+});
+
+describe("pinchOpensOverview", () => {
+  it("opens only once the fingers close well past the floor", () => {
+    const floor = 0.47;
+    expect(pinchOpensOverview(floor, floor)).toBe(false);
+    // A zoom-out that overshoots the fit on its way back springs back.
+    expect(pinchOpensOverview(floor * 0.8, floor)).toBe(false);
+    expect(pinchOpensOverview(floor * OVERVIEW_PINCH_ZOOM, floor)).toBe(true);
+    // Joost's recording: fingers at about a sixth of the fit.
+    expect(pinchOpensOverview(floor * 0.16, floor)).toBe(true);
+  });
+
+  it("refuses a missing floor or zoom", () => {
+    for (const [raw, floor] of [
+      [0, 0.5],
+      [-1, 0.5],
+      [Number.NaN, 0.5],
+      [0.1, 0],
+      [0.1, Number.NaN],
+    ]) {
+      expect(pinchOpensOverview(raw, floor)).toBe(false);
+    }
   });
 });

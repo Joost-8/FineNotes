@@ -452,6 +452,8 @@ export class InkView extends TextFileView {
   private askSession: AskSession | null = null;
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
+  /** The page sidebar was shut when a pinch opened the overview: shut it again after. */
+  private sidebarForOverview = false;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
   /** Recording, replay and audio transcription (0.5); see note-audio.ts. */
   private audio: NoteAudio | null = null;
@@ -2386,7 +2388,10 @@ export class InkView extends TextFileView {
         onMovePages: (indexes, gap) => this.movePages(indexes, gap),
         onSelectionAction: (action, indexes) => this.selectionAction(action, indexes),
         // The options pill floats over the page, which the overview covers.
-        onOverviewChange: (open) => root.toggleClass("goodobsidian-overview-open", open),
+        onOverviewChange: (open) => {
+          root.toggleClass("goodobsidian-overview-open", open);
+          if (!open) this.closeSidebarAfterOverview();
+        },
         listFiles: (kind) => this.listNotebookFiles(kind),
         onOpenFile: (kind, row) => this.openNotebookFile(kind, row),
         onFileKind: (kind) => (lastFileKind = kind),
@@ -2474,6 +2479,7 @@ export class InkView extends TextFileView {
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
+        onPinchOverview: () => this.openOverviewFromPinch(),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
@@ -3087,6 +3093,8 @@ export class InkView extends TextFileView {
     this.toolbar?.setAddPageVisible(!single && !practice);
     // A single page takes no more pages, and a protected note takes no edits.
     this.surface?.setPullToAddPage(!single && !practice && !this.guard.locked);
+    // The overview needs pages to show, as its ⤢ does.
+    this.surface?.setPinchToOverview(!single && !practice);
     this.sidebar?.setSingle(single, practice);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
@@ -3146,6 +3154,39 @@ export class InkView extends TextFileView {
     // The panel slides in (or out) while the page glides beside it, both
     // GoodNotes' 200 ms `ease`, instead of everything jumping in one frame.
     if (before) this.surface?.glideFrom(before, PANEL_SLIDE_MS);
+  }
+
+  /**
+   * A pinch closed well past the fit: every page, in the sidebar's overview.
+   * A shut sidebar opens under it, without its slide (the overview covers
+   * it), and shuts again when the overview closes.
+   */
+  private openOverviewFromPinch(): void {
+    const sidebar = this.sidebar;
+    if (!sidebar || sidebar.isOverview) return;
+    if (!sidebar.isOpen) {
+      this.chatPanel?.close();
+      sidebar.setOpen(true);
+      sidebar.setCurrentPage(this.surface?.currentPage ?? 0);
+      this.syncSidebarInset();
+      this.surface?.layout();
+      this.sidebarForOverview = true;
+    }
+    sidebar.setOverview(true, true);
+  }
+
+  /** The overview closed: shut the sidebar a pinch opened for it. */
+  private closeSidebarAfterOverview(): void {
+    if (!this.sidebarForOverview) return;
+    this.sidebarForOverview = false;
+    // After the sidebar's own call returns: closing the sidebar also closes
+    // the overview, and calls back here halfway through.
+    queueMicrotask(() => {
+      if (!this.sidebar?.isOpen || this.sidebar.isOverview) return;
+      this.sidebar.setOpen(false);
+      this.syncSidebarInset();
+      this.surface?.layout();
+    });
   }
 
   /** Keep the floating options pill over the page area, right of the sidebar. */

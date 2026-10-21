@@ -193,6 +193,7 @@ import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/st
 import {
   MAX_SCALE,
   anchorScrollDelta,
+  pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
   wheelZoomFactor,
@@ -679,6 +680,12 @@ export interface InkSurfaceCallbacks {
    * enables it with {@link InkSurface.setPullToAddPage}.
    */
   onPullAddPage?: () => void;
+  /**
+   * A pinch closed well past the fit and let go (`pinchOpensOverview`): show
+   * every page in the overview. Only while the host enables it with
+   * {@link InkSurface.setPinchToOverview}.
+   */
+  onPinchOverview?: () => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1244,6 +1251,15 @@ export class InkSurface {
   private pinch: { raw: number; centerX: number; centerY: number } | null = null;
   /** The zoom springing back inside its limits after a pinch overshot them. */
   private zoomAnim: { from: number; to: number; t0: number; cx: number; cy: number } | null = null;
+  /**
+   * A row settling on page `page`, centred, as a pinch lets go: `dx`, `dy`
+   * is how far off centre it was at `t0`, and it eases to nothing over the
+   * zoom spring's time, so the zoom and the centring land as one motion
+   * (`stepRowSettle`).
+   */
+  private rowSettle: { page: number; dx: number; dy: number; t0: number } | null = null;
+  /** Whether a pinch well past the fit opens the page overview (`setPinchToOverview`). */
+  private pinchOverviewEnabled = false;
   private wheelZoomTimer = 0;
   /** A wheel or trackpad scroll across a row of pages settles on a page when it stops. */
   private wheelSnapTimer = 0;
@@ -2382,6 +2398,7 @@ export class InkSurface {
   resetView(): void {
     this.pinch = null;
     this.zoomAnim = null;
+    this.rowSettle = null;
     this.userZoom = this.minZoom;
     this.ensurePaperSize();
     this.layout();
@@ -2455,6 +2472,11 @@ export class InkSurface {
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
+  }
+
+  /** Let (or stop) a pinch well past the fit open the page overview. The host knows single pages. */
+  setPinchToOverview(enabled: boolean): void {
+    this.pinchOverviewEnabled = enabled;
   }
 
   /** Let (or stop) a pull past the last page add a page. The host knows single pages. */
@@ -3060,7 +3082,8 @@ export class InkSurface {
       !this.scroller.isDragging &&
       !this.scroller.isAnimating &&
       this.pinch === null &&
-      this.zoomAnim === null
+      this.zoomAnim === null &&
+      this.rowSettle === null
     );
   }
 
@@ -3127,7 +3150,16 @@ export class InkSurface {
     this.syncScrollThumbs(true);
     this.chromeUntil.thumbs = t + THUMB_HOLD_MS;
     if (zoom) {
-      this.zoomReadoutEl.setText(`${zoomPercent(this.scale)}%`);
+      // Past the point where letting go opens the overview, the pill says so
+      // with the overview's symbol instead of a percentage.
+      if (!this.pinchOverviewArmed) {
+        this.zoomReadoutEl.removeClass("is-overview");
+        this.zoomReadoutEl.setText(`${zoomPercent(this.scale)}%`);
+      } else if (!this.zoomReadoutEl.hasClass("is-overview")) {
+        this.zoomReadoutEl.empty();
+        setIcon(this.zoomReadoutEl, "layout-grid");
+        this.zoomReadoutEl.addClass("is-overview");
+      }
       this.zoomReadoutEl.removeClass("is-idle");
       this.chromeUntil.zoom = t + ZOOM_READOUT_HOLD_MS;
     }
@@ -3212,7 +3244,9 @@ export class InkSurface {
     // here froze the spring for the length of the fling, then snapped it.
     const scrolling = this.scroller.step(t);
     const zooming = this.stepZoomAnim(t);
-    const moving = scrolling || zooming;
+    // After the zoom, which moves the view about the fingers' point.
+    const settling = this.stepRowSettle(t);
+    const moving = scrolling || zooming || settling;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
@@ -3511,6 +3545,65 @@ export class InkSurface {
     if (!this.snapRowAfterZoom) return;
     this.snapRowAfterZoom = false;
     if (this.turnsPages) this.snapToPage(0, this.pageIndex);
+  }
+
+  /**
+   * A pinch on a row let go where the row turns pages: carry the page being
+   * read into the centre while the zoom springs back, instead of snapping it
+   * there afterwards. A snap started mid-spring aimed at where the page was
+   * before the zoom moved it, and threw the view a page off (Joost's
+   * recording, 2026-10-21).
+   */
+  private startRowSettle(): void {
+    const page = this.pageIndex;
+    const { x, y } = this.scroller.position;
+    this.scroller.stop();
+    this.rowSettle = { page, dx: x - this.rowX(page), dy: y, t0: now() };
+    this.requestFrame();
+  }
+
+  /** Advance `rowSettle`; true while it moves. Anything else moving the view ends it. */
+  private stepRowSettle(t: number): boolean {
+    const settle = this.rowSettle;
+    if (!settle) return false;
+    if (this.scroller.isDragging || this.scroller.isAnimating || this.pinch) {
+      this.rowSettle = null;
+      return false;
+    }
+    const progress = (t - settle.t0) / ZOOM_SPRING_MS;
+    const left = progress >= 1 ? 0 : 1 - easeOutCubic(progress);
+    // Centred at the scale of this frame: the zoom may still be springing.
+    this.scroller.setPosition(this.rowX(settle.page) + settle.dx * left, settle.dy * left);
+    if (progress < 1) return true;
+    this.rowSettle = null;
+    return false;
+  }
+
+  /** The fingers of the pinch under way have closed far enough to open the overview. */
+  private get pinchOverviewArmed(): boolean {
+    return (
+      this.pinchOverviewEnabled &&
+      this.pinch !== null &&
+      pinchOpensOverview(this.pinch.raw, this.minZoom)
+    );
+  }
+
+  /**
+   * A pinch let go well past the fit: the host shows every page. The page
+   * goes back to the fit under the overview at once, centred, so it is
+   * there when the overview closes; the finger still down is done with.
+   */
+  private openOverviewFromPinch(): void {
+    this.zoomAnim = null;
+    this.rowSettle = null;
+    this.snapRowAfterZoom = false;
+    this.scroller.cancel();
+    this.applyZoom(this.minZoom, this.cssW / 2, this.cssH / 2);
+    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+    this.syncViewport();
+    this.zoomReadoutEl.addClass("is-idle");
+    this.callbacks.onPinchOverview?.();
+    this.requestFrame();
   }
 
   /**
@@ -4648,6 +4741,12 @@ export class InkSurface {
       }
       if (pulled) {
         this.callbacks.onPullAddPage?.();
+      } else if (this.snapRowAfterZoom && this.zoomAnim) {
+        // The last finger of a pinch: the page centres as the zoom springs back.
+        this.snapRowAfterZoom = false;
+        this.startRowSettle();
+      } else if (this.rowSettle) {
+        // Already settling on its page.
       } else if (this.turnsPages) {
         this.snapToPage(this.scroller.velocity.x, this.swipeFromPage);
       } else if (edgeTurn !== 0) {
@@ -4680,6 +4779,7 @@ export class InkSurface {
       this.fingerHold.end();
       if (this.imageDrag || this.groupDrag) return;
       this.zoomAnim = null;
+      this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
     },
     onPinch: (info) => {
@@ -4693,8 +4793,13 @@ export class InkSurface {
     },
     onPinchEnd: () => {
       const pinch = this.pinch;
+      const overview = this.pinchOverviewArmed;
       this.pinch = null;
       if (!pinch) return;
+      if (overview) {
+        this.openOverviewFromPinch();
+        return;
+      }
       this.settleHeldPage();
       this.syncInkCursor();
       const target = this.clampZoom(this.userZoom);
@@ -4710,8 +4815,15 @@ export class InkSurface {
           cx: pinch.centerX,
           cy: pinch.centerY,
         };
-      } else {
-        this.settleRowAfterZoom();
+      }
+      // No finger left: the page centres as the zoom springs back. With one
+      // still down, its release does that (`onPanEnd`).
+      if (this.snapRowAfterZoom && !this.scroller.isDragging) {
+        this.snapRowAfterZoom = false;
+        this.startRowSettle();
+      } else if (!this.zoomAnim) {
+        // Nothing to spring back: the release snaps to a page as a swipe does.
+        this.snapRowAfterZoom = false;
       }
       this.requestFrame();
     },
@@ -4757,6 +4869,7 @@ export class InkSurface {
 
   /** Show a word in the readout pill for `holdMs`, faded on the zoom readout's clock. */
   private flashReadout(text: string, holdMs = READOUT_WORD_HOLD_MS): void {
+    this.zoomReadoutEl.removeClass("is-overview");
     this.zoomReadoutEl.setText(text);
     this.zoomReadoutEl.removeClass("is-idle");
     this.chromeUntil.zoom = now() + holdMs;
@@ -4772,6 +4885,7 @@ export class InkSurface {
     cy: number;
   }): void {
     this.zoomAnim = null;
+    this.rowSettle = null;
     if (this.userZoom !== start.zoom) this.applyZoom(start.zoom, start.cx, start.cy);
     this.scroller.setPosition(start.x, start.y);
     this.syncViewport();
@@ -4793,6 +4907,7 @@ export class InkSurface {
     const zoomed = this.userZoom !== undo.zoom;
     if ((!zoomed && moved < 0.5) || !undoesPalm(now() - undo.t, moved)) return;
     this.zoomAnim = null;
+    this.rowSettle = null;
     if (zoomed) this.applyZoom(undo.zoom, undo.cx, undo.cy);
     this.scroller.setPosition(undo.x, undo.y);
     this.syncViewport();
@@ -4932,6 +5047,7 @@ export class InkSurface {
   private startZoomDrag(sample: Pt): void {
     const at = this.toClient(sample);
     this.zoomAnim = null;
+    this.rowSettle = null;
     this.zoomDrag = { from: this.userZoom, x: at.x, y: at.y };
   }
 

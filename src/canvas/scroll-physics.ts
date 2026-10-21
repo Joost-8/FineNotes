@@ -314,6 +314,11 @@ export class KineticScroller {
       this.glide.toX = clamp(this.glide.toX + dx, this.minX, this.maxX);
       this.glide.toY = clamp(this.glide.toY + dy, this.minY, this.maxY);
     }
+    // So does a snap's target: left behind, the spring pulled the view away
+    // from the page it was settling on while the zoom sprang back, a page off
+    // on an iPad (Joost's recording, 2026-10-21).
+    if (this.targetX !== null) this.targetX = clamp(this.targetX + dx, this.minX, this.maxX);
+    if (this.targetY !== null) this.targetY = clamp(this.targetY + dy, this.minY, this.maxY);
     if (this.drag) {
       this.drag.baseX += dx;
       this.drag.baseY += dy;
