@@ -529,6 +529,8 @@ export default class GoodObsidianPlugin extends Plugin {
     let due = performance.now() + STARTUP_TICK_MS;
     let timer = 0;
     const tick = (): void => {
+      // A plugin built in a test and never unloaded must not outlive its window.
+      if (typeof window === "undefined") return;
       const now = performance.now();
       this.startup.late(now - due);
       if (now >= end) {
