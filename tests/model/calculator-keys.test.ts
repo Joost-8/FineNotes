@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type MathBox, layoutWithEnding } from "../../src/model/calc-display";
-import { calculate, deleteLast } from "../../src/model/calculator";
+import { calculate, deleteLast, parseExpression } from "../../src/model/calculator";
 import {
   ACTIVE_BOX,
   CARET,
@@ -89,6 +89,11 @@ describe("calculator keypad", () => {
       const expr = exercise(k);
       // Hex digits are read as digits in base 16 only.
       const base = (k.digit ?? 0) >= 10 ? 16 : 10;
+      // d/dx(f) and ∫(f) are worked symbolically: they only need to read.
+      if (k.label === "d/dx" || k.label === "∫") {
+        expect(parseExpression(expr).ok, `${k.label}: ${expr}`).toBe(true);
+        continue;
+      }
       const result = calculate(expr, { base, angle: "rad" });
       expect(result.ok, `${k.label}: ${expr} ${result.ok ? "" : result.error}`).toBe(true);
     }
@@ -219,7 +224,7 @@ describe("typing", () => {
 
   it("says what a function's inputs are while the cursor is in them", () => {
     const at = (expr: string, cursor?: number) => hintFor({ expr, cursor, fresh: false });
-    expect(at("solve(▢ = ▢, ▢)", 6)).toMatch(/^solve\(f = g, near\)/);
+    expect(at("solve(▢ = ▢)", 6)).toMatch(/^solve\(f = g\)/);
     expect(at("d/dx(x², 3")).toMatch(/slope/);
     expect(at("∫(x, 0, 1")).toMatch(/area/);
     expect(at("2+log(8, ")).toMatch(/base b/);

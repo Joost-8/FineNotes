@@ -679,16 +679,13 @@ export class GraphPanel {
     });
     for (const slider of this.state.spec.sliders ?? []) this.renderSlider(list, slider);
     this.renderPins(list);
-    // GeoGebra's Input row: a line still to be typed.
+    // GeoGebra's Input row: an expression still to be typed (a function, an equation, points…).
     const add = list.createEl("button", {
       cls: "clickable-icon goodobsidian-calc-function goodobsidian-calc-add",
     });
     setIcon(add.createSpan({ cls: "goodobsidian-calc-add-icon" }), "plus");
-    add.createSpan({
-      cls: "goodobsidian-calc-add-text",
-      text: lines.length === 0 ? "y = …, x² + y² = 25, (cos t, sin t), r = θ …" : "Input",
-    });
-    add.setAttribute("aria-label", "Add a line");
+    add.createSpan({ cls: "goodobsidian-calc-add-text", text: "Expression" });
+    add.setAttribute("aria-label", "Add an expression");
     add.disabled = lines.length >= MAX_LINES;
     add.addEventListener("click", () => this.host.editLine(null));
   }

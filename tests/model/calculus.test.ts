@@ -140,7 +140,8 @@ describe("calculus in the calculator", () => {
     expect(show("Σ(x, 1.5, 3)")).toBe("! Σ counts in whole numbers");
     expect(show("Σ(x, 2, 1, 3)")).toBe("! Σ needs a letter to count with");
     expect(show("Σ(x, 1, 2000000)")).toBe("! Too many terms");
-    expect(show("d/dx(x)")).toBe("! d/dx takes 2 inputs");
+    expect(show("d/dx(x)")).toBe("! d/dx(f) is a function: d/dx(f, a) is its slope at a");
+    expect(show("∫(x)")).toBe("! ∫(f) is a function: ∫(f, a, b) is a number");
     expect(show("∫(1/x, -1, 1)")).toBe("! Integral does not converge");
     expect(show("solve(x^2+1, 0)")).toBe("! No root found");
     expect(show("x+1")).toBe("! Unknown name: x");

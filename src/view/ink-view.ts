@@ -1259,7 +1259,9 @@ export class InkView extends TextFileView {
     if (!page) return false;
     const style = textStyleOf(sanitizeTextStyle(this.settings.textStyle));
     // A first guess at the box's size, to centre it; the box fits its text.
-    const w = Math.max(80, text.length * style.fontSize * 0.55);
+    // Steps come as several lines: the widest one sets the width.
+    const longest = Math.max(...text.split("\n").map((line) => line.length));
+    const w = Math.max(80, longest * style.fontSize * 0.55);
     const at = centredOrigin(
       surface.visiblePageRect(index),
       page.geometry,
