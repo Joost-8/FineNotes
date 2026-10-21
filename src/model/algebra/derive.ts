@@ -228,7 +228,12 @@ function rewriteAll(e: Expr, v: string, rules: Set<string>): { expr: Expr } {
 }
 
 /** Whether two expressions agree as functions of x, at a few points where both are defined. */
-export function agree(a: Expr, b: Expr, v = "x", points = [0.37, 1.13, 2.71, -0.83, 0.61, -1.7]): boolean {
+export function agree(
+  a: Expr,
+  b: Expr,
+  v = "x",
+  points = [0.37, 1.13, 2.71, -0.83, 0.61, -1.7],
+): boolean {
   let tried = 0;
   for (const p of points) {
     const vars = new Map([[v, p]]);

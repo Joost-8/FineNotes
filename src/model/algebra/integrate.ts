@@ -146,13 +146,7 @@ export function linear(g: Expr, v: string): { a: Expr; b: Expr } | null {
 }
 
 /** One rule applied to ∫ f dv. */
-function rule(
-  f: Expr,
-  v: string,
-  rules: Set<string>,
-  pending: Pending[],
-  used: Set<string>,
-): Expr {
+function rule(f: Expr, v: string, rules: Set<string>, pending: Pending[], used: Set<string>): Expr {
   const x = sym(v);
   if (free(f, v)) {
     rules.add("Integral of a constant");
@@ -192,7 +186,9 @@ function rule(
   }
   const substituted = substitution(f, v, used);
   if (substituted) {
-    rules.add(`Substitute ${substituted.u} = ${plain(substituted.g)}, d${substituted.u} = ${plain(substituted.dg)} d${v}`);
+    rules.add(
+      `Substitute ${substituted.u} = ${plain(substituted.g)}, d${substituted.u} = ${plain(substituted.dg)} d${v}`,
+    );
     pending.push({ v: substituted.u, by: substituted.g });
     used.add(substituted.u);
     return integral(substituted.h, substituted.u);
@@ -308,7 +304,9 @@ function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
       case "log":
         return named(div(sub(mul(g, fn("ln", g)), g), fn("ln", num(10))));
       case "atan":
-        return named(sub(mul(g, fn("atan", g)), mul(num(1, 2), fn("ln", add(ONE, pow(g, num(2)))))));
+        return named(
+          sub(mul(g, fn("atan", g)), mul(num(1, 2), fn("ln", add(ONE, pow(g, num(2)))))),
+        );
       case "asin":
         return named(add(mul(g, fn("asin", g)), sqrt(sub(ONE, pow(g, num(2))))));
       case "acos":
@@ -337,10 +335,7 @@ function rationalRule(f: Expr, v: string): { result: Expr; rule: string } | null
   if (trim(N).length >= trim(D).length) {
     const { quotient, remainder } = divide(N, D);
     return {
-      result: add(
-        later(fromPoly(quotient, v), v),
-        later(div(fromPoly(remainder, v), Dx), v),
-      ),
+      result: add(later(fromPoly(quotient, v), v), later(div(fromPoly(remainder, v), Dx), v)),
       rule: "Polynomial division",
     };
   }
@@ -359,10 +354,7 @@ function rationalRule(f: Expr, v: string): { result: Expr; rule: string } | null
     const alpha = qdiv(N[1], dD[1]);
     const beta = qadd(N[0], qneg(qmul(alpha, dD[0])));
     return {
-      result: add(
-        mul(numQ(alpha), fn("ln", fn("abs", Dx))),
-        later(div(numQ(beta), Dx), v),
-      ),
+      result: add(mul(numQ(alpha), fn("ln", fn("abs", Dx))), later(div(numQ(beta), Dx), v)),
       rule: "Split the numerator",
     };
   }

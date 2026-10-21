@@ -815,11 +815,12 @@ for (const [name, fn] of MORE_FUNCTIONS) (FUNCTIONS as Map<string, CalcFunction>
 
 /** The calculus functions take an expression in a variable, so they see their first argument unevaluated. */
 const CALCULUS: Readonly<Record<string, { label: string; min: number; max: number }>> = {
-  deriv: { label: "d/dx", min: 2, max: 2 },
-  integral: { label: "∫", min: 3, max: 3 },
+  // d/dx(f) and ∫(f) are worked symbolically (model/algebra); with a point or limits they are numbers.
+  deriv: { label: "d/dx", min: 1, max: 2 },
+  integral: { label: "∫", min: 1, max: 3 },
   sum: { label: "Σ", min: 3, max: 4 },
   prod: { label: "Π", min: 3, max: 4 },
-  solve: { label: "solve", min: 2, max: 3 },
+  solve: { label: "solve", min: 1, max: 3 },
   lim: { label: "lim", min: 2, max: 2 },
 };
 
@@ -1347,17 +1348,19 @@ function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
       return numeric(limit(realFunction(args[0], env, VARIABLE), to));
     }
     case "deriv":
+      if (args.length < 2) return fail("d/dx(f) is a function: d/dx(f, a) is its slope at a");
       return numeric(derivative(realFunction(args[0], env, VARIABLE), value(args[1])));
     case "integral":
+      if (args.length < 3) return fail("∫(f) is a function: ∫(f, a, b) is a number");
       return numeric(
         integrate(realFunction(args[0], env, VARIABLE), value(args[1]), value(args[2])),
       );
     case "solve": {
       const f = realFunction(difference(args[0]), env, VARIABLE);
       return numeric(
-        args.length === 2
-          ? solveNear(f, value(args[1]))
-          : solveIn(f, value(args[1]), value(args[2])),
+        args.length === 3
+          ? solveIn(f, value(args[1]), value(args[2]))
+          : solveNear(f, args.length === 2 ? value(args[1]) : 0),
       );
     }
     default:
@@ -1510,15 +1513,23 @@ function compileCalculus(node: Extract<CalcNode, { k: "call" }>, args: Compiled[
     r.ok ? r.value : NaN;
   switch (node.fn) {
     case "deriv":
-      return (vars) => value(derivative(bind(vars, VARIABLE), args[1](vars)));
+      // d/dx(f) on a graph is f′ itself: the slope at each x.
+      return (vars) =>
+        value(
+          derivative(
+            bind(vars, VARIABLE),
+            args.length > 1 ? args[1](vars) : (vars.get(VARIABLE) ?? NaN),
+          ),
+        );
     case "integral":
+      if (args.length < 3) return () => NaN;
       return (vars) => value(integrate(bind(vars, VARIABLE), args[1](vars), args[2](vars)));
     case "solve":
       return (vars) =>
         value(
-          args.length === 2
-            ? solveNear(bind(vars, VARIABLE), args[1](vars))
-            : solveIn(bind(vars, VARIABLE), args[1](vars), args[2](vars)),
+          args.length === 3
+            ? solveIn(bind(vars, VARIABLE), args[1](vars), args[2](vars))
+            : solveNear(bind(vars, VARIABLE), args.length === 2 ? args[1](vars) : 0),
         );
     case "lim":
       return (vars) => value(limit(bind(vars, VARIABLE), args[1](vars)));

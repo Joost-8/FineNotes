@@ -193,7 +193,11 @@ export function add(...parts: Expr[]): Expr {
     terms.push(withCoefficient(coef, rest));
   }
   terms.sort(compareTerms);
-  if (constant.n !== 0n) terms.push(numQ(constant));
+  // 5 − √13 and π/6 + 2πk: a sum with no x starts with its number.
+  if (constant.n !== 0n) {
+    if (terms.every((t) => free(t, "x"))) terms.unshift(numQ(constant));
+    else terms.push(numQ(constant));
+  }
   if (terms.length === 0) return ZERO;
   if (terms.length === 1) return terms[0];
   return { t: "add", terms };
@@ -349,7 +353,11 @@ function numPower(b: Q, e: Q): Expr {
   }
   // Two radicals of numbers (a numerator's and a denominator's) multiply into one.
   if (factors.length === 2) {
-    const [a, b2] = factors as Array<{ t: "pow"; base: { t: "num"; v: Q }; exp: { t: "num"; v: Q } }>;
+    const [a, b2] = factors as Array<{
+      t: "pow";
+      base: { t: "num"; v: Q };
+      exp: { t: "num"; v: Q };
+    }>;
     if (qeq(a.exp.v, b2.exp.v)) return mul(numQ(coef), pow(numQ(qmul(a.base.v, b2.base.v)), a.exp));
   }
   if (factors.length === 0) return numQ(coef);
@@ -475,6 +483,11 @@ function degree(e: Expr): number {
   return 0;
 }
 
+/** Whether `e` has a letter other than x, π and e (a parameter such as k). */
+function hasParameter(e: Expr): boolean {
+  return nodes(e).some((n) => n.t === "sym" && !["x", "pi", "e"].includes(n.name));
+}
+
 function compareTerms(a: Expr, b: Expr): number {
   // The constant of integration always last.
   const ca = a.t === "sym" && a.name === "C" ? 1 : 0;
@@ -486,6 +499,10 @@ function compareTerms(a: Expr, b: Expr): number {
   const fa = free(a, "x") ? 1 : 0;
   const fb = free(b, "x") ? 1 : 0;
   if (fa !== fb) return fa - fb;
+  // Terms with a parameter (2πk) after those without (π/6).
+  const pa = hasParameter(a) ? 1 : 0;
+  const pb = hasParameter(b) ? 1 : 0;
+  if (pa !== pb) return pa - pb;
   const ka = key(a);
   const kb = key(b);
   return ka < kb ? -1 : ka > kb ? 1 : 0;
@@ -783,8 +800,11 @@ function printProduct(factors: readonly Expr[]): string {
   // Juxtaposed, as written by hand: 2x, x sin(x), 3(x + 1).
   let numerator = "";
   for (const part of parts) {
+    // A letter or digit before a letter would run into it (x^2 cos, 2x sin): a space there.
     const glue =
-      numerator === "" || /^[0-9]+$/.test(numerator) || /^[(√]/.test(part) ? "" : " ";
+      !/^[0-9]*$/.test(numerator) && /[A-Za-z0-9]$/.test(numerator) && /^[A-Za-z]/.test(part)
+        ? " "
+        : "";
     numerator += glue + part;
   }
   if (coef.d !== 1n) bottom.unshift(num(coef.d));

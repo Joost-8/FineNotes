@@ -48,19 +48,12 @@ import {
   qnum,
   qsub,
   replace,
+  splitCoefficient,
   sqrt,
   sub,
   sym,
 } from "./expr";
-import {
-  MAX_DEGREE,
-  degree,
-  factorPoly,
-  fromPoly,
-  linearFactor,
-  toPoly,
-  trim,
-} from "./poly";
+import { MAX_DEGREE, degree, factorPoly, fromPoly, linearFactor, toPoly, trim } from "./poly";
 
 /** A line of working: what was done, and the equations it left (several are joined by "or"). */
 export interface SolveStep {
@@ -177,9 +170,14 @@ function mulOut(e: Expr, m: Expr): Expr {
 function linearSolve(p: Q[], v: string, steps: SolveStep[]): Solution {
   const [b, a] = p;
   const x = sym(v);
-  if (b.n !== 0n) steps.push({ rule: `Move ${plain(numQ(b))} to the other side`, math: [pair(mul(numQ(a), x), numQ(qneg(b)))] });
+  if (b.n !== 0n)
+    steps.push({
+      rule: `Move ${plain(numQ(b))} to the other side`,
+      math: [pair(mul(numQ(a), x), numQ(qneg(b)))],
+    });
   const root = qdiv(qneg(b), a);
-  if (!(a.n === 1n && a.d === 1n)) steps.push({ rule: `Divide both sides by ${plain(numQ(a))}`, math: [pair(x, numQ(root))] });
+  if (!(a.n === 1n && a.d === 1n))
+    steps.push({ rule: `Divide both sides by ${plain(numQ(a))}`, math: [pair(x, numQ(root))] });
   return { values: [numQ(root)], approx: false, steps };
 }
 
@@ -236,10 +234,15 @@ function quadraticFormula(p: Q[], v: string, steps: SolveStep[]): Solution {
   }
   const root = sqrt(numQ(disc));
   const two = numQ(qmul(q(2), a));
-  const values =
-    disc.n === 0n
-      ? [div(numQ(qneg(b)), two)]
-      : [div(sub(numQ(qneg(b)), root), two), div(add(numQ(qneg(b)), root), two)];
+  // 1 ± √3 when 2a divides both parts, (5 ± √13)/2 when it does not.
+  const first = div(numQ(qneg(b)), two);
+  const second = div(root, two);
+  const whole = [first, second].every((t) => splitCoefficient(t).coef.d === 1n);
+  const value = (sign: 1 | -1): Expr =>
+    whole
+      ? add(first, sign < 0 ? neg(second) : second)
+      : div(add(numQ(qneg(b)), sign < 0 ? neg(root) : root), two);
+  const values = disc.n === 0n ? [first] : [value(-1), value(1)];
   values.sort((x, y) => evaluate(x) - evaluate(y));
   steps.push({ rule: "Simplify", math: answerExpr(values, v) });
   return { values, approx: false, steps };
@@ -308,7 +311,8 @@ function isolate(
         // u^n = r → u = r^(1/n), ± for an even whole n.
         const n = l.exp;
         if (n.t === "num" && qint(n.v) && n.v.n % 2n === 0n) {
-          if (evaluate(r) < 0) return { values: [], approx: false, message: "No real solution", steps };
+          if (evaluate(r) < 0)
+            return { values: [], approx: false, message: "No real solution", steps };
           const root = pow(r, div(ONE, n));
           if (isNum(root, 0)) {
             l = l.base;
@@ -316,28 +320,45 @@ function isolate(
             steps.push({ rule: `Take the ${ordinal(n)} root`, math: [pair(l, r)] });
             continue;
           }
-          return branches(l.base, [root, neg(root)], v, angle, steps, `Take the ${ordinal(n)} root of both sides`);
+          return branches(
+            l.base,
+            [root, neg(root)],
+            v,
+            angle,
+            steps,
+            `Take the ${ordinal(n)} root of both sides`,
+          );
         }
-        if (n.t === "num" && n.v.n < 0n && evaluate(r) === 0) return { values: [], approx: false, message: "No solution", steps };
+        if (n.t === "num" && n.v.n < 0n && evaluate(r) === 0)
+          return { values: [], approx: false, message: "No solution", steps };
         if (n.t === "num" && n.v.d === 2n && evaluate(r) < 0)
           return { values: [], approx: false, message: "No real solution", steps };
         r = pow(r, div(ONE, n));
         l = l.base;
         steps.push({
-          rule: n.t === "num" && n.v.n === 1n && n.v.d === 2n ? "Square both sides" : `Raise both sides to the power ${plain(div(ONE, n))}`,
+          rule:
+            n.t === "num" && n.v.n === 1n && n.v.d === 2n
+              ? "Square both sides"
+              : `Raise both sides to the power ${plain(div(ONE, n))}`,
           math: [pair(l, r)],
         });
         continue;
       }
       if (free(l.base, v)) {
         // a^u = r → u = ln(r)/ln(a); e^u = r → u = ln(r).
-        if (evaluate(r) <= 0) return { values: [], approx: false, message: "No real solution", steps };
+        if (evaluate(r) <= 0)
+          return { values: [], approx: false, message: "No real solution", steps };
         const base = l.base;
         const exact = exactLog(base, r);
-        r = exact ?? (base.t === "sym" && base.name === "e" ? fn("ln", r) : div(fn("ln", r), fn("ln", base)));
+        r =
+          exact ??
+          (base.t === "sym" && base.name === "e" ? fn("ln", r) : div(fn("ln", r), fn("ln", base)));
         l = l.exp;
         steps.push({
-          rule: base.t === "sym" && base.name === "e" ? "Take ln of both sides" : `Take the logarithm base ${plain(base)}`,
+          rule:
+            base.t === "sym" && base.name === "e"
+              ? "Take ln of both sides"
+              : `Take the logarithm base ${plain(base)}`,
           math: [pair(l, r)],
         });
         continue;
@@ -427,7 +448,11 @@ function trigFamily(
   const full = angle === "deg" ? num(360) : mul(num(2), PI);
   const half = angle === "deg" ? num(180) : PI;
   const principal = exactInverse(name, r, angle);
-  const base = principal ?? (angle === "deg" ? mul(num(180), div(fn(`a${name}` as "asin", r), PI)) : fn(`a${name}` as "asin", r));
+  const base =
+    principal ??
+    (angle === "deg"
+      ? mul(num(180), div(fn(`a${name}` as "asin", r), PI))
+      : fn(`a${name}` as "asin", r));
   let rights: Expr[];
   if (name === "sin") rights = [add(base, mul(full, k)), add(sub(half, base), mul(full, k))];
   else if (name === "cos") rights = [add(base, mul(full, k)), add(neg(base), mul(full, k))];
@@ -452,7 +477,7 @@ function exactInverse(name: "sin" | "cos" | "tan", r: Expr, angle: "deg" | "rad"
   const candidates: Q[] = [];
   for (let n = -12; n <= 12; n++) candidates.push(q(n, 12));
   const range =
-    name === "acos" as string || name === "cos"
+    name === ("acos" as string) || name === "cos"
       ? candidates.filter((t) => qcmp(t, q(0)) >= 0 && qcmp(t, q(1)) <= 0)
       : candidates.filter((t) => qcmp(t, q(-1, 2)) >= 0 && qcmp(t, q(1, 2)) <= 0);
   const target = evaluate(r);
@@ -477,7 +502,12 @@ function exactInverse(name: "sin" | "cos" | "tan", r: Expr, angle: "deg" | "rad"
 // --- Numbers -----------------------------------------------------------------------
 
 /** Real roots of f in [−100, 100]: sign changes, then bisection. */
-export function numericRoots(f: (x: number) => number, from = -100, to = 100, samples = 4000): number[] {
+export function numericRoots(
+  f: (x: number) => number,
+  from = -100,
+  to = 100,
+  samples = 4000,
+): number[] {
   const roots: number[] = [];
   const step = (to - from) / samples;
   let x0 = from;
@@ -503,7 +533,8 @@ export function numericRoots(f: (x: number) => number, from = -100, to = 100, sa
         }
         const root = (a + b) / 2;
         // A jump through a pole changes sign too: keep only where f is small.
-        if (Math.abs(f(root)) < 1e-6 * Math.max(1, Math.abs(f0), Math.abs(f1))) pushRoot(roots, root);
+        if (Math.abs(f(root)) < 1e-6 * Math.max(1, Math.abs(f0), Math.abs(f1)))
+          pushRoot(roots, root);
       }
     }
     x0 = x1;
@@ -526,7 +557,8 @@ function numeric(e: Expr, v: string, angle: "deg" | "rad", steps: SolveStep[]): 
     return evaluate(degreesIn(e), vars) * 1 + 0 * scale;
   };
   const roots = numericRoots(f);
-  if (roots.length === 0) return { values: [], approx: true, message: "No solution found between −100 and 100", steps };
+  if (roots.length === 0)
+    return { values: [], approx: true, message: "No solution found between −100 and 100", steps };
   if (roots.length > 12) throw new AlgebraError("Too many solutions to list");
   return {
     values: roots.map((r) => num(Math.round(r * 1e9), 1e9)),

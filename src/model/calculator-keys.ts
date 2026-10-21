@@ -214,24 +214,24 @@ const TRIG: KeyRows = [
 
 const CALCULUS: KeyRows = [
   [
-    fn("d/dx", `d/dx(${BOX}, ${BOX})`, "d/dx(f, a): the slope of f at x = a"),
-    fn("∫", `∫(${BOX}, ${BOX}, ${BOX})`, "∫(f, a, b): the area under f from x = a to b"),
+    fn("d/dx", `d/dx(${BOX})`, "d/dx(f): the derivative of f, with its steps"),
+    fn("∫", `∫(${BOX})`, "∫(f): the antiderivative of f, with its steps"),
     fn("Σ", `Σ(${BOX}, ${BOX}, ${BOX})`, "Σ(f, a, b): f added up for x = a, a+1, …, b"),
     fn("Π", `Π(${BOX}, ${BOX}, ${BOX})`, "Π(f, a, b): f multiplied for x = a, a+1, …, b"),
     fn("lim", `lim(${BOX}, ${BOX})`, "lim(f, a): the value f approaches as x → a (a may be ∞)"),
-    fn(
-      "solve",
-      `solve(${BOX} = ${BOX}, ${BOX})`,
-      "solve(f = g, near): the x where f = g, nearest to near",
-    ),
+    fn("solve", `solve(${BOX} = ${BOX})`, "solve(f = g): every x where f = g, with the steps"),
   ],
   [
     fn("x", "x", "The variable x", { aria: "variable x" }),
     fn("∞", "∞", "Infinity, as a limit's target: lim(1/x, ∞)", { aria: "infinity" }),
     fn("π", "π", "Pi, 3.14159…", { aria: "pi" }),
     fn("e", "e", "Euler's number, 2.71828…"),
-    null,
-    null,
+    fn("∫ₐᵇ", `∫(${BOX}, ${BOX}, ${BOX})`, "∫(f, a, b): the area under f from x = a to b", {
+      aria: "definite integral",
+    }),
+    fn("f′(a)", `d/dx(${BOX}, ${BOX})`, "d/dx(f, a): the slope of f at x = a", {
+      aria: "slope at a point",
+    }),
   ],
   [null, null, null, null, null, null],
 ];
@@ -649,9 +649,9 @@ export function toEnd(entry: Entry): Entry {
 
 /** What each function's inputs are, for the line under the display while one is being filled. */
 const HINTS: ReadonlyArray<[RegExp, string]> = [
-  [/solve$/, "solve(f = g, near): the x where f = g, closest to near"],
-  [/d\/dx$/, "d/dx(f, a): the slope of f at x = a"],
-  [/∫$/, "∫(f, a, b): area under f from x = a to x = b"],
+  [/solve$/, "solve(f = g): every x where f = g"],
+  [/d\/dx$/, "d/dx(f) is the derivative; d/dx(f, a) the slope at x = a"],
+  [/∫$/, "∫(f) is the antiderivative; ∫(f, a, b) the area from a to b"],
   [/Σ$/, "Σ(f, a, b): f added for x = a … b; Σ(f, i, a, b) counts with i"],
   [/Π$/, "Π(f, a, b): f multiplied for x = a … b"],
   [/lim$/, "lim(f, a): what f tends to as x → a; a may be ∞"],
