@@ -368,7 +368,7 @@ import {
   toggleList,
 } from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
-import { revealDelta } from "./text-reveal";
+import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
 import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
 import { History, historyNotice } from "../model/history";
@@ -1202,6 +1202,11 @@ export class InkSurface {
     tool: ActiveTool;
     returnTool: ActiveTool | null;
   } | null = null;
+  /**
+   * The held or typed-in box, and where the view was when it last showed:
+   * `dropTextOutOfSight` lets it go only once the view has moved since.
+   */
+  private textSeen: { view: TextBoxView; at: ViewSpot } | null = null;
   /** Set while a box is parked: its blur must not hand the Text tool back. */
   private parkingText = false;
   /** The last rectangle handed to `onTextAnchor`, rounded, as a key ("" for none). */
@@ -4444,6 +4449,8 @@ export class InkSurface {
     this.ensurePaperSize();
     const position = this.scroller.position;
     this.scroller.setPosition(position.x, position.y + delta);
+    // Scrolled to show the box, not away from it: where it is seen from next.
+    this.textSeen = null;
     this.syncViewport();
     this.requestFrame();
     return true;
@@ -9970,16 +9977,23 @@ export class InkSurface {
    */
   private dropTextOutOfSight(): void {
     const view = this.heldText ?? this.editingTextView();
-    if (!view) return;
+    if (!view) {
+      this.textSeen = null;
+      return;
+    }
     const box = view.root.getBoundingClientRect();
     if (box.width === 0 && box.height === 0) return;
     const page = this.surfaceEl.getBoundingClientRect();
-    const showing =
-      box.bottom > page.top &&
-      box.top < page.bottom &&
-      box.right > page.left &&
-      box.left < page.right;
-    if (showing) return;
+    const at = { x: this.scroller.position.x, y: this.scroller.position.y, scale: this.scale };
+    const seen = this.textSeen?.view === view ? this.textSeen.at : null;
+    if (!seen || showsIn(box, page)) {
+      this.textSeen = { view, at };
+      return;
+    }
+    // Only the view moving carries a box away: the pane shrinking under it
+    // (the iPad keyboard opening) does not (`carriedOutOfSight`).
+    if (!carriedOutOfSight(box, page, seen, at)) return;
+    this.textSeen = null;
     const parked = { view, tool: this.toolState.tool, returnTool: this.heldReturnTool };
     // The keyboard goes. With the lasso the blur keeps the box held, which
     // is let go next; the Text tool must not hand itself back.
