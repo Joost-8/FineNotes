@@ -91,6 +91,8 @@ const MIN_POINTS = 2;
 const MIN_SPAN = 24;
 /** Closedness also scales with the stroke: a big loop may leave a big gap. */
 const CLOSE_SPAN_FRACTION = 0.1;
+/** A loop's closing gap never exceeds this share of the stroke's diagonal. */
+const CLOSE_MAX_SPAN_FRACTION = 0.25;
 
 /** Line: max perpendicular deviation as a fraction of end-to-end span. A
  *  quick Pencil line bows ~2–3% of its span; a 45° arc measures ~6.6%. */
@@ -2184,7 +2186,13 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
   if (diag < MIN_SPAN) return { ...none, n: points.length, diag };
 
   const pressure = meanPressure(pts);
-  const tolerance = Math.max(closeTolerance, CLOSE_SPAN_FRACTION * diag);
+  // The gap that closes a loop is also bounded by the stroke's own size: a
+  // 28 px glyph (a handwritten "1" with its tick) sat inside the fixed 24 px
+  // and read as a closed loop, then as a triangle.
+  const tolerance = Math.min(
+    Math.max(closeTolerance, CLOSE_SPAN_FRACTION * diag),
+    CLOSE_MAX_SPAN_FRACTION * diag,
+  );
 
   // Closed shapes are fitted to the cleaned stroke. Open ones see the raw
   // points as well: an arrow's last barb is a hook by any local measure, and
