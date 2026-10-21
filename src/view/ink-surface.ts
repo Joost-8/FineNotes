@@ -3922,12 +3922,19 @@ export class InkSurface {
    * Build a box's shown text from its typed text: plain runs as text, links
    * as their shown text in a span that opens them. A box with no links shows
    * its textarea alone (`has-links` is off).
+   *
+   * A checklist's boxes are spans that tick on a tap. A box with boxes but no
+   * links (`has-checks`) keeps its textarea shown and only the boxes of the
+   * copy take taps, laid exactly over the textarea's own: on the iPad, a tap
+   * on the words of a see-through textarea brought the keyboard up and
+   * straight down again (2.5.1).
    */
   private renderShownText(view: TextBoxView, text: string): void {
     if (view.shownText === text) return;
     view.shownText = text;
     view.shown.empty();
     let links = 0;
+    let checks = 0;
     // A checklist's boxes (2.5) are tappable like links: a tap ticks one.
     const boxes = taskBoxes(text);
     let at = 0;
@@ -3947,7 +3954,7 @@ export class InkSurface {
           });
           this.bindTextTask(check, view, box.line, !box.done);
           done = box.offset - from + 1;
-          links++;
+          checks++;
         }
         view.shown.appendText(segment.text.slice(done));
         continue;
@@ -3961,6 +3968,7 @@ export class InkSurface {
       this.bindTextLink(link, target);
     }
     view.root.toggleClass("has-links", links > 0);
+    view.root.toggleClass("has-checks", checks > 0 && links === 0);
   }
 
   /**

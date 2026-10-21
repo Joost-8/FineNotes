@@ -1966,8 +1966,29 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
 
 /* A checklist's box in a text box (2.5): a tap ticks it. */
 .goodobsidian-textbox-check {
+  position: relative;
   cursor: pointer;
   pointer-events: auto;
+}
+
+/* A larger target than the glyph, which is a few px wide at fit zoom. */
+.goodobsidian-textbox-check::before {
+  content: "";
+  position: absolute;
+  inset: -0.35em -0.3em;
+}
+
+/* A box with checklist boxes and no links (2.5.1): its textarea stays shown
+   and the copy over it is laid out but unseen, all but its boxes, which are
+   see-through too and take the taps over the textarea's own glyphs. */
+.goodobsidian-page-textbox.has-checks:not(:focus-within) .goodobsidian-page-textbox-view {
+  display: block;
+  visibility: hidden;
+}
+
+.goodobsidian-page-textbox.has-checks .goodobsidian-textbox-check {
+  visibility: visible;
+  color: transparent;
 }
 
 .goodobsidian-surface.is-lasso .goodobsidian-textbox-link,

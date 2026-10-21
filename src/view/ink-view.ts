@@ -208,7 +208,8 @@ import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
-import { pageHits, searchMatchTarget } from "../search/hit-strokes";
+import { type ReadLine, lineHits, pageHits, searchMatchTarget } from "../search/hit-strokes";
+import { inkBounds } from "../model/tasks";
 import {
   type LexiconSuggestion,
   SUGGEST_MARGIN,
@@ -363,6 +364,8 @@ interface PageWords {
   /** Every stroke on its read lines, and each line's text. */
   read: Set<string>;
   lines: string[];
+  /** Each line's text and its ink's word groups, for search to find words in (2.5.1). */
+  readLines: ReadLine[];
   /** The worker's id for it, while it keeps its log-probabilities. */
   id?: number;
 }
@@ -2177,6 +2180,7 @@ export class InkView extends TextFileView {
       words: readWords(reading.lines),
       read: new Set(reading.lines.flatMap((line) => line.strokeIds)),
       lines: reading.lines.map((line) => line.text),
+      readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
       id: reading.id,
     };
     this.pageReadings.set(page.id, entry);
@@ -2923,21 +2927,22 @@ export class InkView extends TextFileView {
     if (!surface || !page) return;
     surface.setSearchHits(null);
     surface.goToPage(index, true);
-    let words: ReadWord[] = [];
+    let lines: ReadLine[] = [];
     const hash = pageContentHash(page);
     const kept = this.pageReadings.get(page.id);
-    if (kept && kept.hash === hash) words = kept.words;
+    if (kept && kept.hash === hash) lines = kept.readLines;
     else if (this.settings.handwritingOnDevice !== false && page.strokes.length > 0) {
       try {
         const reading = await this.plugin.handwriting.readPage(page.strokes, true);
         if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-        words = this.keepReading(page, hash, reading).words;
+        lines = this.keepReading(page, hash, reading).readLines;
       } catch {
         // No model, or the page could not be read: the text boxes still light up.
       }
     }
-    const hits = pageHits(query, words, page.textBoxes);
-    surface.setSearchHits(page.id, hits.words, hits.boxes);
+    const words = lineHits(query, lines, (ids) => inkBounds(page, ids));
+    const { boxes } = pageHits(query, [], page.textBoxes);
+    surface.setSearchHits(page.id, words, boxes);
   }
 
   /**

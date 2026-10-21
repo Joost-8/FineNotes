@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { pageHits, searchMatchTarget } from "../../src/search/hit-strokes";
+import { lineHits, pageHits, searchMatchTarget } from "../../src/search/hit-strokes";
 
 const words = [
   { text: "Mitochondria", strokeIds: ["s1", "s2"] },
@@ -32,6 +32,44 @@ describe("pageHits", () => {
 
   it("finds nothing for an empty query", () => {
     expect(pageHits("  ", words, [{ id: "t1", text: "x" }])).toEqual({ words: [], boxes: [] });
+  });
+});
+
+describe("lineHits", () => {
+  // Each stroke id is a 40 px wide word group at x = its index × 50.
+  const boundsOf = (ids: readonly string[]) => {
+    const xs = ids.map((id) => Number(id.slice(1)) * 50);
+    return { minX: Math.min(...xs), maxX: Math.max(...xs) + 40 };
+  };
+
+  it("takes the word group of a word when the line's counts agree", () => {
+    const lines = [{ text: "Input port functions", words: [["g0"], ["g1"], ["g2"]] }];
+    expect(lineHits("port", lines, boundsOf)).toEqual([["g1"]]);
+  });
+
+  it("places a word by its share of the line when the ink has more groups", () => {
+    // "Routing" was written in two pieces: six groups for three words.
+    const lines = [
+      { text: "Routing determines paths", words: [["g0"], ["g1"], ["g2"], ["g3"], ["g4"], ["g5"]] },
+    ];
+    expect(lineHits("routing", lines, boundsOf)).toEqual([["g0", "g1"]]);
+    expect(lineHits("determines", lines, boundsOf)).toEqual([["g2", "g3", "g4"]]);
+    expect(lineHits("paths", lines, boundsOf)).toEqual([["g5"]]);
+  });
+
+  it("takes a misread word when nothing holds the query exactly", () => {
+    const lines = [{ text: "Fowarding: move packets", words: [["g0"], ["g1"], ["g2"]] }];
+    expect(lineHits("forwarding", lines, boundsOf)).toEqual([["g0"]]);
+    // A title "CRT" read as "CRI" (Joost's Algebra notebook, page 14) is found.
+    expect(lineHits("crt", [{ text: "CRI", words: [["g0"]] }], boundsOf)).toEqual([["g0"]]);
+    // Two letters are never guessed at, nor is a word two letters off.
+    expect(lineHits("ab", [{ text: "ac", words: [["g0"]] }], boundsOf)).toEqual([]);
+    expect(lineHits("crt", [{ text: "CIA", words: [["g0"]] }], boundsOf)).toEqual([]);
+  });
+
+  it("prefers exact hits over near ones", () => {
+    const lines = [{ text: "packet packets", words: [["g0"], ["g1"]] }];
+    expect(lineHits("packets", lines, boundsOf)).toEqual([["g1"]]);
   });
 });
 
