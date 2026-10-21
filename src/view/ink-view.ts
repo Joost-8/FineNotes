@@ -208,6 +208,7 @@ import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import { pageHits, searchMatchTarget } from "../search/hit-strokes";
 import {
   type LexiconSuggestion,
   SUGGEST_MARGIN,
@@ -421,6 +422,8 @@ export class InkView extends TextFileView {
   private pendingSubpath: string | null = null;
   /** Back/Forward's page (0-based), until the pages have loaded. */
   private pendingPageIndex: number | null = null;
+  /** A result of Obsidian's own search, to light up on its page once it shows (2.5). */
+  private pendingSearch: { pageIndex: number; query: string } | null = null;
   /**
    * The file this leaf has put on its remembered page. A second load of the
    * same file (a sync touched it) keeps the reader where they are.
@@ -2892,8 +2895,37 @@ export class InkView extends TextFileView {
       index: pages,
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
-      goTo: (index) => this.surface?.goToPage(index, true),
+      goTo: (index, query) => void this.showSearchHits(index, query),
     }).open();
+  }
+
+  /**
+   * Turn to page `index` and light up what `query` found there (2.5): the
+   * handwritten words, from this device's reading of the page (read now if
+   * the one kept is out of date), and the text boxes. Without on-device
+   * reading only the text boxes light up.
+   */
+  private async showSearchHits(index: number, query: string): Promise<void> {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page) return;
+    surface.setSearchHits(null);
+    surface.goToPage(index, true);
+    let words: ReadWord[] = [];
+    const hash = pageContentHash(page);
+    const kept = this.pageReadings.get(page.id);
+    if (kept && kept.hash === hash) words = kept.words;
+    else if (this.settings.handwritingOnDevice !== false && page.strokes.length > 0) {
+      try {
+        const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+        if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+        words = this.keepReading(page, hash, reading).words;
+      } catch {
+        // No model, or the page could not be read: the text boxes still light up.
+      }
+    }
+    const hits = pageHits(query, words, page.textBoxes);
+    surface.setSearchHits(page.id, hits.words, hits.boxes);
   }
 
   /**
@@ -2903,8 +2935,20 @@ export class InkView extends TextFileView {
    */
   override setEphemeralState(state: unknown): void {
     super.setEphemeralState(state);
-    const { subpath, pageIndex } = (state ?? {}) as { subpath?: unknown; pageIndex?: unknown };
-    if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
+    const { subpath, pageIndex, match } = (state ?? {}) as {
+      subpath?: unknown;
+      pageIndex?: unknown;
+      match?: { content?: unknown; matches?: unknown };
+    };
+    // A result of Obsidian's own search: its page, with the words lit up (2.5).
+    const found =
+      typeof match?.content === "string" && Array.isArray(match.matches)
+        ? searchMatchTarget(match.content, match.matches as Array<[number, number]>)
+        : null;
+    if (found) {
+      this.pendingSearch = found;
+      this.pendingPageIndex = found.pageIndex;
+    } else if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
     else if (typeof pageIndex === "number" && Number.isInteger(pageIndex) && pageIndex >= 0) {
       // Back or Forward: the page this note was on then (see getEphemeralState).
       this.pendingPageIndex = pageIndex;
@@ -2952,6 +2996,9 @@ export class InkView extends TextFileView {
       index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);
+    const search = this.pendingSearch;
+    this.pendingSearch = null;
+    if (search && search.pageIndex === index) void this.showSearchHits(index, search.query);
   }
 
   // --- Where each notebook was left ---------------------------------------------

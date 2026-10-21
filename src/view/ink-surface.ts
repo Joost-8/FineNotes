@@ -491,6 +491,8 @@ const COUNTER_HOLD_MS = 1800;
 const ZOOM_READOUT_HOLD_MS = 2000;
 /** The gap between linked ink and its underline, screen px. */
 const LINK_UNDERLINE_GAP_PX = 3;
+/** Room left round a word a search lit up, screen px. */
+const SEARCH_MARK_PAD = 3;
 /** Below a flagged word's ink, in screen px, to its dotted underline. */
 const WORD_FLAG_GAP_PX = 5;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
@@ -1495,6 +1497,9 @@ export class InkSurface {
   private readonly linkMarks: HTMLElement[] = [];
   /** A box beside each handwritten task, which a tap ticks (2.5). */
   private readonly taskMarks: HTMLElement[] = [];
+  /** What the search result last opened found on its page, lit until the page is touched (2.5). */
+  private searchHits: { pageId: string; words: string[][]; boxes: string[] } | null = null;
+  private readonly searchMarks: HTMLElement[] = [];
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words Grape may have misread, by page id: a wavy underline each. */
@@ -8551,7 +8556,8 @@ export class InkSurface {
     for (let i = used; i < this.sectionRibbons.length; i++) {
       this.sectionRibbons[i].addClass("is-hidden");
     }
-    const linked = this.syncLinkMarks() + this.syncWordMarks() + this.syncTaskMarks();
+    const linked =
+      this.syncLinkMarks() + this.syncWordMarks() + this.syncTaskMarks() + this.syncSearchMarks();
     this.sectionRibbonsEl.toggleClass("is-hidden", used === 0 && linked === 0);
   }
 
@@ -8634,6 +8640,73 @@ export class InkSurface {
       }
     }
     for (let i = used; i < this.taskMarks.length; i++) this.taskMarks[i].addClass("is-hidden");
+    return used;
+  }
+
+  /**
+   * Light up what a search found on a page (2.5): each word's ink under a
+   * soft highlight, and each text box holding the words, and glide to the
+   * first of them. They stay until the page is next touched or edited, or
+   * another search is opened; `null` puts them out.
+   */
+  setSearchHits(pageId: string | null, words: string[][] = [], boxes: string[] = []): void {
+    const had = this.searchHits !== null;
+    this.searchHits =
+      pageId !== null && (words.length > 0 || boxes.length > 0) ? { pageId, words, boxes } : null;
+    if (!had && !this.searchHits) return;
+    for (const view of this.textBoxInputs.values()) {
+      view.root.toggleClass(
+        "is-search-hit",
+        this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id),
+      );
+    }
+    this.syncSectionRibbons();
+    const hits = this.searchHits;
+    if (!hits) return;
+    const index = this.doc.pages.findIndex((page) => page.id === hits.pageId);
+    const page = this.doc.pages[index];
+    if (!page) return;
+    // Glide to the first hit: the highest word, or the highest box.
+    const tops = [
+      ...hits.words.flatMap((ids) => inkBounds(page, ids)?.minY ?? []),
+      ...page.textBoxes.filter((box) => hits.boxes.includes(box.id)).map((box) => box.y),
+    ];
+    if (tops.length > 0) this.goToPagePoint(index, Math.min(...tops), true);
+    // The next press on the page puts them out.
+    this.surfaceEl.addEventListener("pointerdown", () => this.setSearchHits(null), {
+      capture: true,
+      once: true,
+    });
+  }
+
+  /** A soft highlight over each word the last search found. Returns how many are shown. */
+  private syncSearchMarks(): number {
+    let used = 0;
+    const hits = this.searchHits;
+    const box = hits ? this.boxForPage(hits.pageId) : null;
+    const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
+    if (hits && box && page) {
+      const scale = this.unitScale;
+      for (const ids of hits.words) {
+        const bounds = inkBounds(page, ids);
+        if (!bounds) continue;
+        let mark = this.searchMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-search-mark" });
+          this.searchMarks.push(mark);
+        }
+        const pad = SEARCH_MARK_PAD / scale;
+        mark.removeClass("is-hidden");
+        mark.setCssStyles({
+          left: `${(box.x + bounds.minX - pad) * scale}px`,
+          top: `${(box.y + bounds.minY - pad) * scale}px`,
+          width: `${(bounds.maxX - bounds.minX + 2 * pad) * scale}px`,
+          height: `${(bounds.maxY - bounds.minY + 2 * pad) * scale}px`,
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.searchMarks.length; i++) this.searchMarks[i].addClass("is-hidden");
     return used;
   }
 

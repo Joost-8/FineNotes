@@ -6702,6 +6702,32 @@ input[type="range"].goodobsidian-player-scrubber {
   display: none;
 }
 
+/* A word a search found, lit as a highlighter would (2.5), until the page is next touched. */
+.goodobsidian-search-mark {
+  position: absolute;
+  border-radius: 4px;
+  background: hsla(var(--interactive-accent-hsl), 0.22);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+  animation: goodobsidian-search-pulse 1.2s var(--gob-ease-out) 1;
+}
+
+.goodobsidian-search-mark.is-hidden {
+  display: none;
+}
+
+@keyframes goodobsidian-search-pulse {
+  0% {
+    box-shadow: 0 0 0 6px hsla(var(--interactive-accent-hsl), 0.35);
+  }
+}
+
+/* A text box holding a word a search found. */
+.goodobsidian-page-textbox.is-search-hit {
+  border-radius: 4px;
+  background: hsla(var(--interactive-accent-hsl), 0.16);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+}
+
 /* A handwritten task's box beside its ink (2.5), in the ink's colour (set
    inline); a tap ticks it. The export draws the same box (paintTaskBox). */
 .goodobsidian-task-mark {

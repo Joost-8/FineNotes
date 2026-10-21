@@ -135,6 +135,7 @@ export default defineConfig({
         "src/export/annotation-layers.ts",
         "src/export/page-range.ts",
         "src/search/notebook-search.ts",
+        "src/search/hit-strokes.ts",
         "src/search/link-choices.ts",
         "src/util/errors.ts",
       ],
