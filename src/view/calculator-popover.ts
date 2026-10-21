@@ -486,6 +486,8 @@ export class CalculatorPopover {
     this.hideTip();
     this.bodyEl.empty();
     this.bodyEl.className = `goodobsidian-calc-body is-${this.pane}`;
+    // On the graph, Insert graph sits under the list, by the thumb (styles.css).
+    this.el.toggleClass("is-graphing", this.pane === "graph");
     for (const [pane, button] of this.paneButtons) {
       const on = pane === this.pane;
       button.toggleClass("is-active", on);
@@ -997,8 +999,7 @@ export class CalculatorPopover {
   }
 
   private hint(): string {
-    if (this.pane === "graph")
-      return "Tap a curve for its point; hold to pin it. Two fingers zoom.";
+    if (this.pane === "graph") return "";
     const hint = hintFor(this.entry);
     if (hint) return hint;
     if (this.editingLine !== null && this.entry.expr === "") {

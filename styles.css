@@ -10348,7 +10348,9 @@ button.clickable-icon.goodobsidian-calc-clear {
   font-size: var(--font-ui-small);
 }
 
-/* The graph: Desmos' list above its canvas. */
+/* The graph, as GeoGebra lays it out: the canvas on top and the list
+   under it; from 480 px wide (`is-wide`, calculator-graph.ts) the list sits
+   on the left, so the plot keeps the whole height. */
 .goodobsidian-calc-graph {
   display: flex;
   flex: 1 1 auto;
@@ -10357,15 +10359,32 @@ button.clickable-icon.goodobsidian-calc-clear {
   min-height: 0;
 }
 
+.goodobsidian-calc-graph.is-wide {
+  flex-direction: row-reverse;
+  gap: 8px;
+}
+
 .goodobsidian-calc-functions {
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
   gap: 2px;
-  max-height: 200px;
+  max-height: 42%;
   min-height: 40px;
   overflow-y: auto;
   touch-action: pan-y;
+}
+
+.goodobsidian-calc-graph.is-wide .goodobsidian-calc-functions {
+  flex: 0 0 clamp(200px, 40%, 300px);
+  max-height: none;
+  min-width: 0;
+}
+
+/* The selected line: its curve is drawn heavier and only it shows its points. */
+.goodobsidian-calc-function.is-selected {
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-active-bg);
 }
 
 .goodobsidian-calc-function {
@@ -10432,17 +10451,50 @@ button.clickable-icon.goodobsidian-calc-play {
   color: var(--text-muted);
 }
 
+/* The Input row: a line still to be typed, set like the lines above it. */
 button.clickable-icon.goodobsidian-calc-function.goodobsidian-calc-add {
   justify-content: flex-start;
   gap: 8px;
   height: auto;
-  padding: 0 10px;
+  padding: 0 10px 0 12px;
   border-radius: var(--gob-radius-m);
-  box-shadow: inset 0 0 0 1px var(--gob-line);
   color: var(--gob-active-fg);
   font-size: var(--font-ui-small);
   white-space: normal;
   text-align: left;
+}
+
+.goodobsidian-calc-add-text {
+  color: var(--text-faint);
+}
+
+/* A pinned point's row: its line's colour, its name and where it is. */
+.goodobsidian-calc-pin-dot {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 40px;
+}
+
+.goodobsidian-calc-pin-dot::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.goodobsidian-calc-pin-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 button.clickable-icon.goodobsidian-calc-add:disabled {
@@ -10537,9 +10589,14 @@ button.clickable-icon.goodobsidian-calc-chip.is-danger {
   min-height: 40px;
 }
 
-.goodobsidian-calc-slider-value {
+button.clickable-icon.goodobsidian-calc-slider-value {
   flex: 0 0 auto;
+  justify-content: flex-start;
   min-width: 64px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: var(--gob-radius-s);
+  color: var(--text-normal);
   font-style: italic;
   font-variant-numeric: tabular-nums;
 }
@@ -10549,6 +10606,17 @@ input[type="range"].goodobsidian-calc-slider-range {
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
+}
+
+/* Beside the plot the list is narrow: the slider takes a row of its own under its name. */
+.goodobsidian-calc-graph.is-wide .goodobsidian-calc-slider-top {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.goodobsidian-calc-graph.is-wide input[type="range"].goodobsidian-calc-slider-range {
+  order: 3;
+  flex-basis: 100%;
 }
 
 .goodobsidian-calc-slider-bounds {
@@ -10709,12 +10777,25 @@ button.clickable-icon.goodobsidian-calc-window-button {
   padding: 0 8px 8px;
 }
 
-.goodobsidian-graph-window .goodobsidian-calc-functions {
-  max-height: 34%;
+.goodobsidian-graph-window .goodobsidian-calc-graph:not(.is-wide) .goodobsidian-calc-functions {
+  max-height: 40%;
 }
 
 .goodobsidian-graph-window .goodobsidian-calc-canvas {
   min-height: 120px;
+}
+
+/* On the graph, Insert graph moves under the list and the hint line goes. */
+.goodobsidian-calc.is-graphing .goodobsidian-calc-body {
+  order: 1;
+}
+
+.goodobsidian-calc.is-graphing .goodobsidian-calc-actions {
+  order: 2;
+}
+
+.goodobsidian-calc.is-graphing .goodobsidian-calc-hint {
+  display: none;
 }
 
 /* The corner to resize from: a 28 px target over the graph's corner. */

@@ -31,7 +31,7 @@ import {
 
 /** Desmos' order of colours, for lines without one of their own. */
 export const LINE_COLORS = ["#2d70b3", "#c74440", "#388c46", "#6042a6", "#e07400", "#1a1a1a"];
-export const DEFAULT_LINE_WIDTH = 2.25;
+export const DEFAULT_LINE_WIDTH = 2.5;
 
 /** An implicit region's coverage, one byte (0–255) per grid cell, row by row from the top. */
 export interface RegionMask {

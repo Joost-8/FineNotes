@@ -502,7 +502,7 @@ export interface GraphSpecData {
   /** Trig in degrees or radians; absent means radians. */
   angle?: "deg" | "rad";
   /** Points pinned on function lines (by line id), kept with their labels. */
-  pins?: Array<{ line: string; x: number }>;
+  pins?: Array<{ line: string; x: number; name?: string }>;
   [field: string]: unknown;
 }
 

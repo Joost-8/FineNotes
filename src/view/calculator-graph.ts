@@ -1,16 +1,20 @@
 /**
- * The calculator's graph pane, Desmos-style: the list of lines (with their
- * sliders) above, the canvas below.
+ * The calculator's graph pane, laid out as GeoGebra's: the canvas on top
+ * and the list of lines under it, or the list on the left once the pane is
+ * wide enough ({@link WIDE_MIN_PX}), so the plot keeps its height.
  *
  * - **List.** A dot per line in its colour (tap it to hide or show the
- *   line), the line as math (tap it to edit it on the keys), and ⋯ for its
- *   options: dashed, width, derivative, tangent, ∫ area, table, move up or
- *   down, delete. Any other letter in a line gets a slider row with a play
- *   button and editable min, step and max.
+ *   line), the line as math (tap it to select it and edit it on the keys),
+ *   and ⋯ for its options: dashed, width, derivative, tangent, ∫ area,
+ *   table, move up or down, delete. Any other letter in a line gets a
+ *   slider row with a play button; a tap on its name folds out min, step
+ *   and max. Pinned points follow as rows of their own, named A, B, …, and
+ *   the Input row adds a line.
  * - **Canvas.** One finger (or the Pencil, or a mouse) pans, two pinch, a
- *   wheel zooms, a double tap fits the curves. A tap on a grey dot (a root,
- *   an extremum, an intercept, an intersection) or on a curve shows its
- *   point; tap and hold pins it, and a tap on a pin takes it away. ⚙ opens
+ *   wheel zooms, a double tap fits the curves. A tap on a curve selects its
+ *   line and shows the point; only the selected line shows its points of
+ *   interest (roots, extrema, intercepts, intersections), as rings, and a
+ *   tap beside the curves lets it go. Tap and hold pins a point. ⚙ opens
  *   the view: grid, numbers, 1:1 axes, π ticks and the range.
  *
  * The maths is `model/graph-lines.ts` and `model/graph-sample.ts`, the
@@ -32,6 +36,7 @@ import {
   MAX_SPAN,
   MIN_SPAN,
   defaultRange,
+  nextPinName,
   fitRange,
   panRange,
   toScreen,
@@ -69,6 +74,8 @@ export interface GraphState {
    * Desmos does, rather than stretching the graph.
    */
   drawn?: { w: number; h: number };
+  /** The selected line, in every panel showing the graph; not stored. */
+  selected?: string;
 }
 
 export function newGraphState(spec?: GraphSpec): GraphState {
@@ -94,6 +101,10 @@ export interface GraphPanelHost {
   drawMath(parent: HTMLElement, text: string): void;
 }
 
+/** From this width (CSS px) the list sits left of the canvas rather than under it. */
+const WIDE_MIN_PX = 480;
+/** The most points pinned on one graph. */
+const MAX_PINS = 12;
 const TAP_SLOP_PX = 8;
 const TAP_MS = 300;
 const HOLD_MS = 500;
@@ -135,6 +146,10 @@ export class GraphPanel {
   /** The moving grid's cell, adapted to how long moving frames take. */
   private movingCell = CELL_MOVING;
   private openOptions: string | null = null;
+  /** The slider whose min, step and max are folded out. */
+  private openBounds: string | null = null;
+  /** Line ids at the last compile: a new one is selected. */
+  private knownLines: Set<string> | null = null;
   private playing: string | null = null;
   private playDir = 1;
   private playFrame = 0;
@@ -160,8 +175,8 @@ export class GraphPanel {
     private readonly host: GraphPanelHost,
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-calc-graph" });
-    this.list = this.el.createDiv({ cls: "goodobsidian-calc-functions" });
     this.wrap = this.el.createDiv({ cls: "goodobsidian-calc-canvas" });
+    this.list = this.el.createDiv({ cls: "goodobsidian-calc-functions" });
     this.canvas = this.wrap.createEl("canvas");
     this.canvas.setAttribute("role", "img");
     this.canvas.setAttribute("aria-label", "Graph");
@@ -183,8 +198,19 @@ export class GraphPanel {
     if (typeof ResizeObserver === "function") {
       const observer = new ResizeObserver(() => this.schedule());
       observer.observe(this.wrap);
-      this.dispose.push(() => observer.disconnect());
+      const shape = new ResizeObserver(() => this.reflow());
+      shape.observe(this.el);
+      this.dispose.push(() => {
+        observer.disconnect();
+        shape.disconnect();
+      });
     }
+  }
+
+  /** List beside the canvas when the pane is wide, under it when narrow. */
+  private reflow(): void {
+    const wide = this.el.clientWidth >= WIDE_MIN_PX;
+    if (wide !== this.el.hasClass("is-wide")) this.el.toggleClass("is-wide", wide);
   }
 
   /** The graph as a plain object: lines, sliders, view and range. */
@@ -294,16 +320,19 @@ export class GraphPanel {
       const index = spec.lines?.findIndex((l) => l.id === pin.line) ?? -1;
       const y = valueOfLine(prepared, pin.line, pin.x);
       if (index < 0 || !Number.isFinite(y)) return [];
-      return [{ x: pin.x, y, color: this.colorOf(index), label: pointLabel(pin.x, y) }];
+      const label = pointLabel(pin.x, y);
+      return [{ x: pin.x, y, color: this.colorOf(index), label, name: pin.name }];
     });
+    this.showPinValues(pins);
     paintGraphGeometry(ctx, { x: 0, y: 0, w, h }, range, this.geometry, {
       colors: this.colors(),
       fontFamily: getComputedStyle(this.canvas).fontFamily || "sans-serif",
       grid: spec.grid !== false,
       labels: spec.labels !== false,
       piTicks: spec.piTicks === true,
-      pois: busy ? [] : this.pois,
+      pois: busy ? [] : this.selectedPois(),
       pins,
+      ...(this.state.selected ? { selected: this.state.selected } : {}),
       ...(this.marker ? { trace: this.marker } : {}),
     });
     const took = performance.now() - started;
@@ -333,6 +362,34 @@ export class GraphPanel {
     }, 150);
   }
 
+  /** Only the selected line shows its points of interest (Desmos and GeoGebra alike). */
+  private selectedPois(): Poi[] {
+    const id = this.state.selected;
+    return id ? this.pois.filter((poi) => poi.lines.includes(id)) : [];
+  }
+
+  /** Select a line (null: none), in every panel showing the graph. */
+  private select(id: string | null): void {
+    if ((this.state.selected ?? null) === id) return;
+    if (id === null) delete this.state.selected;
+    else this.state.selected = id;
+    for (const row of Array.from(this.list.querySelectorAll<HTMLElement>("[data-line]"))) {
+      row.toggleClass("is-selected", row.dataset.line === id);
+    }
+    this.schedule();
+    graphChanged(this.state, this);
+  }
+
+  /** Each pin's row shows where it is now (a slider moves it). */
+  private showPinValues(pins: ReadonlyArray<{ name?: string; x: number; y: number }>): void {
+    for (const pin of pins) {
+      if (!pin.name) continue;
+      this.list
+        .querySelector(`[data-pin="${pin.name}"] .goodobsidian-calc-pin-value`)
+        ?.setText(`${pin.name} = ${listPoint(pin.x, pin.y)}`);
+    }
+  }
+
   private schedule(): void {
     if (this.paused) {
       this.pending = true;
@@ -350,6 +407,16 @@ export class GraphPanel {
     spec.sliders = this.prepared.sliders;
     this.poisKey = "";
     this.pois = [];
+    // A line just added (or typed again) is the one selected; a deleted one lets go.
+    const ids = new Set((spec.lines ?? []).map((l) => l.id));
+    const added = this.knownLines ? [...ids].filter((id) => !this.knownLines?.has(id)) : [];
+    if (added.length > 0) this.state.selected = added[added.length - 1];
+    if (this.state.selected && !ids.has(this.state.selected)) delete this.state.selected;
+    this.knownLines = ids;
+    // Pins from before pins had names get theirs now.
+    for (const pin of spec.pins ?? []) {
+      if (!pin.name) pin.name = nextPinName(spec.pins ?? []) ?? undefined;
+    }
   }
 
   private dark(): boolean {
@@ -554,7 +621,9 @@ export class GraphPanel {
       const line = lines[index];
       if (!line) return;
       const row = list.createDiv({ cls: "goodobsidian-calc-function" });
+      row.dataset.line = line.id;
       row.toggleClass("is-hidden-line", line.hidden === true);
+      row.toggleClass("is-selected", this.state.selected === line.id);
       const dot = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-swatch",
         attr: {
@@ -577,7 +646,10 @@ export class GraphPanel {
       if (plot.kind === "error") {
         text.createDiv({ cls: "goodobsidian-calc-function-error", text: plot.error });
       }
-      text.addEventListener("click", () => this.host.editLine(line.id));
+      text.addEventListener("click", () => {
+        this.select(line.id);
+        this.host.editLine(line.id);
+      });
       const more = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-more",
         attr: {
@@ -606,15 +678,15 @@ export class GraphPanel {
       }
     });
     for (const slider of this.state.spec.sliders ?? []) this.renderSlider(list, slider);
+    this.renderPins(list);
+    // GeoGebra's Input row: a line still to be typed.
     const add = list.createEl("button", {
       cls: "clickable-icon goodobsidian-calc-function goodobsidian-calc-add",
     });
     setIcon(add.createSpan({ cls: "goodobsidian-calc-add-icon" }), "plus");
     add.createSpan({
-      text:
-        lines.length === 0
-          ? "Add a line: y = …, x² + y² = 25, (cos t, sin t), r = θ …"
-          : "Add a line",
+      cls: "goodobsidian-calc-add-text",
+      text: lines.length === 0 ? "y = …, x² + y² = 25, (cos t, sin t), r = θ …" : "Input",
     });
     add.setAttribute("aria-label", "Add a line");
     add.disabled = lines.length >= MAX_LINES;
@@ -696,6 +768,8 @@ export class GraphPanel {
     toggle("Down", false, () => this.move(index, 1), index < this.lines().length - 1);
     const remove = toggle("Delete", false, () => {
       this.lines().splice(index, 1);
+      const spec = this.state.spec;
+      if (spec.pins) spec.pins = spec.pins.filter((pin) => pin.line !== line.id);
       this.openOptions = null;
     });
     remove.addClass("is-danger");
@@ -738,7 +812,16 @@ export class GraphPanel {
     const row = list.createDiv({ cls: "goodobsidian-calc-slider" });
     row.dataset.slider = slider.name;
     const top = row.createDiv({ cls: "goodobsidian-calc-slider-top" });
-    const value = top.createSpan({ cls: "goodobsidian-calc-slider-value" });
+    const open = this.openBounds === slider.name;
+    // The name folds out min, step and max: they are set once, the slider is used often.
+    const value = top.createEl("button", {
+      cls: "clickable-icon goodobsidian-calc-slider-value",
+      attr: { "aria-label": `Range of ${slider.name}`, "aria-expanded": String(open) },
+    });
+    value.addEventListener("click", () => {
+      this.openBounds = open ? null : slider.name;
+      this.renderList();
+    });
     const show = (): void =>
       value.setText(`${slider.name} = ${Number(slider.value.toPrecision(4))}`);
     show();
@@ -767,6 +850,7 @@ export class GraphPanel {
     });
     setIcon(play, this.playing === slider.name ? "pause" : "play");
     play.addEventListener("click", () => this.togglePlay(slider.name));
+    if (!open) return;
     const bounds = row.createDiv({ cls: "goodobsidian-calc-slider-bounds" });
     for (const [key, label] of [
       ["min", "min"],
@@ -782,6 +866,35 @@ export class GraphPanel {
         slider[key] = v;
         if (slider.min >= slider.max) slider.max = slider.min + 1;
         slider.value = Math.min(slider.max, Math.max(slider.min, slider.value));
+        this.renderList();
+        this.schedule();
+        this.changed();
+      });
+    }
+  }
+
+  /** Pinned points as rows: a dot in their line's colour, "A = (x, y)", and a cross to take it away. */
+  private renderPins(list: HTMLElement): void {
+    const spec = this.state.spec;
+    for (const pin of spec.pins ?? []) {
+      const index = this.lines().findIndex((l) => l.id === pin.line);
+      if (index < 0 || !pin.name) continue;
+      const row = list.createDiv({ cls: "goodobsidian-calc-function goodobsidian-calc-pin" });
+      row.dataset.pin = pin.name;
+      const dot = row.createSpan({ cls: "goodobsidian-calc-pin-dot" });
+      dot.setCssStyles({ color: this.colorOf(index) });
+      const y = this.prepared ? valueOfLine(this.prepared, pin.line, pin.x) : NaN;
+      row.createSpan({
+        cls: "goodobsidian-calc-pin-value",
+        text: `${pin.name} = ${Number.isFinite(y) ? listPoint(pin.x, y) : "—"}`,
+      });
+      const remove = row.createEl("button", {
+        cls: "clickable-icon goodobsidian-calc-more",
+        attr: { "aria-label": `Remove point ${pin.name}` },
+      });
+      setIcon(remove, "x");
+      remove.addEventListener("click", () => {
+        spec.pins = (spec.pins ?? []).filter((p) => p !== pin);
         this.renderList();
         this.schedule();
         this.changed();
@@ -985,7 +1098,7 @@ export class GraphPanel {
     const range = this.range();
     let best: Poi | null = null;
     let bestPx = 16;
-    for (const poi of this.pois) {
+    for (const poi of this.selectedPois()) {
       const s = toScreen(range, w, h, poi.x, poi.y);
       const d = Math.hypot(s.px - p.x, s.py - p.y);
       if (d <= bestPx) {
@@ -995,7 +1108,9 @@ export class GraphPanel {
     }
     if (best) {
       const label = `${poiName(best)} ${pointLabel(best.x, best.y)}`;
-      return { x: best.x, y: best.y, color: this.colors().poi, label };
+      const index = this.lines().findIndex((l) => l.id === this.state.selected);
+      const color = index >= 0 ? this.colorOf(index) : this.colors().poi;
+      return { x: best.x, y: best.y, color, label };
     }
     const prepared = this.prepared;
     if (!prepared) return null;
@@ -1025,7 +1140,7 @@ export class GraphPanel {
       this.setView(this.fitted(this.range()));
       return;
     }
-    // A tap on a pin takes it away.
+    // A tap on a pin shows where it is; its row's cross takes it away.
     const pins = this.state.spec.pins ?? [];
     const w = this.wrap.clientWidth;
     const h = this.wrap.clientHeight;
@@ -1037,14 +1152,19 @@ export class GraphPanel {
       const s = toScreen(range, w, h, pin.x, y);
       return Math.hypot(s.px - p.x, s.py - p.y) < 14;
     });
-    if (onPin >= 0) {
-      pins.splice(onPin, 1);
-      this.marker = null;
+    if (onPin >= 0 && prepared) {
+      const pin = pins[onPin];
+      const y = valueOfLine(prepared, pin.line, pin.x);
+      const index = this.lines().findIndex((l) => l.id === pin.line);
+      const label = `${pin.name ?? ""} ${pointLabel(pin.x, y)}`.trim();
+      this.marker = { x: pin.x, y, color: this.colorOf(index), label, line: pin.line };
       this.schedule();
-      this.changed();
       return;
     }
     this.marker = this.hit(p);
+    // A tap on a curve selects its line; a tap beside every curve lets it go.
+    if (this.marker?.line) this.select(this.marker.line);
+    else if (!this.marker) this.select(null);
     this.schedule();
   }
 
@@ -1053,11 +1173,28 @@ export class GraphPanel {
     const hit = this.hit(p);
     if (!hit?.line) return;
     const spec = this.state.spec;
-    spec.pins = [...(spec.pins ?? []), { line: hit.line, x: hit.x }].slice(-12);
+    const pins = spec.pins ?? [];
+    const name = nextPinName(pins);
+    if (!name || pins.length >= MAX_PINS) return;
+    spec.pins = [...pins, { line: hit.line, x: hit.x, name }];
+    this.select(hit.line);
     this.marker = null;
+    this.renderList();
     this.schedule();
     this.changed();
   }
+}
+
+/** A point in the list, as GeoGebra's algebra view rounds it: two decimals (a tap on it shows more). */
+function listPoint(x: number, y: number): string {
+  const short = (v: number): string => {
+    const text =
+      Math.abs(v) >= 1e5 || (v !== 0 && Math.abs(v) < 5e-3)
+        ? v.toExponential(2)
+        : `${Number(v.toFixed(2))}`;
+    return text.replace("-", "−");
+  };
+  return `(${short(x)}, ${short(y)})`;
 }
 
 function midpoint(a: Pointer, b: Pointer): Pointer {
