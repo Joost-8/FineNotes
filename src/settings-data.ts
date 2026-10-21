@@ -258,11 +258,14 @@ export interface GoodObsidianSettings {
   straightHighlighter: boolean;
 
   /**
-   * The settings tab's sections shown folded, by id. Checked where read
-   * ({@link foldedSectionsOf}). It replaced `openSettingsSections` (the open
-   * ones), so everyone starts again from the new default.
+   * The settings tab's sections shown open, by id; every other one is
+   * folded. Checked where read ({@link openSectionsOf}). It replaced
+   * `foldedSettingsSections` (2026-10-21, the compact settings), which is
+   * dropped on load, so everyone starts with every section folded.
    */
-  foldedSettingsSections: string[];
+  settingsOpen: string[];
+  /** The iPad's "switch off Scribble" tip was dismissed with its ✕. */
+  scribbleTipDismissed: boolean;
 
   /**
    * The calculator's switches and its history per notebook path. Checked
@@ -344,42 +347,122 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penCursor: "ink",
   straightHighlighter: true,
 
-  foldedSettingsSections: ["pens", "shortcuts"],
+  settingsOpen: [],
+  scribbleTipDismissed: false,
 };
 
-// --- Folded settings sections ----------------------------------------------------
+// --- Settings sections -----------------------------------------------------------
 
 /**
- * The parts of the settings tab that fold, by the id `foldedSettingsSections`
- * keeps: the sections, and the shortcut list inside "Pens and shortcuts".
- * Ids, not headings, so a renamed heading keeps its state.
+ * The settings tab's sections, by the id `settingsOpen` keeps. Ids, not
+ * headings, so a renamed heading keeps its state.
  */
 export const SETTINGS_SECTIONS = [
   "writing",
   "pens",
-  "shortcuts",
   "pages",
   "on-device",
   "ai",
   "advanced",
-  "support",
-  "community",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
-
-/** Folded on a fresh install: "Pens and shortcuts" (the longest) and its shortcut list. */
-export const DEFAULT_FOLDED_SECTIONS: readonly SettingsSection[] = ["pens", "shortcuts"];
 
 function isSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
 /**
- * The folded sections a stored value names, in the tab's order, once each.
- * Anything but a list (a missing key, a hand-edited file) is the default;
- * ids this build does not know are dropped.
+ * The open sections a stored value names, in the tab's order, once each.
+ * Anything but a list (a missing key, a hand-edited file) opens none; ids
+ * this build does not know are dropped.
  */
+export function openSectionsOf(raw: unknown): SettingsSection[] {
+  if (!Array.isArray(raw)) return [];
+  return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
+}
+
+/**
+ * Whether `id` is shown open. `alone`: one section open at a time (on an
+ * iPad or a phone), so of several stored open (synced from a computer) only
+ * the first is.
+ */
+export function sectionOpen(raw: unknown, id: SettingsSection, alone = false): boolean {
+  const open = openSectionsOf(raw);
+  return alone ? open[0] === id : open.includes(id);
+}
+
+/** The open sections with `id` opened or folded; `alone`: opening it folds the rest. */
+export function withSection(
+  raw: unknown,
+  id: SettingsSection,
+  open: boolean,
+  alone = false,
+): SettingsSection[] {
+  if (!isSection(id)) return openSectionsOf(raw);
+  if (open && alone) return [id];
+  const rest = openSectionsOf(raw).filter((section) => section !== id);
+  return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
+}
+
+// --- Choices that set two switches -------------------------------------------------
+
+/** "Back to the pen": the two return-to-pen switches as one choice. */
+export type ReturnToPen = "never" | "reselect" | "after-use" | "both";
+
+export function returnToPenOf(
+  settings: Pick<GoodObsidianSettings, "returnToPenOnReselect" | "returnToPenAfterUse">,
+): ReturnToPen {
+  const reselect = settings.returnToPenOnReselect === true;
+  const afterUse = settings.returnToPenAfterUse === true;
+  if (reselect && afterUse) return "both";
+  if (reselect) return "reselect";
+  return afterUse ? "after-use" : "never";
+}
+
+export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown): void {
+  settings.returnToPenOnReselect = choice === "reselect" || choice === "both";
+  settings.returnToPenAfterUse = choice === "after-use" || choice === "both";
+}
+
+/**
+ * "Page appearance" with "Dark PDF pages" folded in: each dark choice comes
+ * once with PDFs turned dark and once with them as they are.
+ */
+export type AppearanceChoice = PageAppearance | "dark-pdf-light" | "system-pdf-light";
+
+export function appearanceChoiceOf(
+  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
+): AppearanceChoice {
+  const appearance: PageAppearance =
+    settings.pageAppearance === "dark" || settings.pageAppearance === "system"
+      ? settings.pageAppearance
+      : "light";
+  if (appearance === "light" || settings.invertPdfPages !== false) return appearance;
+  return appearance === "dark" ? "dark-pdf-light" : "system-pdf-light";
+}
+
+export function storeAppearanceChoice(settings: GoodObsidianSettings, choice: unknown): void {
+  switch (choice) {
+    case "dark":
+    case "system":
+      settings.pageAppearance = choice;
+      settings.invertPdfPages = true;
+      return;
+    case "dark-pdf-light":
+      settings.pageAppearance = "dark";
+      settings.invertPdfPages = false;
+      return;
+    case "system-pdf-light":
+      settings.pageAppearance = "system";
+      settings.invertPdfPages = false;
+      return;
+    default:
+      // Light pages leave the PDF switch as it was, for the next dark choice.
+      settings.pageAppearance = "light";
+  }
+}
+
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
 export function attachmentDefaults(
   settings: Pick<
@@ -394,23 +477,6 @@ export function attachmentDefaults(
     chats: settings.chatsFolder,
     exports: settings.exportsFolder,
   };
-}
-
-export function foldedSectionsOf(raw: unknown): SettingsSection[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_FOLDED_SECTIONS];
-  return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
-}
-
-/** Whether `id` is shown unfolded. */
-export function sectionOpen(raw: unknown, id: SettingsSection): boolean {
-  return !foldedSectionsOf(raw).includes(id);
-}
-
-/** The folded sections with `id` opened or folded. */
-export function withSection(raw: unknown, id: SettingsSection, open: boolean): SettingsSection[] {
-  if (!isSection(id)) return foldedSectionsOf(raw);
-  const rest = foldedSectionsOf(raw).filter((section) => section !== id);
-  return open ? rest : SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s));
 }
 
 // --- Dark pages ----------------------------------------------------------------

@@ -681,6 +681,9 @@ export default class GoodObsidianPlugin extends Plugin {
     // not carried over.
     delete loaded.pressureEnabled;
     delete loaded.trocrModel;
+    // The folded sections before the compact settings (2026-10-21): now the
+    // open ones are kept, and every section starts folded.
+    delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.

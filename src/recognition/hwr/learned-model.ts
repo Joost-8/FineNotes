@@ -82,6 +82,33 @@ export function learnedStatus(
     : { tone: "off", text: `On this device, switched off: reading uses Grape alone${when}.` };
 }
 
+/**
+ * The learned model's state in a few words, for its row and the section's
+ * header: "In use · 9.8 % → 4.1 %", "Off", "Not learned yet". The long
+ * form is `learnedStatus`, behind the row's info button.
+ */
+export function learnedBadge(
+  model: LearnedModel | undefined,
+  onDevice: boolean,
+  inUse: boolean,
+): { tone: "ready" | "off" | "missing"; text: string } {
+  if (!onDevice) {
+    return { tone: "missing", text: model ? "Not on this device yet" : "Not learned yet" };
+  }
+  if (!inUse) return { tone: "off", text: "Off · Grape alone" };
+  return {
+    tone: "ready",
+    text: model ? `In use · ${model.before} % → ${model.after} %` : "In use",
+  };
+}
+
+/** "2 of 3 sheets · 49 lines": how far learning has come, in one line. */
+export function learnSummary(sheets: readonly PracticeSheet[], sets: number): string {
+  const written = new Set(sheets.filter((s) => s.written > 0 && s.set).map((s) => s.set)).size;
+  const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
+  return `${written} of ${sets} sheets · ${plural(lines, "line")}`;
+}
+
 /** A practice sheet in the vault, as the settings list it. */
 export interface PracticeSheet {
   path: string;

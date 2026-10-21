@@ -12,6 +12,8 @@ import {
   fewerMistakes,
   hasUnusedLines,
   learnStepText,
+  learnSummary,
+  learnedBadge,
   learnedDate,
   learnedFrom,
   learnedResult,
@@ -83,6 +85,33 @@ describe("the learned model in words", () => {
     expect(learnedStatus(undefined, false, true).text).toBe("Not learned yet.");
     // A file put back by hand, with no record: still on this device.
     expect(learnedStatus(undefined, true, true).text).toBe("On this device and in use.");
+  });
+});
+
+describe("the learned model in a few words", () => {
+  it("says in use with how well it reads, off, or missing", () => {
+    expect(learnedBadge(model, true, true)).toEqual({
+      tone: "ready",
+      text: "In use · 9.8 % → 4.1 %",
+    });
+    expect(learnedBadge(undefined, true, true)).toEqual({ tone: "ready", text: "In use" });
+    expect(learnedBadge(model, true, false)).toEqual({ tone: "off", text: "Off · Grape alone" });
+    expect(learnedBadge(model, false, true)).toEqual({
+      tone: "missing",
+      text: "Not on this device yet",
+    });
+    expect(learnedBadge(undefined, false, true)).toEqual({
+      tone: "missing",
+      text: "Not learned yet",
+    });
+  });
+
+  it("counts the sets written and the lines copied", () => {
+    expect(learnSummary([], 3)).toBe("0 of 3 sheets · 0 lines");
+    expect(learnSummary([sheet(1, 30), sheet(2, 1), sheet(3, 0)], 3)).toBe(
+      "2 of 3 sheets · 31 lines",
+    );
+    expect(learnSummary([sheet(1, 1)], 3)).toBe("1 of 3 sheets · 1 line");
   });
 });
 
