@@ -5,7 +5,7 @@
  * time a feature needs it.
  *
  * A feature registers its model once (`register`) and asks for it when it
- * needs it (`offer` shows the card). Settings › Models lists every
+ * needs it (`offer` shows the card). Settings › Models on this device lists every
  * registered model with its state, size, Download and Remove.
  *
  * - Files come with `requestUrl`: it follows GitHub's redirect to its file

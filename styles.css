@@ -2254,11 +2254,12 @@ body.is-mobile .goodobsidian-scrollthumb {
 
 /* ---------------------------------------------------------- settings tab */
 
-/* A note between settings rows: muted text on the secondary surface, marked
-   by an accent bar down its left edge, with a bold title line. */
+/* A note between settings rows, shown only while it is true: one line on the
+   secondary surface, marked by an accent bar down its left edge; its detail
+   opens under it from its ⓘ, and a tip can be dismissed with its ✕. */
 .goodobsidian-callout {
-  margin-bottom: 1em;
-  padding: 12px 14px;
+  margin-bottom: var(--size-4-2);
+  padding: 8px 12px;
   border-left: 4px solid var(--interactive-accent);
   border-radius: var(--gob-radius-l);
   background-color: var(--background-secondary);
@@ -2267,9 +2268,17 @@ body.is-mobile .goodobsidian-scrollthumb {
 }
 
 .goodobsidian-callout-title {
-  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
   color: var(--text-normal);
-  font-weight: var(--font-semibold);
+  font-weight: var(--font-medium);
+}
+
+.goodobsidian-callout-close.clickable-icon {
+  margin-inline-start: auto;
+  padding: var(--size-2-2);
+  color: var(--text-faint);
 }
 
 /* A settings row the tab fills itself, edge to edge (a callout, the footer):
@@ -2278,6 +2287,108 @@ body.is-mobile .goodobsidian-scrollthumb {
   display: block;
   padding: 0;
   border-top: none;
+}
+
+/* Models on this device. The introduction, muted, at the top of the section. */
+.goodobsidian-models-intro {
+  padding: var(--size-4-3) 0 var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* A model's own row (the voice model, Grape, the learned model) heads the
+   rows of its choices: a heavier name, and its state after a dot in the
+   state's colour, the one line under it. */
+.goodobsidian-model-head .setting-item-name {
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-model-status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-3);
+  color: var(--text-normal);
+}
+
+.goodobsidian-model-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.goodobsidian-model-status.is-ready .goodobsidian-model-dot,
+.goodobsidian-status-part.is-ready .goodobsidian-model-dot {
+  background: var(--color-green);
+}
+
+.goodobsidian-model-status.is-busy .goodobsidian-model-dot,
+.goodobsidian-status-part.is-busy .goodobsidian-model-dot {
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-model-status.is-failed .goodobsidian-model-dot,
+.goodobsidian-status-part.is-failed .goodobsidian-model-dot {
+  background: var(--text-error);
+}
+
+.goodobsidian-model-status.is-missing,
+.goodobsidian-model-status.is-off {
+  color: var(--text-muted);
+}
+
+/* "Learn your handwriting": its line and buttons share the first line; the
+   practice sheets follow as chips the full width under it, each opening its
+   sheet, with a filled check when the learned model was built from it. */
+.setting-item.goodobsidian-learn-step {
+  flex-wrap: wrap;
+}
+
+/* The text gives way to the buttons, so the two share the first line. */
+.goodobsidian-learn-step > .setting-item-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.goodobsidian-learn-step > .setting-item-control {
+  flex: none;
+}
+
+.goodobsidian-sheet-chips {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}
+
+button.goodobsidian-sheet-chip.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  width: auto;
+  height: 32px;
+  padding: 0 var(--size-4-3);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-sheet-mark {
+  display: flex;
+  color: var(--text-faint);
+  --icon-size: 14px;
+}
+
+.goodobsidian-sheet-chip.is-used .goodobsidian-sheet-mark {
+  color: var(--color-green);
+}
+
+.goodobsidian-sheet-state {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The endpoint URL row: its field goes under the name, full width, so a long
@@ -2353,28 +2464,193 @@ input.goodobsidian-color-list.is-invalid {
 }
 
 .setting-group.is-folded > .setting-item-heading .goodobsidian-fold-chevron .svg-icon,
-.goodobsidian-shortcuts-row.is-folded .goodobsidian-fold-chevron .svg-icon {
+.setting-group.goodobsidian-section:not(.is-more-open)
+  .goodobsidian-more-row
+  .goodobsidian-fold-chevron
+  .svg-icon {
   transform: none;
 }
 
-/* The shortcuts: the full width under their row, in groups, two columns,
-   each key a key cap in Obsidian's own hotkey chip (its Hotkeys tab). */
-.setting-item.goodobsidian-shortcuts-row {
-  flex-wrap: wrap;
-  cursor: var(--cursor);
+/* A section's header: its icon before the heading, and its state in a few
+   words (or a dot, or a colour) beside the chevron, so a folded section
+   rarely needs opening. */
+.goodobsidian-section-icon {
+  display: inline-flex;
+  margin-inline-end: var(--size-4-2);
+  color: var(--text-muted);
+  vertical-align: -2px;
+  --icon-size: 16px;
 }
 
-.goodobsidian-shortcuts {
+.goodobsidian-section-status {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+  white-space: nowrap;
+}
+
+.goodobsidian-status-part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-2);
+}
+
+.goodobsidian-status-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+}
+
+/* "More": the section's rows after it stay hidden until it is tapped. By
+   class, so search still finds them (and opens it). */
+.setting-group.goodobsidian-section:not(.is-more-open)
+  .setting-item.goodobsidian-more-row
+  ~ .setting-item {
+  display: none;
+}
+
+.setting-item.goodobsidian-more-row {
+  cursor: var(--cursor);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.goodobsidian-more-row .setting-item-name {
+  color: var(--text-muted);
+}
+
+/* The ⓘ after a row's name, and the explanation it opens under the row's
+   one line. */
+.goodobsidian-info.clickable-icon {
+  display: inline-flex;
+  margin: -6px 0 -6px 2px;
+  padding: 6px;
+  color: var(--text-faint);
+  vertical-align: middle;
+  --icon-size: 14px;
+}
+
+.goodobsidian-info-text {
+  max-width: 56ch;
+  margin-top: var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+}
+
+.goodobsidian-callout > .goodobsidian-info-text {
+  font-weight: var(--font-normal);
+}
+
+.goodobsidian-info-text.is-hidden,
+.goodobsidian-field-error.is-hidden {
+  display: none;
+}
+
+/* A field's one red line while what is typed cannot be used. */
+.goodobsidian-field-error {
+  margin-top: var(--size-2-2);
+  color: var(--text-error);
+}
+
+.goodobsidian-section .setting-item-control input.is-invalid {
+  border-color: var(--text-error);
+}
+
+/* The saved pens: a strip of chips under their row, each the pen's colour
+   at its width with its number key in the corner, then + for the pen in
+   hand. */
+.setting-item.goodobsidian-pen-strip-row {
+  flex-wrap: wrap;
+}
+
+.goodobsidian-pen-strip-row > .setting-item-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.goodobsidian-pen-strip {
   flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}
+
+button.goodobsidian-pen-chip.clickable-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--gob-radius-l);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-pen-chip-dot {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+}
+
+.goodobsidian-pen-chip-dot.is-highlighter {
+  border-radius: 3px;
+  opacity: 0.7;
+}
+
+.goodobsidian-pen-chip-key {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+button.goodobsidian-pen-chip.is-add.clickable-icon {
+  color: var(--text-muted);
+}
+
+button.goodobsidian-pen-chip.is-add.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The editor a saved pen's chip opens: its controls on one row. */
+.goodobsidian-pen-editor .setting-item {
+  border-top: none;
+}
+
+/* Feedback and community: one line of links at the end of the tab. */
+.setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--size-2-2) var(--size-4-3);
+  margin-top: var(--size-4-4);
+  padding-top: var(--size-4-2);
+}
+
+button.goodobsidian-footer-link.clickable-icon {
+  width: auto;
+  height: auto;
+  padding: var(--size-2-2) var(--size-2-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* The shortcut sheet's list: in groups, each key a key cap in Obsidian's
+   own hotkey chip (its Hotkeys tab). */
+.goodobsidian-shortcuts {
   display: flex;
   flex-direction: column;
   gap: var(--size-4-4);
-  margin-top: var(--size-4-3);
-  cursor: auto;
-}
-
-.goodobsidian-shortcuts-row.is-folded .goodobsidian-shortcuts {
-  display: none;
 }
 
 .goodobsidian-shortcut-group-title {
@@ -8890,7 +9166,7 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
 }
 
 /*
- * Settings → Handwriting → Learn now, while a run is on: the button fills
+ * Settings → Models on this device → Learn now, while a run is on: it fills
  * from the left as it goes (--gob-learn-progress), and Stop shows beside it.
  */
 button.goodobsidian-learn-button.is-learning {

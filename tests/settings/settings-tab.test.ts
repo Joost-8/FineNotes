@@ -49,8 +49,9 @@ vi.mock("../../src/view/folder-suggest", () => ({
   },
 }));
 
-const { ExtraButtonComponent, FakeEl, Platform, Setting } = await import("../fakes/obsidian");
-const { DEFAULT_SETTINGS, GoodObsidianSettingTab, shortcutList } =
+const { ExtraButtonComponent, FakeEl, Menu, Modal, Platform, Setting } =
+  await import("../fakes/obsidian");
+const { DEFAULT_SETTINGS, GoodObsidianSettingTab, addInfo, shortcutList } =
   await import("../../src/settings");
 const { SIZES } = await import("../../src/constants");
 const { DEFAULT_MODELS, LLM_PROVIDER_ID, VENDOR_LABELS, VENDORS } =
@@ -60,6 +61,7 @@ const { DEFAULT_IMAGE_MODELS, imageUnsupportedReason } =
 const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
+const { speechAsset } = await import("../../src/audio/speech-models");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
 
 type Settings = typeof DEFAULT_SETTINGS;
@@ -102,6 +104,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
   const calls: string[] = [];
   const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
+  const speechStore = fakeStore(speechAsset("whisper-base"), calls);
+  /** The vault the learning rows look in: practice files and model files by path. */
+  const files = new Map<string, string>();
+  const learnerListeners = new Set<() => void>();
   const plugin = {
     settings,
     calls,
@@ -124,12 +130,59 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
-    models: { all: () => [grapeStore] },
+    files,
+    models: { all: () => [grapeStore, speechStore] },
+    speech: { store: () => speechStore },
     grape: {
       model: grapeStore,
-      id: "grape",
+      id: "grape-2",
       offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
     },
+    learner: {
+      progress: null as { step: number; steps: number; startedAt: number } | null,
+      start: vi.fn(() => calls.push("learn")),
+      stop: vi.fn(() => calls.push("stop")),
+      subscribe: (l: () => void) => {
+        learnerListeners.add(l);
+        return () => learnerListeners.delete(l);
+      },
+    },
+    learningHost: () => ({
+      app: {
+        vault: {
+          getMarkdownFiles: () => [],
+          getFileByPath: () => null,
+          adapter: {
+            exists: (path: string) => Promise.resolve(files.has(path)),
+            stat: (path: string) =>
+              Promise.resolve(
+                files.has(path) ? { type: "file", size: files.get(path)?.length ?? 0 } : null,
+              ),
+            remove: (path: string) => {
+              calls.push(`rm:${path}`);
+              files.delete(path);
+              return Promise.resolve();
+            },
+            rename: (from: string, to: string) => {
+              files.set(to, files.get(from) ?? "");
+              files.delete(from);
+              return Promise.resolve();
+            },
+          },
+        },
+      },
+      pluginDir: "plug",
+      settings,
+      baseId: "grape-2",
+      saveSettings: () => {
+        calls.push("save");
+        return Promise.resolve();
+      },
+      reloadReader: () => calls.push("reload"),
+      openNotebook: () => null,
+      createPracticeFile: () => Promise.resolve(null),
+    }),
+    closeSettings: vi.fn(() => calls.push("closeSettings")),
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
     startOpenRouterConnect: vi.fn(() => {
@@ -249,15 +302,12 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 }
 
 const AI = "AI with your own key";
-const MODELS = "Models";
-const SUPPORT = "Support and diagnostics";
-const COMMUNITY = "Feedback and community";
-const WRITING = "Writing and tools";
+const MODELS = "Models on this device";
+const WRITING = "Writing";
 const PAGES = "Pages and notebooks";
-const HANDWRITING = "Handwriting";
-const RECORDINGS = "Recordings";
 const ADVANCED = "Advanced";
 const PENS = "Pens and shortcuts";
+const FOOTER = "Feedback and community";
 
 beforeEach(() => {
   dialogs.keyModals.length = 0;
@@ -270,47 +320,53 @@ beforeEach(() => {
 
 // --- Layout ------------------------------------------------------------------
 
+/** "Models on this device", top to bottom. */
+const MODEL_ROWS = [
+  ["(block)", "render"],
+  ["Voice · Whisper base", "render"],
+  ["Size and language", "render"],
+  ["Handwriting · Grape 2.0", "render"],
+  ["Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
+  ["Underline words it may have misread", "toggle:checkHandwrittenWords"],
+  ["Your handwriting model", "render"],
+  ["Read with my model", "toggle:useLearnedHandwriting"],
+  ["Learn your handwriting", "render"],
+] as const;
+
+/** The longest one line a row may say under its name; the rest goes behind its ⓘ. */
+const ONE_LINE = 60;
+
 describe("the rows", () => {
   it("come in this order, grouped under these headings", () => {
     const { tab } = makeTab(makePlugin());
     const label = VENDORS.anthropic.label;
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
-      [WRITING, "Draw and hold to make shapes", "toggle:drawAndHold"],
-      [WRITING, "Select active tool again to return to pen", "toggle:returnToPenOnReselect"],
-      [WRITING, "Return to pen after one use", "toggle:returnToPenAfterUse"],
+      [WRITING, "Start with", "render"],
+      [WRITING, "Hold to make shapes", "toggle:drawAndHold"],
+      [WRITING, "Back to the pen", "render"],
+      [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
+      [WRITING, "More", "render"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
-      [WRITING, "Double-tap with fingers to undo and redo", "toggle:fingerTapUndo"],
-      [WRITING, "Default tool", "dropdown:defaultTool"],
-      [WRITING, "Default stroke size", "dropdown:defaultSize"],
-      [WRITING, "Default ink color", "color:defaultColor"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
+      [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Saved pens", "render"],
-      ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [PENS, `Saved pen ${n}`, "render"]),
-      [PENS, "Save the pen in hand", "render"],
-      [PENS, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
-      [PENS, "Keyboard and stylus shortcuts", "render"],
-      [PAGES, "Page appearance", "dropdown:pageAppearance"],
-      [PAGES, "Dark PDF pages", "toggle:invertPdfPages"],
+      [PENS, "Keyboard shortcuts", "render"],
+      [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
-      [PAGES, "(block)", "render"],
-      [PAGES, "Default folder for new notebooks", "render"],
-      [PAGES, "Give new notebooks their own folder", "toggle:notebookOwnFolder"],
+      [PAGES, "More", "render"],
+      [PAGES, "New notebooks go in", "render"],
+      [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
       [PAGES, "Stickers folder", "text:stickerFolder"],
       [PAGES, "Templates folder", "text:templateFolder"],
       [PAGES, "Template gallery", "text:templateGalleryUrl"],
-      [PAGES, "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
-      [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
+      [PAGES, "New notebook in the right-click menu", "toggle:showNewNotebookInContextMenu"],
+      [PAGES, "New notebook button in the file explorer", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
-      [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
-      [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
-      [HANDWRITING, "Learn my handwriting", "render"],
-      [RECORDINGS, "Speech model on this device", "dropdown:speechModel"],
-      [RECORDINGS, "Spoken language", "dropdown:speechLanguage"],
-      [MODELS, "Grape (handwriting recognizer model)", "render"],
+      ...MODEL_ROWS.map(([name, kind]) => [MODELS, name, kind]),
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
@@ -320,151 +376,112 @@ describe("the rows", () => {
       [AI, "AI model", "text:llmModel"],
       [AI, `${label} API key`, "render"],
       [AI, "(block)", "render"],
+      [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
+      [AI, "Recognize automatically", "toggle:autoRecognize"],
+      [AI, "More", "render"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
       [AI, `${label} API key for images`, "render"],
-      [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
-      [AI, "Recognize automatically", "toggle:autoRecognize"],
-      [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
-      [ADVANCED, "Pressure-sensitive pens (advanced)", "toggle:pressureWidth"],
+      [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
+      [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
+      [ADVANCED, "Input debug overlay", "toggle:debugHud"],
       [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
+      [ADVANCED, "More", "render"],
       [ADVANCED, "Folder for pictures and PDFs", "text:imagesFolder"],
       [ADVANCED, "Folder for recordings", "text:recordingsFolder"],
       [ADVANCED, "Folder for recording transcripts", "text:transcriptsFolder"],
       [ADVANCED, "Folder for AI chats", "text:chatsFolder"],
       [ADVANCED, "Folder for PDF exports", "text:exportsFolder"],
-      [SUPPORT, "Input debug overlay", "toggle:debugHud"],
-      [COMMUNITY, "Ideas and questions", "render"],
-      [COMMUNITY, "Report a bug", "render"],
-      [COMMUNITY, "Follow FineNotes", "render"],
+      ["", FOOTER, "render"],
     ]);
   });
 
-  it("keeps blocks out of search and gives every shown row a description", () => {
+  it("says at most one short line under a row, the rest behind its ⓘ", () => {
     for (const vendor of ["anthropic", "custom", "openrouter", "google"] as const) {
       const { tab } = makeTab(makePlugin({ llmVendor: vendor, imageVendor: "openai" }));
       for (const { def } of rows(tab)) {
-        if (def.name === "") {
-          expect(def.searchable).toBe(false);
+        if (def.name === "" || def.name === "More") {
+          expect(def.searchable, def.name).toBe(false);
           expect(def.render).toBeTypeOf("function");
-        } else if (shown(def)) {
-          expect(def.desc, def.name).toBeTruthy();
+        }
+        if (typeof def.desc === "string") {
+          expect(def.desc.length, def.name).toBeLessThanOrEqual(ONE_LINE);
         }
       }
     }
+    // Rows whose name says it all have no line at all, and an ⓘ for the rest.
+    const { tab } = makeTab(makePlugin());
+    const all = rows(tab);
+    expect(named(all, "Hold to make shapes").desc).toBeUndefined();
+    expect(tab.infoOf("Hold to make shapes")).toMatch(/keep the pen still/);
+    expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
+    expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
+    expect(tab.infoOf("Start with")).toBeUndefined();
   });
 
-  it("offers these extra search words", () => {
+  it("finds every merged or renamed setting by its old words", () => {
     const { tab } = makeTab(makePlugin());
-    const aliases = Object.fromEntries(
-      rows(tab)
-        .filter((r) => r.def.name !== "")
-        .map((r) => [r.def.name, r.def.aliases ?? []]),
+    const words = (name: string) => named(rows(tab), name).aliases ?? [];
+    expect(words("Start with")).toEqual(
+      expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    const label = VENDORS.anthropic.label;
-    expect(aliases).toEqual({
-      "Draw and hold to make shapes": ["shape recognition", "straighten", "snap"],
-      "Select active tool again to return to pen": ["tool", "eraser", "lasso", "text", "shape"],
-      "Return to pen after one use": ["tool", "eraser", "lasso", "text", "shape"],
-      "Drag to size text boxes": ["text", "text box", "size", "drag"],
-      "Double-tap with fingers to undo and redo": ["undo", "redo", "gesture", "fingers", "tap"],
-      "Desynchronized canvas": ["latency", "glitch", "artifacts"],
-      "Pressure-sensitive pens (advanced)": [
-        "pressure sensitivity",
-        "stylus",
-        "Apple Pencil",
-        "fountain pen",
-        "brush pen",
-      ],
-      "Page appearance": ["dark mode", "night mode", "invert", "theme"],
-      "Dark PDF pages": ["dark mode", "invert", "slides"],
-      "Paper width": ["canvas size", "page width"],
-      "Default folder for new notebooks": ["folder", "location", "new notebook", "new page"],
-      "Give new notebooks their own folder": [
-        "folder",
-        "own folder",
-        "new notebook",
-        "attachments",
-      ],
-      "Stickers folder": ["sticker", "collection", "folder"],
-      "Templates folder": ["template", "folder", "share"],
-      "Template gallery": ["template", "gallery", "community", "share"],
-      "Show New notebook in right-click menu": ["context menu", "file explorer", "new notebook"],
-      "Show New notebook in file explorer bar": ["toolbar", "file explorer", "new notebook"],
-      "Show notebook folders as notebooks": ["file explorer", "folder", "folder note", "icons"],
-      "Default ink color": ["pen color"],
-      "Default tool": [],
-      "Default stroke size": ["pen size", "line width"],
-      "Highlighter opacity": ["transparency", "alpha"],
-      "Custom colors": ["palette"],
-      "Saved pens": ["favorite pens", "presets"],
-      ...Object.fromEntries(
-        [1, 2, 3, 4, 5, 6, 7, 8].map((n) => [
-          `Saved pen ${n}`,
-          ["favorite pen", "preset", "number key"],
-        ]),
-      ),
-      "Save the pen in hand": ["favorite pen", "preset"],
-      "Straighten highlighter strokes": ["highlighter", "straight", "line"],
-      "Stylus side button": ["barrel button", "pen tablet", "wacom", "stylus"],
-      "Cursor over the page": ["cursor", "pointer", "crosshair"],
-      "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
-      "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
-      "Underline words it may have misread (test)": [
-        "handwriting",
-        "spelling",
-        "correct",
-        "misread",
-        "underline",
-      ],
-      "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
-      "Speech model on this device": [
-        "audio",
-        "speech",
-        "whisper",
-        "transcribe",
-        "offline",
-        "model",
-      ],
-      "Spoken language": ["audio", "speech", "language", "transcribe"],
-      "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape-2"],
-      "Handwriting model file": ["handwriting", "recognition", "model"],
-      "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
-      "Folder for recordings": ["folder", "attachments", "where files are saved"],
-      "Folder for recording transcripts": ["folder", "attachments", "where files are saved"],
-      "Folder for AI chats": ["folder", "attachments", "where files are saved"],
-      "Folder for PDF exports": ["folder", "attachments", "where files are saved"],
-      "Handwriting recognition": ["OCR", "handwriting to text"],
-      "Recognize automatically": ["auto recognition"],
-      "Set up an AI service": ["API key", "AI", "transcribe"],
-      "AI service": ["Anthropic", "Claude", "OpenAI", "GPT", "Gemini", "OpenRouter", "Cloud AI"],
-      "Endpoint URL": ["self-hosted", "local server"],
-      "Connect OpenRouter": [],
-      "AI model": [],
-      [`${label} API key`]: ["token", "secret", "API key"],
-      "Image generation": ["generate image", "picture", "DALL-E", "GPT Image", "Nano Banana"],
-      "Image model": [],
-      [`${label} API key for images`]: ["image key"],
-      "Input debug overlay": ["diagnostics", "HUD", "troubleshooting"],
-      "Ideas and questions": ["feedback", "idea", "question", "suggestion", "community"],
-      "Report a bug": ["bug", "issue", "problem", "GitHub"],
-      "Follow FineNotes": ["social", "X", "Twitter", "Instagram", "TikTok", "YouTube"],
-    });
+    expect(words("Back to the pen")).toContain("return to pen");
+    expect(words("Hold to make shapes")).toContain("draw and hold");
+    expect(words("Page appearance")).toEqual(
+      expect.arrayContaining(["dark mode", "dark PDF pages"]),
+    );
+    expect(words("New notebooks go in")).toContain("default folder for new notebooks");
+    expect(words("Saved pens")).toEqual(
+      expect.arrayContaining(["save the pen in hand", "restore defaults"]),
+    );
+    expect(words("Size and language")).toEqual(
+      expect.arrayContaining(["voice model size", "spoken language"]),
+    );
+    expect(words("Your handwriting model")).toEqual(
+      expect.arrayContaining([
+        "learned handwriting model",
+        "go back to the previous learned model",
+        "delete my learned model",
+      ]),
+    );
+    expect(words("Learn your handwriting")).toEqual(
+      expect.arrayContaining(["write the practice sheets", "learn my handwriting"]),
+    );
+    expect(words("Input debug overlay")).toContain("support");
+    expect(words(FOOTER)).toEqual(
+      expect.arrayContaining(["feedback", "report a bug", "Instagram", "YouTube"]),
+    );
   });
 
   it("offers these choices", () => {
     const { tab } = makeTab(makePlugin());
     const all = rows(tab);
-    expect(named(all, "Default tool").control?.options).toEqual({
+    const start = renderRow(named(all, "Start with"));
+    expect(start.dropdowns[0].options).toEqual({
       pen: "Pen",
       highlighter: "Highlighter",
       eraser: "Eraser",
       select: "Select",
     });
-    const sizes = named(all, "Default stroke size").control?.options ?? {};
-    expect(Object.entries(sizes)).toEqual(SIZES.map((s) => [String(s), String(s)]));
+    expect(Object.entries(start.dropdowns[1].options)).toEqual(
+      SIZES.map((s) => [String(s), String(s)]),
+    );
+    expect(start.colors).toHaveLength(1);
+    expect(Object.keys(renderRow(named(all, "Back to the pen")).dropdowns[0].options)).toEqual([
+      "never",
+      "reselect",
+      "after-use",
+      "both",
+    ]);
+    expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
+      "light",
+      "dark",
+      "dark-pdf-light",
+      "system",
+      "system-pdf-light",
+    ]);
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
       [LLM_PROVIDER_ID]: providerLabel(LLM_PROVIDER_ID),
@@ -499,14 +516,17 @@ describe("the rows", () => {
 // --- Visibility --------------------------------------------------------------
 
 /** The "Pens and shortcuts" rows a fresh install shows, on a computer. */
-const PEN_ROWS = [
-  "Saved pens",
-  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `Saved pen ${n}`),
-  "Save the pen in hand",
-  "Straighten highlighter strokes",
-  "Stylus side button",
-  "Cursor over the page",
-  "Keyboard and stylus shortcuts",
+const PEN_ROWS = ["Saved pens", "Stylus side button", "Cursor over the page", "Keyboard shortcuts"];
+
+/** The rows of "Models on this device" shown by default: nothing learned yet. */
+const DEFAULT_MODEL_ROWS = [
+  "Voice · Whisper base",
+  "Size and language",
+  "Handwriting · Grape 2.0",
+  "Read handwriting on this device (beta)",
+  "Underline words it may have misread",
+  "Your handwriting model",
+  "Learn your handwriting",
 ];
 
 describe("which rows show", () => {
@@ -520,54 +540,49 @@ describe("which rows show", () => {
   it("warns about pressure only while it is on", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
-    const toggle = "Pressure-sensitive pens (advanced)";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Handwriting model file");
+    const toggle = "Pressure-sensitive pens";
+    expect(off[off.indexOf(toggle) + 1]).toBe("Desynchronized canvas");
     expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
-      "Draw and hold to make shapes",
-      "Select active tool again to return to pen",
-      "Return to pen after one use",
+      "Start with",
+      "Hold to make shapes",
+      "Back to the pen",
+      "Two-finger double-tap to undo",
+      "More",
       "Drag to size text boxes",
-      "Double-tap with fingers to undo and redo",
-      "Default tool",
-      "Default stroke size",
-      "Default ink color",
       "Custom colors",
       "Highlighter opacity",
+      "Straighten highlighter strokes",
       ...PEN_ROWS,
-      // "Dark PDF pages" shows with dark pages only.
       "Page appearance",
       "Paper width",
-      "Default folder for new notebooks",
-      "Give new notebooks their own folder",
+      "More",
+      "New notebooks go in",
+      "Each notebook gets its own folder",
       "Stickers folder",
       "Templates folder",
       "Template gallery",
-      "Show New notebook in right-click menu",
-      "Show New notebook in file explorer bar",
+      "New notebook in the right-click menu",
+      "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
-      "Read handwriting on this device (beta)",
-      "Underline words it may have misread (test)",
-      "Learn my handwriting",
-      "Speech model on this device",
-      "Spoken language",
-      "Grape (handwriting recognizer model)",
+      // The models' introduction.
+      "(block 25)",
+      ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
+      "Pressure-sensitive pens",
       "Desynchronized canvas",
-      "Pressure-sensitive pens (advanced)",
+      "Input debug overlay",
       "Handwriting model file",
+      "More",
       "Folder for pictures and PDFs",
       "Folder for recordings",
       "Folder for recording transcripts",
       "Folder for AI chats",
       "Folder for PDF exports",
-      "Input debug overlay",
-      "Ideas and questions",
-      "Report a bug",
-      "Follow FineNotes",
+      FOOTER,
     ]);
   });
 
@@ -575,15 +590,16 @@ describe("which rows show", () => {
     const label = VENDORS.anthropic.label;
     const names = visibleNames(makePlugin());
     const from = names.indexOf("Set up an AI service");
-    expect(names.slice(from, names.indexOf("Desynchronized canvas"))).toEqual([
+    expect(names.slice(from, names.indexOf("Pressure-sensitive pens"))).toEqual([
       "Set up an AI service",
       "AI service",
       "AI model",
       `${label} API key`,
+      "Handwriting recognition",
+      "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${39 + PEN_ROWS.length})`,
-      "Handwriting recognition",
+      "(block 47)",
     ]);
   });
 
@@ -595,13 +611,26 @@ describe("which rows show", () => {
     expect(names).toContain("Handwriting recognition");
   });
 
-  it("shows the Scribble tip on an iPad only", () => {
+  it("shows the Scribble tip on an iPad only, in one line, until it is dismissed", () => {
     Platform.isIosApp = true;
     Platform.isTablet = true;
-    const { tab } = makeTab(makePlugin());
+    const plugin = makePlugin();
+    const { tab, fake } = makeTab(plugin);
     const tip = rows(tab)[0].def;
     expect(shown(tip)).toBe(true);
-    expect(renderRow(tip).settingEl.textContent).toMatch(/Scribble/);
+    const drawn = renderRow(tip);
+    expect(drawn.find("goodobsidian-callout-title")?.text).toMatch(/Scribble/);
+    // The how is behind the ⓘ, hidden until it is tapped.
+    const how = drawn.find("goodobsidian-info-text");
+    expect(how?.hasClass("is-hidden")).toBe(true);
+    drawn.find("goodobsidian-info")?.dispatch("click");
+    expect(how?.hasClass("is-hidden")).toBe(false);
+    expect(how?.text).toMatch(/Apple Pencil → Scribble/);
+    drawn.find("goodobsidian-callout-close")?.dispatch("click");
+    expect(plugin.settings.scribbleTipDismissed).toBe(true);
+    expect(plugin.calls).toContain("save");
+    expect(fake.domRefreshes).toBe(1);
+    expect(shown(tip)).toBe(false);
     Platform.isTablet = false;
     expect(shown(rows(makeTab(makePlugin()).tab)[0].def)).toBe(false);
   });
@@ -715,6 +744,47 @@ describe("control values", () => {
     },
   );
 
+  it("sets both return-to-pen switches from Back to the pen", async () => {
+    const plugin = makePlugin({ returnToPenAfterUse: true });
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Back to the pen"));
+    expect(row.dropdowns[0].value).toBe("after-use");
+    await row.dropdowns[0].pick("both");
+    expect([plugin.settings.returnToPenOnReselect, plugin.settings.returnToPenAfterUse]).toEqual([
+      true,
+      true,
+    ]);
+    expect(plugin.saveSettings).toHaveBeenCalledOnce();
+  });
+
+  it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
+    const plugin = Object.assign(makePlugin({ pageAppearance: "dark", invertPdfPages: false }), {
+      applyPageAppearance: vi.fn(() => Promise.resolve()),
+    });
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Page appearance"));
+    expect(row.dropdowns[0].value).toBe("dark-pdf-light");
+    await row.dropdowns[0].pick("system");
+    expect([plugin.settings.pageAppearance, plugin.settings.invertPdfPages]).toEqual([
+      "system",
+      true,
+    ]);
+    expect(plugin.applyPageAppearance).toHaveBeenCalledOnce();
+  });
+
+  it("sets the tool, width and colour a note starts with from Start with", async () => {
+    const plugin = makePlugin({ defaultSize: 5, defaultColor: "#223344" });
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Start with"));
+    expect([row.dropdowns[0].value, row.dropdowns[1].value, row.colors[0].value]).toEqual([
+      "pen",
+      "5",
+      "#223344",
+    ]);
+    await row.dropdowns[0].pick("highlighter");
+    await row.dropdowns[1].pick("8");
+    await row.colors[0].pick("#112233");
+    expect([plugin.settings.defaultTool, plugin.settings.defaultSize]).toEqual(["highlighter", 8]);
+    expect(plugin.settings.defaultColor).toBe("#112233");
+  });
+
   it.each(["showNewNotebookInContextMenu", "showNewNotebookInExplorer"] as const)(
     "saves %s without requiring a restart",
     async (key) => {
@@ -791,15 +861,16 @@ describe("control values", () => {
 // --- Rows the tab renders itself -------------------------------------------------
 
 describe("paper width", () => {
-  it("saves a whole number from 320 to 4096 and flags anything else", async () => {
+  it("saves a whole number from 320 to 4096 and says in one red line why anything else is not", async () => {
     const plugin = makePlugin({ paperWidth: 1024 });
-    const { tab, fake } = makeTab(plugin);
-    const all = rows(tab);
-    const setting = renderRow(named(all, "Paper width"));
-    const callout = blockAfter(all, "Paper width");
+    const { tab } = makeTab(plugin);
+    const setting = renderRow(named(rows(tab), "Paper width"));
+    const error = setting.find("goodobsidian-field-error");
     const field = setting.texts[0];
     expect(field.value).toBe("1024");
-    expect(shown(callout)).toBe(false);
+    expect(error?.hasClass("is-hidden")).toBe(true);
+    expect(error?.text).toContain("320");
+    expect(error?.text).toContain("4096");
 
     const cases: Array<[string, number, boolean]> = [
       ["5000", 1024, true],
@@ -811,26 +882,23 @@ describe("paper width", () => {
       ["1400px", 1400, false],
       ["800.9", 800, false],
     ];
-    let refreshes = 0;
     for (const [typed, stored, flagged] of cases) {
       await field.type(typed);
-      expect([typed, plugin.settings.paperWidth, shown(callout)]).toEqual([typed, stored, flagged]);
-      expect(fake.domRefreshes).toBe(++refreshes);
+      expect([typed, plugin.settings.paperWidth, !error?.hasClass("is-hidden")]).toEqual([
+        typed,
+        stored,
+        flagged,
+      ]);
+      expect(field.inputEl.hasClass("is-invalid")).toBe(flagged);
     }
     expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
-
-    const text = renderRow(callout).settingEl.textContent;
-    expect(text).toContain("320");
-    expect(text).toContain("4096");
   });
 
   it("forgets a bad entry when the tab is drawn again", async () => {
-    const { tab } = makeTab(makePlugin());
-    const all = rows(tab);
+    const all = rows(makeTab(makePlugin()).tab);
     await renderRow(named(all, "Paper width")).texts[0].type("99999");
-    expect(shown(blockAfter(all, "Paper width"))).toBe(true);
-    renderRow(named(all, "Paper width"));
-    expect(shown(blockAfter(all, "Paper width"))).toBe(false);
+    const again = renderRow(named(all, "Paper width"));
+    expect(again.find("goodobsidian-field-error")?.hasClass("is-hidden")).toBe(true);
   });
 });
 
@@ -871,7 +939,7 @@ describe("endpoint URL", () => {
 describe("default folder for new notebooks", () => {
   it("stores a cleaned-up path, typed or picked", async () => {
     const plugin = makePlugin({ newNotebookFolder: "School" });
-    const setting = renderRow(named(rows(makeTab(plugin).tab), "Default folder for new notebooks"));
+    const setting = renderRow(named(rows(makeTab(plugin).tab), "New notebooks go in"));
     const field = setting.texts[0];
     expect(field.value).toBe("School");
     expect(field.placeholder).toBe("Folder of the open note");
@@ -931,21 +999,24 @@ describe("API key rows", () => {
     expect(custom.buttons.map((b) => [b.text, b.cta])).toEqual([["Add key", false]]);
   });
 
-  it("says where each key is kept and where it goes", () => {
-    const all = rows(makeTab(makePlugin({ imageVendor: "openai" })).tab);
-    expect(named(all, "Anthropic (Claude) API key").desc).toBe(
+  it("says where each key is kept and where it goes, behind the row's ⓘ", () => {
+    const { tab } = makeTab(makePlugin({ imageVendor: "openai" }));
+    rows(tab);
+    expect(tab.infoOf("Anthropic (Claude) API key")).toBe(
       "Your own key. Kept in Obsidian's keychain (Settings → Keychain), outside this vault's files; " +
         "sent only to Anthropic (Claude), and only when you start an AI action.",
     );
     const insecure = makePlugin({ imageVendor: "openai" });
     insecure.keys.secure = false;
-    expect(named(rows(makeTab(insecure).tab), "OpenAI (GPT) API key for images").desc).toBe(
+    const insecureTab = makeTab(insecure).tab;
+    rows(insecureTab);
+    expect(insecureTab.infoOf("OpenAI (GPT) API key for images")).toBe(
       "Your own OpenAI (GPT) key, used only to generate images. Stored in this vault's plugin data; " +
         "sent only to OpenAI (GPT).",
     );
-    expect(
-      named(rows(makeTab(makePlugin({ llmVendor: "custom" })).tab), "Endpoint API key").desc,
-    ).toBe(
+    const custom = makeTab(makePlugin({ llmVendor: "custom" })).tab;
+    rows(custom);
+    expect(custom.infoOf("Endpoint API key")).toBe(
       "Optional — most self-hosted servers don't need one. Kept apart from your cloud keys and sent " +
         "only to your endpoint.",
     );
@@ -1004,15 +1075,23 @@ describe("API key rows", () => {
   });
 });
 
-describe("the support footer", () => {
-  it("links to Discussions, the bug report and FineNotes' accounts", async () => {
+describe("the feedback footer", () => {
+  it("links to Discussions, the bug report and FineNotes' accounts, in one line", () => {
     const opened: string[] = [];
     vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
     try {
-      const all = rows(makeTab(makePlugin()).tab);
-      for (const name of ["Ideas and questions", "Report a bug", "Follow FineNotes"]) {
-        for (const button of renderRow(named(all, name)).buttons) await button.click();
-      }
+      const footer = renderRow(named(rows(makeTab(makePlugin()).tab), FOOTER));
+      expect(footer.settingEl.hasClass("goodobsidian-settings-footer")).toBe(true);
+      const links = footer.settingEl.findAll("goodobsidian-footer-link");
+      expect(links.map((l) => l.text)).toEqual([
+        "Ideas and questions",
+        "Report a bug",
+        "X",
+        "Instagram",
+        "TikTok",
+        "YouTube",
+      ]);
+      for (const link of links) link.dispatch("click");
       expect(opened).toEqual([
         "https://github.com/Joost-8/FineNotes/discussions",
         "https://github.com/Joost-8/FineNotes/issues/new/choose",
@@ -1021,15 +1100,34 @@ describe("the support footer", () => {
         "https://www.tiktok.com/@finenotesobsidian",
         "https://www.youtube.com/@FineNotesAtObsidian",
       ]);
-      expect(renderRow(named(all, "Follow FineNotes")).buttons.map((b) => b.text)).toEqual([
-        "X",
-        "Instagram",
-        "TikTok",
-        "YouTube",
-      ]);
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("the ⓘ after a row's name", () => {
+  it("opens the row's longer explanation in place, and closes it again", () => {
+    const row = new Setting();
+    row.setName("Hold to make shapes");
+    addInfo(row.settingEl as never, "Draw a rough line and keep the pen still.");
+    addInfo(row.settingEl as never, "twice");
+    const buttons = row.settingEl.findAll("goodobsidian-info");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].parent).toBe(row.nameEl);
+    expect(buttons[0].attrs).toMatchObject({ role: "button", "aria-expanded": "false" });
+    const text = row.infoEl.find("goodobsidian-info-text");
+    expect(text?.hasClass("is-hidden")).toBe(true);
+    // A tap on it is not a tap on the row (a toggle row would flip).
+    let rowTapped = false;
+    row.settingEl.addEventListener("click", () => (rowTapped = true));
+    const tap = buttons[0].dispatch("click");
+    expect(tap.defaultPrevented).toBe(true);
+    expect(rowTapped).toBe(false);
+    expect(text?.hasClass("is-hidden")).toBe(false);
+    expect(buttons[0].attrs["aria-expanded"]).toBe("true");
+    buttons[0].dispatch("keydown", { key: "Enter" });
+    expect(text?.hasClass("is-hidden")).toBe(true);
   });
 });
 
@@ -1055,10 +1153,37 @@ describe("refresh", () => {
 });
 
 describe("pens and shortcuts (FineNotes#24, #25)", () => {
-  it("edits a saved pen's type, colour and width where it is", async () => {
+  /** The saved pens' strip, drawn. */
+  function strip(plugin: Plugin) {
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
+    const chips = row.settingEl.findAll("goodobsidian-pen-chip");
+    return { row, pens: chips.filter((c) => !c.hasClass("is-add")), add: chips.at(-1) };
+  }
+
+  /** Open saved pen `n`'s editor from its chip; the editor's controls. */
+  function editor(plugin: Plugin, n: number) {
+    strip(plugin).pens[n - 1].dispatch("click");
+    const modal = Modal.made.at(-1);
+    const setting = Setting.created.at(-1);
+    if (!modal || !setting) throw new Error("no editor");
+    return { modal, setting };
+  }
+
+  it("shows each saved pen as a chip of its colour with its number key", () => {
     const plugin = makePlugin();
-    const all = rows(makeTab(plugin).tab);
-    const setting = renderRow(named(all, "Saved pen 2"));
+    const { pens, add } = strip(plugin);
+    expect(pens).toHaveLength(8);
+    expect(pens[1].attrs["aria-label"]).toBe(`2: ${savedPenLabel(plugin.settings.savedPens[1])}`);
+    expect(pens[1].find("goodobsidian-pen-chip-dot")?.style.backgroundColor).toBe("#e03131");
+    expect(pens[1].find("goodobsidian-pen-chip-key")?.text).toBe("2");
+    expect(add?.hasClass("is-add")).toBe(true);
+  });
+
+  it("edits a saved pen's type, colour and width in its editor", async () => {
+    const plugin = makePlugin();
+    const { modal, setting } = editor(plugin, 2);
+    expect(modal.titleEl.text).toBe("Saved pen 2");
+    expect(modal.isOpen).toBe(true);
     expect(setting.dropdowns[0].value).toBe("ball");
     expect(Object.keys(setting.dropdowns[0].options)).toEqual([
       "fountain",
@@ -1073,82 +1198,69 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     await setting.colors[0].pick("#00AA00");
     expect(plugin.settings.savedPens[1].color).toBe("#00aa00");
     expect(setting.find("goodobsidian-saved-pen-swatch")?.style.backgroundColor).toBe("#00aa00");
-    // Typed widths are saved as they become widths; the tab is not rebuilt under the field.
     await setting.texts[0].type("1");
     expect(plugin.settings.savedPens[1].size).toBe(4.88);
     await setting.texts[0].type("9");
     expect(plugin.settings.savedPens[1].size).toBe(4.88);
     expect(setting.texts[0].inputEl.hasClass("is-invalid")).toBe(true);
-    expect(plugin.calls).not.toContain("update");
     await setting.dropdowns[0].pick("highlighter");
     expect(plugin.settings.savedPens[1].type).toBe("highlighter");
+    expect(setting.descEl.text).toBe(savedPenLabel(plugin.settings.savedPens[1]));
+    // The strip is drawn again once the editor closes.
+    expect(plugin.calls).not.toContain("update");
+    modal.close();
     expect(plugin.calls).toContain("update");
   });
 
-  it("moves and deletes saved pens, and keeps the ends' arrows off", async () => {
+  it("moves and deletes saved pens from the editor, which then closes", async () => {
     const plugin = makePlugin();
-    const all = rows(makeTab(plugin).tab);
-    const first = renderRow(named(all, "Saved pen 1"));
-    const last = renderRow(named(all, "Saved pen 8"));
-    expect(first.extras.map((b) => [b.icon, b.disabled])).toEqual([
-      ["arrow-up", true],
-      ["arrow-down", false],
+    const first = editor(plugin, 1);
+    expect(first.setting.extras.map((b) => [b.icon, b.disabled])).toEqual([
+      ["arrow-left", true],
+      ["arrow-right", false],
       ["trash-2", false],
     ]);
-    expect(last.extras[1].disabled).toBe(true);
+    expect(editor(plugin, 8).setting.extras[1].disabled).toBe(true);
     const [blue, red] = plugin.settings.savedPens;
-    await first.extras[1].click();
+    await first.setting.extras[1].click();
     expect(plugin.settings.savedPens.slice(0, 2)).toEqual([red, blue]);
-    await first.extras[2].click();
+    expect(first.modal.isOpen).toBe(false);
+    const again = editor(plugin, 1);
+    await again.setting.extras[2].click();
     expect(plugin.settings.savedPens).toHaveLength(7);
     expect(plugin.settings.savedPens[0]).toEqual(blue);
+    expect(again.modal.isOpen).toBe(false);
   });
 
-  it("saves the pen in hand once, and restores the defaults", async () => {
+  it("saves the pen in hand once with +, and restores the defaults after asking", async () => {
     const lastPen = { type: "brush" as const, color: "#123456", size: 4 };
     const plugin = makePlugin({ lastPen });
-    const all = rows(makeTab(plugin).tab);
-    expect(named(all, "Save the pen in hand").desc).toContain("Brush pen");
-    const save = renderRow(named(all, "Save the pen in hand"));
     // Eight are saved already: full.
-    expect(save.button("Save pen").disabled).toBe(true);
+    const full = strip(plugin).add;
+    expect((full as unknown as { disabled: boolean }).disabled).toBe(true);
+    expect(full?.attrs["aria-label"]).toMatch(/all 8 places are taken/);
     plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 3);
-    const room = renderRow(named(rows(makeTab(plugin).tab), "Save the pen in hand"));
-    expect(room.button("Save pen").disabled).toBe(false);
-    await room.button("Save pen").click();
+    const room = strip(plugin).add;
+    expect(room?.attrs["aria-label"]).toContain("Brush pen");
+    room?.dispatch("click");
     expect(plugin.settings.savedPens[3]).toEqual(lastPen);
-    expect(named(rows(makeTab(plugin).tab), "Save the pen in hand").desc).toContain("saved");
-    const restore = renderRow(named(all, "Saved pens"));
-    await restore.button("Restore defaults").click();
+    expect(strip(plugin).add?.attrs["aria-label"]).toMatch(/saved already/);
+
+    const { row } = strip(plugin);
+    expect(row.extras[0].icon).toBe("rotate-ccw");
+    dialogs.confirmAnswer = false;
+    await row.extras[0].click();
+    expect(plugin.settings.savedPens).toHaveLength(4);
+    expect(dialogs.confirms.at(-1)?.title).toBe("Restore the default pens?");
+    dialogs.confirmAnswer = true;
+    await row.extras[0].click();
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("keeps a saved pen's label and the pen-in-hand row true while it is edited", async () => {
-    const plugin = makePlugin();
-    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 3);
-    const second = plugin.settings.savedPens[1];
-    plugin.settings.lastPen = { ...second, color: "#00aa00" };
-    const tab = makeTab(plugin).tab;
-    const all = rows(tab);
-    const save = renderRow(named(all, "Save the pen in hand"));
-    expect(save.button("Save pen").disabled).toBe(false);
-    const pen = renderRow(named(all, "Saved pen 2"));
-    // The pen in hand is saved pen 2 in another colour: picking that colour makes it saved.
-    await pen.colors[0].pick("#00AA00");
-    expect(save.button("Save pen").disabled).toBe(true);
-    expect(save.descEl.textContent).toMatch(/saved already/);
-    await pen.texts[0].type("1");
-    expect(pen.descEl.textContent).toBe(savedPenLabel(plugin.settings.savedPens[1]));
-    expect(pen.descEl.textContent).not.toBe(savedPenLabel(second));
-    expect(save.button("Save pen").disabled).toBe(false);
-    expect(plugin.calls).not.toContain("update");
-  });
-
   it("asks for a pen first when none was written with", () => {
-    const all = rows(makeTab(makePlugin()).tab);
-    expect(named(all, "Save the pen in hand").desc).toMatch(/first/);
-    const save = renderRow(named(all, "Save the pen in hand"));
-    expect(save.button("Save pen").disabled).toBe(true);
+    const add = strip(makePlugin()).add;
+    expect(add?.attrs["aria-label"]).toMatch(/first/);
+    expect((add as unknown as { disabled: boolean }).disabled).toBe(true);
   });
 
   it("offers the barrel's four choices, and the cursor's three only on a computer", () => {
@@ -1182,9 +1294,17 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.calls).toEqual(["penCursor:crosshair", "penCursor:arrow"]);
   });
 
-  it("lists the shortcuts in groups, each key a key cap, Ctrl or ⌘ by platform", () => {
-    const pc = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard and stylus shortcuts"));
-    const list = pc.find("goodobsidian-shortcuts");
+  /** Open the shortcut sheet from its row; the sheet's list. */
+  function shortcutSheet() {
+    const row = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard shortcuts"));
+    void row.button("Show all").click();
+    const modal = Modal.made.at(-1);
+    expect(modal?.isOpen).toBe(true);
+    return modal?.contentEl.find("goodobsidian-shortcuts");
+  }
+
+  it("lists the shortcuts on their own sheet, each key a key cap, Ctrl or ⌘ by platform", () => {
+    const list = shortcutSheet();
     expect(list?.findAll("goodobsidian-shortcut-group-title").map((el) => el.text)).toEqual([
       "Tools",
       "Pens",
@@ -1212,9 +1332,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(caps("Erase")).toEqual([]);
 
     Platform.isIosApp = true;
-    const ipad = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard and stylus shortcuts"));
-    const redo = ipad
-      .find("goodobsidian-shortcuts")
+    const redo = shortcutSheet()
       ?.findAll("goodobsidian-shortcut")
       .find((el) => el.find("goodobsidian-shortcut-action")?.text === "Redo");
     expect(redo?.findAll("goodobsidian-key").map((el) => [el.text, el.attrs.title])).toEqual([
@@ -1239,33 +1357,6 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(pc.Erase).toBe("Write with the eraser end");
     expect(pc["Show or hide this list"]).toBe("?");
     expect(shortcutList(false)).toHaveLength(19);
-  });
-
-  it("folds the shortcut list at first, and remembers it open", () => {
-    const plugin = makePlugin();
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Keyboard and stylus shortcuts"));
-    expect(row.settingEl.hasClass("is-folded")).toBe(true);
-    const chevron = row.extras[0].extraSettingsEl;
-    expect(chevron.attrs["aria-expanded"]).toBe("false");
-
-    // Reading the list is not folding it.
-    row.find("goodobsidian-shortcut-action")?.dispatch("click");
-    chevron.dispatch("click");
-    expect(row.settingEl.hasClass("is-folded")).toBe(false);
-    expect(chevron.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.foldedSettingsSections).toEqual(["pens"]);
-    expect(plugin.calls).toEqual(["save"]);
-    row.find("goodobsidian-shortcut-action")?.dispatch("click");
-    expect(row.settingEl.hasClass("is-folded")).toBe(false);
-
-    // Opened again later, it is open.
-    const again = renderRow(named(rows(makeTab(plugin).tab), "Keyboard and stylus shortcuts"));
-    expect(again.settingEl.hasClass("is-folded")).toBe(false);
-    // The keyboard folds it from the chevron.
-    const key = again.extras[0].extraSettingsEl.dispatch("keydown", { key: "Enter" });
-    expect(key.defaultPrevented).toBe(true);
-    expect(again.settingEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.foldedSettingsSections).toEqual(["pens", "shortcuts"]);
   });
 });
 
@@ -1309,68 +1400,62 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
   return out.filter((row) => shown(row.def));
 }
 
+const HEADINGS = [WRITING, PENS, PAGES, MODELS, AI, ADVANCED];
+
 describe("folding sections", () => {
-  it("folds Pens and shortcuts only, at first", () => {
+  it("folds every section at first, leaving only their headers and the footer", () => {
     const { tab } = makeTab(makePlugin(), false);
-    expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual([
-      [WRITING, "goodobsidian-section"],
-      [PENS, "goodobsidian-section is-folded"],
-      [PAGES, "goodobsidian-section"],
-      [HANDWRITING, "goodobsidian-section"],
-      [RECORDINGS, "goodobsidian-section"],
-      [MODELS, "goodobsidian-section"],
-      [AI, "goodobsidian-section"],
-      [ADVANCED, "goodobsidian-section"],
-      [SUPPORT, "goodobsidian-section"],
-      [COMMUNITY, "goodobsidian-section"],
-    ]);
-    const shownHeadings = new Set(unfoldedRows(tab).map((r) => r.heading));
-    expect(shownHeadings.has(PENS)).toBe(false);
-    expect(shownHeadings.has(WRITING) && shownHeadings.has(COMMUNITY)).toBe(true);
-    expect(unfoldedRows(tab).filter((r) => r.heading === WRITING)).toHaveLength(10);
+    expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual(
+      HEADINGS.map((h) => [h, "goodobsidian-section is-folded"]),
+    );
+    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual([FOOTER]);
   });
 
   it("shows the rows of the sections that are open", () => {
-    const plugin = makePlugin({
-      foldedSettingsSections: [
-        "writing",
-        "pages",
-        "handwriting",
-        "recordings",
-        "models",
-        "ai",
-        "advanced",
-        "support",
-      ],
-    });
+    const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
-    expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(14);
+    expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(4);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
-    const folded = makeTab(
-      makePlugin({
-        foldedSettingsSections: [
-          "writing",
-          "pens",
-          "shortcuts",
-          "pages",
-          "handwriting",
-          "ai",
-          "advanced",
-          "support",
-          "community",
-        ],
-      }),
-    ).tab;
-    const open = makeTab(makePlugin({ foldedSettingsSections: [] })).tab;
+    const folded = makeTab(makePlugin()).tab;
+    const open = makeTab(makePlugin({ settingsOpen: [...HEADINGS.keys()].map(String) })).tab;
     const names = (tab: InstanceType<typeof GoodObsidianSettingTab>) =>
       rows(tab)
         .filter((r) => shown(r.def) && r.def.searchable !== false)
         .map((r) => r.def.name);
     expect(names(folded)).toEqual(names(open));
-    expect(names(folded)).toContain("Keyboard and stylus shortcuts");
+    expect(names(folded)).toContain("Folder for recordings");
+  });
+
+  it("puts the section's icon before its heading and its state beside the chevron", async () => {
+    const plugin = makePlugin({ defaultTool: "highlighter", defaultSize: 5, paperWidth: 900 });
+    const { tab } = makeTab(plugin, false);
+    const drawn = groups(tab).map(drawGroup);
+    const [writing, pens, pages, models, ai, advanced] = drawn;
+    expect(writing.header.find("goodobsidian-section-icon")?.attrs["data-icon"]).toBe("pencil");
+    expect(
+      writing.header.find("setting-item-name")?.children[0].hasClass("goodobsidian-section-icon"),
+    ).toBe(true);
+    const status = (g: (typeof drawn)[number]) =>
+      g.header.find("goodobsidian-section-status")?.textContent;
+    expect(status(writing)).toBe("Highlighter · 5");
+    expect(writing.header.find("goodobsidian-status-swatch")?.style.backgroundColor).toBe(
+      plugin.settings.defaultColor,
+    );
+    expect(status(pens)).toBe("8 saved");
+    expect(status(pages)).toBe("Light · 900 px");
+    expect(status(models)).toBe("VoiceHandwriting");
+    expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
+      ["goodobsidian-status-part", "is-ready"],
+      ["goodobsidian-status-part", "is-ready"],
+    ]);
+    expect(status(ai)).toBe("Not set up");
+    expect(status(advanced)).toBe("");
+    // The state follows a change made in the tab.
+    await tab.setControlValue("defaultSize", "8");
+    expect(status(writing)).toBe("Highlighter · 8");
   });
 
   it("folds and unfolds from the header, and remembers it", () => {
@@ -1389,7 +1474,7 @@ describe("folding sections", () => {
     pens.chevron?.dispatch("click");
     expect(pens.groupEl.hasClass("is-folded")).toBe(false);
     expect(pens.chevron?.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.foldedSettingsSections).toEqual(["shortcuts"]);
+    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
     expect(plugin.calls).toEqual(["save"]);
 
     // Reopening the settings (or Obsidian) draws it open.
@@ -1397,35 +1482,111 @@ describe("folding sections", () => {
     expect(groups(reopened)[1].cls).toBe("goodobsidian-section");
     expect(unfoldedRows(reopened).some((r) => r.def.name === "Stylus side button")).toBe(true);
 
+    // On a computer several stay open.
     const writing = drawGroup(groups(reopened)[0]);
     writing.header.find("setting-item-name")?.dispatch("click");
-    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.foldedSettingsSections).toEqual(["writing", "shortcuts"]);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+    expect(plugin.settings.settingsOpen).toEqual(["writing", "pens"]);
     // Space on the chevron, as on any button.
     const space = writing.chevron?.dispatch("keydown", { key: " " });
     expect(space?.defaultPrevented).toBe(true);
-    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-    expect(plugin.settings.foldedSettingsSections).toEqual(["shortcuts"]);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
     writing.chevron?.dispatch("keydown", { key: "a" });
-    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+  });
+
+  it("keeps one section open at a time on an iPad", () => {
+    Platform.isMobile = true;
+    try {
+      const plugin = makePlugin({ settingsOpen: ["pens", "pages"] });
+      const { tab } = makeTab(plugin, false);
+      // Of two open on a computer and synced, the iPad shows the first.
+      expect(groups(tab).map((g) => g.cls?.includes("is-folded"))).toEqual([
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+      ]);
+      const [writing, pens] = groups(tab).map(drawGroup);
+      writing.chevron?.dispatch("click");
+      expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+      expect(pens.groupEl.hasClass("is-folded")).toBe(true);
+      expect(writing.header.scrolledIntoView).toBe(1);
+      expect(plugin.settings.settingsOpen).toEqual(["writing"]);
+    } finally {
+      Platform.isMobile = false;
+    }
+  });
+
+  it("hides the rows after More until it is tapped, and keeps it open while the settings are", () => {
+    const plugin = makePlugin({ settingsOpen: ["writing"] });
+    const { tab } = makeTab(plugin, false);
+    expect(groups(tab)[0].cls).toBe("goodobsidian-section");
+    const writing = drawGroup(groups(tab)[0]);
+    const more = new Setting(writing.groupEl.createDiv("setting-items"));
+    more.setName("More");
+    named(rows(tab), "More").render?.(more, {});
+    expect(more.settingEl.hasClass("goodobsidian-more-row")).toBe(true);
+    expect(more.settingEl.attrs["aria-expanded"]).toBe("false");
+    more.settingEl.dispatch("click");
+    expect(writing.groupEl.hasClass("is-more-open")).toBe(true);
+    expect(more.settingEl.attrs["aria-expanded"]).toBe("true");
+    // Drawn again (a value changed), the section keeps its More open.
+    expect(groups(tab)[0].cls).toBe("goodobsidian-section is-more-open");
+    more.settingEl.dispatch("keydown", { key: "Enter" });
+    expect(writing.groupEl.hasClass("is-more-open")).toBe(false);
+    expect(groups(tab)[0].cls).toBe("goodobsidian-section");
+    // Closing the settings forgets it.
+    more.settingEl.dispatch("click");
+    tab.hide();
+    expect(groups(tab)[0].cls).toBe("goodobsidian-section");
   });
 });
 
-describe("Models (downloaded on first use)", () => {
+describe("Models on this device", () => {
   /** The buttons the row shows now (the fake keeps every one ever added). */
   const current = (setting: FakeSetting) =>
     setting.buttons.filter((b) => setting.controlEl.children.includes(b.buttonEl));
-  const GRAPE = "Grape (handwriting recognizer model)";
+  const menuButtons = (setting: FakeSetting) =>
+    setting.extras.filter((b) => setting.controlEl.children.includes(b.extraSettingsEl));
+  const GRAPE = "Handwriting · Grape 2.0";
+  const VOICE = "Voice · Whisper base";
+  const status = (setting: FakeSetting) =>
+    setting.descEl.find("goodobsidian-model-status")?.textContent ?? "";
 
-  it("shows a downloaded model with Re-download and Remove", async () => {
+  it("says in one line whether each model is here and how big it is; what it is for is behind ⓘ", () => {
     const plugin = makePlugin();
+    plugin.speech.store().state = { kind: "missing" };
     const { tab } = makeTab(plugin);
-    const setting = renderRow(named(rows(tab), GRAPE));
-    expect(setting.descEl.text).toBe("Version 2.0, 5.7 MB, on this device.");
-    expect(current(setting).map((b) => b.text)).toEqual(["Re-download", "Remove"]);
-    await current(setting)[1].click();
+    const all = rows(tab);
+    const grape = renderRow(named(all, GRAPE));
+    expect(grape.descEl.textContent).toBe("Version 2.0, 5.7 MB, on this device.");
+    expect(grape.descEl.find("goodobsidian-model-status")?.hasClass("is-ready")).toBe(true);
+    expect(tab.infoOf(GRAPE)).toMatch(/^Grape \(handwriting recognizer model\) reads/);
+    const voice = renderRow(named(all, VOICE));
+    expect(status(voice)).toBe("Not downloaded yet (83.4 MB).");
+    expect(voice.descEl.find("goodobsidian-model-status")?.hasClass("is-missing")).toBe(true);
+    expect(tab.infoOf(VOICE)).toMatch(/^Whisper \(speech recognizer model\) turns recordings/);
+  });
+
+  it("puts Re-download and Remove of a downloaded model in its ⋯", async () => {
+    const plugin = makePlugin();
+    const setting = renderRow(named(rows(makeTab(plugin).tab), GRAPE));
+    expect(current(setting)).toHaveLength(0);
+    const [more] = menuButtons(setting);
+    expect(more.icon).toBe("more-horizontal");
+    await more.click();
+    const menu = Menu.shown.at(-1);
+    expect(menu?.items.map((i) => [i.title, i.warning])).toEqual([
+      ["Re-download", false],
+      ["Remove", true],
+    ]);
+    await menu?.pick("Remove");
     expect(plugin.calls).toEqual(expect.arrayContaining(["released:grape-2", "grape-2:remove"]));
-    await current(setting)[0].click();
+    await menu?.pick("Re-download");
     expect(plugin.calls).toContain("grape-2:redownload");
   });
 
@@ -1435,13 +1596,14 @@ describe("Models (downloaded on first use)", () => {
     const { tab } = makeTab(plugin);
     const row = named(rows(tab), GRAPE);
     let setting = renderRow(row);
-    expect(setting.descEl.text).toBe("Not downloaded yet (5.7 MB).");
+    expect(status(setting)).toBe("Not downloaded yet (5.7 MB).");
     expect(current(setting).map((b) => [b.text, b.cta])).toEqual([["Download", true]]);
+    expect(menuButtons(setting)).toHaveLength(0);
     await current(setting)[0].click();
     expect(plugin.calls).toContain("grape-2:download");
     plugin.grape.model.state = { kind: "failed", reason: "offline", detail: "" };
     setting = renderRow(row);
-    expect(setting.descEl.text).toBe("Downloads when you're online.");
+    expect(status(setting)).toBe("Downloads when you're online.");
     expect(current(setting).map((b) => b.text)).toEqual(["Try again"]);
   });
 
@@ -1450,17 +1612,34 @@ describe("Models (downloaded on first use)", () => {
     plugin.grape.model.state = { kind: "downloading", received: 0, total: 0 };
     const setting = renderRow(named(rows(makeTab(plugin).tab), GRAPE));
     expect(current(setting)).toHaveLength(0);
-    expect(setting.descEl.text).toMatch(/^Downloading/);
+    expect(menuButtons(setting)).toHaveLength(0);
+    expect(status(setting)).toMatch(/^Downloading/);
   });
 
-  it("lists every registered model", () => {
+  it("sets the voice model's size and language side by side", async () => {
     const plugin = makePlugin();
-    const other = fakeStore({ ...GRAPE_MODEL, id: "whisper", label: "Whisper" }, plugin.calls);
-    plugin.models.all = () => [plugin.grape.model, other];
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Size and language"));
+    expect(row.dropdowns[0].value).toBe("whisper-base");
+    expect(row.dropdowns[0].options["whisper-tiny"]).toMatch(/^Whisper tiny \(/);
+    expect(row.dropdowns[1].value).toBe("auto");
+    await row.dropdowns[1].pick("nl");
+    expect(plugin.settings.speechLanguage).toBe("nl");
+    await row.dropdowns[0].pick("whisper-tiny");
+    expect(plugin.settings.speechModel).toBe("whisper-tiny");
+    expect(plugin.calls).toContain("update");
+  });
+
+  it("lists a model of another feature at the end", () => {
+    const plugin = makePlugin();
+    const other = fakeStore({ ...GRAPE_MODEL, id: "other", label: "Other model" }, plugin.calls);
+    plugin.models.all = () => [plugin.grape.model, plugin.speech.store(), other];
     const names = rows(makeTab(plugin).tab)
       .filter((r) => r.heading === MODELS)
       .map((r) => r.def.name);
-    expect(names).toEqual([GRAPE, "Whisper"]);
+    expect(names).toEqual([
+      ...MODEL_ROWS.map(([name]) => (name === "(block)" ? "" : name)),
+      "Other model",
+    ]);
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {
@@ -1473,5 +1652,124 @@ describe("Models (downloaded on first use)", () => {
       "grape:offer:ask",
       "grape:offer:ask",
     ]);
+  });
+});
+
+describe("the learned handwriting model", () => {
+  const MODEL = "plug/handwriting/grape-2/personal.bin";
+  const PREVIOUS = "plug/handwriting/grape-2/personal-prev.bin";
+  const LEARNED = "Your handwriting model";
+  const LEARN = "Learn your handwriting";
+  const record = {
+    learnedAt: "2026-10-21T20:00:00.000Z",
+    lines: 240,
+    tested: 60,
+    before: 9.8,
+    after: 4.1,
+  };
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** The tab after its learning rows have looked in the vault once. */
+  async function loaded(plugin: Plugin) {
+    const made = makeTab(plugin);
+    renderRow(named(rows(made.tab), LEARNED));
+    await flush();
+    return made;
+  }
+  const visible = (tab: InstanceType<typeof GoodObsidianSettingTab>) =>
+    rows(tab)
+      .filter((r) => r.heading === MODELS && shown(r.def))
+      .map((r) => r.def.name);
+
+  /** The learned model's ⋯ menu, opened; undefined when the row has none. */
+  async function learnedMenu(tab: InstanceType<typeof GoodObsidianSettingTab>) {
+    const row = renderRow(named(rows(tab), LEARNED));
+    const more = row.extras[0];
+    if (!more) return undefined;
+    await more.click();
+    return Menu.shown.at(-1);
+  }
+
+  it("invites a first learning, with nothing to switch, undo or delete", async () => {
+    const { tab } = await loaded(makePlugin());
+    expect(visible(tab)).not.toContain("Read with my model");
+    const head = renderRow(named(rows(tab), LEARNED));
+    expect(head.descEl.textContent).toBe("Not learned yet");
+    expect(await learnedMenu(tab)).toBeUndefined();
+    const learn = renderRow(named(rows(tab), LEARN));
+    expect(learn.descEl.text).toBe("0 of 3 sheets · 0 lines");
+    expect(learn.buttons.map((b) => [b.text, b.cta])).toEqual([
+      ["Write sheet 1", true],
+      ["Learn now", false],
+    ]);
+    expect(learn.buttons[1].disabled).toBe(true);
+    expect(tab.infoOf(LEARN)).toMatch(/Copy at least 10 lines first \(0 so far\)/);
+  });
+
+  it("describes a learned model in one line: in use, and how much better it reads", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = await loaded(plugin);
+    const head = renderRow(named(rows(tab), LEARNED));
+    expect(head.descEl.textContent).toBe("In use · 9.8 % → 4.1 % · 1 KB");
+    expect(tab.infoOf(LEARNED)).toContain("learned 21 Oct 2026 from 240 of your lines");
+    expect(tab.infoOf(LEARNED)).toContain("58 % fewer mistakes.");
+    expect(visible(tab)).toContain("Read with my model");
+    expect((await learnedMenu(tab))?.items.map((i) => i.title)).toEqual(["Delete…"]);
+  });
+
+  it("switches to Grape alone without touching the file", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = await loaded(plugin);
+    await tab.setControlValue("useLearnedHandwriting", false);
+    expect(plugin.settings.useLearnedHandwriting).toBe(false);
+    expect(plugin.files.has(MODEL)).toBe(true);
+    expect(plugin.settings.grape2Model).toBe(record);
+    expect(plugin.calls.filter((c) => c.startsWith("rm:"))).toEqual([]);
+    const head = renderRow(named(rows(tab), LEARNED));
+    expect(head.descEl.textContent).toContain("Off · Grape alone");
+  });
+
+  it("deletes only after a confirmation that says what goes", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    plugin.files.set(PREVIOUS, "old");
+    const { tab } = await loaded(plugin);
+    const menu = await learnedMenu(tab);
+    expect(menu?.items.map((i) => [i.title, i.warning])).toEqual([
+      ["Go back to the previous model", false],
+      ["Delete…", true],
+    ]);
+    dialogs.confirmAnswer = false;
+    await menu?.pick("Delete…");
+    await flush();
+    expect(dialogs.confirms.at(-1)).toMatchObject({
+      title: "Delete your learned handwriting model?",
+      cta: "Delete",
+      warning: true,
+    });
+    expect(dialogs.confirms.at(-1)?.message).toMatch(/Its file and the one before it are deleted/);
+    expect(plugin.files.has(MODEL)).toBe(true);
+    dialogs.confirmAnswer = true;
+    await menu?.pick("Delete…");
+    await flush();
+    expect(plugin.files.size).toBe(0);
+    expect(plugin.settings.grape2Model).toBeUndefined();
+  });
+
+  it("goes back to the previous model, keeping the current one to swap back", async () => {
+    const older = { ...record, learnedAt: "2026-10-13", after: 6.2 };
+    const plugin = makePlugin({ grape2Model: record, grape2ModelPrevious: older });
+    plugin.files.set(MODEL, "new");
+    plugin.files.set(PREVIOUS, "old");
+    const { tab } = await loaded(plugin);
+    rows(tab);
+    expect(tab.infoOf(LEARNED)).toMatch(/learned 13 Oct 2026 .* 6.2 %/);
+    await (await learnedMenu(tab))?.pick("Go back to the previous model");
+    await flush();
+    expect(plugin.files.get(MODEL)).toBe("old");
+    expect(plugin.files.get(PREVIOUS)).toBe("new");
+    expect(plugin.settings.grape2Model).toBe(older);
   });
 });

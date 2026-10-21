@@ -5,6 +5,8 @@ export interface ConfirmOptions {
   title: string;
   message: string;
   cta: string;
+  /** The yes deletes or loses something: the button is red rather than the accent. */
+  warning?: boolean;
 }
 
 /**
@@ -32,15 +34,14 @@ export class ConfirmModal extends Modal {
   }
 
   override onOpen(): void {
-    const { title, message, cta } = this.options;
+    const { title, message, cta, warning } = this.options;
     this.modalEl.addClass("goodobsidian-dialog");
     this.titleEl.setText(title);
     this.contentEl.createEl("p", { text: message });
     new Setting(this.contentEl)
       .addButton((yes) =>
-        yes
+        (warning ? yes.setDestructive() : yes.setCta())
           .setButtonText(cta)
-          .setCta()
           .onClick(() => this.answerAndClose(true)),
       )
       .addButton((no) => no.setButtonText("Cancel").onClick(() => this.answerAndClose(false)));
