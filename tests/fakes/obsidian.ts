@@ -80,6 +80,12 @@ export class FakeEl {
   querySelector(selector: string): FakeEl | null {
     return this.find(selector.replace(/^\./, "")) ?? null;
   }
+  /** Take this element out of the one it sits in. */
+  remove(): void {
+    const at = this.parent?.children.indexOf(this) ?? -1;
+    if (at >= 0) this.parent?.children.splice(at, 1);
+    this.parent = null;
+  }
   /** Put `child` at the end of this element's children. */
   append(child: FakeEl): void {
     this.children.push(child);

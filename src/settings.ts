@@ -46,10 +46,9 @@ import {
   type App,
   type ExtraButtonComponent,
   Menu,
-  Modal,
   Platform,
   PluginSettingTab,
-  Setting,
+  type Setting,
   type SettingControl,
   type SettingDefinition,
   type SettingDefinitionItem,
@@ -119,17 +118,12 @@ import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import { penGlyph } from "./view/pen-glyph-svg";
 import {
-  SAVED_PEN_TYPES,
+  MAX_SAVED_PENS,
   type SavedPen,
-  type SavedPenType,
   defaultSavedPens,
-  editSavedPen,
-  mmText,
-  moveSavedPen,
   removeSavedPen,
   savedPenLabel,
   savedPensOf,
-  widthFromMm,
 } from "./model/saved-pens";
 import type { BarrelAction } from "./input/pen-modifiers";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
@@ -207,15 +201,6 @@ const RETURN_TO_PEN_NAMES: Record<ReturnToPen, string> = {
   reselect: "Tap the tool again",
   "after-use": "After one use",
   both: "Both",
-};
-
-/** The pen types, as the saved pen editor names them. */
-const PEN_TYPE_NAMES: Record<SavedPenType, string> = {
-  fountain: "Fountain pen",
-  ball: "Ball pen",
-  brush: "Brush pen",
-  calligraphy: "Calligraphy pen",
-  highlighter: "Highlighter",
 };
 
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
@@ -517,6 +502,17 @@ function block(draw: (el: HTMLElement) => void, visible: Visible = true): Settin
   };
 }
 
+/**
+ * Remove what an earlier draw of a row put in `parent` with class `cls`:
+ * Obsidian redraws a row in place, and keeps what a row added outside its
+ * name, description and controls.
+ */
+function removeOwn(parent: HTMLElement, cls: string): void {
+  for (let el = parent.querySelector(`.${cls}`); el; el = parent.querySelector(`.${cls}`)) {
+    el.remove();
+  }
+}
+
 /** A note that shows only while it is true: one line, the rest behind its ⓘ. */
 function callout({ title, detail }: Callout, visible: Visible): SettingDefinition {
   return block((el) => {
@@ -575,6 +571,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly infos = new Map<string, string>();
   /** Each drawn section header's status, redrawn after a value changes. */
   private readonly statuses = new Map<SettingsSection, () => void>();
+  /** Each section header's current toggle, behind the one click listener it gets. */
+  private readonly headerToggles = new WeakMap<HTMLElement, () => void>();
   /** Each drawn section's fold, for folding the others when one opens on a tablet. */
   private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
 
@@ -681,6 +679,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     const control = chevron.parentElement;
     if (control) {
+      removeOwn(control, "goodobsidian-section-status");
       const statusEl = control.createSpan({ cls: "goodobsidian-section-status" });
       control.prepend(statusEl);
       const show = (): void => {
@@ -725,13 +724,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.rememberFold(id, opening);
     };
     sync();
-    // The whole header is the target, chevron included: one click, one toggle.
-    header.addEventListener("click", toggle);
+    // The whole header is the target, chevron included: one click, one
+    // toggle. Obsidian may draw a header again in place: it keeps one
+    // listener, which runs the latest toggle.
+    const wired = this.headerToggles.has(header);
+    this.headerToggles.set(header, toggle);
+    if (!wired) header.addEventListener("click", () => this.headerToggles.get(header)?.());
     chevron.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       toggle();
     });
+    if (wired) return;
     this.revealOnFlash(group, () => {
       open();
       group.addClass("is-more-open");
@@ -997,23 +1001,34 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Saved pens as one strip of chips, the stylus button, the cursor, and the
-   * shortcuts (FineNotes#24, #25).
+   * The saved pens as a list, the stylus button, the cursor, and the
+   * shortcuts (FineNotes#24, #25). The list changes only when a pen is saved
+   * from the toolbar's star (eight at most) or deleted here.
    */
   private pensGroup(): SettingDefinitionItem {
+    const pens = savedPensOf(this.plugin.settings.savedPens);
     return this.section(
       "pens",
       "Pens and shortcuts",
       "star",
       [
         this.info(
-          drawnRow("Saved pens", "Tap one to change it.", (s) => this.drawPenStrip(s), [
-            "favorite pens",
-            "presets",
-            "number key",
-            "restore defaults",
-          ]),
+          drawnRow(
+            "Saved pens",
+            pens.length > 0
+              ? `${pens.length} of ${MAX_SAVED_PENS} · add one with the star in the toolbar`
+              : "None yet · add one with the star in the toolbar",
+            (s) => this.drawRestorePens(s),
+            ["favorite pens", "presets", "number key", "restore defaults"],
+          ),
           DESC.savedPens,
+        ),
+        ...pens.map((pen, index) =>
+          drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
+            "saved pen",
+            "preset",
+            "delete pen",
+          ]),
         ),
         this.info(
           dropdown("barrelButton", "Stylus side button", "", BARREL_NAMES, [
@@ -1054,24 +1069,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.update();
   }
 
-  /**
-   * The saved pens as chips under their row: each the pen's own icon in its
-   * ink, with its width under it and its number key in the corner. A chip
-   * opens the pen's editor; the row's arrow restores the defaults, after
-   * asking. New pens are saved from the toolbar's star.
-   */
-  private drawPenStrip(setting: Setting): void {
-    const pens = savedPensOf(this.plugin.settings.savedPens);
-    setting.settingEl.addClass("goodobsidian-pen-strip-row");
-    const strip = setting.settingEl.createDiv({ cls: "goodobsidian-pen-strip" });
-    pens.forEach((pen, index) => {
-      const chip = strip.createEl("button", { cls: "goodobsidian-pen-chip clickable-icon" });
-      chip.setAttribute("aria-label", `${index + 1}: ${savedPenLabel(pen)}`);
-      chip.append(penGlyph(pen.type, pen.color, chip.ownerDocument));
-      chip.createSpan({ cls: "goodobsidian-pen-chip-width", text: mmText(pen.size) });
-      chip.createSpan({ cls: "goodobsidian-pen-chip-key", text: String(index + 1) });
-      chip.addEventListener("click", () => this.editPen(index));
-    });
+  /** "Saved pens": restore FineNotes' own eight, after asking. */
+  private drawRestorePens(setting: Setting): void {
     setting.addExtraButton((button) =>
       button
         .setIcon("rotate-ccw")
@@ -1087,87 +1086,27 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** A saved pen's editor: its type, colour and width, then earlier, later and delete. */
-  private editPen(index: number): void {
-    const pens = savedPensOf(this.plugin.settings.savedPens);
-    if (!pens[index]) return;
-    const modal = new Modal(this.app);
-    modal.titleEl.setText(`Saved pen ${index + 1}`);
-    modal.modalEl.addClass("goodobsidian-pen-editor");
-    this.drawSavedPen(new Setting(modal.contentEl), pens, index, () => modal.close());
-    // The strip shows what was changed once the editor closes.
-    modal.onClose = () => this.update();
-    modal.open();
-  }
-
-  /** A saved pen's controls: its type, colour and width, then earlier, later and delete. */
-  private drawSavedPen(
-    setting: Setting,
-    pens: readonly SavedPen[],
-    index: number,
-    done: () => void,
-  ): void {
-    const pen = pens[index];
-    setting.setClass("goodobsidian-saved-pen-setting");
-    setting.setDesc(savedPenLabel(pen));
-    const swatch = setting.nameEl.createSpan({ cls: "goodobsidian-saved-pen-swatch" });
-    swatch.setCssStyles({ backgroundColor: pen.color });
-    // Each change is saved as it is made; the label follows.
-    const edit = (patch: Partial<SavedPen>): SavedPen => {
-      const edited = editSavedPen(savedPensOf(this.plugin.settings.savedPens), index, patch);
-      this.plugin.saveSavedPens(edited);
-      setting.setDesc(savedPenLabel(edited[index]));
-      return edited[index];
-    };
-    setting.addDropdown((dropdown) => {
-      for (const type of SAVED_PEN_TYPES) dropdown.addOption(type, PEN_TYPE_NAMES[type]);
-      dropdown.setValue(pen.type).onChange((type) => {
-        edit({ type: type as SavedPenType });
-      });
-    });
-    setting.addColorPicker((picker) => {
-      picker.setValue(pen.color).onChange((color) => {
-        swatch.setCssStyles({ backgroundColor: edit({ color }).color });
-      });
-    });
-    setting.addText((text) => {
-      text.inputEl.addClass("goodobsidian-saved-pen-width");
-      text.inputEl.setAttribute("inputmode", "decimal");
-      text.inputEl.setAttribute("aria-label", "Width in millimetres");
-      text.setValue(mmText(pen.size));
-      text.onChange((typed) => {
-        const size = widthFromMm(typed);
-        text.inputEl.toggleClass("is-invalid", size === null);
-        if (size !== null) edit({ size });
-      });
-    });
-    const move = (step: number): void => {
-      this.savePens(moveSavedPen(savedPensOf(this.plugin.settings.savedPens), index, step));
-      done();
-    };
-    setting.addExtraButton((button) => {
-      button
-        .setIcon("arrow-left")
-        .setTooltip("Move earlier")
-        .onClick(() => move(-1));
-      button.setDisabled(index === 0);
-    });
-    setting.addExtraButton((button) => {
-      button
-        .setIcon("arrow-right")
-        .setTooltip("Move later")
-        .onClick(() => move(1));
-      button.setDisabled(index === pens.length - 1);
-    });
-    setting.addExtraButton((button) => {
+  /**
+   * A saved pen's row: its number key, its icon in its ink and its name and
+   * width, then delete. Obsidian redraws a row in place, so what an earlier
+   * draw put in the name goes first.
+   */
+  private drawSavedPen(setting: Setting, pen: SavedPen, index: number): void {
+    setting.setClass("goodobsidian-saved-pen-row");
+    const name = setting.nameEl;
+    removeOwn(name, "goodobsidian-saved-pen-mark");
+    const mark = name.createSpan({ cls: "goodobsidian-saved-pen-mark" });
+    mark.createSpan({ cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
+    mark.append(penGlyph(pen.type, pen.color, name.ownerDocument));
+    name.prepend(mark);
+    setting.addExtraButton((button) =>
       button
         .setIcon("trash-2")
         .setTooltip("Delete")
-        .onClick(() => {
-          this.savePens(removeSavedPen(savedPensOf(this.plugin.settings.savedPens), index));
-          done();
-        });
-    });
+        .onClick(() =>
+          this.savePens(removeSavedPen(savedPensOf(this.plugin.settings.savedPens), index)),
+        ),
+    );
   }
 
   /** The shortcuts are a sheet of their own, the one `?` opens in a notebook. */
@@ -1944,6 +1883,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    */
   private drawLearnRow(setting: Setting): void {
     setting.settingEl.addClass("goodobsidian-learn-step");
+    removeOwn(setting.settingEl, "goodobsidian-sheet-chips");
     const learning = this.learningState;
     if (!learning) {
       this.loadLearning();
@@ -2106,6 +2046,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * is true; the stored width stays the last valid one.
    */
   private drawPaperWidth(setting: Setting): void {
+    removeOwn(setting.descEl, "goodobsidian-field-error");
     const error = setting.descEl.createDiv({
       cls: "goodobsidian-field-error is-hidden",
       text: PAPER_WIDTH_ERROR,

@@ -304,6 +304,8 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 }
 
 const AI = "AI with your own key";
+/** One row per default saved pen, named as the pen. */
+const DEFAULT_PEN_NAMES = DEFAULT_SETTINGS.savedPens.map((pen) => savedPenLabel(pen));
 const MODELS = "Models on this device";
 const WRITING = "Writing";
 const PAGES = "Pages and notebooks";
@@ -359,6 +361,7 @@ describe("the rows", () => {
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Saved pens", "render"],
+      ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
@@ -526,7 +529,13 @@ describe("the rows", () => {
 // --- Visibility --------------------------------------------------------------
 
 /** The "Pens and shortcuts" rows a fresh install shows, on a computer. */
-const PEN_ROWS = ["Saved pens", "Stylus side button", "Cursor over the page", "Keyboard shortcuts"];
+const PEN_ROWS = [
+  "Saved pens",
+  ...DEFAULT_PEN_NAMES,
+  "Stylus side button",
+  "Cursor over the page",
+  "Keyboard shortcuts",
+];
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
 const DEFAULT_MODEL_ROWS = [
@@ -579,7 +588,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 25)",
+      "(block 33)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -609,7 +618,7 @@ describe("which rows show", () => {
       "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block 47)",
+      "(block 55)",
     ]);
   });
 
@@ -1163,94 +1172,61 @@ describe("refresh", () => {
 });
 
 describe("pens and shortcuts (FineNotes#24, #25)", () => {
-  /** The saved pens' strip, drawn. */
-  function strip(plugin: Plugin) {
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
-    return { row, pens: row.settingEl.findAll("goodobsidian-pen-chip") };
+  /** The rows of the saved pens, drawn: one per pen, after "Saved pens". */
+  function penRows(plugin: Plugin) {
+    const all = rows(makeTab(plugin).tab).filter((r) => r.heading === PENS);
+    const from = all.findIndex((r) => r.def.name === "Saved pens");
+    const count = plugin.settings.savedPens.length;
+    return all.slice(from + 1, from + 1 + count).map((r) => renderRow(r.def));
   }
 
-  /** Open saved pen `n`'s editor from its chip; the editor's controls. */
-  function editor(plugin: Plugin, n: number) {
-    strip(plugin).pens[n - 1].dispatch("click");
-    const modal = Modal.made.at(-1);
-    const setting = Setting.created.at(-1);
-    if (!modal || !setting) throw new Error("no editor");
-    return { modal, setting };
-  }
-
-  it("shows each saved pen as its own pen icon in its ink, its width under it, and its key", () => {
+  it("lists each saved pen as a row: its key, its icon in its ink, its name and width", () => {
     const plugin = makePlugin();
-    const { pens } = strip(plugin);
-    // Eight at most, all of them shown: new pens are saved from the toolbar's star.
+    const pens = penRows(plugin);
     expect(pens).toHaveLength(8);
     const pen = plugin.settings.savedPens[1];
-    expect(pens[1].attrs["aria-label"]).toBe(`2: ${savedPenLabel(pen)}`);
-    const glyph = pens[1].children.find((c) => c.tag === "svg");
-    expect(glyph).toBeDefined();
-    // The tip is drawn in the pen's own ink.
+    const mark = pens[1].nameEl.find("goodobsidian-saved-pen-mark");
+    expect(pens[1].nameEl.children[0]).toBe(mark);
+    expect(mark?.find("goodobsidian-saved-pen-key")?.text).toBe("2");
+    const glyph = mark?.children.find((c) => c.tag === "svg");
     const painted = (glyph?.children ?? []).flatMap((part) => Object.values(part.attrs));
     expect(painted).toContain(pen.color);
-    expect(pens[1].find("goodobsidian-pen-chip-width")?.text).toBe("0.41");
-    expect(pens[1].find("goodobsidian-pen-chip-key")?.text).toBe("2");
+    expect(named(rows(makeTab(plugin).tab), savedPenLabel(pen))).toBeDefined();
   });
 
-  it("edits a saved pen's type, colour and width in its editor", async () => {
-    const plugin = makePlugin();
-    const { modal, setting } = editor(plugin, 2);
-    expect(modal.titleEl.text).toBe("Saved pen 2");
-    expect(modal.isOpen).toBe(true);
-    expect(setting.dropdowns[0].value).toBe("ball");
-    expect(Object.keys(setting.dropdowns[0].options)).toEqual([
-      "fountain",
-      "ball",
-      "brush",
-      "calligraphy",
-      "highlighter",
-    ]);
-    expect(setting.colors[0].value).toBe("#e03131");
-    expect(setting.texts[0].value).toBe("0.41");
+  it("says how many are saved and where new ones come from, eight at most", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    expect(named(all, "Saved pens").desc).toBe("8 of 8 · add one with the star in the toolbar");
+    const none = makePlugin();
+    none.settings.savedPens = [];
+    expect(named(rows(makeTab(none).tab), "Saved pens").desc).toMatch(/^None yet/);
+  });
 
-    await setting.colors[0].pick("#00AA00");
-    expect(plugin.settings.savedPens[1].color).toBe("#00aa00");
-    expect(setting.find("goodobsidian-saved-pen-swatch")?.style.backgroundColor).toBe("#00aa00");
-    await setting.texts[0].type("1");
-    expect(plugin.settings.savedPens[1].size).toBe(4.88);
-    await setting.texts[0].type("9");
-    expect(plugin.settings.savedPens[1].size).toBe(4.88);
-    expect(setting.texts[0].inputEl.hasClass("is-invalid")).toBe(true);
-    await setting.dropdowns[0].pick("highlighter");
-    expect(plugin.settings.savedPens[1].type).toBe("highlighter");
-    expect(setting.descEl.text).toBe(savedPenLabel(plugin.settings.savedPens[1]));
-    // The strip is drawn again once the editor closes.
-    expect(plugin.calls).not.toContain("update");
-    modal.close();
+  it("deletes a pen from its row", async () => {
+    const plugin = makePlugin();
+    const [first, second] = plugin.settings.savedPens;
+    const pens = penRows(plugin);
+    expect(pens[0].extras.map((b) => b.icon)).toEqual(["trash-2"]);
+    await pens[0].extras[0].click();
+    expect(plugin.settings.savedPens).toHaveLength(7);
+    expect(plugin.settings.savedPens[0]).toEqual(second);
+    expect(plugin.settings.savedPens).not.toContainEqual(first);
     expect(plugin.calls).toContain("update");
   });
 
-  it("moves and deletes saved pens from the editor, which then closes", async () => {
+  it("draws a row again in place without a second icon", () => {
     const plugin = makePlugin();
-    const first = editor(plugin, 1);
-    expect(first.setting.extras.map((b) => [b.icon, b.disabled])).toEqual([
-      ["arrow-left", true],
-      ["arrow-right", false],
-      ["trash-2", false],
-    ]);
-    expect(editor(plugin, 8).setting.extras[1].disabled).toBe(true);
-    const [blue, red] = plugin.settings.savedPens;
-    await first.setting.extras[1].click();
-    expect(plugin.settings.savedPens.slice(0, 2)).toEqual([red, blue]);
-    expect(first.modal.isOpen).toBe(false);
-    const again = editor(plugin, 1);
-    await again.setting.extras[2].click();
-    expect(plugin.settings.savedPens).toHaveLength(7);
-    expect(plugin.settings.savedPens[0]).toEqual(blue);
-    expect(again.modal.isOpen).toBe(false);
+    const all = rows(makeTab(plugin).tab);
+    const def = named(all, savedPenLabel(plugin.settings.savedPens[0]));
+    const setting = renderRow(def);
+    def.render?.(setting, {});
+    expect(setting.nameEl.findAll("goodobsidian-saved-pen-mark")).toHaveLength(1);
   });
 
   it("restores the default pens only after asking", async () => {
     const plugin = makePlugin();
     plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 4);
-    const { row } = strip(plugin);
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
     expect(row.extras[0].icon).toBe("rotate-ccw");
     dialogs.confirmAnswer = false;
     await row.extras[0].click();
@@ -1413,7 +1389,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(4);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
