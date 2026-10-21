@@ -241,7 +241,7 @@ export default class GoodObsidianPlugin extends Plugin {
   });
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
-  readonly grape = new GrapeFiles(this.models, () => this.settings.grapeModel);
+  readonly grape = new GrapeFiles(this.models);
 
   /** The on-device handwriting reader, started on first use. */
   readonly handwriting = new HandwritingReader(

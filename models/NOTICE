@@ -1,12 +1,15 @@
-Grape 1.0, the FineNotes handwriting recogniser (model "ship-big2")
+Grape 2.0, the FineNotes handwriting recogniser
 Copyright 2026 Joost (FineNotes)
 
 Licensed under the Apache License, Version 2.0 (see LICENSE). This NOTICE
 must travel with every copy of the model file.
 
-The model is a 5x128 bidirectional LSTM with a character language model. It
-was trained on the data below. No training sample is contained in the model
-file. Changes made to the data are listed per source.
+The model is a 5x192 bidirectional LSTM that reads Bezier curves, with a
+character language model. It was trained on the data below. No training
+sample is contained in the model file. Changes made to the data are listed
+per source. Lines of the handwriting sets whose label did not match the ink
+were removed after a check by an AI model; no data left the author's
+machines for training.
 
 ------------------------------------------------------------------------
 Handwriting (pen trajectories)
@@ -79,6 +82,12 @@ GSM8K (https://github.com/openai/grade-school-math)
   Word problems and worked answers, with calculator annotations removed.
 
 FineNotes templates and the author's own typed notes.
+
+Symbols for synthetic formulas: the HWRT / Detexify symbol recognition data
+  (Martin Thoma; Zenodo record 50022). Open Database License 1.0
+  (https://opendatacommons.org/licenses/odbl/1-0/). Single drawn symbols
+  were placed into synthetic formulas laid out with KaTeX (MIT License,
+  https://katex.org); the model file contains none of the symbols.
 
 The MIT License text (Faker, GSM8K):
   Permission is hereby granted, free of charge, to any person obtaining a

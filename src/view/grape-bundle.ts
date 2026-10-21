@@ -7,7 +7,7 @@
  */
 export async function bundledGrape(): Promise<ArrayBuffer | null> {
   if (typeof __FINENOTES_BUNDLE_GRAPE__ !== "undefined" && __FINENOTES_BUNDLE_GRAPE__) {
-    const { default: bytes } = await import("../../models/grape-1.0.bin");
+    const { default: bytes } = await import("../../models/grape-2.0.bin");
     // A copy: the caller may hand it to a worker.
     return bytes.slice().buffer;
   }

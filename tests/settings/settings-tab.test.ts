@@ -306,7 +306,6 @@ describe("the rows", () => {
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
-      [HANDWRITING, "Handwriting model", "dropdown:grapeModel"],
       [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
       [HANDWRITING, "Learn my handwriting", "render"],
       [RECORDINGS, "Speech model on this device", "dropdown:speechModel"],
@@ -413,7 +412,6 @@ describe("the rows", () => {
       "Cursor over the page": ["cursor", "pointer", "crosshair"],
       "Keyboard and stylus shortcuts": ["hotkeys", "keys", "modifier"],
       "Read handwriting on this device (beta)": ["handwriting", "recognition", "search", "offline"],
-      "Handwriting model": ["handwriting", "recognition", "model", "Grape 2", "preview"],
       "Underline words it may have misread (test)": [
         "handwriting",
         "spelling",
@@ -431,7 +429,7 @@ describe("the rows", () => {
         "model",
       ],
       "Spoken language": ["audio", "speech", "language", "transcribe"],
-      "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape"],
+      "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape-2"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
       "Folder for recordings": ["folder", "attachments", "where files are saved"],
@@ -552,7 +550,6 @@ describe("which rows show", () => {
       "Show New notebook in file explorer bar",
       "Show notebook folders as notebooks",
       "Read handwriting on this device (beta)",
-      "Handwriting model",
       "Underline words it may have misread (test)",
       "Learn my handwriting",
       "Speech model on this device",
@@ -585,7 +582,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${40 + PEN_ROWS.length})`,
+      `(block ${39 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1424,12 +1421,12 @@ describe("Models (downloaded on first use)", () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin);
     const setting = renderRow(named(rows(tab), GRAPE));
-    expect(setting.descEl.text).toBe("Version 1.0, 3.5 MB, on this device.");
+    expect(setting.descEl.text).toBe("Version 2.0, 5.7 MB, on this device.");
     expect(current(setting).map((b) => b.text)).toEqual(["Re-download", "Remove"]);
     await current(setting)[1].click();
-    expect(plugin.calls).toEqual(expect.arrayContaining(["released:grape", "grape:remove"]));
+    expect(plugin.calls).toEqual(expect.arrayContaining(["released:grape-2", "grape-2:remove"]));
     await current(setting)[0].click();
-    expect(plugin.calls).toContain("grape:redownload");
+    expect(plugin.calls).toContain("grape-2:redownload");
   });
 
   it("offers the download when a model is missing, and again after a failure", async () => {
@@ -1438,10 +1435,10 @@ describe("Models (downloaded on first use)", () => {
     const { tab } = makeTab(plugin);
     const row = named(rows(tab), GRAPE);
     let setting = renderRow(row);
-    expect(setting.descEl.text).toBe("Not downloaded yet (3.5 MB).");
+    expect(setting.descEl.text).toBe("Not downloaded yet (5.7 MB).");
     expect(current(setting).map((b) => [b.text, b.cta])).toEqual([["Download", true]]);
     await current(setting)[0].click();
-    expect(plugin.calls).toContain("grape:download");
+    expect(plugin.calls).toContain("grape-2:download");
     plugin.grape.model.state = { kind: "failed", reason: "offline", detail: "" };
     setting = renderRow(row);
     expect(setting.descEl.text).toBe("Downloads when you're online.");

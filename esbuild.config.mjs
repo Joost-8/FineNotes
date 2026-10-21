@@ -70,7 +70,7 @@ const inlineWorker = {
 };
 
 /**
- * Whether Grape (models/grape-1.0.bin) is bundled into main.js. The plugin
+ * Whether Grape (models/grape-2.0.bin) is bundled into main.js. The plugin
  * downloads it on first use (src/view/grape-files.ts); while it is bundled,
  * the plugin also writes the bundled copy to <plugin>/handwriting/ in the
  * background, so people who update never download it. The bridge release

@@ -290,7 +290,7 @@ function benchJsonOnly(pages: number, density: Density): void {
 // --- Handwriting reading ------------------------------------------------------------
 
 async function benchReading(): Promise<void> {
-  const model = "models/grape-1.0.bin";
+  const model = "models/grape-2.0.bin";
   if (!existsSync(model)) return;
   const { parseBundle } = await import("../../src/recognition/hwr/bundle");
   const { readPage } = await import("../../src/recognition/hwr/recognizer");

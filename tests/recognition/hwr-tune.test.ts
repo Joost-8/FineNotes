@@ -22,7 +22,7 @@ import {
   tuneRoom,
 } from "../../src/recognition/hwr/tune";
 
-const BYTES = new Uint8Array(readFileSync("models/grape-1.0.bin"));
+const BYTES = new Uint8Array(readFileSync("models/grape-2.0.bin"));
 const BASE = parseBundle(BYTES);
 
 /** A made-up line: a wave as long as its text. */
@@ -126,11 +126,12 @@ describe("tune", () => {
 
   it("leaves out a line too long to learn from, so it cannot size the run's memory", () => {
     const lines = ["hello", "world", "notes", "ink", "pages", "lines"].map((t, i) => line(t, i));
-    // The same wave for 40 letters: ~1,850 frames, past any copied practice line.
-    const long = line("x".repeat(40), 9);
-    expect(prepareLine(long, BASE.meta.alphabet, seededRandom(1), false)!.frames).toBeGreaterThan(
-      TUNE_MAX_FRAMES,
-    );
+    // The same wave for 110 letters: past 400 curves, past any copied practice line.
+    const long = line("x".repeat(110), 9);
+    const model = { input: BASE.meta.input, inputs: BASE.net.inputs };
+    expect(
+      prepareLine(long, BASE.meta.alphabet, seededRandom(1), false, model)!.frames,
+    ).toBeGreaterThan(TUNE_MAX_CURVES);
     const result = tune(BYTES, [...lines, long], { steps: 1, batch: 2 });
     expect(result!.trained + result!.heldOut).toBe(6);
   }, 120000);

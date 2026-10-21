@@ -41,7 +41,7 @@ describe("the practice file", () => {
 
   it("opens on a cover, then has every line printed as a prompt, ten to a page", () => {
     expect(doc.practice).toEqual({ format: PRACTICE_FORMAT, set: 1 });
-    expect(doc.pages).toHaveLength(3);
+    expect(doc.pages).toHaveLength(4);
     const [cover, ...pages] = doc.pages;
     expect(cover.backdrop.kind).toBe("blank");
     const words = printedOf(cover)
@@ -64,12 +64,12 @@ describe("the practice file", () => {
 
   it("has three different sets, each asking only for characters the model can write", () => {
     expect(PRACTICE_SETS).toHaveLength(3);
-    const alphabet = parseBundle(readFileSync("models/grape-1.0.bin")).meta.alphabet;
+    const alphabet = parseBundle(readFileSync("models/grape-2.0.bin")).meta.alphabet;
     const all = PRACTICE_SETS.flat();
     expect(new Set(all).size).toBe(all.length);
     for (const line of all) expect(encodeLabel(line, alphabet), line).not.toBeNull();
     for (const [i, set] of PRACTICE_SETS.entries()) {
-      expect(set, `set ${i + 1}`).toHaveLength(20);
+      expect(set, `set ${i + 1}`).toHaveLength(30);
       // Every letter of the alphabet, in both cases, somewhere in the set.
       const text = set.join(" ");
       for (const letter of "abcdefghijklmnopqrstuvwxyz") {

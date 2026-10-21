@@ -10,6 +10,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Grape 2.0**, a new handwriting model, replaces Grape 1.0 and the model
+  choice in Settings: it reads faster, is smaller (5.7 MB) and reads small
+  note writing and short maths better (on the developer's own notes, 13.4%
+  of characters wrong against 21.2%). Learn my handwriting starts from it, so
+  what was learned from Grape 1.0 is not used any more; practice again to
+  teach it your writing.
+- **Handwriting practice now includes maths**: each of the three sets has ten
+  lines such as fractions, powers, roots, sums and integrals written in plain
+  characters, so Learn my handwriting also learns how you write them. Sets are
+  now 30 lines.
+
 - **Stroke stabilization, per pen**, as in Goodnotes: a 0-100% slider in the
   pen menu, under "Pen settings" (tap the pen in the pen pill), steadies a
   shaky hand while you write. Each pen keeps its own setting, and every pen

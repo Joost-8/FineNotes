@@ -1,9 +1,9 @@
 # Models and data shipped with FineNotes
 
-`grape-1.0.bin` is Grape 1.0, the FineNotes handwriting model: the
+`grape-2.0.bin` is Grape 2.0, the FineNotes handwriting model: the
 on-device recogniser's network and language model. The plugin downloads it
 on first use from the Grape release (`src/recognition/hwr/grape-model.ts`
-pins its size and SHA-256) into `<plugin>/handwriting/`. While
+pins its size and SHA-256) into `<plugin>/handwriting/grape-2/`. While
 `BUNDLE_GRAPE` is on in `esbuild.config.mjs`, it is also built into
 `main.js` (the `binary` loader), and the plugin writes that copy to the
 folder, so people who update never download it. The file stays here for the
