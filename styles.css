@@ -2411,23 +2411,6 @@ button.goodobsidian-sheet-chip.clickable-icon {
   width: 100%;
 }
 
-/* A saved pen's row: its colour as a dot before its name, then its controls. */
-.goodobsidian-saved-pen-swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-inline-start: 8px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 50%;
-  vertical-align: middle;
-}
-
-.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width {
-  width: 5em;
-  text-align: end;
-}
-
-.goodobsidian-saved-pen-setting input.goodobsidian-saved-pen-width.is-invalid,
 input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
@@ -2568,65 +2551,35 @@ input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
 
-/* The saved pens: a strip of chips under their row, each the pen's own
-   icon in its ink, its width under it, its number key in the corner. */
-.setting-item.goodobsidian-pen-strip-row {
-  flex-wrap: wrap;
-}
-
-.goodobsidian-pen-strip-row > .setting-item-info {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.goodobsidian-pen-strip {
-  flex: 1 0 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
-  margin-top: var(--size-4-2);
-}
-
-button.goodobsidian-pen-chip.clickable-icon {
-  position: relative;
-  display: flex;
-  flex-direction: column;
+/* The saved pens: one row each, its number key and its icon in its ink
+   before its name and width, delete at the end. */
+.goodobsidian-saved-pen-mark {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 52px;
-  height: 56px;
-  padding: 0;
-  border-radius: var(--gob-radius-l);
-  background: var(--background-secondary);
+  gap: var(--size-4-2);
+  margin-inline-end: var(--size-4-2);
+  vertical-align: middle;
+}
+
+.goodobsidian-saved-pen-key {
+  min-width: 1.4em;
+  padding: 1px 5px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.goodobsidian-saved-pen-mark svg {
+  width: 22px;
+  height: 22px;
   color: var(--text-muted);
 }
 
-.goodobsidian-pen-chip svg {
-  width: 24px;
-  height: 24px;
-}
-
-.goodobsidian-pen-chip-width {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.goodobsidian-pen-chip-key {
-  position: absolute;
-  top: 3px;
-  right: 5px;
-  color: var(--text-faint);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-/* The editor a saved pen's chip opens: its controls on one row. */
-.goodobsidian-pen-editor .setting-item {
-  border-top: none;
+.setting-item.goodobsidian-saved-pen-row {
+  padding-block: var(--size-4-2);
 }
 
 /* Feedback and community: one centred line of pills at the end of the tab,
