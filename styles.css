@@ -1938,8 +1938,16 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   pointer-events: auto;
 }
 
+/* A checklist's box in a text box (2.5): a tap ticks it. */
+.goodobsidian-textbox-check {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .goodobsidian-surface.is-lasso .goodobsidian-textbox-link,
-.goodobsidian-surface.is-text-tool .goodobsidian-textbox-link {
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-link,
+.goodobsidian-surface.is-lasso .goodobsidian-textbox-check,
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-check {
   pointer-events: none;
 }
 
@@ -6691,6 +6699,33 @@ input[type="range"].goodobsidian-player-scrubber {
 }
 
 .goodobsidian-link-mark.is-hidden {
+  display: none;
+}
+
+/* A handwritten task's box beside its ink (2.5), in the ink's colour (set
+   inline); a tap ticks it. The export draws the same box (paintTaskBox). */
+.goodobsidian-task-mark {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-radius: 20%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.goodobsidian-task-mark.is-done::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.2 5.2 4.2 7.2 8 2.8' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.2 5.2 4.2 7.2 8 2.8' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+}
+
+.goodobsidian-task-mark.is-hidden {
   display: none;
 }
 

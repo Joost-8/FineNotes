@@ -58,6 +58,8 @@ import {
   syncLinkIndex,
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
+import { adoptTaskStates, notebookTasks, syncTaskIndex } from "../recognition/task-index";
+import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
 import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
@@ -247,6 +249,7 @@ import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
+import { TaskModal } from "./task-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
@@ -571,6 +574,8 @@ export class InkView extends TextFileView {
     // The text block's links list follows the notebook's handwritten links,
     // so backlinks and the graph see them (FineNotes#20).
     this.noteBody = syncLinkIndex(this.noteBody, linkTargets(this.doc));
+    // And its checklist follows the notebook's, for the Tasks plugin (2.5).
+    this.noteBody = syncTaskIndex(this.noteBody, notebookTasks(this.doc));
     return this.noteBody;
   }
 
@@ -621,6 +626,8 @@ export class InkView extends TextFileView {
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
+    // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
+    if (doc && !held) this.adoptTicks(body);
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -658,6 +665,16 @@ export class InkView extends TextFileView {
     // Targets rewritten in place, on any page: nothing else can tell the save cache.
     if (renamed > 0) this.encoder.touchAll();
     return renamed;
+  }
+
+  /**
+   * Take ticks made in the note's checklist since the notebook wrote it (by
+   * the Tasks plugin, or by hand) into the notebook, and save them in.
+   */
+  private adoptTicks(body: string): void {
+    if (this.guard.locked) return;
+    const pages = adoptTaskStates(this.doc, body);
+    if (pages.length > 0) this.requestSaveOf(pages);
   }
 
   /**
@@ -2465,6 +2482,7 @@ export class InkView extends TextFileView {
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
+        onMakeTask: (index, strokeIds) => this.makeInkTask(index, strokeIds),
         onOpenLink: (target) => this.openInkLink(target),
         onTapComment: (index, comment) => this.openComment(index, comment),
         onAddComment: (index, at) => {
@@ -3255,6 +3273,32 @@ export class InkView extends TextFileView {
         if (found.text) picker.suggest(found.text, found.fixes);
       });
     }
+  }
+
+  /**
+   * Turn into › Task (2.5): ask what the ink says, starting from what this
+   * device reads in it, and make it a checklist item.
+   */
+  private makeInkTask(index: number, strokeIds: string[]): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    let read: SelectionText | null = null;
+    const modal = new TaskModal(this.app, undefined, (text) => {
+      // By identity: the page may move or go while the dialog is open.
+      if (this.isProtected() || this.surface !== surface) return;
+      if (!surface.document.pages.includes(page)) return;
+      if (read) this.recordEdits(page, read.words, text);
+      const commands = makeTask(surface.document, page, strokeIds, text);
+      if (commands.length === 0) return;
+      surface.applyCommand(new CompositeCommand("Task", commands));
+      this.requestSave();
+    });
+    modal.open();
+    void this.readSelection(page, strokeIds).then((found) => {
+      read = found;
+      if (found.text) modal.suggest(found.text, found.fixes);
+    });
   }
 
   /** The vault's notes for the link picker, most recently changed first. */

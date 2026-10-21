@@ -43,12 +43,14 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
   type Bounds,
   type ImageCrop,
   type ImageElement,
   type InkDocument,
+  type InkTask,
   type Page,
   type PageGeometry,
   type ArrowHeads,
@@ -1834,6 +1836,8 @@ export function renderPageThumbnail(
   for (const stroke of page.strokes) {
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
+  // Handwriting made a checklist item has its box beside it, in its ink colour.
+  for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);
   // A picture in front of the ink (a sticker on handwriting), under the text.
   pictures(true);
 
@@ -1841,6 +1845,40 @@ export function renderPageThumbnail(
   // canvas: a filled shape is a ground the text sits on, and a filled box
   // covers the ink under it in an export just as it does on screen.
   for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  ctx.restore();
+}
+
+/**
+ * Paint a handwritten task's box in page space where the page shows it
+ * (`taskBoxRect`): a rounded square in the colour of its first stroke,
+ * ticked when done. Nothing when its ink is gone.
+ */
+export function paintTaskBox(
+  ctx: CanvasRenderingContext2D,
+  page: Page,
+  task: InkTask,
+  night = false,
+): void {
+  const bounds = inkBounds(page, task.strokes);
+  if (!bounds) return;
+  const { x, y, size } = taskBoxRect(bounds);
+  const first = page.strokes.find((s) => s.id === task.strokes[0]);
+  const color = first?.color ?? "#1f1f1f";
+  ctx.save();
+  ctx.strokeStyle = night ? nightColor(color) : color;
+  ctx.lineWidth = Math.max(1.2, size / 11);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.roundRect(x, y, size, size, size * 0.2);
+  ctx.stroke();
+  if (task.done === true) {
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.22, y + size * 0.52);
+    ctx.lineTo(x + size * 0.42, y + size * 0.72);
+    ctx.lineTo(x + size * 0.8, y + size * 0.28);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

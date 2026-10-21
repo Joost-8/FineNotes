@@ -110,3 +110,32 @@ function snapshot(box: TextBoxElement): StyleSnapshot {
   }
   return snap;
 }
+
+/**
+ * Replace one text box's text, as one step of undo: a tap on a checklist
+ * box (2.5) ticks it without the box being edited.
+ */
+export class SetTextBoxText implements Command {
+  private before: string | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly id: string,
+    private readonly text: string,
+    readonly label = "Edit text",
+  ) {}
+
+  apply(doc: InkDocument): void {
+    const box = pageById(doc, this.pageId)?.textBoxes.find((b) => b.id === this.id);
+    if (!box) return;
+    this.before = box.text;
+    box.text = this.text;
+  }
+
+  invert(doc: InkDocument): void {
+    const box = pageById(doc, this.pageId)?.textBoxes.find((b) => b.id === this.id);
+    if (!box || this.before === null) return;
+    box.text = this.before;
+    this.before = null;
+  }
+}

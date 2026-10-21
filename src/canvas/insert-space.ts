@@ -18,6 +18,7 @@
 import { AddPage } from "../model/commands";
 import { SetSection } from "../model/contents";
 import { SetLink } from "../model/links";
+import { SetTask } from "../model/tasks";
 import type { Command } from "../model/commands";
 import {
   type Bounds,
@@ -338,6 +339,16 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     walk.moves.push(
       new SetLink(page, link.id, null, "Insert space"),
       new SetLink(next, link.id, { strokes: moving, target: link.target }, "Insert space"),
+    );
+  }
+  // So does a checklist item made of handwriting.
+  for (const task of page.tasks ?? []) {
+    const moving = task.strokes.filter((id) => carried.has(id));
+    if (moving.length * 2 <= task.strokes.length) continue;
+    const { id: _id, ...rest } = task;
+    walk.moves.push(
+      new SetTask(page, task.id, null, "Insert space"),
+      new SetTask(next, task.id, { ...rest, strokes: moving }, "Insert space"),
     );
   }
   // A section goes with its heading, keeping its place on the line.

@@ -2451,6 +2451,7 @@ export class Toolbar {
     const kinds: Array<{ kind: ListKind; label: string }> = [
       { kind: "bullet", label: "Bullets" },
       { kind: "number", label: "Numbering" },
+      { kind: "task", label: "Checklist" },
     ];
     for (const { kind, label } of kinds) {
       const button = this.textOption(row, "is-flag", "", () => {
@@ -4047,6 +4048,14 @@ function listGlyph(kind: ListKind): SVGElement {
       for (const y of [6, 12, 18]) {
         add("circle", { cx: "5", cy: String(y), r: "1.3", fill: "currentColor", stroke: "none" });
       }
+      return;
+    }
+    if (kind === "task") {
+      // Three boxes, the first ticked.
+      for (const y of [6, 12, 18]) {
+        add("rect", { x: "2.6", y: String(y - 2.4), width: "4.8", height: "4.8", rx: "1" });
+      }
+      add("path", { d: "M3.6 6l1.1 1.1 1.9-2.2", "stroke-width": "1.3" });
       return;
     }
     // 1, 2, 3 drawn as strokes, so the glyph needs no font.

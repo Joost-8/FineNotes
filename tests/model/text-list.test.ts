@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { BULLET, continueList, listKindOf, toggleList } from "../../src/model/text-list";
+import {
+  BULLET,
+  TASK_DONE,
+  TASK_OPEN,
+  continueList,
+  listKindOf,
+  setTaskDone,
+  taskLines,
+  toggleList,
+} from "../../src/model/text-list";
 
 describe("listKindOf", () => {
   it("reads bullets and numbers, with or without an indent", () => {
@@ -112,5 +121,50 @@ describe("continueList", () => {
 
   it("does nothing special for Enter inside the marker", () => {
     expect(continueList("1. milk", 1)).toBeNull();
+  });
+});
+
+describe("checklists", () => {
+  it("reads both boxes as a checklist", () => {
+    expect(listKindOf(`${TASK_OPEN}milk`)).toBe("task");
+    expect(listKindOf(`  ${TASK_DONE}eggs`)).toBe("task");
+    expect(listKindOf("☐milk")).toBeNull();
+  });
+
+  it("makes lines items to do, keeps a tick, and takes them off again", () => {
+    const on = toggleList(`milk\n${TASK_DONE}eggs`, 0, 9, "task");
+    expect(on.text).toBe(`${TASK_OPEN}milk\n${TASK_DONE}eggs`);
+    expect(toggleList(on.text, 0, on.text.length, "task").text).toBe("milk\neggs");
+  });
+
+  it("turns a bulleted list into a checklist", () => {
+    expect(toggleList(`${BULLET}milk\n${BULLET}eggs`, 0, 12, "task").text).toBe(
+      `${TASK_OPEN}milk\n${TASK_OPEN}eggs`,
+    );
+  });
+
+  it("continues with an unticked item, and ends on an empty one", () => {
+    const text = `${TASK_DONE}milk`;
+    const next = continueList(text, text.length);
+    expect(next?.text).toBe(`${TASK_DONE}milk\n${TASK_OPEN}`);
+    expect(continueList(next?.text ?? "", next?.selectionStart ?? 0)?.text).toBe(
+      `${TASK_DONE}milk\n`,
+    );
+  });
+
+  it("lists the items with their lines, ticks and words", () => {
+    const text = `Shopping\n${TASK_OPEN}milk\n  ${TASK_DONE}eggs \n${BULLET}bread`;
+    expect(taskLines(text)).toEqual([
+      { line: 1, done: false, text: "milk" },
+      { line: 2, done: true, text: "eggs " },
+    ]);
+  });
+
+  it("ticks and unticks one item, and leaves anything else alone", () => {
+    const text = `${TASK_OPEN}milk\n${BULLET}bread`;
+    expect(setTaskDone(text, 0, true)).toBe(`${TASK_DONE}milk\n${BULLET}bread`);
+    expect(setTaskDone(setTaskDone(text, 0, true), 0, false)).toBe(text);
+    expect(setTaskDone(text, 1, true)).toBe(text);
+    expect(setTaskDone(text, 7, true)).toBe(text);
   });
 });

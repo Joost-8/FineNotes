@@ -573,6 +573,24 @@ export interface Page {
   sections?: PageSection[];
   /** Ink on this page that links somewhere (FineNotes#20). Absent when there is none. */
   links?: InkLink[];
+  /** Handwritten lines made checklist items (2.5). Absent when there are none. */
+  tasks?: InkTask[];
+}
+
+/**
+ * A handwritten line made a checklist item with the lasso (2.5): the ink, by
+ * stroke id, what it says (read on the device, then confirmed), and whether
+ * it is ticked. A box is drawn left of the ink; the item is also written into
+ * the note as a `- [ ]` task, so Obsidian's Tasks plugin finds it
+ * (`recognition/task-index.ts`).
+ */
+export interface InkTask {
+  /** `ck<N>`, unique in the notebook. */
+  id: string;
+  strokes: string[];
+  /** One line of text, trimmed. */
+  text: string;
+  done?: true;
 }
 
 /**

@@ -333,6 +333,7 @@ import {
   type TextBoxFrame,
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
+import { SetTask, inkBounds, taskBoxRect, tasksOf, tickTask } from "../model/tasks";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
 import { strokeKey } from "../recognition/hwr/corrections";
@@ -345,7 +346,7 @@ import {
 } from "../model/commands";
 import { ReplaceStrokesOnPage, type StrokeReplacement } from "../model/erase-commands";
 import { addStrokesTimed } from "../model/recording-commands";
-import { SetTextBoxStyle } from "../model/text-commands";
+import { SetTextBoxStyle, SetTextBoxText } from "../model/text-commands";
 import {
   DEFAULT_TEXT_STYLE,
   type TextStyle,
@@ -357,7 +358,14 @@ import {
   shownCase,
   textStyleOf,
 } from "../model/text-style";
-import { type ListKind, type TextEdit, continueList, toggleList } from "../model/text-list";
+import {
+  type ListKind,
+  type TextEdit,
+  continueList,
+  setTaskDone,
+  taskBoxes,
+  toggleList,
+} from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { revealDelta } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
@@ -650,6 +658,11 @@ export interface InkSurfaceCallbacks {
    * is where the ink leads now, when all of it is in one link.
    */
   onLinkStrokes?: (index: number, strokeIds: string[], current: string | null) => void;
+  /**
+   * Turn into › Task on a lasso selection of ink (2.5): the host asks what
+   * it says, and applies `makeTask` for these stroke ids on page `index`.
+   */
+  onMakeTask?: (index: number, strokeIds: string[]) => void;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -1480,6 +1493,8 @@ export class InkSurface {
   private readonly sectionRibbons: HTMLElement[] = [];
   /** An underline under each piece of linked ink. */
   private readonly linkMarks: HTMLElement[] = [];
+  /** A box beside each handwritten task, which a tap ticks (2.5). */
+  private readonly taskMarks: HTMLElement[] = [];
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words Grape may have misread, by page id: a wavy underline each. */
@@ -3866,10 +3881,28 @@ export class InkSurface {
     view.shownText = text;
     view.shown.empty();
     let links = 0;
+    // A checklist's boxes (2.5) are tappable like links: a tap ticks one.
+    const boxes = taskBoxes(text);
+    let at = 0;
     for (const segment of textSegments(text)) {
       const target = segment.target;
+      const from = at;
+      at += segment.text.length;
       if (target === undefined) {
-        view.shown.appendText(segment.text);
+        let done = 0;
+        for (const box of boxes) {
+          if (box.offset < from || box.offset >= at) continue;
+          view.shown.appendText(segment.text.slice(done, box.offset - from));
+          const check = view.shown.createSpan({
+            cls: "goodobsidian-textbox-check",
+            text: segment.text.charAt(box.offset - from),
+            attr: { role: "checkbox", "aria-checked": String(box.done) },
+          });
+          this.bindTextTask(check, view, box.line, !box.done);
+          done = box.offset - from + 1;
+          links++;
+        }
+        view.shown.appendText(segment.text.slice(done));
         continue;
       }
       links++;
@@ -3881,6 +3914,38 @@ export class InkSurface {
       this.bindTextLink(link, target);
     }
     view.root.toggleClass("has-links", links > 0);
+  }
+
+  /**
+   * A checklist box in a text box ticks (or unticks) on a tap, as one step
+   * of undo, without the box being edited. Pointer events, as for a link.
+   */
+  private bindTextTask(el: HTMLElement, view: TextBoxView, line: number, done: boolean): void {
+    let pressed: number | null = null;
+    el.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      pressed = event.pointerId;
+    });
+    el.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (pressed !== event.pointerId) return;
+      pressed = null;
+      const live = this.liveTextBox(view.pageId, view.id);
+      if (!live || this.callbacks.isLocked?.()) return;
+      const text = setTaskDone(live.text, line, done);
+      if (text === live.text) return;
+      this.history.push(
+        this.doc,
+        new SetTextBoxText(view.pageId, view.id, text, done ? "Tick task" : "Untick task"),
+      );
+      view.input.value = text;
+      this.renderShownText(view, text);
+      this.changed([view.pageId]);
+    });
+    el.addEventListener("pointercancel", () => {
+      pressed = null;
+    });
   }
 
   /**
@@ -7722,6 +7787,7 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
+    actions.push(...this.taskActions(sel, index));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -7778,6 +7844,44 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
+    return actions;
+  }
+
+  /**
+   * Turn into › Task for selected ink (2.5), first under Turn into; with ink
+   * that is in a task, Remove task as well.
+   */
+  private taskActions(sel: GroupSelection, index: number): SelectionAction[] {
+    const page = this.doc.pages[index];
+    const make = this.callbacks.onMakeTask;
+    if (!page || !make || sel.strokes.length === 0) return [];
+    const ids = sel.strokes.map((stroke) => stroke.id);
+    const actions: SelectionAction[] = [
+      {
+        id: "task",
+        icon: "square-check-big",
+        label: "Task",
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          make(index, ids);
+        },
+      },
+    ];
+    const held = tasksOf(page, ids);
+    if (held.length > 0) {
+      actions.push({
+        id: "untask",
+        icon: "square-x",
+        label: "Remove task",
+        group: "link",
+        run: () => {
+          const commands = held.map((task) => new SetTask(page, task.id, null));
+          this.applyCommand(new CompositeCommand("Remove task", commands));
+        },
+      });
+    }
     return actions;
   }
 
@@ -8447,7 +8551,7 @@ export class InkSurface {
     for (let i = used; i < this.sectionRibbons.length; i++) {
       this.sectionRibbons[i].addClass("is-hidden");
     }
-    const linked = this.syncLinkMarks() + this.syncWordMarks();
+    const linked = this.syncLinkMarks() + this.syncWordMarks() + this.syncTaskMarks();
     this.sectionRibbonsEl.toggleClass("is-hidden", used === 0 && linked === 0);
   }
 
@@ -8486,6 +8590,74 @@ export class InkSurface {
     }
     for (let i = used; i < this.linkMarks.length; i++) this.linkMarks[i].addClass("is-hidden");
     return used;
+  }
+
+  /**
+   * A box beside each handwritten task, where the export draws it
+   * (`taskBoxRect`), ticked when done; a tap ticks or unticks it, one step of
+   * undo. Returns how many are shown.
+   */
+  private syncTaskMarks(): number {
+    let used = 0;
+    const scale = this.unitScale;
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      if (!page) continue;
+      for (const task of page.tasks ?? []) {
+        const bounds = inkBounds(page, task.strokes);
+        if (!bounds) continue;
+        let mark = this.taskMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({
+            cls: "goodobsidian-task-mark",
+            attr: { role: "checkbox" },
+          });
+          this.bindTaskMark(mark);
+          this.taskMarks.push(mark);
+        }
+        const rect = taskBoxRect(bounds);
+        const first = page.strokes.find((s) => s.id === task.strokes[0]);
+        mark.removeClass("is-hidden");
+        mark.toggleClass("is-done", task.done === true);
+        mark.dataset.pageId = page.id;
+        mark.dataset.taskId = task.id;
+        mark.setAttribute("aria-checked", String(task.done === true));
+        mark.setAttribute("aria-label", task.text || "Task");
+        mark.setCssStyles({
+          left: `${(box.x + rect.x) * scale}px`,
+          top: `${(box.y + rect.y) * scale}px`,
+          width: `${rect.size * scale}px`,
+          height: `${rect.size * scale}px`,
+          color: first?.color ?? "",
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.taskMarks.length; i++) this.taskMarks[i].addClass("is-hidden");
+    return used;
+  }
+
+  /** A tap on a task's box ticks or unticks it: pointer events, as every control over the page. */
+  private bindTaskMark(mark: HTMLElement): void {
+    let pressed: number | null = null;
+    mark.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      pressed = event.pointerId;
+    });
+    mark.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (pressed !== event.pointerId) return;
+      pressed = null;
+      if (this.callbacks.isLocked?.()) return;
+      const page = this.doc.pages.find((p) => p.id === mark.dataset.pageId);
+      const task = page?.tasks?.find((t) => t.id === mark.dataset.taskId);
+      if (!page || !task) return;
+      this.applyCommand(tickTask(page, task, task.done !== true));
+    });
+    mark.addEventListener("pointercancel", () => {
+      pressed = null;
+    });
   }
 
   /**

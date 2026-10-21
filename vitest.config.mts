@@ -111,6 +111,7 @@ export default defineConfig({
         "src/recognition/audio-request.ts",
         "src/recognition/key-store.ts",
         "src/recognition/page-transcripts.ts",
+        "src/recognition/task-index.ts",
         "src/recognition/hwr/numeric.ts",
         "src/recognition/hwr/features.ts",
         "src/recognition/hwr/curves.ts",

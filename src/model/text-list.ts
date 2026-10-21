@@ -1,18 +1,25 @@
 /**
- * Bulleted and numbered lists in a page text box. PURE.
+ * Bulleted, numbered and checklist lists in a page text box. PURE.
  *
- * A list is written into the text itself — "• " or "1. " at the start of a
- * line — rather than kept as a style, so it survives everything plain text
- * does: saving, search, export, transcription and another device. The text
- * pill's list button toggles the lines under the selection; Enter on a list
- * line continues the list, and Enter on an empty item ends it (GoodNotes and
- * every word processor behave this way).
+ * A list is written into the text itself — "• ", "1. " or a box "☐ " / "☑ "
+ * at the start of a line — rather than kept as a style, so it survives
+ * everything plain text does: saving, search, export, transcription and
+ * another device. The text pill's list button toggles the lines under the
+ * selection; Enter on a list line continues the list, and Enter on an empty
+ * item ends it (GoodNotes and every word processor behave this way).
+ *
+ * A checklist (2.5) uses the two glyphs the Notability importer and the AI's
+ * answers already write, so those became live checklists; each item is also
+ * written into the note as a `- [ ]` task (`recognition/task-index.ts`).
  */
 
-export type ListKind = "bullet" | "number";
+export type ListKind = "bullet" | "number" | "task";
 
 /** The marker a bullet line starts with. */
 export const BULLET = "• ";
+/** The marker of a checklist item still to do, and of one done. */
+export const TASK_OPEN = "☐ ";
+export const TASK_DONE = "☑ ";
 
 /** A line's leading list marker: the indent, the marker, and what it is. */
 interface Marker {
@@ -21,16 +28,20 @@ interface Marker {
   kind: ListKind;
   /** The item number, for a numbered line. */
   n: number;
+  /** A checklist item that is ticked. */
+  done: boolean;
 }
 
-const MARKER = /^([ \t]*)(?:(•) |(\d{1,4})[.)] )/;
+const MARKER = /^([ \t]*)(?:(•) |(\d{1,4})[.)] |([☐☑]) )/;
 
 function markerOf(line: string): Marker | null {
   const m = MARKER.exec(line);
   if (!m) return null;
   const [whole, indent] = m;
-  if (m[2]) return { indent, marker: whole.slice(indent.length), kind: "bullet", n: 0 };
-  return { indent, marker: whole.slice(indent.length), kind: "number", n: Number(m[3]) };
+  const marker = whole.slice(indent.length);
+  if (m[2]) return { indent, marker, kind: "bullet", n: 0, done: false };
+  if (m[4]) return { indent, marker, kind: "task", n: 0, done: m[4] === "☑" };
+  return { indent, marker, kind: "number", n: Number(m[3]), done: false };
 }
 
 /** The list a line belongs to, or `null` for a plain line. */
@@ -168,7 +179,16 @@ export function toggleList(
     const m = markerOf(line);
     const indent = m?.indent ?? /^[ \t]*/.exec(line)?.[0] ?? "";
     const body = line.slice(indent.length + (m?.marker.length ?? 0));
-    const marker = all ? "" : kind === "bullet" ? BULLET : `${n++}. `;
+    // A line that is already a checklist item keeps its tick.
+    const marker = all
+      ? ""
+      : kind === "bullet"
+        ? BULLET
+        : kind === "task"
+          ? m?.done
+            ? TASK_DONE
+            : TASK_OPEN
+          : `${n++}. `;
     replaced.set(i, indent + marker + body);
   }
   let edit = applyLines(text, replaced, selectionStart, selectionEnd);
@@ -206,10 +226,56 @@ export function continueList(text: string, caret: number): TextEdit | null {
     const at = lineStart + m.indent.length;
     return { text: out, selectionStart: at, selectionEnd: at };
   }
-  const next = m.kind === "bullet" ? BULLET : `${m.n + 1}. `;
+  // The next item of a checklist starts unticked.
+  const next = m.kind === "bullet" ? BULLET : m.kind === "task" ? TASK_OPEN : `${m.n + 1}. `;
   const insert = `\n${m.indent}${next}`;
   const out = text.slice(0, caret) + insert + text.slice(caret);
   const at = caret + insert.length;
   if (m.kind !== "number") return { text: out, selectionStart: at, selectionEnd: at };
   return applyLines(out, renumberedRun(out.split("\n"), index + 1), at, at);
+}
+
+/** A checklist item of a text box: its line, whether it is ticked, and what it says. */
+export interface TaskLine {
+  /** Index of the line in the text. */
+  line: number;
+  done: boolean;
+  text: string;
+}
+
+/** Where each checklist item's box is in `text`: its offset, its line, and whether ticked. */
+export function taskBoxes(text: string): Array<{ offset: number; line: number; done: boolean }> {
+  const out: Array<{ offset: number; line: number; done: boolean }> = [];
+  let start = 0;
+  text.split("\n").forEach((line, index) => {
+    const m = markerOf(line);
+    if (m?.kind === "task")
+      out.push({ offset: start + m.indent.length, line: index, done: m.done });
+    start += line.length + 1;
+  });
+  return out;
+}
+
+/** Every checklist item in `text`, in order. */
+export function taskLines(text: string): TaskLine[] {
+  const out: TaskLine[] = [];
+  text.split("\n").forEach((line, index) => {
+    const m = markerOf(line);
+    if (m?.kind !== "task") return;
+    out.push({ line: index, done: m.done, text: line.slice(m.indent.length + m.marker.length) });
+  });
+  return out;
+}
+
+/**
+ * `text` with the checklist item on line `line` ticked (`done`) or not;
+ * unchanged when that line is no checklist item or already says so.
+ */
+export function setTaskDone(text: string, line: number, done: boolean): string {
+  const lines = text.split("\n");
+  const m = markerOf(lines[line] ?? "");
+  if (m?.kind !== "task" || m.done === done) return text;
+  const body = lines[line].slice(m.indent.length + m.marker.length);
+  lines[line] = m.indent + (done ? TASK_DONE : TASK_OPEN) + body;
+  return lines.join("\n");
 }

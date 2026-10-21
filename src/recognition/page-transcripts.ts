@@ -50,20 +50,65 @@ import { readTextSection, writeTextSection } from "./text-layer";
 /** The comment that opens the links list at the end of the section. */
 export const LINKS_MARKER = "<!--goodobsidian-links-->";
 const LINKS_HEADING = "### Links";
+/**
+ * The comment that opens the checklist (2.5), which sits between the page
+ * entries and the links list (`recognition/task-index.ts`).
+ */
+export const TASKS_MARKER = "<!--goodobsidian-tasks-->";
+export const TASKS_HEADING = "### Tasks";
+
+/** Where a list at the section's end starts (its heading, or its marker), or -1. */
+function listStart(lines: readonly string[], marker: string, heading: string): number {
+  const at = lines.findIndex((line) => line.trim() === marker);
+  if (at < 0) return -1;
+  return at > 0 && lines[at - 1].trim() === heading ? at - 1 : at;
+}
+
+/** A section's lines, and where its checklist and its links list start (-1: none). */
+function trailingLists(section: string): { lines: string[]; tasks: number; links: number } {
+  const lines = section.replace(/\r\n?/g, "\n").split("\n");
+  return {
+    lines,
+    tasks: listStart(lines, TASKS_MARKER, TASKS_HEADING),
+    links: listStart(lines, LINKS_MARKER, LINKS_HEADING),
+  };
+}
 
 /**
- * A section split into what comes before its links list and the list
- * itself (from its heading, or its marker, to the end; "" when there is none).
+ * A section split into what comes before its lists (the checklist and the
+ * links list) and the links list itself (from its heading, or its marker, to
+ * the end or the checklist; "" when there is none).
  */
 export function splitLinkIndex(section: string): { rest: string; links: string } {
-  const lines = section.replace(/\r\n?/g, "\n").split("\n");
-  const at = lines.findIndex((line) => line.trim() === LINKS_MARKER);
-  if (at < 0) return { rest: section, links: "" };
-  const start = at > 0 && lines[at - 1].trim() === LINKS_HEADING ? at - 1 : at;
+  const { lines, tasks, links } = trailingLists(section);
+  if (tasks < 0 && links < 0) return { rest: section, links: "" };
+  const first = tasks < 0 ? links : links < 0 ? tasks : Math.min(tasks, links);
   return {
-    rest: lines.slice(0, start).join("\n").trimEnd(),
-    links: lines.slice(start).join("\n").trim(),
+    rest: lines.slice(0, first).join("\n").trimEnd(),
+    links:
+      links < 0
+        ? ""
+        : lines
+            .slice(links, tasks > links ? tasks : undefined)
+            .join("\n")
+            .trim(),
   };
+}
+
+/** A section's checklist, from its heading or marker to the links list or the end; "" for none. */
+export function splitTaskIndex(section: string): string {
+  const { lines, tasks, links } = trailingLists(section);
+  if (tasks < 0) return "";
+  return lines
+    .slice(tasks, links > tasks ? links : undefined)
+    .join("\n")
+    .trim();
+}
+
+/** A section with its checklist replaced by `tasks` ("" removes it), before the links list. */
+export function writeTaskIndex(section: string | null, tasks: string): string {
+  const { rest, links } = splitLinkIndex(section ?? "");
+  return [rest.trim(), tasks.trim(), links].filter((part) => part !== "").join("\n\n");
 }
 
 /**
@@ -176,8 +221,9 @@ export function renamedLinkTargets(
 /** A section with its links list replaced by one for these targets. */
 export function writeLinkIndex(section: string | null, targets: readonly string[]): string {
   const rest = splitLinkIndex(section ?? "").rest.trim();
+  const tasks = splitTaskIndex(section ?? "");
   const links = formatLinkIndex(targets);
-  return [rest, links].filter((part) => part !== "").join("\n\n");
+  return [rest, tasks, links].filter((part) => part !== "").join("\n\n");
 }
 
 /**
@@ -321,6 +367,7 @@ export function updatePageTranscripts(
 ): string {
   const parsed = parsePageTranscripts(section);
   const links = splitLinkIndex(section ?? "").links;
+  const tasks = splitTaskIndex(section ?? "");
   const byKey = new Map<string, PageTranscript>();
   let preamble = parsed.preamble;
   if (parsed.legacy) {
@@ -350,7 +397,8 @@ export function updatePageTranscripts(
       `### Page ${index + 1}\n<!--goodobsidian-page ${encodeURIComponent(key)} ${entry.hash}${entry.device ? " device" : ""}-->\n${entry.text}`,
     );
   });
-  // The links list stays at the end; it is rewritten on save, not here.
+  // The checklist and the links list stay at the end; they are rewritten on save, not here.
+  if (tasks) blocks.push(tasks);
   if (links) blocks.push(links);
   return blocks.join("\n\n");
 }

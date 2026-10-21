@@ -62,6 +62,7 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
   let graphSeq = maxId(all, (p) => p.graphs ?? [], "f");
   let commentSeq = maxId(all, (p) => p.comments ?? [], "cm");
   let linkSeq = maxId(all, (p) => p.links ?? [], "l");
+  let taskSeq = maxId(all, (p) => p.tasks ?? [], "ck");
 
   return pages.map((source) => {
     const copy = structuredClone(source);
@@ -84,6 +85,14 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
       });
       if (links.length > 0) copy.links = links;
       else delete copy.links;
+    }
+    if (copy.tasks) {
+      const tasks = copy.tasks.flatMap((task) => {
+        const strokes = task.strokes.flatMap((id) => strokeIds.get(id) ?? []);
+        return strokes.length > 0 ? [{ ...task, id: `ck${++taskSeq}`, strokes }] : [];
+      });
+      if (tasks.length > 0) copy.tasks = tasks;
+      else delete copy.tasks;
     }
     return copy;
   });
