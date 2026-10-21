@@ -1722,16 +1722,18 @@ body,
   background: var(--gob-paper);
 }
 
-/* Several pages move together: a second sheet behind, and their number. */
-.goodobsidian-thumb-ghost.is-stack::before {
-  content: "";
+/* Several pages move together: each shows as a sheet fanned out behind the
+   one grabbed, and their number sits on the corner. */
+.goodobsidian-thumb-ghost-sheet {
   position: absolute;
-  z-index: -1;
   inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
   border-radius: var(--gob-radius-s);
   background: var(--gob-paper);
   box-shadow: var(--gob-shadow-paper);
-  transform: translate(7px, 7px) rotate(4deg);
 }
 
 .goodobsidian-thumb-ghost-count {

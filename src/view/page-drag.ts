@@ -303,7 +303,11 @@ export class PageDrag {
     const sources = shown.filter((item) => indexes.includes(item.index)).map((item) => item.root);
     const frame = press.root.querySelector<HTMLElement>(FRAME) ?? press.root;
     const rect = frame.getBoundingClientRect();
-    const ghost = liftedCopy(frame, rect, indexes.length);
+    const others = sources
+      .filter((root) => root !== press.root)
+      .map((root) => root.querySelector<HTMLElement>(FRAME))
+      .filter((other): other is HTMLElement => other !== null);
+    const ghost = liftedCopy(frame, rect, indexes.length, others);
     const body = press.root.doc.body;
     body.appendChild(ghost);
     const bar = body.createDiv({ cls: "goodobsidian-thumb-drop is-hidden" });
@@ -419,7 +423,13 @@ function stylus(touch: Touch): boolean {
  * repaint) that follows the pointer, with the number of pages when several
  * move together.
  */
-function liftedCopy(frame: HTMLElement, rect: DOMRect, count: number): HTMLElement {
+function liftedCopy(
+  frame: HTMLElement,
+  rect: DOMRect,
+  count: number,
+  /** The frames of the other pages moving too: the first few show as sheets underneath. */
+  others: readonly HTMLElement[] = [],
+): HTMLElement {
   const ghost = createDiv({ cls: "goodobsidian-thumb-ghost" });
   ghost.setCssStyles({
     width: `${rect.width}px`,
@@ -427,13 +437,36 @@ function liftedCopy(frame: HTMLElement, rect: DOMRect, count: number): HTMLEleme
     transform: `translate(${rect.left}px, ${rect.top}px)`,
   });
   if (count > 1) ghost.addClass("is-stack");
+  // The pages beneath, fanned out behind the one grabbed, deepest first.
+  const under = others.slice(0, MAX_SHEETS);
+  under.forEach((other, i) => {
+    const depth = under.length - i;
+    const sheet = copyCanvas(ghost, other, "goodobsidian-thumb-ghost-sheet");
+    sheet.setCssStyles({
+      transform: `translate(${depth * 7}px, ${depth * 6}px) rotate(${depth % 2 === 0 ? -1 : 1}deg)`,
+    });
+  });
+  if (count > 1 && under.length === 0) {
+    copyCanvas(ghost, frame, "goodobsidian-thumb-ghost-sheet").setCssStyles({
+      transform: "translate(7px, 7px) rotate(4deg)",
+    });
+  }
+  copyCanvas(ghost, frame, "goodobsidian-thumb-ghost-canvas");
+  if (count > 1) ghost.createSpan({ cls: "goodobsidian-thumb-ghost-count", text: String(count) });
+  return ghost;
+}
+
+/** How many other pages show as sheets under the one grabbed. */
+const MAX_SHEETS = 3;
+
+/** A copy of a thumbnail's pixels (not a repaint), added to `parent`. */
+function copyCanvas(parent: HTMLElement, frame: HTMLElement, cls: string): HTMLCanvasElement {
   const source = frame.querySelector("canvas");
-  const copy = ghost.createEl("canvas", { cls: "goodobsidian-thumb-ghost-canvas" });
+  const copy = parent.createEl("canvas", { cls });
   if (source && source.width > 0 && source.height > 0) {
     copy.width = source.width;
     copy.height = source.height;
     copy.getContext("2d")?.drawImage(source, 0, 0);
   }
-  if (count > 1) ghost.createSpan({ cls: "goodobsidian-thumb-ghost-count", text: String(count) });
-  return ghost;
+  return copy;
 }
