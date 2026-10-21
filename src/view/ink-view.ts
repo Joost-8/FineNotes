@@ -190,6 +190,9 @@ import {
   isNoOpBlockMove,
   moveIndexForGap,
 } from "../model/page-order";
+import { ReceivePages, transferNotice, transferRefusal } from "../model/page-transfer";
+import type { TransferReceipt } from "../main";
+import { type MoveChoice, MovePagesModal } from "./move-pages-modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import {
   externalUrl,
@@ -3541,10 +3544,145 @@ export class InkView extends TextFileView {
     return indexes.map((i) => pages[i]).filter((page): page is Page => page !== undefined);
   }
 
+  /** Ask where the pages at `indexes` should go: another notebook (FineNotes#33). */
+  private chooseNotebookFor(indexes: readonly number[]): void {
+    const surface = this.surface;
+    const file = this.file;
+    if (!surface || !file || this.isDamaged()) return;
+    const pages = this.pagesAt(indexes);
+    if (pages.length === 0) return;
+    let copyOnly: string | null = null;
+    if (isReadOnly(surface.document)) {
+      copyOnly = "This notebook is read-only, so its pages can be copied but not moved.";
+    } else if (pages.length >= surface.document.pages.length) {
+      copyOnly = "These are all the pages here, so they can be copied but not moved.";
+    }
+    new MovePagesModal(this.app, {
+      count: pages.length,
+      targets: this.plugin.transferTargets(),
+      recent: this.plugin.recentTransferTargets(),
+      exclude: file.path,
+      copyOnly,
+      onChoose: (choice) => void this.sendPages(surface, pages, choice),
+    }).open();
+  }
+
+  /**
+   * Copy `pages` into the notebook chosen, then (unless it is a copy) take
+   * them out of this one as one undoable step. The copy is made first, so a
+   * failure never costs a page. The notice's Undo takes both back.
+   */
+  private async sendPages(
+    surface: InkSurface,
+    pages: readonly Page[],
+    { destination, copy }: MoveChoice,
+  ): Promise<void> {
+    if (this.surface !== surface) return;
+    const here = pages.filter((page) => surface.document.pages.includes(page));
+    if (here.length === 0) return;
+    const receipt: TransferReceipt | string =
+      destination.kind === "new"
+        ? await this.plugin.sendPagesToNewNotebook(destination.title, here)
+        : await this.plugin.sendPages(destination.target.path, here);
+    if (typeof receipt === "string") {
+      new Notice(`FineNotes: ${receipt}`, 8000);
+      return;
+    }
+    this.plugin.rememberTransferTarget(receipt.path);
+    let removal: RemovePages | null = null;
+    if (
+      !copy &&
+      this.surface === surface &&
+      !isReadOnly(surface.document) &&
+      here.length < surface.document.pages.length
+    ) {
+      removal = new RemovePages(here);
+      surface.applyCommand(removal);
+      this.sidebar?.flush();
+      this.requestSave();
+    }
+    const moved = removal;
+    const message = transferNotice(here.length, receipt.title, moved === null);
+    const notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createSpan({ text: message });
+        const undo = fragment.createEl("button", {
+          cls: "goodobsidian-notice-action clickable-icon",
+          text: "Undo",
+        });
+        undo.addEventListener("click", () => {
+          notice.hide();
+          void this.undoTransfer(surface, moved, receipt);
+        });
+      }),
+      10000,
+    );
+  }
+
+  /** Put the pages back here (if they were moved) and take them out of where they went. */
+  private async undoTransfer(
+    surface: InkSurface,
+    removal: RemovePages | null,
+    receipt: TransferReceipt,
+  ): Promise<void> {
+    if (removal) {
+      // Here first: the copy over there is the only other copy of these pages.
+      if (this.surface !== surface || !surface.isLatest(removal)) {
+        new Notice(
+          `FineNotes: this notebook changed since, so the pages stay in ${receipt.title} as well. Delete them there if you do not want them.`,
+          10000,
+        );
+        return;
+      }
+      surface.undo();
+      this.sidebar?.flush();
+      this.requestSave();
+    }
+    try {
+      await receipt.undo();
+    } catch (error) {
+      new Notice(
+        `FineNotes: could not take the pages out of ${receipt.title} — ${errorMessage(error)}`,
+        8000,
+      );
+    }
+  }
+
+  /**
+   * Pages arriving from another notebook (FineNotes#33): added at the end as
+   * one undoable step. Returns how to take them out again, or why they cannot
+   * come.
+   */
+  receivePages(pages: readonly Page[]): { undo: () => Promise<void> } | string {
+    const surface = this.surface;
+    if (!surface) return "that notebook is not ready yet.";
+    if (this.isDamaged()) return "that notebook could not be loaded safely.";
+    const refusal = transferRefusal(surface.document);
+    if (refusal) return refusal;
+    const command = new ReceivePages(pages);
+    surface.applyCommand(command);
+    this.sidebar?.flush();
+    this.requestSave();
+    return {
+      undo: () => {
+        if (this.surface === surface) {
+          surface.applyCommand(new RemovePages(command.added));
+          this.sidebar?.flush();
+          this.requestSave();
+        }
+        return Promise.resolve();
+      },
+    };
+  }
+
   /** An action from the overview's selection bar, on the pages at `indexes`. */
   private selectionAction(action: SelectionAction, indexes: readonly number[]): void {
     if (action === "export") {
       this.exportPdf(indexes);
+      return;
+    }
+    if (action === "move-to") {
+      this.chooseNotebookFor(indexes);
       return;
     }
     const surface = this.surface;

@@ -6,6 +6,20 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **Move or copy pages to another notebook** (FineNotes#33). In the page
+  sidebar, tick pages and choose Move, then "To another notebook…": pick a
+  notebook (the one you used last comes first, and a search finds the rest)
+  or start a new one, and choose Move or Copy. The pages arrive at the end of
+  the other notebook, which can be closed or open; a notice offers Undo, which
+  takes them back out of both.
+- **Select pages in the sidebar itself**, not only in the page overview:
+  Ctrl/Cmd-click or Shift-click a page, or choose Select pages in its menu.
+  Dragging one ticked page takes every ticked page with it.
+
 ## [2.4.0] - 2026-10-21
 
 ### Added

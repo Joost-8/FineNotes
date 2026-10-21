@@ -46,7 +46,15 @@ import {
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
-import { buildInkFile } from "./model/serialize";
+import { buildInkFile, parseInkFile } from "./model/serialize";
+import {
+  ReceivePages,
+  type TransferTarget,
+  prepareTransfer,
+  rememberTarget,
+  removePagesById,
+  transferRefusal,
+} from "./model/page-transfer";
 import type { RecognitionProvider } from "./recognition/provider";
 import { createProviderRegistry, resolveProvider } from "./recognition/registry";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
@@ -122,6 +130,16 @@ import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-lib
 
 /** Where the name a user shares templates under is remembered, on this device. */
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
+/** The notebooks pages were sent to last, in this device's local storage. */
+const RECENT_TARGETS_KEY = "goodobsidian:move-targets";
+
+/** Pages were added to a notebook; `undo` takes exactly those pages (or the new notebook) away. */
+export interface TransferReceipt {
+  path: string;
+  /** What the notebook is called, for the notice. */
+  title: string;
+  undo: () => Promise<void>;
+}
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
@@ -141,7 +159,7 @@ import {
   writePracticePage,
 } from "./view/handwriting-learning";
 import { buildPracticeFile } from "./recognition/practice";
-import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX } from "./constants";
+import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX, SINGLE_PAGE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
@@ -1721,6 +1739,8 @@ export default class GoodObsidianPlugin extends Plugin {
     ) => InkDocument | Promise<InkDocument> = (heading, attachments) =>
       buildNewDocument(choices, heading, attachments),
     ownFolder = this.settings.notebookOwnFolder,
+    /** Open it in the current tab; false leaves the view where it is. */
+    open = true,
   ): Promise<TFile | null> {
     const dir = normalizeFolder(folder ?? this.newNotebookFolder());
     try {
@@ -1740,6 +1760,7 @@ export default class GoodObsidianPlugin extends Plugin {
         normalizePath(joinVaultPath(paths.folder, name)),
         content,
       );
+      if (!open) return file;
       // Straight into the notebook view, in the current tab, focused.
       const tab = this.app.workspace.getLeaf(false);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
@@ -1749,6 +1770,127 @@ export default class GoodObsidianPlugin extends Plugin {
       new Notice(`FineNotes: could not create the notebook — ${errorMessage(error)}`, 8000);
       return null;
     }
+  }
+
+  // --- Pages sent to another notebook (FineNotes#33) ---------------------------
+
+  /** Every notebook pages could be sent to: not a single page, not a practice set. */
+  transferTargets(): TransferTarget[] {
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => {
+        const name = file.name.toLowerCase();
+        return (
+          this.isInkFile(file) &&
+          !name.endsWith(SINGLE_PAGE_FILE_SUFFIX) &&
+          !name.endsWith(PRACTICE_FILE_SUFFIX)
+        );
+      })
+      .map((file) => ({
+        path: file.path,
+        title: stripInkSuffix(file.name),
+        mtime: file.stat.mtime,
+      }));
+  }
+
+  /** The notebooks pages went to last, most recent first (kept on this device). */
+  recentTransferTargets(): string[] {
+    const raw: unknown = this.app.loadLocalStorage(RECENT_TARGETS_KEY);
+    if (typeof raw !== "string") return [];
+    try {
+      const list: unknown = JSON.parse(raw);
+      return Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  rememberTransferTarget(path: string): void {
+    const next = rememberTarget(this.recentTransferTargets(), path);
+    this.app.saveLocalStorage(RECENT_TARGETS_KEY, JSON.stringify(next));
+  }
+
+  /**
+   * Add copies of `pages` to the end of the notebook at `path`: through its
+   * view when it is open (so the view keeps owning the file), else by
+   * rewriting the file. A string comes back when it cannot be done.
+   */
+  async sendPages(path: string, pages: readonly Page[]): Promise<TransferReceipt | string> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return "that notebook is gone.";
+    const title = stripInkSuffix(file.name);
+    const view = this.openNotebooks().find((open) => open.file?.path === path);
+    if (view) {
+      const received = view.receivePages(pages);
+      return typeof received === "string" ? received : { path, title, undo: received.undo };
+    }
+    const outcome: { refusal: string | null; added: string[] } = { refusal: null, added: [] };
+    try {
+      await this.app.vault.process(file, (data) => {
+        const parsed = parseInkFile(data, this.settings.paperWidth);
+        if (!parsed.doc) {
+          outcome.refusal = "that notebook could not be read.";
+          return data;
+        }
+        outcome.refusal = transferRefusal(parsed.doc);
+        if (outcome.refusal) return data;
+        const command = new ReceivePages(pages);
+        command.apply(parsed.doc);
+        outcome.added = command.added.map((page) => page.id);
+        return buildInkFile(parsed.body, parsed.doc);
+      });
+    } catch (error) {
+      return `could not write to ${title} — ${errorMessage(error)}`;
+    }
+    if (outcome.refusal) return outcome.refusal;
+    const { added } = outcome;
+    return {
+      path,
+      title,
+      undo: async () => {
+        await this.app.vault.process(file, (data) => {
+          const parsed = parseInkFile(data, this.settings.paperWidth);
+          if (!parsed.doc || removePagesById(parsed.doc, added) === 0) return data;
+          return buildInkFile(parsed.body, parsed.doc);
+        });
+      },
+    };
+  }
+
+  /** A new notebook that starts with copies of `pages`, left unopened. */
+  async sendPagesToNewNotebook(
+    title: string,
+    pages: readonly Page[],
+  ): Promise<TransferReceipt | string> {
+    const choices: NotebookChoices = {
+      ...parseNotebookChoices(this.settings.lastNotebookChoices),
+      type: "notebook",
+      cover: "none",
+    };
+    const file = await this.createNotebook(
+      title || "Moved pages",
+      choices,
+      undefined,
+      (heading, attachments) => {
+        const doc = buildNewDocument(choices, heading, attachments);
+        const copies = prepareTransfer(pages, { ...doc, pages: [] });
+        if (copies.length > 0) {
+          doc.pages = copies;
+          doc.view.width = copies[0].geometry.width;
+        }
+        return doc;
+      },
+      this.settings.notebookOwnFolder,
+      false,
+    );
+    if (!file) return "the new notebook could not be made.";
+    return {
+      path: file.path,
+      title: stripInkSuffix(file.name),
+      undo: async () => {
+        await this.app.fileManager.trashFile(file);
+      },
+    };
   }
 
   /**

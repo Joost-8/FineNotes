@@ -9939,6 +9939,11 @@ export class InkSurface {
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
   }
 
+  /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */
+  isLatest(command: Command): boolean {
+    return this.history.isLatest(command);
+  }
+
   /** Whether Undo would do anything. */
   get canUndo(): boolean {
     return this.history.canUndo();

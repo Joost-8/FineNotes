@@ -111,7 +111,7 @@ export type SectionAction = "rename" | "remove";
 
 /** What the overview's selection bar does to the selected pages. */
 export type SelectionAction =
-  "move-start" | "move-end" | "duplicate" | "bookmark" | "export" | "delete";
+  "move-start" | "move-end" | "move-to" | "duplicate" | "bookmark" | "export" | "delete";
 
 export interface PageSidebarCallbacks {
   /** A page was tapped; `fromOverview` when the overview closes to show it (jump, do not glide). */
@@ -523,6 +523,7 @@ export class PageSidebar {
     if (!open) {
       this.drag.cancel();
       this.setOverview(false);
+      this.setSelecting(false);
     }
     this.open = open;
     this.slide?.cancel();
@@ -604,9 +605,12 @@ export class PageSidebar {
     this.callbacks.onOverviewChange?.(on);
   }
 
-  /** Select mode in the overview: taps tick pages, and the selection bar shows. */
+  /**
+   * Select mode, in the panel or its overview: taps tick pages, the selection
+   * bar shows, and dragging a ticked page takes every ticked page with it.
+   */
   setSelecting(on: boolean): void {
-    if (on && !this.overview) return;
+    if (on && (!this.open || this.single || this.fixed)) return;
     if (on === this.selecting) return;
     this.selecting = on;
     if (!on) {
@@ -650,6 +654,7 @@ export class PageSidebar {
   /** Show the page thumbnails or the recordings. */
   showTab(tab: SidebarTab): void {
     this.tab = tab;
+    if (tab !== "pages") this.setSelecting(false);
     this.pagesEl.toggleClass("is-hidden", tab !== "pages");
     this.contentsEl.toggleClass("is-hidden", tab !== "contents");
     this.filesEl.toggleClass("is-hidden", tab !== "files");
@@ -1233,8 +1238,9 @@ export class PageSidebar {
     if (!page) return;
     const range = event.shiftKey;
     const toggle = event.metaKey || event.ctrlKey;
-    if (this.overview && (this.selecting || range || toggle)) {
+    if (this.selecting || range || toggle) {
       this.setSelecting(true);
+      if (!this.selecting) return;
       if (range && this.anchor && this.doc) {
         const from = this.doc.pages.indexOf(this.anchor);
         for (const at of rangeOf(from < 0 ? index : from, index)) {
@@ -1273,7 +1279,7 @@ export class PageSidebar {
   private tapName(index: number, event: MouseEvent, anchor: HTMLElement): void {
     const page = this.doc?.pages[index];
     if (!page) return;
-    if (this.overview && (this.selecting || event.shiftKey || event.metaKey || event.ctrlKey)) {
+    if (this.selecting || event.shiftKey || event.metaKey || event.ctrlKey) {
       this.tapThumb(index, anchor, event);
       return;
     }
@@ -1357,19 +1363,41 @@ export class PageSidebar {
 
   private showMoveMenu(event: MouseEvent, anchor: HTMLElement): void {
     const menu = new Menu();
+    // Moving every page within the notebook means nothing.
+    const whole = this.selected.size >= (this.doc?.pages.length ?? 0);
     menu.addItem((item) =>
       item
         .setTitle("Move to the start")
         .setIcon("arrow-up-to-line")
+        .setDisabled(whole)
         .onClick(() => this.selectionAction("move-start", anchor)),
     );
     menu.addItem((item) =>
       item
         .setTitle("Move to the end")
         .setIcon("arrow-down-to-line")
+        .setDisabled(whole)
         .onClick(() => this.selectionAction("move-end", anchor)),
     );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle("To another notebook…")
+        .setIcon("folder-input")
+        .onClick(() => this.selectionAction("move-to", anchor)),
+    );
     menu.showAtMouseEvent(event);
+  }
+
+  /** Start Select with page `index` ticked (the page menu's "Select pages"). */
+  private beginSelecting(index: number): void {
+    const page = this.doc?.pages[index];
+    this.setSelecting(true);
+    if (!page || !this.selecting) return;
+    this.selected.add(page);
+    this.anchor = page;
+    this.syncSelection();
+    this.syncChrome();
   }
 
   /** Tick or untick each thumbnail as the selection says. */
@@ -1396,9 +1424,9 @@ export class PageSidebar {
     this.expandButton.setAttribute("aria-label", expandLabel);
     this.expandButton.setAttribute("title", expandLabel);
     this.expandButton.toggleClass("is-hidden", this.single || selecting);
-    this.closeButton.toggleClass("is-hidden", overview);
+    this.closeButton.toggleClass("is-hidden", overview || selecting);
     this.tabsEl.toggleClass("is-hidden", overview);
-    this.selectButton.toggleClass("is-hidden", !overview);
+    this.selectButton.toggleClass("is-hidden", !overview && !selecting);
     this.selectButton.setText(selecting ? "Done" : "Select");
     this.selectButton.toggleClass("is-done", selecting);
     this.selectAllButton.toggleClass("is-hidden", !selecting);
@@ -1417,7 +1445,8 @@ export class PageSidebar {
     // Moving or deleting every page means nothing (and a notebook keeps one).
     const total = this.doc?.pages.length ?? 0;
     for (const [action, button] of this.selectBarButtons) {
-      const whole = (action === "delete" || action === "move") && count >= total;
+      // Move stays: every page can still be copied to another notebook.
+      const whole = action === "delete" && count >= total;
       button.disabled = count === 0 || whole;
     }
     const bookmark = this.selectBarButtons.get("bookmark");
@@ -1452,6 +1481,14 @@ export class PageSidebar {
         .setIcon(marked ? "bookmark-minus" : "bookmark")
         .onClick(act("bookmark")),
     );
+    if (!this.single) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Select pages")
+          .setIcon("check-circle")
+          .onClick(() => this.beginSelecting(index)),
+      );
+    }
     const titled = this.doc?.pages[index]?.title !== undefined;
     menu.addItem((item) =>
       item
