@@ -427,6 +427,7 @@ import {
   toolAfterUse,
 } from "./tool-return";
 import { PointerHud } from "./pointer-hud";
+import { type TextEndRecord, textEndLine } from "./text-end-hud";
 import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
@@ -801,6 +802,8 @@ interface TextBoxView {
    */
   laidAt: number;
   zoomScaled: boolean;
+  /** When it was last focused (`now()`), for the HUD's text-end line. */
+  focusedAt: number;
 }
 
 /** A text-tool drag shorter than this (page px) is a tap: a box that fits its text. */
@@ -1619,6 +1622,10 @@ export class InkSurface {
   private readonly hud = new PointerHud();
   private hudFrame = 0;
   private hudLastVerdict = "-";
+  /** Why the last text box stopped being edited (`text-end-hud.ts`). */
+  private hudTextEnd = "";
+  /** The surface's path blurring a text box right now; "" while the browser does it. */
+  private textBlurBy = "";
   private hudLayouts = 0;
   /** Frame rate and paint time while something moves, smoothed. */
   private hudFps = 0;
@@ -2611,7 +2618,7 @@ export class InkSurface {
       this.hideTextHint();
       // Picking another tool finishes the box being edited — and since the
       // tool is no longer Text, finishing it switches nothing back.
-      this.blurTextBox();
+      this.blurTextBox(`tool:${tool}`);
     }
   }
 
@@ -3901,7 +3908,7 @@ export class InkSurface {
     for (const view of stale) {
       // Removing a focused element fires no blur in every engine; an undo
       // that takes away the box being edited must still end the edit.
-      if (document.activeElement === view.input) view.input.blur();
+      if (document.activeElement === view.input) this.blurTextInput(view.input, "gone");
       // A kept box that went (an undo took it): nothing is held any more.
       if (this.heldText === view) this.heldText = null;
       view.root.remove();
@@ -4127,6 +4134,7 @@ export class InkSurface {
       fitW: textBox.w,
       laidAt: 0,
       zoomScaled: false,
+      focusedAt: 0,
     };
 
     // Text editing must never start an ink gesture on the scroll overlay
@@ -4137,6 +4145,7 @@ export class InkSurface {
       if (document.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
     });
     input.addEventListener("focus", () => {
+      view.focusedAt = now();
       // Typing again in a kept box, or in another one: nothing is held now,
       // and nothing parked. A box held with the lasso is typed in with the
       // lasso still in hand (GoodNotes); the tool to come back to stays for
@@ -4161,6 +4170,7 @@ export class InkSurface {
     });
     input.addEventListener("blur", (event) => {
       if (!this.renderer) return;
+      if (this.debug) this.noteTextEnd(view, event);
       // A handle drag finishes the edit itself when it lets go.
       if (root.hasClass("is-dragging")) return;
       if (onTextBox(event.relatedTarget)) {
@@ -5694,6 +5704,43 @@ export class InkSurface {
   }
 
   /** Redraw the HUD on the next frame: one redraw for however many changes come first. */
+  /** Blur a text box's textarea, telling the HUD which path did (`by`). */
+  private blurTextInput(input: HTMLTextAreaElement, by: string): void {
+    this.textBlurBy = by;
+    try {
+      input.blur();
+    } finally {
+      this.textBlurBy = "";
+    }
+  }
+
+  /**
+   * A text box blurred: keep why in the HUD, and whether it went with it,
+   * empty (read once the blur handler has run). Where the focus went is
+   * read a frame later, when WebKit has moved it.
+   */
+  private noteTextEnd(view: TextBoxView, event: FocusEvent): void {
+    const surface = this.surfaceEl.getBoundingClientRect();
+    const box = view.root.getBoundingClientRect();
+    const record: TextEndRecord = {
+      by: this.textBlurBy,
+      ms: view.focusedAt ? now() - view.focusedAt : 0,
+      to: event.relatedTarget instanceof Element ? event.relatedTarget : null,
+      keyboard: keyboardHeight(),
+      surfaceH: surface.height,
+      boxTop: box.top - surface.top,
+      boxBottom: box.bottom - surface.top,
+      tool: this.toolState.tool,
+      hidden: document.visibilityState === "hidden",
+      removed: false,
+    };
+    window.requestAnimationFrame(() => {
+      record.removed = !this.liveTextBox(view.pageId, view.id);
+      this.hudTextEnd = textEndLine(record, document.activeElement);
+      this.scheduleHud();
+    });
+  }
+
   private scheduleHud(): void {
     if (this.hudFrame !== 0) return;
     this.hudFrame = window.requestAnimationFrame(this.drawHud);
@@ -5714,6 +5761,7 @@ export class InkSurface {
       this.hud.summary(strokeCount(this.doc)) +
         `shape ${this.hudLastVerdict}\n` +
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
+        (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
         this.hudGeometry(),
     );
   }
@@ -9929,7 +9977,8 @@ export class InkSurface {
     // is let go next; the Text tool must not hand itself back.
     this.parkingText = true;
     try {
-      this.editingTextView()?.input.blur();
+      const typing = this.editingTextView();
+      if (typing) this.blurTextInput(typing.input, "out-of-sight");
     } finally {
       this.parkingText = false;
     }
@@ -10873,8 +10922,9 @@ export class InkSurface {
   }
 
   /** Finish editing the focused text box, if there is one (the blur handler does the rest). */
-  private blurTextBox(): void {
-    this.editingTextView()?.input.blur();
+  private blurTextBox(by = "finish"): void {
+    const view = this.editingTextView();
+    if (view) this.blurTextInput(view.input, by);
   }
 
   /**
@@ -10899,7 +10949,7 @@ export class InkSurface {
     if (view) {
       this.heldText = view;
       view.root.addClass("is-held");
-      view.input.blur();
+      this.blurTextInput(view.input, "tap-beside");
       // The blur handed the pill back to the tool: the held box keeps it.
       this.reportTextEditing();
     }
