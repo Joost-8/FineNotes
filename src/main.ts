@@ -137,7 +137,6 @@ import {
   HandwritingLearner,
   type LearningHost,
   learnedModelPath,
-  learnedRecord,
   writePracticePage,
 } from "./view/handwriting-learning";
 import { buildPracticeFile } from "./recognition/practice";
@@ -227,7 +226,7 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Which view each note opens in (see view-routing.ts). */
   private readonly router = new ViewRouter();
 
-  /** Models downloaded on first use, listed under Settings › Models (model-downloads.ts). */
+  /** Models downloaded on first use, listed under Settings › Models on this device (model-downloads.ts). */
   readonly models = new ModelRegistry(this.app, () => this.pluginDir);
 
   /** Transcribing recordings on this device: one job at a time (device-transcriber.ts). */
@@ -248,10 +247,13 @@ export default class GoodObsidianPlugin extends Plugin {
     this.app,
     () => ({
       customPath: this.settings.hwrModelPath ?? "",
-      // Each Grape reads with the model learned from it, when there is one.
-      learnedPath: learnedRecord(this.settings, this.grape.id)
-        ? learnedModelPath(this.pluginDir, false, this.grape.id)
-        : "",
+      // Each Grape reads with the model learned from it, when its file is
+      // here and "Read with my learned model" is on. The file decides, not
+      // the record: a model put back by hand reads too.
+      learnedPath:
+        this.settings.useLearnedHandwriting !== false
+          ? learnedModelPath(this.pluginDir, false, this.grape.id)
+          : "",
     }),
     () => this.grape.source(),
   );
@@ -322,7 +324,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
-    // The chosen speech model shows under Settings › Models from the start.
+    // The chosen speech model shows under Settings › Models on this device from the start.
     this.speech.store();
     await this.setUpKeyStore();
     // A pen picked just before the plugin stops is still kept.
@@ -711,7 +713,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * A model's files are about to be removed or replaced (Settings › Models):
+   * A model's files are about to be removed or replaced (Settings › Models on this device):
    * whatever holds it in memory lets go, and loads it again when next needed.
    */
   modelReleased(id: string): void {
@@ -938,6 +940,11 @@ export default class GoodObsidianPlugin extends Plugin {
       return null;
     }
     return transcribeAudio(config, bytes, mimeType, onProgress);
+  }
+
+  /** Close the settings window, to show a note opened from it (the same app API as below). */
+  closeSettings(): void {
+    (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
   }
 
   /** Open this plugin's settings tab (an undocumented but long-stable app API). */

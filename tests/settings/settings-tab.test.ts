@@ -60,6 +60,7 @@ const { DEFAULT_IMAGE_MODELS, imageUnsupportedReason } =
 const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
+const { speechAsset } = await import("../../src/audio/speech-models");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
 
 type Settings = typeof DEFAULT_SETTINGS;
@@ -102,6 +103,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
   const calls: string[] = [];
   const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
+  const speechStore = fakeStore(speechAsset("whisper-base"), calls);
+  /** The vault the learning rows look in: practice files and model files by path. */
+  const files = new Map<string, string>();
+  const learnerListeners = new Set<() => void>();
   const plugin = {
     settings,
     calls,
@@ -124,12 +129,59 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
-    models: { all: () => [grapeStore] },
+    files,
+    models: { all: () => [grapeStore, speechStore] },
+    speech: { store: () => speechStore },
     grape: {
       model: grapeStore,
-      id: "grape",
+      id: "grape-2",
       offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
     },
+    learner: {
+      progress: null as { step: number; steps: number; startedAt: number } | null,
+      start: vi.fn(() => calls.push("learn")),
+      stop: vi.fn(() => calls.push("stop")),
+      subscribe: (l: () => void) => {
+        learnerListeners.add(l);
+        return () => learnerListeners.delete(l);
+      },
+    },
+    learningHost: () => ({
+      app: {
+        vault: {
+          getMarkdownFiles: () => [],
+          getFileByPath: () => null,
+          adapter: {
+            exists: (path: string) => Promise.resolve(files.has(path)),
+            stat: (path: string) =>
+              Promise.resolve(
+                files.has(path) ? { type: "file", size: files.get(path)?.length ?? 0 } : null,
+              ),
+            remove: (path: string) => {
+              calls.push(`rm:${path}`);
+              files.delete(path);
+              return Promise.resolve();
+            },
+            rename: (from: string, to: string) => {
+              files.set(to, files.get(from) ?? "");
+              files.delete(from);
+              return Promise.resolve();
+            },
+          },
+        },
+      },
+      pluginDir: "plug",
+      settings,
+      baseId: "grape-2",
+      saveSettings: () => {
+        calls.push("save");
+        return Promise.resolve();
+      },
+      reloadReader: () => calls.push("reload"),
+      openNotebook: () => null,
+      createPracticeFile: () => Promise.resolve(null),
+    }),
+    closeSettings: vi.fn(() => calls.push("closeSettings")),
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
     startOpenRouterConnect: vi.fn(() => {
@@ -249,13 +301,11 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
 }
 
 const AI = "AI with your own key";
-const MODELS = "Models";
+const MODELS = "Models on this device";
 const SUPPORT = "Support and diagnostics";
 const COMMUNITY = "Feedback and community";
 const WRITING = "Writing and tools";
 const PAGES = "Pages and notebooks";
-const HANDWRITING = "Handwriting";
-const RECORDINGS = "Recordings";
 const ADVANCED = "Advanced";
 const PENS = "Pens and shortcuts";
 
@@ -269,6 +319,23 @@ beforeEach(() => {
 });
 
 // --- Layout ------------------------------------------------------------------
+
+/** "Models on this device", top to bottom. */
+const MODEL_ROWS = [
+  ["(block)", "render"],
+  ["Voice model: Whisper base", "render"],
+  ["Voice model size", "dropdown:speechModel"],
+  ["Spoken language", "dropdown:speechLanguage"],
+  ["Handwriting model: Grape 2.0", "render"],
+  ["Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
+  ["Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
+  ["Your learned handwriting model", "render"],
+  ["Read with my learned model", "toggle:useLearnedHandwriting"],
+  ["Go back to the previous learned model", "render"],
+  ["Step 1 · Write the practice sheets", "render"],
+  ["Step 2 · Learn my handwriting", "render"],
+  ["Delete my learned model", "render"],
+] as const;
 
 describe("the rows", () => {
   it("come in this order, grouped under these headings", () => {
@@ -305,12 +372,7 @@ describe("the rows", () => {
       [PAGES, "Show New notebook in right-click menu", "toggle:showNewNotebookInContextMenu"],
       [PAGES, "Show New notebook in file explorer bar", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
-      [HANDWRITING, "Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
-      [HANDWRITING, "Underline words it may have misread (test)", "toggle:checkHandwrittenWords"],
-      [HANDWRITING, "Learn my handwriting", "render"],
-      [RECORDINGS, "Speech model on this device", "dropdown:speechModel"],
-      [RECORDINGS, "Spoken language", "dropdown:speechLanguage"],
-      [MODELS, "Grape (handwriting recognizer model)", "render"],
+      ...MODEL_ROWS.map(([name, kind]) => [MODELS, name, kind]),
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
@@ -419,17 +481,51 @@ describe("the rows", () => {
         "misread",
         "underline",
       ],
-      "Learn my handwriting": ["handwriting", "practice", "fine-tune", "personal", "recognition"],
-      "Speech model on this device": [
+      "Voice model: Whisper base": [
         "audio",
         "speech",
         "whisper",
         "transcribe",
+        "voice",
+        "model",
+        "download",
         "offline",
+      ],
+      "Voice model size": ["audio", "speech", "whisper", "transcribe", "offline", "model"],
+      "Spoken language": ["audio", "speech", "language", "transcribe"],
+      "Handwriting model: Grape 2.0": [
+        "handwriting",
+        "grape",
+        "recognition",
+        "model",
+        "download",
+        "offline",
+      ],
+      "Your learned handwriting model": [
+        "handwriting",
+        "learned",
+        "personal",
+        "fine-tune",
         "model",
       ],
-      "Spoken language": ["audio", "speech", "language", "transcribe"],
-      "Grape (handwriting recognizer model)": ["model", "download", "offline", "grape-2"],
+      "Read with my learned model": ["handwriting", "learned", "personal", "grape", "fine-tune"],
+      "Go back to the previous learned model": ["handwriting", "learned", "undo", "previous"],
+      "Step 1 · Write the practice sheets": [
+        "handwriting",
+        "practice",
+        "sheet",
+        "learn",
+        "personal",
+      ],
+      "Step 2 · Learn my handwriting": [
+        "handwriting",
+        "practice",
+        "fine-tune",
+        "personal",
+        "learn",
+        "recognition",
+      ],
+      "Delete my learned model": ["handwriting", "learned", "delete", "remove", "personal"],
       "Handwriting model file": ["handwriting", "recognition", "model"],
       "Folder for pictures and PDFs": ["folder", "attachments", "where files are saved"],
       "Folder for recordings": ["folder", "attachments", "where files are saved"],
@@ -509,6 +605,19 @@ const PEN_ROWS = [
   "Keyboard and stylus shortcuts",
 ];
 
+/** The rows of "Models on this device" shown by default: nothing learned yet. */
+const DEFAULT_MODEL_ROWS = [
+  "Voice model: Whisper base",
+  "Voice model size",
+  "Spoken language",
+  "Handwriting model: Grape 2.0",
+  "Read handwriting on this device (beta)",
+  "Underline words it may have misread (test)",
+  "Your learned handwriting model",
+  "Step 1 · Write the practice sheets",
+  "Step 2 · Learn my handwriting",
+];
+
 describe("which rows show", () => {
   /** The rows shown; `aiOpen`: the AI group opened, as Show does when no key is set up. */
   function visibleNames(plugin: Plugin, aiOpen = true): string[] {
@@ -549,12 +658,9 @@ describe("which rows show", () => {
       "Show New notebook in right-click menu",
       "Show New notebook in file explorer bar",
       "Show notebook folders as notebooks",
-      "Read handwriting on this device (beta)",
-      "Underline words it may have misread (test)",
-      "Learn my handwriting",
-      "Speech model on this device",
-      "Spoken language",
-      "Grape (handwriting recognizer model)",
+      // The models' introduction.
+      `(block ${23 + PEN_ROWS.length})`,
+      ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Desynchronized canvas",
       "Pressure-sensitive pens (advanced)",
@@ -582,7 +688,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      `(block ${39 + PEN_ROWS.length})`,
+      `(block ${46 + PEN_ROWS.length})`,
       "Handwriting recognition",
     ]);
   });
@@ -1316,8 +1422,6 @@ describe("folding sections", () => {
       [WRITING, "goodobsidian-section"],
       [PENS, "goodobsidian-section is-folded"],
       [PAGES, "goodobsidian-section"],
-      [HANDWRITING, "goodobsidian-section"],
-      [RECORDINGS, "goodobsidian-section"],
       [MODELS, "goodobsidian-section"],
       [AI, "goodobsidian-section"],
       [ADVANCED, "goodobsidian-section"],
@@ -1332,16 +1436,7 @@ describe("folding sections", () => {
 
   it("shows the rows of the sections that are open", () => {
     const plugin = makePlugin({
-      foldedSettingsSections: [
-        "writing",
-        "pages",
-        "handwriting",
-        "recordings",
-        "models",
-        "ai",
-        "advanced",
-        "support",
-      ],
+      foldedSettingsSections: ["writing", "pages", "on-device", "ai", "advanced", "support"],
     });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, COMMUNITY]);
@@ -1356,7 +1451,7 @@ describe("folding sections", () => {
           "pens",
           "shortcuts",
           "pages",
-          "handwriting",
+          "on-device",
           "ai",
           "advanced",
           "support",
@@ -1411,17 +1506,35 @@ describe("folding sections", () => {
   });
 });
 
-describe("Models (downloaded on first use)", () => {
+describe("Models on this device", () => {
   /** The buttons the row shows now (the fake keeps every one ever added). */
   const current = (setting: FakeSetting) =>
     setting.buttons.filter((b) => setting.controlEl.children.includes(b.buttonEl));
-  const GRAPE = "Grape (handwriting recognizer model)";
+  const GRAPE = "Handwriting model: Grape 2.0";
+  const VOICE = "Voice model: Whisper base";
+  const status = (setting: FakeSetting) =>
+    setting.descEl.find("goodobsidian-model-status")?.textContent ?? "";
+
+  it("says what each model is for, whether it is here, and how big it is", () => {
+    const plugin = makePlugin();
+    plugin.speech.store().state = { kind: "missing" };
+    const all = rows(makeTab(plugin).tab);
+    const grape = renderRow(named(all, GRAPE));
+    expect(grape.descEl.textContent).toMatch(/^Grape \(handwriting recognizer model\) reads/);
+    expect(status(grape)).toBe("Version 2.0, 5.7 MB, on this device.");
+    expect(grape.descEl.find("goodobsidian-model-status")?.hasClass("is-ready")).toBe(true);
+    const voice = renderRow(named(all, VOICE));
+    expect(voice.descEl.textContent).toMatch(
+      /^Whisper \(speech recognizer model\) turns recordings/,
+    );
+    expect(status(voice)).toBe("Not downloaded yet (83.4 MB).");
+    expect(voice.descEl.find("goodobsidian-model-status")?.hasClass("is-missing")).toBe(true);
+  });
 
   it("shows a downloaded model with Re-download and Remove", async () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin);
     const setting = renderRow(named(rows(tab), GRAPE));
-    expect(setting.descEl.text).toBe("Version 2.0, 5.7 MB, on this device.");
     expect(current(setting).map((b) => b.text)).toEqual(["Re-download", "Remove"]);
     await current(setting)[1].click();
     expect(plugin.calls).toEqual(expect.arrayContaining(["released:grape-2", "grape-2:remove"]));
@@ -1435,13 +1548,13 @@ describe("Models (downloaded on first use)", () => {
     const { tab } = makeTab(plugin);
     const row = named(rows(tab), GRAPE);
     let setting = renderRow(row);
-    expect(setting.descEl.text).toBe("Not downloaded yet (5.7 MB).");
+    expect(status(setting)).toBe("Not downloaded yet (5.7 MB).");
     expect(current(setting).map((b) => [b.text, b.cta])).toEqual([["Download", true]]);
     await current(setting)[0].click();
     expect(plugin.calls).toContain("grape-2:download");
     plugin.grape.model.state = { kind: "failed", reason: "offline", detail: "" };
     setting = renderRow(row);
-    expect(setting.descEl.text).toBe("Downloads when you're online.");
+    expect(status(setting)).toBe("Downloads when you're online.");
     expect(current(setting).map((b) => b.text)).toEqual(["Try again"]);
   });
 
@@ -1450,17 +1563,20 @@ describe("Models (downloaded on first use)", () => {
     plugin.grape.model.state = { kind: "downloading", received: 0, total: 0 };
     const setting = renderRow(named(rows(makeTab(plugin).tab), GRAPE));
     expect(current(setting)).toHaveLength(0);
-    expect(setting.descEl.text).toMatch(/^Downloading/);
+    expect(status(setting)).toMatch(/^Downloading/);
   });
 
-  it("lists every registered model", () => {
+  it("lists a model of another feature at the end", () => {
     const plugin = makePlugin();
-    const other = fakeStore({ ...GRAPE_MODEL, id: "whisper", label: "Whisper" }, plugin.calls);
-    plugin.models.all = () => [plugin.grape.model, other];
+    const other = fakeStore({ ...GRAPE_MODEL, id: "other", label: "Other model" }, plugin.calls);
+    plugin.models.all = () => [plugin.grape.model, plugin.speech.store(), other];
     const names = rows(makeTab(plugin).tab)
       .filter((r) => r.heading === MODELS)
       .map((r) => r.def.name);
-    expect(names).toEqual([GRAPE, "Whisper"]);
+    expect(names).toEqual([
+      ...MODEL_ROWS.map(([name]) => (name === "(block)" ? "" : name)),
+      "Other model",
+    ]);
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {
@@ -1473,5 +1589,108 @@ describe("Models (downloaded on first use)", () => {
       "grape:offer:ask",
       "grape:offer:ask",
     ]);
+  });
+});
+
+describe("the learned handwriting model", () => {
+  const MODEL = "plug/handwriting/grape-2/personal.bin";
+  const PREVIOUS = "plug/handwriting/grape-2/personal-prev.bin";
+  const record = {
+    learnedAt: "2026-10-21T20:00:00.000Z",
+    lines: 240,
+    tested: 60,
+    before: 9.8,
+    after: 4.1,
+  };
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** The tab after its learning rows have looked in the vault once. */
+  async function loaded(plugin: Plugin) {
+    const made = makeTab(plugin);
+    renderRow(named(rows(made.tab), "Your learned handwriting model"));
+    await flush();
+    return made;
+  }
+  const visible = (tab: InstanceType<typeof GoodObsidianSettingTab>) =>
+    rows(tab)
+      .filter((r) => r.heading === MODELS && shown(r.def))
+      .map((r) => r.def.name);
+
+  it("invites a first learning, with nothing to switch, undo or delete", async () => {
+    const { tab } = await loaded(makePlugin());
+    const names = visible(tab);
+    expect(names).not.toContain("Read with my learned model");
+    expect(names).not.toContain("Go back to the previous learned model");
+    expect(names).not.toContain("Delete my learned model");
+    const head = renderRow(named(rows(tab), "Your learned handwriting model"));
+    expect(head.descEl.textContent).toContain("Not learned yet.");
+    const learn = renderRow(named(rows(tab), "Step 2 · Learn my handwriting"));
+    expect(learn.descEl.text).toMatch(/^Copy at least 10 lines first \(0 so far\)/);
+    expect(learn.buttons[0].disabled).toBe(true);
+  });
+
+  it("describes a learned model: in use, what it learned from, how much better it reads", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = await loaded(plugin);
+    const head = renderRow(named(rows(tab), "Your learned handwriting model"));
+    expect(head.descEl.textContent).toContain(
+      "On this device and in use, learned 21 Oct 2026 from 240 of your lines. 1 KB.",
+    );
+    expect(head.descEl.textContent).toContain("58 % fewer mistakes.");
+    expect(visible(tab)).toContain("Read with my learned model");
+    expect(visible(tab)).toContain("Delete my learned model");
+  });
+
+  it("switches to Grape alone without touching the file", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = await loaded(plugin);
+    await tab.setControlValue("useLearnedHandwriting", false);
+    expect(plugin.settings.useLearnedHandwriting).toBe(false);
+    expect(plugin.files.has(MODEL)).toBe(true);
+    expect(plugin.settings.grape2Model).toBe(record);
+    expect(plugin.calls.filter((c) => c.startsWith("rm:"))).toEqual([]);
+    const head = renderRow(named(rows(tab), "Your learned handwriting model"));
+    expect(head.descEl.textContent).toContain("switched off: reading uses Grape alone");
+  });
+
+  it("deletes only after a confirmation that says what goes", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    plugin.files.set(PREVIOUS, "old");
+    const { tab } = await loaded(plugin);
+    const row = renderRow(named(rows(tab), "Delete my learned model"));
+    expect(row.buttons[0].text).toBe("Delete…");
+    expect(row.buttons[0].destructive).toBe(true);
+    dialogs.confirmAnswer = false;
+    await row.buttons[0].click();
+    expect(dialogs.confirms.at(-1)).toMatchObject({
+      title: "Delete your learned handwriting model?",
+      cta: "Delete",
+      warning: true,
+    });
+    expect(dialogs.confirms.at(-1)?.message).toMatch(/Its file and the one before it are deleted/);
+    expect(plugin.files.has(MODEL)).toBe(true);
+    dialogs.confirmAnswer = true;
+    await row.buttons[0].click();
+    expect(plugin.files.size).toBe(0);
+    expect(plugin.settings.grape2Model).toBeUndefined();
+  });
+
+  it("goes back to the previous model, keeping the current one to swap back", async () => {
+    const older = { ...record, learnedAt: "2026-10-13", after: 6.2 };
+    const plugin = makePlugin({ grape2Model: record, grape2ModelPrevious: older });
+    plugin.files.set(MODEL, "new");
+    plugin.files.set(PREVIOUS, "old");
+    const { tab } = await loaded(plugin);
+    const row = named(rows(tab), "Go back to the previous learned model");
+    expect(shown(row)).toBe(true);
+    expect(row.desc).toMatch(/learned 13 Oct 2026 .* 6.2 %/);
+    const setting = renderRow(row);
+    await setting.buttons[0].click();
+    expect(plugin.files.get(MODEL)).toBe("old");
+    expect(plugin.files.get(PREVIOUS)).toBe("new");
+    expect(plugin.settings.grape2Model).toBe(older);
   });
 });

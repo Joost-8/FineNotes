@@ -110,6 +110,9 @@ export class FakeEl {
   setCssStyles(styles: Record<string, string>): void {
     Object.assign(this.style, styles);
   }
+  setCssProps(props: Record<string, string>): void {
+    Object.assign(this.style, props);
+  }
 
   /** All text below this element, in document order. */
   get textContent(): string {
@@ -163,6 +166,7 @@ export class ButtonComponent {
   text = "";
   cta = false;
   warning = false;
+  destructive = false;
   private handler: (() => unknown) | null = null;
   setButtonText(text: string): this {
     this.text = text;
@@ -170,6 +174,10 @@ export class ButtonComponent {
   }
   setCta(): this {
     this.cta = true;
+    return this;
+  }
+  setDestructive(): this {
+    this.destructive = true;
     return this;
   }
   setWarning(): this {
@@ -397,6 +405,27 @@ export class AbstractInputSuggest {
 export class FuzzySuggestModal extends Modal {}
 
 export const Platform = { isIosApp: false, isTablet: false, isMobile: false };
+
+/** Obsidian's path tidying, as far as these tests need it. */
+export function normalizePath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/|\/$/g, "");
+}
+
+/** Notices shown, newest last. */
+export const notices: string[] = [];
+export class Notice {
+  constructor(message: string) {
+    notices.push(message);
+  }
+}
+
+/** Icons draw nothing here; the element keeps the icon's name. */
+export function setIcon(el: FakeEl, icon: string): void {
+  el.setAttribute("data-icon", icon);
+}
 
 /** The plugin requires Obsidian 1.13, so every version check passes. */
 export function requireApiVersion(_version: string): boolean {

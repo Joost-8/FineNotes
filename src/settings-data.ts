@@ -9,7 +9,7 @@
  */
 
 import { type ShapeToolStyle } from "./model/shape-style";
-import type { LearnedModel } from "./view/handwriting-learning";
+import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
   DEFAULT_ERASER_SIZE,
   DEFAULT_HIGHLIGHTER_ALPHA,
@@ -215,6 +215,14 @@ export interface GoodObsidianSettings {
   handwritingModel?: LearnedModel;
   /** The model learned from Grape 2.0. */
   grape2Model?: LearnedModel;
+  /** The model before the last learning (`personal-prev.bin`), kept to go back to. */
+  grape2ModelPrevious?: LearnedModel;
+  handwritingModelPrevious?: LearnedModel;
+  /**
+   * Read with the learned model when its file is here (on unless switched
+   * off); off reads with Grape alone and keeps the file.
+   */
+  useLearnedHandwriting?: boolean;
   /** Where the practice notebook was written. */
   practiceNotebookPath?: string;
 
@@ -351,9 +359,7 @@ export const SETTINGS_SECTIONS = [
   "pens",
   "shortcuts",
   "pages",
-  "handwriting",
-  "recordings",
-  "models",
+  "on-device",
   "ai",
   "advanced",
   "support",
@@ -478,7 +484,9 @@ export function parseColorList(text: string): string[] {
 /**
  * The keys a settings control does not show as stored: the slider works in
  * percent, the dropdown in strings, the colour list as one line of text, and
- * a model id is stored without the spaces a paste brings along.
+ * a model id is stored without the spaces a paste brings along. "Read with
+ * my learned model" is on until switched off, so a file without the key
+ * reads with it.
  */
 const CONVERSIONS: Record<
   string,
@@ -495,6 +503,7 @@ const CONVERSIONS: Record<
   },
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
+  useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
 };
 
 function conversion(key: string) {
@@ -525,6 +534,7 @@ export function changesTabLayout(key: string): boolean {
     key === "llmVendor" ||
     key === "imageVendor" ||
     key === "pressureWidth" ||
-    key === "speechModel"
+    key === "speechModel" ||
+    key === "useLearnedHandwriting"
   );
 }

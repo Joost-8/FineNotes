@@ -372,13 +372,14 @@ audio.
 Grape (handwriting recognizer model) reads your ink on the device a few
 seconds after you stop writing: notebook search and Obsidian's search then
 find it. Nothing leaves the device. Switch it off under Settings → FineNotes
-→ Handwriting → **Read handwriting on this device**.
+→ Models on this device → **Read handwriting on this device**.
 
 Grape is kept in the plugin's `handwriting` folder, so vault sync brings it
 to your other devices. If you already used FineNotes, it puts its built-in
 copy there by itself. On a new install, the first time a handwriting
 feature needs it, FineNotes offers a one-time 3.5 MB download (with **Not
-now**). Settings → Models shows it, with **Re-download** and **Remove**.
+now**). Settings → Models on this device shows it, with **Re-download**
+and **Remove**.
 
 To make it read your own handwriting much better:
 
@@ -386,12 +387,18 @@ To make it read your own handwriting much better:
    file opens, with a cover that explains what to do.
 2. Copy each grey line on the empty line below it, in your normal
    handwriting. It takes about 8 minutes.
-3. Tap **AI** → **Learn my handwriting** (or Settings → Handwriting →
-   **Learn now**). It learns on the device in a few minutes, in the
-   background, and keeps the result only if it reads your writing better.
+3. Tap **AI** → **Learn my handwriting** (or Settings → Models on this
+   device → **Learn now**). It learns on the device in a few minutes, in
+   the background, and keeps the result only if it reads your writing
+   better.
 
 Each of the three practice sets has different lines, and every set you
-write helps. **AI** → **Read this page** shows how Grape reads a page.
+write helps. Settings → Models on this device lists your practice sheets,
+how many lines each has, and which ones your learned model was built
+from. **Read with my learned model** switches between it and Grape alone
+without deleting anything; the model before your last learning is kept,
+to go back to; and deleting your learned model is its own button, which
+asks first. **AI** → **Read this page** shows how Grape reads a page.
 
 Grape is a work in progress that still needs more training on real
 handwriting. It is open source (Apache 2.0) at
@@ -513,7 +520,8 @@ into the plugin, to keep the plugin small:
 - **Why:** reading handwriting on the device needs the model; without it,
   every other feature works.
 - **When:** once, after you tap **Download** on the card that appears the
-  first time a handwriting feature needs it, or in Settings → Models. A file
+  first time a handwriting feature needs it, or in Settings → Models on
+  this device. A file
   already in your vault (written by an earlier FineNotes, or synced from
   another device) is checked and used, not downloaded again. FineNotes checks
   the file's size and SHA-256 checksum before using it, and a newer Grape

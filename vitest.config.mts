@@ -95,6 +95,7 @@ export default defineConfig({
         "src/recognition/hwr/tune.ts",
         "src/recognition/hwr/bundle-write.ts",
         "src/recognition/practice.ts",
+        "src/recognition/hwr/learned-model.ts",
         "src/recognition/registry.ts",
         "src/recognition/manual.ts",
         "src/recognition/llm-request.ts",

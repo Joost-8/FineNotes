@@ -9,13 +9,31 @@
  */
 
 import {
+  deleteLearnedModel,
+  learnedFiles,
   learnedRecord,
-  learnedSummary,
-  practiceFiles,
+  practiceSheets,
+  previousKey,
   progressLabel,
-  resetLearnedModel,
+  readCorrectionLines,
+  swapWithPrevious,
   writePracticePage,
 } from "./view/handwriting-learning";
+import {
+  MIN_PRACTICE_LINES,
+  type PracticeSheet,
+  deleteQuestion,
+  hasUnusedLines,
+  learnStepText,
+  learnedResult,
+  learnedStatus,
+  nextSheetAction,
+  sheetText,
+  sheetUse,
+  undoText,
+  writeStepText,
+} from "./recognition/hwr/learned-model";
+import { PRACTICE_SETS } from "./recognition/practice";
 import {
   type App,
   type ExtraButtonComponent,
@@ -25,6 +43,7 @@ import {
   type SettingControl,
   type SettingDefinition,
   type SettingDefinitionItem,
+  setIcon,
 } from "obsidian";
 import { SIZES } from "./constants";
 import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
@@ -66,8 +85,20 @@ import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import { renderShortcutList } from "./view/shortcut-list";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
-import { formatSize, isBusy, stateText, totalBytes } from "./downloads/model-manifest";
-import { SPEECH_LANGUAGES, speechAsset, speechModelsFor } from "./audio/speech-models";
+import {
+  type AssetState,
+  formatSize,
+  isBusy,
+  stateText,
+  totalBytes,
+} from "./downloads/model-manifest";
+import {
+  SPEECH_LANGUAGES,
+  effectiveSpeechModel,
+  speechAsset,
+  speechModelInfo,
+  speechModelsFor,
+} from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import {
@@ -341,6 +372,52 @@ function drawnRow(
   return { name, desc, aliases, visible, render: draw };
 }
 
+/** What each on-device model is and does, in the words its row starts with. */
+const MODEL_PURPOSE = {
+  voice:
+    "Whisper (speech recognizer model) turns recordings into text when you pick “Transcribe on this device” on a recording.",
+  grape:
+    "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
+  learned:
+    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (steps 1 and 2 below).",
+  writeStep: "Practice sheets have lines to copy in your own handwriting.",
+  learnStep: "FineNotes learns from the lines you copied, on this device.",
+};
+
+/** How a model's state reads at a glance: the colour of the dot before its state. */
+type ModelTone = "ready" | "off" | "missing" | "busy" | "failed";
+
+function stateTone(state: AssetState): ModelTone {
+  switch (state.kind) {
+    case "ready":
+      return "ready";
+    case "missing":
+    case "outdated":
+      return "missing";
+    case "failed":
+      return "failed";
+    default:
+      return "busy";
+  }
+}
+
+/** A model row's description: what it is for, then its state after a coloured dot. */
+function modelInfo(setting: Setting, purpose: string, status: string, tone: ModelTone): void {
+  const desc = setting.descEl;
+  desc.empty();
+  desc.createDiv({ cls: "goodobsidian-model-line", text: purpose });
+  const line = desc.createDiv({ cls: `goodobsidian-model-status is-${tone}` });
+  line.createSpan({ cls: "goodobsidian-model-dot" });
+  line.createSpan({ text: status });
+}
+
+/** What the learned-model rows show, read once each time the tab opens. */
+interface LearningState {
+  sheets: PracticeSheet[];
+  corrections: number;
+  files: { current: boolean; previous: boolean; bytes: number };
+}
+
 /** The class every folding section carries; `is-folded` beside it hides its rows. */
 const SECTION_CLS = "goodobsidian-section";
 
@@ -532,8 +609,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.writingGroup(),
       this.pensGroup(),
       this.pagesGroup(),
-      this.handwritingGroup(),
-      this.recordingsGroup(),
       this.modelsGroup(),
       this.aiGroup(),
       this.advancedGroup(),
@@ -579,7 +654,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
-    // A newly chosen speech model joins Models (registered) before the tab is rebuilt.
+    // A newly chosen speech model is registered before the tab is rebuilt, so its row shows it.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
     // Turned on: Grape is needed now, so offer it if it is not here.
@@ -957,77 +1032,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ]);
   }
 
-  /** Reading handwriting on this device, and learning the user's. */
-  private handwritingGroup(): SettingDefinitionItem {
-    const { settings } = this.plugin;
-    return this.section("handwriting", "Handwriting", [
-      toggle(
-        "handwritingOnDevice",
-        "Read handwriting on this device (beta)",
-        "Reads your handwriting with Grape (handwriting recognizer model), downloaded " +
-          "once, on this device: notebook search and Obsidian's search find it, and a " +
-          "lassoed heading or word fills in its title or link. Nothing leaves the device. " +
-          "In beta: it misreads some words, more so in small or hurried writing, so check " +
-          "what it reads before relying on it.",
-        ["handwriting", "recognition", "search", "offline"],
-      ),
-      {
-        ...toggle(
-          "checkHandwrittenWords",
-          "Underline words it may have misread (test)",
-          "After a page is read, words Grape is not sure of get a dotted underline. Tap one " +
-            "with a finger to correct the reading, confirm it, or ignore the word; Learn my " +
-            "handwriting learns from your answers. Uses the word list built into FineNotes, " +
-            "plus your own words.txt in the plugin's handwriting folder.",
-          ["handwriting", "spelling", "correct", "misread", "underline"],
-        ),
-        visible: () => settings.handwritingOnDevice !== false,
-      },
-      drawnRow(
-        "Learn my handwriting",
-        learnedSummary(learnedRecord(settings, this.plugin.grape.id)),
-        (setting) => this.drawLearning(setting),
-        ["handwriting", "practice", "fine-tune", "personal", "recognition"],
-        () => settings.handwritingOnDevice !== false,
-      ),
-    ]);
-  }
-
-  /**
-   * Transcribing recordings on this device: which speech model, and the
-   * language spoken. The model itself is listed under Models once chosen.
-   */
-  private recordingsGroup(): SettingDefinitionItem {
-    const mobile = Platform.isMobile;
-    const models: Record<string, string> = {};
-    for (const m of speechModelsFor(mobile)) {
-      models[m.id] = `${m.label} (${formatSize(totalBytes(speechAsset(m.id)))})`;
-    }
-    const languages: Record<string, string> = {};
-    for (const l of SPEECH_LANGUAGES) languages[l.code] = l.name;
-    return this.section("recordings", "Recordings", [
-      dropdown(
-        "speechModel",
-        "Speech model on this device",
-        "Transcribe on this device uses this model, downloaded the first time. Tiny is " +
-          "quickest; base is more accurate and the default." +
-          (mobile
-            ? " Small is offered on desktop only: it needs more memory than an iPad has to spare."
-            : " Small is the most accurate and about three times slower than base.") +
-          " For long lectures an AI key or your own server is faster.",
-        models,
-        ["audio", "speech", "whisper", "transcribe", "offline", "model"],
-      ),
-      dropdown(
-        "speechLanguage",
-        "Spoken language",
-        "Detect works for most recordings; choosing the language helps with short ones.",
-        languages,
-        ["audio", "speech", "language", "transcribe"],
-      ),
-    ]);
-  }
-
   /**
    * "AI with your own key". The vendors are read once per build of the rows:
    * changing one rebuilds them (`changesTabLayout`). The endpoint URL is
@@ -1189,39 +1193,156 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * 5000 did not take.
    */
   /**
-   * Practice files, learning from them, and going back to the built-in
-   * model. While a run is on, Learn now shows its progress, filling up as
-   * a bar, and Stop ends it; closing the settings leaves it running.
-   */
-  /**
-   * "Models": every model a feature downloads on first use
-   * (view/model-downloads.ts), one row each, whatever feature registered it.
+   * "Models on this device": the three models FineNotes runs here, each
+   * under a row that says what it is, whether it is downloaded, how big it
+   * is and what it is for, with its choices below it. The voice model
+   * (Whisper), Grape (the handwriting recognizer model), and the model
+   * learned from the user's handwriting, with the two steps that make it.
+   * A model a feature registered that is none of these is listed at the end.
    */
   private modelsGroup(): SettingDefinitionItem {
-    return this.section(
-      "models",
-      "Models",
-      this.plugin.models
-        .all()
-        .map((store) =>
-          drawnRow(
-            store.asset.label,
-            stateText(store.asset, store.state),
-            (setting) => this.drawDownload(setting, store),
-            ["model", "download", "offline", store.asset.id],
-          ),
+    const { settings } = this.plugin;
+    const grape = this.plugin.grape.model;
+    const speech = this.plugin.speech.store();
+    const others = this.plugin.models.all().filter((s) => s !== grape && s !== speech);
+    const reading = (): boolean => settings.handwritingOnDevice !== false;
+    const learning = this.learningState;
+    const record = learnedRecord(settings, this.plugin.grape.id);
+    const onDevice = learning?.files.current ?? false;
+    const mobile = Platform.isMobile;
+    const sizes: Record<string, string> = {};
+    for (const m of speechModelsFor(mobile)) {
+      sizes[m.id] = `${m.label} (${formatSize(totalBytes(speechAsset(m.id)))})`;
+    }
+    const languages: Record<string, string> = {};
+    for (const l of SPEECH_LANGUAGES) languages[l.code] = l.name;
+    return this.section("on-device", "Models on this device", [
+      block((el) =>
+        el.createDiv({
+          cls: "goodobsidian-models-intro",
+          text: "FineNotes runs these models on this device, with no key and no server: what they read and hear never leaves it. Each downloads once, the first time it is needed.",
+        }),
+      ),
+      // The voice model.
+      drawnRow(
+        `Voice model: ${speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label}`,
+        MODEL_PURPOSE.voice,
+        (setting) => this.drawDownload(setting, speech, MODEL_PURPOSE.voice),
+        ["audio", "speech", "whisper", "transcribe", "voice", "model", "download", "offline"],
+      ),
+      dropdown(
+        "speechModel",
+        "Voice model size",
+        "Tiny is quickest; base is more accurate and the default." +
+          (mobile
+            ? " Small is offered on desktop only: it needs more memory than an iPad has to spare."
+            : " Small is the most accurate and about three times slower than base.") +
+          " A new size downloads the first time you use it. For long lectures an AI key or your own server is faster.",
+        sizes,
+        ["audio", "speech", "whisper", "transcribe", "offline", "model"],
+      ),
+      dropdown(
+        "speechLanguage",
+        "Spoken language",
+        "Detect works for most recordings; choosing the language helps with short ones.",
+        languages,
+        ["audio", "speech", "language", "transcribe"],
+      ),
+      // Grape.
+      drawnRow(
+        `Handwriting model: Grape ${grape.asset.version}`,
+        MODEL_PURPOSE.grape,
+        (setting) => this.drawDownload(setting, grape, MODEL_PURPOSE.grape),
+        ["handwriting", "grape", "recognition", "model", "download", "offline"],
+      ),
+      toggle(
+        "handwritingOnDevice",
+        "Read handwriting on this device (beta)",
+        "Reads your notebooks with Grape, or with your learned model below. In beta: it " +
+          "misreads some words, more so in small or hurried writing, so check what it reads " +
+          "before relying on it.",
+        ["handwriting", "recognition", "search", "offline"],
+      ),
+      {
+        ...toggle(
+          "checkHandwrittenWords",
+          "Underline words it may have misread (test)",
+          "After a page is read, words it is not sure of get a dotted underline. Tap one " +
+            "with a finger to correct the reading, confirm it, or ignore the word; learning " +
+            "your handwriting uses your answers too. Uses the word list built into FineNotes, " +
+            "plus your own words.txt in the plugin's handwriting folder.",
+          ["handwriting", "spelling", "correct", "misread", "underline"],
         ),
-    );
+        visible: reading,
+      },
+      // The learned model, and how to make one.
+      drawnRow(
+        "Your learned handwriting model",
+        MODEL_PURPOSE.learned,
+        (setting) => this.drawLearnedModel(setting),
+        ["handwriting", "learned", "personal", "fine-tune", "model"],
+        reading,
+      ),
+      {
+        ...toggle(
+          "useLearnedHandwriting",
+          "Read with my learned model",
+          "On: your notebooks are read with the model learned from your handwriting. Off: " +
+            "with Grape alone. Switching it off keeps your learned model on this device, " +
+            "ready to switch on again.",
+          ["handwriting", "learned", "personal", "grape", "fine-tune"],
+        ),
+        visible: () => reading() && onDevice,
+      },
+      drawnRow(
+        "Go back to the previous learned model",
+        undoText(settings[previousKey(this.plugin.grape.id)]),
+        (setting) => this.drawUndoLearning(setting),
+        ["handwriting", "learned", "undo", "previous"],
+        () => reading() && (learning?.files.previous ?? false),
+      ),
+      drawnRow(
+        "Step 1 · Write the practice sheets",
+        MODEL_PURPOSE.writeStep,
+        (setting) => this.drawWriteStep(setting),
+        ["handwriting", "practice", "sheet", "learn", "personal"],
+        reading,
+      ),
+      drawnRow(
+        "Step 2 · Learn my handwriting",
+        MODEL_PURPOSE.learnStep,
+        (setting) => this.drawLearnStep(setting),
+        ["handwriting", "practice", "fine-tune", "personal", "learn", "recognition"],
+        reading,
+      ),
+      drawnRow(
+        "Delete my learned model",
+        "Deletes the file from this vault. Your practice sheets stay, so you can learn again.",
+        (setting) => this.drawDeleteLearned(setting),
+        ["handwriting", "learned", "delete", "remove", "personal"],
+        () => reading() && (onDevice || learning?.files.previous === true || !!record),
+      ),
+      ...others.map((store) =>
+        drawnRow(
+          store.asset.label,
+          store.asset.purpose,
+          (setting) => this.drawDownload(setting, store, store.asset.purpose),
+          ["model", "download", "offline", store.asset.id],
+        ),
+      ),
+    ]);
   }
 
   /**
-   * A downloaded model's row: its state and size, with Download, or
-   * Re-download and Remove; the progress while it downloads.
+   * A model's row: what it is for, then its state and size with a dot of
+   * its colour, and Download, or Re-download and Remove; the progress while
+   * it downloads.
    */
-  private drawDownload(setting: Setting, store: AssetStore): void {
+  private drawDownload(setting: Setting, store: AssetStore, purpose: string): void {
+    setting.settingEl.addClass("goodobsidian-model-head");
     const show = (): void => {
       const state = store.state;
-      setting.setDesc(stateText(store.asset, state));
+      modelInfo(setting, purpose, stateText(store.asset, state), stateTone(state));
       setting.controlEl.empty();
       if (isBusy(state)) return;
       if (state.kind === "ready") {
@@ -1259,68 +1380,229 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     void store.check(true);
   }
 
-  private drawLearning(setting: Setting): void {
+  // --- The learned handwriting model -------------------------------------------
+
+  /**
+   * What the learned-model rows show: the practice sheets with their copied
+   * lines, the corrected words, and which model files are here. Read when
+   * those rows are first drawn, then the tab is rebuilt with it; forgotten
+   * when the tab closes, or when learning, undo or delete changes it.
+   */
+  private learningState: LearningState | null = null;
+  private learningLoad: Promise<void> | null = null;
+
+  /** Read the learning state once, and rebuild the tab with it. */
+  private loadLearning(): void {
+    if (this.learningState || this.learningLoad) return;
     const host = this.plugin.learningHost();
-    const learner = this.plugin.learner;
-    const files = practiceFiles(host).length;
-    setting.addButton((b) =>
-      b
-        .setButtonText(files > 0 ? "Write another practice set" : "Write practice page")
-        .onClick(async () => {
-          await writePracticePage(host);
-          // The first practice file brings "Learn now"; the button's wording changes too.
-          if (setting.settingEl.isConnected) this.update();
-        }),
-    );
-    if (files > 0 || learner.progress) {
-      setting.addButton((learn) => {
-        learn.buttonEl.addClass("goodobsidian-learn-button");
-        learn.setCta().onClick(() => void learner.start());
-        const stop = setting.controlEl.createEl("button", {
-          text: "Stop",
-          cls: "goodobsidian-learn-stop",
-        });
-        const show = (): void => {
-          const progress = learner.progress;
-          learn.setDisabled(progress !== null);
-          learn.setButtonText(progress ? progressLabel(progress, Date.now()) : "Learn now");
-          learn.buttonEl.setCssProps({
-            "--gob-learn-progress": progress
-              ? `${Math.round((100 * progress.step) / progress.steps)}%`
-              : "0%",
-          });
-          learn.buttonEl.toggleClass("is-learning", progress !== null);
-          stop.toggleClass("is-hidden", progress === null);
+    this.learningLoad = (async () => {
+      const [sheets, corrections, files] = await Promise.all([
+        practiceSheets(host),
+        readCorrectionLines(host).then((lines) => lines.length),
+        learnedFiles(host),
+      ]);
+      this.learningState = { sheets, corrections, files };
+    })()
+      .catch(() => {
+        this.learningState = {
+          sheets: [],
+          corrections: 0,
+          files: { current: false, previous: false, bytes: 0 },
         };
-        stop.addEventListener("click", () => learner.stop());
-        let running = learner.progress !== null;
-        const unsubscribe = learner.subscribe(() => {
-          // The tab was closed or redrawn: this row is gone.
-          if (!learn.buttonEl.isConnected) {
-            unsubscribe();
-            return;
-          }
-          const now = learner.progress !== null;
-          // A run ended: the summary and the buttons change with it.
-          if (running && !now) {
-            unsubscribe();
-            this.update();
-            return;
-          }
-          running = now;
-          show();
-        });
-        show();
+      })
+      .finally(() => {
+        this.learningLoad = null;
+        if (this.containerEl.isConnected) this.update();
+      });
+  }
+
+  /** Forget the learning state and read it again (after learning, undo or delete). */
+  private reloadLearning(): void {
+    this.learningState = null;
+    this.update();
+  }
+
+  override hide(): void {
+    this.learningState = null;
+    super.hide();
+  }
+
+  /** The learned model's row: what it is, whether it is here and in use, and how well it reads. */
+  private drawLearnedModel(setting: Setting): void {
+    setting.settingEl.addClass("goodobsidian-model-head");
+    const what = MODEL_PURPOSE.learned;
+    const learning = this.learningState;
+    if (!learning) {
+      this.loadLearning();
+      modelInfo(setting, what, "Looking for it…", "busy");
+      return;
+    }
+    const { settings } = this.plugin;
+    const record = learnedRecord(settings, this.plugin.grape.id);
+    const inUse = settings.useLearnedHandwriting !== false;
+    const status = learnedStatus(record, learning.files.current, inUse);
+    const size = learning.files.current ? ` ${formatSize(learning.files.bytes)}.` : "";
+    modelInfo(setting, what, status.text + size, status.tone);
+    const desc = setting.descEl;
+    if (record && learning.files.current) {
+      desc.createDiv({ cls: "goodobsidian-model-line", text: learnedResult(record) });
+    } else if (learning.files.current) {
+      desc.createDiv({
+        cls: "goodobsidian-model-line",
+        text: "How well it reads was not recorded with it: learn again to measure it.",
       });
     }
-    if (learnedRecord(this.plugin.settings, this.plugin.grape.id)) {
-      setting.addButton((b) =>
-        b.setButtonText("Use Grape").onClick(async () => {
-          await resetLearnedModel(host);
-          this.update();
-        }),
-      );
+  }
+
+  /** Step 1: what to do on a practice sheet, the sheets so far, and a button for the next one. */
+  private drawWriteStep(setting: Setting): void {
+    setting.settingEl.addClass("goodobsidian-learn-step");
+    const learning = this.learningState;
+    if (!learning) {
+      this.loadLearning();
+      return;
     }
+    const host = this.plugin.learningHost();
+    const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
+    setting.setDesc(writeStepText(learning.sheets, PRACTICE_SETS.length));
+    const next = nextSheetAction(learning.sheets, PRACTICE_SETS.length);
+    setting.addButton((b) => {
+      b.setButtonText(next.label).onClick(async () => {
+        this.plugin.closeSettings();
+        if (next.kind === "continue") await this.app.workspace.openLinkText(next.path, "", false);
+        else await writePracticePage(host);
+      });
+      // The first thing to do, until there is enough to learn from.
+      if (learning.sheets.every((sheet) => sheet.written === 0)) b.setCta();
+    });
+    if (learning.sheets.length === 0) return;
+    const list = setting.settingEl.createDiv({ cls: "goodobsidian-sheet-list" });
+    for (const sheet of learning.sheets) {
+      const use = sheetUse(sheet, record);
+      const item = list.createEl("button", {
+        cls: "goodobsidian-sheet clickable-icon",
+        attr: { "aria-label": `Open ${sheet.title}` },
+      });
+      const done = sheet.written >= sheet.prompts;
+      const mark = item.createSpan({
+        cls: `goodobsidian-sheet-mark${use === "used" ? " is-used" : ""}`,
+      });
+      setIcon(
+        mark,
+        use === "used" ? "circle-check" : done || sheet.written > 0 ? "circle-dot" : "circle",
+      );
+      const text = item.createSpan({ cls: "goodobsidian-sheet-text" });
+      text.createSpan({ cls: "goodobsidian-sheet-title", text: sheet.title });
+      text.createSpan({ cls: "goodobsidian-sheet-state", text: sheetText(sheet, use) });
+      setIcon(item.createSpan({ cls: "goodobsidian-sheet-open" }), "chevron-right");
+      item.addEventListener("click", () => {
+        this.plugin.closeSettings();
+        void this.app.workspace.openLinkText(sheet.path, "", false);
+      });
+    }
+  }
+
+  /**
+   * Step 2: Learn now, with what it learns from. While a run is on, the
+   * button shows its progress, filling up as a bar, and Stop ends it;
+   * closing the settings leaves it running.
+   */
+  private drawLearnStep(setting: Setting): void {
+    setting.settingEl.addClass("goodobsidian-learn-step");
+    const learning = this.learningState;
+    if (!learning) {
+      this.loadLearning();
+      return;
+    }
+    const learner = this.plugin.learner;
+    const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
+    const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
+    const enough = lines + learning.corrections >= MIN_PRACTICE_LINES;
+    setting.setDesc(learnStepText(lines, learning.corrections, learning.files.current));
+    if (record && !hasUnusedLines(learning.sheets, record) && record.sources) {
+      setting.descEl.createDiv({
+        cls: "goodobsidian-model-line",
+        text: "Your learned model already has every line on your sheets: write another sheet first to improve it.",
+      });
+    }
+    setting.addButton((learn) => {
+      learn.buttonEl.addClass("goodobsidian-learn-button");
+      learn.setCta().onClick(() => void learner.start());
+      const stop = setting.controlEl.createEl("button", {
+        text: "Stop",
+        cls: "goodobsidian-learn-stop",
+      });
+      const show = (): void => {
+        const progress = learner.progress;
+        learn.setDisabled(progress !== null || !enough);
+        learn.setButtonText(
+          progress
+            ? progressLabel(progress, Date.now())
+            : learning.files.current
+              ? "Learn again"
+              : "Learn now",
+        );
+        learn.buttonEl.setCssProps({
+          "--gob-learn-progress": progress
+            ? `${Math.round((100 * progress.step) / progress.steps)}%`
+            : "0%",
+        });
+        learn.buttonEl.toggleClass("is-learning", progress !== null);
+        stop.toggleClass("is-hidden", progress === null);
+      };
+      stop.addEventListener("click", () => learner.stop());
+      let running = learner.progress !== null;
+      const unsubscribe = learner.subscribe(() => {
+        // The tab was closed or redrawn: this row is gone.
+        if (!learn.buttonEl.isConnected) {
+          unsubscribe();
+          return;
+        }
+        const now = learner.progress !== null;
+        // A run ended: the model, its sheets and the buttons change with it.
+        if (running && !now) {
+          unsubscribe();
+          this.reloadLearning();
+          return;
+        }
+        running = now;
+        show();
+      });
+      show();
+    });
+  }
+
+  /** Swap the learned model for the one before the last learning; swapping again goes forward. */
+  private drawUndoLearning(setting: Setting): void {
+    setting.addButton((b) =>
+      b.setButtonText("Swap").onClick(async () => {
+        if (this.plugin.learner.progress) return;
+        await swapWithPrevious(this.plugin.learningHost());
+        this.reloadLearning();
+      }),
+    );
+  }
+
+  /** Delete the learned model, after a dialog that says what goes and how to keep it instead. */
+  private drawDeleteLearned(setting: Setting): void {
+    setting.addButton((b) =>
+      b
+        .setButtonText("Delete…")
+        .setDestructive()
+        .onClick(async () => {
+          const host = this.plugin.learningHost();
+          const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
+          const yes = await ConfirmModal.confirm(this.app, {
+            title: "Delete your learned handwriting model?",
+            message: deleteQuestion(record, this.learningState?.files.previous ?? false),
+            cta: "Delete",
+            warning: true,
+          });
+          if (!yes) return;
+          await deleteLearnedModel(host);
+          this.reloadLearning();
+        }),
+    );
   }
 
   /** Show or Hide: the AI group's rows, when no AI service is set up. */

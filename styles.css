@@ -2232,6 +2232,142 @@ body.is-mobile .goodobsidian-scrollthumb {
   border-top: none;
 }
 
+/* Models on this device. The introduction, muted, at the top of the section. */
+.goodobsidian-models-intro {
+  padding: var(--size-4-3) 0 var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* A model's own row (the voice model, Grape, the learned model) heads the
+   rows of its choices: a heavier name, room above it, and its state after a
+   dot in the state's colour. */
+.setting-item.goodobsidian-model-head {
+  padding-top: var(--size-4-5);
+}
+
+.goodobsidian-model-head .setting-item-name {
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-model-line + .goodobsidian-model-line,
+.goodobsidian-model-status {
+  margin-top: var(--size-2-2);
+}
+
+.goodobsidian-model-status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-3);
+  color: var(--text-normal);
+}
+
+.goodobsidian-model-status + .goodobsidian-model-line {
+  margin-top: var(--size-2-2);
+}
+
+.goodobsidian-model-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.goodobsidian-model-status.is-ready .goodobsidian-model-dot {
+  background: var(--color-green);
+}
+
+.goodobsidian-model-status.is-busy .goodobsidian-model-dot {
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-model-status.is-failed .goodobsidian-model-dot {
+  background: var(--text-error);
+}
+
+.goodobsidian-model-status.is-missing,
+.goodobsidian-model-status.is-off {
+  color: var(--text-muted);
+}
+
+/* Step 1's practice sheets, the full width under its row: one row each, a
+   finger's height, which opens the sheet. The mark is a filled check when
+   the learned model was built from the sheet as it is. */
+.setting-item.goodobsidian-learn-step {
+  flex-wrap: wrap;
+}
+
+/* The text gives way to the button, so the two share the first line. */
+.goodobsidian-learn-step > .setting-item-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.goodobsidian-learn-step > .setting-item-control {
+  flex: none;
+}
+
+.goodobsidian-sheet-list {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--size-4-2);
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-l);
+  overflow: hidden;
+}
+
+button.goodobsidian-sheet.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-3);
+  width: 100%;
+  min-height: 52px;
+  height: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: 0;
+  color: var(--text-normal);
+  text-align: left;
+}
+
+button.goodobsidian-sheet.clickable-icon + button.goodobsidian-sheet.clickable-icon {
+  border-top: 1px solid var(--gob-line);
+}
+
+.goodobsidian-sheet-mark {
+  display: flex;
+  color: var(--text-faint);
+}
+
+.goodobsidian-sheet-mark.is-used {
+  color: var(--color-green);
+}
+
+.goodobsidian-sheet-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goodobsidian-sheet-title {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.goodobsidian-sheet-state {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: normal;
+}
+
+.goodobsidian-sheet-open {
+  display: flex;
+  color: var(--text-faint);
+}
+
 /* The endpoint URL row: its field goes under the name, full width, so a long
    URL stays readable on a phone. */
 .goodobsidian-wide-text {
@@ -8723,7 +8859,7 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
 }
 
 /*
- * Settings → Handwriting → Learn now, while a run is on: the button fills
+ * Settings → Models on this device → Learn now, while a run is on: it fills
  * from the left as it goes (--gob-learn-progress), and Stop shows beside it.
  */
 button.goodobsidian-learn-button.is-learning {
