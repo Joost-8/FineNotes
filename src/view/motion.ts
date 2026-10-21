@@ -10,6 +10,28 @@ import { type Spring, springEasing } from "./springs";
 /** The page sidebar sliding in or out, and the page gliding beside it. */
 export const PANEL_SLIDE_MS = 200;
 
+/** A box in client px. */
+export interface ClientBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The notebook view as it was on screen, for the page overview to fly the
+ * page being read into its place (`PageSidebar.setOverview`).
+ */
+export interface PageSnapshot {
+  /** The pane's layers (desk, paper, ink) composited, in device px. */
+  image: HTMLCanvasElement;
+  /** Where the pane and the page being read were. */
+  pane: ClientBox;
+  page: ClientBox;
+  /** The desk around the page, to fill where the page was lifted from. */
+  desk: string;
+}
+
 /** Whether the person asked the system for less motion. */
 export function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;

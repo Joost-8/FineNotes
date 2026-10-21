@@ -25,8 +25,8 @@ export interface NotebookSearchHost {
   /** The last query, so searching again carries on where it left off. */
   initial: string;
   onQuery: (query: string) => void;
-  /** Turn to a page, 0-based. */
-  goTo: (pageIndex: number) => void;
+  /** Turn to a page, 0-based, and light up what `query` found there. */
+  goTo: (pageIndex: number, query: string) => void;
 }
 
 export class NotebookSearchModal extends SuggestModal<SearchHit> {
@@ -93,7 +93,7 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
   }
 
   onChooseSuggestion(hit: SearchHit): void {
-    this.host.goTo(hit.pageIndex);
+    this.host.goTo(hit.pageIndex, this.inputEl.value);
   }
 
   /** What an empty list says: how to search, or why nothing was found. */

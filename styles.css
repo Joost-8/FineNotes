@@ -1552,6 +1552,32 @@ body,
   flex: 0 0 auto;
 }
 
+/* The overview opening: the page being read flies from the desk into its
+   slot over the grid, and the view it lay in recedes under it. Only for the
+   length of the flight; it takes no presses. */
+.goodobsidian-overview-flight {
+  position: absolute;
+  z-index: 17;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.goodobsidian-overview-flight-view,
+.goodobsidian-overview-flight-page {
+  position: absolute;
+}
+
+.goodobsidian-overview-flight-page {
+  transform-origin: 0 0;
+  box-shadow: var(--gob-shadow-float);
+}
+
+/* The slot the page is flying into stays empty until it lands. */
+.goodobsidian-thumb-frame.is-landing {
+  visibility: hidden;
+}
+
 .goodobsidian-pagesidebar.is-overview .goodobsidian-pagesidebar-head {
   grid-template-columns: 1fr auto 1fr;
   padding: 0 16px;
@@ -1722,16 +1748,18 @@ body,
   background: var(--gob-paper);
 }
 
-/* Several pages move together: a second sheet behind, and their number. */
-.goodobsidian-thumb-ghost.is-stack::before {
-  content: "";
+/* Several pages move together: each shows as a sheet fanned out behind the
+   one grabbed, and their number sits on the corner. */
+.goodobsidian-thumb-ghost-sheet {
   position: absolute;
-  z-index: -1;
   inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
   border-radius: var(--gob-radius-s);
   background: var(--gob-paper);
   box-shadow: var(--gob-shadow-paper);
-  transform: translate(7px, 7px) rotate(4deg);
 }
 
 .goodobsidian-thumb-ghost-count {
@@ -1936,8 +1964,16 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   pointer-events: auto;
 }
 
+/* A checklist's box in a text box (2.5): a tap ticks it. */
+.goodobsidian-textbox-check {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .goodobsidian-surface.is-lasso .goodobsidian-textbox-link,
-.goodobsidian-surface.is-text-tool .goodobsidian-textbox-link {
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-link,
+.goodobsidian-surface.is-lasso .goodobsidian-textbox-check,
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-check {
   pointer-events: none;
 }
 
@@ -2052,6 +2088,18 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   white-space: nowrap;
   pointer-events: none;
   opacity: 0.85;
+}
+
+/* A pinch closed far enough that letting go shows every page: the overview's grid, in the accent. */
+.goodobsidian-zoomreadout.is-overview {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-zoomreadout.is-overview svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* A thin thumb on the right edge (and the bottom one when zoomed in wide). */
@@ -5861,6 +5909,66 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--gob-sel-line);
 }
 
+/* "Turn into ›": the chevron sits where a check would. */
+.goodobsidian-selection-row-check.is-chevron {
+  color: var(--gob-sel-icon);
+}
+
+/* A segmented row: its label, then a well of icon buttons, the one that is on raised. */
+.goodobsidian-selection-segments {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--gob-touch);
+  padding: 0 4px 0 10px;
+}
+
+.goodobsidian-selection-segments-label {
+  flex: 1 1 auto;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-selection-segment-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--gob-radius-m) - 2px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+  opacity: 1;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon.is-active {
+  background: var(--color-base-35);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-selection-segment svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon.has-label {
+  width: auto;
+  min-width: 40px;
+  padding: 0 6px;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Colour: a row of discs, each in a 44 px target. */
 .goodobsidian-selection-swatches {
   display: flex;
@@ -5941,6 +6049,12 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-view .goodobsidian-audio-button.clickable-icon:hover {
   background: var(--background-modifier-hover);
+}
+
+/* The player's Replay ink switch (2.5), lit while ink replays. */
+.goodobsidian-view .goodobsidian-audio-button.goodobsidian-player-replay.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.16);
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-audio-button-icon {
@@ -6617,6 +6731,59 @@ input[type="range"].goodobsidian-player-scrubber {
 }
 
 .goodobsidian-link-mark.is-hidden {
+  display: none;
+}
+
+/* A word a search found, lit as a highlighter would (2.5), until the page is next touched. */
+.goodobsidian-search-mark {
+  position: absolute;
+  border-radius: 4px;
+  background: hsla(var(--interactive-accent-hsl), 0.22);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+  animation: goodobsidian-search-pulse 1.2s var(--gob-ease-out) 1;
+}
+
+.goodobsidian-search-mark.is-hidden {
+  display: none;
+}
+
+@keyframes goodobsidian-search-pulse {
+  0% {
+    box-shadow: 0 0 0 6px hsla(var(--interactive-accent-hsl), 0.35);
+  }
+}
+
+/* A text box holding a word a search found. */
+.goodobsidian-page-textbox.is-search-hit {
+  border-radius: 4px;
+  background: hsla(var(--interactive-accent-hsl), 0.16);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+}
+
+/* A handwritten task's box beside its ink (2.5), in the ink's colour (set
+   inline); a tap ticks it. The export draws the same box (paintTaskBox). */
+.goodobsidian-task-mark {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-radius: 20%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.goodobsidian-task-mark.is-done::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.2 5.2 4.2 7.2 8 2.8' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.2 5.2 4.2 7.2 8 2.8' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+}
+
+.goodobsidian-task-mark.is-hidden {
   display: none;
 }
 
@@ -10912,4 +11079,167 @@ button.clickable-icon.goodobsidian-calc-window-button {
 .goodobsidian-graph-window.is-front,
 .goodobsidian-calc-window.is-front {
   z-index: 21;
+}
+
+/* Select mode in the docked page sidebar (not only the overview): the bar
+   shows icons alone, and the header's Done takes the place of the close. */
+.goodobsidian-pagesidebar:not(.is-overview)
+  .goodobsidian-pagesidebar-selectbar
+  .goodobsidian-pagesidebar-selectbar-button.clickable-icon {
+  padding: 0 9px;
+}
+
+.goodobsidian-pagesidebar:not(.is-overview) .goodobsidian-pagesidebar-selectbar-label {
+  display: none;
+}
+
+/* "Move to another notebook": a mode switch, a search field, the notebooks. */
+body:not(.is-phone) .modal.goodobsidian-move-modal {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.goodobsidian-move-mode {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-move-mode .goodobsidian-move-mode-button.clickable-icon {
+  flex: 1 1 0;
+  justify-content: center;
+  min-height: var(--gob-touch-compact);
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-move-mode .goodobsidian-move-mode-button.clickable-icon.is-active {
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-raised);
+  color: var(--text-normal);
+}
+
+.goodobsidian-move-mode .goodobsidian-move-mode-button.clickable-icon:disabled {
+  opacity: 0.4;
+}
+
+.goodobsidian-move-search-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.goodobsidian-move-search-icon {
+  position: absolute;
+  left: 12px;
+  display: inline-flex;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.goodobsidian-move-search-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 16px or iPadOS zooms the page into the field when it takes focus. */
+.goodobsidian-move-search-row .goodobsidian-move-search {
+  width: 100%;
+  height: var(--gob-touch);
+  padding-left: 36px;
+  font-size: 16px;
+}
+
+.goodobsidian-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-move-list .goodobsidian-move-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 6px 12px;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  text-align: left;
+  white-space: normal;
+}
+
+.goodobsidian-move-list .goodobsidian-move-row.clickable-icon:hover,
+.goodobsidian-move-list .goodobsidian-move-row.is-picked.clickable-icon {
+  background: var(--background-modifier-hover);
+}
+
+.goodobsidian-move-list .goodobsidian-move-row.is-picked.clickable-icon {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.goodobsidian-move-row-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.goodobsidian-move-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goodobsidian-move-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-move-row-folder {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-move-row-tag {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-move-more {
+  padding: 8px 12px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-move-new .goodobsidian-move-new-field {
+  width: calc(100% - 24px);
+  height: var(--gob-touch);
+  margin: 2px 12px 6px;
+  font-size: 16px;
+}
+
+/* A notice with an action in it (pages moved, with Undo). */
+.notice .goodobsidian-notice-action.clickable-icon {
+  display: inline-flex;
+  margin-left: 12px;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }

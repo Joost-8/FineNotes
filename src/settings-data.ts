@@ -202,6 +202,11 @@ export interface GoodObsidianSettings {
   /** Read handwriting on this device: search, titles and links from ink. */
   handwritingOnDevice: boolean;
   /**
+   * While a recording plays, ink not written yet at that moment shows pale
+   * (2.5); switched on the player bar.
+   */
+  replayInk: boolean;
+  /**
    * Underline words read on this device that may be misread; a tap corrects
    * them, and learning uses the answers (view/word-check.ts).
    */
@@ -321,6 +326,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   returnToPenAfterUse: false,
   fingerTapUndo: true,
   handwritingOnDevice: true,
+  replayInk: true,
   checkHandwrittenWords: false,
   speechModel: "whisper-base",
   speechLanguage: "auto",

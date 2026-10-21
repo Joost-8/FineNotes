@@ -445,6 +445,23 @@ describe("KineticScroller: page glide", () => {
     expect(s.position.y).toBe(2300);
   });
 
+  it("a nudge mid-snap (a zoom springing back) moves the snap's target with it", () => {
+    const s = notebook();
+    s.setPosition(0, 1000);
+    s.snapTo(null, 2000, 0);
+    s.step(16);
+    s.step(32);
+    const before = s.position.y;
+    s.nudge(0, 300);
+    expect(s.position.y).toBe(before + 300);
+    // Never overshoots back towards the old target on the way.
+    let t = 32;
+    let low = Infinity;
+    while (s.step((t += 16.667)) && t < 5000) low = Math.min(low, s.position.y);
+    expect(low).toBeGreaterThanOrEqual(before + 300 - 0.5);
+    expect(s.position.y).toBeCloseTo(2300, 5);
+  });
+
   it("a shrinking extent pulls the glide's target back into bounds", () => {
     const s = notebook();
     s.glideTo(0, 6000, 0);

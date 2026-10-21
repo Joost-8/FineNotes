@@ -60,6 +60,8 @@ export class SelectionActionBar {
   private moreButton: HTMLButtonElement | null = null;
   private actions: SelectionAction[] = [];
   private key = "";
+  /** The submenu shown in place of the menu ("Turn into"), or null for the menu itself. */
+  private submenu: string | null = null;
   /** The visible area the bar was last placed in, for placing the menu. */
   private visible: Bounds | null = null;
   private readonly onOutsideDown = (event: PointerEvent): void => {
@@ -125,6 +127,7 @@ export class SelectionActionBar {
     if (!this.menuEl) return;
     this.menuEl.remove();
     this.menuEl = null;
+    this.submenu = null;
     this.moreButton?.removeClass("is-active");
     this.parent.ownerDocument.removeEventListener("pointerdown", this.onOutsideDown, true);
   }
@@ -213,6 +216,24 @@ export class SelectionActionBar {
     if (!menu) return;
     menu.empty();
     const layout = menuLayout(this.actions);
+    const open = this.submenu
+      ? layout.rows.find((row) => row.kind === "submenu" && row.label === this.submenu)
+      : undefined;
+    if (open?.kind === "submenu") {
+      // A sub-panel in place of the menu: a way back, then its rows.
+      const back = this.button(menu, "goodobsidian-selection-row is-back", "Back");
+      iconInto(back.createSpan({ cls: "goodobsidian-selection-row-icon" }), ["chevron-left"], "‹");
+      back.createSpan({ cls: "goodobsidian-selection-row-label", text: open.label });
+      onTap(back, () => {
+        this.submenu = null;
+        this.renderMenu();
+      });
+      menu.createDiv({ cls: "goodobsidian-selection-menu-divider" });
+      for (const action of open.actions) this.renderRow(menu, action);
+      this.placeMenu();
+      return;
+    }
+    this.submenu = null;
     if (layout.tiles.length > 0) {
       const strip = menu.createDiv({ cls: "goodobsidian-selection-tiles" });
       for (const action of layout.tiles) {
@@ -231,31 +252,84 @@ export class SelectionActionBar {
     for (const row of layout.rows) {
       if (row.kind === "divider") {
         menu.createDiv({ cls: "goodobsidian-selection-menu-divider" });
-        continue;
+      } else if (row.kind === "segments") {
+        this.renderSegments(menu, row.label, row.actions);
+      } else if (row.kind === "submenu") {
+        const button = this.button(menu, "goodobsidian-selection-row", row.label);
+        button.setAttribute("role", "menuitem");
+        button.setAttribute("aria-haspopup", "menu");
+        iconInto(
+          button.createSpan({ cls: "goodobsidian-selection-row-icon" }),
+          iconsFor(row.icon),
+          "",
+        );
+        button.createSpan({ cls: "goodobsidian-selection-row-label", text: row.label });
+        iconInto(
+          button.createSpan({ cls: "goodobsidian-selection-row-check is-chevron" }),
+          ["chevron-right"],
+          "›",
+        );
+        const label = row.label;
+        onTap(button, () => {
+          this.submenu = label;
+          this.renderMenu();
+        });
+      } else if (row.action.swatches) {
+        this.renderSwatches(menu, row.action);
+      } else {
+        this.renderRow(menu, row.action);
       }
-      const { action } = row;
-      if (action.swatches) {
-        this.renderSwatches(menu, action);
-        continue;
-      }
-      const button = this.button(menu, "goodobsidian-selection-row", action.label);
-      button.setAttribute("role", "menuitem");
-      iconInto(
-        button.createSpan({ cls: "goodobsidian-selection-row-icon" }),
-        iconsFor(action.icon),
-        "",
-      );
-      button.createSpan({ cls: "goodobsidian-selection-row-label", text: action.label });
-      if (action.checked !== undefined) {
-        button.setAttribute("role", "menuitemcheckbox");
-        button.setAttribute("aria-checked", String(action.checked));
-        const check = button.createSpan({ cls: "goodobsidian-selection-row-check" });
-        if (action.checked) iconInto(check, ["check"], "✓");
-      }
-      this.decorate(button, action);
-      onTap(button, () => this.run(action.id, true));
     }
     this.placeMenu();
+  }
+
+  /** One row of the menu: icon, label, and a check when it is a choice that is on. */
+  private renderRow(menu: HTMLElement, action: SelectionAction): void {
+    const button = this.button(menu, "goodobsidian-selection-row", action.label);
+    button.setAttribute("role", "menuitem");
+    iconInto(
+      button.createSpan({ cls: "goodobsidian-selection-row-icon" }),
+      iconsFor(action.icon),
+      "",
+    );
+    button.createSpan({ cls: "goodobsidian-selection-row-label", text: action.label });
+    if (action.checked !== undefined) {
+      button.setAttribute("role", "menuitemcheckbox");
+      button.setAttribute("aria-checked", String(action.checked));
+      const check = button.createSpan({ cls: "goodobsidian-selection-row-check" });
+      if (action.checked) iconInto(check, ["check"], "✓");
+    }
+    this.decorate(button, action);
+    onTap(button, () => this.run(action.id, true));
+  }
+
+  /**
+   * A labelled row of icon buttons, the one that is on lit. A tap keeps the
+   * menu open, as a swatch does, so a fill and a line can be tried in turn.
+   */
+  private renderSegments(menu: HTMLElement, label: string, actions: SelectionAction[]): void {
+    const row = menu.createDiv({ cls: "goodobsidian-selection-segments" });
+    row.createSpan({ cls: "goodobsidian-selection-segments-label", text: label });
+    const group = row.createDiv({
+      cls: "goodobsidian-selection-segment-group",
+      attr: { role: "group", "aria-label": label },
+    });
+    for (const action of actions) {
+      const button = this.button(group, "goodobsidian-selection-segment", action.label);
+      if (action.showLabel) {
+        // A value no icon says (an opacity): its words.
+        button.addClass("has-label");
+        button.setText(action.label);
+      } else {
+        iconInto(button, iconsFor(action.icon), action.label.slice(0, 2));
+      }
+      if (action.checked !== undefined) {
+        button.setAttribute("aria-pressed", String(action.checked));
+        button.toggleClass("is-active", action.checked);
+      }
+      this.decorate(button, action);
+      onTap(button, () => this.run(action.id, false));
+    }
   }
 
   /** A labelled row of colour swatches. A pick keeps the menu open to try another. */
@@ -401,6 +475,8 @@ const ICON_FALLBACKS: Readonly<Record<string, readonly string[]>> = {
   "bring-to-front": ["arrow-up-to-line"],
   "send-to-back": ["arrow-down-to-line"],
   "copy-plus": ["copy"],
+  "wand-sparkles": ["wand-2", "wand"],
+  "square-check-big": ["check-square"],
 };
 
 /** An icon name and its fallbacks, for {@link iconInto}. */

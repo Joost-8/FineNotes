@@ -106,6 +106,55 @@ describe("menuLayout", () => {
     const swatches = { colors: ["#000"], current: null, pick: () => {} };
     expect(menuLayout([action("colour", { menu: "tile", swatches })]).tiles).toEqual([]);
   });
+
+  it("folds a segment's entries into one row where the first of them stands", () => {
+    const layout = menuLayout([
+      action("copy"),
+      action("fill-none", { group: "style", segment: "Fill" }),
+      action("line-solid", { group: "style", segment: "Line" }),
+      action("fill-soft", { group: "style", segment: "Fill" }),
+      action("delete", { group: "delete" }),
+    ]);
+    expect(
+      layout.rows.map((row) =>
+        row.kind === "segments"
+          ? `${row.label}:${row.actions.map((a) => a.id).join(",")}`
+          : row.kind === "action"
+            ? row.action.id
+            : row.kind,
+      ),
+    ).toEqual([
+      "copy",
+      "divider",
+      "Fill:fill-none,fill-soft",
+      "Line:line-solid",
+      "divider",
+      "delete",
+    ]);
+  });
+
+  it("gathers a submenu's entries behind one row, and leaves tiles alone", () => {
+    const turn = { label: "Turn into", icon: "wand" };
+    const layout = menuLayout([
+      action("cut", { menu: "tile" }),
+      action("task", { group: "turn", submenu: turn }),
+      action("copy-text"),
+      action("link", { group: "turn", submenu: turn }),
+    ]);
+    expect(layout.tiles.map((a) => a.id)).toEqual(["cut"]);
+    const sub = layout.rows.find((row) => row.kind === "submenu");
+    expect(sub?.kind === "submenu" && sub.actions.map((a) => a.id)).toEqual(["task", "link"]);
+    expect(layout.rows.filter((row) => row.kind === "submenu")).toHaveLength(1);
+  });
+
+  it("keeps a submenu entry out of the segments, and a swatch row out of both", () => {
+    const swatches = { colors: ["#000"], current: null, pick: () => {} };
+    const layout = menuLayout([
+      action("colour", { swatches, segment: "Colour" }),
+      action("task", { segment: "X", submenu: { label: "Turn into", icon: "wand" } }),
+    ]);
+    expect(layout.rows.map((row) => row.kind)).toEqual(["action", "submenu"]);
+  });
 });
 
 describe("actionsKey", () => {
@@ -119,6 +168,11 @@ describe("actionsKey", () => {
     const red = [action("colour", { swatches: { colors: ["#f00"], current: "#f00", pick } })];
     const none = [action("colour", { swatches: { colors: ["#f00"], current: null, pick } })];
     expect(actionsKey(red)).not.toBe(actionsKey(none));
+    // A segment or submenu stays open while it is used: a changed check must redraw it.
+    expect(actionsKey([action("a", { checked: true })])).not.toBe(
+      actionsKey([action("a", { checked: false })]),
+    );
+    expect(actionsKey([action("a", { segment: "Fill" })])).not.toBe(actionsKey([action("a")]));
   });
 
   it("reads enabled as on unless it is false", () => {

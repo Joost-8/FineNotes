@@ -43,12 +43,14 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
   type Bounds,
   type ImageCrop,
   type ImageElement,
   type InkDocument,
+  type InkTask,
   type Page,
   type PageGeometry,
   type ArrowHeads,
@@ -108,6 +110,8 @@ import {
 } from "./tile-grid";
 import type { ViewportState } from "./viewport";
 
+/** How strongly ink a playing recording has not reached yet is drawn (2.5). */
+const FADED_INK_ALPHA = 0.22;
 /** The veil over the part of a picture a crop leaves out. A real colour: canvas ignores `var(--…)`. */
 const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
 /** The lasso's and the selection box's line, and the lasso's fill. Real colours, as above. */
@@ -483,6 +487,8 @@ export class Renderer {
   private hiddenImages: ReadonlySet<ImageElement> = new Set();
   /** Strokes (by id) left out of tiles and previews: a lasso selection being dragged. */
   private hiddenStrokes: ReadonlySet<string> = new Set();
+  /** Strokes drawn pale: ink a recording's playback has not reached yet (2.5). */
+  private fadedStrokes: ReadonlySet<string> = new Set();
   /** Tables left out of tiles and previews: a lasso selection being dragged. */
   private hiddenTables: ReadonlySet<TableElement> = new Set();
   /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
@@ -588,6 +594,16 @@ export class Renderer {
    */
   setHiddenStrokes(ids: ReadonlySet<string>): void {
     this.hiddenStrokes = ids;
+  }
+
+  /**
+   * Draw these strokes pale in every tile and preview rasterised from now on:
+   * ink written after the moment a recording is playing (2.5, as Notability
+   * replays a note). Same rule as {@link setHiddenStrokes}: the caller
+   * invalidates the regions of the strokes that changed.
+   */
+  setFadedStrokes(ids: ReadonlySet<string>): void {
+    this.fadedStrokes = ids;
   }
 
   /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
@@ -1265,7 +1281,13 @@ export class Renderer {
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) return;
+    const faded = this.fadedStrokes.has(stroke.id);
+    if (faded) {
+      ctx.save();
+      ctx.globalAlpha *= FADED_INK_ALPHA;
+    }
     paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
+    if (faded) ctx.restore();
   }
 
   /** Whether page `pageIndex` of the document last painted is shown inverted (`pageLook`). */
@@ -1658,7 +1680,8 @@ function paintStroke(
   const highlighter = style.tool === "highlighter";
   ctx.save();
   if (highlighter) {
-    ctx.globalAlpha = highlighterAlpha;
+    // Times whatever the caller set: a faded stroke's alpha (replay).
+    ctx.globalAlpha *= highlighterAlpha;
     ctx.globalCompositeOperation = night ? NIGHT_HIGHLIGHTER_BLEND : DAY_HIGHLIGHTER_BLEND;
   }
   // Ink colour is absolute (contracts/design-brief.md): a stored colour is
@@ -1834,6 +1857,8 @@ export function renderPageThumbnail(
   for (const stroke of page.strokes) {
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
+  // Handwriting made a checklist item has its box beside it, in its ink colour.
+  for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);
   // A picture in front of the ink (a sticker on handwriting), under the text.
   pictures(true);
 
@@ -1841,6 +1866,40 @@ export function renderPageThumbnail(
   // canvas: a filled shape is a ground the text sits on, and a filled box
   // covers the ink under it in an export just as it does on screen.
   for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  ctx.restore();
+}
+
+/**
+ * Paint a handwritten task's box in page space where the page shows it
+ * (`taskBoxRect`): a rounded square in the colour of its first stroke,
+ * ticked when done. Nothing when its ink is gone.
+ */
+export function paintTaskBox(
+  ctx: CanvasRenderingContext2D,
+  page: Page,
+  task: InkTask,
+  night = false,
+): void {
+  const bounds = inkBounds(page, task.strokes);
+  if (!bounds) return;
+  const { x, y, size } = taskBoxRect(bounds);
+  const first = page.strokes.find((s) => s.id === task.strokes[0]);
+  const color = first?.color ?? "#1f1f1f";
+  ctx.save();
+  ctx.strokeStyle = night ? nightColor(color) : color;
+  ctx.lineWidth = Math.max(1.2, size / 11);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.roundRect(x, y, size, size, size * 0.2);
+  ctx.stroke();
+  if (task.done === true) {
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.22, y + size * 0.52);
+    ctx.lineTo(x + size * 0.42, y + size * 0.72);
+    ctx.lineTo(x + size * 0.8, y + size * 0.28);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

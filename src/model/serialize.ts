@@ -32,6 +32,7 @@ import {
 import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
+import { normalizeTasks } from "./tasks";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
@@ -49,6 +50,7 @@ import {
   type Page,
   type PageSection,
   type InkLink,
+  type InkTask,
   type PageGeometry,
   type Recording,
   type PracticeInfo,
@@ -169,6 +171,7 @@ interface StoredPage {
   title?: string;
   sections?: PageSection[];
   links?: InkLink[];
+  tasks?: InkTask[];
   images: ImageElement[];
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
@@ -279,6 +282,7 @@ function storePage(page: Page): StoredPage {
     title: normalizePageTitle(page.title),
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
+    tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
     images: page.images,
     textBoxes: page.textBoxes,
     tables: page.tables && page.tables.length > 0 ? page.tables : undefined,
@@ -894,6 +898,7 @@ function normalizePage(
   fallbackWidth: number,
   seenSections: Set<string> = new Set(),
   seenLinks: Set<string> = new Set(),
+  seenTasks: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -947,6 +952,7 @@ function normalizePage(
     ...titleOf(page.title),
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
+    ...tasksOf(page.tasks, strokes, seenTasks),
     ...(tables.length > 0 ? { tables } : {}),
     ...(graphs.length > 0 ? { graphs } : {}),
     ...(comments.length > 0 ? { comments } : {}),
@@ -961,6 +967,16 @@ function linksOf(
 ): { links?: InkLink[] } {
   const links = normalizeLinks(raw, new Set(strokes.map((s) => s.id)), seen);
   return links.length > 0 ? { links } : {};
+}
+
+/** A page's tasks, spread into the page only when any of them still holds ink there. */
+function tasksOf(
+  raw: unknown,
+  strokes: readonly Stroke[],
+  seen: Set<string>,
+): { tasks?: InkTask[] } {
+  const tasks = normalizeTasks(raw, new Set(strokes.map((s) => s.id)), seen);
+  return tasks.length > 0 ? { tasks } : {};
 }
 
 /** A page's sections, spread into the page only when it has any. */
@@ -1012,7 +1028,10 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (Array.isArray(raw.pages)) {
     const seenSections = new Set<string>();
     const seenLinks = new Set<string>();
-    pages = raw.pages.map((p, i) => normalizePage(p, i, view.width, seenSections, seenLinks));
+    const seenTasks = new Set<string>();
+    pages = raw.pages.map((p, i) =>
+      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks),
+    );
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
   } else {

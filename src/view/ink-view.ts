@@ -58,6 +58,8 @@ import {
   syncLinkIndex,
   updatePageTranscripts,
 } from "../recognition/page-transcripts";
+import { adoptTaskStates, notebookTasks, syncTaskIndex } from "../recognition/task-index";
+import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
 import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
@@ -190,6 +192,9 @@ import {
   isNoOpBlockMove,
   moveIndexForGap,
 } from "../model/page-order";
+import { ReceivePages, transferNotice, transferRefusal } from "../model/page-transfer";
+import type { TransferReceipt } from "../main";
+import { type MoveChoice, MovePagesModal } from "./move-pages-modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import {
   externalUrl,
@@ -203,6 +208,7 @@ import { inkForReading, readingText } from "./handwriting";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import { pageHits, searchMatchTarget } from "../search/hit-strokes";
 import {
   type LexiconSuggestion,
   SUGGEST_MARGIN,
@@ -244,6 +250,7 @@ import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
+import { TaskModal } from "./task-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
@@ -263,7 +270,7 @@ import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from ".
 import { penInksOf } from "../model/pen-inks";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
-import { PANEL_SLIDE_MS } from "./motion";
+import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type LastPages,
   forgetInLastPages,
@@ -415,6 +422,8 @@ export class InkView extends TextFileView {
   private pendingSubpath: string | null = null;
   /** Back/Forward's page (0-based), until the pages have loaded. */
   private pendingPageIndex: number | null = null;
+  /** A result of Obsidian's own search, to light up on its page once it shows (2.5). */
+  private pendingSearch: { pageIndex: number; query: string } | null = null;
   /**
    * The file this leaf has put on its remembered page. A second load of the
    * same file (a sync touched it) keeps the reader where they are.
@@ -449,6 +458,8 @@ export class InkView extends TextFileView {
   private askSession: AskSession | null = null;
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
+  /** The page sidebar was shut when a pinch opened the overview: shut it again after. */
+  private sidebarForOverview = false;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
   /** Recording, replay and audio transcription (0.5); see note-audio.ts. */
   private audio: NoteAudio | null = null;
@@ -566,6 +577,8 @@ export class InkView extends TextFileView {
     // The text block's links list follows the notebook's handwritten links,
     // so backlinks and the graph see them (FineNotes#20).
     this.noteBody = syncLinkIndex(this.noteBody, linkTargets(this.doc));
+    // And its checklist follows the notebook's, for the Tasks plugin (2.5).
+    this.noteBody = syncTaskIndex(this.noteBody, notebookTasks(this.doc));
     return this.noteBody;
   }
 
@@ -616,6 +629,8 @@ export class InkView extends TextFileView {
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
+    // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
+    if (doc && !held) this.adoptTicks(body);
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -653,6 +668,16 @@ export class InkView extends TextFileView {
     // Targets rewritten in place, on any page: nothing else can tell the save cache.
     if (renamed > 0) this.encoder.touchAll();
     return renamed;
+  }
+
+  /**
+   * Take ticks made in the note's checklist since the notebook wrote it (by
+   * the Tasks plugin, or by hand) into the notebook, and save them in.
+   */
+  private adoptTicks(body: string): void {
+    if (this.guard.locked) return;
+    const pages = adoptTaskStates(this.doc, body);
+    if (pages.length > 0) this.requestSaveOf(pages);
   }
 
   /**
@@ -2383,7 +2408,11 @@ export class InkView extends TextFileView {
         onMovePages: (indexes, gap) => this.movePages(indexes, gap),
         onSelectionAction: (action, indexes) => this.selectionAction(action, indexes),
         // The options pill floats over the page, which the overview covers.
-        onOverviewChange: (open) => root.toggleClass("goodobsidian-overview-open", open),
+        pageSnapshot: () => this.surface?.snapshotPage() ?? null,
+        onOverviewChange: (open) => {
+          root.toggleClass("goodobsidian-overview-open", open);
+          if (!open) this.closeSidebarAfterOverview();
+        },
         listFiles: (kind) => this.listNotebookFiles(kind),
         onOpenFile: (kind, row) => this.openNotebookFile(kind, row),
         onFileKind: (kind) => (lastFileKind = kind),
@@ -2457,6 +2486,7 @@ export class InkView extends TextFileView {
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
+        onMakeTask: (index, strokeIds) => this.makeInkTask(index, strokeIds),
         onOpenLink: (target) => this.openInkLink(target),
         onTapComment: (index, comment) => this.openComment(index, comment),
         onAddComment: (index, at) => {
@@ -2471,6 +2501,7 @@ export class InkView extends TextFileView {
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
+        onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
@@ -2865,8 +2896,37 @@ export class InkView extends TextFileView {
       index: pages,
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
-      goTo: (index) => this.surface?.goToPage(index, true),
+      goTo: (index, query) => void this.showSearchHits(index, query),
     }).open();
+  }
+
+  /**
+   * Turn to page `index` and light up what `query` found there (2.5): the
+   * handwritten words, from this device's reading of the page (read now if
+   * the one kept is out of date), and the text boxes. Without on-device
+   * reading only the text boxes light up.
+   */
+  private async showSearchHits(index: number, query: string): Promise<void> {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page) return;
+    surface.setSearchHits(null);
+    surface.goToPage(index, true);
+    let words: ReadWord[] = [];
+    const hash = pageContentHash(page);
+    const kept = this.pageReadings.get(page.id);
+    if (kept && kept.hash === hash) words = kept.words;
+    else if (this.settings.handwritingOnDevice !== false && page.strokes.length > 0) {
+      try {
+        const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+        if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+        words = this.keepReading(page, hash, reading).words;
+      } catch {
+        // No model, or the page could not be read: the text boxes still light up.
+      }
+    }
+    const hits = pageHits(query, words, page.textBoxes);
+    surface.setSearchHits(page.id, hits.words, hits.boxes);
   }
 
   /**
@@ -2876,8 +2936,20 @@ export class InkView extends TextFileView {
    */
   override setEphemeralState(state: unknown): void {
     super.setEphemeralState(state);
-    const { subpath, pageIndex } = (state ?? {}) as { subpath?: unknown; pageIndex?: unknown };
-    if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
+    const { subpath, pageIndex, match } = (state ?? {}) as {
+      subpath?: unknown;
+      pageIndex?: unknown;
+      match?: { content?: unknown; matches?: unknown };
+    };
+    // A result of Obsidian's own search: its page, with the words lit up (2.5).
+    const found =
+      typeof match?.content === "string" && Array.isArray(match.matches)
+        ? searchMatchTarget(match.content, match.matches as Array<[number, number]>)
+        : null;
+    if (found) {
+      this.pendingSearch = found;
+      this.pendingPageIndex = found.pageIndex;
+    } else if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
     else if (typeof pageIndex === "number" && Number.isInteger(pageIndex) && pageIndex >= 0) {
       // Back or Forward: the page this note was on then (see getEphemeralState).
       this.pendingPageIndex = pageIndex;
@@ -2925,6 +2997,9 @@ export class InkView extends TextFileView {
       index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);
+    const search = this.pendingSearch;
+    this.pendingSearch = null;
+    if (search && search.pageIndex === index) void this.showSearchHits(index, search.query);
   }
 
   // --- Where each notebook was left ---------------------------------------------
@@ -3084,6 +3159,8 @@ export class InkView extends TextFileView {
     this.toolbar?.setAddPageVisible(!single && !practice);
     // A single page takes no more pages, and a protected note takes no edits.
     this.surface?.setPullToAddPage(!single && !practice && !this.guard.locked);
+    // The overview needs pages to show, as its ⤢ does.
+    this.surface?.setPinchToOverview(!single && !practice);
     this.sidebar?.setSingle(single, practice);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
@@ -3143,6 +3220,39 @@ export class InkView extends TextFileView {
     // The panel slides in (or out) while the page glides beside it, both
     // GoodNotes' 200 ms `ease`, instead of everything jumping in one frame.
     if (before) this.surface?.glideFrom(before, PANEL_SLIDE_MS);
+  }
+
+  /**
+   * A pinch closed well past the fit: every page, in the sidebar's overview.
+   * A shut sidebar opens under it, without its slide (the overview covers
+   * it), and shuts again when the overview closes.
+   */
+  private openOverviewFromPinch(snapshot: PageSnapshot | null): void {
+    const sidebar = this.sidebar;
+    if (!sidebar || sidebar.isOverview) return;
+    if (!sidebar.isOpen) {
+      this.chatPanel?.close();
+      sidebar.setOpen(true);
+      sidebar.setCurrentPage(this.surface?.currentPage ?? 0);
+      this.syncSidebarInset();
+      this.surface?.layout();
+      this.sidebarForOverview = true;
+    }
+    sidebar.setOverview(true, true, snapshot);
+  }
+
+  /** The overview closed: shut the sidebar a pinch opened for it. */
+  private closeSidebarAfterOverview(): void {
+    if (!this.sidebarForOverview) return;
+    this.sidebarForOverview = false;
+    // After the sidebar's own call returns: closing the sidebar also closes
+    // the overview, and calls back here halfway through.
+    queueMicrotask(() => {
+      if (!this.sidebar?.isOpen || this.sidebar.isOverview) return;
+      this.sidebar.setOpen(false);
+      this.syncSidebarInset();
+      this.surface?.layout();
+    });
   }
 
   /** Keep the floating options pill over the page area, right of the sidebar. */
@@ -3211,6 +3321,32 @@ export class InkView extends TextFileView {
         if (found.text) picker.suggest(found.text, found.fixes);
       });
     }
+  }
+
+  /**
+   * Turn into › Task (2.5): ask what the ink says, starting from what this
+   * device reads in it, and make it a checklist item.
+   */
+  private makeInkTask(index: number, strokeIds: string[]): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    let read: SelectionText | null = null;
+    const modal = new TaskModal(this.app, undefined, (text) => {
+      // By identity: the page may move or go while the dialog is open.
+      if (this.isProtected() || this.surface !== surface) return;
+      if (!surface.document.pages.includes(page)) return;
+      if (read) this.recordEdits(page, read.words, text);
+      const commands = makeTask(surface.document, page, strokeIds, text);
+      if (commands.length === 0) return;
+      surface.applyCommand(new CompositeCommand("Task", commands));
+      this.requestSave();
+    });
+    modal.open();
+    void this.readSelection(page, strokeIds).then((found) => {
+      read = found;
+      if (found.text) modal.suggest(found.text, found.fixes);
+    });
   }
 
   /** The vault's notes for the link picker, most recently changed first. */
@@ -3541,10 +3677,145 @@ export class InkView extends TextFileView {
     return indexes.map((i) => pages[i]).filter((page): page is Page => page !== undefined);
   }
 
+  /** Ask where the pages at `indexes` should go: another notebook (FineNotes#33). */
+  private chooseNotebookFor(indexes: readonly number[]): void {
+    const surface = this.surface;
+    const file = this.file;
+    if (!surface || !file || this.isDamaged()) return;
+    const pages = this.pagesAt(indexes);
+    if (pages.length === 0) return;
+    let copyOnly: string | null = null;
+    if (isReadOnly(surface.document)) {
+      copyOnly = "This notebook is read-only, so its pages can be copied but not moved.";
+    } else if (pages.length >= surface.document.pages.length) {
+      copyOnly = "These are all the pages here, so they can be copied but not moved.";
+    }
+    new MovePagesModal(this.app, {
+      count: pages.length,
+      targets: this.plugin.transferTargets(),
+      recent: this.plugin.recentTransferTargets(),
+      exclude: file.path,
+      copyOnly,
+      onChoose: (choice) => void this.sendPages(surface, pages, choice),
+    }).open();
+  }
+
+  /**
+   * Copy `pages` into the notebook chosen, then (unless it is a copy) take
+   * them out of this one as one undoable step. The copy is made first, so a
+   * failure never costs a page. The notice's Undo takes both back.
+   */
+  private async sendPages(
+    surface: InkSurface,
+    pages: readonly Page[],
+    { destination, copy }: MoveChoice,
+  ): Promise<void> {
+    if (this.surface !== surface) return;
+    const here = pages.filter((page) => surface.document.pages.includes(page));
+    if (here.length === 0) return;
+    const receipt: TransferReceipt | string =
+      destination.kind === "new"
+        ? await this.plugin.sendPagesToNewNotebook(destination.title, here)
+        : await this.plugin.sendPages(destination.target.path, here);
+    if (typeof receipt === "string") {
+      new Notice(`FineNotes: ${receipt}`, 8000);
+      return;
+    }
+    this.plugin.rememberTransferTarget(receipt.path);
+    let removal: RemovePages | null = null;
+    if (
+      !copy &&
+      this.surface === surface &&
+      !isReadOnly(surface.document) &&
+      here.length < surface.document.pages.length
+    ) {
+      removal = new RemovePages(here);
+      surface.applyCommand(removal);
+      this.sidebar?.flush();
+      this.requestSave();
+    }
+    const moved = removal;
+    const message = transferNotice(here.length, receipt.title, moved === null);
+    const notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createSpan({ text: message });
+        const undo = fragment.createEl("button", {
+          cls: "goodobsidian-notice-action clickable-icon",
+          text: "Undo",
+        });
+        undo.addEventListener("click", () => {
+          notice.hide();
+          void this.undoTransfer(surface, moved, receipt);
+        });
+      }),
+      10000,
+    );
+  }
+
+  /** Put the pages back here (if they were moved) and take them out of where they went. */
+  private async undoTransfer(
+    surface: InkSurface,
+    removal: RemovePages | null,
+    receipt: TransferReceipt,
+  ): Promise<void> {
+    if (removal) {
+      // Here first: the copy over there is the only other copy of these pages.
+      if (this.surface !== surface || !surface.isLatest(removal)) {
+        new Notice(
+          `FineNotes: this notebook changed since, so the pages stay in ${receipt.title} as well. Delete them there if you do not want them.`,
+          10000,
+        );
+        return;
+      }
+      surface.undo();
+      this.sidebar?.flush();
+      this.requestSave();
+    }
+    try {
+      await receipt.undo();
+    } catch (error) {
+      new Notice(
+        `FineNotes: could not take the pages out of ${receipt.title} — ${errorMessage(error)}`,
+        8000,
+      );
+    }
+  }
+
+  /**
+   * Pages arriving from another notebook (FineNotes#33): added at the end as
+   * one undoable step. Returns how to take them out again, or why they cannot
+   * come.
+   */
+  receivePages(pages: readonly Page[]): { undo: () => Promise<void> } | string {
+    const surface = this.surface;
+    if (!surface) return "that notebook is not ready yet.";
+    if (this.isDamaged()) return "that notebook could not be loaded safely.";
+    const refusal = transferRefusal(surface.document);
+    if (refusal) return refusal;
+    const command = new ReceivePages(pages);
+    surface.applyCommand(command);
+    this.sidebar?.flush();
+    this.requestSave();
+    return {
+      undo: () => {
+        if (this.surface === surface) {
+          surface.applyCommand(new RemovePages(command.added));
+          this.sidebar?.flush();
+          this.requestSave();
+        }
+        return Promise.resolve();
+      },
+    };
+  }
+
   /** An action from the overview's selection bar, on the pages at `indexes`. */
   private selectionAction(action: SelectionAction, indexes: readonly number[]): void {
     if (action === "export") {
       this.exportPdf(indexes);
+      return;
+    }
+    if (action === "move-to") {
+      this.chooseNotebookFor(indexes);
       return;
     }
     const surface = this.surface;

@@ -6,6 +6,46 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **Move or copy pages to another notebook** (FineNotes#33). In the page
+  sidebar, tick pages and choose Move, then "To another notebook…": pick a
+  notebook (the one you used last comes first, and a search finds the rest)
+  or start a new one, and choose Move or Copy. The pages arrive at the end of
+  the other notebook, which can be closed or open; a notice offers Undo, which
+  takes them back out of both.
+- **Select pages in the sidebar itself**, not only in the page overview:
+  Ctrl/Cmd-click or Shift-click a page, or choose Select pages in its menu.
+  Dragging one ticked page takes every ticked page with it.
+- **Checklists that Obsidian's Tasks plugin finds.** A text box can be a
+  checklist (the new button next to Bullets and Numbering), and a tap on a
+  box ticks it. Handwriting becomes a task too: lasso it, then Turn into ›
+  Task. The words are read on the device and you can correct them; a box
+  appears beside the ink, and a tap ticks it. Every item is also listed in
+  the note as a `- [ ]` task with a link to its page, so Tasks queries and
+  Obsidian's own search show it. Tick it there and the notebook is ticked
+  too.
+- **Search shows what it found on the page.** Opening a search result now
+  glides to the first match and lights up the handwritten words and text
+  boxes that hold it, until you touch the page. A result of Obsidian's own
+  search opens the notebook on the right page with the words lit, instead
+  of the last page you read.
+- **Ink replay.** While a recording plays, ink you had not written yet at
+  that moment is pale and turns to full colour as the recording reaches it,
+  as in Notability. Seeking shows that moment at once, and the page being
+  written comes into view unless you are using the page. The pen button on
+  the player bar turns it off.
+
+### Changed
+
+- **A shorter lasso menu.** Cut, Copy, Duplicate and Paste sit across the
+  top. Fill, line, corners, arrowheads and flip are one row each instead of
+  eleven, and stay open while you try them. Contents heading, Link, Sticker,
+  Comment and the new Task are under Turn into ›. A picture's menu gets the
+  same tiles, with Arrange, Flip and Opacity as one row each.
+
 ## [2.4.0] - 2026-10-21
 
 ### Added

@@ -182,3 +182,75 @@ describe("thumbnail title", () => {
     expect(thumbnailTitleOf(undefined)).toBe("");
   });
 });
+
+describe("select mode in the docked panel", () => {
+  type Priv = Record<string, (...args: never[]) => unknown>;
+  const proto = PageSidebar.prototype as unknown as Priv;
+
+  /** A panel (not the overview) with the chrome stubbed out. */
+  function panel(extra: Record<string, unknown> = {}) {
+    return Object.assign(Object.create(PageSidebar.prototype) as object, {
+      doc: notebook(5),
+      thumbs: [],
+      open: true,
+      single: false,
+      fixed: false,
+      overview: false,
+      selecting: false,
+      selected: new Set<Page>(),
+      anchor: null,
+      callbacks: {},
+      syncChrome: () => {},
+      syncSelection: () => {},
+      ...extra,
+    }) as Record<string, unknown> & { selected: Set<Page>; selecting: boolean; doc: InkDocument };
+  }
+  const call = (sidebar: object, name: string, ...args: unknown[]): unknown =>
+    (proto[name] as (...a: unknown[]) => unknown).apply(sidebar, args);
+
+  it("starts without the overview, and only on a notebook that can be edited", () => {
+    const sidebar = panel();
+    call(sidebar, "setSelecting", true);
+    expect(sidebar.selecting).toBe(true);
+    for (const state of [{ single: true }, { fixed: true }, { open: false }]) {
+      const refused = panel(state);
+      call(refused, "setSelecting", true);
+      expect(refused.selecting).toBe(false);
+    }
+  });
+
+  it("ticks a page on a Ctrl-click and ends with its selection when turned off", () => {
+    const sidebar = panel();
+    call(sidebar, "tapThumb", 1, {}, { ctrlKey: true });
+    call(sidebar, "tapThumb", 3, {}, { metaKey: true });
+    expect(sidebar.selecting).toBe(true);
+    expect([...sidebar.selected].map((p) => p.id)).toEqual(["p2", "p4"]);
+    call(sidebar, "tapThumb", 1, {}, {});
+    expect([...sidebar.selected].map((p) => p.id)).toEqual(["p4"]);
+    call(sidebar, "setSelecting", false);
+    expect(sidebar.selected.size).toBe(0);
+  });
+
+  it("drags every ticked page with the one grabbed, and a loose page alone", () => {
+    const sidebar = panel();
+    call(sidebar, "tapThumb", 0, {}, { ctrlKey: true });
+    call(sidebar, "tapThumb", 2, {}, { ctrlKey: true });
+    expect(call(sidebar, "movingWith", 2)).toEqual([0, 2]);
+    expect(call(sidebar, "movingWith", 4)).toEqual([4]);
+  });
+
+  it("is left by switching to another tab", () => {
+    const sidebar = panel({
+      tabButtons: new Map(),
+      pagesEl: { toggleClass: () => {} },
+      contentsEl: { toggleClass: () => {} },
+      filesEl: { toggleClass: () => {} },
+      el: { setAttribute: () => {} },
+      titleEl: { setText: () => {} },
+    });
+    call(sidebar, "setSelecting", true);
+    sidebar.open = false;
+    call(sidebar, "showTab", "contents");
+    expect(sidebar.selecting).toBe(false);
+  });
+});

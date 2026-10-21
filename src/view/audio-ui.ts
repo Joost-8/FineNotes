@@ -144,6 +144,18 @@ export class RecordingPill {
 const HINT_MS = 4000;
 const STANDING_HINT = "Tap your writing to hear what was said as you wrote it.";
 
+/** What the page does as a recording plays (2.5): ink replay. */
+export interface PlayerHooks {
+  /**
+   * Where playback is, ms into the recording: every frame while it plays,
+   * and on a seek, a pause or a load.
+   */
+  onTime?: (ms: number) => void;
+  /** Ink replay is on: the bar shows its switch, which calls `onReplay`. */
+  replay?: boolean;
+  onReplay?: (on: boolean) => void;
+}
+
 /**
  * The compact player over the bottom of the page. Plays through an
  * `<audio>` element fed the vault's resource URL for the file.
@@ -167,8 +179,17 @@ export class AudioPlayerBar {
   private pendingSeekMs: number | null = null;
   /** A finger is on the scrubber: playback must not drag it back. */
   private scrubbing = false;
+  /** The frame loop that reports the time while playing; 0 when stopped. */
+  private frame = 0;
+  private replayButton: HTMLButtonElement | null = null;
+  private replayOn: boolean;
 
-  constructor(parent: HTMLElement, onClose: () => void) {
+  constructor(
+    parent: HTMLElement,
+    onClose: () => void,
+    private readonly hooks: PlayerHooks = {},
+  ) {
+    this.replayOn = hooks.replay === true;
     this.el = parent.createDiv({
       cls: "goodobsidian-player",
       attr: { role: "region", "aria-label": "Recording player" },
@@ -189,6 +210,19 @@ export class AudioPlayerBar {
       attr: { min: "0", max: "0", step: "0.1", value: "0", "aria-label": "Position" },
     });
     this.timeEl = row.createDiv({ cls: "goodobsidian-player-time" });
+    if (hooks.onReplay) {
+      // Ink replay: what was not written yet at this moment shows pale.
+      this.replayButton = tapButton(
+        row,
+        { icon: "pen-line", label: "Replay ink", cls: "goodobsidian-player-replay" },
+        () => {
+          this.replayOn = !this.replayOn;
+          this.renderReplay();
+          hooks.onReplay?.(this.replayOn);
+        },
+      );
+      this.renderReplay();
+    }
     tapButton(row, { icon: "x", label: "Close player" }, onClose);
 
     // The scrubber is the only thing here that takes a drag; nothing below sees it.
@@ -213,9 +247,20 @@ export class AudioPlayerBar {
     this.audio.addEventListener("timeupdate", () => {
       if (!this.scrubbing) this.renderPosition(this.audio.currentTime * 1000);
     });
-    this.audio.addEventListener("play", () => this.renderPlaying(true));
-    this.audio.addEventListener("pause", () => this.renderPlaying(false));
-    this.audio.addEventListener("ended", () => this.renderPlaying(false));
+    this.audio.addEventListener("play", () => {
+      this.renderPlaying(true);
+      this.startFrames();
+    });
+    this.audio.addEventListener("pause", () => {
+      this.renderPlaying(false);
+      this.stopFrames();
+    });
+    this.audio.addEventListener("ended", () => {
+      this.renderPlaying(false);
+      this.stopFrames();
+    });
+    // A seek lands: the page shows that moment, playing or not.
+    this.audio.addEventListener("seeked", () => this.reportTime());
     this.audio.addEventListener("loadedmetadata", () => {
       // A recording saved without a length (it should not happen) takes the
       // file's, if the file knows it.
@@ -237,6 +282,11 @@ export class AudioPlayerBar {
     return this.current;
   }
 
+  /** Where playback is, ms into the recording. */
+  get positionMs(): number {
+    return this.audio.currentTime * 1000;
+  }
+
   /** Load `recording` from `url` (the vault's resource URL), paused at the start. */
   load(recording: Recording, url: string): void {
     this.current = recording;
@@ -247,6 +297,7 @@ export class AudioPlayerBar {
     this.audio.load();
     this.renderPosition(0);
     this.renderPlaying(false);
+    this.hooks.onTime?.(0);
   }
 
   /** Move to `ms` into the recording (clamped to it). */
@@ -287,6 +338,7 @@ export class AudioPlayerBar {
 
   destroy(): void {
     window.clearTimeout(this.hintTimer);
+    this.stopFrames();
     this.audio.pause();
     // Let go of the file: an `<audio>` keeps its source open until told.
     this.audio.removeAttribute("src");
@@ -318,6 +370,34 @@ export class AudioPlayerBar {
     // Called after every change of the scrubber's value, dragged or played.
     syncRangeFill(this.scrubber);
     this.timeEl.setText(`${formatClock(ms)} / ${formatClock(this.durationMs)}`);
+  }
+
+  /** Tell the page where playback is. */
+  private reportTime(): void {
+    this.hooks.onTime?.(this.audio.currentTime * 1000);
+  }
+
+  /** Report the time every frame while playing: ink comes back as it was written. */
+  private startFrames(): void {
+    if (!this.hooks.onTime || this.frame !== 0) return;
+    const step = (): void => {
+      this.reportTime();
+      this.frame = this.audio.paused ? 0 : window.requestAnimationFrame(step);
+    };
+    this.frame = window.requestAnimationFrame(step);
+  }
+
+  private stopFrames(): void {
+    if (this.frame !== 0) window.cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    this.reportTime();
+  }
+
+  private renderReplay(): void {
+    const button = this.replayButton;
+    if (!button) return;
+    button.toggleClass("is-active", this.replayOn);
+    button.setAttribute("aria-pressed", String(this.replayOn));
   }
 
   private renderPlaying(playing: boolean): void {

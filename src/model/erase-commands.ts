@@ -7,7 +7,7 @@
  */
 
 import type { Command } from "./commands";
-import { type InkDocument, type InkLink, type Stroke, pageById } from "./document";
+import { type InkDocument, type InkLink, type InkTask, type Stroke, pageById } from "./document";
 
 /** One erased stroke and what is left of it (possibly nothing). */
 export interface StrokeReplacement {
@@ -25,8 +25,9 @@ export class ReplaceStrokesOnPage implements Command {
   readonly label = "Erase";
   /** Where each replacement landed on the last apply, for an exact undo. */
   private applied: Array<{ replacement: StrokeReplacement; index: number }> = [];
-  /** The page's links before the last apply; `null` until it has run. */
+  /** The page's links and tasks before the last apply; `null` until it has run. */
   private links: { before: InkLink[] | undefined } | null = null;
+  private tasks: { before: InkTask[] | undefined } | null = null;
 
   constructor(
     readonly pageId: string,
@@ -61,6 +62,21 @@ export class ReplaceStrokesOnPage implements Command {
       if (links.length > 0) page.links = links;
       else delete page.links;
     }
+    this.tasks = { before: page.tasks };
+    if (page.tasks) {
+      // A task's ink, cut in pieces, stays one task.
+      const pieces = new Map(
+        this.applied.map(({ replacement }) => [
+          replacement.original.id,
+          replacement.pieces.map((p) => p.id),
+        ]),
+      );
+      const tasks = page.tasks
+        .map((task) => ({ ...task, strokes: task.strokes.flatMap((id) => pieces.get(id) ?? [id]) }))
+        .filter((task) => task.strokes.length > 0);
+      if (tasks.length > 0) page.tasks = tasks;
+      else delete page.tasks;
+    }
   }
 
   invert(doc: InkDocument): void {
@@ -80,6 +96,12 @@ export class ReplaceStrokesOnPage implements Command {
       if (before === undefined) delete page.links;
       else page.links = before;
       this.links = null;
+    }
+    if (this.tasks) {
+      const { before } = this.tasks;
+      if (before === undefined) delete page.tasks;
+      else page.tasks = before;
+      this.tasks = null;
     }
   }
 }

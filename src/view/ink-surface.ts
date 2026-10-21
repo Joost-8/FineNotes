@@ -193,6 +193,7 @@ import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/st
 import {
   MAX_SCALE,
   anchorScrollDelta,
+  pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
   wheelZoomFactor,
@@ -200,7 +201,7 @@ import {
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
-import { prefersReducedMotion } from "./motion";
+import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
   type Smoothing,
@@ -332,6 +333,8 @@ import {
   type TextBoxFrame,
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
+import { SetTask, inkBounds, taskBoxRect, tasksOf, tickTask } from "../model/tasks";
+import { fadeChanges } from "../audio/replay";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
 import { strokeKey } from "../recognition/hwr/corrections";
@@ -344,7 +347,7 @@ import {
 } from "../model/commands";
 import { ReplaceStrokesOnPage, type StrokeReplacement } from "../model/erase-commands";
 import { addStrokesTimed } from "../model/recording-commands";
-import { SetTextBoxStyle } from "../model/text-commands";
+import { SetTextBoxStyle, SetTextBoxText } from "../model/text-commands";
 import {
   DEFAULT_TEXT_STYLE,
   type TextStyle,
@@ -356,7 +359,14 @@ import {
   shownCase,
   textStyleOf,
 } from "../model/text-style";
-import { type ListKind, type TextEdit, continueList, toggleList } from "../model/text-list";
+import {
+  type ListKind,
+  type TextEdit,
+  continueList,
+  setTaskDone,
+  taskBoxes,
+  toggleList,
+} from "../model/text-list";
 import { keyboardHeight } from "./keyboard";
 import { revealDelta } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
@@ -482,6 +492,8 @@ const COUNTER_HOLD_MS = 1800;
 const ZOOM_READOUT_HOLD_MS = 2000;
 /** The gap between linked ink and its underline, screen px. */
 const LINK_UNDERLINE_GAP_PX = 3;
+/** Room left round a word a search lit up, screen px. */
+const SEARCH_MARK_PAD = 3;
 /** Below a flagged word's ink, in screen px, to its dotted underline. */
 const WORD_FLAG_GAP_PX = 5;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
@@ -649,6 +661,11 @@ export interface InkSurfaceCallbacks {
    * is where the ink leads now, when all of it is in one link.
    */
   onLinkStrokes?: (index: number, strokeIds: string[], current: string | null) => void;
+  /**
+   * Turn into › Task on a lasso selection of ink (2.5): the host asks what
+   * it says, and applies `makeTask` for these stroke ids on page `index`.
+   */
+  onMakeTask?: (index: number, strokeIds: string[]) => void;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -679,6 +696,12 @@ export interface InkSurfaceCallbacks {
    * enables it with {@link InkSurface.setPullToAddPage}.
    */
   onPullAddPage?: () => void;
+  /**
+   * A pinch closed well past the fit and let go (`pinchOpensOverview`): show
+   * every page in the overview. Only while the host enables it with
+   * {@link InkSurface.setPinchToOverview}.
+   */
+  onPinchOverview?: (snapshot: PageSnapshot | null) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1039,25 +1062,30 @@ function placedAt(image: ImageElement, t: ImageTransform): ImageElement {
   return out;
 }
 
-/** Flip horizontal · Flip vertical, as rows of their own in the "…" menu. */
-function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
+/** Flip horizontal · Flip vertical, as one segmented row of the "…" menu. */
+function flipActions(flip: (axis: FlipAxis) => void, group = "flip"): SelectionAction[] {
   return [
     {
       id: "flip-x",
       icon: "flip-horizontal-2",
       label: "Flip horizontal",
-      group: "flip",
+      group,
+      segment: "Flip",
       run: () => flip("x"),
     },
     {
       id: "flip-y",
       icon: "flip-vertical-2",
       label: "Flip vertical",
-      group: "flip",
+      group,
+      segment: "Flip",
       run: () => flip("y"),
     },
   ];
 }
+
+/** The lasso menu's one row that opens what a selection can become (2.5). */
+const TURN_INTO = { label: "Turn into", icon: "wand-sparkles" } as const;
 
 /**
  * A box on screen, client px; whether it is being typed in (the keyboard is
@@ -1239,6 +1267,15 @@ export class InkSurface {
   private pinch: { raw: number; centerX: number; centerY: number } | null = null;
   /** The zoom springing back inside its limits after a pinch overshot them. */
   private zoomAnim: { from: number; to: number; t0: number; cx: number; cy: number } | null = null;
+  /**
+   * A row settling on page `page`, centred, as a pinch lets go: `dx`, `dy`
+   * is how far off centre it was at `t0`, and it eases to nothing over the
+   * zoom spring's time, so the zoom and the centring land as one motion
+   * (`stepRowSettle`).
+   */
+  private rowSettle: { page: number; dx: number; dy: number; t0: number } | null = null;
+  /** Whether a pinch well past the fit opens the page overview (`setPinchToOverview`). */
+  private pinchOverviewEnabled = false;
   private wheelZoomTimer = 0;
   /** A wheel or trackpad scroll across a row of pages settles on a page when it stops. */
   private wheelSnapTimer = 0;
@@ -1397,6 +1434,8 @@ export class InkSurface {
   /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
   private readonly laserTrail = new LaserTrail();
   private readonly laserCanvas: HTMLCanvasElement;
+  /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
+  private readonly paneLayers: HTMLCanvasElement[];
   private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
@@ -1459,6 +1498,13 @@ export class InkSurface {
   private readonly sectionRibbons: HTMLElement[] = [];
   /** An underline under each piece of linked ink. */
   private readonly linkMarks: HTMLElement[] = [];
+  /** A box beside each handwritten task, which a tap ticks (2.5). */
+  private readonly taskMarks: HTMLElement[] = [];
+  /** What the search result last opened found on its page, lit until the page is touched (2.5). */
+  private searchHits: { pageId: string; words: string[][]; boxes: string[] } | null = null;
+  private readonly searchMarks: HTMLElement[] = [];
+  /** Ink a playing recording has not reached yet, drawn pale (2.5). */
+  private fadedStrokes: ReadonlySet<string> = new Set();
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words Grape may have misread, by page id: a wavy underline each. */
@@ -1849,6 +1895,7 @@ export class InkSurface {
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", toolState.tool === "text");
 
+    this.paneLayers = [backdropCanvas, dryCanvas];
     const renderer = new Renderer(
       backdropCanvas,
       dryCanvas,
@@ -2289,6 +2336,33 @@ export class InkSurface {
   }
 
   /**
+   * The pane as it is on screen now, and where the page being read is in
+   * it, for the page overview to fly the page into its place. A copy of
+   * the canvases: what shows, PDF and text included, with no repaint.
+   */
+  snapshotPage(): PageSnapshot | null {
+    // The canvases catch up with the view first: a pinch moves it between frames.
+    this.syncViewport();
+    this.paint(Infinity);
+    const page = this.pageClientRect();
+    const [bottom] = this.paneLayers;
+    if (!page || !bottom || bottom.width === 0 || bottom.height === 0) return null;
+    const pane = this.surfaceEl.getBoundingClientRect();
+    const image = createEl("canvas");
+    image.width = bottom.width;
+    image.height = bottom.height;
+    const ctx = image.getContext("2d");
+    if (!ctx) return null;
+    for (const layer of this.paneLayers) ctx.drawImage(layer, 0, 0);
+    return {
+      image,
+      pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },
+      page,
+      desk: this.paper.desk,
+    };
+  }
+
+  /**
    * The pane just changed shape and was laid out afresh — the page sidebar
    * opened or closed. Draw the page where it was (`before`, from
    * {@link pageClientRect}) and glide it to where it is now, over
@@ -2377,6 +2451,7 @@ export class InkSurface {
   resetView(): void {
     this.pinch = null;
     this.zoomAnim = null;
+    this.rowSettle = null;
     this.userZoom = this.minZoom;
     this.ensurePaperSize();
     this.layout();
@@ -2450,6 +2525,11 @@ export class InkSurface {
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
+  }
+
+  /** Let (or stop) a pinch well past the fit open the page overview. The host knows single pages. */
+  setPinchToOverview(enabled: boolean): void {
+    this.pinchOverviewEnabled = enabled;
   }
 
   /** Let (or stop) a pull past the last page add a page. The host knows single pages. */
@@ -3055,7 +3135,8 @@ export class InkSurface {
       !this.scroller.isDragging &&
       !this.scroller.isAnimating &&
       this.pinch === null &&
-      this.zoomAnim === null
+      this.zoomAnim === null &&
+      this.rowSettle === null
     );
   }
 
@@ -3122,7 +3203,16 @@ export class InkSurface {
     this.syncScrollThumbs(true);
     this.chromeUntil.thumbs = t + THUMB_HOLD_MS;
     if (zoom) {
-      this.zoomReadoutEl.setText(`${zoomPercent(this.scale)}%`);
+      // Past the point where letting go opens the overview, the pill says so
+      // with the overview's symbol instead of a percentage.
+      if (!this.pinchOverviewArmed) {
+        this.zoomReadoutEl.removeClass("is-overview");
+        this.zoomReadoutEl.setText(`${zoomPercent(this.scale)}%`);
+      } else if (!this.zoomReadoutEl.hasClass("is-overview")) {
+        this.zoomReadoutEl.empty();
+        setIcon(this.zoomReadoutEl, "layout-grid");
+        this.zoomReadoutEl.addClass("is-overview");
+      }
       this.zoomReadoutEl.removeClass("is-idle");
       this.chromeUntil.zoom = t + ZOOM_READOUT_HOLD_MS;
     }
@@ -3207,7 +3297,9 @@ export class InkSurface {
     // here froze the spring for the length of the fling, then snapped it.
     const scrolling = this.scroller.step(t);
     const zooming = this.stepZoomAnim(t);
-    const moving = scrolling || zooming;
+    // After the zoom, which moves the view about the fingers' point.
+    const settling = this.stepRowSettle(t);
+    const moving = scrolling || zooming || settling;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
@@ -3509,6 +3601,67 @@ export class InkSurface {
   }
 
   /**
+   * A pinch on a row let go where the row turns pages: carry the page being
+   * read into the centre while the zoom springs back, instead of snapping it
+   * there afterwards. A snap started mid-spring aimed at where the page was
+   * before the zoom moved it, and threw the view a page off (Joost's
+   * recording, 2026-10-21).
+   */
+  private startRowSettle(): void {
+    const page = this.pageIndex;
+    const { x, y } = this.scroller.position;
+    this.scroller.stop();
+    this.rowSettle = { page, dx: x - this.rowX(page), dy: y, t0: now() };
+    this.requestFrame();
+  }
+
+  /** Advance `rowSettle`; true while it moves. Anything else moving the view ends it. */
+  private stepRowSettle(t: number): boolean {
+    const settle = this.rowSettle;
+    if (!settle) return false;
+    if (this.scroller.isDragging || this.scroller.isAnimating || this.pinch) {
+      this.rowSettle = null;
+      return false;
+    }
+    const progress = (t - settle.t0) / ZOOM_SPRING_MS;
+    const left = progress >= 1 ? 0 : 1 - easeOutCubic(progress);
+    // Centred at the scale of this frame: the zoom may still be springing.
+    this.scroller.setPosition(this.rowX(settle.page) + settle.dx * left, settle.dy * left);
+    if (progress < 1) return true;
+    this.rowSettle = null;
+    return false;
+  }
+
+  /** The fingers of the pinch under way have closed far enough to open the overview. */
+  private get pinchOverviewArmed(): boolean {
+    return (
+      this.pinchOverviewEnabled &&
+      this.pinch !== null &&
+      pinchOpensOverview(this.pinch.raw, this.minZoom)
+    );
+  }
+
+  /**
+   * A pinch let go well past the fit: the host shows every page. The page
+   * goes back to the fit under the overview at once, centred, so it is
+   * there when the overview closes; the finger still down is done with.
+   */
+  private openOverviewFromPinch(): void {
+    // The page as the fingers left it, before it goes back to the fit.
+    const snapshot = this.snapshotPage();
+    this.zoomAnim = null;
+    this.rowSettle = null;
+    this.snapRowAfterZoom = false;
+    this.scroller.cancel();
+    this.applyZoom(this.minZoom, this.cssW / 2, this.cssH / 2);
+    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+    this.syncViewport();
+    this.zoomReadoutEl.addClass("is-idle");
+    this.callbacks.onPinchOverview?.(snapshot);
+    this.requestFrame();
+  }
+
+  /**
    * After a swipe across a row of pages at the zoom floor: settle on the page
    * the release points at, one page at most from where the swipe began.
    */
@@ -3768,10 +3921,28 @@ export class InkSurface {
     view.shownText = text;
     view.shown.empty();
     let links = 0;
+    // A checklist's boxes (2.5) are tappable like links: a tap ticks one.
+    const boxes = taskBoxes(text);
+    let at = 0;
     for (const segment of textSegments(text)) {
       const target = segment.target;
+      const from = at;
+      at += segment.text.length;
       if (target === undefined) {
-        view.shown.appendText(segment.text);
+        let done = 0;
+        for (const box of boxes) {
+          if (box.offset < from || box.offset >= at) continue;
+          view.shown.appendText(segment.text.slice(done, box.offset - from));
+          const check = view.shown.createSpan({
+            cls: "goodobsidian-textbox-check",
+            text: segment.text.charAt(box.offset - from),
+            attr: { role: "checkbox", "aria-checked": String(box.done) },
+          });
+          this.bindTextTask(check, view, box.line, !box.done);
+          done = box.offset - from + 1;
+          links++;
+        }
+        view.shown.appendText(segment.text.slice(done));
         continue;
       }
       links++;
@@ -3783,6 +3954,38 @@ export class InkSurface {
       this.bindTextLink(link, target);
     }
     view.root.toggleClass("has-links", links > 0);
+  }
+
+  /**
+   * A checklist box in a text box ticks (or unticks) on a tap, as one step
+   * of undo, without the box being edited. Pointer events, as for a link.
+   */
+  private bindTextTask(el: HTMLElement, view: TextBoxView, line: number, done: boolean): void {
+    let pressed: number | null = null;
+    el.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      pressed = event.pointerId;
+    });
+    el.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (pressed !== event.pointerId) return;
+      pressed = null;
+      const live = this.liveTextBox(view.pageId, view.id);
+      if (!live || this.callbacks.isLocked?.()) return;
+      const text = setTaskDone(live.text, line, done);
+      if (text === live.text) return;
+      this.history.push(
+        this.doc,
+        new SetTextBoxText(view.pageId, view.id, text, done ? "Tick task" : "Untick task"),
+      );
+      view.input.value = text;
+      this.renderShownText(view, text);
+      this.changed([view.pageId]);
+    });
+    el.addEventListener("pointercancel", () => {
+      pressed = null;
+    });
   }
 
   /**
@@ -4643,6 +4846,12 @@ export class InkSurface {
       }
       if (pulled) {
         this.callbacks.onPullAddPage?.();
+      } else if (this.snapRowAfterZoom && this.zoomAnim) {
+        // The last finger of a pinch: the page centres as the zoom springs back.
+        this.snapRowAfterZoom = false;
+        this.startRowSettle();
+      } else if (this.rowSettle) {
+        // Already settling on its page.
       } else if (this.turnsPages) {
         this.snapToPage(this.scroller.velocity.x, this.swipeFromPage);
       } else if (edgeTurn !== 0) {
@@ -4675,6 +4884,7 @@ export class InkSurface {
       this.fingerHold.end();
       if (this.imageDrag || this.groupDrag) return;
       this.zoomAnim = null;
+      this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
     },
     onPinch: (info) => {
@@ -4688,8 +4898,13 @@ export class InkSurface {
     },
     onPinchEnd: () => {
       const pinch = this.pinch;
+      const overview = this.pinchOverviewArmed;
       this.pinch = null;
       if (!pinch) return;
+      if (overview) {
+        this.openOverviewFromPinch();
+        return;
+      }
       this.settleHeldPage();
       this.syncInkCursor();
       const target = this.clampZoom(this.userZoom);
@@ -4705,8 +4920,15 @@ export class InkSurface {
           cx: pinch.centerX,
           cy: pinch.centerY,
         };
-      } else {
-        this.settleRowAfterZoom();
+      }
+      // No finger left: the page centres as the zoom springs back. With one
+      // still down, its release does that (`onPanEnd`).
+      if (this.snapRowAfterZoom && !this.scroller.isDragging) {
+        this.snapRowAfterZoom = false;
+        this.startRowSettle();
+      } else if (!this.zoomAnim) {
+        // Nothing to spring back: the release snaps to a page as a swipe does.
+        this.snapRowAfterZoom = false;
       }
       this.requestFrame();
     },
@@ -4752,6 +4974,7 @@ export class InkSurface {
 
   /** Show a word in the readout pill for `holdMs`, faded on the zoom readout's clock. */
   private flashReadout(text: string, holdMs = READOUT_WORD_HOLD_MS): void {
+    this.zoomReadoutEl.removeClass("is-overview");
     this.zoomReadoutEl.setText(text);
     this.zoomReadoutEl.removeClass("is-idle");
     this.chromeUntil.zoom = now() + holdMs;
@@ -4767,6 +4990,7 @@ export class InkSurface {
     cy: number;
   }): void {
     this.zoomAnim = null;
+    this.rowSettle = null;
     if (this.userZoom !== start.zoom) this.applyZoom(start.zoom, start.cx, start.cy);
     this.scroller.setPosition(start.x, start.y);
     this.syncViewport();
@@ -4788,6 +5012,7 @@ export class InkSurface {
     const zoomed = this.userZoom !== undo.zoom;
     if ((!zoomed && moved < 0.5) || !undoesPalm(now() - undo.t, moved)) return;
     this.zoomAnim = null;
+    this.rowSettle = null;
     if (zoomed) this.applyZoom(undo.zoom, undo.cx, undo.cy);
     this.scroller.setPosition(undo.x, undo.y);
     this.syncViewport();
@@ -4927,6 +5152,7 @@ export class InkSurface {
   private startZoomDrag(sample: Pt): void {
     const at = this.toClient(sample);
     this.zoomAnim = null;
+    this.rowSettle = null;
     this.zoomDrag = { from: this.userZoom, x: at.x, y: at.y };
   }
 
@@ -7379,10 +7605,12 @@ export class InkSurface {
 
   /**
    * A lone picture's bar and "…" menu, as GoodNotes has them (Joost's
-   * screenshots): the bar is Crop | Cut · Duplicate · Delete · "…"; the menu
-   * has Cut · Front · Back across the top, then Copy · Duplicate · Paste ·
-   * Lock image, Crop image, and Delete at the foot. Front and Back stack the
-   * pictures among themselves — ink and text always stay above every picture.
+   * screenshots): the bar is Crop | Cut · Duplicate · Delete · "…". Since
+   * 2.5 the menu has Cut · Copy · Duplicate · Paste across the top, as the
+   * lasso's does, then Lock image, Crop image, one row each for Arrange
+   * (front, back), Flip and Opacity, and Delete at the foot. Front and Back
+   * stack the pictures among themselves — ink and text always stay above
+   * every picture.
    */
   private imageActions(sel: { pageId: string; image: ImageElement }): SelectionAction[] {
     const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
@@ -7408,33 +7636,41 @@ export class InkSurface {
         run: () => this.cutSelection(),
       },
       {
-        id: "front",
-        icon: "bring-to-front",
-        label: "Front",
+        id: "copy",
+        icon: "copy",
+        label: "Copy",
         group: "edit",
         menu: "tile",
-        enabled: can("front"),
-        run: () => this.reorderSelectedImage("front"),
+        run: () => this.copySelection(),
       },
-      {
-        id: "back",
-        icon: "send-to-back",
-        label: "Back",
-        group: "edit",
-        menu: "tile",
-        enabled: can("back"),
-        run: () => this.reorderSelectedImage("back"),
-      },
-      { id: "copy", icon: "copy", label: "Copy", group: "edit", run: () => this.copySelection() },
       {
         id: "duplicate",
         icon: "copy-plus",
         label: "Duplicate",
         group: "edit",
         bar: true,
+        menu: "tile",
         run: () => this.duplicateSelectedImage(),
       },
-      this.pasteAction(sel.pageId),
+      { ...this.pasteAction(sel.pageId), menu: "tile" },
+      {
+        id: "front",
+        icon: "bring-to-front",
+        label: "Bring to front",
+        group: "arrange",
+        segment: "Arrange",
+        enabled: can("front"),
+        run: () => this.reorderSelectedImage("front"),
+      },
+      {
+        id: "back",
+        icon: "send-to-back",
+        label: "Send to back",
+        group: "arrange",
+        segment: "Arrange",
+        enabled: can("back"),
+        run: () => this.reorderSelectedImage("back"),
+      },
       {
         id: "lock",
         icon: "lock",
@@ -7449,7 +7685,7 @@ export class InkSurface {
         group: "crop-image",
         run: () => this.startCrop(),
       },
-      ...flipActions((axis) => this.flipSelectedImage(axis)),
+      ...flipActions((axis) => this.flipSelectedImage(axis), "arrange"),
       {
         id: "in-front",
         icon: "layers",
@@ -7461,8 +7697,10 @@ export class InkSurface {
       ...IMAGE_OPACITIES.map((opacity): SelectionAction => ({
         id: `opacity-${opacity}`,
         icon: opacity === 1 ? "circle" : "circle-dashed",
-        label: `Opacity ${Math.round(opacity * 100)} %`,
+        label: `${Math.round(opacity * 100)} %`,
         group: "opacity",
+        segment: "Opacity",
+        showLabel: true,
         checked: Math.abs((sel.image.opacity ?? 1) - opacity) < 0.005,
         run: () => this.setSelectedImageOpacity(opacity),
       })),
@@ -7480,8 +7718,11 @@ export class InkSurface {
   }
 
   /**
-   * The bar for a lasso selection: Cut · Duplicate · Delete · "…"; the menu
-   * has Copy · Duplicate · Paste, Colour when it holds ink, and Delete.
+   * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
+   * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
+   * Duplicate · Paste across the top; Colour when it holds ink; one segmented
+   * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
+   * into ›, which holds what the selection can become; and Delete.
    */
   private groupActions(sel: GroupSelection): SelectionAction[] {
     const actions: SelectionAction[] = [
@@ -7491,19 +7732,27 @@ export class InkSurface {
         label: "Cut",
         group: "edit",
         bar: true,
-        menu: "none",
+        menu: "tile",
         run: () => this.cutSelection(),
       },
-      { id: "copy", icon: "copy", label: "Copy", group: "edit", run: () => this.copySelection() },
+      {
+        id: "copy",
+        icon: "copy",
+        label: "Copy",
+        group: "edit",
+        menu: "tile",
+        run: () => this.copySelection(),
+      },
       {
         id: "duplicate",
         icon: "copy-plus",
         label: "Duplicate",
         group: "edit",
         bar: true,
+        menu: "tile",
         run: () => this.duplicateSelection(),
       },
-      this.pasteAction(sel.pageId),
+      { ...this.pasteAction(sel.pageId), menu: "tile" },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -7531,15 +7780,6 @@ export class InkSurface {
           },
         });
       }
-    }
-    if (this.callbacks.onSaveSticker) {
-      actions.push({
-        id: "save-sticker",
-        icon: "sticker",
-        label: "Save as sticker",
-        group: "edit",
-        run: () => void this.saveSelectionAsSticker(),
-      });
     }
     if (sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
@@ -7571,6 +7811,7 @@ export class InkSurface {
       });
     }
     actions.push(...this.shapeStyleActions(sel.strokes));
+    actions.push(...flipActions((axis) => this.flipSelection(axis), "style"));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Highlighter ink over a PDF's text: the text it covers can be copied.
@@ -7586,13 +7827,15 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
+    actions.push(...this.taskActions(sel, index));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
         id: "contents",
         icon: "list-plus",
-        label: "Add to contents",
-        group: "contents",
+        label: "Contents heading",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           const at = { x: heading.minX, y: (heading.minY + heading.maxY) / 2 };
           this.clearSelection();
@@ -7605,13 +7848,24 @@ export class InkSurface {
       });
     }
     actions.push(...this.linkActions(sel, index));
+    if (this.callbacks.onSaveSticker) {
+      actions.push({
+        id: "save-sticker",
+        icon: "sticker",
+        label: "Sticker",
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => void this.saveSelectionAsSticker(),
+      });
+    }
     const comment = this.callbacks.onAddComment;
     if (heading && index >= 0 && comment) {
       actions.push({
         id: "comment",
         icon: "message-square-plus",
         label: "Comment",
-        group: "comment",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           // Pinned at the selection's top-right corner, beside what it is about.
           const at = { x: heading.maxX, y: heading.minY };
@@ -7630,8 +7884,44 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // Last in the menu, below Delete.
-    actions.push(...flipActions((axis) => this.flipSelection(axis)));
+    return actions;
+  }
+
+  /**
+   * Turn into › Task for selected ink (2.5), first under Turn into; with ink
+   * that is in a task, Remove task as well.
+   */
+  private taskActions(sel: GroupSelection, index: number): SelectionAction[] {
+    const page = this.doc.pages[index];
+    const make = this.callbacks.onMakeTask;
+    if (!page || !make || sel.strokes.length === 0) return [];
+    const ids = sel.strokes.map((stroke) => stroke.id);
+    const actions: SelectionAction[] = [
+      {
+        id: "task",
+        icon: "square-check-big",
+        label: "Task",
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          make(index, ids);
+        },
+      },
+    ];
+    const held = tasksOf(page, ids);
+    if (held.length > 0) {
+      actions.push({
+        id: "untask",
+        icon: "square-x",
+        label: "Remove task",
+        group: "link",
+        run: () => {
+          const commands = held.map((task) => new SetTask(page, task.id, null));
+          this.applyCommand(new CompositeCommand("Remove task", commands));
+        },
+      });
+    }
     return actions;
   }
 
@@ -7651,7 +7941,8 @@ export class InkSurface {
         id: "link",
         icon: "link",
         label: one ? "Change link" : "Link to…",
-        group: "link",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           this.clearSelection();
           ask(index, ids, one?.target ?? null);
@@ -8300,7 +8591,8 @@ export class InkSurface {
     for (let i = used; i < this.sectionRibbons.length; i++) {
       this.sectionRibbons[i].addClass("is-hidden");
     }
-    const linked = this.syncLinkMarks() + this.syncWordMarks();
+    const linked =
+      this.syncLinkMarks() + this.syncWordMarks() + this.syncTaskMarks() + this.syncSearchMarks();
     this.sectionRibbonsEl.toggleClass("is-hidden", used === 0 && linked === 0);
   }
 
@@ -8339,6 +8631,165 @@ export class InkSurface {
     }
     for (let i = used; i < this.linkMarks.length; i++) this.linkMarks[i].addClass("is-hidden");
     return used;
+  }
+
+  /**
+   * A box beside each handwritten task, where the export draws it
+   * (`taskBoxRect`), ticked when done; a tap ticks or unticks it, one step of
+   * undo. Returns how many are shown.
+   */
+  private syncTaskMarks(): number {
+    let used = 0;
+    const scale = this.unitScale;
+    for (const box of this.pageLayout.boxes) {
+      const page = this.pageAt(box.index);
+      if (!page) continue;
+      for (const task of page.tasks ?? []) {
+        const bounds = inkBounds(page, task.strokes);
+        if (!bounds) continue;
+        let mark = this.taskMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({
+            cls: "goodobsidian-task-mark",
+            attr: { role: "checkbox" },
+          });
+          this.bindTaskMark(mark);
+          this.taskMarks.push(mark);
+        }
+        const rect = taskBoxRect(bounds);
+        const first = page.strokes.find((s) => s.id === task.strokes[0]);
+        mark.removeClass("is-hidden");
+        mark.toggleClass("is-done", task.done === true);
+        mark.dataset.pageId = page.id;
+        mark.dataset.taskId = task.id;
+        mark.setAttribute("aria-checked", String(task.done === true));
+        mark.setAttribute("aria-label", task.text || "Task");
+        mark.setCssStyles({
+          left: `${(box.x + rect.x) * scale}px`,
+          top: `${(box.y + rect.y) * scale}px`,
+          width: `${rect.size * scale}px`,
+          height: `${rect.size * scale}px`,
+          color: first?.color ?? "",
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.taskMarks.length; i++) this.taskMarks[i].addClass("is-hidden");
+    return used;
+  }
+
+  /**
+   * Draw these strokes pale (`null`: none), as a recording plays: ink not
+   * written yet at that moment (`audio/replay.ts`). Only the strokes whose
+   * look changed are painted again, so playing forward costs one stroke's
+   * tiles at a time.
+   */
+  setFadedStrokes(ids: ReadonlySet<string> | null): void {
+    const next = ids ?? new Set<string>();
+    const changed = fadeChanges(this.fadedStrokes, next);
+    if (changed.size === 0) return;
+    this.fadedStrokes = next;
+    this.renderer?.setFadedStrokes(next);
+    this.doc.pages.forEach((page, index) => {
+      let dirty: Bounds | null = null;
+      for (const stroke of page.strokes) {
+        if (!changed.has(stroke.id)) continue;
+        const bounds = strokeBounds(stroke);
+        if (bounds) dirty = unionBounds(dirty, bounds);
+      }
+      if (dirty) this.renderer?.invalidateRegion(index, dirty);
+    });
+    this.renderDry();
+  }
+
+  /**
+   * Light up what a search found on a page (2.5): each word's ink under a
+   * soft highlight, and each text box holding the words, and glide to the
+   * first of them. They stay until the page is next touched or edited, or
+   * another search is opened; `null` puts them out.
+   */
+  setSearchHits(pageId: string | null, words: string[][] = [], boxes: string[] = []): void {
+    const had = this.searchHits !== null;
+    this.searchHits =
+      pageId !== null && (words.length > 0 || boxes.length > 0) ? { pageId, words, boxes } : null;
+    if (!had && !this.searchHits) return;
+    for (const view of this.textBoxInputs.values()) {
+      view.root.toggleClass(
+        "is-search-hit",
+        this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id),
+      );
+    }
+    this.syncSectionRibbons();
+    const hits = this.searchHits;
+    if (!hits) return;
+    const index = this.doc.pages.findIndex((page) => page.id === hits.pageId);
+    const page = this.doc.pages[index];
+    if (!page) return;
+    // Glide to the first hit: the highest word, or the highest box.
+    const tops = [
+      ...hits.words.flatMap((ids) => inkBounds(page, ids)?.minY ?? []),
+      ...page.textBoxes.filter((box) => hits.boxes.includes(box.id)).map((box) => box.y),
+    ];
+    if (tops.length > 0) this.goToPagePoint(index, Math.min(...tops), true);
+    // The next press on the page puts them out.
+    this.surfaceEl.addEventListener("pointerdown", () => this.setSearchHits(null), {
+      capture: true,
+      once: true,
+    });
+  }
+
+  /** A soft highlight over each word the last search found. Returns how many are shown. */
+  private syncSearchMarks(): number {
+    let used = 0;
+    const hits = this.searchHits;
+    const box = hits ? this.boxForPage(hits.pageId) : null;
+    const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
+    if (hits && box && page) {
+      const scale = this.unitScale;
+      for (const ids of hits.words) {
+        const bounds = inkBounds(page, ids);
+        if (!bounds) continue;
+        let mark = this.searchMarks[used];
+        if (!mark) {
+          mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-search-mark" });
+          this.searchMarks.push(mark);
+        }
+        const pad = SEARCH_MARK_PAD / scale;
+        mark.removeClass("is-hidden");
+        mark.setCssStyles({
+          left: `${(box.x + bounds.minX - pad) * scale}px`,
+          top: `${(box.y + bounds.minY - pad) * scale}px`,
+          width: `${(bounds.maxX - bounds.minX + 2 * pad) * scale}px`,
+          height: `${(bounds.maxY - bounds.minY + 2 * pad) * scale}px`,
+        });
+        used++;
+      }
+    }
+    for (let i = used; i < this.searchMarks.length; i++) this.searchMarks[i].addClass("is-hidden");
+    return used;
+  }
+
+  /** A tap on a task's box ticks or unticks it: pointer events, as every control over the page. */
+  private bindTaskMark(mark: HTMLElement): void {
+    let pressed: number | null = null;
+    mark.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      pressed = event.pointerId;
+    });
+    mark.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (pressed !== event.pointerId) return;
+      pressed = null;
+      if (this.callbacks.isLocked?.()) return;
+      const page = this.doc.pages.find((p) => p.id === mark.dataset.pageId);
+      const task = page?.tasks?.find((t) => t.id === mark.dataset.taskId);
+      if (!page || !task) return;
+      this.applyCommand(tickTask(page, task, task.done !== true));
+    });
+    mark.addEventListener("pointercancel", () => {
+      pressed = null;
+    });
   }
 
   /**
@@ -8806,15 +9257,24 @@ export class InkSurface {
     if (common.shapes === 0) return [];
     const { style } = common;
     const out: SelectionAction[] = [];
+    // One segmented row per property (2.5): eleven check rows had become four lines.
     const row = (
       id: string,
       icon: string,
       label: string,
-      group: string,
+      segment: string,
       checked: boolean,
       apply: ShapeStyle,
     ): void => {
-      out.push({ id, icon, label, group, checked, run: () => this.restyleSelection(apply) });
+      out.push({
+        id,
+        icon,
+        label,
+        group: "style",
+        segment,
+        checked,
+        run: () => this.restyleSelection(apply),
+      });
     };
     if (common.fillable) {
       const fill =
@@ -8825,21 +9285,22 @@ export class InkSurface {
             : splitFill(style.fill).alpha < 1
               ? "soft"
               : "solid";
-      row("fill-none", "square", "No fill", "fill", fill === "none", { fill: null });
-      row("fill-soft", "paint-bucket", "Soft fill", "fill", fill === "soft", { fillFrom: "soft" });
-      row("fill-solid", "paint-bucket", "Solid fill", "fill", fill === "solid", {
+      row("fill-none", "square", "No fill", "Fill", fill === "none", { fill: null });
+      row("fill-soft", "droplet", "Soft fill", "Fill", fill === "soft", { fillFrom: "soft" });
+      row("fill-solid", "paint-bucket", "Solid fill", "Fill", fill === "solid", {
         fillFrom: "solid",
       });
     }
-    row("line-solid", "minus", "Solid line", "line", style.dash === null, { dash: null });
-    row("line-dash", "square-dashed", "Dashed line", "line", style.dash === "dash", {
+    row("line-solid", "minus", "Solid line", "Line", style.dash === null, { dash: null });
+    row("line-dash", "square-dashed", "Dashed line", "Line", style.dash === "dash", {
       dash: "dash",
     });
-    row("line-dot", "ellipsis", "Dotted line", "line", style.dash === "dot", { dash: "dot" });
+    row("line-dot", "ellipsis", "Dotted line", "Line", style.dash === "dot", { dash: "dot" });
     if (common.roundable) {
       const rounded = typeof style.radius === "number" && style.radius > 0;
-      row("corners", "square-round-corner", "Rounded corners", "corners", rounded, {
-        radius: rounded ? null : ROUND_RADIUS,
+      row("corners-square", "square", "Square corners", "Corners", !rounded, { radius: null });
+      row("corners", "square-round-corner", "Rounded corners", "Corners", rounded, {
+        radius: ROUND_RADIUS,
       });
     }
     if (common.headed) {
@@ -8848,14 +9309,14 @@ export class InkSurface {
       const end = heads?.end;
       const filled = start === "filled" || end === "filled";
       const kind = filled ? "filled" : "open";
-      row("head-start", "arrow-left", "Arrow at start", "heads", start !== undefined, {
+      row("head-start", "arrow-left", "Arrow at start", "Arrows", start !== undefined, {
         heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) },
       });
-      row("head-end", "arrow-right", "Arrow at end", "heads", end !== undefined, {
+      row("head-end", "arrow-right", "Arrow at end", "Arrows", end !== undefined, {
         heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) },
       });
       const flip = filled ? "open" : "filled";
-      row("head-filled", "triangle", "Filled arrowheads", "heads", filled, {
+      row("head-filled", "triangle", "Filled arrowheads", "Arrows", filled, {
         heads:
           start || end
             ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
@@ -9937,6 +10398,11 @@ export class InkSurface {
     this.changed();
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
+  }
+
+  /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */
+  isLatest(command: Command): boolean {
+    return this.history.isLatest(command);
   }
 
   /** Whether Undo would do anything. */
