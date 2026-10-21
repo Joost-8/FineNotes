@@ -5976,6 +5976,19 @@ textarea.goodobsidian-chat-input:focus-visible {
   padding: 0 4px 4px;
 }
 
+/* The colour row folds to one line: the first colours and a chevron. The
+   other colours, the eyedropper, "+" and its mixer come with the chevron. */
+.goodobsidian-selection-menu
+  .goodobsidian-selection-swatch-block:not(.is-expanded)
+  .goodobsidian-selection-swatch.is-extra.clickable-icon,
+.goodobsidian-selection-swatch-block:not(.is-expanded) > .goodobsidian-selection-mixer {
+  display: none;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-swatch.is-expand.clickable-icon {
+  color: var(--gob-sel-icon);
+}
+
 .goodobsidian-selection-menu .goodobsidian-selection-swatch.clickable-icon {
   display: inline-flex;
   align-items: center;

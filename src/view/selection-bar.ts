@@ -32,6 +32,7 @@ import {
   type SelectionAction,
   actionsKey,
   barItems,
+  compactSwatches,
   isEnabled,
   menuLayout,
   placeFloating,
@@ -62,6 +63,8 @@ export class SelectionActionBar {
   private key = "";
   /** The submenu shown in place of the menu ("Turn into"), or null for the menu itself. */
   private submenu: string | null = null;
+  /** The colour row shows every colour, the eyedropper and "+", until the menu closes. */
+  private swatchesOpen = false;
   /** The visible area the bar was last placed in, for placing the menu. */
   private visible: Bounds | null = null;
   private readonly onOutsideDown = (event: PointerEvent): void => {
@@ -128,6 +131,7 @@ export class SelectionActionBar {
     this.menuEl.remove();
     this.menuEl = null;
     this.submenu = null;
+    this.swatchesOpen = false;
     this.moreButton?.removeClass("is-active");
     this.parent.ownerDocument.removeEventListener("pointerdown", this.onOutsideDown, true);
   }
@@ -346,6 +350,10 @@ export class SelectionActionBar {
     head.createSpan({ cls: "goodobsidian-selection-row-label", text: action.label });
     const row = block.createDiv({ cls: "goodobsidian-selection-swatches" });
     const current = swatches.current?.toLowerCase() ?? null;
+    // One line at first: the first colours (the selection's own among them)
+    // and a chevron; the rest, the eyedropper and "+" come with the chevron.
+    const shown = compactSwatches(swatches.colors, current);
+    block.toggleClass("is-expanded", this.swatchesOpen);
     for (const color of swatches.colors) {
       // A 44 px target round a smaller disc. The disc *is* the ink colour:
       // a value, not chrome.
@@ -354,6 +362,7 @@ export class SelectionActionBar {
         background: color,
       });
       swatch.toggleClass("is-active", color.toLowerCase() === current);
+      swatch.toggleClass("is-extra", !shown.has(color));
       swatch.disabled = !isEnabled(action);
       onTap(swatch, () => {
         const latest = this.actions.find((a) => a.id === action.id);
@@ -364,7 +373,7 @@ export class SelectionActionBar {
       // The eyedropper: the next tap on the page picks the colour.
       const dropper = this.button(
         row,
-        "goodobsidian-selection-swatch is-eyedropper",
+        "goodobsidian-selection-swatch is-eyedropper is-extra",
         "Pick from the page",
       );
       setIcon(dropper.createSpan({ cls: "goodobsidian-selection-swatch-disc" }), "pipette");
@@ -374,12 +383,32 @@ export class SelectionActionBar {
         if (latest?.swatches?.eyedropper && isEnabled(latest)) latest.swatches.eyedropper();
       });
     }
+    const expand = this.button(row, "goodobsidian-selection-swatch is-expand", "More colours");
+    const syncExpand = (): void => {
+      setIcon(expand, this.swatchesOpen ? "chevron-up" : "chevron-down");
+      const label = this.swatchesOpen ? "Fewer colours" : "More colours";
+      expand.setAttribute("aria-label", label);
+      expand.setAttribute("title", label);
+      expand.setAttribute("aria-expanded", String(this.swatchesOpen));
+    };
+    syncExpand();
+    onTap(expand, () => {
+      this.swatchesOpen = !this.swatchesOpen;
+      block.toggleClass("is-expanded", this.swatchesOpen);
+      syncExpand();
+      this.placeMenu();
+    });
     if (!swatches.custom) return;
     // "+": a colour of one's own, picked by hue and shade, below the row.
-    const plus = this.button(row, "goodobsidian-selection-swatch is-custom", "Custom colour");
+    const plus = this.button(
+      row,
+      "goodobsidian-selection-swatch is-custom is-extra",
+      "Custom colour",
+    );
     plus.createSpan({ cls: "goodobsidian-selection-swatch-disc goodobsidian-color-more" });
     plus.disabled = !isEnabled(action);
-    const mixer = block.createDiv({ cls: "is-hidden" });
+    row.append(expand);
+    const mixer = block.createDiv({ cls: "goodobsidian-selection-mixer is-hidden" });
     renderColorMixer(
       mixer,
       swatches.current,
