@@ -201,7 +201,7 @@ import {
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { zoomPercent } from "../model/units";
-import { prefersReducedMotion } from "./motion";
+import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
   type Smoothing,
@@ -701,7 +701,7 @@ export interface InkSurfaceCallbacks {
    * every page in the overview. Only while the host enables it with
    * {@link InkSurface.setPinchToOverview}.
    */
-  onPinchOverview?: () => void;
+  onPinchOverview?: (snapshot: PageSnapshot | null) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1434,6 +1434,8 @@ export class InkSurface {
   /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
   private readonly laserTrail = new LaserTrail();
   private readonly laserCanvas: HTMLCanvasElement;
+  /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
+  private readonly paneLayers: HTMLCanvasElement[];
   private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
@@ -1893,6 +1895,7 @@ export class InkSurface {
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", toolState.tool === "text");
 
+    this.paneLayers = [backdropCanvas, dryCanvas];
     const renderer = new Renderer(
       backdropCanvas,
       dryCanvas,
@@ -2329,6 +2332,33 @@ export class InkSurface {
       top: pane.top + (box.y - this.viewport.scrollY) * scale,
       width: box.width * scale,
       height: box.height * scale,
+    };
+  }
+
+  /**
+   * The pane as it is on screen now, and where the page being read is in
+   * it, for the page overview to fly the page into its place. A copy of
+   * the canvases: what shows, PDF and text included, with no repaint.
+   */
+  snapshotPage(): PageSnapshot | null {
+    // The canvases catch up with the view first: a pinch moves it between frames.
+    this.syncViewport();
+    this.paint(Infinity);
+    const page = this.pageClientRect();
+    const [bottom] = this.paneLayers;
+    if (!page || !bottom || bottom.width === 0 || bottom.height === 0) return null;
+    const pane = this.surfaceEl.getBoundingClientRect();
+    const image = createEl("canvas");
+    image.width = bottom.width;
+    image.height = bottom.height;
+    const ctx = image.getContext("2d");
+    if (!ctx) return null;
+    for (const layer of this.paneLayers) ctx.drawImage(layer, 0, 0);
+    return {
+      image,
+      pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },
+      page,
+      desk: this.paper.desk,
     };
   }
 
@@ -3617,6 +3647,8 @@ export class InkSurface {
    * there when the overview closes; the finger still down is done with.
    */
   private openOverviewFromPinch(): void {
+    // The page as the fingers left it, before it goes back to the fit.
+    const snapshot = this.snapshotPage();
     this.zoomAnim = null;
     this.rowSettle = null;
     this.snapRowAfterZoom = false;
@@ -3625,7 +3657,7 @@ export class InkSurface {
     if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
     this.syncViewport();
     this.zoomReadoutEl.addClass("is-idle");
-    this.callbacks.onPinchOverview?.();
+    this.callbacks.onPinchOverview?.(snapshot);
     this.requestFrame();
   }
 

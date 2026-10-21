@@ -270,7 +270,7 @@ import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from ".
 import { penInksOf } from "../model/pen-inks";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
-import { PANEL_SLIDE_MS } from "./motion";
+import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type LastPages,
   forgetInLastPages,
@@ -2408,6 +2408,7 @@ export class InkView extends TextFileView {
         onMovePages: (indexes, gap) => this.movePages(indexes, gap),
         onSelectionAction: (action, indexes) => this.selectionAction(action, indexes),
         // The options pill floats over the page, which the overview covers.
+        pageSnapshot: () => this.surface?.snapshotPage() ?? null,
         onOverviewChange: (open) => {
           root.toggleClass("goodobsidian-overview-open", open);
           if (!open) this.closeSidebarAfterOverview();
@@ -2500,7 +2501,7 @@ export class InkView extends TextFileView {
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
-        onPinchOverview: () => this.openOverviewFromPinch(),
+        onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
@@ -3226,7 +3227,7 @@ export class InkView extends TextFileView {
    * A shut sidebar opens under it, without its slide (the overview covers
    * it), and shuts again when the overview closes.
    */
-  private openOverviewFromPinch(): void {
+  private openOverviewFromPinch(snapshot: PageSnapshot | null): void {
     const sidebar = this.sidebar;
     if (!sidebar || sidebar.isOverview) return;
     if (!sidebar.isOpen) {
@@ -3237,7 +3238,7 @@ export class InkView extends TextFileView {
       this.surface?.layout();
       this.sidebarForOverview = true;
     }
-    sidebar.setOverview(true, true);
+    sidebar.setOverview(true, true, snapshot);
   }
 
   /** The overview closed: shut the sidebar a pinch opened for it. */

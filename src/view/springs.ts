@@ -25,6 +25,8 @@ export const POPOVER_IN: Spring = { duration: 0.3, bounce: 0 };
 export const POPOVER_OUT: Spring = { duration: 0.2, bounce: 0 };
 /** The selected-tool indicator sliding between buttons: a touch of bounce. */
 export const TOOL_INDICATOR: Spring = { duration: 0.35, bounce: 0.1 };
+/** The page being read flying into its place in the page overview: it settles into the deck. */
+export const OVERVIEW_FLIGHT: Spring = { duration: 0.42, bounce: 0.08 };
 
 /** The fallbacks where `linear()` is unsupported: styles.css's --gob-ease-out and --gob-spring. */
 export const EASE_OUT_FALLBACK = "cubic-bezier(0.25, 0.8, 0.3, 1)";

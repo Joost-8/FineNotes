@@ -83,7 +83,14 @@ import type { PaperTheme } from "../canvas/backdrop";
 import { type InkDocument, type Page, isCoverRuling } from "../model/document";
 import { releaseCanvas } from "./image-import";
 import { pageSignature } from "../model/page-signature";
-import { PANEL_SLIDE_MS, prefersReducedMotion } from "./motion";
+import {
+  type ClientBox,
+  PANEL_SLIDE_MS,
+  type PageSnapshot,
+  prefersReducedMotion,
+  springCurve,
+} from "./motion";
+import { EASE_OUT_FALLBACK, OVERVIEW_FLIGHT, springMs } from "./springs";
 import { PageDrag } from "./page-drag";
 import { rangeOf } from "./page-drag-model";
 
@@ -142,6 +149,8 @@ export interface PageSidebarCallbacks {
   onSelectionAction?: (action: SelectionAction, indexes: number[], anchor: HTMLElement) => void;
   /** The overview opened or closed. */
   onOverviewChange?: (open: boolean) => void;
+  /** The notebook view as it is on screen, for the overview to fly the page being read into its place. */
+  pageSnapshot?: () => PageSnapshot | null;
   /**
    * The Files tab's rows for `kind` (never Recordings, which has its own
    * panel). Asked only while the tab is shown, once per showing or pick.
@@ -325,6 +334,8 @@ export class PageSidebar {
   private anchor: Page | null = null;
   /** The overview's open or close animation, while it runs. */
   private zoom: Animation | null = null;
+  /** The page flying into its place as the overview opens (`flyIn`): ends it early. */
+  private flight: (() => void) | null = null;
   /** Each thumbnail by its root element, for the intersection observer. */
   private readonly viewOf = new Map<Element, ThumbView>();
   /** Paint passes so far: the clock {@link ThumbView.seen} counts on. */
@@ -572,10 +583,17 @@ export class PageSidebar {
 
   /**
    * Grow the panel into the overview, or back. The overview always shows
-   * the pages; leaving it ends Select. With `animate` it zooms open.
+   * the pages; leaving it ends Select. With `animate` it opens with the page
+   * being read flying into its place in the grid (`snapshot`, else the
+   * host's `pageSnapshot`), or, without one, zooms open.
    */
-  setOverview(on: boolean, animate = false): void {
+  setOverview(on: boolean, animate = false, snapshot?: PageSnapshot | null): void {
     if (on === this.overview || (on && (!this.open || this.single))) return;
+    const motion =
+      on && animate && !prefersReducedMotion() && typeof this.el.animate === "function";
+    // Before anything changes on screen.
+    const from = motion ? (snapshot ?? this.callbacks.pageSnapshot?.() ?? null) : null;
+    this.flight?.();
     this.drag.cancel();
     const docked = this.el.offsetWidth;
     const floating = this.el.win.getComputedStyle(this.el).position === "absolute";
@@ -587,8 +605,14 @@ export class PageSidebar {
     this.el.toggleClass("is-overview", on);
     this.zoom?.cancel();
     this.zoom = null;
-    // It zooms open from the panel; going back, the page is simply there again.
-    if (on && animate && !prefersReducedMotion() && typeof this.el.animate === "function") {
+    this.syncChrome();
+    // A thumbnail is painted for the width it shows at.
+    for (const view of this.thumbs) view.painted = "";
+    this.schedulePaint();
+    this.revealCurrent();
+    // The page flies into its place; with no page to fly, the panel zooms
+    // open. Going back, the page is simply there again.
+    if (motion && !(from && this.flyIn(from))) {
       this.zoom = this.el.animate(
         [
           { opacity: 0, transform: "scale(0.97)" },
@@ -597,12 +621,130 @@ export class PageSidebar {
         { duration: PANEL_SLIDE_MS, easing: "ease" },
       );
     }
-    this.syncChrome();
-    // A thumbnail is painted for the width it shows at.
-    for (const view of this.thumbs) view.painted = "";
-    this.schedulePaint();
-    this.revealCurrent();
     this.callbacks.onOverviewChange?.(on);
+  }
+
+  /**
+   * Open the overview the way a page goes into the deck: the page being
+   * read leaves its place on the desk and settles into its slot in the
+   * grid, the view it lay in recedes and fades, and the other pages come in
+   * around it. The grid's own background is there from the first frame, so
+   * nothing behind it shows through. False when the page's slot cannot be
+   * found, for the plain zoom instead.
+   */
+  private flyIn(snap: PageSnapshot): boolean {
+    const slot = this.thumbs[this.current]?.root.querySelector<HTMLElement>(
+      ".goodobsidian-thumb-frame",
+    );
+    const host = this.el.parentElement;
+    if (!slot || !host) return false;
+    const to = slot.getBoundingClientRect();
+    const { page, pane, image } = snap;
+    if (!(to.width > 0) || !(page.width > 0) || !(pane.width > 0)) return false;
+    const base = host.getBoundingClientRect();
+    const k = image.width / pane.width;
+    const layer = host.createDiv({ cls: "goodobsidian-overview-flight" });
+    const place = (el: HTMLElement, box: ClientBox): void =>
+      el.setCssStyles({
+        left: `${box.left - base.left}px`,
+        top: `${box.top - base.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+      });
+
+    // The view as it was, with the page lifted out of it: the desk shows
+    // where it lay, as it would under a page picked up.
+    const view = layer.createEl("canvas", { cls: "goodobsidian-overview-flight-view" });
+    view.width = image.width;
+    view.height = image.height;
+    const vctx = view.getContext("2d");
+    if (vctx) {
+      vctx.drawImage(image, 0, 0);
+      vctx.fillStyle = snap.desk;
+      const shadow = 12;
+      vctx.fillRect(
+        (page.left - pane.left - shadow) * k,
+        (page.top - pane.top - shadow) * k,
+        (page.width + 2 * shadow) * k,
+        (page.height + 2 * shadow) * k,
+      );
+    }
+    place(view, pane);
+
+    // The page: its pixels as they were, where all of it showed; else (a
+    // page zoomed in past the pane) the thumbnail painter draws all of it.
+    const sheet = layer.createEl("canvas", { cls: "goodobsidian-overview-flight-page" });
+    const whole =
+      page.left >= pane.left - 1 &&
+      page.top >= pane.top - 1 &&
+      page.left + page.width <= pane.left + pane.width + 1 &&
+      page.top + page.height <= pane.top + pane.height + 1;
+    if (whole) {
+      sheet.width = Math.max(1, Math.round(page.width * k));
+      sheet.height = Math.max(1, Math.round(page.height * k));
+      sheet
+        .getContext("2d")
+        ?.drawImage(
+          image,
+          (page.left - pane.left) * k,
+          (page.top - pane.top) * k,
+          page.width * k,
+          page.height * k,
+          0,
+          0,
+          sheet.width,
+          sheet.height,
+        );
+    } else {
+      this.paintThumbnail(sheet, this.current, Math.min(page.width, OVERVIEW_THUMB_WIDTH * 2));
+    }
+    place(sheet, page);
+
+    const ms = springMs(OVERVIEW_FLIGHT);
+    const easing = springCurve(OVERVIEW_FLIGHT, EASE_OUT_FALLBACK);
+    const sx = to.width / page.width;
+    const sy = to.height / page.height;
+    // The slot's corners, drawn before the scale shrinks them.
+    const radius = parseFloat(this.el.win.getComputedStyle(slot).borderTopLeftRadius) || 0;
+    sheet.animate(
+      [
+        { transform: "none", borderRadius: "0px" },
+        {
+          transform: `translate(${to.left - page.left}px, ${to.top - page.top}px) scale(${sx}, ${sy})`,
+          borderRadius: `${radius / sx}px / ${radius / sy}px`,
+        },
+      ],
+      { duration: ms, easing, fill: "forwards" },
+    );
+    // The view recedes toward where the page lay, and is gone by half time.
+    const origin = `${page.left + page.width / 2 - pane.left}px ${page.top + page.height / 2 - pane.top}px`;
+    view.animate(
+      [
+        { transformOrigin: origin, transform: "scale(1)", opacity: 1 },
+        { transformOrigin: origin, transform: "scale(0.88)", opacity: 0 },
+      ],
+      { duration: ms * 0.55, easing: "ease-out", fill: "forwards" },
+    );
+    // The rest of the overview comes in around the page.
+    for (const part of Array.from(this.el.children)) {
+      part.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: ms * 0.7,
+        delay: ms * 0.2,
+        easing: "ease-out",
+        fill: "backwards",
+      });
+    }
+    // Its own thumbnail shows once the page has landed on it. A timer, not
+    // the animation's finish event (ledger: the browser pane delays those).
+    slot.addClass("is-landing");
+    const timer = window.setTimeout(() => this.flight?.(), ms);
+    this.flight = () => {
+      window.clearTimeout(timer);
+      this.flight = null;
+      slot.removeClass("is-landing");
+      layer.remove();
+    };
+    return true;
   }
 
   /**
