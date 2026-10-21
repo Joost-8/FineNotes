@@ -117,20 +117,17 @@ import {
 } from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
 import { FolderInputSuggest } from "./view/folder-suggest";
+import { penGlyph } from "./view/pen-glyph-svg";
 import {
-  MAX_SAVED_PENS,
   SAVED_PEN_TYPES,
   type SavedPen,
   type SavedPenType,
-  addSavedPen,
   defaultSavedPens,
   editSavedPen,
   mmText,
   moveSavedPen,
   removeSavedPen,
-  savedPenIndex,
   savedPenLabel,
-  savedPenOf,
   savedPensOf,
   widthFromMm,
 } from "./model/saved-pens";
@@ -308,8 +305,8 @@ const DESC = {
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
   savedPens:
     "Up to eight pens with their own type, colour and width, picked from the star in the " +
-    "pen's toolbar or with the keys 1 to 8. Tap one to change, move or delete it; + saves " +
-    "the pen you last wrote with; the arrow restores FineNotes' own eight.",
+    "pen's toolbar or with the keys 1 to 8, and saved from that star. Tap one to change, " +
+    "move or delete it; the arrow restores FineNotes' own eight.",
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
@@ -774,38 +771,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /**
    * "More": the section's rows after it stay hidden until it is tapped, by
    * a class on the group (so search still finds them, and opens it). It
-   * says what is under it.
+   * says what is under it. An action row, so Obsidian draws it as one of
+   * its own tappable rows and handles the tap.
    */
   private more(id: SettingsSection, what: string): SettingDefinition {
     return {
       name: "More",
       desc: what,
       searchable: false,
-      render: (setting) => {
-        const row = setting.settingEl;
-        row.addClass("goodobsidian-more-row");
-        row.setAttribute("role", "button");
-        row.setAttribute("tabindex", "0");
-        setting.addExtraButton((b) => {
-          b.setIcon("chevron-right");
-          b.extraSettingsEl.addClass("goodobsidian-fold-chevron");
-        });
-        const flip = (): void => {
-          const group = row.closest<HTMLElement>(".setting-group");
-          if (!group) return;
-          const open = !group.hasClass("is-more-open");
-          group.toggleClass("is-more-open", open);
-          row.setAttribute("aria-expanded", String(open));
-          if (open) this.moreOpen.add(id);
-          else this.moreOpen.delete(id);
-        };
-        row.setAttribute("aria-expanded", String(this.moreOpen.has(id)));
-        row.addEventListener("click", flip);
-        row.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          flip();
-        });
+      action: (row) => {
+        const group = row.closest<HTMLElement>(".setting-group");
+        if (!group) return;
+        const open = !group.hasClass("is-more-open");
+        group.toggleClass("is-more-open", open);
+        if (open) this.moreOpen.add(id);
+        else this.moreOpen.delete(id);
       },
     };
   }
@@ -1031,7 +1011,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "favorite pens",
             "presets",
             "number key",
-            "save the pen in hand",
             "restore defaults",
           ]),
           DESC.savedPens,
@@ -1070,26 +1049,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** What + would save, or why it cannot: the add chip's label. */
-  private lastPenDesc(pens: readonly SavedPen[]): string {
-    const last = savedPenOf(this.plugin.settings.lastPen);
-    if (!last) return "Write with a pen first; the one you last wrote with is saved.";
-    if (savedPenIndex(pens, last) >= 0) return `${savedPenLabel(last)}: saved already.`;
-    if (pens.length >= MAX_SAVED_PENS) {
-      return `${savedPenLabel(last)}: all ${MAX_SAVED_PENS} places are taken, so delete one first.`;
-    }
-    return `Save the pen you last wrote with: ${savedPenLabel(last)}, ${last.color}.`;
-  }
-
   private savePens(pens: readonly SavedPen[]): void {
     this.plugin.saveSavedPens(pens);
     this.update();
   }
 
   /**
-   * The saved pens as chips under their row, each its colour at its width
-   * with its number key, then + for the pen in hand. A chip opens the pen's
-   * editor; the row's arrow restores the defaults, after asking.
+   * The saved pens as chips under their row: each the pen's own icon in its
+   * ink, with its width under it and its number key in the corner. A chip
+   * opens the pen's editor; the row's arrow restores the defaults, after
+   * asking. New pens are saved from the toolbar's star.
    */
   private drawPenStrip(setting: Setting): void {
     const pens = savedPensOf(this.plugin.settings.savedPens);
@@ -1098,22 +1067,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     pens.forEach((pen, index) => {
       const chip = strip.createEl("button", { cls: "goodobsidian-pen-chip clickable-icon" });
       chip.setAttribute("aria-label", `${index + 1}: ${savedPenLabel(pen)}`);
-      const dot = chip.createSpan({
-        cls: `goodobsidian-pen-chip-dot${pen.type === "highlighter" ? " is-highlighter" : ""}`,
-      });
-      const size = Math.round(Math.min(16, Math.max(4, 3 + pen.size * 1.6)));
-      dot.setCssStyles({ width: `${size}px`, height: `${size}px`, backgroundColor: pen.color });
+      chip.append(penGlyph(pen.type, pen.color, chip.ownerDocument));
+      chip.createSpan({ cls: "goodobsidian-pen-chip-width", text: mmText(pen.size) });
       chip.createSpan({ cls: "goodobsidian-pen-chip-key", text: String(index + 1) });
       chip.addEventListener("click", () => this.editPen(index));
-    });
-    const last = savedPenOf(this.plugin.settings.lastPen);
-    const can = last !== null && savedPenIndex(pens, last) < 0 && pens.length < MAX_SAVED_PENS;
-    const add = strip.createEl("button", { cls: "goodobsidian-pen-chip is-add clickable-icon" });
-    setIcon(add, "plus");
-    add.setAttribute("aria-label", this.lastPenDesc(pens));
-    add.disabled = !can;
-    add.addEventListener("click", () => {
-      if (can && last) this.savePens(addSavedPen(pens, last));
     });
     setting.addExtraButton((button) =>
       button
@@ -1574,15 +1531,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const row = setting.settingEl;
         row.empty();
         row.addClass("goodobsidian-plain-row", "goodobsidian-settings-footer");
-        const link = (label: string, url: string): void => {
+        // Each link in its own colour: FineNotes' two with an icon, the
+        // accounts in their brands' colours.
+        const link = (label: string, url: string, icon?: string): void => {
+          const key = label.toLowerCase().split(" ")[0];
           const button = row.createEl("button", {
-            cls: "goodobsidian-footer-link clickable-icon",
-            text: label,
+            cls: `goodobsidian-footer-link clickable-icon is-${key}`,
           });
+          if (icon) setIcon(button.createSpan({ cls: "goodobsidian-footer-icon" }), icon);
+          button.createSpan({ text: label });
           button.addEventListener("click", () => window.open(url));
         };
-        link("Ideas and questions", COMMUNITY_LINKS.discussions);
-        link("Report a bug", COMMUNITY_LINKS.bugReport);
+        link("Ideas and questions", COMMUNITY_LINKS.discussions, "lightbulb");
+        link("Report a bug", COMMUNITY_LINKS.bugReport, "bug");
         for (const { label, url } of COMMUNITY_LINKS.social) link(label, url);
       },
     };

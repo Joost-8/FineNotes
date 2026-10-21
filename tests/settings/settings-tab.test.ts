@@ -251,6 +251,7 @@ interface Def {
     step?: number;
   };
   render?: (setting: FakeSetting, group: unknown) => unknown;
+  action?: (el: unknown, index: number) => unknown;
 }
 
 interface Row {
@@ -275,7 +276,8 @@ function shown(def: Def): boolean {
 }
 
 function kind(def: Def): string {
-  return def.control ? `${def.control.type}:${def.control.key}` : def.render ? "render" : "none";
+  if (def.control) return `${def.control.type}:${def.control.key}`;
+  return def.render ? "render" : def.action ? "action" : "none";
 }
 
 /** Render one row as Obsidian does: name and description first, then `render`. */
@@ -310,6 +312,11 @@ const PENS = "Pens and shortcuts";
 const FOOTER = "Feedback and community";
 
 beforeEach(() => {
+  // The pen icons are SVG made in the row's document: a stand-in document.
+  vi.stubGlobal("activeDocument", {
+    body: { hasClass: () => false },
+    createElementNS: (_ns: string, tag: string) => new FakeEl(tag),
+  });
   dialogs.keyModals.length = 0;
   dialogs.confirms.length = 0;
   dialogs.confirmAnswer = true;
@@ -346,7 +353,7 @@ describe("the rows", () => {
       [WRITING, "Hold to make shapes", "toggle:drawAndHold"],
       [WRITING, "Back to the pen", "render"],
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
-      [WRITING, "More", "render"],
+      [WRITING, "More", "action"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
@@ -357,7 +364,7 @@ describe("the rows", () => {
       [PENS, "Keyboard shortcuts", "render"],
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
-      [PAGES, "More", "render"],
+      [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
       [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
       [PAGES, "Stickers folder", "text:stickerFolder"],
@@ -378,7 +385,7 @@ describe("the rows", () => {
       [AI, "(block)", "render"],
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
-      [AI, "More", "render"],
+      [AI, "More", "action"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
@@ -388,7 +395,7 @@ describe("the rows", () => {
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
       [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
-      [ADVANCED, "More", "render"],
+      [ADVANCED, "More", "action"],
       [ADVANCED, "Folder for pictures and PDFs", "text:imagesFolder"],
       [ADVANCED, "Folder for recordings", "text:recordingsFolder"],
       [ADVANCED, "Folder for recording transcripts", "text:transcriptsFolder"],
@@ -402,9 +409,14 @@ describe("the rows", () => {
     for (const vendor of ["anthropic", "custom", "openrouter", "google"] as const) {
       const { tab } = makeTab(makePlugin({ llmVendor: vendor, imageVendor: "openai" }));
       for (const { def } of rows(tab)) {
-        if (def.name === "" || def.name === "More") {
-          expect(def.searchable, def.name).toBe(false);
+        if (def.name === "") {
+          expect(def.searchable).toBe(false);
           expect(def.render).toBeTypeOf("function");
+        }
+        if (def.name === "More") {
+          // Obsidian's own tappable row, kept out of search.
+          expect(def.searchable).toBe(false);
+          expect(def.action).toBeTypeOf("function");
         }
         if (typeof def.desc === "string") {
           expect(def.desc.length, def.name).toBeLessThanOrEqual(ONE_LINE);
@@ -433,9 +445,7 @@ describe("the rows", () => {
       expect.arrayContaining(["dark mode", "dark PDF pages"]),
     );
     expect(words("New notebooks go in")).toContain("default folder for new notebooks");
-    expect(words("Saved pens")).toEqual(
-      expect.arrayContaining(["save the pen in hand", "restore defaults"]),
-    );
+    expect(words("Saved pens")).toEqual(expect.arrayContaining(["number key", "restore defaults"]));
     expect(words("Size and language")).toEqual(
       expect.arrayContaining(["voice model size", "spoken language"]),
     );
@@ -1083,7 +1093,7 @@ describe("the feedback footer", () => {
       const footer = renderRow(named(rows(makeTab(makePlugin()).tab), FOOTER));
       expect(footer.settingEl.hasClass("goodobsidian-settings-footer")).toBe(true);
       const links = footer.settingEl.findAll("goodobsidian-footer-link");
-      expect(links.map((l) => l.text)).toEqual([
+      expect(links.map((l) => l.textContent)).toEqual([
         "Ideas and questions",
         "Report a bug",
         "X",
@@ -1156,8 +1166,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
   /** The saved pens' strip, drawn. */
   function strip(plugin: Plugin) {
     const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
-    const chips = row.settingEl.findAll("goodobsidian-pen-chip");
-    return { row, pens: chips.filter((c) => !c.hasClass("is-add")), add: chips.at(-1) };
+    return { row, pens: row.settingEl.findAll("goodobsidian-pen-chip") };
   }
 
   /** Open saved pen `n`'s editor from its chip; the editor's controls. */
@@ -1169,14 +1178,20 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     return { modal, setting };
   }
 
-  it("shows each saved pen as a chip of its colour with its number key", () => {
+  it("shows each saved pen as its own pen icon in its ink, its width under it, and its key", () => {
     const plugin = makePlugin();
-    const { pens, add } = strip(plugin);
+    const { pens } = strip(plugin);
+    // Eight at most, all of them shown: new pens are saved from the toolbar's star.
     expect(pens).toHaveLength(8);
-    expect(pens[1].attrs["aria-label"]).toBe(`2: ${savedPenLabel(plugin.settings.savedPens[1])}`);
-    expect(pens[1].find("goodobsidian-pen-chip-dot")?.style.backgroundColor).toBe("#e03131");
+    const pen = plugin.settings.savedPens[1];
+    expect(pens[1].attrs["aria-label"]).toBe(`2: ${savedPenLabel(pen)}`);
+    const glyph = pens[1].children.find((c) => c.tag === "svg");
+    expect(glyph).toBeDefined();
+    // The tip is drawn in the pen's own ink.
+    const painted = (glyph?.children ?? []).flatMap((part) => Object.values(part.attrs));
+    expect(painted).toContain(pen.color);
+    expect(pens[1].find("goodobsidian-pen-chip-width")?.text).toBe("0.41");
     expect(pens[1].find("goodobsidian-pen-chip-key")?.text).toBe("2");
-    expect(add?.hasClass("is-add")).toBe(true);
   });
 
   it("edits a saved pen's type, colour and width in its editor", async () => {
@@ -1232,20 +1247,9 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(again.modal.isOpen).toBe(false);
   });
 
-  it("saves the pen in hand once with +, and restores the defaults after asking", async () => {
-    const lastPen = { type: "brush" as const, color: "#123456", size: 4 };
-    const plugin = makePlugin({ lastPen });
-    // Eight are saved already: full.
-    const full = strip(plugin).add;
-    expect((full as unknown as { disabled: boolean }).disabled).toBe(true);
-    expect(full?.attrs["aria-label"]).toMatch(/all 8 places are taken/);
-    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 3);
-    const room = strip(plugin).add;
-    expect(room?.attrs["aria-label"]).toContain("Brush pen");
-    room?.dispatch("click");
-    expect(plugin.settings.savedPens[3]).toEqual(lastPen);
-    expect(strip(plugin).add?.attrs["aria-label"]).toMatch(/saved already/);
-
+  it("restores the default pens only after asking", async () => {
+    const plugin = makePlugin();
+    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 4);
     const { row } = strip(plugin);
     expect(row.extras[0].icon).toBe("rotate-ccw");
     dialogs.confirmAnswer = false;
@@ -1255,12 +1259,6 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     dialogs.confirmAnswer = true;
     await row.extras[0].click();
     expect(plugin.settings.savedPens).toHaveLength(8);
-  });
-
-  it("asks for a pen first when none was written with", () => {
-    const add = strip(makePlugin()).add;
-    expect(add?.attrs["aria-label"]).toMatch(/first/);
-    expect((add as unknown as { disabled: boolean }).disabled).toBe(true);
   });
 
   it("offers the barrel's four choices, and the cursor's three only on a computer", () => {
@@ -1526,21 +1524,18 @@ describe("folding sections", () => {
     const { tab } = makeTab(plugin, false);
     expect(groups(tab)[0].cls).toBe("goodobsidian-section");
     const writing = drawGroup(groups(tab)[0]);
-    const more = new Setting(writing.groupEl.createDiv("setting-items"));
-    more.setName("More");
-    named(rows(tab), "More").render?.(more, {});
-    expect(more.settingEl.hasClass("goodobsidian-more-row")).toBe(true);
-    expect(more.settingEl.attrs["aria-expanded"]).toBe("false");
-    more.settingEl.dispatch("click");
+    // Obsidian draws More as an action row and runs its action on a tap.
+    const row = writing.groupEl.createDiv("setting-items").createDiv("setting-item mod-action");
+    const tap = () => named(rows(tab), "More").action?.(row, 4);
+    tap();
     expect(writing.groupEl.hasClass("is-more-open")).toBe(true);
-    expect(more.settingEl.attrs["aria-expanded"]).toBe("true");
     // Drawn again (a value changed), the section keeps its More open.
     expect(groups(tab)[0].cls).toBe("goodobsidian-section is-more-open");
-    more.settingEl.dispatch("keydown", { key: "Enter" });
+    tap();
     expect(writing.groupEl.hasClass("is-more-open")).toBe(false);
     expect(groups(tab)[0].cls).toBe("goodobsidian-section");
     // Closing the settings forgets it.
-    more.settingEl.dispatch("click");
+    tap();
     tab.hide();
     expect(groups(tab)[0].cls).toBe("goodobsidian-section");
   });
