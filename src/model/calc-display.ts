@@ -44,6 +44,8 @@ const NAMES: Readonly<Record<string, string>> = {
   m: "M",
   theta: "θ",
   inf: "∞",
+  // The constant of integration: the tokenizer lowers case, so it travels as a word.
+  constant: "C",
 };
 const FUNCTION_NAMES: Readonly<Record<string, string>> = {
   asin: "sin⁻¹",
@@ -203,7 +205,8 @@ export function layoutExpression(
 export function layoutWithEnding(
   expression: string,
   base: NumberBase = 10,
-  options: { graph?: boolean } = {},
+  /** `graph`: a graph's line (run-together letters, = or < at the top); `relations`: = with whole names (a worked answer). */
+  options: { graph?: boolean; relations?: boolean } = {},
 ): { box: MathBox; ending: string } | null {
   if (!expression.trim()) return null;
   // A graph line's restriction, {0 < x < 5}, is shown as typed after its curve.
@@ -217,7 +220,7 @@ export function layoutWithEnding(
   // A graph line: run-together letters (ax), and = or < at the top.
   const parse = options.graph
     ? { letters: true, relations: true }
-    : { letters: false, relations: false };
+    : { letters: false, relations: options.relations === true };
   // What a half-typed expression lacks: an operand, then more inputs of a function.
   const endings = ["", PLACEHOLDER, `,${PLACEHOLDER}`, `,${PLACEHOLDER}`, `,${PLACEHOLDER}`];
   let attempt = expression;

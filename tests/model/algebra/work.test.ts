@@ -39,7 +39,7 @@ describe("the calculator's symbolic side", () => {
 
   it("integrates without limits, + C, and with them exactly", () => {
     const w = ok("∫(2x cos(x^2))");
-    expect(w.answer).toEqual(["sin(x^2) + C"]);
+    expect(w.answer).toEqual(["sin(x^2) + constant"]);
     expect(w.steps.at(-1)?.rule).toBe("Add the constant of integration");
     const definite = ok("∫(x^2, 0, 3)");
     expect(definite.answer).toEqual(["9"]);

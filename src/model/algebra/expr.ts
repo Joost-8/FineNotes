@@ -724,7 +724,8 @@ export function evaluate(e: Expr, vars: ReadonlyMap<string, number> = new Map())
 
 // --- Writing ------------------------------------------------------------------------
 
-const NAMES: Readonly<Record<string, string>> = { pi: "π" };
+/** Letters as the calculator writes them; C (lowered to c by its tokenizer) goes as a word the display shows as C. */
+const NAMES: Readonly<Record<string, string>> = { pi: "π", C: "constant" };
 
 /** Whether a term is shown with a leading minus (a negative number or coefficient). */
 export function isNegative(e: Expr): boolean {
@@ -778,7 +779,8 @@ function printPower(base: Expr, exp: Expr): string {
     return `root(${print(base)}, ${exp.v.d})`;
   }
   const b = base.t === "pow" || base.t === "fn" ? `(${print(base)})` : atom(base);
-  const x = exp.t === "num" && qint(exp.v) && exp.v.n >= 0n ? print(exp) : `(${print(exp)})`;
+  const bare = (exp.t === "num" && qint(exp.v) && exp.v.n >= 0n) || exp.t === "sym";
+  const x = bare ? print(exp) : `(${print(exp)})`;
   return `${b}^${x}`;
 }
 
@@ -832,6 +834,8 @@ export function plain(e: Expr): string {
     .replace(/\^([0-9]+)/g, (_m, digits: string) =>
       [...digits].map((c) => superscripts[c] ?? c).join(""),
     )
+    .replace(/\^x\b/g, "ˣ")
+    .replace(/\bconstant\b/g, "C")
     .replace(/-/g, "−")
     .replace(/\babs\(([^()]*)\)/g, "|$1|");
 }

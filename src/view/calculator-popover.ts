@@ -86,6 +86,7 @@ import {
   withPrefs,
   withoutHistory,
 } from "../model/calculator-store";
+import { type Worked, readable, work } from "../model/algebra/work";
 import type { GraphSpec } from "../model/graph";
 import { MAX_LINES, newLineId, normalizeGraphSpec } from "../model/graph-lines";
 import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
@@ -153,7 +154,10 @@ export function drawGraphMath(parent: HTMLElement, text: string): void {
   else parent.createSpan({ cls: "goodobsidian-calc-raw", text });
 }
 
-type Pane = "keys" | "history" | "graph";
+type Pane = "keys" | "history" | "graph" | "steps";
+
+/** A symbolic answer on show, with the expression it answers. */
+type Shown = Extract<Worked, { ok: true }> & { expr: string };
 
 export class CalculatorPopover {
   private readonly frame: FloatingWindow;
@@ -170,6 +174,8 @@ export class CalculatorPopover {
   private shown: CalcValue | null = null;
   /** The line the result on show came from, for Insert. */
   private shownLine: CalcEntry | null = null;
+  /** The answer on show when it was worked symbolically (∫, d/dx, an equation), with its steps. */
+  private worked: Shown | null = null;
   private error = "";
   private pane: Pane = "keys";
   private shifted = false;
@@ -291,6 +297,7 @@ export class CalculatorPopover {
       setIcon(out, "picture-in-picture-2");
       out.setAttribute("aria-label", "Pop out the graph");
     }
+    this.paneButton(flags, "steps", "list-ordered", "Steps");
     this.paneButton(flags, "graph", "chart-spline", "Graph");
     this.paneButton(flags, "history", "history", "History");
     this.exprEl = display.createDiv({ cls: "goodobsidian-calc-expr" });
@@ -494,6 +501,7 @@ export class CalculatorPopover {
       button.setAttribute("aria-pressed", String(on));
     }
     if (this.pane === "history") this.renderHistory();
+    else if (this.pane === "steps") this.renderSteps();
     else if (this.pane === "graph") this.renderGraph();
     else this.renderKeys();
     this.refresh();
@@ -578,6 +586,48 @@ export class CalculatorPopover {
   /** AC clears everything; C, while something is typed, only the expression. */
   private clearsAll(): boolean {
     return this.entry.fresh || this.entry.expr === "";
+  }
+
+  /** The working of the answer on show: each step's rule, then what it left; the answer last. */
+  private renderSteps(): void {
+    const worked = this.showing();
+    const list = this.bodyEl.createDiv({
+      cls: "goodobsidian-calc-history goodobsidian-calc-steps",
+    });
+    if (!worked) return;
+    for (const step of worked.steps) {
+      const row = list.createDiv({ cls: "goodobsidian-calc-step" });
+      row.createDiv({ cls: "goodobsidian-calc-step-rule", text: step.rule });
+      this.drawLines(row.createDiv({ cls: "goodobsidian-calc-step-math" }), step.math, "or");
+    }
+    const answer = list.createDiv({ cls: "goodobsidian-calc-step is-answer" });
+    this.drawLines(answer.createDiv({ cls: "goodobsidian-calc-step-math" }), worked.answer, "or");
+    if (worked.note) answer.createDiv({ cls: "goodobsidian-calc-step-rule", text: worked.note });
+    this.button(
+      this.bodyEl,
+      "Insert steps",
+      () => this.insertSteps(),
+      "goodobsidian-calc-insert goodobsidian-calc-insert-steps",
+      "Put the working and the answer on the page as a text box",
+    );
+  }
+
+  /** Several lines of math in a row, joined by a word ("or") or a comma. */
+  private drawLines(parent: HTMLElement, lines: readonly string[], joiner: string): void {
+    lines.forEach((line, i) => {
+      if (i > 0) parent.createSpan({ cls: "goodobsidian-calc-step-join", text: joiner });
+      const span = parent.createSpan({ cls: "goodobsidian-calc-math" });
+      // Whole names (u, k, C) and = at the top, as an answer is written.
+      const laid = layoutWithEnding(line, 10, { relations: true });
+      if (laid) renderBox(span, laid.box);
+      else span.createSpan({ cls: "goodobsidian-calc-raw", text: line });
+    });
+  }
+
+  /** The symbolic answer on show, if the display shows one. */
+  private showing(): Shown | null {
+    const w = this.worked;
+    return w && this.entry.fresh && w.expr === this.entry.expr ? w : null;
   }
 
   private renderHistory(): void {
@@ -746,6 +796,9 @@ export class CalculatorPopover {
     if (this.entry.fresh) return this.shown !== null;
     const expr = this.entry.expr;
     if (!expr.trim()) return false;
+    // ∫, d/dx, an equation or anything with x: worked symbolically, with steps.
+    const symbolic = this.data.prefs.base === 10 ? work(expr, this.angle()) : null;
+    if (symbolic) return this.showWorked(expr, symbolic);
     const result = calculate(expr, this.ctx(), this.data.prefs);
     if (!result.ok) {
       this.error =
@@ -758,6 +811,30 @@ export class CalculatorPopover {
     session.ans = result.value;
     this.exprAns = result.value;
     this.shown = result.value;
+    this.shownLine = line;
+    this.entry = { expr, cursor: expr.length, fresh: true };
+    this.error = "";
+    this.save(withEntry(this.data, this.host.path, line, Date.now()));
+    this.refresh();
+    return true;
+  }
+
+  private showWorked(expr: string, symbolic: Worked): boolean {
+    if (!symbolic.ok) {
+      this.error = symbolic.error;
+      this.refresh();
+      return false;
+    }
+    const ansText = this.format(this.exprAns) ?? "";
+    const result = [...symbolic.answer, ...(symbolic.note ? [symbolic.note] : [])].join(", ");
+    const line = { expr: spellAns(expr, ansText), result };
+    this.worked = { ...symbolic, expr };
+    // A single number (x = 3, the area from 0 to 3) becomes Ans; an expression does not.
+    this.shown = null;
+    if (symbolic.value !== undefined) {
+      session.ans = symbolic.value;
+      this.exprAns = symbolic.value;
+    }
     this.shownLine = line;
     this.entry = { expr, cursor: expr.length, fresh: true };
     this.error = "";
@@ -904,9 +981,29 @@ export class CalculatorPopover {
     if (!this.entry.fresh && !this.equals()) return;
     const line = this.shownLine;
     if (!line) return;
+    const worked = this.showing();
+    if (worked) {
+      const answer = worked.answer.map(readable).join(", ");
+      const text = withSum ? `${readable(line.expr)}: ${answer}` : answer;
+      if (this.host.insert(text)) this.close();
+      return;
+    }
     const result = this.shown !== null ? (this.format(this.shown) ?? line.result) : line.result;
     const text = withSum ? `${line.expr} = ${result}` : result;
     if (this.host.insert(text)) this.close();
+  }
+
+  /** The problem, each step (its rule, then its math) and the answer, as lines of a text box. */
+  private insertSteps(): void {
+    const worked = this.showing();
+    if (!worked) return;
+    const lines = [readable(worked.expr)];
+    for (const step of worked.steps) {
+      lines.push(step.rule, `   ${step.math.map(readable).join("  or  ")}`);
+    }
+    lines.push(`Answer: ${worked.answer.map(readable).join(", ")}`);
+    if (worked.note) lines.push(worked.note);
+    if (this.host.insert(lines.join("\n"))) this.close();
   }
 
   private save(data: CalculatorData): void {
@@ -969,6 +1066,8 @@ export class CalculatorPopover {
       text = "";
     } else if (editing) {
       text = "";
+    } else if (this.showing()) {
+      text = "";
     } else if (this.entry.fresh && this.shown !== null) {
       const shown = this.format(this.shown);
       text = shown ?? "Not a whole number";
@@ -983,6 +1082,10 @@ export class CalculatorPopover {
       this.resultEl.addClass("is-preview");
     }
     this.resultEl.setText(text);
+    const worked = !this.error && !graphing && !editing ? this.showing() : null;
+    if (worked) this.drawLines(this.resultEl, worked.answer, ",");
+    // The steps button shows only while there are steps to show.
+    this.paneButtons.get("steps")?.toggleClass("is-hidden", !worked || worked.steps.length === 0);
     this.fitResult();
     this.hintEl.setText(this.hint());
 
@@ -1000,6 +1103,8 @@ export class CalculatorPopover {
 
   private hint(): string {
     if (this.pane === "graph") return "";
+    const worked = this.showing();
+    if (worked) return worked.note ?? (worked.approx ? "Found numerically" : "");
     return hintFor(this.entry);
   }
 
@@ -1230,7 +1335,7 @@ function renderBox(parent: HTMLElement, box: MathBox): void {
       const limits = op.createSpan({ cls: "gob-m-limits" });
       if (box.hi) renderBox(limits.createSpan({ cls: "gob-m-hi" }), box.hi);
       limits.createSpan({ cls: "gob-m-sym", text: box.sym });
-      renderBox(limits.createSpan({ cls: "gob-m-lo" }), box.lo);
+      if (box.lo) renderBox(limits.createSpan({ cls: "gob-m-lo" }), box.lo);
       renderBox(op.createSpan({ cls: "gob-m-body" }), box.body);
       if (box.tail) op.createSpan({ cls: "gob-m-var gob-m-tail", text: box.tail });
       return;

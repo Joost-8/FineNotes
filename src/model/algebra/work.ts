@@ -193,6 +193,40 @@ function simplified(e: Expr): Worked {
   return { ok: true, answer: [print(result)], steps, approx: false };
 }
 
+const SUPERSCRIPT: Readonly<Record<string, string>> = {
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+  "-": "⁻",
+};
+
+/**
+ * Calculator text as it reads in a text box on the page: x², √, ·, −, |x|,
+ * ∫ … dx and d/dx. What has no plain form (a fraction's bar) stays as `/`.
+ */
+export function readable(text: string): string {
+  return text
+    .replace(/\^\((-?[0-9]+)\)/g, (_m, d: string) =>
+      [...d].map((c) => SUPERSCRIPT[c] ?? c).join(""),
+    )
+    .replace(/\^([0-9]+)/g, (_m, d: string) => [...d].map((c) => SUPERSCRIPT[c] ?? c).join(""))
+    .replace(/\^x\b/g, "ˣ")
+    .replace(/\bconstant\b/g, "C")
+    .replace(/\babs\(([^()]*)\)/g, "|$1|")
+    .replace(/\bsqrt\(/g, "√(")
+    .replace(/∫\(([^,]*)\)$/, "∫ $1 dx")
+    .replace(/\*/g, "·")
+    .replace(/ - /g, " − ")
+    .replace(/(^|[(=\s])-/g, "$1−");
+}
+
 /** A float as the display writes it: ten significant digits, no float noise. */
 function decimal(v: number): string {
   if (v === 0) return "0";
