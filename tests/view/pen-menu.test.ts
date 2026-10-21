@@ -133,6 +133,8 @@ describe("saved pens on the toolbar (FineNotes#24, #25)", () => {
       eraserSizeButtons: new Map(),
       penTypeButtons: new Map(),
       shapeButtons: new Map(),
+      // A bar with no width yet: the tool change has nothing to fit (fitBar).
+      barEl: { getBoundingClientRect: () => ({ width: 0 }) },
     });
     state.penType = "fountain";
     // Just enough of a document to build the icons.

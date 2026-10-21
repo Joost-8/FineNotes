@@ -186,20 +186,25 @@ describe("pullAddProgress", () => {
     expect(pullAddProgress(10, 0)).toBe(0);
   });
 
-  it("is reachable with the rubber band on an iPad-sized pane", () => {
-    // The rubber band never shows more than the pane; the threshold must sit
-    // well inside what a comfortable pull shows.
-    const s = new KineticScroller();
-    s.setExtent({
-      contentWidth: 800,
-      contentHeight: 3000,
-      viewportWidth: 820,
-      viewportHeight: 1100,
-    });
-    s.setPosition(0, 1900);
-    s.dragStart(400, 900, 0);
-    s.dragMove(400, 600, 100);
-    expect(pullAddProgress(s.overscrollEnd.y)).toBe(1);
+  it("takes a deliberate pull on an iPad-sized pane, not a nudge", () => {
+    // The rubber band never shows more than the pane: a 400 px pull (about a
+    // third of a landscape iPad) reaches the threshold, a 200 px one does not
+    // (Joost, 2026-10-21: "do not make it that sensitive").
+    const stretch = (finger: number): number => {
+      const s = new KineticScroller();
+      s.setExtent({
+        contentWidth: 800,
+        contentHeight: 3000,
+        viewportWidth: 820,
+        viewportHeight: 1100,
+      });
+      s.setPosition(0, 1900);
+      s.dragStart(400, 900, 0);
+      s.dragMove(400, 900 - finger, 100);
+      return s.overscrollEnd.y;
+    };
+    expect(pullAddProgress(stretch(400))).toBe(1);
+    expect(pullAddProgress(stretch(200))).toBeLessThan(1);
   });
 });
 

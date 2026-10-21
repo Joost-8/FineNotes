@@ -41,6 +41,8 @@ export interface CalculatorData {
   history: Record<string, { entries: CalcEntry[]; at: number }>;
   /** Notebook path → where its graph window was. */
   windows: Record<string, WindowPlace>;
+  /** Where the calculator's window was: one place for every notebook, as it is one tool. */
+  calcWindow?: WindowPlace;
 }
 
 export const HISTORY_MAX = 30;
@@ -81,6 +83,8 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
     if (typeof fractions === "boolean") data.prefs.fractions = fractions;
     if (NUMBER_BASES.includes(base as NumberBase)) data.prefs.base = base as NumberBase;
   }
+  const calcWindow = parsePlace(raw.calcWindow);
+  if (calcWindow) data.calcWindow = calcWindow;
   if (isRecord(raw.windows)) {
     for (const [path, value] of Object.entries(raw.windows)) {
       const place = parsePlace(value);
@@ -120,6 +124,11 @@ export function withWindow(data: CalculatorData, path: string, place: WindowPlac
   return { ...data, windows };
 }
 
+/** The calculator's window placed at `place`. */
+export function withCalcWindow(data: CalculatorData, place: WindowPlace): CalculatorData {
+  return { ...data, calcWindow: { ...place } };
+}
+
 export function windowOf(data: CalculatorData, path: string): WindowPlace | null {
   return Object.prototype.hasOwnProperty.call(data.windows, path) ? data.windows[path] : null;
 }
@@ -153,13 +162,13 @@ export function withEntry(
     paths.sort((a, b) => history[b].at - history[a].at);
     for (const stale of paths.slice(HISTORY_NOTEBOOKS_MAX)) delete history[stale];
   }
-  return { prefs: data.prefs, history, windows: data.windows };
+  return { ...data, history };
 }
 
 export function withoutHistory(data: CalculatorData, path: string): CalculatorData {
   const history = copyHistory(data);
   delete history[path];
-  return { prefs: data.prefs, history, windows: data.windows };
+  return { ...data, history };
 }
 
 export function withPrefs(data: CalculatorData, patch: Partial<CalcPrefs>): CalculatorData {
@@ -184,7 +193,7 @@ export function renameCalculatorHistory(
     windows[to] = windows[from];
     delete windows[from];
   }
-  return { prefs: data.prefs, history, windows };
+  return { ...data, history, windows };
 }
 
 /** A graph window is never smaller than this (room for its title bar, a line and a graph). */
@@ -192,6 +201,22 @@ export const WINDOW_MIN = { w: 240, h: 200 };
 /** A minimised window: the pill it shrinks to. */
 export const WINDOW_PILL = { w: 132, h: 40 };
 const WINDOW_MARGIN = 8;
+/**
+ * The calculator's window is never smaller than this: the display, the
+ * tabs and both key grids with 30 px keys. Measured in the UI gallery: the
+ * keys first spill at 590 px tall, whatever the width.
+ */
+export const CALC_WINDOW_MIN = { w: 300, h: 600 };
+
+/**
+ * Where the calculator's window first opens: the top left of the view, under
+ * the toolbar's calculator button, as wide as the old pop-up and as tall as
+ * fits.
+ */
+export function defaultCalcPlace(bounds: { w: number; h: number }): WindowPlace {
+  const h = Math.max(CALC_WINDOW_MIN.h, Math.min(680, bounds.h - 80));
+  return clampPlace({ x: 16, y: 64, w: 360, h }, bounds, CALC_WINDOW_MIN);
+}
 
 /** Where a graph window first opens: the top right of the view, a third of its width. */
 export function defaultPlace(bounds: { w: number; h: number }): WindowPlace {
@@ -202,14 +227,18 @@ export function defaultPlace(bounds: { w: number; h: number }): WindowPlace {
 
 /**
  * `place` kept inside a view `bounds` (a split view, a rotation): no
- * smaller than {@link WINDOW_MIN}, no larger than the view, and with its
- * title bar (or the pill) wholly inside.
+ * smaller than `min` ({@link WINDOW_MIN} unless given), no larger than the
+ * view, and with its title bar (or the pill) wholly inside.
  */
-export function clampPlace(place: WindowPlace, bounds: { w: number; h: number }): WindowPlace {
-  const roomW = Math.max(WINDOW_MIN.w, bounds.w - 2 * WINDOW_MARGIN);
-  const roomH = Math.max(WINDOW_MIN.h, bounds.h - 2 * WINDOW_MARGIN);
-  const w = Math.min(roomW, Math.max(WINDOW_MIN.w, place.w));
-  const h = Math.min(roomH, Math.max(WINDOW_MIN.h, place.h));
+export function clampPlace(
+  place: WindowPlace,
+  bounds: { w: number; h: number },
+  min: { w: number; h: number } = WINDOW_MIN,
+): WindowPlace {
+  const roomW = Math.max(min.w, bounds.w - 2 * WINDOW_MARGIN);
+  const roomH = Math.max(min.h, bounds.h - 2 * WINDOW_MARGIN);
+  const w = Math.min(roomW, Math.max(min.w, place.w));
+  const h = Math.min(roomH, Math.max(min.h, place.h));
   const shownW = place.minimised ? WINDOW_PILL.w : w;
   const shownH = place.minimised ? WINDOW_PILL.h : h;
   const clamp = (v: number, size: number, room: number): number =>

@@ -6,9 +6,25 @@ documented here. The format follows
 [semver](https://semver.org/). The GitHub Release notes for each tag are
 extracted from the matching section of this file by `release.yml`.
 
-## [Unreleased]
+## [2.4.0] - 2026-10-21
 
 ### Added
+
+- **Zoomed in on a notebook whose pages run across, turn the page by pulling
+  past its edge**, as in Goodnotes (FineNotes#34). Zoomed in, the view keeps
+  to the page you are on; a pull past its edge shows the next page, and a
+  longer one glides there at the same zoom. While you pinch, the pages beside
+  it show, and letting go settles on the page in the middle.
+- **The calculator is a window** that floats over the notebook like the graph
+  window: move it by its title bar, resize it from its corner (the keys grow
+  with it), close it with its cross or the toolbar button. It stays open while
+  you write and opens where you left it. Typed keys go to it only while it is
+  the window in use.
+- **The eraser button shows the eraser mode** in use: its own icon for Whole
+  stroke and By line, also in the mode menu.
+- **Pull past the last page to add one, zoomed in too**, with a placeholder of
+  the coming page sliding in, as in Goodnotes. It now takes a deliberate pull,
+  and a pinch never adds a page.
 
 - **Grape 2.0**, a new handwriting model, replaces Grape 1.0 and the model
   choice in Settings: it reads faster, is smaller (5.7 MB) and reads small
@@ -28,8 +44,28 @@ extracted from the matching section of this file by `release.yml`.
   small letters; higher settings let the settled ink trail the pen by up to
   ~2 mm and round off small loops. Ink already on the page is never changed.
 
+### Changed
+
+- **The toolbar never scrolls sideways.** When it runs out of room, the least
+  used buttons fold into the ⋯ panel (the calculator first, then PDF,
+  recording, pictures, and so on); undo, the pen, the eraser and the tool in
+  hand always stay.
+- **Notebook settings** (the gear) lead with the notebook itself and group the
+  rest, and **New notebook** has Create on the left and one round cross on the
+  right (by Oskar, #31 and #32).
+- Notices such as "Part of this stroke is outside the page" move to the top of
+  the page when the text bar sits near the bottom, so they never cover it.
+- The page sidebar's header is solid, and the thumbnails fade out under it.
+- Dropdown arrows are a little smaller, with a little more room before them.
+
 ### Fixed
 
+- Zoomed in, opening or closing the page sidebar or the Ask panel jumped to
+  another page when the pages run across.
+- Switching to another app and back could show a different page.
+- A system gesture (switching apps with four fingers, Control Center, going
+  home) no longer moves or turns the page on its way out.
+- Small handwriting, such as a 1 with its tick, snapped to a triangle (#36).
 - Renaming a notebook in its settings showed the old name in the dialog when
   the notebook has its own folder; a page header with `{title}` and the
   thumbnails also kept the old name until the notebook was reopened.

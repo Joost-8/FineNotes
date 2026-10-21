@@ -15,6 +15,7 @@ describe("PDF toolbar button", () => {
       // A group makes the tool indicator as its first child.
       barEl: { createDiv: () => ({ createDiv: () => ({}) }) },
       addToolButton: vi.fn(),
+      foldable: [],
       watchCrowding: vi.fn(),
       barButton: (
         parent: unknown,

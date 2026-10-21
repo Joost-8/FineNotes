@@ -74,6 +74,7 @@ export default defineConfig({
         "src/view/range-fill.ts",
         "src/view/page-drag-model.ts",
         "src/view/text-reveal.ts",
+        "src/view/toast-side.ts",
         "src/canvas/scan-raster.ts",
         "src/canvas/homography.ts",
         "src/canvas/page-detect.ts",

@@ -281,10 +281,10 @@ export function penOfState(state: ToolbarState): SavedPen {
  */
 export type EraserMode = "standard" | "stroke" | "ruled";
 
-const ERASER_MODES: ReadonlyArray<{ id: EraserMode; label: string; icon: string }> = [
-  { id: "standard", label: "Standard", icon: "eraser" },
-  { id: "stroke", label: "Whole stroke", icon: "spline" },
-  { id: "ruled", label: "By line (lined paper)", icon: "align-justify" },
+const ERASER_MODES: ReadonlyArray<{ id: EraserMode; label: string }> = [
+  { id: "standard", label: "Standard" },
+  { id: "stroke", label: "Whole stroke" },
+  { id: "ruled", label: "By line (lined paper)" },
 ];
 
 /** The eraser mode a toolbar state implies. Anything unknown counts as standard. */
@@ -485,6 +485,8 @@ export interface ToolbarCallbacks {
   onShare?: (anchor: HTMLElement) => void;
   /** Open the ⋯ panel for the page being read; `anchor` is the button. */
   onMore?: (anchor: HTMLElement) => void;
+  /** The options pill was placed (it may have moved); `chromeSpans` says where. */
+  onPillPlaced?: () => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -580,6 +582,39 @@ export interface TextAnchor {
 /** The least room kept between the centred tools and the groups beside them. */
 const BAR_GAP = 8;
 
+/**
+ * A tier-1 button folded into the ⋯ panel because the bar ran out of room
+ * (`Toolbar.fitBar`). `run` does what the button does, anchored on ⋯.
+ */
+export interface FoldedBarItem {
+  icon: string;
+  label: string;
+  run: (anchor: HTMLElement) => void;
+}
+
+/**
+ * INVARIANT: the tool bar never scrolls sideways. When its buttons do not
+ * fit, they fold into the ⋯ panel, least important first, in this order
+ * (lower folds first). Undo, the pen, the eraser and ⋯ itself never fold,
+ * and neither does the tool in hand.
+ */
+const FOLD_RANK = {
+  calculator: 0,
+  pdf: 1,
+  record: 2,
+  image: 3,
+  ai: 4,
+  search: 5,
+  share: 6,
+  settings: 7,
+  shape: 8,
+  text: 9,
+  select: 10,
+  addPage: 11,
+  redo: 12,
+  thumbnails: 13,
+} as const;
+
 /** How many stroke widths tier 2 shows before the "more" chevron. */
 const QUICK_WIDTHS = 3;
 
@@ -615,6 +650,10 @@ export class Toolbar {
   // The buttons that each stand for one choice, keyed by it. `syncActive`
   // marks the one matching the state; the pill's are rebuilt with the pill.
   private readonly toolButtons = new Map<ActiveTool, HTMLElement>();
+  /** The lasso type the lasso button shows now (`drawLassoIcon`). */
+  private lassoIconMode: LassoMode | null = null;
+  /** The eraser mode the eraser button shows now (`drawEraserIcon`). */
+  private eraserIconMode: EraserMode | null = null;
   private readonly colorSwatches = new Map<string, HTMLElement>();
   private readonly widthButtons = new Map<number, HTMLElement>();
   private readonly penTypeButtons = new Map<PenType, HTMLButtonElement>();
@@ -629,6 +668,13 @@ export class Toolbar {
   private penPreviewKey = "";
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
+  /** The tier-1 buttons that may fold into ⋯ (`fitBar`), ranked by `FOLD_RANK`. */
+  private readonly foldable: Array<
+    FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
+  > = [];
+  private moreButton: HTMLButtonElement | null = null;
+  /** Sets `is-crowded` from the groups' widths (`watchCrowding`). */
+  private measureCrowding: () => void = () => {};
   /** The selected tool's square: one element sliding between the tool buttons. */
   private toolIndicator: HTMLElement | null = null;
   /** The tool the indicator stands under, so a pick of the same tool does not slide. */
@@ -799,21 +845,32 @@ export class Toolbar {
       "Page thumbnails",
       cb.onToggleThumbnails,
     );
+    this.fold(
+      FOLD_RANK.thumbnails,
+      this.thumbnailsButton,
+      "panel-left",
+      "Page thumbnails",
+      cb.onToggleThumbnails,
+    );
     const beyond: HTMLElement[] = [];
     this.beyondWriting = beyond;
     const keep = (button: HTMLElement): void => {
       beyond.push(button);
     };
-    keep(this.barButton(left, "search", "Search this notebook", cb.onSearch));
-    keep(this.barButton(left, "sparkles", "AI", cb.onAi));
-    keep(this.barButton(left, "calculator", "Calculator", cb.onCalculator));
+    keep(this.foldButton(left, FOLD_RANK.search, "search", "Search this notebook", cb.onSearch));
+    keep(this.foldButton(left, FOLD_RANK.ai, "sparkles", "AI", cb.onAi));
+    keep(this.foldButton(left, FOLD_RANK.calculator, "calculator", "Calculator", cb.onCalculator));
 
     const history = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-centre" });
     this.undoButton = this.barButton(history, "undo-2", "Undo (Cmd/Ctrl+Z)", () =>
       this.callbacks.onUndo(),
     );
-    this.redoButton = this.barButton(history, "redo-2", "Redo (Cmd/Ctrl+Shift+Z)", () =>
-      this.callbacks.onRedo(),
+    this.redoButton = this.foldButton(
+      history,
+      FOLD_RANK.redo,
+      "redo-2",
+      "Redo (Cmd/Ctrl+Shift+Z)",
+      () => this.callbacks.onRedo(),
     );
 
     // The writing tools, centred on the bar (styles.css), as GoodNotes has them.
@@ -826,11 +883,17 @@ export class Toolbar {
     this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
     keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
     keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
-    keep(this.barButton(tools, "image", "Insert image", cb.onInsertImage));
-    keep(this.barButton(tools, "file-text", "Insert PDF", cb.onInsertPdf));
+    keep(this.foldButton(tools, FOLD_RANK.image, "image", "Insert image", cb.onInsertImage));
+    keep(this.foldButton(tools, FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf));
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
-    this.recordButton = this.barButton(tools, "mic", "Record audio", cb.onRecord);
+    this.recordButton = this.foldButton(
+      tools,
+      FOLD_RANK.record,
+      "mic",
+      "Record audio",
+      cb.onRecord,
+    );
     keep(this.recordButton);
 
     // The document's own actions, right: add a page, GoodNotes' share
@@ -838,10 +901,10 @@ export class Toolbar {
     // (bookmark, duplicate, go to page, clear, delete), then, rightmost,
     // the note's own settings.
     const doc = this.barEl.createDiv({ cls: "goodobsidian-bar-group goodobsidian-bar-doc" });
-    this.addPageButton = this.barButton(doc, "plus", "Add page", cb.onAddPage);
-    keep(this.barButton(doc, "share", "Export as PDF", cb.onShare));
-    this.barButton(doc, "more-horizontal", "More", cb.onMore);
-    this.barButton(doc, "settings", "Notebook settings", cb.onSettings);
+    this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
+    keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
+    this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
+    this.foldButton(doc, FOLD_RANK.settings, "settings", "Notebook settings", cb.onSettings);
     this.watchCrowding();
   }
 
@@ -873,9 +936,12 @@ export class Toolbar {
       this.barEl.toggleClass("is-crowded", crowded);
     };
     // Measure with the tools centred: crowding moves the right-hand group.
-    const measure = (): void => {
+    this.measureCrowding = (): void => {
       this.barEl.removeClass("is-crowded");
       check();
+    };
+    const measure = (): void => {
+      this.fitBar(this.indicatorTool);
       // The buttons moved with the bar: the indicator follows, without a slide.
       this.placeIndicator(this.indicatorTool, null);
     };
@@ -885,6 +951,82 @@ export class Toolbar {
       this.disposers.push(() => observer.disconnect());
     }
     measure();
+  }
+
+  /**
+   * Keep the bar's invariant (`FOLD_RANK`): show every button, then fold the
+   * least important into ⋯ until the groups fit inside the bar. `active` is
+   * the tool in hand, which stays. Measured from the groups themselves, like
+   * the crowding, so it follows the pane rather than the window.
+   */
+  private fitBar(active: ActiveTool | null): void {
+    const bar = this.barEl;
+    const box = bar.getBoundingClientRect();
+    if (box.width === 0) return;
+    for (const item of this.foldable) item.button.removeClass("is-overflowed");
+    this.measureCrowding();
+    const style = getComputedStyle(bar);
+    const left = box.left + parseFloat(style.paddingLeft);
+    const right = box.right - parseFloat(style.paddingRight);
+    const overflows = (): boolean =>
+      Array.from(bar.children).some((group) => {
+        if (!group.instanceOf(HTMLElement)) return false;
+        const at = group.getBoundingClientRect();
+        return at.width > 0 && (at.right > right + 0.5 || at.left < left - 0.5);
+      });
+    const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
+    for (const item of order) {
+      if (!overflows()) break;
+      if (item.tool !== undefined && item.tool === active) continue;
+      // Hidden for another reason (a practice file, a single page): nothing to fold.
+      if (item.button.style.display === "none") continue;
+      item.button.addClass("is-overflowed");
+      this.measureCrowding();
+    }
+    this.moreButton?.toggleClass("has-folded", this.foldedItems().length > 0);
+  }
+
+  /** The bar's buttons folded into ⋯ just now, in the bar's order. */
+  foldedItems(): FoldedBarItem[] {
+    return this.foldable
+      .filter((item) => item.button.hasClass("is-overflowed"))
+      .sort((a, b) =>
+        a.button.compareDocumentPosition(b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+      )
+      .map(({ icon, label, run }) => ({ icon, label, run }));
+  }
+
+  /** Let `button` fold into ⋯ (`fitBar`). A disabled one (no handler) never shows there. */
+  private fold(
+    rank: number,
+    button: HTMLElement,
+    icon: string,
+    label: string,
+    handler: ((anchor: HTMLButtonElement) => void) | undefined,
+    tool?: ActiveTool,
+  ): void {
+    if (!handler) return;
+    // A row in ⋯ is anchored on ⋯, since the button itself is hidden.
+    const run = (anchor: HTMLElement): void => {
+      const at = anchor.instanceOf(HTMLButtonElement) ? anchor : this.moreButton;
+      if (at) handler(at);
+    };
+    // "Undo (Cmd/Ctrl+Z)" reads as "Undo" in a menu row.
+    const name = label.replace(/ \(.*\)$/, "");
+    this.foldable.push({ rank, button, icon, label: name, run, tool });
+  }
+
+  /** A tier-1 button that may fold into ⋯ when the bar runs short. */
+  private foldButton(
+    parent: HTMLElement,
+    rank: number,
+    icon: string,
+    label: string,
+    handler: ((button: HTMLButtonElement) => void) | undefined,
+  ): HTMLButtonElement {
+    const button = this.barButton(parent, icon, label, handler);
+    this.fold(rank, button, icon, label, handler);
+    return button;
   }
 
   /**
@@ -918,6 +1060,17 @@ export class Toolbar {
     label: string,
   ): HTMLButtonElement {
     const button = this.barButton(parent, icon, label, () => this.tapTool(tool, button));
+    const rank =
+      tool === "select"
+        ? FOLD_RANK.select
+        : tool === "text"
+          ? FOLD_RANK.text
+          : tool === "shape"
+            ? FOLD_RANK.shape
+            : undefined;
+    if (rank !== undefined) {
+      this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
+    }
     if (tool === "select") {
       button.addClass("has-caret");
       iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
@@ -960,6 +1113,50 @@ export class Toolbar {
       "--gob-ink-width": `${widthMarkThickness(width)}px`,
     });
     button.setAttribute("aria-label", `${spec.label} (P or W)`);
+  }
+
+  /**
+   * The lasso button shows the lasso type in use, drawn as its card in the
+   * lasso popover draws it, so the two always match.
+   */
+  private drawLassoIcon(): void {
+    const button = this.toolButtons.get("select");
+    if (!button) return;
+    const mode = lassoModeFor(this.state);
+    if (mode === this.lassoIconMode) return;
+    this.lassoIconMode = mode;
+    // Whatever `iconOrText` put there: Lucide's lasso, or its text fallback.
+    for (const child of Array.from(button.childNodes)) {
+      if (!(child.instanceOf(HTMLElement) && child.hasClass("goodobsidian-tool-caret")))
+        child.remove();
+    }
+    button.removeClass("goodobsidian-icon-fallback");
+    const glyph = lassoGlyph(mode, 22);
+    // Less margin than the card's, so it is as large as the icons beside it.
+    glyph.setAttribute("viewBox", "2.5 2.5 27 27");
+    button.prepend(glyph);
+    button.setAttribute("aria-label", `Lasso select: ${LASSO_MODE_LABELS[mode].toLowerCase()} (V)`);
+  }
+
+  /**
+   * The eraser button shows the eraser mode in use, drawn as the mode button
+   * and the mode menu draw it: Lucide's eraser for Standard, the eraser
+   * trailing a stroke for Whole stroke, lines with an eraser for By line.
+   */
+  private drawEraserIcon(): void {
+    const button = this.toolButtons.get("eraser");
+    if (!button) return;
+    const mode = eraserModeFor(this.state);
+    if (mode === this.eraserIconMode) return;
+    this.eraserIconMode = mode;
+    button.empty();
+    button.removeClass("goodobsidian-icon-fallback");
+    eraserModeIcon(button, mode, "Eraser");
+    const label = ERASER_MODES.find((m) => m.id === mode)?.label ?? "Standard";
+    button.setAttribute(
+      "aria-label",
+      mode === "standard" ? "Eraser (E)" : `Eraser: ${label.toLowerCase()} (E)`,
+    );
   }
 
   /**
@@ -1397,7 +1594,7 @@ export class Toolbar {
     const mode = ERASER_MODES.find((m) => m.id === eraserModeFor(this.state)) ?? ERASER_MODES[0];
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
     const modeIcon = modeButton.createSpan({ cls: "goodobsidian-erasermode-icon" });
-    iconOrText(modeIcon, mode.icon, mode.label);
+    eraserModeIcon(modeIcon, mode.id, mode.label);
     modeButton.createSpan({ text: mode.label });
     const modeCaret = modeButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(modeCaret, "chevron-down", "");
@@ -1727,6 +1924,7 @@ export class Toolbar {
       card.addEventListener("click", () => {
         this.state.lassoMode = option;
         this.saveLasso();
+        this.drawLassoIcon();
         this.popoverRender?.();
       });
     }
@@ -2554,7 +2752,15 @@ export class Toolbar {
     const body = this.openPopover("eraser-mode", anchor);
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Eraser" });
     for (const mode of ERASER_MODES) {
-      const button = body.createEl("button", { cls: "goodobsidian-wide", text: mode.label });
+      const button = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-erasermode-row",
+      });
+      eraserModeIcon(
+        button.createSpan({ cls: "goodobsidian-erasermode-icon" }),
+        mode.id,
+        mode.label,
+      );
+      button.createSpan({ text: mode.label });
       button.toggleClass("is-active", mode.id === eraserModeFor(this.state));
       button.addEventListener("click", () => {
         this.closePopover();
@@ -2960,6 +3166,22 @@ export class Toolbar {
    * Re-applied after a resize or rotation and when the sidebar opens.
    */
   applyPosition(): void {
+    this.placePill();
+    // Toasts keep to the other end of the page (`toastSide`).
+    this.callbacks.onPillPlaced?.();
+  }
+
+  /** The bar and the pill as shown, as vertical spans in screen px (`toastSide`). */
+  chromeSpans(): Array<{ top: number; bottom: number }> {
+    const spans = [this.barEl.getBoundingClientRect()];
+    const pill = this.optionsEl;
+    if (!pill.hasClass("is-offscreen") && !pill.hasClass("is-hidden")) {
+      spans.push(pill.getBoundingClientRect());
+    }
+    return spans.map(({ top, bottom }) => ({ top, bottom }));
+  }
+
+  private placePill(): void {
     // A glide in progress would be measured as the pill's size.
     this.stopPillMorph();
     this.fitTextPill();
@@ -3229,6 +3451,7 @@ export class Toolbar {
    */
   setAddPageVisible(visible: boolean): void {
     this.addPageButton?.toggle(visible);
+    this.fitBar(this.indicatorTool);
   }
 
   /**
@@ -3240,6 +3463,7 @@ export class Toolbar {
     if (on === this.practice) return;
     this.practice = on;
     for (const button of this.beyondWriting) button.toggle(!on);
+    this.fitBar(this.indicatorTool);
     if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
     this.closePopover();
     this.buildOptions();
@@ -3347,6 +3571,8 @@ export class Toolbar {
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
     const from = tool === this.indicatorTool ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // The tool in hand stays on the bar, and a chosen tool is wider.
+    if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
     markChosen(this.colorSwatches, state.color);
     markChosen(this.widthButtons, state.size);
@@ -3354,6 +3580,8 @@ export class Toolbar {
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
     this.drawPenPreview();
+    this.drawLassoIcon();
+    this.drawEraserIcon();
     // The pen menu, if it is open, shows each pen in its colour now.
     if (this.popoverKind === "pens") {
       for (const [id, row] of this.penMenuRows) {
@@ -3496,13 +3724,14 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
 
 /**
  * A lasso type card's picture, after GoodNotes': a dashed square for the
- * rectangular lasso, a dashed freehand blob for the freehand one.
+ * rectangular lasso, a dashed freehand blob for the freehand one. The lasso
+ * tool's own button draws the same picture for the type in use.
  */
-function lassoGlyph(mode: LassoMode): SVGElement {
+function lassoGlyph(mode: LassoMode, size = 30): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 32 32");
-  svg.setAttribute("width", "30");
-  svg.setAttribute("height", "30");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
@@ -3855,6 +4084,61 @@ function flagPatch(
  * `<svg>` child, or an empty one); in that case we fall back to a short text
  * label so the button stays usable." (research/FEASIBILITY.md §2.4.)
  */
+/**
+ * The eraser mode's icon into `el`, in Lucide's style (24-unit grid, the
+ * stroke width the surrounding icons use): Lucide's eraser for Standard;
+ * for Whole stroke the eraser with a stroke trailing from its tip; for By
+ * line three lines of writing, the middle one going, with a small eraser.
+ * Joost's picks from three designs each (2026-10-21).
+ */
+function eraserModeIcon(el: HTMLElement, mode: EraserMode, label: string): void {
+  if (mode === "standard") {
+    iconOrText(el, "eraser", label);
+    return;
+  }
+  el.empty();
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
+  for (const [key, value] of Object.entries({
+    class: "svg-icon goodobsidian-eraser-glyph",
+    viewBox: "0 0 24 24",
+    width: "24",
+    height: "24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  })) {
+    svg.setAttribute(key, value);
+  }
+  const path = (parent: Element, d: string, dash?: string): void => {
+    const p = activeDocument.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    if (dash) p.setAttribute("stroke-dasharray", dash);
+    // In a scaled group the line keeps the icon's own width.
+    if (parent !== svg) p.setAttribute("vector-effect", "non-scaling-stroke");
+    parent.appendChild(p);
+  };
+  const eraser = (transform: string): void => {
+    const g = activeDocument.createElementNS(SVG_NS, "g");
+    g.setAttribute("transform", transform);
+    path(g, "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21");
+    path(g, "m5 11 9 9");
+    svg.appendChild(g);
+  };
+  if (mode === "stroke") {
+    eraser("translate(5 0) scale(0.78)");
+    path(svg, "M2 21c1.5-3.5 3-5.5 4.5-4s.5 4 2.5 3.5 2-2 3.5-3.2");
+  } else {
+    path(svg, "M3 5h13");
+    path(svg, "M3 10.5h8", "2 2.6");
+    path(svg, "M3 16h5");
+    eraser("translate(10.5 10.5) scale(0.56)");
+  }
+  el.appendChild(svg);
+}
+
 function iconOrText(el: HTMLElement, icon: string, label: string): void {
   setIcon(el, icon);
   const svg = el.querySelector("svg");

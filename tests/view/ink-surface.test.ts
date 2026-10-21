@@ -1278,7 +1278,11 @@ function pane(width: number, height: number, devicePixelRatio?: number): Pane {
       setLayout: () => {},
       resize: (w: number, h: number, dpr: number) => resized.push([w, h, dpr]),
     },
-    surfaceEl: { clientWidth: width, clientHeight: height },
+    surfaceEl: {
+      clientWidth: width,
+      clientHeight: height,
+      ownerDocument: { visibilityState: "visible" },
+    },
     sizeWait: new SizeWait(),
     hudLayouts: 0,
     debug: false,
@@ -1335,10 +1339,10 @@ describe("layout", () => {
     run(p.surface, "layout");
     for (let i = 0; i < 10; i++) p.frames.shift()?.();
     p.frames.length = 0;
-    p.surface.surfaceEl = { clientWidth: 800, clientHeight: 600 };
+    p.surface.surfaceEl = { clientWidth: 800, clientHeight: 600, ownerDocument: document };
     run(p.surface, "layout");
     expect(p.resized).toHaveLength(1);
-    p.surface.surfaceEl = { clientWidth: 0, clientHeight: 0 };
+    p.surface.surfaceEl = { clientWidth: 0, clientHeight: 0, ownerDocument: document };
     run(p.surface, "layout");
     expect(p.drain()).toBe(60);
   });

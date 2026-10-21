@@ -339,10 +339,23 @@ export class KineticScroller {
    * {@link snapTo} it starts from rest and its length does not grow with the
    * distance: a jump across seven pages takes as long as one to the next.
    * `t` is the timestamp the glide starts at, on the clock `step` is fed.
+   * `from` starts it there instead of where the content is, unclamped.
    */
-  glideTo(x: number, y: number, t: number, durationMs = GLIDE_MS): void {
+  glideTo(
+    x: number,
+    y: number,
+    t: number,
+    durationMs = GLIDE_MS,
+    from?: { x: number; y: number },
+  ): void {
     if (this.drag) return;
     this.stop();
+    // A start outside the range is kept: the range just tightened around a
+    // view that is to glide into it (a zoomed-in row moving its hold).
+    if (from) {
+      this.x = from.x;
+      this.y = from.y;
+    }
     const toX = clamp(x, this.minX, this.maxX);
     const toY = clamp(y, this.minY, this.maxY);
     if (Math.hypot(toX - this.x, toY - this.y) < 0.5 || !(durationMs > 0)) {

@@ -37,6 +37,11 @@ body,
   --gob-touch: 44px;
   --gob-touch-compact: 36px;
   --gob-gap: 4px;
+  /* A dropdown trigger's caret (icon or label, then a chevron): one size
+     and one extra gap before it for every trigger, so the chevron reads as a
+     quiet hint, set apart from what it opens. */
+  --gob-caret-size: 10px;
+  --gob-caret-gap: 3px;
 
   /* Radii.
      s: small things on the page and in lists (text boxes, table cells,
@@ -111,7 +116,6 @@ body,
 
   /* Frost, used only inside the @supports blocks that can draw it. */
   --gob-frost: color-mix(in srgb, var(--background-primary) 78%, transparent);
-  --gob-frost-side: color-mix(in srgb, var(--background-secondary) 80%, transparent);
   --gob-blur: blur(24px) saturate(1.7);
 
   /* Motion (GoodNotes, measured). */
@@ -261,8 +265,9 @@ body,
   gap: 4px;
   padding: 6px 10px;
   flex: 0 0 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* INVARIANT: the bar never scrolls sideways. What does not fit folds into
+     the ⋯ panel, least important first (toolbar.ts, FOLD_RANK and fitBar). */
+  overflow: hidden;
   background: var(--gob-bar-bg);
   color: var(--gob-icon);
   /* Chrome, not canvas: no gesture here may reach the drawing surface. */
@@ -274,7 +279,9 @@ body,
   border-bottom: var(--gob-bar-border);
 }
 
-.goodobsidian-toolbar::-webkit-scrollbar {
+/* A button folded into ⋯. At Obsidian's button specificity and above,
+   which would otherwise set its display. */
+.goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-overflowed {
   display: none;
 }
 
@@ -635,12 +642,13 @@ body,
 }
 
 .goodobsidian-erasermode-caret {
+  margin-inline-start: var(--gob-caret-gap);
   color: var(--text-muted);
 }
 
 .goodobsidian-erasermode-caret svg {
-  width: 14px;
-  height: 14px;
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 .goodobsidian-options .goodobsidian-erasersize {
@@ -767,6 +775,19 @@ body,
 .goodobsidian-popover button.goodobsidian-wide.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
+}
+
+/* The eraser mode menu: each mode's icon (toolbar.ts, eraserModeIcon)
+   before its name, as the eraser button shows it. */
+.goodobsidian-popover button.goodobsidian-erasermode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.goodobsidian-erasermode-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* The pen type menu: each pen's icon before its name. */
@@ -953,13 +974,21 @@ body,
 /* Pages | Audio, GoodNotes' segmented switch at the top of the panel. It
    stays put while the thumbnails scroll under it. */
 /* Header (title · ✕) and the Pages | Audio switch, after GoodNotes' sidebar.
-   They stay put while the thumbnails scroll under them. */
+   They stay put while the thumbnails scroll under them: a solid island in
+   the panel's own colour (not frosted, so nothing shows through the
+   switch), whose bottom padding fades out, so the thumbnails disappear
+   gradually and are fully gone by the switch's lower edge. */
 .goodobsidian-pagesidebar-top {
+  --gob-island-fade: 16px;
   position: sticky;
   z-index: 2;
   top: 0;
-  padding-bottom: 10px;
-  background: var(--gob-side-bg);
+  padding-bottom: var(--gob-island-fade);
+  background: linear-gradient(
+    to bottom,
+    var(--gob-side-bg) calc(100% - var(--gob-island-fade)),
+    transparent
+  );
 }
 
 .goodobsidian-pagesidebar-head {
@@ -1239,11 +1268,12 @@ body,
 
 .goodobsidian-pagesidebar-filter-caret {
   display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
 }
 
 .goodobsidian-pagesidebar-filter-caret svg {
-  width: 14px;
-  height: 14px;
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 .goodobsidian-pagesidebar-empty {
@@ -1257,7 +1287,8 @@ body,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 20px;
-  padding: 16px 20px 32px;
+  /* 10 px under the header's 16 px fade: the first row rests where it did. */
+  padding: 10px 20px 32px;
   align-items: start;
 }
 
@@ -3663,12 +3694,13 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-options .goodobsidian-text-control .goodobsidian-text-caret {
   display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
   color: var(--text-muted);
 }
 
 .goodobsidian-options .goodobsidian-text-control .goodobsidian-text-caret svg {
-  width: 14px;
-  height: 14px;
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 /* "B I": lit in the accent while any of bold, italic, underline or
@@ -4446,12 +4478,13 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-chat-pages-chevron {
   display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
   color: var(--text-faint);
 }
 
 .goodobsidian-chat-pages-chevron svg {
-  width: 16px;
-  height: 16px;
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
   transition: transform 0.15s ease-out;
 }
 
@@ -5424,9 +5457,10 @@ textarea.goodobsidian-chat-input:focus-visible {
   }
 }
 
-.goodobsidian-tool-caret svg {
-  width: 12px;
-  height: 12px;
+/* Above `.goodobsidian-toolbar button .svg-icon`, which sized it as a 22 px icon. */
+.goodobsidian-toolbar button .goodobsidian-tool-caret svg {
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 /* A popover that points at its button. The arrow follows the button when
@@ -7236,7 +7270,10 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
   max-width: 96px;
 }
 
-.goodobsidian-pull-add.is-hidden {
+/* Compound, so the row's own `display: grid` (below) cannot outrank it:
+   with a single class the ring stayed on screen after every pull. */
+.goodobsidian-pull-add.is-hidden,
+.goodobsidian-pull-add.is-row.is-hidden {
   display: none;
 }
 
@@ -7280,6 +7317,63 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
 .goodobsidian-pull-add-arrow {
   color: var(--interactive-accent);
   display: flex;
+}
+
+/* Across a row, as Goodnotes: the arrow left of the ring, the label under it. */
+.goodobsidian-pull-add.is-row {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "arrow ring"
+    ". label";
+  align-items: center;
+  justify-items: center;
+  column-gap: 6px;
+}
+
+.goodobsidian-pull-add.is-row .goodobsidian-pull-add-ring {
+  grid-area: ring;
+}
+
+.goodobsidian-pull-add.is-row .goodobsidian-pull-add-arrow {
+  grid-area: arrow;
+}
+
+.goodobsidian-pull-add.is-row .goodobsidian-pull-add-label {
+  grid-area: label;
+}
+
+/* The arrow says which way to pull; armed, there is nothing left to pull. */
+.goodobsidian-pull-add.is-armed .goodobsidian-pull-add-arrow {
+  visibility: hidden;
+}
+
+/* The coming page, past the ring: a grey placeholder sliding in from the
+   far edge as the stretch grows (`--gob-pull-strip`, the revealed strip). */
+.goodobsidian-pull-add-ghost {
+  position: absolute;
+  z-index: 8;
+  left: 22%;
+  bottom: calc(var(--gob-pull-strip, 0px) * 0.5 - 40%);
+  width: 56%;
+  height: 40%;
+  border-radius: 2px;
+  background: rgba(var(--mono-rgb-100), 0.16);
+  pointer-events: none;
+}
+
+.goodobsidian-pull-add-ghost.is-row {
+  top: 22%;
+  bottom: auto;
+  left: auto;
+  right: calc(var(--gob-pull-strip, 0px) * 0.5 - 40%);
+  width: 40%;
+  height: 56%;
+}
+
+.goodobsidian-pull-add-ghost.is-hidden,
+.goodobsidian-pull-add-ghost.is-row.is-hidden {
+  display: none;
 }
 
 /* Armed: letting go adds the page. */
@@ -7868,9 +7962,14 @@ button.goodobsidian-color-eyedropper .svg-icon {
   color: var(--text-normal);
 }
 
+.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret {
+  display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
+}
+
 .goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret svg {
-  width: 12px;
-  height: 12px;
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 /* ------------------------------------------ pen gestures (pen type menu) */
@@ -8600,12 +8699,6 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
     background: var(--gob-pop-bg);
     -webkit-backdrop-filter: blur(20px) saturate(1.6);
     backdrop-filter: blur(20px) saturate(1.6);
-  }
-
-  .goodobsidian-pagesidebar-top {
-    background: var(--gob-frost-side);
-    -webkit-backdrop-filter: var(--gob-blur);
-    backdrop-filter: var(--gob-blur);
   }
 }
 
@@ -10554,7 +10647,8 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 /* The calculator's graph popped out over the notebook (view/graph-window.ts):
    above the page, below pop-ups; moved by its bar, sized by its corner. */
-.goodobsidian-graph-window {
+.goodobsidian-graph-window,
+.goodobsidian-calc-window {
   position: absolute;
   z-index: 20;
   display: flex;
@@ -10571,11 +10665,13 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
   transition: transform 120ms ease-out;
 }
 
-.goodobsidian-graph-window.is-raised {
+.goodobsidian-graph-window.is-raised,
+.goodobsidian-calc-window.is-raised {
   transform: scale(1.02);
 }
 
-.goodobsidian-graph-window-bar {
+.goodobsidian-graph-window-bar,
+.goodobsidian-calc-window-bar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -10586,14 +10682,16 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
   touch-action: none;
 }
 
-.goodobsidian-graph-window-title {
+.goodobsidian-graph-window-title,
+.goodobsidian-calc-window-title {
   flex: 1 1 auto;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold, 600);
 }
 
-button.clickable-icon.goodobsidian-graph-window-button {
+button.clickable-icon.goodobsidian-graph-window-button,
+button.clickable-icon.goodobsidian-calc-window-button {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
@@ -10602,7 +10700,8 @@ button.clickable-icon.goodobsidian-graph-window-button {
   color: var(--gob-icon);
 }
 
-.goodobsidian-graph-window-body {
+.goodobsidian-graph-window-body,
+.goodobsidian-calc-window-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -10619,7 +10718,8 @@ button.clickable-icon.goodobsidian-graph-window-button {
 }
 
 /* The corner to resize from: a 28 px target over the graph's corner. */
-.goodobsidian-graph-window-grip {
+.goodobsidian-graph-window-grip,
+.goodobsidian-calc-window-grip {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -10633,7 +10733,8 @@ button.clickable-icon.goodobsidian-graph-window-button {
   touch-action: none;
 }
 
-.goodobsidian-graph-window-grip svg {
+.goodobsidian-graph-window-grip svg,
+.goodobsidian-calc-window-grip svg {
   width: 14px;
   height: 14px;
 }
@@ -10649,4 +10750,85 @@ button.clickable-icon.goodobsidian-graph-window-button {
 .goodobsidian-graph-window.is-minimised
   button.clickable-icon.goodobsidian-graph-window-button:not(.is-close) {
   display: none;
+}
+
+/* ------------------------------------------------- toasts away from the bar */
+
+/* A toast takes the end of the page area away from the tool bar and its
+   pill (toast-side.ts): the bottom, unless the pill sits low (a text box
+   near the bottom), then the top, dropping in instead of rising. */
+.goodobsidian-surface.is-toast-top > .goodobsidian-offpage,
+.goodobsidian-surface.is-toast-top > .goodobsidian-text-hint,
+.goodobsidian-surface.is-toast-top > .goodobsidian-text-copy {
+  top: 16px;
+  bottom: auto;
+  animation-name: goodobsidian-toast-drop;
+}
+
+@keyframes goodobsidian-toast-drop {
+  from {
+    opacity: 0.5;
+    transform: translate(-50%, -200%) scale(0.6);
+  }
+}
+
+/* ------------------------------------------------- the calculator's window */
+
+/* The calculator floats in a window like the graph's (floating-window.ts,
+   the shared frame rules above). Inside it the calculator fills the body
+   and the keys stretch with the window: the two key grids share the height
+   left under the display (the function keys' three rows, the numbers'
+   five), never shorter than 30 px (the window's minimum height is what
+   that needs, CALC_WINDOW_MIN); the history and
+   graph panes take that same height. Selectors outrank the pop-up's fixed
+   heights (`.goodobsidian-calc-body.is-graph` and the key rules). */
+.goodobsidian-calc-window .goodobsidian-calc {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 4px 4px;
+  /* A view shorter than the window's minimum: scroll, never cut off. */
+  overflow-y: auto;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.goodobsidian-calc-window .goodobsidian-calc-display,
+.goodobsidian-calc-window .goodobsidian-calc-actions {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-calc-window .goodobsidian-calc .goodobsidian-calc-body {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.goodobsidian-calc-window .goodobsidian-calc-body .goodobsidian-calc-tabs {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-calc-window .goodobsidian-calc-body .goodobsidian-calc-keys.is-science {
+  flex: 3 1 0;
+  grid-auto-rows: minmax(30px, 1fr);
+  min-height: 0;
+}
+
+.goodobsidian-calc-window .goodobsidian-calc-body .goodobsidian-calc-keys.is-numbers {
+  flex: 5 1 0;
+  grid-auto-rows: minmax(30px, 1fr);
+  min-height: 0;
+}
+
+.goodobsidian-calc-window button.clickable-icon.goodobsidian-calc-key {
+  height: auto;
+  min-height: 30px;
+}
+
+/* The window last touched sits over the other one. */
+.goodobsidian-graph-window.is-front,
+.goodobsidian-calc-window.is-front {
+  z-index: 21;
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  CALC_WINDOW_MIN,
   DEFAULT_CALC_PREFS,
+  defaultCalcPlace,
+  withCalcWindow,
   HISTORY_MAX,
   HISTORY_NOTEBOOKS_MAX,
   historyOf,
@@ -180,5 +183,37 @@ describe("graph window places", () => {
       h: 300,
       minimised: true,
     });
+  });
+});
+
+describe("the calculator's window", () => {
+  const view = { w: 1180, h: 760 };
+
+  it("opens top left, under the toolbar, at least its minimum and inside the view", () => {
+    const place = defaultCalcPlace(view);
+    expect(place.x).toBe(16);
+    expect(place.y).toBe(64);
+    expect(place.w).toBeGreaterThanOrEqual(CALC_WINDOW_MIN.w);
+    expect(place.h).toBeGreaterThanOrEqual(CALC_WINDOW_MIN.h);
+    expect(place.y + place.h).toBeLessThanOrEqual(view.h);
+  });
+
+  it("is never sized below its own minimum, larger than the graph window's", () => {
+    const place = clampPlace({ x: 20, y: 20, w: 10, h: 10 }, view, CALC_WINDOW_MIN);
+    expect([place.w, place.h]).toEqual([CALC_WINDOW_MIN.w, CALC_WINDOW_MIN.h]);
+    expect(clampPlace({ x: 20, y: 20, w: 10, h: 10 }, view).h).toBe(WINDOW_MIN.h);
+  });
+
+  it("keeps one place for every notebook, through a save, a load and the other edits", () => {
+    const place = { x: 40, y: 80, w: 420, h: 640 };
+    let data = withCalcWindow(parseCalculatorData(null), place);
+    data = withEntry(data, "a.notebook.md", { expr: "1+1", result: "2" }, 1);
+    data = withoutHistory(data, "b.notebook.md");
+    data = renameCalculatorHistory(data, "a.notebook.md", "c.notebook.md") ?? data;
+    const loaded = parseCalculatorData(JSON.parse(JSON.stringify(data)));
+    expect(loaded.calcWindow).toEqual(place);
+    expect(parseCalculatorData({ calcWindow: { x: 1, y: 2, w: -5, h: 9 } }).calcWindow).toBe(
+      undefined,
+    );
   });
 });

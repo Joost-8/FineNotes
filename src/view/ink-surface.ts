@@ -168,6 +168,11 @@ import {
   rowScrollInsets,
   rowScrollXForPage,
   rowSlotGap,
+  rowGapAtZoom,
+  ROW_PULL_ADD_PX,
+  PULL_ADD_PAGE_PX,
+  rowEdgeTurn,
+  pullAddAllowed,
   rowTurnsPages,
   scrollTopForPage,
   inkBeyondPage,
@@ -417,6 +422,7 @@ import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
+import { type Span, toastSide } from "./toast-side";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
 const ZOOM_STEP = 1.25;
@@ -1269,6 +1275,33 @@ export class InkSurface {
     cx: number;
     cy: number;
   } | null = null;
+  /**
+   * Where the page was when the current finger gesture began, and whether
+   * the system took any of its fingers (`pointercancel`): iPadOS's four-finger
+   * app switch, Control Center, the swipe home. Then lifting puts the page
+   * back instead of flinging or turning it.
+   */
+  private fingerGesture: {
+    x: number;
+    y: number;
+    zoom: number;
+    cx: number;
+    cy: number;
+    cancelled: boolean;
+  } | null = null;
+  /**
+   * The current finger gesture for pulling in a page (`pullAddAllowed`):
+   * where its focus started and is now, and whether a second finger came
+   * down (a pinch is never a pull). Null between gestures, so the ring can
+   * only show while one is going on.
+   */
+  private pullGesture: {
+    fromX: number;
+    fromY: number;
+    x: number;
+    y: number;
+    pinched: boolean;
+  } | null = null;
   /** Which way the pages run; read from the document on every layout. */
   private direction: ScrollDirection = "vertical";
   /** The page a finger swipe started on: a row of pages turns at most one page per swipe. */
@@ -1965,13 +1998,19 @@ export class InkSurface {
     // (see `handlePaste`). Idempotent, so every open surface may report it.
     const onLeave = (): void => clipboard.noteWindowLeft();
     const onVisibility = (): void => {
-      if (document.visibilityState === "hidden") clipboard.noteWindowLeft();
+      if (this.surfaceEl.ownerDocument.visibilityState === "hidden") clipboard.noteWindowLeft();
+      else if (this.layoutWhenShown) {
+        this.layoutWhenShown = false;
+        this.layout();
+      }
     };
+    // The surface's own document: a popout window hides and shows its own.
+    const viewDoc = this.surfaceEl.ownerDocument;
     window.addEventListener("blur", onLeave);
-    document.addEventListener("visibilitychange", onVisibility);
+    viewDoc.addEventListener("visibilitychange", onVisibility);
     this.disposers.push(() => {
       window.removeEventListener("blur", onLeave);
-      document.removeEventListener("visibilitychange", onVisibility);
+      viewDoc.removeEventListener("visibilitychange", onVisibility);
     });
 
     // A pane that changes size (a sidebar, a rotation, a split) is laid out again.
@@ -2365,17 +2404,14 @@ export class InkSurface {
     this.parkedText = null;
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const row = this.direction === "horizontal";
-    if (row && !this.turnsPages && clamped !== this.pageIndex) {
-      // Zoomed in, a row is held to the page being read (`ensurePaperSize`),
-      // so a glide to another page stopped at this one's edge. Move the hold
-      // to the new page and land on its top-left corner, at the same zoom.
-      this.pageIndex = clamped;
-      this.ensurePaperSize();
+    // Zoomed in, a row lands on the page's top-left corner at the same zoom;
+    // centring it would only show its middle.
+    const zoomedRow = row && !this.turnsPages;
+    if (zoomedRow) {
+      // The hold moves to the new page, and the view glides there from where it is.
       const range = rowPageScrollRange(this.pageLayout, clamped, this.scale, this.cssW);
-      this.scroller.setPosition(range.min, 0);
+      this.glideHeldTo(clamped, range.min, 0, animate);
       this.syncViewport();
-      this.callbacks.onPageChange?.(clamped, this.doc.pages.length);
-      this.reportStatus();
       this.flashChrome();
       this.requestFrame();
       return;
@@ -2805,11 +2841,28 @@ export class InkSurface {
   layout(): void {
     const renderer = this.renderer;
     if (!renderer) return;
+    // In the background iPadOS may resize the app for its app-switcher
+    // snapshots (in the other orientation, too), and every such size would
+    // re-fit the scale and the zoom floor under the page being read; coming
+    // back then showed another page (Joost's recording, 2026-10-21). Nobody
+    // sees a hidden page: lay it out once it shows again, from where it was.
+    if (this.surfaceEl.ownerDocument.visibilityState === "hidden") {
+      this.layoutWhenShown = true;
+      return;
+    }
     const { clientWidth: cssW, clientHeight: cssH } = this.surfaceEl;
     const size = this.sizeWait.check(cssW, cssH);
     if (size === "retry") window.requestAnimationFrame(() => this.layout());
     if (size !== "layout") return;
     this.hudLayouts += 1;
+    // A row zoomed in keeps the spot in the middle of the pane in the middle
+    // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
+    // Split View): the scale and the gap between pages both follow the width,
+    // so the old scroll offset would name a spot pages away.
+    const rowAnchor =
+      this.zoomInitialised && this.direction === "horizontal" && !this.pinch && !this.atZoomFloor
+        ? this.rowPointAt(this.cssW / 2, this.cssH / 2)
+        : null;
     this.cssW = cssW;
     this.cssH = cssH;
 
@@ -2841,15 +2894,24 @@ export class InkSurface {
       // pages so a centred page's neighbours sit just off the pane. The gap
       // changes neither the fit width nor the tallest page, so the scale and
       // floor just computed still hold.
-      const gap = rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
-      this.pageLayout = layoutPages(this.doc.pages, { direction, gap });
-      renderer.setLayout(this.pageLayout);
+      // Zoomed in, the gap closes so the next page shows beside this one.
+      this.rowSlot = rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
+      this.rowGap = Number.NaN;
+      this.syncRowGap();
     }
     this.ensurePaperSize();
     const scale = this.scale;
     if (anchored && priorScale > 0 && Math.abs(scale / priorScale - 1) > 1e-6) {
       const ratio = scale / priorScale;
       this.scroller.setPosition(priorAt.x * ratio, priorAt.y * ratio);
+    }
+    const rowSpot =
+      rowAnchor && !turned && !this.atZoomFloor ? this.pageLayout.boxes[rowAnchor.index] : null;
+    if (rowAnchor && rowSpot) {
+      this.scroller.setPosition(
+        (rowSpot.x + rowAnchor.local.x) * scale - cssW / 2,
+        (rowSpot.y + rowAnchor.local.y) * scale - cssH / 2,
+      );
     }
     if (turned) {
       this.userZoom = this.minZoom;
@@ -2869,7 +2931,32 @@ export class InkSurface {
     if (this.debug) this.scheduleHud();
   }
 
+  /**
+   * The row page nearest the pane point (`sx`, `sy`) (pane px) and the
+   * page-local point under it, read from the layout as it is now.
+   */
+  private rowPointAt(
+    sx: number,
+    sy: number,
+  ): { index: number; local: { x: number; y: number } } | null {
+    const scale = this.unitScale;
+    const at = { x: (sx - this.offsetX) / scale, y: sy / scale + this.viewport.scrollY };
+    const index = nearestRowBox(this.pageLayout.boxes, at.x);
+    const box = this.pageLayout.boxes[index];
+    return box ? { index, local: this.toPage(box, at) } : null;
+  }
+
   private relayoutFrame = 0;
+  /** A layout was asked for while the page was hidden (`layout`): do it on showing. */
+  private layoutWhenShown = false;
+  /**
+   * The page a zoomed-in row is held to (`ensurePaperSize`). Its own field,
+   * not `pageIndex`: the page indicator rewrites `pageIndex` from what is on
+   * screen while the view glides to a new page, and the hold must not follow
+   * it back. Null when no row is held (zoomed out, pages down): the hold
+   * then starts on the page being read.
+   */
+  private heldPage: number | null = null;
 
   /** Coalesce viewport events into one layout per frame. */
   private scheduleRelayout(): void {
@@ -2914,12 +3001,25 @@ export class InkSurface {
     this.paperEl.setCssStyles({ width: `${width}px`, height: `${height}px` });
     const row = this.direction === "horizontal";
     const insets = row ? rowScrollInsets(this.pageLayout, scale, this.cssW) : { lead: 0, trail: 0 };
-    // Zoomed in, a swipe moves around the page being read and never onto the
-    // next one; turning pages waits until the view is zoomed out again.
+    // Zoomed in, a row is held to the page being read, as Goodnotes holds it
+    // (Joost's recording, 2026-10-21): its edges stop at the pane's, and a
+    // pull past one shows the next page and, far enough, turns to it
+    // (`rowEdgeTurn`). While a pinch is on, the whole row is free, so the
+    // neighbours show beside the page; letting go settles on the page then
+    // in the middle (`onPinchEnd`).
+    const last = this.pageLayout.boxes.length - 1;
     const rangeX =
-      row && !this.turnsPages
-        ? rowPageScrollRange(this.pageLayout, this.pageIndex, scale, this.cssW)
+      row && !this.turnsPages && last >= 0
+        ? this.pinch
+          ? {
+              min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
+              max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max,
+            }
+          : rowPageScrollRange(this.pageLayout, this.heldIndex(), scale, this.cssW)
         : undefined;
+    // Zoomed out (or pages down) nothing is held; a later zoom-in starts on
+    // the page then being read.
+    if (!row || this.turnsPages) this.heldPage = null;
     this.scroller.setExtent({
       contentWidth: width,
       contentHeight: height,
@@ -3228,8 +3328,17 @@ export class InkSurface {
    * value past the limits, everything else clamps first.
    */
   private applyZoom(nextZoom: number, anchorX: number, anchorY: number): void {
-    const before = this.toLayout(anchorX, anchorY);
+    let before = this.toLayout(anchorX, anchorY);
+    // A row's pages slide together as it zooms in (`syncRowGap`): keep the
+    // point of the page under the fingers fixed, not the layout point.
+    const boxes = this.pageLayout.boxes;
+    const held = this.direction === "horizontal" ? nearestRowBox(boxes, before.x) : -1;
+    const local = held >= 0 ? this.toPage(boxes[held], before) : null;
     this.userZoom = nextZoom;
+    if (this.syncRowGap() && local) {
+      const box = this.pageLayout.boxes[held];
+      if (box) before = { x: box.x + local.x, y: box.y + local.y };
+    }
     this.ensurePaperSize();
     this.syncViewport();
     const after = this.toLayout(anchorX, anchorY);
@@ -3247,6 +3356,30 @@ export class InkSurface {
     this.flashChrome(true);
     this.requestFrame();
     this.reportStatus();
+  }
+
+  /** The slot gap of a row at the zoom floor (`rowSlotGap`), set by `layout`. */
+  private rowSlot = 0;
+  /** The gap the row is laid out with now (`rowGapAtZoom`); NaN forces a layout. */
+  private rowGap = Number.NaN;
+
+  /**
+   * Lay a row of pages out with the gap for the zoom now: the slot gap at
+   * the floor, closing to a thin strip zoomed in, so the neighbouring page
+   * shows (FineNotes#34). Tiles are per page, so moving pages costs no
+   * rasterising. Returns whether the pages moved.
+   */
+  private syncRowGap(): boolean {
+    if (this.direction !== "horizontal" || !(this.rowSlot > 0)) return false;
+    const gap = rowGapAtZoom(this.rowSlot, this.userZoom, this.minZoom, this.scale);
+    // Zoomed well in the gap is a fixed 20 screen px, a little less in page
+    // units at every zoom step: lay the notebook out again only when it moved
+    // by 3% (well under a px on screen), not on every frame of a pinch.
+    if (Math.abs(gap - this.rowGap) < Math.max(0.01, this.rowGap * 0.03)) return false;
+    this.rowGap = gap;
+    this.pageLayout = layoutPages(this.doc.pages, { direction: "horizontal", gap });
+    this.renderer?.setLayout(this.pageLayout);
+    return true;
   }
 
   private zoomBy(factor: number): void {
@@ -3307,6 +3440,67 @@ export class InkSurface {
     this.requestFrame();
   }
 
+  /** A row zoomed in, held to the page being read (`ensurePaperSize`). */
+  private get heldRow(): boolean {
+    return this.direction === "horizontal" && !this.turnsPages;
+  }
+
+  /** The page a zoomed-in row is held to: `heldPage`, or the page being read. */
+  private heldIndex(): number {
+    const last = Math.max(0, this.doc.pages.length - 1);
+    return Math.max(0, Math.min(last, this.heldPage ?? this.pageIndex));
+  }
+
+  /**
+   * Move a zoomed-in row's hold to page `index` and go to `x`, `y` on it from
+   * where the view is now: the view is put back where it was after the range
+   * changes, so a glide starts there instead of jumping into the new range.
+   */
+  private glideHeldTo(index: number, x: number, y: number, animate: boolean): void {
+    const from = this.scroller.position;
+    this.heldPage = index;
+    // The new range may not hold where the view is (an idle scroller is
+    // clamped into it at once): the glide starts from where it was.
+    this.ensurePaperSize();
+    if (animate) this.scroller.glideTo(x, y, now(), undefined, from);
+    else this.scroller.setPosition(x, y);
+  }
+
+  /**
+   * Zoomed in, turn a held row to the page beside the one being read, at the
+   * same zoom and height: it glides on to the next page's left edge, or back
+   * to the previous page's right edge (`rowEdgeTurn`).
+   */
+  private turnHeldPage(step: -1 | 1): void {
+    const to = this.heldIndex() + step;
+    if (to < 0 || to >= this.doc.pages.length) return;
+    const range = rowPageScrollRange(this.pageLayout, to, this.scale, this.cssW);
+    this.glideHeldTo(to, step > 0 ? range.min : range.max, this.scroller.position.y, true);
+    this.flashChrome();
+    this.requestFrame();
+  }
+
+  /**
+   * A pinch on a zoomed-in row ended: hold the row to the page now in the
+   * middle of the pane and glide onto it, as Goodnotes settles on the page
+   * when the fingers lift (the neighbours go out of sight again).
+   */
+  private settleHeldPage(): void {
+    if (!this.heldRow) return;
+    // The page indicator reports the page change from what is on screen.
+    const at = this.rowPointAt(this.cssW / 2, this.cssH / 2);
+    if (at) this.heldPage = at.index;
+    const range = rowPageScrollRange(this.pageLayout, this.heldIndex(), this.scale, this.cssW);
+    const { x } = this.scroller.position;
+    const inside = Math.min(range.max, Math.max(range.min, x));
+    // A finger still down carries the gesture on as a pan; its release springs
+    // into the new range. Otherwise glide there now, before the range tightens.
+    if (!this.scroller.isDragging && Math.abs(inside - x) > 0.5)
+      this.scroller.snapTo(inside, null, now());
+    this.ensurePaperSize();
+    this.requestFrame();
+  }
+
   /** Centre the page being read, if a pinch asked for it on ending (see `onPinchEnd`). */
   private settleRowAfterZoom(): void {
     if (!this.snapRowAfterZoom) return;
@@ -3333,19 +3527,41 @@ export class InkSurface {
 
   /** How far the page is stretched past the last page, along the way the pages run. */
   private pullOverscroll(): number {
+    // Zoomed in, a row is held to one page: past its end is past the
+    // notebook's end only on the last page (elsewhere a pull turns the page).
+    if (this.heldRow && this.heldIndex() !== this.doc.pages.length - 1) return 0;
     const end = this.scroller.overscrollEnd;
     return this.direction === "horizontal" ? end.x : end.y;
   }
 
+  /** How far a pull is to adding a page: rows ask for a longer pull (`ROW_PULL_ADD_PX`). */
+  private pullProgress(over: number): number {
+    const threshold = this.direction === "horizontal" ? ROW_PULL_ADD_PX : PULL_ADD_PAGE_PX;
+    return pullAddProgress(over, threshold);
+  }
+
+  /** Whether the finger gesture so far may pull in a new page (`pullAddAllowed`). */
+  private pullAllowed(): boolean {
+    const g = this.pullGesture;
+    if (!g) return false;
+    const row = this.direction === "horizontal";
+    const dx = g.x - g.fromX;
+    const dy = g.y - g.fromY;
+    return pullAddAllowed({
+      pinched: g.pinched,
+      along: row ? dx : dy,
+      across: row ? dy : dx,
+    });
+  }
+
   /** Keep the pull-to-add ring in step with the stretch while a finger holds it. */
   private syncPullAdd(): void {
-    const held = this.direction === "horizontal" && !this.turnsPages;
-    if (!this.pullAddEnabled || !this.touchPanning || held) {
+    if (!this.pullAddEnabled || !this.touchPanning || !this.pullAllowed()) {
       this.pullAdd.hide();
       return;
     }
     const over = this.pullOverscroll();
-    this.pullAdd.update(this.direction, over, pullAddProgress(over));
+    this.pullAdd.update(this.direction, over, this.pullProgress(over));
   }
 
   /** Repaint backdrop + ink and re-place the text boxes and selection chrome (zoom, layout, edits). */
@@ -4356,6 +4572,15 @@ export class InkSurface {
         this.swipeFromPage = this.pageIndex;
         const at = this.scroller.position;
         this.palmUndo = { t: now(), x: at.x, y: at.y, zoom: this.userZoom, cx: x, cy: y };
+        this.fingerGesture = {
+          x: at.x,
+          y: at.y,
+          zoom: this.userZoom,
+          cx: x,
+          cy: y,
+          cancelled: false,
+        };
+        this.pullGesture = { fromX: x, fromY: y, x, y, pinched: false };
       }
       this.touchPanning = true;
       window.clearTimeout(this.wheelSnapTimer);
@@ -4369,6 +4594,10 @@ export class InkSurface {
         this.stopPress();
       }
       if (this.fingerHold.active && !this.fingerHold.move(x, y)) this.stopPress();
+      if (this.pullGesture) {
+        this.pullGesture.x = x;
+        this.pullGesture.y = y;
+      }
       this.scroller.dragMove(x, y, t);
       this.requestFrame();
     },
@@ -4383,22 +4612,41 @@ export class InkSurface {
         this.syncActionBar();
       }
       // Read before the release springs it back: past the end far enough,
-      // letting go adds a page.
-      // A zoomed-in row is held to its page: its edge is no place to add one.
+      // letting go adds a page. Zoomed in too, as in Goodnotes: a row is no
+      // longer held to one page, so its end is the last page's edge.
       const pulled =
-        this.pullAddEnabled &&
-        (this.direction !== "horizontal" || this.turnsPages) &&
-        pullAddProgress(this.pullOverscroll()) >= 1;
+        this.pullAddEnabled && this.pullAllowed() && this.pullProgress(this.pullOverscroll()) >= 1;
+      // Zoomed in, held to its page: pulled well past an edge, letting go
+      // turns to the page beside it (Goodnotes). Never a pinch.
+      const bounds = this.scroller.bounds;
+      const edgeTurn =
+        this.heldRow && !pulled && this.pullGesture?.pinched === false
+          ? rowEdgeTurn(this.scroller.position.x, bounds.minX, bounds.maxX)
+          : 0;
+      this.pullGesture = null;
       this.touchPanning = false;
       this.penPanning = false;
       this.palmUndo = null;
       this.scrollEl.removeClass("is-hand-dragging");
       this.pullAdd.hide();
       this.scroller.dragEnd(t);
+      const gesture = this.fingerGesture;
+      this.fingerGesture = null;
+      if (gesture?.cancelled) {
+        // The system took the gesture (an app switch, Control Center, the
+        // swipe home): what the fingers did on the way was never meant for
+        // the page, so it goes back to where it was, zoom and all, with no
+        // fling and no page turn. A finger WebKit's long press cancelled was
+        // held still, so for it this changes nothing.
+        this.restoreFingerGesture(gesture);
+        return;
+      }
       if (pulled) {
         this.callbacks.onPullAddPage?.();
       } else if (this.turnsPages) {
         this.snapToPage(this.scroller.velocity.x, this.swipeFromPage);
+      } else if (edgeTurn !== 0) {
+        this.turnHeldPage(edgeTurn);
       }
       this.requestFrame();
       if (tap && t - tap.t <= FINGER_TAP_MS) this.onFingerTap(tap.x, tap.y);
@@ -4406,6 +4654,8 @@ export class InkSurface {
     // Only a landing pen voids a finger gesture.
     onPanCancel: () => {
       this.fingerTap = null;
+      this.fingerGesture = null;
+      this.pullGesture = null;
       this.stopPress();
       this.fingerHold.end();
       this.touchPanning = false;
@@ -4417,6 +4667,9 @@ export class InkSurface {
       this.requestFrame();
     },
     onPinchStart: (centerX, centerY) => {
+      // A pinch is never a pull: the ring goes, and stays gone for this gesture.
+      if (this.pullGesture) this.pullGesture.pinched = true;
+      this.pullAdd.hide();
       this.fingerTap = null;
       this.stopPress();
       this.fingerHold.end();
@@ -4437,6 +4690,7 @@ export class InkSurface {
       const pinch = this.pinch;
       this.pinch = null;
       if (!pinch) return;
+      this.settleHeldPage();
       this.syncInkCursor();
       const target = this.clampZoom(this.userZoom);
       // Pinched back out to where a row turns pages: settle on the page being
@@ -4463,6 +4717,7 @@ export class InkSurface {
     // WebKit's own long press may end a finger held still before the press
     // timer is due: that is the hold it interrupted (ledger).
     onFingerCancel: (t) => {
+      if (this.fingerGesture) this.fingerGesture.cancelled = true;
       if (!this.pressTimer || !this.fingerHold.cancelIsHold(t)) return;
       this.stopPress();
       this.fingerHeld();
@@ -4501,6 +4756,22 @@ export class InkSurface {
     this.zoomReadoutEl.removeClass("is-idle");
     this.chromeUntil.zoom = now() + holdMs;
     if (!this.chromeTimer) this.chromeTimer = window.setTimeout(this.fadeChrome, holdMs);
+  }
+
+  /** Put the page back where a finger gesture the system took found it (`fingerGesture`). */
+  private restoreFingerGesture(start: {
+    x: number;
+    y: number;
+    zoom: number;
+    cx: number;
+    cy: number;
+  }): void {
+    this.zoomAnim = null;
+    if (this.userZoom !== start.zoom) this.applyZoom(start.zoom, start.cx, start.cy);
+    this.scroller.setPosition(start.x, start.y);
+    this.syncViewport();
+    this.requestFrame();
+    if (this.debug) this.hud.mark("system:undo");
   }
 
   /**
@@ -5559,6 +5830,7 @@ export class InkSurface {
     this.hideOffPage();
     this.offPageCommand = command;
     this.offPageEl.removeClass("is-hidden");
+    this.placeToasts();
     this.offPageTimer = window.setTimeout(() => this.fadeOffPage(), OFF_PAGE_NOTICE_MS);
   }
 
@@ -5851,6 +6123,7 @@ export class InkSurface {
     this.textCopyCommand = command;
     this.textCopyLabel.setText(`\u201c${text.replace(/\s+/g, " ")}\u201d`);
     this.textCopyEl.removeClass("is-hidden");
+    this.placeToasts();
     this.textCopyTimer = window.setTimeout(() => this.hideTextCopy(), TEXT_COPY_NOTICE_MS);
   }
 
@@ -10402,6 +10675,24 @@ export class InkSurface {
     this.textHintLabel.setText(text);
     this.textHintDismiss = onDismiss;
     this.textHintEl.removeClass("is-hidden");
+    this.placeToasts();
+  }
+
+  /**
+   * The tool bar and its pill as shown, in screen px, for `placeToasts`.
+   * Set by the view; without it the toasts keep to the bottom.
+   */
+  toastChrome: (() => Span[]) | null = null;
+
+  /**
+   * Put the toasts (off-page, text hint, highlighted text) at the end of
+   * the page area away from the tool bar and its pill (`toastSide`). Run
+   * when one shows and whenever the pill moves.
+   */
+  placeToasts(): void {
+    const box = this.surfaceEl.getBoundingClientRect();
+    const side = toastSide(box, this.toastChrome?.() ?? []);
+    this.surfaceEl.toggleClass("is-toast-top", side === "top");
   }
 
   hideTextHint(): void {
@@ -10571,4 +10862,19 @@ function graphAt(page: Page, p: Pt): GraphElement | null {
     if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) return g;
   }
   return null;
+}
+
+/** The index of the row box nearest layout x `x` (inside one, or the closer edge). */
+function nearestRowBox(boxes: readonly PageBox[], x: number): number {
+  let best = -1;
+  let bestAway = Infinity;
+  for (let i = 0; i < boxes.length; i++) {
+    const box = boxes[i];
+    const away = x < box.x ? box.x - x : x > box.x + box.width ? x - box.x - box.width : 0;
+    if (away < bestAway) {
+      bestAway = away;
+      best = i;
+    }
+  }
+  return best;
 }

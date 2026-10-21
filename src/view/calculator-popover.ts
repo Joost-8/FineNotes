@@ -1,7 +1,11 @@
 /**
- * The calculator: the sheet the toolbar's calculator button opens. A card
- * attached to <body> below its button, as the Add Page and AI menus are,
- * closed by a tap outside, Escape or a second tap on the button.
+ * The calculator: a window floating over the notebook, as the graph window
+ * does (`floating-window.ts`): moved by its title bar, resized from its
+ * corner, opened where it was left, and closed by its cross or a second tap
+ * on the toolbar's calculator button, never by a tap on the page, so it
+ * stays open beside the notes while you write. It hears a hardware keyboard
+ * only while it is the window in use (the last tap was inside it), so the
+ * page's own shortcuts work again once you write.
  *
  * What it borrows, and from where (Joost's briefs, 2026-10-19): iOS's keys
  * (round number keys, the operators in an accent column, a press that
@@ -72,9 +76,12 @@ import {
   withCursor,
 } from "../model/calculator-keys";
 import {
+  CALC_WINDOW_MIN,
   type CalcEntry,
   type CalculatorData,
+  defaultCalcPlace,
   historyOf,
+  withCalcWindow,
   withEntry,
   withPrefs,
   withoutHistory,
@@ -82,8 +89,8 @@ import {
 import type { GraphSpec } from "../model/graph";
 import { MAX_LINES, newLineId, normalizeGraphSpec } from "../model/graph-lines";
 import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
+import { FloatingWindow } from "./floating-window";
 
-const POPOVER_WIDTH = 360;
 const RESULT_MAX_PX = 32;
 const RESULT_MIN_PX = 15;
 /** A swipe across the display this far deletes one sign, as on iOS. */
@@ -149,7 +156,10 @@ export function drawGraphMath(parent: HTMLElement, text: string): void {
 type Pane = "keys" | "history" | "graph";
 
 export class CalculatorPopover {
+  private readonly frame: FloatingWindow;
   private readonly el: HTMLElement;
+  /** The window in use: a hardware keyboard types into it (the last tap was inside). */
+  private active = true;
   private readonly dispose: Array<() => void> = [];
   private closed = false;
   private data: CalculatorData;
@@ -188,7 +198,7 @@ export class CalculatorPopover {
   private readonly graphAction: HTMLButtonElement | null;
 
   constructor(
-    private readonly anchor: HTMLElement,
+    container: HTMLElement,
     private readonly host: CalculatorHost,
     private readonly options: CalculatorOptions = {},
   ) {
@@ -201,9 +211,19 @@ export class CalculatorPopover {
     } else {
       this.graphState = graphStateFor(host.path);
     }
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-calc" });
-    this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", "Calculator");
+    this.frame = new FloatingWindow({
+      container,
+      cls: "goodobsidian-calc-window",
+      title: options.editGraph ? "Edit graph" : "Calculator",
+      label: "Calculator",
+      closeLabel: "Close the calculator",
+      min: CALC_WINDOW_MIN,
+      firstPlace: defaultCalcPlace,
+      place: () => this.data.calcWindow ?? null,
+      savePlace: (place) => this.save(withCalcWindow(this.data, place)),
+      onClose: () => this.close(),
+    });
+    this.el = this.frame.body.createDiv({ cls: "goodobsidian-calc" });
 
     const display = this.el.createDiv({ cls: "goodobsidian-calc-display" });
     const flags = display.createDiv({ cls: "goodobsidian-calc-flags" });
@@ -262,7 +282,8 @@ export class CalculatorPopover {
         "",
         () => {
           host.popOutGraph?.();
-          this.close();
+          // The graph now has its own window: this one goes back to its keys.
+          if (this.pane === "graph") this.showPane("graph");
         },
         "goodobsidian-calc-icon is-popout",
         "Pop the graph out into a window that stays open while you write",
@@ -319,18 +340,13 @@ export class CalculatorPopover {
 
     this.bodyEl = this.el.createDiv({ cls: "goodobsidian-calc-body" });
     this.render();
-    this.place();
-    this.installDismiss();
+    this.installKeys();
     this.installTouchGuard();
     if (options.editLine !== undefined) this.editLine(options.editLine);
   }
 
   get isOpen(): boolean {
     return !this.closed;
-  }
-
-  get anchorEl(): HTMLElement {
-    return this.anchor;
   }
 
   /** The graph as a plain object (lines, sliders, view, range), for a graph on a page; null when empty. */
@@ -352,7 +368,7 @@ export class CalculatorPopover {
     this.graph?.destroy();
     window.clearTimeout(this.tipTimer);
     for (const d of this.dispose) d();
-    this.el.remove();
+    this.frame.destroy();
   }
 
   /**
@@ -765,7 +781,6 @@ export class CalculatorPopover {
       this.entry = { expr: "", cursor: 0, fresh: false };
     }
     this.render();
-    this.place();
   }
 
   // --- Graph lines on the keys ----------------------------------------------------
@@ -1092,27 +1107,19 @@ export class CalculatorPopover {
     this.dispose.push(() => this.el.removeEventListener("touchstart", guard));
   }
 
-  /** Below the anchor, left-aligned to it, kept inside the window. */
-  private place(): void {
-    const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    const height = this.el.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - height - 8);
-    this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
-  }
-
-  private installDismiss(): void {
+  /**
+   * A hardware keyboard types into the calculator while it is the window in
+   * use: from opening it, or a tap inside it, until a tap anywhere else.
+   * Escape then cancels a graph line being typed, or closes the calculator.
+   */
+  private installKeys(): void {
     const onDown = (event: PointerEvent): void => {
       const target = event.target as Node | null;
-      if (target && (this.el.contains(target) || this.anchor.contains(target))) {
-        if (this.tip && !this.tip.contains(target)) this.hideTip();
-        return;
-      }
-      this.close();
+      this.active = !!target && this.frame.el.contains(target);
+      if (target && this.tip && !this.tip.contains(target)) this.hideTip();
     };
     const onKey = (event: KeyboardEvent): void => {
+      if (!this.active || this.frame.isMinimised) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -1146,19 +1153,13 @@ export class CalculatorPopover {
       }
       this.press({ label: mapped.insert, insert: mapped.insert, continues: mapped.continues });
     };
-    const onResize = (): void => {
-      if (this.anchor.isConnected) this.place();
-      else this.close();
-    };
     // Capture: the drawing surface consumes its own pointer events, and its
     // single-letter shortcuts (P, E, T) must not fire while typing a sum.
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey, true);
-    window.addEventListener("resize", onResize);
     this.dispose.push(() => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("resize", onResize);
     });
   }
 }

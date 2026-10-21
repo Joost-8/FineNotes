@@ -2,7 +2,9 @@
  * The "pull to add a page" ring GoodNotes shows past the last page: a page
  * icon inside a ring that fills as the page is dragged further past the end,
  * an arrow pointing the way to pull, and a label that turns to "Release"
- * once letting go would add the page.
+ * once letting go would add the page. Past the ring, the coming page shows
+ * as a grey placeholder sliding in from the far edge (Goodnotes, Joost's
+ * recording 2026-10-21).
  *
  * It sits in the strip of desk the stretch reveals — below the last page when
  * pages run down, right of it when they run across — and is chrome: it never
@@ -19,6 +21,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export class PullAddIndicator {
   private readonly el: HTMLElement;
+  private readonly ghostEl: HTMLElement;
   private readonly progressEl: SVGCircleElement;
   private readonly arrowEl: HTMLElement;
   private readonly labelEl: HTMLElement;
@@ -27,6 +30,8 @@ export class PullAddIndicator {
   private visible = false;
 
   constructor(host: HTMLElement) {
+    this.ghostEl = host.createDiv({ cls: "goodobsidian-pull-add-ghost is-hidden" });
+    this.ghostEl.setAttribute("aria-hidden", "true");
     this.el = host.createDiv({ cls: "goodobsidian-pull-add is-hidden" });
     this.el.setAttribute("aria-hidden", "true");
     const ring = this.el.createDiv({ cls: "goodobsidian-pull-add-ring" });
@@ -66,6 +71,7 @@ export class PullAddIndicator {
     if (direction !== this.direction) {
       this.direction = direction;
       this.el.toggleClass("is-row", direction === "horizontal");
+      this.ghostEl.toggleClass("is-row", direction === "horizontal");
       setIcon(this.arrowEl, direction === "horizontal" ? "arrow-left" : "arrow-up");
     }
     const armed = progress >= 1;
@@ -75,18 +81,23 @@ export class PullAddIndicator {
       this.labelEl.setText(armed ? "Release to add page" : "Pull to add page");
     }
     this.progressEl.setAttribute("stroke-dashoffset", `${CIRCUMFERENCE * (1 - progress)}`);
-    // Centred in the strip of desk the stretch has revealed.
-    const inset = Math.max(0, overscroll / 2);
-    this.el.setCssProps({ "--gob-pull-inset": `${inset}px` });
+    // In the strip of desk the stretch has revealed: the ring a quarter of
+    // the way in from the page, the placeholder from halfway (Goodnotes).
+    const strip = Math.max(0, overscroll);
+    this.el.setCssProps({ "--gob-pull-inset": `${strip * 0.76}px` });
+    this.ghostEl.setCssProps({ "--gob-pull-strip": `${strip}px` });
     if (!this.visible) {
       this.visible = true;
       this.el.removeClass("is-hidden");
+      this.ghostEl.removeClass("is-hidden");
     }
   }
 
   hide(): void {
-    if (!this.visible) return;
+    // Always, not only when it thinks it shows: a ring left on screen is worse
+    // than two class writes.
     this.visible = false;
     this.el.addClass("is-hidden");
+    this.ghostEl.addClass("is-hidden");
   }
 }

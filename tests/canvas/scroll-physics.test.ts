@@ -497,3 +497,30 @@ describe("room below the content for the keyboard (2026-10-12)", () => {
     expect(s.position.y).toBe(0);
   });
 });
+
+describe("glideTo from a start outside the range", () => {
+  it("glides in from the given start instead of jumping into the range", () => {
+    const s = new KineticScroller();
+    s.setExtent({
+      contentWidth: 5000,
+      contentHeight: 800,
+      viewportWidth: 1000,
+      viewportHeight: 800,
+    });
+    s.setExtent({
+      contentWidth: 5000,
+      contentHeight: 800,
+      viewportWidth: 1000,
+      viewportHeight: 800,
+      rangeX: { min: 3000, max: 3500 },
+    });
+    expect(s.position.x).toBe(3000);
+    s.glideTo(3000, 0, 0, 300, { x: 1200, y: 0 });
+    expect(s.position.x).toBe(1200);
+    s.step(150);
+    expect(s.position.x).toBeGreaterThan(1200);
+    expect(s.position.x).toBeLessThan(3000);
+    s.step(300);
+    expect(s.position.x).toBe(3000);
+  });
+});

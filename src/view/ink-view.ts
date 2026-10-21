@@ -1127,15 +1127,18 @@ export class InkView extends TextFileView {
     );
   }
 
-  /** Open the calculator under `anchor`, or close it when it is open there. */
-  private toggleCalculator(anchor: HTMLElement): void {
+  /**
+   * Open the calculator's window, or close it when it is open: the toolbar's
+   * calculator button (or its row in ⋯) toggles it, and its cross closes it.
+   */
+  private toggleCalculator(): void {
     const open = this.calculator;
     this.calculator = null;
     if (open?.isOpen) {
       open.close();
-      if (open.anchorEl === anchor) return;
+      return;
     }
-    this.calculator = new CalculatorPopover(anchor, this.calculatorHost());
+    this.calculator = new CalculatorPopover(this.contentEl, this.calculatorHost());
   }
 
   /** What the calculator needs from this notebook. */
@@ -1179,12 +1182,10 @@ export class InkView extends TextFileView {
 
   /** The calculator on its keys, typing a line of the graph (from the graph window). */
   private calculatorOnLine(id: string | null): void {
-    const anchor = this.contentEl.querySelector<HTMLElement>(
-      'button.goodobsidian-tool[aria-label="Calculator"]',
-    );
-    if (!anchor) return;
     this.calculator?.close();
-    this.calculator = new CalculatorPopover(anchor, this.calculatorHost(), { editLine: id });
+    this.calculator = new CalculatorPopover(this.contentEl, this.calculatorHost(), {
+      editLine: id,
+    });
   }
 
   /**
@@ -1193,13 +1194,10 @@ export class InkView extends TextFileView {
    * calculator button; its Done commits the edit as one undo step.
    */
   private editGraph(pageId: string, graph: GraphElement): void {
-    const anchor = this.contentEl.querySelector<HTMLElement>(
-      'button.goodobsidian-tool[aria-label="Calculator"]',
-    );
-    if (!anchor || this.isProtected()) return;
+    if (this.isProtected()) return;
     this.calculator?.close();
     this.calculator = new CalculatorPopover(
-      anchor,
+      this.contentEl,
       {
         path: this.file?.path ?? "",
         load: () => parseCalculatorData(this.settings.calculator),
@@ -2333,13 +2331,14 @@ export class InkView extends TextFileView {
         onInsertImage: (anchor) => this.openImageMenu(anchor),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
-        onCalculator: (anchor) => this.toggleCalculator(anchor),
+        onCalculator: () => this.toggleCalculator(),
         // Inside the tap: the microphone is only granted from a user gesture.
         onRecord: () => this.audio?.toggleRecording(),
         onSettings: () => this.openNoteSettings(),
         onShare: () => this.exportPdf(),
         onSearch: () => void this.openSearch(),
         onMore: (anchor) => this.toggleMorePanel(anchor),
+        onPillPlaced: () => this.surface?.placeToasts(),
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2482,6 +2481,7 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.surface.toastChrome = () => this.toolbar?.chromeSpans() ?? [];
     this.surface.setNotebookTitle(this.notebookTitle());
     this.setPenCursor(this.settings.penCursor);
     this.surface.setInkPressure(this.settings.pressureWidth);
@@ -3659,6 +3659,7 @@ export class InkView extends TextFileView {
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
+        folded: this.toolbar?.foldedItems() ?? [],
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),

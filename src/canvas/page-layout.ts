@@ -319,6 +319,46 @@ export function rowSlotGap(pages: readonly Page[], paneWidth: number, floorScale
   return Math.max(PAGE_GAP, Math.ceil(needed));
 }
 
+/** Screen px between neighbouring pages of a row zoomed well in, as Goodnotes' thin strip. */
+export const ROW_ZOOMED_GAP_PX = 20;
+
+/**
+ * The multiple of the zoom floor below which a row keeps its slot gap, so
+ * no neighbouring page shows. Measured from Goodnotes (Joost's recording,
+ * 2026-10-21): only empty desk beside the page up to about 1.7x the fit.
+ */
+export const ROW_GAP_OPEN_ZOOM = 1.7;
+
+/**
+ * The multiple of the zoom floor at which a row's gap has closed to
+ * {@link ROW_ZOOMED_GAP_PX}. From {@link ROW_GAP_OPEN_ZOOM} to here the
+ * neighbour slides in, and on zooming out it is gone as quickly: Goodnotes
+ * does both within about 0.3x of zoom.
+ */
+export const ROW_GAP_CLOSED_ZOOM = 2;
+
+/**
+ * The gap (layout px) between a row's pages at `zoom`. From the floor up to
+ * {@link ROW_GAP_OPEN_ZOOM} it is the slot gap that keeps the neighbours
+ * just off screen (`rowSlotGap`). Zoomed further in, a slot gap
+ * would grow with the zoom and push the next page a screen or more away;
+ * instead the gap closes to a constant {@link ROW_ZOOMED_GAP_PX} on screen,
+ * so the neighbouring page shows beside the one being read (FineNotes#34).
+ * `scale` is screen px per layout px at `zoom`.
+ */
+export function rowGapAtZoom(slotGap: number, zoom: number, floor: number, scale: number): number {
+  if (!(floor > 0) || !(scale > 0) || !Number.isFinite(zoom)) return slotGap;
+  const closed = ROW_ZOOMED_GAP_PX / scale;
+  // A slot narrower than the closed gap (a pane no wider than its page) has nothing to close.
+  if (closed >= slotGap) return slotGap;
+  const ratio = zoom / floor;
+  if (ratio <= ROW_GAP_OPEN_ZOOM) return slotGap;
+  if (ratio >= ROW_GAP_CLOSED_ZOOM) return closed;
+  const t = (ratio - ROW_GAP_OPEN_ZOOM) / (ROW_GAP_CLOSED_ZOOM - ROW_GAP_OPEN_ZOOM);
+  const eased = t * t * (3 - 2 * t);
+  return slotGap + (closed - slotGap) * eased;
+}
+
 /**
  * Up to this multiple of the zoom floor, a swipe across a row of pages turns
  * the page; zoomed in further, a swipe moves around the page being read and
@@ -326,6 +366,25 @@ export function rowSlotGap(pages: readonly Page[], paneWidth: number, floorScale
  * hair past it does not lose page turning.
  */
 export const ROW_PAGING_ZOOM = 1.1;
+
+/**
+ * Screen px a zoomed-in page must be pulled past its edge (the
+ * rubber-banded stretch: about 230 px of finger on an iPad) for letting go
+ * to turn to the page beside it, as Goodnotes does (Joost's recording,
+ * 2026-10-21). Less, and it springs back.
+ */
+export const ROW_EDGE_TURN_PX = 110;
+
+/**
+ * On letting go of a zoomed-in row held to its page: -1 to turn back, 1 to
+ * turn on, 0 to spring back. `x` is the scroll position, stretched past the
+ * page's range `minX`..`maxX` by the finger.
+ */
+export function rowEdgeTurn(x: number, minX: number, maxX: number): -1 | 0 | 1 {
+  if (x - maxX >= ROW_EDGE_TURN_PX) return 1;
+  if (minX - x >= ROW_EDGE_TURN_PX) return -1;
+  return 0;
+}
 
 /** Whether a row of pages turns pages at `zoom`, given the zoom floor. */
 export function rowTurnsPages(zoom: number, floor: number): boolean {
@@ -399,6 +458,36 @@ export function pageSnapIndex(
 
 /** How far past the last page (screen px) a pull must stretch to add a page. */
 export const PULL_ADD_PAGE_PX = 110;
+
+/**
+ * The same with pages running across: a longer, deliberate pull (about
+ * 340 px of finger on an iPad), so a pan or a pinch near the last page's
+ * edge never adds one (Joost, 2026-10-21: "do not make it that sensitive").
+ */
+export const ROW_PULL_ADD_PX = 150;
+
+/** A pull must run along the pages at least this many times as far as across them. */
+export const PULL_ADD_STRAIGHTNESS = 2;
+
+/** What a finger gesture has done, for {@link pullAddAllowed}. */
+export interface PullGesture {
+  /** A second finger came down at some point: a pinch, never a pull. */
+  pinched: boolean;
+  /** Screen px the gesture has moved, along the pages and across them. */
+  along: number;
+  across: number;
+}
+
+/**
+ * Whether a finger gesture may pull a new page in at all (show the ring,
+ * add a page on release), as Goodnotes allows it, at any zoom: one finger
+ * dragged deliberately along the pages, never a pinch (a pinch on the last
+ * page stretches it too, and read as a pull).
+ */
+export function pullAddAllowed(g: PullGesture): boolean {
+  if (g.pinched) return false;
+  return Math.abs(g.along) >= PULL_ADD_STRAIGHTNESS * Math.abs(g.across);
+}
 
 /**
  * Progress of "pull past the end to add a page", 0..1, from how far the

@@ -30,6 +30,7 @@
 
 import { setIcon } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
+import type { FoldedBarItem } from "./toolbar";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -48,6 +49,8 @@ export interface MorePanelPage {
   clearable: boolean;
   /** The pages are shown dark (the view setting). */
   darkPages?: boolean;
+  /** Tool bar buttons folded in here because the bar had no room for them. */
+  folded?: FoldedBarItem[];
 }
 
 export interface MorePanelActions {
@@ -119,6 +122,15 @@ export class MorePanel {
   private render(): void {
     const { page, actions } = this;
     this.el.createDiv({ cls: "goodobsidian-more-title", text: "More" });
+
+    // The tool bar never scrolls: what did not fit on it is first here.
+    const folded = page.folded ?? [];
+    if (folded.length > 0) {
+      const bar = this.group();
+      for (const item of folded) {
+        this.row(bar, { icon: item.icon, text: item.label, run: () => item.run(this.anchor) });
+      }
+    }
 
     const card = this.group();
     const head = card.createDiv({ cls: "goodobsidian-more-pagehead" });
