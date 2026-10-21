@@ -376,12 +376,13 @@ describe("the rows", () => {
       [AI, "AI model", "text:llmModel"],
       [AI, `${label} API key`, "render"],
       [AI, "(block)", "render"],
+      [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
+      [AI, "Recognize automatically", "toggle:autoRecognize"],
+      [AI, "More", "render"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
       [AI, `${label} API key for images`, "render"],
-      [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
-      [AI, "Recognize automatically", "toggle:autoRecognize"],
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
@@ -594,10 +595,11 @@ describe("which rows show", () => {
       "AI service",
       "AI model",
       `${label} API key`,
+      "Handwriting recognition",
+      "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block 44)",
-      "Handwriting recognition",
+      "(block 47)",
     ]);
   });
 

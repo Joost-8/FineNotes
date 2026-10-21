@@ -1486,6 +1486,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ),
       callout(CALLOUTS.noKeychain, !this.plugin.keys.secure),
       this.info(
+        dropdown("recognitionProviderId", "Handwriting recognition", "", providers, [
+          "OCR",
+          "handwriting to text",
+        ]),
+        DESC.recognition,
+      ),
+      {
+        ...this.info(
+          toggle("autoRecognize", "Recognize automatically", "", ["auto recognition"]),
+          DESC.autoRecognize,
+        ),
+        visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
+      },
+      // Pictures are the AI rows fewest people change.
+      this.more("ai", "Pictures: service, model and key"),
+      this.info(
         dropdown("imageVendor", "Image generation", "", IMAGE_VENDOR_LABELS, [
           "generate image",
           "picture",
@@ -1514,20 +1530,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         this.keyDesc(imageVendor, "image"),
       ),
-      this.info(
-        dropdown("recognitionProviderId", "Handwriting recognition", "", providers, [
-          "OCR",
-          "handwriting to text",
-        ]),
-        DESC.recognition,
-      ),
-      {
-        ...this.info(
-          toggle("autoRecognize", "Recognize automatically", "", ["auto recognition"]),
-          DESC.autoRecognize,
-        ),
-        visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
-      },
     ];
     return this.section(
       "ai",
