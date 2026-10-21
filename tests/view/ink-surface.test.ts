@@ -999,7 +999,7 @@ describe("Add to contents on a selection", () => {
     expect(cleared).toBe(1);
   });
 
-  it("sits above Link to in the menu, with Comment after it and the flips last", () => {
+  it("sits above Link to under Turn into, with Comment after it, and Delete last", () => {
     const p = page("p1", [line("h", 100, 300, 115)]);
     const comments: unknown[] = [];
     const surface = surfaceWith({
@@ -1018,12 +1018,19 @@ describe("Add to contents on a selection", () => {
     });
     const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
     const actions = run<SelectionAction[]>(surface, "groupActions", sel);
-    const rows = menuLayout(actions)
-      .rows.filter((r) => r.kind === "action")
-      .map((r) => (r.kind === "action" ? r.action.id : ""));
-    expect(rows.indexOf("contents")).toBeLessThan(rows.indexOf("link"));
-    expect(rows.indexOf("link")).toBeLessThan(rows.indexOf("comment"));
-    expect(rows.slice(-3)).toEqual(["delete", "flip-x", "flip-y"]);
+    const { rows } = menuLayout(actions);
+    const turn = rows.find((r) => r.kind === "submenu");
+    const into = turn?.kind === "submenu" ? turn.actions.map((a) => a.id) : [];
+    expect(into.indexOf("contents")).toBeLessThan(into.indexOf("link"));
+    expect(into.indexOf("link")).toBeLessThan(into.indexOf("comment"));
+    // The flips are one segmented row with the style; Delete is the menu's foot.
+    const flip = rows.find((r) => r.kind === "segments" && r.label === "Flip");
+    expect(flip?.kind === "segments" && flip.actions.map((a) => a.id)).toEqual([
+      "flip-x",
+      "flip-y",
+    ]);
+    const last = rows[rows.length - 1];
+    expect(last.kind === "action" && last.action.id).toBe("delete");
     // A comment is pinned at the selection's top-right corner.
     actions.find((a) => a.id === "comment")?.run?.();
     expect(comments).toEqual([[0, { x: 300, y: 105 }]]);

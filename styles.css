@@ -5863,6 +5863,66 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--gob-sel-line);
 }
 
+/* "Turn into ›": the chevron sits where a check would. */
+.goodobsidian-selection-row-check.is-chevron {
+  color: var(--gob-sel-icon);
+}
+
+/* A segmented row: its label, then a well of icon buttons, the one that is on raised. */
+.goodobsidian-selection-segments {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--gob-touch);
+  padding: 0 4px 0 10px;
+}
+
+.goodobsidian-selection-segments-label {
+  flex: 1 1 auto;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-selection-segment-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--gob-radius-m) - 2px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+  opacity: 1;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon.is-active {
+  background: var(--color-base-35);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-selection-segment svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon.has-label {
+  width: auto;
+  min-width: 40px;
+  padding: 0 6px;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Colour: a row of discs, each in a 44 px target. */
 .goodobsidian-selection-swatches {
   display: flex;

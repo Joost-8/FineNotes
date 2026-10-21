@@ -72,13 +72,28 @@ export interface SelectionAction {
   checked?: boolean;
   /** Draw a row of colour swatches instead of a button (menu only). */
   swatches?: ActionSwatches;
+  /**
+   * In the menu, one button of a segmented row with this label: Fill's
+   * none · soft · solid, the line styles, Flip's two axes (2.5, so a shape's
+   * eleven check rows became four lines). A tap keeps the menu open.
+   */
+  segment?: string;
+  /**
+   * In the menu, one row of a sub-panel opened from a single row with this
+   * label and icon ("Turn into ›": Task, Text, Heading, Link, …).
+   */
+  submenu?: { label: string; icon: string };
   run?: () => void;
 }
 
 export type BarItem =
   { kind: "action"; action: SelectionAction } | { kind: "divider" } | { kind: "more" };
 
-export type MenuRow = { kind: "action"; action: SelectionAction } | { kind: "divider" };
+export type MenuRow =
+  | { kind: "action"; action: SelectionAction }
+  | { kind: "segments"; label: string; actions: SelectionAction[] }
+  | { kind: "submenu"; label: string; icon: string; actions: SelectionAction[] }
+  | { kind: "divider" };
 
 export interface MenuLayout {
   tiles: SelectionAction[];
@@ -142,15 +157,49 @@ export function barItems(actions: readonly SelectionAction[]): BarItem[] {
   return items;
 }
 
-/** What the "…" menu shows: its tiles across the top, then its rows by group. */
+/**
+ * What the "…" menu shows: its tiles across the top, then its rows by group.
+ * The entries of one segment become one row where the first of them stands,
+ * and so do the entries of one submenu.
+ */
 export function menuLayout(actions: readonly SelectionAction[]): MenuLayout {
+  const rowed = actions.filter((a) => menuPlacement(a) === "row");
+  const segmentOf = (a: SelectionAction): string | null =>
+    a.segment !== undefined && !a.swatches && !a.submenu ? a.segment : null;
+  const submenuOf = (a: SelectionAction): string | null => a.submenu?.label ?? null;
+  const leads = rowed.filter((a, i) => {
+    const segment = segmentOf(a);
+    if (segment !== null) return rowed.findIndex((b) => segmentOf(b) === segment) === i;
+    const submenu = submenuOf(a);
+    if (submenu !== null) return rowed.findIndex((b) => submenuOf(b) === submenu) === i;
+    return true;
+  });
   return {
     tiles: actions.filter((a) => menuPlacement(a) === "tile" && !a.swatches),
     rows: grouped<MenuRow>(
-      actions,
+      leads,
       menuGroup,
-      (a) => menuPlacement(a) === "row",
-      (action) => ({ kind: "action", action }),
+      () => true,
+      (action): MenuRow => {
+        const segment = segmentOf(action);
+        if (segment !== null) {
+          return {
+            kind: "segments",
+            label: segment,
+            actions: rowed.filter((b) => segmentOf(b) === segment),
+          };
+        }
+        const submenu = action.submenu;
+        if (submenu) {
+          return {
+            kind: "submenu",
+            label: submenu.label,
+            icon: submenu.icon,
+            actions: rowed.filter((b) => submenuOf(b) === submenu.label),
+          };
+        }
+        return { kind: "action", action };
+      },
       { kind: "divider" },
     ),
   };
@@ -173,6 +222,9 @@ export function actionsKey(actions: readonly SelectionAction[]): string {
       a.bar === true,
       a.showLabel === true,
       menuPlacement(a),
+      a.checked ?? null,
+      a.segment ?? null,
+      a.submenu ? [a.submenu.label, a.submenu.icon] : null,
       a.swatches ? [a.swatches.colors, a.swatches.current] : null,
     ]),
   );

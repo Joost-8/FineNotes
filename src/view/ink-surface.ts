@@ -1039,25 +1039,30 @@ function placedAt(image: ImageElement, t: ImageTransform): ImageElement {
   return out;
 }
 
-/** Flip horizontal · Flip vertical, as rows of their own in the "…" menu. */
-function flipActions(flip: (axis: FlipAxis) => void): SelectionAction[] {
+/** Flip horizontal · Flip vertical, as one segmented row of the "…" menu. */
+function flipActions(flip: (axis: FlipAxis) => void, group = "flip"): SelectionAction[] {
   return [
     {
       id: "flip-x",
       icon: "flip-horizontal-2",
       label: "Flip horizontal",
-      group: "flip",
+      group,
+      segment: "Flip",
       run: () => flip("x"),
     },
     {
       id: "flip-y",
       icon: "flip-vertical-2",
       label: "Flip vertical",
-      group: "flip",
+      group,
+      segment: "Flip",
       run: () => flip("y"),
     },
   ];
 }
+
+/** The lasso menu's one row that opens what a selection can become (2.5). */
+const TURN_INTO = { label: "Turn into", icon: "wand-sparkles" } as const;
 
 /**
  * A box on screen, client px; whether it is being typed in (the keyboard is
@@ -7379,10 +7384,12 @@ export class InkSurface {
 
   /**
    * A lone picture's bar and "…" menu, as GoodNotes has them (Joost's
-   * screenshots): the bar is Crop | Cut · Duplicate · Delete · "…"; the menu
-   * has Cut · Front · Back across the top, then Copy · Duplicate · Paste ·
-   * Lock image, Crop image, and Delete at the foot. Front and Back stack the
-   * pictures among themselves — ink and text always stay above every picture.
+   * screenshots): the bar is Crop | Cut · Duplicate · Delete · "…". Since
+   * 2.5 the menu has Cut · Copy · Duplicate · Paste across the top, as the
+   * lasso's does, then Lock image, Crop image, one row each for Arrange
+   * (front, back), Flip and Opacity, and Delete at the foot. Front and Back
+   * stack the pictures among themselves — ink and text always stay above
+   * every picture.
    */
   private imageActions(sel: { pageId: string; image: ImageElement }): SelectionAction[] {
     const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
@@ -7408,33 +7415,41 @@ export class InkSurface {
         run: () => this.cutSelection(),
       },
       {
-        id: "front",
-        icon: "bring-to-front",
-        label: "Front",
+        id: "copy",
+        icon: "copy",
+        label: "Copy",
         group: "edit",
         menu: "tile",
-        enabled: can("front"),
-        run: () => this.reorderSelectedImage("front"),
+        run: () => this.copySelection(),
       },
-      {
-        id: "back",
-        icon: "send-to-back",
-        label: "Back",
-        group: "edit",
-        menu: "tile",
-        enabled: can("back"),
-        run: () => this.reorderSelectedImage("back"),
-      },
-      { id: "copy", icon: "copy", label: "Copy", group: "edit", run: () => this.copySelection() },
       {
         id: "duplicate",
         icon: "copy-plus",
         label: "Duplicate",
         group: "edit",
         bar: true,
+        menu: "tile",
         run: () => this.duplicateSelectedImage(),
       },
-      this.pasteAction(sel.pageId),
+      { ...this.pasteAction(sel.pageId), menu: "tile" },
+      {
+        id: "front",
+        icon: "bring-to-front",
+        label: "Bring to front",
+        group: "arrange",
+        segment: "Arrange",
+        enabled: can("front"),
+        run: () => this.reorderSelectedImage("front"),
+      },
+      {
+        id: "back",
+        icon: "send-to-back",
+        label: "Send to back",
+        group: "arrange",
+        segment: "Arrange",
+        enabled: can("back"),
+        run: () => this.reorderSelectedImage("back"),
+      },
       {
         id: "lock",
         icon: "lock",
@@ -7449,7 +7464,7 @@ export class InkSurface {
         group: "crop-image",
         run: () => this.startCrop(),
       },
-      ...flipActions((axis) => this.flipSelectedImage(axis)),
+      ...flipActions((axis) => this.flipSelectedImage(axis), "arrange"),
       {
         id: "in-front",
         icon: "layers",
@@ -7461,8 +7476,10 @@ export class InkSurface {
       ...IMAGE_OPACITIES.map((opacity): SelectionAction => ({
         id: `opacity-${opacity}`,
         icon: opacity === 1 ? "circle" : "circle-dashed",
-        label: `Opacity ${Math.round(opacity * 100)} %`,
+        label: `${Math.round(opacity * 100)} %`,
         group: "opacity",
+        segment: "Opacity",
+        showLabel: true,
         checked: Math.abs((sel.image.opacity ?? 1) - opacity) < 0.005,
         run: () => this.setSelectedImageOpacity(opacity),
       })),
@@ -7480,8 +7497,11 @@ export class InkSurface {
   }
 
   /**
-   * The bar for a lasso selection: Cut · Duplicate · Delete · "…"; the menu
-   * has Copy · Duplicate · Paste, Colour when it holds ink, and Delete.
+   * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
+   * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
+   * Duplicate · Paste across the top; Colour when it holds ink; one segmented
+   * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
+   * into ›, which holds what the selection can become; and Delete.
    */
   private groupActions(sel: GroupSelection): SelectionAction[] {
     const actions: SelectionAction[] = [
@@ -7491,19 +7511,27 @@ export class InkSurface {
         label: "Cut",
         group: "edit",
         bar: true,
-        menu: "none",
+        menu: "tile",
         run: () => this.cutSelection(),
       },
-      { id: "copy", icon: "copy", label: "Copy", group: "edit", run: () => this.copySelection() },
+      {
+        id: "copy",
+        icon: "copy",
+        label: "Copy",
+        group: "edit",
+        menu: "tile",
+        run: () => this.copySelection(),
+      },
       {
         id: "duplicate",
         icon: "copy-plus",
         label: "Duplicate",
         group: "edit",
         bar: true,
+        menu: "tile",
         run: () => this.duplicateSelection(),
       },
-      this.pasteAction(sel.pageId),
+      { ...this.pasteAction(sel.pageId), menu: "tile" },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -7531,15 +7559,6 @@ export class InkSurface {
           },
         });
       }
-    }
-    if (this.callbacks.onSaveSticker) {
-      actions.push({
-        id: "save-sticker",
-        icon: "sticker",
-        label: "Save as sticker",
-        group: "edit",
-        run: () => void this.saveSelectionAsSticker(),
-      });
     }
     if (sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
@@ -7571,6 +7590,7 @@ export class InkSurface {
       });
     }
     actions.push(...this.shapeStyleActions(sel.strokes));
+    actions.push(...flipActions((axis) => this.flipSelection(axis), "style"));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Highlighter ink over a PDF's text: the text it covers can be copied.
@@ -7591,8 +7611,9 @@ export class InkSurface {
       actions.push({
         id: "contents",
         icon: "list-plus",
-        label: "Add to contents",
-        group: "contents",
+        label: "Contents heading",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           const at = { x: heading.minX, y: (heading.minY + heading.maxY) / 2 };
           this.clearSelection();
@@ -7605,13 +7626,24 @@ export class InkSurface {
       });
     }
     actions.push(...this.linkActions(sel, index));
+    if (this.callbacks.onSaveSticker) {
+      actions.push({
+        id: "save-sticker",
+        icon: "sticker",
+        label: "Sticker",
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => void this.saveSelectionAsSticker(),
+      });
+    }
     const comment = this.callbacks.onAddComment;
     if (heading && index >= 0 && comment) {
       actions.push({
         id: "comment",
         icon: "message-square-plus",
         label: "Comment",
-        group: "comment",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           // Pinned at the selection's top-right corner, beside what it is about.
           const at = { x: heading.maxX, y: heading.minY };
@@ -7630,8 +7662,6 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // Last in the menu, below Delete.
-    actions.push(...flipActions((axis) => this.flipSelection(axis)));
     return actions;
   }
 
@@ -7651,7 +7681,8 @@ export class InkSurface {
         id: "link",
         icon: "link",
         label: one ? "Change link" : "Link to…",
-        group: "link",
+        group: "turn",
+        submenu: TURN_INTO,
         run: () => {
           this.clearSelection();
           ask(index, ids, one?.target ?? null);
@@ -8806,15 +8837,24 @@ export class InkSurface {
     if (common.shapes === 0) return [];
     const { style } = common;
     const out: SelectionAction[] = [];
+    // One segmented row per property (2.5): eleven check rows had become four lines.
     const row = (
       id: string,
       icon: string,
       label: string,
-      group: string,
+      segment: string,
       checked: boolean,
       apply: ShapeStyle,
     ): void => {
-      out.push({ id, icon, label, group, checked, run: () => this.restyleSelection(apply) });
+      out.push({
+        id,
+        icon,
+        label,
+        group: "style",
+        segment,
+        checked,
+        run: () => this.restyleSelection(apply),
+      });
     };
     if (common.fillable) {
       const fill =
@@ -8825,21 +8865,22 @@ export class InkSurface {
             : splitFill(style.fill).alpha < 1
               ? "soft"
               : "solid";
-      row("fill-none", "square", "No fill", "fill", fill === "none", { fill: null });
-      row("fill-soft", "paint-bucket", "Soft fill", "fill", fill === "soft", { fillFrom: "soft" });
-      row("fill-solid", "paint-bucket", "Solid fill", "fill", fill === "solid", {
+      row("fill-none", "square", "No fill", "Fill", fill === "none", { fill: null });
+      row("fill-soft", "droplet", "Soft fill", "Fill", fill === "soft", { fillFrom: "soft" });
+      row("fill-solid", "paint-bucket", "Solid fill", "Fill", fill === "solid", {
         fillFrom: "solid",
       });
     }
-    row("line-solid", "minus", "Solid line", "line", style.dash === null, { dash: null });
-    row("line-dash", "square-dashed", "Dashed line", "line", style.dash === "dash", {
+    row("line-solid", "minus", "Solid line", "Line", style.dash === null, { dash: null });
+    row("line-dash", "square-dashed", "Dashed line", "Line", style.dash === "dash", {
       dash: "dash",
     });
-    row("line-dot", "ellipsis", "Dotted line", "line", style.dash === "dot", { dash: "dot" });
+    row("line-dot", "ellipsis", "Dotted line", "Line", style.dash === "dot", { dash: "dot" });
     if (common.roundable) {
       const rounded = typeof style.radius === "number" && style.radius > 0;
-      row("corners", "square-round-corner", "Rounded corners", "corners", rounded, {
-        radius: rounded ? null : ROUND_RADIUS,
+      row("corners-square", "square", "Square corners", "Corners", !rounded, { radius: null });
+      row("corners", "square-round-corner", "Rounded corners", "Corners", rounded, {
+        radius: ROUND_RADIUS,
       });
     }
     if (common.headed) {
@@ -8848,14 +8889,14 @@ export class InkSurface {
       const end = heads?.end;
       const filled = start === "filled" || end === "filled";
       const kind = filled ? "filled" : "open";
-      row("head-start", "arrow-left", "Arrow at start", "heads", start !== undefined, {
+      row("head-start", "arrow-left", "Arrow at start", "Arrows", start !== undefined, {
         heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) },
       });
-      row("head-end", "arrow-right", "Arrow at end", "heads", end !== undefined, {
+      row("head-end", "arrow-right", "Arrow at end", "Arrows", end !== undefined, {
         heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) },
       });
       const flip = filled ? "open" : "filled";
-      row("head-filled", "triangle", "Filled arrowheads", "heads", filled, {
+      row("head-filled", "triangle", "Filled arrowheads", "Arrows", filled, {
         heads:
           start || end
             ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
