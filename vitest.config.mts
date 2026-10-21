@@ -54,6 +54,7 @@ export default defineConfig({
         "src/view/selection-bar-model.ts",
         "src/view/view-routing.ts",
         "src/view/load-guard.ts",
+        "src/view/startup-log.ts",
         "src/view/text-panel.ts",
         "src/view/id-sequence.ts",
         "src/view/stroke-index.ts",

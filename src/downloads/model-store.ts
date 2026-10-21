@@ -180,14 +180,22 @@ export class AssetStore {
   /**
    * Store bytes the plugin already has for file `name` (a bundled copy),
    * when they are exactly the pinned file and that file is not stored yet.
-   * True when the model is ready afterwards.
+   * True when the model is ready afterwards. `bytes` is asked for only when
+   * the file is not stored: decoding a bundled copy costs seconds on an
+   * iPad, and this runs at every start-up.
    */
-  async adopt(name: string, data: ArrayBuffer): Promise<boolean> {
+  async adopt(name: string, bytes: () => Promise<ArrayBuffer | null>): Promise<boolean> {
     const file = this.asset.files.find((f) => f.name === name);
     if (!file || isBusy(this.current) || this.downloading) return false;
     await this.check();
     if (this.current.kind === "ready") return true;
-    if (data.byteLength !== file.bytes || (await this.deps.sha256(data)) !== file.sha256)
+    let data: ArrayBuffer | null;
+    try {
+      data = await bytes();
+    } catch {
+      return false;
+    }
+    if (!data || data.byteLength !== file.bytes || (await this.deps.sha256(data)) !== file.sha256)
       return false;
     if (!(await this.verifies(file))) {
       try {

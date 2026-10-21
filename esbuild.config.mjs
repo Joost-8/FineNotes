@@ -105,8 +105,9 @@ const context = await esbuild.context({
   target: "es2020",
   // CHANGELOG.md is bundled as text for the in-app "What's new" modal, and
   // the word list (models/words.txt) for the misread-word underlining; the
-  // handwriting model as bytes while BUNDLE_GRAPE is on.
-  loader: { ".md": "text", ".txt": "text", ".bin": "binary" },
+  // handwriting model as base64 while BUNDLE_GRAPE is on (not "binary":
+  // see src/view/grape-bundle.ts).
+  loader: { ".md": "text", ".txt": "text", ".bin": "base64" },
   define: { __FINENOTES_BUNDLE_GRAPE__: JSON.stringify(BUNDLE_GRAPE) },
   logLevel: "info",
   sourcemap: production ? false : "inline",

@@ -15,7 +15,7 @@ import { bundleFormatOf } from "../recognition/hwr/bundle";
 import { GRAPE_MODEL } from "../recognition/hwr/grape-model";
 import type { AssetStore } from "../downloads/model-store";
 import type { ModelRegistry } from "./model-downloads";
-import { bundledGrape } from "./grape-bundle";
+import { GRAPE_BUNDLED, bundledGrape } from "./grape-bundle";
 
 /** How long a "not here" answer is trusted before the folder is looked at again (vault sync). */
 const RECHECK_MS = 30_000;
@@ -44,13 +44,12 @@ export class GrapeFiles {
   /**
    * Write the bundled copy to the folder when no verified file is there (a
    * build that bundles Grape only). True when Grape is on disk afterwards.
+   * The bundle is decoded only when the file is missing: this runs at every
+   * start-up, and Grape is nearly always there already.
    */
   bridge(): Promise<boolean> {
-    this.bridging ??= (async () => {
-      const bytes = await bundledGrape();
-      if (!bytes) return false;
-      return this.store.adopt(GRAPE_MODEL.files[0].name, bytes);
-    })().finally(() => {
+    if (!GRAPE_BUNDLED) return Promise.resolve(false);
+    this.bridging ??= this.store.adopt(GRAPE_MODEL.files[0].name, bundledGrape).finally(() => {
       this.bridging = null;
     });
     return this.bridging;

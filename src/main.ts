@@ -147,6 +147,7 @@ import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
+import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { HandwritingReader } from "./view/handwriting";
@@ -181,6 +182,10 @@ const LAST_PEN_SAVE_MS = 600;
 
 /** How long after the layout is ready a bundled Grape is written to disk: off the startup path. */
 const GRAPE_BRIDGE_DELAY_MS = 8000;
+
+/** How long after load the main thread is watched for stalls (startup-log.ts), and how often. */
+const STARTUP_WATCH_MS = 90_000;
+const STARTUP_TICK_MS = 250;
 
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
@@ -260,6 +265,9 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
 
+  /** The first 90 s: steps and main-thread stalls, for the diagnostics export (startup-log.ts). */
+  readonly startup = new StartupLog(() => performance.now());
+
   /** The on-device handwriting reader, started on first use. */
   readonly handwriting = new HandwritingReader(
     this.app,
@@ -334,6 +342,8 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   override async onload(): Promise<void> {
+    this.startup.mark("onload");
+    this.watchStartup();
     // Each vendor reads only its own key slot, so a cloud key can never reach
     // an arbitrary user-configured URL (the custom endpoint has a slot of its own).
     // Registered before the settings load, which check the saved provider
@@ -480,7 +490,13 @@ export default class GoodObsidianPlugin extends Plugin {
     // A release that still bundles Grape writes it to the handwriting folder,
     // once, in the background and well after startup (grape-files.ts).
     this.app.workspace.onLayoutReady(() => {
-      const timer = window.setTimeout(() => void this.grape.bridge(), GRAPE_BRIDGE_DELAY_MS);
+      this.startup.mark("layout ready");
+      const timer = window.setTimeout(() => {
+        const began = performance.now();
+        void this.grape.bridge().finally(() => {
+          this.startup.timed("grape bridge", performance.now() - began);
+        });
+      }, GRAPE_BRIDGE_DELAY_MS);
       this.register(() => window.clearTimeout(timer));
     });
 
@@ -501,6 +517,29 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerObsidianProtocolHandler(OPENROUTER_CALLBACK_ACTION, (params) => {
       void this.handleOpenRouterCallback(params);
     });
+    this.startup.mark("onload done");
+  }
+
+  /**
+   * A timer due every STARTUP_TICK_MS for the first STARTUP_WATCH_MS: how late
+   * each one comes is how long the main thread was held (startup-log.ts).
+   */
+  private watchStartup(): void {
+    const end = performance.now() + STARTUP_WATCH_MS;
+    let due = performance.now() + STARTUP_TICK_MS;
+    let timer = 0;
+    const tick = (): void => {
+      const now = performance.now();
+      this.startup.late(now - due);
+      if (now >= end) {
+        this.startup.stop();
+        return;
+      }
+      due = now + STARTUP_TICK_MS;
+      timer = window.setTimeout(tick, STARTUP_TICK_MS);
+    };
+    timer = window.setTimeout(tick, STARTUP_TICK_MS);
+    this.register(() => window.clearTimeout(timer));
   }
 
   // --- Commands ---------------------------------------------------------------
