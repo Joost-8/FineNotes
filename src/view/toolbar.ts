@@ -58,6 +58,7 @@
  *   "3 / 18" readout are chrome-level, because discrete pages are the fix.
  */
 
+import { penGlyph } from "./pen-glyph-svg";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
@@ -106,11 +107,9 @@ import { keyboardHeight } from "./keyboard";
 import { renderColorPicker } from "./color-picker";
 import { type PenInk, type PenInks, penInkFor, switchPenInk, withPenInk } from "../model/pen-inks";
 import {
-  PEN_ICON_BOX,
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
   inkNeedsRim,
-  penIconParts,
   sampleStroke,
   swoosh,
   widthMarkThickness,
@@ -1102,7 +1101,7 @@ export class Toolbar {
     if (key === this.penPreviewKey) return;
     this.penPreviewKey = key;
     button.empty();
-    const glyph = penGlyph(spec, color);
+    const glyph = penGlyph(spec.id, color);
     glyph.classList.add("goodobsidian-tool-pen-glyph");
     button.append(glyph);
     const mark = button.createSpan({ cls: "goodobsidian-tool-pen-width" });
@@ -1280,7 +1279,7 @@ export class Toolbar {
     // remain one tap away in its menu, keeping the writing area clear.
     const active = this.activePenType();
     const pen = this.optionsEl.createEl("button", { cls: "goodobsidian-pentype" });
-    pen.append(penGlyph(active, this.state.color));
+    pen.append(penGlyph(active.id, this.state.color));
     pen.setAttribute("aria-label", `${active.label} options`);
     pen.setAttribute("title", `${active.label} options`);
     pen.addEventListener("click", () => this.togglePenTypeList());
@@ -1523,7 +1522,7 @@ export class Toolbar {
       const row = body.createEl("button", {
         cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-saved-pen",
       });
-      row.append(penGlyph(spec, pen.color));
+      row.append(penGlyph(spec.id, pen.color));
       row.createSpan({ cls: "goodobsidian-saved-pen-label", text: savedPenLabel(pen) });
       row.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
       row.toggleClass("is-active", inHand && samePen(pen, current));
@@ -2851,7 +2850,7 @@ export class Toolbar {
     for (const spec of PEN_MENU_TYPES) {
       if (this.practice && spec.tool === "highlighter") continue;
       const button = body.createEl("button", { cls: "goodobsidian-wide goodobsidian-pen-row" });
-      button.append(penGlyph(spec, this.inkColorOf(spec)));
+      button.append(penGlyph(spec.id, this.inkColorOf(spec)));
       this.penMenuRows.set(spec.id, button);
       button.createSpan({ text: spec.label });
       button.toggleClass("is-active", spec.id === this.activePenType().id);
@@ -3588,7 +3587,7 @@ export class Toolbar {
         if (!row.isConnected) continue;
         const spec = PEN_TYPES.find((type) => type.id === id);
         const glyph = row.querySelector("svg");
-        if (spec && glyph) glyph.replaceWith(penGlyph(spec, this.inkColorOf(spec)));
+        if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.inkColorOf(spec)));
         row.toggleClass("is-active", id === this.activePenType().id);
       }
     }
@@ -3642,38 +3641,6 @@ function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K, pressed = false)
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-
-/** A pen-type swatch: a nib silhouette tinted with the current ink colour. */
-function penGlyph(spec: PenTypeSpec, color: string): SVGElement {
-  const svg = activeDocument.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${PEN_ICON_BOX} ${PEN_ICON_BOX}`);
-  svg.setAttribute("width", "24");
-  svg.setAttribute("height", "24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.6");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  // An outline of the pen, its tip in the ink it writes with (pen-glyphs.ts).
-  // Ink that would vanish into the bar gets a rim in the icon's colour; its
-  // lines are drawn in the icon's colour outright.
-  const rim = inkNeedsRim(color, activeDocument.body.hasClass("theme-dark"));
-  for (const part of penIconParts(spec.id)) {
-    const el = activeDocument.createElementNS(SVG_NS, part.tag);
-    for (const [key, value] of Object.entries(part.attrs)) el.setAttribute(key, value);
-    const paint = part.ink && !(rim && !part.fill) ? color : "currentColor";
-    if (part.fill) el.setAttribute("fill", paint);
-    if ((part.fill || part.ink) && part.attrs.stroke === undefined)
-      el.setAttribute("stroke", paint);
-    if (rim && part.ink && part.fill) {
-      el.setAttribute("stroke", "currentColor");
-      el.setAttribute("stroke-width", "1");
-    }
-    svg.append(el);
-  }
-  return svg;
-}
 
 /**
  * A Shape-tool control, drawn as the outline it places. Auto-shape is a
