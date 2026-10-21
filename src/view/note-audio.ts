@@ -42,6 +42,13 @@ import {
   transcriptPathFor,
   uploadSizeProblem,
 } from "../audio/recording";
+import {
+  type ReplayStroke,
+  fadedAt,
+  replayTimeline,
+  writingAt,
+  writtenCount,
+} from "../audio/replay";
 import { availablePath, parentFolder } from "../canvas/image-raster";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { attachmentDefaults } from "../settings-data";
@@ -84,6 +91,9 @@ type StopReason = "user" | "hidden" | "closed" | "file-changed" | RecorderInterr
 /** A recording at least this long asks before the pill's bin discards it, ms. */
 const DISCARD_CONFIRM_MS = 30000;
 
+/** Ink replay turns to the page being written only when the page has not been touched for this long, ms. */
+const FOLLOW_IDLE_MS = 3000;
+
 /** How often the recording pill's time is redrawn, ms. */
 const PILL_TICK_MS = 500;
 
@@ -107,6 +117,18 @@ export class NoteAudio {
   private pill: RecordingPill | null = null;
   private tick = 0;
   private player: AudioPlayerBar | null = null;
+  /**
+   * Ink replay (2.5): the strokes written while the recording in the player
+   * ran, keyed on that recording and the notebook's size; how many of them
+   * are written at the moment shown; the page being written; and when the
+   * page was last touched, so following along never pulls it from a hand.
+   */
+  private replay: { key: string; strokes: ReplayStroke[]; shown: number } | null = null;
+  private replayPage: string | null = null;
+  private touchedAt = 0;
+  private readonly onPageTouch = (): void => {
+    this.touchedAt = performance.now();
+  };
   private panel: RecordingsPanel | null = null;
   private transcribing = false;
   private alive = true;
@@ -488,16 +510,65 @@ export class NoteAudio {
     if (this.player) return this.player;
     const surface = this.host.surface();
     if (!surface) return null;
-    this.player = new AudioPlayerBar(surface.surfaceEl, () => this.closePlayer());
+    const settings = this.host.plugin.settings;
+    const player = new AudioPlayerBar(surface.surfaceEl, () => this.closePlayer(), {
+      replay: settings.replayInk !== false,
+      onTime: (ms) => this.replayAt(ms),
+      onReplay: (on) => {
+        settings.replayInk = on;
+        void this.host.plugin.saveSettings();
+        this.replay = null;
+        if (on) this.replayAt(player.positionMs);
+        else this.host.surface()?.setFadedStrokes(null);
+      },
+    });
+    this.player = player;
     surface.setStrokeTapHandler((page, stroke) => this.onStrokeTap(page, stroke));
-    return this.player;
+    surface.surfaceEl.addEventListener("pointerdown", this.onPageTouch, { capture: true });
+    return player;
   }
 
   private closePlayer(): void {
     const player = this.player;
     this.player = null;
     player?.destroy();
-    this.host.surface()?.setStrokeTapHandler(null);
+    const surface = this.host.surface();
+    surface?.setStrokeTapHandler(null);
+    surface?.setFadedStrokes(null);
+    surface?.surfaceEl.removeEventListener("pointerdown", this.onPageTouch, { capture: true });
+    this.replay = null;
+    this.replayPage = null;
+  }
+
+  /**
+   * Show the notebook as it was `ms` into the recording in the player (2.5):
+   * ink not written yet pale, and, while nobody is touching the page, the
+   * page being written in view. Every frame while playing, so it only
+   * repaints when another stroke comes due.
+   */
+  private replayAt(ms: number): void {
+    const player = this.player;
+    const surface = this.host.surface();
+    const recording = player?.recording;
+    if (!player || !surface || !recording || this.host.plugin.settings.replayInk === false) return;
+    const doc = surface.document;
+    const count = doc.pages.reduce((n, page) => n + page.strokes.length, 0);
+    const key = `${recording.id}|${doc.pages.length}|${count}`;
+    if (this.replay?.key !== key) {
+      this.replay = { key, strokes: replayTimeline(doc.pages, recording), shown: -1 };
+    }
+    const replay = this.replay;
+    if (replay.strokes.length === 0) return;
+    const written = writtenCount(replay.strokes, ms);
+    if (written === replay.shown) return;
+    replay.shown = written;
+    surface.setFadedStrokes(fadedAt(replay.strokes, ms));
+    const writing = writingAt(replay.strokes, ms);
+    if (writing === null || writing === this.replayPage) return;
+    this.replayPage = writing;
+    if (performance.now() - this.touchedAt < FOLLOW_IDLE_MS) return;
+    const index = doc.pages.findIndex((page) => page.id === writing);
+    if (index >= 0 && index !== surface.currentPage) surface.goToPage(index, true);
   }
 
   /**

@@ -334,6 +334,7 @@ import {
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
 import { SetTask, inkBounds, taskBoxRect, tasksOf, tickTask } from "../model/tasks";
+import { fadeChanges } from "../audio/replay";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
 import { strokeKey } from "../recognition/hwr/corrections";
@@ -1500,6 +1501,8 @@ export class InkSurface {
   /** What the search result last opened found on its page, lit until the page is touched (2.5). */
   private searchHits: { pageId: string; words: string[][]; boxes: string[] } | null = null;
   private readonly searchMarks: HTMLElement[] = [];
+  /** Ink a playing recording has not reached yet, drawn pale (2.5). */
+  private fadedStrokes: ReadonlySet<string> = new Set();
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words Grape may have misread, by page id: a wavy underline each. */
@@ -8641,6 +8644,30 @@ export class InkSurface {
     }
     for (let i = used; i < this.taskMarks.length; i++) this.taskMarks[i].addClass("is-hidden");
     return used;
+  }
+
+  /**
+   * Draw these strokes pale (`null`: none), as a recording plays: ink not
+   * written yet at that moment (`audio/replay.ts`). Only the strokes whose
+   * look changed are painted again, so playing forward costs one stroke's
+   * tiles at a time.
+   */
+  setFadedStrokes(ids: ReadonlySet<string> | null): void {
+    const next = ids ?? new Set<string>();
+    const changed = fadeChanges(this.fadedStrokes, next);
+    if (changed.size === 0) return;
+    this.fadedStrokes = next;
+    this.renderer?.setFadedStrokes(next);
+    this.doc.pages.forEach((page, index) => {
+      let dirty: Bounds | null = null;
+      for (const stroke of page.strokes) {
+        if (!changed.has(stroke.id)) continue;
+        const bounds = strokeBounds(stroke);
+        if (bounds) dirty = unionBounds(dirty, bounds);
+      }
+      if (dirty) this.renderer?.invalidateRegion(index, dirty);
+    });
+    this.renderDry();
   }
 
   /**

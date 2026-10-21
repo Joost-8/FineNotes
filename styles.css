@@ -6025,6 +6025,12 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--background-modifier-hover);
 }
 
+/* The player's Replay ink switch (2.5), lit while ink replays. */
+.goodobsidian-view .goodobsidian-audio-button.goodobsidian-player-replay.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.16);
+  color: var(--interactive-accent);
+}
+
 .goodobsidian-audio-button-icon {
   display: inline-flex;
 }
