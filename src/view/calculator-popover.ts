@@ -1000,12 +1000,7 @@ export class CalculatorPopover {
 
   private hint(): string {
     if (this.pane === "graph") return "";
-    const hint = hintFor(this.entry);
-    if (hint) return hint;
-    if (this.editingLine !== null && this.entry.expr === "") {
-      return "y = …, x = …, x² + y² = 25, y < sin x, (cos t, sin t), r = 1 + cos θ";
-    }
-    return "";
+    return hintFor(this.entry);
   }
 
   /** Scale the expression down to its line instead of letting the display grow. */
