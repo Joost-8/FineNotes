@@ -86,8 +86,14 @@ leaves `main.js` in two releases, from the same code:
    `grep -c Rk5IV main.js` must print 0 (Grape's header in base64).
 
 Users who skip the bridge release, and fresh installs, see the download
-card once. `FINENOTES_BUNDLE_GRAPE=0 npm run build` builds the switch
-release's `main.js` locally for a test, without touching the constant.
+card once.
+
+**Done 2026-10-22, early:** the bridge was 2.4.0, and the switch came the
+next release rather than a month later, because a `main.js` over 5 MB
+(2.4.0's was 9.7 MB) cannot sync on Obsidian Sync's Standard plan, which
+the directory's review warns about. People who update from 2.3.0 or older
+straight to the next release download Grape once. `main.js` is now
+about 2.3 MB; `FINENOTES_BUNDLE_GRAPE=1 npm run build` bundles it again.
 
 A newer Grape: publish it as a release asset on Joost-8/Grape, then pin it
 in `src/recognition/hwr/grape-model.ts` (version, URL, size, SHA-256). A

@@ -71,6 +71,37 @@ describe("lineHits", () => {
     const lines = [{ text: "packet packets", words: [["g0"], ["g1"]] }];
     expect(lineHits("packets", lines, boundsOf)).toEqual([["g1"]]);
   });
+
+  describe("with the page's transcript", () => {
+    // Readings and transcripts from Joost's Algebra notebook, page 6.
+    const lines = [
+      { text: "Soft ware assignment", words: [["g0"], ["g1"], ["g2"]] },
+      {
+        text: "Sign is stored as a flag PIVJ",
+        words: [["g3"], ["g4"], ["g5"], ["g6"], ["g7"], ["g8"], ["g9"]],
+      },
+    ];
+    const transcript = "Software assignment\nSign is stored as a flag plus";
+
+    it("lights a word the device misread, where the transcript says it is", () => {
+      expect(lineHits("plus", lines, boundsOf, transcript)).toEqual([["g9"]]);
+      expect(lineHits("software", lines, boundsOf, transcript)).toEqual([["g0", "g1"]]);
+    });
+
+    it("lights a word the reading and the transcript both hold once", () => {
+      expect(lineHits("flag", lines, boundsOf, transcript)).toEqual([["g8"]]);
+    });
+
+    it("lights every place the transcript holds it, besides the reading's own", () => {
+      const twice = [{ text: "order of the ordet", words: [["g0"], ["g1"], ["g2"], ["g3"]] }];
+      expect(lineHits("order", twice, boundsOf, "order of the order")).toEqual([["g0"], ["g3"]]);
+    });
+
+    it("lights nothing where the reading has nothing like the transcript", () => {
+      const other = [{ text: "zzzz qqqq", words: [["g0"], ["g1"]] }];
+      expect(lineHits("plus", other, boundsOf, "a flag plus")).toEqual([]);
+    });
+  });
 });
 
 describe("searchMatchTarget", () => {

@@ -7889,7 +7889,6 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
-    actions.push(...this.taskActions(sel, index));
     if (heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -7936,6 +7935,8 @@ export class InkSurface {
         },
       });
     }
+    // Task last under Turn into.
+    actions.push(...this.taskActions(sel, index));
     // Flip after "Turn into": what a selection becomes reads before how it is turned.
     actions.push(...flipActions((axis) => this.flipSelection(axis), "flip"));
     actions.push({
@@ -7952,7 +7953,7 @@ export class InkSurface {
   }
 
   /**
-   * Turn into › Task for selected ink (2.5), first under Turn into; with ink
+   * Turn into › Task for selected ink (2.5), last under Turn into; with ink
    * that is in a task, Remove task as well.
    */
   private taskActions(sel: GroupSelection, index: number): SelectionAction[] {

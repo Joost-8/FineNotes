@@ -666,14 +666,17 @@ export class GraphPanel {
         this.renderOptions(list, line, index, plot.kind === "function");
       }
       if (line.table && plot.kind === "function" && this.prepared) {
+        // The cells are the grid's own children: a row wrapper would need
+        // `display: contents`, which the directory's review flags.
         const table = list.createDiv({ cls: "goodobsidian-calc-table" });
-        const head = table.createDiv({ cls: "goodobsidian-calc-table-row is-head" });
-        head.createSpan({ text: "x" });
-        head.createSpan({ text: "y" });
+        const cell = (text: string, head = false): void => {
+          table.createSpan({ cls: `goodobsidian-calc-table-cell${head ? " is-head" : ""}`, text });
+        };
+        cell("x", true);
+        cell("y", true);
         for (const { x, y } of tableOfValues(this.prepared, line.id, this.range())) {
-          const tr = table.createDiv({ cls: "goodobsidian-calc-table-row" });
-          tr.createSpan({ text: `${x}` });
-          tr.createSpan({ text: Number.isFinite(y) ? `${Number(y.toPrecision(6))}` : "—" });
+          cell(`${x}`);
+          cell(Number.isFinite(y) ? `${Number(y.toPrecision(6))}` : "—");
         }
       }
     });

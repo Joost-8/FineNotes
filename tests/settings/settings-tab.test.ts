@@ -23,6 +23,14 @@ const dialogs = vi.hoisted(() => ({
   confirms: [] as Array<{ title: string; message: string; cta: string }>,
   confirmAnswer: true,
   folderSuggests: [] as Array<{ inputEl: unknown; onPick: (path: string) => void }>,
+  penModals: [] as Array<{
+    pen: { type: string; color: string; size: number };
+    index: number | null;
+    pens: readonly unknown[];
+    highlighterAlpha: number;
+    onCustomColor?: (color: string) => void;
+    onSave: (pen: { type: string; color: string; size: number }) => void;
+  }>,
 }));
 
 vi.mock("../../src/ui/api-key-modal", () => ({
@@ -39,6 +47,14 @@ vi.mock("../../src/ui/confirm-modal", () => ({
       dialogs.confirms.push(options);
       return Promise.resolve(dialogs.confirmAnswer);
     },
+  },
+}));
+vi.mock("../../src/view/saved-pen-modal", () => ({
+  SavedPenModal: class {
+    constructor(_app: unknown, options: (typeof dialogs.penModals)[number]) {
+      dialogs.penModals.push(options);
+    }
+    open(): void {}
   },
 }));
 vi.mock("../../src/view/folder-suggest", () => ({
@@ -323,6 +339,7 @@ beforeEach(() => {
   dialogs.confirms.length = 0;
   dialogs.confirmAnswer = true;
   dialogs.folderSuggests.length = 0;
+  dialogs.penModals.length = 0;
   Platform.isIosApp = false;
   Platform.isTablet = false;
 });
@@ -1180,26 +1197,87 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     return all.slice(from + 1, from + 1 + count).map((r) => renderRow(r.def));
   }
 
-  it("lists each saved pen as a row: its key, its icon in its ink, its name and width", () => {
+  it("lists each saved pen as a row: its key, its icon and its stroke in its ink, its name as its label", () => {
     const plugin = makePlugin();
     const pens = penRows(plugin);
     expect(pens).toHaveLength(8);
     const pen = plugin.settings.savedPens[1];
     const mark = pens[1].nameEl.find("goodobsidian-saved-pen-mark");
-    expect(pens[1].nameEl.children[0]).toBe(mark);
+    // The mark is all the name shows: the words are its label and tooltip.
+    expect(pens[1].nameEl.children).toEqual([mark]);
+    expect(pens[1].nameEl.text).toBe("");
+    expect(mark?.tag).toBe("button");
+    expect(mark?.attrs["aria-label"]).toBe(`Pen 2: ${savedPenLabel(pen)}`);
     expect(mark?.find("goodobsidian-saved-pen-key")?.text).toBe("2");
     const glyph = mark?.children.find((c) => c.tag === "svg");
     const painted = (glyph?.children ?? []).flatMap((part) => Object.values(part.attrs));
     expect(painted).toContain(pen.color);
+    const stroke = mark?.find("goodobsidian-pen-sample")?.children[0]?.children[0];
+    expect(stroke?.tag).toBe("path");
+    expect(Object.values(stroke?.attrs ?? {})).toContain(pen.color);
     expect(named(rows(makeTab(plugin).tab), savedPenLabel(pen))).toBeDefined();
   });
 
-  it("says how many are saved and where new ones come from, eight at most", () => {
-    const all = rows(makeTab(makePlugin()).tab);
-    expect(named(all, "Saved pens").desc).toBe("8 of 8 · add one with the star in the toolbar");
-    const none = makePlugin();
-    none.settings.savedPens = [];
-    expect(named(rows(makeTab(none).tab), "Saved pens").desc).toMatch(/^None yet/);
+  it("draws the highlighter's stroke at the page's highlighter opacity", () => {
+    const plugin = makePlugin();
+    plugin.settings.highlighterAlpha = 0.3;
+    const at = plugin.settings.savedPens.findIndex((pen) => pen.type === "highlighter");
+    const mark = penRows(plugin)[at].nameEl.find("goodobsidian-saved-pen-mark");
+    const paper = mark?.find("goodobsidian-pen-sample");
+    expect(paper?.hasClass("is-highlighter")).toBe(true);
+    expect(paper?.children[0]?.children[0]?.attrs.opacity).toBe("0.3");
+  });
+
+  it("adds a pen with + beside Saved pens, while there is room", () => {
+    const plugin = makePlugin();
+    plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 2);
+    plugin.settings.lastPen = { type: "brush", color: "#e03131", size: 3 };
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
+    expect(row.descEl.text).toBe("");
+    expect(row.extras.map((b) => b.icon)).toEqual(["plus", "rotate-ccw"]);
+    row.extras[0].click();
+    const dialog = dialogs.penModals.at(-1);
+    expect(dialog?.index).toBeNull();
+    expect(dialog?.pen).toEqual(plugin.settings.lastPen);
+    dialog?.onSave({ type: "calligraphy", color: "#2f9e44", size: 4 });
+    expect(plugin.settings.savedPens).toHaveLength(3);
+    expect(plugin.settings.savedPens[2]).toEqual({
+      type: "calligraphy",
+      color: "#2f9e44",
+      size: 4,
+    });
+    expect(plugin.calls).toContain("update");
+  });
+
+  it("offers no + when eight are saved", () => {
+    const plugin = makePlugin();
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
+    expect(row.extras[0].disabled).toBe(true);
+    row.extras[0].click();
+    expect(dialogs.penModals).toHaveLength(0);
+  });
+
+  it("changes a pen from a tap on its row, and refuses one that is saved already", () => {
+    const plugin = makePlugin();
+    const [, second, third] = plugin.settings.savedPens;
+    const pens = penRows(plugin);
+    pens[2].nameEl.find("goodobsidian-saved-pen-mark")?.dispatch("click");
+    const dialog = dialogs.penModals.at(-1);
+    expect(dialog?.index).toBe(2);
+    expect(dialog?.pen).toEqual(third);
+    dialog?.onSave({ ...second });
+    expect(plugin.settings.savedPens[2]).toEqual(third);
+    dialog?.onSave({ ...third, size: 5 });
+    expect(plugin.settings.savedPens[2]).toEqual({ ...third, size: 5 });
+    expect(plugin.settings.savedPens).toHaveLength(8);
+  });
+
+  it("remembers a custom colour made in the pen dialog", () => {
+    const plugin = makePlugin();
+    penRows(plugin)[0].infoEl.dispatch("click");
+    dialogs.penModals.at(-1)?.onCustomColor?.("#123456");
+    expect(plugin.settings.recentColors[0]).toBe("#123456");
+    expect(plugin.calls).toContain("save");
   });
 
   it("deletes a pen from its row", async () => {
@@ -1227,13 +1305,13 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     const plugin = makePlugin();
     plugin.settings.savedPens = plugin.settings.savedPens.slice(0, 4);
     const row = renderRow(named(rows(makeTab(plugin).tab), "Saved pens"));
-    expect(row.extras[0].icon).toBe("rotate-ccw");
+    expect(row.extras[1].icon).toBe("rotate-ccw");
     dialogs.confirmAnswer = false;
-    await row.extras[0].click();
+    await row.extras[1].click();
     expect(plugin.settings.savedPens).toHaveLength(4);
     expect(dialogs.confirms.at(-1)?.title).toBe("Restore the default pens?");
     dialogs.confirmAnswer = true;
-    await row.extras[0].click();
+    await row.extras[1].click();
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 

@@ -1,27 +1,41 @@
 /** `src/model/saved-pens.ts` — saved pens and the pen last written with (FineNotes#24, #25). */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FINE_PEN_MIN } from "../../src/model/pen-widths";
 import {
   DEFAULT_SAVED_PENS,
+  HIGHLIGHTER_MIN_WIDTH,
   MAX_PEN_WIDTH,
   MAX_SAVED_PENS,
+  SAMPLE_MAX_THICKNESS,
+  SAVED_PEN_NAMES,
+  SAVED_PEN_SCALE,
+  SAVED_PEN_TYPES,
   type SavedPen,
   addSavedPen,
   defaultSavedPens,
+  duplicateIndex,
   editSavedPen,
   isPenWidth,
+  laidWidth,
   mmText,
   moveSavedPen,
+  newPenDraft,
   openingTool,
+  putSavedPen,
   removeSavedPen,
   samePen,
+  sampleThickness,
   savedPenIndex,
   savedPenLabel,
   savedPenOf,
   savedPensOf,
   widthFromMm,
+  withPenType,
 } from "../../src/model/saved-pens";
+
+// Only to read the toolbar's pen types, which the multipliers here must match.
+vi.mock("obsidian", () => import("../view/fake-obsidian"));
 
 const blue: SavedPen = { type: "ball", color: "#1971c2", size: 2 };
 const red: SavedPen = { type: "fountain", color: "#e03131", size: 3 };
@@ -160,5 +174,96 @@ describe("openingTool", () => {
   it("keeps any other default tool", () => {
     expect(openingTool("eraser", marker)).toBe("eraser");
     expect(openingTool("select", blue)).toBe("select");
+  });
+});
+
+describe("a pen's width on the page and in its sample (the settings' pen rows)", () => {
+  it("names and scales each type as the toolbar's pen menu does", async () => {
+    const { PEN_TYPES, strokeWidthFor } = await import("../../src/view/toolbar");
+    expect(PEN_TYPES.map((spec) => spec.id)).toEqual([...SAVED_PEN_TYPES]);
+    for (const spec of PEN_TYPES) {
+      expect(SAVED_PEN_NAMES[spec.id]).toBe(spec.label);
+      expect(SAVED_PEN_SCALE[spec.id]).toBe(spec.sizeScale);
+      for (const size of [FINE_PEN_MIN, 1.22, 2, 5, 12, MAX_PEN_WIDTH]) {
+        const tool = spec.id === "highlighter" ? "highlighter" : "pen";
+        const state = { tool, penType: spec.id, size, color: "#000000" } as never;
+        expect(laidWidth({ type: spec.id, color: "#000000", size })).toBeCloseTo(
+          strokeWidthFor(state),
+          9,
+        );
+      }
+    }
+  });
+
+  it("lays a highlighter down at least at its thinnest preset, times four", () => {
+    expect(laidWidth({ ...marker, size: 1 })).toBe(HIGHLIGHTER_MIN_WIDTH * 4);
+    expect(laidWidth(marker)).toBe(20);
+    expect(laidWidth(blue)).toBe(2);
+    expect(laidWidth({ ...blue, type: "calligraphy" })).toBeCloseTo(5.2, 9);
+  });
+
+  it("draws every sample at one scale, the widest pen filling the strip", () => {
+    const widest: SavedPen = { type: "ball", color: "#000000", size: MAX_PEN_WIDTH };
+    expect(sampleThickness(widest)).toBe(SAMPLE_MAX_THICKNESS);
+    // A pen twice as wide draws twice as thick.
+    expect(sampleThickness({ ...blue, size: 4 })).toBeCloseTo(2 * sampleThickness(blue), 1);
+    expect(sampleThickness(red)).toBeGreaterThan(sampleThickness(blue));
+    expect(sampleThickness(marker)).toBeGreaterThan(sampleThickness({ ...marker, type: "ball" }));
+  });
+
+  it("never draws a sample under 1 px, nor past the strip", () => {
+    expect(sampleThickness({ ...blue, size: FINE_PEN_MIN })).toBe(1);
+    expect(sampleThickness({ ...marker, size: MAX_PEN_WIDTH })).toBe(SAMPLE_MAX_THICKNESS);
+  });
+});
+
+describe("making and changing a saved pen (the pen dialog)", () => {
+  it("raises a pen turned into a highlighter to the highlighter's thinnest width", () => {
+    expect(withPenType({ ...blue, size: 1 }, "highlighter")).toEqual({
+      type: "highlighter",
+      color: blue.color,
+      size: HIGHLIGHTER_MIN_WIDTH,
+    });
+    expect(withPenType({ ...marker, size: 8 }, "highlighter").size).toBe(8);
+    expect(withPenType({ ...blue, size: 1 }, "fountain")).toEqual({
+      ...blue,
+      size: 1,
+      type: "fountain",
+    });
+  });
+
+  it("finds another saved pen that draws the same, but not the one being changed", () => {
+    const pens = [blue, red, marker];
+    expect(duplicateIndex(pens, { ...red, color: "#E03131" }, -1)).toBe(1);
+    expect(duplicateIndex(pens, red, 1)).toBe(-1);
+    expect(duplicateIndex(pens, { ...red, size: 4 }, -1)).toBe(-1);
+  });
+
+  it("adds a new pen at the end, unless the list is full or it is saved already", () => {
+    expect(putSavedPen([blue], red, null)).toEqual([blue, red]);
+    expect(putSavedPen([blue, red], { ...red }, null)).toBeNull();
+    expect(putSavedPen(defaultSavedPens(), { ...red, size: 4 }, null)).toBeNull();
+  });
+
+  it("puts a changed pen in its own place", () => {
+    const pens = [blue, red, marker];
+    const changed = putSavedPen(pens, { ...red, color: "#2F9E44" }, 1);
+    expect(changed).toEqual([blue, { ...red, color: "#2f9e44" }, marker]);
+    // Unchanged is fine; turning it into another saved pen is not.
+    expect(putSavedPen(pens, red, 1)).toEqual(pens);
+    expect(putSavedPen(pens, blue, 1)).toBeNull();
+  });
+
+  it("refuses a place that holds no pen, and what is not a pen", () => {
+    expect(putSavedPen([blue], red, 1)).toBeNull();
+    expect(putSavedPen([blue], red, -1)).toBeNull();
+    expect(putSavedPen([blue], { ...red, size: 999 }, null)).toBeNull();
+    expect(putSavedPen([blue], { ...red, color: "red" }, 0)).toBeNull();
+  });
+
+  it("starts a new pen as the pen last written with, or a black ball pen", () => {
+    expect(newPenDraft(red)).toEqual(red);
+    expect(newPenDraft(undefined)).toEqual({ type: "ball", color: "#1a1a1a", size: 2 });
+    expect(newPenDraft({ type: "quill" })).toEqual({ type: "ball", color: "#1a1a1a", size: 2 });
   });
 });

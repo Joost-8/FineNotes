@@ -2918,7 +2918,8 @@ export class InkView extends TextFileView {
   /**
    * Turn to page `index` and light up what `query` found there (2.5): the
    * handwritten words, from this device's reading of the page (read now if
-   * the one kept is out of date), and the text boxes. Without on-device
+   * the one kept is out of date) lined up with the page's transcript, and
+   * the text boxes. Without on-device
    * reading only the text boxes light up.
    */
   private async showSearchHits(index: number, query: string): Promise<void> {
@@ -2940,7 +2941,13 @@ export class InkView extends TextFileView {
         // No model, or the page could not be read: the text boxes still light up.
       }
     }
-    const words = lineHits(query, lines, (ids) => inkBounds(page, ids));
+    // The page's transcript finds the words this device misread (2.5.2).
+    const transcript = (await this.notebookTextIndex())[index]?.sources
+      .filter((source) => source.kind === "handwriting")
+      .map((source) => source.text)
+      .join("\n");
+    if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript);
     const { boxes } = pageHits(query, [], page.textBoxes);
     surface.setSearchHits(page.id, words, boxes);
   }

@@ -1,6 +1,43 @@
-import { PEN_ICON_BOX, inkNeedsRim, penIconParts } from "./pen-glyphs";
+import { PEN_ICON_BOX, inkNeedsRim, penIconParts, sampleStroke } from "./pen-glyphs";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * A pen's sample stroke as an SVG element `width` × `height` px: a wave in
+ * the pen's own character (`sampleStroke`, as the width popover's preview
+ * draws it), `thickness` px at its fullest, in `color`. A highlighter is
+ * drawn at `highlighterOpacity`. The paper under it is the caller's.
+ */
+export function penSample(
+  pen: string,
+  color: string,
+  thickness: number,
+  width: number,
+  height: number,
+  highlighterOpacity: number,
+  doc: Document = activeDocument,
+): SVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  svg.setAttribute("aria-hidden", "true");
+  const shape = sampleStroke(pen, thickness, width, height);
+  const path = doc.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", shape.d);
+  path.setAttribute("stroke-linejoin", "round");
+  if (shape.strokeWidth === undefined) {
+    path.setAttribute("fill", color);
+  } else {
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", shape.strokeWidth.toFixed(2));
+    path.setAttribute("stroke-linecap", shape.cap ?? "round");
+  }
+  if (pen === "highlighter") path.setAttribute("opacity", String(highlighterOpacity));
+  svg.append(path);
+  return svg;
+}
 
 /**
  * A pen type's icon as an SVG element: an outline of the pen, its tip in the

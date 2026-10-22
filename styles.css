@@ -2572,14 +2572,142 @@ input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
 
-/* The saved pens: one row each, its number key and its icon in its ink
-   before its name and width, delete at the end. */
+/* The saved pens: one row each, its number key, its icon in its ink and its
+   stroke on a strip of paper, delete at the end. The mark is a button, and
+   a tap anywhere on the row's left side changes the pen (settings.ts). */
 .goodobsidian-saved-pen-mark {
   display: inline-flex;
   align-items: center;
   gap: var(--size-4-2);
   margin-inline-end: var(--size-4-2);
   vertical-align: middle;
+}
+
+/* Its own selector outranks Obsidian's `.clickable-icon` padding and size. */
+button.goodobsidian-saved-pen-mark.clickable-icon {
+  gap: var(--size-4-3);
+  width: auto;
+  height: auto;
+  padding: 2px 4px 2px 2px;
+  border-radius: var(--gob-radius-m);
+  color: inherit;
+}
+
+.setting-item.goodobsidian-saved-pen-row {
+  align-items: center;
+}
+
+.setting-item.goodobsidian-saved-pen-row .setting-item-info {
+  cursor: pointer;
+}
+
+/* The name holds only the mark: no line box around it, so it centres on the row. */
+.setting-item.goodobsidian-saved-pen-row .setting-item-name {
+  display: flex;
+}
+
+/* The stroke's paper: the width popover's strip (`goodobsidian-size-preview`),
+   row-sized. Its size matches `PEN_SAMPLE` in settings.ts. */
+.goodobsidian-size-preview.goodobsidian-pen-sample {
+  flex: none;
+  width: 112px;
+  height: 28px;
+  margin: 0;
+  border-radius: var(--gob-radius-s, 6px);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.goodobsidian-saved-pen-mark .goodobsidian-pen-sample svg {
+  display: block;
+  width: 112px;
+  height: 28px;
+}
+
+/* The highlighter multiplies onto the paper, as on the page (not onto the
+   dark paper pale ink gets, where it would vanish). */
+.goodobsidian-size-preview.is-highlighter:not(.is-light-ink) > svg {
+  mix-blend-mode: multiply;
+}
+
+/* The pen dialog (view/saved-pen-modal.ts): the stroke, the types, the
+   width, the colours. */
+.modal.goodobsidian-pen-modal {
+  width: min(400px, calc(100vw - 32px));
+}
+
+.goodobsidian-pen-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.goodobsidian-size-preview.goodobsidian-pen-preview {
+  flex: none;
+  height: 56px;
+  margin: 0;
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.goodobsidian-pen-preview > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.goodobsidian-pen-modal-types {
+  display: flex;
+  justify-content: space-between;
+}
+
+button.goodobsidian-pen-modal-type.clickable-icon {
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-muted);
+}
+
+button.goodobsidian-pen-modal-type.clickable-icon.is-active {
+  background-color: hsla(var(--interactive-accent-hsl), 0.15);
+  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.goodobsidian-pen-modal-type svg {
+  width: 26px;
+  height: 26px;
+}
+
+.goodobsidian-pen-modal-width {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.goodobsidian-pen-modal-width .goodobsidian-width-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* 16 px, or iPadOS zooms the page into the field. */
+.goodobsidian-width-readout input.goodobsidian-width-field.goodobsidian-pen-modal-mm {
+  height: 32px;
+  font-size: 16px;
+}
+
+.goodobsidian-pen-modal-colors .goodobsidian-color-grid {
+  justify-content: space-between;
+}
+
+.goodobsidian-pen-modal-hint {
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-pen-modal-hint.is-hidden {
+  display: none;
 }
 
 .goodobsidian-saved-pen-key {
@@ -3001,7 +3129,8 @@ body,
   margin: 4px 0 8px;
 }
 
-.goodobsidian-popover input[type="range"].goodobsidian-width-range {
+.goodobsidian-popover input[type="range"].goodobsidian-width-range,
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3015,7 +3144,8 @@ body,
 }
 
 /* How tall each slider's input (its touch target) is. */
-.goodobsidian-popover input[type="range"].goodobsidian-width-range {
+.goodobsidian-popover input[type="range"].goodobsidian-width-range,
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
 
@@ -3031,6 +3161,7 @@ input[type="range"].goodobsidian-player-scrubber {
    never need to change. The selectors outrank Obsidian's own
    `input[type='range']` rules. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
   border: none;
@@ -3054,6 +3185,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
    with `position: relative; top: var(--slider-thumb-y)` (-9 px, sized for
    its own slider), which put ours 9 px above the bar: `top` is reset. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
   width: 16px;
@@ -3069,6 +3201,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 }
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
   top: 0;
@@ -3080,6 +3213,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
 
 @media (prefers-reduced-motion: reduce) {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
   }
@@ -7816,7 +7950,7 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
     ". label";
   align-items: center;
   justify-items: center;
-  column-gap: 6px;
+  gap: 0 6px;
 }
 
 .goodobsidian-pull-add.is-row .goodobsidian-pull-add-ring {
@@ -11095,17 +11229,13 @@ button.clickable-icon.goodobsidian-calc-chip.is-danger {
   font-variant-numeric: tabular-nums;
 }
 
-.goodobsidian-calc-table-row {
-  display: contents;
-}
-
-.goodobsidian-calc-table-row > span {
+.goodobsidian-calc-table-cell {
   padding: 2px 8px;
   border-top: 1px solid var(--gob-line);
   text-align: right;
 }
 
-.goodobsidian-calc-table-row.is-head > span {
+.goodobsidian-calc-table-cell.is-head {
   border-top: none;
   color: var(--text-muted);
   font-style: italic;

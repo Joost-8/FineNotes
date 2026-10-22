@@ -74,11 +74,12 @@ const inlineWorker = {
  * downloads it on first use (src/view/grape-files.ts); while it is bundled,
  * the plugin also writes the bundled copy to <plugin>/handwriting/ in the
  * background, so people who update never download it. The bridge release
- * ships with `true`; a later release, once that one has been out a while,
- * flips it to `false` (RELEASE.md, "Grape bundle"). FINENOTES_BUNDLE_GRAPE=0
- * builds without it for a test.
+ * (2.4.0) shipped with it; it is off since, because a main.js over 5 MB
+ * cannot sync on Obsidian Sync's Standard plan and the directory's review
+ * warns about it (RELEASE.md, "Grape bundle"). FINENOTES_BUNDLE_GRAPE=1
+ * builds with it.
  */
-const BUNDLE_GRAPE = process.env.FINENOTES_BUNDLE_GRAPE !== "0";
+const BUNDLE_GRAPE = process.env.FINENOTES_BUNDLE_GRAPE === "1";
 
 const context = await esbuild.context({
   banner: { js: banner },
