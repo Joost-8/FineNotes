@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-10-22
+
 ### Added
 
 - **Move or copy pages to another notebook** (FineNotes#33). In the page
@@ -46,6 +48,10 @@ extracted from the matching section of this file by `release.yml`.
   button shows the steps, each named (Product rule, Substitute u = x²);
   Insert steps puts them on the page as a text box. ∫ with limits and the
   slope at a point have keys of their own in the Calculus tab.
+- **Add and change saved pens in Settings.** Each saved pen now shows its
+  stroke, in its ink and at its width, instead of a name and a number. A
+  plus button next to Saved pens makes a new one (type, width, colour, with
+  a preview); a tap on a saved pen opens it to change.
 
 ### Changed
 
@@ -68,6 +74,12 @@ extracted from the matching section of this file by `release.yml`.
   it: it is drawn heavier and only it shows its roots and peaks. A held point
   is pinned as A, B, … with a row of its own; sliders fold their range away
   behind their name; the grid has faint minor lines.
+- **solve next to 6** on the calculator's number pad, in place of mod
+  (mod is still in the Basic tab).
+- **A much smaller download.** `main.js` is 2.3 MB instead of 9.7 MB, so it
+  syncs on Obsidian Sync's Standard plan again: the handwriting model is no
+  longer built into it. 2.4.0 already saved it next to the plugin; if you
+  update from an older version, it is downloaded once when first needed.
 
 ### Fixed
 
@@ -75,6 +87,13 @@ extracted from the matching section of this file by `release.yml`.
   now **Read with my learned model**, a switch that keeps the file. The model
   before your last learning is kept, to go back to, and deleting your learned
   model is its own button, which asks first.
+- **Search lights the words the handwriting reader got wrong.** A word the
+  transcript has right but Grape read otherwise ("Soft ware", "PIVJ" for
+  "plus") is now found through the transcript and lit where it is written,
+  and a word's neighbours no longer light up with it.
+- **The calculator shows a worked answer whole.** A stacked answer (x⁴ over
+  12 + C) was cut off at the bottom, and an integral's limits at the top;
+  both now fit the display.
 
 ## [2.4.0] - 2026-10-21
 
