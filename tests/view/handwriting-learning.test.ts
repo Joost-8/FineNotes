@@ -1,7 +1,7 @@
 /**
- * `src/view/handwriting-learning.ts`: where the learned model lives, what
- * the settings say about it, which practice set comes next, and the
- * practice lines it learns from.
+ * `src/view/handwriting-learning.ts`: where the learned model lives, which
+ * practice set comes next, the practice lines it learns from, and that a
+ * learned model is only ever deleted by the action that says so.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -9,12 +9,18 @@ import { DEFAULT_PAGE_GEOMETRY } from "../../src/model/document";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
+const { TFile } = await import("./fake-obsidian");
 const {
+  deleteLearnedModel,
+  learnedFiles,
   learnedKey,
   learnedModelPath,
   learnedRecord,
-  learnedSummary,
+  practiceSheets,
+  previousKey,
+  readAllPracticeLines,
   readPracticeLines,
+  swapWithPrevious,
   nextPracticeSet,
   practiceSetOf,
   progressLabel,
@@ -42,20 +48,6 @@ describe("the learned model", () => {
     const one = { learnedAt: "2026-10-13", lines: 16, tested: 4, before: 15.2, after: 7.6 };
     expect(learnedRecord({ handwritingModel: one }, "grape")).toBe(one);
     expect(learnedRecord({ handwritingModel: one }, "grape-2")).toBeUndefined();
-  });
-
-  it("is described in one sentence, or invited when there is none", () => {
-    expect(learnedSummary(undefined)).toMatch(/practice lines once/);
-    const text = learnedSummary({
-      learnedAt: "2026-10-11T20:00:00.000Z",
-      lines: 32,
-      tested: 8,
-      before: 18.4,
-      after: 6,
-    });
-    expect(text).toBe(
-      "Learned from 32 of your lines on 2026-10-11: on 8 test lines it gets 6 % of characters wrong, against 18.4 % before.",
-    );
   });
 
   it("runs the recipe's 100 steps, from ten lines up", () => {
@@ -117,5 +109,155 @@ describe("readPracticeLines", () => {
     expect(lines).toEqual([
       { text: PRACTICE_LINES[0], strokes: [{ pts: [80, y - 8, 0.5, 300, y + 8, 0.5], t0: 12 }] },
     ]);
+  });
+});
+
+/** A vault in memory: files by path, practice notebooks open, the settings saved. */
+function fakeHost(files: Record<string, string>, docs: Record<string, unknown> = {}) {
+  const store = new Map(Object.entries(files));
+  const settings: Record<string, unknown> = {};
+  let saves = 0;
+  let reloads = 0;
+  const host = {
+    app: {
+      vault: {
+        adapter: {
+          exists: async (path: string) =>
+            store.has(path) || [...store.keys()].some((k) => k.startsWith(`${path}/`)),
+          stat: async (path: string) =>
+            store.has(path) ? { type: "file", size: store.get(path)?.length ?? 0, mtime: 0 } : null,
+          remove: async (path: string) => void store.delete(path),
+          rename: async (from: string, to: string) => {
+            store.set(to, store.get(from) ?? "");
+            store.delete(from);
+          },
+          read: async (path: string) => store.get(path) ?? "",
+        },
+        getMarkdownFiles: () =>
+          [...store.keys()].filter((k) => k.endsWith(".md")).map((k) => new TFile(k)),
+        getFileByPath: (path: string) => (store.has(path) ? new TFile(path) : null),
+      },
+    },
+    pluginDir: "plug",
+    settings,
+    baseId: "grape-2",
+    saveSettings: async () => void saves++,
+    reloadReader: () => void reloads++,
+    openNotebook: (path: string) => docs[path] ?? null,
+  };
+  return { host: host as never, store, settings, saves: () => saves, reloads: () => reloads };
+}
+
+const MODEL = "plug/handwriting/grape-2/personal.bin";
+const PREVIOUS = "plug/handwriting/grape-2/personal-prev.bin";
+const one = { learnedAt: "2026-10-13", lines: 16, tested: 4, before: 15.2, after: 7.6 };
+const two = { learnedAt: "2026-10-21", lines: 40, tested: 10, before: 15.2, after: 5.1 };
+
+describe("keeping a learned model", () => {
+  it("finds which model files are on this device", async () => {
+    const { host } = fakeHost({ [MODEL]: "abcd" });
+    expect(await learnedFiles(host)).toEqual({ current: true, previous: false, bytes: 4 });
+  });
+
+  it("swaps with the previous model, files and records, and swaps back", async () => {
+    const { host, store, settings } = fakeHost({ [MODEL]: "new", [PREVIOUS]: "old" });
+    settings.grape2Model = two;
+    settings.grape2ModelPrevious = one;
+    settings.useLearnedHandwriting = false;
+    await swapWithPrevious(host);
+    expect(store.get(MODEL)).toBe("old");
+    expect(store.get(PREVIOUS)).toBe("new");
+    expect(settings[learnedKey("grape-2")]).toBe(one);
+    expect(settings[previousKey("grape-2")]).toBe(two);
+    expect(settings.useLearnedHandwriting).toBe(true);
+    await swapWithPrevious(host);
+    expect(store.get(MODEL)).toBe("new");
+    expect(settings.grape2Model).toBe(two);
+    expect([...store.keys()].some((k) => k.endsWith(".swap"))).toBe(false);
+  });
+
+  it("swaps a model whose scores were never recorded", async () => {
+    const { host, store, settings } = fakeHost({ [MODEL]: "new", [PREVIOUS]: "old" });
+    settings.grape2Model = two;
+    await swapWithPrevious(host);
+    expect(store.get(MODEL)).toBe("old");
+    expect(settings.grape2Model).toBeUndefined();
+    expect(settings.grape2ModelPrevious).toBe(two);
+  });
+
+  it("does nothing to swap without a previous model", async () => {
+    const { host, store, saves } = fakeHost({ [MODEL]: "new" });
+    await swapWithPrevious(host);
+    expect(store.get(MODEL)).toBe("new");
+    expect(saves()).toBe(0);
+  });
+
+  it("deletes both files and both records only when asked to delete", async () => {
+    const { host, store, settings, reloads } = fakeHost({
+      [MODEL]: "new",
+      [PREVIOUS]: "old",
+      "plug/words.txt": "x",
+    });
+    settings.grape2Model = two;
+    settings.grape2ModelPrevious = one;
+    await deleteLearnedModel(host);
+    expect([...store.keys()]).toEqual(["plug/words.txt"]);
+    expect(settings.grape2Model).toBeUndefined();
+    expect(settings.grape2ModelPrevious).toBeUndefined();
+    expect(reloads()).toBe(1);
+  });
+
+  it("no longer exports the action that deleted a model on the way to Grape", async () => {
+    const module = await import("../../src/view/handwriting-learning");
+    expect("resetLearnedModel" in module).toBe(false);
+  });
+});
+
+describe("practice sheets", () => {
+  function written(set: number, lines: number) {
+    const doc = buildPracticeFile(set, DEFAULT_PAGE_GEOMETRY);
+    // Prompt k sits on rule 3 + 3k of its page; its copy on the line below.
+    doc.pages[1].strokes = Array.from({ length: lines }, (_, k) => {
+      const y = 40 * (3 + 3 * k) + 20;
+      return {
+        id: `s${k}`,
+        color: "#000",
+        size: 2,
+        tool: "pen" as const,
+        pts: [80, y - 8, 0.5, 300, y + 8, 0.5],
+        t0: 0,
+      };
+    });
+    return doc;
+  }
+
+  it("lists each sheet with its set and the lines copied on it, by set", async () => {
+    const { host } = fakeHost(
+      {
+        "P/Handwriting practice 2.practice.md": "",
+        "P/Handwriting practice 1.practice.md": "",
+        "P/Notes.md": "",
+      },
+      {
+        "P/Handwriting practice 1.practice.md": written(1, 3),
+        "P/Handwriting practice 2.practice.md": written(2, 0),
+      },
+    );
+    const sheets = await practiceSheets(host);
+    expect(sheets.map((s) => [s.title, s.set, s.written])).toEqual([
+      ["Handwriting practice 1", 1, 3],
+      ["Handwriting practice 2", 2, 0],
+    ]);
+    expect(sheets[0].prompts).toBe(PRACTICE_LINES.length);
+  });
+
+  it("records which sheets the lines came from", async () => {
+    const { host } = fakeHost(
+      { "a 1.practice.md": "", "b 2.practice.md": "" },
+      { "a 1.practice.md": written(1, 2), "b 2.practice.md": written(2, 0) },
+    );
+    const { lines, sources } = await readAllPracticeLines(host);
+    expect(lines).toHaveLength(2);
+    expect(sources).toEqual([{ path: "a 1.practice.md", lines: 2 }]);
   });
 });

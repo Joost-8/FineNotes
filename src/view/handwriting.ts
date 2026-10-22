@@ -37,7 +37,7 @@ export class ModelNotDownloadedError extends Error {
   constructor() {
     super(
       "Grape (handwriting recognizer model) is not on this device yet. It downloads when " +
-        "you're online, from Settings › Handwriting.",
+        "you're online, from Settings › Models on this device.",
     );
     this.name = "ModelNotDownloadedError";
   }

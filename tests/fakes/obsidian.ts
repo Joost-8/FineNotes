@@ -61,13 +61,49 @@ export class FakeEl {
     event.preventDefault = () => {
       event.defaultPrevented = true;
     };
-    for (let el: FakeEl | null = this.self(); el; el = el.parent) {
+    event.stopPropagation = () => {
+      event.propagationStopped = true;
+    };
+    for (let el: FakeEl | null = this.self(); el && !event.propagationStopped; el = el.parent) {
       for (const listener of el.listeners[type] ?? []) listener(event);
     }
     return event;
   }
   private self(): FakeEl {
     return this;
+  }
+  /** The element this one sits in, as the DOM names it. */
+  get parentElement(): FakeEl | null {
+    return this.parent;
+  }
+  /** The first descendant matching a class selector (".a"), or null. */
+  querySelector(selector: string): FakeEl | null {
+    return this.find(selector.replace(/^\./, "")) ?? null;
+  }
+  /** Take this element out of the one it sits in. */
+  remove(): void {
+    const at = this.parent?.children.indexOf(this) ?? -1;
+    if (at >= 0) this.parent?.children.splice(at, 1);
+    this.parent = null;
+  }
+  /** Put `child` at the end of this element's children. */
+  append(child: FakeEl): void {
+    this.children.push(child);
+    child.parent = this;
+  }
+  /** Move `child` to the front of this element's children. */
+  prepend(child: FakeEl): void {
+    const at = this.children.indexOf(child);
+    if (at >= 0) this.children.splice(at, 1);
+    this.children.unshift(child);
+    child.parent = this;
+  }
+  scrolledIntoView = 0;
+  scrollIntoView(): void {
+    this.scrolledIntoView++;
+  }
+  getBoundingClientRect(): { left: number; top: number; right: number; bottom: number } {
+    return { left: 0, top: 0, right: 0, bottom: 0 };
   }
   createDiv(info?: ElInfo): FakeEl {
     return this.createEl("div", info);
@@ -109,6 +145,9 @@ export class FakeEl {
   }
   setCssStyles(styles: Record<string, string>): void {
     Object.assign(this.style, styles);
+  }
+  setCssProps(props: Record<string, string>): void {
+    Object.assign(this.style, props);
   }
 
   /** All text below this element, in document order. */
@@ -163,6 +202,7 @@ export class ButtonComponent {
   text = "";
   cta = false;
   warning = false;
+  destructive = false;
   private handler: (() => unknown) | null = null;
   setButtonText(text: string): this {
     this.text = text;
@@ -170,6 +210,10 @@ export class ButtonComponent {
   }
   setCta(): this {
     this.cta = true;
+    return this;
+  }
+  setDestructive(): this {
+    this.destructive = true;
     return this;
   }
   setWarning(): this {
@@ -217,6 +261,7 @@ class ValueComponent {
 }
 
 export class DropdownComponent extends ValueComponent {
+  readonly selectEl = new FakeEl("select");
   readonly options: Record<string, string> = {};
   addOption(value: string, label: string): this {
     this.options[value] = label;
@@ -370,6 +415,51 @@ export class Modal {
   onClose(): void {}
 }
 
+/** A menu: the items it was given, and where it was shown. Menus shown so far, newest last. */
+export class Menu {
+  static readonly shown: Menu[] = [];
+  readonly items: Array<{ title: string; icon: string; warning: boolean; run: () => unknown }> = [];
+  addItem(build: (item: MenuItem) => unknown): this {
+    const item = new MenuItem();
+    build(item);
+    this.items.push({ title: item.title, icon: item.icon, warning: item.warning, run: item.run });
+    return this;
+  }
+  showAtPosition(_position: { x: number; y: number }): this {
+    Menu.shown.push(this);
+    return this;
+  }
+  /** Run the item called `title`, as a tap on it would. */
+  async pick(title: string): Promise<void> {
+    const found = this.items.find((item) => item.title === title);
+    if (!found) throw new Error(`no menu item "${title}" among ${this.items.map((i) => i.title)}`);
+    await found.run();
+  }
+}
+
+export class MenuItem {
+  title = "";
+  icon = "";
+  warning = false;
+  run: () => unknown = () => undefined;
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+  setWarning(warning: boolean): this {
+    this.warning = warning;
+    return this;
+  }
+  onClick(run: () => unknown): this {
+    this.run = run;
+    return this;
+  }
+}
+
 export class PluginSettingTab {
   readonly containerEl = new FakeEl("div", "vertical-tab-content");
   /** How often the tab asked Obsidian to rebuild, or to re-check visibility. */
@@ -385,6 +475,7 @@ export class PluginSettingTab {
   refreshDomState(): void {
     this.domRefreshes++;
   }
+  hide(): void {}
 }
 
 export class AbstractInputSuggest {
@@ -397,6 +488,27 @@ export class AbstractInputSuggest {
 export class FuzzySuggestModal extends Modal {}
 
 export const Platform = { isIosApp: false, isTablet: false, isMobile: false };
+
+/** Obsidian's path tidying, as far as these tests need it. */
+export function normalizePath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/|\/$/g, "");
+}
+
+/** Notices shown, newest last. */
+export const notices: string[] = [];
+export class Notice {
+  constructor(message: string) {
+    notices.push(message);
+  }
+}
+
+/** Icons draw nothing here; the element keeps the icon's name. */
+export function setIcon(el: FakeEl, icon: string): void {
+  el.setAttribute("data-icon", icon);
+}
 
 /** The plugin requires Obsidian 1.13, so every version check passes. */
 export function requireApiVersion(_version: string): boolean {

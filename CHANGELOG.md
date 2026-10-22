@@ -45,6 +45,22 @@ extracted from the matching section of this file by `release.yml`.
   eleven, and stay open while you try them. Contents heading, Link, Sticker,
   Comment and the new Task are under Turn into ›. A picture's menu gets the
   same tiles, with Arrange, Flip and Opacity as one row each.
+- **One settings section for the models on this device.** "Handwriting",
+  "Recordings" and "Models" are now **Models on this device**: the voice
+  model (Whisper), Grape (handwriting recognizer model) and your learned
+  handwriting model, each saying what it is for, whether it is downloaded and
+  how big it is, with its choices under it.
+- **Learning your handwriting in two steps**: write the practice sheets, then
+  learn. The settings list your sheets, how many lines each has, and which
+  ones your learned model was built from, and say how much better it reads
+  than Grape alone.
+
+### Fixed
+
+- **A learned handwriting model is no longer deleted by "Use Grape".** It is
+  now **Read with my learned model**, a switch that keeps the file. The model
+  before your last learning is kept, to go back to, and deleting your learned
+  model is its own button, which asks first.
 
 ## [2.4.0] - 2026-10-21
 

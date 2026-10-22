@@ -15,14 +15,18 @@ import {
   DEFAULT_SETTINGS,
   PAPER_WIDTH_RANGE,
   changesTabLayout,
+  appearanceChoiceOf,
   endpointWarning,
-  foldedSectionsOf,
+  openSectionsOf,
   pagesAreDark,
   paperWidthFrom,
   parseColorList,
+  returnToPenOf,
   sectionOpen,
   shownPaperTheme,
   shownValue,
+  storeAppearanceChoice,
+  storeReturnToPen,
   storeShownValue,
   withSection,
 } from "../../src/settings-data";
@@ -121,7 +125,8 @@ const FRESH_INSTALL = {
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
-  foldedSettingsSections: ["pens", "shortcuts"],
+  settingsOpen: [],
+  scribbleTipDismissed: false,
 };
 
 /**
@@ -209,7 +214,8 @@ const USED_VAULT = {
   barrelButton: "pan",
   penCursor: "crosshair",
   straightHighlighter: false,
-  foldedSettingsSections: ["writing", "ai"],
+  settingsOpen: ["writing", "ai"],
+  scribbleTipDismissed: true,
   experimentalFutureFlag: 7,
 };
 
@@ -377,31 +383,80 @@ describe("control values", () => {
   });
 });
 
-describe("folded settings sections", () => {
-  it("folds only Pens and shortcuts, and its shortcut list, on a fresh install", () => {
-    expect(foldedSectionsOf(undefined)).toEqual(["pens", "shortcuts"]);
-    expect(sectionOpen(undefined, "writing")).toBe(true);
-    expect(sectionOpen(undefined, "pages")).toBe(true);
-    expect(sectionOpen(undefined, "community")).toBe(true);
-    expect(sectionOpen(undefined, "shortcuts")).toBe(false);
-    expect(sectionOpen(DEFAULT_SETTINGS.foldedSettingsSections, "pens")).toBe(false);
+describe("settings sections", () => {
+  it("opens none on a fresh install", () => {
+    expect(openSectionsOf(undefined)).toEqual([]);
+    expect(openSectionsOf(DEFAULT_SETTINGS.settingsOpen)).toEqual([]);
+    expect(sectionOpen(undefined, "writing")).toBe(false);
   });
 
   it("reads a hand-edited value without trusting it", () => {
-    expect(foldedSectionsOf("pens")).toEqual(["pens", "shortcuts"]);
-    expect(foldedSectionsOf(null)).toEqual(["pens", "shortcuts"]);
+    expect(openSectionsOf("pens")).toEqual([]);
+    expect(openSectionsOf(null)).toEqual([]);
     // Unknown ids go; known ones come back in the tab's order, once each.
-    expect(foldedSectionsOf(["ai", "nope", "pens", "ai", 7, "toString"])).toEqual(["pens", "ai"]);
-    // Everything open is a choice, not a missing value.
-    expect(foldedSectionsOf([])).toEqual([]);
+    expect(openSectionsOf(["ai", "nope", "pens", "ai", 7, "toString", "shortcuts"])).toEqual([
+      "pens",
+      "ai",
+    ]);
   });
 
   it("opens and folds one section, leaving the others", () => {
-    const folded = withSection(["pens"], "advanced", false);
-    expect(folded).toEqual(["pens", "advanced"]);
-    expect(withSection(folded, "pens", true)).toEqual(["advanced"]);
-    expect(withSection(folded, "advanced", false)).toEqual(["pens", "advanced"]);
-    expect(withSection(undefined, "shortcuts", true)).toEqual(["pens"]);
-    expect(withSection(["pens"], "toString" as never, false)).toEqual(["pens"]);
+    const open = withSection(["pens"], "advanced", true);
+    expect(open).toEqual(["pens", "advanced"]);
+    expect(withSection(open, "pens", false)).toEqual(["advanced"]);
+    expect(withSection(open, "advanced", true)).toEqual(["pens", "advanced"]);
+    expect(withSection(["pens"], "toString" as never, true)).toEqual(["pens"]);
+  });
+
+  it("keeps one open at a time on a tablet, the first of several synced from a computer", () => {
+    expect(withSection(["pens", "ai"], "pages", true, true)).toEqual(["pages"]);
+    expect(withSection(["pages"], "pages", false, true)).toEqual([]);
+    expect(sectionOpen(["pens", "ai"], "pens", true)).toBe(true);
+    expect(sectionOpen(["pens", "ai"], "ai", true)).toBe(false);
+    expect(sectionOpen(["pens", "ai"], "ai")).toBe(true);
+  });
+});
+
+describe("choices that set two switches", () => {
+  it("reads and writes Back to the pen as both return switches", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(returnToPenOf(settings)).toBe("never");
+    for (const [choice, reselect, afterUse] of [
+      ["reselect", true, false],
+      ["after-use", false, true],
+      ["both", true, true],
+      ["never", false, false],
+    ] as const) {
+      storeReturnToPen(settings, choice);
+      expect([settings.returnToPenOnReselect, settings.returnToPenAfterUse]).toEqual([
+        reselect,
+        afterUse,
+      ]);
+      expect(returnToPenOf(settings)).toBe(choice);
+    }
+    storeReturnToPen(settings, "nonsense");
+    expect(returnToPenOf(settings)).toBe("never");
+  });
+
+  it("reads and writes Page appearance with the PDF choice folded in", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(appearanceChoiceOf(settings)).toBe("light");
+    for (const [choice, appearance, invert] of [
+      ["dark", "dark", true],
+      ["dark-pdf-light", "dark", false],
+      ["system", "system", true],
+      ["system-pdf-light", "system", false],
+    ] as const) {
+      storeAppearanceChoice(settings, choice);
+      expect([settings.pageAppearance, settings.invertPdfPages]).toEqual([appearance, invert]);
+      expect(appearanceChoiceOf(settings)).toBe(choice);
+    }
+    // Light leaves the PDF switch for the next dark choice; light shows as light either way.
+    storeAppearanceChoice(settings, "light");
+    expect([settings.pageAppearance, settings.invertPdfPages]).toEqual(["light", false]);
+    expect(appearanceChoiceOf(settings)).toBe("light");
+    expect(appearanceChoiceOf({ pageAppearance: "sepia" as never, invertPdfPages: false })).toBe(
+      "light",
+    );
   });
 });
