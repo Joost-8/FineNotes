@@ -10555,6 +10555,29 @@ button.clickable-icon.goodobsidian-calc-chip.is-hidden,
   color: var(--text-error);
 }
 
+/* A worked answer laid out as math (x⁴ over 12 + C): the result row takes
+   18 px from the expression's, so the display keeps its height, and each
+   scales its math into its row (fitExpression, fitResult). */
+.goodobsidian-calc-display.has-math .goodobsidian-calc-expr {
+  height: 44px;
+}
+
+.goodobsidian-calc-result.is-math {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 58px;
+  line-height: normal;
+}
+
+.goodobsidian-calc-answer {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  white-space: nowrap;
+  transform-origin: right center;
+}
+
 .goodobsidian-calc-hint {
   height: 16px;
   padding-right: 4px;

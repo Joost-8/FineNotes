@@ -154,6 +154,34 @@ export function drawGraphMath(parent: HTMLElement, text: string): void {
   else parent.createSpan({ cls: "goodobsidian-calc-raw", text });
 }
 
+/**
+ * The size of everything drawn in `el`, its pieces included: an integral's
+ * limits and a power's exponent hang outside the box `scrollHeight` sees.
+ */
+function drawnSize(el: HTMLElement): { w: number; h: number; dy: number } {
+  const own = el.getBoundingClientRect();
+  let top = own.top;
+  let bottom = own.bottom;
+  let left = own.left;
+  let right = own.right;
+  for (const child of Array.from(el.querySelectorAll("*"))) {
+    const r = child.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    top = Math.min(top, r.top);
+    bottom = Math.max(bottom, r.bottom);
+    left = Math.min(left, r.left);
+    right = Math.max(right, r.right);
+  }
+  const dy = (top + bottom) / 2 - (own.top + own.bottom) / 2;
+  return { w: Math.max(el.scrollWidth, right - left), h: bottom - top, dy };
+}
+
+/** Scale math about its right middle, moved so what is drawn is centred (`dy` from {@link drawnSize}). */
+function centred(scale: number, dy: number): string {
+  const shift = Math.abs(dy) > 0.5 ? `translateY(${(-dy * scale).toFixed(1)}px) ` : "";
+  return scale < 1 || shift ? `${shift}scale(${scale})` : "";
+}
+
 type Pane = "keys" | "history" | "graph" | "steps";
 
 /** A symbolic answer on show, with the expression it answers. */
@@ -193,6 +221,7 @@ export class CalculatorPopover {
   private readonly baseChip: HTMLElement;
   private readonly memoryChip: HTMLButtonElement;
   private readonly editChip: HTMLButtonElement;
+  private readonly displayEl: HTMLElement;
   private readonly exprEl: HTMLElement;
   private readonly mathEl: HTMLElement;
   private readonly resultEl: HTMLElement;
@@ -232,6 +261,7 @@ export class CalculatorPopover {
     this.el = this.frame.body.createDiv({ cls: "goodobsidian-calc" });
 
     const display = this.el.createDiv({ cls: "goodobsidian-calc-display" });
+    this.displayEl = display;
     const flags = display.createDiv({ cls: "goodobsidian-calc-flags" });
     this.angleChip = this.button(
       flags,
@@ -1055,6 +1085,11 @@ export class CalculatorPopover {
     this.mathEl.toggleClass("is-raw", !laid);
     this.exprEl.toggleClass("is-done", this.entry.fresh);
     this.exprEl.toggleClass("is-hidden-expr", graphing);
+    const worked = !this.error && !graphing && !editing ? this.showing() : null;
+    // A worked answer is math, often stacked (x⁴ over 12): the expression
+    // gives it some of its height, so both fit and the keys stay put.
+    this.displayEl.toggleClass("has-math", worked !== null);
+    this.resultEl.toggleClass("is-math", worked !== null);
     this.fitExpression();
 
     this.resultEl.removeClass("is-error", "is-preview");
@@ -1082,8 +1117,13 @@ export class CalculatorPopover {
       this.resultEl.addClass("is-preview");
     }
     this.resultEl.setText(text);
-    const worked = !this.error && !graphing && !editing ? this.showing() : null;
-    if (worked) this.drawLines(this.resultEl, worked.answer, ",");
+    if (worked) {
+      this.drawLines(
+        this.resultEl.createSpan({ cls: "goodobsidian-calc-answer" }),
+        worked.answer,
+        ",",
+      );
+    }
     // The steps button shows only while there are steps to show.
     this.paneButtons.get("steps")?.toggleClass("is-hidden", !worked || worked.steps.length === 0);
     this.fitResult();
@@ -1112,17 +1152,30 @@ export class CalculatorPopover {
   private fitExpression(): void {
     this.mathEl.setCssStyles({ transform: "" });
     const room = this.exprEl.clientWidth;
-    const height = this.exprEl.clientHeight;
-    const w = this.mathEl.scrollWidth;
-    const h = this.mathEl.scrollHeight;
+    const height = this.exprEl.clientHeight - 6;
+    const { w, h, dy } = drawnSize(this.mathEl);
     if (!room || !w) return;
     const scale = Math.min(1, room / w, height / Math.max(1, h));
-    if (scale < 1) this.mathEl.setCssStyles({ transform: `scale(${scale})` });
+    this.mathEl.setCssStyles({ transform: centred(scale, dy) });
   }
 
-  /** The result's font shrinks to fit its line, as iOS's does. */
+  /**
+   * The result's font shrinks to fit its line, as iOS's does; an answer
+   * laid out as math scales down to its row's width and height, as the
+   * expression does.
+   */
   private fitResult(): void {
     this.resultEl.setCssStyles({ fontSize: `${RESULT_MAX_PX}px` });
+    const answer = this.resultEl.querySelector<HTMLElement>(".goodobsidian-calc-answer");
+    if (answer) {
+      answer.setCssStyles({ transform: "" });
+      const { w, h, dy } = drawnSize(answer);
+      if (!w || !h) return;
+      const room = this.resultEl.clientWidth - 4;
+      const scale = Math.min(1, room / w, (this.resultEl.clientHeight - 4) / h);
+      answer.setCssStyles({ transform: centred(scale, dy) });
+      return;
+    }
     const size = fittedFontSize(
       this.resultEl.scrollWidth,
       this.resultEl.clientWidth,
