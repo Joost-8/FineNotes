@@ -97,4 +97,20 @@ describe("UpdateNotice", () => {
     expect(n.available).toBeNull();
     expect(heard).not.toHaveBeenCalled();
   });
+
+  it('offers "Update available" until it is closed, and a later check keeps that', async () => {
+    requestUrl.mockResolvedValue(answer({ version: "2.4.2" }));
+    const { n, saved } = notice({ checkedAt: 0, latest: "2.4.2" });
+    expect(n.pendingAnnouncement()).toBe("2.4.2");
+    n.announced("2.4.2");
+    expect(n.pendingAnnouncement()).toBeNull();
+    await n.check();
+    expect(saved.at(-1)).toEqual({ checkedAt: 10 * DAY, latest: "2.4.2", announced: "2.4.2" });
+    expect(n.pendingAnnouncement()).toBeNull();
+  });
+
+  it("offers nothing while checking is off", () => {
+    const { n } = notice({ checkedAt: 0, latest: "2.4.2" }, { enabled: false });
+    expect(n.pendingAnnouncement()).toBeNull();
+  });
 });

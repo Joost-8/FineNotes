@@ -675,6 +675,8 @@ export class Toolbar {
   > = [];
   private moreButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
+  /** "Update available" under the gear while it shows (`showUpdateTip`). */
+  private updateTip: HTMLElement | null = null;
   /** Sets `is-crowded` from the groups' widths (`watchCrowding`). */
   private measureCrowding: () => void = () => {};
   /** The selected tool's square: one element sliding between the tool buttons. */
@@ -952,6 +954,7 @@ export class Toolbar {
       this.fitBar(this.indicatorTool);
       // The buttons moved with the bar: the indicator follows, without a slide.
       this.placeIndicator(this.indicatorTool, null);
+      this.placeUpdateTip();
     };
     if (typeof ResizeObserver === "function") {
       const observer = new ResizeObserver(measure);
@@ -996,6 +999,67 @@ export class Toolbar {
       "has-mark",
       this.foldedItems().some((item) => item.marked),
     );
+  }
+
+  /**
+   * "Update available" in a small bubble under the gear (or ⋯, where the
+   * gear has folded), until it is closed: a tap on it runs `open`, its ✕
+   * runs `dismiss`, and either takes it away. The dot stays. False when the
+   * bar is not laid out yet, so the host can try again.
+   */
+  showUpdateTip(open: () => void, dismiss: () => void): boolean {
+    const anchor = this.updateAnchor();
+    if (!anchor || anchor.getBoundingClientRect().width === 0) return false;
+    this.hideUpdateTip();
+    // On the body: the bar clips what leaves it (overflow: hidden).
+    const tip = anchor.ownerDocument.body.createDiv({ cls: "goodobsidian-update-tip" });
+    const text = tip.createSpan({ cls: "goodobsidian-update-tip-text", text: "Update available" });
+    text.setAttribute("role", "button");
+    text.setAttribute("aria-label", "Update available: open FineNotes' settings");
+    text.addEventListener("click", () => {
+      this.hideUpdateTip();
+      open();
+    });
+    const close = tip.createSpan({ cls: "goodobsidian-update-tip-close" });
+    setIcon(close, "x");
+    close.setAttribute("role", "button");
+    close.setAttribute("aria-label", "Dismiss");
+    close.addEventListener("click", () => {
+      this.hideUpdateTip();
+      dismiss();
+    });
+    this.updateTip = tip;
+    this.placeUpdateTip();
+    return true;
+  }
+
+  /** Where "Update available" points: the gear, or ⋯ when the gear has folded into it. */
+  private updateAnchor(): HTMLButtonElement | null {
+    const gear = this.settingsButton;
+    return gear && !gear.hasClass("is-overflowed") ? gear : this.moreButton;
+  }
+
+  /**
+   * Put "Update available" under its button, its point (22 px in from its
+   * right) under the button's middle, on screen; hidden while the bar is
+   * (another tab in front). The bar's ResizeObserver calls this.
+   */
+  private placeUpdateTip(): void {
+    const tip = this.updateTip;
+    if (!tip) return;
+    const at = this.updateAnchor()?.getBoundingClientRect();
+    const shown = at !== undefined && at.width > 0;
+    tip.toggleClass("is-hidden", !shown);
+    if (!shown) return;
+    const width = tip.offsetWidth;
+    const room = (tip.ownerDocument.defaultView ?? window).innerWidth;
+    const left = Math.min(Math.max(8, at.left + at.width / 2 + 22 - width), room - width - 8);
+    tip.setCssStyles({ top: `${Math.round(at.bottom + 6)}px`, left: `${Math.round(left)}px` });
+  }
+
+  private hideUpdateTip(): void {
+    this.updateTip?.remove();
+    this.updateTip = null;
   }
 
   /**
@@ -3648,6 +3712,7 @@ export class Toolbar {
 
   /** Close what is open, drop every listener outside the toolbar, and take both tiers away. */
   destroy(): void {
+    this.hideUpdateTip();
     this.closePopover();
     for (const [popover, timer] of this.leavingPopovers) {
       window.clearTimeout(timer);

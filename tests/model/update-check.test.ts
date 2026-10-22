@@ -8,6 +8,7 @@ import {
   checkDue,
   compareVersions,
   newerVersion,
+  toAnnounce,
   updateRecordOf,
   versionOfManifest,
 } from "../../src/model/update-check";
@@ -76,5 +77,18 @@ describe("the record and when to check", () => {
     // A beta installed by hand is newer than main's release.
     expect(newerVersion({ checkedAt: 1, latest: "2.4.1" }, "2.5.0-beta.1")).toBeNull();
     expect(newerVersion({ checkedAt: 0, latest: "" }, "2.4.1")).toBeNull();
+  });
+
+  it('says "Update available" once per version, and keeps what it said through a load', () => {
+    const record = updateRecordOf({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2" });
+    expect(record.announced).toBe("2.4.2");
+    expect(toAnnounce(record, "2.4.1")).toBeNull();
+    expect(toAnnounce({ ...record, latest: "2.5.0" }, "2.4.1")).toBe("2.5.0");
+    expect(toAnnounce({ checkedAt: 1, latest: "2.4.2" }, "2.4.1")).toBe("2.4.2");
+    expect(toAnnounce({ checkedAt: 1, latest: "2.4.1" }, "2.4.1")).toBeNull();
+    expect(updateRecordOf({ checkedAt: 1, latest: "", announced: 3 })).toEqual({
+      checkedAt: 1,
+      latest: "",
+    });
   });
 });

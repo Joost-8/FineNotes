@@ -11,6 +11,7 @@ import {
   type UpdateRecord,
   checkDue,
   newerVersion,
+  toAnnounce,
   updateRecordOf,
   versionOfManifest,
 } from "../model/update-check";
@@ -45,6 +46,20 @@ export class UpdateNotice {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * The version whose "Update available" is still to be shown here, or
+   * null; {@link announced} records that it was.
+   */
+  pendingAnnouncement(): string | null {
+    if (!this.options.enabled()) return null;
+    return toAnnounce(updateRecordOf(this.options.load()), this.options.current);
+  }
+
+  /** "Update available" was shown for `version` on this device: once is enough. */
+  announced(version: string): void {
+    this.options.save({ ...updateRecordOf(this.options.load()), announced: version });
+  }
+
   /** Checking was switched on or off: the marks follow. */
   changed(): void {
     for (const listener of this.listeners) listener();
@@ -67,7 +82,7 @@ export class UpdateNotice {
       // No connection, or not JSON.
     }
     if (latest === null) return;
-    const record = { checkedAt: now, latest };
+    const record = { ...updateRecordOf(this.options.load()), checkedAt: now, latest };
     this.options.save(record);
     const found = newerVersion(record, this.options.current);
     if (found === this.latest) return;

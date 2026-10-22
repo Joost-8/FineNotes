@@ -21,10 +21,14 @@ export const PLUGIN_PAGE_URL = "obsidian://show-plugin?id=finenotes";
 /** How often the version is read at most. */
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/** What the last check found: when it ran (ms since 1970) and the version on `main`. */
+/**
+ * What the last check found: when it ran (ms since 1970) and the version on
+ * `main`; and the version whose "Update available" this device has shown.
+ */
 export interface UpdateRecord {
   checkedAt: number;
   latest: string;
+  announced?: string;
 }
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
@@ -62,9 +66,11 @@ export function versionOfManifest(json: unknown): string | null {
 /** A stored record as a record; anything else reads as "never checked". */
 export function updateRecordOf(value: unknown): UpdateRecord {
   if (typeof value === "object" && value !== null) {
-    const { checkedAt, latest } = value as Record<string, unknown>;
+    const { checkedAt, latest, announced } = value as Record<string, unknown>;
     if (typeof checkedAt === "number" && Number.isFinite(checkedAt) && typeof latest === "string") {
-      return { checkedAt, latest };
+      return typeof announced === "string"
+        ? { checkedAt, latest, announced }
+        : { checkedAt, latest };
     }
   }
   return { checkedAt: 0, latest: "" };
@@ -79,4 +85,13 @@ export function checkDue(record: UpdateRecord, now: number): boolean {
 export function newerVersion(record: UpdateRecord, current: string): string | null {
   const order = compareVersions(record.latest, current);
   return order !== null && order > 0 ? record.latest : null;
+}
+
+/**
+ * The newer version whose "Update available" is still to be shown on this
+ * device, or null: it is said once per version, the dot stays.
+ */
+export function toAnnounce(record: UpdateRecord, current: string): string | null {
+  const newer = newerVersion(record, current);
+  return newer !== null && record.announced !== newer ? newer : null;
 }

@@ -300,6 +300,8 @@ const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink lo
 const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
 const READ_ONLY_NOTICE_MS = 4000;
+/** How long after a notebook opens "Update available" appears, ms: once the bar is laid out. */
+const UPDATE_TIP_DELAY_MS = 1500;
 
 /** Shown once when a load is held (see load-guard.ts). */
 const HELD_LOAD_NOTICE =
@@ -2389,9 +2391,25 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
       },
     );
-    // The gear's dot while a newer FineNotes is out (update-notice.ts).
+    // The gear's dot while a newer FineNotes is out, and "Update available"
+    // under it until it is tapped or closed, once per version (update-notice.ts).
     const updates = this.plugin.updates;
-    const markUpdate = (): void => this.toolbar?.setUpdateMark(updates.available);
+    const markUpdate = (): void => {
+      this.toolbar?.setUpdateMark(updates.available);
+      const version = updates.pendingAnnouncement();
+      if (!version) return;
+      // After the bar is laid out; if it is not yet, the next change or open says it.
+      window.setTimeout(() => {
+        if (updates.pendingAnnouncement() !== version) return;
+        this.toolbar?.showUpdateTip(
+          () => {
+            updates.announced(version);
+            this.plugin.openSettingsTab();
+          },
+          () => updates.announced(version),
+        );
+      }, UPDATE_TIP_DELAY_MS);
+    };
     markUpdate();
     this.unwatchUpdates?.();
     this.unwatchUpdates = updates.subscribe(markUpdate);
