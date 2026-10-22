@@ -174,7 +174,8 @@ describe("decoding", () => {
     };
     expect(decodeDocument(shaped(4096)).pages).toHaveLength(1);
     expect(() => decodeDocument(shaped(MAX_INFLATED_BYTES + 1))).toThrow(SerializeError);
-  });
+    // 64 MB deflated and inflated: past the 5 s default when coverage runs alongside the suite.
+  }, 30_000);
 });
 
 describe("the note file", () => {

@@ -34,9 +34,9 @@ function widthAt(d: string, i: number): number {
 
 describe("pen icons", () => {
   it("has its own icon for each pen, its tip in ink", () => {
-    const pens = ["fountain", "ball", "brush", "highlighter"];
+    const pens = ["fountain", "ball", "brush", "calligraphy", "highlighter"];
     const icons = pens.map((pen) => JSON.stringify(penIconParts(pen)));
-    expect(new Set(icons).size).toBe(4);
+    expect(new Set(icons).size).toBe(5);
     for (const pen of pens) {
       expect(
         penIconParts(pen).some((part) => part.ink),
@@ -47,7 +47,7 @@ describe("pen icons", () => {
   });
 
   it("leans every pen the same way, and never outlines a filled tip in ink", () => {
-    for (const pen of ["fountain", "ball", "brush", "highlighter"]) {
+    for (const pen of ["fountain", "ball", "brush", "calligraphy", "highlighter"]) {
       for (const part of penIconParts(pen)) {
         expect(part.attrs.transform, pen).toBe("rotate(45 12 12)");
         // A filled ink part is outlined in the icon's colour or not at all, never in ink.
@@ -95,6 +95,9 @@ describe("width glyphs", () => {
     expect(widthAt(brush, 3)).toBeGreaterThan(widthAt(brush, 10));
     expect(widthAt(brush, 10)).toBeGreaterThan(widthAt(brush, 20));
     expect(widthAt(brush, 20)).toBeLessThan(1);
+    // The calligraphy pen's flat nib: thick and thin by turns along the curve.
+    const nib = Array.from({ length: 21 }, (_, i) => widthAt(swoosh("calligraphy", 6).d, i));
+    expect(Math.max(...nib)).toBeGreaterThan(3 * Math.min(...nib));
     // Wider pens draw wider glyphs.
     expect(widthAt(swoosh("fountain", 8).d, 10)).toBeGreaterThan(
       widthAt(swoosh("fountain", 2).d, 10),
