@@ -282,3 +282,17 @@ export function placeFloating(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/** How many colours the lasso menu's colour row shows before its chevron: one line. */
+export const COMPACT_SWATCHES = 5;
+
+/**
+ * The colours the colour row shows while folded: the first few, with the
+ * selection's own colour among them when it is further along.
+ */
+export function compactSwatches(colors: readonly string[], current: string | null): Set<string> {
+  const shown = colors.slice(0, COMPACT_SWATCHES);
+  const own = current ? colors.find((c) => c.toLowerCase() === current) : undefined;
+  if (own && !shown.includes(own) && shown.length > 0) shown[shown.length - 1] = own;
+  return new Set(shown);
+}

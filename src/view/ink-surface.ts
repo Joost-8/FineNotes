@@ -7819,7 +7819,6 @@ export class InkSurface {
       });
     }
     actions.push(...this.shapeStyleActions(sel.strokes));
-    actions.push(...flipActions((axis) => this.flipSelection(axis), "style"));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Highlighter ink over a PDF's text: the text it covers can be copied.
@@ -7882,6 +7881,8 @@ export class InkSurface {
         },
       });
     }
+    // Flip after "Turn into": what a selection becomes reads before how it is turned.
+    actions.push(...flipActions((axis) => this.flipSelection(axis), "flip"));
     actions.push({
       id: "delete",
       icon: "trash-2",

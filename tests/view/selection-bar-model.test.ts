@@ -5,9 +5,11 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  COMPACT_SWATCHES,
   type SelectionAction,
   actionsKey,
   barItems,
+  compactSwatches,
   isEnabled,
   menuLayout,
   placeFloating,
@@ -257,5 +259,32 @@ describe("placeFloating", () => {
       y: 92,
       below: true,
     });
+  });
+});
+
+describe("the lasso menu's colour row", () => {
+  const colors = [
+    "#111",
+    "#e03131",
+    "#2f9e44",
+    "#1971c2",
+    "#f08c00",
+    "#9c36b5",
+    "#ff00aa",
+    "#00ccaa",
+  ];
+
+  it("shows one line of colours before its chevron", () => {
+    const shown = compactSwatches(colors, null);
+    expect([...shown]).toEqual(colors.slice(0, COMPACT_SWATCHES));
+  });
+
+  it("keeps the selection's own colour in view when it is further along", () => {
+    const shown = compactSwatches(colors, "#00CCAA".toLowerCase());
+    expect(shown.size).toBe(COMPACT_SWATCHES);
+    expect(shown.has("#00ccaa")).toBe(true);
+    expect(shown.has(colors[COMPACT_SWATCHES - 1])).toBe(false);
+    expect([...compactSwatches(colors, "#e03131")]).toEqual(colors.slice(0, COMPACT_SWATCHES));
+    expect([...compactSwatches(["#111"], null)]).toEqual(["#111"]);
   });
 });
