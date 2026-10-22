@@ -128,7 +128,12 @@ export class MorePanel {
     if (folded.length > 0) {
       const bar = this.group();
       for (const item of folded) {
-        this.row(bar, { icon: item.icon, text: item.label, run: () => item.run(this.anchor) });
+        this.row(bar, {
+          icon: item.icon,
+          text: item.label,
+          cls: item.marked ? "has-mark" : undefined,
+          run: () => item.run(this.anchor),
+        });
       }
     }
 

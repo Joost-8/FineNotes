@@ -95,6 +95,8 @@ export interface GoodObsidianSettings {
   scribbleNoticeShown: boolean;
   /** The last version whose changes "What's new" has shown. */
   lastSeenVersion: string;
+  /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
+  checkForUpdates: boolean;
 
   // AI with the user's own key.
   /** The vendor that transcribes pages and answers questions. */
@@ -301,6 +303,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   debugHud: false,
   scribbleNoticeShown: false,
   lastSeenVersion: "",
+  checkForUpdates: true,
   llmVendor: "anthropic",
   llmModel: "",
   llmApiKey: "",

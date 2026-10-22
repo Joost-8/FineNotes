@@ -57,6 +57,8 @@ export interface NoteSettingsHost {
   rename: (name: string) => Promise<void>;
   /** Open FineNotes' own tab in Obsidian's settings. */
   openPluginSettings: () => void;
+  /** A newer FineNotes that is out, marked on the way to the settings; null when none. */
+  update?: string | null;
   /**
    * Paint the cover page, title and all, into `canvas` at `cssWidth`.
    * Resolves `false` when there is no cover to paint.
@@ -281,6 +283,14 @@ export class NoteSettingsModal extends Modal {
       attr: { type: "button" },
     });
     all.createSpan({ text: "All FineNotes settings" });
+    if (this.host.update) {
+      // The gear's dot, carried on to where the update is.
+      all.addClass("has-mark");
+      all.setAttribute(
+        "aria-label",
+        `All FineNotes settings · FineNotes ${this.host.update} is out`,
+      );
+    }
     setIcon(all.createSpan({ cls: "goodobsidian-ns-all-icon" }), "chevron-right");
     all.addEventListener("click", () => {
       this.close();

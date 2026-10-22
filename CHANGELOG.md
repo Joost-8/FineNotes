@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
+  version of its newest release on GitHub and puts a dot on the toolbar's
+  gear; the notebook settings lead on to a line at the top of FineNotes'
+  settings, whose Update button opens FineNotes in Community plugins. It
+  only tells you; Obsidian still does the updating. Switch it off under
+  Advanced → Check for updates.
+
 ## [2.4.1] - 2026-10-22
 
 ### Added

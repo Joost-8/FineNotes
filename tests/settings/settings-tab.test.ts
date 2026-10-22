@@ -128,6 +128,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     settings,
     calls,
     keys: { secure: true },
+    // No newer FineNotes known (update-notice.ts), unless a test says one is out.
+    updates: {
+      available: null as string | null,
+      changed: vi.fn(),
+      check: vi.fn(() => Promise.resolve()),
+    },
     providers: new Map<string, unknown>([
       [MANUAL_PROVIDER_ID, {}],
       [LLM_PROVIDER_ID, {}],
@@ -413,6 +419,7 @@ describe("the rows", () => {
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
+      [ADVANCED, "Check for updates", "toggle:checkForUpdates"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
       [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
       [ADVANCED, "More", "action"],
@@ -610,6 +617,7 @@ describe("which rows show", () => {
       "Set up an AI service",
       "Pressure-sensitive pens",
       "Desynchronized canvas",
+      "Check for updates",
       "Input debug overlay",
       "Handwriting model file",
       "More",
@@ -645,6 +653,39 @@ describe("which rows show", () => {
     expect(names).not.toContain("Set up an AI service");
     expect(names).toContain("AI service");
     expect(names).toContain("Handwriting recognition");
+  });
+
+  it("says a newer FineNotes is out, above everything, with Obsidian's Update a tap away", () => {
+    const quiet = rows(makeTab(makePlugin()).tab);
+    expect(
+      quiet.some((r) => r.def.name === "" && /is out/.test(renderRow(r.def).settingEl.textContent)),
+    ).toBe(false);
+    const plugin = makePlugin();
+    plugin.updates.available = "2.4.2";
+    const drawn = renderRow(rows(makeTab(plugin).tab)[0].def);
+    expect(drawn.settingEl.find("goodobsidian-callout-title")?.textContent).toMatch(
+      /^FineNotes 2\.4\.2 is out/,
+    );
+    const opened: string[] = [];
+    vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
+    try {
+      drawn.settingEl.find("mod-cta")?.dispatch("click");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(opened).toEqual(["obsidian://show-plugin?id=finenotes"]);
+  });
+
+  it("switching update checks tells the marks at once, and checks when switched on", async () => {
+    const plugin = makePlugin();
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("checkForUpdates", false);
+    expect(plugin.settings.checkForUpdates).toBe(false);
+    expect(plugin.updates.changed).toHaveBeenCalledTimes(1);
+    expect(plugin.updates.check).not.toHaveBeenCalled();
+    await tab.setControlValue("checkForUpdates", true);
+    expect(plugin.updates.check).toHaveBeenCalledTimes(1);
+    expect(plugin.calls).toContain("save");
   });
 
   it("shows the Scribble tip on an iPad only, in one line, until it is dismissed", () => {

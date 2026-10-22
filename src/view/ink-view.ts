@@ -489,6 +489,8 @@ export class InkView extends TextFileView {
   private readonly pageReadings = new Map<string, PageWords>();
   /** The card of the underlined word last tapped, while it is open. */
   private wordPopover: WordPopover | null = null;
+  /** Stops the gear's update mark following the plugin's check. */
+  private unwatchUpdates: (() => void) | null = null;
   /** The wait before the page in view is checked for misread words. */
   private wordCheckTimer = 0;
   /** Pages read on the device this session, by key, at the hash they were read at. */
@@ -829,6 +831,8 @@ export class InkView extends TextFileView {
     this.surface = null;
     this.toolbar?.destroy();
     this.toolbar = null;
+    this.unwatchUpdates?.();
+    this.unwatchUpdates = null;
     this.sidebar?.destroy();
     this.chatPanel?.destroy();
     this.chatPanel = null;
@@ -2385,6 +2389,12 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
       },
     );
+    // The gear's dot while a newer FineNotes is out (update-notice.ts).
+    const updates = this.plugin.updates;
+    const markUpdate = (): void => this.toolbar?.setUpdateMark(updates.available);
+    markUpdate();
+    this.unwatchUpdates?.();
+    this.unwatchUpdates = updates.subscribe(markUpdate);
 
     const pdfCache = new PdfBackdropCache(this.app);
     this.pdfCache = pdfCache;
@@ -2767,6 +2777,7 @@ export class InkView extends TextFileView {
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
+      update: this.plugin.updates.available,
       furniture: () => ({ ...this.doc.furniture }),
       setFurniture: (furniture) => {
         apply(new SetFurniture(furniture));

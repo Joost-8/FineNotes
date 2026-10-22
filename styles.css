@@ -11765,3 +11765,39 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* A newer FineNotes is out (update-notice.ts): a dot on the toolbar's gear
+   (on ⋯ and its row there when the gear folded into it), carried on to the
+   notebook settings' way to all settings, where the callout says which. */
+.goodobsidian-toolbar button.has-mark::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--background-primary);
+  pointer-events: none;
+}
+
+.goodobsidian-more .goodobsidian-more-row.has-mark .goodobsidian-more-label::after,
+.goodobsidian-ns-all.has-mark > span:first-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-start: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  vertical-align: middle;
+}
+
+/* Its Update is a small pill, so the callout keeps one line's height. */
+.goodobsidian-update-callout .goodobsidian-callout-title > button.mod-cta {
+  height: 26px;
+  margin-inline-start: auto;
+  padding: 0 12px;
+  font-size: var(--font-ui-small);
+}

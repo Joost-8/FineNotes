@@ -42,6 +42,7 @@ import {
   writeStepText,
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS } from "./recognition/practice";
+import { PLUGIN_PAGE_URL } from "./model/update-check";
 import {
   type App,
   type ExtraButtonComponent,
@@ -307,6 +308,11 @@ const DESC = {
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
+  checkForUpdates:
+    "Once a day, FineNotes reads the number of its newest release from GitHub " +
+    "(github.com/Joost-8/FineNotes) and puts a dot on the toolbar's gear when it is newer. " +
+    "Nothing about you or your notes is sent. Updating is still Obsidian's: its Update " +
+    "button, under Community plugins.",
   debugHud:
     "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
     "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
@@ -852,6 +858,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       await this.plugin.setPenCursor(penCursorStyleOf(value));
       return;
     }
+    if (key === "checkForUpdates") {
+      this.plugin.settings.checkForUpdates = value === true;
+      await this.plugin.saveSettings();
+      // The marks follow at once; switched on, the check runs if it is due.
+      this.plugin.updates.changed();
+      if (value === true) void this.plugin.updates.check();
+      this.update();
+      return;
+    }
     if (key === "pressureWidth") {
       // Saved by the plugin, which redraws every open notebook's ink.
       await this.plugin.setPressureWidth(value as boolean);
@@ -877,12 +892,27 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   // --- Sections --------------------------------------------------------------
 
-  /** Above every section: the iPad's Scribble, which loses strokes, until its ✕. */
+  /**
+   * Above every section: a newer FineNotes, while one is out, with Obsidian's
+   * own Update a tap away; and the iPad's Scribble, which loses strokes,
+   * until its ✕.
+   */
   private topRows(): SettingDefinition[] {
+    const update = this.plugin.updates.available;
+    const updateRow = block((el) => {
+      const box = el.createDiv({ cls: "goodobsidian-callout goodobsidian-update-callout" });
+      const line = box.createDiv({ cls: "goodobsidian-callout-title" });
+      line.createSpan({ text: `FineNotes ${update ?? ""} is out` });
+      const open = line.createEl("button", { cls: "mod-cta", text: "Update" });
+      open.setAttribute("aria-label", "Open FineNotes in Community plugins to update it");
+      open.addEventListener("click", () => window.open(PLUGIN_PAGE_URL));
+    });
     const shown = (): boolean =>
       Platform.isIosApp && Platform.isTablet && !this.plugin.settings.scribbleTipDismissed;
     const { title, detail } = CALLOUTS.scribble;
     return [
+      // Only while one is out: the tab is rebuilt when checking is switched.
+      ...(update !== null ? [updateRow] : []),
       block((el) => {
         const box = el.createDiv({ cls: "goodobsidian-callout" });
         const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
@@ -1349,6 +1379,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "artifacts",
           ]),
           DESC.desynchronized,
+        ),
+        this.info(
+          toggle("checkForUpdates", "Check for updates", "", [
+            "update",
+            "new version",
+            "release",
+            "notification",
+          ]),
+          DESC.checkForUpdates,
         ),
         this.info(
           toggle("debugHud", "Input debug overlay", "", [

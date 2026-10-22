@@ -507,12 +507,12 @@ telemetry, no ads and no account. Your handwriting is read by Grape
 (handwriting recognizer model) on the device; practice files and what Grape
 learns from them stay in your vault.
 
-The network is used in three cases, all optional.
+The network is used in four cases, all optional.
 
 **Grape (handwriting recognizer model).** It is downloaded rather than built
 into the plugin, to keep the plugin small:
 
-- **What is downloaded:** the Grape model file (`grape-1.0.bin`, 3.5 MB).
+- **What is downloaded:** the Grape model file (`grape-2.0.bin`, 5.7 MB).
   Nothing is uploaded.
 - **From where:** the public GitHub releases of
   [Joost-8/Grape](https://github.com/Joost-8/Grape/releases)
@@ -536,6 +536,15 @@ its list of templates, their preview pictures, and the one template you
 choose to add. Nothing about you or your vault is sent. A template is only
 accepted if it is a PDF, PNG, JPEG or WebP file of at most 40 MB, or a
 FineNotes template file, so nothing in it can run.
+
+**Checking for updates.** Once a day at most, FineNotes reads the version
+number in its own `manifest.json` on GitHub
+(`raw.githubusercontent.com/Joost-8/FineNotes/main/manifest.json`, the file
+Obsidian's own updater reads), and puts a dot on the toolbar's gear when a
+newer FineNotes is out. Nothing about you or your vault is sent; GitHub sees
+your IP address, as with any download. It only tells you: updating is still
+done by Obsidian, under Settings → Community plugins. Switch it off in
+Settings → Advanced → Check for updates.
 
 **The AI features**, only after you:
 

@@ -88,6 +88,7 @@ import {
 } from "./recognition/openrouter-auth";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { WhatsNewModal } from "./ui/whats-new-modal";
+import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -183,6 +184,11 @@ const LAST_PEN_SAVE_MS = 600;
 /** How long after the layout is ready a bundled Grape is written to disk: off the startup path. */
 const GRAPE_BRIDGE_DELAY_MS = 8000;
 
+/** How long after the layout is ready the daily update check runs: off the startup path. */
+const UPDATE_CHECK_DELAY_MS = 20_000;
+/** This device's record of the last update check (update-notice.ts). */
+const UPDATE_KEY = "finenotes:update-check";
+
 /** How long after load the main thread is watched for stalls (startup-log.ts), and how often. */
 const STARTUP_WATCH_MS = 90_000;
 const STARTUP_TICK_MS = 250;
@@ -264,6 +270,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
+  /** Whether a newer FineNotes is out: the dot on the gear (update-notice.ts). */
+  readonly updates = new UpdateNotice({
+    current: this.manifest.version,
+    enabled: () => this.settings.checkForUpdates,
+    load: () => this.app.loadLocalStorage(UPDATE_KEY) as unknown,
+    save: (record) => this.app.saveLocalStorage(UPDATE_KEY, record),
+  });
 
   /** The first 90 s: steps and main-thread stalls, for the diagnostics export (startup-log.ts). */
   readonly startup = new StartupLog(() => performance.now());
@@ -498,6 +511,8 @@ export default class GoodObsidianPlugin extends Plugin {
         });
       }, GRAPE_BRIDGE_DELAY_MS);
       this.register(() => window.clearTimeout(timer));
+      const check = window.setTimeout(() => void this.updates.check(), UPDATE_CHECK_DELAY_MS);
+      this.register(() => window.clearTimeout(check));
     });
 
     this.register(() => this.explorerNotebookButton.destroy());

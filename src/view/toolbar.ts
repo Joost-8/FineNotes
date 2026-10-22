@@ -589,6 +589,8 @@ export interface FoldedBarItem {
   icon: string;
   label: string;
   run: (anchor: HTMLElement) => void;
+  /** It carries a mark (the gear's "a newer FineNotes is out"). */
+  marked?: boolean;
 }
 
 /**
@@ -672,6 +674,7 @@ export class Toolbar {
     FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
   > = [];
   private moreButton: HTMLButtonElement | null = null;
+  private settingsButton: HTMLButtonElement | null = null;
   /** Sets `is-crowded` from the groups' widths (`watchCrowding`). */
   private measureCrowding: () => void = () => {};
   /** The selected tool's square: one element sliding between the tool buttons. */
@@ -903,7 +906,13 @@ export class Toolbar {
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
     keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
-    this.foldButton(doc, FOLD_RANK.settings, "settings", "Notebook settings", cb.onSettings);
+    this.settingsButton = this.foldButton(
+      doc,
+      FOLD_RANK.settings,
+      "settings",
+      "Notebook settings",
+      cb.onSettings,
+    );
     this.watchCrowding();
   }
 
@@ -983,6 +992,28 @@ export class Toolbar {
       this.measureCrowding();
     }
     this.moreButton?.toggleClass("has-folded", this.foldedItems().length > 0);
+    this.moreButton?.toggleClass(
+      "has-mark",
+      this.foldedItems().some((item) => item.marked),
+    );
+  }
+
+  /**
+   * A dot on the gear while a newer FineNotes is out (`version`), or none
+   * (null). Folded into ⋯, the gear's row and ⋯ carry it instead.
+   */
+  setUpdateMark(version: string | null): void {
+    const gear = this.settingsButton;
+    if (!gear) return;
+    gear.toggleClass("has-mark", version !== null);
+    gear.setAttr(
+      "aria-label",
+      version === null ? "Notebook settings" : `Notebook settings · FineNotes ${version} is out`,
+    );
+    this.moreButton?.toggleClass(
+      "has-mark",
+      this.foldedItems().some((item) => item.marked),
+    );
   }
 
   /** The bar's buttons folded into ⋯ just now, in the bar's order. */
@@ -992,7 +1023,12 @@ export class Toolbar {
       .sort((a, b) =>
         a.button.compareDocumentPosition(b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       )
-      .map(({ icon, label, run }) => ({ icon, label, run }));
+      .map(({ icon, label, run, button }) => ({
+        icon,
+        label,
+        run,
+        marked: button.hasClass("has-mark"),
+      }));
   }
 
   /** Let `button` fold into ⋯ (`fitBar`). A disabled one (no handler) never shows there. */
