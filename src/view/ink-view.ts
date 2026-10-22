@@ -619,6 +619,13 @@ export class InkView extends TextFileView {
 
   /** Obsidian read the file (on open, or because it changed on disk). */
   setViewData(data: string, _clear: boolean): void {
+    const began = performance.now();
+    this.loadViewData(data);
+    const kb = Math.round(data.length / 1024);
+    this.plugin.startup.timed(`notebook loaded, ${kb} KB`, performance.now() - began);
+  }
+
+  private loadViewData(data: string): void {
     const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
     const held = this.guard.admit({
       text: data,
@@ -938,6 +945,8 @@ export class InkView extends TextFileView {
       this.surface?.exportDiagnostics({
         version: this.plugin.manifest.version,
         file: this.file?.path ?? null,
+        // A lag after a cold start, pinned without a console (startup-log.ts).
+        startup: this.plugin.startup.report(),
       }) ?? null
     );
   }
@@ -1253,7 +1262,9 @@ export class InkView extends TextFileView {
     if (!page) return false;
     const style = textStyleOf(sanitizeTextStyle(this.settings.textStyle));
     // A first guess at the box's size, to centre it; the box fits its text.
-    const w = Math.max(80, text.length * style.fontSize * 0.55);
+    // Steps come as several lines: the widest one sets the width.
+    const longest = Math.max(...text.split("\n").map((line) => line.length));
+    const w = Math.max(80, longest * style.fontSize * 0.55);
     const at = centredOrigin(
       surface.visiblePageRect(index),
       page.geometry,

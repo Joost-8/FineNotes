@@ -12,6 +12,8 @@ function makeFile(format = 1, size = 2000): Uint8Array {
 }
 
 const FILE = makeFile();
+/** Bytes as `adopt` asks for them: on demand. */
+const bytesOf = (data: ArrayBuffer) => (): Promise<ArrayBuffer> => Promise.resolve(data);
 const sha = (data: ArrayBuffer | Uint8Array): string =>
   createHash("sha256").update(new Uint8Array(data)).digest("hex");
 
@@ -310,13 +312,13 @@ describe("AssetStore", () => {
     const { deps, files, srv, writes } = fakes();
     files.set("grape-0.9.bin", makeFile(1, 100));
     const store = new AssetStore(ASSET, deps);
-    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(true);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(FILE.slice().buffer))).toBe(true);
     expect(store.state.kind).toBe("ready");
     expect(writes).toEqual(["grape-1.0.bin.download"]);
     expect([...files.keys()]).toEqual(["grape-1.0.bin"]);
     expect(srv.requests).toHaveLength(0);
     // Once it is there, nothing is written again.
-    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(true);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(FILE.slice().buffer))).toBe(true);
     expect(writes).toHaveLength(1);
   });
 
@@ -325,20 +327,49 @@ describe("AssetStore", () => {
     const store = new AssetStore(ASSET, deps);
     const wrong = FILE.slice();
     wrong[9] ^= 1;
-    expect(await store.adopt("grape-1.0.bin", wrong.buffer)).toBe(false);
-    expect(await store.adopt("grape-1.0.bin", FILE.slice(1).buffer)).toBe(false);
-    expect(await store.adopt("other.bin", FILE.slice().buffer)).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(wrong.buffer))).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(FILE.slice(1).buffer))).toBe(false);
+    expect(await store.adopt("other.bin", bytesOf(FILE.slice().buffer))).toBe(false);
     expect(files.size).toBe(0);
     const running = store.download();
-    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(FILE.slice().buffer))).toBe(false);
     expect(await running).toBe(true);
+  });
+
+  it("asks for the bundled bytes only when the file is not stored", async () => {
+    const { deps, files, writes } = fakes();
+    files.set("grape-1.0.bin", FILE.slice());
+    const store = new AssetStore(ASSET, deps);
+    let asked = 0;
+    const bundled = (): Promise<ArrayBuffer> => {
+      asked++;
+      return Promise.resolve(FILE.slice().buffer);
+    };
+    // Every start-up after the first: Grape is there, the bundle stays shut.
+    expect(await store.adopt("grape-1.0.bin", bundled)).toBe(true);
+    expect(asked).toBe(0);
+    expect(writes).toHaveLength(0);
+    // Gone (removed in the settings): now the bundle is opened.
+    files.clear();
+    await store.check(true);
+    expect(await store.adopt("grape-1.0.bin", bundled)).toBe(true);
+    expect(asked).toBe(1);
+  });
+
+  it("adopts nothing when the bundled bytes are missing or fail to load", async () => {
+    const { deps, files } = fakes();
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.adopt("grape-1.0.bin", () => Promise.resolve(null))).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", () => Promise.reject(new Error("bad")))).toBe(false);
+    expect(files.size).toBe(0);
+    expect(store.state.kind).toBe("missing");
   });
 
   it("reports a failed write while adopting as not adopted", async () => {
     const { deps } = fakes();
     deps.write = () => Promise.reject(new Error("read-only"));
     const store = new AssetStore(ASSET, deps);
-    expect(await store.adopt("grape-1.0.bin", FILE.slice().buffer)).toBe(false);
+    expect(await store.adopt("grape-1.0.bin", bytesOf(FILE.slice().buffer))).toBe(false);
     expect(store.state.kind).toBe("missing");
   });
 

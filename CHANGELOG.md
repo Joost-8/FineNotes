@@ -37,6 +37,15 @@ extracted from the matching section of this file by `release.yml`.
   as in Notability. Seeking shows that moment at once, and the page being
   written comes into view unless you are using the page. The pen button on
   the player bar turns it off.
+- **The calculator solves and shows its working**, as Symbolab does. Type an
+  equation in solve( ) and press =: every x, exactly (x = (5 − √13)/2), by
+  moving terms, factoring or the quadratic formula; trig equations give every
+  solution with k, and what has no exact answer is found in numbers (≈).
+  ∫( ) without limits gives the antiderivative + C (substitution, by parts,
+  partial fractions and more), and d/dx( ) the derivative. The new list
+  button shows the steps, each named (Product rule, Substitute u = x²);
+  Insert steps puts them on the page as a text box. ∫ with limits and the
+  slope at a point have keys of their own in the Calculus tab.
 
 ### Changed
 
@@ -54,6 +63,11 @@ extracted from the matching section of this file by `release.yml`.
   learn. The settings list your sheets, how many lines each has, and which
   ones your learned model was built from, and say how much better it reads
   than Grape alone.
+- **The graph is laid out as GeoGebra's**: the plot on top and the list
+  under it, or the list beside it in a wide window. A tap on a curve selects
+  it: it is drawn heavier and only it shows its roots and peaks. A held point
+  is pinned as A, B, … with a row of its own; sliders fold their range away
+  behind their name; the grid has faint minor lines.
 
 ### Fixed
 

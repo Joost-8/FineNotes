@@ -143,7 +143,7 @@ describe("graph window places", () => {
 
   it("opens top right, and stays inside the view whatever happens to it", () => {
     const first = defaultPlace({ w: 1200, h: 800 });
-    expect(first).toEqual({ x: 1200 - 400 - 16, y: 64, w: 400, h: 380 });
+    expect(first).toEqual({ x: 1200 - 540 - 16, y: 64, w: 540, h: 380 });
     // A split view narrower than the window: it shrinks to fit, never below its minimum.
     expect(clampPlace({ x: 900, y: 50, w: 400, h: 300 }, { w: 500, h: 800 })).toEqual({
       x: 92,

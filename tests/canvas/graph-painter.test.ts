@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type GraphColors,
   formatPi,
+  minorValues,
   paintGraph,
   paintGraphGeometry,
   pointLabel,
@@ -56,7 +57,8 @@ describe("paintGraph", () => {
     expect(calls.some((c) => c.name === "clip")).toBe(true);
     expect(calls.find((c) => c.name === "fillRect")?.state.fillStyle).toBe("#fff");
     const strokes = calls.filter((c) => c.name === "stroke").map((c) => c.state.strokeStyle);
-    expect(strokes).toEqual(["#eee", "#888", "#2f6fde", "#d9433b"]);
+    // Minor grid, major grid, axes, then the curves.
+    expect(strokes).toEqual(["#eee", "#eee", "#888", "#2f6fde", "#d9433b"]);
     const labels = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
     expect(labels).toContain("5");
     expect(labels).toContain("−5");
@@ -161,7 +163,7 @@ describe("paintGraphGeometry and renderGraphSpec", () => {
       { colors: COLORS },
     );
     const fills = calls.filter((c) => c.name === "fill");
-    expect(fills.some((c) => c.state.globalAlpha === 0.2)).toBe(true);
+    expect(fills.some((c) => c.state.globalAlpha === 0.15)).toBe(true);
     expect(fills.some((c) => c.state.globalAlpha === 0.3)).toBe(true);
     const dashes = calls.filter((c) => c.name === "setLineDash").map((c) => c.args[0]);
     expect(dashes).toContainEqual([7, 5]);
@@ -221,6 +223,87 @@ describe("paintGraphGeometry and renderGraphSpec", () => {
     expect(labels).toContain("−2π");
     expect(labels).toContain("(2, 1)");
     expect(calls.filter((c) => c.name === "arc").length).toBe(2);
+  });
+
+  it("draws the selected line last, heavier, over a halo in its colour, with its points as rings", () => {
+    const line = (id: string, color: string): LineGeometry => ({
+      id,
+      color,
+      dashed: false,
+      width: 2.5,
+      strokes: [[-5, 0, 5, 1]],
+      fills: [],
+      dots: [],
+    });
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(
+      ctx,
+      { x: 0, y: 0, w: 400, h: 400 },
+      RANGE,
+      [line("a", "#f00"), line("b", "#00f")],
+      {
+        colors: COLORS,
+        selected: "a",
+        pois: [{ x: 0, y: 0, kind: "root", lines: ["a"] }],
+      },
+    );
+    const strokes = calls.filter((c) => c.name === "stroke" && c.state.strokeStyle !== COLORS.grid);
+    const curves = strokes.filter(
+      (c) => c.state.strokeStyle === "#f00" || c.state.strokeStyle === "#00f",
+    );
+    // b first; then a's halo (wide, faint), then a itself one px heavier.
+    expect(curves.slice(0, 3).map((c) => [c.state.strokeStyle, c.state.lineWidth])).toEqual([
+      ["#00f", 2.5],
+      ["#f00", 9.5],
+      ["#f00", 3.5],
+    ]);
+    expect(curves[1].state.globalAlpha).toBeLessThan(0.5);
+    // The ring: background inside, the selected line's colour round it.
+    const ring = calls.filter((c) => c.name === "arc").at(-1);
+    expect(ring).toBeDefined();
+    const after = calls.slice(calls.indexOf(ring!));
+    expect(after.find((c) => c.name === "stroke")?.state.strokeStyle).toBe("#f00");
+    expect(after.find((c) => c.name === "fill")?.state.fillStyle).toBe(COLORS.background);
+  });
+
+  it("puts minor grid lines between the major ones, never on them", () => {
+    const { step, values } = minorValues(-2, 2, 1, false);
+    expect(step).toBeCloseTo(0.2, 12);
+    expect(values.length).toBe(16);
+    for (const v of values) expect(Math.abs(v - Math.round(v))).toBeGreaterThan(1e-6);
+    // π ticks are halved.
+    expect(minorValues(0, 2 * Math.PI, Math.PI, true).values).toEqual([
+      Math.PI / 2,
+      (3 * Math.PI) / 2,
+    ]);
+    // Minor lines are drawn only while far enough apart.
+    const dense = recorder();
+    paintGraphGeometry(
+      dense.ctx,
+      { x: 0, y: 0, w: 100, h: 100 },
+      { xMin: -1000, xMax: 1000, yMin: -1000, yMax: 1000 },
+      [],
+      {
+        colors: COLORS,
+      },
+    );
+    expect(
+      dense.calls.filter(
+        (c) =>
+          c.name === "stroke" && c.state.globalAlpha !== 1 && c.state.globalAlpha !== undefined,
+      ).length,
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it("labels a named pin with its name alone", () => {
+    const { ctx, calls } = recorder();
+    paintGraphGeometry(ctx, { x: 0, y: 0, w: 400, h: 400 }, RANGE, [], {
+      colors: COLORS,
+      pins: [{ x: 2, y: 1, color: "#00f", label: "(2, 1)", name: "A" }],
+    });
+    const labels = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
+    expect(labels).toContain("A");
+    expect(labels).not.toContain("(2, 1)");
   });
 
   it("names multiples of π", () => {

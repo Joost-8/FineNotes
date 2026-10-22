@@ -218,9 +218,13 @@ export function defaultCalcPlace(bounds: { w: number; h: number }): WindowPlace 
   return clampPlace({ x: 16, y: 64, w: 360, h }, bounds, CALC_WINDOW_MIN);
 }
 
-/** Where a graph window first opens: the top right of the view, a third of its width. */
+/**
+ * Where a graph window first opens: the top right of the view, up to 45 % of
+ * its width, so on an iPad in landscape it is wide enough for the list to
+ * sit beside the plot.
+ */
 export function defaultPlace(bounds: { w: number; h: number }): WindowPlace {
-  const w = Math.max(WINDOW_MIN.w, Math.min(420, Math.round(bounds.w / 3)));
+  const w = Math.max(WINDOW_MIN.w, Math.min(560, Math.round(bounds.w * 0.45)));
   const h = Math.max(WINDOW_MIN.h, Math.min(380, Math.round(bounds.h / 2)));
   return clampPlace({ x: bounds.w - w - 16, y: 64, w, h }, bounds);
 }

@@ -8,6 +8,8 @@ import {
   defaultRange,
   fitRange,
   formatTick,
+  minorStep,
+  nextPinName,
   niceTicks,
   panRange,
   sampleCurve,
@@ -221,5 +223,33 @@ describe("view", () => {
   it("has a square default view", () => {
     expect(defaultRange(400, 200)).toEqual({ xMin: -10, xMax: 10, yMin: -5, yMax: 5 });
     expect(defaultRange(400, 200, "deg")).toEqual({ xMin: -360, xMax: 360, yMin: -5, yMax: 5 });
+  });
+});
+
+describe("minor grid and pin names", () => {
+  it("puts minor lines on round numbers between the major ones", () => {
+    expect(minorStep(1)).toBeCloseTo(0.2, 12);
+    expect(minorStep(5)).toBeCloseTo(1, 12);
+    expect(minorStep(2)).toBeCloseTo(0.5, 12);
+    expect(minorStep(20)).toBeCloseTo(5, 12);
+    expect(minorStep(0.05)).toBeCloseTo(0.01, 12);
+    expect(minorStep(0.2)).toBeCloseTo(0.05, 12);
+  });
+
+  it("names pins A, B, … and reuses a freed letter", () => {
+    expect(nextPinName([])).toBe("A");
+    expect(nextPinName([{ line: "l1", x: 0, name: "A" }])).toBe("B");
+    expect(
+      nextPinName([
+        { line: "l1", x: 0, name: "B" },
+        { line: "l1", x: 1 },
+      ]),
+    ).toBe("A");
+    const all = Array.from({ length: 26 }, (_, i) => ({
+      line: "l1",
+      x: i,
+      name: String.fromCharCode(65 + i),
+    }));
+    expect(nextPinName(all)).toBeNull();
   });
 });

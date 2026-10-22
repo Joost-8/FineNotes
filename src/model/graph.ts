@@ -45,9 +45,27 @@ export interface GraphSpec extends GraphRange {
   square?: boolean;
   /** x ticks at multiples of π. */
   piTicks?: boolean;
-  /** Points pinned on function lines, kept with their labels. */
-  pins?: Array<{ line: string; x: number }>;
+  /** Points pinned on function lines, kept with their labels; named A, B, … as GeoGebra names points. */
+  pins?: GraphPin[];
   [key: string]: unknown;
+}
+
+/** A point pinned on a function line: it follows the line (a slider moves it too). */
+export interface GraphPin {
+  line: string;
+  x: number;
+  /** A, B, …; pins from before names were given have none. */
+  name?: string;
+}
+
+/** The first capital letter no pin uses yet; null when all 26 are taken. */
+export function nextPinName(pins: readonly GraphPin[]): string | null {
+  const used = new Set(pins.map((p) => p.name));
+  for (let i = 0; i < 26; i++) {
+    const name = String.fromCharCode(65 + i);
+    if (!used.has(name)) return name;
+  }
+  return null;
 }
 
 /** A run of curve in value space, flat: [x0, y0, x1, y1, …]. */
@@ -216,6 +234,15 @@ export function niceTicks(
     values.push(Math.abs(v) < step * 1e-9 ? 0 : v);
   }
   return { step, values };
+}
+
+/**
+ * The step of the faint grid between major lines: a fifth of a step of 1 or
+ * 5 × 10ⁿ, a quarter of 2 × 10ⁿ, so minor lines land on round numbers.
+ */
+export function minorStep(step: number): number {
+  const mantissa = step / 10 ** Math.floor(Math.log10(step) + 1e-9);
+  return Math.abs(mantissa - 2) < 1e-6 ? step / 4 : step / 5;
 }
 
 /** A tick's label: as many decimals as the step needs, an exponent when the numbers are huge or tiny. */

@@ -32,7 +32,7 @@ export type MathBox =
   | { t: "paren"; body: MathBox }
   | { t: "abs"; body: MathBox }
   /** ∫ or Σ with limits above and below. */
-  | { t: "bigop"; sym: string; lo: MathBox; hi?: MathBox; body: MathBox; tail?: string };
+  | { t: "bigop"; sym: string; lo?: MathBox; hi?: MathBox; body: MathBox; tail?: string };
 
 const text = (s: string, role: "num" | "op" | "fn" | "var"): MathBox => ({ t: "text", s, role });
 const row = (...items: MathBox[]): MathBox => ({ t: "row", items });
@@ -44,6 +44,8 @@ const NAMES: Readonly<Record<string, string>> = {
   m: "M",
   theta: "θ",
   inf: "∞",
+  // The constant of integration: the tokenizer lowers case, so it travels as a word.
+  constant: "C",
 };
 const FUNCTION_NAMES: Readonly<Record<string, string>> = {
   asin: "sin⁻¹",
@@ -134,7 +136,20 @@ function call(node: Extract<CalcNode, { k: "call" }>): MathBox {
     case "abs":
       return { t: "abs", body: grouped(a) };
     case "integral":
-      return { t: "bigop", sym: "∫", lo: box(b), hi: box(c), body: box(a), tail: "dx" };
+      // ∫(f) without limits; ∫(f, u) in another letter (a substitution's step); ∫(f, a, b) with them.
+      if (node.args.length === 1) return { t: "bigop", sym: "∫", body: box(a), tail: "dx" };
+      if (node.args.length === 2 && b.k === "name" && b.slot === undefined) {
+        return { t: "bigop", sym: "∫", body: box(a), tail: `d${b.name}` };
+      }
+      // Half typed (∫(x, ▢): the upper limit still to come is a box too.
+      return {
+        t: "bigop",
+        sym: "∫",
+        lo: box(b),
+        hi: c ? box(c) : { t: "slot" },
+        body: box(a),
+        tail: "dx",
+      };
     case "lim":
       return {
         t: "bigop",
@@ -155,6 +170,11 @@ function call(node: Extract<CalcNode, { k: "call" }>): MathBox {
       };
     }
     case "deriv":
+      if (node.args.length === 1)
+        return row(
+          { t: "frac", num: text("d", "fn"), den: text("dx", "fn") },
+          { t: "paren", body: box(a) },
+        );
       return row(
         { t: "frac", num: text("d", "fn"), den: text("dx", "fn") },
         { t: "paren", body: box(a) },
@@ -185,7 +205,8 @@ export function layoutExpression(
 export function layoutWithEnding(
   expression: string,
   base: NumberBase = 10,
-  options: { graph?: boolean } = {},
+  /** `graph`: a graph's line (run-together letters, = or < at the top); `relations`: = with whole names (a worked answer). */
+  options: { graph?: boolean; relations?: boolean } = {},
 ): { box: MathBox; ending: string } | null {
   if (!expression.trim()) return null;
   // A graph line's restriction, {0 < x < 5}, is shown as typed after its curve.
@@ -199,7 +220,7 @@ export function layoutWithEnding(
   // A graph line: run-together letters (ax), and = or < at the top.
   const parse = options.graph
     ? { letters: true, relations: true }
-    : { letters: false, relations: false };
+    : { letters: false, relations: options.relations === true };
   // What a half-typed expression lacks: an operand, then more inputs of a function.
   const endings = ["", PLACEHOLDER, `,${PLACEHOLDER}`, `,${PLACEHOLDER}`, `,${PLACEHOLDER}`];
   let attempt = expression;
@@ -234,7 +255,8 @@ export function boxText(b: MathBox): string {
       return `|${boxText(b.body)}|`;
     case "bigop": {
       const hi = b.hi ? `^{${boxText(b.hi)}}` : "";
-      return `${b.sym}_{${boxText(b.lo)}}${hi}${boxText(b.body)}${b.tail ? ` ${b.tail}` : ""}`;
+      const lo = b.lo ? `_{${boxText(b.lo)}}` : "";
+      return `${b.sym}${lo}${hi}${boxText(b.body)}${b.tail ? ` ${b.tail}` : ""}`;
     }
   }
 }

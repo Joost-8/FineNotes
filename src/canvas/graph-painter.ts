@@ -21,6 +21,7 @@ import {
   type GraphSpec,
   type Polyline,
   formatTick,
+  minorStep,
   niceTicks,
   toScreen,
 } from "../model/graph";
@@ -69,10 +70,14 @@ export interface GraphPaintOptions {
   fontFamily?: string;
   /** A traced point, with its label. */
   trace?: GraphTrace;
-  /** Grey dots: roots, extrema, intercepts, intersections. */
+  /** Rings: roots, extrema, intercepts, intersections (the selected line's only, in the calculator). */
   pois?: readonly Poi[];
-  /** Pinned points, each with its colour and label. */
-  pins?: ReadonlyArray<{ x: number; y: number; color: string; label: string }>;
+  /** Pinned points, each with its colour and label; a named one shows only its name. */
+  pins?: ReadonlyArray<{ x: number; y: number; color: string; label: string; name?: string }>;
+  /** The selected line's id: drawn heavier, with a soft halo in its colour. */
+  selected?: string;
+  /** Faint lines between the grid's major lines (default on, with the grid). */
+  minorGrid?: boolean;
   /** How to make an offscreen canvas for an implicit region; none: the region is drawn in rectangles. */
   makeCanvas?: (w: number, h: number) => OffscreenCanvas | HTMLCanvasElement | null;
 }
@@ -85,6 +90,11 @@ export interface Frame {
 }
 
 type At = (x: number, y: number) => { px: number; py: number };
+
+/** How strongly a region (`y < …`, an implicit inequality) is shaded: light, so overlaps still read. */
+const REGION_ALPHA = 0.15;
+/** The selected line is this much heavier, CSS px. */
+const SELECTED_EXTRA_PX = 1;
 
 /** Draw `curves` (one list of polylines per expression) over `range` into `frame`. */
 export function paintGraph(
@@ -137,20 +147,34 @@ export function paintGraphGeometry(
     : niceTicks(range.xMin, range.xMax, w / u, 64);
   const yTicks = niceTicks(range.yMin, range.yMax, h / u, 48);
   if (options.grid !== false) {
+    const lines = (xs: readonly number[], ys: readonly number[]): void => {
+      ctx.beginPath();
+      for (const x of xs) {
+        const { px } = at(x, 0);
+        ctx.moveTo(Math.round(px) + 0.5 * u, fy);
+        ctx.lineTo(Math.round(px) + 0.5 * u, fy + h);
+      }
+      for (const y of ys) {
+        const { py } = at(0, y);
+        ctx.moveTo(fx, Math.round(py) + 0.5 * u);
+        ctx.lineTo(fx + w, Math.round(py) + 0.5 * u);
+      }
+      ctx.stroke();
+    };
     ctx.strokeStyle = colors.grid;
     ctx.lineWidth = u;
-    ctx.beginPath();
-    for (const x of xTicks.values) {
-      const { px } = at(x, 0);
-      ctx.moveTo(Math.round(px) + 0.5 * u, fy);
-      ctx.lineTo(Math.round(px) + 0.5 * u, fy + h);
+    if (options.minorGrid !== false) {
+      // GeoGebra's faint lines between the major ones, while they are far enough apart to read.
+      const minorX = minorValues(range.xMin, range.xMax, xTicks.step, options.piTicks === true);
+      const minorY = minorValues(range.yMin, range.yMax, yTicks.step, false);
+      ctx.globalAlpha = MINOR_ALPHA;
+      lines(
+        (minorX.step / (range.xMax - range.xMin)) * w >= MINOR_MIN_PX * u ? minorX.values : [],
+        (minorY.step / (range.yMax - range.yMin)) * h >= MINOR_MIN_PX * u ? minorY.values : [],
+      );
+      ctx.globalAlpha = 1;
     }
-    for (const y of yTicks.values) {
-      const { py } = at(0, y);
-      ctx.moveTo(fx, Math.round(py) + 0.5 * u);
-      ctx.lineTo(fx + w, Math.round(py) + 0.5 * u);
-    }
-    ctx.stroke();
+    lines(xTicks.values, yTicks.values);
   }
 
   // Axes, where they are in view.
@@ -177,18 +201,49 @@ export function paintGraphGeometry(
   // Shading first, under every curve.
   for (const g of geometry) {
     if (g.mask) paintMask(ctx, frame, g.mask, g.color, options);
-    if (g.fills.length > 0) fillPolys(ctx, at, g.fills, g.color, 0.2);
+    if (g.fills.length > 0) fillPolys(ctx, at, g.fills, g.color, REGION_ALPHA);
     if (g.area && g.area.fills.length > 0) fillPolys(ctx, at, g.area.fills, g.color, 0.3);
   }
-  for (const g of geometry) paintLine(ctx, at, g, u);
+  // The selected line last, over the others, heavier and with a halo.
+  const selected = geometry.find((g) => g.id === options.selected);
+  for (const g of geometry) if (g !== selected) paintLine(ctx, at, g, u);
+  if (selected) {
+    paintHalo(ctx, at, selected, u);
+    paintLine(ctx, at, { ...selected, width: selected.width + SELECTED_EXTRA_PX }, u);
+  }
   for (const g of geometry) if (g.area) paintAreaLabel(ctx, frame, at, g, options);
 
-  if (options.pois) paintPois(ctx, at, options.pois, options);
+  if (options.pois) paintPois(ctx, at, options.pois, selected?.color, options);
   for (const pin of options.pins ?? []) {
-    paintMarker(ctx, frame, at, { ...pin, curve: undefined }, options);
+    if (pin.name) paintNamedPin(ctx, frame, at, { ...pin, name: pin.name }, options);
+    else paintMarker(ctx, frame, at, { ...pin, curve: undefined }, options);
   }
   if (options.trace) paintMarker(ctx, frame, at, options.trace, options);
   ctx.restore();
+}
+
+/** Minor lines closer than this (CSS px) are left out: they would read as a tint. */
+const MINOR_MIN_PX = 8;
+/** Minor lines in the grid's colour at this strength: there, but under the major lines. */
+const MINOR_ALPHA = 0.32;
+
+/** Where the minor grid lines fall between major lines `step` apart (a π step is halved). */
+export function minorValues(
+  min: number,
+  max: number,
+  step: number,
+  pi: boolean,
+): { step: number; values: number[] } {
+  const minor = pi ? step / 2 : minorStep(step);
+  const values: number[] = [];
+  if (!(minor > 0) || !(max > min)) return { step: minor, values };
+  for (let k = Math.ceil(min / minor); k * minor <= max && values.length < 1000; k++) {
+    const v = k * minor;
+    // The major lines are drawn on their own.
+    const ratio = v / step;
+    if (Math.abs(ratio - Math.round(ratio)) > 1e-6) values.push(v);
+  }
+  return { step: minor, values };
 }
 
 /** x ticks at multiples (or fractions) of π, labelled in π. */
@@ -315,7 +370,7 @@ function paintMask(
   const cellW = frame.w / mask.cols;
   const cellH = frame.h / mask.rows;
   ctx.save();
-  ctx.globalAlpha = 0.2;
+  ctx.globalAlpha = REGION_ALPHA;
   ctx.fillStyle = color;
   const small = canvas?.getContext("2d") as
     CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -378,23 +433,70 @@ function paintAreaLabel(
   ctx.fillText(text, mid.px, y);
 }
 
+/** A line under the selected one, wide and faint in its own colour. */
+function paintHalo(ctx: CanvasRenderingContext2D, at: At, g: LineGeometry, u: number): void {
+  if (g.strokes.length === 0) return;
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = g.color;
+  ctx.lineWidth = (g.width + 7) * u;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  trace(ctx, at, g.strokes);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Points of interest as hollow rings, in the selected line's colour when there is one. */
 function paintPois(
   ctx: CanvasRenderingContext2D,
   at: At,
   pois: readonly Poi[],
+  color: string | undefined,
   options: GraphPaintOptions,
 ): void {
   const u = options.unit ?? 1;
-  ctx.fillStyle = options.colors.poi ?? options.colors.label;
-  ctx.strokeStyle = options.colors.background ?? "#ffffff";
-  ctx.lineWidth = 1.5 * u;
+  ctx.fillStyle = options.colors.background ?? "#ffffff";
+  ctx.strokeStyle = color ?? options.colors.poi ?? options.colors.label;
+  ctx.lineWidth = 2 * u;
   for (const poi of pois) {
     const p = at(poi.x, poi.y);
     ctx.beginPath();
-    ctx.arc(p.px, p.py, 3.5 * u, 0, Math.PI * 2);
+    ctx.arc(p.px, p.py, 4.5 * u, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
+}
+
+/** A pin with a name: a dot in its line's colour and the name beside it, as GeoGebra labels points. */
+function paintNamedPin(
+  ctx: CanvasRenderingContext2D,
+  frame: Frame,
+  at: At,
+  pin: { x: number; y: number; color: string; name: string },
+  options: GraphPaintOptions,
+): void {
+  const u = options.unit ?? 1;
+  const p = at(pin.x, pin.y);
+  const background = options.colors.background ?? "#ffffff";
+  ctx.fillStyle = pin.color;
+  ctx.strokeStyle = background;
+  ctx.lineWidth = 2 * u;
+  ctx.beginPath();
+  ctx.arc(p.px, p.py, 5 * u, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = `600 ${13 * u}px ${options.fontFamily ?? "sans-serif"}`;
+  const width = ctx.measureText(pin.name).width;
+  // Up and to the right, kept inside the frame.
+  const x = Math.min(frame.x + frame.w - width - 3 * u, p.px + 8 * u);
+  const y = Math.max(frame.y + 14 * u, p.py - 8 * u);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.lineWidth = 3 * u;
+  ctx.lineJoin = "round";
+  ctx.strokeText(pin.name, x, y);
+  ctx.fillText(pin.name, x, y);
 }
 
 function paintLabels(
@@ -423,7 +525,7 @@ function paintLabels(
     // A label the frame's edge would cut is left out, not clipped.
     const half = ctx.measureText(label).width / 2;
     if (px - half < fx + pad / 2 || px + half > fx + w - pad / 2) continue;
-    ctx.fillText(label, px, labelY);
+    haloText(ctx, label, px, labelY, options);
   }
   const rightOfAxis = origin.px + pad;
   const labelX = Math.min(fx + w - pad, Math.max(fx + pad, rightOfAxis));
@@ -433,8 +535,28 @@ function paintLabels(
     if (y === 0) continue;
     const py = fy + ((range.yMax - y) / (range.yMax - range.yMin)) * h;
     if (py - size / 2 < fy + pad / 2 || py + size / 2 > fy + h - pad / 2) continue;
-    ctx.fillText(formatTick(y, yTicks.step), labelX, py);
+    haloText(ctx, formatTick(y, yTicks.step), labelX, py, options);
   }
+}
+
+/** Text with a rim of the background round it, so a grid line or a curve under it never cuts it. */
+function haloText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  options: GraphPaintOptions,
+): void {
+  const background = options.colors.background;
+  if (background) {
+    ctx.save();
+    ctx.strokeStyle = background;
+    ctx.lineWidth = 3 * (options.unit ?? 1);
+    ctx.lineJoin = "round";
+    ctx.strokeText(text, x, y);
+    ctx.restore();
+  }
+  ctx.fillText(text, x, y);
 }
 
 /** A traced or pinned point: a dot in its line's colour, with a label above it (below near the top). */
@@ -531,7 +653,8 @@ export function renderGraphSpec(
     const entry = prepared.lines.find((p) => p.line.id === pin.line);
     const y = valueOfLine(prepared, pin.line, pin.x);
     if (!entry || !Number.isFinite(y)) return [];
-    return [{ x: pin.x, y, color: entry.color, label: pointLabel(pin.x, y) }];
+    const label = pointLabel(pin.x, y);
+    return [{ x: pin.x, y, color: entry.color, label, ...(pin.name ? { name: pin.name } : {}) }];
   });
   paintGraphGeometry(ctx, frame, spec, geometry, {
     ...options,

@@ -271,30 +271,64 @@ describe("a finger tap on a text box", () => {
       width: 200,
       height: 40,
     });
-    let boxTop = 400;
+    // The view scrolls up as the box goes down the screen: scroll y + box top stays 400.
+    const position = { x: 0, y: 0 };
+    s.scroller = { position };
+    s.baseScale = 1;
+    s.userZoom = 1;
+    const at = (top: number): void => {
+      position.y = 400 - top;
+    };
     (view.root as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () =>
-      rect(boxTop);
+      rect(400 - position.y);
     s.surfaceEl = {
       getBoundingClientRect: () => ({ top: 120, bottom: 800, left: 0, right: 1180 }),
     };
     s.heldText = view;
     s.heldReturnTool = "pen";
     classes.add("is-held");
+    run(s, "dropTextOutOfSight");
     // Still showing, even by a sliver: nothing happens.
-    boxTop = 790;
+    at(790);
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBe(view);
     // Gone below the page: the frame goes, the tool stays, the box is parked.
-    boxTop = 805;
+    at(805);
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBeNull();
     expect(classes.has("is-held")).toBe(false);
     expect(s.setTool).not.toHaveBeenCalled();
     expect(s.parkedText).toMatchObject({ view, tool: "select", returnTool: "pen" });
     // Scrolled back: nothing comes back by itself.
-    boxTop = 400;
+    at(400);
     run(s, "dropTextOutOfSight");
     expect(s.heldText).toBeNull();
+  });
+
+  it("a box just made is kept when the pane shrinks away from it, the view where it was", () => {
+    // The iPad keyboard opening (2026-10-21): the pane ends above the box
+    // before anything scrolls it clear; letting it go removed it, empty.
+    const { s, view } = holdable("text");
+    const blur = vi.fn();
+    (view as unknown as { input: { blur: () => void } }).input.blur = blur;
+    (view.root as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect =
+      () => ({ top: 600, bottom: 630, left: 100, right: 300, width: 200, height: 30 });
+    let paneBottom = 800;
+    s.surfaceEl = {
+      getBoundingClientRect: () => ({ top: 120, bottom: paneBottom, left: 0, right: 1180 }),
+    };
+    s.scroller = { position: { x: 0, y: 250 } };
+    s.baseScale = 1;
+    s.userZoom = 1;
+    s.editingTextView = () => view;
+    run(s, "dropTextOutOfSight");
+    paneBottom = 420;
+    run(s, "dropTextOutOfSight");
+    expect(blur).not.toHaveBeenCalled();
+    // Collapsed altogether (the keyboard cap, ledger 2026-09-21): still kept.
+    paneBottom = 120;
+    run(s, "dropTextOutOfSight");
+    expect(blur).not.toHaveBeenCalled();
   });
 
   it("a tap on the parked box types in it at once; a tap elsewhere forgets it", () => {
@@ -341,6 +375,11 @@ describe("a finger tap on a text box", () => {
       getBoundingClientRect: () => ({ top: 120, bottom: 800, left: 0, right: 1180 }),
     };
     s.editingTextView = () => view;
+    // Last seen with the view 600 px further up the page.
+    s.scroller = { position: { x: 0, y: 600 } };
+    s.baseScale = 1;
+    s.userZoom = 1;
+    s.textSeen = { view, at: { x: 0, y: 0, scale: 1 } };
     run(s, "dropTextOutOfSight");
     expect(blur).toHaveBeenCalled();
   });

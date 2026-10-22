@@ -220,6 +220,8 @@ function fakeApp(
 let app: ReturnType<typeof fakeApp>;
 let plugin: Plugin;
 let registered: Registered;
+/** Every plugin a test loaded: a test that loads twice must not leave the first one running. */
+const loadedPlugins: Registered[] = [];
 let opened: string[];
 
 async function flush(): Promise<void> {
@@ -242,6 +244,7 @@ async function load(
     } as never,
   );
   registered = plugin as unknown as Registered;
+  loadedPlugins.push(registered);
   registered.stored = stored;
   await plugin.onload();
 }
@@ -307,7 +310,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  registered?.unload();
+  for (const each of loadedPlugins.splice(0)) each.unload();
   vi.unstubAllGlobals();
 });
 
@@ -900,6 +903,7 @@ describe("settings after a change of plugin id", () => {
       { id, name: "Renamed", version: VERSION } as never,
     );
     registered = plugin as unknown as Registered;
+    loadedPlugins.push(registered);
     registered.stored = own;
     await plugin.onload();
   }

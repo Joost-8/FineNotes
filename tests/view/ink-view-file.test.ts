@@ -25,6 +25,7 @@ const { readTextSection, writeTextSection } = await import("../../src/recognitio
 const { pageKeys, updatePageTranscripts } = await import("../../src/recognition/page-transcripts");
 const { encodeDocument } = await import("../../src/model/serialize");
 const { VENDORS } = await import("../../src/recognition/llm-request");
+const { StartupLog } = await import("../../src/view/startup-log");
 
 type View = InstanceType<typeof InkView>;
 
@@ -55,6 +56,7 @@ function fakePlugin(settings: Record<string, unknown> = {}) {
       log: () => Object.entries(plugin.moves).map(([from, to]) => ({ from, to })),
       relink: (path: string) => plugin.moves[path],
     },
+    startup: new StartupLog(() => 0),
   };
 }
 
