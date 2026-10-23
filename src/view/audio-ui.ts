@@ -16,6 +16,7 @@
 import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
 import { describeRecording, formatClock } from "../audio/recording";
 import type { Recording } from "../model/document";
+import { swallowGhostClick } from "./ghost-click";
 import { syncRangeFill } from "./range-fill";
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
@@ -80,7 +81,9 @@ export function tapButton(
       event.clientX <= r.right &&
       event.clientY >= r.top &&
       event.clientY <= r.bottom;
-    if (inside && !button.disabled) run();
+    if (!inside || button.disabled) return;
+    swallowGhostClick(button.ownerDocument, event);
+    run();
   });
   button.addEventListener("pointercancel", () => {
     armed = null;
