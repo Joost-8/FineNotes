@@ -18,8 +18,9 @@
  *
  * The next click is eaten (in the capture phase, before any target sees it)
  * only if it lands within {@link GHOST_CLICK_PX} of the lift and
- * {@link GHOST_CLICK_MS} after it. Any click ends the watch, so on the iPad,
- * where none comes, a later real click passes and clears it.
+ * {@link GHOST_CLICK_MS} after it. The watch ends at the first click, or
+ * after {@link GHOST_CLICK_MS} when none comes (the iPad), so a quick second
+ * tap at the same spot is never taken for a ghost.
  */
 
 /** Longest a synthesised click lags its pointerup, ms. */
@@ -42,9 +43,11 @@ export function swallowGhostClick(doc: Document, up: PointerEvent): void {
     event.preventDefault();
   };
   const end = (): void => {
+    window.clearTimeout(timer);
     doc.removeEventListener("click", onClick, true);
     if (disarm === end) disarm = null;
   };
   doc.addEventListener("click", onClick, true);
+  const timer = window.setTimeout(end, GHOST_CLICK_MS);
   disarm = end;
 }

@@ -1,5 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GHOST_CLICK_MS, GHOST_CLICK_PX, swallowGhostClick } from "../../src/view/ghost-click";
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", {
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+  });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 /** A document that records its capture-phase click listeners. */
 function fakeDocument() {
@@ -49,6 +62,16 @@ describe("swallowGhostClick", () => {
     const late = click({ timeStamp: 1000 + GHOST_CLICK_MS + 1 });
     expect(late.stopImmediatePropagation).not.toHaveBeenCalled();
     expect(listeners.size).toBe(0);
+  });
+
+  it("stops watching after GHOST_CLICK_MS, so a quick second tap there is not eaten", () => {
+    const { doc, listeners, click } = fakeDocument();
+    swallowGhostClick(doc, up());
+    vi.advanceTimersByTime(GHOST_CLICK_MS - 1);
+    expect(listeners.size).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(listeners.size).toBe(0);
+    expect(click().stopImmediatePropagation).not.toHaveBeenCalled();
   });
 
   it("lets a click elsewhere through, and stops watching", () => {
