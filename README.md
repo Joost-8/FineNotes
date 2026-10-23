@@ -1,37 +1,24 @@
 # FineNotes
 
+![Writing in FineNotes: a title, a highlight, two lines of notes, and a rough circle that snaps clean](assets/readme/writing.gif)
+
 Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Android tablet pens, and pen tablets on Windows, macOS or Linux. Real pages, paper templates, snapping shapes, PDF annotation and pictures, kept as plain files in your vault.
 
-Most handwriting plugins for Obsidian give you an infinite canvas. FineNotes
-gives you **pages**, as Goodnotes does. A page has a fixed size, so ink stays
-exactly where you wrote it on an iPad, a phone and a laptop, whatever the width
-of the window.
+- **Real pages, not an infinite canvas.** A page has a fixed size, as in
+  Goodnotes, so ink stays exactly where you wrote it on an iPad, a phone and a
+  laptop, whatever the width of the window.
+- **Reads your handwriting on your device** with Grape, for search, titles and
+  links. Offline, with no account.
+- **Free, and plain files in your vault.** No subscription, and no cloud you
+  did not choose.
+
+![A notebook with its page sidebar: a teal cover, a page about the cell with a labelled diagram, and a genetics page](assets/readme/hero-pages.png)
+
+![A lecture slide opened in FineNotes, with highlights, a circled formula and handwritten notes](assets/readme/pdf-annotation.png)
 
 **Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
 
 **Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
-
-## Why I made FineNotes
-
-FineNotes started as a personal project because I was tired of all the paid
-note-taking apps on the App Store, such as Goodnotes and Notability, combined
-with the bad performance of Apple Notes as an alternative. I was also tired of
-companies being the ones responsible for keeping your notes in their cloud,
-something that Obsidian fixes. Furthermore, I was struggling with compatibility
-issues between my PC, which runs Windows, and my Apple devices, which made
-synchronization a very arduous task, to say the least.
-
-The purpose of this plugin is to be a complete alternative to those note-taking
-apps. It can't have every feature a native App Store app has, because it runs
-as TypeScript inside Obsidian, with the memory limits that come with that. But
-I think that with future releases and your feedback it can get very close. For
-now it has all the essential features; only some extra, handy ones from those
-apps are still missing.
-
-Hope you guys enjoy this and give me some
-[feedback](https://github.com/Joost-8/FineNotes/issues)!
-
-— Joost
 
 ## Features
 
@@ -94,6 +81,8 @@ Hope you guys enjoy this and give me some
   lift the Pencil.
 - A Shape tool with connectors, and tables up to 8 × 8.
 
+![A genetics page: a Punnett square, filled shapes, a highlighted result and a pink sticky note](assets/readme/page-portrait.png)
+
 **Selecting and arranging**
 
 - A freehand or rectangular lasso, with switches for what it picks up:
@@ -128,6 +117,28 @@ Hope you guys enjoy this and give me some
 - Ask questions about a page or a whole notebook.
 - Generate a picture.
 - Transcribe a recording.
+
+## Why I made FineNotes
+
+FineNotes started as a personal project because I was tired of all the paid
+note-taking apps on the App Store, such as Goodnotes and Notability, combined
+with the bad performance of Apple Notes as an alternative. I was also tired of
+companies being the ones responsible for keeping your notes in their cloud,
+something that Obsidian fixes. Furthermore, I was struggling with compatibility
+issues between my PC, which runs Windows, and my Apple devices, which made
+synchronization a very arduous task, to say the least.
+
+The purpose of this plugin is to be a complete alternative to those note-taking
+apps. It can't have every feature a native App Store app has, because it runs
+as TypeScript inside Obsidian, with the memory limits that come with that. But
+I think that with future releases and your feedback it can get very close. For
+now it has all the essential features; only some extra, handy ones from those
+apps are still missing.
+
+Hope you guys enjoy this and give me some
+[feedback](https://github.com/Joost-8/FineNotes/issues)!
+
+— Joost
 
 ## Requirements
 
