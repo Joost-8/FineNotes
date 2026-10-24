@@ -224,8 +224,21 @@ function penStroke(pen: string, curve: Curve, thick: number, highlighterOpacity:
   return { d: outline(curve, (t) => (thick / 2) * shape(t)) };
 }
 
+/** The highlighter's width mark: a level band across the glyph, as a highlight lies. */
+const HIGHLIGHT_BAND = `M3 ${SWOOSH_HEIGHT / 2}H${SWOOSH_WIDTH - 3}`;
+
 /** The width button for a stroke `thickness` screen px wide, with pen `pen`. */
 export function swoosh(pen: string, thickness: number): Swoosh {
+  // A highlight is wide: a level band shows its height whole up to the
+  // glyph's, where a slanted one would be cut at its corners.
+  if (pen === "highlighter") {
+    return {
+      d: HIGHLIGHT_BAND,
+      strokeWidth: glyphThickness(thickness),
+      cap: "butt",
+      opacity: 0.55,
+    };
+  }
   return penStroke(pen, SWOOSH_CURVE, glyphThickness(thickness), 0.55);
 }
 
