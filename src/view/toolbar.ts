@@ -1419,10 +1419,16 @@ export class Toolbar {
 
     // Stroke widths, drawn as literal strokes of increasing weight.
     for (const width of this.quickWidths()) {
-      const button = widthButton(this.optionsEl, width, active.id, this.widthMark(width), () => {
-        this.setWidth(width);
-        this.syncActive();
-      });
+      const button = widthButton(
+        this.optionsEl,
+        this.widthMm(width),
+        active.id,
+        this.widthMark(width),
+        () => {
+          this.setWidth(width);
+          this.syncActive();
+        },
+      );
       this.widthButtons.set(width, button);
     }
     this.chevron("More widths", (button) => this.toggleWidthList(button));
@@ -2717,8 +2723,9 @@ export class Toolbar {
     // The readout, the thumb, the preview and the presets always show the live width.
     const show = (): void => {
       const width = chosenWidth(this.state.size, floor);
-      if (activeDocument.activeElement !== field) field.value = mmText(width);
-      field.setAttribute("title", formatMm(width));
+      // In mm of ink on the page: a highlighter's band, not the width before its 4x.
+      if (activeDocument.activeElement !== field) field.value = mmText(width, this.inkScale());
+      field.setAttribute("title", this.widthMm(width));
       range.value = String(nearestStop(stops, width));
       syncRangeFill(range);
       markChosen(presets, this.state.size);
@@ -2740,11 +2747,17 @@ export class Toolbar {
       this.syncActive();
     };
     for (const width of this.widths) {
-      const preset = widthButton(row, width, this.activePenType().id, this.widthMark(width), () => {
-        pick(width);
-        this.closePopover();
-        settle();
-      });
+      const preset = widthButton(
+        row,
+        this.widthMm(width),
+        this.activePenType().id,
+        this.widthMark(width),
+        () => {
+          pick(width);
+          this.closePopover();
+          settle();
+        },
+      );
       presets.set(width, preset);
     }
     // The zoom changed under the open popover: its marks follow the ink.
@@ -2764,11 +2777,11 @@ export class Toolbar {
       settle();
     });
     const typed = (): void => {
-      const width = widthFromMm(field.value);
+      const width = widthFromMm(field.value, this.inkScale());
       field.toggleClass("is-invalid", width === null);
       if (width === null) return;
       pick(width);
-      field.value = mmText(chosenWidth(this.state.size, floor));
+      field.value = mmText(chosenWidth(this.state.size, floor), this.inkScale());
       settle();
     };
     field.addEventListener("change", typed);
@@ -2792,6 +2805,20 @@ export class Toolbar {
    */
   private widthMark(width: number): number {
     return strokeWidthFor({ ...this.state, size: width }) * this.previewScales().pen;
+  }
+
+  /**
+   * The pen type's multiplier on the chosen width (a highlighter's 4): the
+   * mm the width controls show and take are the ink's, chosen width times
+   * this. A shape's outline is drawn at the chosen width.
+   */
+  private inkScale(): number {
+    return this.state.tool === "shape" ? 1 : penTypeFor(this.state).sizeScale;
+  }
+
+  /** A preset width as its button names it: the ink's width on the page, in mm. */
+  private widthMm(width: number): string {
+    return formatMm(strokeWidthFor({ ...this.state, size: width }));
   }
 
   /** How wide an eraser size's mark is drawn, screen px: its footprint on the page. */
@@ -4011,20 +4038,20 @@ function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
 
 /**
  * A preset pen width, in the pill or in the widths popover: the stroke
- * itself, `thickness` screen px as it writes now, named in millimetres for
- * screen readers and on hover.
+ * itself, `thickness` screen px as it writes now, named by its ink's width
+ * (`mm`, "0.62 mm") for screen readers and on hover.
  */
 function widthButton(
   parent: HTMLElement,
-  width: number,
+  mm: string,
   pen: string,
   thickness: number,
   onPick: () => void,
 ): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
   button.append(widthGlyph(thickness, pen));
-  button.setAttribute("aria-label", `Width ${formatMm(width)}`);
-  button.setAttribute("title", formatMm(width));
+  button.setAttribute("aria-label", `Width ${mm}`);
+  button.setAttribute("title", mm);
   button.addEventListener("click", onPick);
   return button;
 }

@@ -1540,7 +1540,7 @@ describe("folding sections", () => {
     ).toBe(true);
     const status = (g: (typeof drawn)[number]) =>
       g.header.find("goodobsidian-section-status")?.textContent;
-    expect(status(writing)).toBe("Highlighter · 5");
+    expect(status(writing)).toBe("Highlighter · 4.1 mm");
     expect(writing.header.find("goodobsidian-status-swatch")?.style.backgroundColor).toBe(
       plugin.settings.defaultColor,
     );
@@ -1555,7 +1555,7 @@ describe("folding sections", () => {
     expect(status(advanced)).toBe("");
     // The state follows a change made in the tab.
     await tab.setControlValue("defaultSize", "8");
-    expect(status(writing)).toBe("Highlighter · 8");
+    expect(status(writing)).toBe("Highlighter · 6.6 mm");
   });
 
   it("folds and unfolds from the header, and remembers it", () => {

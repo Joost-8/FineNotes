@@ -13,8 +13,8 @@
 
 import { SIZES } from "../constants";
 import { parseHexColor } from "./colors";
-import { FINE_PEN_MIN, chosenWidth } from "./pen-widths";
-import { mmToPage, pageToMm } from "./units";
+import { FINE_PEN_MIN, chosenWidth, widthStops } from "./pen-widths";
+import { formatMm, mmToPage, pageToMm } from "./units";
 
 /** The pen types, as `toolbar.ts` names them. */
 export const SAVED_PEN_TYPES = ["fountain", "ball", "brush", "calligraphy", "highlighter"] as const;
@@ -174,23 +174,46 @@ export function editSavedPen(
  * as a stroke stores it; `null` while the text is not a width between the
  * thinnest pen and {@link MAX_PEN_MM}. Out of range is refused rather than
  * clamped: a clamped number would be a width nobody typed.
+ *
+ * The mm are the ink's on the page: with a pen type's multiplier `scale`
+ * (a highlighter's 4), typing 4 mm sets the width that draws a 4 mm band.
+ * What is stored stays the width before the multiplier, so saved pens and
+ * strokes do not change; only the number people see and type does.
  */
-export function widthFromMm(text: string): number | null {
+export function widthFromMm(text: string, scale = 1): number | null {
   const match = /^\s*(\d+(?:[.,]\d*)?|[.,]\d+)\s*(?:mm)?\s*$/i.exec(text);
-  if (!match) return null;
+  if (!match || !(scale > 0)) return null;
   const mm = Number(match[1].replace(",", "."));
-  const width = Math.round(mmToPage(mm) * 100) / 100;
+  // A slider stop, as the field shows it, reads back as that stop: two
+  // decimals of mm through a 1.8x brush would drift 3 to 3.01.
+  const shown = mm.toFixed(2);
+  const stop = widthStops(SIZES, true).find((w) => mmText(w, scale) === shown);
+  if (stop !== undefined) return stop;
+  const width = Math.round((mmToPage(mm) / scale) * 100) / 100;
   return isPenWidth(width) ? width : null;
 }
 
-/** A width in page px as the mm field shows it: two decimals, no unit. */
-export function mmText(width: number): string {
-  return pageToMm(width).toFixed(2);
+/**
+ * A width in page px, before the multiplier `scale`, as the mm field shows
+ * it: the ink's width on the page, two decimals, no unit.
+ */
+export function mmText(width: number, scale = 1): string {
+  return pageToMm(width * scale).toFixed(2);
 }
 
-/** What a pen is called in a list: "Ball pen, 0.41 mm". */
+/**
+ * The width a note opens with (settings' "Start with"), as the ink it lays
+ * down with the tool it opens with: "0.62 mm" for the pen, four times that
+ * for the highlighter. Any other tool opens on the pen's width.
+ */
+export function defaultWidthText(tool: string, size: number): string {
+  const type: SavedPenType = tool === "highlighter" ? "highlighter" : "fountain";
+  return formatMm(laidWidth({ type, color: "#000000", size }));
+}
+
+/** What a pen is called in a list, by the width of its ink: "Highlighter, 4.10 mm". */
 export function savedPenLabel(pen: SavedPen): string {
-  return `${SAVED_PEN_NAMES[pen.type]}, ${mmText(pen.size)} mm`;
+  return `${SAVED_PEN_NAMES[pen.type]}, ${mmText(pen.size, SAVED_PEN_SCALE[pen.type])} mm`;
 }
 
 /**

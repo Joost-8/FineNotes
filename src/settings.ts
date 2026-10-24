@@ -122,6 +122,7 @@ import {
   MAX_SAVED_PENS,
   type SavedPen,
   defaultSavedPens,
+  defaultWidthText,
   newPenDraft,
   putSavedPen,
   removeSavedPen,
@@ -1004,7 +1005,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
       ],
       () => [
-        { text: `${TOOL_NAMES[settings.defaultTool] ?? TOOL_NAMES.pen} · ${settings.defaultSize}` },
+        {
+          text: `${TOOL_NAMES[settings.defaultTool] ?? TOOL_NAMES.pen} · ${defaultWidthText(settings.defaultTool, settings.defaultSize)}`,
+        },
         { color: settings.defaultColor },
       ],
     );
@@ -1013,14 +1016,26 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** "Start with": the tool, the width and the colour a note opens with, side by side. */
   private drawStartWith(setting: Setting): void {
     const settings = this.plugin.settings;
+    // The widths read as the ink they lay down with the tool chosen beside them.
+    let sizes: HTMLSelectElement | null = null;
+    const nameSizes = (tool: string): void => {
+      for (const option of Array.from(sizes?.options ?? [])) {
+        option.text = defaultWidthText(tool, Number(option.value));
+      }
+    };
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(TOOL_NAMES)) d.addOption(id, name);
       d.selectEl.setAttribute("aria-label", "Tool");
       d.setValue(String(shownValue(settings, "defaultTool")));
-      d.onChange((value) => void this.setControlValue("defaultTool", value));
+      d.onChange((value) => {
+        nameSizes(value);
+        void this.setControlValue("defaultTool", value);
+      });
     });
     setting.addDropdown((d) => {
+      sizes = d.selectEl;
       for (const size of SIZES) d.addOption(String(size), String(size));
+      nameSizes(String(shownValue(settings, "defaultTool")));
       d.selectEl.setAttribute("aria-label", "Stroke size");
       d.setValue(String(shownValue(settings, "defaultSize")));
       d.onChange((value) => void this.setControlValue("defaultSize", value));

@@ -20,6 +20,7 @@ import { relativeLuminance } from "../model/cover";
 import { nearestStop, widthStops } from "../model/pen-widths";
 import {
   SAVED_PEN_NAMES,
+  SAVED_PEN_SCALE,
   SAVED_PEN_TYPES,
   type SavedPen,
   duplicateIndex,
@@ -124,11 +125,13 @@ export class SavedPenModal extends Modal {
       show();
     });
     const typed = (): void => {
-      const width = widthFromMm(field.value);
+      // The mm are the ink's: a highlighter's band, its width times 4.
+      const scale = SAVED_PEN_SCALE[this.pen.type];
+      const width = widthFromMm(field.value, scale);
       field.toggleClass("is-invalid", width === null);
       if (width === null) return;
       this.pen = withPenType({ ...this.pen, size: width }, this.pen.type);
-      field.value = mmText(this.pen.size);
+      field.value = mmText(this.pen.size, scale);
       show();
     };
     field.addEventListener("change", typed);
@@ -210,7 +213,9 @@ export class SavedPenModal extends Modal {
       range.max = String(all.length - 1);
       range.value = String(nearestStop(all, pen.size));
       syncRangeFill(range);
-      if (body.ownerDocument.activeElement !== field) field.value = mmText(pen.size);
+      if (body.ownerDocument.activeElement !== field) {
+        field.value = mmText(pen.size, SAVED_PEN_SCALE[pen.type]);
+      }
       field.removeClass("is-invalid");
       const same = duplicateIndex(this.options.pens, pen, index ?? -1);
       hint.setText(same >= 0 ? `Same as pen ${same + 1}` : "");

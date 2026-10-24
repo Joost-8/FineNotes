@@ -34,6 +34,12 @@ extracted from the matching section of this file by `release.yml`.
   eraser's sizes are drawn as thick as the line they write, or as large as
   the eraser is, on the page at the zoom you are at, beside the ink you
   compare them with. The eraser's size in mm is what it erases at that zoom.
+- **Widths in mm are the ink's.** The highlighter, brush and calligraphy pen
+  draw wider than the width you pick (4×, 1.8× and 2.6×), but the width
+  field, its presets, saved pens and the default width showed the number
+  before that. They now show and take the width of the ink on the page: a
+  highlighter that draws a 4.1 mm band reads 4.1 mm, and typing 4 mm gives
+  a 4 mm band. Your pens and your ink are unchanged.
 
 ## [2.4.1] - 2026-10-22
 

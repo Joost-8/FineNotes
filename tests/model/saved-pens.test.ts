@@ -1,7 +1,8 @@
 /** `src/model/saved-pens.ts` — saved pens and the pen last written with (FineNotes#24, #25). */
 
 import { describe, expect, it, vi } from "vitest";
-import { FINE_PEN_MIN } from "../../src/model/pen-widths";
+import { FINE_PEN_MIN, widthStops } from "../../src/model/pen-widths";
+import { SIZES } from "../../src/constants";
 import {
   DEFAULT_SAVED_PENS,
   HIGHLIGHTER_MIN_WIDTH,
@@ -10,6 +11,7 @@ import {
   SAMPLE_MAX_THICKNESS,
   SAVED_PEN_NAMES,
   SAVED_PEN_SCALE,
+  defaultWidthText,
   SAVED_PEN_TYPES,
   type SavedPen,
   addSavedPen,
@@ -155,12 +157,43 @@ describe("widths in mm", () => {
     expect(isPenWidth(MAX_PEN_WIDTH)).toBe(true);
   });
 
-  it("shows a width as mm with two decimals, and names a pen by it", () => {
+  it("shows a width as mm with two decimals, and names a pen by its ink's width", () => {
     expect(mmText(2)).toBe("0.41");
     expect(savedPenLabel(blue)).toBe("Ball pen, 0.41 mm");
-    expect(savedPenLabel(marker)).toBe("Highlighter, 1.03 mm");
-    expect(savedPenLabel({ ...red, type: "brush" })).toBe("Brush pen, 0.62 mm");
+    // A highlighter set to 5 draws a 20 page px band.
+    expect(savedPenLabel(marker)).toBe("Highlighter, 4.10 mm");
+    expect(savedPenLabel({ ...red, type: "brush" })).toBe("Brush pen, 1.11 mm");
     expect(savedPenLabel(red)).toBe("Fountain pen, 0.62 mm");
+  });
+
+  it("reads and shows the ink's width through a pen type's multiplier, storing the width before it", () => {
+    expect(mmText(5, SAVED_PEN_SCALE.highlighter)).toBe("4.10");
+    // Typing 4 mm for a highlighter sets the width whose band is 4 mm.
+    const width = widthFromMm("4", SAVED_PEN_SCALE.highlighter);
+    expect(width).toBe(4.88);
+    expect(mmText(width ?? 0, SAVED_PEN_SCALE.highlighter)).toBe("4.00");
+    expect(widthFromMm("1.11", SAVED_PEN_SCALE.brush)).toBe(3);
+    expect(widthFromMm("1", SAVED_PEN_SCALE.calligraphy)).toBe(1.88);
+    // The range is the stored width's: a 20 mm highlighter is a 5 mm width.
+    expect(widthFromMm("20", SAVED_PEN_SCALE.highlighter)).toBe(MAX_PEN_WIDTH);
+    expect(widthFromMm("21", SAVED_PEN_SCALE.highlighter)).toBeNull();
+    expect(widthFromMm("1", 0)).toBeNull();
+    // Every stop the slider has reads back as itself, at every multiplier.
+    for (const scale of Object.values(SAVED_PEN_SCALE)) {
+      for (const stop of widthStops(SIZES, true)) {
+        expect(widthFromMm(mmText(stop, scale), scale)).toBe(stop);
+      }
+    }
+  });
+});
+
+describe("defaultWidthText", () => {
+  it("names the opening width by the ink it lays down with the opening tool", () => {
+    expect(defaultWidthText("pen", 3)).toBe("0.62 mm");
+    expect(defaultWidthText("highlighter", 3)).toBe("2.5 mm");
+    // A highlighter is never thinner than its thinnest preset.
+    expect(defaultWidthText("highlighter", 1)).toBe("1.6 mm");
+    expect(defaultWidthText("eraser", 3)).toBe("0.62 mm");
   });
 });
 
