@@ -139,10 +139,10 @@ export class WordCheck {
    *
    * - When its ink fits list words about as well as the reading (margin
    *   under `SUGGEST_MARGIN`), it is probably a misread: the best list words
-   *   come first, as chips ("Did you mean"), then Correct the reading, That's
-   *   what I wrote, and Add to dictionary.
-   * - Otherwise the ink really shows this word: That's what I wrote (with the
-   *   closest list spelling under it), Add to dictionary, then Correct.
+   *   come first, as chips under the reading, then Type what it says, It
+   *   says "…", and Add to dictionary.
+   * - Otherwise the ink really shows this word: It says "…" (with the
+   *   closest list spelling under it), Add to dictionary, then Type.
    *
    * `done` runs after an answer is saved, to take the underline away;
    * `closed` whenever the card closes, answered or not.
@@ -160,12 +160,12 @@ export class WordCheck {
       void this.answer(word, kind, text).then(done);
     const correct: WordPopoverRow = {
       icon: "pencil",
-      label: "Correct the reading…",
+      label: "Type what it says…",
       run: () => new WordCorrectionModal(this.app, read, (text) => reply("misread", text)).open(),
     };
     const wrote: WordPopoverRow = {
       icon: "check",
-      label: "That's what I wrote",
+      label: `It says “${read}”`,
       sub: !misread && found?.words[0] ? `Closest word: ${found.words[0]}` : undefined,
       run: () => reply("mistake", read),
     };

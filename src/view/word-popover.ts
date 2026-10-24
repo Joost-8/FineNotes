@@ -3,8 +3,10 @@
  * it): a FineNotes popover on <body>, below the tap, closed by a tap
  * outside, Escape, or an answer. Styled like the Add Page and AI popovers.
  *
- * - When its ink fits list words about as well as the reading, they come
- *   first as chips ("Did you mean"), the first tinted with the accent.
+ * - First what Grape read, large: the word to check.
+ * - When its ink fits list words about as well as the reading, they follow
+ *   right under it as chips, the first tinted with the accent: other words
+ *   the ink may say, with no caption ("Did you mean" read as spelling).
  * - Then rows, each an icon, a label and an optional sub-line.
  */
 
@@ -22,7 +24,7 @@ export interface WordPopoverRow {
 export interface WordPopoverContent {
   /** What Grape read. */
   read: string;
-  /** Words to offer as chips, best first; none for no "Did you mean". */
+  /** Other words the ink may say, as chips, best first; none for no chips. */
   chips: readonly string[];
   onChip: (word: string) => void;
   rows: readonly WordPopoverRow[];
@@ -64,10 +66,10 @@ export class WordPopover {
   }
 
   private build(content: WordPopoverContent): void {
-    this.el.createDiv({ cls: "goodobsidian-wordcheck-read", text: `Read as “${content.read}”` });
+    this.el.createDiv({ cls: "goodobsidian-wordcheck-read", text: `“${content.read}”` });
     if (content.chips.length > 0) {
-      this.el.createDiv({ cls: "goodobsidian-wordcheck-caption", text: "Did you mean" });
       const chips = this.el.createDiv({ cls: "goodobsidian-wordcheck-chips" });
+      chips.setAttribute("aria-label", "Or it may say");
       content.chips.forEach((word, i) => {
         // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
         const chip = chips.createEl("button", {

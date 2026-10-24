@@ -41,6 +41,15 @@ extracted from the matching section of this file by `release.yml`.
   highlighter that draws a 4.1 mm band reads 4.1 mm, and typing 4 mm gives
   a 4 mm band. Your pens and your ink are unchanged.
 
+### Changed
+
+- **A clearer card for an underlined word.** What FineNotes read is now
+  the card's large heading, so you see at once what to check. The other
+  words your ink may say follow right under it without the "Did you mean"
+  caption, which read like a spelling check. The rows say what they do:
+  "Type what it says…", "It says “…”" (your spelling, kept) and "Add to
+  dictionary".
+
 ## [2.4.1] - 2026-10-22
 
 ### Added
