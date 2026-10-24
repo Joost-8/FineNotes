@@ -9634,26 +9634,42 @@ button.goodobsidian-learn-stop.is-hidden {
   transform-origin: 0 0;
 }
 
-/* Finger-sized grips with a small visible bar, on the cell's edges. */
+/* A refused edit (the page ends there): the cell's outline turns red for a moment. */
+.goodobsidian-table-cell.is-refused {
+  outline-color: var(--text-error);
+}
+
+/* The grips on the table's borders while a cell is typed in: one per column
+   on the top border, one per row on the left border, each a finger-sized
+   target around a small handle; the typed-in cell's two are filled. The
+   layer itself lets presses through to the cells. */
+.goodobsidian-table-grips {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.goodobsidian-table-grips.is-hidden,
+.goodobsidian-table-guide.is-hidden {
+  display: none;
+}
+
 .goodobsidian-table-grip {
   position: absolute;
-  z-index: 1;
+  width: 28px;
+  height: 28px;
+  pointer-events: auto;
   touch-action: none;
+  transform: translate(-50%, -50%);
 }
 
 .goodobsidian-table-grip.is-col {
   top: 0;
-  right: -16px;
-  width: 32px;
-  height: 100%;
   cursor: col-resize;
 }
 
 .goodobsidian-table-grip.is-row {
   left: 0;
-  bottom: -16px;
-  width: 100%;
-  height: 32px;
   cursor: row-resize;
 }
 
@@ -9662,19 +9678,47 @@ button.goodobsidian-learn-stop.is-hidden {
   position: absolute;
   top: 50%;
   left: 50%;
-  border-radius: 2px;
-  background: var(--interactive-accent);
+  box-sizing: border-box;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--gob-mark);
   transform: translate(-50%, -50%);
 }
 
 .goodobsidian-table-grip.is-col::after {
-  width: 4px;
-  height: min(24px, 60%);
+  width: 7px;
+  height: 16px;
 }
 
 .goodobsidian-table-grip.is-row::after {
-  width: min(24px, 60%);
-  height: 4px;
+  width: 16px;
+  height: 7px;
+}
+
+.goodobsidian-table-grip.is-current::after,
+.goodobsidian-table-grip.is-dragging::after {
+  background: var(--interactive-accent);
+}
+
+/* The border being dragged, across the whole table. */
+.goodobsidian-table-guide {
+  position: absolute;
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+
+.goodobsidian-table-guide.is-col {
+  top: 0;
+  width: 2px;
+  height: 100%;
+  margin-left: -1px;
+}
+
+.goodobsidian-table-guide.is-row {
+  left: 0;
+  width: 100%;
+  height: 2px;
+  margin-top: -1px;
 }
 
 .goodobsidian-table-bar {
@@ -9716,6 +9760,12 @@ button.goodobsidian-learn-stop.is-hidden {
 
 .goodobsidian-table-bar .goodobsidian-table-bar-button.is-active {
   background: var(--gob-sel-line);
+}
+
+/* No room on the page for it, or nothing to take away. */
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .goodobsidian-table-bar-icon {

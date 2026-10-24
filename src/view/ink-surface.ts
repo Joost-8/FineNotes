@@ -265,8 +265,6 @@ import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
-  TABLE_MAX_COLS,
-  TABLE_MAX_ROWS,
   TABLE_MIN_COL,
   TABLE_MIN_ROW,
   cellText,
@@ -288,6 +286,13 @@ import {
   SetTableCell,
   SetTableHeader,
 } from "../model/table-commands";
+import {
+  type PageSize,
+  furthestFitting,
+  insertColumnWithin,
+  insertRowWithin,
+  keepsToPage,
+} from "../model/table-fit";
 import {
   type CellRef,
   type TableLayout,
@@ -5120,6 +5125,19 @@ export class InkSurface {
         this.cellTap = true;
         return;
       }
+      // With the lasso (how "Edit table" is reached), a press in the table
+      // being typed in moves to the cell it lifts in; beside it, lassoing
+      // goes on as ever.
+      const page = this.pageAt(box.index);
+      const edited = this.cellEdit.table;
+      if (
+        this.gestureTool() === "select" &&
+        page?.id === this.cellEdit.pageId &&
+        cellAt(this.tableLayout(edited), local.x, local.y)
+      ) {
+        this.cellTap = true;
+        return;
+      }
       this.endCellEdit(true);
     }
     if (this.editingTextView()) {
@@ -7900,6 +7918,18 @@ export class InkSurface {
         });
       }
     }
+    // One table (with the ink written in it): type in its cells, as a tap in a cell does.
+    const table = this.loneTable(sel);
+    if (table) {
+      actions.unshift({
+        id: "edit-table",
+        icon: "text-cursor-input",
+        label: "Edit table",
+        group: "table",
+        bar: true,
+        run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
+      });
+    }
     if (sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
       actions.push({
@@ -9697,6 +9727,15 @@ export class InkSurface {
       this.selectionFrameEl.releasePointerCapture(drag.pointerId);
     }
     if (!drag.lifted) {
+      // A tap in a cell of a table picked up on its own types in that cell,
+      // as a second tap on a table does in Keynote and Numbers. Inside the
+      // pointerup, so iPadOS raises the keyboard for the focus.
+      const table = commit && !drag.scale && !drag.turn ? this.loneTable(drag.selection) : null;
+      const cell = table ? cellAt(this.tableLayout(table), drag.from.x, drag.from.y) : null;
+      if (table && cell) {
+        this.startCellEdit(drag.selection.pageId, table, cell);
+        return;
+      }
       this.syncSelectionOverlay();
       return;
     }
@@ -9821,6 +9860,8 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
+    // While a cell is typed in, a finger tap in another cell of that table types there.
+    if (this.cellEdit && this.fingerMovesCell(clientX, clientY)) return;
     if (this.dismissUsedSelection()) return;
     // A tap beside a picture being cropped finishes the crop, as a pen's does.
     if (this.cropping) {
@@ -10592,7 +10633,17 @@ export class InkSurface {
     row: number;
     col: number;
     before: string;
+    /**
+     * The cell's text the last time the table fitted its page, the table's
+     * frame then and where the caret was: typing that would take the table
+     * further past the page goes back to it.
+     */
+    fitText: string;
+    fitFrame: BoxFrame;
+    fitCaret: number;
   } | null = null;
+  /** The table bar's actions that would do nothing or not fit, worked out when they may change. */
+  private cellDisabled: ReadonlySet<TableAction> = new Set();
   private cellEditor: TableCellEditor | null = null;
   /** A Text-tool press while a cell is typed in: what it does is decided on lift. */
   private cellTap = false;
@@ -10620,6 +10671,17 @@ export class InkSurface {
     return { x: layout.x, y: layout.y, w: layout.w, h: layout.h };
   }
 
+  /**
+   * The one table a selection holds when nothing else but the ink written
+   * in it is picked up with it (as a tap on a table selects it), else `null`.
+   */
+  private loneTable(sel: ElementLists): TableElement | null {
+    const tables = sel.tables ?? [];
+    const others =
+      sel.images.length + sel.textBoxes.length + (sel.graphs?.length ?? 0) + tables.length - 1;
+    return tables.length === 1 && others === 0 ? tables[0] : null;
+  }
+
   /** The topmost table with a cell under page point `p`, and that cell. */
   private tableAt(page: Page, p: Pt): { table: TableElement; cell: CellRef } | null {
     const tables = page.tables ?? [];
@@ -10628,6 +10690,20 @@ export class InkSurface {
       if (cell) return { table: tables[i], cell };
     }
     return null;
+  }
+
+  /** A finger tapped at client (x, y): type in the cell there of the table being typed in. */
+  private fingerMovesCell(clientX: number, clientY: number): boolean {
+    const edit = this.cellEdit;
+    if (!edit) return false;
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    if (!box || box.id !== edit.pageId) return false;
+    const p = this.toPage(box, at);
+    const cell = cellAt(this.tableLayout(edit.table), p.x, p.y);
+    if (!cell) return false;
+    this.startCellEdit(edit.pageId, edit.table, cell);
+    return true;
   }
 
   /** Type in the cell under page point `p` of the page in `box`; false when there is none. */
@@ -10654,9 +10730,19 @@ export class InkSurface {
       this.clearSelection();
       this.deselectImage();
     }
-    this.cellEdit = { pageId, table, ...cell, before: cellText(table, cell.row, cell.col) };
+    const text = cellText(table, cell.row, cell.col);
+    this.cellEdit = {
+      pageId,
+      table,
+      ...cell,
+      before: text,
+      fitText: text,
+      fitFrame: this.tableFrameOf(table),
+      fitCaret: text.length,
+    };
+    this.cellDisabled = this.disabledTableActions();
     const editor = (this.cellEditor ??= new TableCellEditor(this.textBoxesEl, {
-      onInput: (text) => this.typeInCell(text),
+      onInput: (typed, composing) => this.typeInCell(typed, composing),
       onFocus: () => {
         this.holdTextEditingClass();
         this.watchTypingKeyboard(true);
@@ -10665,13 +10751,20 @@ export class InkSurface {
       },
       onBlur: (next) => {
         const target = next as Node | null;
-        if (target && (editor.root.contains(target) || editor.bar.contains(target))) return;
+        if (
+          target &&
+          (editor.root.contains(target) ||
+            editor.bar.contains(target) ||
+            editor.grips.contains(target))
+        ) {
+          return;
+        }
         this.endCellEdit(false);
       },
       onStep: (step) => this.stepCellEdit(step),
       onEscape: () => this.endCellEdit(true),
       onAction: (action) => this.tableAction(action),
-      onGrip: (kind, event) => this.startGripDrag(kind, event),
+      onGrip: (kind, index, event) => this.startGripDrag(kind, index, event),
     }));
     editor.input.value = this.cellEdit.before;
     this.renderer?.setEditingCell({ table, cell });
@@ -10734,16 +10827,45 @@ export class InkSurface {
     return true;
   }
 
-  /** The cell's text was typed into: the cell changes as it is typed, and its row grows. */
-  private typeInCell(text: string): void {
+  /**
+   * The cell's text was typed into: the cell changes as it is typed, and its
+   * row grows. Text that would take the table further past the page's edge
+   * than it was is not taken, as paper ends where it ends; while an input
+   * method is still composing, that waits until it settles.
+   */
+  private typeInCell(text: string, composing = false): void {
     const edit = this.cellEdit;
     if (!edit) return;
     const before = this.tableFrameOf(edit.table);
     setCellText(edit.table, edit.row, edit.col, text);
+    let after = this.tableFrameOf(edit.table);
+    const page = this.pageSizeOf(edit.pageId);
+    const editor = this.cellEditor;
+    if (!composing && page && editor) {
+      if (keepsToPage(edit.fitFrame, after, page)) {
+        edit.fitText = text;
+        edit.fitFrame = after;
+        edit.fitCaret = editor.input.selectionStart ?? text.length;
+      } else {
+        setCellText(edit.table, edit.row, edit.col, edit.fitText);
+        editor.input.value = edit.fitText;
+        editor.input.setSelectionRange(edit.fitCaret, edit.fitCaret);
+        editor.refuse();
+        after = this.tableFrameOf(edit.table);
+      }
+    }
+    // A row that grew or shrank changes what still fits below the table.
+    if (after.h !== before.h) this.cellDisabled = this.disabledTableActions();
     this.repaintTable(edit.pageId, edit.table, before);
     this.placeCellEditor();
     this.keepTypingBoxVisible();
     this.changed([edit.pageId]);
+  }
+
+  /** A page's size, page px, by its id. */
+  private pageSizeOf(pageId: string): PageSize | null {
+    const box = this.boxForPage(pageId);
+    return box ? { width: box.width, height: box.height } : null;
   }
 
   /** Tab: the next cell (a new row past the last one); Shift+Tab: the one before. */
@@ -10751,14 +10873,17 @@ export class InkSurface {
     const edit = this.cellEdit;
     if (!edit) return;
     let next = stepCell(edit.table, edit.row, edit.col, step);
-    if (!next && step === 1 && edit.table.rows.length < TABLE_MAX_ROWS) {
+    // Past the last cell, a new row, while the page has room for one.
+    const plan = !next && step === 1 ? this.planTableAction("row-below", edit) : null;
+    if (plan) {
       this.commitCellEdit();
-      this.history.push(
-        this.doc,
-        new InsertTableRow(edit.pageId, edit.table, edit.table.rows.length),
-      );
+      const before = this.tableFrameOf(edit.table);
+      this.history.push(this.doc, plan.command);
       next = { row: edit.table.rows.length - 1, col: 0 };
+      this.repaintTable(edit.pageId, edit.table, before);
       this.changed([edit.pageId]);
+    } else if (!next && step === 1) {
+      this.cellEditor?.refuse();
     }
     if (next) this.startCellEdit(edit.pageId, edit.table, next);
   }
@@ -10768,35 +10893,100 @@ export class InkSurface {
     const edit = this.cellEdit;
     if (!edit) return;
     this.commitCellEdit();
-    const { pageId, table } = edit;
-    let { row, col } = edit;
-    const before = this.tableFrameOf(table);
-    let command: Command | null = null;
-    if (action === "row-above" || action === "row-below") {
-      if (table.rows.length >= TABLE_MAX_ROWS) return;
-      row += action === "row-below" ? 1 : 0;
-      command = new InsertTableRow(pageId, table, row);
-    } else if (action === "col-left" || action === "col-right") {
-      if (table.cols.length >= TABLE_MAX_COLS) return;
-      col += action === "col-right" ? 1 : 0;
-      command = new InsertTableColumn(pageId, table, col);
-    } else if (action === "delete-row") {
-      if (table.rows.length <= 1) return;
-      command = new RemoveTableRow(pageId, table, row);
-      row = Math.min(row, table.rows.length - 2);
-    } else if (action === "delete-col") {
-      if (table.cols.length <= 1) return;
-      command = new RemoveTableColumn(pageId, table, col);
-      col = Math.min(col, table.cols.length - 2);
-    } else {
-      command = new SetTableHeader(pageId, table, table.header !== true);
+    const plan = this.planTableAction(action, edit);
+    if (!plan) {
+      this.cellEditor?.refuse();
+      return;
     }
-    this.history.push(this.doc, command);
+    const { pageId, table } = edit;
+    const before = this.tableFrameOf(table);
+    this.history.push(this.doc, plan.command);
     // The cell typed in after the edit: the new row or column, else the same place.
     this.cellEdit = null;
-    this.startCellEdit(pageId, table, { row, col });
+    this.startCellEdit(pageId, table, { row: plan.row, col: plan.col });
     this.repaintTable(pageId, table, before);
     this.changed([pageId]);
+  }
+
+  /**
+   * What a bar button would do to the table being typed in: its command and
+   * the cell typed in afterwards, or `null` when it would do nothing (the
+   * last row, the most columns) or would take the table further past its
+   * page than it is. A new row is no higher than the room below the table, a
+   * new column narrows the others to the page's width, and then the whole
+   * table is laid out once more, since narrower columns and a bold header
+   * wrap their text onto more lines.
+   */
+  private planTableAction(
+    action: TableAction,
+    edit: { pageId: string; table: TableElement; row: number; col: number },
+  ): { command: Command; row: number; col: number } | null {
+    const { pageId, table } = edit;
+    const page = this.pageSizeOf(pageId);
+    if (!page) return null;
+    const frame = this.tableFrameOf(table);
+    let { row, col } = edit;
+    let command: Command;
+    let change: (trial: TableElement) => boolean;
+    if (action === "row-above" || action === "row-below") {
+      row += action === "row-below" ? 1 : 0;
+      const room = page.height - (frame.y + frame.h);
+      const at = row;
+      change = (trial) => insertRowWithin(trial, at, room);
+      command = new InsertTableRow(pageId, table, at, room);
+    } else if (action === "col-left" || action === "col-right") {
+      col += action === "col-right" ? 1 : 0;
+      const room = page.width - table.x;
+      const at = col;
+      change = (trial) => insertColumnWithin(trial, at, room);
+      command = new InsertTableColumn(pageId, table, at, room);
+    } else if (action === "delete-row") {
+      // Taking a row or a column out only makes the table smaller.
+      if (table.rows.length <= 1) return null;
+      return {
+        command: new RemoveTableRow(pageId, table, row),
+        row: Math.min(row, table.rows.length - 2),
+        col,
+      };
+    } else if (action === "delete-col") {
+      if (table.cols.length <= 1) return null;
+      return {
+        command: new RemoveTableColumn(pageId, table, col),
+        row,
+        col: Math.min(col, table.cols.length - 2),
+      };
+    } else {
+      const on = table.header !== true;
+      change = (trial) => {
+        if (on) trial.header = true;
+        else delete trial.header;
+        return true;
+      };
+      command = new SetTableHeader(pageId, table, on);
+    }
+    const trial = structuredClone(table);
+    if (!change(trial) || !keepsToPage(frame, this.tableFrameOf(trial), page)) return null;
+    return { command, row, col };
+  }
+
+  /** The bar's actions that would do nothing or not fit on the page now. */
+  private disabledTableActions(): ReadonlySet<TableAction> {
+    const edit = this.cellEdit;
+    const out = new Set<TableAction>();
+    if (!edit) return out;
+    const all: TableAction[] = [
+      "row-above",
+      "row-below",
+      "col-left",
+      "col-right",
+      "header",
+      "delete-row",
+      "delete-col",
+    ];
+    for (const action of all) {
+      if (!this.planTableAction(action, edit)) out.add(action);
+    }
+    return out;
   }
 
   /**
@@ -10843,13 +11033,33 @@ export class InkSurface {
       height: Math.round(frame.h * scale),
       tableLeft: Math.round((box.x + layout.x) * scale),
       tableTop: Math.round((box.y + layout.y) * scale),
+      tableWidth: Math.round(layout.w * scale),
+      tableHeight: Math.round(layout.h * scale),
+      colEdges: layout.colX.map((x, i) => Math.round((box.x + x + layout.colW[i]) * scale)),
+      rowEdges: layout.rowY.map((y, i) => Math.round((box.y + y + layout.rowH[i]) * scale)),
+      col: edit.col,
+      row: edit.row,
       scale,
       style: { ...style, color: shownColor(style.color, night) },
       header: edit.table.header === true,
+      disabled: this.cellDisabled,
     });
+    const drag = this.gripDrag;
+    if (drag) {
+      const offset =
+        drag.kind === "col"
+          ? layout.colX[drag.index] + layout.colW[drag.index] - layout.x
+          : layout.rowY[drag.index] + layout.rowH[drag.index] - layout.y;
+      editor.showGuide(drag.kind, Math.round(offset * scale));
+    }
   }
 
   // --- Tables: resizing a column or a row by its grip ---------------------------------
+  //
+  // Every column's right edge and every row's bottom edge has a grip on the
+  // table's border (`table-cell-editor.ts`). A drag sizes only that column or
+  // row, never under the least, and stops where the table would go further
+  // past the page than it was when the drag began.
 
   private gripDrag: {
     pointerId: number;
@@ -10860,28 +11070,38 @@ export class InkSurface {
     /** Where the drag starts from: the shown size, page px, and the press, client px. */
     from: number;
     start: number;
+    /** The table's frame when the drag began: it may not go further past the page. */
+    frame: BoxFrame;
     target: HTMLElement;
   } | null = null;
 
-  private startGripDrag(kind: "col" | "row", event: PointerEvent): void {
+  private startGripDrag(kind: "col" | "row", index: number, event: PointerEvent): void {
     const edit = this.cellEdit;
     if (!edit || this.gripDrag) return;
+    const list = kind === "col" ? edit.table.cols : edit.table.rows;
+    if (index < 0 || index >= list.length) return;
     const layout = this.tableLayout(edit.table);
-    const index = kind === "col" ? edit.col : edit.row;
     const target = event.currentTarget as HTMLElement;
     this.gripDrag = {
       pointerId: event.pointerId,
       kind,
       index,
-      was: kind === "col" ? edit.table.cols[index] : edit.table.rows[index],
+      was: list[index],
       from: kind === "col" ? layout.colW[index] : layout.rowH[index],
       start: kind === "col" ? event.clientX : event.clientY,
+      frame: this.tableFrameOf(edit.table),
       target,
     };
-    target.setPointerCapture(event.pointerId);
+    target.addClass("is-dragging");
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
+    }
     target.addEventListener("pointermove", this.onGripMove);
     target.addEventListener("pointerup", this.onGripUp);
     target.addEventListener("pointercancel", this.onGripUp);
+    this.placeCellEditor();
   }
 
   private readonly onGripMove = (event: PointerEvent): void => {
@@ -10891,10 +11111,21 @@ export class InkSurface {
     event.stopPropagation();
     const before = this.tableFrameOf(edit.table);
     const at = drag.kind === "col" ? event.clientX : event.clientY;
-    const size = drag.from + (at - drag.start) / this.unitScale;
+    const want = drag.from + (at - drag.start) / this.unitScale;
+    const least = drag.kind === "col" ? TABLE_MIN_COL : TABLE_MIN_ROW;
+    const sized = (table: TableElement, size: number): void => {
+      (drag.kind === "col" ? table.cols : table.rows)[drag.index] = Math.max(least, size);
+    };
+    const page = this.pageSizeOf(edit.pageId);
+    const size = page
+      ? furthestFitting(drag.from, want, (value) => {
+          const trial = structuredClone(edit.table);
+          sized(trial, value);
+          return keepsToPage(drag.frame, this.tableFrameOf(trial), page);
+        })
+      : want;
     // Previewed on the table itself; the lift records it as one step.
-    if (drag.kind === "col") edit.table.cols[drag.index] = Math.max(TABLE_MIN_COL, size);
-    else edit.table.rows[drag.index] = Math.max(TABLE_MIN_ROW, size);
+    sized(edit.table, size);
     this.repaintTable(edit.pageId, edit.table, before);
     this.placeCellEditor();
   };
@@ -10911,6 +11142,8 @@ export class InkSurface {
     const drag = this.gripDrag;
     if (!drag) return;
     this.gripDrag = null;
+    drag.target.removeClass("is-dragging");
+    this.cellEditor?.showGuide(null);
     drag.target.removeEventListener("pointermove", this.onGripMove);
     drag.target.removeEventListener("pointerup", this.onGripUp);
     drag.target.removeEventListener("pointercancel", this.onGripUp);
@@ -10931,6 +11164,8 @@ export class InkSurface {
       );
       this.changed([edit.pageId]);
     }
+    edit.fitFrame = this.tableFrameOf(edit.table);
+    this.cellDisabled = this.disabledTableActions();
     this.repaintTable(edit.pageId, edit.table);
     this.placeCellEditor();
   }

@@ -13,15 +13,8 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, type TableElement, pageById } from "./document";
-import {
-  insertColumn,
-  insertRow,
-  removeColumn,
-  removeRow,
-  setCellText,
-  setColumnWidth,
-  setRowHeight,
-} from "./table";
+import { removeColumn, removeRow, setCellText, setColumnWidth, setRowHeight } from "./table";
+import { insertColumnWithin, insertRowWithin } from "./table-fit";
 
 /** Put a table on a page, above the tables already there. */
 export class AddTable implements Command {
@@ -83,10 +76,13 @@ class TableEdit implements Command {
   }
 }
 
-/** An empty row at `index` (0 = above the first row). */
+/**
+ * An empty row at `index` (0 = above the first row), no higher than the
+ * `room` left below the table (page px; none given: as high as it copies).
+ */
 export class InsertTableRow extends TableEdit {
-  constructor(pageId: string, table: TableElement, index: number) {
-    super(pageId, table, "Add row", (t) => insertRow(t, index));
+  constructor(pageId: string, table: TableElement, index: number, room = Infinity) {
+    super(pageId, table, "Add row", (t) => insertRowWithin(t, index, room));
   }
 }
 
@@ -97,10 +93,14 @@ export class RemoveTableRow extends TableEdit {
   }
 }
 
-/** An empty column at `index` (0 = left of the first column). */
+/**
+ * An empty column at `index` (0 = left of the first column), the columns
+ * narrowed to fit within `room` (page px from the table's left edge to the
+ * page's right edge; none given: no limit).
+ */
 export class InsertTableColumn extends TableEdit {
-  constructor(pageId: string, table: TableElement, index: number) {
-    super(pageId, table, "Add column", (t) => insertColumn(t, index));
+  constructor(pageId: string, table: TableElement, index: number, room = Infinity) {
+    super(pageId, table, "Add column", (t) => insertColumnWithin(t, index, room));
   }
 }
 

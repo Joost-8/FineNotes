@@ -6,9 +6,11 @@
  * at (`canvas/table-layout`). While it is up, the canvas leaves that cell's
  * text out, so nothing shows twice.
  *
- * Above the table floats its bar: add a row or a column, delete the cell's
- * row or column, and the header row. On the cell's right and bottom edges
- * sit grips that resize its column and its row.
+ * Above the table floats its bar: add a row or a column, the header row, and
+ * delete the cell's row or column; an addition that would not fit on the
+ * page is greyed out. Every column's right edge has a grip on the table's top
+ * border and every row's bottom edge one on its left border, outside the
+ * cells, so a drag of any border resizes and a tap in any cell types there.
  *
  * The rules from CLAUDE.md's ledger this follows: every button is
  * `clickable-icon` (Obsidian pads plain buttons 20 px on the iPad) and acts on
@@ -24,14 +26,15 @@ import { fontFamilyOf } from "../model/text-style";
 import type { TextStyle } from "../model/text-style";
 import { lineHeightOf } from "../model/text-style";
 import { textInset } from "../canvas/text-layout";
+import { swallowGhostClick } from "./ghost-click";
 
 /** What the bar's buttons do. */
 export type TableAction =
   "row-above" | "row-below" | "col-left" | "col-right" | "delete-row" | "delete-col" | "header";
 
 export interface CellEditorCallbacks {
-  /** The text was typed or pasted into. */
-  onInput: (text: string) => void;
+  /** The text was typed or pasted into (`composing`: an input method is still at it). */
+  onInput: (text: string, composing: boolean) => void;
   /** The textarea took the focus. */
   onFocus: () => void;
   /** The textarea lost it, to `next` (`null`: to nothing). */
@@ -41,8 +44,8 @@ export interface CellEditorCallbacks {
   /** Escape: stop typing. */
   onEscape: () => void;
   onAction: (action: TableAction) => void;
-  /** A grip was pressed: drag the column's right edge or the row's bottom edge. */
-  onGrip: (kind: "col" | "row", event: PointerEvent) => void;
+  /** A grip was pressed: drag column `index`'s right edge or row `index`'s bottom edge. */
+  onGrip: (kind: "col" | "row", index: number, event: PointerEvent) => void;
 }
 
 /** Where the cell is on screen and how its text looks there. */
@@ -52,65 +55,78 @@ export interface CellPlacement {
   top: number;
   width: number;
   height: number;
-  /** The table's frame's left and top edges, in the same px, for the bar. */
+  /** The table's frame, in the same px: the bar sits above it, the grips on its borders. */
   tableLeft: number;
   tableTop: number;
+  tableWidth: number;
+  tableHeight: number;
+  /** Each column's right edge and each row's bottom edge, in the same px. */
+  colEdges: readonly number[];
+  rowEdges: readonly number[];
+  /** The cell's column and row, whose grips are marked. */
+  col: number;
+  row: number;
   /** CSS px per page px. */
   scale: number;
   /** The cell's style; `color` already as the page shows it. */
   style: TextStyle;
   /** Whether the table has a header row (the bar's toggle shows it). */
   header: boolean;
+  /** The bar's actions that would do nothing now (no room on the page, the last row). */
+  disabled: ReadonlySet<TableAction>;
 }
 
 /** iPadOS zooms into a text field whose computed font is under this (ink-surface's rule). */
 const IOS_MIN_INPUT_FONT_PX = 16;
-/** The bar's gap above the table, CSS px. */
-const BAR_GAP_PX = 8;
+/** The bar's gap above the table, CSS px: clear of the column grips on its top border. */
+const BAR_GAP_PX = 16;
 /** The bar's height, CSS px, as styles.css sets it: it goes below the table if there is no room. */
 const BAR_HEIGHT_PX = 36;
+/** How long a refused edit marks the cell, ms. */
+const REFUSED_MS = 450;
 
-const ACTIONS: ReadonlyArray<{ action: TableAction; icon: string; label: string; text: string }> = [
-  { action: "row-above", icon: "arrow-up-to-line", label: "Add row above", text: "Row above" },
-  { action: "row-below", icon: "arrow-down-to-line", label: "Add row below", text: "Row below" },
-  { action: "col-left", icon: "arrow-left-to-line", label: "Add column left", text: "Column left" },
-  {
-    action: "col-right",
-    icon: "arrow-right-to-line",
-    label: "Add column right",
-    text: "Column right",
-  },
-  { action: "delete-row", icon: "trash-2", label: "Delete row", text: "Row" },
-  { action: "delete-col", icon: "trash-2", label: "Delete column", text: "Column" },
-  { action: "header", icon: "heading", label: "Header row", text: "Header" },
-];
+/**
+ * The bar, left to right. A symbol each, its name in the tooltip; only what
+ * deletes keeps a word, as everywhere in FineNotes.
+ */
+const ACTIONS: ReadonlyArray<{ action: TableAction; icon: string; label: string; text?: string }> =
+  [
+    { action: "row-above", icon: "arrow-up-to-line", label: "Add row above" },
+    { action: "row-below", icon: "arrow-down-to-line", label: "Add row below" },
+    { action: "col-left", icon: "arrow-left-to-line", label: "Add column left" },
+    { action: "col-right", icon: "arrow-right-to-line", label: "Add column right" },
+    { action: "header", icon: "heading", label: "Header row" },
+    { action: "delete-row", icon: "trash-2", label: "Delete row", text: "Row" },
+    { action: "delete-col", icon: "trash-2", label: "Delete column", text: "Column" },
+  ];
+/** A divider goes before each of these. */
+const GROUP_STARTS: ReadonlySet<TableAction> = new Set(["col-left", "header", "delete-row"]);
 
 export class TableCellEditor {
-  /** The cell's frame: the textarea and the two grips. */
+  /** The cell's frame: the textarea. */
   readonly root: HTMLElement;
   readonly input: HTMLTextAreaElement;
   readonly bar: HTMLElement;
-  private readonly headerButton: HTMLButtonElement;
+  /** The grips on the table's borders, one per column and per row, reused as the table changes. */
+  readonly grips: HTMLElement;
+  private readonly colGrips: HTMLElement[] = [];
+  private readonly rowGrips: HTMLElement[] = [];
+  /** A line along the border being dragged, across the whole table. */
+  private readonly guide: HTMLElement;
+  private readonly buttons = new Map<TableAction, HTMLButtonElement>();
+  private readonly callbacks: CellEditorCallbacks;
   private shown = false;
+  private refuseTimer = 0;
 
   constructor(layer: HTMLElement, callbacks: CellEditorCallbacks) {
+    this.callbacks = callbacks;
     this.root = layer.createDiv({ cls: "goodobsidian-table-cell is-hidden" });
     this.input = this.root.createEl("textarea", {
       cls: "goodobsidian-table-cell-input",
       attr: { "aria-label": "Table cell", rows: "1" },
     });
-    for (const kind of ["col", "row"] as const) {
-      const grip = this.root.createDiv({
-        cls: `goodobsidian-table-grip is-${kind}`,
-        attr: { "aria-label": kind === "col" ? "Resize column" : "Resize row" },
-      });
-      grip.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-        // The textarea keeps the focus, and the keyboard stays up.
-        event.preventDefault();
-        callbacks.onGrip(kind, event);
-      });
-    }
+    this.grips = layer.createDiv({ cls: "goodobsidian-table-grips is-hidden" });
+    this.guide = this.grips.createDiv({ cls: "goodobsidian-table-guide is-hidden" });
     // Dark in every theme, as the lasso's action bar is (Obsidian's own palette class).
     this.bar = layer.createDiv({ cls: "goodobsidian-table-bar theme-dark is-hidden" });
     // No press on the bar starts ink or takes the focus from the cell.
@@ -120,24 +136,27 @@ export class TableCellEditor {
         event.preventDefault();
       });
     }
-    let header: HTMLButtonElement | null = null;
     for (const entry of ACTIONS) {
-      if (entry.action === "delete-row") this.bar.createDiv({ cls: "goodobsidian-table-bar-gap" });
+      if (GROUP_STARTS.has(entry.action)) this.bar.createDiv({ cls: "goodobsidian-table-bar-gap" });
       const button = this.bar.createEl("button", {
         cls: "goodobsidian-table-bar-button clickable-icon",
-        attr: { "aria-label": entry.label, title: entry.label },
+        attr: { "aria-label": entry.label },
       });
+      button.dataset.action = entry.action;
       const icon = button.createSpan({ cls: "goodobsidian-table-bar-icon" });
       setIcon(icon, entry.icon);
-      button.createSpan({ cls: "goodobsidian-table-bar-text", text: entry.text });
+      if (entry.text) button.createSpan({ cls: "goodobsidian-table-bar-text", text: entry.text });
       onPress(button, () => callbacks.onAction(entry.action));
-      if (entry.action === "header") header = button;
+      this.buttons.set(entry.action, button);
     }
-    this.headerButton = header ?? this.bar.createEl("button");
 
     // Text editing never starts ink on the page beneath.
     this.input.addEventListener("pointerdown", (event) => event.stopPropagation());
-    this.input.addEventListener("input", () => callbacks.onInput(this.input.value));
+    this.input.addEventListener("input", (event) =>
+      callbacks.onInput(this.input.value, (event as InputEvent).isComposing === true),
+    );
+    // What an input method settles on is checked once it is settled.
+    this.input.addEventListener("compositionend", () => callbacks.onInput(this.input.value, false));
     this.input.addEventListener("focus", () => callbacks.onFocus());
     this.input.addEventListener("blur", (event) => callbacks.onBlur(event.relatedTarget));
     this.input.addEventListener("keydown", (event) => {
@@ -189,8 +208,80 @@ export class TableCellEditor {
       left: `${Math.max(0, at.tableLeft)}px`,
       top: `${above >= 0 ? above : at.top + at.height + BAR_GAP_PX}px`,
     });
-    this.headerButton.toggleClass("is-active", at.header);
-    this.headerButton.setAttribute("aria-pressed", String(at.header));
+    for (const [action, button] of this.buttons) button.disabled = at.disabled.has(action);
+    const header = this.buttons.get("header");
+    header?.toggleClass("is-active", at.header);
+    header?.setAttribute("aria-pressed", String(at.header));
+    this.placeGrips(at);
+  }
+
+  /** One grip per column on the table's top border, one per row on its left border. */
+  private placeGrips(at: CellPlacement): void {
+    this.grips.removeClass("is-hidden");
+    this.grips.setCssStyles({
+      left: `${at.tableLeft}px`,
+      top: `${at.tableTop}px`,
+      width: `${at.tableWidth}px`,
+      height: `${at.tableHeight}px`,
+    });
+    this.syncGrips("col", this.colGrips, at.colEdges.length);
+    this.syncGrips("row", this.rowGrips, at.rowEdges.length);
+    at.colEdges.forEach((edge, i) => {
+      this.colGrips[i].setCssStyles({ left: `${edge - at.tableLeft}px` });
+      this.colGrips[i].toggleClass("is-current", i === at.col);
+    });
+    at.rowEdges.forEach((edge, i) => {
+      this.rowGrips[i].setCssStyles({ top: `${edge - at.tableTop}px` });
+      this.rowGrips[i].toggleClass("is-current", i === at.row);
+    });
+  }
+
+  /** Make `list` hold exactly `count` grips of `kind`, reusing the ones there. */
+  private syncGrips(kind: "col" | "row", list: HTMLElement[], count: number): void {
+    while (list.length > count) list.pop()?.remove();
+    while (list.length < count) {
+      const index = list.length;
+      const grip = this.grips.createDiv({
+        cls: `goodobsidian-table-grip is-${kind}`,
+        attr: { "aria-label": kind === "col" ? "Resize column" : "Resize row" },
+      });
+      grip.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        // The textarea keeps the focus, and the keyboard stays up.
+        event.preventDefault();
+        this.callbacks.onGrip(kind, index, event);
+      });
+      list.push(grip);
+    }
+  }
+
+  /** The grip a drag of column or row `index`'s edge started on. */
+  gripAt(kind: "col" | "row", index: number): HTMLElement | undefined {
+    return (kind === "col" ? this.colGrips : this.rowGrips)[index];
+  }
+
+  /**
+   * Show the guide along the border being dragged, at `offset` from the
+   * table's left (a column) or top (a row) edge, in the layer's px; `null`
+   * hides it.
+   */
+  showGuide(kind: "col" | "row" | null, offset = 0): void {
+    this.guide.toggleClass("is-hidden", kind === null);
+    this.guide.toggleClass("is-col", kind === "col");
+    this.guide.toggleClass("is-row", kind === "row");
+    if (kind === "col") this.guide.setCssStyles({ left: `${offset}px`, top: "" });
+    else if (kind === "row") this.guide.setCssStyles({ top: `${offset}px`, left: "" });
+  }
+
+  /**
+   * Show for a moment that what was asked does not fit (the page ends, the
+   * table is as full as it may be): the cell's outline turns red. A timer
+   * clears it, never an animation's finish.
+   */
+  refuse(): void {
+    this.root.addClass("is-refused");
+    window.clearTimeout(this.refuseTimer);
+    this.refuseTimer = window.setTimeout(() => this.root.removeClass("is-refused"), REFUSED_MS);
   }
 
   /** Take the editor away; the caller has blurred it or is about to. */
@@ -198,11 +289,14 @@ export class TableCellEditor {
     this.shown = false;
     this.root.addClass("is-hidden");
     this.bar.addClass("is-hidden");
+    this.grips.addClass("is-hidden");
+    this.showGuide(null);
   }
 
   remove(): void {
     this.root.remove();
     this.bar.remove();
+    this.grips.remove();
   }
 }
 
@@ -221,7 +315,10 @@ function onPress(button: HTMLButtonElement, action: () => void): void {
     event.stopPropagation();
     if (armed !== event.pointerId) return;
     armed = null;
-    if (!button.disabled) action();
+    if (button.disabled) return;
+    // Android follows the lift with a click on whatever is under the finger then.
+    swallowGhostClick(button.ownerDocument, event);
+    action();
   });
   button.addEventListener("pointercancel", () => {
     armed = null;
