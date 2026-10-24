@@ -861,16 +861,6 @@ export class Toolbar {
       "Page thumbnails",
       cb.onToggleThumbnails,
     );
-    // Next to the thumbnails: both decide what sits around the page.
-    if (cb.onFullScreen) {
-      this.fullScreenButton = this.foldButton(
-        left,
-        FOLD_RANK.fullScreen,
-        "maximize-2",
-        "Full screen",
-        cb.onFullScreen,
-      );
-    }
     const beyond: HTMLElement[] = [];
     this.beyondWriting = beyond;
     const keep = (button: HTMLElement): void => {
@@ -915,11 +905,20 @@ export class Toolbar {
     );
     keep(this.recordButton);
 
-    // The document's own actions, right: add a page, GoodNotes' share
-    // button (export as PDF), its ⋯ sheet for the page being read
-    // (bookmark, duplicate, go to page, clear, delete), then, rightmost,
-    // the note's own settings.
+    // The document's own actions, right: full screen (tablets), add a page,
+    // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
+    // being read (bookmark, duplicate, go to page, clear, delete), then,
+    // rightmost, the note's own settings.
     const doc = this.barEl.createDiv({ cls: "goodobsidian-bar-group goodobsidian-bar-doc" });
+    if (cb.onFullScreen) {
+      this.fullScreenButton = this.foldButton(
+        doc,
+        FOLD_RANK.fullScreen,
+        "maximize-2",
+        "Full screen",
+        cb.onFullScreen,
+      );
+    }
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
     keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
