@@ -815,6 +815,11 @@ export class InkView extends TextFileView {
     if (this.writeHold.savePending) void this.saveNow();
   }
 
+  /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
+  showFullScreen(on: boolean): void {
+    this.toolbar?.setFullScreen(on);
+  }
+
   override async onClose(): Promise<void> {
     this.recordLastPage();
     this.audio?.destroy();
@@ -2352,6 +2357,9 @@ export class InkView extends TextFileView {
           this.plugin.saveLasso(mode, filter);
         },
         onToggleThumbnails: () => this.toggleSidebar(),
+        onFullScreen: this.plugin.fullScreenOffered
+          ? () => this.plugin.toggleFullScreen()
+          : undefined,
         onTextStyle: (patch) => this.surface?.applyTextStyle(patch),
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
@@ -2391,6 +2399,7 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
       },
     );
+    this.showFullScreen(this.plugin.fullScreen);
     // The gear's dot while a newer FineNotes is out, and "Update available"
     // under it until it is tapped or closed, once per version (update-notice.ts).
     const updates = this.plugin.updates;

@@ -11869,3 +11869,15 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
     transform: translateY(-4px);
   }
 }
+
+/* ------------------------------------------------------------- full screen */
+
+/* A tablet's full screen (main.ts, `syncFullScreen`): the tab group whose
+   tab in front is a notebook loses Obsidian's tab bar and view header. The
+   status bar's inset above them stays (Obsidian pads the split for it). */
+.workspace-tabs.goodobsidian-full-screen > .workspace-tab-header-container,
+.workspace-tabs.goodobsidian-full-screen
+  .workspace-leaf-content[data-type="goodobsidian-view"]
+  > .view-header {
+  display: none;
+}

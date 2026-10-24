@@ -466,6 +466,8 @@ export interface ToolbarCallbacks {
   /** Add a page; `anchor` is the button, for a popover to hang from. */
   onAddPage?: (anchor: HTMLElement) => void;
   onToggleThumbnails?: () => void;
+  /** Show the notebook full screen, or leave it. Without it the bar has no such button. */
+  onFullScreen?: () => void;
   onSearch?: () => void;
   // --- 0.5 (contracts/api.md v7).
   /** Open the image menu (Photos, camera, files, vault, scan, AI); `anchor` is the button. */
@@ -600,20 +602,21 @@ export interface FoldedBarItem {
  * and neither does the tool in hand.
  */
 const FOLD_RANK = {
-  calculator: 0,
-  pdf: 1,
-  record: 2,
-  image: 3,
-  ai: 4,
-  search: 5,
-  share: 6,
-  settings: 7,
-  shape: 8,
-  text: 9,
-  select: 10,
-  addPage: 11,
-  redo: 12,
-  thumbnails: 13,
+  fullScreen: 0,
+  calculator: 1,
+  pdf: 2,
+  record: 3,
+  image: 4,
+  ai: 5,
+  search: 6,
+  share: 7,
+  settings: 8,
+  shape: 9,
+  text: 10,
+  select: 11,
+  addPage: 12,
+  redo: 13,
+  thumbnails: 14,
 } as const;
 
 /** How many stroke widths tier 2 shows before the "more" chevron. */
@@ -663,6 +666,8 @@ export class Toolbar {
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
   private thumbnailsButton: HTMLButtonElement | null = null;
+  /** Full screen (tablets only, `onFullScreen`); its icon says which way it goes. */
+  private fullScreenButton: HTMLButtonElement | null = null;
   /** The tier-1 pen button, drawn as the pen in hand (`drawPenPreview`). */
   private penToolButton: HTMLElement | null = null;
   /** What the pen button last drew, so an unchanged pen is not redrawn. */
@@ -856,6 +861,16 @@ export class Toolbar {
       "Page thumbnails",
       cb.onToggleThumbnails,
     );
+    // Next to the thumbnails: both decide what sits around the page.
+    if (cb.onFullScreen) {
+      this.fullScreenButton = this.foldButton(
+        left,
+        FOLD_RANK.fullScreen,
+        "maximize-2",
+        "Full screen",
+        cb.onFullScreen,
+      );
+    }
     const beyond: HTMLElement[] = [];
     this.beyondWriting = beyond;
     const keep = (button: HTMLElement): void => {
@@ -1078,6 +1093,24 @@ export class Toolbar {
       "has-mark",
       this.foldedItems().some((item) => item.marked),
     );
+  }
+
+  /**
+   * Show whether the notebook is full screen: the button then offers the
+   * way back, in the bar and in ⋯ alike.
+   */
+  setFullScreen(on: boolean): void {
+    const button = this.fullScreenButton;
+    if (!button) return;
+    const icon = on ? "minimize-2" : "maximize-2";
+    const label = on ? "Leave full screen" : "Full screen";
+    iconOrText(button, icon, label);
+    button.setAttr("aria-label", label);
+    const item = this.foldable.find((entry) => entry.button === button);
+    if (item) {
+      item.icon = icon;
+      item.label = label;
+    }
   }
 
   /** The bar's buttons folded into ⋯ just now, in the bar's order. */

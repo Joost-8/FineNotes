@@ -17,6 +17,11 @@ extracted from the matching section of this file by `release.yml`.
   settings, opens FineNotes in Community plugins. It only tells you;
   Obsidian still does the updating. Switch it off under Advanced → Check
   for updates.
+- **Full screen on a tablet.** The new button next to page thumbnails (or
+  its row in ⋯ when the toolbar is short of room) hides Obsidian's tab bar
+  and title bar above a notebook, so the page gets about 90 px more height.
+  The same button brings them back. Switch to a note in another tab and
+  Obsidian's bars come back for it. The choice is kept on each device.
 
 ## [2.4.1] - 2026-10-22
 

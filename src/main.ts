@@ -46,6 +46,7 @@ import {
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -365,6 +366,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
+    this.installFullScreen();
     // The chosen speech model shows under Settings › Models on this device from the start.
     this.speech.store();
     await this.setUpKeyStore();
@@ -1353,6 +1355,65 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.syncPaperTheme();
     this.pageEmbeds?.repaintAll();
+  }
+
+  // --- Full screen (tablets) ---------------------------------------------------
+
+  private static readonly FULL_SCREEN_KEY = "goodobsidian:full-screen";
+  /** On a tab group showing a notebook full screen; styles.css hides its chrome. */
+  private static readonly FULL_SCREEN_CLASS = "goodobsidian-full-screen";
+
+  /** Whether notebooks show full screen on this device (stored per device). */
+  fullScreen = false;
+  /** The tab groups given the full-screen class, each to get its chrome back. */
+  private fullScreenGroups = new Set<HTMLElement>();
+
+  /**
+   * Full screen is a tablet's: there Obsidian's tab bar and view header take
+   * 90 px above the page. A desktop window keeps its own controls in that bar.
+   */
+  get fullScreenOffered(): boolean {
+    return Platform.isTablet;
+  }
+
+  toggleFullScreen(): void {
+    this.fullScreen = !this.fullScreen;
+    this.app.saveLocalStorage(
+      GoodObsidianPlugin.FULL_SCREEN_KEY,
+      storedFullScreen(this.fullScreen),
+    );
+    for (const view of this.openNotebooks()) view.showFullScreen(this.fullScreen);
+    this.syncFullScreen();
+  }
+
+  /** Put the class on the tab groups whose tab in front is a notebook, and only on those. */
+  syncFullScreen(): void {
+    const places = this.openNotebooks().flatMap((view) => {
+      const group = view.containerEl.closest<HTMLElement>(".workspace-tabs");
+      return group ? [{ group, shown: view.containerEl.isShown() }] : [];
+    });
+    const groups = fullScreenGroups(this.fullScreen && this.fullScreenOffered, places);
+    const cls = GoodObsidianPlugin.FULL_SCREEN_CLASS;
+    for (const group of this.fullScreenGroups) if (!groups.has(group)) group.removeClass(cls);
+    for (const group of groups) group.addClass(cls);
+    this.fullScreenGroups = groups;
+  }
+
+  private installFullScreen(): void {
+    this.fullScreen = parseFullScreen(
+      this.app.loadLocalStorage(GoodObsidianPlugin.FULL_SCREEN_KEY),
+    );
+    if (!this.fullScreenOffered) return;
+    const sync = (): void => this.syncFullScreen();
+    this.registerEvent(this.app.workspace.on("layout-change", sync));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", sync));
+    this.app.workspace.onLayoutReady(sync);
+    this.register(() => {
+      for (const group of this.fullScreenGroups) {
+        group.removeClass(GoodObsidianPlugin.FULL_SCREEN_CLASS);
+      }
+      this.fullScreenGroups.clear();
+    });
   }
 
   /** Every notebook view open in the workspace. */

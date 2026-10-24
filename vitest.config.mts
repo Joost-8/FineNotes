@@ -74,6 +74,7 @@ export default defineConfig({
         "src/view/page-embed-model.ts",
         "src/view/range-fill.ts",
         "src/view/page-drag-model.ts",
+        "src/view/full-screen-model.ts",
         "src/view/text-reveal.ts",
         "src/view/toast-side.ts",
         "src/view/ghost-click.ts",
