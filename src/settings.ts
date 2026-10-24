@@ -1593,6 +1593,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const row = setting.settingEl;
         row.empty();
         row.addClass("goodobsidian-plain-row", "goodobsidian-settings-footer");
+        // The list it sits in loses its box (styles.css), marked here rather
+        // than found with `:has()`, which the plugin review flags as slow.
+        // Obsidian has placed the row in its list before `render` runs.
+        row.parentElement?.addClass("goodobsidian-footer-items");
         // Each link in its own colour: FineNotes' two with an icon, the
         // accounts in their brands' colours.
         const link = (label: string, url: string, icon?: string): void => {

@@ -1181,6 +1181,13 @@ describe("the feedback footer", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("marks the list it sits in, which styles.css takes the box off", () => {
+    const list = new FakeEl("div", "setting-items");
+    const setting = new Setting(list);
+    named(rows(makeTab(makePlugin()).tab), FOOTER).render?.(setting as never, {} as never);
+    expect(list.hasClass("goodobsidian-footer-items")).toBe(true);
+  });
 });
 
 describe("the ⓘ after a row's name", () => {

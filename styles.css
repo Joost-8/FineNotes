@@ -2734,7 +2734,7 @@ button.goodobsidian-pen-modal-type.clickable-icon.is-active {
 /* Feedback and community: one centred line of pills at the end of the tab,
    each in its own colour (FineNotes' two with an icon, the accounts in their
    brands' colours), with no box of its own around them. */
-.setting-items:has(> .goodobsidian-settings-footer) {
+.setting-items.goodobsidian-footer-items {
   border: none;
   background: none;
   box-shadow: none;
