@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   existingCopy,
+  isTemplatePaper,
   paperFileKind,
   isPaperSource,
   paperBackdrop,
@@ -15,6 +16,7 @@ import {
   paperName,
   papersFolderOf,
 } from "../../src/model/paper-library";
+import type { PdfBackdrop } from "../../src/model/document";
 
 describe("the paper library", () => {
   it("lives in Papers inside the templates folder", () => {
@@ -54,11 +56,40 @@ describe("the paper library", () => {
     expect(paperGeometry({ width: 842, height: 595 }, 1000)).toEqual({ width: 1000, height: 707 });
   });
 
-  it("points a page at the notebook's copy", () => {
+  it("points a page at the notebook's copy, marked as a template's", () => {
     expect(paperBackdrop("Notes/Images/Paper Planner.pdf", 3)).toEqual({
       kind: "pdf",
       path: "Notes/Images/Paper Planner.pdf",
       page: 3,
+      template: true,
+    });
+  });
+
+  describe("which PDF pages are template paper", () => {
+    const pdf = (path: string, template?: true): PdfBackdrop =>
+      template ? { kind: "pdf", path, page: 0, template } : { kind: "pdf", path, page: 0 };
+    const library = new Set(["Weekly planner", "Cornell"]);
+
+    it("a page marked as made from My templates is, whatever its name and the library", () => {
+      expect(isTemplatePaper(pdf("N/Images/Lecture 4.pdf", true), new Set())).toBe(true);
+    });
+
+    it("an unmarked copy (a notebook made before the mark) is, while its template is listed", () => {
+      expect(isTemplatePaper(pdf("N/Images/Paper Weekly planner.pdf"), library)).toBe(true);
+      expect(isTemplatePaper(pdf("N/Paper Cornell 2.pdf"), library)).toBe(true);
+      expect(isTemplatePaper(pdf("Paper Cornell.PDF"), library)).toBe(true);
+    });
+
+    it("an unmarked copy whose template is gone from My templates is not", () => {
+      expect(isTemplatePaper(pdf("N/Images/Paper Weekly planner.pdf"), new Set())).toBe(false);
+    });
+
+    it("an imported PDF that only looks like a copy is not", () => {
+      expect(isTemplatePaper(pdf("Exams/Paper 2.pdf"), library)).toBe(false);
+      expect(isTemplatePaper(pdf("N/Paper Weekly.pdf"), library)).toBe(false);
+      expect(isTemplatePaper(pdf("N/Paper Cornell notes.pdf"), library)).toBe(false);
+      expect(isTemplatePaper(pdf("N/Cornell.pdf"), library)).toBe(false);
+      expect(isTemplatePaper(pdf("N/Lecture 4.pdf"), library)).toBe(false);
     });
   });
 

@@ -745,6 +745,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
         path: b.path,
         page: Math.max(0, Math.round(num(b.page, 0))),
         ...(b.annotations === false ? { annotations: false as const } : {}),
+        ...(b.template === true ? { template: true as const } : {}),
       };
     }
     return { kind: "blank" };

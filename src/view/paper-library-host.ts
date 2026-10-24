@@ -25,6 +25,21 @@ import { measurePdfPages } from "./pdf-pages";
 import type { PaperLibraryHost } from "./template-picker";
 import { ConfirmModal } from "./template-ui";
 
+/**
+ * The names of the templates in My templates now ({@link paperName}), from
+ * the vault's file list alone: no PDF is read, so a page can be added at once.
+ */
+export function templateNamesIn(app: App, templateFolder: string): Set<string> {
+  const prefix = `${normalizePath(papersFolderOf(templateFolder))}/`;
+  const names = new Set<string>();
+  for (const file of app.vault.getFiles()) {
+    if (file.path.startsWith(prefix) && file.extension.toLowerCase() === "pdf") {
+      names.add(paperName(file.path));
+    }
+  }
+  return names;
+}
+
 /** What the system file picker offers. */
 const ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
 /** A picture's longest side in the PDF, in pixels: sharp on any iPad, never huge. */

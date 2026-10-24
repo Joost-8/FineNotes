@@ -111,9 +111,30 @@ export function paperGeometry(
   return { width, height: Math.round((width * entry.height) / entry.width) };
 }
 
-/** The page backdrop for page `page` of the notebook's copy at `path`. */
+/**
+ * Whether a page's PDF is paper from My templates, which a page added after
+ * it repeats, rather than content such as a lecture's slides. A page made
+ * from My templates says so (`template`). One made before it did is known
+ * by its copy's name, `Paper <name>.pdf` (or `… 2.pdf`), and only while a
+ * template of that name is still in My templates (`templateNames`, as
+ * {@link paperName} gives them): an imported "Paper 2.pdf" is not paper.
+ */
+export function isTemplatePaper(
+  backdrop: PdfBackdrop,
+  templateNames: ReadonlySet<string>,
+): boolean {
+  if (backdrop.template === true) return true;
+  const leaf = backdrop.path.slice(backdrop.path.lastIndexOf("/") + 1);
+  if (!leaf.startsWith(PAPER_COPY_PREFIX) || !leaf.toLowerCase().endsWith(".pdf")) return false;
+  const stem = leaf.slice(PAPER_COPY_PREFIX.length, -".pdf".length);
+  // The copy's own name, or that name with the number a second copy gets.
+  const name = stem.replace(/ \d+$/, "");
+  return templateNames.has(stem) || templateNames.has(name);
+}
+
+/** The page backdrop for page `page` of the notebook's copy at `path`: marked as a template's. */
 export function paperBackdrop(path: string, page: number): PdfBackdrop {
-  return { kind: "pdf", path, page };
+  return { kind: "pdf", path, page, template: true };
 }
 
 /**

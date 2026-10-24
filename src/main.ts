@@ -108,6 +108,7 @@ import {
   normalizeFolder,
   notebookPaths,
   parseNotebookChoices,
+  parseNotebookTemplate,
   stripInkSuffix,
   targetFolder,
   uniqueFileName,
@@ -578,8 +579,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.addCommand({
       id: "create-notebook-with-last-settings",
       name: "Create notebook with last settings",
-      callback: () =>
-        void this.createNotebook("", parseNotebookChoices(this.settings.lastNotebookChoices)),
+      callback: () => void this.createNotebookWithLastSettings(),
     });
 
     this.addCommand({
@@ -1718,12 +1718,16 @@ export default class GoodObsidianPlugin extends Plugin {
     });
     const modal = new NewNotebookModal(this.app, {
       choices: parseNotebookChoices(this.settings.lastNotebookChoices),
+      template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
       folder: folder ?? this.newNotebookFolder(),
       papers: library,
       onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
       onCreate: ({ title, choices, folder, template }) => {
         this.settings.lastNotebookChoices = { ...choices };
+        this.settings.lastNotebookTemplate = template
+          ? { path: template.path, page: template.page }
+          : null;
         void this.saveSettings();
         if (template)
           void this.createNotebookFromTemplate(title, choices, folder, template, library);
@@ -1732,6 +1736,31 @@ export default class GoodObsidianPlugin extends Plugin {
     });
     cache.onReady = (path) => modal.paperReady(path);
     modal.open();
+  }
+
+  /**
+   * The dialog's last choices without the dialog: the template it made a
+   * notebook of last time while that is still in My templates, else the paper.
+   */
+  private async createNotebookWithLastSettings(): Promise<void> {
+    const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
+    const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
+    if (remembered) {
+      const library = this.paperLibrary();
+      const entries = await library.list().catch(() => []);
+      const entry = entries.find((e) => e.path === remembered.path && e.page === remembered.page);
+      if (entry) {
+        await this.createNotebookFromTemplate(
+          "",
+          choices,
+          this.newNotebookFolder(),
+          entry,
+          library,
+        );
+        return;
+      }
+    }
+    await this.createNotebook("", choices);
   }
 
   /** My templates, painting previews with `paint`, and with the community gallery. */
@@ -1810,7 +1839,7 @@ export default class GoodObsidianPlugin extends Plugin {
         path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
       }
       await this.app.vault.createBinary(path, bytes);
-      return buildPdfNotebook(choices, heading, attachments, path, sizes);
+      return buildPdfNotebook(choices, heading, attachments, path, sizes, true);
     });
   }
 

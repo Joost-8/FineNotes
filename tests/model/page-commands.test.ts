@@ -21,6 +21,7 @@ import {
   pageToInsertAfter,
 } from "../../src/model/page-commands";
 import {
+  type Backdrop,
   type InkDocument,
   type Stroke,
   blankPage,
@@ -32,6 +33,14 @@ import { dequantizePts, quantizePts } from "../../src/model/serialize";
 function stroke(id: string, pts: number[] = [1, 2, 0.5, 3, 4, 0.5]): Stroke {
   return { id, color: "#1a1a1a", size: 3, tool: "pen", pts };
 }
+
+/** Page `page` of a notebook's copy of a template from My templates. */
+const TEMPLATE_PAPER = (page: number): Backdrop => ({
+  kind: "pdf",
+  path: "Planner/Paper Weekly planner.pdf",
+  page,
+  template: true,
+});
 
 function threePages(): InkDocument {
   const doc = emptyDocument();
@@ -447,6 +456,41 @@ describe("pageToInsertAfter", () => {
     const doc = threePages();
     doc.pages[2].backdrop = { kind: "pdf", path: "Slides/deck.pdf", page: 3 };
     expect(pageToInsertAfter(doc, 2)?.page.backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("repeats a page of My templates as it is: the same page of the same PDF", () => {
+    const doc = threePages();
+    const paper = TEMPLATE_PAPER(2);
+    doc.pages[1].backdrop = paper;
+    const result = pageToInsertAfter(doc, 1);
+    expect(result?.page.backdrop).toEqual(paper);
+    expect(result?.page.backdrop).not.toBe(paper);
+  });
+
+  it("repeats an unmarked copy (a notebook made before the mark) while its template is listed", () => {
+    const doc = threePages();
+    const paper: Backdrop = { kind: "pdf", path: "Planner/Paper Weekly planner.pdf", page: 1 };
+    doc.pages[2].backdrop = paper;
+    expect(pageToInsertAfter(doc, 2, new Set(["Weekly planner"]))?.page.backdrop).toEqual(paper);
+    expect(pageToInsertAfter(doc, 2, new Set())?.page.backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("does not repeat an unmarked PDF named like a copy when no template has its name", () => {
+    const doc = threePages();
+    doc.pages[2].backdrop = { kind: "pdf", path: "Exams/Paper 2.pdf", page: 0 };
+    const names = new Set(["Weekly planner"]);
+    expect(pageToInsertAfter(doc, 2, names)?.page.backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("past a cover, a page of My templates is repeated in its own shape", () => {
+    const doc = threePages();
+    doc.pages[0].backdrop = { kind: "cover-plain" };
+    doc.pages[0].geometry = { width: 1024, height: 1449 };
+    doc.pages[1].backdrop = TEMPLATE_PAPER(0);
+    doc.pages[1].geometry = { width: 1024, height: 768 };
+    const result = pageToInsertAfter(doc, 0);
+    expect(result?.page.backdrop).toEqual(TEMPLATE_PAPER(0));
+    expect(result?.page.geometry).toEqual({ width: 1024, height: 768 });
   });
 
   it("gives the new page an id that is free in this document", () => {

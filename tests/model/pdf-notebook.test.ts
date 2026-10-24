@@ -32,6 +32,17 @@ describe("buildPdfNotebook", () => {
     expect(doc.single).toBeUndefined();
   });
 
+  it("marks its pages as a template's only when the PDF is a copy from My templates", () => {
+    const args = [DEFAULT_NOTEBOOK_CHOICES, "", undefined, "N/Paper Planner.pdf", [A4]] as const;
+    expect(buildPdfNotebook(...args).pages[0].backdrop).not.toHaveProperty("template");
+    expect(buildPdfNotebook(...args, true).pages[0].backdrop).toEqual({
+      kind: "pdf",
+      path: "N/Paper Planner.pdf",
+      page: 0,
+      template: true,
+    });
+  });
+
   it("sizes pages from the chosen paper, turned to each PDF page", () => {
     const base = sizeGeometry(DEFAULT_NOTEBOOK_CHOICES.size, false);
     const short = Math.min(base.width, base.height);

@@ -86,7 +86,7 @@ import { PdfTextCache } from "./pdf-text-source";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
-import { VaultPaperLibrary } from "./paper-library-host";
+import { VaultPaperLibrary, templateNamesIn } from "./paper-library-host";
 import { renderPageThumbnail } from "../canvas/renderer";
 import {
   PAPER_COPY_PREFIX,
@@ -221,8 +221,14 @@ import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
-import { type PageGeometry, type SyntheticBackdrop, isCoverRuling } from "../model/document";
-import { paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
+import {
+  type Backdrop,
+  type PageGeometry,
+  type PdfBackdrop,
+  type SyntheticBackdrop,
+  isCoverRuling,
+} from "../model/document";
+import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
@@ -1731,7 +1737,7 @@ export class InkView extends TextFileView {
       }
       case "add_practice_page": {
         if (this.isSinglePage) return { text: "This note is a single page.", isError: true };
-        const insert = pageToInsertAfter(doc, call.after - 1);
+        const insert = pageToInsertAfter(doc, call.after - 1, this.templateNames());
         if (!insert) break;
         const { page } = insert;
         const { width, height } = page.geometry;
@@ -2610,8 +2616,9 @@ export class InkView extends TextFileView {
     this.pdfCache.onReady = (path, page, area) => {
       this.surface?.pdfPageReady(path, page, area);
       if (!area?.region) this.sidebar?.invalidatePdfPage(path, page);
-      // My templates' previews in an open template picker.
+      // My templates' previews in an open template picker or Add page popover.
       if (!area?.region) this.templatePicker?.paperReady(path);
+      if (!area?.region) this.addPagePopover?.popover.paperReady(path);
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
@@ -4071,13 +4078,20 @@ export class InkView extends TextFileView {
     const at = Math.max(0, Math.min(this.doc.pages.length - 1, ref));
     const page = this.doc.pages[at];
     if (!page) return;
+    // A cover is not paper: next to one, offer the notebook's paper.
+    const paper = paperPageFor(this.doc.pages, at);
+    // A page of My templates is repeated in its own shape.
+    const shapeOf = (backdrop: Backdrop): PageGeometry =>
+      backdrop.kind === "pdf" && paper ? paper.geometry : page.geometry;
     const popover = new AddPagePopover(anchor, {
-      // A cover is not paper: next to one, offer the notebook's paper.
-      current: paperTemplateFor(this.doc.pages, at),
+      current: paper?.backdrop ?? { kind: "blank" },
       geometry: page.geometry,
       recent: this.loadRecentTemplates(),
+      templateNames: this.templateNames(),
       position,
-      onPick: (backdrop, at) => this.addTemplatePage(backdrop, page.geometry, at, ref),
+      paintPaper: (canvas, backdrop, cssWidth) =>
+        this.paintPaperThumbnail(canvas, backdrop, shapeOf(backdrop), cssWidth),
+      onPick: (backdrop, at) => this.addTemplatePage(backdrop, shapeOf(backdrop), at, ref),
       onMore: (at) => this.openTemplatePicker("add", ref, at),
     });
     this.addPagePopover = { popover, anchor };
@@ -4139,29 +4153,47 @@ export class InkView extends TextFileView {
 
   /** My templates (`model/paper-library.ts`), drawn by the thumbnails' painter. */
   private paperLibrary(): VaultPaperLibrary | undefined {
-    const painter = this.thumbBackdrops;
-    if (!painter) return undefined;
+    if (!this.thumbBackdrops) return undefined;
     return new VaultPaperLibrary(
       this.app,
       () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
-      (canvas, backdrop, geometry, cssWidth) => {
-        const page: Page = {
-          id: "paper",
-          kind: "ink",
-          geometry,
-          backdrop,
-          strokes: [],
-          images: [],
-          textBoxes: [],
-        };
-        renderPageThumbnail(canvas, page, painter, cssWidth, window.devicePixelRatio || 1, {
-          usePressure: false,
-          highlighterAlpha: this.settings.highlighterAlpha,
-        });
-      },
+      (canvas, backdrop, geometry, cssWidth) =>
+        this.paintPaperThumbnail(canvas, backdrop, geometry, cssWidth),
       () => this.plugin.openTemplateGallery(),
       (path) => void this.plugin.openShareTemplate(path),
     );
+  }
+
+  /** The names in My templates now, which tell an older notebook's template pages apart. */
+  private templateNames(): Set<string> {
+    return templateNamesIn(
+      this.app,
+      normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+    );
+  }
+
+  /** An empty page with PDF paper `backdrop`, as a thumbnail `cssWidth` wide. */
+  private paintPaperThumbnail(
+    canvas: HTMLCanvasElement,
+    backdrop: PdfBackdrop,
+    geometry: PageGeometry,
+    cssWidth: number,
+  ): void {
+    const painter = this.thumbBackdrops;
+    if (!painter) return;
+    const page: Page = {
+      id: "paper",
+      kind: "ink",
+      geometry,
+      backdrop,
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    };
+    renderPageThumbnail(canvas, page, painter, cssWidth, window.devicePixelRatio || 1, {
+      usePressure: false,
+      highlighterAlpha: this.settings.highlighterAlpha,
+    });
   }
 
   /**
@@ -4276,7 +4308,7 @@ export class InkView extends TextFileView {
   }
 
   private addTemplatePage(
-    backdrop: SyntheticBackdrop,
+    backdrop: Backdrop,
     geometry: PageGeometry,
     position: InsertPosition,
     ref: number,
@@ -4288,7 +4320,7 @@ export class InkView extends TextFileView {
     this.surface.applyCommand(new AddPage(insert.index, insert.page));
     // Glide onto the new page, as GoodNotes does after "Add page".
     this.surface.goToPage(insert.index, true);
-    this.rememberTemplate(backdrop);
+    if (backdrop.kind !== "pdf") this.rememberTemplate(backdrop);
     this.requestSave();
   }
 
@@ -4719,7 +4751,7 @@ export class InkView extends TextFileView {
    */
   private addPage(afterIndex: number, animate = false): void {
     if (this.isProtected() || this.refuseSinglePage()) return;
-    const insert = pageToInsertAfter(this.doc, afterIndex);
+    const insert = pageToInsertAfter(this.doc, afterIndex, this.templateNames());
     if (!insert || !this.surface) return;
     this.surface.applyCommand(new AddPage(insert.index, insert.page));
     this.surface.goToPage(insert.index, animate);
