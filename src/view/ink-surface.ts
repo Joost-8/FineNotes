@@ -267,9 +267,11 @@ import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
   TABLE_MIN_COL,
   TABLE_MIN_ROW,
+  cellStyleOf,
   cellText,
   makeTable,
   nextTableId,
+  setCellStyle,
   setCellText,
   stepCell,
   tableScaleRange,
@@ -284,10 +286,12 @@ import {
   ResizeTableColumn,
   ResizeTableRow,
   SetTableCell,
+  SetTableCellStyle,
   SetTableHeader,
 } from "../model/table-commands";
 import {
   type PageSize,
+  floatedTop,
   furthestFitting,
   insertColumnWithin,
   insertRowWithin,
@@ -10634,12 +10638,19 @@ export class InkSurface {
     col: number;
     before: string;
     /**
-     * The cell's text the last time the table fitted its page, the table's
-     * frame then and where the caret was: typing that would take the table
-     * further past the page goes back to it.
+     * The table's top edge and frame when typing in this cell began (or was
+     * last recorded): text that runs past the bottom of the page floats the
+     * table up from there, and is recorded with the move as one step.
+     */
+    startY: number;
+    startFrame: BoxFrame;
+    /**
+     * The cell's text the last time the table fitted its page, its top edge
+     * then and where the caret was: typing that cannot fit even with the
+     * table at the top of the page goes back to it.
      */
     fitText: string;
-    fitFrame: BoxFrame;
+    fitY: number;
     fitCaret: number;
   } | null = null;
   /** The table bar's actions that would do nothing or not fit, worked out when they may change. */
@@ -10736,8 +10747,10 @@ export class InkSurface {
       table,
       ...cell,
       before: text,
+      startY: table.y,
+      startFrame: this.tableFrameOf(table),
       fitText: text,
-      fitFrame: this.tableFrameOf(table),
+      fitY: table.y,
       fitCaret: text.length,
     };
     this.cellDisabled = this.disabledTableActions();
@@ -10764,6 +10777,7 @@ export class InkSurface {
       onStep: (step) => this.stepCellEdit(step),
       onEscape: () => this.endCellEdit(true),
       onAction: (action) => this.tableAction(action),
+      onColor: (color) => this.colorCell(color),
       onGrip: (kind, index, event) => this.startGripDrag(kind, index, event),
     }));
     editor.input.value = this.cellEdit.before;
@@ -10781,17 +10795,21 @@ export class InkSurface {
     const edit = this.cellEdit;
     if (!edit) return;
     const after = cellText(edit.table, edit.row, edit.col);
-    if (after === edit.before) return;
+    const moved = edit.table.y !== edit.startY;
+    if (after === edit.before && !moved) return;
     const onPage = this.doc.pages.some(
       (page) => page.id === edit.pageId && page.tables?.includes(edit.table),
     );
     if (onPage) {
+      const move = moved ? { from: edit.startY, to: edit.table.y } : undefined;
       this.history.push(
         this.doc,
-        new SetTableCell(edit.pageId, edit.table, edit.row, edit.col, edit.before, after),
+        new SetTableCell(edit.pageId, edit.table, edit.row, edit.col, edit.before, after, move),
       );
     }
     edit.before = after;
+    edit.startY = edit.table.y;
+    edit.startFrame = this.tableFrameOf(edit.table);
   }
 
   /**
@@ -10829,9 +10847,11 @@ export class InkSurface {
 
   /**
    * The cell's text was typed into: the cell changes as it is typed, and its
-   * row grows. Text that would take the table further past the page's edge
-   * than it was is not taken, as paper ends where it ends; while an input
-   * method is still composing, that waits until it settles.
+   * row grows. Text that would run past the bottom of the page floats the
+   * table up, only as far as it needs and never above the page's top, and
+   * back down as the text shrinks (never below where typing began). Text
+   * that does not fit even then is not taken, as paper ends where it ends.
+   * While an input method is still composing, all that waits until it settles.
    */
   private typeInCell(text: string, composing = false): void {
     const edit = this.cellEdit;
@@ -10842,20 +10862,25 @@ export class InkSurface {
     const page = this.pageSizeOf(edit.pageId);
     const editor = this.cellEditor;
     if (!composing && page && editor) {
-      if (keepsToPage(edit.fitFrame, after, page)) {
+      edit.table.y = floatedTop(edit.startY, after.h, page.height);
+      after = this.tableFrameOf(edit.table);
+      if (keepsToPage(edit.startFrame, after, page)) {
         edit.fitText = text;
-        edit.fitFrame = after;
+        edit.fitY = edit.table.y;
         edit.fitCaret = editor.input.selectionStart ?? text.length;
       } else {
         setCellText(edit.table, edit.row, edit.col, edit.fitText);
+        edit.table.y = edit.fitY;
         editor.input.value = edit.fitText;
         editor.input.setSelectionRange(edit.fitCaret, edit.fitCaret);
         editor.refuse();
         after = this.tableFrameOf(edit.table);
       }
     }
-    // A row that grew or shrank changes what still fits below the table.
-    if (after.h !== before.h) this.cellDisabled = this.disabledTableActions();
+    // A row that grew or shrank, or a table that floated, changes what still fits.
+    if (after.h !== before.h || after.y !== before.y) {
+      this.cellDisabled = this.disabledTableActions();
+    }
     this.repaintTable(edit.pageId, edit.table, before);
     this.placeCellEditor();
     this.keepTypingBoxVisible();
@@ -10909,6 +10934,33 @@ export class InkSurface {
   }
 
   /**
+   * A swatch under the bar: the cell's text takes that colour (`null`: the
+   * table's own again), one undo step, and typing goes on in the cell.
+   */
+  private colorCell(color: string | null): void {
+    const edit = this.cellEdit;
+    if (!edit) return;
+    const own = cellStyleOf(edit.table, edit.row, edit.col)?.color ?? null;
+    if (own === color) return;
+    this.commitCellEdit();
+    const { pageId, table, row, col } = edit;
+    this.history.push(this.doc, new SetTableCellStyle(pageId, table, row, col, { color }));
+    this.cellEdit = null;
+    this.startCellEdit(pageId, table, { row, col });
+    this.repaintTable(pageId, table);
+    this.changed([pageId]);
+  }
+
+  /** The colours a cell can take: the table's own text colour, then the pen palette's. */
+  private cellColors(table: TableElement): string[] {
+    const out = [table.textColor];
+    for (const color of [...(this.doc.palette?.colors ?? []), ...this.palette]) {
+      if (/^#[0-9a-f]{6}$/i.test(color) && !out.some((c) => sameColor(c, color))) out.push(color);
+    }
+    return out;
+  }
+
+  /**
    * What a bar button would do to the table being typed in: its command and
    * the cell typed in afterwards, or `null` when it would do nothing (the
    * last row, the most columns) or would take the table further past its
@@ -10955,6 +11007,15 @@ export class InkSurface {
         row,
         col: Math.min(col, table.cols.length - 2),
       };
+    } else if (action === "bold") {
+      // A header cell is bold already; a bolder cell may wrap onto more lines.
+      if (table.header === true && row === 0) return null;
+      const bold = cellStyleOf(table, row, col)?.bold !== true;
+      change = (trial) => {
+        setCellStyle(trial, row, col, { bold });
+        return true;
+      };
+      command = new SetTableCellStyle(pageId, table, row, col, { bold });
     } else {
       const on = table.header !== true;
       change = (trial) => {
@@ -10980,6 +11041,7 @@ export class InkSurface {
       "col-left",
       "col-right",
       "header",
+      "bold",
       "delete-row",
       "delete-col",
     ];
@@ -11025,7 +11087,7 @@ export class InkSurface {
     const scale = this.unitScale;
     const page = this.pageAt(box.index);
     const night = page ? pageLook(page.backdrop, this.paper).night : false;
-    const style = cellStyle(edit.table, edit.row);
+    const style = cellStyle(edit.table, edit.row, edit.col);
     editor.place({
       left: Math.round((box.x + frame.x) * scale),
       top: Math.round((box.y + frame.y) * scale),
@@ -11043,6 +11105,9 @@ export class InkSurface {
       style: { ...style, color: shownColor(style.color, night) },
       header: edit.table.header === true,
       disabled: this.cellDisabled,
+      bold: style.bold === true,
+      colors: this.cellColors(edit.table),
+      cellColor: cellStyleOf(edit.table, edit.row, edit.col)?.color ?? null,
     });
     const drag = this.gripDrag;
     if (drag) {
@@ -11164,7 +11229,7 @@ export class InkSurface {
       );
       this.changed([edit.pageId]);
     }
-    edit.fitFrame = this.tableFrameOf(edit.table);
+    edit.startFrame = this.tableFrameOf(edit.table);
     this.cellDisabled = this.disabledTableActions();
     this.repaintTable(edit.pageId, edit.table);
     this.placeCellEditor();

@@ -484,6 +484,20 @@ export interface TableElement {
   fill?: string;
   /** The grid drawn dashed or dotted; absent is solid. */
   dash?: ShapeDash;
+  /**
+   * Each cell's own look over the table's, `cellStyles[row][col]`, shaped
+   * as `cells`; `null` where a cell has none. Absent when no cell has one,
+   * so a table nobody styled is stored as it always was.
+   */
+  cellStyles?: Array<Array<TableCellStyle | null>>;
+}
+
+/** A table cell's own look: bold, and a text colour over the table's `textColor`. */
+export interface TableCellStyle {
+  /** Only stored as `true`. */
+  bold?: true;
+  /** `#rrggbb`. */
+  color?: string;
 }
 
 /**

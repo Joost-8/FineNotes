@@ -13,7 +13,15 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, type TableElement, pageById } from "./document";
-import { removeColumn, removeRow, setCellText, setColumnWidth, setRowHeight } from "./table";
+import {
+  type TableCellStylePatch,
+  removeColumn,
+  removeRow,
+  setCellStyle,
+  setCellText,
+  setColumnWidth,
+  setRowHeight,
+} from "./table";
 import { insertColumnWithin, insertRowWithin } from "./table-fit";
 
 /** Put a table on a page, above the tables already there. */
@@ -135,11 +143,28 @@ export class SetTableHeader extends TableEdit {
   }
 }
 
+/** A cell's own look: bold or not, its text colour or the table's. */
+export class SetTableCellStyle extends TableEdit {
+  constructor(
+    pageId: string,
+    table: TableElement,
+    row: number,
+    col: number,
+    patch: TableCellStylePatch,
+  ) {
+    super(pageId, table, "Cell style", (t) => setCellStyle(t, row, col, patch));
+  }
+}
+
 /**
  * A cell's text. Typing writes the cell as it goes (so the page, its
  * thumbnail and a save see it at once), and the edit is recorded when the
  * cell is left, with the text it had before: `before` is given, not read,
  * because by then the table already holds `after`.
+ *
+ * Text that would run past the bottom of the page moves the table up
+ * instead; `move` gives its top edge before and after, so the text and the
+ * move are one step.
  */
 export class SetTableCell implements Command {
   readonly label = "Edit cell";
@@ -151,17 +176,20 @@ export class SetTableCell implements Command {
     private readonly col: number,
     private readonly before: string,
     private readonly after: string,
+    private readonly move?: { from: number; to: number },
   ) {}
 
   apply(doc: InkDocument): void {
     if (onPage(doc, this.pageId, this.table)) {
       setCellText(this.table, this.row, this.col, this.after);
+      if (this.move) this.table.y = this.move.to;
     }
   }
 
   invert(doc: InkDocument): void {
     if (onPage(doc, this.pageId, this.table)) {
       setCellText(this.table, this.row, this.col, this.before);
+      if (this.move) this.table.y = this.move.from;
     }
   }
 }

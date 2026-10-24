@@ -2049,11 +2049,11 @@ export function paintTable(
     ctx.restore();
   });
   layout.cells.forEach((row, r) => {
-    const style = cellStyle(table, r);
-    ctx.font = canvasFont(style, style.fontSize);
     row.forEach((cell, c) => {
       if (skip && skip.row === r && skip.col === c) return;
       if (cell.lines.every((line) => line.runs.length === 0)) return;
+      const style = cellStyle(table, r, c);
+      ctx.font = canvasFont(style, style.fontSize);
       const clip = { x: layout.colX[c], y: layout.rowY[r], w: layout.colW[c] };
       ctx.save();
       paintTextLines(ctx, style, cell, clip, night);

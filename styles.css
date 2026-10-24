@@ -9762,6 +9762,55 @@ button.goodobsidian-learn-stop.is-hidden {
   background: var(--gob-sel-line);
 }
 
+/* The cell's text colour: a disc, the colour itself. */
+.goodobsidian-table-bar-disc {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--color-base-70);
+}
+
+/* The swatches the disc opens, in a row under the bar. */
+.goodobsidian-table-swatches {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--gob-sel-line);
+  border-radius: var(--gob-card-radius);
+  background: var(--gob-sel-bg);
+  box-shadow: var(--gob-shadow-float);
+}
+
+.goodobsidian-table-swatches.is-hidden {
+  display: none;
+}
+
+.goodobsidian-table-swatches .goodobsidian-table-swatch.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.goodobsidian-table-swatch-disc {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.goodobsidian-table-swatches .goodobsidian-table-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
 /* No room on the page for it, or nothing to take away. */
 .goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon:disabled {
   opacity: 0.35;

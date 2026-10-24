@@ -119,6 +119,18 @@ export function insertedRowHeight(like: number, room: number): number | null {
   return Math.max(TABLE_MIN_ROW, Math.min(like, Math.floor(room * 100) / 100));
 }
 
+/**
+ * Where a table's top edge goes while its text grows, so its bottom stays on
+ * the page: up only as far as needed, never below where typing began
+ * (`startY`), never above the page's top (or above where it already was,
+ * when it began above it). Whether it then fits is the caller's
+ * {@link keepsToPage}: a table as tall as the page cannot float any higher.
+ */
+export function floatedTop(startY: number, height: number, pageHeight: number): number {
+  const top = Math.min(0, startY);
+  return Math.max(top, Math.min(startY, pageHeight - height));
+}
+
 /** Put an empty column in at `index`, the columns brought within `room`; false when refused. */
 export function insertColumnWithin(table: TableElement, index: number, room: number): boolean {
   const widths = columnsWithInserted(table.cols, index, room);

@@ -14,6 +14,7 @@
 import {
   type InkDocument,
   type ShapeDash,
+  type TableCellStyle,
   type TableElement,
   TEXT_FONTS,
   type TextFont,
@@ -112,6 +113,11 @@ export function insertRow(table: TableElement, index: number): void {
     0,
     table.cols.map(() => ""),
   );
+  table.cellStyles?.splice(
+    at,
+    0,
+    table.cols.map(() => null),
+  );
 }
 
 /** Take out row `index`; the last row stays (a table always has one). */
@@ -119,6 +125,8 @@ export function removeRow(table: TableElement, index: number): void {
   if (table.rows.length <= 1 || !inRange(index, table.rows.length)) return;
   table.rows.splice(index, 1);
   table.cells.splice(index, 1);
+  table.cellStyles?.splice(index, 1);
+  dropEmptyStyles(table);
   // The header was that row: the next row does not become one.
   if (index === 0) delete table.header;
 }
@@ -130,6 +138,7 @@ export function insertColumn(table: TableElement, index: number): void {
   const like = table.cols[Math.min(at, table.cols.length - 1)] ?? TABLE_MIN_COL;
   table.cols.splice(at, 0, like);
   for (const row of table.cells) row.splice(at, 0, "");
+  for (const row of table.cellStyles ?? []) row.splice(at, 0, null);
 }
 
 /** Take out column `index`; the last column stays. */
@@ -137,6 +146,8 @@ export function removeColumn(table: TableElement, index: number): void {
   if (table.cols.length <= 1 || !inRange(index, table.cols.length)) return;
   table.cols.splice(index, 1);
   for (const row of table.cells) row.splice(index, 1);
+  for (const row of table.cellStyles ?? []) row.splice(index, 1);
+  dropEmptyStyles(table);
 }
 
 /** Set column `index`'s width, never under {@link TABLE_MIN_COL}. */
@@ -161,6 +172,45 @@ export function setCellText(table: TableElement, row: number, col: number, text:
   const cells = table.cells[row];
   if (!cells || !inRange(col, cells.length)) return;
   cells[col] = text;
+}
+
+/** A cell's own look, `null` when it has none or lies outside the table. */
+export function cellStyleOf(
+  table: Pick<TableElement, "cellStyles">,
+  row: number,
+  col: number,
+): TableCellStyle | null {
+  return table.cellStyles?.[row]?.[col] ?? null;
+}
+
+/** A change to a cell's look: `bold` false and `color` null take them away. */
+export interface TableCellStylePatch {
+  bold?: boolean;
+  color?: string | null;
+}
+
+/**
+ * Change a cell's own look; nothing outside the table, and nothing for a
+ * colour that is not `#rrggbb`. The grid of looks is made the first time a
+ * cell gets one and goes again when no cell has one.
+ */
+export function setCellStyle(
+  table: TableElement,
+  row: number,
+  col: number,
+  patch: TableCellStylePatch,
+): void {
+  if (!inRange(row, table.rows.length) || !inRange(col, table.cols.length)) return;
+  const next: TableCellStyle = { ...(cellStyleOf(table, row, col) ?? {}) };
+  if (patch.bold === true) next.bold = true;
+  else if (patch.bold === false) delete next.bold;
+  if (patch.color === null) delete next.color;
+  else if (patch.color !== undefined && isRgb(patch.color)) next.color = patch.color.toLowerCase();
+  const empty = next.bold === undefined && next.color === undefined;
+  if (empty && !table.cellStyles) return;
+  table.cellStyles ??= table.rows.map(() => table.cols.map(() => null));
+  table.cellStyles[row][col] = empty ? null : next;
+  dropEmptyStyles(table);
 }
 
 /** The cell after (`step` 1) or before (`step` -1) one, reading order; `null` past either end. */
@@ -244,13 +294,56 @@ export function normalizeTable(raw: unknown, mintId: () => string): TableElement
   if (fill) table.fill = fill;
   const dash: ShapeDash | undefined = readDash(r.dash);
   if (dash) table.dash = dash;
+  const styles = readCellStyles(r.cellStyles, rows.length, cols.length);
+  if (styles) table.cellStyles = styles;
   return table;
+}
+
+/**
+ * The stored looks of the cells, shaped as the cells (padded with `null`,
+ * cut to the table), each keeping only what it may hold; `undefined` when
+ * none is left.
+ */
+function readCellStyles(
+  raw: unknown,
+  rows: number,
+  cols: number,
+): Array<Array<TableCellStyle | null>> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  let any = false;
+  const out = Array.from({ length: rows }, (_, i) => {
+    const row: unknown[] = Array.isArray(raw[i]) ? (raw[i] as unknown[]) : [];
+    return Array.from({ length: cols }, (__, j): TableCellStyle | null => {
+      const cell = row[j];
+      if (typeof cell !== "object" || cell === null) return null;
+      const c = cell as Record<string, unknown>;
+      const style: TableCellStyle = {};
+      if (c.bold === true) style.bold = true;
+      if (isRgb(c.color)) style.color = c.color.toLowerCase();
+      if (style.bold === undefined && style.color === undefined) return null;
+      any = true;
+      return style;
+    });
+  });
+  return any ? out : undefined;
 }
 
 /** A table's colour when the file has none to give: the default ink. */
 const DEFAULT_TABLE_COLOR = "#1a1a1a";
 
 // --- Helpers ----------------------------------------------------------------
+
+/** Take the grid of looks away once no cell has one. */
+function dropEmptyStyles(table: TableElement): void {
+  if (table.cellStyles && table.cellStyles.every((row) => row.every((cell) => cell === null))) {
+    delete table.cellStyles;
+  }
+}
+
+/** A plain `#rrggbb` colour. */
+function isRgb(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
 
 function lengths(raw: unknown, min: number, most: number): number[] {
   if (!Array.isArray(raw)) return [];

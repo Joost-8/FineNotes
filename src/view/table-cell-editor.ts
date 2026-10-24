@@ -6,9 +6,10 @@
  * at (`canvas/table-layout`). While it is up, the canvas leaves that cell's
  * text out, so nothing shows twice.
  *
- * Above the table floats its bar: add a row or a column, the header row, and
- * delete the cell's row or column; an addition that would not fit on the
- * page is greyed out. Every column's right edge has a grip on the table's top
+ * Above the table floats its bar: add a row or a column, the header row, the
+ * cell's own bold and colour (a row of swatches under the bar), and delete
+ * the cell's row or column; an addition that would not fit on the page is
+ * greyed out. Every column's right edge has a grip on the table's top
  * border and every row's bottom edge one on its left border, outside the
  * cells, so a drag of any border resizes and a tap in any cell types there.
  *
@@ -30,7 +31,14 @@ import { swallowGhostClick } from "./ghost-click";
 
 /** What the bar's buttons do. */
 export type TableAction =
-  "row-above" | "row-below" | "col-left" | "col-right" | "delete-row" | "delete-col" | "header";
+  | "row-above"
+  | "row-below"
+  | "col-left"
+  | "col-right"
+  | "delete-row"
+  | "delete-col"
+  | "header"
+  | "bold";
 
 export interface CellEditorCallbacks {
   /** The text was typed or pasted into (`composing`: an input method is still at it). */
@@ -44,6 +52,8 @@ export interface CellEditorCallbacks {
   /** Escape: stop typing. */
   onEscape: () => void;
   onAction: (action: TableAction) => void;
+  /** A swatch was picked for the cell's text: a colour, or `null` for the table's own. */
+  onColor: (color: string | null) => void;
   /** A grip was pressed: drag column `index`'s right edge or row `index`'s bottom edge. */
   onGrip: (kind: "col" | "row", index: number, event: PointerEvent) => void;
 }
@@ -74,6 +84,12 @@ export interface CellPlacement {
   header: boolean;
   /** The bar's actions that would do nothing now (no room on the page, the last row). */
   disabled: ReadonlySet<TableAction>;
+  /** Whether the cell is bold: its own bold, or the header's. */
+  bold: boolean;
+  /** The swatches the colour row offers, the table's own text colour first. */
+  colors: readonly string[];
+  /** The cell's own colour, `null` when it shows the table's. */
+  cellColor: string | null;
 }
 
 /** iPadOS zooms into a text field whose computed font is under this (ink-surface's rule). */
@@ -96,6 +112,7 @@ const ACTIONS: ReadonlyArray<{ action: TableAction; icon: string; label: string;
     { action: "col-left", icon: "arrow-left-to-line", label: "Add column left" },
     { action: "col-right", icon: "arrow-right-to-line", label: "Add column right" },
     { action: "header", icon: "heading", label: "Header row" },
+    { action: "bold", icon: "bold", label: "Bold" },
     { action: "delete-row", icon: "trash-2", label: "Delete row", text: "Row" },
     { action: "delete-col", icon: "trash-2", label: "Delete column", text: "Column" },
   ];
@@ -114,6 +131,12 @@ export class TableCellEditor {
   /** A line along the border being dragged, across the whole table. */
   private readonly guide: HTMLElement;
   private readonly buttons = new Map<TableAction, HTMLButtonElement>();
+  /** The cell's text colour: a disc on the bar, and the row of swatches it opens. */
+  private readonly colorButton!: HTMLButtonElement;
+  private readonly colorDisc!: HTMLElement;
+  private readonly swatchRow: HTMLElement;
+  /** The swatches shown, to rebuild them only when the palette changes. */
+  private swatchKey = "";
   private readonly callbacks: CellEditorCallbacks;
   private shown = false;
   private refuseTimer = 0;
@@ -148,7 +171,17 @@ export class TableCellEditor {
       if (entry.text) button.createSpan({ cls: "goodobsidian-table-bar-text", text: entry.text });
       onPress(button, () => callbacks.onAction(entry.action));
       this.buttons.set(entry.action, button);
+      if (entry.action === "bold") {
+        // The colour sits beside Bold: the disc is the cell's colour, a value, not chrome.
+        this.colorButton = this.bar.createEl("button", {
+          cls: "goodobsidian-table-bar-button clickable-icon is-color",
+          attr: { "aria-label": "Text colour", "aria-expanded": "false" },
+        });
+        this.colorDisc = this.colorButton.createSpan({ cls: "goodobsidian-table-bar-disc" });
+        onPress(this.colorButton, () => this.toggleSwatches());
+      }
     }
+    this.swatchRow = this.bar.createDiv({ cls: "goodobsidian-table-swatches is-hidden" });
 
     // Text editing never starts ink on the page beneath.
     this.input.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -212,7 +245,47 @@ export class TableCellEditor {
     const header = this.buttons.get("header");
     header?.toggleClass("is-active", at.header);
     header?.setAttribute("aria-pressed", String(at.header));
+    const bold = this.buttons.get("bold");
+    bold?.toggleClass("is-active", at.bold);
+    bold?.setAttribute("aria-pressed", String(at.bold));
+    this.colorDisc.setCssStyles({ backgroundColor: at.style.color });
+    this.syncSwatches(at.colors, at.cellColor);
     this.placeGrips(at);
+  }
+
+  /** Open or close the row of swatches under the bar. */
+  private toggleSwatches(): void {
+    const open = this.swatchRow.hasClass("is-hidden");
+    this.swatchRow.toggleClass("is-hidden", !open);
+    this.colorButton.toggleClass("is-active", open);
+    this.colorButton.setAttribute("aria-expanded", String(open));
+  }
+
+  /**
+   * One disc per colour, the table's own first (it takes the cell's colour
+   * away); the cell's colour is ringed.
+   */
+  private syncSwatches(colors: readonly string[], current: string | null): void {
+    const key = colors.join();
+    if (key !== this.swatchKey) {
+      this.swatchKey = key;
+      this.swatchRow.empty();
+      colors.forEach((color, i) => {
+        const swatch = this.swatchRow.createEl("button", {
+          cls: "goodobsidian-table-swatch clickable-icon",
+          attr: { "aria-label": i === 0 ? "Table's text colour" : color },
+        });
+        swatch.dataset.color = color;
+        swatch.createSpan({ cls: "goodobsidian-table-swatch-disc" }).setCssStyles({
+          backgroundColor: color,
+        });
+        onPress(swatch, () => this.callbacks.onColor(i === 0 ? null : color));
+      });
+    }
+    const shown = current ?? colors[0];
+    for (const swatch of Array.from(this.swatchRow.children) as HTMLElement[]) {
+      swatch.toggleClass("is-active", swatch.dataset.color === shown);
+    }
   }
 
   /** One grip per column on the table's top border, one per row on its left border. */
@@ -287,6 +360,7 @@ export class TableCellEditor {
   /** Take the editor away; the caller has blurred it or is about to. */
   hide(): void {
     this.shown = false;
+    if (!this.swatchRow.hasClass("is-hidden")) this.toggleSwatches();
     this.root.addClass("is-hidden");
     this.bar.addClass("is-hidden");
     this.grips.addClass("is-hidden");

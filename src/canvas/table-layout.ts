@@ -16,7 +16,7 @@
  */
 
 import type { TableElement } from "../model/document";
-import { headerFillOf } from "../model/table";
+import { cellStyleOf, headerFillOf } from "../model/table";
 import type { TextStyle } from "../model/text-style";
 import { type Measure, type TextBoxLayout, layoutTextBox } from "./text-layout";
 
@@ -53,13 +53,18 @@ export function isHeaderRow(table: Pick<TableElement, "header">, row: number): b
   return row === 0 && table.header === true;
 }
 
-/** The text style a cell is typed and drawn in. */
-export function cellStyle(table: TableElement, row: number): TextStyle {
+/**
+ * The text style a cell is typed and drawn in: the table's, with the cell's
+ * own bold and colour over it (`col` given). A header cell is always bold.
+ */
+export function cellStyle(table: TableElement, row: number, col?: number): TextStyle {
+  const own = col === undefined ? null : cellStyleOf(table, row, col);
+  const bold = isHeaderRow(table, row) || own?.bold === true;
   return {
-    color: table.textColor,
+    color: own?.color ?? table.textColor,
     fontSize: table.fontSize,
     ...(table.font ? { font: table.font } : {}),
-    ...(isHeaderRow(table, row) ? { bold: true } : {}),
+    ...(bold ? { bold: true } : {}),
     padding: TABLE_CELL_PAD,
   };
 }
@@ -82,11 +87,14 @@ export function layoutTable(table: TableElement, measureFor: MeasureFor): TableL
   const cells: TextBoxLayout[][] = [];
   let y = table.y;
   table.rows.forEach((least, r) => {
-    const style = cellStyle(table, r);
-    const measure = measureFor(style.bold === true);
-    const row = table.cols.map((w, c) =>
-      layoutTextBox({ ...style, x: colX[c], y, w, text: table.cells[r]?.[c] ?? "" }, measure),
-    );
+    const row = table.cols.map((w, c) => {
+      const style = cellStyle(table, r, c);
+      const measure = measureFor(style.bold === true);
+      return layoutTextBox(
+        { ...style, x: colX[c], y, w, text: table.cells[r]?.[c] ?? "" },
+        measure,
+      );
+    });
     const h = Math.max(least, ...row.map((cell) => cell.height));
     for (const cell of row) cell.height = h;
     rowY.push(y);
@@ -178,6 +186,7 @@ export function tableLayoutKey(table: TableElement): string {
     table.fontSize,
     table.font ?? "",
     table.header === true,
+    table.cellStyles ?? null,
   ]);
 }
 
