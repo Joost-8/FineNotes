@@ -18,6 +18,8 @@
  * the stroke) — which also stops the browser synthesising a click from a
  * Pencil tap. So every control here acts on a pointerup that follows a
  * pointerdown on the same control, and on a keyboard click (`detail === 0`).
+ * Android does synthesise that click, after the action ran; `ghost-click.ts`
+ * eats it, or it would close a dialog the action opened.
  *
  * The pill and the menu are dark in every theme, as GoodNotes draws them.
  * They carry Obsidian's own `theme-dark` class, which re-declares the
@@ -28,6 +30,7 @@
 import { setIcon } from "obsidian";
 import { renderColorMixer } from "./color-picker";
 import type { Bounds } from "../model/document";
+import { swallowGhostClick } from "./ghost-click";
 import {
   type SelectionAction,
   actionsKey,
@@ -483,7 +486,11 @@ export function onTap(button: HTMLButtonElement, action: () => void): void {
     event.stopPropagation();
     if (armed !== event.pointerId) return;
     armed = null;
-    if (!button.disabled) action();
+    if (button.disabled) return;
+    // Android follows the lift with a click at whatever is under it by then,
+    // such as the background of a dialog this action opens, which closes it.
+    swallowGhostClick(button.ownerDocument, event);
+    action();
   });
   button.addEventListener("pointercancel", () => {
     armed = null;
