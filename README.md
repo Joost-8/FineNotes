@@ -16,6 +16,8 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 ![A lecture slide opened in FineNotes, with highlights, a circled formula and handwritten notes](assets/readme/pdf-annotation.png)
 
+**Website:** [finenotes.vercel.app](https://finenotes.vercel.app), with a demo you can [try in your browser](https://finenotes.vercel.app/play/)
+
 **Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
 
 **Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
@@ -677,6 +679,7 @@ build.
   [Discussions](https://github.com/Joost-8/FineNotes/discussions).
 - **Something broken?** [Report a bug](https://github.com/Joost-8/FineNotes/issues/new/choose):
   the form says which diagnostics help with which problem.
+- **Website:** [finenotes.vercel.app](https://finenotes.vercel.app), with a browser demo.
 - **Follow FineNotes** for news, tips and demos: [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian).
 - The same links are in Settings → FineNotes → Feedback and community.
 - Everyone taking part is expected to follow the
