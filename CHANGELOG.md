@@ -23,6 +23,18 @@ extracted from the matching section of this file by `release.yml`.
   The same button brings them back. Switch to a note in another tab and
   Obsidian's bars come back for it. The choice is kept on each device.
 
+### Fixed
+
+- **Erasing by line no longer takes a whole highlight.** A highlight
+  (straightened or not), a shape, or a stroke running over several lines
+  used to go whole as soon as the eraser touched its line. Now only its
+  part on the stretch of line you erase goes: erase a word, and the
+  highlight under it goes with it, while the rest of the highlight stays.
+- **Width marks at their real size.** The pen's width buttons and the
+  eraser's sizes are drawn as thick as the line they write, or as large as
+  the eraser is, on the page at the zoom you are at, beside the ink you
+  compare them with. The eraser's size in mm is what it erases at that zoom.
+
 ## [2.4.1] - 2026-10-22
 
 ### Added

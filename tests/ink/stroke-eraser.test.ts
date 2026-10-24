@@ -8,6 +8,8 @@ import {
   MIN_PIECE_LENGTH,
   eraseCircleFromPoints,
   eraseCircleFromStroke,
+  eraseRectsFromPoints,
+  eraseRectsFromStroke,
   eraserFilterOf,
   eraserTakes,
 } from "../../src/ink/stroke-eraser";
@@ -190,6 +192,101 @@ describe("eraseCircleFromStroke", () => {
     let minted = 0;
     expect(eraseCircleFromStroke(stroke, 50, 50, 10, () => `s${++minted}`)).toBeNull();
     expect(minted).toBe(0);
+  });
+});
+
+describe("eraseRectsFromPoints", () => {
+  /** A rectangle spanning y -10..10 from x0 to x1. */
+  const band = (x0: number, x1: number) => ({ minX: x0, maxX: x1, minY: -10, maxY: 10 });
+
+  it("returns null when no rectangle reaches the stroke", () => {
+    expect(eraseRectsFromPoints(line(0, 100), 2, [])).toBeNull();
+    expect(eraseRectsFromPoints(line(0, 100), 2, [band(200, 300)])).toBeNull();
+    expect(eraseRectsFromPoints(line(0, 100, 50), 2, [band(0, 100)])).toBeNull();
+  });
+
+  it("cuts a two-point line, widened sideways by half its width", () => {
+    const pieces = eraseRectsFromPoints(line(0, 100), 4, [band(40, 60)])!;
+    expect(pieces.map(xs)).toEqual([
+      [0, 38],
+      [62, 100],
+    ]);
+  });
+
+  it("cuts several rectangles out of one segment, in order, merging overlaps", () => {
+    const pieces = eraseRectsFromPoints(line(0, 100), 0, [
+      band(70, 80),
+      band(20, 30),
+      band(25, 35),
+    ])!;
+    expect(pieces.map(xs)).toEqual([
+      [0, 20],
+      [35, 70],
+      [80, 100],
+    ]);
+  });
+
+  it("cuts densely sampled ink at the rectangle's edges exactly", () => {
+    const pieces = eraseRectsFromPoints(sampled(0, 100, 3), 0, [band(40, 61)])!;
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0][pieces[0].length - 3]).toBeCloseTo(40);
+    expect(pieces[1][0]).toBeCloseTo(61);
+  });
+
+  it("does not widen up and down: a line just outside a band stays", () => {
+    expect(eraseRectsFromPoints(line(0, 100, 12), 20, [band(0, 100)])).toBeNull();
+  });
+
+  it("crosses a band at a slant, with interpolated pressure", () => {
+    const pieces = eraseRectsFromPoints([0, -50, 0, 0, 50, 1], 0, [band(-100, 100)])!;
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0].slice(3)).toEqual([0, -10, 0.4]);
+    expect(pieces[1].slice(0, 3)).toEqual([0, 10, 0.6]);
+  });
+
+  it("removes a stroke wholly inside, and a dot inside", () => {
+    expect(eraseRectsFromPoints(line(10, 20), 2, [band(0, 100)])).toEqual([]);
+    expect(eraseRectsFromPoints([5, 0, 0.5], 2, [band(0, 10)])).toEqual([]);
+    expect(eraseRectsFromPoints([50, 0, 0.5], 2, [band(0, 10)])).toBeNull();
+  });
+
+  it("reads only whole points of a ragged array, and drops slivers", () => {
+    const ragged = [...line(0, 100), 7];
+    expect(eraseRectsFromPoints(ragged, 0, [band(40, 60)])!.map(xs)).toEqual([
+      [0, 40],
+      [60, 100],
+    ]);
+    expect(eraseRectsFromPoints(line(0, 100), 0, [band(0.5, 100)])).toEqual([]);
+  });
+
+  it("cuts through repeated points", () => {
+    const pts = [0, 0, 0.5, 50, 0, 0.5, 50, 0, 0.5, 100, 0, 0.5];
+    expect(eraseRectsFromPoints(pts, 0, [band(45, 55)])!.map(xs)).toEqual([
+      [0, 45],
+      [55, 100],
+    ]);
+  });
+});
+
+describe("eraseRectsFromStroke", () => {
+  it("keeps a straightened highlight's shape, style and t0 on its pieces", () => {
+    const hl: Stroke = {
+      id: "h",
+      color: "#ffd400",
+      size: 20,
+      tool: "highlighter",
+      pts: line(0, 400),
+      t0: 9,
+      shape: "line",
+    };
+    let n = 0;
+    const pieces = eraseRectsFromStroke(hl, [{ minX: 100, maxX: 200, minY: -5, maxY: 5 }], () =>
+      String(++n),
+    )!;
+    expect(pieces.map((p) => [p.id, p.shape, p.tool, p.size, p.t0, p.color])).toEqual([
+      ["1", "line", "highlighter", 20, 9, "#ffd400"],
+      ["2", "line", "highlighter", 20, 9, "#ffd400"],
+    ]);
   });
 });
 

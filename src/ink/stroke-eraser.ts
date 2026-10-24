@@ -186,23 +186,187 @@ export function eraseCircleFromStroke(
   nextId: () => string,
 ): Stroke[] | null {
   const pieces = eraseCircleFromPoints(stroke.pts, stroke.size, cx, cy, radius);
-  if (pieces === null) return null;
-  return pieces.map((pts) => {
-    const piece: Stroke = {
-      id: nextId(),
-      color: stroke.color,
-      size: stroke.size,
-      tool: stroke.tool,
-      pts,
-    };
-    if (stroke.t0 !== undefined) piece.t0 = stroke.t0;
-    if (stroke.shape !== undefined) piece.shape = stroke.shape;
-    // A piece is drawn as its shape was: dashed, its corners as round. Not
-    // filled (a piece is open) and without heads (its ends are new).
-    if (stroke.dash !== undefined) piece.dash = stroke.dash;
-    if (stroke.radius !== undefined) piece.radius = stroke.radius;
-    return piece;
-  });
+  return pieces === null ? null : pieces.map((pts) => pieceOf(stroke, pts, nextId));
+}
+
+/** A rectangle the ruled eraser has taken: a stretch of one line's band. */
+export interface EraseRect {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/**
+ * Cut every rectangle in `rects` out of one polyline: what the ruled eraser
+ * does to a highlight, a shape or a stroke across several lines, so only the
+ * part on the lines it erases goes. The rectangles widen sideways by half
+ * the stroke's width, as the circle does, so a cut end's round cap stops at
+ * the rectangle's edge. Not up and down: a band's edge is the next line's
+ * edge, and a highlight along a rule would be cut from both lines.
+ *
+ * @returns `null` when no rectangle touches the polyline, otherwise the
+ *          surviving pieces, an empty array when nothing survives.
+ */
+export function eraseRectsFromPoints(
+  pts: readonly number[],
+  strokeSize: number,
+  rects: readonly EraseRect[],
+): number[][] | null {
+  const usable = pts.length - (pts.length % POINT_STRIDE);
+  const n = usable / POINT_STRIDE;
+  if (n === 0 || rects.length === 0) return null;
+  const pad = Math.max(0, strokeSize) / 2;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < usable; i += POINT_STRIDE) {
+    minX = Math.min(minX, pts[i]);
+    maxX = Math.max(maxX, pts[i]);
+    minY = Math.min(minY, pts[i + 1]);
+    maxY = Math.max(maxY, pts[i + 1]);
+  }
+  // Broad phase: only the rectangles that reach the polyline's bounds.
+  const near = rects
+    .map((r) => ({ minX: r.minX - pad, maxX: r.maxX + pad, minY: r.minY, maxY: r.maxY }))
+    .filter((r) => r.minX <= maxX && r.maxX >= minX && r.minY <= maxY && r.maxY >= minY);
+  if (near.length === 0) return null;
+
+  if (n === 1) {
+    return near.some((r) => inside(r, pts[0], pts[1])) ? [] : null;
+  }
+
+  const pieces: number[][] = [];
+  let current: number[] = [];
+  let touched = false;
+  const push = (a: number, b: number, t: number): void => {
+    if (t <= 0) current.push(pts[a], pts[a + 1], pts[a + 2]);
+    else if (t >= 1) current.push(pts[b], pts[b + 1], pts[b + 2]);
+    else {
+      current.push(
+        pts[a] + (pts[b] - pts[a]) * t,
+        pts[a + 1] + (pts[b + 1] - pts[a + 1]) * t,
+        pts[a + 2] + (pts[b + 2] - pts[a + 2]) * t,
+      );
+    }
+  };
+  const closePiece = (): void => {
+    if (current.length >= 2 * POINT_STRIDE) pieces.push(current);
+    current = [];
+  };
+
+  for (let a = 0; a + POINT_STRIDE < usable; a += POINT_STRIDE) {
+    const b = a + POINT_STRIDE;
+    const spans = insideSpans(near, pts[a], pts[a + 1], pts[b], pts[b + 1]);
+    if (spans.length === 0) {
+      if (current.length === 0) push(a, b, 0);
+      push(a, b, 1);
+      continue;
+    }
+    touched = true;
+    // `t` walks the segment: outside from `t` to each span's start.
+    let t = 0;
+    for (const [lo, hi] of spans) {
+      if (lo > t) {
+        if (current.length === 0) push(a, b, t);
+        push(a, b, lo);
+      }
+      closePiece();
+      t = hi;
+    }
+    if (t < 1) {
+      push(a, b, t);
+      push(a, b, 1);
+    }
+  }
+  closePiece();
+
+  if (!touched) return null;
+  return pieces.filter((piece) => polylineLength(piece) >= MIN_PIECE_LENGTH);
+}
+
+/**
+ * {@link eraseRectsFromPoints} for a whole stroke, each piece keeping the
+ * stroke's style and `shape` as {@link eraseCircleFromStroke}'s do.
+ */
+export function eraseRectsFromStroke(
+  stroke: Stroke,
+  rects: readonly EraseRect[],
+  nextId: () => string,
+): Stroke[] | null {
+  const pieces = eraseRectsFromPoints(stroke.pts, stroke.size, rects);
+  return pieces === null ? null : pieces.map((pts) => pieceOf(stroke, pts, nextId));
+}
+
+/** A surviving piece of `stroke`, drawn as it was. */
+function pieceOf(stroke: Stroke, pts: number[], nextId: () => string): Stroke {
+  const piece: Stroke = {
+    id: nextId(),
+    color: stroke.color,
+    size: stroke.size,
+    tool: stroke.tool,
+    pts,
+  };
+  if (stroke.t0 !== undefined) piece.t0 = stroke.t0;
+  if (stroke.shape !== undefined) piece.shape = stroke.shape;
+  // A piece is drawn as its shape was: dashed, its corners as round. Not
+  // filled (a piece is open) and without heads (its ends are new).
+  if (stroke.dash !== undefined) piece.dash = stroke.dash;
+  if (stroke.radius !== undefined) piece.radius = stroke.radius;
+  return piece;
+}
+
+function inside(r: EraseRect, x: number, y: number): boolean {
+  return x >= r.minX && x <= r.maxX && y >= r.minY && y <= r.maxY;
+}
+
+/**
+ * Where segment A→B lies inside any of the rectangles, as sorted, merged
+ * spans of its parameter t in [0, 1] (Liang-Barsky per rectangle). A span
+ * that only grazes a corner (zero length) counts as outside, as the circle's
+ * graze does; a segment of zero length is inside wholly or not at all.
+ */
+function insideSpans(
+  rects: readonly EraseRect[],
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): Array<[number, number]> {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const spans: Array<[number, number]> = [];
+  for (const r of rects) {
+    if (dx === 0 && dy === 0) {
+      if (inside(r, ax, ay)) return [[0, 1]];
+      continue;
+    }
+    let lo = 0;
+    let hi = 1;
+    for (const [d, from, min, max] of [
+      [dx, ax, r.minX, r.maxX],
+      [dy, ay, r.minY, r.maxY],
+    ]) {
+      if (d === 0) {
+        if (from < min || from > max) hi = -1;
+        continue;
+      }
+      const t1 = (min - from) / d;
+      const t2 = (max - from) / d;
+      lo = Math.max(lo, Math.min(t1, t2));
+      hi = Math.min(hi, Math.max(t1, t2));
+    }
+    if (lo < hi) spans.push([lo, hi]);
+  }
+  spans.sort((p, q) => p[0] - q[0]);
+  const merged: Array<[number, number]> = [];
+  for (const span of spans) {
+    const last = merged[merged.length - 1];
+    if (last && span[0] <= last[1]) last[1] = Math.max(last[1], span[1]);
+    else merged.push([span[0], span[1]]);
+  }
+  return merged;
 }
 
 function polylineLength(pts: readonly number[]): number {

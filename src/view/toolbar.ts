@@ -126,12 +126,7 @@ import {
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
-import {
-  clampEraserSize,
-  eraserGlyphRadius,
-  eraserStops,
-  quickEraserSizes,
-} from "../model/eraser-sizes";
+import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
 import {
   EASE_OUT_FALLBACK,
@@ -722,6 +717,8 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** Redraws the open width or eraser-size popover's marks for a new zoom. */
+  private sizeMarksRender: (() => void) | null = null;
   /**
    * Style of the page text box being edited, shown in the text pill in place
    * of the style new boxes get. `null` while no box has focus.
@@ -1422,7 +1419,7 @@ export class Toolbar {
 
     // Stroke widths, drawn as literal strokes of increasing weight.
     for (const width of this.quickWidths()) {
-      const button = widthButton(this.optionsEl, width, active.id, () => {
+      const button = widthButton(this.optionsEl, width, active.id, this.widthMark(width), () => {
         this.setWidth(width);
         this.syncActive();
       });
@@ -1739,8 +1736,8 @@ export class Toolbar {
     // opens the slider, as the pen's widths do.
     for (const size of quickEraserSizes(eraserSizeFor(this.state))) {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
-      button.append(eraserSizeGlyph(size));
-      button.setAttribute("aria-label", `Eraser size ${formatMm(size)}`);
+      button.append(eraserSizeGlyph(this.eraserMark(size)));
+      button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
       button.addEventListener("click", () => {
         this.setEraserSize(size);
         this.syncActive();
@@ -2743,13 +2740,22 @@ export class Toolbar {
       this.syncActive();
     };
     for (const width of this.widths) {
-      const preset = widthButton(row, width, this.activePenType().id, () => {
+      const preset = widthButton(row, width, this.activePenType().id, this.widthMark(width), () => {
         pick(width);
         this.closePopover();
         settle();
       });
       presets.set(width, preset);
     }
+    // The zoom changed under the open popover: its marks follow the ink.
+    this.sizeMarksRender = () => {
+      for (const [width, preset] of presets) {
+        preset
+          .querySelector("svg")
+          ?.replaceWith(widthGlyph(this.widthMark(width), this.activePenType().id));
+      }
+      show();
+    };
     // Live while dragging; the pill's widths follow once the thumb is let go.
     range.addEventListener("input", () => pick(stops[Number(range.value)] ?? this.state.size));
     range.addEventListener("change", settle);
@@ -2777,6 +2783,46 @@ export class Toolbar {
       this.popoverKeyboard.watch(field, head);
     }
     show();
+  }
+
+  /**
+   * How thick a width's mark is drawn, screen px: the stroke it lays down
+   * with the pen in hand (its pen type's multiplier included), at the zoom
+   * now, so the mark is the line it writes beside it.
+   */
+  private widthMark(width: number): number {
+    return strokeWidthFor({ ...this.state, size: width }) * this.previewScales().pen;
+  }
+
+  /** How wide an eraser size's mark is drawn, screen px: its footprint on the page. */
+  private eraserMark(size: number): number {
+    return size * this.previewScales().eraser;
+  }
+
+  /**
+   * An eraser size in millimetres of paper it erases now. The eraser keeps
+   * its size on screen, so zoomed in it covers less of the page: at 2.5x
+   * the size that takes 4.9 mm at fit takes 2.0 mm.
+   */
+  private eraserMm(size: number): string {
+    const { pen, eraser } = this.previewScales();
+    return formatMm((size * eraser) / pen);
+  }
+
+  /**
+   * Redraw every width and eraser-size mark at its true size: the zoom or
+   * the pane's width changed, and the ink on the page with it.
+   */
+  refreshSizeMarks(): void {
+    const pen = this.activePenType().id;
+    for (const [width, button] of this.widthButtons) {
+      button.querySelector("svg")?.replaceWith(widthGlyph(this.widthMark(width), pen));
+    }
+    for (const [size, button] of this.eraserSizeButtons) {
+      button.querySelector("svg")?.replaceWith(eraserSizeGlyph(this.eraserMark(size)));
+      button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+    }
+    this.sizeMarksRender?.();
   }
 
   /** Screen px per page px for the size previews (1 : 1 without a host that knows). */
@@ -2830,7 +2876,7 @@ export class Toolbar {
     // The readout, the thumb, the preview and the presets always show the live size.
     const show = (): void => {
       const size = eraserSizeFor(this.state);
-      readout.setText(formatMm(size));
+      readout.setText(this.eraserMm(size));
       range.value = String(nearestStop(stops, size));
       syncRangeFill(range);
       markChosen(presets, size);
@@ -2847,9 +2893,9 @@ export class Toolbar {
     };
     for (const size of ERASER_SIZES) {
       const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
-      preset.append(eraserSizeGlyph(size));
-      preset.setAttribute("aria-label", `Eraser size ${formatMm(size)}`);
-      preset.setAttribute("title", formatMm(size));
+      preset.append(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
+      preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+      preset.setAttribute("title", this.eraserMm(size));
       preset.addEventListener("click", () => {
         pick(size);
         this.closePopover();
@@ -2857,6 +2903,16 @@ export class Toolbar {
       });
       presets.set(size, preset);
     }
+    this.sizeMarksRender = () => {
+      for (const [size, preset] of presets) {
+        preset
+          .querySelector("svg")
+          ?.replaceWith(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
+        preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+        preset.setAttribute("title", this.eraserMm(size));
+      }
+      show();
+    };
     // Live while dragging; the pill follows once the thumb is let go.
     range.addEventListener("input", () =>
       pick(stops[Number(range.value)] ?? eraserSizeFor(this.state)),
@@ -3163,6 +3219,7 @@ export class Toolbar {
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+    this.sizeMarksRender = null;
   }
 
   /**
@@ -3922,18 +3979,30 @@ function eraserPreview(parent: HTMLElement): (screenDiameter: number) => void {
   };
 }
 
-/** An eraser-size control: a hollow circle whose diameter grows with the size. */
-function eraserSizeGlyph(size: number): SVGElement {
+/** The eraser-size popover's presets are larger than the pill's: they have the room. */
+const POPOVER_ERASER_BOX = 40;
+
+/**
+ * An eraser-size control: the eraser's footprint at the size it erases
+ * (`diameter`, screen px), as the strip under the slider draws it, in a
+ * `box` px square. One larger than the box fills it, shaded darker.
+ */
+function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 28 28");
-  svg.setAttribute("width", "28");
-  svg.setAttribute("height", "28");
+  svg.setAttribute("viewBox", `0 0 ${box} ${box}`);
+  svg.setAttribute("width", String(box));
+  svg.setAttribute("height", String(box));
   svg.setAttribute("aria-hidden", "true");
   const circle = activeDocument.createElementNS(SVG_NS, "circle");
-  circle.setAttribute("cx", "14");
-  circle.setAttribute("cy", "14");
-  circle.setAttribute("r", eraserGlyphRadius(size).toFixed(2));
-  circle.setAttribute("fill", "none");
+  circle.setAttribute("cx", String(box / 2));
+  circle.setAttribute("cy", String(box / 2));
+  // The ring is drawn inside the footprint, as the strip's border is. A
+  // footprint too big for the box fills it, shaded darker: at least this big.
+  const d = Number.isFinite(diameter) && diameter > 0 ? diameter : 2;
+  const fits = d <= box;
+  circle.setAttribute("r", Math.max(0.75, Math.min(d, box) / 2 - 0.75).toFixed(2));
+  circle.setAttribute("fill", "currentColor");
+  circle.setAttribute("fill-opacity", fits ? "0.08" : "0.22");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
   svg.append(circle);
@@ -3942,16 +4011,18 @@ function eraserSizeGlyph(size: number): SVGElement {
 
 /**
  * A preset pen width, in the pill or in the widths popover: the stroke
- * itself, named in millimetres for screen readers and on hover.
+ * itself, `thickness` screen px as it writes now, named in millimetres for
+ * screen readers and on hover.
  */
 function widthButton(
   parent: HTMLElement,
   width: number,
   pen: string,
+  thickness: number,
   onPick: () => void,
 ): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
-  button.append(widthGlyph(width, pen));
+  button.append(widthGlyph(thickness, pen));
   button.setAttribute("aria-label", `Width ${formatMm(width)}`);
   button.setAttribute("title", formatMm(width));
   button.addEventListener("click", onPick);
@@ -3959,17 +4030,18 @@ function widthButton(
 }
 
 /**
- * A stroke-width control drawn as a stroke of that weight, in the pen's own
- * character: tapered for the fountain pen, even for the ballpoint, lifting
- * off for the brush, a flat band for the highlighter (pen-glyphs.ts).
+ * A stroke-width control drawn as a stroke `thickness` screen px thick, in
+ * the pen's own character: tapered for the fountain pen, even for the
+ * ballpoint, lifting off for the brush, a flat band for the highlighter
+ * (pen-glyphs.ts).
  */
-function widthGlyph(size: number, pen: string): SVGElement {
+function widthGlyph(thickness: number, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${SWOOSH_WIDTH} ${SWOOSH_HEIGHT}`);
   svg.setAttribute("width", String(SWOOSH_WIDTH));
   svg.setAttribute("height", String(SWOOSH_HEIGHT));
   svg.setAttribute("aria-hidden", "true");
-  const shape = swoosh(pen, size);
+  const shape = swoosh(pen, thickness);
   const path = activeDocument.createElementNS(SVG_NS, "path");
   path.setAttribute("d", shape.d);
   if (shape.strokeWidth === undefined) {

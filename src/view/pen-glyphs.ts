@@ -127,14 +127,20 @@ export interface Swoosh {
   opacity?: number;
 }
 
-/** The thickest a glyph's stroke gets, in glyph px, so the heaviest still fits. */
-const MAX_THICKNESS = 8;
 /** Points along the stroke for a tapered outline. */
 const SAMPLES = 20;
 
-/** A pen width (page px) as the glyph's thickness, in glyph px. */
-export function glyphThickness(size: number): number {
-  return Math.max(1.5, Math.min(MAX_THICKNESS, Number.isFinite(size) ? size : 1.5));
+/** The thinnest a width mark is drawn, glyph px: below it a line is not there at all. */
+const MIN_THICKNESS = 0.25;
+
+/**
+ * A width mark's thickness, glyph px (one is a screen px): the stroke's own
+ * width on screen, so the mark is the line it writes. Past the glyph's
+ * height it fills the glyph, which is as thick as it can show.
+ */
+export function glyphThickness(screenPx: number): number {
+  if (!Number.isFinite(screenPx)) return 1.5;
+  return Math.max(MIN_THICKNESS, Math.min(SWOOSH_HEIGHT, screenPx));
 }
 
 /** A cubic Bézier: start, two control points, end. */
@@ -218,14 +224,9 @@ function penStroke(pen: string, curve: Curve, thick: number, highlighterOpacity:
   return { d: outline(curve, (t) => (thick / 2) * shape(t)) };
 }
 
-/** The width button for `size` (page px) with pen `pen`. */
-export function swoosh(pen: string, size: number): Swoosh {
-  const thick = glyphThickness(size);
-  // The highlighter's band is a little heavier there: it is drawn wide.
-  if (pen === "highlighter") {
-    return penStroke(pen, SWOOSH_CURVE, Math.min(MAX_THICKNESS + 2, thick + 2), 0.55);
-  }
-  return penStroke(pen, SWOOSH_CURVE, thick, 0.55);
+/** The width button for a stroke `thickness` screen px wide, with pen `pen`. */
+export function swoosh(pen: string, thickness: number): Swoosh {
+  return penStroke(pen, SWOOSH_CURVE, glyphThickness(thickness), 0.55);
 }
 
 /** How opaque the size preview draws the highlighter: the page's default. */

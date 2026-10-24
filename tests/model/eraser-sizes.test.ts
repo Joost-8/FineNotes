@@ -4,7 +4,6 @@ import {
   clampEraserSize,
   ERASER_MAX_SIZE,
   ERASER_MIN_SIZE,
-  eraserGlyphRadius,
   eraserStops,
   quickEraserSizes,
 } from "../../src/model/eraser-sizes";
@@ -73,20 +72,5 @@ describe("quickEraserSizes", () => {
 
   it("ignores a nonsense live size", () => {
     expect(quickEraserSizes(Number.NaN)).toEqual([...ERASER_SIZES]);
-  });
-});
-
-describe("eraserGlyphRadius", () => {
-  it("grows with the size and spans the glyph box across the range", () => {
-    expect(eraserGlyphRadius(ERASER_MIN_SIZE)).toBeCloseTo(3);
-    expect(eraserGlyphRadius(ERASER_MAX_SIZE)).toBeCloseTo(12);
-    const presets = ERASER_SIZES.map(eraserGlyphRadius);
-    expect(presets[0]).toBeLessThan(presets[1]);
-    expect(presets[1]).toBeLessThan(presets[2]);
-  });
-
-  it("keeps out-of-range sizes inside the box", () => {
-    expect(eraserGlyphRadius(1)).toBeCloseTo(3);
-    expect(eraserGlyphRadius(1000)).toBeCloseTo(12);
   });
 });

@@ -189,7 +189,12 @@ import {
   textBoxCandidates,
 } from "../canvas/eyedropper";
 import { Eyedropper } from "./eyedropper";
-import { type EraserFilter, eraseCircleFromStroke, eraserTakes } from "../ink/stroke-eraser";
+import {
+  type EraserFilter,
+  eraseCircleFromStroke,
+  eraseRectsFromStroke,
+  eraserTakes,
+} from "../ink/stroke-eraser";
 import {
   MAX_SCALE,
   anchorScrollDelta,
@@ -487,6 +492,8 @@ const TEXT_COPY_NOTICE_MS = 6000;
  */
 /** Scroll thumbs: gone about a second after the page stops. */
 const THUMB_HOLD_MS = 1000;
+/** How long a zoom rests before the toolbar's width marks follow it. */
+const SIZE_SCALE_SETTLE_MS = 150;
 /** The page counter. */
 const COUNTER_HOLD_MS = 1800;
 /** The zoom readout, a beat after the counter. */
@@ -645,6 +652,12 @@ export interface InkSurfaceCallbacks {
    * Hosts use it to keep the toolbar's page navigation in step.
    */
   onPageChange?: (index: number, total: number) => void;
+  /**
+   * {@link InkSurface.sizePreviewScales} changed (a zoom came to rest, or
+   * the pane changed width), so the toolbar can redraw its width and
+   * eraser-size marks at their size on the page now.
+   */
+  onSizeScale?: () => void;
   /**
    * Where the reader is as the page moves: page `index`, `y` page px down
    * it (a third of the way down the view). Every frame of a scroll.
@@ -1259,6 +1272,9 @@ export class InkSurface {
   /** When each transient piece of chrome is due to fade (`now()` ms). */
   private readonly chromeUntil = { thumbs: 0, counter: 0, zoom: 0 };
   private chromeTimer = 0;
+  /** The size scales the host was last told of (`onSizeScale`). */
+  private reportedSizeScale: { pen: number; eraser: number } | null = null;
+  private sizeScaleTimer = 0;
   /** The diagnostics HUD, over the page (see `setDebug`). */
   private readonly hudEl: HTMLElement;
 
@@ -2116,6 +2132,8 @@ export class InkSurface {
     this.wheelZoomTimer = 0;
     window.clearTimeout(this.chromeTimer);
     this.chromeTimer = 0;
+    window.clearTimeout(this.sizeScaleTimer);
+    this.sizeScaleTimer = 0;
     window.clearTimeout(this.textClassTimer);
     this.textClassTimer = 0;
     window.clearTimeout(this.pasteTimer);
@@ -3021,6 +3039,16 @@ export class InkSurface {
     this.renderAll();
     this.schedulePrefetch();
     if (this.debug) this.scheduleHud();
+    this.reportSizeScale();
+  }
+
+  /** Tell the host when {@link sizePreviewScales} is not what it last said. */
+  private reportSizeScale(): void {
+    const { pen, eraser } = this.sizePreviewScales();
+    const last = this.reportedSizeScale;
+    if (last && last.pen === pen && last.eraser === eraser) return;
+    this.reportedSizeScale = { pen, eraser };
+    this.callbacks.onSizeScale?.();
   }
 
   /**
@@ -3460,6 +3488,12 @@ export class InkSurface {
     this.flashChrome(true);
     this.requestFrame();
     this.reportStatus();
+    // The toolbar's width marks follow once the zoom rests, not every frame.
+    window.clearTimeout(this.sizeScaleTimer);
+    this.sizeScaleTimer = window.setTimeout(() => {
+      this.sizeScaleTimer = 0;
+      this.reportSizeScale();
+    }, SIZE_SCALE_SETTLE_MS);
   }
 
   /** The slot gap of a row at the zoom floor (`rowSlotGap`), set by `layout`. */
@@ -6549,13 +6583,35 @@ export class InkSurface {
   }
 
   /**
-   * Ruled mode: whole strokes on the line under the eraser, as far along it
-   * as the pass goes (`ruled-ink.ts`), marked to go when the pen lifts.
+   * Ruled mode: whole words on the line under the eraser, as far along it
+   * as the pass goes (`ruled-ink.ts`), marked to go when the pen lifts; a
+   * highlight, a shape or a stroke across lines is cut to what lies off the
+   * erased stretch, as the standard eraser cuts.
    */
   private eraseRuledAt(page: Page, ruled: RuledEraser, at: Pt, radius: number): boolean {
-    let marked = false;
-    for (const id of ruled.dab(at, radius)) marked = this.markWhole(page, id) || marked;
-    return marked;
+    const { taken, cut } = ruled.dab(at, radius);
+    let changed = false;
+    for (const id of taken) changed = this.markWhole(page, id) || changed;
+    if (cut.length === 0) return changed;
+    const regions = ruled.regions();
+    const nextId = (): string => this.strokeIds.next();
+    for (const id of cut) {
+      const original = this.strokeIndex.get(id);
+      if (!original || this.eraseIds.has(id)) continue;
+      // Each dab cuts the original by every stretch so far, so pieces never
+      // pile up cut upon cut.
+      const pieces = eraseRectsFromStroke(original, regions, nextId);
+      if (pieces === null) continue;
+      // A linked word is never cut: touching it takes all of it.
+      if (isLinked(page, id)) {
+        changed = this.markWhole(page, id) || changed;
+        continue;
+      }
+      this.erasePieces.set(id, pieces);
+      this.eraseDirty.add(id);
+      changed = true;
+    }
+    return changed;
   }
 
   /**

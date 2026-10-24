@@ -1,6 +1,6 @@
 /**
- * The eraser-size slider: its range and stops, the three quick sizes the
- * toolbar shows, and how big each is drawn there.
+ * The eraser-size slider: its range and stops, and the three quick sizes
+ * the toolbar shows.
  *
  * Sizes are diameters in page px at fit-to-page zoom (the surface scales them
  * for the zoom, so the eraser covers the same screen area at any zoom). The
@@ -59,18 +59,4 @@ export function quickEraserSizes(
     quick[nearest] = live;
   }
   return quick.sort((a, b) => a - b);
-}
-
-/** Smallest and largest radius of a size glyph in its 28 px box. */
-const GLYPH_MIN_R = 3;
-const GLYPH_MAX_R = 12;
-
-/**
- * The radius a size's glyph is drawn at, on a log scale across the slider's
- * range, so a small size still reads as a circle and the largest fills the box.
- */
-export function eraserGlyphRadius(size: number): number {
-  const s = clampEraserSize(size);
-  const k = Math.log(s / ERASER_MIN_SIZE) / Math.log(ERASER_MAX_SIZE / ERASER_MIN_SIZE);
-  return GLYPH_MIN_R + (GLYPH_MAX_R - GLYPH_MIN_R) * k;
 }

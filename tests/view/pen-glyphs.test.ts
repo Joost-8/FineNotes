@@ -72,17 +72,22 @@ describe("ink that would vanish into the bar", () => {
 });
 
 describe("width glyphs", () => {
-  it("grow with the width, within a range that fits the button", () => {
-    expect(glyphThickness(0.5)).toBe(1.5);
-    expect(glyphThickness(5)).toBe(5);
-    expect(glyphThickness(40)).toBe(8);
+  it("are as thick as the stroke on screen, up to the glyph's height", () => {
+    expect(glyphThickness(0.5)).toBe(0.5);
+    expect(glyphThickness(5.74)).toBe(5.74);
+    expect(glyphThickness(0.01)).toBe(0.25);
+    expect(glyphThickness(40)).toBe(SWOOSH_HEIGHT);
     expect(glyphThickness(Number.NaN)).toBe(1.5);
   });
 
   it("draw the ballpoint even and the highlighter as a flat, see-through band", () => {
     expect(swoosh("ball", 3)).toMatchObject({ strokeWidth: 3, cap: "round" });
-    expect(swoosh("highlighter", 3)).toMatchObject({ strokeWidth: 5, cap: "butt", opacity: 0.55 });
-    expect(swoosh("highlighter", 40).strokeWidth).toBe(10);
+    expect(swoosh("highlighter", 14)).toMatchObject({
+      strokeWidth: 14,
+      cap: "butt",
+      opacity: 0.55,
+    });
+    expect(swoosh("highlighter", 40).strokeWidth).toBe(SWOOSH_HEIGHT);
   });
 
   it("taper the fountain pen at both ends and the brush toward its end", () => {
@@ -104,9 +109,9 @@ describe("width glyphs", () => {
     );
   });
 
-  it("stay inside their box", () => {
+  it("stay inside their box while they fit in it", () => {
     for (const pen of ["fountain", "ball", "brush", "highlighter"]) {
-      for (const size of [2, 5, 12]) {
+      for (const size of [0.5, 2, 5, 8]) {
         const shape = swoosh(pen, size);
         const pad = (shape.strokeWidth ?? 0) / 2;
         // A flat (butt) end stops where the line does; a round one reaches past it.

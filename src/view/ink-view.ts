@@ -2529,6 +2529,7 @@ export class InkView extends TextFileView {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
+        onSizeScale: () => this.toolbar?.refreshSizeMarks(),
         onPageChange: (index) => {
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();

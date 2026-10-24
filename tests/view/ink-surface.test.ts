@@ -816,7 +816,7 @@ describe("whole-stroke erase", () => {
 
 describe("ruled erase", () => {
   /** Page 1 ruled wide (rules at 40, 80, 120 …): "dolor," on line 2, "below" on line 3. */
-  function ruledInk(kind: "ruled-wide" | "blank" = "ruled-wide") {
+  function ruledInk(kind: "ruled-wide" | "blank" = "ruled-wide", extra: Stroke[] = []) {
     const doc = documentOf(
       page("p1", [
         line("dolor", 100, 160, 115),
@@ -828,6 +828,7 @@ describe("ruled erase", () => {
           pts: [163, 121, 0.5, 161, 133, 0.5],
         },
         line("below", 100, 160, 155),
+        ...extra,
       ]),
     );
     doc.pages[0].backdrop = { kind };
@@ -850,6 +851,31 @@ describe("ruled erase", () => {
     expect(ids(w.doc.pages[0])).toEqual(["below"]);
     w.undo();
     expect(ids(w.doc.pages[0])).toEqual(["dolor", "comma", "below"]);
+  });
+
+  it("cuts a straightened highlight to the erased word, in the same undo step", () => {
+    const highlight: Stroke = {
+      id: "hl",
+      color: "#ffd43b",
+      size: 20,
+      tool: "highlighter",
+      shape: "line",
+      pts: [90, 110, 0.5, 400, 110, 0.5],
+    };
+    const w = ruledInk("ruled-wide", [highlight]);
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    // The word goes whole; the highlight is not marked, only cut.
+    expect([...w.marked()].sort()).toEqual(["comma", "dolor"]);
+    const pieces = w.pieces().get("hl") ?? [];
+    // What lay under the pass and "dolor," (96..169) goes, and 10 more for
+    // the band's round cap.
+    expect(pieces.map((p) => [p.pts[0], p.pts[p.pts.length - 3]])).toEqual([[179, 400]]);
+    expect(pieces[0].shape).toBe("line");
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["below", pieces[0].id]);
+    w.undo();
+    expect(ids(w.doc.pages[0])).toEqual(["dolor", "comma", "below", "hl"]);
   });
 
   it("on a page without lines, says so and leaves the pass to the standard eraser", () => {
@@ -1293,6 +1319,8 @@ function pane(width: number, height: number, devicePixelRatio?: number): Pane {
     sizeWait: new SizeWait(),
     hudLayouts: 0,
     debug: false,
+    callbacks: {},
+    reportedSizeScale: null,
     doc,
     direction: "vertical",
     pageIndex: 0,
@@ -1899,5 +1927,33 @@ describe("ink pressure", () => {
     expect(frames).toEqual(["frame"]);
     run(s, "setInkPressure", false);
     expect(frames).toEqual(["frame"]);
+  });
+});
+
+describe("size preview scales", () => {
+  it("pen widths grow with the zoom; the eraser keeps its size at fit", () => {
+    const s = surfaceWith({ baseScale: 0.8, userZoom: 2.5 });
+    expect(run(s, "sizePreviewScales")).toEqual({ pen: 2, eraser: 0.8 });
+  });
+
+  it("tells the host once each time they change, so the toolbar's marks follow", () => {
+    const told = vi.fn();
+    const s = surfaceWith({
+      baseScale: 1,
+      userZoom: 1,
+      reportedSizeScale: null,
+      callbacks: { onSizeScale: told },
+    });
+    run(s, "reportSizeScale");
+    run(s, "reportSizeScale");
+    expect(told).toHaveBeenCalledTimes(1);
+    s.userZoom = 3;
+    run(s, "reportSizeScale");
+    run(s, "reportSizeScale");
+    expect(told).toHaveBeenCalledTimes(2);
+    // A pane of another width moves the eraser's scale alone.
+    s.baseScale = 1.2;
+    run(s, "reportSizeScale");
+    expect(told).toHaveBeenCalledTimes(3);
   });
 });
