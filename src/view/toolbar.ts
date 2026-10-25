@@ -68,6 +68,16 @@ import {
   type RulerKind,
 } from "../canvas/ruler-geometry";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
+import {
+  BAR_ITEMS,
+  BAR_ITEM_ICONS,
+  BAR_ITEM_LABELS,
+  type BarItemId,
+  DEFAULT_BAR,
+  hiddenItems,
+  normalizeBar,
+} from "./toolbar-layout";
+import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
 import {
@@ -546,6 +556,17 @@ export interface ToolbarCallbacks {
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
   onRuler?: () => void;
+  /** Open the sticker picker; `anchor` is the button. Without it the bar has no stickers. */
+  onStickers?: (anchor: HTMLElement) => void;
+  /**
+   * A sticky-note colour was picked: the next tap on a page sticks a note of
+   * it there. Without it the bar has no sticky notes.
+   */
+  onStickyColor?: (color: string) => void;
+  /** The sticky notes button was tapped while a note waited to be placed: it waits no more. */
+  onStickyCancel?: () => void;
+  /** Open "Customize toolbar". Without it the accessories menu has no such row. */
+  onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
 }
@@ -558,6 +579,8 @@ export interface ToolbarOptions {
    * keeps a slot at the front of the pen's colour row.
    */
   reservedColors?: readonly string[];
+  /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
+  items?: readonly BarItemId[];
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -617,6 +640,8 @@ const FOLD_RANK = {
   fullScreen: 0,
   calculator: 1,
   pdf: 2,
+  sticker: 2.4,
+  sticky: 2.6,
   record: 3,
   image: 4,
   ai: 5,
@@ -631,6 +656,9 @@ const FOLD_RANK = {
   redo: 13,
   thumbnails: 14,
 } as const;
+
+/** The sticky-note colour picked last, ringed in the colours; the classic yellow at first. */
+let lastStickyColor = DEFAULT_STICKY_COLOR;
 
 /** The strip of the ruler button, from its right edge, that opens its popover: the chevron, px. */
 const RULER_CARET_STRIP = 22;
@@ -695,6 +723,16 @@ export class Toolbar {
     FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
   > = [];
   private moreButton: HTMLButtonElement | null = null;
+  /** Each centre item's button, for showing, hiding and ordering them (`setItems`). */
+  private readonly barItems = new Map<BarItemId, HTMLButtonElement>();
+  /** What a tap on each centre item does, run from the accessories menu with its button. */
+  private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
+  /** The centre items shown, left to right. */
+  private items: BarItemId[] = [...DEFAULT_BAR];
+  /** The last button of the tools: the hidden items and "Customize toolbar". */
+  private accessoriesButton: HTMLButtonElement | null = null;
+  /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
+  private stickyButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
   /** "Update available" under the gear while it shows (`showUpdateTip`). */
   private updateTip: HTMLElement | null = null;
@@ -907,24 +945,68 @@ export class Toolbar {
     this.toolsGroup = tools;
     // First, so every button paints over it.
     this.toolIndicator = tools.createDiv({ cls: "goodobsidian-tool-indicator is-hidden" });
-    keep(this.addToolButton(tools, "select", "lasso", "Lasso select (V)"));
-    this.addToolButton(tools, "pen", "pen-tool", "Pen (P or W)");
-    this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
-    keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
-    keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
-    if (cb.onRuler) keep(this.addRulerButton(tools));
-    keep(this.foldButton(tools, FOLD_RANK.image, "image", "Insert image", cb.onInsertImage));
-    keep(this.foldButton(tools, FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf));
+    // Every item is built once; `setItems` shows, hides and orders them.
+    const item = (
+      id: BarItemId,
+      button: HTMLButtonElement,
+      run: ((anchor: HTMLElement) => void) | undefined,
+    ): void => {
+      this.barItems.set(id, button);
+      if (run && !button.disabled) this.itemRuns.set(id, run);
+      if (id !== "pen" && id !== "eraser") keep(button);
+    };
+    const tool = (id: ActiveTool & BarItemId, icon: string, label: string): void => {
+      const button = this.addToolButton(tools, id, icon, label);
+      item(id, button, (anchor) => this.tapTool(id, anchor));
+    };
+    tool("select", "lasso", "Lasso select (V)");
+    tool("pen", "pen-tool", "Pen (P or W)");
+    tool("eraser", "eraser", "Eraser (E)");
+    tool("text", "type", "Text box (T)");
+    tool("shape", "shapes", "Shapes (S)");
+    if (cb.onRuler) {
+      item("ruler", this.addRulerButton(tools), () => {
+        this.closePopover();
+        this.callbacks.onRuler?.();
+      });
+    }
+    const action = (
+      id: BarItemId,
+      rank: number,
+      icon: string,
+      label: string,
+      handler: ((anchor: HTMLElement) => void) | undefined,
+    ): HTMLButtonElement => {
+      const button = this.foldButton(tools, rank, icon, label, handler);
+      item(id, button, handler);
+      return button;
+    };
+    action("image", FOLD_RANK.image, "image", "Insert image", cb.onInsertImage);
+    action("pdf", FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf);
+    if (cb.onStickers) action("sticker", FOLD_RANK.sticker, "sticker", "Stickers", cb.onStickers);
+    if (cb.onStickyColor) {
+      this.stickyButton = action(
+        "sticky",
+        FOLD_RANK.sticky,
+        "sticky-note",
+        "Sticky notes",
+        (anchor) => this.tapSticky(anchor),
+      );
+    }
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
-    this.recordButton = this.foldButton(
-      tools,
-      FOLD_RANK.record,
-      "mic",
-      "Record audio",
-      cb.onRecord,
+    this.recordButton = action("record", FOLD_RANK.record, "mic", "Record audio", cb.onRecord);
+    // Last, Goodnotes' accessories: what the bar does not show, and the way
+    // to choose what it shows. It never folds, as ⋯ never does.
+    const accessories = this.barButton(tools, "toolbox", "More tools", (button) =>
+      this.toggleAccessories(button),
     );
-    keep(this.recordButton);
+    accessories.addClass("has-caret", "goodobsidian-accessories-button");
+    iconOrText(accessories.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
+    accessories.setAttribute("aria-haspopup", "menu");
+    this.accessoriesButton = accessories;
+    keep(accessories);
+    this.setItems(this.options.items ?? DEFAULT_BAR, false);
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1024,8 +1106,9 @@ export class Toolbar {
     for (const item of order) {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
-      // Hidden for another reason (a practice file, a single page): nothing to fold.
-      if (item.button.style.display === "none") continue;
+      // Hidden for another reason (a practice file, a single page, taken off
+      // the bar in "Customize toolbar"): nothing to fold.
+      if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
@@ -1238,6 +1321,143 @@ export class Toolbar {
   }
 
   /**
+   * Show the centre items `items`, left to right, and take the rest off the
+   * bar (they wait in the accessories menu). Unknown or unavailable items
+   * are skipped; the pen always shows (`normalizeBar`). `relayout` refits
+   * the bar and moves the indicator, as a live change needs.
+   */
+  setItems(items: readonly BarItemId[], relayout = true): void {
+    const shown = normalizeBar(items).filter((id) => this.barItems.has(id));
+    this.items = shown;
+    const tools = this.toolsGroup;
+    if (!tools) return;
+    for (const [id, button] of this.barItems)
+      button.toggleClass("is-unlisted", !shown.includes(id));
+    for (const id of shown) {
+      const button = this.barItems.get(id);
+      if (button) tools.appendChild(button);
+    }
+    if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
+    if (this.popoverKind === "accessories") this.popoverRender?.();
+    if (!relayout) return;
+    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    this.fitBar(tool);
+    this.placeIndicator(tool, null);
+  }
+
+  /** The centre items the bar shows now, left to right; hidden ones are those it has but does not show. */
+  get shownItems(): readonly BarItemId[] {
+    return this.items;
+  }
+
+  /** The centre items this bar can show at all (the ruler, stickers and sticky notes need a host). */
+  get availableItems(): readonly BarItemId[] {
+    return BAR_ITEMS.filter((id) => this.barItems.has(id));
+  }
+
+  /**
+   * Goodnotes' accessories menu, hanging from the last button of the tools:
+   * every item taken off the bar, which a tap runs as its button would, then
+   * "Customize toolbar".
+   */
+  private toggleAccessories(anchor: HTMLElement): void {
+    if (this.popoverKind === "accessories") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("accessories", anchor);
+    this.popover?.addClass("has-arrow", "goodobsidian-accessories-popover");
+    this.popover?.setAttribute("role", "menu");
+    this.popoverRender = () => {
+      body.empty();
+      const hidden = hiddenItems(this.items).filter((id) => this.itemRuns.has(id));
+      for (const id of hidden) {
+        const button = this.barItems.get(id);
+        const run = this.itemRuns.get(id);
+        if (!button || !run) continue;
+        const row = body.createEl("button", {
+          cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
+          attr: { role: "menuitem" },
+        });
+        iconOrText(row.createSpan({ cls: "goodobsidian-accessory-icon" }), BAR_ITEM_ICONS[id], "");
+        row.createSpan({ text: BAR_ITEM_LABELS[id] });
+        row.toggleClass("is-active", button.hasClass("is-on") || button.hasClass("is-active"));
+        row.addEventListener("click", () => {
+          // Sticky notes swap this menu for their colours, hanging from the same place.
+          if (id !== "sticky") this.closePopover();
+          run(anchor);
+        });
+      }
+      if (this.callbacks.onCustomize) {
+        if (hidden.length > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
+        const customize = body.createEl("button", {
+          cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
+          attr: { role: "menuitem" },
+        });
+        iconOrText(customize.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
+        customize.createSpan({ text: "Customize toolbar" });
+        customize.addEventListener("click", () => {
+          this.closePopover();
+          this.callbacks.onCustomize?.();
+        });
+      }
+      this.keepPopoverInside(anchor);
+    };
+    this.popoverRender();
+  }
+
+  /**
+   * The sticky notes button: its ten colours, or, while a note waits to be
+   * placed, a tap that stops it waiting.
+   */
+  private tapSticky(anchor: HTMLElement): void {
+    if (this.stickyButton?.hasClass("is-on")) {
+      this.closePopover();
+      this.callbacks.onStickyCancel?.();
+      return;
+    }
+    if (this.popoverKind === "sticky") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("sticky", anchor);
+    this.popover?.addClass("has-arrow", "goodobsidian-sticky-popover");
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Sticky note" });
+    const grid = body.createDiv({
+      cls: "goodobsidian-sticky-colors",
+      attr: { role: "group", "aria-label": "Sticky note colour" },
+    });
+    for (const { color, label } of STICKY_COLORS) {
+      const swatch = grid.createEl("button", {
+        cls: "goodobsidian-sticky-swatch",
+        attr: { "aria-label": label, "aria-pressed": String(color === lastStickyColor) },
+      });
+      // backgroundColor, never the shorthand: it would reset the stylesheet's clip (ledger).
+      swatch.setCssStyles({ backgroundColor: color });
+      swatch.toggleClass("is-active", color === lastStickyColor);
+      swatch.addEventListener("click", () => {
+        lastStickyColor = color;
+        this.closePopover();
+        this.callbacks.onStickyColor?.(color);
+      });
+    }
+    this.keepPopoverInside(anchor);
+  }
+
+  /** Show the sticky notes button on while a note waits for a tap on the page. */
+  setStickyArmed(armed: boolean): void {
+    const button = this.stickyButton;
+    if (!button) return;
+    button.toggleClass("is-on", armed);
+    button.setAttribute("aria-pressed", String(armed));
+    button.setAttr(
+      "aria-label",
+      armed ? "Sticky notes: tap the page to place one" : "Sticky notes",
+    );
+    this.accessoriesButton?.toggleClass("is-on", armed && button.hasClass("is-unlisted"));
+  }
+
+  /**
    * The ruler: not a tool but something laid on the page while any tool is
    * in hand, so a toggle beside the tools, drawn on while the ruler is out
    * (`setRulerOut`). A tap brings it out or puts it away; while it is out a
@@ -1273,6 +1493,7 @@ export class Toolbar {
     if (!button || button.hasClass("is-on") === out) return;
     button.toggleClass("is-on", out);
     button.setAttribute("aria-pressed", String(out));
+    this.accessoriesButton?.toggleClass("is-on", out && button.hasClass("is-unlisted"));
     if (!out && this.popoverKind === "ruler") this.closePopover();
     // It is wider while it shows its chevron: the bar may fold differently,
     // and the centred tools move under the tool indicator, which follows.
@@ -3858,7 +4079,10 @@ export class Toolbar {
     for (const slide of this.toolSlides) slide.cancel();
     this.toolSlides = [];
     this.indicatorTool = tool;
-    const target = tool === null ? undefined : this.toolButtons.get(tool);
+    let target = tool === null ? undefined : this.toolButtons.get(tool);
+    // A tool taken off the bar is in hand from the accessories menu: the
+    // indicator marks that button instead.
+    if (target?.hasClass("is-unlisted") && this.accessoriesButton) target = this.accessoriesButton;
     // A tool with no bar button (the laser), or a bar not laid out yet: no
     // indicator, and the button's own active square shows (styles.css).
     const shown = target !== undefined && target.offsetWidth > 0;

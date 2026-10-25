@@ -30,7 +30,6 @@
 import { type App, FuzzySuggestModal, Notice, Platform, type TFile, setIcon } from "obsidian";
 import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
-import { STICKY_COLORS } from "../model/sticky-notes";
 import { pickImageFile } from "./image-import";
 
 /** Options for placing a picture; every field is optional. */
@@ -73,8 +72,6 @@ export interface ImageMenuContext {
   ) => Promise<ImageElement | null>;
   /** Place a picture that is already in the vault, by path. No copy is made. */
   insertVaultFile: (path: string, options?: InsertImageOptions) => Promise<ImageElement | null>;
-  /** Place a sticky note of `color` (`#rrggbb`) on the page in view, selected. */
-  insertSticky?: (color: string) => void;
 }
 
 /** A colour an entry offers beside its name, as a swatch. */
@@ -146,14 +143,6 @@ export const BUILT_IN_IMAGE_ENTRIES: readonly ImageMenuEntry[] = [
     order: 30,
     run: (ctx) =>
       new VaultImageSuggestModal(ctx.app, (file) => void ctx.insertVaultFile(file.path)).open(),
-  },
-  {
-    id: "sticky",
-    icon: "sticky-note",
-    label: "Sticky note",
-    order: 37,
-    swatches: STICKY_COLORS.map(({ color, label }) => ({ color, label })),
-    run: (ctx, color) => ctx.insertSticky?.(color ?? STICKY_COLORS[0].color),
   },
 ];
 

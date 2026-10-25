@@ -15,7 +15,9 @@ import {
 import {
   IDENTITY,
   MoveNoteInk,
+  DEFAULT_STICKY_COLOR,
   STICKY_COLORS,
+  stickyBoxAt,
   SetStickyColor,
   applyAffine,
   compose,
@@ -43,7 +45,7 @@ import {
   withNoteInk,
 } from "../../src/model/sticky-notes";
 
-const YELLOW = STICKY_COLORS[0].color;
+const YELLOW = DEFAULT_STICKY_COLOR;
 
 function note(extra: Partial<ImageElement> = {}): ImageElement {
   return { ...newStickyNote("i1", { x: 100, y: 200, w: 200, h: 100 }, YELLOW), ...extra };
@@ -87,11 +89,35 @@ describe("the paper", () => {
     expect(isStickyNote({ id: "i2", path: "a.png", x: 0, y: 0, w: 1, h: 1 })).toBe(false);
   });
 
-  it("offers a few distinct colours", () => {
+  it("offers ten distinct colours, the default and the four from before among them", () => {
     const colours = STICKY_COLORS.map((c) => c.color);
     expect(new Set(colours).size).toBe(colours.length);
-    expect(colours.length).toBeGreaterThanOrEqual(3);
+    expect(colours.length).toBe(10);
+    for (const before of ["#fde68a", "#fbcfe8", "#bfdbfe", "#bbf7d0", DEFAULT_STICKY_COLOR]) {
+      expect(colours).toContain(before);
+    }
     for (const c of colours) expect(readStickyPaper({ color: c })).toEqual({ color: c });
+  });
+});
+
+describe("stickyBoxAt", () => {
+  it("centres the note on the tap", () => {
+    expect(stickyBoxAt({ x: 500, y: 400 }, 240, 1024, 1448)).toEqual({
+      x: 380,
+      y: 280,
+      w: 240,
+      h: 240,
+    });
+  });
+
+  it("slides it inside the page near an edge", () => {
+    expect(stickyBoxAt({ x: 10, y: 1440 }, 240, 1024, 1448)).toEqual({
+      x: 0,
+      y: 1208,
+      w: 240,
+      h: 240,
+    });
+    expect(stickyBoxAt({ x: 1020, y: 5 }, 240, 1024, 1448).x).toBe(784);
   });
 });
 

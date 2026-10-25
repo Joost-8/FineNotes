@@ -10,6 +10,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Customize the toolbar.** A new toolbox button at the end of the tools
+  opens what the bar does not show (stickers, sticky notes, the ruler and
+  Record audio at first), and Customize toolbar: one list of the bar's
+  tools from left to right, where you drag a tool to move it, tap (−) to
+  take it off the bar and (+) to put it back. The pen always stays.
+- **Stickers and sticky notes have their own buttons**, no longer in the
+  Insert image menu. Sticky notes come in ten colours: pick one, then tap
+  the page where the note should go.
+- **Double-tap with one finger to fit the page's width**, and again to see
+  the whole page.
+
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
   gear, with "Update available" under it until you close it with its ✕
@@ -25,6 +36,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+### Fixed
+
+- **Grey and dark paper keep their edges.** A page the colour of the grey
+  background around it (Dark Paper, or a grey paper from the paper
+  designer) now gets a background in another shade, so you can see where
+  the page ends.
 - **Erasing by line no longer takes a whole highlight.** A highlight
   (straightened or not), a shape, or a stroke running over several lines
   used to go whole as soon as the eraser touched its line. Now only its

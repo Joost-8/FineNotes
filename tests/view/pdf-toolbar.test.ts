@@ -14,7 +14,12 @@ describe("PDF toolbar button", () => {
       callbacks: { onInsertImage: vi.fn(), onInsertPdf: importPdf },
       // A group makes the tool indicator as its first child.
       barEl: { createDiv: () => ({ createDiv: () => ({}) }) },
-      addToolButton: vi.fn(),
+      addToolButton: vi.fn(() => ({ disabled: false })),
+      addRulerButton: vi.fn(),
+      setItems: vi.fn(),
+      options: {},
+      barItems: new Map(),
+      itemRuns: new Map(),
       foldable: [],
       watchCrowding: vi.fn(),
       barButton: (
@@ -23,7 +28,20 @@ describe("PDF toolbar button", () => {
         label: string,
         handler?: (button: unknown) => void,
       ) => {
-        const button = { label, parent, handler, addClass: vi.fn() };
+        const button = {
+          label,
+          parent,
+          handler,
+          disabled: false,
+          addClass: vi.fn(),
+          createSpan: () => ({
+            querySelector: () => null,
+            empty: vi.fn(),
+            setText: vi.fn(),
+            addClass: vi.fn(),
+          }),
+          setAttribute: vi.fn(),
+        };
         buttons.push(button);
         return button;
       },

@@ -56,6 +56,7 @@ export default defineConfig({
         "src/canvas/sticky-paper.ts",
         "src/view/selection-bar-model.ts",
         "src/view/view-routing.ts",
+        "src/view/toolbar-layout.ts",
         "src/view/load-guard.ts",
         "src/view/startup-log.ts",
         "src/view/text-panel.ts",

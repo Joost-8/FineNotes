@@ -1580,6 +1580,8 @@ export class InkSurface {
   private imagesShown = false;
   /** A finger went down and could still turn out to be a tap. */
   private fingerTap: { x: number; y: number; t: number } | null = null;
+  /** Where a waiting sticky note goes on the next tap (`armStickyNote`). */
+  private stickyPlace: ((index: number, at: Pt) => void) | null = null;
   /** The last finger tap that nothing took, waiting for a second (`zoomOnDoubleTap`). */
   private plainTap: PlainTap | null = null;
   /** The same finger, watched for a hold that opens the press menu (`finger-hold.ts`). */
@@ -5301,6 +5303,7 @@ export class InkSurface {
    */
   private pressRoute(event: PointerEvent): PressRoute {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
@@ -5320,6 +5323,31 @@ export class InkSurface {
     const { tool } = this.toolState;
     if (tool !== "pen" && tool !== "highlighter") return false;
     return this.practice === null && this.pressOverrideOf(event) === null;
+  }
+
+  /**
+   * A sticky note waits to be placed: the next tap on a page, by pen, mouse
+   * or finger, calls `place` with the page and the page-local point, and
+   * draws nothing. Null stops it waiting.
+   */
+  armStickyNote(place: ((index: number, at: Pt) => void) | null): void {
+    this.stickyPlace = place;
+  }
+
+  /** Whether a sticky note waits to be placed (`armStickyNote`). */
+  get stickyArmed(): boolean {
+    return this.stickyPlace !== null;
+  }
+
+  /** Place the waiting sticky note at a client point, if it is on a page. */
+  private placeStickyAt(clientX: number, clientY: number): boolean {
+    const place = this.stickyPlace;
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    if (!place || !box) return false;
+    this.stickyPlace = null;
+    place(box.index, this.toPage(box, at));
+    return true;
   }
 
   /** Whether the ruler is out. */
@@ -10143,6 +10171,7 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
+    if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
     // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
     const plain = { x: clientX, y: clientY, t: now() };
     const paired = pairsAsDoubleTap(this.plainTap, plain);

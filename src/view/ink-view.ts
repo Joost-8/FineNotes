@@ -116,7 +116,9 @@ import {
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
-import { STICKY_SIDE, newStickyNote } from "../model/sticky-notes";
+import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
+import type { BarItemId } from "./toolbar-layout";
+import { CustomizeToolbarModal } from "./customize-toolbar-modal";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -952,6 +954,38 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
+  /** Show the tool bar's items `items` ("Customize toolbar", here or in another notebook). */
+  setToolbarItems(items: readonly BarItemId[]): void {
+    this.toolbar?.setItems(items);
+  }
+
+  /** "Customize toolbar": the bar's items, changed live and kept for every notebook. */
+  private openCustomizeToolbar(): void {
+    const toolbar = this.toolbar;
+    if (!toolbar) return;
+    new CustomizeToolbarModal(this.app, toolbar.shownItems, toolbar.availableItems, (items) =>
+      this.plugin.saveToolbarItems(items),
+    ).open();
+  }
+
+  /**
+   * A sticky note of `color` waits for a tap on a page, which sticks it
+   * there (null: it waits no more). The sticky notes button is on meanwhile.
+   */
+  private armStickyNote(color: string | null): void {
+    const surface = this.surface;
+    if (!surface || (color !== null && this.isProtected())) return;
+    surface.armStickyNote(
+      color === null
+        ? null
+        : (index, at) => {
+            this.toolbar?.setStickyArmed(false);
+            this.insertStickyNote(color, index, at);
+          },
+    );
+    this.toolbar?.setStickyArmed(color !== null);
+  }
+
   setPenCursor(style: unknown): void {
     this.surface?.setPenCursor(Platform.isMobile ? "arrow" : penCursorStyleOf(style));
   }
@@ -2430,6 +2464,13 @@ export class InkView extends TextFileView {
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
+        onStickers: () => {
+          if (!this.isProtected() && this.file)
+            this.plugin.openStickerPicker(this.imageMenuContext());
+        },
+        onStickyColor: (color) => this.armStickyNote(color),
+        onStickyCancel: () => this.armStickyNote(null),
+        onCustomize: () => this.openCustomizeToolbar(),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
@@ -2444,6 +2485,7 @@ export class InkView extends TextFileView {
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
+        items: this.settings.toolbarItems,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -4409,26 +4451,23 @@ export class InkView extends TextFileView {
       insertBytes: (bytes, mime, name, options) =>
         this.insertImageBytes(bytes, mime, name, options),
       insertVaultFile: (path, options) => this.insertImageFromVault(path, options),
-      insertSticky: (color) => this.insertStickyNote(color),
     };
   }
 
   /**
-   * Stick a note of `color` on the page in view, centred in its visible
-   * part (one `InsertImage`, so Undo takes it back). Unlike a picture it is
-   * not selected: the next thing done with a note is writing on it, and a
-   * selected one would move under the pen. The paper is painted, so nothing
-   * is saved to the vault.
+   * Stick a note of `color` on page `index`, centred on page point `at`
+   * and kept on the page (one `InsertImage`, so Undo takes it back). Unlike
+   * a picture it is not selected: the next thing done with a note is
+   * writing on it, and a selected one would move under the pen. The paper
+   * is painted, so nothing is saved to the vault.
    */
-  private insertStickyNote(color: string): void {
+  private insertStickyNote(color: string, index: number, at: { x: number; y: number }): void {
     const surface = this.surface;
     if (!surface || this.isProtected()) return;
     const doc = surface.document;
-    const index = Math.max(0, Math.min(doc.pages.length - 1, surface.currentPage));
     const page = doc.pages[index];
     if (!page) return;
-    const side = { width: STICKY_SIDE, height: STICKY_SIDE };
-    const box = placeImageBox(side, page.geometry, surface.visibleRegion(index));
+    const box = stickyBoxAt(at, STICKY_SIDE, page.geometry.width, page.geometry.height);
     const note = newStickyNote(nextImageId(doc), box, color);
     surface.applyCommand(new InsertImage(page.id, note));
   }

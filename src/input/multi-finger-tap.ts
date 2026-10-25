@@ -219,9 +219,9 @@ export const ONE_FINGER_DOUBLE_TAP_MS = 500;
  * Whether `second` makes a one-finger double tap with `first`: soon enough
  * after it, and within the distance two- and three-finger taps are paired by.
  */
-export function pairsAsDoubleTap(first: PlainTap | null, second: PlainTap): boolean {
+export function pairsAsDoubleTap(first: PlainTap | null | undefined, second: PlainTap): boolean {
   return (
-    first !== null &&
+    first != null &&
     second.t >= first.t &&
     second.t - first.t <= ONE_FINGER_DOUBLE_TAP_MS &&
     Math.hypot(second.x - first.x, second.y - first.y) <= DOUBLE_TAP_DISTANCE_PX

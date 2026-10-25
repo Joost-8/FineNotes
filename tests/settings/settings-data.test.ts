@@ -125,6 +125,7 @@ const FRESH_INSTALL = {
     { type: "brush", color: "#9c36b5", size: 3 },
     { type: "highlighter", color: "#fab005", size: 5 },
   ],
+  toolbarItems: ["select", "pen", "eraser", "text", "shape", "image", "pdf"],
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
@@ -216,6 +217,7 @@ const USED_VAULT = {
   invertPdfPages: false,
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
+  toolbarItems: ["pen", "sticky", "select", "ruler"],
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   penCursor: "crosshair",
