@@ -342,6 +342,8 @@ const REPO_URL = "https://github.com/Joost-8/FineNotes";
 export const COMMUNITY_LINKS = {
   discussions: `${REPO_URL}/discussions`,
   bugReport: `${REPO_URL}/issues/new/choose`,
+  /** The same page as `fundingUrl` in manifest.json and `.github/FUNDING.yml`. */
+  support: "https://github.com/sponsors/Joost-8",
   social: [
     { label: "X", url: "https://x.com/finenotes_" },
     { label: "Instagram", url: "https://www.instagram.com/finenotesobsidian/" },
@@ -1583,7 +1585,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** Ideas, bugs and FineNotes' accounts: one line of links at the very end. */
+  /** Ideas, bugs, support and FineNotes' accounts: one line of links at the very end. */
   private footerRow(): SettingDefinition {
     return {
       name: "Feedback and community",
@@ -1603,6 +1605,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "Instagram",
         "TikTok",
         "YouTube",
+        "support",
+        "sponsor",
+        "donate",
+        "coffee",
       ],
       render: (setting) => {
         const row = setting.settingEl;
@@ -1612,19 +1618,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         // than found with `:has()`, which the plugin review flags as slow.
         // Obsidian has placed the row in its list before `render` runs.
         row.parentElement?.addClass("goodobsidian-footer-items");
-        // Each link in its own colour: FineNotes' two with an icon, the
-        // accounts in their brands' colours.
-        const link = (label: string, url: string, icon?: string): void => {
+        // Each link in its own colour: FineNotes' three with an icon, the
+        // accounts in their brands' colours. The heart says what it is on its
+        // own, so its name is only its tooltip and the line stays one line.
+        const link = (label: string, url: string, icon?: string, iconOnly = false): void => {
           const key = label.toLowerCase().split(" ")[0];
           const button = row.createEl("button", {
             cls: `goodobsidian-footer-link clickable-icon is-${key}`,
           });
           if (icon) setIcon(button.createSpan({ cls: "goodobsidian-footer-icon" }), icon);
-          button.createSpan({ text: label });
+          if (iconOnly) button.setAttribute("aria-label", label);
+          else button.createSpan({ text: label });
           button.addEventListener("click", () => window.open(url));
         };
         link("Ideas and questions", COMMUNITY_LINKS.discussions, "lightbulb");
         link("Report a bug", COMMUNITY_LINKS.bugReport, "bug");
+        link("Support FineNotes", COMMUNITY_LINKS.support, "heart", true);
         for (const { label, url } of COMMUNITY_LINKS.social) link(label, url);
       },
     };

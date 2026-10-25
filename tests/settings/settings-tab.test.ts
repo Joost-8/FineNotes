@@ -1153,7 +1153,7 @@ describe("API key rows", () => {
 });
 
 describe("the feedback footer", () => {
-  it("links to Discussions, the bug report and FineNotes' accounts, in one line", () => {
+  it("links to Discussions, the bug report, Sponsors and FineNotes' accounts, in one line", () => {
     const opened: string[] = [];
     vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
     try {
@@ -1163,15 +1163,19 @@ describe("the feedback footer", () => {
       expect(links.map((l) => l.textContent)).toEqual([
         "Ideas and questions",
         "Report a bug",
+        "",
         "X",
         "Instagram",
         "TikTok",
         "YouTube",
       ]);
+      // The heart has no word; its name is its tooltip.
+      expect(links[2].attrs["aria-label"]).toBe("Support FineNotes");
       for (const link of links) link.dispatch("click");
       expect(opened).toEqual([
         "https://github.com/Joost-8/FineNotes/discussions",
         "https://github.com/Joost-8/FineNotes/issues/new/choose",
+        "https://github.com/sponsors/Joost-8",
         "https://x.com/finenotes_",
         "https://www.instagram.com/finenotesobsidian/",
         "https://www.tiktok.com/@finenotesobsidian",

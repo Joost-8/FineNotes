@@ -2745,7 +2745,7 @@ button.goodobsidian-pen-modal-type.clickable-icon.is-active {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: var(--size-4-2);
+  gap: 6px;
   margin-top: var(--size-4-4);
   padding: var(--size-4-2) 0;
 }
@@ -2783,6 +2783,14 @@ button.goodobsidian-footer-link.clickable-icon:hover {
 
 .goodobsidian-footer-link.is-report {
   --gob-footer: #e5484d;
+}
+
+/* The heart alone, round like X, in GitHub Sponsors' pink. */
+button.goodobsidian-footer-link.clickable-icon.is-support {
+  --gob-footer: #bf3989;
+  justify-content: center;
+  width: 32px;
+  padding: 0;
 }
 
 .goodobsidian-footer-link.is-x {

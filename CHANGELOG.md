@@ -22,6 +22,9 @@ extracted from the matching section of this file by `release.yml`.
   and title bar above a notebook, so the page gets about 90 px more height.
   The same button brings them back. Switch to a note in another tab and
   Obsidian's bars come back for it. The choice is kept on each device.
+- **A way to support FineNotes.** A heart at the end of FineNotes'
+  settings, and Obsidian's support button on FineNotes' page in Community
+  plugins, open FineNotes' GitHub Sponsors page.
 
 ### Fixed
 
