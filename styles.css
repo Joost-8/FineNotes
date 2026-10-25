@@ -12195,3 +12195,27 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   > .view-header {
   display: none;
 }
+
+/* ---------------------------------------- making room for a moved tool bar */
+
+/* The options pill along the bottom or upright at a side (toolbar.ts,
+   clearForPill) says how far it reaches in from that edge; what else rests
+   there steps aside by as much. At the end of the file, as it restyles
+   several components (CLAUDE.md ledger). Under the tool bar it reaches
+   nothing, and all of these sit where they always have. */
+.goodobsidian-pageindicator {
+  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+}
+
+.goodobsidian-zoomreadout {
+  right: calc(12px + var(--gob-pill-clear-right, 0px));
+  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+}
+
+.goodobsidian-rec-pill {
+  right: calc(12px + var(--gob-pill-clear-right, 0px));
+}
+
+.goodobsidian-player {
+  bottom: calc(44px + var(--gob-pill-clear-bottom, 0px));
+}

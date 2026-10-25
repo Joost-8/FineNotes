@@ -21,8 +21,10 @@ extracted from the matching section of this file by `release.yml`.
   square showing the tool, and when you let go it springs to the nearest
   place: under the toolbar, along the bottom, or upright along the left or
   right edge. Upright, the pen's bar shows one width button and three
-  colours, with the rest behind a ⌄. Its menus open toward the page. Every
-  tool's bar goes there, and each device remembers its own place.
+  colours, with the rest behind a ⌄. Its menus open toward the page, and
+  the page counter, zoom readout, recording pill and audio player step
+  aside for it. Every tool's bar goes there, and each device remembers its
+  own place.
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
   gear, with "Update available" under it until you close it with its ✕

@@ -6,6 +6,7 @@ import {
   nearestDock,
   parsePillDock,
   colorWindow,
+  pillClearance,
   popoverSide,
 } from "../../src/view/pill-dock-model";
 
@@ -95,5 +96,33 @@ describe("the colours an upright pill shows", () => {
 
   it("starts at the beginning when no colour of the row is chosen", () => {
     expect(colorWindow(9, -1, 3)).toBe(0);
+  });
+});
+
+describe("the room the pill takes from an edge", () => {
+  const host = { width: 1000, height: 800 };
+
+  it("is from the edge to the pill's far side, and a gap", () => {
+    const bottom = { left: 300, top: 740, right: 700, bottom: 788 };
+    expect(pillClearance("bottom", bottom, host, true, 8)).toEqual({
+      bottom: 68,
+      left: 0,
+      right: 0,
+    });
+    const left = { left: 8, top: 68, right: 56, bottom: 400 };
+    expect(pillClearance("left", left, host, true, 8)).toEqual({ bottom: 0, left: 64, right: 0 });
+    const right = { left: 944, top: 68, right: 992, bottom: 400 };
+    expect(pillClearance("right", right, host, true, 8)).toEqual({ bottom: 0, left: 0, right: 64 });
+  });
+
+  it("is nothing under the tool bar, or while the pill is not at its place", () => {
+    const top = { left: 300, top: 60, right: 700, bottom: 108 };
+    expect(pillClearance("top", top, host, true, 8)).toEqual({ bottom: 0, left: 0, right: 0 });
+    const bottom = { left: 300, top: 740, right: 700, bottom: 788 };
+    expect(pillClearance("bottom", bottom, host, false, 8)).toEqual({
+      bottom: 0,
+      left: 0,
+      right: 0,
+    });
   });
 });

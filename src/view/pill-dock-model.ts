@@ -124,3 +124,33 @@ export function colorWindow(length: number, chosen: number, count: number): numb
   const middle = chosen - Math.floor((count - 1) / 2);
   return Math.max(0, Math.min(middle, length - count));
 }
+
+/** How far into the view, px, the pill reaches from each edge it rests on. */
+export interface PillClearance {
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * The room the pill takes from the view's bottom, left or right edge, so
+ * what else sits there (the page counter, the zoom readout, the recording
+ * pill, the audio player) can step aside: from the edge to the pill's far
+ * side, plus `gap`. Nothing while it is not shown at its place (tucked
+ * away, or floating by a text box), and nothing under the tool bar, where
+ * none of those sit.
+ */
+export function pillClearance(
+  dock: PillDock,
+  pill: { left: number; top: number; right: number; bottom: number },
+  host: { width: number; height: number },
+  shown: boolean,
+  gap: number,
+): PillClearance {
+  const none = { bottom: 0, left: 0, right: 0 };
+  if (!shown || dock === "top") return none;
+  const reach = (n: number): number => Math.max(0, Math.round(n + gap));
+  if (dock === "bottom") return { ...none, bottom: reach(host.height - pill.top) };
+  if (dock === "left") return { ...none, left: reach(pill.right) };
+  return { ...none, right: reach(host.width - pill.left) };
+}

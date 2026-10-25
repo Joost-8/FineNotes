@@ -139,6 +139,7 @@ import {
   isUpright,
   nearestDock,
   parsePillDock,
+  pillClearance,
   popoverSide,
 } from "./pill-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
@@ -3670,7 +3671,9 @@ export class Toolbar {
   chromeSpans(): Array<{ top: number; bottom: number }> {
     const spans = [this.barEl.getBoundingClientRect()];
     const pill = this.optionsEl;
-    if (!pill.hasClass("is-offscreen") && !pill.hasClass("is-hidden")) {
+    // An upright pill stands at a side, clear of a toast centred on the page.
+    const upright = pill.hasClass("is-upright") && !pill.hasClass("is-anchored");
+    if (!pill.hasClass("is-offscreen") && !pill.hasClass("is-hidden") && !upright) {
       spans.push(pill.getBoundingClientRect());
     }
     return spans.map(({ top, bottom }) => ({ top, bottom }));
@@ -3685,12 +3688,16 @@ export class Toolbar {
     const anchored = this.anchoredPlace(hostBox, pill);
     this.optionsEl.toggleClass("is-anchored", anchored !== null);
     this.optionsEl.toggleClass("is-offscreen", anchored === "hidden");
-    if (anchored === "hidden") return;
+    if (anchored === "hidden") {
+      this.clearForPill(null, hostBox);
+      return;
+    }
     if (anchored) {
       this.optionsEl.setCssStyles({
         left: `${Math.round(anchored.left)}px`,
         top: `${Math.round(anchored.top)}px`,
       });
+      this.clearForPill(null, hostBox);
       return;
     }
     const area = this.pillArea(hostBox, pill.width);
@@ -3703,6 +3710,44 @@ export class Toolbar {
       left: `${Math.round(place.left)}px`,
       top: `${Math.round(place.top)}px`,
     });
+    const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
+    this.clearForPill(
+      shown
+        ? {
+            left: place.left,
+            top: place.top,
+            right: place.left + pill.width,
+            bottom: place.top + pill.height,
+          }
+        : null,
+      hostBox,
+    );
+  }
+
+  /**
+   * Tell what else rests on the view's edges (the page counter, the zoom
+   * readout, the recording pill, the audio player; styles.css) how far the
+   * pill reaches in from the edge it rests on, as `--gob-pill-clear-*` on
+   * the host; `null` while it is not at its place.
+   */
+  private clearForPill(
+    pill: { left: number; top: number; right: number; bottom: number } | null,
+    hostBox: DOMRect,
+  ): void {
+    // Measured from where the page ends, as the counter and readout are.
+    const area = this.pillArea(hostBox, 0);
+    const clear = pillClearance(
+      this.pillDock,
+      pill ?? { left: 0, top: 0, right: 0, bottom: 0 },
+      { width: area.right, height: area.bottom },
+      pill !== null,
+      EDGE_INSET,
+    );
+    this.host.setCssProps({
+      "--gob-pill-clear-bottom": `${clear.bottom}px`,
+      "--gob-pill-clear-left": `${clear.left}px`,
+      "--gob-pill-clear-right": `${clear.right}px`,
+    });
   }
 
   /**
@@ -3711,13 +3756,16 @@ export class Toolbar {
    * above the keyboard.
    */
   private pillArea(hostBox: DOMRect, pillWidth: number): PillArea {
-    const windowBottom =
-      (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
+    const win = this.host.ownerDocument.defaultView;
+    const windowBottom = (win?.innerHeight ?? Infinity) - keyboardHeight();
+    // Obsidian pads the view's foot (32 px on mobile, for its own bar); the
+    // page ends above it, and so does the pill's room.
+    const foot = parseFloat(win?.getComputedStyle(this.host).paddingBottom ?? "") || 0;
     return {
       left: Math.min(this.leftInset, Math.max(0, hostBox.width - pillWidth)),
       top: this.barBottom(),
       right: hostBox.width,
-      bottom: Math.min(hostBox.height, windowBottom - hostBox.top),
+      bottom: Math.min(hostBox.height - foot, windowBottom - hostBox.top),
     };
   }
 
@@ -3889,7 +3937,9 @@ export class Toolbar {
    */
   private showOptions(visible: boolean): void {
     this.optionsEl.toggleClass("is-collapsed", !visible);
+    // Tucked away, it leaves its edge to the counter and the readout again.
     if (visible) this.applyPosition();
+    else this.clearForPill(null, this.host.getBoundingClientRect());
   }
 
   /**
