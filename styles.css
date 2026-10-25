@@ -4733,7 +4733,14 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   flex: 1 1 auto;
   min-width: 0;
   padding-right: 4px;
+  overflow: hidden;
   white-space: nowrap;
+}
+
+/* In a wider font the name gives way to the swatches, never under them. */
+.goodobsidian-imagemenu-split .goodobsidian-imagemenu-row > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 button.goodobsidian-imagemenu-swatch {

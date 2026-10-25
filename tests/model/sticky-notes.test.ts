@@ -38,6 +38,7 @@ import {
   pageToNote,
   readStickyPaper,
   relinkNoteInk,
+  shownAt,
   unfoldNoteInk,
   withNoteInk,
 } from "../../src/model/sticky-notes";
@@ -382,5 +383,38 @@ describe("folding for the disk", () => {
     expect(back.pts[0]).toBeCloseTo(p.x, 9);
     expect(back.pts[1]).toBeCloseTo(p.y, 9);
     expect(back.pts[4]).toBeCloseTo(q.y, 9);
+  });
+});
+
+describe("shownAt: what the eraser may touch", () => {
+  const stuck = note({ id: "i1", front: true });
+  const under = note({ id: "i2", front: undefined, x: 500 });
+  const onStuck = stroke("a", [], "i1");
+  const onUnder = stroke("b", [], "i2");
+  const plain = stroke("c", []);
+  const page = pageWith([stuck, under], [onStuck, onUnder, plain]);
+
+  it("lets everything show on a page without notes", () => {
+    expect(shownAt(pageWith([], [plain]), plain, 150, 250)).toBe(true);
+  });
+
+  it("shows a note's ink only on that note", () => {
+    expect(shownAt(page, onStuck, 150, 250)).toBe(true);
+    expect(shownAt(page, onStuck, 50, 50)).toBe(false);
+    expect(shownAt(page, onStuck, 550, 250)).toBe(false);
+  });
+
+  it("hides page ink under a note stuck on, not under one beneath the ink", () => {
+    expect(shownAt(page, plain, 150, 250)).toBe(false);
+    expect(shownAt(page, plain, 550, 250)).toBe(true);
+    expect(shownAt(page, plain, 50, 50)).toBe(true);
+    expect(shownAt(page, onUnder, 550, 250)).toBe(true);
+  });
+
+  it("hides a note's ink under another note laid over it", () => {
+    const over = note({ id: "i3", front: true, x: 120 });
+    const stacked = pageWith([stuck, over], [onStuck]);
+    expect(shownAt(stacked, onStuck, 110, 250)).toBe(true);
+    expect(shownAt(stacked, onStuck, 200, 250)).toBe(false);
   });
 });

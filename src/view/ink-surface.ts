@@ -346,6 +346,8 @@ import {
   inkOfNote,
   loneNote,
   noteAt,
+  noteIdsOf,
+  shownAt,
   withNoteInk,
 } from "../model/sticky-notes";
 import {
@@ -6626,7 +6628,15 @@ export class InkSurface {
    * erased stretch, as the standard eraser cuts.
    */
   private eraseRuledAt(page: Page, ruled: RuledEraser, at: Pt, radius: number): boolean {
-    const { taken, cut } = ruled.dab(at, radius);
+    const dabbed = ruled.dab(at, radius);
+    // Ink a sticky note hides, or a note's ink off its note, is not touched.
+    const notes = noteIdsOf(page.images);
+    const shown = (id: string): boolean => {
+      const stroke = this.strokeIndex.get(id);
+      return stroke !== undefined && shownAt(page, stroke, at.x, at.y, notes);
+    };
+    const taken = [...dabbed.taken].filter(shown);
+    const cut = [...dabbed.cut].filter(shown);
     let changed = false;
     for (const id of taken) changed = this.markWhole(page, id) || changed;
     if (cut.length === 0) return changed;
@@ -6675,9 +6685,12 @@ export class InkSurface {
    */
   private eraseWholeAt(page: Page, at: Pt, radius: number, filter: EraserFilter): boolean {
     let marked = false;
+    const notes = noteIdsOf(page.images);
     for (const id of this.strokeIndex.near(page.id, at.x, at.y, radius)) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || this.eraseIds.has(id) || !eraserTakes(stroke, filter)) continue;
+      // Ink a sticky note hides, or a note's ink off its note, is not touched.
+      if (!shownAt(page, stroke, at.x, at.y, notes)) continue;
       if (!strokeHitByPoint(stroke, at.x, at.y, radius)) continue;
       marked = this.markWhole(page, id) || marked;
     }
@@ -6699,10 +6712,13 @@ export class InkSurface {
     const reach = radius + MAX_STROKE_HALF_WIDTH;
     const candidates = this.strokeIndex.near(page.id, sample.x, sample.y, reach);
     const nextId = (): string => this.strokeIds.next();
+    const notes = noteIdsOf(page.images);
     let changed = false;
     for (const id of candidates) {
       const original = this.strokeIndex.get(id);
       if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
+      // Ink a sticky note hides, or a note's ink off its note, is not touched.
+      if (!shownAt(page, original, sample.x, sample.y, notes)) continue;
       // A linked word is never cut: touching it takes all of it.
       if (isLinked(page, id)) {
         const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
@@ -6818,9 +6834,13 @@ export class InkSurface {
       maxY: b.maxY + pad,
     });
     const ids = new Set<string>();
+    // Where the scribble began decides what it can see: a sticky note's ink
+    // on that note, or the page's ink off any note stuck on.
+    const notes = noteIdsOf(page.images);
     for (const id of near) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || !scribbleMayErase(stroke, gestures.scribbleErasesAll)) continue;
+      if (!shownAt(page, stroke, pts[0], pts[1], notes)) continue;
       const margin = reach + stroke.size / 2;
       if (scribbleCoverage(scribble, stroke.pts, margin) >= SCRIBBLE_COVERAGE) ids.add(id);
     }

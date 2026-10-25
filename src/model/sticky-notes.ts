@@ -216,6 +216,26 @@ export function noteAt(page: Page, x: number, y: number): ImageElement | null {
   return null;
 }
 
+/**
+ * Whether `stroke` shows at page point (x, y), as far as sticky notes
+ * decide, so the eraser takes only what it is seen to touch: a note's ink
+ * only on that note, where nothing lies over it; page ink not under a note
+ * stuck on in front of the ink. `notes` is {@link noteIdsOf} the page's
+ * images; without notes everything shows, as before.
+ */
+export function shownAt(
+  page: Page,
+  stroke: Stroke,
+  x: number,
+  y: number,
+  notes: ReadonlySet<string> | null = noteIdsOf(page.images),
+): boolean {
+  if (!notes) return true;
+  const top = noteAt(page, x, y);
+  if (isNoteInk(stroke, notes)) return top !== null && top.id === stroke.onSticky;
+  return top?.front !== true;
+}
+
 // --- Selections, copies, deletes ------------------------------------------------
 
 /** The elements of a selection this module looks at. */

@@ -4351,8 +4351,10 @@ export class InkView extends TextFileView {
 
   /**
    * Stick a note of `color` on the page in view, centred in its visible
-   * part, selected (one `InsertImage`, so Undo takes it back). The paper is
-   * painted, so nothing is saved to the vault.
+   * part (one `InsertImage`, so Undo takes it back). Unlike a picture it is
+   * not selected: the next thing done with a note is writing on it, and a
+   * selected one would move under the pen. The paper is painted, so nothing
+   * is saved to the vault.
    */
   private insertStickyNote(color: string): void {
     const surface = this.surface;
@@ -4365,7 +4367,6 @@ export class InkView extends TextFileView {
     const box = placeImageBox(side, page.geometry, surface.visibleRegion(index));
     const note = newStickyNote(nextImageId(doc), box, color);
     surface.applyCommand(new InsertImage(page.id, note));
-    surface.selectImage(page.id, note.id);
   }
 
   /**
