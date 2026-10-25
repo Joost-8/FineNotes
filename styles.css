@@ -1057,7 +1057,8 @@ body,
 .goodobsidian-pagesidebar-grid.is-hidden,
 .goodobsidian-pagesidebar-audio.is-hidden,
 .goodobsidian-pagesidebar-contents.is-hidden,
-.goodobsidian-pagesidebar .goodobsidian-contents-add.is-hidden,
+.goodobsidian-pagesidebar .goodobsidian-pagesidebar-tab.clickable-icon.is-hidden,
+.goodobsidian-pagesidebar .goodobsidian-contents-add.clickable-icon.is-hidden,
 .goodobsidian-contents-empty.is-hidden,
 .goodobsidian-pagesidebar-empty.is-hidden,
 .goodobsidian-thumb.is-hidden,
@@ -3848,12 +3849,35 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   justify-self: start;
 }
 
-.goodobsidian-newnb-header > button:last-child {
+.goodobsidian-newnb-header > button:last-child,
+.goodobsidian-newnb-header-end {
   justify-self: end;
 }
 
+/* The ∞ (an endless board, FineNotes#46) and the ✕, side by side. */
+.goodobsidian-newnb-header-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The ∞: the ✕'s round shape, lit with the accent while it is on. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  --icon-size: 20px;
+}
+
+.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon.is-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 /* The header's ✕: a round button that closes the dialog. */
-.goodobsidian-newnb-header > button.goodobsidian-newnb-close.clickable-icon {
+.goodobsidian-newnb-header button.goodobsidian-newnb-close.clickable-icon {
   width: 36px;
   height: 36px;
   padding: 0;
@@ -3863,7 +3887,7 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   --icon-size: 18px;
 }
 
-.goodobsidian-newnb-header > button.goodobsidian-newnb-close.clickable-icon:hover {
+.goodobsidian-newnb-header button.goodobsidian-newnb-close.clickable-icon:hover {
   color: var(--text-normal);
 }
 
@@ -4158,6 +4182,11 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   gap: 8px;
 }
 
+/* Its own display outranks the shared .is-hidden: a board hides Cover and Paper. */
+.goodobsidian-newnb-section.is-hidden {
+  display: none;
+}
+
 .goodobsidian-newnb-section-title {
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold, 600);
@@ -4182,6 +4211,25 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-newnb .goodobsidian-template-card.is-large .goodobsidian-template-preview {
   width: 72px;
+}
+
+/* A board's three papers, sharing the row. */
+.goodobsidian-newnb-board-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.goodobsidian-newnb .goodobsidian-newnb-board-cards .goodobsidian-template-card.is-large {
+  width: 100%;
+}
+
+.goodobsidian-newnb
+  .goodobsidian-newnb-board-cards
+  .goodobsidian-template-card.is-large
+  .goodobsidian-template-preview {
+  width: 100%;
+  max-width: 132px;
 }
 
 .goodobsidian-newnb-folder {

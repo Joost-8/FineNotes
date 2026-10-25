@@ -237,6 +237,7 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
+import { isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
@@ -1432,6 +1433,8 @@ export class InkView extends TextFileView {
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
+    // TODO(#46 phase 4): on a board, Ask asks about what is on screen, not
+    // about pages picked from a list.
     if (this.isDamaged()) return;
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
@@ -2083,6 +2086,8 @@ export class InkView extends TextFileView {
     try {
       let reading: PageReading;
       try {
+        // TODO(#46 phase 4): a board is read by area, around what changed;
+        // its whole page would make every reading slower as it fills.
         reading = await this.plugin.handwriting.readPage(step.page.strokes, this.wordsChecked);
       } catch {
         // An error or a timeout: skip this page until it changes, and go on.
@@ -3018,6 +3023,8 @@ export class InkView extends TextFileView {
    * reading only the text boxes light up.
    */
   private async showSearchHits(index: number, query: string): Promise<void> {
+    // TODO(#46 phase 4): on a board, search flies to the word itself; going
+    // to its page shows nothing there, the board being one page.
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page) return;
@@ -3110,8 +3117,9 @@ export class InkView extends TextFileView {
     if (fresh) {
       // From now on the page being read is worth remembering for this file.
       this.restoredPath = path;
-      // A notebook opened anew starts at fit zoom, whatever this leaf showed before.
-      surface.resetView();
+      // A notebook opened anew starts at fit zoom (a board at 100% on its middle),
+      // whatever this leaf showed before.
+      surface.showHome();
       index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);
@@ -3183,6 +3191,9 @@ export class InkView extends TextFileView {
    * not be the pages on disk.
    */
   exportPdf(chosen?: readonly number[]): void {
+    // TODO(#46 phase 4): a board exports as one PDF page the size of its
+    // drawing, with no "This page" or "Choose pages"; today it is the whole
+    // (mostly empty) page.
     const note = this.file;
     if (this.isDamaged() || !note) return;
     const doc = this.surface?.document ?? this.doc;
@@ -3260,6 +3271,11 @@ export class InkView extends TextFileView {
     return this.doc.single === true;
   }
 
+  /** Whether the open document is an endless board (FineNotes#46); a board is a single page too. */
+  get isBoard(): boolean {
+    return isBoard(this.doc) && this.doc.pages.length === 1;
+  }
+
   /** A handwriting practice file: kept to writing, its pages and paper fixed. */
   get isPractice(): boolean {
     return this.doc.practice !== undefined;
@@ -3280,8 +3296,12 @@ export class InkView extends TextFileView {
     // The overview needs pages to show, as its ⤢ does.
     this.surface?.setPinchToOverview(!single && !practice);
     this.sidebar?.setSingle(single, practice);
+    // A board's panel is Contents and Files; its ⋯ has no page items (`toggleMorePanel`).
+    this.sidebar?.setBoard(this.isBoard);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
+    // A PDF's pages become pages: a board has none to add.
+    this.toolbar?.setInsertPdfVisible(!this.isBoard);
     this.surface?.setPractice(practice ? deviceKind() : null);
     if (single || practice) {
       this.addPagePopover?.popover.close();
@@ -3298,7 +3318,8 @@ export class InkView extends TextFileView {
 
   /** "Convert to notebook": the single page becomes a notebook that takes more pages. Undoable. */
   convertToNotebook(): void {
-    if (!this.surface || this.isProtected() || !this.isSinglePage) return;
+    // A board stays a board (FineNotes#46): its page is not a sheet to add sheets to.
+    if (!this.surface || this.isProtected() || !this.isSinglePage || this.isBoard) return;
     // Through the surface's stack, so Cmd/Ctrl+Z makes it a single page again;
     // its onChange re-syncs the chrome and saves.
     this.surface.applyCommand(new SetSingle(false));
@@ -3315,7 +3336,9 @@ export class InkView extends TextFileView {
       return true;
     }
     if (!this.isSinglePage) return false;
-    new Notice("This is a single page. Convert it to a notebook to add pages.");
+    // A board grows by itself as it is written on (FineNotes#46).
+    if (this.isBoard) new Notice("A board has one page, which grows as you write near its edge.");
+    else new Notice("This is a single page. Convert it to a notebook to add pages.");
     return true;
   }
 
@@ -4084,6 +4107,7 @@ export class InkView extends TextFileView {
         titled: page.title !== undefined,
         cover: page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind),
         single: this.isSinglePage,
+        board: this.isBoard,
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
@@ -4625,6 +4649,10 @@ export class InkView extends TextFileView {
   /** Import an unchanged PDF attachment or reference an existing vault PDF. */
   importPdf(fromVault = false): void {
     if (this.isProtected() || !this.file || !this.surface || this.refusePractice()) return;
+    if (this.isBoard) {
+      new Notice("A board has no pages for a PDF's pages. Pictures can go on it.");
+      return;
+    }
     if (this.isSinglePage) {
       new Notice("Convert this single page to a notebook before importing a PDF.");
       return;

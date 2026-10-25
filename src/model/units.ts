@@ -14,6 +14,13 @@ export const PAGE_PX_PER_MM = DEFAULT_PAPER_WIDTH / 210;
 /** CSS px per millimetre at CSS's reference 96 px per inch. */
 export const CSS_PX_PER_MM = 96 / 25.4;
 
+/**
+ * The view scale (CSS px per page px) the readout calls 100%: the page at
+ * its real size. An endless board opens at it and calls it writing size
+ * (FineNotes#46): there is no width for a board to fit.
+ */
+export const WRITING_SCALE = CSS_PX_PER_MM / PAGE_PX_PER_MM;
+
 /** A length in page px, in millimetres. */
 export function pageToMm(px: number): number {
   return px / PAGE_PX_PER_MM;

@@ -554,19 +554,41 @@ describe("notebook commands", () => {
     app.workspace.active = new MarkdownView();
     expect(offered(id)).toBe(false);
     const spy = vi.fn(() => Promise.resolve());
-    app.workspace.active = inkView({ [method]: spy });
+    app.workspace.active = inkView({ [method]: spy, isBoard: false });
     expect(offered(id)).toBe(true);
     expect(spy).not.toHaveBeenCalled();
     run(id);
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["copy-page-link", "import-vault-pdf", "save-as-template", "save-page-as-template"])(
+    "%s is not offered on an endless board, which has no pages",
+    async (id) => {
+      await load();
+      app.workspace.active = inkView({ isSinglePage: true, isBoard: true });
+      expect(offered(id)).toBe(false);
+      app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
+      expect(offered(id)).toBe(true);
+    },
+  );
+
   it("convert-to-notebook is offered only on a single page", async () => {
     await load();
     const convert = vi.fn();
     app.workspace.active = inkView({ isSinglePage: false, convertToNotebook: convert });
     expect(offered("convert-to-notebook")).toBe(false);
-    app.workspace.active = inkView({ isSinglePage: true, convertToNotebook: convert });
+    // A board is a single page that stays a board (FineNotes#46).
+    app.workspace.active = inkView({
+      isSinglePage: true,
+      isBoard: true,
+      convertToNotebook: convert,
+    });
+    expect(offered("convert-to-notebook")).toBe(false);
+    app.workspace.active = inkView({
+      isSinglePage: true,
+      isBoard: false,
+      convertToNotebook: convert,
+    });
     expect(offered("convert-to-notebook")).toBe(true);
     expect(convert).not.toHaveBeenCalled();
     run("convert-to-notebook");

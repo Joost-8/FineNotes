@@ -152,6 +152,13 @@ export interface ScrollExtent {
    * content still stretches and springs back.
    */
   rangeX?: { min: number; max: number };
+  /** The same for `y`: an endless board scrolls a screen past its drawing, no further. */
+  rangeY?: { min: number; max: number };
+  /**
+   * Scroll in any direction, never locked to one axis: an endless board,
+   * where a mind map is panned across as often as along (FineNotes#46).
+   */
+  freeAxes?: boolean;
   /**
    * Extra room to scroll past the content's bottom edge, px: the on-screen
    * keyboard's height while a text box is edited, so a box low on a page
@@ -204,6 +211,8 @@ export class KineticScroller {
   private viewH = 1;
   /** Content wider than the viewport: it can scroll and stretch sideways. */
   private bounceX = false;
+  /** No axis lock: every drag moves both ways (`ScrollExtent.freeAxes`). */
+  private freeAxes = false;
   /** Vertical always stretches, as GoodNotes does even on a one-page note. */
   private readonly bounceY = true;
   private drag: Drag | null = null;
@@ -269,10 +278,15 @@ export class KineticScroller {
       this.minX = range.min;
       this.maxX = Math.max(range.min, range.max);
     }
-    this.maxY = Math.max(
-      0,
-      extent.contentHeight - extent.viewportHeight + Math.max(0, extent.trailY ?? 0),
-    );
+    const trailY = Math.max(0, extent.trailY ?? 0);
+    this.minY = 0;
+    this.maxY = Math.max(0, extent.contentHeight - extent.viewportHeight + trailY);
+    const rangeY = extent.rangeY;
+    if (rangeY && Number.isFinite(rangeY.min) && Number.isFinite(rangeY.max)) {
+      this.minY = rangeY.min;
+      this.maxY = Math.max(rangeY.min, rangeY.max) + trailY;
+    }
+    this.freeAxes = extent.freeAxes === true;
     this.bounceX =
       extent.alwaysBounceX === true ||
       extent.contentWidth + lead + trail > extent.viewportWidth + 0.5;
@@ -431,7 +445,7 @@ export class KineticScroller {
     const dx = drag.originX - fingerX;
     const dy = drag.originY - fingerY;
     if (drag.lock === "undecided" && Math.hypot(dx, dy) >= AXIS_LOCK_DISTANCE) {
-      drag.lock = decideLock(dx, dy, this.bounceX);
+      drag.lock = this.freeAxes ? "free" : decideLock(dx, dy, this.bounceX);
     }
     const useX = drag.lock === "x" || drag.lock === "free" || drag.lock === "undecided";
     const useY = drag.lock !== "x";

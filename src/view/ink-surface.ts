@@ -176,6 +176,10 @@ import {
   rowTurnsPages,
   scrollTopForPage,
   inkBeyondPage,
+  boardCentre,
+  boardScrollRange,
+  boardScrollToCentre,
+  layoutBoard,
 } from "../canvas/page-layout";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import {
@@ -198,6 +202,7 @@ import {
 import {
   MAX_SCALE,
   anchorScrollDelta,
+  boardFitZoom,
   pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
@@ -205,7 +210,8 @@ import {
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { scrollThumb } from "../canvas/scroll-thumb";
-import { zoomPercent } from "../model/units";
+import { WRITING_SCALE, zoomPercent } from "../model/units";
+import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -1432,6 +1438,27 @@ export class InkSurface {
   private minZoom = 1;
   /** Whether the first layout has set the default zoom yet. */
   private zoomInitialised = false;
+  /**
+   * An endless board (FineNotes#46): one page that grows, scrolled freely,
+   * 100% at the writing size. Read from the document on every layout.
+   */
+  private board = false;
+  /** What is drawn on the board (`drawnBounds`), kept up to date by every edit. */
+  private boardDrawn: Bounds | null = null;
+  /**
+   * The view as it was when an erase made the drawing smaller: still in the
+   * scroll range, so the view does not jump back to what is left. Let go of
+   * when a finger or the wheel moves the view.
+   */
+  private boardHold: Bounds | null = null;
+  /**
+   * How far a left or up growth moved the board's content (page px) since
+   * the last layout, which moves the view by as much so nothing on screen
+   * jumps; an undo moves it back (`GrowBoard`'s `onShift`).
+   */
+  private boardShift = { x: 0, y: 0 };
+  /** Steps the board's growth has looked at, so an undo never grows it again. */
+  private boardChecked = new WeakSet<Command>();
   private paper: PaperTheme;
   private pageIndex = 0;
 
@@ -2551,6 +2578,7 @@ export class InkSurface {
    * host's save cache trusts it; see InkSurfaceCallbacks.onChange).
    */
   private changed(pages?: readonly string[]): void {
+    this.growBoard();
     this.reportStatus();
     this.syncPageTabs();
     // Ink moved or went: the underlines and ribbons follow it.
@@ -2599,11 +2627,49 @@ export class InkSurface {
     this.userZoom = this.minZoom;
     this.ensurePaperSize();
     this.layout();
+    // A board fits its whole drawing (FineNotes#44), in the middle of the pane.
+    if (this.board) {
+      this.centreBoard(false);
+      this.reportStatus();
+      return;
+    }
     // After the layout, which would otherwise keep the current page of a row centred.
     this.scroller.setPosition(this.direction === "horizontal" ? this.rowX(0) : 0, 0);
     this.syncViewport();
     this.requestFrame();
     this.reportStatus();
+  }
+
+  /**
+   * The view a notebook opens at. A board: the writing size (100%) on the
+   * middle of its drawing. Anything else: {@link resetView}, the page fitted.
+   * TODO(#46 phase 4): a board opens where it was left, as a notebook opens
+   * on the page it was left at (`last-page.ts` keeps a page index only).
+   */
+  showHome(): void {
+    if (!this.board) {
+      this.resetView();
+      return;
+    }
+    this.pinch = null;
+    this.zoomAnim = null;
+    this.userZoom = 1;
+    this.ensurePaperSize();
+    this.centreBoard(false);
+    this.reportStatus();
+  }
+
+  /** Put the middle of a board's drawing (or of its page) in the middle of the pane. */
+  private centreBoard(animate: boolean): void {
+    const page = this.doc.pages[0];
+    if (!page) return;
+    const centre = boardCentre(page.geometry, this.boardDrawn);
+    const at = boardScrollToCentre(centre, this.scale, this.cssW, this.cssH);
+    if (animate) this.scroller.glideTo(at.x, at.y, now());
+    else this.scroller.setPosition(at.x, at.y);
+    this.syncViewport();
+    this.flashChrome(true);
+    this.requestFrame();
   }
 
   zoomIn(): void {
@@ -2621,6 +2687,8 @@ export class InkSurface {
    */
   goToPage(index: number, animate = false): void {
     this.parkedText = null;
+    // A board is one page, always under the view: there is nowhere to go.
+    if (this.board) return;
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const row = this.direction === "horizontal";
     // Zoomed in, a row lands on the page's top-left corner at the same zoom;
@@ -2652,6 +2720,17 @@ export class InkSurface {
   goToPagePoint(index: number, y: number, animate = false): void {
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const box = this.pageLayout.boxes[clamped];
+    // TODO(#46 phase 4): a heading on a board flies to its point, x and y,
+    // and the zoom that shows it; for now the view only moves up or down.
+    if (this.board && box) {
+      const top = (Math.max(0, y) - SECTION_LEAD_PX / this.unitScale) * this.scale;
+      const x = this.scroller.position.x;
+      if (animate) this.scroller.glideTo(x, top, now());
+      else this.scroller.setPosition(x, top);
+      this.syncViewport();
+      this.requestFrame();
+      return;
+    }
     if (this.direction === "horizontal" || !box) {
       this.goToPage(clamped, animate);
       return;
@@ -3083,6 +3162,18 @@ export class InkSurface {
     // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
     // Split View): the scale and the gap between pages both follow the width,
     // so the old scroll offset would name a spot pages away.
+    if (isBoard(this.doc) && this.doc.pages.length === 1) {
+      this.layoutBoardView(cssW, cssH);
+      this.layoutTail(cssW, cssH);
+      return;
+    }
+    if (this.board) {
+      // A board's zoom counts from the writing size: a notebook starts afresh.
+      this.board = false;
+      this.boardDrawn = null;
+      this.boardHold = null;
+      this.zoomInitialised = false;
+    }
     const rowAnchor =
       this.zoomInitialised && this.direction === "horizontal" && !this.pinch && !this.atZoomFloor
         ? this.rowPointAt(this.cssW / 2, this.cssH / 2)
@@ -3146,8 +3237,12 @@ export class InkSurface {
       // A pane that changed shape (rotation, split view) keeps the page centred.
       this.scroller.setPosition(this.rowX(this.pageIndex), 0);
     }
+    this.layoutTail(cssW, cssH);
+  }
 
-    renderer.resize(cssW, cssH, backingScale(window.devicePixelRatio));
+  /** The end of every layout: size the canvases, place the paper and paint. */
+  private layoutTail(cssW: number, cssH: number): void {
+    this.renderer?.resize(cssW, cssH, backingScale(window.devicePixelRatio));
     this.syncViewport();
     this.syncInkCursor();
     this.settleIfIdle();
@@ -3155,6 +3250,131 @@ export class InkSurface {
     this.schedulePrefetch();
     if (this.debug) this.scheduleHud();
     this.reportSizeScale();
+  }
+
+  /**
+   * Lay out an endless board (FineNotes#46): its one page at the origin, at
+   * the writing size times the zoom; it opens at 100% on the middle of its
+   * drawing. Afterwards the point in the middle of the pane stays there
+   * when the pane changes shape, and moves with the board's content when a
+   * left or up growth shifts it (`boardShift`), so the view never jumps.
+   */
+  private layoutBoardView(cssW: number, cssH: number): void {
+    const page = this.doc.pages[0];
+    const scaleBefore = this.unitScale;
+    const shift = this.boardShift;
+    this.boardShift = { x: 0, y: 0 };
+    // The page point in the middle of the pane, before anything changes.
+    // Opened anew, or a notebook before in this leaf: 100% on the middle.
+    const fresh = !this.zoomInitialised || !this.board;
+    const anchor = !fresh
+      ? {
+          x: (this.cssW / 2 - this.offsetX) / scaleBefore + shift.x,
+          y: this.viewport.scrollY + this.cssH / 2 / scaleBefore + shift.y,
+        }
+      : null;
+    const resized = cssW !== this.cssW || cssH !== this.cssH;
+    const position = this.scroller.position;
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.board = true;
+    this.direction = "vertical";
+    this.pageLayout = layoutBoard(page);
+    this.renderer?.setLayout(this.pageLayout);
+    this.boardDrawn = drawnBounds(page);
+    // No width to fit: 100% is the writing size, on every device.
+    this.baseScale = WRITING_SCALE;
+    this.minZoom = boardFitZoom(this.boardDrawn, WRITING_SCALE, cssW, cssH);
+    if (fresh) {
+      this.userZoom = 1;
+      this.zoomAnim = null;
+    }
+    this.zoomInitialised = true;
+    this.ensurePaperSize();
+    const scale = this.scale;
+    if (!anchor) {
+      const centre = boardCentre(page.geometry, this.boardDrawn);
+      const home = boardScrollToCentre(centre, scale, cssW, cssH);
+      this.scroller.setPosition(home.x, home.y);
+    } else if (this.pinch) {
+      // Mid-pinch the fingers hold the view: only the shift moves it.
+      this.scroller.nudge(shift.x * scale, shift.y * scale);
+    } else if (resized || shift.x !== 0 || shift.y !== 0) {
+      const at = boardScrollToCentre(anchor, scale, cssW, cssH);
+      this.scroller.setPosition(at.x, at.y);
+    } else {
+      this.scroller.setPosition(position.x, position.y);
+    }
+  }
+
+  /**
+   * After an edit on a board: keep what is drawn, the zoom floor and the
+   * scroll range up to date, and grow the page where the newest edit came
+   * within a screen of an edge, as part of that edit's undo step (once per
+   * step, and never under a redo branch, where it would move the document
+   * out from under the steps there).
+   */
+  private growBoard(): void {
+    if (!this.board) return;
+    const page = this.doc.pages[0];
+    if (!page) return;
+    const before = this.boardDrawn;
+    this.boardDrawn = drawnBounds(page);
+    if (before && (!this.boardDrawn || !boundsContain(this.boardDrawn, before))) {
+      // Less drawn than before (an erase, an undo): keep the view where it is.
+      this.boardHold = this.visibleBoardRect();
+    }
+    this.minZoom = boardFitZoom(this.boardDrawn, WRITING_SCALE, this.cssW, this.cssH);
+    const latest = this.history.latest;
+    if (latest && !this.boardChecked.has(latest) && !this.history.canRedo()) {
+      this.boardChecked.add(latest);
+      const scale = this.unitScale;
+      const growth = boardGrowth(page.geometry, this.boardDrawn, {
+        x: this.cssW / scale,
+        y: this.cssH / scale,
+      });
+      if (!isNoGrowth(growth)) {
+        const grow = new GrowBoard(page.id, growth, (dx, dy) => {
+          this.boardShift.x += dx;
+          this.boardShift.y += dy;
+        });
+        // Its `onChange` lays the board out again (`syncBoardLayout`).
+        if (this.history.attach(this.doc, grow) && this.history.latest) {
+          this.boardChecked.add(this.history.latest);
+        }
+        return;
+      }
+    }
+    this.ensurePaperSize();
+  }
+
+  /** The part of the board on screen, page px. */
+  private visibleBoardRect(): Bounds {
+    const scale = this.unitScale;
+    const left = -this.offsetX / scale;
+    const top = this.viewport.scrollY;
+    return { minX: left, minY: top, maxX: left + this.cssW / scale, maxY: top + this.cssH / scale };
+  }
+
+  /** A finger or the wheel moves the view: the range an erase held open closes again. */
+  private releaseBoardHold(): void {
+    if (!this.boardHold) return;
+    this.boardHold = null;
+    if (this.board) this.ensurePaperSize();
+  }
+
+  /**
+   * The board's page changed size, or its content moved (a growth, its undo,
+   * or a withdrawn step that held one): lay it out again at once, the view
+   * moving with the content, before anything paints.
+   */
+  private syncBoardLayout(): void {
+    if (!this.board && !isBoard(this.doc)) return;
+    const moved = this.boardShift.x !== 0 || this.boardShift.y !== 0;
+    if (!moved && !this.layoutStale()) return;
+    this.strokeIndex.rebuild(this.doc.pages);
+    this.renderer?.invalidateAll();
+    this.layout();
   }
 
   /** Tell the host when {@link sizePreviewScales} is not what it last said. */
@@ -3234,6 +3454,31 @@ export class InkSurface {
     const width = Math.ceil(this.pageLayout.width * scale);
     const height = Math.ceil(this.pageLayout.height * scale);
     this.paperEl.setCssStyles({ width: `${width}px`, height: `${height}px` });
+    const page = this.doc.pages[0];
+    if (this.board && page) {
+      // Free both ways, a screen past the drawing (and past the view an erase left).
+      const drawn = this.boardDrawn;
+      const hold = this.boardHold;
+      const range = boardScrollRange(
+        page.geometry,
+        drawn && hold ? boundsUnion(drawn, hold) : (drawn ?? hold),
+        scale,
+        this.cssW,
+        this.cssH,
+      );
+      this.scroller.setExtent({
+        contentWidth: width,
+        contentHeight: height,
+        viewportWidth: this.cssW,
+        viewportHeight: this.cssH,
+        alwaysBounceX: true,
+        rangeX: { min: range.minX, max: range.maxX },
+        rangeY: { min: range.minY, max: range.maxY },
+        freeAxes: true,
+        trailY: this.typingField() ? keyboardHeight() : 0,
+      });
+      return;
+    }
     const row = this.direction === "horizontal";
     const insets = row ? rowScrollInsets(this.pageLayout, scale, this.cssW) : { lead: 0, trail: 0 };
     // Zoomed in, a row is held to the page being read, as Goodnotes holds it
@@ -3307,8 +3552,9 @@ export class InkSurface {
     const { x, y } = this.scroller.position;
     // A page narrower than the pane floats centred; a wider one scrolls. A row
     // always scrolls: its scroll range already centres the first and last page.
+    // A board always scrolls: its range centres a page smaller than the pane.
     this.offsetX =
-      this.direction !== "horizontal" && paperWidth <= this.cssW
+      !this.board && this.direction !== "horizontal" && paperWidth <= this.cssW
         ? (this.cssW - paperWidth) / 2
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
@@ -3331,7 +3577,8 @@ export class InkSurface {
     this.indicatorEl.setText(total > 0 ? `${index + 1} of ${total}` : "0 of 0");
     const seen = this.visiblePageRect(index);
     if (seen) this.callbacks.onReadingPoint?.(index, seen.y + seen.h / 3);
-    this.indicatorEl.toggleClass("is-hidden", total === 0);
+    // A board has no pages to count; the zoom readout stays.
+    this.indicatorEl.toggleClass("is-hidden", total === 0 || this.board);
     if (index !== this.pageIndex) {
       this.pageIndex = index;
       this.markCurrentTab();
@@ -3649,6 +3896,7 @@ export class InkSurface {
 
   private onWheel(event: WheelEvent): void {
     event.preventDefault();
+    this.releaseBoardHold();
     const unit = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? this.cssH : 1;
     if (event.ctrlKey || event.metaKey) {
       const factor = wheelZoomFactor(event.deltaY * unit);
@@ -4965,6 +5213,7 @@ export class InkSurface {
       }
       this.touchPanning = true;
       window.clearTimeout(this.wheelSnapTimer);
+      this.releaseBoardHold();
       this.scroller.dragStart(x, y, t);
       this.requestFrame();
     },
@@ -6295,7 +6544,8 @@ export class InkSurface {
     this.notePracticeInput();
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
-    this.noteOffPage(box, stroke, command);
+    // A board grows to hold ink past its edge (`growBoard`): nothing is lost.
+    if (!this.board) this.noteOffPage(box, stroke, command);
     if (!shape) this.callbacks.onStrokeDrawn?.(page.id, stroke);
     // A stroke the pen was held on ended on purpose; any other may be a
     // flicker of the Pencil's contact, which the next pen-down carries on.
@@ -11012,6 +11262,7 @@ export class InkSurface {
 
   /** Tell the host when undo or redo becomes (un)available. */
   private syncHistory(): void {
+    this.syncBoardLayout();
     // The off-page notice's Undo means that stroke; once it is not the
     // latest step (more ink, an undo, a withdrawn loop) the notice goes.
     if (this.offPageCommand && !this.history.isLatest(this.offPageCommand)) this.hideOffPage();
@@ -11026,9 +11277,17 @@ export class InkSurface {
 
   /** The document no longer matches the layout: its scroll direction or page count changed. */
   private layoutStale(): boolean {
+    const box = this.pageLayout.boxes[0];
+    const page = this.doc.pages[0];
     return (
-      scrollDirectionOf(this.doc) !== this.direction ||
-      this.pageLayout.boxes.length !== this.doc.pages.length
+      (!isBoard(this.doc) && scrollDirectionOf(this.doc) !== this.direction) ||
+      this.pageLayout.boxes.length !== this.doc.pages.length ||
+      isBoard(this.doc) !== this.board ||
+      // A board's one page grew, or an undo took the growth back.
+      (this.board &&
+        box !== undefined &&
+        page !== undefined &&
+        (box.width !== page.geometry.width || box.height !== page.geometry.height))
     );
   }
 
@@ -12181,4 +12440,24 @@ function nearestRowBox(boxes: readonly PageBox[], x: number): number {
     }
   }
   return best;
+}
+
+/** Whether `outer` holds all of `inner`. */
+function boundsContain(outer: Bounds, inner: Bounds): boolean {
+  return (
+    outer.minX <= inner.minX &&
+    outer.minY <= inner.minY &&
+    outer.maxX >= inner.maxX &&
+    outer.maxY >= inner.maxY
+  );
+}
+
+/** The smallest box holding both. */
+function boundsUnion(a: Bounds, b: Bounds): Bounds {
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
 }

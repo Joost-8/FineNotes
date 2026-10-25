@@ -602,18 +602,26 @@ export default class GoodObsidianPlugin extends Plugin {
       "convert-to-notebook",
       "Convert single page to notebook",
       (view) => view.convertToNotebook(),
-      (view) => view.isSinglePage,
+      (view) => view.isSinglePage && !view.isBoard,
     );
     this.notebookCommand("scan-document", "Scan document into this notebook", (view) =>
       view.scanDocument(),
     );
     this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf());
-    this.notebookCommand("import-vault-pdf", "Import PDF from vault…", (view) =>
-      view.importPdf(true),
+    // An endless board (FineNotes#46) has no pages to add, link to or save as a template.
+    const pages = (view: InkView): boolean => !view.isBoard;
+    this.notebookCommand(
+      "import-vault-pdf",
+      "Import PDF from vault…",
+      (view) => view.importPdf(true),
+      pages,
     );
     this.notebookCommand("search-notebook", "Search this notebook…", (view) => view.openSearch());
-    this.notebookCommand("copy-page-link", "Copy link to current page", (view) =>
-      view.copyPageLink(),
+    this.notebookCommand(
+      "copy-page-link",
+      "Copy link to current page",
+      (view) => view.copyPageLink(),
+      pages,
     );
     this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
       view.copyHighlightedText(),
@@ -626,13 +634,21 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.hasInkSelected,
     );
     this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
-    this.notebookCommand("save-as-template", "Save notebook as template…", (view) =>
-      view.saveAsTemplate(),
+    this.notebookCommand(
+      "save-as-template",
+      "Save notebook as template…",
+      (view) => view.saveAsTemplate(),
+      pages,
     );
-    this.notebookCommand("save-page-as-template", "Save page as template", (view) => {
-      const shown = view.currentPageInk();
-      if (shown) void view.savePageAsTemplate(shown.number - 1);
-    });
+    this.notebookCommand(
+      "save-page-as-template",
+      "Save page as template",
+      (view) => {
+        const shown = view.currentPageInk();
+        if (shown) void view.savePageAsTemplate(shown.number - 1);
+      },
+      pages,
+    );
     this.addCommand({
       id: "new-from-template",
       name: "New notebook from template…",
@@ -1746,9 +1762,12 @@ export default class GoodObsidianPlugin extends Plugin {
       onImport: (folder) => this.openImportNotebook(folder),
       onCreate: ({ title, choices, folder, template }) => {
         this.settings.lastNotebookChoices = { ...choices };
-        this.settings.lastNotebookTemplate = template
-          ? { path: template.path, page: template.page }
-          : null;
+        // A board takes no template: the notebook's last one stays remembered.
+        if (choices.type !== "endless") {
+          this.settings.lastNotebookTemplate = template
+            ? { path: template.path, page: template.page }
+            : null;
+        }
         void this.saveSettings();
         if (template)
           void this.createNotebookFromTemplate(title, choices, folder, template, library);
@@ -1766,7 +1785,7 @@ export default class GoodObsidianPlugin extends Plugin {
   private async createNotebookWithLastSettings(): Promise<void> {
     const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
     const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
-    if (remembered) {
+    if (remembered && choices.type !== "endless") {
       const library = this.paperLibrary();
       const entries = await library.list().catch(() => []);
       const entry = entries.find((e) => e.path === remembered.path && e.page === remembered.page);

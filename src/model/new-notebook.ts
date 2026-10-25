@@ -18,6 +18,7 @@ import {
   SCHEMA_VERSION,
   SINGLE_PAGE_FILE_SUFFIX,
 } from "../constants";
+import { BOARD_RULINGS, boardStartGeometry } from "./board";
 import { coverMonogramBox, coverTitleBox } from "./cover";
 import { pdfPageGeometry } from "./scan-commands";
 import {
@@ -42,7 +43,8 @@ import {
   templateBackdrop,
 } from "./templates";
 
-export type NotebookType = "notebook" | "single";
+/** A notebook of pages, a single page, or an endless board (`model/board.ts`). */
+export type NotebookType = "notebook" | "single" | "endless";
 
 /** A cover design, or none. */
 export type CoverChoice = CoverRuling | "none";
@@ -50,12 +52,17 @@ export type CoverChoice = CoverRuling | "none";
 /** Everything the dialog asks apart from the title and the folder. */
 export interface NotebookChoices {
   type: NotebookType;
-  /** Ignored for a single page. */
+  /** Ignored for a single page and a board. */
   cover: CoverChoice;
   /** A {@link COVER_COLORS} id. */
   coverColor: string;
   /** The paper ruling. Never a cover. */
   ruling: Ruling;
+  /**
+   * A board's paper, one of `BOARD_RULINGS`: remembered on its own, so a
+   * board's dots do not become the next notebook's paper.
+   */
+  boardRuling: Ruling;
   paper: PaperColorId;
   /** A {@link PAGE_SIZES} id. */
   size: string;
@@ -68,6 +75,7 @@ export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   coverColor: COVER_COLORS[0].id,
   // Blank, as every note created before the dialog existed was.
   ruling: "blank",
+  boardRuling: "blank",
   paper: "white",
   size: PAGE_SIZES[0].id,
   landscape: false,
@@ -83,8 +91,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   const out: NotebookChoices = { ...DEFAULT_NOTEBOOK_CHOICES };
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
   const r = raw as Record<string, unknown>;
-  // Only notebooks are made now: a remembered "single" page reads as a notebook.
-  if (r.type === "notebook") out.type = r.type;
+  // Notebooks and boards are made now: a remembered "single" page reads as a notebook.
+  if (r.type === "notebook" || r.type === "endless") out.type = r.type;
   // Only a design the picker still offers: a remembered classic one reads as the default.
   if (r.cover === "none" || COVER_TEMPLATES.some((t) => t.ruling === r.cover)) {
     out.cover = r.cover as CoverChoice;
@@ -97,6 +105,9 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
     !isCoverRuling(r.ruling)
   ) {
     out.ruling = r.ruling as Ruling;
+  }
+  if (BOARD_RULINGS.some((ruling) => ruling === r.boardRuling)) {
+    out.boardRuling = r.boardRuling as Ruling;
   }
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
@@ -202,7 +213,8 @@ export function stripInkSuffix(name: string): string {
 
 /** The name a notebook gets when its title leaves nothing usable. */
 export function defaultTitle(type: NotebookType): string {
-  return type === "single" ? "Untitled page" : "Untitled notebook";
+  if (type === "single") return "Untitled page";
+  return type === "endless" ? "Untitled board" : "Untitled notebook";
 }
 
 /** The file base name for a title: sanitised, or the default for its type. */
@@ -361,7 +373,10 @@ function page(id: string, geometry: PageGeometry, backdrop: SyntheticBackdrop): 
  * The document a new notebook starts with. With a cover, page 1 is the cover
  * (same size as the paper, the title on it as a text box) and page 2 the
  * chosen paper; without one, just the paper. A single page is exactly one
- * page and is flagged so the view offers no way to add another.
+ * page and is flagged so the view offers no way to add another. A board
+ * (FineNotes#46) is one large page of white paper (blank, dotted or
+ * squared; any other ruling reads as blank), flagged a single page too, so
+ * that a build that knows no boards still opens it as one.
  */
 export function buildNewDocument(
   choices: NotebookChoices,
@@ -381,6 +396,15 @@ export function buildNewDocument(
   if (choices.type === "single") {
     doc.pages.push(page("p1", geometry, paper));
     doc.single = true;
+    return doc;
+  }
+  if (choices.type === "endless") {
+    const kind = BOARD_RULINGS.includes(choices.boardRuling) ? choices.boardRuling : "blank";
+    const board = boardStartGeometry();
+    doc.view.width = board.width;
+    doc.pages.push(page("p1", board, templateBackdrop(kind, "white")));
+    doc.single = true;
+    doc.endless = true;
     return doc;
   }
   if (choices.cover !== "none") {

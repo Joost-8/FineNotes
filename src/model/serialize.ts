@@ -192,6 +192,7 @@ interface StoredPage {
 interface StoredMeta {
   recognizedHash?: string;
   single?: boolean;
+  endless?: true;
   folders?: AttachmentFolders;
   scroll?: "horizontal";
   readOnly?: true;
@@ -336,6 +337,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
   const meta: StoredMeta = {
     recognizedHash: doc.recognizedHash || undefined,
     single: doc.single === true ? true : undefined,
+    endless: doc.endless === true && doc.pages.length === 1 ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
     readOnly: doc.readOnly === true ? true : undefined,
@@ -1115,6 +1117,9 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   const doc: InkDocument = { version: SCHEMA_VERSION, view, pages };
   if (typeof meta.recognizedHash === "string") doc.recognizedHash = meta.recognizedHash;
   if (meta.single === true) doc.single = true;
+  // A board is one page. Pages added to it by a build that knows no boards
+  // make it a notebook again, with every page kept.
+  if (meta.endless === true && pages.length === 1) doc.endless = true;
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
