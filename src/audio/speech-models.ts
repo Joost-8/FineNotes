@@ -17,8 +17,12 @@ import type { ModelAsset, ModelFile } from "../downloads/model-manifest";
 
 export type SpeechModelId = "whisper-tiny" | "whisper-base" | "whisper-small";
 
-/** Where the files are published: the FineNotes models repository's `speech-1` release. */
-const RELEASE = "https://github.com/Joost-8/FineNotes-models/releases/download/speech-1";
+/**
+ * Where the files are published: the `speech-1` release of the templates
+ * repository. 2.4.x reads the same files from Joost-8/FineNotes-models,
+ * which stays up until those installs have updated.
+ */
+const RELEASE = "https://github.com/Joost-8/FineNotes-templates/releases/download/speech-1";
 
 /** FineNotes' whisper.cpp runtime: scripts/whisper-runtime/build.sh, whisper.cpp 0c7be69, emsdk 4.0.15. */
 export const SPEECH_RUNTIME: ModelFile = {
