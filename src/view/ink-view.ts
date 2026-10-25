@@ -227,7 +227,6 @@ import type { LinkableNote } from "../search/link-choices";
 import {
   type Backdrop,
   type PageGeometry,
-  type PdfBackdrop,
   type SyntheticBackdrop,
   isCoverRuling,
 } from "../model/document";
@@ -4215,10 +4214,10 @@ export class InkView extends TextFileView {
     );
   }
 
-  /** An empty page with PDF paper `backdrop`, as a thumbnail `cssWidth` wide. */
+  /** An empty page with paper `backdrop` (a PDF page or a designed paper), as a thumbnail `cssWidth` wide. */
   private paintPaperThumbnail(
     canvas: HTMLCanvasElement,
-    backdrop: PdfBackdrop,
+    backdrop: Backdrop,
     geometry: PageGeometry,
     cssWidth: number,
   ): void {
