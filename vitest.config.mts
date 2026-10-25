@@ -53,6 +53,7 @@ export default defineConfig({
         "src/canvas/laser-trail.ts",
         "src/canvas/eyedropper.ts",
         "src/canvas/ruler-geometry.ts",
+        "src/canvas/sticky-paper.ts",
         "src/view/selection-bar-model.ts",
         "src/view/view-routing.ts",
         "src/view/load-guard.ts",

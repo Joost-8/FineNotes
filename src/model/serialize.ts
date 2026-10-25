@@ -44,6 +44,13 @@ import { normalizeTable } from "./table";
 import { normalizeGraph } from "./graph-element";
 import { normalizeComment } from "./comments";
 import {
+  type FormatFeature,
+  isLabelProblem,
+  payloadLabel,
+  readPayloadLabel,
+} from "./format-features";
+import { foldNoteInk, isStickyNote, readStickyPaper, unfoldNoteInk } from "./sticky-notes";
+import {
   type AttachmentFolders,
   type Backdrop,
   type ImageElement,
@@ -173,7 +180,7 @@ interface StoredPage {
   sections?: PageSection[];
   links?: InkLink[];
   tasks?: InkTask[];
-  images: ImageElement[];
+  images: Array<ImageElement | StoredNote>;
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
   graphs?: GraphElement[];
@@ -193,8 +200,15 @@ interface StoredMeta {
   furniture?: { header?: string; numbers?: "center" | "right" };
 }
 
+/** A sticky note as stored: its paper carries its ink, in the note's own space. */
+type StoredNote = Omit<ImageElement, "sticky"> & {
+  sticky: { color: string; ink?: StoredStroke[] };
+};
+
 interface StoredDocument {
   version: number;
+  /** What an older reader would lose (`format-features.ts`); absent when nothing. */
+  requires?: FormatFeature[];
   view: ViewState;
   meta?: StoredMeta;
   recordings?: Recording[];
@@ -272,6 +286,7 @@ function readSamples(raw: unknown): number[] | undefined {
  * as they are held, every key in the order it was set.
  */
 function storePage(page: Page): StoredPage {
+  const { pageInk, noteInk } = foldNoteInk(page);
   return {
     id: page.id,
     kind: page.kind,
@@ -284,13 +299,36 @@ function storePage(page: Page): StoredPage {
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
-    images: page.images,
+    images: page.images.some(isStickyNote)
+      ? page.images.map((image) => storeImage(image, noteInk))
+      : page.images,
     textBoxes: page.textBoxes,
     tables: page.tables && page.tables.length > 0 ? page.tables : undefined,
     graphs: page.graphs && page.graphs.length > 0 ? page.graphs : undefined,
     comments: page.comments && page.comments.length > 0 ? page.comments : undefined,
-    strokes: page.strokes.map(storeStroke),
+    strokes: pageInk.map(storeStroke),
   };
+}
+
+/**
+ * An image as stored: as it is held, except that a note's paper also holds
+ * the note's ink (`ink`, left out when there is none), in its own space.
+ */
+function storeImage(
+  image: ImageElement,
+  noteInk: ReadonlyMap<string, Stroke[]>,
+): ImageElement | StoredNote {
+  if (!isStickyNote(image)) return image;
+  const ink = noteInk.get(image.id);
+  return {
+    ...image,
+    sticky: { color: image.sticky.color, ink: ink?.length ? ink.map(storeStroke) : undefined },
+  };
+}
+
+/** The features a document uses that an older reader would lose. */
+function featuresOf(doc: InkDocument): FormatFeature[] {
+  return doc.pages.some((page) => page.images.some(isStickyNote)) ? ["sticky"] : [];
 }
 
 /** The meta block, or `undefined` when none of its fields has anything to say. */
@@ -314,8 +352,10 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
  * its final `[` and `]}` (see {@link assembleJson}).
  */
 function storeHead(doc: InkDocument): StoredDocument {
+  const requires = featuresOf(doc);
   return {
     version: SCHEMA_VERSION,
+    requires: requires.length > 0 ? requires : undefined,
     view: doc.view,
     meta: storeMeta(doc),
     recordings: doc.recordings?.length ? doc.recordings : undefined,
@@ -330,9 +370,13 @@ function storeDocument(doc: InkDocument): StoredDocument {
   return stored;
 }
 
-/** The document as a `v<n>:<base64>` payload, always at the current schema version. */
+/**
+ * The document as a `v<n>:<base64>` payload, always at the current schema
+ * version, its label naming the features it uses (`v2+sticky:`).
+ */
 export function encodeDocument(doc: InkDocument): string {
-  return `v${SCHEMA_VERSION}:${deflateToBase64(JSON.stringify(storeDocument(doc)))}`;
+  const stored = storeDocument(doc);
+  return `${payloadLabel(stored.requires)}:${deflateToBase64(JSON.stringify(stored))}`;
 }
 
 /** What closes the stored JSON after the last page. */
@@ -562,7 +606,7 @@ export class DocumentEncoder {
     const payload =
       this.reused && known
         ? known.payload
-        : `v${SCHEMA_VERSION}:${deflateToBase64(assembleJson(snapshot), SAVE_LEVEL)}`;
+        : `${payloadLabel(featuresOf(doc))}:${deflateToBase64(assembleJson(snapshot), SAVE_LEVEL)}`;
     this.accept(snapshot, payload);
     return payload;
   }
@@ -579,12 +623,13 @@ export class DocumentEncoder {
    */
   remember(payload: string, json?: string): void {
     this.known = null;
-    const prefix = `v${SCHEMA_VERSION}:`;
-    if (!payload.startsWith(prefix)) return;
+    const colon = payload.indexOf(":");
+    const label = colon < 0 ? null : readPayloadLabel(payload.slice(0, colon));
+    if (!label || isLabelProblem(label) || label.version !== SCHEMA_VERSION) return;
     let stored = json;
     if (stored === undefined) {
       try {
-        stored = inflateFromBase64(payload.slice(prefix.length));
+        stored = inflateFromBase64(payload.slice(colon + 1));
       } catch {
         return;
       }
@@ -768,10 +813,12 @@ function normalizeBackdrop(raw: unknown): Backdrop {
 
 function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null {
   if (!isRecord(raw)) return null;
-  if (typeof raw.path !== "string" || raw.path.length === 0) return null;
+  // A note is paper, not a file: it needs no path, and has no crop.
+  const sticky = readStickyPaper(raw.sticky);
+  if (!sticky && (typeof raw.path !== "string" || raw.path.length === 0)) return null;
   return {
     id: typeof raw.id === "string" ? raw.id : mintId(),
-    path: raw.path,
+    path: sticky ? "" : (raw.path as string),
     x: num(raw.x, 0),
     y: num(raw.y, 0),
     w: Math.max(1, num(raw.w, 100)),
@@ -779,7 +826,7 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
     ...(typeof raw.rotation === "number" && Number.isFinite(raw.rotation)
       ? { rotation: raw.rotation }
       : {}),
-    ...normalizeCrop(raw.crop),
+    ...(sticky ? {} : normalizeCrop(raw.crop)),
     ...(raw.flipX === true ? { flipX: true } : {}),
     ...(raw.flipY === true ? { flipY: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
@@ -787,6 +834,7 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
     ...(readImageOpacity(raw.opacity) !== undefined
       ? { opacity: readImageOpacity(raw.opacity) }
       : {}),
+    ...(sticky ? { sticky } : {}),
   };
 }
 
@@ -907,9 +955,18 @@ function normalizePage(
   const images: ImageElement[] = [];
   const imagesRaw = Array.isArray(page.images) ? page.images : [];
   let lastImageId = maxNumericId(imagesRaw, "i");
+  // Each note's ink, back in page space, goes after the page's own.
+  const noteInk: Stroke[] = [];
+  const noteIds = new Set<string>();
   imagesRaw.forEach((im) => {
     const image = normalizeImage(im, () => `i${++lastImageId}`);
-    if (image) images.push(image);
+    if (!image) return;
+    images.push(image);
+    // An id two notes share would make one note's ink the other's too.
+    if (!image.sticky || noteIds.has(image.id)) return;
+    noteIds.add(image.id);
+    const stored = isRecord(im) && isRecord(im.sticky) ? im.sticky.ink : undefined;
+    noteInk.push(...unfoldNoteInk(image, readStrokes(stored)));
   });
   const textBoxes: TextBoxElement[] = [];
   const textBoxesRaw = Array.isArray(page.textBoxes) ? page.textBoxes : [];
@@ -939,7 +996,7 @@ function normalizePage(
     const normalized = normalizeComment(comment, () => `cm${++lastCommentId}`);
     if (normalized) comments.push(normalized);
   });
-  const strokes = readStrokes(page.strokes);
+  const strokes = [...readStrokes(page.strokes), ...noteInk];
   return {
     id: typeof page.id === "string" ? page.id : `p${index + 1}`,
     kind: "ink",
@@ -1096,8 +1153,13 @@ function decodePayload(payload: string, fallbackWidth: number): { doc: InkDocume
   if (!text.startsWith("v") || colon < 0) {
     throw new SerializeError("the payload does not start with `v<n>:`");
   }
-  if (!Number.isFinite(Number(text.slice(1, colon)))) {
-    throw new SerializeError("the payload's version is not a number");
+  const label = readPayloadLabel(text.slice(0, colon));
+  if (isLabelProblem(label)) {
+    throw new SerializeError(
+      label.kind === "unknown-feature"
+        ? `the notebook uses "${label.feature}", which needs a newer FineNotes`
+        : "the payload's version is not a number",
+    );
   }
   const json = stage("the payload is not base64 of DEFLATE data", () =>
     inflateFromBase64(text.slice(colon + 1)),

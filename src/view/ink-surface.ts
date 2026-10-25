@@ -338,6 +338,19 @@ import {
 } from "../model/image-commands";
 import { InkClipboard, pasteCopies, pastePlacement, sameSpotTaken } from "../model/clipboard";
 import {
+  type NoteFrame,
+  MoveNoteInk,
+  SetStickyColor,
+  STICKY_COLORS,
+  copyNoteInk,
+  inkOfNote,
+  loneNote,
+  noteAt,
+  noteIdsOf,
+  shownAt,
+  withNoteInk,
+} from "../model/sticky-notes";
+import {
   AddTextBoxToPage,
   ClearPage,
   CompositeCommand,
@@ -6343,6 +6356,10 @@ export class InkSurface {
    * starts the page's clock in the same undo step.
    */
   private commitStroke(box: PageBox, page: Page, stroke: Stroke): Command {
+    if (stroke.pts.length >= 3 && stroke.onSticky === undefined) {
+      const note = noteAt(page, stroke.pts[0], stroke.pts[1]);
+      if (note) stroke.onSticky = note.id;
+    }
     const command = addStrokesTimed(page, [stroke], this.penDownAt);
     this.history.push(this.doc, command);
     this.strokeIndex.add(page.id, stroke);
@@ -6743,7 +6760,15 @@ export class InkSurface {
    * erased stretch, as the standard eraser cuts.
    */
   private eraseRuledAt(page: Page, ruled: RuledEraser, at: Pt, radius: number): boolean {
-    const { taken, cut } = ruled.dab(at, radius);
+    const dabbed = ruled.dab(at, radius);
+    // Ink a sticky note hides, or a note's ink off its note, is not touched.
+    const notes = noteIdsOf(page.images);
+    const shown = (id: string): boolean => {
+      const stroke = this.strokeIndex.get(id);
+      return stroke !== undefined && shownAt(page, stroke, at.x, at.y, notes);
+    };
+    const taken = [...dabbed.taken].filter(shown);
+    const cut = [...dabbed.cut].filter(shown);
     let changed = false;
     for (const id of taken) changed = this.markWhole(page, id) || changed;
     if (cut.length === 0) return changed;
@@ -6792,9 +6817,12 @@ export class InkSurface {
    */
   private eraseWholeAt(page: Page, at: Pt, radius: number, filter: EraserFilter): boolean {
     let marked = false;
+    const notes = noteIdsOf(page.images);
     for (const id of this.strokeIndex.near(page.id, at.x, at.y, radius)) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || this.eraseIds.has(id) || !eraserTakes(stroke, filter)) continue;
+      // Ink a sticky note hides, or a note's ink off its note, is not touched.
+      if (!shownAt(page, stroke, at.x, at.y, notes)) continue;
       if (!strokeHitByPoint(stroke, at.x, at.y, radius)) continue;
       marked = this.markWhole(page, id) || marked;
     }
@@ -6816,10 +6844,13 @@ export class InkSurface {
     const reach = radius + MAX_STROKE_HALF_WIDTH;
     const candidates = this.strokeIndex.near(page.id, sample.x, sample.y, reach);
     const nextId = (): string => this.strokeIds.next();
+    const notes = noteIdsOf(page.images);
     let changed = false;
     for (const id of candidates) {
       const original = this.strokeIndex.get(id);
       if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
+      // Ink a sticky note hides, or a note's ink off its note, is not touched.
+      if (!shownAt(page, original, sample.x, sample.y, notes)) continue;
       // A linked word is never cut: touching it takes all of it.
       if (isLinked(page, id)) {
         const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
@@ -6935,9 +6966,13 @@ export class InkSurface {
       maxY: b.maxY + pad,
     });
     const ids = new Set<string>();
+    // Where the scribble began decides what it can see: a sticky note's ink
+    // on that note, or the page's ink off any note stuck on.
+    const notes = noteIdsOf(page.images);
     for (const id of near) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || !scribbleMayErase(stroke, gestures.scribbleErasesAll)) continue;
+      if (!shownAt(page, stroke, pts[0], pts[1], notes)) continue;
       const margin = reach + stroke.size / 2;
       if (scribbleCoverage(scribble, stroke.pts, margin) >= SCRIBBLE_COVERAGE) ids.add(id);
     }
@@ -7676,18 +7711,25 @@ export class InkSurface {
   private select(pageId: string, elements: ElementLists): void {
     this.clearSelection();
     this.deselectImage();
-    const { strokes, textBoxes } = elements;
+    const { textBoxes } = elements;
     const tables = elements.tables ?? [];
     const graphs = elements.graphs ?? [];
     const images = elements.images.filter((image) => image.locked !== true);
+    // A sticky note never goes anywhere without its ink.
+    const page = images.some((image) => image.sticky)
+      ? this.doc.pages.find((candidate) => candidate.id === pageId)
+      : undefined;
+    const strokes = page
+      ? withNoteInk(page, { strokes: elements.strokes, images })
+      : elements.strokes;
     if (isEmptySelection({ strokes, images, textBoxes, tables, graphs })) return;
     if (this.toolState.tool === "select") this.selectionToolUsed = true;
     if (
-      strokes.length === 0 &&
       textBoxes.length === 0 &&
       tables.length === 0 &&
       graphs.length === 0 &&
-      images.length === 1
+      images.length === 1 &&
+      (strokes.length === 0 || loneNote({ strokes, images }) !== null)
     ) {
       this.setImageSelection(pageId, images[0]);
       return;
@@ -7943,6 +7985,36 @@ export class InkSurface {
     const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
     const can = (to: ImageLayer): boolean =>
       page !== undefined && canReorderImage(page, sel.image, to);
+    const actions = this.pictureActions(sel, can);
+    const note = sel.image.sticky;
+    if (!note) return actions;
+    // A sticky note is paper, not a picture: its colour in place of the
+    // crop and the opacity, which a note has no use for.
+    const pictureOnly = (id: string): boolean =>
+      id === "crop" || id === "crop-image" || id.startsWith("opacity-");
+    const colour: SelectionAction = {
+      id: "note-colour",
+      icon: "palette",
+      label: "Colour",
+      group: "style",
+      swatches: {
+        colors: STICKY_COLORS.map((choice) => choice.color),
+        current: note.color,
+        pick: (color) => this.recolorSelectedNote(color),
+      },
+    };
+    return [
+      colour,
+      ...actions
+        .filter((action) => !pictureOnly(action.id))
+        .map((action) => (action.id === "lock" ? { ...action, label: "Lock note" } : action)),
+    ];
+  }
+
+  private pictureActions(
+    sel: { pageId: string; image: ImageElement },
+    can: (to: ImageLayer) => boolean,
+  ): SelectionAction[] {
     return [
       {
         id: "crop",
@@ -8578,10 +8650,11 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel) return false;
     clipboard.put(
-      { strokes: [], images: [sel.image], textBoxes: [] },
+      { strokes: this.noteInk(sel), images: [sel.image], textBoxes: [] },
       imageBounds(transformOf(sel.image)),
     );
-    this.callbacks.onCopyImage?.(sel.image);
+    // A note is no file: there is no picture for the system clipboard.
+    if (!sel.image.sticky) this.callbacks.onCopyImage?.(sel.image);
     this.syncActionBar();
     return true;
   }
@@ -8596,7 +8669,11 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel) return;
     this.applyCommand(
-      new RemoveElements(sel.pageId, { strokes: [], images: [sel.image], textBoxes: [] }, "Cut"),
+      new RemoveElements(
+        sel.pageId,
+        { strokes: this.noteInk(sel), images: [sel.image], textBoxes: [] },
+        "Cut",
+      ),
     );
     this.selectionTakenAway();
   }
@@ -8800,7 +8877,19 @@ export class InkSurface {
   private flipSelectedImage(axis: FlipAxis): void {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return;
-    this.history.push(this.doc, new FlipImage(sel.pageId, sel.image, axis));
+    const before: NoteFrame = { ...sel.image };
+    const after: NoteFrame = {
+      ...before,
+      ...(axis === "x"
+        ? { flipX: before.flipX === true ? undefined : true }
+        : { flipY: before.flipY === true ? undefined : true }),
+    };
+    this.history.push(
+      this.doc,
+      this.withNoteInkFollowing(sel, new FlipImage(sel.pageId, sel.image, axis), before, after),
+    );
+    // A note's ink moved with it: the eraser and the lasso look for it there.
+    if (sel.image.sticky) this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     const box = this.boxForPage(sel.pageId);
     if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(sel.image)));
     this.renderDry();
@@ -10489,9 +10578,56 @@ export class InkSurface {
   deleteSelectedImage(): boolean {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return false;
-    this.applyCommand(new RemoveImage(sel.pageId, sel.image.id));
+    const ink = this.noteInk(sel);
+    this.applyCommand(
+      ink.length > 0
+        ? new RemoveElements(
+            sel.pageId,
+            { strokes: ink, images: [sel.image], textBoxes: [] },
+            "Delete",
+          )
+        : new RemoveImage(sel.pageId, sel.image.id),
+    );
     this.selectionTakenAway();
     return true;
+  }
+
+  /** The ink on the selected image when it is a sticky note; none for a picture. */
+  private noteInk(sel: { pageId: string; image: ImageElement }): Stroke[] {
+    if (!sel.image.sticky) return [];
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    return page ? inkOfNote(page, sel.image) : [];
+  }
+
+  /**
+   * The selected image's frame changes from `before` to `after` by
+   * `command`: one undo step that takes a sticky note's ink along, or the
+   * command alone for a picture or an empty note.
+   */
+  private withNoteInkFollowing(
+    sel: { pageId: string; image: ImageElement },
+    command: Command,
+    before: NoteFrame,
+    after: NoteFrame,
+  ): Command {
+    if (this.noteInk(sel).length === 0) return command;
+    return new CompositeCommand(command.label, [
+      command,
+      new MoveNoteInk(sel.pageId, sel.image, before, after),
+    ]);
+  }
+
+  /** Repaint the selected sticky note in `color`. */
+  private recolorSelectedNote(color: string): void {
+    const sel = this.liveImageSelection();
+    if (!sel || !sel.image.sticky || this.callbacks.isLocked?.()) return;
+    if (sel.image.sticky.color === color) return;
+    this.history.push(this.doc, new SetStickyColor(sel.pageId, sel.image, color));
+    const box = this.boxForPage(sel.pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(sel.image)));
+    this.renderDry();
+    this.syncActionBar();
+    this.changed();
   }
 
   /**
@@ -10503,7 +10639,12 @@ export class InkSurface {
     const page = sel ? this.doc.pages.find((candidate) => candidate.id === sel.pageId) : null;
     if (!sel || !page || this.callbacks.isLocked?.()) return false;
     const copy = duplicateImage(this.doc, page.geometry, sel.image);
-    this.applyCommand(new InsertImage(page.id, copy));
+    const ink = copyNoteInk(page, sel.image, copy, () => this.strokeIds.next());
+    this.applyCommand(
+      ink.length > 0
+        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: [] }, "Duplicate")
+        : new InsertImage(page.id, copy),
+    );
     this.setImageSelection(page.id, copy);
     return true;
   }
@@ -10672,7 +10813,7 @@ export class InkSurface {
     const box = drag ? this.boxForPage(drag.pageId) : null;
     if (!drag || !box) return;
     // A cropped or flipped picture is dragged as it is: the draft is a full copy.
-    this.renderer?.renderImageDraft(box.index, placedAt(drag.image, drag.draft));
+    this.renderer?.renderImageDraft(box.index, placedAt(drag.image, drag.draft), this.inkPressure);
   }
 
   /**
@@ -10707,7 +10848,17 @@ export class InkSurface {
       if (dirty) this.renderer?.invalidateRegion(box.index, dirty);
     }
     if (changed) {
-      this.history.push(this.doc, new TransformImage(drag.pageId, drag.image.id, drag.draft));
+      const flips = { flipX: drag.image.flipX, flipY: drag.image.flipY };
+      this.history.push(
+        this.doc,
+        this.withNoteInkFollowing(
+          { pageId: drag.pageId, image: drag.image },
+          new TransformImage(drag.pageId, drag.image.id, drag.draft),
+          { ...drag.start, ...flips },
+          { ...drag.draft, ...flips },
+        ),
+      );
+      if (drag.image.sticky) this.strokeIndex.refreshPages(this.doc.pages, [drag.pageId]);
     }
     this.renderDry();
     this.syncImageOverlay();

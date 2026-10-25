@@ -1052,3 +1052,58 @@ build drops the four fields. Nothing else is lost.
 
 The same change adds A2, A1 and A0 to `PAGE_SIZES`, and labels `standard`
 (1024 × 1448 page px, 210 × 297 mm) "A4 (Standard)".
+
+## Sticky notes (2026-10-25)
+
+A sticky note is paper placed on a page like a picture, with ink of its own
+(`src/model/sticky-notes.ts`). It is an `ImageElement` with `sticky`:
+
+```ts
+sticky?: { color: string }; // #rrggbb; `path` is "" and `crop` unused
+```
+
+In memory, the ink written on a note is ordinary page strokes in page space
+with `onSticky: "<image id>"`, so the eraser, the lasso, undo, the stroke
+caches, thumbnails and exports reach it like any ink. A pen or highlighter
+stroke whose first point lies on a note (the topmost picture or note there
+decides) belongs to it. Whatever moves, resizes, turns, mirrors, copies or
+deletes a note does the same to its ink in the same undo step
+(`MoveNoteInk`, `withNoteInk`, `copyNoteInk`). It is drawn with its note,
+clipped to the note's outline, and keeps its colours on dark pages as the
+paper does. A stroke whose note is gone is plain page ink.
+
+On disk the ink lives inside its note, and no stroke on disk has `onSticky`:
+
+```json
+{
+  "id": "i3",
+  "path": "",
+  "x": 100,
+  "y": 200,
+  "w": 240,
+  "h": 240,
+  "front": true,
+  "sticky": { "color": "#fde68a", "ink": [/* strokes, as `strokes` holds them */] }
+}
+```
+
+`ink` is left out when the note has none. Its points are in **the note's own
+space**: note px from the note's top-left, before `flipX`/`flipY` and
+`rotation` are applied, at the note's stored `w` and `h` (quantized like any
+stroke). A reader maps them onto the page as the picture painter places a
+picture: mirrored in the note's frame, then turned about its centre. A
+resize stretches the ink with the paper; widths scale by the root of the
+area scale.
+
+### Payload label: refusing instead of dropping
+
+A notebook with any sticky note is written `v2+sticky:<base64>`, and its
+JSON carries `"requires": ["sticky"]` right after `version`
+(`src/model/format-features.ts`). Every reader since 2.0 requires the label
+after `v` to be a number, so an older FineNotes cannot decode such a payload;
+its protected load (`view/load-guard.ts`, `unreadable-ink`) then holds the
+note read-only and every save writes it back unchanged, instead of saving it
+without the ink (an older reader drops a pathless image and every unknown
+field). This reader refuses a label naming a feature it does not know in the
+same way; a later feature adds its own `+name`. A notebook without notes keeps
+the plain `v2:` label and opens in older builds as before.

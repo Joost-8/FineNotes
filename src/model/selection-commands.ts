@@ -23,6 +23,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
+import { relinkNoteInk } from "./sticky-notes";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
 import { restoreGraph, scaleGraph } from "./graph-element";
@@ -713,21 +714,27 @@ export function copyElements(
   dx: number,
   dy: number,
 ): ElementLists {
+  const strokes = elements.strokes.map((stroke) => {
+    const copy = structuredClone(stroke);
+    copy.id = ids.stroke();
+    copy.pts = translatePoints(stroke.pts, dx, dy);
+    delete copy.t0;
+    return copy;
+  });
+  // Ink on a copied note belongs to the copy; on a note left behind, to no note.
+  const owners = new Map<string, string>();
+  const images = elements.images.map((image) => {
+    const copy = structuredClone(image);
+    copy.id = ids.image();
+    copy.x += dx;
+    copy.y += dy;
+    owners.set(image.id, copy.id);
+    return copy;
+  });
+  relinkNoteInk(strokes, owners);
   return {
-    strokes: elements.strokes.map((stroke) => {
-      const copy = structuredClone(stroke);
-      copy.id = ids.stroke();
-      copy.pts = translatePoints(stroke.pts, dx, dy);
-      delete copy.t0;
-      return copy;
-    }),
-    images: elements.images.map((image) => {
-      const copy = structuredClone(image);
-      copy.id = ids.image();
-      copy.x += dx;
-      copy.y += dy;
-      return copy;
-    }),
+    strokes,
+    images,
     textBoxes: elements.textBoxes.map((textBox) => {
       const copy = structuredClone(textBox);
       copy.id = ids.textBox();

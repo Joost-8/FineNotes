@@ -72,6 +72,8 @@ import {
   tableLayoutKey,
 } from "./table-layout";
 import { imageBounds, rotationOf } from "./image-geometry";
+import { paintStickyPaper, withinNote } from "./sticky-paper";
+import { type Affine, isNoteInk, noteIdsOf, noteMove } from "../model/sticky-notes";
 import { paintGraph } from "./graph-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
@@ -275,10 +277,14 @@ export interface ImagePainter {
 export function drawPlacedImage(
   ctx: CanvasRenderingContext2D,
   image: ImageElement,
-  painter: ImagePainter,
+  painter: ImagePainter | null,
   deviceScale: number,
+  inkOnNote?: () => void,
 ): void {
   if (!(image.w > 0) || !(image.h > 0)) return;
+  // A sticky note is paper painted here, so it needs no painter.
+  const sticky = image.sticky;
+  if (!sticky && !painter) return;
   ctx.save();
   if (image.opacity !== undefined) ctx.globalAlpha *= image.opacity;
   ctx.translate(image.x + image.w / 2, image.y + image.h / 2);
@@ -288,8 +294,11 @@ export function drawPlacedImage(
     ctx.scale(image.flipX === true ? -1 : 1, image.flipY === true ? -1 : 1);
   }
   ctx.translate(-image.w / 2, -image.h / 2);
-  painter.paintImage(ctx, image, deviceScale);
+  if (sticky) paintStickyPaper(ctx, image.w, image.h, sticky.color);
+  else painter?.paintImage(ctx, image, deviceScale);
   ctx.restore();
+  // The note's ink, over its paper and never past its edge.
+  if (sticky && inkOnNote) withinNote(ctx, image, inkOnNote);
 }
 
 /**
@@ -449,6 +458,15 @@ function overlaps(a: Bounds, b: Bounds): boolean {
 
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/** How the ink inside a sticky note is drawn, as the page's ink is around it. */
+interface InkPass {
+  usePressure: boolean;
+  /** Strokes the eraser is taking away, by id. */
+  hidden?: ReadonlySet<string>;
+  /** Strokes the eraser is cutting, and the pieces they leave. */
+  replaced?: ReadonlyMap<string, readonly Stroke[]>;
 }
 
 export class Renderer {
@@ -1062,12 +1080,20 @@ export class Renderer {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.setTransform(level, 0, 0, level, -tr.x, -tr.y);
-    this.paintPage(ctx, page, box, level, {
-      minX: tr.x / level,
-      minY: tr.y / level,
-      maxX: (tr.x + tr.w) / level,
-      maxY: (tr.y + tr.h) / level,
-    });
+    const ink: InkPass = { usePressure, hidden, replaced };
+    this.paintPage(
+      ctx,
+      page,
+      box,
+      level,
+      {
+        minX: tr.x / level,
+        minY: tr.y / level,
+        maxX: (tr.x + tr.w) / level,
+        maxY: (tr.y + tr.h) / level,
+      },
+      ink,
+    );
     const region: Bounds = {
       minX: tr.x / level - INK_PAD,
       minY: tr.y / level - INK_PAD,
@@ -1075,7 +1101,7 @@ export class Renderer {
       maxY: (tr.y + tr.h) / level + INK_PAD,
     };
     this.paintStrokes(ctx, page, region, usePressure, hidden, replaced);
-    this.paintImages(ctx, page, region, level, true);
+    this.paintImages(ctx, page, region, level, ink, true);
     const tile: Tile = { canvas, pageId: page.id, level, rect: tr };
     this.tiles.set(tileKey(page.id, level, tr.col, tr.row), tile, tr.w * tr.h * 4);
     return tile;
@@ -1112,7 +1138,8 @@ export class Renderer {
     const theme = this.paper;
     this.paper = LIGHT_PAPER;
     try {
-      this.paintPage(ctx, page, box, level, region);
+      const ink: InkPass = { usePressure };
+      this.paintPage(ctx, page, box, level, region, ink);
       const inked: Bounds = {
         minX: region.minX - INK_PAD,
         minY: region.minY - INK_PAD,
@@ -1120,7 +1147,7 @@ export class Renderer {
         maxY: region.maxY + INK_PAD,
       };
       this.paintStrokes(ctx, page, inked, usePressure);
-      this.paintImages(ctx, page, region, level, true);
+      this.paintImages(ctx, page, region, level, ink, true);
     } finally {
       this.paper = theme;
     }
@@ -1142,9 +1169,10 @@ export class Renderer {
     if (!ctx) return null;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     const all: Bounds = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
-    this.paintPage(ctx, page, box, scale, all);
+    const ink: InkPass = { usePressure };
+    this.paintPage(ctx, page, box, scale, all, ink);
     this.paintStrokes(ctx, page, all, usePressure);
-    this.paintImages(ctx, page, all, scale, true);
+    this.paintImages(ctx, page, all, scale, ink, true);
     const preview: Preview = { canvas, scale };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
@@ -1162,6 +1190,7 @@ export class Renderer {
     box: PageBox,
     level: number,
     region: Bounds,
+    ink: InkPass,
   ): void {
     ctx.beginPath();
     ctx.rect(0, 0, box.width, box.height);
@@ -1179,7 +1208,7 @@ export class Renderer {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);
       paintFurniture(ctx, page.geometry, texts, pageLook(page.backdrop, this.paper).night);
     }
-    this.paintImages(ctx, page, region, level);
+    this.paintImages(ctx, page, region, level, ink);
     this.paintTables(ctx, page, region);
     this.paintGraphs(ctx, page, region, level);
     // Inset by half a device pixel so the hairline lies inside the clip.
@@ -1192,22 +1221,41 @@ export class Renderer {
   /**
    * The page's images that overlap `region`, bottom to top, at `level`
    * device px per page px: those under the ink, or with `front` those in
-   * front of it.
+   * front of it. A sticky note brings its ink, drawn as `ink` says (the
+   * erase preview's hidden and replaced strokes included); a hidden note
+   * hides its ink too. Notes are painted without an image painter.
    */
   private paintImages(
     ctx: CanvasRenderingContext2D,
     page: Page,
     region: Bounds,
     level: number,
+    ink: InkPass,
     front = false,
   ): void {
     const painter = this.imagePainter;
-    if (!painter) return;
     for (const image of page.images) {
       if ((image.front === true) !== front) continue;
+      if (!painter && !image.sticky) continue;
       if (this.hiddenImages.has(image)) continue;
       if (!overlaps(imageBounds(image), region)) continue;
-      drawPlacedImage(ctx, image, painter, level);
+      const inkOnNote = image.sticky
+        ? () => {
+            for (const stroke of page.strokes) {
+              if (stroke.onSticky !== image.id) continue;
+              this.paintStroke(
+                ctx,
+                stroke,
+                region,
+                ink.usePressure,
+                false,
+                ink.hidden,
+                ink.replaced,
+              );
+            }
+          }
+        : undefined;
+      drawPlacedImage(ctx, image, painter, level, inkOnNote);
     }
   }
 
@@ -1261,15 +1309,31 @@ export class Renderer {
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
   ): void {
     const night = pageLook(page.backdrop, this.paper).night;
+    // A sticky note's ink is drawn with its note (`paintImages`).
+    const notes = noteIdsOf(page.images);
     for (const stroke of page.strokes) {
-      if (hidden?.has(stroke.id) || this.hiddenStrokes.has(stroke.id)) continue;
-      const pieces = replaced?.get(stroke.id);
-      if (pieces) {
-        for (const piece of pieces) this.paintEntry(ctx, piece, region, usePressure, night);
-        continue;
-      }
-      this.paintEntry(ctx, stroke, region, usePressure, night);
+      if (isNoteInk(stroke, notes)) continue;
+      this.paintStroke(ctx, stroke, region, usePressure, night, hidden, replaced);
     }
+  }
+
+  /** One stroke as the tiles draw it: left out when hidden, its pieces while the eraser cuts it. */
+  private paintStroke(
+    ctx: CanvasRenderingContext2D,
+    stroke: Stroke,
+    region: Bounds,
+    usePressure: boolean,
+    night: boolean,
+    hidden?: ReadonlySet<string>,
+    replaced?: ReadonlyMap<string, readonly Stroke[]>,
+  ): void {
+    if (hidden?.has(stroke.id) || this.hiddenStrokes.has(stroke.id)) return;
+    const pieces = replaced?.get(stroke.id);
+    if (pieces) {
+      for (const piece of pieces) this.paintEntry(ctx, piece, region, usePressure, night);
+      return;
+    }
+    this.paintEntry(ctx, stroke, region, usePressure, night);
   }
 
   private paintEntry(
@@ -1463,18 +1527,24 @@ export class Renderer {
       ctx.rotate(turn.angle);
       ctx.translate(-turn.x, -turn.y);
     }
+    const draw = (stroke: Stroke, dark: boolean): void => {
+      const entry = this.pathEntry(stroke, usePressure);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, dark, decorOf(stroke), stroke.pts);
+    };
+    const notes = noteIdsOf(images);
     const pictures = (front: boolean): void => {
-      if (!this.imagePainter) return;
       for (const image of images) {
         if ((image.front === true) !== front) continue;
-        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale);
+        const inkOnNote = image.sticky
+          ? () => {
+              for (const stroke of strokes) if (stroke.onSticky === image.id) draw(stroke, false);
+            }
+          : undefined;
+        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale, inkOnNote);
       }
     };
     pictures(false);
-    for (const stroke of strokes) {
-      const entry = this.pathEntry(stroke, usePressure);
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
-    }
+    for (const stroke of strokes) if (!isNoteInk(stroke, notes)) draw(stroke, night);
     pictures(true);
     ctx.restore();
     this.setWetVisible(true);
@@ -1497,6 +1567,7 @@ export class Renderer {
     const bounds = entry.bounds;
     const page = this.doc?.pages[pageIndex];
     if (
+      (stroke.onSticky !== undefined && page && isNoteInk(stroke, noteIdsOf(page.images))) ||
       page?.images.some((image) => image.front === true && overlaps(imageBounds(image), bounds))
     ) {
       this.invalidateRegion(pageIndex, bounds);
@@ -1547,16 +1618,47 @@ export class Renderer {
    * costs one blit per frame instead of re-rasterising every tile it crosses;
    * it floats above the ink until the pen lifts, then drops back beneath it.
    */
-  renderImageDraft(pageIndex: number, image: ImageElement): void {
+  renderImageDraft(pageIndex: number, image: ImageElement, usePressure = false): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
-    if (!box || !this.imagePainter) return;
+    if (!box || (!this.imagePainter && !image.sticky)) return;
     this.toLayoutSpace(ctx);
     this.enterPage(ctx, box);
-    drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale);
+    drawPlacedImage(
+      ctx,
+      image,
+      this.imagePainter,
+      this.deviceScale,
+      this.draftInk(pageIndex, image, usePressure),
+    );
     ctx.restore();
     this.setWetVisible(true);
+  }
+
+  /**
+   * The ink of the note `draft` is a moved copy of (same id), drawn where
+   * the draft has the note: the cached outlines under the map from the
+   * note's frame to the draft's, as `MoveNoteInk` will commit it.
+   */
+  private draftInk(
+    pageIndex: number,
+    draft: ImageElement,
+    usePressure: boolean,
+  ): (() => void) | undefined {
+    const page = this.doc?.pages[pageIndex];
+    const note = draft.sticky ? page?.images.find((image) => image.id === draft.id) : undefined;
+    if (!page || !note) return undefined;
+    const m: Affine = noteMove(note, draft);
+    const ctx = this.wet.ctx;
+    return () => {
+      ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      for (const stroke of page.strokes) {
+        if (stroke.onSticky !== note.id) continue;
+        const entry = this.pathEntry(stroke, usePressure);
+        paintStroke(ctx, entry, stroke, this.highlighterAlpha, false, decorOf(stroke), stroke.pts);
+      }
+    };
   }
 
   /**
@@ -1839,10 +1941,21 @@ export function renderPageThumbnail(
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
   }
+  const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
+  // A sticky note keeps its colour on dark pages, so its ink keeps its own too.
+  const notes = noteIdsOf(page.images);
   const pictures = (front: boolean): void => {
-    if (!options.images) return;
     for (const image of page.images) {
-      if ((image.front === true) === front) drawPlacedImage(ctx, image, options.images, k);
+      if ((image.front === true) !== front) continue;
+      const inkOnNote = image.sticky
+        ? () => {
+            for (const stroke of page.strokes) {
+              if (stroke.onSticky !== image.id) continue;
+              fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, false);
+            }
+          }
+        : undefined;
+      drawPlacedImage(ctx, image, options.images ?? null, k, inkOnNote);
     }
   };
   pictures(false);
@@ -1853,8 +1966,8 @@ export function renderPageThumbnail(
     paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
   }
 
-  const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   for (const stroke of page.strokes) {
+    if (isNoteInk(stroke, notes)) continue;
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
   // Handwriting made a checklist item has its box beside it, in its ink colour.

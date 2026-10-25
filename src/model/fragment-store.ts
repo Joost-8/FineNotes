@@ -7,7 +7,7 @@
  * Pure: no DOM, no worker API, so tests run it directly.
  */
 
-import { SCHEMA_VERSION } from "../constants";
+import { featuresOfHead, payloadLabel } from "./format-features";
 import { SAVE_LEVEL, deflateBytesToBase64 } from "./compress";
 
 const COMMA = 0x2c;
@@ -54,6 +54,6 @@ export class FragmentStore {
       at += part.length;
     });
     json.set(PAGES_CLOSE, at);
-    return `v${SCHEMA_VERSION}:${deflateBytesToBase64(json, SAVE_LEVEL)}`;
+    return `${payloadLabel(featuresOfHead(head))}:${deflateBytesToBase64(json, SAVE_LEVEL)}`;
   }
 }

@@ -14,6 +14,7 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
+import { relinkNoteInk } from "./sticky-notes";
 
 /** Why a notebook takes no pages, or `null` when it does. */
 export function transferRefusal(doc: InkDocument): string | null {
@@ -74,7 +75,14 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
       stroke.id = id;
     }
     for (const box of copy.textBoxes) box.id = `t${++textSeq}`;
-    for (const image of copy.images) image.id = `i${++imageSeq}`;
+    const imageIds = new Map<string, string>();
+    for (const image of copy.images) {
+      const id = `i${++imageSeq}`;
+      imageIds.set(image.id, id);
+      image.id = id;
+    }
+    // The ink on a note follows the note's new id.
+    relinkNoteInk(copy.strokes, imageIds);
     for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
     for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
     for (const comment of copy.comments ?? []) comment.id = `cm${++commentSeq}`;
