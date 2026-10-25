@@ -150,7 +150,7 @@ import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
 import type { AttachmentFolders, InkDocument, Page } from "./model/document";
-import { registerImageMenuEntry } from "./view/image-menu";
+import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
@@ -174,6 +174,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
+import { type BarItemId, normalizeBar } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -396,36 +397,6 @@ export default class GoodObsidianPlugin extends Plugin {
         order: 50,
         isAvailable: () => this.imageAiConfig() !== null,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.openGenerateImage(),
-      }),
-    );
-    // "Stickers": the built-in pack and the user's own collections. A pick is
-    // saved beside the notebook (a copy, never a link to the stickers folder)
-    // and placed like any picture.
-    this.register(
-      registerImageMenuEntry({
-        id: "stickers",
-        icon: "sticker",
-        label: "Stickers",
-        order: 35,
-        run: (ctx) => {
-          new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
-            void (async () => {
-              if (choice.kind === "builtin") {
-                const svg = stickerSvg(choice.sticker, choice.color);
-                const bytes = new TextEncoder().encode(svg).buffer;
-                await ctx.insertBytes(
-                  bytes,
-                  "image/svg+xml",
-                  stickerFileName(choice.sticker, choice.color),
-                );
-                return;
-              }
-              const bytes = await this.app.vault.readBinary(choice.file);
-              const mime = mimeForExtension(choice.file.extension) ?? "image/png";
-              await ctx.insertBytes(bytes, mime, choice.file.basename);
-            })();
-          }).open();
-        },
       }),
     );
     // "Scan document": straight into the camera from the tap that chose it
@@ -794,6 +765,7 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
+    this.settings.toolbarItems = normalizeBar(this.settings.toolbarItems);
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
@@ -1195,6 +1167,38 @@ export default class GoodObsidianPlugin extends Plugin {
   saveSavedPens(pens: readonly SavedPen[]): void {
     this.settings.savedPens = pens.map((pen) => ({ ...pen }));
     void this.saveSettings();
+  }
+
+  /**
+   * "Stickers", the tool bar's own button: the built-in pack and the user's
+   * own collections. A pick is saved beside the notebook (a copy, never a
+   * link to the stickers folder) and placed like any picture.
+   */
+  openStickerPicker(ctx: Pick<ImageMenuContext, "insertBytes">): void {
+    new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
+      void (async () => {
+        if (choice.kind === "builtin") {
+          const svg = stickerSvg(choice.sticker, choice.color);
+          const bytes = new TextEncoder().encode(svg).buffer;
+          await ctx.insertBytes(
+            bytes,
+            "image/svg+xml",
+            stickerFileName(choice.sticker, choice.color),
+          );
+          return;
+        }
+        const bytes = await this.app.vault.readBinary(choice.file);
+        const mime = mimeForExtension(choice.file.extension) ?? "image/png";
+        await ctx.insertBytes(bytes, mime, choice.file.basename);
+      })();
+    }).open();
+  }
+
+  /** "Customize toolbar" changed the bar: every open notebook shows the new one. */
+  saveToolbarItems(items: readonly BarItemId[]): void {
+    this.settings.toolbarItems = normalizeBar(items);
+    void this.saveSettings();
+    for (const view of this.openNotebooks()) view.setToolbarItems(this.settings.toolbarItems);
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */

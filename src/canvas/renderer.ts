@@ -35,7 +35,7 @@
  */
 
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
-import { LIGHT_PAPER, type PaperTheme, pageLook, shownColor } from "./backdrop";
+import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
 import {
   DAY_HIGHLIGHTER_BLEND,
   NIGHT_HIGHLIGHTER_BLEND,
@@ -490,6 +490,8 @@ export class Renderer {
    * and whoever changes this must {@link invalidateAll}: tiles hold colour.
    */
   paper: PaperTheme = LIGHT_PAPER;
+  /** The desk the last backdrop was painted on (`deskFor`): the theme's, unless a page matched it. */
+  desk = LIGHT_PAPER.desk;
 
   /** The desk and the page shadows. */
   private readonly backdrop: Layer;
@@ -823,11 +825,19 @@ export class Renderer {
     const ctx = this.backdrop.ctx;
     // The desk. The page is an object lying on it, not a region filling the
     // pane (design brief), so the field is painted edge to edge first.
+    // Its shade keeps every page on screen apart from it (`deskFor`).
+    const boxes = this.boxesOnScreen(doc.pages.length);
+    const papers: string[] = [];
+    for (const box of boxes) {
+      const page = doc.pages[box.index];
+      if (page) papers.push(paperColorOf(page, this.paper));
+    }
+    this.desk = deskFor(this.paper, papers);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = this.paper.desk;
+    ctx.fillStyle = this.desk;
     ctx.fillRect(0, 0, this.dry.canvas.width, this.dry.canvas.height);
     const sprite = this.shadowSprite();
-    for (const box of this.boxesOnScreen(doc.pages.length)) {
+    for (const box of boxes) {
       const r = this.pageDeviceRect(box);
       this.drawShadow(ctx, sprite, r.x, r.y, r.w, r.h, SHADOW_OFFSET_Y * this.screen.dpr);
       // Under the page, the page's own colour (see paperColorOf).

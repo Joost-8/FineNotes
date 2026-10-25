@@ -26,8 +26,10 @@
 import {
   type CoverPalette,
   type CoverRect,
+  contrastRatio,
   coverLayout,
   coverPalette,
+  relativeLuminance,
   withAlpha,
 } from "../model/cover";
 import type {
@@ -109,6 +111,40 @@ export const DARK_PAPER: PaperTheme = {
   desk: "#0e0f11",
   night: true,
 };
+
+/**
+ * A desk at least this far (WCAG contrast ratio) from every page on it shows
+ * each page's edge. Dark Paper on the light theme's desk is 1.39, and a grey
+ * paper from the paper designer can match the desk exactly (FineNotes: "the
+ * grey template paper has the same colour as the background").
+ */
+export const DESK_MIN_CONTRAST = 1.5;
+
+/** The desks a page too close to the usual one moves to, darkest first. */
+export const DESK_SHADES: readonly string[] = ["#0e0f11", "#3b3e45", "#6b6f79", "#a3a7b0"];
+
+/**
+ * The desk under pages painted `papers`: the theme's own while every page
+ * stands apart from it, otherwise the shade nearest it (in luminance) that
+ * sets every page apart, or failing that the one that sets them furthest
+ * apart. The smallest change that shows the edges, so a dark page gets a
+ * mid-grey desk rather than a pale one.
+ *
+ * Apart means {@link DESK_MIN_CONTRAST}, or the theme's own paper's contrast
+ * with its desk where that is lower: dark pages lie 1.11 from their desk by
+ * design, and show their edge with a faint light line instead.
+ */
+export function deskFor(theme: PaperTheme, papers: readonly string[]): string {
+  const floor = Math.min(DESK_MIN_CONTRAST, contrastRatio(theme.paper, theme.desk));
+  const worst = (desk: string): number =>
+    papers.reduce((least, paper) => Math.min(least, contrastRatio(desk, paper)), Infinity);
+  if (worst(theme.desk) >= floor) return theme.desk;
+  const home = relativeLuminance(theme.desk);
+  const away = (desk: string): number => Math.abs(relativeLuminance(desk) - home);
+  const clear = DESK_SHADES.filter((desk) => worst(desk) >= floor);
+  if (clear.length > 0) return clear.reduce((a, b) => (away(b) < away(a) ? b : a));
+  return DESK_SHADES.reduce((a, b) => (worst(b) > worst(a) ? b : a));
+}
 
 /** Dark pages that leave PDF pages as they are. */
 const DARK_PAPER_KEEP_PDF: PaperTheme = { ...DARK_PAPER, keepPdf: true };

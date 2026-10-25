@@ -59,6 +59,7 @@ export default defineConfig({
         "src/view/swatch-drag-model.ts",
         "src/view/pill-dock-model.ts",
         "src/view/view-routing.ts",
+        "src/view/toolbar-layout.ts",
         "src/view/load-guard.ts",
         "src/view/startup-log.ts",
         "src/view/text-panel.ts",

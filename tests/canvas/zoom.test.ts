@@ -4,6 +4,7 @@ import {
   MIN_SCALE,
   OVERVIEW_PINCH_ZOOM,
   anchorScrollDelta,
+  doubleTapZoom,
   pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
@@ -138,5 +139,19 @@ describe("pinchOpensOverview", () => {
     ]) {
       expect(pinchOpensOverview(raw, floor)).toBe(false);
     }
+  });
+});
+
+describe("doubleTapZoom", () => {
+  it("goes to fit-to-width from anywhere else", () => {
+    expect(doubleTapZoom(0.6, 0.6)).toBe(1);
+    expect(doubleTapZoom(3, 0.6)).toBe(1);
+  });
+  it("goes back to the whole page from fit-to-width", () => {
+    expect(doubleTapZoom(1, 0.6)).toBe(0.6);
+    expect(doubleTapZoom(1.01, 0.6)).toBe(0.6);
+  });
+  it("stays at fit-to-width when the whole page already fills the width", () => {
+    expect(doubleTapZoom(1, 1)).toBe(1);
   });
 });

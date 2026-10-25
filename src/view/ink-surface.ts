@@ -207,8 +207,10 @@ import {
   fitPageZoom,
   nextZoomFloor,
   wheelZoomFactor,
+  doubleTapZoom,
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
+import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, zoomPercent } from "../model/units";
 import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
@@ -1613,6 +1615,10 @@ export class InkSurface {
   private imagesShown = false;
   /** A finger went down and could still turn out to be a tap. */
   private fingerTap: { x: number; y: number; t: number } | null = null;
+  /** Where a waiting sticky note goes on the next tap (`armStickyNote`). */
+  private stickyPlace: ((index: number, at: Pt) => void) | null = null;
+  /** The last finger tap that nothing took, waiting for a second (`zoomOnDoubleTap`). */
+  private plainTap: PlainTap | null = null;
   /** The same finger, watched for a hold that opens the press menu (`finger-hold.ts`). */
   private readonly fingerHold = new FingerHold();
   /** Touch points on the glass at the last touch event over the page. */
@@ -2528,7 +2534,7 @@ export class InkSurface {
       image,
       pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },
       page,
-      desk: this.paper.desk,
+      desk: this.renderer?.desk ?? this.paper.desk,
     };
   }
 
@@ -5601,6 +5607,7 @@ export class InkSurface {
    */
   private pressRoute(event: PointerEvent): PressRoute {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
@@ -5620,6 +5627,31 @@ export class InkSurface {
     const { tool } = this.toolState;
     if (tool !== "pen" && tool !== "highlighter") return false;
     return this.practice === null && this.pressOverrideOf(event) === null;
+  }
+
+  /**
+   * A sticky note waits to be placed: the next tap on a page, by pen, mouse
+   * or finger, calls `place` with the page and the page-local point, and
+   * draws nothing. Null stops it waiting.
+   */
+  armStickyNote(place: ((index: number, at: Pt) => void) | null): void {
+    this.stickyPlace = place;
+  }
+
+  /** Whether a sticky note waits to be placed (`armStickyNote`). */
+  get stickyArmed(): boolean {
+    return this.stickyPlace !== null;
+  }
+
+  /** Place the waiting sticky note at a client point, if it is on a page. */
+  private placeStickyAt(clientX: number, clientY: number): boolean {
+    const place = this.stickyPlace;
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    if (!place || !box) return false;
+    this.stickyPlace = null;
+    place(box.index, this.toPage(box, at));
+    return true;
   }
 
   /** Whether the ruler is out. */
@@ -10507,6 +10539,15 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
+    if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
+    // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
+    const plain = { x: clientX, y: clientY, t: now() };
+    const paired = pairsAsDoubleTap(this.plainTap, plain);
+    this.plainTap = null;
+    if (paired) {
+      this.zoomOnDoubleTap(clientX, clientY);
+      return;
+    }
     // While a cell is typed in, a finger tap in another cell of that table types there.
     if (this.cellEdit && this.fingerMovesCell(clientX, clientY)) return;
     if (this.dismissUsedSelection()) return;
@@ -10549,10 +10590,15 @@ export class InkSurface {
       if (box && tapped) {
         const p = this.toPage(box, at);
         // Typed text sits above the pictures, so a box is tried first.
-        if (!this.fingerHoldsTextBox(tapped, p) && !this.fingerPicksGraph(tapped, p)) {
-          this.fingerPicksPicture(tapped, p);
+        if (
+          this.fingerHoldsTextBox(tapped, p) ||
+          this.fingerPicksGraph(tapped, p) ||
+          this.fingerPicksPicture(tapped, p)
+        ) {
+          return;
         }
       }
+      this.plainTap = plain;
       return;
     }
     if (!box) {
@@ -10560,9 +10606,26 @@ export class InkSurface {
       this.forgetParkedText();
       this.clearSelection();
       this.deselectImage();
+      this.plainTap = plain;
       return;
     }
     this.tapSelect(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX);
+    if (!this.hasSelection()) this.plainTap = plain;
+  }
+
+  /**
+   * One finger tapped twice where nothing took the taps: zoom to fit the
+   * page's width, or from there back to the whole page (`doubleTapZoom`),
+   * about the tap, on the zoom spring a pinch lets go on.
+   */
+  private zoomOnDoubleTap(clientX: number, clientY: number): void {
+    const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom));
+    if (Math.abs(target - this.userZoom) < 1e-3) return;
+    this.pinch = null;
+    this.rowSettle = null;
+    this.zoomAnim = { from: this.userZoom, to: target, t0: now(), cx: clientX, cy: clientY };
+    this.snapRowAfterZoom = this.direction === "horizontal" && rowTurnsPages(target, this.minZoom);
+    this.requestFrame();
   }
 
   /**

@@ -7,6 +7,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DOUBLE_TAP_DISTANCE_PX,
+  ONE_FINGER_DOUBLE_TAP_MS,
+  pairsAsDoubleTap,
   DOUBLE_TAP_GAP_MS,
   MULTI_TAP_MAX_MS,
   MULTI_TAP_SLOP_PX,
@@ -250,5 +252,24 @@ describe("MultiFingerTap", () => {
     tap.up(99, 1000);
     tap.move(99, 0, 0);
     expect(fired).toEqual([]);
+  });
+});
+
+describe("pairsAsDoubleTap (one finger)", () => {
+  const first = { x: 100, y: 100, t: 1000 };
+  it("pairs a second tap soon after and nearby", () => {
+    expect(pairsAsDoubleTap(first, { x: 110, y: 95, t: 1000 + ONE_FINGER_DOUBLE_TAP_MS })).toBe(
+      true,
+    );
+  });
+  it("refuses a tap too late, too far, before the first, or with nothing to pair", () => {
+    expect(pairsAsDoubleTap(first, { x: 100, y: 100, t: 1001 + ONE_FINGER_DOUBLE_TAP_MS })).toBe(
+      false,
+    );
+    expect(pairsAsDoubleTap(first, { x: 100 + DOUBLE_TAP_DISTANCE_PX + 1, y: 100, t: 1100 })).toBe(
+      false,
+    );
+    expect(pairsAsDoubleTap(first, { x: 100, y: 100, t: 900 })).toBe(false);
+    expect(pairsAsDoubleTap(null, first)).toBe(false);
   });
 });

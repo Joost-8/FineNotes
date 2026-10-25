@@ -132,3 +132,15 @@ export function boardFitZoom(
   const fit = Math.min(w > 0 ? roomW / w : Infinity, h > 0 ? roomH / h : Infinity);
   return Math.min(1, Math.max(MIN_SCALE, fit));
 }
+
+/** A zoom this close to fit-to-width (as a fraction of it) counts as fit-to-width. */
+const AT_FIT_WIDTH = 0.02;
+
+/**
+ * Where a one-finger double tap zooms: to fit-to-width (1) from anywhere
+ * else, and from fit-to-width back to the whole page (`floor`). Where the
+ * whole page already fills the width, the floor is 1 and the tap stays put.
+ */
+export function doubleTapZoom(zoom: number, floor: number): number {
+  return Math.abs(zoom - 1) <= AT_FIT_WIDTH ? Math.min(1, floor) : 1;
+}

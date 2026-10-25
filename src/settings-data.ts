@@ -22,6 +22,7 @@ import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
+import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
@@ -261,6 +262,8 @@ export interface GoodObsidianSettings {
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
+  /** The tools the bar shows, left to right ("Customize toolbar"); the rest wait in its menu. */
+  toolbarItems: BarItemId[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -367,6 +370,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   invertPdfPages: true,
 
   savedPens: defaultSavedPens(),
+  toolbarItems: [...DEFAULT_BAR],
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,

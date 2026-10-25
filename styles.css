@@ -12737,3 +12737,183 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
 .goodobsidian-player {
   bottom: calc(44px + var(--gob-pill-clear-bottom, 0px));
 }
+
+/* --- The customizable tool bar ------------------------------------------------
+   toolbar.ts (setItems, toggleAccessories, tapSticky) and
+   customize-toolbar-modal.ts. Last in the file: these restyle buttons that
+   the bar's own rules above also style. */
+
+/* An item taken off the bar in "Customize toolbar"; it waits in the accessories menu. */
+.goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-unlisted {
+  display: none;
+}
+
+/* The accessories button, last of the tools: Goodnotes shows its ▾ always,
+   since a tap always opens its menu. */
+.goodobsidian-toolbar button.goodobsidian-accessories-button {
+  min-width: 58px;
+  padding-right: 18px;
+}
+
+.goodobsidian-toolbar button.goodobsidian-accessories-button .goodobsidian-tool-caret {
+  opacity: 0.85;
+}
+
+/* On, like the ruler: a sticky note waits for a tap, or a hidden ruler or
+   sticky note is out behind the accessories button. */
+.goodobsidian-toolbar button.goodobsidian-tool.is-on,
+.goodobsidian-toolbar button.goodobsidian-tool.is-on:hover:not(:disabled) {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+  --gob-press: var(--gob-active-press);
+}
+
+.goodobsidian-accessories-popover .goodobsidian-popover-body {
+  min-width: 220px;
+}
+
+.goodobsidian-accessory-icon {
+  display: inline-flex;
+  width: 24px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+/* Ten note colours, five to a row: square, as the notes are. */
+.goodobsidian-sticky-colors {
+  display: grid;
+  grid-template-columns: repeat(5, var(--gob-touch-compact));
+  gap: 6px;
+}
+
+.goodobsidian-popover button.goodobsidian-sticky-swatch {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.goodobsidian-popover button.goodobsidian-sticky-swatch.is-active {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--interactive-accent);
+}
+
+/* "Customize toolbar": one list, the bar's items above the hidden ones. */
+.goodobsidian-customize-modal {
+  width: min(420px, 92vw);
+}
+
+.goodobsidian-customize-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-customize-label {
+  margin-top: 6px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.goodobsidian-customize-list {
+  border: var(--gob-hairline);
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.goodobsidian-customize-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--gob-touch);
+  padding: 0 10px 0 6px;
+  background: var(--background-secondary);
+}
+
+.goodobsidian-customize-row + .goodobsidian-customize-row {
+  border-top: var(--gob-hairline);
+}
+
+/* The dragged row rides above the others; the rest slide out of its way. */
+.goodobsidian-customize-list.is-shown .goodobsidian-customize-row {
+  transition: transform 0.18s ease;
+}
+
+.goodobsidian-customize-list.is-shown .goodobsidian-customize-row.is-dragging {
+  z-index: 1;
+  transition: none;
+  box-shadow: var(--gob-shadow-sheet, 0 4px 14px rgba(0, 0, 0, 0.25));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-customize-list.is-shown .goodobsidian-customize-row {
+    transition: none;
+  }
+}
+
+.goodobsidian-customize-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.goodobsidian-customize-toggle.is-remove {
+  color: var(--color-red);
+}
+
+.goodobsidian-customize-toggle.is-add {
+  color: var(--color-green);
+}
+
+.goodobsidian-customize-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.goodobsidian-customize-name {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-customize-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: var(--gob-touch);
+  margin-right: -10px;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+
+.goodobsidian-customize-row.is-dragging .goodobsidian-customize-grip {
+  cursor: grabbing;
+}
+
+/* Red words, not a red button: it overwrites the bar. Obsidian's
+   button.mod-warning fills a button red, so the fill is taken off. */
+.goodobsidian-customize-body button.goodobsidian-customize-reset,
+.goodobsidian-customize-body button.goodobsidian-customize-reset:hover:not(:disabled) {
+  align-self: flex-start;
+  margin-top: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-error);
+}
+
+.goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
+  color: var(--text-faint);
+}

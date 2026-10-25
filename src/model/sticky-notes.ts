@@ -32,7 +32,7 @@ import {
   pageById,
 } from "./document";
 
-/** A colour the Insert image menu offers a note in. */
+/** A colour the sticky notes button offers a note in. */
 export interface StickyColor {
   id: string;
   /** What the swatch is called (its tooltip). */
@@ -41,13 +41,26 @@ export interface StickyColor {
   color: string;
 }
 
-/** The note colours offered, first the default: the classic yellow, then three pastels. */
+/**
+ * The ten note colours offered, round the colour wheel as Goodnotes lays
+ * its notes out, ending on grey and white. Yellow, pink, blue and green are
+ * the colours notes were made in before, unchanged.
+ */
 export const STICKY_COLORS: readonly StickyColor[] = [
+  { id: "red", label: "Red", color: "#fecaca" },
+  { id: "orange", label: "Orange", color: "#fed7aa" },
   { id: "yellow", label: "Yellow", color: "#fde68a" },
-  { id: "pink", label: "Pink", color: "#fbcfe8" },
-  { id: "blue", label: "Blue", color: "#bfdbfe" },
   { id: "green", label: "Green", color: "#bbf7d0" },
+  { id: "teal", label: "Teal", color: "#a5f3fc" },
+  { id: "blue", label: "Blue", color: "#bfdbfe" },
+  { id: "purple", label: "Purple", color: "#e9d5ff" },
+  { id: "pink", label: "Pink", color: "#fbcfe8" },
+  { id: "grey", label: "Grey", color: "#e5e7eb" },
+  { id: "white", label: "White", color: "#ffffff" },
 ];
+
+/** The colour a first note is offered in: the classic yellow. */
+export const DEFAULT_STICKY_COLOR = "#fde68a";
 
 /** A new note's side, page px: about 50 mm on an A4 page (a real 76 mm note leaves too little page). */
 export const STICKY_SIDE = 240;
@@ -399,6 +412,21 @@ export function newStickyNote(
   color: string,
 ): ImageElement {
   return { id, path: "", x: box.x, y: box.y, w: box.w, h: box.h, front: true, sticky: { color } };
+}
+
+/**
+ * Where a note of side `side` stuck at page point `at` goes: centred on it,
+ * then slid inside a page `width` by `height` (a note larger than the page
+ * sits at its corner).
+ */
+export function stickyBoxAt(
+  at: { x: number; y: number },
+  side: number,
+  width: number,
+  height: number,
+): { x: number; y: number; w: number; h: number } {
+  const clamp = (v: number, room: number): number => Math.max(0, Math.min(room - side, v));
+  return { x: clamp(at.x - side / 2, width), y: clamp(at.y - side / 2, height), w: side, h: side };
 }
 
 // --- On disk ----------------------------------------------------------------------
