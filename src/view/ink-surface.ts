@@ -3169,6 +3169,7 @@ export class InkSurface {
     }
     if (this.board) {
       // A board's zoom counts from the writing size: a notebook starts afresh.
+      this.renderer?.setPreviewWindow(null);
       this.board = false;
       this.boardDrawn = null;
       this.boardHold = null;
@@ -3280,9 +3281,10 @@ export class InkSurface {
     this.board = true;
     this.direction = "vertical";
     this.pageLayout = layoutBoard(page);
+    // The stand-in while tiles catch up covers the drawing, not the whole board.
+    if (fresh) this.renderer?.setPreviewWindow(() => this.boardPreviewWindow());
     this.renderer?.setLayout(this.pageLayout);
     this.boardDrawn = drawnBounds(page);
-    // No width to fit: 100% is the writing size, on every device.
     this.baseScale = WRITING_SCALE;
     this.minZoom = boardFitZoom(this.boardDrawn, WRITING_SCALE, cssW, cssH);
     if (fresh) {
@@ -3325,6 +3327,7 @@ export class InkSurface {
       this.boardHold = this.visibleBoardRect();
     }
     this.minZoom = boardFitZoom(this.boardDrawn, WRITING_SCALE, this.cssW, this.cssH);
+    this.dropStaleBoardPreview();
     const latest = this.history.latest;
     if (latest && !this.boardChecked.has(latest) && !this.history.canRedo()) {
       this.boardChecked.add(latest);
@@ -3346,6 +3349,44 @@ export class InkSurface {
       }
     }
     this.ensurePaperSize();
+  }
+
+  /**
+   * The part of a board its stand-in preview shows: what is drawn and what
+   * is on screen, and a screen more on every side (page px).
+   */
+  private boardPreviewWindow(): Bounds {
+    const view = this.visibleBoardRect();
+    const drawn = this.boardDrawn ? boundsUnion(this.boardDrawn, view) : view;
+    const mx = view.maxX - view.minX;
+    const my = view.maxY - view.minY;
+    return {
+      minX: drawn.minX - mx,
+      minY: drawn.minY - my,
+      maxX: drawn.maxX + mx,
+      maxY: drawn.maxY + my,
+    };
+  }
+
+  /**
+   * Drop a board's preview once it no longer covers the drawing and the
+   * view (ink beyond it, or the view zoomed out past it): the next one is
+   * made around them.
+   */
+  private dropStaleBoardPreview(): void {
+    const page = this.doc.pages[0];
+    if (!this.board || !page || !this.renderer) return;
+    const area = this.renderer.previewArea(page.id);
+    if (!area) return;
+    const view = this.visibleBoardRect();
+    const needed = this.boardDrawn ? boundsUnion(this.boardDrawn, view) : view;
+    const clipped = {
+      minX: Math.max(0, needed.minX),
+      minY: Math.max(0, needed.minY),
+      maxX: Math.min(page.geometry.width, needed.maxX),
+      maxY: Math.min(page.geometry.height, needed.maxY),
+    };
+    if (!boundsContain(area, clipped)) this.renderer.dropPreview(page.id);
   }
 
   /** The part of the board on screen, page px. */
@@ -3707,6 +3748,12 @@ export class InkSurface {
     this.syncViewport();
     // The ruler's centimetres are the page's, at the zoom now.
     this.ruler?.setScale(this.scale);
+    // A board's stand-in is coarse: its tiles start at the new zoom as soon
+    // as the zoom is over, not after a fling that follows it has stopped.
+    if (this.board && this.renderer.isTransient && !this.zoomTransient) {
+      this.renderer.settle();
+      this.dropStaleBoardPreview();
+    }
     // The zoom has ended (a fling may carry on): place the boxes it hid or scaled.
     if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     this.trackTextPillMotion(busy);
