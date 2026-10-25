@@ -378,7 +378,20 @@ interface Tile {
 interface Preview {
   canvas: HTMLCanvasElement;
   scale: number;
+  /**
+   * The part of the page it shows, page px, when that is not the whole
+   * page: an endless board's preview covers its drawing and a screen around
+   * it ({@link Renderer.setPreviewWindow}).
+   */
+  window?: Bounds;
 }
+
+/**
+ * Longest side of a windowed preview, device px (16 MB at most). A board's
+ * page is many screens across: its whole-page preview at the usual 1024 px
+ * was too coarse to read ink by, so its preview covers less, more finely.
+ */
+const WINDOWED_PREVIEW_MAX_SIDE = 2048;
 
 interface PathEntry {
   fingerprint: string;
@@ -500,6 +513,8 @@ export class Renderer {
   private level = 0;
   private readonly tiles = new ByteLru<Tile>(MIN_TILE_BUDGET, (tile) => releaseCanvas(tile.canvas));
   private readonly previews = new ByteLru<Preview>(PREVIEW_BUDGET, (p) => releaseCanvas(p.canvas));
+  /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
+  private previewWindow: ((box: PageBox) => Bounds | null) | null = null;
   private readonly paths = new WeakMap<Stroke, PathEntry>();
   private shadow: ShadowSprite | null = null;
 
@@ -564,6 +579,29 @@ export class Renderer {
   /** The page stack this renderer is painting. */
   setLayout(layout: DocumentLayout): void {
     this.layout = layout;
+  }
+
+  /**
+   * Let previews cover part of a page (`window` returns page px, or null
+   * for the whole page), at up to {@link WINDOWED_PREVIEW_MAX_SIDE}. Null
+   * goes back to whole pages. Drops every preview either way.
+   */
+  setPreviewWindow(window: ((box: PageBox) => Bounds | null) | null): void {
+    this.previewWindow = window;
+    this.previews.clear();
+  }
+
+  /** The part of a page its cached preview shows, page px, or null when it has none. */
+  previewArea(pageId: string): Bounds | null {
+    const preview = this.previews.peek(pageId);
+    if (!preview) return null;
+    const box = this.layout.boxes.find((b) => b.id === pageId);
+    return preview.window ?? (box ? { minX: 0, minY: 0, maxX: box.width, maxY: box.height } : null);
+  }
+
+  /** Forget a page's preview, so the next one is made afresh. Its tiles stay. */
+  dropPreview(pageId: string): void {
+    this.previews.delete(pageId);
   }
 
   /** The backdrop painter tiles draw pages with. Invalidates every tile. */
@@ -954,7 +992,19 @@ export class Renderer {
         preview !== undefined &&
         transient &&
         Math.abs(Math.log(k / preview.scale)) < Math.abs(Math.log(s));
-      if (preview) {
+      if (preview?.window) {
+        // Only part of the page: the paper first, so nothing else shows the desk.
+        const w = preview.window;
+        ctx.fillStyle = paperColorOf(page, this.paper);
+        ctx.fillRect(ox, oy, raster.w * s, raster.h * s);
+        ctx.drawImage(
+          preview.canvas,
+          ox + w.minX * k,
+          oy + w.minY * k,
+          (preview.canvas.width / preview.scale) * k,
+          (preview.canvas.height / preview.scale) * k,
+        );
+      } else if (preview) {
         // Blurry is better than blank while the tiles catch up.
         ctx.drawImage(preview.canvas, ox, oy, raster.w * s, raster.h * s);
       }
@@ -1134,6 +1184,8 @@ export class Renderer {
 
   /** The whole page at thumbnail resolution: the fallback while tiles catch up. */
   private buildPreview(page: Page, box: PageBox, usePressure: boolean): Preview | null {
+    const window = this.previewWindow ? clampToPage(this.previewWindow(box), box) : null;
+    if (window) return this.buildWindowedPreview(page, box, window, usePressure);
     const scale = previewScale(box.width, box.height);
     const canvas = createEl("canvas");
     canvas.width = Math.max(1, Math.ceil(box.width * scale));
@@ -1146,6 +1198,36 @@ export class Renderer {
     this.paintStrokes(ctx, page, all, usePressure);
     this.paintImages(ctx, page, all, scale, true);
     const preview: Preview = { canvas, scale };
+    this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
+    return preview;
+  }
+
+  /** A preview of part of a page, `window` (page px), its longest side {@link WINDOWED_PREVIEW_MAX_SIDE}. */
+  private buildWindowedPreview(
+    page: Page,
+    box: PageBox,
+    window: Bounds,
+    usePressure: boolean,
+  ): Preview | null {
+    const w = window.maxX - window.minX;
+    const h = window.maxY - window.minY;
+    const scale = previewScale(w, h, WINDOWED_PREVIEW_MAX_SIDE);
+    const canvas = createEl("canvas");
+    canvas.width = Math.max(1, Math.ceil(w * scale));
+    canvas.height = Math.max(1, Math.ceil(h * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(scale, 0, 0, scale, -window.minX * scale, -window.minY * scale);
+    this.paintPage(ctx, page, box, scale, window);
+    const inked: Bounds = {
+      minX: window.minX - INK_PAD,
+      minY: window.minY - INK_PAD,
+      maxX: window.maxX + INK_PAD,
+      maxY: window.maxY + INK_PAD,
+    };
+    this.paintStrokes(ctx, page, inked, usePressure);
+    this.paintImages(ctx, page, window, scale, true);
+    const preview: Preview = { canvas, scale, window };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
   }
@@ -1527,7 +1609,9 @@ export class Renderer {
     const ctx = preview?.canvas.getContext("2d");
     if (preview && ctx) {
       ctx.save();
-      ctx.setTransform(preview.scale, 0, 0, preview.scale, 0, 0);
+      const k = preview.scale;
+      const origin = preview.window ?? { minX: 0, minY: 0 };
+      ctx.setTransform(k, 0, 0, k, -origin.minX * k, -origin.minY * k);
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
@@ -2091,4 +2175,16 @@ function finiteOr(value: number | undefined, fallback: number): number {
 /** `b` grown by `pad` on every side. */
 function padBounds(b: Bounds, pad: number): Bounds {
   return { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
+}
+
+/** `window` cut to the page, or null when nothing of it is on the page. */
+function clampToPage(window: Bounds | null, box: PageBox): Bounds | null {
+  if (!window) return null;
+  const out: Bounds = {
+    minX: Math.max(0, window.minX),
+    minY: Math.max(0, window.minY),
+    maxX: Math.min(box.width, window.maxX),
+    maxY: Math.min(box.height, window.maxY),
+  };
+  return out.maxX > out.minX && out.maxY > out.minY ? out : null;
 }
