@@ -123,7 +123,11 @@ class PaperDesigner {
     this.stash = Array.from(modalEl.childNodes);
     for (const node of this.stash) node.remove();
     modalEl.addClass("goodobsidian-designing");
-    this.keyboard = new DialogKeyboard(modalEl);
+    // `fit`: the designer is taller than the room above the iPad keyboard,
+    // and its fields sit in a column that scrolls on its own. It shrinks to
+    // that room and the field is scrolled into view, rather than the whole
+    // dialog rising off the top of the screen.
+    this.keyboard = new DialogKeyboard(modalEl, { fit: true });
     this.root = modalEl.createDiv({ cls: "goodobsidian-paper-designer" });
     this.build();
     this.sync();

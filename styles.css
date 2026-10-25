@@ -3583,7 +3583,8 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
 .goodobsidian-paper-designer {
   display: flex;
   flex-direction: column;
-  height: min(680px, 84vh, calc(100vh - var(--keyboard-height, 0px) - 32px));
+  /* With the iPad keyboard up, the room above it (DialogKeyboard `fit`). */
+  height: min(680px, 84vh, var(--goodobsidian-keyboard-room, 100vh));
   min-height: 0;
 }
 

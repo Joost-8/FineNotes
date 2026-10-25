@@ -146,6 +146,7 @@ export class DialogKeyboard {
     // dialog at its new height.
     if (this.options.fit) {
       this.setRoom(window.innerHeight - keyboard - 2 * KEYBOARD_GAP_PX);
+      this.revealInScroller(typing.row);
     }
     // Measured where the dialog would sit unlifted, never where it is now: the
     // lift glides (a CSS transition), and reading a half-moved dialog every
@@ -165,6 +166,34 @@ export class DialogKeyboard {
     // Only as far as the row needs, and never so far that its top leaves the screen.
     const next = Math.min(bottom - limit, top - KEYBOARD_GAP_PX);
     this.setLift(Math.max(0, next));
+  }
+
+  /**
+   * A `fit` dialog shrinks, and a row in a part of it that scrolls on its
+   * own (the paper designer's controls) can end up below that part's
+   * visible bottom: scroll it back into view there. Only the dialog's own
+   * scroller moves, never the window.
+   */
+  private revealInScroller(row: HTMLElement): void {
+    let scroller = row.parentElement;
+    while (scroller && scroller !== this.modalEl) {
+      const overflow = getComputedStyle(scroller).overflowY;
+      if (
+        (overflow === "auto" || overflow === "scroll") &&
+        scroller.scrollHeight > scroller.clientHeight
+      ) {
+        break;
+      }
+      scroller = scroller.parentElement;
+    }
+    if (!scroller || scroller === this.modalEl) return;
+    const view = scroller.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    if (box.bottom > view.bottom - KEYBOARD_GAP_PX) {
+      scroller.scrollTop += box.bottom - view.bottom + KEYBOARD_GAP_PX;
+    } else if (box.top < view.top + KEYBOARD_GAP_PX) {
+      scroller.scrollTop -= view.top + KEYBOARD_GAP_PX - box.top;
+    }
   }
 
   private setLift(px: number): void {
