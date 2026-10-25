@@ -936,7 +936,7 @@ interface ZoomSettle {
 }
 
 /** How long a picked eraser size shows its true footprint on the page (`previewEraser`). */
-const ERASER_PREVIEW_MS = 900;
+const ERASER_PREVIEW_MS = 1500;
 /** How long a double tap's zoom takes to glide the last pixels to its page (`settleAfterZoom`). */
 const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
@@ -7062,9 +7062,10 @@ export class InkSurface {
 
   /**
    * Show the eraser's footprint, true size, in the middle of the page in
-   * view for a moment: a size or the eraser was just picked, and the marks
-   * in the bar cannot always show it (a large eraser zoomed in outgrows
-   * them). Not while erasing, when the footprint follows the pen already.
+   * view for a moment: a size was just picked, and the marks in the bar
+   * cannot always show it (a large eraser zoomed in outgrows them). An
+   * outline over the page's own lines, so it can be judged against them.
+   * Not while erasing, when the footprint follows the pen already.
    */
   previewEraser(): void {
     if (this.eraseLast !== null) return;

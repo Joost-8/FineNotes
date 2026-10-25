@@ -2356,7 +2356,7 @@ export class Toolbar {
     // opens the slider, as the pen's widths do.
     for (const size of quickEraserSizes(eraserSizeFor(this.state))) {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
-      button.append(eraserSizeGlyph(this.eraserMark(size), undefined, this.eraserMm(size)));
+      button.append(eraserSizeGlyph(this.eraserMark(size)));
       button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
       button.addEventListener("click", () => {
         this.setEraserSize(size);
@@ -3385,9 +3385,7 @@ export class Toolbar {
       for (const [width, preset] of presets) {
         preset
           .querySelector("svg")
-          ?.replaceWith(
-            widthGlyph(this.widthMark(width), this.activePenType().id, this.widthMm(width)),
-          );
+          ?.replaceWith(widthGlyph(this.widthMark(width), this.activePenType().id));
       }
       show();
     };
@@ -3460,14 +3458,10 @@ export class Toolbar {
   refreshSizeMarks(): void {
     const pen = this.activePenType().id;
     for (const [width, button] of this.widthButtons) {
-      button
-        .querySelector("svg")
-        ?.replaceWith(widthGlyph(this.widthMark(width), pen, this.widthMm(width)));
+      button.querySelector("svg")?.replaceWith(widthGlyph(this.widthMark(width), pen));
     }
     for (const [size, button] of this.eraserSizeButtons) {
-      button
-        .querySelector("svg")
-        ?.replaceWith(eraserSizeGlyph(this.eraserMark(size), undefined, this.eraserMm(size)));
+      button.querySelector("svg")?.replaceWith(eraserSizeGlyph(this.eraserMark(size)));
       button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
     }
     this.sizeMarksRender?.();
@@ -3541,9 +3535,7 @@ export class Toolbar {
     };
     for (const size of ERASER_SIZES) {
       const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
-      preset.append(
-        eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX, this.eraserMm(size)),
-      );
+      preset.append(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
       preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
       preset.setAttribute("title", this.eraserMm(size));
       preset.addEventListener("click", () => {
@@ -3557,9 +3549,7 @@ export class Toolbar {
       for (const [size, preset] of presets) {
         preset
           .querySelector("svg")
-          ?.replaceWith(
-            eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX, this.eraserMm(size)),
-          );
+          ?.replaceWith(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
         preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
         preset.setAttribute("title", this.eraserMm(size));
       }
@@ -4814,7 +4804,7 @@ const POPOVER_ERASER_BOX = 40;
  * (`diameter`, screen px), as the strip under the slider draws it, in a
  * `box` px square. One larger than the box fills it, shaded darker.
  */
-function eraserSizeGlyph(diameter: number, box = 28, mm?: string): SVGElement {
+function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${box} ${box}`);
   svg.setAttribute("width", String(box));
@@ -4823,39 +4813,17 @@ function eraserSizeGlyph(diameter: number, box = 28, mm?: string): SVGElement {
   const circle = activeDocument.createElementNS(SVG_NS, "circle");
   circle.setAttribute("cx", String(box / 2));
   circle.setAttribute("cy", String(box / 2));
-  // The ring is drawn inside the footprint, as the strip's border is. A
-  // footprint too big for the box would only fill it, which says nothing
-  // about its size: it is drawn dashed, with its size in mm.
+  // The ring alone, drawn inside the footprint as the strip's border is: the
+  // eraser's own size on the page, beside the page's lines. A footprint too
+  // big for the box is drawn dashed at the box's edge.
   const d = Number.isFinite(diameter) && diameter > 0 ? diameter : 2;
-  const fits = d <= box;
   circle.setAttribute("r", Math.max(0.75, Math.min(d, box) / 2 - 0.75).toFixed(2));
-  circle.setAttribute("fill", "currentColor");
-  circle.setAttribute("fill-opacity", "0.08");
+  circle.setAttribute("fill", "none");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
+  if (d > box) circle.setAttribute("stroke-dasharray", "2.5 2");
   svg.append(circle);
-  if (!fits && mm) {
-    circle.setAttribute("stroke-dasharray", "2.5 2");
-    svg.append(sizeLabel(mm, box, box));
-  }
   return svg;
-}
-
-/**
- * A mark's size as a number (millimetres, without the unit), centred in a
- * glyph `width` by `height`: what a mark too big to draw true shows instead.
- */
-function sizeLabel(mm: string, width: number, height: number): SVGElement {
-  const text = activeDocument.createElementNS(SVG_NS, "text");
-  text.setAttribute("x", String(width / 2));
-  text.setAttribute("y", String(height / 2));
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("dominant-baseline", "central");
-  text.setAttribute("font-size", String(Math.round(Math.min(width, height) * 0.36)));
-  text.setAttribute("font-weight", "600");
-  text.setAttribute("fill", "currentColor");
-  text.textContent = mm.replace(/\s*mm$/, "");
-  return text;
 }
 
 /**
@@ -4871,7 +4839,7 @@ function widthButton(
   onPick: () => void,
 ): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
-  button.append(widthGlyph(thickness, pen, mm));
+  button.append(widthGlyph(thickness, pen));
   button.setAttribute("aria-label", `Width ${mm}`);
   button.setAttribute("title", mm);
   button.addEventListener("click", onPick);
@@ -4884,7 +4852,7 @@ function widthButton(
  * ballpoint, lifting off for the brush, a flat band for the highlighter
  * (pen-glyphs.ts).
  */
-function widthGlyph(thickness: number, pen: string, mm?: string): SVGElement {
+function widthGlyph(thickness: number, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${SWOOSH_WIDTH} ${SWOOSH_HEIGHT}`);
   svg.setAttribute("width", String(SWOOSH_WIDTH));
@@ -4903,12 +4871,6 @@ function widthGlyph(thickness: number, pen: string, mm?: string): SVGElement {
   }
   if (shape.opacity !== undefined) path.setAttribute("opacity", String(shape.opacity));
   svg.append(path);
-  // Thicker on screen than the glyph is tall: the stroke would only fill it,
-  // so it fades behind its width in mm.
-  if (mm && thickness > SWOOSH_HEIGHT) {
-    path.setAttribute("opacity", "0.18");
-    svg.append(sizeLabel(mm, SWOOSH_WIDTH, SWOOSH_HEIGHT));
-  }
   return svg;
 }
 
