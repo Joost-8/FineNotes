@@ -104,6 +104,27 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   return out;
 }
 
+/** The My templates entry the dialog made a notebook of last time. */
+export interface NotebookTemplateChoice {
+  /** Vault path of the library's PDF. */
+  path: string;
+  /** 0-based page of that PDF. */
+  page: number;
+}
+
+/**
+ * Read the remembered template back, or none. Like the choices, it may hold
+ * anything; unlike them it has no default to fall back on field by field, so
+ * one bad field means no template, and the dialog starts on the paper.
+ */
+export function parseNotebookTemplate(raw: unknown): NotebookTemplateChoice | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.path !== "string" || r.path.trim() === "") return null;
+  if (typeof r.page !== "number" || !Number.isInteger(r.page) || r.page < 0) return null;
+  return { path: r.path, page: r.page };
+}
+
 // --- Titles and file names --------------------------------------------------
 
 /** Longest title kept, in characters: a cover and a heading, not an essay. */
@@ -391,6 +412,8 @@ export function buildPdfNotebook(
   attachments: AttachmentFolders | undefined,
   path: string,
   sizes: ReadonlyArray<{ width: number; height: number }>,
+  /** The PDF is a copy of a template from My templates: its pages are marked so. */
+  fromTemplate = false,
 ): InkDocument {
   const doc = buildNewDocument({ ...choices, type: "notebook" }, title, attachments);
   if (sizes.length === 0) return doc;
@@ -399,7 +422,9 @@ export function buildPdfNotebook(
     id: `p${index + 1}`,
     kind: "ink",
     geometry: pdfPageGeometry(base, size),
-    backdrop: { kind: "pdf", path, page: index },
+    backdrop: fromTemplate
+      ? { kind: "pdf", path, page: index, template: true }
+      : { kind: "pdf", path, page: index },
     strokes: [],
     images: [],
     textBoxes: [],

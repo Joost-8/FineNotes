@@ -18,6 +18,7 @@ import {
   RULINGS,
   isCoverRuling,
 } from "./document";
+import { isTemplatePaper } from "./paper-library";
 import { mmToPage } from "./units";
 
 export interface TemplateEntry {
@@ -173,20 +174,39 @@ export function coverColorOf(backdrop: Backdrop): string | null {
 }
 
 /**
- * The paper a new page next to page `index` should repeat. Normally that
- * page's own backdrop — but a cover is not paper, so next to a cover it is
- * the nearest paper page's (the one after it first), or blank paper.
+ * The page whose paper a new page next to page `index` should repeat.
+ * Normally that page — but a cover is not paper, so next to a cover it is
+ * the nearest paper page (the one after it first), or none.
  */
-export function paperTemplateFor(pages: readonly Page[], index: number): Backdrop {
+export function paperPageFor(pages: readonly Page[], index: number): Page | undefined {
   const at = Math.max(0, Math.min(pages.length - 1, Math.trunc(index) || 0));
   const isPaper = (page: Page | undefined): page is Page =>
     !!page && (page.backdrop.kind === "pdf" || !isCoverRuling(page.backdrop.kind));
-  if (isPaper(pages[at])) return pages[at].backdrop;
+  if (isPaper(pages[at])) return pages[at];
   for (let d = 1; d < pages.length; d++) {
-    if (isPaper(pages[at + d])) return pages[at + d].backdrop;
-    if (isPaper(pages[at - d])) return pages[at - d].backdrop;
+    if (isPaper(pages[at + d])) return pages[at + d];
+    if (isPaper(pages[at - d])) return pages[at - d];
   }
-  return { kind: "blank" };
+  return undefined;
+}
+
+/** The paper a new page next to page `index` should repeat ({@link paperPageFor}), or blank. */
+export function paperTemplateFor(pages: readonly Page[], index: number): Backdrop {
+  return paperPageFor(pages, index)?.backdrop ?? { kind: "blank" };
+}
+
+/**
+ * The backdrop a new page repeats from paper `backdrop`. A PDF page from My
+ * templates is paper like any other ({@link isTemplatePaper}, given the
+ * names in My templates now), so it repeats as it is, the same page of the
+ * same PDF. Any other PDF page (a lecture's slide) points at content, not
+ * paper: a blank sheet is the honest default.
+ */
+export function repeatedPaper(backdrop: Backdrop, templateNames: ReadonlySet<string>): Backdrop {
+  if (backdrop.kind === "pdf" && !isTemplatePaper(backdrop, templateNames)) {
+    return { kind: "blank" };
+  }
+  return { ...backdrop };
 }
 
 const RULING_NAMES: ReadonlyMap<Ruling, string> = new Map([
@@ -339,20 +359,24 @@ export function parseRecent(raw: unknown): SyntheticBackdrop[] {
 
 /**
  * The cards the "Add Page" popover shows: the current page's own template
- * first, then the recent ones that differ from it. A PDF page cannot be
- * repeated as a template, so its card is plain paper — and so is a cover's,
+ * first, then the recent ones that differ from it. The first card repeats
+ * the page as a new page would ({@link repeatedPaper}): a page of My
+ * templates as it is, any other PDF page as plain paper. So is a cover,
  * which is not paper at all (hosts pass {@link paperTemplateFor} instead).
  */
 export function popoverTemplates(
   current: Backdrop,
   recent: readonly SyntheticBackdrop[],
-): Array<{ label: string; backdrop: SyntheticBackdrop }> {
-  const first: SyntheticBackdrop =
-    current.kind === "pdf" || isCoverRuling(current.kind) ? { kind: "blank" } : { ...current };
+  templateNames: ReadonlySet<string> = new Set(),
+): Array<{ label: string; backdrop: Backdrop }> {
+  const first: Backdrop =
+    current.kind !== "pdf" && isCoverRuling(current.kind)
+      ? { kind: "blank" }
+      : repeatedPaper(current, templateNames);
   return [
     { label: "Current template", backdrop: first },
     ...recent
-      .filter((r) => !sameTemplate(r, first))
+      .filter((r) => first.kind === "pdf" || !sameTemplate(r, first))
       .map((backdrop) => ({ label: templateName(backdrop.kind), backdrop })),
   ].slice(0, MAX_RECENT);
 }

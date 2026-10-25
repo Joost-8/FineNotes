@@ -86,6 +86,11 @@ export interface GoodObsidianSettings {
    * hold anything, so it is only read through `parseNotebookChoices`.
    */
   lastNotebookChoices: unknown;
+  /**
+   * The My templates entry the dialog made a notebook of last time, or null
+   * when it was a paper. Read only through `parseNotebookTemplate`.
+   */
+  lastNotebookTemplate: unknown;
 
   recognitionProviderId: string;
   desynchronizedCanvas: boolean;
@@ -298,6 +303,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   paperWidth: DEFAULT_PAPER_WIDTH,
   newNotebookFolder: "",
   lastNotebookChoices: null,
+  lastNotebookTemplate: null,
   recognitionProviderId: MANUAL_PROVIDER_ID,
   desynchronizedCanvas: true,
   debugHud: false,

@@ -298,6 +298,11 @@ export interface PdfBackdrop {
    * otherwise show twice. Stored only as `false`; absent means drawn.
    */
   annotations?: false;
+  /**
+   * `true`: the PDF is a notebook's copy of a template from My templates, so
+   * a page added after this one repeats it. Stored only as `true`.
+   */
+  template?: true;
 }
 
 export type Backdrop = SyntheticBackdrop | PdfBackdrop;

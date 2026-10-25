@@ -26,7 +26,13 @@ import {
 import { type App, Menu, Modal, setIcon } from "obsidian";
 import { renderColorMixer } from "./color-picker";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
-import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document";
+import type {
+  Backdrop,
+  PageGeometry,
+  PdfBackdrop,
+  Ruling,
+  SyntheticBackdrop,
+} from "../model/document";
 import type { InsertPosition } from "../model/page-commands";
 import type { PaperEntry } from "../model/paper-library";
 import {
@@ -118,12 +124,16 @@ export function installPopoverDismiss(
 
 export interface AddPagePopoverOptions {
   /** The template of the page the popover was opened from. */
-  current: SyntheticBackdrop | { kind: "pdf"; path: string; page: number };
+  current: Backdrop;
   /** Geometry new pages inherit (the reference page's). */
   geometry: PageGeometry;
   recent: readonly SyntheticBackdrop[];
+  /** The templates in My templates now, by name: a page made of one before it was marked is still one. */
+  templateNames?: ReadonlySet<string>;
   position: InsertPosition;
-  onPick: (backdrop: SyntheticBackdrop, position: InsertPosition) => void;
+  /** A page of My templates as a card preview `cssWidth` wide; called again once it has rendered. */
+  paintPaper?: (canvas: HTMLCanvasElement, backdrop: PdfBackdrop, cssWidth: number) => void;
+  onPick: (backdrop: Backdrop, position: InsertPosition) => void;
   onMore: (position: InsertPosition) => void;
 }
 
@@ -136,6 +146,8 @@ export class AddPagePopover {
   private readonly segments = new Map<InsertPosition, HTMLButtonElement>();
   private readonly dispose: Array<() => void> = [];
   private closed = false;
+  /** The card showing a page of My templates, repainted when its PDF page renders. */
+  private paperCard: { canvas: HTMLCanvasElement; backdrop: PdfBackdrop } | null = null;
 
   constructor(
     anchor: HTMLElement,
@@ -168,6 +180,13 @@ export class AddPagePopover {
     this.el.remove();
   }
 
+  /** Repaint the My templates card of `path`: its PDF page has rendered. */
+  paperReady(path: string): void {
+    const card = this.paperCard;
+    if (!card || this.closed || card.backdrop.path !== path) return;
+    this.options.paintPaper?.(card.canvas, card.backdrop, CARD_WIDTH);
+  }
+
   private build(): void {
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Add Page" });
 
@@ -194,13 +213,23 @@ export class AddPagePopover {
       text: "Templates shown here keep the current page's size.",
     });
     const cards = this.el.createDiv({ cls: "goodobsidian-addpage-cards" });
-    for (const card of popoverTemplates(this.options.current, this.options.recent)) {
+    const { current, recent, templateNames } = this.options;
+    for (const card of popoverTemplates(current, recent, templateNames)) {
       const button = cards.createEl("button", { cls: "goodobsidian-template-card clickable-icon" });
       button.setAttribute("aria-label", `Add a page: ${card.label}`);
       const canvas = button.createEl("canvas", { cls: "goodobsidian-template-preview" });
-      paintTemplatePreview(canvas, card.backdrop, this.options.geometry, CARD_WIDTH);
+      const backdrop = card.backdrop;
+      if (backdrop.kind === "pdf") {
+        this.paperCard = { canvas, backdrop };
+        this.options.paintPaper?.(canvas, backdrop, CARD_WIDTH);
+      } else {
+        paintTemplatePreview(canvas, backdrop, this.options.geometry, CARD_WIDTH);
+      }
       button.createDiv({ cls: "goodobsidian-template-name", text: card.label });
-      button.createDiv({ cls: "goodobsidian-template-sub", text: paperLabel(card.backdrop) });
+      button.createDiv({
+        cls: "goodobsidian-template-sub",
+        text: backdrop.kind === "pdf" ? "My templates" : paperLabel(backdrop),
+      });
       button.addEventListener("click", () => {
         this.close();
         this.options.onPick(card.backdrop, this.position);
@@ -464,6 +493,8 @@ export interface MyTemplatesOptions {
   previewWidth?: number;
   onChoose: (entry: PaperEntry) => void;
   onActivate?: (entry: PaperEntry) => void;
+  /** Chosen as the section opens (through `onChoose`), when it is still in the library. */
+  initial?: { path: string; page: number };
   /** A template was deleted; a dialog that had it chosen lets go of it. */
   onRemoved?: (path: string) => void;
 }
@@ -479,12 +510,14 @@ export class MyTemplatesSection {
   private cards: Array<{ entry: PaperEntry; root: HTMLElement; canvas: HTMLCanvasElement }> = [];
   private chosen: PaperEntry | null = null;
   private alive = true;
+  private initial: { path: string; page: number } | null;
 
   constructor(
     parent: HTMLElement,
     private readonly options: MyTemplatesOptions,
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-my-papers" });
+    this.initial = options.initial ?? null;
     void this.render();
   }
 
@@ -518,6 +551,13 @@ export class MyTemplatesSection {
     const entries = this.options.wholeFiles ? all.filter((entry) => entry.page === 0) : all;
     this.el.empty();
     this.cards = [];
+    // Only the first listing: a later one (after an import or a delete) keeps what was chosen since.
+    const initial = this.initial;
+    this.initial = null;
+    const found =
+      initial &&
+      entries.find((entry) => entry.path === initial.path && entry.page === initial.page);
+    if (found) this.options.onChoose(found);
     const details = this.el.createEl("details", { cls: "goodobsidian-templates-section" });
     details.open = true;
     const summary = details.createEl("summary");

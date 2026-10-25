@@ -19,6 +19,7 @@ import {
   MAX_RECENT,
   coverBackdrop,
   coverColorOf,
+  paperPageFor,
   paperTemplateFor,
   PAGE_SIZES,
   PAPER_COLORS,
@@ -27,6 +28,7 @@ import {
   paperLabel,
   parseRecent,
   popoverTemplates,
+  repeatedPaper,
   pushRecent,
   sizeGeometry,
   sizeOf,
@@ -145,6 +147,49 @@ describe("recent templates", () => {
     const cards = popoverTemplates({ kind: "pdf", path: "x.pdf", page: 2 }, []);
     expect(cards[0].backdrop).toEqual({ kind: "blank" });
   });
+
+  it("a page of My templates is its own current template, ahead of every recent one", () => {
+    const paper = {
+      kind: "pdf" as const,
+      path: "Notes/Paper Cornell.pdf",
+      page: 1,
+      template: true as const,
+    };
+    const cards = popoverTemplates(paper, [{ kind: "blank" }, { kind: "todos" }]);
+    expect(cards.map((c) => c.label)).toEqual(["Current template", "Blank", "Todos"]);
+    expect(cards[0].backdrop).toEqual(paper);
+    expect(cards[0].backdrop).not.toBe(paper);
+  });
+
+  it("an unmarked copy is the current template only while its template is listed", () => {
+    const older = { kind: "pdf" as const, path: "Notes/Paper Cornell.pdf", page: 0 };
+    expect(popoverTemplates(older, [], new Set(["Cornell"]))[0].backdrop).toEqual(older);
+    expect(popoverTemplates(older, [])[0].backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("a cover's current template is plain paper", () => {
+    const cards = popoverTemplates({ kind: "cover-plain" }, []);
+    expect(cards[0].backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("repeatedPaper keeps paper and pages of My templates, and blanks any other PDF", () => {
+    const lined = { kind: "lined" as const, spacing: 40 };
+    const none = new Set<string>();
+    expect(repeatedPaper(lined, none)).toEqual(lined);
+    expect(repeatedPaper(lined, none)).not.toBe(lined);
+    const marked = {
+      kind: "pdf" as const,
+      path: "Paper Grid.pdf",
+      page: 0,
+      template: true as const,
+    };
+    expect(repeatedPaper(marked, none)).toEqual(marked);
+    const older = { kind: "pdf" as const, path: "Paper Grid.pdf", page: 0 };
+    expect(repeatedPaper(older, new Set(["Grid"]))).toEqual(older);
+    expect(repeatedPaper(older, none)).toEqual({ kind: "blank" });
+    const lecture = { kind: "pdf" as const, path: "Lectures/week 3.pdf", page: 4 };
+    expect(repeatedPaper(lecture, new Set(["week 3"]))).toEqual({ kind: "blank" });
+  });
 });
 
 describe("cover colours and covers next to paper", () => {
@@ -175,6 +220,8 @@ describe("cover colours and covers next to paper", () => {
     expect(paperTemplateFor([dotted, squared], 1)).toEqual({ kind: "squared" });
     expect(paperTemplateFor([cover], 0)).toEqual({ kind: "blank" });
     expect(paperTemplateFor([cover, dotted], 99)).toEqual({ kind: "dotted" });
+    expect(paperPageFor([cover, dotted], 0)).toBe(dotted);
+    expect(paperPageFor([cover], 0)).toBeUndefined();
   });
 
   it("a cover is never remembered or offered as a recent template", () => {

@@ -54,6 +54,8 @@ export interface NewNotebookOptions {
   onClosed?: () => void;
   /** Preselected: the choices made last time. */
   choices: NotebookChoices;
+  /** Preselected over the paper: the template from My templates chosen last time, if still there. */
+  template?: { path: string; page: number } | null;
   /** Preselected folder: the setting, or the active file's folder. */
   folder: string;
   onCreate: (request: NewNotebookRequest) => void;
@@ -295,6 +297,7 @@ export class NewNotebookModal extends Modal {
         host: papers,
         wholeFiles: true,
         previewWidth: PREVIEW_WIDTH,
+        ...(this.options.template ? { initial: this.options.template } : {}),
         onChoose: (entry) => this.chooseTemplate(entry),
         onActivate: (entry) => {
           this.chooseTemplate(entry);

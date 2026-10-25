@@ -21,7 +21,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
-import { paperTemplateFor } from "./templates";
+import { paperPageFor, repeatedPaper } from "./templates";
 
 /** Append a freshly-drawn stroke to a specific page. */
 export class AddStrokeToPage implements Command {
@@ -255,39 +255,36 @@ export class MoveStrokesOnPage implements Command {
  *
  * Contract v2 §1: a new page inherits the geometry and backdrop of the page it
  * follows — except that a cover is not paper, so a page after the cover
- * repeats the notebook's paper instead ({@link paperTemplateFor}). The
+ * repeats the notebook's paper instead ({@link paperPageFor}), and a PDF page
+ * repeats only when it is paper from My templates ({@link repeatedPaper}). The
  * command itself is the model's `AddPage`; only the "what page, and where"
  * decision is the view's, so that is all that lives here.
  */
 export function pageToInsertAfter(
   doc: InkDocument,
   afterIndex: number,
+  /** The templates in My templates now, by name ({@link repeatedPaper}). */
+  templateNames: ReadonlySet<string> = new Set(),
 ): { index: number; page: Page } | null {
   const at = doc.pages[afterIndex] ? afterIndex : doc.pages.length - 1;
   const template = doc.pages[at];
   if (!template) return null;
+  const paper = paperPageFor(doc.pages, at);
+  const backdrop = repeatedPaper(paper?.backdrop ?? { kind: "blank" }, templateNames);
+  // A repeated PDF page keeps that page's shape, even when it sits past a cover.
+  const geometry = backdrop.kind === "pdf" && paper ? paper.geometry : template.geometry;
   return {
     index: afterIndex + 1,
     page: {
       id: nextPageId(doc),
       kind: "ink",
-      geometry: { ...template.geometry },
-      backdrop: inheritBackdrop(paperTemplateFor(doc.pages, at)),
+      geometry: { ...geometry },
+      backdrop,
       strokes: [],
       images: [],
       textBoxes: [],
     },
   };
-}
-
-/**
- * A new page inherits the previous page's backdrop — except a PDF backdrop,
- * which points at a specific source page and cannot be meaningfully repeated.
- * A blank sheet is the honest default there.
- */
-function inheritBackdrop(backdrop: Backdrop): Backdrop {
-  if (backdrop.kind === "pdf") return { kind: "blank" };
-  return { ...backdrop };
 }
 
 /** Next free `p<N>` page id for a document. */

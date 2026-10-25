@@ -90,6 +90,26 @@ describe("v2 pages, backdrops, images and shapes", () => {
     });
   });
 
+  it("round-trips the mark of a page made from My templates, and only `true` as the mark", () => {
+    const marked = pageDoc({
+      backdrop: { kind: "pdf", path: "N/Paper Planner.pdf", page: 1, template: true },
+    });
+    expect(decodeDocument(encodeDocument(marked)).pages[0].backdrop).toEqual({
+      kind: "pdf",
+      path: "N/Paper Planner.pdf",
+      page: 1,
+      template: true,
+    });
+    const odd = pageDoc({
+      backdrop: { kind: "pdf", path: "a.pdf", page: 0, template: "yes" } as never,
+    });
+    expect(decodeDocument(encodeDocument(odd)).pages[0].backdrop).toEqual({
+      kind: "pdf",
+      path: "a.pdf",
+      page: 0,
+    });
+  });
+
   it("falls back to blank rather than dropping a page whose PDF path is missing", () => {
     const payload = `v2:${deflateToBase64(
       JSON.stringify({
