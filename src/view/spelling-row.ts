@@ -21,7 +21,7 @@ export class SpellingRows {
 
   constructor(
     after: HTMLElement,
-    private readonly field: HTMLInputElement,
+    private readonly field: HTMLInputElement | HTMLTextAreaElement,
     fixes: readonly SpellingFix[],
   ) {
     this.el = createDiv({ cls: "goodobsidian-spelling" });

@@ -460,6 +460,7 @@ describe("registration", () => {
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-text-layer",
+        "turn-selection-into-text",
         "view-changelog",
         "write-handwriting-practice",
         "zoom-in",
@@ -467,6 +468,13 @@ describe("registration", () => {
       ].sort(),
     );
     for (const c of registered.commands) expect(c.name.trim()).not.toBe("");
+  });
+
+  it("offers Turn selection into text with no default hotkey, for the user to bind (#42)", async () => {
+    await load();
+    const command = registered.commands.find((c) => c.id === "turn-selection-into-text");
+    expect(command?.name).toBe("Turn selection into text");
+    expect((command as { hotkeys?: unknown } | undefined)?.hotkeys).toBeUndefined();
   });
 
   it("registers the notebook view, the ribbon button and the OpenRouter callback", async () => {

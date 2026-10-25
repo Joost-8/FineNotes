@@ -216,7 +216,12 @@ import {
   replaceCore,
   wordCore,
 } from "../recognition/hwr/lexicon";
-import { editedWords, matchCase, selectionWords } from "../recognition/hwr/selection-words";
+import {
+  editedWords,
+  matchCase,
+  selectionWords,
+  wordsByLine,
+} from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
 import { nextDeviceStep } from "../recognition/device-reading";
@@ -252,6 +257,7 @@ import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
+import { InkTextModal } from "./ink-text-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
@@ -2540,6 +2546,7 @@ export class InkView extends TextFileView {
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onMakeTask: (index, strokeIds) => this.makeInkTask(index, strokeIds),
+        onTurnIntoText: (index, strokeIds) => this.turnIntoText(index, strokeIds),
         onOpenLink: (target) => this.openInkLink(target),
         onTapComment: (index, comment) => this.openComment(index, comment),
         onAddComment: (index, at) => {
@@ -3411,6 +3418,40 @@ export class InkView extends TextFileView {
     });
   }
 
+  /**
+   * Turn into › Text (FineNotes#42): ask what the ink says, starting from
+   * what this device reads in it, line by line, and replace the ink with a
+   * text box saying that. Undo brings the ink back.
+   */
+  private turnIntoText(index: number, strokeIds: string[]): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    let read: SelectionText | null = null;
+    const modal = new InkTextModal(this.app, (text) => {
+      // By identity: the page may move or go while the dialog is open.
+      if (this.isProtected() || this.surface !== surface) return;
+      if (read) this.recordEdits(page, read.words, text);
+      if (surface.turnInkIntoText(page, strokeIds, text)) this.requestSave();
+    });
+    modal.open();
+    void this.readSelection(page, strokeIds, true).then((found) => {
+      read = found;
+      if (found.text) modal.suggest(found.text, found.fixes);
+    });
+  }
+
+  /** Whether the lasso holds ink that "Turn selection into text" can act on. */
+  get hasInkSelected(): boolean {
+    return !this.isProtected() && (this.surface?.selectedInk() ?? null) !== null;
+  }
+
+  /** The "Turn selection into text" command: Turn into › Text on the lasso selection. */
+  turnSelectionIntoText(): void {
+    const ink = this.surface?.selectedInk();
+    if (ink) this.turnIntoText(ink.index, ink.strokeIds);
+  }
+
   /** The vault's notes for the link picker, most recently changed first. */
   private linkableNotes(): LinkableNote[] {
     const from = this.file?.path ?? "";
@@ -3493,14 +3534,18 @@ export class InkView extends TextFileView {
    * page's content now), their text is used: read alone, a word loses the
    * line around it. Those words are then checked against the word list.
    */
-  private async readSelection(page: Page, strokeIds: readonly string[]): Promise<SelectionText> {
+  private async readSelection(
+    page: Page,
+    strokeIds: readonly string[],
+    keepLines = false,
+  ): Promise<SelectionText> {
     const none: SelectionText = { text: "", fixes: [], words: [] };
     if (this.settings.handwritingOnDevice === false || strokeIds.length === 0) return none;
     const entry = this.pageReadings.get(page.id);
     if (entry && entry.hash === pageContentHash(page)) {
       const words = selectionWords(entry.words, entry.read, strokeIds);
       if (words) {
-        const text = words.map((w) => w.text).join(" ");
+        const text = keepLines ? wordsByLine(words) : words.map((w) => w.text).join(" ");
         return { text, fixes: await this.spellingFixes(page, entry, words), words };
       }
     }
@@ -3508,7 +3553,8 @@ export class InkView extends TextFileView {
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     if (strokes.length === 0) return none;
     try {
-      return { text: await this.plugin.handwriting.readInk(strokes), fixes: [], words: [] };
+      const text = await this.plugin.handwriting.readInk(strokes, keepLines);
+      return { text, fixes: [], words: [] };
     } catch {
       return none;
     }

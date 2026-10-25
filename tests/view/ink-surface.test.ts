@@ -1078,6 +1078,93 @@ describe("Add to contents on a selection", () => {
   });
 });
 
+describe("Turn into › Text (FineNotes#42)", () => {
+  function menuSurface(callbacks: State, sel: State): SelectionAction[] {
+    const surface = surfaceWith({
+      doc: documentOf(page("p1", sel.strokes as Stroke[])),
+      palette: [],
+      toolState: {},
+      callbacks,
+      groupBounds: () => ({ minX: 100, minY: 105, maxX: 300, maxY: 125 }),
+      pasteAction: () => ({ id: "paste", icon: "", label: "Paste", group: "edit" }),
+      shapeStyleActions: () => [],
+      clearSelection: () => undefined,
+    });
+    return run<SelectionAction[]>(surface, "groupActions", sel);
+  }
+
+  it("is first under Turn into, and hands the ink to the host", () => {
+    const asked: unknown[] = [];
+    const strokes = [line("a", 100, 300, 115), line("b", 100, 300, 140)];
+    const sel = { pageId: "p1", strokes, images: [], textBoxes: [] };
+    const actions = menuSurface(
+      {
+        onTurnIntoText: (...args: unknown[]) => asked.push(args),
+        onMakeTask: () => undefined,
+        onLinkStrokes: () => undefined,
+      },
+      sel,
+    );
+    const turn = menuLayout(actions).rows.find((r) => r.kind === "submenu");
+    const into = turn?.kind === "submenu" ? turn.actions : [];
+    expect(into[0]).toMatchObject({ id: "to-text", icon: "type", label: "Text" });
+    into[0].run?.();
+    expect(asked).toEqual([[0, ["a", "b"]]]);
+  });
+
+  it("is not offered for a selection without ink", () => {
+    const box = { id: "t1", x: 0, y: 0, w: 80, text: "hi", color: "#000", fontSize: 22 };
+    const sel = { pageId: "p1", strokes: [], images: [], textBoxes: [box] };
+    const actions = menuSurface({ onTurnIntoText: () => undefined }, sel);
+    expect(actions.some((a) => a.id === "to-text")).toBe(false);
+  });
+
+  it("replaces the ink with a selected box in its colour, and undo brings the ink back", () => {
+    const blue = { ...line("a", 100, 300, 115), color: "#1d4ed8" };
+    const p = page("p1", [line("k", 0, 50, 10), blue]);
+    const doc = documentOf(p);
+    const history = new History();
+    const selected: unknown[] = [];
+    const ids = new IdSequence("t");
+    const surface = surfaceWith({
+      doc,
+      history,
+      textBoxIds: ids,
+      toolState: { textStyle: { color: "#000000", fontSize: 22 } },
+      callbacks: {},
+      applyCommand: (command: Parameters<History["push"]>[1]) => history.push(doc, command),
+      syncTextBoxes: () => undefined,
+      select: (...args: unknown[]) => selected.push(args),
+    });
+    expect(run(surface, "turnInkIntoText", p, ["a"], "  hello ")).toBe(true);
+    expect(p.strokes.map((s) => s.id)).toEqual(["k"]);
+    expect(p.textBoxes).toHaveLength(1);
+    expect(p.textBoxes[0]).toMatchObject({ text: "hello", color: "#1d4ed8", fit: true });
+    expect(selected).toEqual([["p1", { strokes: [], images: [], textBoxes: [p.textBoxes[0]] }]]);
+    history.undo(doc);
+    expect(p.strokes).toEqual([line("k", 0, 50, 10), blue]);
+    expect(p.textBoxes).toEqual([]);
+    // Blank text, or ink no longer there, changes nothing.
+    expect(run(surface, "turnInkIntoText", p, ["a"], " \n ")).toBe(false);
+    expect(run(surface, "turnInkIntoText", p, ["gone"], "x")).toBe(false);
+    expect(p.textBoxes).toEqual([]);
+  });
+
+  it("finds the lasso's ink for the command, and nothing without ink", () => {
+    const p = page("p1", [line("a", 100, 300, 115)]);
+    let selection: State | null = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const surface = surfaceWith({
+      doc: documentOf(blankPage("p0"), p),
+      liveSelection: () => selection,
+    });
+    expect(run(surface, "selectedInk")).toEqual({ index: 1, strokeIds: ["a"] });
+    selection = { pageId: "p1", strokes: [], images: [], textBoxes: [] };
+    expect(run(surface, "selectedInk")).toBeNull();
+    selection = null;
+    expect(run(surface, "selectedInk")).toBeNull();
+  });
+});
+
 describe("handwritten links", () => {
   function linked() {
     const p = page("p1", [line("fir", 100, 200, 115), line("rest", 300, 400, 115)]);

@@ -179,10 +179,11 @@ export class HandwritingReader {
     }
   }
 
-  /** What a few strokes say, on one line: lines joined by spaces. */
-  async readInk(strokes: readonly Stroke[]): Promise<string> {
+  /** What a few strokes say: on one line (lines joined by spaces), or line by line. */
+  async readInk(strokes: readonly Stroke[], keepLines = false): Promise<string> {
     const reading = await this.readPage(strokes);
-    return readingText(reading).replace(/\n/g, " ").trim();
+    const text = readingText(reading);
+    return (keepLines ? text : text.replace(/\n/g, " ")).trim();
   }
 
   dispose(): void {
