@@ -617,12 +617,12 @@ const FOLD_RANK = {
   calculator: 1,
   pdf: 2,
   record: 3,
-  ruler: 3.5,
   image: 4,
   ai: 5,
   search: 6,
   share: 7,
   settings: 8,
+  ruler: 8.5,
   shape: 9,
   text: 10,
   select: 11,
@@ -1273,8 +1273,11 @@ export class Toolbar {
     button.toggleClass("is-on", out);
     button.setAttribute("aria-pressed", String(out));
     if (!out && this.popoverKind === "ruler") this.closePopover();
-    // It is wider while it shows its chevron.
-    this.fitBar(this.state.tool === "highlighter" ? "pen" : this.state.tool);
+    // It is wider while it shows its chevron: the bar may fold differently,
+    // and the centred tools move under the tool indicator, which follows.
+    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    this.fitBar(tool);
+    this.placeIndicator(tool, null);
   }
 
   private toggleRulerPopover(anchor: HTMLElement): void {
