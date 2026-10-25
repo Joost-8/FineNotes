@@ -54,6 +54,9 @@ extracted from the matching section of this file by `release.yml`.
   Replace swaps the ink for a text box in the ink's colour and size. Undo
   brings the ink back. On a computer, the command "Turn selection into
   text" does the same; give it a hotkey under Settings → Hotkeys.
+- **A way to support FineNotes.** A heart at the end of FineNotes'
+  settings, and Obsidian's support button on FineNotes' page in Community
+  plugins, open FineNotes' GitHub Sponsors page.
 
 ### Fixed
 

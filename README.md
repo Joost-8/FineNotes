@@ -22,6 +22,8 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 **Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
 
+**Support FineNotes:** [GitHub Sponsors](https://github.com/sponsors/Joost-8)
+
 ## Features
 
 **Handwriting recognition on your device: Grape (handwriting recognizer model)**
@@ -679,6 +681,8 @@ build.
   [Discussions](https://github.com/Joost-8/FineNotes/discussions).
 - **Something broken?** [Report a bug](https://github.com/Joost-8/FineNotes/issues/new/choose):
   the form says which diagnostics help with which problem.
+- **Like FineNotes?** You can support its development on
+  [GitHub Sponsors](https://github.com/sponsors/Joost-8), monthly or once.
 - **Website:** [finenotes.vercel.app](https://finenotes.vercel.app), with a browser demo.
 - **Follow FineNotes** for news, tips and demos: [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian).
 - The same links are in Settings → FineNotes → Feedback and community.
