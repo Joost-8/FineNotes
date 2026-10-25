@@ -222,8 +222,8 @@ export interface GoodObsidianSettings {
   checkHandwrittenWords: boolean;
   /**
    * Calculation notes: a line that ends in "=" is read on this device and its
-   * answer offered beside it, written on a tap (view/calc-notes.ts). Only
-   * with a model that reads maths well enough. Off by default.
+   * answer offered beside it, written only on a tap (view/calc-notes.ts).
+   * On by default (Joost, 2026-10-25: every Grape now reads maths).
    */
   calcNotes: boolean;
   /**
@@ -356,7 +356,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   handwritingOnDevice: true,
   replayInk: true,
   checkHandwrittenWords: false,
-  calcNotes: false,
+  calcNotes: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
   notebookOwnFolder: true,

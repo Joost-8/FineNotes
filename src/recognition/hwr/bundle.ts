@@ -60,14 +60,6 @@ export interface HwrMeta {
   };
   decoder: { alpha: number; beta: number; beam: number; topk: number; prune: number };
   /**
-   * Set (true) only on a model measured to read digits and operators well
-   * enough that a calculation from its reading can be trusted: calculation
-   * notes stay off with any other. Grape 2.0 does not set it (on its
-   * developer's own ink it reads about seven digits in ten right). A model
-   * learned from one keeps its header, so it keeps the flag.
-   */
-  maths?: boolean;
-  /**
    * What the network reads, from format 2: absent means point frames (the
    * features above). Curves are fitted to those frames (curves.ts); the
    * network's inputs may be wider than a curve's CURVE_RAW values, padded
@@ -117,11 +109,6 @@ export interface HwrBundle {
   meta: HwrMeta;
   net: NetWeights;
   lm: CharLm | null;
-}
-
-/** Whether a model's header says it reads maths well enough to calculate with ({@link HwrMeta.maths}). */
-export function readsMaths(meta: Pick<HwrMeta, "maths">): boolean {
-  return meta.maths === true;
 }
 
 /** A file that is not a recogniser this build can read. */

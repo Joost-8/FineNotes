@@ -79,6 +79,7 @@ const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 const { speechAsset } = await import("../../src/audio/speech-models");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
+const { SYMBOL_SET } = await import("../../src/recognition/practice");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
@@ -162,10 +163,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     },
     // The reader: what model is loaded (none yet), and loading one.
     handwriting: {
-      info: null as { maths: boolean } | null,
+      info: null as object | null,
       model: vi.fn(() => {
         calls.push("hwr:load");
-        return Promise.resolve({ maths: false });
+        return Promise.resolve({});
       }),
     },
     learner: {
@@ -210,7 +211,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       },
       reloadReader: () => calls.push("reload"),
       openNotebook: () => null,
-      createPracticeFile: () => Promise.resolve(null),
+      createPracticeFile: (set: number) => {
+        calls.push(`practice:${set}`);
+        return Promise.resolve(null);
+      },
     }),
     closeSettings: vi.fn(() => calls.push("closeSettings")),
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
@@ -369,7 +373,6 @@ const MODEL_ROWS = [
   ["Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
   ["Underline words it may have misread", "toggle:checkHandwrittenWords"],
   ["Calculate lines that end in =", "toggle:calcNotes"],
-  ["(block)", "render"],
   ["Your handwriting model", "render"],
   ["Read with my model", "toggle:useLearnedHandwriting"],
   ["Learn your handwriting", "render"],
@@ -1750,26 +1753,13 @@ describe("Models on this device", () => {
     ]);
   });
 
-  it("says, while calculating is on, when the model in use cannot calculate", async () => {
+  it("calculates by default, with no model check and no warning under it", () => {
     const plugin = makePlugin();
-    const callout = () => {
-      const all = rows(makeTab(plugin).tab);
-      return all[all.findIndex((r) => r.def.name === "Calculate lines that end in =") + 1].def;
-    };
-    // Off by default; then on, before any model is loaded: nothing to say yet.
-    expect(plugin.settings.calcNotes).toBe(false);
-    expect(shown(callout())).toBe(false);
-    plugin.settings.calcNotes = true;
-    expect(shown(callout())).toBe(false);
-    plugin.handwriting.info = { maths: false };
-    expect(shown(callout())).toBe(true);
-    plugin.handwriting.info = { maths: true };
-    expect(shown(callout())).toBe(false);
-    // Switching it on loads the model, so the tab can tell.
-    plugin.settings.calcNotes = false;
-    const { tab } = makeTab(plugin);
-    await tab.setControlValue("calcNotes", true);
-    expect(plugin.calls).toContain("hwr:load");
+    expect(plugin.settings.calcNotes).toBe(true);
+    const all = rows(makeTab(plugin).tab);
+    const at = all.findIndex((r) => r.def.name === "Calculate lines that end in =");
+    expect(shown(all[at].def)).toBe(true);
+    expect(all[at + 1].def.name).toBe("Your handwriting model");
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {
@@ -1834,6 +1824,18 @@ describe("the learned handwriting model", () => {
     ]);
     expect(learn.buttons[1].disabled).toBe(true);
     expect(tab.infoOf(LEARN)).toMatch(/Copy at least 10 lines first \(0 so far\)/);
+  });
+
+  it("offers the symbol sheet beside the text sheets, before either is written", async () => {
+    const plugin = makePlugin();
+    const { tab } = await loaded(plugin);
+    const learn = renderRow(named(rows(tab), LEARN));
+    const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
+    expect(chips.map((c) => c.textContent)).toEqual(["Symbols"]);
+    chips[0].dispatch("click");
+    await flush();
+    expect(plugin.calls).toContain("closeSettings");
+    expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
   });
 
   it("describes a learned model in one line: in use, and how much better it reads", async () => {

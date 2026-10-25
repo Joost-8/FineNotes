@@ -24,6 +24,7 @@ import {
   readCorrectionLines,
   swapWithPrevious,
   writePracticePage,
+  writeSymbolPractice,
 } from "./view/handwriting-learning";
 import {
   MIN_PRACTICE_LINES,
@@ -182,13 +183,6 @@ const CALLOUTS = {
     detail:
       "This Obsidian version has no keychain. Obsidian 1.11.4 and newer keep keys outside the vault's files.",
   },
-  calcModel: {
-    title: "This handwriting model can't calculate yet",
-    detail:
-      "A misread digit would give a confident wrong answer, so lines are calculated only " +
-      "with a model whose file says it reads digits and operators reliably. Grape 2.0, " +
-      "and a model learned from it, do not; nothing is calculated until such a model is set.",
-  },
 } satisfies Record<string, Callout>;
 
 /** "Calculate lines that end in ="'s ⓘ. */
@@ -197,8 +191,8 @@ const CALC_NOTES_INFO =
   "FineNotes reads the line on this device and shows what it read and the answer beside " +
   "it. Tap that to write the answer after the =, at your writing's size, in your own hand " +
   "once you have written the symbol practice sheet (a command); keep writing to leave the " +
-  "page as it was. A letter set on a line above (a = 5) can be used. Needs a handwriting " +
-  "model that reads digits reliably.";
+  "page as it was. A letter set on a line above (a = 5) can be used. Check what it read " +
+  "before you tap: a misread digit gives a wrong answer.";
 
 /** Under the Paper width field while what is typed is not a width. */
 const PAPER_WIDTH_ERROR = `Use ${PAPER_WIDTH_RANGE.min} to ${PAPER_WIDTH_RANGE.max}; the last valid width is kept until then.`;
@@ -904,13 +898,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
       await this.plugin.grape.model.check();
       this.plugin.grape.offer("ask");
-    }
-    // Turned on: load the model, so the tab can say whether it reads maths.
-    if (key === "calcNotes" && value === true) {
-      this.plugin.handwriting.model().then(
-        () => this.update(),
-        () => undefined,
-      );
     }
   }
 
@@ -1768,14 +1755,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           visible: reading,
         },
-        callout(
-          CALLOUTS.calcModel,
-          () =>
-            reading() &&
-            settings.calcNotes &&
-            this.plugin.handwriting.info !== null &&
-            !this.plugin.handwriting.info.maths,
-        ),
         this.info(
           drawnRow(
             "Your handwriting model",
@@ -2140,7 +2119,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       });
       show();
     });
-    if (learning.sheets.length === 0) return;
     const list = setting.settingEl.createDiv({ cls: "goodobsidian-sheet-chips" });
     for (const sheet of learning.sheets) {
       const use = sheetUse(sheet, record);
@@ -2164,6 +2142,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       chip.addEventListener("click", () => {
         this.plugin.closeSettings();
         void this.app.workspace.openLinkText(sheet.path, "", false);
+      });
+    }
+    // The symbol sheet sits among the sheets from the start: learning takes
+    // the text sheets, the symbol sheet, or both, whichever were written.
+    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set))) {
+      const chip = list.createEl("button", { cls: "goodobsidian-sheet-chip clickable-icon" });
+      chip.setAttribute("aria-label", "Write the symbol sheet: digits, operators and signs");
+      setIcon(chip.createSpan({ cls: "goodobsidian-sheet-mark" }), "circle-plus");
+      chip.createSpan({ cls: "goodobsidian-sheet-title", text: "Symbols" });
+      chip.addEventListener("click", () => {
+        this.plugin.closeSettings();
+        void writeSymbolPractice(host);
       });
     }
   }

@@ -1,14 +1,13 @@
 /**
- * Calculation notes (Settings › Models on this device, off by default): write
+ * Calculation notes (Settings › Models on this device, on by default): write
  * a line that ends in "=" and lift the pen; a moment later FineNotes reads
  * the line on this device and shows a suggestion beside it, what it read and
  * the answer ("12×4 = 48"). A tap writes the answer as ink, after the "=", at
  * the line's own height, in the writer's hand when they wrote the symbol
  * sheet; writing on, or ignoring it, leaves the page as it was.
  *
- * It runs only with a handwriting model whose file says it reads maths well
- * enough (`HwrMeta.maths`): a wrong digit would give a confident wrong
- * answer. Grape 2.0 does not say so, so with it nothing is calculated.
+ * A misread digit would give a confident wrong answer, so nothing is
+ * written until the user has seen what was read and tapped the suggestion.
  *
  * The pure parts: `model/calc-ink.ts` (the "=", the line, where the answer
  * goes), `model/calc-note.ts` (the reading to a sum, the answer's text) and
@@ -102,8 +101,8 @@ export class CalcNotes {
 
   private async suggest(pageId: string, eq: EqualsSign, token: number): Promise<void> {
     const reader = this.host.reader;
-    const info = await reader.model();
-    if (!info.maths || token !== this.token || !this.host.enabled()) return;
+    await reader.model();
+    if (token !== this.token || !this.host.enabled()) return;
     const page = this.host.page(pageId);
     if (!page || !stillLast(page, eq)) return;
     const strokes = sumStrokes(page.strokes, eq, writingLines(page.backdrop, page.geometry));
