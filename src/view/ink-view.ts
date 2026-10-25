@@ -2284,7 +2284,7 @@ export class InkView extends TextFileView {
     return entry;
   }
 
-  /** A finger tapped an underlined word: ask what it says. */
+  /** A finger tapped (or a mouse right-clicked) an underlined word: ask what it says. */
   private askAboutWord(index: number, strokeIds: string[], at: { x: number; y: number }): void {
     const file = this.file;
     const surface = this.surface;

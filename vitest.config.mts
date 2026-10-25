@@ -85,6 +85,7 @@ export default defineConfig({
         "src/view/text-reveal.ts",
         "src/view/toast-side.ts",
         "src/view/ghost-click.ts",
+        "src/view/ink-target.ts",
         "src/canvas/scan-raster.ts",
         "src/canvas/homography.ts",
         "src/canvas/page-detect.ts",

@@ -57,12 +57,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
-### Fixed
-
 - **Grey and dark paper keep their edges.** A page the colour of the grey
   background around it (Dark Paper, or a grey paper from the paper
   designer) now gets a background in another shade, so you can see where
   the page ends.
+- **Right-click an underlined word to correct it, on a computer.** With a
+  mouse there was no way to open the card of a word the handwriting check
+  underlined: the mouse writes, and a right-click always opened the menu.
+  A right-click on an underlined word, or on linked ink, now does what a
+  finger tap there does; anywhere else it still opens the menu (#41).
 - **Erasing by line no longer takes a whole highlight.** A highlight
   (straightened or not), a shape, or a stroke running over several lines
   used to go whole as soon as the eraser touched its line. Now only its
