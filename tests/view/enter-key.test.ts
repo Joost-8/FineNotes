@@ -5,7 +5,7 @@
  * (FineNotes#42).
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { onEnterKey } from "../../src/view/enter-key";
 
 /** A field that records cancelled events, driven by hand (no DOM here). */
@@ -87,6 +87,46 @@ describe("onEnterKey", () => {
     g.input("one line\n", "insertText");
     expect(confirmed).toEqual(["one line"]);
     expect(g.target.value).toBe("one line");
+  });
+
+  it("brings back the selected word iOS removed before typing the line break (Joost's recording)", () => {
+    // "What" selected, iOS offering Wat / Wrat; the ✓ removes it, then types "\n".
+    const f = field();
+    const confirmed: string[] = [];
+    onEnterKey(f.target, () => confirmed.push(f.target.value), { shiftNewline: true });
+    f.input("What");
+    f.beforeinput("deleteContentBackward");
+    f.input("", "deleteContentBackward");
+    f.beforeinput("insertLineBreak");
+    f.input("\n", "insertLineBreak");
+    expect(confirmed).toEqual(["What"]);
+    expect(f.target.value).toBe("What");
+
+    // The same with the Return reported as composing first, and the break cancelled.
+    const g = field();
+    const got: string[] = [];
+    onEnterKey(g.target, () => got.push(g.target.value), { shiftNewline: true });
+    g.input("What");
+    g.key("Enter", { isComposing: true });
+    g.input("", "insertReplacementText", "");
+    g.beforeinput("insertLineBreak");
+    expect(got).toEqual(["What"]);
+    expect(g.target.value).toBe("What");
+  });
+
+  it("keeps a deletion the user made before pressing Return", () => {
+    const f = field();
+    const confirmed: string[] = [];
+    let now = 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    onEnterKey(f.target, () => confirmed.push(f.target.value));
+    f.input("Buy milk", "insertText", "k");
+    f.key("Backspace");
+    f.input("Buy mil", "deleteContentBackward");
+    now += 900;
+    f.beforeinput("insertLineBreak");
+    expect(confirmed).toEqual(["Buy mil"]);
+    clock.mockRestore();
   });
 
   it("leaves typing, pasted lines, a script's own text and an input method's Return alone", () => {
