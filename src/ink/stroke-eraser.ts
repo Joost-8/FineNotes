@@ -314,6 +314,8 @@ function pieceOf(stroke: Stroke, pts: number[], nextId: () => string): Stroke {
   // filled (a piece is open) and without heads (its ends are new).
   if (stroke.dash !== undefined) piece.dash = stroke.dash;
   if (stroke.radius !== undefined) piece.radius = stroke.radius;
+  // A piece of a note's ink stays on the note.
+  if (stroke.onSticky !== undefined) piece.onSticky = stroke.onSticky;
   return piece;
 }
 

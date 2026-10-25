@@ -37,6 +37,7 @@ import {
   RemoveElements,
   TranslateElements,
 } from "../model/selection-commands";
+import { isNoteInk, noteIdsOf, withNoteInk } from "../model/sticky-notes";
 import { DRAWING_PITCHES, MARGIN_SHARE, linedItems } from "./ruled-ink";
 import {
   type LineBlock,
@@ -177,8 +178,11 @@ function placedOn(page: Page, blocks: readonly LineBlock[], layout: SpaceLayout)
     const pinned = element.kind === "image" && element.el.locked === true;
     return { element, bounds, line, pinned };
   };
+  // A note's ink goes where its note goes (`listsOf`), never on its own.
+  const notes = noteIdsOf(page.images);
+  const ink = notes ? page.strokes.filter((stroke) => !isNoteInk(stroke, notes)) : page.strokes;
   return [
-    ...linedItems(blocks, page.strokes, strokeBounds).map((l) =>
+    ...linedItems(blocks, ink, strokeBounds).map((l) =>
       place({ kind: "stroke", el: l.item }, l.bounds, l.line),
     ),
     ...page.images.map((el) => {
@@ -192,13 +196,14 @@ function placedOn(page: Page, blocks: readonly LineBlock[], layout: SpaceLayout)
   ];
 }
 
-function listsOf(placed: readonly Placed[]): ElementLists {
+function listsOf(page: Page, placed: readonly Placed[]): ElementLists {
   const lists: ElementLists = { strokes: [], images: [], textBoxes: [] };
   for (const { element } of placed) {
     if (element.kind === "stroke") lists.strokes.push(element.el);
     else if (element.kind === "image") lists.images.push(element.el);
     else lists.textBoxes.push(element.el);
   }
+  lists.strokes = withNoteInk(page, lists);
   return lists;
 }
 
@@ -283,7 +288,7 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     else spillMarks.push({ section, from: line, to: to - n });
   }
   if (stay.length > 0) {
-    walk.moves.push(new TranslateElements(page.id, listsOf(stay), 0, dy));
+    walk.moves.push(new TranslateElements(page.id, listsOf(page, stay), 0, dy));
     walk.moved += stay.length;
   }
   if (spill.length === 0 && spillMarks.length === 0) return;
@@ -322,7 +327,7 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     else byShift.set(shift, [s.placed]);
   }
   for (const [shift, group] of byShift) {
-    const lists = listsOf(group);
+    const lists = listsOf(page, group);
     walk.moves.push(
       new TranslateElements(page.id, lists, 0, shift),
       new RemoveElements(page.id, lists, "Insert space"),
@@ -428,7 +433,8 @@ function closeUp(walk: Walk, pageIndex: number, target: SpaceTarget, count: numb
   const marks = sectionsFrom(page, blocks, target);
   if (empty === 0 || (below.length === 0 && marks.length === 0)) return 0;
   const dy = -empty * block.pitch;
-  if (below.length > 0) walk.moves.push(new TranslateElements(page.id, listsOf(below), 0, dy));
+  if (below.length > 0)
+    walk.moves.push(new TranslateElements(page.id, listsOf(page, below), 0, dy));
   for (const { section } of marks) {
     walk.moves.push(new SetSection(page, section.id, moved(section, dy)));
   }

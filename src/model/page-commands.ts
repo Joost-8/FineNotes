@@ -21,6 +21,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
+import { relinkNoteInk } from "./sticky-notes";
 import { paperTemplateFor } from "./templates";
 
 /** Append a freshly-drawn stroke to a specific page. */
@@ -390,7 +391,14 @@ export function duplicatePageAfter(
   delete copy.tasks;
   for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
-  for (const image of copy.images) image.id = `i${++imageSeq}`;
+  const imageIds = new Map<string, string>();
+  for (const image of copy.images) {
+    const id = `i${++imageSeq}`;
+    imageIds.set(image.id, id);
+    image.id = id;
+  }
+  // The ink on a note follows the note's new id.
+  relinkNoteInk(copy.strokes, imageIds);
   for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
   for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
   return { index: index + 1, page: copy };

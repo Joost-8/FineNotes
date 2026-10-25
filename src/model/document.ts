@@ -119,6 +119,15 @@ export interface Stroke {
    * where the ink is training data for the handwriting reader.
    */
   samples?: number[];
+  /**
+   * The id of the sticky note (an {@link ImageElement} with `sticky`) this
+   * ink was written on: it is drawn on the note, clipped to it, and moves,
+   * turns, mirrors and copies with it (`model/sticky-notes.ts`). In memory
+   * only: on disk such a stroke is kept inside its note, in the note's own
+   * space (contracts/api.md, "Sticky notes"). A stroke whose note is gone is
+   * plain page ink.
+   */
+  onSticky?: string;
 }
 
 /** Values per entry of {@link Stroke.samples}: x, y, pressure, time. */
@@ -339,6 +348,18 @@ export interface ImageElement {
    * to but not including 1. Absent is fully opaque.
    */
   opacity?: number;
+  /**
+   * Set on a sticky note: paper painted in this colour rather than a picture
+   * from the vault, so `path` is empty and `crop` unused. Ink written on it
+   * is the strokes whose `onSticky` names this element.
+   */
+  sticky?: StickyPaper;
+}
+
+/** A sticky note's paper. Replaced as a whole, never edited in place. */
+export interface StickyPaper {
+  /** `#rrggbb`. */
+  color: string;
 }
 
 /** The faintest a picture may be drawn: fainter would be a picture nobody can find. */

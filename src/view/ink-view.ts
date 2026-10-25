@@ -114,7 +114,9 @@ import {
   imageMenuEntries,
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
-import { newImageElement, placeImageBox } from "../model/images";
+import { newImageElement, nextImageId, placeImageBox } from "../model/images";
+import { STICKY_SIDE, newStickyNote } from "../model/sticky-notes";
+import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
@@ -308,6 +310,11 @@ const HELD_LOAD_NOTICE =
   "FineNotes: this notebook's ink did not load, perhaps because the file has not " +
   "finished syncing. Nothing on disk has changed. The notebook stays read-only until it " +
   "loads cleanly: reopen it once the sync is done.";
+
+/** The same, for a notebook a newer FineNotes wrote with something this one cannot keep. */
+const NEWER_FORMAT_NOTICE =
+  "FineNotes: this notebook uses something a newer FineNotes added. It stays read-only " +
+  "here, so nothing in it is lost: update FineNotes to edit it.";
 
 /**
  * The tools as the settings left them, for a view that has just opened: the
@@ -636,7 +643,10 @@ export class InkView extends TextFileView {
       bytesOnDisk: this.file?.stat.size ?? 0,
       decoded: doc !== null,
     });
-    if (held) new Notice(HELD_LOAD_NOTICE, 10000);
+    if (held) {
+      const newer = payload !== undefined && needsNewerReader(payload);
+      new Notice(newer ? NEWER_FORMAT_NOTICE : HELD_LOAD_NOTICE, 10000);
+    }
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
     if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
@@ -4335,7 +4345,27 @@ export class InkView extends TextFileView {
       insertBytes: (bytes, mime, name, options) =>
         this.insertImageBytes(bytes, mime, name, options),
       insertVaultFile: (path, options) => this.insertImageFromVault(path, options),
+      insertSticky: (color) => this.insertStickyNote(color),
     };
+  }
+
+  /**
+   * Stick a note of `color` on the page in view, centred in its visible
+   * part, selected (one `InsertImage`, so Undo takes it back). The paper is
+   * painted, so nothing is saved to the vault.
+   */
+  private insertStickyNote(color: string): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    const doc = surface.document;
+    const index = Math.max(0, Math.min(doc.pages.length - 1, surface.currentPage));
+    const page = doc.pages[index];
+    if (!page) return;
+    const side = { width: STICKY_SIDE, height: STICKY_SIDE };
+    const box = placeImageBox(side, page.geometry, surface.visibleRegion(index));
+    const note = newStickyNote(nextImageId(doc), box, color);
+    surface.applyCommand(new InsertImage(page.id, note));
+    surface.selectImage(page.id, note.id);
   }
 
   /**

@@ -176,6 +176,8 @@ export class VaultImageCache implements ImagePainter {
    */
   async prepare(images: readonly ImageElement[], deviceScale: number): Promise<void> {
     for (const image of images) {
+      // A sticky note is painted, not decoded.
+      if (image.sticky) continue;
       // More than one round: a decode already in flight for a smaller size is waited
       // for first, and only then is the size asked for queued.
       for (let round = 0; round < 3 && !this.destroyed; round++) {

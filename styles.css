@@ -4721,6 +4721,49 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   border-radius: var(--gob-radius-m);
 }
 
+/* Sticky note (2026-10-25): its name, then its colours as swatches on the
+   same row. A swatch places a note of that colour; the name places the one
+   used last, which wears the ring. */
+.goodobsidian-imagemenu-split {
+  display: flex;
+  align-items: center;
+}
+
+.goodobsidian-imagemenu-split .goodobsidian-imagemenu-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+button.goodobsidian-imagemenu-swatch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: var(--gob-touch);
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+}
+
+.goodobsidian-imagemenu-swatch-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.goodobsidian-imagemenu-swatch.is-last .goodobsidian-imagemenu-swatch-dot {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--interactive-accent);
+}
+
 /* The hidden file input behind Photos / Take photo. Moved off screen rather
    than `display: none`, which older iOS refused to open a picker for. */
 .goodobsidian-file-input {
