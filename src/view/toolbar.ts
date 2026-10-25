@@ -116,13 +116,19 @@ import {
 } from "./pen-glyphs";
 import {
   DEFAULT_SHAPE_COLOR,
+  PEN_ROW_MAX,
+  colorAfterRemoving,
   contrastMark,
   penColorRow,
   pickPenColor,
   pushRecentColor,
+  removablePenColor,
+  removePenColor,
   reservedPenColors,
   sameColor,
 } from "../model/colors";
+import { bindSwatchDrag } from "./swatch-drag";
+import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
@@ -619,6 +625,9 @@ const QUICK_WIDTHS = 3;
 
 /** The pill changing width and place for a new tool: GoodNotes' 0.3 s `ease`. */
 const PILL_MORPH_MS = 300;
+
+/** How wide the colour row's faded ends are, CSS px (styles.css); a chosen colour is kept clear of them. */
+const COLOR_ROW_FADE_PX = 14;
 /** A new tool's controls fading in. */
 const PILL_FADE_MS = 150;
 
@@ -654,6 +663,10 @@ export class Toolbar {
   /** The eraser mode the eraser button shows now (`drawEraserIcon`). */
   private eraserIconMode: EraserMode | null = null;
   private readonly colorSwatches = new Map<string, HTMLElement>();
+  /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
+  private colorRowScroll = 0;
+  /** A colour was just added with the "+": the row scrolls to its end once to show it. */
+  private revealNewColor = false;
   private readonly widthButtons = new Map<number, HTMLElement>();
   private readonly penTypeButtons = new Map<PenType, HTMLButtonElement>();
   private readonly eraserSizeButtons = new Map<number, HTMLButtonElement>();
@@ -1354,6 +1367,9 @@ export class Toolbar {
     // Where the pill is now, mid-glide or not, so it can glide from there.
     const before = this.pillBox();
     this.stopPillMorph();
+    // The colour row is rebuilt too: keep it scrolled where it was.
+    const colorRow = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-colors");
+    if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
     this.optionsEl.empty();
     this.colorSwatches.clear();
     this.widthButtons.clear();
@@ -1435,32 +1451,54 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Five colours, then every colour in the picker.
-    for (const color of this.quickColors()) {
-      const swatch = this.swatchButton(this.optionsEl, color, () => {
+    // The colour row, as GoodNotes': five in view, the rest a swipe away, and
+    // the "+" after the last one, so a new colour joins the end and stays.
+    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
+    // A sideways swipe here scrolls the row, never Obsidian's sidebars.
+    row.dataset.ignoreSwipe = "true";
+    const colors = this.quickColors();
+    const reserved = this.reservedColors().length;
+    for (const color of colors) {
+      const removable = removablePenColor(colors, reserved, color);
+      const swatch = this.swatchButton(row, color, () => {
         // GoodNotes: a tap on the colour already chosen opens the picker on
         // it (the ▾ in the swatch says so), and what it picks takes that
         // swatch's place; any other colour is just picked.
         if (sameColor(color, this.state.color)) {
-          this.toggleColorPopover("pen-color", swatch, this.state.color, (picked) =>
-            this.setPenColor(picked, color),
+          this.toggleColorPopover(
+            "pen-color",
+            swatch,
+            this.state.color,
+            (picked) => this.setPenColor(picked, color),
+            removable ? () => this.removePenColor(color) : undefined,
           );
         } else this.setPenColor(color);
       });
+      if (removable) {
+        bindSwatchDrag(swatch, {
+          bar: () => this.optionsEl,
+          onRemove: () => this.removePenColor(color),
+        });
+      }
       this.colorSwatches.set(color, swatch);
     }
-    // A dashed ring holding a "+", as GoodNotes' "add colour" (styles.css).
-    const more = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-color-more clickable-icon",
-    });
-    iconOrText(more, "plus", "+");
-    more.setAttribute("aria-label", "More colours");
-    more.setAttribute("title", "More colours");
-    more.addEventListener("click", () =>
-      this.toggleColorPopover("pen-color", more, this.state.color, (color) =>
-        this.setPenColor(color),
-      ),
-    );
+    // A dashed ring holding a "+", as GoodNotes' "add colour" (styles.css),
+    // until the row is full.
+    if (colors.length < PEN_ROW_MAX) {
+      const more = row.createEl("button", {
+        cls: "goodobsidian-color-more clickable-icon",
+      });
+      iconOrText(more, "plus", "+");
+      more.setAttribute("aria-label", "Add colour");
+      more.setAttribute("title", "Add colour");
+      more.addEventListener("click", () =>
+        this.toggleColorPopover("pen-color", more, this.state.color, (color) => {
+          this.revealNewColor = true;
+          this.setPenColor(color);
+        }),
+      );
+    }
+    this.fitColorRow(row);
 
     // Auto-shape: a stroke that is plainly a shape snaps to it on lift.
     if (this.practice) return;
@@ -1517,6 +1555,72 @@ export class Toolbar {
     this.syncActive();
   }
 
+  /**
+   * Take `color` out of the row (its picker's Delete, or dragged off the
+   * pill). The pen then writes with the swatch before it, as GoodNotes does.
+   */
+  private removePenColor(color: string): void {
+    const row = this.quickColors();
+    const reserved = this.reservedColors().length;
+    if (!removablePenColor(row, reserved, color)) return;
+    if (this.popoverKind === "pen-color") this.closePopover();
+    const picked = removePenColor(row, reserved, color);
+    this.state.penColors = picked;
+    this.callbacks.onPenColors?.(picked);
+    if (sameColor(color, this.state.color)) {
+      const next = colorAfterRemoving(row, color);
+      if (next) {
+        this.state.color = next;
+        this.callbacks.onColorChange(next);
+      }
+    }
+    this.keepPenInk();
+    this.buildOptions();
+    this.syncActive();
+  }
+
+  /**
+   * Scroll the rebuilt colour row back to where it was, or to its end when a
+   * colour was just added, keeping the chosen colour in view; and fade the
+   * ends that hide more. A wheel scrolls it sideways, for a mouse.
+   */
+  private fitColorRow(row: HTMLElement): void {
+    const fade = (): void => {
+      const ends = hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
+      row.toggleClass("has-more-start", ends.start);
+      row.toggleClass("has-more-end", ends.end);
+    };
+    row.scrollLeft = this.revealNewColor ? row.scrollWidth : this.colorRowScroll;
+    this.revealNewColor = false;
+    const chosen = this.colorSwatches.get(
+      [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
+    );
+    if (chosen) {
+      row.scrollLeft = scrollToShow(
+        row.scrollLeft,
+        row.clientWidth,
+        chosen.offsetLeft,
+        chosen.offsetWidth,
+        COLOR_ROW_FADE_PX,
+      );
+    }
+    this.colorRowScroll = row.scrollLeft;
+    fade();
+    row.addEventListener("scroll", () => {
+      this.colorRowScroll = row.scrollLeft;
+      fade();
+    });
+    row.addEventListener(
+      "wheel",
+      (event) => {
+        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+        row.scrollLeft += event.deltaY;
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+  }
+
   /** Remember the ink in hand (colour, row and width) as the active pen type's own. */
   private keepPenInk(): void {
     this.state.penInks = withPenInk(
@@ -1542,6 +1646,7 @@ export class Toolbar {
     anchor: HTMLElement,
     current: string,
     pick: (color: string) => void,
+    onDelete?: () => void,
   ): void {
     if (this.popoverKind === kind) {
       this.closePopover();
@@ -1565,6 +1670,7 @@ export class Toolbar {
         pick(color);
       },
       onEyedropper: this.eyedropper(pick),
+      onDelete,
     });
     this.keepPopoverInside(anchor);
   }

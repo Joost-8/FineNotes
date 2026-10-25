@@ -8347,6 +8347,18 @@ button.goodobsidian-color-eyedropper .svg-icon {
   height: 20px;
 }
 
+/* The pen picker's Delete: red words on nothing, after the eyedropper.
+   Never `mod-warning`, which fills a button red (CLAUDE.md ledger). */
+button.goodobsidian-color-delete.clickable-icon {
+  flex: 0 0 auto;
+  height: var(--gob-touch);
+  padding: 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  font-size: var(--font-ui-small);
+  color: var(--text-error);
+}
+
 /* In the custom colour's title row it sits before the way back. */
 .goodobsidian-color-mixer-head .goodobsidian-popover-title {
   flex: 1 1 auto;
@@ -8572,6 +8584,77 @@ button.goodobsidian-color-eyedropper .svg-icon {
   width: 14px;
   height: 14px;
   stroke-width: 2.25px;
+}
+
+/* The pen's colour row, as GoodNotes': five colours and the "+" in view,
+   the rest a swipe away. An end that hides more fades over 14 px
+   (COLOR_ROW_FADE_PX in toolbar.ts), so a colour cut there reads as "more".
+   It may shrink to two swatches when the pane is narrow. */
+.goodobsidian-pen-colors {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: calc(var(--gob-touch-compact) * 2);
+  max-width: calc(var(--gob-touch-compact) * 6);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  --gob-fade-start: #000;
+  --gob-fade-end: #000;
+  mask-image: linear-gradient(
+    90deg,
+    var(--gob-fade-start) 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    var(--gob-fade-end) 100%
+  );
+}
+
+.goodobsidian-pen-colors::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-pen-colors.has-more-start {
+  --gob-fade-start: transparent;
+}
+
+.goodobsidian-pen-colors.has-more-end {
+  --gob-fade-end: transparent;
+}
+
+.goodobsidian-pen-colors > * {
+  flex: none;
+}
+
+/* A colour held to be dragged off: it fades where it was, and a copy of
+   its disc follows the finger, shrinking once it is clear of the pill. */
+.goodobsidian-options .goodobsidian-swatch.is-lifted {
+  opacity: 0.25;
+}
+
+.goodobsidian-swatch-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--layer-tooltip);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
+    scale(1.15);
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.goodobsidian-swatch-ghost.is-off {
+  opacity: 0.55;
+  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
+    scale(0.7);
 }
 
 /* The shape pill's colour: a disc of the shapes' colour and a caret. */

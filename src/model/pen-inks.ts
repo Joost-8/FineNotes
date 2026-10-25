@@ -8,7 +8,7 @@
  * them (`penInks`).
  */
 
-import { parseHexColor } from "./colors";
+import { PEN_ROW_MAX, parseHexColor } from "./colors";
 import { SAVED_PEN_TYPES, type SavedPenType } from "./saved-pens";
 
 /** A pen type's ink: the colour in hand, its pill row's picked colours, and its width. */
@@ -30,8 +30,8 @@ export type PenInks = Partial<Record<SavedPenType, PenInk>>;
 /** A highlighter that was never used starts yellow, as in GoodNotes. */
 export const FIRST_HIGHLIGHTER_COLOR = "#fab005";
 
-/** The most colours a row keeps; more than a pill shows, fewer than a file can hold. */
-const MAX_ROW = 16;
+/** The most colours a row keeps: as many as the pill's row can hold. */
+const MAX_ROW = PEN_ROW_MAX;
 
 /** A width a file can hold: a finite positive number; anything else is none. */
 function sizeOf(raw: unknown): number | undefined {

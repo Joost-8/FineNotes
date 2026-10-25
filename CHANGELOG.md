@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **A pen colour row that grows, as in Goodnotes.** A colour added with
+  the pen's + now joins the end of the row and stays there, instead of
+  pushing one out; the + moves along after it. Five colours show at once,
+  and you swipe along the row for the rest (up to 24 for each pen type).
+  To take a colour out, tap it and choose Delete in the picker, or hold
+  it and drag it off the bar.
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
   gear, with "Update available" under it until you close it with its ✕

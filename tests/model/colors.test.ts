@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   COMMON_COLORS,
   MAX_RECENT_COLORS,
+  PEN_ROW_MAX,
   PEN_ROW_SIZE,
+  colorAfterRemoving,
   penColorRow,
   pickPenColor,
+  removablePenColor,
+  removePenColor,
   reservedPenColors,
   hexToRgb,
   parseHexColor,
@@ -175,14 +179,15 @@ describe("the pen's colour row", () => {
     expect(reserved).toHaveLength(4);
     const row = penColorRow(reserved, undefined, fill);
     expect(row).toEqual([...reserved, "#1a1a1a"]);
-    expect(pickPenColor(row, 4, "#abcdef")).toEqual(["#abcdef"]);
+    expect(pickPenColor(row, 4, "#abcdef")).toEqual(["#1a1a1a", "#abcdef"]);
   });
 
   it("keeps a picked colour, and moves nothing for one already there", () => {
     const reserved = ["#1a1a1a"];
     let row = penColorRow(reserved, undefined, fill);
     const picked = pickPenColor(row, 1, "#ABCDEF");
-    expect(picked).toEqual(["#abcdef", "#e03131", "#1971c2", "#2f9e44"]);
+    // A new colour joins the end of the row; nothing makes way for it.
+    expect(picked).toEqual(["#e03131", "#1971c2", "#2f9e44", "#f08c00", "#abcdef"]);
     row = penColorRow(reserved, picked, fill);
     // Going back to black, then to the pick: both stay where they are.
     expect(pickPenColor(row, 1, "#1a1a1a")).toEqual(picked);
@@ -199,22 +204,60 @@ describe("the pen's colour row", () => {
       "#2f9e44",
       "#f08c00",
     ]);
+    // From a reserved swatch's picker the colour joins the end instead.
     expect(pickPenColor(row, 1, "#abcdef", "#1a1a1a")).toEqual([
-      "#abcdef",
       "#e03131",
       "#1971c2",
       "#2f9e44",
+      "#f08c00",
+      "#abcdef",
     ]);
   });
 
-  it("reads back a stored row however it was damaged", () => {
-    expect(penColorRow([], ["#abcdef", 7, "#ABCDEF", "x"], fill)).toEqual([
-      "#abcdef",
-      "#1a1a1a",
-      "#e03131",
-      "#1971c2",
-      "#2f9e44",
-    ]);
+  it("grows to twenty-four colours and then keeps what it has", () => {
+    expect(PEN_ROW_MAX).toBe(24);
+    let row = penColorRow(["#1a1a1a"], undefined, fill);
+    for (let i = 0; i < 30; i++) {
+      const color = `#00${(16 + i).toString(16)}00`;
+      row = ["#1a1a1a", ...pickPenColor(row, 1, color)];
+    }
+    expect(row).toHaveLength(24);
+    // Five to start with, so the nineteenth new colour (0x10 + 18) filled it.
+    expect(row[23]).toBe("#002200");
+    // Full: a new colour is written with but not kept; a swatch still changes in place.
+    expect(pickPenColor(row, 1, "#abcdef")).toEqual(row.slice(1));
+    expect(pickPenColor(row, 1, "#abcdef", "#002200").at(-1)).toBe("#abcdef");
+  });
+
+  it("reads back a stored row however it was damaged, and does not top it up", () => {
+    expect(penColorRow([], ["#abcdef", 7, "#ABCDEF", "x"], fill)).toEqual(["#abcdef"]);
+    expect(penColorRow(["#1a1a1a"], [], fill)).toEqual(["#1a1a1a"]);
     expect(penColorRow([], "nope" as never, fill)).toHaveLength(5);
+    const many = Array.from({ length: 30 }, (_, i) => `#0000${(i + 16).toString(16)}`);
+    expect(penColorRow(["#1a1a1a"], many, fill)).toHaveLength(24);
+  });
+
+  it("reads a row stored before it grew exactly as it was shown", () => {
+    // What the five-swatch row stored: its picked slots, always full.
+    const old = ["#abcdef", "#e03131", "#1971c2", "#2f9e44"];
+    expect(penColorRow(["#1a1a1a"], old, fill)).toEqual(["#1a1a1a", ...old]);
+  });
+
+  it("removes a picked colour, but never a reserved one", () => {
+    const row = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44"];
+    expect(removePenColor(row, 1, "#1971C2")).toEqual(["#e03131", "#2f9e44"]);
+    expect(removePenColor(row, 1, "#1a1a1a")).toEqual(["#e03131", "#1971c2", "#2f9e44"]);
+    expect(removePenColor(row, 1, "#abcdef")).toEqual(["#e03131", "#1971c2", "#2f9e44"]);
+    expect(removablePenColor(row, 1, "#1971c2")).toBe(true);
+    expect(removablePenColor(row, 1, "#1a1a1a")).toBe(false);
+    expect(removablePenColor(row, 1, "#abcdef")).toBe(false);
+  });
+
+  it("writes with the swatch before a removed one, or after it when it was first", () => {
+    const row = ["#1a1a1a", "#e03131", "#1971c2"];
+    expect(colorAfterRemoving(row, "#1971c2")).toBe("#e03131");
+    expect(colorAfterRemoving(row, "#1A1A1A")).toBe("#e03131");
+    expect(colorAfterRemoving(["#e03131"], "#e03131")).toBeNull();
+    expect(colorAfterRemoving(row, "#abcdef")).toBeNull();
   });
 });
