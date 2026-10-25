@@ -10,13 +10,35 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **A pen colour row that grows, as in Goodnotes.** A colour added with
-  the pen's + now joins the end of the row and stays there, instead of
-  pushing one out; the + moves along after it. The row shows as many
-  colours as the bar has room for, up to ten, and you swipe along it for
-  the rest (up to 24 for each pen type).
-  To take a colour out, tap it and choose Delete in the picker, or hold
-  it and drag it off the bar.
+- **Endless boards** ([#46](https://github.com/Joost-8/FineNotes/issues/46)).
+  The infinity button in the New notebook dialog makes a board instead of a
+  notebook: one page that grows as you write near its edges, on blank,
+  dotted or squared white paper. It opens at writing size on the middle of
+  your drawing, scrolls freely in every direction, and zooms out until the
+  whole drawing fits. A board has no page list, page counter or PDF pages.
+  Exporting it, Ask AI, handwriting reading and search still treat it as a
+  page and come in a later version. A FineNotes that knows no boards opens
+  one as a single page.
+- **A ruler to draw along**: a straight ruler, a set square or a protractor.
+  The ruler button lays it over the page, level in the middle. One finger
+  or the mouse slides it, two fingers turn it with snapping (off, 5°, 15°
+  or 45°), and its centimetres are the page's at the zoom you are at. A pen
+  or highlighter line started near its edge follows it and is stored
+  perfectly straight. The chevron on the button picks the kind and the
+  snapping.
+- **Sticky notes you write on**, in ten colours. Pick a colour on the
+  sticky notes button and tap the page where the note should go. Ink that
+  starts on a note belongs to it: it moves, resizes, turns, copies and
+  deletes with the note, and the eraser and lasso reach it. Notebooks with
+  sticky notes open read-only in older versions of FineNotes, so update
+  FineNotes on every device first.
+- **Customize the toolbar.** A new toolbox button at the end of the tools
+  opens the tools the bar does not show (stickers, sticky notes, the ruler
+  and Record audio at first), and Customize toolbar: one list of the bar's
+  tools from left to right, where you drag a tool to move it, tap (−) to
+  take it off the bar and (+) to put it back. The pen always stays.
+  Stickers and sticky notes are tools of their own now, no longer in the
+  Insert image menu.
 - **Move the tool bar to any side, as in Goodnotes.** Hold the pen,
   eraser, text or shapes bar for a moment and drag it: it shrinks to a
   square showing the tool, and when you let go it springs to the nearest
@@ -26,17 +48,42 @@ extracted from the matching section of this file by `release.yml`.
   the page counter, zoom readout, recording pill and audio player step
   aside for it. Every tool's bar goes there, and each device remembers its
   own place.
-- **Customize the toolbar.** A new toolbox button at the end of the tools
-  opens what the bar does not show (stickers, sticky notes, the ruler and
-  Record audio at first), and Customize toolbar: one list of the bar's
-  tools from left to right, where you drag a tool to move it, tap (−) to
-  take it off the bar and (+) to put it back. The pen always stays.
-- **Stickers and sticky notes have their own buttons**, no longer in the
-  Insert image menu. Sticky notes come in ten colours, which stay open
-  until you tap the page where the note should go.
+- **A pen colour row that grows, as in Goodnotes.** A colour added with
+  the pen's + now joins the end of the row and stays there, instead of
+  pushing one out; the + moves along after it. The row shows as many
+  colours as the bar has room for, up to ten, and you swipe along it for
+  the rest (up to 24 for each pen type). To take a colour out, tap it and
+  choose Delete in the picker, or hold it and drag it off the bar.
+- **Design your own paper.** "Design a paper…" under My templates' + opens
+  a designer with a live preview: size (now up to A0) and orientation,
+  paper colour, a paper grain, lines, squares or dots in mm and their
+  colour, margins, a blank area and margin lines. Saved papers list in My
+  templates and work for new pages and new notebooks.
+- **Turn handwriting into text** ([#42](https://github.com/Joost-8/FineNotes/issues/42)).
+  Lasso some writing and choose Turn into › Text: FineNotes fills in what
+  it reads there, a line for each written line, for you to check, and
+  Replace swaps the ink for a text box in the ink's colour and size. Undo
+  brings the ink back. On a computer, the command "Turn selection into
+  text" does the same; give it a hotkey under Settings → Hotkeys.
+- **Lasso "One item".** A fourth lasso type: the pen picks up whatever it
+  lands on and moves it in the same stroke, with no loop to draw.
+- **Tables you can style and shape.** A cell can be bold and have its own
+  text colour. Drag any column's or row's border to resize it. The lasso
+  picks a table up, and Edit table on its bar starts typing in it. A table
+  keeps to its page: it never grows past the page's edge, and typing near
+  the bottom lifts it as far as needed.
+- **New pages repeat your template**
+  ([#39](https://github.com/Joost-8/FineNotes/discussions/39)). In a
+  notebook made from a page in My templates, a new page repeats the
+  template page it follows, and New notebook starts on the template you
+  used last.
 - **Double-tap with one finger to fill the screen with the page**, edge to
   edge with nothing around it, and again to see the whole page.
-
+- **Full screen on a tablet.** The new button left of Add page (or its
+  row in ⋯ when the toolbar is short of room) hides Obsidian's tab bar
+  and title bar above a notebook, so the page gets about 90 px more height.
+  The same button brings them back. Switch to a note in another tab and
+  Obsidian's bars come back for it. The choice is kept on each device.
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
   gear, with "Update available" under it until you close it with its ✕
@@ -44,47 +91,14 @@ extracted from the matching section of this file by `release.yml`.
   settings, opens FineNotes in Community plugins. It only tells you;
   Obsidian still does the updating. Switch it off under Advanced → Check
   for updates.
-- **Full screen on a tablet.** The new button left of Add page (or its
-  row in ⋯ when the toolbar is short of room) hides Obsidian's tab bar
-  and title bar above a notebook, so the page gets about 90 px more height.
-  The same button brings them back. Switch to a note in another tab and
-  Obsidian's bars come back for it. The choice is kept on each device.
-- **Turn handwriting into text** ([#42](https://github.com/Joost-8/FineNotes/issues/42)).
-  Lasso some writing and choose Turn into › Text: FineNotes fills in what
-  it reads there, a line for each written line, for you to check, and
-  Replace swaps the ink for a text box in the ink's colour and size. Undo
-  brings the ink back. On a computer, the command "Turn selection into
-  text" does the same; give it a hotkey under Settings → Hotkeys.
+- **Calculation notes (for handwriting models that read maths).** Write a
+  sum ending in "=" and the answer is offered beside it; a tap writes it
+  after the "=", in your own hand if you have written the new symbol
+  practice sheet under Learn my handwriting. Off by default, and only
+  offered with a model that reads maths: Grape 2.0 does not yet.
 - **A way to support FineNotes.** A heart at the end of FineNotes'
   settings, and Obsidian's support button on FineNotes' page in Community
   plugins, open FineNotes' GitHub Sponsors page.
-
-### Fixed
-
-- **Grey and dark paper keep their edges.** A page the colour of the grey
-  background around it (Dark Paper, or a grey paper from the paper
-  designer) now gets a background in another shade, so you can see where
-  the page ends.
-- **Right-click an underlined word to correct it, on a computer.** With a
-  mouse there was no way to open the card of a word the handwriting check
-  underlined: the mouse writes, and a right-click always opened the menu.
-  A right-click on an underlined word, or on linked ink, now does what a
-  finger tap there does; anywhere else it still opens the menu (#41).
-- **Erasing by line no longer takes a whole highlight.** A highlight
-  (straightened or not), a shape, or a stroke running over several lines
-  used to go whole as soon as the eraser touched its line. Now only its
-  part on the stretch of line you erase goes: erase a word, and the
-  highlight under it goes with it, while the rest of the highlight stays.
-- **Width marks at their real size.** The pen's width buttons and the
-  eraser's sizes are drawn as thick as the line they write, or as large as
-  the eraser is, on the page at the zoom you are at, beside the ink you
-  compare them with. The eraser's size in mm is what it erases at that zoom.
-- **Widths in mm are the ink's.** The highlighter, brush and calligraphy pen
-  draw wider than the width you pick (4×, 1.8× and 2.6×), but the width
-  field, its presets, saved pens and the default width showed the number
-  before that. They now show and take the width of the ink on the page: a
-  highlighter that draws a 4.1 mm band reads 4.1 mm, and typing 4 mm gives
-  a 4 mm band. Your pens and your ink are unchanged.
 
 ### Changed
 
@@ -92,12 +106,50 @@ extracted from the matching section of this file by `release.yml`.
   same patch of page at every zoom, and its size marks show it at that
   zoom. The size previews (eraser and pen) draw on the page's own paper
   and lines at the zoom, so a size reads against the lines it will meet.
+- **Width marks at their real size.** The pen's width buttons and the
+  eraser's sizes are drawn as thick as the line they write, or as large as
+  the eraser is, on the page at the zoom you are at.
+- **Widths in mm are the ink's.** The highlighter, brush and calligraphy pen
+  draw wider than the width you pick (4×, 1.8× and 2.6×), but the width
+  field, its presets, saved pens and the default width showed the number
+  before that. They now show and take the width of the ink on the page: a
+  highlighter that draws a 4.1 mm band reads 4.1 mm, and typing 4 mm gives
+  a 4 mm band. Your pens and your ink are unchanged.
 - **A clearer card for an underlined word.** What FineNotes read is now
   the card's large heading, so you see at once what to check. The other
   words your ink may say follow right under it without the "Did you mean"
   caption, which read like a spelling check. The rows say what they do:
   "Type what it says…", "It says “…”" (your spelling, kept) and "Add to
   dictionary".
+
+### Fixed
+
+- **"Transcribe on this device" downloads its speech model again**
+  ([#48](https://github.com/Joost-8/FineNotes/issues/48)). 2.4.x looked for
+  the models in a place that had not been published, so every download
+  failed.
+- **Grey and dark paper keep their edges.** A page the colour of the grey
+  background around it (Dark Paper, or a grey paper from the paper
+  designer) now gets a background in another shade, so you can see where
+  the page ends.
+- **Right-click an underlined word to correct it, on a computer**
+  ([#41](https://github.com/Joost-8/FineNotes/issues/41)). With a mouse
+  there was no way to open the card of a word the handwriting check
+  underlined: the mouse writes, and a right-click always opened the menu.
+  A right-click on an underlined word, or on linked ink, now does what a
+  finger tap there does; anywhere else it still opens the menu.
+- **On Android, dialogs opened from the lasso menu stay open**
+  ([#38](https://github.com/Joost-8/FineNotes/issues/38)). Add to contents
+  or Link to… sometimes flashed up and closed at once.
+- **The iPad keyboard's ✓ confirms every dialog**, even while the field's
+  text is selected, instead of typing a line break over it.
+- **Erasing by line no longer takes a whole highlight.** A highlight
+  (straightened or not), a shape, or a stroke running over several lines
+  used to go whole as soon as the eraser touched its line. Now only its
+  part on the stretch of line you erase goes: erase a word, and the
+  highlight under it goes with it, while the rest of the highlight stays.
+- **The page panel's Add button for contents** hides when there is nothing
+  to add.
 
 ## [2.4.1] - 2026-10-22
 
