@@ -47,6 +47,7 @@ import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } f
 import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
+import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -1414,6 +1415,32 @@ export default class GoodObsidianPlugin extends Plugin {
       }
       this.fullScreenGroups.clear();
     });
+  }
+
+  // --- Where the tool options pill rests ---------------------------------------
+
+  private static readonly PILL_DOCK_KEY = "goodobsidian:pill-dock";
+
+  /**
+   * Where the tool options pill rests (pill-dock-model.ts): every tool's,
+   * in every notebook, kept per device, as the iPad and a laptop want
+   * different places.
+   */
+  get pillDock(): PillDock {
+    this.pillDockSeen ??= parsePillDock(
+      this.app.loadLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY),
+    );
+    return this.pillDockSeen;
+  }
+
+  private pillDockSeen: PillDock | null = null;
+
+  /** The pill was dragged to `dock` in one notebook: keep it, and move every other's. */
+  setPillDock(dock: PillDock): void {
+    if (dock === this.pillDock) return;
+    this.pillDockSeen = dock;
+    this.app.saveLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY, dock);
+    for (const view of this.openNotebooks()) view.showPillDock(dock);
   }
 
   /** Every notebook view open in the workspace. */

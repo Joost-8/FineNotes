@@ -128,6 +128,15 @@ import {
   sameColor,
 } from "../model/colors";
 import { bindSwatchDrag } from "./swatch-drag";
+import { bindPillDrag } from "./pill-drag";
+import {
+  DEFAULT_PILL_DOCK,
+  type PillArea,
+  type PillDock,
+  dockPlace,
+  nearestDock,
+  parsePillDock,
+} from "./pill-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
@@ -257,6 +266,26 @@ export function strokeWidthFor(state: ToolbarState): number {
 /** The tool whose options memory `tool` shares: the highlighter is a pen type. */
 function optionsKey(tool: ActiveTool): ActiveTool {
   return tool === "highlighter" ? "pen" : tool;
+}
+
+/** The icon a tool's pill shows while it is being carried: its tool bar button's. */
+const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
+  pen: "pen-tool",
+  eraser: "eraser",
+  text: "type",
+  shape: "shapes",
+};
+
+/**
+ * The places the pill can be dragged to in this build. The side places
+ * need the pills laid out upright (pill-dock-model.ts, `isUpright`), which
+ * comes next; until then a stored side reads as under the tool bar.
+ */
+const OFFERED_DOCKS: readonly PillDock[] = ["top", "bottom"];
+
+function offeredDock(raw: unknown): PillDock {
+  const dock = parsePillDock(raw);
+  return OFFERED_DOCKS.includes(dock) ? dock : DEFAULT_PILL_DOCK;
 }
 
 /**
@@ -489,6 +518,8 @@ export interface ToolbarCallbacks {
   onMore?: (anchor: HTMLElement) => void;
   /** The options pill was placed (it may have moved); `chromeSpans` says where. */
   onPillPlaced?: () => void;
+  /** The user dragged the options pill to `dock`; the host keeps it for this device. */
+  onPillDock?: (dock: PillDock) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -547,6 +578,8 @@ export interface ToolbarOptions {
    * keeps a slot at the front of the pen's colour row.
    */
   reservedColors?: readonly string[];
+  /** Where the options pill rests (`pill-dock-model.ts`); under the tool bar by default. */
+  pillDock?: PillDock;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -663,6 +696,8 @@ export class Toolbar {
   /** The eraser mode the eraser button shows now (`drawEraserIcon`). */
   private eraserIconMode: EraserMode | null = null;
   private readonly colorSwatches = new Map<string, HTMLElement>();
+  /** Where the pill rests when it is not by a text box (pill-dock-model.ts). */
+  private pillDock: PillDock = DEFAULT_PILL_DOCK;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
   private colorRowScroll = 0;
   /** A colour was just added with the "+": the row scrolls to its end once to show it. */
@@ -784,6 +819,19 @@ export class Toolbar {
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
     this.optionsEl.setAttribute("aria-label", "Tool options");
+
+    this.pillDock = offeredDock(options.pillDock);
+    this.optionsEl.addClass(`is-dock-${this.pillDock}`);
+    bindPillDrag(this.optionsEl, {
+      host,
+      // By a text box the pill follows the box, so there is no place to move it to.
+      canDrag: () => !this.optionsEl.hasClass("is-anchored"),
+      icon: () =>
+        this.optionsEl.hasClass("is-text")
+          ? "type"
+          : (PILL_ICONS[optionsKey(this.optionsTool)] ?? "pen-tool"),
+      onDrop: (x, y) => this.dropPill(x, y),
+    });
 
     this.buildBar();
     this.buildOptions();
@@ -3520,15 +3568,71 @@ export class Toolbar {
       });
       return;
     }
-    const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
-    const span = Math.max(1, hostBox.width - inset);
-    const minLeft = inset + EDGE_INSET;
-    const maxLeft = Math.max(minLeft, hostBox.width - pill.width - EDGE_INSET);
-    const left = Math.min(maxLeft, Math.max(minLeft, inset + (span - pill.width) / 2));
+    const place = dockPlace(
+      this.pillDock,
+      this.pillArea(hostBox, pill.width),
+      pill.width,
+      pill.height,
+      EDGE_INSET,
+    );
     this.optionsEl.setCssStyles({
-      left: `${Math.round(left)}px`,
-      top: `${Math.round(this.barBottom())}px`,
+      left: `${Math.round(place.left)}px`,
+      top: `${Math.round(place.top)}px`,
     });
+  }
+
+  /**
+   * The part of the view the pill rests in, host px: below the tool bar,
+   * right of a docked panel (unless the pill would not fit beside it), and
+   * above the keyboard.
+   */
+  private pillArea(hostBox: DOMRect, pillWidth: number): PillArea {
+    const windowBottom =
+      (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
+    return {
+      left: Math.min(this.leftInset, Math.max(0, hostBox.width - pillWidth)),
+      top: this.barBottom(),
+      right: hostBox.width,
+      bottom: Math.min(hostBox.height, windowBottom - hostBox.top),
+    };
+  }
+
+  /** The pill was carried and let go at (`x`, `y`), host px: rest it at the nearest place. */
+  private dropPill(x: number, y: number): void {
+    const hostBox = this.host.getBoundingClientRect();
+    const pill = this.optionsEl.getBoundingClientRect();
+    const dock = nearestDock(this.pillArea(hostBox, pill.width), x, y, OFFERED_DOCKS);
+    // Spring from where it was let go: the pill grows out of the square there.
+    const before = { x: x - pill.width / 2, y: y - pill.height / 2 };
+    this.setPillDock(dock);
+    this.callbacks.onPillDock?.(dock);
+    const after = this.optionsEl.getBoundingClientRect();
+    if (prefersReducedMotion()) return;
+    const dx = before.x - (after.left - hostBox.left);
+    const dy = before.y - (after.top - hostBox.top);
+    this.optionsEl.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(0.3)`, opacity: 0.4 },
+        { transform: "none", opacity: 1 },
+      ],
+      { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) },
+    );
+  }
+
+  /**
+   * Rest the pill at `dock` (another notebook's pill was moved there, or
+   * this one was dropped there). Hosts call it to keep every notebook alike.
+   */
+  setPillDock(dock: PillDock): void {
+    const next = offeredDock(dock);
+    if (next === this.pillDock) {
+      this.applyPosition();
+      return;
+    }
+    this.optionsEl.removeClass(`is-dock-${this.pillDock}`);
+    this.pillDock = next;
+    this.optionsEl.addClass(`is-dock-${next}`);
+    this.applyPosition();
   }
 
   /**

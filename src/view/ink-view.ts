@@ -274,6 +274,7 @@ import {
   type SelectionAction,
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
+import type { PillDock } from "./pill-dock-model";
 import { penInksOf } from "../model/pen-inks";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
@@ -824,6 +825,11 @@ export class InkView extends TextFileView {
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
   showFullScreen(on: boolean): void {
     this.toolbar?.setFullScreen(on);
+  }
+
+  /** The options pill was moved in some notebook (the plugin's, per device): this one's follows. */
+  showPillDock(dock: PillDock): void {
+    this.toolbar?.setPillDock(dock);
   }
 
   override async onClose(): Promise<void> {
@@ -2399,10 +2405,12 @@ export class InkView extends TextFileView {
         onSearch: () => void this.openSearch(),
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
+        onPillDock: (dock) => this.plugin.setPillDock(dock),
       },
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
+        pillDock: this.plugin.pillDock,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);

@@ -16,6 +16,11 @@ extracted from the matching section of this file by `release.yml`.
   and you swipe along the row for the rest (up to 24 for each pen type).
   To take a colour out, tap it and choose Delete in the picker, or hold
   it and drag it off the bar.
+- **Move the tool bar to the bottom, as in Goodnotes.** Hold the pen,
+  eraser, text or shapes bar for a moment and drag it: it shrinks to a
+  square showing the tool, and when you let go it springs to the nearest
+  place, under the toolbar or along the bottom. Every tool's bar goes there,
+  and each device remembers its own place.
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
   gear, with "Update available" under it until you close it with its ✕

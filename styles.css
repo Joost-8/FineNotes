@@ -497,6 +497,42 @@ body,
     visibility 0s linear var(--gob-t-slide);
 }
 
+/* Along the bottom it tucks away downwards, off the screen's edge. */
+.goodobsidian-options.is-floating.is-dock-bottom.is-collapsed {
+  translate: 0 calc(100% + var(--gob-pill-gap) + 2px);
+}
+
+/* Carried (toolbar.ts, pill-drag.ts): the pill leaves its place and a small
+   square showing the tool follows the finger, as GoodNotes' does. */
+.goodobsidian-options.is-floating.is-lifted {
+  visibility: hidden;
+}
+
+.goodobsidian-pill-square {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-pill-bg);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--interactive-accent);
+  pointer-events: none;
+  translate: calc(var(--gob-square-x, 0px) - 50%) calc(var(--gob-square-y, 0px) - 50%);
+  animation: goodobsidian-grow 0.16s ease-out;
+}
+
+.goodobsidian-pill-square .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
 /* The pill's controls are compact, after GoodNotes: it sits over the page and
    must not read as a second tool bar. 36 px is still a comfortable Pencil tap. */
 .goodobsidian-options button {
