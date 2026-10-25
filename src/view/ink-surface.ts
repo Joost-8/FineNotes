@@ -1641,6 +1641,8 @@ export class InkSurface {
   private imagesShown = false;
   /** A finger went down and could still turn out to be a tap. */
   private fingerTap: { x: number; y: number; t: number } | null = null;
+  /** What paints page backdrops (`setBackdropPainter`), for `paintPaperSample` too. */
+  private backdropPainter: BackdropPainter | null = null;
   /** Where a waiting sticky note goes on the next tap (`armStickyNote`). */
   private stickyPlace: ((index: number, at: Pt) => void) | null = null;
   /** The last finger tap that nothing took, waiting for a second (`zoomOnDoubleTap`). */
@@ -5018,8 +5020,55 @@ export class InkSurface {
    * should know about. Until one is set, pages paint as bare paper.
    */
   setBackdropPainter(painter: BackdropPainter | null): void {
+    this.backdropPainter = painter;
     this.renderer?.setPainter(painter);
     this.requestFrame();
+  }
+
+  /**
+   * Paint the page in view's paper and lines, without its ink, into
+   * `canvas` (`width` by `height` CSS px) at the zoom now, centred on the
+   * middle of what shows of the page: the paper under the width and eraser
+   * size previews, so a size reads against the page's own lines. False when
+   * no page shows.
+   */
+  paintPaperSample(canvas: HTMLCanvasElement, width: number, height: number): boolean {
+    const page = this.doc.pages[this.pageIndex];
+    const seen = this.visibleRegion(this.pageIndex);
+    if (!page || !seen || !(width > 0) || !(height > 0)) return false;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const scale = this.unitScale;
+    const s = scale * dpr;
+    const cx = (seen.minX + seen.maxX) / 2;
+    const cy = (seen.minY + seen.maxY) / 2;
+    // Off the page's edge the desk shows, as it does around the page.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = this.renderer?.desk ?? this.paper.desk;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
+    const region = {
+      minX: Math.max(0, cx - width / 2 / scale),
+      minY: Math.max(0, cy - height / 2 / scale),
+      maxX: Math.min(page.geometry.width, cx + width / 2 / scale),
+      maxY: Math.min(page.geometry.height, cy + height / 2 / scale),
+    };
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, page.geometry.width, page.geometry.height);
+    ctx.clip();
+    ctx.fillStyle = paperColorOf(page, this.paper);
+    ctx.fillRect(0, 0, page.geometry.width, page.geometry.height);
+    this.backdropPainter?.paint(ctx, page.backdrop, page.geometry, 1, {
+      deviceScale: s,
+      region,
+      paper: this.paper,
+    });
+    ctx.restore();
+    return true;
   }
 
   /** `devicePixelRatio * viewScale` — what a PDF backdrop should rasterise at. */

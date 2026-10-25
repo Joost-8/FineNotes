@@ -90,7 +90,8 @@ extracted from the matching section of this file by `release.yml`.
 
 - **The eraser's size is the paper's**, like a pen's width: it erases the
   same patch of page at every zoom, and its size marks show it at that
-  zoom.
+  zoom. The size previews (eraser and pen) draw on the page's own paper
+  and lines at the zoom, so a size reads against the lines it will meet.
 - **A clearer card for an underlined word.** What FineNotes read is now
   the card's large heading, so you see at once what to check. The other
   words your ink may say follow right under it without the "Did you mean"

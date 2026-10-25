@@ -2449,6 +2449,8 @@ export class InkView extends TextFileView {
         },
         onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
+        paintSizePaper: (canvas, width, height) =>
+          this.surface?.paintPaperSample(canvas, width, height) ?? false,
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
         onLassoChange: (mode, filter) => {
           this.surface?.refreshLassoChrome();
