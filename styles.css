@@ -8722,16 +8722,17 @@ button.goodobsidian-color-delete.clickable-icon {
   stroke-width: 2.25px;
 }
 
-/* The pen's colour row, as GoodNotes': five colours and the "+" in view,
-   the rest a swipe away. An end that hides more fades over 14 px
-   (COLOR_ROW_FADE_PX in toolbar.ts), so a colour cut there reads as "more".
-   It may shrink to two swatches when the pane is narrow. */
+/* The pen's colour row, as GoodNotes': it takes the room the pill has, up to
+   ten colours and the "+" (a pill much wider would cross the whole page),
+   the rest a swipe away. On a narrow pane it gives way first, down to two
+   swatches. An end that hides more fades over 14 px (COLOR_ROW_FADE_PX in
+   toolbar.ts), so a colour cut there reads as "more". */
 .goodobsidian-pen-colors {
   display: flex;
   flex: 0 1 auto;
   align-items: center;
   min-width: calc(var(--gob-touch-compact) * 2);
-  max-width: calc(var(--gob-touch-compact) * 6);
+  max-width: calc(var(--gob-touch-compact) * 11);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;

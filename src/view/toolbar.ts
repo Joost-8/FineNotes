@@ -702,6 +702,8 @@ export class Toolbar {
   private readonly colorSwatches = new Map<string, HTMLElement>();
   /** Where the pill rests when it is not by a text box (pill-dock-model.ts). */
   private pillDock: PillDock = DEFAULT_PILL_DOCK;
+  /** Watches the pen's colour row give way to a narrow pane (`fitColorRow`). */
+  private colorRowWatch: ResizeObserver | null = null;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
   private colorRowScroll = 0;
   /** A colour was just added with the "+": the row scrolls to its end once to show it. */
@@ -837,6 +839,8 @@ export class Toolbar {
           : (PILL_ICONS[optionsKey(this.optionsTool)] ?? "pen-tool"),
       onDrop: (x, y) => this.dropPill(x, y),
     });
+
+    this.disposers.push(() => this.colorRowWatch?.disconnect());
 
     this.buildBar();
     this.buildOptions();
@@ -1530,8 +1534,9 @@ export class Toolbar {
       }
       this.chevron("All colours", (button) => this.togglePenColorList(button));
     } else {
-      // The colour row, as GoodNotes': five in view, the rest a swipe away, and
-      // the "+" after the last one, so a new colour joins the end and stays.
+      // The colour row, as GoodNotes': as many as the pill has room for, up
+      // to ten (styles.css), the rest a swipe away, and the "+" after the
+      // last one, so a new colour joins the end and stays.
       const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
       // A sideways swipe here scrolls the row, never Obsidian's sidebars.
       row.dataset.ignoreSwipe = "true";
@@ -1721,17 +1726,34 @@ export class Toolbar {
     const chosen = this.colorSwatches.get(
       [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
     );
-    if (chosen) {
-      row.scrollLeft = scrollToShow(
-        row.scrollLeft,
-        row.clientWidth,
-        chosen.offsetLeft,
-        chosen.offsetWidth,
-        COLOR_ROW_FADE_PX,
-      );
+    /** Keep the chosen colour in view. Offsets are the pill's (the row is not positioned). */
+    const showChosen = (): void => {
+      if (chosen) {
+        row.scrollLeft = scrollToShow(
+          row.scrollLeft,
+          row.clientWidth,
+          chosen.offsetLeft - row.offsetLeft,
+          chosen.offsetWidth,
+          COLOR_ROW_FADE_PX,
+        );
+      }
+      this.colorRowScroll = row.scrollLeft;
+      fade();
+    };
+    showChosen();
+    // The row gives way when the pill has too little room, which can settle
+    // after it was built (the pill is placed afterwards): look again then.
+    this.colorRowWatch?.disconnect();
+    this.colorRowWatch = null;
+    if (typeof ResizeObserver !== "undefined") {
+      let width = row.clientWidth;
+      this.colorRowWatch = new ResizeObserver(() => {
+        if (row.clientWidth === width) return;
+        width = row.clientWidth;
+        showChosen();
+      });
+      this.colorRowWatch.observe(row);
     }
-    this.colorRowScroll = row.scrollLeft;
-    fade();
     row.addEventListener("scroll", () => {
       this.colorRowScroll = row.scrollLeft;
       fade();
