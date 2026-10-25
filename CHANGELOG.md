@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-25
+
 ### Added
 
 - **Endless boards** ([#46](https://github.com/Joost-8/FineNotes/issues/46)).
