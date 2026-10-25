@@ -12,8 +12,9 @@ extracted from the matching section of this file by `release.yml`.
 
 - **A pen colour row that grows, as in Goodnotes.** A colour added with
   the pen's + now joins the end of the row and stays there, instead of
-  pushing one out; the + moves along after it. Five colours show at once,
-  and you swipe along the row for the rest (up to 24 for each pen type).
+  pushing one out; the + moves along after it. The row shows as many
+  colours as the bar has room for, up to ten, and you swipe along it for
+  the rest (up to 24 for each pen type).
   To take a colour out, tap it and choose Delete in the picker, or hold
   it and drag it off the bar.
 - **Move the tool bar to any side, as in Goodnotes.** Hold the pen,
