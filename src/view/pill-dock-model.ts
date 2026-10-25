@@ -93,3 +93,34 @@ export function dockPlace(
       };
   }
 }
+
+/** Which way a popover opens from a control in the pill. */
+export type PopoverSide = "down" | "up" | "right" | "left";
+
+/**
+ * A popover hanging from the pill opens away from the pill's edge, toward
+ * the page: down from the top, up from the bottom, inwards from a side.
+ */
+export function popoverSide(dock: PillDock): PopoverSide {
+  switch (dock) {
+    case "top":
+      return "down";
+    case "bottom":
+      return "up";
+    case "left":
+      return "right";
+    case "right":
+      return "left";
+  }
+}
+
+/**
+ * The first of `count` colours an upright pill shows out of a row of
+ * `length`, so the chosen one (at `chosen`, -1 for none) is among them:
+ * in the middle where it can be, never past either end.
+ */
+export function colorWindow(length: number, chosen: number, count: number): number {
+  if (length <= count || chosen < 0) return 0;
+  const middle = chosen - Math.floor((count - 1) / 2);
+  return Math.max(0, Math.min(middle, length - count));
+}

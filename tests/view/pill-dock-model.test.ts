@@ -5,6 +5,8 @@ import {
   isUpright,
   nearestDock,
   parsePillDock,
+  colorWindow,
+  popoverSide,
 } from "../../src/view/pill-dock-model";
 
 const area = { left: 0, top: 60, right: 1000, bottom: 760 };
@@ -66,5 +68,32 @@ describe("where the pill rests", () => {
     expect(isUpright("right")).toBe(true);
     expect(isUpright("top")).toBe(false);
     expect(isUpright("bottom")).toBe(false);
+  });
+});
+
+describe("popovers from the pill", () => {
+  it("open toward the page from every place", () => {
+    expect(popoverSide("top")).toBe("down");
+    expect(popoverSide("bottom")).toBe("up");
+    expect(popoverSide("left")).toBe("right");
+    expect(popoverSide("right")).toBe("left");
+  });
+});
+
+describe("the colours an upright pill shows", () => {
+  it("shows the whole row when it is short", () => {
+    expect(colorWindow(3, 2, 3)).toBe(0);
+    expect(colorWindow(2, 0, 3)).toBe(0);
+  });
+
+  it("keeps the chosen colour in the middle where it can", () => {
+    expect(colorWindow(9, 4, 3)).toBe(3);
+    expect(colorWindow(9, 0, 3)).toBe(0);
+    expect(colorWindow(9, 8, 3)).toBe(6);
+    expect(colorWindow(9, 7, 3)).toBe(6);
+  });
+
+  it("starts at the beginning when no colour of the row is chosen", () => {
+    expect(colorWindow(9, -1, 3)).toBe(0);
   });
 });

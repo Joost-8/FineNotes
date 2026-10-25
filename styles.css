@@ -502,6 +502,74 @@ body,
   translate: 0 calc(100% + var(--gob-pill-gap) + 2px);
 }
 
+/* Upright at a side (toolbar.ts, pill-dock-model.ts): the controls stack,
+   the dividers lie flat, and a pill taller than the room scrolls. It tucks
+   away sideways, off its own edge. */
+.goodobsidian-options.is-floating.is-upright {
+  flex-direction: column;
+  max-width: none;
+  max-height: var(--gob-pill-room, 80vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.goodobsidian-options.is-upright .goodobsidian-sep {
+  width: 22px;
+  height: 1px;
+  margin: 4px 0;
+}
+
+.goodobsidian-options.is-floating.is-dock-left.is-collapsed {
+  translate: calc(-100% - var(--gob-pill-gap) - 2px) 0;
+}
+
+.goodobsidian-options.is-floating.is-dock-right.is-collapsed {
+  translate: calc(100% + var(--gob-pill-gap) + 2px) 0;
+}
+
+/* The upright pill's ⌄: the whole colour row, and its "+", in rows of six. */
+.goodobsidian-pen-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, var(--gob-touch-compact));
+  gap: 2px;
+}
+
+.goodobsidian-pen-color-grid button.goodobsidian-swatch {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background-clip: content-box;
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-swatch.is-active {
+  box-shadow: var(--gob-swatch-ring);
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more.clickable-icon {
+  position: relative;
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 6px;
+  border-radius: 50%;
+  background: none;
+  color: var(--gob-icon);
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more.clickable-icon::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1.5px dashed currentColor;
+  border-radius: 50%;
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
 /* Carried (toolbar.ts, pill-drag.ts): the pill leaves its place and a small
    square showing the tool follows the finger, as GoodNotes' does. */
 .goodobsidian-options.is-floating.is-lifted {
@@ -764,6 +832,18 @@ body,
 
 .goodobsidian-popover.opens-up {
   transform-origin: calc(50% + var(--gob-popover-arrow, 0px)) bottom;
+}
+
+/* Beside an upright pill (toolbar.ts, openPopover): centred on its button,
+   opening toward the page. */
+.goodobsidian-popover.opens-right {
+  transform: translateY(-50%);
+  transform-origin: left calc(50% + var(--gob-popover-arrow, 0px));
+}
+
+.goodobsidian-popover.opens-left {
+  transform: translate(-100%, -50%);
+  transform-origin: right calc(50% + var(--gob-popover-arrow, 0px));
 }
 
 .goodobsidian-popover-body {
@@ -6003,6 +6083,26 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--gob-pop-bg);
   transform: translateX(-50%) rotate(45deg);
   border-color: var(--gob-line);
+}
+
+/* The arrow on the side the popover opens from. */
+.goodobsidian-popover.has-arrow.opens-up::before {
+  top: auto;
+  bottom: -7px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.goodobsidian-popover.has-arrow.opens-right::before {
+  top: calc(50% + var(--gob-popover-arrow, 0px));
+  left: -7px;
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.goodobsidian-popover.has-arrow.opens-left::before {
+  top: calc(50% + var(--gob-popover-arrow, 0px));
+  left: auto;
+  right: -7px;
+  transform: translateY(-50%) rotate(135deg);
 }
 
 .goodobsidian-popover.is-lasso-popover {
