@@ -200,3 +200,30 @@ function finish(group: Group, end: number): Tap {
   const n = group.landed.length;
   return { fingers: group.peak, start: group.start, end, x: x / n, y: y / n };
 }
+
+/** A one-finger tap that did nothing on the page: where, and when it lifted. */
+export interface PlainTap {
+  x: number;
+  y: number;
+  t: number;
+}
+
+/**
+ * A one-finger double tap's second lift comes at most this long after the
+ * first: both taps are timed by their lifts, so this is the gap between them
+ * plus the second tap's own length.
+ */
+export const ONE_FINGER_DOUBLE_TAP_MS = 500;
+
+/**
+ * Whether `second` makes a one-finger double tap with `first`: soon enough
+ * after it, and within the distance two- and three-finger taps are paired by.
+ */
+export function pairsAsDoubleTap(first: PlainTap | null, second: PlainTap): boolean {
+  return (
+    first !== null &&
+    second.t >= first.t &&
+    second.t - first.t <= ONE_FINGER_DOUBLE_TAP_MS &&
+    Math.hypot(second.x - first.x, second.y - first.y) <= DOUBLE_TAP_DISTANCE_PX
+  );
+}
