@@ -27,7 +27,8 @@ const {
   MIN_PRACTICE_LINES,
   LEARN_STEPS,
 } = await import("../../src/view/handwriting-learning");
-const { buildPracticeFile, PRACTICE_LINES } = await import("../../src/recognition/practice");
+const { buildPracticeFile, PRACTICE_LINES, SYMBOL_SET } =
+  await import("../../src/recognition/practice");
 
 describe("the learned model", () => {
   it("lives in the plugin's folder, with the one it replaced beside it", () => {
@@ -62,6 +63,10 @@ describe("practice sets", () => {
     expect(practiceSetOf("Handwriting practice 2 1.practice.md")).toBe(1);
     expect(practiceSetOf("Handwriting practice.practice.md")).toBeNull();
     expect(practiceSetOf("Handwriting practice 7.practice.md")).toBeNull();
+    // The symbol sheet, and a second copy of it.
+    expect(practiceSetOf("Symbol practice.practice.md")).toBe(SYMBOL_SET);
+    expect(practiceSetOf("Symbol practice 2.practice.md")).toBe(SYMBOL_SET);
+    expect(practiceSetOf("Old symbol practice.practice.md")).toBeNull();
   });
 
   it("writes the first set not written yet, then the one written least", () => {

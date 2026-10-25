@@ -9,7 +9,7 @@
  */
 
 import { simdAvailable } from "./blstm";
-import { type HwrBundle, parseBundle } from "./bundle";
+import { type HwrBundle, parseBundle, readsMaths } from "./bundle";
 import { type LineLogp, Lexicon, suggest } from "./lexicon";
 import { HWR_TAG, type HwrReply, type HwrRequest, type HwrResult } from "./protocol";
 import { readLine, readPage } from "./recognizer";
@@ -47,6 +47,7 @@ function handle(request: HwrRequest, id: number): HwrResult {
         hidden: meta.net.hidden,
         characters: meta.alphabet.length,
         lmContexts: meta.lm?.nodes ?? 0,
+        maths: readsMaths(meta),
         parseMs: now() - t0,
         simd,
       },

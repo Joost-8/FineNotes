@@ -462,6 +462,7 @@ describe("registration", () => {
         "toggle-text-layer",
         "view-changelog",
         "write-handwriting-practice",
+        "write-symbol-practice",
         "zoom-in",
         "zoom-out",
       ].sort(),

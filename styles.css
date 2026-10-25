@@ -10148,6 +10148,47 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
   height: 16px;
 }
 
+/* ---------------------------------------------------- calculation notes */
+/* A line ending in "=" (calc-chip.ts, calc-notes.ts): what was read and the
+   answer, in a pill over the line from the "=" on. Chrome, not ink: a tap
+   writes the answer, anything else leaves the page alone. Its bottom left
+   sits on the point it is placed at. */
+button.goodobsidian-calc-chip.clickable-icon {
+  position: absolute;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 14px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 26px;
+  white-space: nowrap;
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(0, -100%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+button.goodobsidian-calc-chip.clickable-icon:hover {
+  background: var(--background-primary);
+  filter: brightness(1.04);
+}
+
+button.goodobsidian-calc-chip.is-hidden.clickable-icon {
+  display: none;
+}
+
+.goodobsidian-calc-chip-answer {
+  color: var(--interactive-accent);
+  font-weight: var(--font-semibold);
+}
+
 /* The comment dialog: Delete on the left, Resolve and Save on the right. */
 .goodobsidian-comment-field {
   min-height: 96px;

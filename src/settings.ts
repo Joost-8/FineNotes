@@ -41,7 +41,7 @@ import {
   undoText,
   writeStepText,
 } from "./recognition/hwr/learned-model";
-import { PRACTICE_SETS } from "./recognition/practice";
+import { PRACTICE_SETS, isSymbolSet } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
 import {
   type App,
@@ -182,7 +182,23 @@ const CALLOUTS = {
     detail:
       "This Obsidian version has no keychain. Obsidian 1.11.4 and newer keep keys outside the vault's files.",
   },
+  calcModel: {
+    title: "This handwriting model can't calculate yet",
+    detail:
+      "A misread digit would give a confident wrong answer, so lines are calculated only " +
+      "with a model whose file says it reads digits and operators reliably. Grape 2.0, " +
+      "and a model learned from it, do not; nothing is calculated until such a model is set.",
+  },
 } satisfies Record<string, Callout>;
+
+/** "Calculate lines that end in ="'s ⓘ. */
+const CALC_NOTES_INFO =
+  "Write a sum ending in = (12x4 =; an x between numbers is times) and lift the pen: " +
+  "FineNotes reads the line on this device and shows what it read and the answer beside " +
+  "it. Tap that to write the answer after the =, at your writing's size, in your own hand " +
+  "once you have written the symbol practice sheet (a command); keep writing to leave the " +
+  "page as it was. A letter set on a line above (a = 5) can be used. Needs a handwriting " +
+  "model that reads digits reliably.";
 
 /** Under the Paper width field while what is typed is not a width. */
 const PAPER_WIDTH_ERROR = `Use ${PAPER_WIDTH_RANGE.min} to ${PAPER_WIDTH_RANGE.max}; the last valid width is kept until then.`;
@@ -888,6 +904,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
       await this.plugin.grape.model.check();
       this.plugin.grape.offer("ask");
+    }
+    // Turned on: load the model, so the tab can say whether it reads maths.
+    if (key === "calcNotes" && value === true) {
+      this.plugin.handwriting.model().then(
+        () => this.update(),
+        () => undefined,
+      );
     }
   }
 
@@ -1729,6 +1752,30 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           visible: reading,
         },
+        {
+          ...this.info(
+            toggle("calcNotes", "Calculate lines that end in =", "", [
+              "calculation notes",
+              "calculate",
+              "calculator",
+              "maths",
+              "math",
+              "sum",
+              "equals",
+              "answer",
+            ]),
+            CALC_NOTES_INFO,
+          ),
+          visible: reading,
+        },
+        callout(
+          CALLOUTS.calcModel,
+          () =>
+            reading() &&
+            settings.calcNotes &&
+            this.plugin.handwriting.info !== null &&
+            !this.plugin.handwriting.info.maths,
+        ),
         this.info(
           drawnRow(
             "Your handwriting model",
@@ -2108,7 +2155,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       );
       chip.createSpan({
         cls: "goodobsidian-sheet-title",
-        text: sheet.set ? `Sheet ${sheet.set}` : sheet.title,
+        text: isSymbolSet(sheet.set) ? "Symbols" : sheet.set ? `Sheet ${sheet.set}` : sheet.title,
       });
       chip.createSpan({
         cls: "goodobsidian-sheet-state",

@@ -160,6 +160,14 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       id: "grape-2",
       offer: vi.fn((how: string) => calls.push(`grape:offer:${how}`)),
     },
+    // The reader: what model is loaded (none yet), and loading one.
+    handwriting: {
+      info: null as { maths: boolean } | null,
+      model: vi.fn(() => {
+        calls.push("hwr:load");
+        return Promise.resolve({ maths: false });
+      }),
+    },
     learner: {
       progress: null as { step: number; steps: number; startedAt: number } | null,
       start: vi.fn(() => calls.push("learn")),
@@ -360,6 +368,8 @@ const MODEL_ROWS = [
   ["Handwriting · Grape 2.0", "render"],
   ["Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
   ["Underline words it may have misread", "toggle:checkHandwrittenWords"],
+  ["Calculate lines that end in =", "toggle:calcNotes"],
+  ["(block)", "render"],
   ["Your handwriting model", "render"],
   ["Read with my model", "toggle:useLearnedHandwriting"],
   ["Learn your handwriting", "render"],
@@ -568,6 +578,7 @@ const DEFAULT_MODEL_ROWS = [
   "Handwriting · Grape 2.0",
   "Read handwriting on this device (beta)",
   "Underline words it may have misread",
+  "Calculate lines that end in =",
   "Your handwriting model",
   "Learn your handwriting",
 ];
@@ -643,7 +654,7 @@ describe("which rows show", () => {
       "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block 55)",
+      expect.stringMatching(/^\(block \d+\)$/),
     ]);
   });
 
@@ -1737,6 +1748,28 @@ describe("Models on this device", () => {
       ...MODEL_ROWS.map(([name]) => (name === "(block)" ? "" : name)),
       "Other model",
     ]);
+  });
+
+  it("says, while calculating is on, when the model in use cannot calculate", async () => {
+    const plugin = makePlugin();
+    const callout = () => {
+      const all = rows(makeTab(plugin).tab);
+      return all[all.findIndex((r) => r.def.name === "Calculate lines that end in =") + 1].def;
+    };
+    // Off by default; then on, before any model is loaded: nothing to say yet.
+    expect(plugin.settings.calcNotes).toBe(false);
+    expect(shown(callout())).toBe(false);
+    plugin.settings.calcNotes = true;
+    expect(shown(callout())).toBe(false);
+    plugin.handwriting.info = { maths: false };
+    expect(shown(callout())).toBe(true);
+    plugin.handwriting.info = { maths: true };
+    expect(shown(callout())).toBe(false);
+    // Switching it on loads the model, so the tab can tell.
+    plugin.settings.calcNotes = false;
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("calcNotes", true);
+    expect(plugin.calls).toContain("hwr:load");
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {

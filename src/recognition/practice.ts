@@ -12,7 +12,10 @@
  * samples, so the file on its own is training data.
  *
  * Three sets of lines, each covering the alphabet in both cases, digits,
- * times, money, maths, punctuation and a `[[link]]`. Learning uses every set
+ * times, money, maths, punctuation and a `[[link]]`, and a symbol sheet
+ * ({@link SYMBOL_SET}): one digit, operator or sign per line, with its name
+ * printed beside it, so the reader learns how this writer makes them (and
+ * calculation notes can answer in their hand). Learning uses every sheet
  * written. Notebooks made before practice files (prompts in text boxes whose
  * ids start with `practice-`) are still read.
  *
@@ -134,11 +137,92 @@ export const PRACTICE_SETS: readonly (readonly string[])[] = [
   ],
 ];
 
+/**
+ * The symbol sheet's set number: far above the text sets, so more of those
+ * can follow without a clash, and positive, as `practice.set` must be.
+ */
+export const SYMBOL_SET = 100;
+
+/**
+ * The symbol sheet: each digit twice, then every operator, bracket and sign
+ * in Grape's alphabet, one to a line, with a name printed beside it (a
+ * caption, not part of the label: the line's label is the symbol alone). The
+ * letter x is there because a calculation writes it for "times".
+ */
+export const SYMBOL_LINES: readonly { symbol: string; name: string }[] = [
+  { symbol: "0", name: "zero" },
+  { symbol: "1", name: "one" },
+  { symbol: "2", name: "two" },
+  { symbol: "3", name: "three" },
+  { symbol: "4", name: "four" },
+  { symbol: "5", name: "five" },
+  { symbol: "6", name: "six" },
+  { symbol: "7", name: "seven" },
+  { symbol: "8", name: "eight" },
+  { symbol: "9", name: "nine" },
+  { symbol: "+", name: "plus" },
+  { symbol: "-", name: "minus" },
+  { symbol: "x", name: "times, as a letter x" },
+  { symbol: "*", name: "times, as a star" },
+  { symbol: "/", name: "divided by" },
+  { symbol: "=", name: "equals" },
+  { symbol: ".", name: "decimal point" },
+  { symbol: ",", name: "comma" },
+  { symbol: "(", name: "opening bracket" },
+  { symbol: ")", name: "closing bracket" },
+  { symbol: "^", name: "to the power" },
+  { symbol: "%", name: "percent" },
+  { symbol: "<", name: "less than" },
+  { symbol: ">", name: "greater than" },
+  { symbol: "[", name: "opening square bracket" },
+  { symbol: "]", name: "closing square bracket" },
+  { symbol: "{", name: "opening brace" },
+  { symbol: "}", name: "closing brace" },
+  { symbol: "|", name: "bar" },
+  { symbol: "!", name: "factorial, exclamation mark" },
+  { symbol: "_", name: "underscore, subscript" },
+  { symbol: ":", name: "colon" },
+  { symbol: ";", name: "semicolon" },
+  { symbol: "?", name: "question mark" },
+  { symbol: "'", name: "prime, apostrophe" },
+  { symbol: '"', name: "quotation mark" },
+  { symbol: "~", name: "tilde, about" },
+  { symbol: "#", name: "number sign" },
+  { symbol: "$", name: "dollar" },
+  { symbol: "&", name: "and" },
+  { symbol: "@", name: "at" },
+  { symbol: String.fromCharCode(92), name: "backslash" },
+  { symbol: "`", name: "backquote" },
+  { symbol: "7", name: "seven, again" },
+  { symbol: "4", name: "four, again" },
+  { symbol: "1", name: "one, again" },
+  { symbol: "9", name: "nine, again" },
+  { symbol: "0", name: "zero, again" },
+  { symbol: "5", name: "five, again" },
+  { symbol: "2", name: "two, again" },
+  { symbol: "8", name: "eight, again" },
+  { symbol: "3", name: "three, again" },
+  { symbol: "6", name: "six, again" },
+];
+
+/** Whether `set` is the symbol sheet. */
+export function isSymbolSet(set: number | null | undefined): boolean {
+  return set === SYMBOL_SET;
+}
+
+/** The labels a sheet asks for: a text set's lines, or the symbol sheet's symbols. */
+export function practicePrompts(set: number): readonly string[] {
+  if (isSymbolSet(set)) return SYMBOL_LINES.map((line) => line.symbol);
+  return PRACTICE_SETS[Math.min(PRACTICE_SETS.length, Math.max(1, Math.round(set))) - 1];
+}
+
 /** Set 1's lines (the first practice notebooks had only these). */
 export const PRACTICE_LINES = PRACTICE_SETS[0];
 
 /** Prompts on one page. */
 export const PROMPTS_PER_PAGE = 10;
+/** Symbols on one page of the symbol sheet: one every two lines. */
+export const SYMBOLS_PER_PAGE = 15;
 /** The ruling's pitch (ruled-wide), page px. */
 const PITCH = 40;
 /** Where printed text starts, page px from the left. */
@@ -207,8 +291,30 @@ export function wrapPrinted(text: string, width: number, size: number): string[]
   return out;
 }
 
+/** The symbol sheet's cover: what to do with one symbol a line. */
+const SYMBOL_COVER: readonly { heading?: string; text: string }[] = [
+  {
+    heading: "How to do it",
+    text:
+      "1. On the next pages, each grey symbol has its name beside it and an empty line under it.\n" +
+      "2. Write the symbol once on the empty line below it, at the size you write maths, " +
+      "the way you always write it.\n" +
+      "3. One symbol per line, nothing else. Made a mistake? Erase it and write it again. " +
+      "Skipping a line is fine.",
+  },
+  COVER[1],
+  {
+    heading: "What it is for",
+    text:
+      "FineNotes learns how you write digits, operators and signs, so it reads your maths " +
+      "better. Calculation notes, when on, also write their answers in your own hand with it.",
+  },
+  COVER[3],
+];
+
 /** The cover: a title, the set, and what to do, printed on plain paper. */
 function coverPage(set: number, geometry: PageGeometry): Page {
+  const symbols = isSymbolSet(set);
   const printed: PrintedText[] = [];
   const width = geometry.width - 2 * LEFT;
   // Below where the floating tool pill sits at fit zoom, and large enough
@@ -217,7 +323,7 @@ function coverPage(set: number, geometry: PageGeometry): Page {
   printed.push({
     x: LEFT,
     y,
-    text: "Handwriting practice",
+    text: symbols ? "Symbol practice" : "Handwriting practice",
     size: 52,
     bold: true,
     color: HEADING_COLOR,
@@ -226,12 +332,14 @@ function coverPage(set: number, geometry: PageGeometry): Page {
   printed.push({
     x: LEFT,
     y,
-    text: `Set ${set} of ${PRACTICE_SETS.length} · teaches FineNotes to read your handwriting`,
+    text: symbols
+      ? "Digits, operators and signs · teaches FineNotes to read your maths"
+      : `Set ${set} of ${PRACTICE_SETS.length} · teaches FineNotes to read your handwriting`,
     size: 24,
     color: PROMPT_COLOR,
   });
   y += 30;
-  for (const part of COVER) {
+  for (const part of symbols ? SYMBOL_COVER : COVER) {
     y += 44;
     if (part.heading) {
       printed.push({ x: LEFT, y, text: part.heading, size: 30, bold: true, color: HEADING_COLOR });
@@ -262,6 +370,7 @@ function coverPage(set: number, geometry: PageGeometry): Page {
  * write on, a spare line), under a short reminder at the top.
  */
 export function buildPracticeFile(set: number, geometry: PageGeometry): InkDocument {
+  if (isSymbolSet(set)) return buildSymbolFile(geometry);
   const which = Math.min(PRACTICE_SETS.length, Math.max(1, Math.round(set)));
   const lines = PRACTICE_SETS[which - 1];
   const pages: Page[] = [coverPage(which, geometry)];
@@ -304,6 +413,58 @@ export function buildPracticeFile(set: number, geometry: PageGeometry): InkDocum
     version: SCHEMA_VERSION,
     view: { scrollY: 0, width: geometry.width, scale: 1 },
     practice: { format: PRACTICE_FORMAT, set: which },
+    pages,
+  };
+}
+
+/**
+ * The symbol sheet: the cover, then pages of ruled-wide paper with a symbol
+ * every two lines (printed large, its name small beside it), written on the
+ * line below. The name is printed text without a prompt id, so it is never
+ * a label.
+ */
+function buildSymbolFile(geometry: PageGeometry): InkDocument {
+  const pages: Page[] = [coverPage(SYMBOL_SET, geometry)];
+  const count = Math.ceil(SYMBOL_LINES.length / SYMBOLS_PER_PAGE);
+  for (let p = 0; p < count; p++) {
+    const printed: PrintedText[] = [
+      {
+        x: LEFT,
+        y: PITCH - ABOVE_RULE,
+        text: `Symbols · page ${p + 1} of ${count} · write each grey symbol once on the empty line below it`,
+        size: 15,
+        color: PROMPT_COLOR,
+      },
+    ];
+    SYMBOL_LINES.slice(p * SYMBOLS_PER_PAGE, (p + 1) * SYMBOLS_PER_PAGE).forEach((line, i) => {
+      const n = p * SYMBOLS_PER_PAGE + i;
+      // The symbol sits on rule k and is copied on the line below it; the
+      // next symbol is on the rule after that.
+      const y = PITCH * (3 + i * 2) - ABOVE_RULE;
+      printed.push({
+        x: LEFT,
+        y,
+        text: line.symbol,
+        size: 26,
+        color: PROMPT_COLOR,
+        prompt: `${PRACTICE_PREFIX}${SYMBOL_SET}-${n + 1}`,
+      });
+      printed.push({ x: LEFT + 70, y, text: line.name, size: 15, color: PROMPT_COLOR });
+    });
+    pages.push({
+      id: `p${p + 1}`,
+      kind: "ink",
+      geometry: { ...geometry },
+      backdrop: { kind: "ruled-wide", printed },
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    });
+  }
+  return {
+    version: SCHEMA_VERSION,
+    view: { scrollY: 0, width: geometry.width, scale: 1 },
+    practice: { format: PRACTICE_FORMAT, set: SYMBOL_SET },
     pages,
   };
 }
@@ -363,6 +524,41 @@ export function practiceLines(doc: InkDocument): PracticeLine[] {
       });
       if (strokes.length > 0) out.push({ text: prompt.text, strokes });
     });
+  }
+  return out;
+}
+
+/**
+ * The characters written on a symbol sheet, with the rule each was written
+ * above: what calculation notes write their answers with
+ * (`model/answer-glyphs.ts`). Empty for any other practice file.
+ */
+export function symbolSamples(
+  doc: InkDocument,
+): { symbol: string; strokes: Stroke["pts"][]; baseline: number }[] {
+  if (!isSymbolSet(doc.practice?.set)) return [];
+  const out: { symbol: string; strokes: Stroke["pts"][]; baseline: number }[] = [];
+  for (const page of doc.pages) {
+    if (page.backdrop.kind === "pdf") continue;
+    const prompts = (page.backdrop.printed ?? []).filter((line) => line.prompt);
+    if (prompts.length === 0) continue;
+    const blocks = writingLines(page.backdrop, page.geometry);
+    const writing = page.strokes.filter(isWriting);
+    const refs = assignLines(
+      blocks,
+      writing.map((s) => strokeBounds(s) ?? { minX: 0, minY: -1e9, maxX: 0, maxY: -1e9 }),
+    );
+    for (const prompt of prompts) {
+      const ref = lineAt(blocks, prompt.x, prompt.y);
+      if (!ref || Array.from(prompt.text).length !== 1) continue;
+      const line = ref.line + 1;
+      const baseline = blocks[ref.block].baselines[line];
+      if (baseline === undefined) continue;
+      const strokes = writing
+        .filter((_, j) => refs[j]?.block === ref.block && refs[j]?.line === line)
+        .map((s) => s.pts);
+      if (strokes.length > 0) out.push({ symbol: prompt.text, strokes, baseline });
+    }
   }
   return out;
 }

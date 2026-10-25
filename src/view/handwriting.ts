@@ -80,6 +80,11 @@ export class HandwritingReader {
     private readonly grape: () => Promise<StoredModel | null>,
   ) {}
 
+  /** What the model in the worker is, or null before one is loaded. Never loads one. */
+  get info(): HwrModelInfo | null {
+    return this.loaded?.info ?? null;
+  }
+
   /** The model, loaded into the worker if it is not there yet (or its file changed). */
   async model(): Promise<HwrModelInfo> {
     const source = this.source();

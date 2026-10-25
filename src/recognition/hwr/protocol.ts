@@ -74,6 +74,8 @@ export interface HwrModelInfo {
   characters: number;
   /** LM contexts, or 0 without an LM. */
   lmContexts: number;
+  /** The header says it reads maths well enough to calculate with (`HwrMeta.maths`). */
+  maths: boolean;
   /** Milliseconds to parse the file and lay the network out for the kernels. */
   parseMs: number;
   /** The network runs with WebAssembly SIMD (else plain JavaScript, ~10x slower). */

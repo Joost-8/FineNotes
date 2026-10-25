@@ -104,9 +104,20 @@ export function learnedBadge(
 
 /** "2 of 3 sheets · 49 lines": how far learning has come, in one line. */
 export function learnSummary(sheets: readonly PracticeSheet[], sets: number): string {
-  const written = new Set(sheets.filter((s) => s.written > 0 && s.set).map((s) => s.set)).size;
+  const written = writtenSets(sheets, sets);
   const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
   return `${written} of ${sets} sheets · ${plural(lines, "line")}`;
+}
+
+/** Whether a sheet is one of the `sets` text sets (not the symbol sheet, not a legacy notebook). */
+function isTextSheet(sheet: PracticeSheet, sets: number): boolean {
+  return sheet.set !== null && sheet.set >= 1 && sheet.set <= sets;
+}
+
+/** How many of the `sets` text sets have a sheet with something copied on it. */
+function writtenSets(sheets: readonly PracticeSheet[], sets: number): number {
+  return new Set(sheets.filter((s) => s.written > 0 && isTextSheet(s, sets)).map((s) => s.set))
+    .size;
 }
 
 /** A practice sheet in the vault, as the settings list it. */
@@ -183,7 +194,9 @@ export function nextSheetAction(
     return {
       kind: "continue",
       path: unfinished.path,
-      label: unfinished.set ? `Continue sheet ${unfinished.set}` : `Continue ${unfinished.title}`,
+      label: isTextSheet(unfinished, sets)
+        ? `Continue sheet ${unfinished.set}`
+        : `Continue ${unfinished.title}`,
     };
   for (let set = 1; set <= sets; set++) {
     if (!sheets.some((s) => s.set === set)) return { kind: "write", label: `Write sheet ${set}` };
@@ -196,7 +209,7 @@ export function writeStepText(sheets: readonly PracticeSheet[], sets: number): s
   const how =
     "Each sheet has grey lines to copy: write each one on the empty line under it, in your " +
     "everyday handwriting, then close the sheet.";
-  const written = new Set(sheets.filter((s) => s.written > 0 && s.set).map((s) => s.set)).size;
+  const written = writtenSets(sheets, sets);
   if (sheets.length === 0) return `${how} There are ${sets} sheets; start with the first.`;
   return `${how} ${written} of ${sets} sheets written; every sheet you add helps it learn.`;
 }

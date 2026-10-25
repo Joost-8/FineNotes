@@ -161,8 +161,9 @@ import {
   type LearningHost,
   learnedModelPath,
   writePracticePage,
+  writeSymbolPractice,
 } from "./view/handwriting-learning";
-import { buildPracticeFile } from "./recognition/practice";
+import { buildPracticeFile, isSymbolSet } from "./recognition/practice";
 import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX, SINGLE_PAGE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
@@ -667,6 +668,11 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "write-handwriting-practice",
       name: "Write a handwriting practice set",
       callback: () => void writePracticePage(this.learningHost()),
+    });
+    this.addCommand({
+      id: "write-symbol-practice",
+      name: "Write the symbol practice sheet (digits, operators, signs)",
+      callback: () => void writeSymbolPractice(this.learningHost()),
     });
     this.addCommand({
       id: "learn-handwriting",
@@ -2066,7 +2072,7 @@ export default class GoodObsidianPlugin extends Plugin {
       if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
       const taken = new Set(parent?.children.map((child) => child.name) ?? []);
-      const base = `Handwriting practice ${set}`;
+      const base = isSymbolSet(set) ? "Symbol practice" : `Handwriting practice ${set}`;
       const name = uniqueFileName(base, PRACTICE_FILE_SUFFIX, taken);
       const geometry = { ...DEFAULT_PAGE_GEOMETRY, width: this.settings.paperWidth };
       const content = buildInkFile(
