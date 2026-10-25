@@ -2447,10 +2447,7 @@ export class InkView extends TextFileView {
           this.toolbar?.setRulerOut(this.surface?.rulerOut ?? false);
           this.plugin.saveRuler(kind, snap);
         },
-        onEraserChange: (mode, size) => {
-          this.plugin.saveEraser(mode, size);
-          this.surface?.previewEraser();
-        },
+        onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
         onLassoChange: (mode, filter) => {

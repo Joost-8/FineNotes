@@ -935,8 +935,6 @@ interface ZoomSettle {
   fill: boolean;
 }
 
-/** How long a picked eraser size shows its true footprint on the page (`previewEraser`). */
-const ERASER_PREVIEW_MS = 1500;
 /** How long a double tap's zoom takes to glide the last pixels to its page (`settleAfterZoom`). */
 const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
@@ -1551,8 +1549,6 @@ export class InkSurface {
   private eraseRuled: RuledEraser | null = null;
   /** The eraser's footprint, shown on the page while erasing. */
   private readonly eraserCursorEl: HTMLElement;
-  /** Hides the footprint `previewEraser` showed. */
-  private eraserPreviewTimer = 0;
   /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
   private readonly laserTrail = new LaserTrail();
   private readonly laserCanvas: HTMLCanvasElement;
@@ -7058,26 +7054,6 @@ export class InkSurface {
    */
   private eraserSize(): number {
     return eraserSizeFor(this.toolState);
-  }
-
-  /**
-   * Show the eraser's footprint, true size, in the middle of the page in
-   * view for a moment: a size was just picked, and the marks in the bar
-   * cannot always show it (a large eraser zoomed in outgrows them). An
-   * outline over the page's own lines, so it can be judged against them.
-   * Not while erasing, when the footprint follows the pen already.
-   */
-  previewEraser(): void {
-    if (this.eraseLast !== null) return;
-    const box = this.pageLayout.boxes[this.pageIndex];
-    const seen = this.visibleRegion(this.pageIndex);
-    if (!box || !seen) return;
-    this.showEraserCursor(box, { x: (seen.minX + seen.maxX) / 2, y: (seen.minY + seen.maxY) / 2 });
-    window.clearTimeout(this.eraserPreviewTimer);
-    this.eraserPreviewTimer = window.setTimeout(() => {
-      this.eraserPreviewTimer = 0;
-      if (this.eraseLast === null) this.eraserCursorEl.addClass("is-hidden");
-    }, ERASER_PREVIEW_MS);
   }
 
   /** Show the eraser's footprint centred on a page-local point. */

@@ -4814,14 +4814,12 @@ function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
   circle.setAttribute("cx", String(box / 2));
   circle.setAttribute("cy", String(box / 2));
   // The ring alone, drawn inside the footprint as the strip's border is: the
-  // eraser's own size on the page, beside the page's lines. A footprint too
-  // big for the box is drawn dashed at the box's edge.
+  // eraser's own size on the page at this zoom, up to the box's edge.
   const d = Number.isFinite(diameter) && diameter > 0 ? diameter : 2;
   circle.setAttribute("r", Math.max(0.75, Math.min(d, box) / 2 - 0.75).toFixed(2));
   circle.setAttribute("fill", "none");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
-  if (d > box) circle.setAttribute("stroke-dasharray", "2.5 2");
   svg.append(circle);
   return svg;
 }
