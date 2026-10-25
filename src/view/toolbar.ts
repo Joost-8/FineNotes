@@ -1484,12 +1484,8 @@ export class Toolbar {
    * placed, a tap that stops it waiting.
    */
   private tapSticky(anchor: HTMLElement): void {
-    if (this.stickyButton?.hasClass("is-on")) {
-      this.closePopover();
-      this.callbacks.onStickyCancel?.();
-      return;
-    }
-    if (this.popoverKind === "sticky") {
+    if (this.stickyButton?.hasClass("is-on") || this.popoverKind === "sticky") {
+      // Closing the colours while a note waits stops it waiting (`closePopover`).
       this.closePopover();
       return;
     }
@@ -1500,20 +1496,25 @@ export class Toolbar {
       cls: "goodobsidian-sticky-colors",
       attr: { role: "group", "aria-label": "Sticky note colour" },
     });
+    const swatches = new Map<string, HTMLElement>();
     for (const { color, label } of STICKY_COLORS) {
       const swatch = grid.createEl("button", {
         cls: "goodobsidian-sticky-swatch",
-        attr: { "aria-label": label, "aria-pressed": String(color === lastStickyColor) },
+        attr: { "aria-label": label },
       });
       // backgroundColor, never the shorthand: it would reset the stylesheet's clip (ledger).
       swatch.setCssStyles({ backgroundColor: color });
-      swatch.toggleClass("is-active", color === lastStickyColor);
+      swatches.set(color, swatch);
       swatch.addEventListener("click", () => {
         lastStickyColor = color;
-        this.closePopover();
+        markChosen(swatches, color, true);
         this.callbacks.onStickyColor?.(color);
       });
     }
+    markChosen(swatches, lastStickyColor, true);
+    // As in Goodnotes, the colours stay out until the note is on the page:
+    // the ringed one waits for a tap there, and a tap on another swaps it.
+    this.callbacks.onStickyColor?.(lastStickyColor);
     this.keepPopoverInside(anchor);
   }
 
@@ -1521,6 +1522,7 @@ export class Toolbar {
   setStickyArmed(armed: boolean): void {
     const button = this.stickyButton;
     if (!button) return;
+    const was = button.hasClass("is-on");
     button.toggleClass("is-on", armed);
     button.setAttribute("aria-pressed", String(armed));
     button.setAttr(
@@ -1528,6 +1530,8 @@ export class Toolbar {
       armed ? "Sticky notes: tap the page to place one" : "Sticky notes",
     );
     this.accessoriesButton?.toggleClass("is-on", armed && button.hasClass("is-unlisted"));
+    // The note is on the page (or stopped waiting): its colours go.
+    if (was && !armed && this.popoverKind === "sticky") this.closePopover();
   }
 
   /**
@@ -3438,9 +3442,9 @@ export class Toolbar {
   }
 
   /**
-   * An eraser size in millimetres of paper it erases now. The eraser keeps
-   * its size on screen, so zoomed in it covers less of the page: at 2.5x
-   * the size that takes 4.9 mm at fit takes 2.0 mm.
+   * An eraser size in millimetres of paper it erases. The eraser's size is
+   * the paper's, so this is the same at every zoom (the host's eraser scale
+   * equals its pen scale); a host that scales them apart still gets the truth.
    */
   private eraserMm(size: number): string {
     const { pen, eraser } = this.previewScales();
@@ -3880,6 +3884,7 @@ export class Toolbar {
   }
 
   private closePopover(): void {
+    const kind = this.popoverKind;
     this.popoverKeyboard?.end();
     this.popoverKeyboard = null;
     if (this.popover) this.shrinkPopover(this.popover);
@@ -3887,6 +3892,11 @@ export class Toolbar {
     this.popoverKind = null;
     this.popoverRender = null;
     this.sizeMarksRender = null;
+    // The sticky colours closed with a note still waiting (Escape, another
+    // tool, the button again): it waits no more.
+    if (kind === "sticky" && this.stickyButton?.hasClass("is-on")) {
+      this.callbacks.onStickyCancel?.();
+    }
   }
 
   /**
@@ -3995,6 +4005,8 @@ export class Toolbar {
   private installDismiss(): void {
     const onDown = (event: PointerEvent): void => {
       if (!this.popover) return;
+      // The tap that sticks the waiting note closes the colours once it lands (`setStickyArmed`).
+      if (this.popoverKind === "sticky" && this.stickyButton?.hasClass("is-on")) return;
       const target = event.target as Node | null;
       if (
         target &&

@@ -208,6 +208,8 @@ import {
   nextZoomFloor,
   wheelZoomFactor,
   doubleTapZoom,
+  pageFillZoom,
+  zoomAnchorFor,
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
@@ -923,6 +925,8 @@ const MOUSE_TAP_TOLERANCE_PX = PEN_TAP_TOLERANCE_PX;
 const PDF_LINK_WAIT_MS = 1500;
 /** A finger that lifts within this long of landing, having barely moved, tapped. */
 const FINGER_TAP_MS = 350;
+/** How long a double tap's zoom takes to glide the last pixels to its page (`settleAfterZoom`). */
+const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
 const IMAGE_DRAG_SLOP_PX = 3;
 /**
@@ -1339,7 +1343,15 @@ export class InkSurface {
   /** The ruler laid over the page (`ruler-overlay.ts`), out or put away. */
   private ruler: RulerOverlay | null = null;
   /** The zoom springing back inside its limits after a pinch overshot them. */
-  private zoomAnim: { from: number; to: number; t0: number; cx: number; cy: number } | null = null;
+  private zoomAnim: {
+    from: number;
+    to: number;
+    t0: number;
+    cx: number;
+    cy: number;
+    /** Where the view comes to rest after (scroll px; null keeps that axis): a double tap's page. */
+    settle?: { x: number | null; y: number | null };
+  } | null = null;
   /**
    * A row settling on page `page`, centred, as a pinch lets go: `dx`, `dy`
    * is how far off centre it was at `t0`, and it eases to nothing over the
@@ -3868,6 +3880,7 @@ export class InkSurface {
     this.applyZoom(zoom, anim.cx, anim.cy);
     if (progress >= 1) {
       this.zoomAnim = null;
+      if (anim.settle) this.settleAfterZoom(anim.settle);
       this.settleRowAfterZoom();
       return false;
     }
@@ -5090,12 +5103,11 @@ export class InkSurface {
 
   /**
    * How many screen px one page px of each size is right now, for the size
-   * previews in the width and eraser popovers. Pen width belongs to the page
-   * and grows with the zoom; the eraser is a screen size, set at fit-to-page
-   * zoom (`atFitZoom`).
+   * previews in the width and eraser popovers. Both belong to the page and
+   * grow with the zoom (`eraserSize`), so a mark shows what it covers.
    */
   sizePreviewScales(): { pen: number; eraser: number } {
-    return { pen: this.unitScale, eraser: this.unitScale / (this.userZoom || 1) };
+    return { pen: this.unitScale, eraser: this.unitScale };
   }
 
   /**
@@ -7025,12 +7037,13 @@ export class InkSurface {
   }
 
   /**
-   * The eraser's diameter in page px: its chosen size on screen, whatever
-   * the zoom. Zooming in is how a small mistake is reached; an eraser that
-   * grew with the page wiped out its neighbours too.
+   * The eraser's diameter in page px: its chosen size on the paper, whatever
+   * the zoom, as a pen's width is (Joost, 2026-10-25: a size that changed
+   * with the zoom could not be judged). Zoomed in it shows larger on screen,
+   * and covers what its mark and its mm say. It was a screen size until then.
    */
   private eraserSize(): number {
-    return this.atFitZoom(eraserSizeFor(this.toolState));
+    return eraserSizeFor(this.toolState);
   }
 
   /** Show the eraser's footprint centred on a page-local point. */
@@ -10637,17 +10650,78 @@ export class InkSurface {
   }
 
   /**
-   * One finger tapped twice where nothing took the taps: zoom to fit the
-   * page's width, or from there back to the whole page (`doubleTapZoom`),
-   * about the tap, on the zoom spring a pinch lets go on.
+   * One finger tapped twice where nothing took the taps: zoom until the
+   * tapped page covers the pane, its left edge on the pane's and the tapped
+   * spot as high as it was (inside the page), so nothing but the page shows;
+   * from there, back to the whole page, centred. Zoom and scroll land as one
+   * motion: the zoom turns about the point the move leaves in place
+   * (`zoomAnchorFor`), and a last glide takes up what the clamps changed.
    */
   private zoomOnDoubleTap(clientX: number, clientY: number): void {
-    const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom));
+    // An endless board has no edge to fill: its writing size (100%), and
+    // from there back to the whole drawing, about the tap.
+    if (this.board) {
+      const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, 1));
+      if (Math.abs(target - this.userZoom) < 1e-3) return;
+      this.pinch = null;
+      this.rowSettle = null;
+      this.zoomAnim = { from: this.userZoom, to: target, t0: now(), cx: clientX, cy: clientY };
+      this.requestFrame();
+      return;
+    }
+    const at = this.toLayout(clientX, clientY);
+    const box =
+      boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
+    if (!box) return;
+    const fill = pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH);
+    const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
+    const rect = this.surfaceEl.getBoundingClientRect();
+    const s0 = this.scale;
+    const s1 = this.baseScale * target;
+    const row = this.direction === "horizontal";
+    const filling = target > this.userZoom;
+    // Where the layout origin ends on screen, per axis (screen = offset + layout * scale).
+    let toX: number;
+    let toY: number;
+    if (filling) {
+      const ax = clientX - rect.left;
+      const ay = clientY - rect.top;
+      const keep = (tap: number, layout: number, start: number, size: number, pane: number) =>
+        Math.min(-start * s1, Math.max(pane - (start + size) * s1, tap - layout * s1));
+      toX = keep(ax, at.x, box.x, box.width, this.cssW);
+      toY = keep(ay, at.y, box.y, box.height, this.cssH);
+    } else {
+      toX = this.cssW / 2 - (box.x + box.width / 2) * s1;
+      toY = this.cssH / 2 - (box.y + box.height / 2) * s1;
+    }
+    const fromY = -this.scroller.position.y;
+    const anchorX = zoomAnchorFor(this.offsetX, s0, toX, s1) ?? clientX - rect.left;
+    const anchorY = zoomAnchorFor(fromY, s0, toY, s1) ?? clientY - rect.top;
     this.pinch = null;
     this.rowSettle = null;
-    this.zoomAnim = { from: this.userZoom, to: target, t0: now(), cx: clientX, cy: clientY };
-    this.snapRowAfterZoom = this.direction === "horizontal" && rowTurnsPages(target, this.minZoom);
+    // A row back at the floor snaps to its page as a pinch's release does.
+    this.snapRowAfterZoom = row && rowTurnsPages(target, this.minZoom);
+    // A vertical stack narrower than the pane centres itself: only its height scrolls.
+    const centredX = !row && this.pageLayout.width * s1 <= this.cssW;
+    this.zoomAnim = {
+      from: this.userZoom,
+      to: target,
+      t0: now(),
+      cx: rect.left + anchorX,
+      cy: rect.top + anchorY,
+      settle: this.snapRowAfterZoom ? undefined : { x: centredX ? null : -toX, y: -toY },
+    };
+    this.requestFrame();
+  }
+
+  /** A double tap's zoom ended: glide the last pixels the clamps left to where it aimed. */
+  private settleAfterZoom(settle: { x: number | null; y: number | null }): void {
+    const at = this.scroller.position;
+    const x = settle.x ?? at.x;
+    const y = settle.y ?? at.y;
+    if (Math.hypot(x - at.x, y - at.y) < 1) return;
+    this.scroller.glideTo(x, y, now(), DOUBLE_TAP_SETTLE_MS);
     this.requestFrame();
   }
 
