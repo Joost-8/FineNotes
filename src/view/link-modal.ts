@@ -18,6 +18,7 @@
 import { type App, SuggestModal, setIcon } from "obsidian";
 import { type LinkChoice, type LinkableNote, linkChoices } from "../search/link-choices";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 type PickerItem = LinkChoice | { kind: "remove"; target: string };
@@ -54,6 +55,13 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
     this.limit = 60;
     this.setPlaceholder("Link to a note, a heading (Note#Heading) or a web address");
     this.emptyStateText = "Type a note's name, or a web address.";
+    // Obsidian's keymap takes a plain Return; the iPad's Return over the
+    // selected reading can come only as a line break (enter-key.ts).
+    onEnterKey(
+      this.inputEl,
+      () => this.selectActiveSuggestion(new KeyboardEvent("keydown", { key: "Enter" })),
+      { keydownHandled: true },
+    );
   }
 
   override async onOpen(): Promise<void> {

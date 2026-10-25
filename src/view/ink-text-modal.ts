@@ -17,6 +17,7 @@
 import { type App, Modal } from "obsidian";
 import { inkTextLines } from "../model/ink-to-text";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 /** Longest text a box made from ink takes; a page of writing fits. */
@@ -72,11 +73,7 @@ export class InkTextModal extends Modal {
       this.submit(text);
     };
     done.addEventListener("click", finish);
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-      event.preventDefault();
-      finish();
-    });
+    onEnterKey(field, finish, { shiftNewline: true });
     field.focus();
   }
 

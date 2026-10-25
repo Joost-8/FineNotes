@@ -31,6 +31,7 @@ import {
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
 import type { Stroke } from "../model/document";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { WordPopover, type WordPopoverRow } from "./word-popover";
 import { errorMessage } from "../util/errors";
 
@@ -260,12 +261,7 @@ class WordCorrectionModal extends Modal {
       if (text !== this.read) this.submit(text);
     };
     save.addEventListener("click", done);
-    field.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.isComposing) {
-        event.preventDefault();
-        done();
-      }
-    });
+    onEnterKey(field, done);
     window.setTimeout(() => {
       field.focus();
       field.select();

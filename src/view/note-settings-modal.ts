@@ -23,6 +23,7 @@ import type { ScrollDirection } from "../model/document";
 import type { NotebookFurniture } from "../model/furniture";
 import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 
 /** What the summary card shows. */
 export interface NotebookInfo {
@@ -170,9 +171,7 @@ export class NoteSettingsModal extends Modal {
       }
       void this.host.rename(value).then(() => this.render());
     });
-    field.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") field.blur();
-    });
+    onEnterKey(field, () => field.blur());
     this.keyboard.watch(field, card);
 
     const facts: string[] = [];

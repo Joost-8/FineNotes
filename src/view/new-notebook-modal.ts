@@ -18,6 +18,7 @@
 
 import { type App, Modal, setIcon } from "obsidian";
 import { ICON_IMPORT_NOTEBOOK } from "../constants";
+import { onEnterKey } from "./enter-key";
 import type { PageGeometry, Ruling } from "../model/document";
 import {
   type CoverChoice,
@@ -205,13 +206,8 @@ export class NewNotebookModal extends Modal {
         placeholder: defaultTitle("notebook"),
       },
     });
-    input.addEventListener("keydown", (event) => {
-      // Not while an IME is composing: its Return confirms the characters.
-      if (event.key === "Enter" && !event.isComposing) {
-        event.preventDefault();
-        this.create();
-      }
-    });
+    // Not while an IME is composing: its Return confirms the characters.
+    onEnterKey(input, () => this.create());
     // While the title has focus the on-screen keyboard is up (on iPad): lift
     // the sheet to the top so nothing it needs sits under the keyboard.
     input.addEventListener("pointerdown", () => {

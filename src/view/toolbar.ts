@@ -169,6 +169,7 @@ import {
   withStabilization,
 } from "../model/pen-stabilization";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import {
   DEFAULT_ARROW_HEADS,
   type FillMode,
@@ -2785,12 +2786,7 @@ export class Toolbar {
       settle();
     };
     field.addEventListener("change", typed);
-    field.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        typed();
-      }
-    });
+    onEnterKey(field, typed);
     if (this.popover) {
       this.popoverKeyboard = new DialogKeyboard(this.popover);
       this.popoverKeyboard.watch(field, head);
