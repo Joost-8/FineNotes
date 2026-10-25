@@ -16,6 +16,7 @@
 import { type App, Modal } from "obsidian";
 import { MAX_TASK_TEXT, normalizeTaskText } from "../model/tasks";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 export class TaskModal extends Modal {
@@ -74,11 +75,7 @@ export class TaskModal extends Modal {
       if (text !== this.current) this.submit(text);
     };
     done.addEventListener("click", finish);
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      finish();
-    });
+    onEnterKey(field, finish);
 
     field.focus();
     field.select();

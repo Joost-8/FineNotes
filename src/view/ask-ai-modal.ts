@@ -54,6 +54,7 @@ import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-sess
 import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { keyboardHeight } from "./keyboard";
 import { writeSystemText } from "./system-clipboard";
 
@@ -232,14 +233,9 @@ export class AskChat {
     });
     input.addEventListener("focus", () => this.closePicker());
     input.addEventListener("blur", () => this.syncInput());
-    input.addEventListener("keydown", (event) => {
-      // Return sends, as in any chat; Shift+Return is a new line. Not while
-      // an input method is still composing a character.
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-        event.preventDefault();
-        this.submit();
-      }
-    });
+    // Return sends, as in any chat; Shift+Return is a new line. Not while
+    // an input method is still composing a character.
+    onEnterKey(input, () => this.submit(), { shiftNewline: true });
     this.sendButton = row.createEl("button", {
       cls: "goodobsidian-chat-send clickable-icon",
       attr: { "aria-label": "Send" },

@@ -22,6 +22,12 @@ extracted from the matching section of this file by `release.yml`.
   and title bar above a notebook, so the page gets about 90 px more height.
   The same button brings them back. Switch to a note in another tab and
   Obsidian's bars come back for it. The choice is kept on each device.
+- **Turn handwriting into text** ([#42](https://github.com/Joost-8/FineNotes/issues/42)).
+  Lasso some writing and choose Turn into › Text: FineNotes fills in what
+  it reads there, a line for each written line, for you to check, and
+  Replace swaps the ink for a text box in the ink's colour and size. Undo
+  brings the ink back. On a computer, the command "Turn selection into
+  text" does the same; give it a hotkey under Settings → Hotkeys.
 
 ### Fixed
 

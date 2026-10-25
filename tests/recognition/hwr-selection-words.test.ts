@@ -5,6 +5,7 @@ import {
   matchCase,
   replaceToken,
   selectionWords,
+  wordsByLine,
 } from "../../src/recognition/hwr/selection-words";
 
 const words: ReadWord[] = [
@@ -58,6 +59,21 @@ describe("replaceToken", () => {
       "aFationals Rationals",
     );
     expect(replaceToken("Other title", "Fationals", "Rationals")).toBe("Other title");
+  });
+});
+
+describe("wordsByLine", () => {
+  it("puts each reading line's words on a line of their own", () => {
+    const placed: ReadWord[] = [
+      { text: "Buy", strokeIds: ["a"], at: { line: 0, start: 0, end: 3 } },
+      { text: "milk", strokeIds: ["b"], at: { line: 0, start: 4, end: 8 } },
+      { text: "and", strokeIds: ["c"], at: { line: 2, start: 0, end: 3 } },
+      // No place: it stays on the line before it.
+      { text: "eggs", strokeIds: ["d"] },
+    ];
+    expect(wordsByLine(placed)).toBe("Buy milk\nand eggs");
+    expect(wordsByLine(words)).toBe("The rationals are dense.");
+    expect(wordsByLine([])).toBe("");
   });
 });
 

@@ -55,6 +55,7 @@ export default defineConfig({
         "src/canvas/ruler-geometry.ts",
         "src/canvas/sticky-paper.ts",
         "src/view/selection-bar-model.ts",
+        "src/view/enter-key.ts",
         "src/view/view-routing.ts",
         "src/view/load-guard.ts",
         "src/view/startup-log.ts",

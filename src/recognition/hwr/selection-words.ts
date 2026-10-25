@@ -39,6 +39,23 @@ export function selectionWords(
 }
 
 /**
+ * Read words as text, a line for each line of the reading they came from
+ * (`at.line`), words joined by spaces. Words without a place join the line
+ * before them.
+ */
+export function wordsByLine(words: readonly ReadWord[]): string {
+  let out = "";
+  let line: number | undefined;
+  for (const word of words) {
+    const at = word.at?.line ?? line;
+    if (out !== "") out += at !== line ? "\n" : " ";
+    out += word.text;
+    line = at;
+  }
+  return out;
+}
+
+/**
  * `word` cased like `like`: UPPER when it is upper case (two letters or
  * more), Capitalised when it starts with a capital, else as given.
  */

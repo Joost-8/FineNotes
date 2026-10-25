@@ -5,6 +5,7 @@
  */
 
 import { type App, Modal, Setting } from "obsidian";
+import { onEnterKey } from "../view/enter-key";
 
 export interface ApiKeyModalOptions {
   title: string;
@@ -50,12 +51,7 @@ export class ApiKeyModal extends Modal {
       this.close();
       this.options.onSave(key);
     };
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        save();
-      }
-    });
+    onEnterKey(input, save);
 
     new Setting(this.contentEl)
       .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))

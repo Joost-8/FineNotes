@@ -30,6 +30,7 @@
 
 import { setIcon } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
 
 export interface MorePanelPage {
@@ -288,9 +289,7 @@ export class MorePanel {
       this.close();
       this.actions.goToPage(Math.min(total, Math.max(1, n)) - 1);
     };
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") go();
-    });
+    onEnterKey(input, go);
     this.keyboard.watch(input, row);
     // The whole row is the target, not only the field — and a press on it
     // must undo the scroll iPadOS makes to reveal the field, as one on the

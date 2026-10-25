@@ -618,6 +618,13 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
       view.copyHighlightedText(),
     );
+    // No default hotkey: desktop users give it one (FineNotes#42).
+    this.notebookCommand(
+      "turn-selection-into-text",
+      "Turn selection into text",
+      (view) => view.turnSelectionIntoText(),
+      (view) => view.hasInkSelected,
+    );
     this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
     this.notebookCommand("save-as-template", "Save notebook as template…", (view) =>
       view.saveAsTemplate(),

@@ -32,6 +32,7 @@ import {
 } from "../model/saved-pens";
 import { renderColorPicker } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { penGlyph, penSample } from "./pen-glyph-svg";
 import { syncRangeFill } from "./range-fill";
 
@@ -135,11 +136,7 @@ export class SavedPenModal extends Modal {
       show();
     };
     field.addEventListener("change", typed);
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      typed();
-    });
+    onEnterKey(field, typed);
 
     const colors = body.createDiv({ cls: "goodobsidian-pen-modal-colors" });
     const drawColors = (): void => {

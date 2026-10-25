@@ -762,7 +762,7 @@ export function copyElements(
 
 // --- Helpers ----------------------------------------------------------------
 
-interface Removed<T> {
+export interface Removed<T> {
   index: number;
   item: T;
 }
@@ -775,7 +775,7 @@ function present<T>(list: readonly T[], wanted: readonly T[]): T[] {
 }
 
 /** Remove `targets` from `list` by identity, recording where each was (highest index first). */
-function removeFrom<T>(list: T[], targets: readonly T[]): Array<Removed<T>> {
+export function removeFrom<T>(list: T[], targets: readonly T[]): Array<Removed<T>> {
   const removed: Array<Removed<T>> = [];
   if (targets.length === 0) return removed;
   const set = new Set(targets);
@@ -789,7 +789,7 @@ function removeFrom<T>(list: T[], targets: readonly T[]): Array<Removed<T>> {
 }
 
 /** Undo {@link removeFrom}: reinsert lowest index first, so each lands where it was. */
-function restoreTo<T>(list: T[], removed: ReadonlyArray<Removed<T>>): void {
+export function restoreTo<T>(list: T[], removed: ReadonlyArray<Removed<T>>): void {
   for (let k = removed.length - 1; k >= 0; k--) {
     const { index, item } = removed[k];
     list.splice(Math.min(index, list.length), 0, item);

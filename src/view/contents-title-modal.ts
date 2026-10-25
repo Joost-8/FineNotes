@@ -18,6 +18,7 @@
 import { type App, Modal } from "obsidian";
 import { MAX_PAGE_TITLE_LENGTH, normalizePageTitle } from "../model/contents";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
 
 export class ContentsTitleModal extends Modal {
@@ -96,11 +97,7 @@ export class ContentsTitleModal extends Modal {
       if (title !== this.current) this.submit(title);
     };
     done.addEventListener("click", finish);
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      finish();
-    });
+    onEnterKey(field, finish);
 
     field.focus();
     field.select();

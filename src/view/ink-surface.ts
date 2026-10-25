@@ -361,10 +361,13 @@ import {
 } from "../model/page-commands";
 import { isLinked, linkStrokes, linksOf, withLinkedStrokes } from "../model/links";
 import { SetTask, inkBounds, taskBoxRect, tasksOf, tickTask } from "../model/tasks";
+import { TurnInkIntoText, inkTextBox, sharedInkColor } from "../model/ink-to-text";
 import { fadeChanges } from "../audio/replay";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
 import { strokeKey } from "../recognition/hwr/corrections";
+import { segmentPage } from "../recognition/hwr/lines";
+import { median } from "../recognition/hwr/numeric";
 import {
   type Command,
   type ImageTransform,
@@ -707,6 +710,11 @@ export interface InkSurfaceCallbacks {
    * it says, and applies `makeTask` for these stroke ids on page `index`.
    */
   onMakeTask?: (index: number, strokeIds: string[]) => void;
+  /**
+   * Turn into › Text on a lasso selection of ink (FineNotes#42): the host
+   * asks what it says, then calls `turnInkIntoText` with the answer.
+   */
+  onTurnIntoText?: (index: number, strokeIds: string[]) => void;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -8224,6 +8232,22 @@ export class InkSurface {
     actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    // Text first under Turn into: the plainest thing ink can become.
+    const toText = this.callbacks.onTurnIntoText;
+    if (toText && index >= 0 && sel.strokes.length > 0) {
+      const ids = sel.strokes.map((stroke) => stroke.id);
+      actions.push({
+        id: "to-text",
+        icon: "type",
+        label: "Text",
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          toText(index, ids);
+        },
+      });
+    }
     // Highlighter ink over a PDF's text: the text it covers can be copied.
     const highlighted = sel.strokes.some(isHighlight)
       ? this.highlightedText(index, sel.strokes)
@@ -8580,6 +8604,53 @@ export class InkSurface {
     const x = clamp(at.x, 0, Math.max(0, box.width - TEXT_MIN_W));
     // Inside the tap, so iPadOS raises the keyboard for the focus.
     this.addTextBox(box, { x, y: at.y, w: TEXT_MIN_W, fit: true });
+  }
+
+  /**
+   * The lasso selection's ink, for Turn into › Text from a command: its
+   * page and stroke ids, or `null` when nothing with ink is selected.
+   */
+  selectedInk(): { index: number; strokeIds: string[] } | null {
+    const sel = this.liveSelection();
+    if (!sel || sel.strokes.length === 0) return null;
+    const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    if (index < 0) return null;
+    return { index, strokeIds: sel.strokes.map((stroke) => stroke.id) };
+  }
+
+  /**
+   * Replace these strokes of page `page` with a text box saying `text`
+   * (FineNotes#42), as one undo step, and select the box. The page is held
+   * by identity: it may have moved while the host asked. False when there
+   * was nothing to replace or the text was blank.
+   */
+  turnInkIntoText(page: Page, strokeIds: readonly string[], text: string): boolean {
+    if (this.callbacks.isLocked?.() || !this.doc.pages.includes(page)) return false;
+    const ids = new Set(strokeIds);
+    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
+    const bounds = inkBounds(page, strokeIds);
+    if (strokes.length === 0 || !bounds) return false;
+    // The writing's own lines, as the recogniser finds them: drawing strokes left out.
+    const lines = segmentPage(strokes).lines;
+    const box = inkTextBox({
+      id: this.textBoxIds.next(),
+      bounds,
+      text,
+      style: this.toolState.textStyle ?? DEFAULT_TEXT_STYLE,
+      inkColor: sharedInkColor(strokes.filter((stroke) => !isHighlight(stroke))),
+      written: {
+        count: lines.length,
+        height: median(lines.map((line) => line.box[3] - line.box[1])),
+      },
+      pageWidth: page.geometry.width,
+    });
+    if (!box) return false;
+    const command = new TurnInkIntoText(page, strokes, box);
+    this.applyCommand(command);
+    if (!command.applied) return false;
+    this.syncTextBoxes();
+    this.select(page.id, { strokes: [], images: [], textBoxes: [box] });
+    return true;
   }
 
   /** Delete everything selected, as one undo step. */

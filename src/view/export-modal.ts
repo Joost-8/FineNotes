@@ -28,6 +28,7 @@ import {
   toggleSelection,
 } from "../export/page-range";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 import { releaseCanvas } from "./image-import";
 import { errorMessage } from "../util/errors";
 
@@ -197,12 +198,7 @@ export class ExportPdfModal extends Modal {
         sync(false);
       }
     });
-    field.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        field.blur();
-      }
-    });
+    onEnterKey(field, () => field.blur());
 
     const onTap = (index: number, extend: boolean): void => {
       if (this.busy) return;

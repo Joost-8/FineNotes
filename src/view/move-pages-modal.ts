@@ -16,6 +16,7 @@
 import { type App, Modal, setIcon } from "obsidian";
 import { type TransferTarget, orderTargets } from "../model/page-transfer";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onEnterKey } from "./enter-key";
 
 export type MoveDestination =
   { kind: "notebook"; target: TransferTarget } | { kind: "new"; title: string };
@@ -102,9 +103,7 @@ export class MovePagesModal extends Modal {
       this.query = search.value;
       this.renderList();
     });
-    search.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
+    onEnterKey(search, () => {
       const first = this.matches()[0];
       if (!this.picked && first) this.picked = first;
       this.submit();
@@ -228,11 +227,7 @@ export class MovePagesModal extends Modal {
     field.addEventListener("input", () => {
       this.newTitle = field.value;
     });
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      this.submit();
-    });
+    onEnterKey(field, () => this.submit());
   }
 
   private submit(): void {
