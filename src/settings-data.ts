@@ -189,6 +189,8 @@ export interface GoodObsidianSettings {
    * is read.
    */
   penStabilization?: Record<string, unknown>;
+  /** The ruler's kind and angle snapping (`rulerSettingsOf`). Checked where it is read. */
+  ruler?: unknown;
   /**
    * Advanced: the pressure pens (Fountain, Brush) widen with pen pressure.
    * Off, every pen draws one width. It replaced `pressureEnabled`

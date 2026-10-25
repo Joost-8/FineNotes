@@ -242,6 +242,37 @@ export function projectOntoEdge(edge: RulerEdge, p: RulerPt): RulerPt {
   return { x: edge.c.x + edge.r * Math.cos(angle), y: edge.c.y + edge.r * Math.sin(angle) };
 }
 
+/**
+ * `edge` moved `by` px away from `inside` (a point within the ruler): a
+ * pen drawing along a ruler draws beside its edge, not under it, so the
+ * line it follows lies half the ink's width outside the ruler and shows.
+ */
+export function offsetEdge(edge: RulerEdge, by: number, inside: RulerPt): RulerEdge {
+  if (!(by > 0)) return edge;
+  if (edge.type === "arc") return { ...edge, r: edge.r + by };
+  const dx = edge.b.x - edge.a.x;
+  const dy = edge.b.y - edge.a.y;
+  const len = Math.hypot(dx, dy);
+  if (!(len > 0)) return edge;
+  let nx = -dy / len;
+  let ny = dx / len;
+  // The normal that points away from the inside.
+  if ((inside.x - edge.a.x) * nx + (inside.y - edge.a.y) * ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  return {
+    type: "line",
+    a: { x: edge.a.x + nx * by, y: edge.a.y + ny * by },
+    b: { x: edge.b.x + nx * by, y: edge.b.y + ny * by },
+  };
+}
+
+/** The ruler's middle on screen: a point inside it whatever its kind. */
+export function rulerMiddle(spec: RulerSpec, pose: RulerPose): RulerPt {
+  return toScreen(pose, middleOf(spec));
+}
+
 /** Whether `p` (screen px) is on the ruler, or within `slop` of it. */
 export function hitsRuler(spec: RulerSpec, pose: RulerPose, p: RulerPt, slop = 0): boolean {
   const q = toRuler(pose, p);
@@ -274,6 +305,9 @@ export function snapTolerance(step: number): { step: number; cardinal: number } 
   return { step: tolerance, cardinal: Math.min(tolerance * 2, step - tolerance) };
 }
 
+/** Rounding in a turn summed from finger angles must not push it out of a pull, degrees. */
+const SNAP_EPSILON = 1e-6;
+
 /**
  * A turn the fingers asked for, snapped: within a few degrees of a multiple
  * of `step` it settles on that multiple, and within twice that of level or
@@ -285,9 +319,10 @@ export function snapAngle(deg: number, step: number): number {
   const tolerance = snapTolerance(step);
   if (tolerance.step === 0) return angle;
   const cardinal = Math.round(angle / 90) * 90;
-  if (Math.abs(angle - cardinal) <= tolerance.cardinal) return normalizeAngle(cardinal);
+  if (Math.abs(angle - cardinal) <= tolerance.cardinal + SNAP_EPSILON)
+    return normalizeAngle(cardinal);
   const nearest = Math.round(angle / step) * step;
-  if (Math.abs(angle - nearest) <= tolerance.step) return normalizeAngle(nearest);
+  if (Math.abs(angle - nearest) <= tolerance.step + SNAP_EPSILON) return normalizeAngle(nearest);
   return angle;
 }
 
@@ -356,6 +391,17 @@ export function stepTurn(
 /** Where the visual middle of a ruler is, in its own frame (the protractor's is above its base). */
 function middleOf(spec: RulerSpec): RulerPt {
   return spec.kind === "protractor" ? { x: 0, y: -spec.length / 2 } : { x: 0, y: 0 };
+}
+
+/**
+ * The pose for another kind of ruler in place of this one: the same turn,
+ * its middle where the old one's was, so picking a kind does not send the
+ * ruler across the screen.
+ */
+export function swapKind(pose: RulerPose, from: RulerSpec, to: RulerSpec): RulerPose {
+  const middle = toScreen(pose, middleOf(from));
+  const offset = toScreen({ x: 0, y: 0, angle: pose.angle }, middleOf(to));
+  return { x: middle.x - offset.x, y: middle.y - offset.y, angle: pose.angle };
 }
 
 /** A ruler as it first comes out: level, its middle at the pane's middle. */
@@ -451,10 +497,14 @@ export function protractorTicks(): ProtractorTick[] {
   return ticks;
 }
 
-/** The ruler's angle as its readout shows it: 0–179°, whichever way round it lies. */
+/**
+ * The ruler's angle as its readout shows it: how far it is from level,
+ * 0–90°, whichever way round it lies and whichever way it leans (Apple's
+ * ruler reads the same).
+ */
 export function readoutAngle(angle: number): number {
-  const a = Math.round(normalizeAngle(angle));
-  return ((a % 180) + 180) % 180;
+  const a = Math.abs(Math.round(normalizeAngle(angle))) % 180;
+  return a > 90 ? 180 - a : a;
 }
 
 /** What the settings keep of the ruler: its kind and the snapping. */

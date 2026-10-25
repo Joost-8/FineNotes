@@ -59,6 +59,14 @@
  */
 
 import { penGlyph } from "./pen-glyph-svg";
+import { rulerGlyph } from "./ruler-glyphs";
+import {
+  DEFAULT_RULER_SNAP,
+  RULER_KINDS,
+  RULER_KIND_LABELS,
+  RULER_SNAP_STEPS,
+  type RulerKind,
+} from "../canvas/ruler-geometry";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
@@ -426,6 +434,10 @@ export interface ToolbarState {
    * `undefined` counts as off, where every new box fits its text.
    */
   textDragSize?: boolean;
+  /** The ruler's kind. `undefined` counts as the straight ruler. */
+  rulerKind?: RulerKind;
+  /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
+  rulerSnap?: number;
 }
 
 export interface ToolbarCallbacks {
@@ -531,6 +543,10 @@ export interface ToolbarCallbacks {
   onSavePen?: (pen: SavedPen) => void;
   /** "Edit saved pens": open where they are edited (the settings). */
   onEditPens?: () => void;
+  /** Bring the ruler out or put it away. Without it the bar has no ruler. */
+  onRuler?: () => void;
+  /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
+  onRulerChange?: (kind: RulerKind, snap: number) => void;
 }
 
 export interface ToolbarOptions {
@@ -601,6 +617,7 @@ const FOLD_RANK = {
   calculator: 1,
   pdf: 2,
   record: 3,
+  ruler: 3.5,
   image: 4,
   ai: 5,
   search: 6,
@@ -613,6 +630,9 @@ const FOLD_RANK = {
   redo: 13,
   thumbnails: 14,
 } as const;
+
+/** The strip of the ruler button, from its right edge, that opens its popover: the chevron, px. */
+const RULER_CARET_STRIP = 22;
 
 /** How many stroke widths tier 2 shows before the "more" chevron. */
 const QUICK_WIDTHS = 3;
@@ -689,6 +709,8 @@ export class Toolbar {
   private recordButton: HTMLButtonElement | null = null;
   /** The add-page button. */
   private addPageButton: HTMLButtonElement | null = null;
+  /** The ruler's button, shown on while the ruler is out (`setRulerOut`). */
+  private rulerButton: HTMLButtonElement | null = null;
   /** Bar buttons a practice file hides: everything but the pen, the eraser and the page's own. */
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
@@ -889,6 +911,7 @@ export class Toolbar {
     this.addToolButton(tools, "eraser", "eraser", "Eraser (E)");
     keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
     keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
+    if (cb.onRuler) keep(this.addRulerButton(tools));
     keep(this.foldButton(tools, FOLD_RANK.image, "image", "Insert image", cb.onInsertImage));
     keep(this.foldButton(tools, FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf));
     // The note's recordings live in the page sidebar's Files tab, as in
@@ -1211,6 +1234,111 @@ export class Toolbar {
     }
     this.toolButtons.set(tool, button);
     return button;
+  }
+
+  /**
+   * The ruler: not a tool but something laid on the page while any tool is
+   * in hand, so a toggle beside the tools, drawn on while the ruler is out
+   * (`setRulerOut`). A tap brings it out or puts it away; while it is out a
+   * chevron shows, and a tap there opens its kinds and its snapping, as the
+   * lasso's chevron does.
+   */
+  private addRulerButton(parent: HTMLElement): HTMLButtonElement {
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-tool goodobsidian-ruler-button has-caret",
+    });
+    iconOrText(button, "ruler", "Ruler");
+    button.setAttr("aria-label", "Ruler");
+    button.setAttribute("aria-pressed", "false");
+    iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
+    button.addEventListener("click", (event) => {
+      const box = button.getBoundingClientRect();
+      const onCaret = button.hasClass("is-on") && event.detail !== 0;
+      if (onCaret && event.clientX >= box.right - RULER_CARET_STRIP) {
+        this.toggleRulerPopover(button);
+        return;
+      }
+      this.closePopover();
+      this.callbacks.onRuler?.();
+    });
+    this.fold(FOLD_RANK.ruler, button, "ruler", "Ruler", () => this.callbacks.onRuler?.());
+    this.rulerButton = button;
+    return button;
+  }
+
+  /** Show the ruler button on (accent) while the ruler is out, with its chevron. */
+  setRulerOut(out: boolean): void {
+    const button = this.rulerButton;
+    if (!button || button.hasClass("is-on") === out) return;
+    button.toggleClass("is-on", out);
+    button.setAttribute("aria-pressed", String(out));
+    if (!out && this.popoverKind === "ruler") this.closePopover();
+    // It is wider while it shows its chevron.
+    this.fitBar(this.state.tool === "highlighter" ? "pen" : this.state.tool);
+  }
+
+  private toggleRulerPopover(anchor: HTMLElement): void {
+    if (this.popoverKind === "ruler") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("ruler", anchor);
+    this.popover?.addClass("has-arrow");
+    body.addClass("goodobsidian-ruler-popover");
+    this.popoverRender = () => {
+      body.empty();
+      this.renderRulerOptions(body);
+    };
+    this.popoverRender();
+    this.keepPopoverInside(anchor);
+  }
+
+  /** The three kinds as tiles drawn as each ruler, then the angle snapping. */
+  private renderRulerOptions(body: HTMLElement): void {
+    const kind = this.state.rulerKind ?? "straight";
+    const snap = this.state.rulerSnap ?? DEFAULT_RULER_SNAP;
+    const kinds = body.createDiv({ cls: "goodobsidian-ruler-kinds" });
+    for (const option of RULER_KINDS) {
+      const tile = kinds.createEl("button", {
+        cls: "goodobsidian-ruler-kind clickable-icon",
+        attr: { "aria-label": RULER_KIND_LABELS[option], "aria-pressed": String(option === kind) },
+      });
+      tile.append(rulerGlyph(option, 28));
+      tile.toggleClass("is-active", option === kind);
+      tile.addEventListener("click", () => {
+        this.state.rulerKind = option;
+        this.saveRuler();
+        this.popoverRender?.();
+      });
+    }
+    const steps = body.createDiv({
+      cls: "goodobsidian-ruler-snap",
+      attr: { role: "group", "aria-label": "Angle snapping" },
+    });
+    iconOrText(steps.createSpan({ cls: "goodobsidian-ruler-snap-icon" }), "magnet", "");
+    for (const step of RULER_SNAP_STEPS) {
+      const button = steps.createEl("button", {
+        cls: "goodobsidian-ruler-snap-step clickable-icon",
+        text: step === 0 ? "Off" : `${step}°`,
+        attr: {
+          "aria-label": step === 0 ? "No angle snapping" : `Snap to ${step}°`,
+          "aria-pressed": String(step === snap),
+        },
+      });
+      button.toggleClass("is-active", step === snap);
+      button.addEventListener("click", () => {
+        this.state.rulerSnap = step;
+        this.saveRuler();
+        this.popoverRender?.();
+      });
+    }
+  }
+
+  private saveRuler(): void {
+    this.callbacks.onRulerChange?.(
+      this.state.rulerKind ?? "straight",
+      this.state.rulerSnap ?? DEFAULT_RULER_SNAP,
+    );
   }
 
   /**

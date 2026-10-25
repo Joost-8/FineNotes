@@ -22,11 +22,13 @@ import {
   keepInPane,
   nearestEdge,
   normalizeAngle,
+  offsetEdge,
   openingPose,
   projectOntoEdge,
   protractorTicks,
   readoutAngle,
   rulerEdges,
+  rulerMiddle,
   rulerSettingsOf,
   rulerSpecFor,
   rulerTicks,
@@ -34,6 +36,7 @@ import {
   snapTolerance,
   squareCorners,
   stepTurn,
+  swapKind,
   toRuler,
   toScreen,
   twoFingerPose,
@@ -198,6 +201,43 @@ describe("following an edge", () => {
   });
 });
 
+describe("offsetEdge", () => {
+  it("moves each edge outwards, away from the ruler's middle", () => {
+    const straight = { kind: "straight" as const, length: 600 };
+    const pose = { x: 0, y: 0, angle: 0 };
+    const middle = rulerMiddle(straight, pose);
+    const [top, bottom] = rulerEdges(straight, pose).map((e) => offsetEdge(e, 3, middle));
+    expect(top).toEqual({ type: "line", a: { x: -300, y: -39 }, b: { x: 300, y: -39 } });
+    expect(bottom).toEqual({ type: "line", a: { x: -300, y: 39 }, b: { x: 300, y: 39 } });
+  });
+
+  it("moves the protractor's arc out and its base down", () => {
+    const spec = { kind: "protractor" as const, length: 100 };
+    const pose = { x: 10, y: 20, angle: 0 };
+    const [arc, base] = rulerEdges(spec, pose).map((e) =>
+      offsetEdge(e, 2, rulerMiddle(spec, pose)),
+    );
+    expect(arc.type === "arc" && arc.r).toBe(102);
+    near((base as Extract<RulerEdge, { type: "line" }>).a, { x: -90, y: 22 });
+  });
+
+  it("moves the set square's long edge away from its corner", () => {
+    const spec = { kind: "square" as const, length: 240 };
+    const pose = { x: 0, y: 0, angle: 0 };
+    const long = offsetEdge(rulerEdges(spec, pose)[2], 4, rulerMiddle(spec, pose));
+    // Up and to the right, square to the edge.
+    const line = long as Extract<RulerEdge, { type: "line" }>;
+    near(line.a, { x: -80 + 4 / Math.SQRT2, y: -160 - 4 / Math.SQRT2 }, 1e-9);
+  });
+
+  it("leaves an edge alone for no offset or no length", () => {
+    const edge: RulerEdge = { type: "line", a: { x: 1, y: 1 }, b: { x: 1, y: 1 } };
+    expect(offsetEdge(edge, 3, { x: 0, y: 0 })).toBe(edge);
+    const real: RulerEdge = { type: "line", a: { x: 0, y: 0 }, b: { x: 5, y: 0 } };
+    expect(offsetEdge(real, 0, { x: 0, y: 1 })).toBe(real);
+  });
+});
+
 describe("hitsRuler", () => {
   it("takes a finger on the straight ruler, with a little slop", () => {
     const spec = { kind: "straight" as const, length: 400 };
@@ -253,6 +293,10 @@ describe("snapAngle", () => {
     expect(snapAngle(3, 5)).toBe(0);
     expect(snapAngle(6.5, 5)).toBe(5);
     expect(snapAngle(7.5, 5)).toBe(7.5);
+  });
+
+  it("snaps a turn that rounding left a hair outside the pull", () => {
+    expect(snapAngle(-20.000000000000018, 15)).toBe(-15);
   });
 
   it("does nothing with snapping off", () => {
@@ -358,6 +402,17 @@ describe("opening and keeping it on screen", () => {
     expect(openingPose({ kind: "protractor", length: 160 }, 800, 1000).y).toBe(580);
   });
 
+  it("keeps the middle and the turn when the kind changes", () => {
+    const from = { kind: "straight" as const, length: 600 };
+    const to = { kind: "protractor" as const, length: 160 };
+    const pose = { x: 300, y: 200, angle: 90 };
+    const swapped = swapKind(pose, from, to);
+    expect(swapped.angle).toBe(90);
+    // The protractor's middle sits 80 px above its base; turned a quarter, 80 px to the right of it.
+    near(toScreen(swapped, { x: 0, y: -80 }), { x: 300, y: 200 }, 1e-9);
+    near(swapKind(swapped, to, from), pose, 1e-9);
+  });
+
   it("brings a ruler left off screen back within reach", () => {
     const spec = { kind: "straight" as const, length: 600 };
     const kept = keepInPane(spec, { x: 2000, y: -50, angle: 30 }, 800, 600);
@@ -412,10 +467,15 @@ describe("protractorTicks", () => {
 });
 
 describe("readoutAngle", () => {
-  it("reads 0–179 whichever way round the ruler lies", () => {
+  it("reads 0–90 from level, whichever way round the ruler lies", () => {
     expect(readoutAngle(0)).toBe(0);
-    expect(readoutAngle(-30)).toBe(150);
+    expect(readoutAngle(-30)).toBe(30);
+    expect(readoutAngle(30)).toBe(30);
+    expect(readoutAngle(150)).toBe(30);
+    expect(readoutAngle(-150)).toBe(30);
     expect(readoutAngle(180)).toBe(0);
+    expect(readoutAngle(90)).toBe(90);
+    expect(readoutAngle(-90)).toBe(90);
     expect(readoutAngle(-0.2)).toBe(0);
     expect(readoutAngle(45.4)).toBe(45);
   });

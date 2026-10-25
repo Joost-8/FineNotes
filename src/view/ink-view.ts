@@ -258,6 +258,7 @@ import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
 import { type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
+import { rulerSettingsOf } from "../canvas/ruler-geometry";
 import { eraserFilterOf } from "../ink/stroke-eraser";
 import {
   type PageAction,
@@ -343,6 +344,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
     penInks: inks,
     penStabilization: penStabilizationOf(s.penStabilization),
+    rulerKind: rulerSettingsOf(s.ruler).kind,
+    rulerSnap: rulerSettingsOf(s.ruler).snap,
   };
 }
 
@@ -2349,6 +2352,18 @@ export class InkView extends TextFileView {
         onSavePen: (pen) =>
           this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
         onEditPens: () => this.plugin.openSettingsTab(),
+        onRuler: () => {
+          const surface = this.surface;
+          if (!surface) return;
+          surface.setRulerOut(!surface.rulerOut);
+          this.toolbar?.setRulerOut(surface.rulerOut);
+        },
+        onRulerChange: (kind, snap) => {
+          // Picking a kind or a snapping in the popover means using the ruler.
+          this.surface?.setRulerOut(true);
+          this.toolbar?.setRulerOut(this.surface?.rulerOut ?? false);
+          this.plugin.saveRuler(kind, snap);
+        },
         onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
