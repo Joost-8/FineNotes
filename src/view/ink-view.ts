@@ -2407,6 +2407,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         onToolChange: (tool) => {
           this.surface?.setTool(tool);
+          if (tool === "eraser") this.surface?.previewEraser();
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
         // The toolbar writes colour and size into the shared tool state,
@@ -2447,7 +2448,10 @@ export class InkView extends TextFileView {
           this.toolbar?.setRulerOut(this.surface?.rulerOut ?? false);
           this.plugin.saveRuler(kind, snap);
         },
-        onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
+        onEraserChange: (mode, size) => {
+          this.plugin.saveEraser(mode, size);
+          this.surface?.previewEraser();
+        },
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
         onLassoChange: (mode, filter) => {
