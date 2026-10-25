@@ -183,13 +183,17 @@ export function hasUnusedLines(
 
 /**
  * Step 1's button: carry on with a sheet not copied to the end, else write
- * the first set there is no sheet of yet, else another copy of a set.
+ * the first set there is no sheet of yet, else another copy of a set. The
+ * symbol sheet has a chip of its own, so it never takes this button: either
+ * kind of sheet can be written or continued at any time.
  */
 export function nextSheetAction(
   sheets: readonly PracticeSheet[],
   sets: number,
 ): { kind: "continue"; path: string; label: string } | { kind: "write"; label: string } {
-  const unfinished = sheets.find((s) => s.written < s.prompts);
+  const unfinished = sheets.find(
+    (s) => (s.set === null || isTextSheet(s, sets)) && s.written < s.prompts,
+  );
   if (unfinished)
     return {
       kind: "continue",

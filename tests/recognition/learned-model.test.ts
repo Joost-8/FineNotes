@@ -177,11 +177,13 @@ describe("the steps", () => {
     };
     expect(learnSummary([sheet(1, 30), symbols], 3)).toBe("1 of 3 sheets · 50 lines");
     expect(writeStepText([symbols], 3)).toMatch(/0 of 3 sheets written/);
+    // An unfinished symbol sheet never blocks the text sheets (it has its own chip).
+    expect(nextSheetAction([symbols], 3)).toEqual({ kind: "write", label: "Write sheet 1" });
     expect(nextSheetAction([sheet(1, 30), symbols], 3)).toEqual({
-      kind: "continue",
-      path: symbols.path,
-      label: "Continue Symbol practice",
+      kind: "write",
+      label: "Write sheet 2",
     });
+    expect(nextSheetAction([sheet(1, 12), symbols], 3).label).toBe("Continue sheet 1");
     // A finished symbol sheet does not stand in for a set.
     expect(nextSheetAction([{ ...symbols, written: 53 }], 3).label).toBe("Write sheet 1");
   });
