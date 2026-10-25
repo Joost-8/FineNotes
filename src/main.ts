@@ -97,6 +97,7 @@ import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
+import type { RulerKind } from "./canvas/ruler-geometry";
 import {
   DEFAULT_NOTEBOOK_CHOICES,
   type NotebookChoices,
@@ -1077,6 +1078,12 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Remember which pen gestures are on, for the next session. */
+  /** Remember the ruler's kind and its angle snapping, for the next session. */
+  saveRuler(kind: RulerKind, snap: number): void {
+    this.settings.ruler = { kind, snap };
+    void this.saveSettings();
+  }
+
   savePenGestures(gestures: PenGestures): void {
     this.settings.penGestures = penGesturesOf(gestures);
     void this.saveSettings();

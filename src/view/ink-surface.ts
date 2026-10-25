@@ -448,6 +448,8 @@ import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
+import { RulerOverlay } from "./ruler-overlay";
+import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
 const ZOOM_STEP = 1.25;
@@ -1298,6 +1300,8 @@ export class InkSurface {
   private readonly scroller = new KineticScroller();
   /** A pinch in flight: the un-rubber-banded zoom the fingers are asking for. */
   private pinch: { raw: number; centerX: number; centerY: number } | null = null;
+  /** The ruler laid over the page (`ruler-overlay.ts`), out or put away. */
+  private ruler: RulerOverlay | null = null;
   /** The zoom springing back inside its limits after a pinch overshot them. */
   private zoomAnim: { from: number; to: number; t0: number; cx: number; cy: number } | null = null;
   /**
@@ -1949,11 +1953,23 @@ export class InkSurface {
     renderer.paper = this.paper;
     this.renderer = renderer;
 
+    // The ruler hears every press first (capture, on the surface): a finger
+    // on it moves it, and a pen within reach of an edge follows the edge,
+    // every sample put on it before it is mapped below.
+    this.ruler = new RulerOverlay(this.surfaceEl, {
+      guides: (event) => this.rulerGuides(event),
+      fingersBusy: () => this.pointerInput?.isTouching === true || this.pinch !== null,
+      inkWidth: () => strokeWidthFor(this.toolState) * this.scale,
+    });
+
     // Pen, mouse and finger input arrive through the transparent overlay,
     // mapped into layout space as they come in.
     const input = new PointerController(
       this.scrollEl,
-      (clientX, clientY) => this.toLayout(clientX, clientY),
+      (clientX, clientY) => {
+        const at = this.ruler?.guide(clientX, clientY) ?? { x: clientX, y: clientY };
+        return this.toLayout(at.x, at.y);
+      },
       this.pointerCallbacks,
       () => this.handHeld,
       (event) => this.pressRoute(event),
@@ -2142,6 +2158,8 @@ export class InkSurface {
       if (frame) window.cancelAnimationFrame(frame);
     }
     this.frameReq = this.prefetchReq = this.hudFrame = this.wetFrame = 0;
+    this.ruler?.destroy();
+    this.ruler = null;
     this.focusHoldFrame = this.relayoutFrame = 0;
     window.clearTimeout(this.wheelZoomTimer);
     this.wheelZoomTimer = 0;
@@ -2990,6 +3008,7 @@ export class InkSurface {
         : null;
     this.cssW = cssW;
     this.cssH = cssH;
+    this.ruler?.fitPane();
 
     const direction = scrollDirectionOf(this.doc);
     const turned = direction !== this.direction;
@@ -3358,6 +3377,8 @@ export class InkSurface {
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
+    // The ruler's centimetres are the page's, at the zoom now.
+    this.ruler?.setScale(this.scale);
     // The zoom has ended (a fling may carry on): place the boxes it hid or scaled.
     if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     this.trackTextPillMotion(busy);
@@ -5209,6 +5230,36 @@ export class InkSurface {
     if (route !== "pan") return "draw";
     this.penPanning = true;
     return "pan";
+  }
+
+  /**
+   * Whether a pen or mouse press may follow the ruler's edge: with the pen
+   * or the highlighter, and no key or stylus button lending the press to
+   * another tool. A practice file's strokes are handwriting samples: never.
+   */
+  private rulerGuides(event: PointerEvent): boolean {
+    const { tool } = this.toolState;
+    if (tool !== "pen" && tool !== "highlighter") return false;
+    return this.practice === null && this.pressOverrideOf(event) === null;
+  }
+
+  /** Whether the ruler is out. */
+  get rulerOut(): boolean {
+    return this.ruler?.isOut ?? false;
+  }
+
+  /**
+   * Bring the ruler out (level, in the middle of the pane) or put it away,
+   * as `toolState.rulerKind` and `rulerSnap` say; out already, it takes on
+   * a new kind or snapping where it lies.
+   */
+  setRulerOut(out: boolean): void {
+    const ruler = this.ruler;
+    if (!ruler) return;
+    const snap = this.toolState.rulerSnap ?? DEFAULT_RULER_SNAP;
+    ruler.setScale(this.scale);
+    ruler.setSnap(snap);
+    ruler.setOut(out, this.toolState.rulerKind ?? "straight", snap);
   }
 
   /** The tool a stroke's keys and buttons lend it, or null for the tool in hand. */

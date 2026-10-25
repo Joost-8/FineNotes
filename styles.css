@@ -5953,6 +5953,169 @@ textarea.goodobsidian-chat-input:focus-visible {
   height: var(--gob-caret-size);
 }
 
+/* --- The ruler ---------------------------------------------------------------
+   Its button (toolbar.ts, addRulerButton) is a toggle beside the tools, not a
+   tool: on, it takes the accent square itself (the sliding tool indicator
+   stays under the tool in hand), widens and shows the lasso's chevron, which
+   opens its popover. At the specificity of the bar's own button rules. */
+.goodobsidian-toolbar button.goodobsidian-ruler-button.is-on,
+.goodobsidian-toolbar button.goodobsidian-ruler-button.is-on:hover:not(:disabled) {
+  min-width: 58px;
+  padding-right: 18px;
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+  --gob-press: var(--gob-active-press);
+}
+
+.goodobsidian-toolbar button.goodobsidian-ruler-button.is-on .goodobsidian-tool-caret {
+  opacity: 0.85;
+}
+
+/* The popover: three kind tiles, then the snapping as one segmented row. */
+.goodobsidian-ruler-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goodobsidian-ruler-kinds {
+  display: flex;
+  gap: 6px;
+}
+
+.goodobsidian-popover button.goodobsidian-ruler-kind {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 52px;
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-tool-radius);
+  background: var(--gob-well);
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.goodobsidian-ruler-snap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-tool-radius);
+  background: var(--gob-well);
+}
+
+.goodobsidian-ruler-snap-icon {
+  display: inline-flex;
+  padding: 0 6px 0 4px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-ruler-snap-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-popover button.goodobsidian-ruler-snap-step {
+  flex: 1 1 0;
+  min-width: 40px;
+  height: 34px;
+  padding: 0 4px;
+  border: none;
+  border-radius: calc(var(--gob-tool-radius) - 2px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.goodobsidian-popover button.goodobsidian-ruler-kind.is-active,
+.goodobsidian-popover button.goodobsidian-ruler-snap-step.is-active {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+}
+
+/* The ruler itself (ruler-overlay.ts): in screen space over the page, taking
+   no pointer events (the page's overlay hears them and hands the ruler its
+   own). Translucent, so the writing under it shows. */
+.goodobsidian-ruler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.22));
+}
+
+.goodobsidian-ruler.is-hidden {
+  display: none;
+}
+
+.goodobsidian-ruler-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+
+.goodobsidian-ruler-body {
+  fill: color-mix(in srgb, var(--background-secondary) 64%, transparent);
+  fill-rule: evenodd;
+  stroke: var(--background-modifier-border);
+  stroke-width: 1;
+}
+
+.goodobsidian-ruler-edge {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1;
+}
+
+/* The edge the pen is following: a mark, not a message. */
+.goodobsidian-ruler-edge.is-following {
+  stroke: var(--interactive-accent);
+  stroke-width: 2.5;
+}
+
+.goodobsidian-ruler-ticks {
+  fill: none;
+  stroke: var(--text-normal);
+  stroke-width: 1;
+}
+
+.goodobsidian-ruler-label,
+.goodobsidian-ruler-angle {
+  fill: var(--text-normal);
+  font-family: var(--font-interface);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-ruler-label {
+  font-size: 11px;
+}
+
+.goodobsidian-ruler-angle {
+  fill: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.goodobsidian-ruler-angle.is-hidden {
+  display: none;
+}
+
 /* A popover that points at its button. The arrow follows the button when
    the popover slides sideways to stay on screen (--gob-popover-arrow). */
 .goodobsidian-popover.has-arrow::before {
