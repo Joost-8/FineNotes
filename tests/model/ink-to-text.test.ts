@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { type InkDocument, type Stroke, emptyDocument } from "../../src/model/document";
 import {
+  MAX_INK_TEXT_SIZE,
   TurnInkIntoText,
   inkTextBox,
   inkTextLines,
@@ -45,30 +46,74 @@ describe("inkTextBox", () => {
       fit: true,
       text: "hello",
       color: "#000000",
-      // 40 px of writing / the default 1.25 line height.
-      fontSize: 32,
+      // One line, 40 px of writing: an em of 40.
+      fontSize: 40,
     });
   });
 
-  it("keeps the ink's width for several lines, each as tall as one written line", () => {
-    const tall = { ...bounds, maxY: 320 };
+  it("sizes the font by the written lines the line finder saw, not the bounds", () => {
+    // A tall selection (a drawing beside the words) whose writing is 36 px a line.
+    const tall = { ...bounds, maxY: 600 };
+    const one = inkTextBox({
+      id: "t1",
+      bounds: tall,
+      text: "hello",
+      style,
+      written: { count: 1, height: 36 },
+      pageWidth: 800,
+    });
+    expect(one).toMatchObject({ fontSize: 36, fit: true });
+    // Two written lines keep the ink's width, though the text is one line.
+    const two = inkTextBox({
+      id: "t1",
+      bounds: tall,
+      text: "hello world",
+      style,
+      written: { count: 2, height: 30 },
+      pageWidth: 800,
+    });
+    expect(two?.fit).toBeUndefined();
+    expect(two?.fontSize).toBe(30);
+    // No lines found: the bounds again.
+    const none = inkTextBox({
+      id: "t1",
+      bounds,
+      text: "hi",
+      style,
+      written: { count: 0, height: 0 },
+      pageWidth: 800,
+    });
+    expect(none?.fontSize).toBe(40);
+  });
+
+  it("shares the ink's height among the text's lines and the spacing between them", () => {
+    const tall = { ...bounds, maxY: 290 };
     const box = inkTextBox({ id: "t1", bounds: tall, text: "one\ntwo", style, pageWidth: 800 });
     expect(box?.fit).toBeUndefined();
     expect(box?.w).toBe(200);
     expect(box?.text).toBe("one\ntwo");
-    expect(box?.fontSize).toBe(48);
+    // 90 px = 2 em + 0.25 em between.
+    expect(box?.fontSize).toBe(40);
   });
 
-  it("takes the ink's colour and the style's line height", () => {
+  it("never starts bigger than the size list's top: bigger ink is a drawing", () => {
+    const huge = { ...bounds, maxY: 1200 };
+    const box = inkTextBox({ id: "t1", bounds: huge, text: "x", style, pageWidth: 800 });
+    expect(box?.fontSize).toBe(MAX_INK_TEXT_SIZE);
+  });
+
+  it("takes the ink's colour and the rest of the Text tool's style", () => {
+    const tall = { ...bounds, maxY: 300 };
     const box = inkTextBox({
       id: "t1",
-      bounds,
-      text: "hi",
-      style: { ...style, lineHeight: 2, bold: true },
+      bounds: tall,
+      text: "hi\nyou",
+      style: { ...style, lineHeight: 1.5, bold: true },
       inkColor: "#dc2626",
       pageWidth: 800,
     });
-    expect(box).toMatchObject({ color: "#dc2626", fontSize: 20, lineHeight: 2, bold: true });
+    // 100 px = 2 em + 0.5 em between.
+    expect(box).toMatchObject({ color: "#dc2626", fontSize: 40, lineHeight: 1.5, bold: true });
   });
 
   it("stays on the page and never below the smallest size or width a box keeps", () => {

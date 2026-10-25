@@ -353,6 +353,8 @@ import { fadeChanges } from "../audio/replay";
 import { textSegments } from "../model/text-links";
 import type { HandwrittenLink } from "../recognition/handwritten-links";
 import { strokeKey } from "../recognition/hwr/corrections";
+import { segmentPage } from "../recognition/hwr/lines";
+import { median } from "../recognition/hwr/numeric";
 import {
   type Command,
   type ImageTransform,
@@ -8370,12 +8372,18 @@ export class InkSurface {
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     const bounds = inkBounds(page, strokeIds);
     if (strokes.length === 0 || !bounds) return false;
+    // The writing's own lines, as the recogniser finds them: drawing strokes left out.
+    const lines = segmentPage(strokes).lines;
     const box = inkTextBox({
       id: this.textBoxIds.next(),
       bounds,
       text,
       style: this.toolState.textStyle ?? DEFAULT_TEXT_STYLE,
       inkColor: sharedInkColor(strokes.filter((stroke) => !isHighlight(stroke))),
+      written: {
+        count: lines.length,
+        height: median(lines.map((line) => line.box[3] - line.box[1])),
+      },
       pageWidth: page.geometry.width,
     });
     if (!box) return false;

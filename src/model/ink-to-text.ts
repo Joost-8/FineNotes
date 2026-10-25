@@ -4,9 +4,11 @@
  * goes; undo brings exactly those strokes back where they were, and takes
  * the box away.
  *
- * The box sits where the ink began, at a size its handwritten lines suggest:
- * one line fits its text (it grows as typed, as a new box does), several
- * keep the ink's width so the words wrap as they were written.
+ * The box sits where the ink began, its font as big as the writing: a typed
+ * line is as tall as a written one, ascender to descender (measured on real
+ * notes: 30-45 page px on a 1024 px page). One written line fits its text
+ * (it grows as typed, as a new box does); several keep the ink's width, so
+ * the words wrap as they were written.
  *
  * Page, strokes and box are all held by identity (CLAUDE.md, "Resolve an
  * inverse by identity, not by a key that can repeat"). Pure.
@@ -23,6 +25,19 @@ import {
   textStyleOf,
 } from "./text-style";
 
+/**
+ * Largest font a box made from ink starts with: the size list's top. Ink
+ * that would be bigger is a drawing, not writing.
+ */
+export const MAX_INK_TEXT_SIZE = 96;
+
+/** The ink's handwritten lines, as the recogniser's line finder sees them. */
+export interface WrittenLines {
+  count: number;
+  /** A typical line's height, ascender to descender, page px. */
+  height: number;
+}
+
 /** The lines of the text a box made from ink holds, trimmed, blank ones dropped. */
 export function inkTextLines(text: string): string[] {
   return text
@@ -33,9 +48,10 @@ export function inkTextLines(text: string): string[] {
 
 /**
  * The text box that replaces ink spanning `bounds` with `text`: at the ink's
- * top-left, its font sized so each typed line is as tall as a written one,
- * in `style` (the Text tool's) but the ink's own colour. `null` when the
- * text is blank. `pageWidth` keeps the box on the page.
+ * top-left, in `style` (the Text tool's) but the ink's own colour, its font
+ * as tall as the `written` lines. Without them the ink's height is shared
+ * among the text's lines. `null` when the text is blank. `pageWidth` keeps
+ * the box on the page.
  */
 export function inkTextBox(input: {
   id: string;
@@ -44,16 +60,24 @@ export function inkTextBox(input: {
   style: TextStyle;
   /** The ink's colour; the style's when the strokes differ or there are none. */
   inkColor?: string | null;
+  written?: WrittenLines | null;
   pageWidth: number;
 }): TextBoxElement | null {
   const lines = inkTextLines(input.text);
   if (lines.length === 0) return null;
   const { bounds, pageWidth } = input;
+  const written = input.written && input.written.count > 0 ? input.written : null;
   const style = textStyleOf(input.style);
   if (input.inkColor) style.color = input.inkColor;
-  const lineHeight = style.lineHeight ?? DEFAULT_LINE_HEIGHT;
-  const tall = Math.max(0, bounds.maxY - bounds.minY) / lines.length;
-  style.fontSize = roundTextSize(tall / lineHeight);
+  const count = written ? written.count : lines.length;
+  let em: number;
+  if (written) em = written.height;
+  else {
+    // `count` lines an em tall, and the line spacing's extra between them.
+    const spacing = (style.lineHeight ?? DEFAULT_LINE_HEIGHT) - 1;
+    em = Math.max(0, bounds.maxY - bounds.minY) / (count + (count - 1) * spacing);
+  }
+  style.fontSize = Math.min(MAX_INK_TEXT_SIZE, roundTextSize(em));
   const inkWidth = Math.max(MIN_TEXT_BOX_WIDTH, bounds.maxX - bounds.minX);
   const w = Math.min(inkWidth, Math.max(MIN_TEXT_BOX_WIDTH, pageWidth));
   return {
@@ -61,7 +85,7 @@ export function inkTextBox(input: {
     x: Math.min(Math.max(0, bounds.minX), Math.max(0, pageWidth - w)),
     y: Math.max(0, bounds.minY),
     w,
-    ...(lines.length === 1 ? { fit: true as const } : {}),
+    ...(count === 1 ? { fit: true as const } : {}),
     text: lines.join("\n"),
     ...style,
   };
