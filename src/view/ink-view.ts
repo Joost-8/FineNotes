@@ -3061,8 +3061,9 @@ export class InkView extends TextFileView {
     if (fresh) {
       // From now on the page being read is worth remembering for this file.
       this.restoredPath = path;
-      // A notebook opened anew starts at fit zoom, whatever this leaf showed before.
-      surface.resetView();
+      // A notebook opened anew starts at fit zoom (a board at 100% on its middle),
+      // whatever this leaf showed before.
+      surface.showHome();
       index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);

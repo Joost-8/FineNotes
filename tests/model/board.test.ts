@@ -216,6 +216,8 @@ describe("boardGrowth", () => {
   it("reads a reach that is no length as none", () => {
     const edge = { ...middle, maxX: 5600 };
     expect(isNoGrowth(boardGrowth(geometry, edge, { x: Number.NaN, y: -5 }))).toBe(true);
+    const bottom = { ...middle, maxY: 5600 };
+    expect(isNoGrowth(boardGrowth(geometry, bottom, { x: 5, y: Number.NaN }))).toBe(true);
   });
 });
 

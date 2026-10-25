@@ -4,6 +4,7 @@
  * that changes shape, and the scroll that keeps a pinch anchored.
  */
 
+import type { Bounds } from "../model/document";
 import { PAGE_MARGIN_Y } from "./page-layout";
 import type { Vec2 } from "./viewport";
 
@@ -105,4 +106,29 @@ export function pinchOpensOverview(raw: number, floor: number): boolean {
  */
 export function anchorScrollDelta(was: Vec2, now: Vec2, scale: number): Vec2 {
   return { x: (was.x - now.x) * scale, y: (was.y - now.y) * scale };
+}
+
+/** Screen px kept clear around the drawing when an endless board fits it. */
+export const BOARD_FIT_MARGIN_PX = 32;
+
+/**
+ * An endless board's zoom floor (FineNotes#46): the user zoom, relative to
+ * the writing size `writingScale`, at which the whole drawing fits the pane
+ * with {@link BOARD_FIT_MARGIN_PX} around it. Never above 1, the writing
+ * size (a small drawing does not zoom out at all), and never below
+ * {@link MIN_SCALE}. Nothing drawn: 1.
+ */
+export function boardFitZoom(
+  drawn: Bounds | null,
+  writingScale: number,
+  paneWidth: number,
+  paneHeight: number,
+): number {
+  if (!drawn || !(writingScale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) return 1;
+  const w = (drawn.maxX - drawn.minX) * writingScale;
+  const h = (drawn.maxY - drawn.minY) * writingScale;
+  const roomW = Math.max(1, paneWidth - 2 * BOARD_FIT_MARGIN_PX);
+  const roomH = Math.max(1, paneHeight - 2 * BOARD_FIT_MARGIN_PX);
+  const fit = Math.min(w > 0 ? roomW / w : Infinity, h > 0 ? roomH / h : Infinity);
+  return Math.min(1, Math.max(MIN_SCALE, fit));
 }

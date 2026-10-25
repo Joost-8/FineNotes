@@ -25,6 +25,7 @@
  */
 
 import {
+  type Bounds,
   POINT_STRIDE,
   type Page,
   type PageGeometry,
@@ -504,4 +505,89 @@ export function scrollTopForPage(layout: DocumentLayout, index: number): number 
   const box = layout.boxes[Math.max(0, Math.min(layout.boxes.length - 1, index))];
   if (!box) return 0;
   return Math.max(0, box.y - PAGE_MARGIN_Y);
+}
+
+// --- Endless boards (FineNotes#46) ----------------------------------------------
+
+/**
+ * An endless board's layout: its one page at the origin, layout px equal to
+ * page px, with no desk around it. A board has no width to fit; the view's
+ * scale comes from the writing size (`WRITING_SCALE`) and the zoom.
+ */
+export function layoutBoard(page: Page): DocumentLayout {
+  const { width, height } = page.geometry;
+  return {
+    boxes: [{ index: 0, id: page.id, x: 0, y: 0, width, height }],
+    width,
+    height,
+    direction: "vertical",
+    fitWidth: width,
+  };
+}
+
+/** The middle of what is drawn on a board, or of the page when nothing is, page px. */
+export function boardCentre(
+  geometry: PageGeometry,
+  drawn: Bounds | null,
+): { x: number; y: number } {
+  if (!drawn) return { x: geometry.width / 2, y: geometry.height / 2 };
+  return { x: (drawn.minX + drawn.maxX) / 2, y: (drawn.minY + drawn.maxY) / 2 };
+}
+
+/**
+ * The scroll range of a board, screen px as the scroller counts them (`x`
+ * and `y` are the view's top-left corner times `scale`): free in both
+ * directions until a screen of empty paper lies past the drawing, where the
+ * rubber band starts — and never off the paper, which grows ahead of the
+ * drawing (`model/board.ts`). With nothing drawn, a screen around the
+ * page's middle. A page smaller than the pane sits centred in it.
+ */
+export function boardScrollRange(
+  geometry: PageGeometry,
+  drawn: Bounds | null,
+  scale: number,
+  paneWidth: number,
+  paneHeight: number,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  const s = scale > 0 && Number.isFinite(scale) ? scale : 1;
+  const centre = boardCentre(geometry, drawn);
+  const axis = (lo: number, hi: number, length: number, pane: number): [number, number] => {
+    const screen = pane / s;
+    if (length <= screen) {
+      const centred = ((length - screen) / 2) * s;
+      return [centred, centred];
+    }
+    const min = Math.max(0, lo - screen);
+    const max = Math.min(length - screen, hi);
+    // Ink off the paper on both sides of the view (it never is once the
+    // board has grown): anywhere on the paper.
+    return max < min ? [0, (length - screen) * s] : [min * s, max * s];
+  };
+  const [minX, maxX] = axis(
+    drawn?.minX ?? centre.x,
+    drawn?.maxX ?? centre.x,
+    geometry.width,
+    paneWidth,
+  );
+  const [minY, maxY] = axis(
+    drawn?.minY ?? centre.y,
+    drawn?.maxY ?? centre.y,
+    geometry.height,
+    paneHeight,
+  );
+  return { minX, maxX, minY, maxY };
+}
+
+/**
+ * The scroll position (screen px) that puts the page point `at` in the
+ * middle of the pane: where a board opens (the middle of its drawing) and
+ * where a fit of the whole drawing lands.
+ */
+export function boardScrollToCentre(
+  at: { x: number; y: number },
+  scale: number,
+  paneWidth: number,
+  paneHeight: number,
+): { x: number; y: number } {
+  return { x: at.x * scale - paneWidth / 2, y: at.y * scale - paneHeight / 2 };
 }
