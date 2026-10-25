@@ -64,7 +64,8 @@ extracted from the matching section of this file by `release.yml`.
   it reads there, a line for each written line, for you to check, and
   Replace swaps the ink for a text box in the ink's colour and size. Undo
   brings the ink back. On a computer, the command "Turn selection into
-  text" does the same; give it a hotkey under Settings → Hotkeys.
+  text" does the same; give it a hotkey under Settings → Hotkeys. On the
+  iPad, confirm with Replace: the keyboard's ✓ does not replace yet.
 - **Lasso "One item".** A fourth lasso type: the pen picks up whatever it
   lands on and moves it in the same stroke, with no loop to draw.
 - **Tables you can style and shape.** A cell can be bold and have its own
@@ -141,8 +142,8 @@ extracted from the matching section of this file by `release.yml`.
 - **On Android, dialogs opened from the lasso menu stay open**
   ([#38](https://github.com/Joost-8/FineNotes/issues/38)). Add to contents
   or Link to… sometimes flashed up and closed at once.
-- **The iPad keyboard's ✓ confirms every dialog**, even while the field's
-  text is selected, instead of typing a line break over it.
+- **The iPad keyboard's ✓ confirms a dialog's one-line field**, even
+  while its text is selected, instead of typing a line break over it.
 - **Erasing by line no longer takes a whole highlight.** A highlight
   (straightened or not), a shape, or a stroke running over several lines
   used to go whole as soon as the eraser touched its line. Now only its
