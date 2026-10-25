@@ -27,7 +27,7 @@ import { parseInkFile } from "../model/serialize";
 import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { HwrProgress, HwrTuned } from "../recognition/hwr/protocol";
 import type { LabelledLine } from "../recognition/hwr/tune";
-import { PRACTICE_SETS, practiceLines } from "../recognition/practice";
+import { PRACTICE_SETS, SYMBOL_SET, practiceLines, practicePrompts } from "../recognition/practice";
 import {
   type LearnedModel,
   type LearnedSource,
@@ -118,8 +118,13 @@ export async function learnedFiles(
   };
 }
 
-/** The set a practice file's name says it is: "Handwriting practice 2.practice.md" is 2. */
+/**
+ * The set a practice file's name says it is: "Handwriting practice 2.practice.md"
+ * is 2, and "Symbol practice.practice.md" (or "Symbol practice 2…", a second
+ * copy) is the symbol sheet.
+ */
 export function practiceSetOf(name: string): number | null {
+  if (/^symbol practice( \d+)?\.practice\.md$/i.test(name)) return SYMBOL_SET;
   const match = /(\d+)\.practice\.md$/i.exec(name);
   const set = match ? Number(match[1]) : Number.NaN;
   return set >= 1 && set <= PRACTICE_SETS.length ? set : null;
@@ -150,6 +155,11 @@ export function practiceFiles(host: LearningHost): TFile[] {
 export async function writePracticePage(host: LearningHost): Promise<void> {
   const sets = practiceFiles(host).map((file) => practiceSetOf(file.name));
   await host.createPracticeFile(nextPracticeSet(sets));
+}
+
+/** Write the symbol sheet to a new file, and open it. */
+export async function writeSymbolPractice(host: LearningHost): Promise<void> {
+  await host.createPracticeFile(SYMBOL_SET);
 }
 
 /** The copied lines of one practice file: from the open notebook, else from its file. */
@@ -211,7 +221,7 @@ export async function practiceSheets(host: LearningHost): Promise<PracticeSheet[
       title: file.name.replace(/\.practice\.md$/i, "").replace(/\.md$/i, ""),
       set,
       written,
-      prompts: PRACTICE_SETS[(set ?? 1) - 1].length,
+      prompts: practicePrompts(set ?? 1).length,
     });
   }
   return sheets.sort((a, b) => (a.set ?? 0) - (b.set ?? 0) || a.title.localeCompare(b.title));

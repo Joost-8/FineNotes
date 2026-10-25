@@ -9,9 +9,14 @@ import {
   PRACTICE_FORMAT,
   PRACTICE_LINES,
   PRACTICE_SETS,
+  SYMBOL_LINES,
+  SYMBOL_SET,
   buildPracticeFile,
   isPracticeNotebook,
+  isSymbolSet,
   practiceLines,
+  practicePrompts,
+  symbolSamples,
   wrapPrinted,
 } from "../../src/recognition/practice";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
@@ -167,5 +172,97 @@ describe("wrapPrinted", () => {
     expect(wrapPrinted("one two three four", 100, 20)).toEqual(["one two", "three four"]);
     expect(wrapPrinted("a\nb", 1000, 20)).toEqual(["a", "b"]);
     expect(wrapPrinted("unbreakablewordthatislong", 40, 20)).toEqual(["unbreakablewordthatislong"]);
+  });
+});
+
+describe("the symbol sheet", () => {
+  const doc = buildPracticeFile(SYMBOL_SET, A4);
+  // Symbol i (0-based) on a page sits on rule 3 + 2i; it is written on the line below.
+  const symbolY = (i: number) => 40 * (3 + 2 * i) + 20;
+
+  it("has one symbol a line, each named beside it, after a cover of its own", () => {
+    expect(isSymbolSet(SYMBOL_SET)).toBe(true);
+    expect(isSymbolSet(1)).toBe(false);
+    expect(isSymbolSet(null)).toBe(false);
+    expect(doc.practice).toEqual({ format: PRACTICE_FORMAT, set: SYMBOL_SET });
+    expect(isPracticeNotebook(doc)).toBe(true);
+    const [cover, ...pages] = doc.pages;
+    const words = printedOf(cover)
+      .map((line) => line.text)
+      .join(" ");
+    expect(words).toMatch(/Symbol practice/);
+    expect(words).toMatch(/Learn now/);
+    expect(words).not.toMatch(/set \d of/);
+    const prompts = pages.flatMap(promptsOf);
+    expect(prompts.map((line) => line.text)).toEqual(SYMBOL_LINES.map((line) => line.symbol));
+    expect(practicePrompts(SYMBOL_SET)).toEqual(prompts.map((line) => line.text));
+    // Every prompt is one character, and its name is printed text that is no prompt.
+    for (const p of pages) {
+      const printed = printedOf(p);
+      for (const prompt of promptsOf(p)) {
+        expect(Array.from(prompt.text)).toHaveLength(1);
+        const name = printed.find((line) => !line.prompt && line.y === prompt.y);
+        expect(name?.text.length, prompt.text).toBeGreaterThan(1);
+        // The line to write on is on the page.
+        expect(prompt.y + 40).toBeLessThan(A4.height);
+      }
+    }
+  });
+
+  it("asks only for characters the model can write: digits twice, then every sign", () => {
+    const alphabet = parseBundle(readFileSync("models/grape-2.0.bin")).meta.alphabet;
+    for (const { symbol } of SYMBOL_LINES) {
+      expect(encodeLabel(symbol, alphabet), symbol).not.toBeNull();
+    }
+    const symbols = SYMBOL_LINES.map((line) => line.symbol);
+    for (const digit of "0123456789") {
+      expect(
+        symbols.filter((s) => s === digit),
+        digit,
+      ).toHaveLength(2);
+    }
+    for (const sign of "+-*/=().^%x<>") expect(symbols, sign).toContain(sign);
+    // Each sign once.
+    const signs = symbols.filter((s) => !/[0-9]/.test(s));
+    expect(new Set(signs).size).toBe(signs.length);
+    // Every character of the alphabet but letters and space is on the sheet.
+    for (const c of alphabet) {
+      if (/[A-Za-z ]/.test(c)) continue;
+      expect(symbols, JSON.stringify(c)).toContain(c);
+    }
+  });
+
+  it("labels what is written under each symbol with it, for learning", () => {
+    const sheet = buildPracticeFile(SYMBOL_SET, A4);
+    const page = sheet.pages[1];
+    page.strokes = [ink("zero", symbolY(0)), ink("one", symbolY(1)), ink("one-b", symbolY(1) + 4)];
+    expect(practiceLines(sheet).map((l) => [l.text, l.strokes.map((s) => s.id)])).toEqual([
+      ["0", ["zero"]],
+      ["1", ["one", "one-b"]],
+    ]);
+    const back = decodeDocument(encodeDocument(sheet));
+    expect(back.practice?.set).toBe(SYMBOL_SET);
+    expect(practiceLines(back).map((l) => l.text)).toEqual(["0", "1"]);
+  });
+
+  it("gives each written symbol with the rule it sits on, as glyph samples", () => {
+    const sheet = buildPracticeFile(SYMBOL_SET, A4);
+    sheet.pages[1].strokes = [ink("zero", symbolY(0)), ink("plus", symbolY(10))];
+    const samples = symbolSamples(sheet);
+    expect(samples.map((s) => [s.symbol, s.baseline])).toEqual([
+      ["0", 40 * 4],
+      ["+", 40 * 24],
+    ]);
+    expect(samples[0].strokes).toEqual([sheet.pages[1].strokes[0].pts]);
+    // Any other practice file has none.
+    const text = buildPracticeFile(1, A4);
+    text.pages[1].strokes = [ink("a", 40 * 4 + 20)];
+    expect(symbolSamples(text)).toEqual([]);
+  });
+
+  it("a text set's prompts are its lines, the nearest set when out of range", () => {
+    expect(practicePrompts(2)).toBe(PRACTICE_SETS[1]);
+    expect(practicePrompts(9)).toBe(PRACTICE_SETS[2]);
+    expect(practicePrompts(0)).toBe(PRACTICE_SETS[0]);
   });
 });

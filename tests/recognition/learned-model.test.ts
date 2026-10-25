@@ -167,6 +167,25 @@ describe("the steps", () => {
     );
   });
 
+  it("does not count the symbol sheet as one of the sets, and names it by its title", () => {
+    const symbols = {
+      path: "P/Symbol practice.practice.md",
+      title: "Symbol practice",
+      set: 100,
+      written: 20,
+      prompts: 53,
+    };
+    expect(learnSummary([sheet(1, 30), symbols], 3)).toBe("1 of 3 sheets · 50 lines");
+    expect(writeStepText([symbols], 3)).toMatch(/0 of 3 sheets written/);
+    expect(nextSheetAction([sheet(1, 30), symbols], 3)).toEqual({
+      kind: "continue",
+      path: symbols.path,
+      label: "Continue Symbol practice",
+    });
+    // A finished symbol sheet does not stand in for a set.
+    expect(nextSheetAction([{ ...symbols, written: 53 }], 3).label).toBe("Write sheet 1");
+  });
+
   it("asks for ten lines before learning, then says what it learns from", () => {
     expect(learnStepText(4, 2, false)).toMatch(
       new RegExp(`at least ${MIN_PRACTICE_LINES} lines first \\(6 so far\\)`),

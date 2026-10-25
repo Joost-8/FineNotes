@@ -63,6 +63,7 @@ import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
 import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
+import { CalcNotes } from "./calc-notes";
 import {
   type ChatImage,
   type ChatTurn,
@@ -402,6 +403,8 @@ export class InkView extends TextFileView {
   /** When the last "this notebook is read-only" notice showed, ms. */
   private readOnlyNoticeAt = 0;
   private surface: InkSurface | null = null;
+  /** Lines ending in "=" answered on a tap (off unless the setting is on). */
+  private readonly calcNotes: CalcNotes;
   private toolbar: Toolbar | null = null;
   private sidebar: PageSidebar | null = null;
   /** The ⋯ panel, while open. */
@@ -533,6 +536,18 @@ export class InkView extends TextFileView {
     this.showHud = plugin.settings.debugHud;
     this.doc = this.blankNotebook();
     this.toolState = toolStateFrom(plugin.settings);
+    this.calcNotes = new CalcNotes({
+      app: this.app,
+      reader: plugin.handwriting,
+      enabled: () =>
+        this.settings.calcNotes === true &&
+        this.settings.handwritingOnDevice !== false &&
+        !this.isPractice &&
+        !this.isProtected(),
+      surface: () => this.surface,
+      page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
+      learning: () => plugin.learningHost(),
+    });
   }
 
   /** The plugin's settings, read afresh each time: the settings tab may change them. */
@@ -794,6 +809,7 @@ export class InkView extends TextFileView {
     this.quietTimer = 0;
     const t = performance.now();
     if (down) {
+      this.calcNotes.penDown();
       this.writeHold.penDown(t);
       this.pdfCache?.setHeld(true);
       this.pdfText?.setHeld(true);
@@ -834,6 +850,7 @@ export class InkView extends TextFileView {
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
     this.saver.stop();
+    this.calcNotes.dispose();
     this.surface?.destroy();
     this.surface = null;
     this.toolbar?.destroy();
@@ -2513,6 +2530,7 @@ export class InkView extends TextFileView {
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
         onPen: (down) => this.penActivity(down),
+        onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,

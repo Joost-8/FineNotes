@@ -420,6 +420,7 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import { SelectionActionBar, onTap } from "./selection-bar";
+import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
 import {
@@ -612,6 +613,8 @@ export interface InkSurfaceCallbacks {
    * puts off work that would stall the ink until it has been up a moment.
    */
   onPen?: (down: boolean) => void;
+  /** A freehand pen stroke was drawn and committed on page `pageId` (calculation notes). */
+  onStrokeDrawn?: (pageId: string, stroke: Stroke) => void;
   /**
    * Asked before every edit: true refuses it, for a note that must not be
    * written (the host says why).
@@ -1432,6 +1435,8 @@ export class InkSurface {
   private penDownAt: number | null = null;
   /** The colour pickers' "pick from the page", made on first use. */
   private eyedropper: Eyedropper | null = null;
+  /** A calculation note's suggestion beside its line, made on first use. */
+  private calcChip: CalcChip | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
@@ -2316,6 +2321,60 @@ export class InkSurface {
     this.strokeTapHandler = handler;
   }
 
+  /**
+   * Show a calculation note's suggestion ("12×4 =", "48") with its bottom
+   * left at `at` on page `pageId`; a tap runs `accept`. One at a time: a new
+   * one replaces the last.
+   */
+  showCalcSuggestion(
+    pageId: string,
+    at: { x: number; y: number },
+    sum: string,
+    answer: string,
+    accept: () => void,
+  ): void {
+    this.calcChip ??= new CalcChip(this.paperEl);
+    this.calcChip.show({ pageId, x: at.x, y: at.y }, sum, answer, accept);
+    this.syncCalcChip();
+  }
+
+  hideCalcSuggestion(): void {
+    this.calcChip?.hide();
+  }
+
+  /** Where the suggestion is, or null while none shows. */
+  get calcSuggestionPage(): string | null {
+    return this.calcChip?.anchor?.pageId ?? null;
+  }
+
+  /**
+   * Write strokes the host made (a calculation's answer) on page `pageId`,
+   * as one undo step, with ids of their own. False when the note is locked
+   * or the page is gone.
+   */
+  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): boolean {
+    if (this.callbacks.isLocked?.() || strokes.length === 0) return false;
+    const page = this.doc.pages.find((p) => p.id === pageId);
+    if (!page) return false;
+    const made: Stroke[] = strokes.map((s) => ({ ...s, id: this.strokeIds.next() }));
+    this.applyCommand(addStrokesTimed(page, made, this.clock(), "Write answer"));
+    return true;
+  }
+
+  /** Keep the calculation suggestion on its page point across pan and zoom. */
+  private syncCalcChip(): void {
+    const chip = this.calcChip;
+    const anchor = chip?.anchor;
+    if (!chip || !anchor || !this.pageLayout) return;
+    const box = this.pageLayout.boxes.find((b) => this.pageAt(b.index)?.id === anchor.pageId);
+    if (!box) {
+      chip.hide();
+      return;
+    }
+    const scale = this.unitScale;
+    chip.place((box.x + anchor.x) * scale, (box.y + anchor.y) * scale);
+  }
+
   /** Repaint without touching layout or indexes (a PDF raster arrived). */
   repaint(): void {
     this.renderer?.invalidateAll();
@@ -2455,6 +2514,7 @@ export class InkSurface {
     this.syncSpaceHandles();
     // A comment added, resolved or removed (an undo too).
     this.syncCommentMarkers();
+    this.syncCalcChip();
     this.callbacks.onChange(pages);
   }
 
@@ -3492,6 +3552,7 @@ export class InkSurface {
     this.syncSelectionOverlay();
     this.syncLockBadges();
     this.syncCommentMarkers();
+    this.syncCalcChip();
     this.syncSectionRibbons();
     this.syncSpaceHandles();
     this.flashChrome(true);
@@ -3780,6 +3841,7 @@ export class InkSurface {
     this.syncSelectionOverlay();
     this.syncLockBadges();
     this.syncCommentMarkers();
+    this.syncCalcChip();
     this.syncSectionRibbons();
     this.syncSpaceHandles();
     this.syncPageTabs();
@@ -6144,6 +6206,7 @@ export class InkSurface {
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
     this.noteOffPage(box, stroke, command);
+    if (!shape) this.callbacks.onStrokeDrawn?.(page.id, stroke);
     // A stroke the pen was held on ended on purpose; any other may be a
     // flicker of the Pencil's contact, which the next pen-down carries on.
     if (!snap && !heldLongEnough) {
