@@ -1571,6 +1571,12 @@ export class InkSurface {
   private circlePress: { box: PageBox; at: Pt; t: number } | null = null;
   /** The selection a held loop made follows the pen that held it. */
   private circleDrag = false;
+  /**
+   * The "One item" lasso's pen is down: where it landed, and whether it
+   * picked something up (then the selection follows it, as a held loop's
+   * does).
+   */
+  private picking: { box: PageBox; at: Pt; dragging: boolean } | null = null;
 
   // Hold-to-snap (contracts/api.md §2). The pen must dwell for HOLD_MS; a
   // timer, not the next pointermove, notices that — a pen held perfectly still
@@ -5386,10 +5392,22 @@ export class InkSurface {
 
   /** A loop, or a rectangle, selects on lift; a cancel is taken as the lift it most likely was. */
   private readonly lassoGesture: PenGesture = {
-    down: (box, at) => this.selectStart(box, at),
-    move: (box, samples) => this.selectMove(samples.map((sample) => this.toPage(box, sample))),
-    up: () => this.selectEnd(),
-    cancel: () => this.selectEnd(),
+    down: (box, at) => {
+      if (lassoModeFor(this.toolState) === "single") this.pickStart(box, at);
+      else this.selectStart(box, at);
+    },
+    move: (box, samples) => {
+      if (this.picking) this.pickMove(box, samples);
+      else this.selectMove(samples.map((sample) => this.toPage(box, sample)));
+    },
+    up: () => {
+      if (this.picking) this.pickEnd();
+      else this.selectEnd();
+    },
+    cancel: () => {
+      if (this.picking) this.pickEnd();
+      else this.selectEnd();
+    },
   };
 
   /** A tap makes a box that fits its text; with "Drag to size" on, a drag draws the box instead. */
@@ -6957,6 +6975,60 @@ export class InkSurface {
     this.circleDrag = false;
     this.activePage = null;
     this.endGroupDrag(true);
+  }
+
+  /**
+   * The "One item" lasso went down: it takes what is on top there, as a
+   * lasso tap would, and that one thing follows the pen until it lifts. On
+   * empty paper nothing is selected and nothing is drawn; held still, the
+   * pen opens the Paste / Unlock bar, as the other lassos' do.
+   */
+  private pickStart(box: PageBox, at: Pt): void {
+    this.tapSelect(box, at, PEN_TAP_TOLERANCE_PX);
+    const sel = this.liveSelection();
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!sel || !bounds || this.callbacks.isLocked?.()) {
+      this.picking = { box, at, dragging: false };
+      if (!sel) this.startPress(() => this.openPressMenu(box, at));
+      return;
+    }
+    this.groupDrag = {
+      pointerId: -1,
+      selection: sel,
+      bounds,
+      from: at,
+      clientX: 0,
+      clientY: 0,
+      dx: 0,
+      dy: 0,
+      scale: null,
+      turn: null,
+      lifted: false,
+    };
+    this.picking = { box, at, dragging: true };
+  }
+
+  /** The "One item" pen moved: what it picked up follows, past the frame's slop. */
+  private pickMove(box: PageBox, samples: readonly PointerSample[]): void {
+    const pick = this.picking;
+    const last = samples[samples.length - 1];
+    if (!pick || !last) return;
+    const p = this.toPage(box, last);
+    if (Math.hypot(p.x - pick.at.x, p.y - pick.at.y) * this.unitScale > TAP_SLOP_PX) {
+      this.stopPress();
+    }
+    if (pick.dragging) this.dragCircleSelection(box, p);
+  }
+
+  /** It lifted: a move is one step; a tap leaves the one thing selected, with its frame. */
+  private pickEnd(): void {
+    const pick = this.picking;
+    this.picking = null;
+    this.stopPress();
+    // Only a move commits: a tap on a table must select it, not type in a
+    // cell, as the frame's own tap would on a second press.
+    if (pick?.dragging) this.endGroupDrag(this.groupDrag?.lifted === true);
+    this.activePage = null;
   }
 
   // --- The lasso and its selection (0.5) -------------------------------------
