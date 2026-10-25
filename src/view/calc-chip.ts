@@ -24,9 +24,9 @@ export class CalcChip {
   anchor: CalcChipAnchor | null = null;
 
   constructor(parent: HTMLElement) {
-    this.el = parent.createEl("button", { cls: "goodobsidian-calc-chip clickable-icon is-hidden" });
-    this.sumEl = this.el.createSpan({ cls: "goodobsidian-calc-chip-sum" });
-    this.answerEl = this.el.createSpan({ cls: "goodobsidian-calc-chip-answer" });
+    this.el = parent.createEl("button", { cls: "goodobsidian-calc-note clickable-icon is-hidden" });
+    this.sumEl = this.el.createSpan({ cls: "goodobsidian-calc-note-sum" });
+    this.answerEl = this.el.createSpan({ cls: "goodobsidian-calc-note-answer" });
     // Finger, Pencil and mouse alike, and the pen never writes under it.
     onTap(this.el, () => {
       const accept = this.accept;
