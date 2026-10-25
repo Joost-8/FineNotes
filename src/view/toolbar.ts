@@ -124,13 +124,33 @@ import {
 } from "./pen-glyphs";
 import {
   DEFAULT_SHAPE_COLOR,
+  PEN_ROW_MAX,
+  colorAfterRemoving,
   contrastMark,
   penColorRow,
   pickPenColor,
   pushRecentColor,
+  removablePenColor,
+  removePenColor,
   reservedPenColors,
   sameColor,
 } from "../model/colors";
+import { bindSwatchDrag } from "./swatch-drag";
+import { bindPillDrag } from "./pill-drag";
+import {
+  DEFAULT_PILL_DOCK,
+  type PillArea,
+  type PillDock,
+  type PopoverSide,
+  colorWindow,
+  dockPlace,
+  isUpright,
+  nearestDock,
+  parsePillDock,
+  pillClearance,
+  popoverSide,
+} from "./pill-dock-model";
+import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
@@ -260,6 +280,22 @@ export function strokeWidthFor(state: ToolbarState): number {
 /** The tool whose options memory `tool` shares: the highlighter is a pen type. */
 function optionsKey(tool: ActiveTool): ActiveTool {
   return tool === "highlighter" ? "pen" : tool;
+}
+
+/** The icon a tool's pill shows while it is being carried: its tool bar button's. */
+const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
+  pen: "pen-tool",
+  eraser: "eraser",
+  text: "type",
+  shape: "shapes",
+};
+
+/** The places the pill can be dragged to: all four (pill-dock-model.ts). */
+const OFFERED_DOCKS: readonly PillDock[] = ["top", "bottom", "left", "right"];
+
+function offeredDock(raw: unknown): PillDock {
+  const dock = parsePillDock(raw);
+  return OFFERED_DOCKS.includes(dock) ? dock : DEFAULT_PILL_DOCK;
 }
 
 /**
@@ -497,6 +533,8 @@ export interface ToolbarCallbacks {
   onMore?: (anchor: HTMLElement) => void;
   /** The options pill was placed (it may have moved); `chromeSpans` says where. */
   onPillPlaced?: () => void;
+  /** The user dragged the options pill to `dock`; the host keeps it for this device. */
+  onPillDock?: (dock: PillDock) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -559,6 +597,8 @@ export interface ToolbarOptions {
    * keeps a slot at the front of the pen's colour row.
    */
   reservedColors?: readonly string[];
+  /** Where the options pill rests (`pill-dock-model.ts`); under the tool bar by default. */
+  pillDock?: PillDock;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -641,6 +681,12 @@ const QUICK_WIDTHS = 3;
 
 /** The pill changing width and place for a new tool: GoodNotes' 0.3 s `ease`. */
 const PILL_MORPH_MS = 300;
+
+/** How wide the colour row's faded ends are, CSS px (styles.css); a chosen colour is kept clear of them. */
+const COLOR_ROW_FADE_PX = 14;
+
+/** How many colours an upright pill shows; the rest are behind its ⌄. */
+const UPRIGHT_COLORS = 3;
 /** A new tool's controls fading in. */
 const PILL_FADE_MS = 150;
 
@@ -676,6 +722,12 @@ export class Toolbar {
   /** The eraser mode the eraser button shows now (`drawEraserIcon`). */
   private eraserIconMode: EraserMode | null = null;
   private readonly colorSwatches = new Map<string, HTMLElement>();
+  /** Where the pill rests when it is not by a text box (pill-dock-model.ts). */
+  private pillDock: PillDock = DEFAULT_PILL_DOCK;
+  /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
+  private colorRowScroll = 0;
+  /** A colour was just added with the "+": the row scrolls to its end once to show it. */
+  private revealNewColor = false;
   private readonly widthButtons = new Map<number, HTMLElement>();
   private readonly penTypeButtons = new Map<PenType, HTMLButtonElement>();
   private readonly eraserSizeButtons = new Map<number, HTMLButtonElement>();
@@ -797,6 +849,20 @@ export class Toolbar {
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
     this.optionsEl.setAttribute("aria-label", "Tool options");
+
+    this.pillDock = offeredDock(options.pillDock);
+    this.optionsEl.addClass(`is-dock-${this.pillDock}`);
+    this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
+    bindPillDrag(this.optionsEl, {
+      host,
+      // By a text box the pill follows the box, so there is no place to move it to.
+      canDrag: () => !this.optionsEl.hasClass("is-anchored"),
+      icon: () =>
+        this.optionsEl.hasClass("is-text")
+          ? "type"
+          : (PILL_ICONS[optionsKey(this.optionsTool)] ?? "pen-tool"),
+      onDrop: (x, y) => this.dropPill(x, y),
+    });
 
     this.buildBar();
     this.buildOptions();
@@ -1496,6 +1562,9 @@ export class Toolbar {
     // Where the pill is now, mid-glide or not, so it can glide from there.
     const before = this.pillBox();
     this.stopPillMorph();
+    // The colour row is rebuilt too: keep it scrolled where it was.
+    const colorRow = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-colors");
+    if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
     this.optionsEl.empty();
     this.colorSwatches.clear();
     this.widthButtons.clear();
@@ -1555,54 +1624,63 @@ export class Toolbar {
     pen.setAttribute("title", `${active.label} options`);
     pen.addEventListener("click", () => this.togglePenTypeList());
     this.penTypeButtons.set(active.id, pen);
-    this.chevron("Pen options", () => this.togglePenTypeList());
+    // Upright at a side, the pill folds as GoodNotes' does: the pen type is
+    // one button, the widths one, and the colours three and a ⌄.
+    const upright = isUpright(this.pillDock);
+    if (!upright) this.chevron("Pen options", () => this.togglePenTypeList());
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Stroke widths, drawn as literal strokes of increasing weight.
-    for (const width of this.quickWidths()) {
+    if (upright) {
+      const width = this.state.size;
       const button = widthButton(
         this.optionsEl,
         this.widthMm(width),
         active.id,
         this.widthMark(width),
-        () => {
-          this.setWidth(width);
-          this.syncActive();
-        },
+        () => this.toggleWidthList(button),
       );
+      button.setAttribute("aria-label", `Width ${this.widthMm(width)}: more widths`);
       this.widthButtons.set(width, button);
+    } else {
+      // Stroke widths, drawn as literal strokes of increasing weight.
+      for (const width of this.quickWidths()) {
+        const button = widthButton(
+          this.optionsEl,
+          this.widthMm(width),
+          active.id,
+          this.widthMark(width),
+          () => {
+            this.setWidth(width);
+            this.syncActive();
+          },
+        );
+        this.widthButtons.set(width, button);
+      }
+      this.chevron("More widths", (button) => this.toggleWidthList(button));
     }
-    this.chevron("More widths", (button) => this.toggleWidthList(button));
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Five colours, then every colour in the picker.
-    for (const color of this.quickColors()) {
-      const swatch = this.swatchButton(this.optionsEl, color, () => {
-        // GoodNotes: a tap on the colour already chosen opens the picker on
-        // it (the ▾ in the swatch says so), and what it picks takes that
-        // swatch's place; any other colour is just picked.
-        if (sameColor(color, this.state.color)) {
-          this.toggleColorPopover("pen-color", swatch, this.state.color, (picked) =>
-            this.setPenColor(picked, color),
-          );
-        } else this.setPenColor(color);
-      });
-      this.colorSwatches.set(color, swatch);
+    const colors = this.quickColors();
+    if (upright) {
+      // The chosen colour and its neighbours; the ⌄ holds the whole row.
+      const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
+      const first = colorWindow(colors.length, chosen, UPRIGHT_COLORS);
+      for (const color of colors.slice(first, first + UPRIGHT_COLORS)) {
+        this.penSwatch(this.optionsEl, color, colors);
+      }
+      this.chevron("All colours", (button) => this.togglePenColorList(button));
+    } else {
+      // The colour row, as GoodNotes': five in view, the rest a swipe away, and
+      // the "+" after the last one, so a new colour joins the end and stays.
+      const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
+      // A sideways swipe here scrolls the row, never Obsidian's sidebars.
+      row.dataset.ignoreSwipe = "true";
+      for (const color of colors) this.penSwatch(row, color, colors);
+      if (colors.length < PEN_ROW_MAX) this.addColorButton(row);
+      this.fitColorRow(row);
     }
-    // A dashed ring holding a "+", as GoodNotes' "add colour" (styles.css).
-    const more = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-color-more clickable-icon",
-    });
-    iconOrText(more, "plus", "+");
-    more.setAttribute("aria-label", "More colours");
-    more.setAttribute("title", "More colours");
-    more.addEventListener("click", () =>
-      this.toggleColorPopover("pen-color", more, this.state.color, (color) =>
-        this.setPenColor(color),
-      ),
-    );
 
     // Auto-shape: a stroke that is plainly a shape snaps to it on lift.
     if (this.practice) return;
@@ -1659,6 +1737,158 @@ export class Toolbar {
     this.syncActive();
   }
 
+  /**
+   * One of the pen's colours. A tap on the colour already chosen opens the
+   * picker on it (the ▾ in the swatch says so), as GoodNotes does, and what
+   * it picks takes that swatch's place; any other colour is just picked. A
+   * colour the user added can be deleted there, or dragged off the pill.
+   */
+  private penSwatch(parent: HTMLElement, color: string, colors: readonly string[]): void {
+    const removable = removablePenColor(colors, this.reservedColors().length, color);
+    const swatch = this.swatchButton(parent, color, () => {
+      if (sameColor(color, this.state.color)) {
+        this.toggleColorPopover(
+          "pen-color",
+          swatch,
+          this.state.color,
+          (picked) => this.setPenColor(picked, color),
+          removable ? () => this.removePenColor(color) : undefined,
+        );
+      } else this.setPenColor(color);
+    });
+    if (removable) {
+      bindSwatchDrag(swatch, {
+        bar: () => this.optionsEl,
+        onRemove: () => this.removePenColor(color),
+      });
+    }
+    this.colorSwatches.set(color, swatch);
+  }
+
+  /** A dashed ring holding a "+", as GoodNotes' "add colour" (styles.css): the new colour joins the end. */
+  private addColorButton(parent: HTMLElement): void {
+    const more = parent.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
+    iconOrText(more, "plus", "+");
+    more.setAttribute("aria-label", "Add colour");
+    more.setAttribute("title", "Add colour");
+    more.addEventListener("click", () =>
+      this.toggleColorPopover("pen-color", more, this.state.color, (color) => {
+        this.revealNewColor = true;
+        this.setPenColor(color);
+      }),
+    );
+  }
+
+  /**
+   * The upright pill's ⌄: every colour of the row, and the "+", hanging
+   * beside the pill. A colour picked there is picked and the list closes.
+   */
+  private togglePenColorList(anchor: HTMLElement): void {
+    if (this.popoverKind === "pen-colors") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("pen-colors", anchor);
+    this.popover?.addClass("has-arrow", "is-pen-colors");
+    const grid = body.createDiv({ cls: "goodobsidian-pen-color-grid" });
+    const colors = this.quickColors();
+    for (const color of colors) {
+      const swatch = this.swatchButton(grid, color, () => {
+        if (sameColor(color, this.state.color)) {
+          const removable = removablePenColor(colors, this.reservedColors().length, color);
+          this.toggleColorPopover(
+            "pen-color",
+            anchor,
+            this.state.color,
+            (picked) => this.setPenColor(picked, color),
+            removable ? () => this.removePenColor(color) : undefined,
+          );
+        } else {
+          this.closePopover();
+          this.setPenColor(color);
+        }
+      });
+      swatch.toggleClass("is-active", sameColor(color, this.state.color));
+    }
+    if (colors.length < PEN_ROW_MAX) {
+      const more = grid.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
+      iconOrText(more, "plus", "+");
+      more.setAttribute("aria-label", "Add colour");
+      more.addEventListener("click", () =>
+        this.toggleColorPopover("pen-color", anchor, this.state.color, (color) =>
+          this.setPenColor(color),
+        ),
+      );
+    }
+    this.keepPopoverInside(anchor);
+  }
+
+  /**
+   * Take `color` out of the row (its picker's Delete, or dragged off the
+   * pill). The pen then writes with the swatch before it, as GoodNotes does.
+   */
+  private removePenColor(color: string): void {
+    const row = this.quickColors();
+    const reserved = this.reservedColors().length;
+    if (!removablePenColor(row, reserved, color)) return;
+    if (this.popoverKind === "pen-color") this.closePopover();
+    const picked = removePenColor(row, reserved, color);
+    this.state.penColors = picked;
+    this.callbacks.onPenColors?.(picked);
+    if (sameColor(color, this.state.color)) {
+      const next = colorAfterRemoving(row, color);
+      if (next) {
+        this.state.color = next;
+        this.callbacks.onColorChange(next);
+      }
+    }
+    this.keepPenInk();
+    this.buildOptions();
+    this.syncActive();
+  }
+
+  /**
+   * Scroll the rebuilt colour row back to where it was, or to its end when a
+   * colour was just added, keeping the chosen colour in view; and fade the
+   * ends that hide more. A wheel scrolls it sideways, for a mouse.
+   */
+  private fitColorRow(row: HTMLElement): void {
+    const fade = (): void => {
+      const ends = hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
+      row.toggleClass("has-more-start", ends.start);
+      row.toggleClass("has-more-end", ends.end);
+    };
+    row.scrollLeft = this.revealNewColor ? row.scrollWidth : this.colorRowScroll;
+    this.revealNewColor = false;
+    const chosen = this.colorSwatches.get(
+      [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
+    );
+    if (chosen) {
+      row.scrollLeft = scrollToShow(
+        row.scrollLeft,
+        row.clientWidth,
+        chosen.offsetLeft,
+        chosen.offsetWidth,
+        COLOR_ROW_FADE_PX,
+      );
+    }
+    this.colorRowScroll = row.scrollLeft;
+    fade();
+    row.addEventListener("scroll", () => {
+      this.colorRowScroll = row.scrollLeft;
+      fade();
+    });
+    row.addEventListener(
+      "wheel",
+      (event) => {
+        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+        row.scrollLeft += event.deltaY;
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+  }
+
   /** Remember the ink in hand (colour, row and width) as the active pen type's own. */
   private keepPenInk(): void {
     this.state.penInks = withPenInk(
@@ -1684,6 +1914,7 @@ export class Toolbar {
     anchor: HTMLElement,
     current: string,
     pick: (color: string) => void,
+    onDelete?: () => void,
   ): void {
     if (this.popoverKind === kind) {
       this.closePopover();
@@ -1707,6 +1938,7 @@ export class Toolbar {
         pick(color);
       },
       onEyedropper: this.eyedropper(pick),
+      onDelete,
     });
     this.keepPopoverInside(anchor);
   }
@@ -2465,6 +2697,11 @@ export class Toolbar {
   private keepPopoverAboveKeyboard(anchor: HTMLElement): void {
     const popover = this.popover;
     if (!popover) return;
+    // Beside an upright pill it is kept on screen as the others are.
+    if (popover.hasClass("opens-right") || popover.hasClass("opens-left")) {
+      this.keepPopoverInside(anchor);
+      return;
+    }
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
     const floor = Math.min(hostBox.bottom, window.innerHeight - keyboardHeight()) - EDGE_INSET;
@@ -2477,6 +2714,7 @@ export class Toolbar {
       popover.addClass("opens-up");
       popover.setCssStyles({
         top: `${Math.round(anchorBox.top - 8 - room - hostBox.top)}px`,
+        bottom: "auto",
         maxHeight: `${Math.round(room)}px`,
       });
       return;
@@ -3365,15 +3603,44 @@ export class Toolbar {
 
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    popover.setCssStyles({
-      left: `${Math.round(anchorBox.left - hostBox.left + anchorBox.width / 2)}px`,
-      top: `${Math.round(anchorBox.bottom - hostBox.top + 8)}px`,
-    });
+    // Toward the page from wherever the pill rests (pill-dock-model.ts);
+    // placed by the edge it opens from, so its size is not needed yet.
+    const side = this.popoverSideFor(anchor);
+    const centreX = anchorBox.left - hostBox.left + anchorBox.width / 2;
+    const centreY = anchorBox.top - hostBox.top + anchorBox.height / 2;
+    if (side !== "down") popover.addClass(`opens-${side}`);
+    if (side === "down") {
+      popover.setCssStyles({
+        left: `${Math.round(centreX)}px`,
+        top: `${Math.round(anchorBox.bottom - hostBox.top + 8)}px`,
+      });
+    } else if (side === "up") {
+      popover.setCssStyles({
+        left: `${Math.round(centreX)}px`,
+        bottom: `${Math.round(hostBox.bottom - anchorBox.top + 8)}px`,
+      });
+    } else {
+      const edge = side === "right" ? anchorBox.right + 8 : anchorBox.left - 8;
+      popover.setCssStyles({
+        left: `${Math.round(edge - hostBox.left)}px`,
+        top: `${Math.round(centreY)}px`,
+      });
+    }
 
     this.popover = popover;
     this.popoverKind = kind;
     this.growPopover(popover);
     return body;
+  }
+
+  /**
+   * Which way a popover opens from `anchor`: toward the page from the pill
+   * at its place; down from the tool bar, and from a pill floating by a
+   * text box, whose own placing (`keepPopoverAboveKeyboard`) decides.
+   */
+  private popoverSideFor(anchor: HTMLElement): PopoverSide {
+    if (!this.optionsEl.contains(anchor) || this.optionsEl.hasClass("is-anchored")) return "down";
+    return popoverSide(this.pillDock);
   }
 
   private closePopover(): void {
@@ -3465,6 +3732,19 @@ export class Toolbar {
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
     const box = popover.getBoundingClientRect();
+    if (popover.hasClass("opens-right") || popover.hasClass("opens-left")) {
+      // Beside an upright pill it hangs centred on its button: slide it up
+      // or down instead, below the tool bar, the arrow still on the button.
+      const top = hostBox.top + this.barBottom();
+      let lift = 0;
+      if (box.bottom > hostBox.bottom - EDGE_INSET) lift = hostBox.bottom - EDGE_INSET - box.bottom;
+      if (box.top + lift < top) lift = top - box.top;
+      popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-lift)}px` });
+      if (lift === 0) return;
+      const centre = anchorBox.top - hostBox.top + anchorBox.height / 2;
+      popover.setCssStyles({ top: `${Math.round(centre + lift)}px` });
+      return;
+    }
     let shift = 0;
     if (box.right > hostBox.right - EDGE_INSET) shift = hostBox.right - EDGE_INSET - box.right;
     if (box.left + shift < hostBox.left + EDGE_INSET) shift = hostBox.left + EDGE_INSET - box.left;
@@ -3528,7 +3808,9 @@ export class Toolbar {
   chromeSpans(): Array<{ top: number; bottom: number }> {
     const spans = [this.barEl.getBoundingClientRect()];
     const pill = this.optionsEl;
-    if (!pill.hasClass("is-offscreen") && !pill.hasClass("is-hidden")) {
+    // An upright pill stands at a side, clear of a toast centred on the page.
+    const upright = pill.hasClass("is-upright") && !pill.hasClass("is-anchored");
+    if (!pill.hasClass("is-offscreen") && !pill.hasClass("is-hidden") && !upright) {
       spans.push(pill.getBoundingClientRect());
     }
     return spans.map(({ top, bottom }) => ({ top, bottom }));
@@ -3543,23 +3825,129 @@ export class Toolbar {
     const anchored = this.anchoredPlace(hostBox, pill);
     this.optionsEl.toggleClass("is-anchored", anchored !== null);
     this.optionsEl.toggleClass("is-offscreen", anchored === "hidden");
-    if (anchored === "hidden") return;
+    if (anchored === "hidden") {
+      this.clearForPill(null, hostBox);
+      return;
+    }
     if (anchored) {
       this.optionsEl.setCssStyles({
         left: `${Math.round(anchored.left)}px`,
         top: `${Math.round(anchored.top)}px`,
       });
+      this.clearForPill(null, hostBox);
       return;
     }
-    const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
-    const span = Math.max(1, hostBox.width - inset);
-    const minLeft = inset + EDGE_INSET;
-    const maxLeft = Math.max(minLeft, hostBox.width - pill.width - EDGE_INSET);
-    const left = Math.min(maxLeft, Math.max(minLeft, inset + (span - pill.width) / 2));
-    this.optionsEl.setCssStyles({
-      left: `${Math.round(left)}px`,
-      top: `${Math.round(this.barBottom())}px`,
+    const area = this.pillArea(hostBox, pill.width);
+    // An upright pill taller than the room scrolls (styles.css).
+    this.optionsEl.setCssProps({
+      "--gob-pill-room": `${Math.max(0, Math.round(area.bottom - area.top - 2 * EDGE_INSET))}px`,
     });
+    const place = dockPlace(this.pillDock, area, pill.width, pill.height, EDGE_INSET);
+    this.optionsEl.setCssStyles({
+      left: `${Math.round(place.left)}px`,
+      top: `${Math.round(place.top)}px`,
+    });
+    const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
+    this.clearForPill(
+      shown
+        ? {
+            left: place.left,
+            top: place.top,
+            right: place.left + pill.width,
+            bottom: place.top + pill.height,
+          }
+        : null,
+      hostBox,
+    );
+  }
+
+  /**
+   * Tell what else rests on the view's edges (the page counter, the zoom
+   * readout, the recording pill, the audio player; styles.css) how far the
+   * pill reaches in from the edge it rests on, as `--gob-pill-clear-*` on
+   * the host; `null` while it is not at its place.
+   */
+  private clearForPill(
+    pill: { left: number; top: number; right: number; bottom: number } | null,
+    hostBox: DOMRect,
+  ): void {
+    // Measured from where the page ends, as the counter and readout are.
+    const area = this.pillArea(hostBox, 0);
+    const clear = pillClearance(
+      this.pillDock,
+      pill ?? { left: 0, top: 0, right: 0, bottom: 0 },
+      { width: area.right, height: area.bottom },
+      pill !== null,
+      EDGE_INSET,
+    );
+    this.host.setCssProps({
+      "--gob-pill-clear-bottom": `${clear.bottom}px`,
+      "--gob-pill-clear-left": `${clear.left}px`,
+      "--gob-pill-clear-right": `${clear.right}px`,
+    });
+  }
+
+  /**
+   * The part of the view the pill rests in, host px: below the tool bar,
+   * right of a docked panel (unless the pill would not fit beside it), and
+   * above the keyboard.
+   */
+  private pillArea(hostBox: DOMRect, pillWidth: number): PillArea {
+    const win = this.host.ownerDocument.defaultView;
+    const windowBottom = (win?.innerHeight ?? Infinity) - keyboardHeight();
+    // Obsidian pads the view's foot (32 px on mobile, for its own bar); the
+    // page ends above it, and so does the pill's room.
+    const foot = parseFloat(win?.getComputedStyle(this.host).paddingBottom ?? "") || 0;
+    return {
+      left: Math.min(this.leftInset, Math.max(0, hostBox.width - pillWidth)),
+      top: this.barBottom(),
+      right: hostBox.width,
+      bottom: Math.min(hostBox.height - foot, windowBottom - hostBox.top),
+    };
+  }
+
+  /** The pill was carried and let go at (`x`, `y`), host px: rest it at the nearest place. */
+  private dropPill(x: number, y: number): void {
+    const hostBox = this.host.getBoundingClientRect();
+    const pill = this.optionsEl.getBoundingClientRect();
+    const dock = nearestDock(this.pillArea(hostBox, pill.width), x, y, OFFERED_DOCKS);
+    // Spring from where it was let go: the pill grows out of the square there.
+    const before = { x: x - pill.width / 2, y: y - pill.height / 2 };
+    this.setPillDock(dock);
+    this.callbacks.onPillDock?.(dock);
+    const after = this.optionsEl.getBoundingClientRect();
+    if (prefersReducedMotion()) return;
+    const dx = before.x - (after.left - hostBox.left);
+    const dy = before.y - (after.top - hostBox.top);
+    this.optionsEl.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(0.3)`, opacity: 0.4 },
+        { transform: "none", opacity: 1 },
+      ],
+      { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) },
+    );
+  }
+
+  /**
+   * Rest the pill at `dock` (another notebook's pill was moved there, or
+   * this one was dropped there). Hosts call it to keep every notebook alike.
+   */
+  setPillDock(dock: PillDock): void {
+    const next = offeredDock(dock);
+    if (next === this.pillDock) {
+      this.applyPosition();
+      return;
+    }
+    const turned = isUpright(next) !== isUpright(this.pillDock);
+    this.optionsEl.removeClass(`is-dock-${this.pillDock}`);
+    this.pillDock = next;
+    this.optionsEl.addClass(`is-dock-${next}`);
+    this.optionsEl.toggleClass("is-upright", isUpright(next));
+    // Upright, the pen's pill folds its widths and colours (buildPenOptions).
+    if (turned) {
+      this.closePopover();
+      this.buildOptions();
+    } else this.applyPosition();
   }
 
   /**
@@ -3686,7 +4074,9 @@ export class Toolbar {
    */
   private showOptions(visible: boolean): void {
     this.optionsEl.toggleClass("is-collapsed", !visible);
+    // Tucked away, it leaves its edge to the counter and the readout again.
     if (visible) this.applyPosition();
+    else this.clearForPill(null, this.host.getBoundingClientRect());
   }
 
   /**

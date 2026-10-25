@@ -497,6 +497,110 @@ body,
     visibility 0s linear var(--gob-t-slide);
 }
 
+/* Along the bottom it tucks away downwards, off the screen's edge. */
+.goodobsidian-options.is-floating.is-dock-bottom.is-collapsed {
+  translate: 0 calc(100% + var(--gob-pill-gap) + 2px);
+}
+
+/* Upright at a side (toolbar.ts, pill-dock-model.ts): the controls stack,
+   the dividers lie flat, and a pill taller than the room scrolls. It tucks
+   away sideways, off its own edge. */
+.goodobsidian-options.is-floating.is-upright {
+  flex-direction: column;
+  max-width: none;
+  max-height: var(--gob-pill-room, 80vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.goodobsidian-options.is-upright .goodobsidian-sep {
+  width: 22px;
+  height: 1px;
+  margin: 4px 0;
+}
+
+.goodobsidian-options.is-floating.is-dock-left.is-collapsed {
+  translate: calc(-100% - var(--gob-pill-gap) - 2px) 0;
+}
+
+.goodobsidian-options.is-floating.is-dock-right.is-collapsed {
+  translate: calc(100% + var(--gob-pill-gap) + 2px) 0;
+}
+
+/* The upright pill's ⌄: the whole colour row, and its "+", in rows of six. */
+.goodobsidian-pen-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, var(--gob-touch-compact));
+  gap: 2px;
+}
+
+.goodobsidian-pen-color-grid button.goodobsidian-swatch {
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background-clip: content-box;
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-swatch.is-active {
+  box-shadow: var(--gob-swatch-ring);
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more.clickable-icon {
+  position: relative;
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 6px;
+  border-radius: 50%;
+  background: none;
+  color: var(--gob-icon);
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more.clickable-icon::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1.5px dashed currentColor;
+  border-radius: 50%;
+}
+
+.goodobsidian-pen-color-grid .goodobsidian-color-more .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Carried (toolbar.ts, pill-drag.ts): the pill leaves its place and a small
+   square showing the tool follows the finger, as GoodNotes' does. */
+.goodobsidian-options.is-floating.is-lifted {
+  visibility: hidden;
+}
+
+.goodobsidian-pill-square {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-pill-bg);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--interactive-accent);
+  pointer-events: none;
+  translate: calc(var(--gob-square-x, 0px) - 50%) calc(var(--gob-square-y, 0px) - 50%);
+  animation: goodobsidian-grow 0.16s ease-out;
+}
+
+.goodobsidian-pill-square .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
 /* The pill's controls are compact, after GoodNotes: it sits over the page and
    must not read as a second tool bar. 36 px is still a comfortable Pencil tap. */
 .goodobsidian-options button {
@@ -728,6 +832,18 @@ body,
 
 .goodobsidian-popover.opens-up {
   transform-origin: calc(50% + var(--gob-popover-arrow, 0px)) bottom;
+}
+
+/* Beside an upright pill (toolbar.ts, openPopover): centred on its button,
+   opening toward the page. */
+.goodobsidian-popover.opens-right {
+  transform: translateY(-50%);
+  transform-origin: left calc(50% + var(--gob-popover-arrow, 0px));
+}
+
+.goodobsidian-popover.opens-left {
+  transform: translate(-100%, -50%);
+  transform-origin: right calc(50% + var(--gob-popover-arrow, 0px));
 }
 
 .goodobsidian-popover-body {
@@ -6446,6 +6562,26 @@ textarea.goodobsidian-chat-input:focus-visible {
   border-color: var(--gob-line);
 }
 
+/* The arrow on the side the popover opens from. */
+.goodobsidian-popover.has-arrow.opens-up::before {
+  top: auto;
+  bottom: -7px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.goodobsidian-popover.has-arrow.opens-right::before {
+  top: calc(50% + var(--gob-popover-arrow, 0px));
+  left: -7px;
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.goodobsidian-popover.has-arrow.opens-left::before {
+  top: calc(50% + var(--gob-popover-arrow, 0px));
+  left: auto;
+  right: -7px;
+  transform: translateY(-50%) rotate(135deg);
+}
+
 .goodobsidian-popover.is-lasso-popover {
   width: min(320px, calc(100vw - 24px));
 }
@@ -8824,6 +8960,18 @@ button.goodobsidian-color-eyedropper .svg-icon {
   height: 20px;
 }
 
+/* The pen picker's Delete: red words on nothing, after the eyedropper.
+   Never `mod-warning`, which fills a button red (CLAUDE.md ledger). */
+button.goodobsidian-color-delete.clickable-icon {
+  flex: 0 0 auto;
+  height: var(--gob-touch);
+  padding: 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  font-size: var(--font-ui-small);
+  color: var(--text-error);
+}
+
 /* In the custom colour's title row it sits before the way back. */
 .goodobsidian-color-mixer-head .goodobsidian-popover-title {
   flex: 1 1 auto;
@@ -9049,6 +9197,77 @@ button.goodobsidian-color-eyedropper .svg-icon {
   width: 14px;
   height: 14px;
   stroke-width: 2.25px;
+}
+
+/* The pen's colour row, as GoodNotes': five colours and the "+" in view,
+   the rest a swipe away. An end that hides more fades over 14 px
+   (COLOR_ROW_FADE_PX in toolbar.ts), so a colour cut there reads as "more".
+   It may shrink to two swatches when the pane is narrow. */
+.goodobsidian-pen-colors {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: calc(var(--gob-touch-compact) * 2);
+  max-width: calc(var(--gob-touch-compact) * 6);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  --gob-fade-start: #000;
+  --gob-fade-end: #000;
+  mask-image: linear-gradient(
+    90deg,
+    var(--gob-fade-start) 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    var(--gob-fade-end) 100%
+  );
+}
+
+.goodobsidian-pen-colors::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-pen-colors.has-more-start {
+  --gob-fade-start: transparent;
+}
+
+.goodobsidian-pen-colors.has-more-end {
+  --gob-fade-end: transparent;
+}
+
+.goodobsidian-pen-colors > * {
+  flex: none;
+}
+
+/* A colour held to be dragged off: it fades where it was, and a copy of
+   its disc follows the finger, shrinking once it is clear of the pill. */
+.goodobsidian-options .goodobsidian-swatch.is-lifted {
+  opacity: 0.25;
+}
+
+.goodobsidian-swatch-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--layer-tooltip);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
+    scale(1.15);
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.goodobsidian-swatch-ghost.is-off {
+  opacity: 0.55;
+  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
+    scale(0.7);
 }
 
 /* The shape pill's colour: a disc of the shapes' colour and a caret. */
@@ -12493,4 +12712,28 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   .workspace-leaf-content[data-type="goodobsidian-view"]
   > .view-header {
   display: none;
+}
+
+/* ---------------------------------------- making room for a moved tool bar */
+
+/* The options pill along the bottom or upright at a side (toolbar.ts,
+   clearForPill) says how far it reaches in from that edge; what else rests
+   there steps aside by as much. At the end of the file, as it restyles
+   several components (CLAUDE.md ledger). Under the tool bar it reaches
+   nothing, and all of these sit where they always have. */
+.goodobsidian-pageindicator {
+  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+}
+
+.goodobsidian-zoomreadout {
+  right: calc(12px + var(--gob-pill-clear-right, 0px));
+  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+}
+
+.goodobsidian-rec-pill {
+  right: calc(12px + var(--gob-pill-clear-right, 0px));
+}
+
+.goodobsidian-player {
+  bottom: calc(44px + var(--gob-pill-clear-bottom, 0px));
 }

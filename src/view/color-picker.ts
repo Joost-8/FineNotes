@@ -56,6 +56,11 @@ export interface ColorPickerOptions {
    * only when the host can: it arms the page and reports the colour itself.
    */
   onEyedropper?: () => void;
+  /**
+   * Take the colour the picker opened from out of its row (the pen's), as
+   * GoodNotes' picker can. Offered only when the host passes it.
+   */
+  onDelete?: () => void;
 }
 
 /**
@@ -122,6 +127,15 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     text: "Custom colour…",
   });
   if (options.onEyedropper) eyedropperButton(foot, tap, options.onEyedropper);
+  if (options.onDelete) {
+    // A word, not a symbol: it removes something (CLAUDE.md, "show more by showing less").
+    const remove = foot.createEl("button", {
+      cls: "goodobsidian-color-delete clickable-icon",
+      text: "Delete",
+      attr: { "aria-label": "Delete this colour from the row" },
+    });
+    tap(remove, options.onDelete);
+  }
   const mixer = body.createDiv();
   const open = (custom: boolean): void => {
     body.toggleClass("is-custom", custom);

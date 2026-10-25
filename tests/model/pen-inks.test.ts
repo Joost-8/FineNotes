@@ -67,8 +67,8 @@ describe("penInksOf", () => {
     });
   });
 
-  it("keeps at most sixteen colours in a row", () => {
-    const many = Array.from({ length: 20 }, (_, i) => `#0000${(i + 16).toString(16)}`);
-    expect(penInksOf({ ball: { color: "#000000", colors: many } }).ball?.colors).toHaveLength(16);
+  it("keeps at most twenty-four colours in a row", () => {
+    const many = Array.from({ length: 30 }, (_, i) => `#0000${(i + 16).toString(16)}`);
+    expect(penInksOf({ ball: { color: "#000000", colors: many } }).ball?.colors).toHaveLength(24);
   });
 });

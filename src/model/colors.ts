@@ -158,8 +158,11 @@ export function pushRecentColor(recent: readonly string[], color: string): strin
   return [hex, ...kept].slice(0, MAX_RECENT_COLORS);
 }
 
-/** Swatches in the pen's colour row. */
+/** Swatches the pen's colour row shows at once, and holds before it is first edited. */
 export const PEN_ROW_SIZE = 5;
+
+/** The most colours a pen type's row holds, reserved ones included; more scroll. */
+export const PEN_ROW_MAX = 24;
 
 /** Readable colours as `#rrggbb`, each once, in order; anything else dropped. */
 function uniqueColors(colors: readonly unknown[]): string[] {
@@ -181,8 +184,11 @@ export function reservedPenColors(defined: readonly unknown[]): string[] {
 }
 
 /**
- * The pen's row: the reserved colours, then the ones the user picked, topped
- * up from `fill` (the built-in palette) to {@link PEN_ROW_SIZE} swatches.
+ * The pen's row: the reserved colours, then the ones the user keeps, at most
+ * {@link PEN_ROW_MAX}. A row never edited (`picked` absent) is topped up
+ * from `fill` (the built-in palette) to {@link PEN_ROW_SIZE}; a stored row
+ * is the user's own and is not, so a colour they removed stays removed.
+ * Rows stored before the row grew were always full, so they read the same.
  */
 export function penColorRow(
   reserved: readonly string[],
@@ -190,9 +196,10 @@ export function penColorRow(
   fill: readonly string[],
 ): string[] {
   const row = reservedPenColors(reserved);
-  const stored: readonly unknown[] = Array.isArray(picked) ? picked : [];
-  for (const color of uniqueColors([...stored, ...fill])) {
-    if (row.length === PEN_ROW_SIZE) break;
+  const stored = Array.isArray(picked) ? picked : null;
+  const limit = stored ? PEN_ROW_MAX : PEN_ROW_SIZE;
+  for (const color of uniqueColors(stored ?? fill)) {
+    if (row.length >= limit) break;
     if (!row.includes(color)) row.push(color);
   }
   return row;
@@ -203,8 +210,8 @@ export function penColorRow(
  * `color` is chosen. A colour already in the row changes nothing, so a pick
  * stays where it is. `replace` is the swatch whose picker chose it: a picked
  * slot is changed in place, as GoodNotes edits the swatch it opened from.
- * Otherwise the new colour goes first among the picked ones and the last
- * one makes way.
+ * Otherwise the new colour joins the end of the row, as GoodNotes' "+" adds
+ * one, unless the row is full.
  */
 export function pickPenColor(
   row: readonly string[],
@@ -220,7 +227,39 @@ export function pickPenColor(
     free[at] = hex;
     return free;
   }
-  return [hex, ...free].slice(0, Math.max(1, PEN_ROW_SIZE - reservedCount));
+  return row.length < PEN_ROW_MAX ? [...free, hex] : free;
+}
+
+/**
+ * The picked slots of `row` without `color`. A reserved colour comes from
+ * the settings and would only come back, so it stays.
+ */
+export function removePenColor(
+  row: readonly string[],
+  reservedCount: number,
+  color: string,
+): string[] {
+  const free = row.slice(reservedCount);
+  return free.filter((c) => !sameColor(c, color));
+}
+
+/** Whether `color` is one of `row`'s colours the user can remove. */
+export function removablePenColor(
+  row: readonly string[],
+  reservedCount: number,
+  color: string,
+): boolean {
+  return row.slice(reservedCount).some((c) => sameColor(c, color));
+}
+
+/**
+ * The colour to write with once `color` leaves `row`: the swatch before it,
+ * or after it when it was first; null when it was the only one.
+ */
+export function colorAfterRemoving(row: readonly string[], color: string): string | null {
+  const at = row.findIndex((c) => sameColor(c, color));
+  if (at < 0) return null;
+  return row[at - 1] ?? row[at + 1] ?? null;
 }
 
 /** Stored recent colours, cleaned: readable, unique, at most {@link MAX_RECENT_COLORS}. */
