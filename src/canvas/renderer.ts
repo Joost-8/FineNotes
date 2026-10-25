@@ -1246,7 +1246,8 @@ export class Renderer {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.setTransform(scale, 0, 0, scale, -window.minX * scale, -window.minY * scale);
-    this.paintPage(ctx, page, box, scale, window);
+    const ink: InkPass = { usePressure };
+    this.paintPage(ctx, page, box, scale, window, ink);
     const inked: Bounds = {
       minX: window.minX - INK_PAD,
       minY: window.minY - INK_PAD,
@@ -1254,7 +1255,7 @@ export class Renderer {
       maxY: window.maxY + INK_PAD,
     };
     this.paintStrokes(ctx, page, inked, usePressure);
-    this.paintImages(ctx, page, window, scale, true);
+    this.paintImages(ctx, page, window, scale, ink, true);
     const preview: Preview = { canvas, scale, window };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
