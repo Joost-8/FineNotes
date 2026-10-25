@@ -38,14 +38,36 @@ export class History {
   }
 
   /**
+   * Make `extra` part of the newest step, so one undo takes back both: what
+   * an edit set off by itself, such as a board growing under new ink
+   * (`model/board.ts`). Only onto a fresh step, with nothing to redo: added
+   * under a redo branch, it would move the document out from under the
+   * steps there. Returns false (and changes nothing) otherwise.
+   */
+  attach(doc: InkDocument, extra: Command): boolean {
+    const top = this.done[this.done.length - 1];
+    if (!top || this.undone.length > 0) return false;
+    extra.apply(doc);
+    this.done[this.done.length - 1] = new AttachedStep(top, extra);
+    this.onChange?.();
+    return true;
+  }
+
+  /** The newest step, or `null`: what {@link attach} would join. */
+  get latest(): Command | null {
+    return this.done[this.done.length - 1] ?? null;
+  }
+
+  /**
    * Take back `command` as if it had never been pushed — invert it and drop it
    * without a redo entry — but only if it is still the most recent command.
    * Returns false (and changes nothing) otherwise.
    */
   withdraw(doc: InkDocument, command: Command): boolean {
-    if (this.done[this.done.length - 1] !== command) return false;
+    const top = this.done[this.done.length - 1];
+    if (!top || baseOf(top) !== command) return false;
     this.done.pop();
-    command.invert(doc);
+    top.invert(doc);
     this.onChange?.();
     return true;
   }
@@ -59,16 +81,17 @@ export class History {
   withdrawTail(doc: InkDocument, commands: readonly Command[]): boolean {
     const start = this.done.length - commands.length;
     if (commands.length === 0 || start < 0) return false;
-    if (commands.some((command, i) => this.done[start + i] !== command)) return false;
+    if (commands.some((command, i) => baseOf(this.done[start + i]) !== command)) return false;
+    const steps = this.done.slice(start);
     this.done.length = start;
-    for (let i = commands.length - 1; i >= 0; i--) commands[i].invert(doc);
+    for (let i = steps.length - 1; i >= 0; i--) steps[i].invert(doc);
     this.onChange?.();
     return true;
   }
 
   /** Whether `command` is the most recent one, so {@link withdraw} would take it back. */
   isLatest(command: Command): boolean {
-    return this.done.length > 0 && this.done[this.done.length - 1] === command;
+    return this.done.length > 0 && baseOf(this.done[this.done.length - 1]) === command;
   }
 
   canUndo(): boolean {
@@ -105,6 +128,41 @@ export class History {
     this.onChange?.();
     return command;
   }
+}
+
+/**
+ * A step with something attached to it ({@link History.attach}): it applies
+ * as the step, then the extra, and inverts the other way round. It answers
+ * to the step's name and page, so the history reads as before.
+ */
+export class AttachedStep implements Command {
+  readonly label: string;
+  readonly pageId?: string;
+  readonly keepsReading?: boolean;
+
+  constructor(
+    readonly base: Command,
+    readonly extra: Command,
+  ) {
+    this.label = base.label;
+    this.pageId = base.pageId;
+    this.keepsReading = base.keepsReading;
+  }
+
+  apply(doc: InkDocument): void {
+    this.base.apply(doc);
+    this.extra.apply(doc);
+  }
+
+  invert(doc: InkDocument): void {
+    this.extra.invert(doc);
+    this.base.invert(doc);
+  }
+}
+
+/** The step a command was pushed as, under anything attached to it since. */
+function baseOf(command: Command): Command {
+  return command instanceof AttachedStep ? baseOf(command.base) : command;
 }
 
 /**
