@@ -127,6 +127,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Japanese, Chinese and Korean text in PDFs shows again**
+  ([#49](https://github.com/Joost-8/FineNotes/issues/49)). Pages whose
+  fonts were not embedded in the PDF drew no text, and their text could
+  not be read or highlighted.
 - **"Transcribe on this device" downloads its speech model again**
   ([#48](https://github.com/Joost-8/FineNotes/issues/48)). 2.4.x looked for
   the models in a place that had not been published, so every download
