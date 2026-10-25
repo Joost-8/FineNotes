@@ -2497,7 +2497,7 @@ export class InkSurface {
       image,
       pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },
       page,
-      desk: this.paper.desk,
+      desk: this.renderer?.desk ?? this.paper.desk,
     };
   }
 

@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest";
 import {
   DARK_PAPER,
   DEFAULT_SPACING,
+  DESK_MIN_CONTRAST,
+  deskFor,
   LIGHT_PAPER,
   PAPER_PRESETS,
   RULINGS,
@@ -24,6 +26,7 @@ import {
   paperTheme,
   resolveSpacing,
 } from "../../src/canvas/backdrop";
+import { contrastRatio } from "../../src/model/cover";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../../src/model/document";
 import { RULINGS as MODEL_RULINGS } from "../../src/model/document";
 import {
@@ -781,5 +784,35 @@ describe("covers", () => {
       expect(ctx.ops.find((o) => o.op === "fillRect")).toMatchObject({ fillStyle: "#ffffff" });
       expect(ctx.depth).toBe(0);
     }
+  });
+});
+
+describe("deskFor", () => {
+  it("keeps the theme's desk while every page stands apart from it", () => {
+    expect(deskFor(LIGHT_PAPER, ["#ffffff", "#fbf8ed"])).toBe(LIGHT_PAPER.desk);
+    expect(deskFor(LIGHT_PAPER, [])).toBe(LIGHT_PAPER.desk);
+    expect(deskFor(DARK_PAPER, [DARK_PAPER.paper])).toBe(DARK_PAPER.desk);
+  });
+
+  it.each(["#3b3e45", "#26272b", "#45484f", "#0e0f11", "#6b6f79", "#a3a7b0", "#808080"])(
+    "moves off a page painted %s, to a desk that shows its edge",
+    (paper) => {
+      const desk = deskFor(LIGHT_PAPER, [paper]);
+      expect(contrastRatio(desk, paper)).toBeGreaterThanOrEqual(DESK_MIN_CONTRAST);
+      // Dark pages hold every page as far from the desk as their own paper.
+      const floor = contrastRatio(DARK_PAPER.paper, DARK_PAPER.desk);
+      expect(contrastRatio(deskFor(DARK_PAPER, [paper]), paper)).toBeGreaterThanOrEqual(floor);
+    },
+  );
+
+  it("takes the smallest step: a dark page gets a mid-grey desk, not a pale one", () => {
+    expect(deskFor(LIGHT_PAPER, ["#26272b"])).toBe("#6b6f79");
+    expect(deskFor(LIGHT_PAPER, ["#3b3e45"])).toBe("#0e0f11");
+  });
+
+  it("sets apart every page on screen, white and grey together", () => {
+    const desk = deskFor(LIGHT_PAPER, ["#ffffff", "#3b3e45"]);
+    expect(contrastRatio(desk, "#ffffff")).toBeGreaterThanOrEqual(DESK_MIN_CONTRAST);
+    expect(contrastRatio(desk, "#3b3e45")).toBeGreaterThanOrEqual(DESK_MIN_CONTRAST);
   });
 });
