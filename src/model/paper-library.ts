@@ -14,6 +14,7 @@
  */
 
 import type { PageGeometry, PdfBackdrop } from "./document";
+import type { PaperDesign } from "./paper-design";
 
 /** The library's folder inside the templates folder. */
 export const PAPERS_FOLDER = "Papers";
@@ -54,6 +55,11 @@ export interface PaperEntry {
   height: number;
   /** What the picker shows under it. */
   name: string;
+  /**
+   * Set on a paper made in the paper designer (`paper-design.ts`): `path` is
+   * its design file, `page` is 0, and the size is the design's page.
+   */
+  design?: PaperDesign;
 }
 
 /** The library's folder for templates folder `templateFolder`. */

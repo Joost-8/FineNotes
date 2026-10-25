@@ -8,7 +8,16 @@
 
 import { type App, FuzzySuggestModal, Notice, type TFile, normalizePath } from "obsidian";
 import { picturePdf, rgbFromRgba } from "../import/image-pdf";
-import type { PageGeometry, PdfBackdrop } from "../model/document";
+import type { Backdrop, PageGeometry } from "../model/document";
+import {
+  PAPER_DESIGN_EXTENSION,
+  type PaperDesign,
+  designBackdrop,
+  designEntry,
+  designGeometry,
+  parsePaperDesign,
+  serializePaperDesign,
+} from "../model/paper-design";
 import {
   MAX_PAPER_BYTES,
   type PaperEntry,
@@ -58,7 +67,7 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     /** Paint a page with `backdrop` as a thumbnail. */
     private readonly paintPage: (
       canvas: HTMLCanvasElement,
-      backdrop: PdfBackdrop,
+      backdrop: Backdrop,
       geometry: PageGeometry,
       cssWidth: number,
     ) => void,
@@ -120,7 +129,10 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     const prefix = `${this.folder}/`;
     const files = this.app.vault
       .getFiles()
-      .filter((file) => file.path.startsWith(prefix) && file.extension.toLowerCase() === "pdf")
+      .filter((file) => {
+        const ext = file.extension.toLowerCase();
+        return file.path.startsWith(prefix) && (ext === "pdf" || ext === PAPER_DESIGN_EXTENSION);
+      })
       .sort((a, b) => a.basename.localeCompare(b.basename));
     const out: PaperEntry[] = [];
     for (const file of files) {
@@ -131,26 +143,76 @@ export class VaultPaperLibrary implements PaperLibraryHost {
         continue;
       }
       try {
-        const entries = paperEntries(
-          file.path,
-          await measurePdfPages(await this.app.vault.readBinary(file)),
-        );
+        let entries: PaperEntry[];
+        if (file.extension.toLowerCase() === PAPER_DESIGN_EXTENSION) {
+          // A designed paper; any other JSON in the folder is not one and is left out.
+          const design = parsePaperDesign(await this.app.vault.cachedRead(file));
+          entries = design ? [designEntry(file.path, design)] : [];
+        } else {
+          entries = paperEntries(
+            file.path,
+            await measurePdfPages(await this.app.vault.readBinary(file)),
+          );
+        }
         this.sizes.set(file.path, { stamp, entries });
         out.push(...entries);
       } catch {
-        // A PDF that cannot be read is left out, not shown broken.
+        // A file that cannot be read is left out, not shown broken.
       }
     }
     return out;
   }
 
   paint(canvas: HTMLCanvasElement, entry: PaperEntry, cssWidth: number): void {
+    if (entry.design) {
+      this.paintPage(canvas, designBackdrop(entry.design), designGeometry(entry.design), cssWidth);
+      return;
+    }
     this.paintPage(
       canvas,
       paperBackdrop(entry.path, entry.page),
       paperGeometry(entry, PREVIEW_PAGE_WIDTH),
       cssWidth,
     );
+  }
+
+  /**
+   * Keep `design` in My templates: over the file at `path` when editing one
+   * (renamed when its name changed), else as a new file named after it.
+   * Resolves to the saved paper's entry, or null when it could not be saved.
+   */
+  async saveDesign(design: PaperDesign, path?: string): Promise<PaperEntry | null> {
+    try {
+      const folder = this.folder;
+      if (!this.app.vault.getFolderByPath(folder)) {
+        await this.app.vault.createFolder(folder).catch(() => undefined);
+      }
+      const name = paperName(design.name || "Paper");
+      const saved: PaperDesign = { ...design, name };
+      const text = serializePaperDesign(saved);
+      const existing = path ? this.app.vault.getFileByPath(path) : null;
+      let target: string;
+      if (existing) {
+        await this.app.vault.modify(existing, text);
+        target = existing.path;
+        if (existing.basename !== name) {
+          target = this.freePath(folder, name, PAPER_DESIGN_EXTENSION);
+          await this.app.fileManager.renameFile(existing, target);
+        }
+      } else {
+        target = this.freePath(folder, name, PAPER_DESIGN_EXTENSION);
+        await this.app.vault.create(target, text);
+      }
+      this.sizes.delete(target);
+      if (path) this.sizes.delete(path);
+      new Notice(`FineNotes: "${name}" is in My templates.`);
+      return designEntry(target, saved);
+    } catch (error) {
+      new Notice(
+        `FineNotes: couldn't save that paper — ${String((error as Error).message ?? error)}`,
+      );
+      return null;
+    }
   }
 
   async importFile(host: HTMLElement): Promise<boolean> {
@@ -225,9 +287,9 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     }
   }
 
-  private freePath(folder: string, stem: string): string {
+  private freePath(folder: string, stem: string, ext = "pdf"): string {
     for (let n = 1; ; n++) {
-      const path = normalizePath(`${folder}/${n === 1 ? stem : `${stem} ${n}`}.pdf`);
+      const path = normalizePath(`${folder}/${n === 1 ? stem : `${stem} ${n}`}.${ext}`);
       if (!this.app.vault.getAbstractFileByPath(path)) return path;
     }
   }

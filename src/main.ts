@@ -131,6 +131,7 @@ import { VaultBackdropRenderer } from "./view/backdrop-renderer";
 import { thumbnailRasterScale } from "./view/page-sidebar";
 import { renderPageThumbnail } from "./canvas/renderer";
 import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-library";
+import { buildDesignedNotebook } from "./model/paper-design";
 
 /** Where the name a user shares templates under is remembered, on this device. */
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
@@ -1795,7 +1796,8 @@ export default class GoodObsidianPlugin extends Plugin {
    * in, and a notice says which file to attach there.
    */
   async openShareTemplate(initial?: string): Promise<void> {
-    const entries = await this.paperLibrary().list();
+    // A designed paper is not a file the gallery takes.
+    const entries = (await this.paperLibrary().list()).filter((entry) => !entry.design);
     const counts = new Map<string, number>();
     for (const entry of entries) counts.set(entry.path, (counts.get(entry.path) ?? 0) + 1);
     const templates = [...counts].map(([path, pages]) => ({ path, name: paperName(path), pages }));
@@ -1831,6 +1833,14 @@ export default class GoodObsidianPlugin extends Plugin {
     template: PaperEntry,
     library: VaultPaperLibrary,
   ): Promise<void> {
+    // A designed paper: the cover chosen, then a page of it; no file to copy.
+    const design = template.design;
+    if (design) {
+      await this.createNotebook(title, choices, folder, (heading, attachments) =>
+        buildDesignedNotebook(choices, heading, attachments, design),
+      );
+      return;
+    }
     const source = this.app.vault.getFileByPath(template.path);
     if (!source) {
       new Notice("FineNotes: that template's file is gone from the vault.");

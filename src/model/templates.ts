@@ -19,6 +19,7 @@ import {
   isCoverRuling,
 } from "./document";
 import { isTemplatePaper } from "./paper-library";
+import { paperExtrasKey, readPaperExtras } from "./paper-extras";
 import { mmToPage } from "./units";
 
 export interface TemplateEntry {
@@ -273,10 +274,19 @@ export interface PageSize {
 const mm = (v: number): number => Math.round(mmToPage(v));
 
 export const PAGE_SIZES: readonly PageSize[] = [
-  { id: "standard", label: "Standard", width: DEFAULT_PAPER_WIDTH, height: DEFAULT_PAGE_HEIGHT },
+  // 1024 x 1448 page px is 210 x 297 mm at this scale: A4 (units.ts).
+  {
+    id: "standard",
+    label: "A4 (Standard)",
+    width: DEFAULT_PAPER_WIDTH,
+    height: DEFAULT_PAGE_HEIGHT,
+  },
   { id: "a6", label: "A6", width: mm(105), height: mm(148) },
   { id: "a5", label: "A5", width: mm(148), height: mm(210) },
   { id: "a3", label: "A3", width: mm(297), height: mm(420) },
+  { id: "a2", label: "A2", width: mm(420), height: mm(594) },
+  { id: "a1", label: "A1", width: mm(594), height: mm(841) },
+  { id: "a0", label: "A0", width: mm(841), height: mm(1189) },
   { id: "letter", label: "Letter", width: mm(215.9), height: mm(279.4) },
   { id: "legal-size", label: "Legal", width: mm(215.9), height: mm(355.6) },
   { id: "tabloid", label: "Tabloid", width: mm(279.4), height: mm(431.8) },
@@ -318,7 +328,8 @@ function sameTemplate(a: SyntheticBackdrop, b: SyntheticBackdrop): boolean {
     a.kind === b.kind &&
     (a.paperColor ?? "") === (b.paperColor ?? "") &&
     (a.color ?? "") === (b.color ?? "") &&
-    (a.spacing ?? 0) === (b.spacing ?? 0)
+    (a.spacing ?? 0) === (b.spacing ?? 0) &&
+    paperExtrasKey(a) === paperExtrasKey(b)
   );
 }
 
@@ -352,7 +363,7 @@ export function parseRecent(raw: unknown): SyntheticBackdrop[] {
     if (typeof r.spacing === "number" && Number.isFinite(r.spacing) && r.spacing > 0) {
       backdrop.spacing = r.spacing;
     }
-    out.push(backdrop);
+    out.push({ ...backdrop, ...readPaperExtras(r) });
   }
   return out.slice(0, MAX_RECENT);
 }
