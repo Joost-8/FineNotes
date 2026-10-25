@@ -440,6 +440,7 @@ import {
   selectedTool,
   toolAfterUse,
 } from "./tool-return";
+import { inkTargetAt } from "./ink-target";
 import { PointerHud } from "./pointer-hud";
 import { type TextEndRecord, textEndLine } from "./text-end-hud";
 import { SizeWait, backingScale } from "./surface-size";
@@ -701,8 +702,9 @@ export interface InkSurfaceCallbacks {
    */
   onSuggestedLink?: (index: number, strokeIds: string[], target: string) => void;
   /**
-   * A finger tapped a word underlined as maybe misread (`setWordFlags`):
-   * the host asks what it says. `at` is the tap, in client px.
+   * A finger tapped (or a mouse right-clicked) a word underlined as maybe
+   * misread (`setWordFlags`): the host asks what it says. `at` is the tap,
+   * in client px.
    */
   onFlaggedWord?: (index: number, strokeIds: string[], at: { x: number; y: number }) => void;
   /**
@@ -881,6 +883,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const PEN_TAP_TOLERANCE_PX = 6;
 /** The same for a fingertip, which covers more of the glass. */
 const FINGER_TAP_TOLERANCE_PX = 12;
+/** The same for a mouse's right-click, as precise as the Pencil's tip. */
+const MOUSE_TAP_TOLERANCE_PX = PEN_TAP_TOLERANCE_PX;
 /** How long a tap on a PDF page waits for its links to be read, ms. */
 const PDF_LINK_WAIT_MS = 1500;
 /** A finger that lifts within this long of landing, having barely moved, tapped. */
@@ -1545,7 +1549,7 @@ export class InkSurface {
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
   private activeWordFlag: { pageId: string; key: string } | null = null;
-  /** The client point of the finger tap being handled, for `onFlaggedWord`. */
+  /** The client point of the finger tap or right-click being handled, for `onFlaggedWord`. */
   private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
   private pressMenu: PressMenu | null = null;
@@ -2037,7 +2041,11 @@ export class InkSurface {
       if (this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
       const at = this.toLayout(event.clientX, event.clientY);
       const box = boxAtPoint(this.pageLayout, at.x, at.y);
-      if (box) this.openPressMenu(box, this.toPage(box, at));
+      if (!box) return;
+      // The mouse is the pen, so it has no tap: a right-click on linked or
+      // underlined ink does what a finger tap there does (FineNotes#41).
+      if (this.mouseTapsInk(box, at, event.clientX, event.clientY)) return;
+      this.openPressMenu(box, this.toPage(box, at));
     };
     this.scrollEl.addEventListener("contextmenu", onContextMenu);
     this.disposers.push(() => this.scrollEl.removeEventListener("contextmenu", onContextMenu));
@@ -2308,9 +2316,9 @@ export class InkSurface {
   }
 
   /**
-   * While set, a finger tap on ink — or a tap with the lasso — is offered to
-   * `handler` first (audio replay seeks to when the ink was written). `null`
-   * gives taps back their usual meaning.
+   * While set, a finger tap on ink — or a mouse right-click on it, or a tap
+   * with the lasso — is offered to `handler` first (audio replay seeks to
+   * when the ink was written). `null` gives taps back their usual meaning.
    */
   setStrokeTapHandler(handler: StrokeTapHandler | null): void {
     this.strokeTapHandler = handler;
@@ -8960,7 +8968,8 @@ export class InkSurface {
 
   /**
    * Underline words on a page that Grape may have misread; a finger tap on
-   * one calls `onFlaggedWord`. Replaces the page's earlier flags.
+   * one (a right-click with a mouse) calls `onFlaggedWord`. Replaces the
+   * page's earlier flags.
    */
   setWordFlags(pageId: string, flags: ReadonlyArray<readonly string[]>): void {
     if (flags.length > 0) this.wordFlags.set(pageId, flags);
@@ -9049,15 +9058,16 @@ export class InkSurface {
    * page's PDF there (a planner's tab, an index entry, a web address), if
    * any. A link to another page of the PDF goes to the notebook page that
    * shows it. A page whose links are not read yet has them read, and the
-   * tap is followed once they are, if that comes soon (`pdfTextReady`).
+   * tap is followed once they are, if that comes soon (`pdfTextReady`),
+   * unless `wait` is false: a right-click has opened the press menu by then.
    */
-  private followPdfLink(index: number, p: Pt, tolerance: number): boolean {
+  private followPdfLink(index: number, p: Pt, tolerance: number, wait = true): boolean {
     const page = this.pageAt(index);
     const source = this.textSource;
     if (!page || page.backdrop.kind !== "pdf" || !source?.peekLinks) return false;
     const links = source.peekLinks(page.backdrop, page.geometry);
     if (links === null) {
-      this.pendingLinkTap = { page, p, tolerance, at: now() };
+      if (wait) this.pendingLinkTap = { page, p, tolerance, at: now() };
       source.request(page.backdrop);
       return false;
     }
@@ -9097,36 +9107,28 @@ export class InkSurface {
    * any. `tolerance` is page px, around the ink and down to its underline.
    */
   private openLinkAt(page: Page, p: Pt, tolerance: number): boolean {
-    const below = (LINK_UNDERLINE_GAP_PX + 4) / this.unitScale;
-    const hit = (strokes: readonly string[]): boolean => {
-      const b = this.linkBounds(page, strokes);
-      if (!b) return false;
-      if (p.x < b.minX - tolerance || p.x > b.maxX + tolerance) return false;
-      return p.y >= b.minY - tolerance && p.y <= b.maxY + below + tolerance;
-    };
-    const open = this.callbacks.onOpenLink;
-    for (const link of page.links ?? []) {
-      if (open && hit(link.strokes)) {
-        open(link.target);
-        return true;
-      }
-    }
-    const offer = this.callbacks.onSuggestedLink;
+    const { onOpenLink: open, onSuggestedLink: offer, onFlaggedWord: ask } = this.callbacks;
     const index = this.doc.pages.indexOf(page);
-    for (const suggestion of this.suggestionsOn(page)) {
-      if (offer && index >= 0 && hit(suggestion.strokes)) {
-        offer(index, suggestion.strokes, suggestion.target);
-        return true;
-      }
-    }
-    const ask = this.callbacks.onFlaggedWord;
-    for (const strokes of this.wordFlags.get(page.id) ?? []) {
-      if (ask && index >= 0 && hit(strokes)) {
-        ask(index, [...strokes], this.tapClient);
-        return true;
-      }
-    }
-    return false;
+    const links = open ? (page.links ?? []) : [];
+    const suggestions = offer && index >= 0 ? this.suggestionsOn(page) : [];
+    const flags = ask && index >= 0 ? (this.wordFlags.get(page.id) ?? []) : [];
+    const hit = inkTargetAt(
+      {
+        links: links.map((link) => link.strokes),
+        suggestions: suggestions.map((s) => s.strokes),
+        flags,
+      },
+      (strokes) => this.linkBounds(page, strokes),
+      p,
+      { tolerance, below: (LINK_UNDERLINE_GAP_PX + 4) / this.unitScale },
+    );
+    if (!hit) return false;
+    if (hit.kind === "link") open?.(links[hit.index].target);
+    else if (hit.kind === "suggestion") {
+      const suggestion = suggestions[hit.index];
+      offer?.(index, suggestion.strokes, suggestion.target);
+    } else ask?.(index, [...flags[hit.index]], this.tapClient);
+    return true;
   }
 
   /**
@@ -9853,6 +9855,27 @@ export class InkSurface {
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
   private cancelGroupDrag(): void {
     this.endGroupDrag(false);
+  }
+
+  /**
+   * A mouse right-clicked layout point `at` of `box` (client px given too):
+   * open the link, suggestion or flagged word there, or a PDF link, or
+   * hand ink to the stroke-tap handler, as a finger tap would. False when
+   * nothing there took it, so the press menu opens instead.
+   */
+  private mouseTapsInk(box: PageBox, at: Pt, clientX: number, clientY: number): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    const p = this.toPage(box, at);
+    const tolerance = MOUSE_TAP_TOLERANCE_PX / this.unitScale;
+    this.tapClient = { x: clientX, y: clientY };
+    // A press menu open elsewhere closes first; opening it again clears it anyway.
+    if (this.pressMenu) this.clearSelection();
+    return (
+      this.openLinkAt(page, p, tolerance) ||
+      this.followPdfLink(box.index, p, tolerance, false) ||
+      this.offerStrokeTap(box, p, MOUSE_TAP_TOLERANCE_PX)
+    );
   }
 
   /**
