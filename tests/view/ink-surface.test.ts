@@ -1931,9 +1931,18 @@ describe("ink pressure", () => {
 });
 
 describe("size preview scales", () => {
-  it("pen widths grow with the zoom; the eraser keeps its size at fit", () => {
+  it("pen widths and the eraser both grow with the zoom: their sizes are the paper's", () => {
     const s = surfaceWith({ baseScale: 0.8, userZoom: 2.5 });
-    expect(run(s, "sizePreviewScales")).toEqual({ pen: 2, eraser: 0.8 });
+    expect(run(s, "sizePreviewScales")).toEqual({ pen: 2, eraser: 2 });
+  });
+
+  it("erases the same patch of paper at every zoom", () => {
+    const at = (userZoom: number) =>
+      run(
+        surfaceWith({ baseScale: 0.8, userZoom, toolState: { tool: "eraser", eraserSize: 24 } }),
+        "eraserSize",
+      );
+    expect(at(1)).toBe(at(5));
   });
 
   it("tells the host once each time they change, so the toolbar's marks follow", () => {

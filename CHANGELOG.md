@@ -16,10 +16,10 @@ extracted from the matching section of this file by `release.yml`.
   tools from left to right, where you drag a tool to move it, tap (−) to
   take it off the bar and (+) to put it back. The pen always stays.
 - **Stickers and sticky notes have their own buttons**, no longer in the
-  Insert image menu. Sticky notes come in ten colours: pick one, then tap
-  the page where the note should go.
-- **Double-tap with one finger to fit the page's width**, and again to see
-  the whole page.
+  Insert image menu. Sticky notes come in ten colours, which stay open
+  until you tap the page where the note should go.
+- **Double-tap with one finger to fill the screen with the page**, edge to
+  edge with nothing around it, and again to see the whole page.
 
 - **A dot when a newer FineNotes is out.** Once a day FineNotes reads the
   version of its newest release on GitHub and puts a dot on the toolbar's
@@ -60,6 +60,9 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **The eraser's size is the paper's**, like a pen's width: it erases the
+  same patch of page at every zoom, and its size marks and millimetres say
+  so. Zoomed in, it shows larger on screen.
 - **A clearer card for an underlined word.** What FineNotes read is now
   the card's large heading, so you see at once what to check. The other
   words your ink may say follow right under it without the "Did you mean"

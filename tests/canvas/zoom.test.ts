@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PAGE_MARGIN_Y } from "../../src/canvas/page-layout";
 import {
+  MAX_SCALE,
   MIN_SCALE,
   OVERVIEW_PINCH_ZOOM,
   anchorScrollDelta,
   doubleTapZoom,
+  pageFillZoom,
+  zoomAnchorFor,
   pinchOpensOverview,
   fitPageZoom,
   nextZoomFloor,
@@ -142,16 +145,50 @@ describe("pinchOpensOverview", () => {
   });
 });
 
+describe("pageFillZoom", () => {
+  it("fills the pane's width with a tall page, so no desk shows", () => {
+    // A 1000 x 1414 page at base scale 0.5 in an 820 x 1000 pane.
+    const zoom = pageFillZoom(1000, 1414, 0.5, 820, 1000);
+    expect(1000 * 0.5 * zoom).toBeCloseTo(820, 9);
+    expect(1414 * 0.5 * zoom).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("fills the pane's height with a wide page", () => {
+    const zoom = pageFillZoom(1414, 1000, 1, 800, 1000);
+    expect(1000 * zoom).toBeCloseTo(1000, 9);
+    expect(1414 * zoom).toBeGreaterThanOrEqual(800);
+  });
+
+  it("is 1 for nothing to fill, and never past the zoom limit", () => {
+    expect(pageFillZoom(0, 100, 1, 800, 600)).toBe(1);
+    expect(pageFillZoom(100, 100, 1, 0, 600)).toBe(1);
+    expect(pageFillZoom(1, 1, 1, 8000, 8000)).toBe(MAX_SCALE);
+  });
+});
+
 describe("doubleTapZoom", () => {
-  it("goes to fit-to-width from anywhere else", () => {
-    expect(doubleTapZoom(0.6, 0.6)).toBe(1);
-    expect(doubleTapZoom(3, 0.6)).toBe(1);
+  it("goes to the page-filling zoom from anywhere else", () => {
+    expect(doubleTapZoom(0.6, 0.6, 1.1)).toBe(1.1);
+    expect(doubleTapZoom(3, 0.6, 1.1)).toBe(1.1);
   });
-  it("goes back to the whole page from fit-to-width", () => {
-    expect(doubleTapZoom(1, 0.6)).toBe(0.6);
-    expect(doubleTapZoom(1.01, 0.6)).toBe(0.6);
+
+  it("goes back to the whole page from the page-filling zoom", () => {
+    expect(doubleTapZoom(1.1, 0.6, 1.1)).toBe(0.6);
+    expect(doubleTapZoom(1.11, 0.6, 1.1)).toBe(0.6);
   });
-  it("stays at fit-to-width when the whole page already fills the width", () => {
-    expect(doubleTapZoom(1, 1)).toBe(1);
+});
+
+describe("zoomAnchorFor", () => {
+  it("is the point that stays put while the view moves from one offset to the other", () => {
+    const [o0, s0, o1, s1] = [130, 0.5, -45, 1.2];
+    const a = zoomAnchorFor(o0, s0, o1, s1);
+    expect(a).not.toBeNull();
+    // The layout point under the anchor before is under it after.
+    const layout = ((a ?? 0) - o0) / s0;
+    expect(o1 + layout * s1).toBeCloseTo(a ?? 0, 9);
+  });
+
+  it("is null when the scale does not change", () => {
+    expect(zoomAnchorFor(10, 1, 20, 1)).toBeNull();
   });
 });

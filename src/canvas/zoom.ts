@@ -107,14 +107,51 @@ export function anchorScrollDelta(was: Vec2, now: Vec2, scale: number): Vec2 {
   return { x: (was.x - now.x) * scale, y: (was.y - now.y) * scale };
 }
 
-/** A zoom this close to fit-to-width (as a fraction of it) counts as fit-to-width. */
-const AT_FIT_WIDTH = 0.02;
+/** A zoom this close to the page-filling one (as a fraction of it) counts as filling. */
+const AT_FILL = 0.02;
 
 /**
- * Where a one-finger double tap zooms: to fit-to-width (1) from anywhere
- * else, and from fit-to-width back to the whole page (`floor`). Where the
- * whole page already fills the width, the floor is 1 and the tap stays put.
+ * The user zoom at which a page `width` by `height` layout px, shown at
+ * `baseScale`, covers a pane `paneWidth` by `paneHeight` exactly: as small
+ * as it can be with no desk showing beside or around it. For a page taller
+ * than the pane is wide, its width fills the pane. Never past {@link MAX_SCALE}.
  */
-export function doubleTapZoom(zoom: number, floor: number): number {
-  return Math.abs(zoom - 1) <= AT_FIT_WIDTH ? Math.min(1, floor) : 1;
+export function pageFillZoom(
+  width: number,
+  height: number,
+  baseScale: number,
+  paneWidth: number,
+  paneHeight: number,
+): number {
+  if (!(width > 0) || !(height > 0) || !(baseScale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
+    return 1;
+  }
+  const fill = Math.max(paneWidth / (width * baseScale), paneHeight / (height * baseScale));
+  return Math.min(MAX_SCALE, fill);
+}
+
+/**
+ * Where a one-finger double tap zooms: to `fill`, the page covering the
+ * pane ({@link pageFillZoom}), from anywhere else, and from there back to
+ * the whole page (`floor`).
+ */
+export function doubleTapZoom(zoom: number, floor: number, fill: number): number {
+  return fill > 0 && Math.abs(zoom / fill - 1) <= AT_FILL ? floor : fill;
+}
+
+/**
+ * The screen point (on one axis) to zoom about so that a view whose layout
+ * origin sits at `fromOffset` screen px at scale `fromScale` ends with it at
+ * `toOffset` at `toScale`: the fixed point of that move, so zoom and scroll
+ * land together as one motion. Null when the scale does not change.
+ */
+export function zoomAnchorFor(
+  fromOffset: number,
+  fromScale: number,
+  toOffset: number,
+  toScale: number,
+): number | null {
+  const k = toScale / fromScale;
+  if (!Number.isFinite(k) || Math.abs(k - 1) < 1e-6) return null;
+  return (k * fromOffset - toOffset) / (k - 1);
 }
