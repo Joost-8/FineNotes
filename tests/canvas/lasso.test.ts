@@ -62,6 +62,7 @@ describe("lasso settings", () => {
     expect(lassoModeOf("rect")).toBe("rect");
     expect(lassoModeOf("freehand")).toBe("freehand");
     expect(lassoModeOf("lines")).toBe("lines");
+    expect(lassoModeOf("single")).toBe("single");
     expect(lassoModeOf(undefined)).toBe("freehand");
     expect(lassoModeOf("marquee")).toBe("freehand");
   });

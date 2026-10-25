@@ -312,6 +312,7 @@ const LASSO_MODE_LABELS: Record<LassoMode, string> = {
   rect: "Rectangular",
   freehand: "Freehand",
   lines: "By line",
+  single: "One item",
 };
 
 /** GoodNotes' "What to include in the selection", less what this plugin does not have. */
@@ -3925,7 +3926,13 @@ function lassoGlyph(mode: LassoMode, size = 30): SVGElement {
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("stroke-dasharray", "4 3.2");
   const shape = activeDocument.createElementNS(SVG_NS, mode === "rect" ? "rect" : "path");
-  if (mode === "lines") {
+  if (mode === "single") {
+    // A pointer: it takes what it lands on, with no loop to draw.
+    svg.removeAttribute("stroke-dasharray");
+    shape.setAttribute("d", "M9 5l16 12-7.5 1.2 4.3 7.8-3.6 1.9-4.3-7.9L9 25z");
+    shape.setAttribute("fill", "currentColor");
+    shape.setAttribute("fill-opacity", "0.25");
+  } else if (mode === "lines") {
     // The staircase a text selection makes over three lines.
     shape.setAttribute("d", "M14 7h13v12h-9v6H5V13h9z");
     shape.setAttribute("fill", "currentColor");

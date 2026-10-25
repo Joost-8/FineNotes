@@ -37,15 +37,17 @@ export interface Pt {
  * GoodNotes' two lasso types, drawn freehand (the default) or dragged out as
  * a rectangle, and `lines`: on lined paper, dragged from one word to another
  * as text is selected (Stylus Labs Write's ruled selection, FineNotes#20).
+ * `single` draws no loop: the pen picks up the one thing it lands on and
+ * moves it in the same stroke, as a mouse pointer would.
  */
-export type LassoMode = "freehand" | "rect" | "lines";
+export type LassoMode = "freehand" | "rect" | "lines" | "single";
 
 /** In reverse of the order the lasso popover shows them. */
-export const LASSO_MODES: readonly LassoMode[] = ["lines", "freehand", "rect"];
+export const LASSO_MODES: readonly LassoMode[] = ["single", "lines", "freehand", "rect"];
 
 /** A stored lasso mode, or the default when plugin data holds anything else. */
 export function lassoModeOf(raw: unknown): LassoMode {
-  return raw === "rect" || raw === "lines" ? raw : "freehand";
+  return raw === "rect" || raw === "lines" || raw === "single" ? raw : "freehand";
 }
 
 /**
