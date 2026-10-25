@@ -151,7 +151,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   ): void {
     const theme = target?.paper ?? this.theme;
     if (backdrop.kind !== "pdf") {
-      drawSynthetic(ctx, backdrop, geometry, theme, weight);
+      drawSynthetic(ctx, backdrop, geometry, theme, weight, target?.region);
       return;
     }
     // Inverted or kept, the page is painted as it is first.

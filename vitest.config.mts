@@ -45,6 +45,7 @@ export default defineConfig({
         "src/canvas/graph-geometry.ts",
         "src/canvas/shape-decor.ts",
         "src/canvas/paper-style.ts",
+        "src/canvas/paper-texture.ts",
         "src/canvas/lasso.ts",
         "src/canvas/writing-lines.ts",
         "src/canvas/ruled-ink.ts",

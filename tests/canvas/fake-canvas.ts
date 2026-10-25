@@ -51,29 +51,41 @@ export function fakeContext(): FakeContext {
     depth: 0,
     maxDepth: 0,
   };
+  // `translate` is tracked, not recorded: path coordinates are logged in page
+  // space, as a reader of the page would measure them. save/restore keep it.
+  let tx = 0;
+  let ty = 0;
+  const saved: Array<[number, number]> = [];
   const api = {
     save(): void {
       ctx.depth++;
       ctx.maxDepth = Math.max(ctx.maxDepth, ctx.depth);
+      saved.push([tx, ty]);
       ctx.ops.push({ op: "save" });
     },
     restore(): void {
       ctx.depth--;
+      [tx, ty] = saved.pop() ?? [0, 0];
       ctx.ops.push({ op: "restore" });
+    },
+    translate: (x: number, y: number) => {
+      tx += x;
+      ty += y;
     },
     beginPath: () => void ctx.ops.push({ op: "beginPath" }),
     fill: () => void ctx.ops.push({ op: "fill", fillStyle: String(ctx.fillStyle) }),
     stroke: () => void ctx.ops.push({ op: "stroke", strokeStyle: String(ctx.strokeStyle) }),
     clip: () => void ctx.ops.push({ op: "clip" }),
-    moveTo: (x: number, y: number) => void ctx.ops.push({ op: "moveTo", x, y }),
-    lineTo: (x: number, y: number) => void ctx.ops.push({ op: "lineTo", x, y }),
+    moveTo: (x: number, y: number) => void ctx.ops.push({ op: "moveTo", x: x + tx, y: y + ty }),
+    lineTo: (x: number, y: number) => void ctx.ops.push({ op: "lineTo", x: x + tx, y: y + ty }),
     rect: (x: number, y: number, w: number, h: number) =>
-      void ctx.ops.push({ op: "rect", x, y, w, h }),
+      void ctx.ops.push({ op: "rect", x: x + tx, y: y + ty, w, h }),
     fillRect: (x: number, y: number, w: number, h: number) =>
       void ctx.ops.push({ op: "fillRect", x, y, w, h, fillStyle: String(ctx.fillStyle) }),
     strokeRect: (x: number, y: number, w: number, h: number) =>
       void ctx.ops.push({ op: "strokeRect", x, y, w, h }),
-    arc: (x: number, y: number, r: number) => void ctx.ops.push({ op: "arc", x, y, r }),
+    arc: (x: number, y: number, r: number) =>
+      void ctx.ops.push({ op: "arc", x: x + tx, y: y + ty, r }),
     fillText: (text: string, x: number, y: number) =>
       void ctx.ops.push({ op: "fillText", text, x, y }),
     setLineDash: (segments: number[]) => void ctx.ops.push({ op: "setLineDash", segments }),

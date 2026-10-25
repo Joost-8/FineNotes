@@ -3568,6 +3568,221 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* ------------------------------------------------------- paper designer */
+/* "Design a paper…" in My templates (paper-designer.ts). It takes the place
+   of the dialog's own content, so the dialog loses its padding and scroll
+   while it shows; the controls scroll on their own and the preview always
+   fits whole beside (or, narrow, above) them. */
+.modal-container .modal.goodobsidian-designing {
+  width: min(800px, 94vw);
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.goodobsidian-paper-designer {
+  display: flex;
+  flex-direction: column;
+  height: min(680px, 84vh, calc(100vh - var(--keyboard-height, 0px) - 32px));
+  min-height: 0;
+}
+
+.goodobsidian-paper-designer-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--gob-line, var(--background-modifier-border));
+}
+
+.goodobsidian-paper-designer-header > button {
+  height: 40px;
+}
+
+.goodobsidian-paper-designer-header > button:last-child {
+  justify-self: end;
+}
+
+button.goodobsidian-paper-designer-back.clickable-icon {
+  justify-self: start;
+  width: 40px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.goodobsidian-paper-designer-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-paper-designer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "controls preview";
+}
+
+.goodobsidian-paper-designer-controls {
+  grid-area: controls;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px 24px;
+}
+
+.goodobsidian-paper-designer-preview {
+  grid-area: preview;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--gob-well, var(--background-secondary));
+}
+
+.goodobsidian-paper-designer-frame {
+  display: flex;
+  line-height: 0;
+}
+
+.goodobsidian-paper-designer-canvas {
+  display: block;
+  box-shadow: var(--gob-shadow-paper);
+}
+
+.goodobsidian-paper-designer-caption {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The name: 16 px, or iPadOS zooms the page in when it takes focus. */
+.goodobsidian-paper-designer-name-row {
+  margin-bottom: 4px;
+}
+
+input.goodobsidian-paper-designer-name {
+  width: 100%;
+  height: 40px;
+  font-size: 16px;
+}
+
+.goodobsidian-paper-designer-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 6px;
+  list-style: none;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  cursor: pointer;
+}
+
+.goodobsidian-paper-designer-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.goodobsidian-paper-designer-section:not([open]) .goodobsidian-templates-chevron {
+  transform: rotate(-90deg);
+}
+
+/* A folded section says its state beside its title; open, the rows do. */
+.goodobsidian-paper-designer-state {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-paper-designer-section[open] .goodobsidian-paper-designer-state {
+  display: none;
+}
+
+.goodobsidian-paper-designer-section.is-hidden,
+.goodobsidian-paper-designer-rows .is-hidden,
+.goodobsidian-paper-swatch-own.is-hidden {
+  display: none;
+}
+
+.goodobsidian-paper-designer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 8px;
+}
+
+.goodobsidian-paper-designer-rows .goodobsidian-paper-style-row {
+  gap: 6px;
+}
+
+.goodobsidian-paper-designer-rows .goodobsidian-segmented:not(.is-icons) {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-paper-designer-margins {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Swatch rows run without a label, edge to edge. */
+.goodobsidian-paper-designer-colors .goodobsidian-paper-style-row {
+  gap: 0;
+}
+
+/* − value mm +: big enough for a Pencil tap, the value typed in between. */
+.goodobsidian-paper-designer-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-radius-pill, 999px);
+  background: var(--gob-well, var(--background-secondary));
+}
+
+.goodobsidian-paper-designer-stepper > button.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.goodobsidian-paper-designer-stepper > input[type="text"] {
+  width: 52px;
+  height: 32px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-paper-designer-unit {
+  padding-right: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* Narrow (a phone, a slim Split View): the preview above, the controls under it. */
+@media (max-width: 640px) {
+  .goodobsidian-paper-designer-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(140px, 34%) minmax(0, 1fr);
+    grid-template-areas:
+      "preview"
+      "controls";
+  }
+}
+
 /* ------------------------- new notebook dialog, covers, change cover (0.5) */
 
 /* GoodNotes' "Create notebook" sheet. Obsidian's `.modal` is the scroller

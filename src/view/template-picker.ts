@@ -30,6 +30,13 @@ import type { PageGeometry, Ruling, SyntheticBackdrop } from "../model/document"
 import type { InsertPosition } from "../model/page-commands";
 import type { PaperEntry } from "../model/paper-library";
 import {
+  type PaperDesign,
+  defaultPaperDesign,
+  designBackdrop,
+  designGeometry,
+} from "../model/paper-design";
+import { openPaperDesigner } from "./paper-designer";
+import {
   PAGE_SIZES,
   PAPER_COLORS,
   type PaperColorId,
@@ -452,6 +459,11 @@ export interface PaperLibraryHost {
   shareTemplate?(path?: string): void;
   /** Delete a template from My templates, once the user agrees. True when it went. */
   deleteTemplate?(path: string): Promise<boolean>;
+  /**
+   * Keep a paper made in the paper designer: over the design at `path` when
+   * editing one. Resolves to the saved paper, or null.
+   */
+  saveDesign?(design: PaperDesign, path?: string): Promise<PaperEntry | null>;
 }
 
 export interface MyTemplatesOptions {
@@ -539,7 +551,8 @@ export class MyTemplatesSection {
     };
     const add = tool("plus", "Add templates");
     const share = host.shareTemplate?.bind(host);
-    if (share && entries.length > 0) {
+    // Only a PDF or picture can go to the community gallery, not a designed paper.
+    if (share && entries.some((entry) => !entry.design)) {
       tool("share-2", "Share a template").addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -569,6 +582,7 @@ export class MyTemplatesSection {
         run(button);
       });
     };
+    if (host.saveDesign) item("pencil-ruler", "Design a paper…", () => this.openDesigner(null));
     const browse = host.browseCommunity?.bind(host);
     if (browse) item("globe", "Community templates…", () => void browse().then(refresh));
     item("file-up", "From files…", (button) => void host.importFile(button).then(refresh));
@@ -596,7 +610,7 @@ export class MyTemplatesSection {
         cls: "goodobsidian-template-card is-large clickable-icon",
         attr: { "aria-label": name, title: name },
       });
-      this.cardMenu(frame, entry.path, pages);
+      this.cardMenu(frame, entry, pages);
       const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
       root.createDiv({ cls: "goodobsidian-template-name", text: name });
       root.addEventListener("click", () => this.options.onChoose(entry));
@@ -607,18 +621,53 @@ export class MyTemplatesSection {
     if (entries.length === 0) {
       row.createDiv({
         cls: "goodobsidian-my-papers-empty",
-        text: "Tap + to bring in a PDF or picture, or to find one in the community gallery: every page of it is a paper here.",
+        text: "Tap + to design a paper, bring in a PDF or picture, or find one in the community gallery: every page of it is a paper here.",
       });
     }
     this.sync();
   }
 
-  /** The ⋯ on a card: share the template, or delete it (the whole file, every page). */
-  private cardMenu(frame: HTMLElement, path: string, pages: number): void {
+  /**
+   * The designer, in place of this section's dialog (never a dialog on a
+   * dialog), for a new paper or to edit `entry`. Back returns to the dialog
+   * as it was; Save returns with the saved paper listed and chosen.
+   */
+  private openDesigner(entry: PaperEntry | null): void {
     const { host } = this.options;
-    const share = host.shareTemplate?.bind(host);
+    const saveDesign = host.saveDesign?.bind(host);
+    const modalEl = this.el.closest<HTMLElement>(".modal");
+    if (!saveDesign || !modalEl) return;
+    let saved: PaperEntry | null = null;
+    openPaperDesigner(modalEl, {
+      design: entry?.design ?? defaultPaperDesign(),
+      editing: entry?.design !== undefined,
+      save: async (design) => {
+        saved = await saveDesign(design, entry?.path);
+        return saved !== null;
+      },
+      done: () => {
+        const chosen = saved;
+        if (!chosen || !this.alive) return;
+        if (entry && entry.path !== chosen.path) this.options.onRemoved?.(entry.path);
+        void this.render().then(() => {
+          if (this.alive) this.options.onChoose(chosen);
+        });
+      },
+    });
+  }
+
+  /**
+   * The ⋯ on a card: share the template, or delete it (the whole file, every
+   * page); a designed paper is edited instead of shared.
+   */
+  private cardMenu(frame: HTMLElement, entry: PaperEntry, pages: number): void {
+    const { host } = this.options;
+    const path = entry.path;
+    const design = entry.design !== undefined;
+    const share = design ? undefined : host.shareTemplate?.bind(host);
+    const edit = design && host.saveDesign ? () => this.openDesigner(entry) : undefined;
     const remove = host.deleteTemplate?.bind(host);
-    if (!share && !remove) return;
+    if (!share && !remove && !edit) return;
     const more = frame.createEl("button", {
       cls: "goodobsidian-template-card-more clickable-icon",
       attr: { "aria-label": "Template options", title: "Template options" },
@@ -627,6 +676,9 @@ export class MyTemplatesSection {
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       const menu = new Menu();
+      if (edit) {
+        menu.addItem((item) => item.setTitle("Edit…").setIcon("pencil").onClick(edit));
+      }
       if (share) {
         menu.addItem((item) =>
           item
@@ -928,6 +980,16 @@ export class TemplatePickerModal extends Modal {
 
   private apply(): void {
     const paper = this.paper;
+    // A designed paper is an ordinary backdrop at its own size: no file to copy.
+    if (paper?.design) {
+      const choice: TemplateChoice = {
+        backdrop: designBackdrop(paper.design),
+        geometry: designGeometry(paper.design),
+      };
+      this.close();
+      this.options.onApply(choice);
+      return;
+    }
     if (paper && this.options.onApplyPaper) {
       this.close();
       this.options.onApplyPaper(paper);

@@ -34,6 +34,7 @@ import type {
   Backdrop,
   CoverRuling,
   PageGeometry,
+  PaperTexture,
   PrintedText,
   Ruling,
   SyntheticBackdrop,
@@ -49,6 +50,8 @@ import {
   softGradient,
 } from "./cover-patterns";
 import { type LineBlock, evenBlock } from "./writing-lines";
+import { marginLinePlan, ruledArea } from "../model/paper-extras";
+import { TEXTURES, type TextureRegion, isDarkTextureGround, textureMarks } from "./paper-texture";
 import { NIGHT_PAPER, nightColor, nightRule, paperFlips } from "./night";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
@@ -1189,7 +1192,21 @@ export function writingLines(backdrop: Backdrop, geometry: PageGeometry): LineBl
   if (!Object.prototype.hasOwnProperty.call(WRITING_LINES, backdrop.kind)) return [];
   const plan = WRITING_LINES[backdrop.kind];
   if (!plan) return [];
-  const blocks = plan(geometry, resolveSpacing(backdrop.spacing, backdrop.kind));
+  const spacing = resolveSpacing(backdrop.spacing, backdrop.kind);
+  // Designed paper rules only its ruled area, from that area's corner.
+  const area = ruledArea(backdrop, geometry);
+  if (area) {
+    if (area.w <= 0 || area.h <= 0) return [];
+    return plan({ width: area.w, height: area.h }, spacing)
+      .map((block) => ({
+        ...block,
+        x0: block.x0 + area.x,
+        x1: block.x1 + area.x,
+        baselines: block.baselines.map((y) => y + area.y),
+      }))
+      .filter((block) => block.baselines.length > 0);
+  }
+  const blocks = plan(geometry, spacing);
   return blocks.filter((block) => block.baselines.length > 0);
 }
 
@@ -1374,11 +1391,84 @@ export function drawSyntheticRules(
   };
 
   ctx.save();
+  // Designed paper: the ruling stops at the margins and the blank band, and
+  // starts from the corner they leave (`model/paper-extras.ts`).
+  const area = ruledArea(paper, geometry);
+  if (area) {
+    ctx.beginPath();
+    ctx.rect(area.x, area.y, area.w, area.h);
+    ctx.clip();
+    ctx.translate(area.x, area.y);
+    context.geometry = { width: area.w, height: area.h };
+  }
   ctx.strokeStyle = context.color;
   ctx.fillStyle = context.color;
   ctx.lineWidth = RULE_WIDTH * context.weight;
   ctx.beginPath();
-  if (entry.draw(ctx, context) !== "painted") ctx.stroke();
+  if ((!area || (area.w > 0 && area.h > 0)) && entry.draw(ctx, context) !== "painted") {
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Designed paper's grain, under the ruling; only the cells `region` shows, when given. */
+function drawTexture(
+  ctx: CanvasRenderingContext2D,
+  texture: PaperTexture,
+  geometry: PageGeometry,
+  weight: number,
+  paper: string,
+  region?: TextureRegion,
+): void {
+  const marks = textureMarks(texture, geometry, region, weight);
+  const spec = TEXTURES[texture];
+  const inks = isDarkTextureGround(paper) ? spec.onDark : spec.onLight;
+  ctx.save();
+  for (const [rects, color] of [
+    [marks.dark, inks.dark],
+    [marks.light, inks.light],
+  ] as const) {
+    if (rects.length === 0) continue;
+    ctx.beginPath();
+    for (let i = 0; i + 3 < rects.length; i += 4) {
+      ctx.rect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3]);
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  if (marks.fibres.length > 0) {
+    ctx.beginPath();
+    for (let i = 0; i + 3 < marks.fibres.length; i += 4) {
+      ctx.moveTo(marks.fibres[i], marks.fibres[i + 1]);
+      ctx.lineTo(marks.fibres[i + 2], marks.fibres[i + 3]);
+    }
+    ctx.strokeStyle = inks.fibre;
+    ctx.lineWidth = marks.fibreWidth;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Designed paper's margin lines, over the ruling, in the page's look. */
+function drawMarginLines(
+  ctx: CanvasRenderingContext2D,
+  backdrop: SyntheticBackdrop,
+  geometry: PageGeometry,
+  night: boolean,
+  weight: number,
+): void {
+  const plan = marginLinePlan(backdrop, geometry);
+  if (!plan) return;
+  ctx.save();
+  ctx.strokeStyle = night ? nightRule(plan.color) : plan.color;
+  ctx.lineWidth = RULE_WIDTH * Math.max(1, weight);
+  ctx.beginPath();
+  for (const x of plan.xs) {
+    const px = crisp(x);
+    ctx.moveTo(px, plan.y0);
+    ctx.lineTo(px, plan.y1);
+  }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1392,10 +1482,16 @@ export function drawSynthetic(
   geometry: PageGeometry,
   theme: PaperTheme,
   weight = 1,
+  /** The part of the page being painted (a tile), so the grain draws only there. */
+  region?: TextureRegion,
 ): void {
   const look = pageLook(backdrop, theme);
   fillPaper(ctx, geometry, theme, look.paper);
+  if (backdrop.texture === "fine" || backdrop.texture === "heavy") {
+    drawTexture(ctx, backdrop.texture, geometry, weight, look.paper, region);
+  }
   drawSyntheticRules(ctx, backdrop, geometry, theme, weight);
+  if (backdrop.marginLines) drawMarginLines(ctx, backdrop, geometry, look.night, weight);
   if (backdrop.printed?.length) drawPrinted(ctx, backdrop.printed, look.night);
 }
 

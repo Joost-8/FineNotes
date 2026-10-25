@@ -265,6 +265,34 @@ export interface SyntheticBackdrop {
    * nor erased, and it is never read as a link.
    */
   printed?: PrintedText[];
+  /**
+   * A paper made in the paper designer (`model/paper-design.ts`) can carry
+   * these four; contracts/api.md §1 "Designed paper". All page px, all
+   * optional. An older FineNotes ignores them and draws the ruling across
+   * the whole plain page.
+   */
+  /** Grain on the paper, drawn from a fixed seed. Absent: smooth. */
+  texture?: PaperTexture;
+  /** Bands along the edges where the ruling stops. A side left out is 0. */
+  margins?: PaperMargins;
+  /** One band, from one edge inwards, where the ruling stops too. */
+  blankZone?: BlankZone;
+  /** Vertical lines this far in from the left and/or right edge. */
+  marginLines?: MarginLines;
+}
+
+export type PaperTexture = "fine" | "heavy";
+export type PaperSide = "top" | "right" | "bottom" | "left";
+export type PaperMargins = Partial<Record<PaperSide, number>>;
+export interface BlankZone {
+  side: PaperSide;
+  size: number;
+}
+export interface MarginLines {
+  left?: number;
+  right?: number;
+  /** Hex; default a soft red. */
+  color?: string;
 }
 
 /** One line of text printed on the paper. */

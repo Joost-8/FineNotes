@@ -71,6 +71,11 @@ export interface SyntheticBackdrop {
    * Presets: white #ffffff, cream #fbf8ed, yellow #fdf6d8.
    */
   paperColor?: string;
+  /** Designed paper only; see "Designed paper" at the end of this file. */
+  texture?: "fine" | "heavy";
+  margins?: { top?: number; right?: number; bottom?: number; left?: number };
+  blankZone?: { side: "top" | "right" | "bottom" | "left"; size: number };
+  marginLines?: { left?: number; right?: number; color?: string };
 }
 
 export interface PdfBackdrop {
@@ -993,3 +998,57 @@ and relinked. A gallery index is `{ format: 1, templates: [{ id, name,
 author, description, version, licence, preview, download, pages, retired }] }`,
 `download` and `preview` HTTPS only; a retired entry stays listed in the file
 but is not offered.
+
+## Designed paper (2026-10-25)
+
+"Design a paper…" (My templates' +, `src/view/paper-designer.ts`) makes a
+paper of the user's own. It is kept as a JSON file in the templates folder's
+`Papers` folder, beside the PDF papers, and listed in My templates
+(`src/model/paper-design.ts`):
+
+```jsonc
+{
+  "format": "finenotes-paper", // anything else in the folder is not a design
+  "version": 1,
+  "name": "Cream study",
+  "size": "standard", // a PAGE_SIZES id: standard (A4), a6, a5, a3, a2, a1, a0, letter, …
+  "landscape": false,
+  "paper": "#f6efe0",
+  "texture": "plain" | "fine" | "heavy",
+  "ruling": "none" | "lines" | "squares" | "dots",
+  "spacing": 5, // mm
+  "ruleColor": "#d9c7a8",
+  "margins": { "top": 20, "right": 0, "bottom": 0, "left": 30 }, // mm
+  "blank": { "side": "bottom", "size": 50 } | null, // mm
+  "marginLine": { "sides": "left" | "right" | "both", "inset": 25, "color": "#e8a3a3" } | null,
+}
+```
+
+A design file is read field by field: a field that is missing, malformed or
+out of range takes its default and the rest stays. A page never points at the
+design: applying one gives the page the design's size and an ordinary
+synthetic backdrop, so editing or deleting a design changes no page.
+
+The backdrop is the ruling an older build already draws (`blank`,
+`ruled-wide`, `squared`, `dotted`, with `spacing`, `color`, `paperColor`),
+plus four optional fields, all lengths in page px:
+
+| Field         | Meaning                                                                                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `texture`     | `"fine"` or `"heavy"` grain (`src/canvas/paper-texture.ts`): specks, and on heavy paper short fibres, placed by a hash of fixed page cells, never `Math.random`, so every tile, thumbnail and export agree |
+| `margins`     | `{ top?, right?, bottom?, left? }`: the ruling stops this far from each edge; a side left out is 0                                                                                                         |
+| `blankZone`   | `{ side, size }`: one band from one edge with no ruling; where it is wider than that side's margin it wins                                                                                                 |
+| `marginLines` | `{ left?, right?, color? }`: vertical lines this far in from the left and/or right edge, over the ruling, full height except a top or bottom `blankZone`; `color` defaults to `#e8a3a3`                    |
+
+With margins or a blank zone the ruling is clipped to the rectangle they leave
+and starts from its top-left corner (`ruledArea` in
+`src/model/paper-extras.ts`); the ruled tools' lines (`writingLines`) are
+offset the same way. On dark pages the margin line is shown as a rule
+(`nightRule`) and the grain switches to inks for dark paper.
+
+**Older builds** keep only `kind`, `spacing`, `color` and `paperColor`: the
+page opens as plain ruled paper across the whole page, and a save from that
+build drops the four fields. Nothing else is lost.
+
+The same change adds A2, A1 and A0 to `PAGE_SIZES`, and labels `standard`
+(1024 × 1448 page px, 210 × 297 mm) "A4 (Standard)".

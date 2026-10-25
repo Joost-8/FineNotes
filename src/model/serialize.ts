@@ -39,6 +39,7 @@ import { readDash, readFill, readHeads, readRadius } from "./shape-style";
 import { readPalette } from "./palette";
 import { readFurniture } from "./furniture";
 import { readTabColor } from "./page-tabs";
+import { readPaperExtras } from "./paper-extras";
 import { normalizeTable } from "./table";
 import { normalizeGraph } from "./graph-element";
 import { normalizeComment } from "./comments";
@@ -757,6 +758,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
       ...(typeof b.color === "string" ? { color: b.color } : {}),
       ...(typeof b.paperColor === "string" ? { paperColor: b.paperColor } : {}),
       ...(printed.length > 0 ? { printed } : {}),
+      ...readPaperExtras(b),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.
