@@ -1,11 +1,15 @@
 /**
  * The "New notebook" dialog, after GoodNotes' "Create notebook" sheet:
  *
- *   [Create]        New notebook             (✕)    (sticky: never scrolls away)
+ *   [Create]        New notebook          (∞) (✕)    (sticky: never scrolls away)
  *   Title ______________________________            (focused on open)
  *   Import from another app…      [📁 Lectures/Analysis ›]
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
+ *
+ * The ∞ switches it to an endless board (FineNotes#46): the header says
+ * "New board", and cover, size, colour, orientation and the templates give
+ * way to three cards, Blank, Dotted and Squared, on white paper.
  *
  * Laid out for an iPad in either orientation, and usable with the on-screen
  * keyboard up: Create sits in the header, Return in the title creates, and
@@ -18,6 +22,7 @@
 
 import { type App, Modal, setIcon } from "obsidian";
 import { ICON_IMPORT_NOTEBOOK } from "../constants";
+import { BOARD_RULINGS } from "../model/board";
 import type { PageGeometry, Ruling } from "../model/document";
 import {
   type CoverChoice,
@@ -35,6 +40,7 @@ import {
   type PaperLibraryHost,
   PaperControls,
   TemplateGrid,
+  paintTemplatePreview,
 } from "./template-picker";
 
 export interface NewNotebookRequest {
@@ -68,6 +74,16 @@ export interface NewNotebookOptions {
 
 /** Preview width of a cover or template card, CSS px. */
 const PREVIEW_WIDTH = 72;
+/** Preview width of a board's paper card, CSS px: three to a row. */
+const BOARD_PREVIEW_WIDTH = 132;
+/** A board's paper cards show a landscape piece of it, 4 by 3. */
+const BOARD_PREVIEW_GEOMETRY: PageGeometry = { width: 560, height: 420 };
+/** The cards' names, in `BOARD_RULINGS` order. */
+const BOARD_PAPER_NAMES: Readonly<Partial<Record<Ruling, string>>> = {
+  blank: "Blank",
+  dotted: "Dotted",
+  squared: "Squared",
+};
 /** How long after the title takes focus the dialog owns scrolling (keyboard animation), ms. */
 const FOCUS_HOLD_MS = 1200;
 /** After closing, the app is held in place until the keyboard is down: at least, at most, ms. */
@@ -93,6 +109,13 @@ export class NewNotebookModal extends Modal {
   private coverPicker: CoverPicker | null = null;
   private grid: TemplateGrid | null = null;
   private folderLabel: HTMLElement | null = null;
+  private heading: HTMLElement | null = null;
+  private boardToggle: HTMLElement | null = null;
+  /** Cover and Paper: what a notebook asks and a board does not. */
+  private notebookSections: HTMLElement[] = [];
+  /** A board's three paper cards. */
+  private boardSection: HTMLElement | null = null;
+  private boardCards: Array<{ ruling: Ruling; root: HTMLElement }> = [];
   /** Scroll offsets before the title first took focus: what closing puts back. */
   private openScroll: ScrollSnapshot | null = null;
   /** Offsets captured as a finger lands on the title, before WebKit moves anything. */
@@ -129,10 +152,11 @@ export class NewNotebookModal extends Modal {
     this.buildHeader(contentEl.createDiv({ cls: "goodobsidian-newnb-header" }));
     const body = contentEl.createDiv({ cls: "goodobsidian-newnb-body" });
     this.buildTitle(body);
-    this.buildCover(body);
-    this.buildPaper(body);
+    this.notebookSections = [this.buildCover(body), this.buildPaper(body)];
+    this.buildBoardPapers(body);
 
     this.repaint();
+    this.syncKind();
     // Focus inside the gesture that opened the dialog: iPadOS raises the
     // keyboard only for a focus made during a user gesture. Without
     // `preventScroll`, and without the hold the focus handler starts, WebKit
@@ -175,6 +199,9 @@ export class NewNotebookModal extends Modal {
     this.releaseCap();
     this.coverPicker = null;
     this.grid = null;
+    this.notebookSections = [];
+    this.boardSection = null;
+    this.boardCards = [];
     this.templates?.dispose();
     this.templates = null;
     this.contentEl.empty();
@@ -183,12 +210,26 @@ export class NewNotebookModal extends Modal {
 
   // --- Sections ---------------------------------------------------------------
 
-  /** Create on the left, the title in the middle, a round ✕ on the right that closes. */
+  /**
+   * Create on the left, the title in the middle; on the right the ∞ that
+   * makes it an endless board, and a round ✕ that closes.
+   */
   private buildHeader(header: HTMLElement): void {
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
     create.addEventListener("click", () => this.create());
-    header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
-    const close = header.createEl("button", {
+    this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
+    const end = header.createDiv({ cls: "goodobsidian-newnb-header-end" });
+    const board = end.createEl("button", {
+      cls: "goodobsidian-newnb-board clickable-icon",
+      attr: { type: "button", "aria-label": "Endless board" },
+    });
+    setIcon(board, "infinity");
+    board.addEventListener("click", () => {
+      this.choices.type = this.choices.type === "endless" ? "notebook" : "endless";
+      this.syncKind();
+    });
+    this.boardToggle = board;
+    const close = end.createEl("button", {
       cls: "goodobsidian-newnb-close clickable-icon",
       attr: { type: "button", "aria-label": "Close" },
     });
@@ -259,7 +300,7 @@ export class NewNotebookModal extends Modal {
     });
   }
 
-  private buildCover(body: HTMLElement): void {
+  private buildCover(body: HTMLElement): HTMLElement {
     const section = this.section(body, "Cover");
     const color = COVER_COLORS.find((c) => c.id === this.choices.coverColor) ?? COVER_COLORS[0];
     this.coverPicker = new CoverPicker(section, {
@@ -274,9 +315,10 @@ export class NewNotebookModal extends Modal {
         if (picked) this.choices.coverColor = picked.id;
       },
     });
+    return section;
   }
 
-  private buildPaper(body: HTMLElement): void {
+  private buildPaper(body: HTMLElement): HTMLElement {
     const section = this.section(body, "Paper");
     new PaperControls(section.createDiv({ cls: "goodobsidian-templates-controls" }), {
       keepSize: false,
@@ -322,6 +364,61 @@ export class NewNotebookModal extends Modal {
       },
     });
     this.grid.el.addClass("is-inline");
+    return section;
+  }
+
+  /**
+   * A board's paper: three cards, white, one of them chosen. A double tap
+   * creates the board at once, as a template's does.
+   */
+  private buildBoardPapers(body: HTMLElement): void {
+    const section = body.createDiv({ cls: "goodobsidian-newnb-section goodobsidian-newnb-boards" });
+    const row = section.createDiv({ cls: "goodobsidian-newnb-board-cards" });
+    this.boardCards = BOARD_RULINGS.map((ruling) => {
+      const name = BOARD_PAPER_NAMES[ruling] ?? ruling;
+      const root = row.createEl("button", {
+        cls: "goodobsidian-template-card is-large clickable-icon",
+        attr: { type: "button", "aria-label": name },
+      });
+      const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
+      paintTemplatePreview(canvas, { kind: ruling }, BOARD_PREVIEW_GEOMETRY, BOARD_PREVIEW_WIDTH);
+      root.createDiv({ cls: "goodobsidian-template-name", text: name });
+      root.addEventListener("click", () => {
+        this.choices.boardRuling = ruling;
+        this.syncBoardCards();
+      });
+      root.addEventListener("dblclick", () => {
+        this.choices.boardRuling = ruling;
+        this.syncBoardCards();
+        this.create();
+      });
+      return { ruling, root };
+    });
+    this.boardSection = section;
+    this.syncBoardCards();
+  }
+
+  private syncBoardCards(): void {
+    for (const card of this.boardCards) {
+      const active = card.ruling === this.choices.boardRuling;
+      card.root.toggleClass("is-selected", active);
+      card.root.setAttribute("aria-pressed", String(active));
+    }
+  }
+
+  /**
+   * Show what the kind asks for: a notebook its cover and paper, a board its
+   * three cards. The ∞ is lit while it is on; the header and the title's
+   * placeholder say which is being made.
+   */
+  private syncKind(): void {
+    const board = this.choices.type === "endless";
+    this.boardToggle?.toggleClass("is-active", board);
+    this.boardToggle?.setAttribute("aria-pressed", String(board));
+    this.heading?.setText(board ? "New board" : "New notebook");
+    this.titleInput?.setAttribute("placeholder", defaultTitle(board ? "endless" : "notebook"));
+    for (const section of this.notebookSections) section.toggleClass("is-hidden", board);
+    this.boardSection?.toggleClass("is-hidden", !board);
   }
 
   /** A template from My templates (null: the paper picked in the grid). */
@@ -423,7 +520,8 @@ export class NewNotebookModal extends Modal {
       choices: { ...this.choices },
       folder: this.folder,
     };
-    if (this.template) request.template = this.template;
+    // A board is drawn on one of its three papers, never a template's pages.
+    if (this.template && this.choices.type !== "endless") request.template = this.template;
     this.close();
     this.options.onCreate(request);
   }

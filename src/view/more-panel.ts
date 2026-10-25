@@ -43,6 +43,11 @@ export interface MorePanelPage {
   cover: boolean;
   /** A single page cannot be duplicated or deleted. */
   single: boolean;
+  /**
+   * An endless board (FineNotes#46): none of the page's own items, only the
+   * view's rows and clearing it.
+   */
+  board?: boolean;
   /** A practice file: its pages are fixed, so only going to a page and clearing one are offered. */
   fixed?: boolean;
   /** Whether there is ink to clear. */
@@ -137,6 +142,18 @@ export class MorePanel {
       }
     }
 
+    if (page.board) {
+      this.viewRows();
+      this.row(this.group(), {
+        icon: "x-circle",
+        text: "Clear board",
+        cls: "is-danger",
+        enabled: page.clearable,
+        run: () => actions.clear(page.index),
+      });
+      return;
+    }
+
     const card = this.group();
     const head = card.createDiv({ cls: "goodobsidian-more-pagehead" });
     head.createSpan({ cls: "goodobsidian-more-pagename", text: `Page ${page.index + 1}` });
@@ -192,24 +209,7 @@ export class MorePanel {
     }
     if (page.total > 1) this.goToRow(card);
 
-    // The quick switch for the page appearance setting, for writing at night,
-    // and the shortcuts, for an iPad with no keyboard to press ? on.
-    const view = this.group();
-    this.row(view, {
-      icon: page.darkPages ? "sun" : "moon",
-      text: page.darkPages ? "Light pages" : "Dark pages",
-      run: () => actions.toggleDarkPages(),
-    });
-    this.row(view, {
-      icon: "keyboard",
-      text: "Keyboard shortcuts",
-      run: () => actions.showShortcuts(),
-    });
-    this.row(view, {
-      icon: "smartphone",
-      text: "Copy home screen link",
-      run: () => actions.copyHomeLink(),
-    });
+    this.viewRows();
 
     this.heading("Clear or delete page");
     const danger = this.group();
@@ -226,6 +226,30 @@ export class MorePanel {
       cls: "is-danger",
       enabled: page.total > 1,
       run: () => actions.remove(page.index),
+    });
+  }
+
+  /**
+   * The quick switch for the page appearance setting, for writing at night,
+   * and the shortcuts, for an iPad with no keyboard to press ? on.
+   */
+  private viewRows(): void {
+    const { page, actions } = this;
+    const view = this.group();
+    this.row(view, {
+      icon: page.darkPages ? "sun" : "moon",
+      text: page.darkPages ? "Light pages" : "Dark pages",
+      run: () => actions.toggleDarkPages(),
+    });
+    this.row(view, {
+      icon: "keyboard",
+      text: "Keyboard shortcuts",
+      run: () => actions.showShortcuts(),
+    });
+    this.row(view, {
+      icon: "smartphone",
+      text: "Copy home screen link",
+      run: () => actions.copyHomeLink(),
     });
   }
 

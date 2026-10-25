@@ -10,6 +10,13 @@
  * the reader sees no jump. Both are one {@link GrowBoard} command, built on
  * the lasso's move ({@link TranslateElements}), which already covers every
  * kind of element. Pure.
+ *
+ * Still page-shaped, for phase 4 of the issue (each marked `TODO(#46 phase
+ * 4)` where it lives): Export as PDF (one page the size of the drawing),
+ * Ask AI (what is on screen), Grape's reading (by area, not the whole page),
+ * search and the contents (fly to the word or heading), where a board opens
+ * (where it was left), and the home-screen thumbnail (the whole drawing).
+ * Phase 5 measures a full board zoomed out on the iPad and adds the notice.
  */
 
 import { type Command } from "./commands";

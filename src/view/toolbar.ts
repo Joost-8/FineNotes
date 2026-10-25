@@ -689,6 +689,8 @@ export class Toolbar {
   private recordButton: HTMLButtonElement | null = null;
   /** The add-page button. */
   private addPageButton: HTMLButtonElement | null = null;
+  /** Insert PDF: its pages become pages, which an endless board has not. */
+  private insertPdfButton: HTMLButtonElement | null = null;
   /** Bar buttons a practice file hides: everything but the pen, the eraser and the page's own. */
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
@@ -890,7 +892,14 @@ export class Toolbar {
     keep(this.addToolButton(tools, "text", "type", "Text box (T)"));
     keep(this.addToolButton(tools, "shape", "shapes", "Shapes (S)"));
     keep(this.foldButton(tools, FOLD_RANK.image, "image", "Insert image", cb.onInsertImage));
-    keep(this.foldButton(tools, FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf));
+    this.insertPdfButton = this.foldButton(
+      tools,
+      FOLD_RANK.pdf,
+      "file-text",
+      "Insert PDF",
+      cb.onInsertPdf,
+    );
+    keep(this.insertPdfButton);
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = this.foldButton(
@@ -3667,6 +3676,12 @@ export class Toolbar {
    */
   setAddPageVisible(visible: boolean): void {
     this.addPageButton?.toggle(visible);
+    this.fitBar(this.indicatorTool);
+  }
+
+  /** Offer Insert PDF, or not (an endless board, FineNotes#46). Pictures stay. */
+  setInsertPdfVisible(visible: boolean): void {
+    this.insertPdfButton?.toggle(visible && !this.practice);
     this.fitBar(this.indicatorTool);
   }
 

@@ -56,8 +56,13 @@ export interface NotebookChoices {
   cover: CoverChoice;
   /** A {@link COVER_COLORS} id. */
   coverColor: string;
-  /** The paper ruling. Never a cover; for a board, one of `BOARD_RULINGS`. */
+  /** The paper ruling. Never a cover. */
   ruling: Ruling;
+  /**
+   * A board's paper, one of `BOARD_RULINGS`: remembered on its own, so a
+   * board's dots do not become the next notebook's paper.
+   */
+  boardRuling: Ruling;
   paper: PaperColorId;
   /** A {@link PAGE_SIZES} id. */
   size: string;
@@ -70,6 +75,7 @@ export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   coverColor: COVER_COLORS[0].id,
   // Blank, as every note created before the dialog existed was.
   ruling: "blank",
+  boardRuling: "blank",
   paper: "white",
   size: PAGE_SIZES[0].id,
   landscape: false,
@@ -99,6 +105,9 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
     !isCoverRuling(r.ruling)
   ) {
     out.ruling = r.ruling as Ruling;
+  }
+  if (BOARD_RULINGS.some((ruling) => ruling === r.boardRuling)) {
+    out.boardRuling = r.boardRuling as Ruling;
   }
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
@@ -390,7 +399,7 @@ export function buildNewDocument(
     return doc;
   }
   if (choices.type === "endless") {
-    const kind = BOARD_RULINGS.includes(choices.ruling) ? choices.ruling : "blank";
+    const kind = BOARD_RULINGS.includes(choices.boardRuling) ? choices.boardRuling : "blank";
     const board = boardStartGeometry();
     doc.view.width = board.width;
     doc.pages.push(page("p1", board, templateBackdrop(kind, "white")));

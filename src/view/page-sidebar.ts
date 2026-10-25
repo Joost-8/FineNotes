@@ -795,6 +795,8 @@ export class PageSidebar {
 
   /** Show the page thumbnails or the recordings. */
   showTab(tab: SidebarTab): void {
+    // A board's panel has no Pages tab.
+    if (tab === "pages" && this.board) tab = "contents";
     this.tab = tab;
     if (tab !== "pages") this.setSelecting(false);
     this.pagesEl.toggleClass("is-hidden", tab !== "pages");
@@ -971,6 +973,21 @@ export class PageSidebar {
     this.applyFilter();
     this.syncChrome();
   }
+
+  /**
+   * An endless board (FineNotes#46) has one page and no thumbnails to show:
+   * the panel keeps Contents, its headings the way around the board, and
+   * Files, with the recordings.
+   */
+  setBoard(board: boolean): void {
+    this.board = board;
+    this.tabButtons.get("pages")?.toggleClass("is-hidden", board);
+    this.syncContentsAdd();
+    if (board && this.tab === "pages") this.showTab("contents");
+  }
+
+  /** Whether the panel serves an endless board ({@link setBoard}). */
+  private board = false;
 
   /** Force every thumbnail to repaint (e.g. a PDF raster just arrived). */
   invalidate(): void {
@@ -1198,10 +1215,15 @@ export class PageSidebar {
     menu.showAtMouseEvent(event);
   }
 
-  /** "Add page N to contents", for the page being read, unless it is listed already. */
+  /**
+   * "Add page N to contents", for the page being read, unless it is listed
+   * already. Not on a board: its contents are its headings.
+   * TODO(#46 phase 4): a board's entries drop their page number and page
+   * menu, and a tap flies to the heading.
+   */
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];
-    this.contentsAdd.toggleClass("is-hidden", !page || page.title !== undefined);
+    this.contentsAdd.toggleClass("is-hidden", this.board || !page || page.title !== undefined);
     this.contentsAddLabel.setText(`Add page ${this.current + 1} to contents`);
   }
 

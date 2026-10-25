@@ -31,8 +31,10 @@ import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 
 const snapshot = (doc: InkDocument): string => JSON.stringify(doc);
 
-const board = (ruling: "blank" | "dotted" | "squared" | "ruled-wide" = "dotted"): InkDocument =>
-  buildNewDocument({ ...DEFAULT_NOTEBOOK_CHOICES, type: "endless", ruling }, "Mind map");
+const board = (
+  boardRuling: "blank" | "dotted" | "squared" | "ruled-wide" = "dotted",
+): InkDocument =>
+  buildNewDocument({ ...DEFAULT_NOTEBOOK_CHOICES, type: "endless", boardRuling }, "Mind map");
 
 function stroke(id: string, pts: number[], size = 4): Stroke {
   return { id, color: "#000000", size, tool: "pen", pts };
@@ -93,7 +95,7 @@ describe("a new board", () => {
 
   it("is white whatever paper colour was last picked, and has no cover", () => {
     const doc = buildNewDocument(
-      { ...DEFAULT_NOTEBOOK_CHOICES, type: "endless", paper: "yellow", ruling: "dotted" },
+      { ...DEFAULT_NOTEBOOK_CHOICES, type: "endless", paper: "yellow", boardRuling: "dotted" },
       "x",
     );
     expect(doc.pages[0].backdrop.kind).toBe("dotted");
@@ -109,9 +111,17 @@ describe("a new board", () => {
     expect(isBoard(buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "x"))).toBe(false);
   });
 
-  it("is remembered as the choice for next time", () => {
+  it("is remembered as the choice for next time, with its own paper", () => {
     expect(parseNotebookChoices({ type: "endless" }).type).toBe("endless");
     expect(parseNotebookChoices({ type: "single" }).type).toBe("notebook");
+    const back = parseNotebookChoices({ ruling: "ruled-wide", boardRuling: "squared" });
+    expect([back.ruling, back.boardRuling]).toEqual(["ruled-wide", "squared"]);
+    // A board takes only its three papers.
+    expect(parseNotebookChoices({ boardRuling: "ruled-wide" }).boardRuling).toBe("blank");
+    // A notebook's paper is not a board's.
+    const notebook = buildNewDocument({ ...DEFAULT_NOTEBOOK_CHOICES, ruling: "dotted" }, "x");
+    expect(isBoard(notebook)).toBe(false);
+    expect(board("squared").pages[0].backdrop.kind).toBe("squared");
   });
 });
 
