@@ -477,6 +477,12 @@ export interface ToolbarCallbacks {
    * the eraser's at fit-to-page. Left out, a page px is drawn as a screen px.
    */
   sizePreviewScales?: () => { pen: number; eraser: number };
+  /**
+   * Paint the page in view's paper and lines at the zoom now into a canvas
+   * `width` by `height` CSS px: the size previews' paper. False when there
+   * is no page to paint; the strip then keeps its plain paper.
+   */
+  paintSizePaper?: (canvas: HTMLCanvasElement, width: number, height: number) => boolean;
   /** "Erase highlighter only" / "Erase pen only" changed. Hosts persist it. */
   onEraserFilterChange?: (filter: EraserFilter) => void;
   /** The lasso's type, or what it picks up, changed. Hosts persist it. */
@@ -3074,7 +3080,7 @@ export class Toolbar {
     range.min = "0";
     range.max = String(stops.length - 1);
     range.step = "1";
-    const preview = strokePreview(body);
+    const preview = strokePreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
     const presets = new Map<number, HTMLElement>();
     // The readout, the thumb, the preview and the presets always show the live width.
@@ -3254,7 +3260,7 @@ export class Toolbar {
     range.min = "0";
     range.max = String(stops.length - 1);
     range.step = "1";
-    const preview = eraserPreview(body);
+    const preview = eraserPreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
     const presets = new Map<number, HTMLElement>();
     // The readout, the thumb, the preview and the presets always show the live size.
@@ -4323,6 +4329,26 @@ function lassoGlyph(mode: LassoMode, size = 30): SVGElement {
   return svg;
 }
 
+/** Paints the page in view into a canvas (`ToolbarCallbacks.paintSizePaper`). */
+type PaperPainter = (canvas: HTMLCanvasElement, width: number, height: number) => boolean;
+
+/**
+ * The page's own paper and lines under a size strip, at the zoom now, so a
+ * width or an eraser reads against the lines it will meet (Joost's
+ * recording, 2026-10-25: the strip's own 16 px lines matched no page).
+ * Returns what repaints it, measured each time as the strip may have just
+ * been laid out; without a page the strip keeps its plain paper.
+ */
+function paperUnder(strip: HTMLElement, paint?: PaperPainter): () => void {
+  if (!paint) return () => undefined;
+  const canvas = strip.createEl("canvas", { cls: "goodobsidian-size-preview-paper" });
+  return () => {
+    const width = strip.clientWidth;
+    const height = strip.clientHeight;
+    strip.toggleClass("has-page", width > 0 && height > 0 && paint(canvas, width, height));
+  };
+}
+
 /**
  * A strip of paper under the width slider with a sample stroke on it in the
  * pen's own character (`sampleStroke`, the width buttons' shapes drawn
@@ -4331,9 +4357,11 @@ function lassoGlyph(mode: LassoMode, size = 30): SVGElement {
  */
 function strokePreview(
   parent: HTMLElement,
+  paint?: PaperPainter,
 ): (screenWidth: number, color: string, pen: string) => void {
   const strip = parent.createDiv({ cls: "goodobsidian-size-preview" });
   strip.setAttribute("aria-hidden", "true");
+  const paper = paperUnder(strip, paint);
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.classList.add("goodobsidian-size-preview-stroke");
   const path = activeDocument.createElementNS(SVG_NS, "path");
@@ -4345,6 +4373,7 @@ function strokePreview(
     // the stylesheet's strip in a popover that has not been laid out yet.
     const width = strip.clientWidth || 240;
     const height = strip.clientHeight || 44;
+    paper();
     const shape = sampleStroke(pen, screenWidth, width, height);
     path.setAttribute("d", shape.d);
     if (shape.strokeWidth === undefined) {
@@ -4370,11 +4399,16 @@ function strokePreview(
  * it, at the size it erases on screen. A size larger than the strip is cut
  * at its edges, which still reads as large. Returns the redraw function.
  */
-function eraserPreview(parent: HTMLElement): (screenDiameter: number) => void {
-  const strip = parent.createDiv({ cls: "goodobsidian-size-preview" });
+function eraserPreview(
+  parent: HTMLElement,
+  paint?: PaperPainter,
+): (screenDiameter: number) => void {
+  const strip = parent.createDiv({ cls: "goodobsidian-size-preview is-eraser" });
   strip.setAttribute("aria-hidden", "true");
+  const paper = paperUnder(strip, paint);
   const ring = strip.createDiv({ cls: "goodobsidian-size-preview-eraser" });
   return (screenDiameter) => {
+    paper();
     const d = `${Math.max(2, screenDiameter).toFixed(1)}px`;
     ring.setCssStyles({ width: d, height: d });
   };

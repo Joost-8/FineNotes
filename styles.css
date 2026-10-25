@@ -3247,6 +3247,34 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   background-color: #2b2939;
 }
 
+/* The page in view under the strip, at the zoom (toolbar.ts, paperUnder):
+   its lines, not the strip's own. Hidden until it has painted. */
+.goodobsidian-size-preview-paper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+
+.goodobsidian-size-preview.has-page {
+  background-image: none;
+}
+
+.goodobsidian-size-preview.has-page > .goodobsidian-size-preview-paper {
+  display: block;
+}
+
+/* Taller for the eraser: a couple of the page's lines to measure it by. */
+.goodobsidian-size-preview.is-eraser {
+  height: 72px;
+}
+
+/* Above the page: the ring and the stroke. */
+.goodobsidian-size-preview-eraser {
+  position: relative;
+}
+
 .goodobsidian-size-preview-stroke {
   position: absolute;
   inset: 0;
