@@ -9,7 +9,7 @@ vi.mock("obsidian", async () => ({
   loadPdfJs: () => Promise.resolve({}),
 }));
 
-const { PdfWorker, PdfRenderCancelled, acquirePdfWorker, releasePdfWorker, pdfJsBase } =
+const { PdfWorker, PdfRenderCancelled, acquirePdfWorker, releasePdfWorker, pdfAssets, pdfJsBase } =
   await import("../../src/view/pdf-worker");
 
 type Message = { fineNotesPdf: true; id: number; type: string; [key: string]: unknown };
@@ -115,6 +115,7 @@ describe("PdfWorker", () => {
     expect(workers[0].posted[0]).toMatchObject({
       type: "init",
       base: "capacitor://localhost/lib/pdfjs/",
+      assets: { cMapUrl: "capacitor://localhost/lib/pdfjs/cmaps/", cMapPacked: true },
     });
     worker?.destroy();
     expect(worker?.alive).toBe(false);
@@ -124,6 +125,16 @@ describe("PdfWorker", () => {
   it("falls back to the app bundle's place for pdf.js", () => {
     vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
     expect(pdfJsBase()).toBe("app://obsidian.md/lib/pdfjs/");
+  });
+
+  it("points pdf.js at the folders Obsidian ships beside it, as its own viewer does", () => {
+    expect(pdfAssets("capacitor://localhost/lib/pdfjs/")).toEqual({
+      cMapUrl: "capacitor://localhost/lib/pdfjs/cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: "capacitor://localhost/lib/pdfjs/standard_fonts/",
+      wasmUrl: "capacitor://localhost/lib/pdfjs/wasm/",
+      iccUrl: "capacitor://localhost/lib/pdfjs/iccs/",
+    });
   });
 
   it("is unavailable without workers or OffscreenCanvas, or if pdf.js fails to load in it", async () => {

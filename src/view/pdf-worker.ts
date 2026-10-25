@@ -48,6 +48,7 @@ const WORKER_SOURCE = `
 self.activeWindow = self;
 const TAG = ${JSON.stringify(TAG)};
 let lib = null;
+let assets = {};
 const docs = new Map();
 const tasks = new Map();
 const cancelled = new Set();
@@ -71,11 +72,14 @@ self.addEventListener("message", async (event) => {
         lib = await import(m.base + "pdf.min.mjs");
         globalThis.pdfjsWorker = await import(m.base + "pdf.worker.min.mjs");
       }
+      // Fetch them from here: left to choose, pdf.js reads document.baseURI,
+      // which a worker has not, and no page is open to fetch them for us.
+      assets = m.assets ? { ...m.assets, useWorkerFetch: true } : {};
       reply(id, { ok: true });
     } else if (m.type === "open") {
       let open = docs.get(m.path);
       if (!open) {
-        open = { users: 0, promise: lib.getDocument({ data: m.bytes, ownerDocument }).promise };
+        open = { users: 0, promise: lib.getDocument({ data: m.bytes, ownerDocument, ...assets }).promise };
         docs.set(m.path, open);
         open.promise.catch(() => docs.get(m.path) === open && docs.delete(m.path));
       }
@@ -157,6 +161,31 @@ export function pdfJsBase(): string {
   return `${window.location.origin}/lib/pdfjs/`;
 }
 
+/** The files pdf.js reads beside itself, which every `getDocument` is given. */
+export interface PdfAssets {
+  cMapUrl: string;
+  cMapPacked: true;
+  standardFontDataUrl: string;
+  wasmUrl: string;
+  iccUrl: string;
+}
+
+/**
+ * Where pdf.js finds its cMaps, standard fonts, JPEG 2000 decoder and colour
+ * profile: the folders Obsidian ships next to its pdf.js and gives its own
+ * PDF viewer. Without the cMaps a CJK font with no /ToUnicode draws nothing
+ * (FineNotes#49). Call after `loadPdfJs()` has resolved.
+ */
+export function pdfAssets(base = pdfJsBase()): PdfAssets {
+  return {
+    cMapUrl: `${base}cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${base}standard_fonts/`,
+    wasmUrl: `${base}wasm/`,
+    iccUrl: `${base}iccs/`,
+  };
+}
+
 export class PdfWorker {
   private readonly pending = new Map<number, Pending>();
   private next = 1;
@@ -191,7 +220,8 @@ export class PdfWorker {
       await loadPdfJs();
       const url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
       started = new PdfWorker(new Worker(url, { type: "module" }), url);
-      const ready = started.call({ type: "init", base: pdfJsBase() });
+      const base = pdfJsBase();
+      const ready = started.call({ type: "init", base, assets: pdfAssets(base) });
       const late = new Promise<never>((_, reject) => {
         timer = window.setTimeout(() => reject(new Error("PDF worker did not start")), timeoutMs);
       });

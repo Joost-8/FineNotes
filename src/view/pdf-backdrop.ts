@@ -28,7 +28,7 @@ import {
   planPdfRaster,
 } from "../canvas/pdf-raster";
 import type { Bounds, PageGeometry } from "../model/document";
-import { type PdfWorker, PdfRenderCancelled } from "./pdf-worker";
+import { type PdfAssets, type PdfWorker, PdfRenderCancelled, pdfAssets } from "./pdf-worker";
 import { errorMessage } from "../util/errors";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
@@ -116,7 +116,7 @@ interface PdfDocumentLike {
 }
 
 interface PdfJsLike {
-  getDocument(src: { data: Uint8Array }): { promise: Promise<PdfDocumentLike> };
+  getDocument(src: { data: Uint8Array } & PdfAssets): { promise: Promise<PdfDocumentLike> };
 }
 
 /** Round a view scale onto a coarse ladder so the cache key set stays small. */
@@ -655,7 +655,7 @@ export class PdfBackdropCache {
     const lib = await this.pdfjs();
     // pdf.js may detach the buffer it is handed; give it a private copy so a
     // second read of the same file cannot fail on a neutered ArrayBuffer.
-    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
+    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssets() }).promise;
   }
 
   /** As `rasterise`, drawn by pdf.js in the worker. Throws if the worker fails. */

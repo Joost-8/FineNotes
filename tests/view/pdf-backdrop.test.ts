@@ -88,10 +88,12 @@ beforeEach(() => {
   clock = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
   globals.createEl = (): FakeCanvas => ({ width: 0, height: 0, getContext: () => ({}) });
+  vi.stubGlobal("window", { location: { origin: "app://obsidian.md" } });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   delete globals.createEl;
 });
 

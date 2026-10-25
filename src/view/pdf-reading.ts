@@ -5,6 +5,7 @@
  */
 
 import { loadPdfJs } from "obsidian";
+import { type PdfAssets, pdfAssets } from "./pdf-worker";
 import type { PdfInkReading, PdfPageReading } from "../import/pdf";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
@@ -39,7 +40,7 @@ interface DocumentLike {
 }
 
 interface PdfJsLike {
-  getDocument(src: { data: Uint8Array }): { promise: Promise<DocumentLike> };
+  getDocument(src: { data: Uint8Array } & PdfAssets): { promise: Promise<DocumentLike> };
 }
 
 /**
@@ -50,7 +51,7 @@ export async function readPdfPages(
   bytes: Uint8Array,
 ): Promise<{ pages: PdfPageReading[]; madeBy: string }> {
   const lib = await loadPdfJs().then((value: unknown) => value as PdfJsLike);
-  const doc = await lib.getDocument({ data: bytes.slice(0) }).promise;
+  const doc = await lib.getDocument({ data: bytes.slice(0), ...pdfAssets() }).promise;
   try {
     const pages: PdfPageReading[] = [];
     for (let n = 1; n <= doc.numPages; n++) {

@@ -18,6 +18,7 @@
  */
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
+import { type PdfAssets, pdfAssets } from "./pdf-worker";
 import {
   type Matrix,
   type PdfTextItem,
@@ -62,7 +63,7 @@ interface PdfDocumentLike {
 }
 
 interface PdfJsLike {
-  getDocument(src: { data: Uint8Array }): { promise: Promise<PdfDocumentLike> };
+  getDocument(src: { data: Uint8Array } & PdfAssets): { promise: Promise<PdfDocumentLike> };
 }
 
 /** A page's text as pdf.js gave it, before it is laid out on a page of some size. */
@@ -276,6 +277,6 @@ export class PdfTextCache {
     this.lib ??= loadPdfJs().then((value: unknown) => value as PdfJsLike);
     const lib = await this.lib;
     // pdf.js may detach the buffer it is handed: a private copy (CLAUDE.md).
-    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
+    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssets() }).promise;
   }
 }

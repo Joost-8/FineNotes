@@ -5,6 +5,7 @@
  */
 
 import { loadPdfJs } from "obsidian";
+import { type PdfAssets, pdfAssets } from "./pdf-worker";
 
 // The slice of pdf.js used here. `loadPdfJs()` is typed `Promise<any>`, and
 // `any` is an error in this repo (pdf-backdrop.ts types its own slice too).
@@ -24,7 +25,7 @@ interface PdfDocumentLike {
 }
 
 interface PdfJsLike {
-  getDocument(src: { data: Uint8Array }): { promise: Promise<PdfDocumentLike> };
+  getDocument(src: { data: Uint8Array } & PdfAssets): { promise: Promise<PdfDocumentLike> };
 }
 
 /**
@@ -40,7 +41,8 @@ export async function measurePdfPages(
   bytes: ArrayBuffer,
 ): Promise<Array<{ width: number; height: number }>> {
   const lib = await loadPdfJs().then((value: unknown) => value as PdfJsLike);
-  const doc = await lib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
+  const doc = await lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssets() })
+    .promise;
   try {
     const sizes: Array<{ width: number; height: number }> = [];
     for (let n = 1; n <= doc.numPages; n++) {
@@ -66,7 +68,7 @@ const PICTURE_EDGE = 2000;
  */
 export async function rasterizePdfFirstPage(bytes: Uint8Array): Promise<Uint8Array> {
   const lib = await loadPdfJs().then((value: unknown) => value as PdfJsLike);
-  const doc = await lib.getDocument({ data: new Uint8Array(bytes) }).promise;
+  const doc = await lib.getDocument({ data: new Uint8Array(bytes), ...pdfAssets() }).promise;
   try {
     const page = await doc.getPage(1);
     const base = page.getViewport({ scale: 1 });

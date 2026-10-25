@@ -4,7 +4,7 @@
  * be read is kept as having no text, so the highlighter stays freehand.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pdf = {
   opened: 0,
@@ -12,14 +12,18 @@ const pdf = {
   pages: 3,
   fail: false,
   items: [] as unknown[],
+  cMapUrl: undefined as string | undefined,
+  cMapPacked: undefined as boolean | undefined,
 };
 
 vi.mock("obsidian", async () => ({
   ...(await import("./fake-obsidian")),
   loadPdfJs: () =>
     Promise.resolve({
-      getDocument: () => {
+      getDocument: (src: { cMapUrl?: string; cMapPacked?: boolean }) => {
         pdf.opened++;
+        pdf.cMapUrl = src.cMapUrl;
+        pdf.cMapPacked = src.cMapPacked;
         return {
           promise: Promise.resolve({
             numPages: pdf.pages,
@@ -69,7 +73,12 @@ function landed(c: InstanceType<typeof PdfTextCache>): Promise<{ path: string; p
   });
 }
 
+beforeEach(() => {
+  vi.stubGlobal("window", { location: { origin: "app://obsidian.md" } });
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   pdf.opened = 0;
   pdf.reads = 0;
   pdf.fail = false;
@@ -135,6 +144,16 @@ describe("PdfTextCache", () => {
     await ready;
     expect(pdf.reads).toBe(1);
     expect(pdf.opened).toBe(1);
+  });
+
+  it("opens the PDF with Obsidian's cMaps, so CJK text without /ToUnicode reads (#49)", async () => {
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    const c = cache();
+    const ready = landed(c);
+    c.request(BACKDROP);
+    await ready;
+    expect(pdf.cMapUrl).toBe("app://obsidian.md/lib/pdfjs/cmaps/");
+    expect(pdf.cMapPacked).toBe(true);
   });
 
   it("keeps a page it cannot read as having no text: nothing snaps there", async () => {
