@@ -686,7 +686,8 @@ body,
   position: absolute;
   border: 1.5px solid var(--text-muted);
   border-radius: 50%;
-  background: rgba(127, 127, 127, 0.12);
+  /* An outline only: the page's lines show through, to judge the size by. */
+  background: none;
   pointer-events: none;
   transform: translate(-50%, -50%);
 }
