@@ -17,7 +17,11 @@
  *   back ({@link StylusClicks.down}) until it is a click or a stroke.
  * - **Hovering moves.** A browser may only set the button's bit in the
  *   hovering `pointermove`s, with no press: the bit coming and going again
- *   is the click.
+ *   is the click. Android's WebView (Obsidian on a Samsung tablet, S Pen)
+ *   sets the contact bit for it, 1 rather than 2, with no pressure and no
+ *   `pointerdown`; a pen on the glass always has its `pointerdown` first.
+ *   There, the pen touching down with the button held is a `contextmenu`
+ *   alone, as a mouse's ({@link StylusClicks.touched}).
  * - **`contextmenu`.** A WebView may hand the button over as nothing but a
  *   right-click with `pointerType` "pen"; that counts when the pointer events
  *   saw no button.
@@ -62,6 +66,8 @@ export interface PenReading {
   clientY: number;
   /** The event's time stamp, ms. */
   timeStamp: number;
+  /** How hard the pen presses, 0 in the air; absent where unknown. */
+  pressure?: number;
 }
 
 /**
@@ -104,6 +110,10 @@ export function isAirPress(e: PenReading): boolean {
 export class StylusClicks {
   private press: Press | null = null;
   private last: { report: Report; t: number } | null = null;
+  /** The hovering moves have the side button down. */
+  private barrelInAir = false;
+  /** The button went down for something else (the pen touched, or travelled): no click until it is up. */
+  private spent = false;
 
   /**
    * A `pointerdown`. True when it is the side button pressed in the air,
@@ -144,25 +154,43 @@ export class StylusClicks {
 
   /**
    * A hovering pen's move (no press under way): the button's bit coming is
-   * a press, and going again in the air, soon and near, is the click.
+   * a press, and going again in the air, soon and near, is the click. A
+   * press that touches down or travels is spent until the button is let go.
    */
   hover(e: PenReading): boolean {
     if (e.pointerType !== "pen") return false;
     const buttons = e.buttons ?? 0;
-    const barrel = (buttons & BARREL_BIT) !== 0;
-    if ((buttons & (CONTACT_BIT | ERASER_BIT)) !== 0) {
-      this.press = null;
+    const airContact = (buttons & CONTACT_BIT) !== 0 && e.pressure === 0;
+    const touching = ((buttons & CONTACT_BIT) !== 0 && !airContact) || (buttons & ERASER_BIT) !== 0;
+    const barrel = (buttons & BARREL_BIT) !== 0 || airContact;
+    this.barrelInAir = barrel && !touching;
+    if (touching) {
+      this.spend(barrel);
       return false;
     }
+    if (!barrel) {
+      this.spent = false;
+      if (this.press?.report !== "hover") return false;
+      return this.finish(e);
+    }
+    if (this.spent) return false;
     const press = this.press;
-    if (barrel) {
-      if (press === null)
-        this.press = { report: "hover", x: e.clientX, y: e.clientY, t: e.timeStamp };
-      else if (press.report === "hover" && this.travelled(press, e)) this.press = null;
-      return false;
-    }
-    if (press?.report !== "hover") return false;
-    return this.finish(e);
+    if (press === null)
+      this.press = { report: "hover", x: e.clientX, y: e.clientY, t: e.timeStamp };
+    else if (press.report === "hover" && this.travelled(press, e)) this.spend(true);
+    return false;
+  }
+
+  /**
+   * A `contextmenu` while the hovering moves have the side button down:
+   * Android's WebView sends one, as a mouse's right-click, when the pen
+   * touches down with the button held. True when it was that, so it opens
+   * no menu; the press is then no click.
+   */
+  touched(): boolean {
+    if (!this.barrelInAir) return false;
+    this.spend(true);
+    return true;
   }
 
   /**
@@ -189,6 +217,14 @@ export class StylusClicks {
   /** Forget the press under way (the page went away, the setting changed). */
   reset(): void {
     this.press = null;
+    this.spent = false;
+    this.barrelInAir = false;
+  }
+
+  /** The press under way is no click; while the button stays down, none starts. */
+  private spend(held: boolean): void {
+    this.press = null;
+    this.spent = held;
   }
 
   private finish(e: PenReading): boolean {

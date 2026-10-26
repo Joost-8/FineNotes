@@ -2160,6 +2160,9 @@ export class InkSurface {
       if (onTextBox(event.target) || isEditable(event.target)) return;
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
+      // Android's WebView: the pen touching down with its side button held is
+      // this alone, as a mouse's. It is no click of the button, and no menu.
+      if (type !== "touch" && this.pointerInput?.stylusTouched()) return;
       // A WebView may hand the barrel button's click in the air over as this alone.
       if (type === "pen" && this.pointerInput?.stylusMenu(event.timeStamp)) {
         this.stylusClicked(event.clientX, event.clientY);

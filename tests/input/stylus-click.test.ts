@@ -20,6 +20,11 @@ function pen(buttons: number, t: number, x = 0, button = -1): PenReading {
   return { pointerType: "pen", button, buttons, clientX: x, clientY: 0, timeStamp: t };
 }
 
+/** A hovering pen as Android's WebView reports it: the button as the contact bit, no pressure. */
+function android(button: boolean, t: number, x = 0): PenReading {
+  return { ...pen(button ? 1 : 0, t, x), pressure: 0 };
+}
+
 const AIR = 2; // the barrel, not touching
 const WRITING = 1;
 const BOTH = 3;
@@ -113,6 +118,50 @@ describe("hovering moves", () => {
     clicks.hover(pen(AIR, 2000));
     clicks.lifted();
     expect(clicks.hover(pen(0, 2100))).toBe(false);
+  });
+});
+
+describe("hovering moves from Android's WebView", () => {
+  // As recorded on a Galaxy Tab S10 FE (Android 16, WebView 155) in Obsidian.
+  it("the contact bit with no pressure, coming and going in the air, is a click", () => {
+    const clicks = new StylusClicks();
+    clicks.hover(android(false, 0));
+    clicks.hover(android(true, 10));
+    clicks.hover(android(true, 60, 3));
+    expect(clicks.hover(android(false, 150, 3))).toBe(true);
+  });
+
+  it("the contact bit with pressure is the pen on the glass, no click", () => {
+    const clicks = new StylusClicks();
+    clicks.hover(android(true, 0));
+    clicks.hover({ ...pen(WRITING, 40), pressure: 0.5 });
+    expect(clicks.hover(android(false, 100))).toBe(false);
+  });
+
+  it("touching down with the button held is a contextmenu, and the press is then no click", () => {
+    const clicks = new StylusClicks();
+    expect(clicks.touched()).toBe(false); // no button: a mouse's right-click is a right-click
+    clicks.hover(android(true, 0));
+    expect(clicks.touched()).toBe(true);
+    // The pen writes on, still reported as the bit with no pressure.
+    clicks.hover(android(true, 50, 2));
+    clicks.hover(android(true, 90, 4));
+    expect(clicks.hover(android(false, 200, 4))).toBe(false);
+    // The next press is a click again.
+    clicks.hover(android(true, 600, 4));
+    expect(clicks.hover(android(false, 700, 4))).toBe(true);
+  });
+});
+
+describe("a press that travelled", () => {
+  it("makes no click when it comes back and lets go, until the button is up", () => {
+    const clicks = new StylusClicks();
+    clicks.hover(pen(AIR, 0));
+    clicks.hover(pen(AIR, 40, CLICK_SLOP_PX + 20));
+    clicks.hover(pen(AIR, 80, CLICK_SLOP_PX + 21));
+    expect(clicks.hover(pen(0, 120, CLICK_SLOP_PX + 21))).toBe(false);
+    clicks.hover(pen(AIR, 500, 0));
+    expect(clicks.hover(pen(0, 560, 0))).toBe(true);
   });
 });
 

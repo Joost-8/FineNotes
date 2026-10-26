@@ -274,6 +274,15 @@ export class PointerController {
     return this.clicks.menu(timeStamp);
   }
 
+  /**
+   * A `contextmenu` with the side button held in the air: Android's WebView
+   * sends one, as a mouse's right-click, for the pen touching down with the
+   * button held (`stylus-click.ts`). True when it was that.
+   */
+  stylusTouched(): boolean {
+    return this.stylusClicks() && this.clicks.touched();
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
