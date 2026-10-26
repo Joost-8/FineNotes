@@ -1046,6 +1046,29 @@ describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
     expect(log).toEqual(["click 11,10"]);
   });
 
+  it("hears the click as Android's WebView reports it: the contact bit, no pressure, no press", () => {
+    const { log, fire } = clickRig();
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 0, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 120, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 160, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 11,10"]);
+  });
+
+  it("hears the click over the rest of the view, off its element (the popover the click opened)", () => {
+    const { controller, log, wanted } = clickRig();
+    const over = (c: Contact) =>
+      controller.hoverElsewhere(eventFor(1, "pen", c) as unknown as PointerEvent);
+    over({ x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    over({ x: 10, y: 10, t: 150, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 10,10"]);
+    // Not when no click is wanted.
+    wanted.on = false;
+    over({ x: 10, y: 10, t: 900, buttons: 1, pressure: 0 });
+    over({ x: 10, y: 10, t: 1000, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 10,10"]);
+  });
+
   it("hears no click after a press it never had: its pointerup ends the watch", () => {
     const { log, fire } = clickRig();
     // A popover took the pointerdown (popover-dismiss.ts); its moves still come.

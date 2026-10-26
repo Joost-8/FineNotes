@@ -2823,6 +2823,8 @@ export class InkView extends TextFileView {
       (event) =>
         this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
     );
+    // The side button's click with the pen over the tool bar or a popover, not the page.
+    this.registerDomEvent(this.contentEl, "pointermove", (e) => this.surface?.hoverInView(e));
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.

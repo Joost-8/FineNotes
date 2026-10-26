@@ -5830,6 +5830,16 @@ export class InkSurface {
     return !this.editingTextView() && !this.heldText && !this.cellEdit;
   }
 
+  /**
+   * A pen's hovering move anywhere in the view. Those over the page reach the
+   * pointer input already; the rest (the tool bar, an open popover) are passed
+   * on, so the side button's click is heard there too.
+   */
+  hoverInView(event: PointerEvent): void {
+    if (event.target instanceof Node && this.scrollEl.contains(event.target)) return;
+    this.pointerInput?.hoverElsewhere(event);
+  }
+
   /** The barrel button clicked in the air (`stylus-click.ts`): the host's pen menu. */
   private stylusClicked(clientX: number, clientY: number): void {
     // A tablet driver may send the click as a right-click too (FineNotes#25).

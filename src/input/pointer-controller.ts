@@ -275,6 +275,22 @@ export class PointerController {
   }
 
   /**
+   * A hovering pen's move over the rest of the view, off this element: the
+   * tool bar, or the popover the click opened. The side button's click is
+   * heard there too, so the click that closes the pen menu need not find the
+   * page (the pen is often over the menu by then).
+   */
+  hoverElsewhere(event: PointerEvent): void {
+    if (this.held === null) this.hearHover(event);
+  }
+
+  /** A hovering pen's move: the side button's click, if it makes one (`stylus-click.ts`). */
+  private hearHover(event: PointerEvent): void {
+    if (event.pointerType !== "pen" || this.stroke !== null || !this.stylusClicks()) return;
+    if (this.clicks.hover(event)) this.listener.onStylusClick?.(event.clientX, event.clientY);
+  }
+
+  /**
    * A `contextmenu` with the side button held in the air: Android's WebView
    * sends one, as a mouse's right-click, for the pen touching down with the
    * button held (`stylus-click.ts`). True when it was that.
@@ -354,14 +370,7 @@ export class PointerController {
       // Stylus-only mode: a finger already down when the mode came on must
       // not carry on moving the page; its lift still releases it.
       if (this.onlyStylus() && event.pointerType !== "pen") return;
-      if (
-        event.pointerType === "pen" &&
-        this.stroke === null &&
-        this.stylusClicks() &&
-        this.clicks.hover(event)
-      ) {
-        this.listener.onStylusClick?.(event.clientX, event.clientY);
-      }
+      this.hearHover(event);
       if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);
       this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
