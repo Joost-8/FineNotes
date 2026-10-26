@@ -24,12 +24,17 @@
  *   again quickly: the stem and then the bar of a "T". A pen-down that finds
  *   a stroke still open cancels that stroke before starting its own, and the
  *   surface keeps the cancelled stroke's ink.
+ *
+ * The pen's side button pressed with the pen in the air is held back until
+ * it is a click (`stylus-click.ts`) or the stroke it would have been: it
+ * touches down or travels, and only then starts, from where it was pressed.
  */
 
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
+import { StylusClicks } from "./stylus-click";
 
 export type { PinchInfo };
 
@@ -124,6 +129,8 @@ export interface PointerControllerCallbacks {
   onFingerCancel?(t: number): void;
   /** Each event of the drawing pointer as it arrived, for the debug HUD. */
   onDebug?(record: PointerDebugRecord): void;
+  /** The pen's side button was clicked in the air, here (client px; `stylus-click.ts`). */
+  onStylusClick?(clientX: number, clientY: number): void;
 }
 
 /**
@@ -137,6 +144,8 @@ export interface PointerControllerOptions {
   route?: (event: PointerEvent) => PressRoute;
   /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
+  /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
+  stylusClicks?: () => boolean;
 }
 
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
@@ -154,6 +163,10 @@ export class PointerController {
   private readonly fingers: FingerGesture;
   /** Watches every finger, the third included, for undo and redo taps. */
   private readonly taps: MultiFingerTap;
+  /** Hears the pen's side button clicked in the air, however it is reported. */
+  private readonly clicks = new StylusClicks();
+  /** A press of the side button in the air, held back until it is a click or a stroke. */
+  private held: PointerEvent | null = null;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
   constructor(
@@ -168,7 +181,7 @@ export class PointerController {
       (report) => listener.onFingerTapReport?.(report),
     );
     this.handlers = {
-      pointerdown: (event) => this.pressed(event),
+      pointerdown: (event) => this.down(event),
       pointermove: (event) => this.moved(event),
       pointerup: (event) => this.released(event, false),
       pointercancel: (event) => this.released(event, true),
@@ -220,6 +233,45 @@ export class PointerController {
   /** Only a pen acts on the page. */
   private onlyStylus(): boolean {
     return this.options.onlyStylus?.() === true;
+  }
+
+  /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
+  private stylusClicks(): boolean {
+    return this.options.stylusClicks?.() === true;
+  }
+
+  /**
+   * A press. The pen's side button pressed in the air is held back: let go
+   * soon and near, it is a click; once it touches down or travels, it is the
+   * press it would have been (`stylus-click.ts`). Any other pen press ends a
+   * click the hovering moves were watching for.
+   */
+  private down(event: PointerEvent): void {
+    // A browser that sends the held press's touch-down as a press of its own: that one counts.
+    if (this.held?.pointerId === event.pointerId) this.held = null;
+    const pen = event.pointerType === "pen";
+    if (pen && this.stroke === null && this.held === null && this.stylusClicks()) {
+      if (this.clicks.down(event)) {
+        this.notePenSeen(event);
+        this.held = event;
+        event.preventDefault();
+        this.element.setPointerCapture(event.pointerId);
+        return;
+      }
+    } else if (pen) {
+      this.clicks.reset();
+    }
+    this.pressed(event);
+  }
+
+  /**
+   * A `contextmenu` from the pen: whether it is the side button's click,
+   * which a WebView may report this way alone. Never while the pen writes
+   * (Chromium sends one for a long press too).
+   */
+  stylusMenu(timeStamp: number): boolean {
+    if (!this.stylusClicks() || this.stroke !== null || this.held !== null) return false;
+    return this.clicks.menu(timeStamp);
   }
 
   private pressed(event: PointerEvent): void {
@@ -285,10 +337,22 @@ export class PointerController {
 
   private moved(event: PointerEvent): void {
     this.notePenSeen(event);
+    if (this.held?.pointerId === event.pointerId) {
+      this.heldMoved(event);
+      return;
+    }
     if (event.pointerId !== this.stroke) {
       // Stylus-only mode: a finger already down when the mode came on must
       // not carry on moving the page; its lift still releases it.
       if (this.onlyStylus() && event.pointerType !== "pen") return;
+      if (
+        event.pointerType === "pen" &&
+        this.stroke === null &&
+        this.stylusClicks() &&
+        this.clicks.hover(event)
+      ) {
+        this.listener.onStylusClick?.(event.clientX, event.clientY);
+      }
       if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);
       this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
@@ -304,9 +368,40 @@ export class PointerController {
     this.listener.onMove(samples);
   }
 
+  /** A move of the held-back press: wait on, become the press it was, or be the click. */
+  private heldMoved(event: PointerEvent): void {
+    const held = this.held;
+    if (!held) return;
+    const step = this.clicks.held(event);
+    if (step === "wait") {
+      event.preventDefault();
+      return;
+    }
+    this.held = null;
+    if (step === "stroke") {
+      // It touched down or moved off: the press it began as, then this move.
+      this.pressed(held);
+      this.moved(event);
+      return;
+    }
+    this.releaseCapture(event.pointerId);
+    if (step === "click") this.listener.onStylusClick?.(event.clientX, event.clientY);
+  }
+
   private released(event: PointerEvent, cancelled: boolean): void {
     const id = event.pointerId;
     this.notePenSeen(event);
+    if (this.held?.pointerId === id) {
+      this.held = null;
+      this.releaseCapture(id);
+      if (!cancelled && this.clicks.heldUp(event)) {
+        this.listener.onStylusClick?.(event.clientX, event.clientY);
+      } else {
+        this.clicks.reset();
+      }
+      return;
+    }
+    if (event.pointerType === "pen") this.clicks.lifted();
     if (id !== this.stroke) {
       // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
       if (cancelled) this.taps.cancel(id, event.timeStamp);

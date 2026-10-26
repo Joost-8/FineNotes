@@ -135,6 +135,7 @@ import { pushRecentColor } from "./model/colors";
 import { relativeLuminance } from "./model/cover";
 import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
@@ -249,6 +250,12 @@ const BARREL_NAMES: Record<BarrelAction, string> = {
   none: "Nothing",
 };
 
+/** What a click of the barrel button in the air can do, as its dropdown names it. */
+const STYLUS_CLICK_NAMES: Record<StylusClickAction, string> = {
+  "pen-menu": "Open the pen menu",
+  none: "Nothing",
+};
+
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
  * each, in the order the shortcut sheet lists them (FineNotes#25). `apple`
@@ -326,6 +333,9 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
+  stylusClick:
+    "What a click of the side button does with the pen held just above the page, not " +
+    "touching it. A second click closes the menu again.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -1129,6 +1139,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "stylus",
           ]),
           DESC.barrel,
+        ),
+        this.info(
+          dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
+            "barrel click",
+            "s pen",
+            "pen menu",
+            "stylus",
+          ]),
+          DESC.stylusClick,
         ),
         {
           ...this.info(
