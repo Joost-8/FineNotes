@@ -126,6 +126,19 @@ export interface PointerControllerCallbacks {
   onDebug?(record: PointerDebugRecord): void;
 }
 
+/**
+ * The controller's optional decisions. Each is read live, as the surface's
+ * tools and the plugin's settings can change while a note is open.
+ */
+export interface PointerControllerOptions {
+  /** Space is held: a pen or mouse coming down pans like a finger (FineNotes#7). */
+  handHeld?: () => boolean;
+  /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
+  route?: (event: PointerEvent) => PressRoute;
+  /** Only stylus mode: every pointer but the pen is ignored on the page. */
+  onlyStylus?: () => boolean;
+}
+
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
 type Phase = (typeof PHASES)[number];
 
@@ -147,12 +160,7 @@ export class PointerController {
     private readonly element: HTMLElement,
     private readonly toLocal: (clientX: number, clientY: number) => { x: number; y: number },
     private readonly listener: PointerControllerCallbacks,
-    /** Space is held: a pen or mouse coming down pans like a finger (FineNotes#7). */
-    private readonly handHeld: () => boolean = () => false,
-    /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
-    private readonly route: (event: PointerEvent) => PressRoute = () => "draw",
-    /** Only stylus mode: every pointer but the pen is ignored on the page. */
-    private readonly onlyStylus: () => boolean = () => false,
+    private readonly options: PointerControllerOptions = {},
   ) {
     this.fingers = new FingerGesture(listener);
     this.taps = new MultiFingerTap(
@@ -199,6 +207,21 @@ export class PointerController {
     return this.penSeenAt;
   }
 
+  /** Space is held, so a pen or mouse press moves the page (FineNotes#7). */
+  private handHeld(): boolean {
+    return this.options.handHeld?.() === true;
+  }
+
+  /** Where a pen or mouse press goes otherwise (FineNotes#25). */
+  private pressRoute(event: PointerEvent): PressRoute {
+    return this.options.route?.(event) ?? "draw";
+  }
+
+  /** Only a pen acts on the page. */
+  private onlyStylus(): boolean {
+    return this.options.onlyStylus?.() === true;
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
@@ -210,7 +233,7 @@ export class PointerController {
     }
     const role = roleOf(event.pointerType, this.stroke !== null, onlyStylus);
     const free = role === "draw" && this.stroke === null;
-    const route = free ? (this.handHeld() ? "pan" : this.route(event)) : "draw";
+    const route = free ? (this.handHeld() ? "pan" : this.pressRoute(event)) : "draw";
     if (route === "ignore" || role === "ignore") {
       // A palm that lands during a stroke leaves the browser's contact alone;
       // in Only stylus mode the pointer is not the page's at all, so nothing

@@ -168,9 +168,11 @@ class Rig {
       this.el as unknown as HTMLElement,
       toSurface,
       callbacks,
-      () => this.hand.held,
-      () => "draw",
-      () => this.onlyStylus.on,
+      {
+        handHeld: () => this.hand.held,
+        route: () => "draw",
+        onlyStylus: () => this.onlyStylus.on,
+      },
     );
     this.controller.attach();
   }

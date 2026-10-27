@@ -2073,9 +2073,11 @@ export class InkSurface {
         return this.toLayout(at.x, at.y);
       },
       this.pointerCallbacks,
-      () => this.handHeld,
-      (event) => this.pressRoute(event),
-      () => this.callbacks.onlyStylusMode?.() === true,
+      {
+        handHeld: () => this.handHeld,
+        route: (event) => this.pressRoute(event),
+        onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+      },
     );
     input.attach();
     this.pointerInput = input;
