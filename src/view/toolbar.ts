@@ -163,13 +163,10 @@ import {
 import {
   type BarDock,
   DEFAULT_BAR_DOCK,
-  barDockIcon,
   barMenuSide,
   isBarUpright,
-  nearestBarDock,
   pageArea,
   parseBarDock,
-  pillAfterBarMove,
 } from "./bar-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { formatMm } from "../model/units";
@@ -562,8 +559,6 @@ export interface ToolbarCallbacks {
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
   onPillDock?: (dock: PillDock) => void;
-  /** The user dragged the tool bar to `dock`; the host keeps it for this device. */
-  onBarDock?: (dock: BarDock) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -912,15 +907,6 @@ export class Toolbar {
     this.barEl.setAttribute("aria-label", "Handwriting tools");
     this.barDock = parseBarDock(options.barDock);
     this.applyBarDock();
-    // Held, the bar lifts and is carried to an edge, as the pill is: a square
-    // shows the edge it would land on.
-    bindPillDrag(this.barEl, {
-      host,
-      canDrag: () => true,
-      icon: () => barDockIcon(this.barDock),
-      iconAt: (x, y) => barDockIcon(this.nearestBarDock(x, y)),
-      onDrop: (x, y) => this.dropBar(x, y),
-    });
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -4116,17 +4102,10 @@ export class Toolbar {
       : (box) => ({ start: box.left, end: box.right, length: box.width });
   }
 
-  /** The edge nearest to (`x`, `y`), host px, for a bar let go there. */
-  private nearestBarDock(x: number, y: number): BarDock {
-    const hostBox = this.host.getBoundingClientRect();
-    return nearestBarDock(hostBox.width, this.pageBottom(hostBox), x, y);
-  }
-
   /**
-   * Rest the bar at `dock` (another notebook's bar was moved there, or this
-   * one was dropped there). The page area gives way on that side, and the
-   * surface lays out again through its own ResizeObserver, keeping the page
-   * point it showed.
+   * Rest the bar at `dock`, as the setting on this device says (main.ts,
+   * `barDock`). The page area gives way on that side, and the surface lays
+   * out again through its own ResizeObserver, keeping the page point it showed.
    */
   setBarDock(dock: BarDock): void {
     const next = parseBarDock(dock);
@@ -4137,33 +4116,6 @@ export class Toolbar {
     // A bar moved from top to bottom keeps its size, so its observer is quiet.
     this.measureBar();
     this.applyPosition();
-  }
-
-  /**
-   * The bar was carried and let go at (`x`, `y`), host px: rest it at the
-   * nearest edge, and slide it in from there. A pill resting by the bar
-   * goes with it (`pillAfterBarMove`).
-   */
-  private dropBar(x: number, y: number): void {
-    const from = this.barDock;
-    const dock = this.nearestBarDock(x, y);
-    if (dock === from) return;
-    const pill = pillAfterBarMove(this.pillDock, from, dock);
-    this.setBarDock(dock);
-    this.callbacks.onBarDock?.(dock);
-    if (pill !== this.pillDock) {
-      this.setPillDock(pill);
-      this.callbacks.onPillDock?.(pill);
-    }
-    if (prefersReducedMotion() || typeof this.barEl.animate !== "function") return;
-    const offEdge = { top: "0 -100%", bottom: "0 100%", left: "-100% 0", right: "100% 0" }[dock];
-    this.barEl.animate(
-      [
-        { translate: offEdge, opacity: 0 },
-        { translate: "0 0", opacity: 1 },
-      ],
-      { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) },
-    );
   }
 
   /**

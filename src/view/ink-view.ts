@@ -871,7 +871,7 @@ export class InkView extends TextFileView {
     this.toolbar?.setPillDock(dock);
   }
 
-  /** The tool bar was moved in some notebook (the plugin's, per device): this one's follows. */
+  /** The tool bar's place changed in settings (the plugin's, per device): this notebook's follows. */
   showBarDock(dock: BarDock): void {
     this.toolbar?.setBarDock(dock);
   }
@@ -2508,7 +2508,6 @@ export class InkView extends TextFileView {
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
-        onBarDock: (dock) => this.plugin.setBarDock(dock),
       },
       {
         defaultSize: this.settings.defaultSize,

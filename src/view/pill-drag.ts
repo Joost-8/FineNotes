@@ -13,13 +13,9 @@
  *   lifted `touchmove` is cancelled. Whether WebKit's long press cancels a
  *   held finger or Pencil here is unproven on the iPad.
  * - **Mouse:** the same hold, on pointer events.
- *
- * The tool bar is carried the same way (`toolbar.ts`, `dropBar`): its square
- * shows the edge it would land on (`iconAt`).
  */
 
 import { setIcon } from "obsidian";
-import { swallowGhostClick } from "./ghost-click";
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 
 export interface PillDragHost {
@@ -29,8 +25,6 @@ export interface PillDragHost {
   canDrag(): boolean;
   /** The Lucide icon of the tool whose pill it is, for the square. */
   icon(): string;
-  /** The icon the square shows while it is carried over (`x`, `y`), host px, if it changes. */
-  iconAt?(x: number, y: number): string;
   /** The pill was let go at (`x`, `y`), host px: put it in its place. */
   onDrop(x: number, y: number): void;
 }
@@ -47,7 +41,6 @@ export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
   let startY = 0;
   let touchId: number | null = null;
   let square: HTMLElement | null = null;
-  let squareIcon = "";
   let swallowUntil = 0;
 
   const local = (x: number, y: number): { x: number; y: number } => {
@@ -59,18 +52,12 @@ export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
     if (!square) return;
     const at = local(x, y);
     square.setCssProps({ "--gob-square-x": `${at.x}px`, "--gob-square-y": `${at.y}px` });
-    const icon = drag.iconAt?.(at.x, at.y);
-    if (icon && icon !== squareIcon) {
-      squareIcon = icon;
-      setIcon(square, icon);
-    }
   };
 
   const lift = (x: number, y: number): void => {
     timer = 0;
     square = drag.host.createDiv({ cls: "goodobsidian-pill-square" });
-    squareIcon = drag.icon();
-    setIcon(square, squareIcon);
+    setIcon(square, drag.icon());
     pill.addClass("is-lifted");
     place(x, y);
   };
@@ -166,8 +153,6 @@ export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
-      // Let go off the element it moved away from, the click goes to whatever is there.
-      if (square) swallowGhostClick(pill.ownerDocument, e);
       end(e.clientX, e.clientY);
     };
     window.addEventListener("pointermove", move);

@@ -13045,8 +13045,8 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 /* ------------------------------------------- the tool bar at another edge */
 
-/* Held and dragged, the tool bar rests along the top, the bottom, or upright
-   at either side (toolbar.ts, setBarDock; bar-dock-model.ts). The page gives
+/* The "Toolbar" setting puts the tool bar along the top, the bottom, or
+   upright at either side (toolbar.ts, setBarDock; bar-dock-model.ts). The page gives
    way on that side: the bar stays in the view's flow, so the surface shrinks
    and lays out again around the page point it showed. Last in the file: these
    restyle the view, the bar and its buttons, whose own rules come earlier. */
@@ -13057,12 +13057,6 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    narrowed the page and changed its fit (CLAUDE.md ledger, 2026-10-27). */
 .workspace-leaf-content .view-content.goodobsidian-view {
   overflow: hidden;
-}
-
-/* Carried: the bar stays where it was, faded, while a square shows the edge
-   it would land on. */
-.goodobsidian-toolbar.is-lifted {
-  opacity: 0.35;
 }
 
 /* Along the bottom: after the page and the text layer, its hairline above. */

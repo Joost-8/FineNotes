@@ -3,13 +3,11 @@ import {
   type BarDock,
   type Box,
   DEFAULT_BAR_DOCK,
-  barDockIcon,
   barMenuSide,
   isBarUpright,
   menuPlace,
   menuRoom,
   menuAnchor,
-  nearestBarDock,
   pageArea,
   parseBarDock,
   pillAfterBarMove,
@@ -36,19 +34,6 @@ describe("reading a stored place", () => {
     for (const raw of [undefined, null, "", "middle", 3, { dock: "left" }, "toString"]) {
       expect(parseBarDock(raw)).toBe("top");
     }
-  });
-});
-
-describe("the edge nearest where the bar is let go", () => {
-  it("is the edge of the view it is closest to", () => {
-    expect(nearestBarDock(1180, 760, 590, 40)).toBe("top");
-    expect(nearestBarDock(1180, 760, 590, 730)).toBe("bottom");
-    expect(nearestBarDock(1180, 760, 30, 380)).toBe("left");
-    expect(nearestBarDock(1180, 760, 1150, 380)).toBe("right");
-  });
-
-  it("goes back to the top from dead centre", () => {
-    expect(nearestBarDock(800, 800, 400, 400)).toBe("top");
   });
 });
 
@@ -172,15 +157,6 @@ describe("the bar at each edge", () => {
     expect(barMenuSide("bottom")).toBe("up");
     expect(barMenuSide("left")).toBe("right");
     expect(barMenuSide("right")).toBe("left");
-  });
-
-  it("is carried as the icon of the edge it lands on", () => {
-    expect(PILL_DOCKS.map(barDockIcon)).toEqual([
-      "panel-top",
-      "panel-bottom",
-      "panel-left",
-      "panel-right",
-    ]);
   });
 });
 

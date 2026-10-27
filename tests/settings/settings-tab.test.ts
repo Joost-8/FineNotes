@@ -143,6 +143,11 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       calls.push("save");
       return Promise.resolve();
     }),
+    // The tool bar's place, kept on the device, not in the settings (main.ts, barDock).
+    barDock: "top",
+    setBarDock: vi.fn(function (this: { barDock: string }, dock: string) {
+      this.barDock = dock;
+    }),
     setDebugHud: vi.fn((on: boolean) => {
       calls.push(`debugHud:${on}`);
       settings.debugHud = on;
@@ -390,6 +395,7 @@ describe("the rows", () => {
       [WRITING, "Start with", "render"],
       [WRITING, "Hold to make shapes", "toggle:drawAndHold"],
       [WRITING, "Back to the pen", "render"],
+      [WRITING, "Toolbar", "render"],
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
@@ -607,6 +613,7 @@ describe("which rows show", () => {
       "Start with",
       "Hold to make shapes",
       "Back to the pen",
+      "Toolbar",
       "Two-finger double-tap to undo",
       "More",
       "Drag to size text boxes",
@@ -626,7 +633,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -848,6 +855,23 @@ describe("control values", () => {
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     },
   );
+
+  it("moves the tool bar from Toolbar, on this device only, without touching the settings", async () => {
+    const plugin = makePlugin();
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Toolbar"));
+    expect(Object.entries(row.dropdowns[0].options)).toEqual([
+      ["top", "Top"],
+      ["bottom", "Bottom"],
+      ["left", "Left"],
+      ["right", "Right"],
+    ]);
+    expect(row.dropdowns[0].value).toBe("top");
+    await row.dropdowns[0].pick("left");
+    expect(plugin.setBarDock).toHaveBeenCalledWith("left");
+    expect(plugin.barDock).toBe("left");
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(Object.keys(plugin.settings)).not.toContain("barDock");
+  });
 
   it("sets both return-to-pen switches from Back to the pen", async () => {
     const plugin = makePlugin({ returnToPenAfterUse: true });

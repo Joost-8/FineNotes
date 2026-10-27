@@ -48,7 +48,7 @@ import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
-import { type BarDock, parseBarDock } from "./view/bar-dock-model";
+import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -1591,8 +1591,9 @@ export default class GoodObsidianPlugin extends Plugin {
   private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";
 
   /**
-   * Where the tool bar rests (bar-dock-model.ts): along the top until it is
-   * dragged elsewhere, in every notebook, kept per device as the pill is.
+   * Where the tool bar rests (bar-dock-model.ts): along the top until the
+   * "Toolbar" setting says otherwise. Kept per device, as the pill's place is,
+   * not in the synced settings: an iPad and a laptop want different places.
    */
   get barDock(): BarDock {
     this.barDockSeen ??= parseBarDock(this.app.loadLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY));
@@ -1601,12 +1602,18 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private barDockSeen: BarDock | null = null;
 
-  /** The bar was dragged to `dock` in one notebook: keep it, and move every other's. */
+  /**
+   * The "Toolbar" setting chose `dock`: keep it on this device and move every
+   * open notebook's bar. A pill resting by the bar goes with it
+   * (`pillAfterBarMove`).
+   */
   setBarDock(dock: BarDock): void {
-    if (dock === this.barDock) return;
+    const from = this.barDock;
+    if (dock === from) return;
     this.barDockSeen = dock;
     this.app.saveLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY, dock);
     for (const view of this.openNotebooks()) view.showBarDock(dock);
+    this.setPillDock(pillAfterBarMove(this.pillDock, from, dock));
   }
 
   /** Every notebook view open in the workspace. */

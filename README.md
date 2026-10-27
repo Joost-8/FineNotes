@@ -243,9 +243,9 @@ A tool's options appear in a bar under the toolbar. Tap the tool again to
 slide them away, and once more to bring them back. The lasso has no options
 bar: tap it again to open its menu.
 
-To move the toolbar, hold it for a moment and drag it to the bottom or to
-either side; it stands upright at a side. A tool's bar moves the same way.
-Each device remembers its own places.
+To put the toolbar along the bottom, or upright at the left or right, choose
+its place in Settings › Writing › **Toolbar**. Each device keeps its own. A
+tool's bar moves by holding it and dragging it to an edge.
 
 ### Writing and erasing
 

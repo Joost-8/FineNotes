@@ -136,6 +136,7 @@ import { relativeLuminance } from "./model/cover";
 import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { type BarDock, parseBarDock } from "./view/bar-dock-model";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -221,6 +222,14 @@ const RETURN_TO_PEN_NAMES: Record<ReturnToPen, string> = {
   both: "Both",
 };
 
+/** Where the tool bar sits, as "Toolbar" names the places (bar-dock-model.ts, FineNotes#50). */
+const BAR_DOCK_NAMES: Record<BarDock, string> = {
+  top: "Top",
+  bottom: "Bottom",
+  left: "Left",
+  right: "Right",
+};
+
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
 const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
@@ -274,6 +283,10 @@ const DESC = {
     "draws one even width, which is the smoothest to write with.",
   drawAndHold:
     "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
+  barDock:
+    "Where the toolbar sits in your notebooks: along the top or the bottom, or upright at " +
+    "the left or right, where what does not fit folds into ⋯. Each device keeps its own " +
+    "place, so an iPad and a laptop can differ.",
   returnToPen:
     "After the eraser, lasso, text or shape tool, go back to the pen or highlighter you had. " +
     "Tap the tool again: select the active tool once more. After one use: after an eraser " +
@@ -997,6 +1010,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.returnToPen,
         ),
+        this.info(
+          drawnRow("Toolbar", "", (s) => this.drawBarDock(s), [
+            "toolbar position",
+            "toolbar place",
+            "bottom",
+            "left",
+            "right",
+            "side",
+            "vertical",
+            "dock",
+          ]),
+          DESC.barDock,
+        ),
         toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
           "undo",
           "redo",
@@ -1073,6 +1099,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addColorPicker((c) => {
       c.setValue(String(shownValue(settings, "defaultColor")));
       c.onChange((value) => void this.setControlValue("defaultColor", value));
+    });
+  }
+
+  /**
+   * "Toolbar": the place of the tool bar on this device. Not a stored setting
+   * (settings.ts syncs with the vault); the plugin keeps it in app local
+   * storage, as it does the pill's place.
+   */
+  private drawBarDock(setting: Setting): void {
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(BAR_DOCK_NAMES)) d.addOption(id, name);
+      d.setValue(this.plugin.barDock);
+      d.onChange((value) => this.plugin.setBarDock(parseBarDock(value)));
     });
   }
 

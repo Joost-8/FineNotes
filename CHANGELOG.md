@@ -10,15 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Move the toolbar to any edge**
-  ([#50](https://github.com/Joost-8/FineNotes/issues/50)). Hold the main
-  toolbar for a moment and drag it: a square shows the edge it will land on,
-  and when you let go it springs to the nearest one: the top, the bottom, or
-  upright along the left or right side. The page makes room on that side and
-  keeps the spot you were reading. Upright, the toolbar's buttons stack, and
-  what does not fit folds into ⋯ as it does along the top. Its menus open
-  toward the page from every edge, a tool's bar resting by the toolbar goes
-  with it, and each device remembers its own place.
+- **The toolbar at any edge**
+  ([#50](https://github.com/Joost-8/FineNotes/issues/50)). Settings ›
+  Writing › Toolbar puts it along the top (as before) or the bottom, or
+  upright at the left or right. The page makes room on that side and keeps
+  the spot you were reading. Upright, the toolbar's buttons stack, and what
+  does not fit folds into ⋯ as it does along the top. Its menus open toward
+  the page from every edge, a tool's bar resting by the toolbar goes with
+  it, and each device keeps its own place, so an iPad and a laptop can
+  differ.
 
 ### Fixed
 

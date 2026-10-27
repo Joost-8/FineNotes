@@ -1,10 +1,10 @@
 /**
  * Where the tool bar rests (PURE): along the top, as it always has, along
  * the bottom, or upright at the left or right edge of the notebook
- * (FineNotes#50). The user holds the bar and drags it there, as the options
- * pill is moved (`pill-drag.ts`); it springs to the nearest edge, which every
- * notebook then shares and each device remembers. Only these places, never a
- * free position, for the pill's reason (`pill-dock-model.ts`).
+ * (FineNotes#50). A setting chooses it (settings.ts, "Toolbar"), kept per
+ * device as the pill's place is, since an iPad and a laptop want different
+ * places; every open notebook follows. Only these places, never a free
+ * position, for the pill's reason (`pill-dock-model.ts`).
  *
  * The bar takes its edge from the page: the page area is the view less the
  * bar's side, and the pill, the counter, the zoom readout and the toasts all
@@ -16,14 +16,13 @@ import {
   type PillDock,
   type PopoverSide,
   PILL_DOCKS,
-  nearestDock,
   popoverSide,
 } from "./pill-dock-model";
 
 /** The bar's places are the pill's four edges. */
 export type BarDock = PillDock;
 
-/** Where the bar rests until the user moves it: along the top. */
+/** Where the bar rests until the user chooses otherwise: along the top. */
 export const DEFAULT_BAR_DOCK: BarDock = "top";
 
 /** A stored place, read back; anything else is the default. */
@@ -39,15 +38,6 @@ export interface Box {
   top: number;
   right: number;
   bottom: number;
-}
-
-/**
- * The edge nearest to a bar let go at (`x`, `y`), host px, in a view of
- * `width` and `height` (to where the page body ends). Dead centre goes back
- * to the top.
- */
-export function nearestBarDock(width: number, height: number, x: number, y: number): BarDock {
-  return nearestDock({ left: 0, top: 0, right: width, bottom: height }, x, y, PILL_DOCKS);
 }
 
 /**
@@ -95,11 +85,6 @@ export function barMenuSide(dock: BarDock): PopoverSide {
 /** Whether the bar at `dock` stands upright. */
 export function isBarUpright(dock: BarDock): boolean {
   return dock === "left" || dock === "right";
-}
-
-/** The Lucide icon of the bar at `dock`, carried: which edge it lands on. */
-export function barDockIcon(dock: BarDock): string {
-  return `panel-${dock}`;
 }
 
 /**
