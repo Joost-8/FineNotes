@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
+  the Pencil flat and the Brush pen paints a wider stroke, up to three times
+  its width, for shading. Held as you write, nothing changes. Only shaded
+  strokes keep the tilt, so other notes stay as they were; an older FineNotes
+  opens a notebook with shaded strokes read-only. The input debug overlay
+  shows what the pen reports.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

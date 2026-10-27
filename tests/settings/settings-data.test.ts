@@ -100,6 +100,7 @@ const FRESH_INSTALL = {
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
+  pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,
@@ -215,6 +216,7 @@ const USED_VAULT = {
   templateGalleryUrl: "https://example.org/index.json",
   recentColors: ["#123456", "#abcdef"],
   pressureWidth: true,
+  pencilTilt: true,
   pageAppearance: "system",
   invertPdfPages: false,
 

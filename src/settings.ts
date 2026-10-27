@@ -272,6 +272,11 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
+  pencilTilt:
+    "Hold the Pencil flat and the Brush pen paints a wider stroke, up to three times its " +
+    "width, for shading. Held as you write, nothing changes. Only pens and tablets that " +
+    "report tilt do this (the Apple Pencil does). Shaded strokes keep their width when this " +
+    "is off. An older FineNotes opens a notebook with them read-only.",
   drawAndHold:
     "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
   returnToPen:
@@ -1418,6 +1423,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         callout(CALLOUTS.pressure, () => settings.pressureWidth),
         this.info(
+          toggle("pencilTilt", "Pencil tilt", "", [
+            "tilt",
+            "shading",
+            "Apple Pencil",
+            "stylus",
+            "brush pen",
+          ]),
+          DESC.pencilTilt,
+        ),
+        this.info(
           toggle("desynchronizedCanvas", "Desynchronized canvas", "", [
             "latency",
             "glitch",
@@ -1467,7 +1482,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
         ),
       ],
-      () => (settings.pressureWidth ? [{ text: "Pressure on" }] : []),
+      () => [
+        ...(settings.pressureWidth ? [{ text: "Pressure on" }] : []),
+        ...(settings.pencilTilt ? [{ text: "Tilt on" }] : []),
+      ],
     );
   }
 

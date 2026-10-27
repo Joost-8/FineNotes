@@ -2634,6 +2634,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onShortcuts: () => this.toggleShortcuts(),

@@ -431,6 +431,7 @@ describe("the rows", () => {
       [AI, `${label} API key for images`, "render"],
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
+      [ADVANCED, "Pencil tilt", "toggle:pencilTilt"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       [ADVANCED, "Updates", "dropdown:checkForUpdates"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
@@ -598,7 +599,7 @@ describe("which rows show", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Desynchronized canvas");
+    expect(off[off.indexOf(toggle) + 1]).toBe("Pencil tilt");
     expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
@@ -630,6 +631,7 @@ describe("which rows show", () => {
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
+      "Pencil tilt",
       "Desynchronized canvas",
       "Updates",
       "Input debug overlay",

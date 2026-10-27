@@ -43,6 +43,7 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { widestTiltFactor } from "../ink/tilt";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
@@ -136,6 +137,8 @@ export interface StrokeStyle {
   decor?: ShapeDecor | null;
   /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
   nib?: number;
+  /** A stored stroke's Pencil altitude per point (`Stroke.tilt`); absent: upright. */
+  tilt?: readonly number[];
 }
 
 /** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
@@ -406,6 +409,8 @@ interface PathEntry {
   fingerprint: string;
   /** The points array traced: a command that replaces it is always a change. */
   pts: readonly number[];
+  /** The altitudes traced with them (`Stroke.tilt`), which a piece gets anew. */
+  tilt: readonly number[] | undefined;
   /** The stroke's runs, and a `Path2D` for each. */
   runs: InkRun[];
   paths: Path2D[];
@@ -730,6 +735,19 @@ export class Renderer {
     this.previews.clear();
   }
 
+  /**
+   * How far past its centreline the widest tilted stroke on page `pageId`
+   * reaches, page px; 0 when none is tilted. A brush laid flat can paint
+   * beyond {@link INK_PAD}, so a change near it must repaint that far.
+   */
+  private widestInk(pageId: string): number {
+    const page = this.doc?.pages.find((candidate) => candidate.id === pageId);
+    let reach = 0;
+    for (const stroke of page?.strokes ?? [])
+      if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
+    return reach;
+  }
+
   invalidatePage(pageId: string): void {
     this.tiles.deleteWhere((tile) => tile.pageId === pageId);
     this.previews.delete(pageId);
@@ -739,7 +757,8 @@ export class Renderer {
   invalidateRegion(pageIndex: number, bounds: Bounds): void {
     const box = this.layout.boxes[pageIndex];
     if (!box || this.level === 0) return;
-    for (const tr of tilesForBounds(box.width, box.height, this.level, bounds, INK_PAD)) {
+    const pad = Math.max(INK_PAD, this.widestInk(box.id));
+    for (const tr of tilesForBounds(box.width, box.height, this.level, bounds, pad)) {
       this.tiles.delete(tileKey(box.id, this.level, tr.col, tr.row));
     }
     this.previews.delete(box.id);
@@ -1468,23 +1487,28 @@ export class Renderer {
     const n = pts.length;
     const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${stroke.nib ?? ""}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
-    if (cached && cached.pts === pts && cached.fingerprint === fingerprint) return cached;
+    const tilt = stroke.tilt;
+    if (
+      cached &&
+      cached.pts === pts &&
+      cached.tilt === tilt &&
+      cached.fingerprint === fingerprint
+    ) {
+      return cached;
+    }
     let runs: InkRun[] = [];
     let bounds: Bounds | null = null;
     if (n >= 3) {
-      runs = inkRuns(
-        pts,
-        penOptions(stroke.size, pressure, stroke.nib),
-        stroke.shape !== undefined,
-      );
+      const shape = stroke.shape !== undefined;
+      runs = inkRuns(pts, penOptions(stroke.size, pressure, stroke.nib), shape, tilt);
       const b = strokeBounds(stroke);
       if (b) {
-        // Arrowheads reach sideways past the line's ends.
-        const pad = stroke.size + (stroke.heads ? HEAD_MAX / 2 : 0);
+        // Arrowheads reach sideways past the line's ends; a tilted brush, past its nib.
+        const pad = inkReach(stroke) + (stroke.heads ? HEAD_MAX / 2 : 0);
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
-    const entry: PathEntry = { fingerprint, pts, runs, paths: runs.map(pathOf), bounds };
+    const entry: PathEntry = { fingerprint, pts, tilt, runs, paths: runs.map(pathOf), bounds };
     this.paths.set(stroke, entry);
     return entry;
   }
@@ -1856,7 +1880,17 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
     shape: shape !== undefined,
     decor: decorOf(stroke),
     ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
+    ...(stroke.tilt !== undefined ? { tilt: stroke.tilt } : {}),
   };
+}
+
+/**
+ * How far a stored stroke's ink can reach past its centreline, page px, at
+ * most: its nib (pressure draws it at up to 0.8 of that), times the most the
+ * Pencil's tilt widened it.
+ */
+export function inkReach(stroke: Pick<Stroke, "size" | "tilt" | "shape">): number {
+  return stroke.shape === undefined ? stroke.size * widestTiltFactor(stroke.tilt) : stroke.size;
 }
 
 /**
@@ -1975,7 +2009,7 @@ function fillStroke(
   highlighterAlpha: number,
   night = false,
 ): void {
-  const runs = inkRuns(points, penFor(style), style.shape === true);
+  const runs = inkRuns(points, penFor(style), style.shape === true, style.tilt);
   paintStroke(ctx, { runs }, style, highlighterAlpha, night, style.decor ?? null, points);
 }
 

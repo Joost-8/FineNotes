@@ -208,6 +208,12 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
+  /**
+   * Advanced: the Brush pen paints wider where the Pencil is held flat, for
+   * shading (`ink/tilt`). Off, nothing of the tilt is kept. Strokes that
+   * kept it are drawn with it either way.
+   */
+  pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
@@ -364,6 +370,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
+  pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,

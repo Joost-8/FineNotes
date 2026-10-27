@@ -23,8 +23,10 @@ import { SCHEMA_VERSION } from "../constants";
 /**
  * Every feature this build reads, in the order a label lists them.
  * - `sticky`: sticky notes, paper with ink of its own (`model/sticky-notes`).
+ * - `tilt`: brush strokes that keep the Pencil's tilt (`Stroke.tilt`); an
+ *   older build would save them back at the nib's width.
  */
-export const FORMAT_FEATURES = ["sticky"] as const;
+export const FORMAT_FEATURES = ["sticky", "tilt"] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 
