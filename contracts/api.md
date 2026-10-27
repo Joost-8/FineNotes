@@ -411,6 +411,17 @@ the middle, after scoring: the confidence is the drawn ink's. The Shape
 tool's connectors and a held snapped line level about their start; the
 highlighter's straight line about its middle.
 
+**Point handles (2026-10-27, discussion #51).** One shape selected on its
+own shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
+off its points, not its kind: copies of one point (a closed outline's
+repeated first point) are one handle. Curved kinds (`circle`, `ellipse`,
+`roundrect`, `cloud`) get none, pieces included, nor does anything with more
+than 12 vertices. A whole arrow (its six-point layout, checked) has two, its
+tail and tip, and its head follows the shaft. Dragging a corner of a whole
+`rect` or `diamond` makes it a `polygon`; every other kind keeps its kind.
+One drag is one `ReshapeStroke` (`selection-commands.ts`), which gives the
+stroke a fresh points array and puts the old one back on undo.
+
 ### Three deliberate limits (decided 2026-09-20, not accidents)
 
 1. **Minimum size.** A stroke whose bounding-box diagonal is under 24 px is

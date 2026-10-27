@@ -17,6 +17,14 @@ extracted from the matching section of this file by `release.yml`.
   highlighter's straight line. While the pen still holds a snapped line, it
   settles level as you turn it past.
 
+- **Move a shape's corners and ends**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
+  shape on its own and a ring sits on each of its corners or ends: drag one
+  to move that point alone, while the frame's corners still resize the shape
+  and its knob still turns it. A rectangle with a corner moved becomes a
+  four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
+  rounded rectangles and clouds have no rings.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

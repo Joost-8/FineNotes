@@ -23,6 +23,7 @@ export default defineConfig({
         "src/ink/pen-gestures.ts",
         "src/ink/straighten.ts",
         "src/ink/level-line.ts",
+        "src/ink/shape-points.ts",
         "src/canvas/backdrop.ts",
         "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",

@@ -16,6 +16,7 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type ShapeKind,
   type Stroke,
   type GraphElement,
   type TableElement,
@@ -93,6 +94,43 @@ export function translatePoints(pts: readonly number[], dx: number, dy: number):
     out[i + 1] += dy;
   }
   return out;
+}
+
+/**
+ * Give one shape new points, and the kind they make it (discussion #51: a
+ * corner or an end dragged by its handle, `ink/shape-points.ts`). The
+ * stroke is held by identity, as a selection holds it; `pts` is a fresh
+ * array, so the renderer's path cache traces it again. Undo puts back the
+ * very array and kind it had.
+ */
+export class ReshapeStroke implements Command {
+  readonly label = "Edit shape";
+  private previous: { pts: number[]; shape?: ShapeKind } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly stroke: Stroke,
+    private readonly pts: number[],
+    private readonly shape: ShapeKind,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    if (!page?.strokes.includes(this.stroke)) return;
+    this.previous = { pts: this.stroke.pts, shape: this.stroke.shape };
+    this.stroke.pts = this.pts;
+    this.stroke.shape = this.shape;
+  }
+
+  invert(): void {
+    const previous = this.previous;
+    if (!previous) return;
+    this.stroke.pts = previous.pts;
+    if (previous.shape === undefined) delete this.stroke.shape;
+    else this.stroke.shape = previous.shape;
+    this.previous = null;
+  }
 }
 
 /**
