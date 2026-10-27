@@ -2636,6 +2636,7 @@ export class InkView extends TextFileView {
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        lassoAnyPart: () => this.settings.lassoAnyPart === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];

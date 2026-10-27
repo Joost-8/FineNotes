@@ -329,6 +329,10 @@ const DESC = {
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
+  lassoAnyPart:
+    "On, the lasso takes a stroke or shape when any part of it is inside the loop or " +
+    "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
+    "Goodnotes. Pictures and text boxes are taken by their middle either way.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
@@ -1004,7 +1008,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Text boxes, colors, highlighter"),
+        this.more("writing", "Text boxes, colors, highlighter, lasso"),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
             "text",
@@ -1032,6 +1036,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "line",
           ]),
           DESC.straightHighlighter,
+        ),
+        this.info(
+          toggle("lassoAnyPart", "Lasso takes what it touches", "", [
+            "lasso",
+            "select",
+            "selection",
+            "notability",
+          ]),
+          DESC.lassoAnyPart,
         ),
       ],
       () => [

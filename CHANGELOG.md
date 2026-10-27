@@ -8,6 +8,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Lasso takes what it touches** (discussion
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
+  under Writing › More: the lasso takes a stroke or shape when any part of
+  it is inside the loop, as Notability does, instead of at least half of it.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

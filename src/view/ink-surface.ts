@@ -683,6 +683,8 @@ export interface InkSurfaceCallbacks {
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
+  /** "Lasso takes what it touches" (settings): any part of a stroke inside takes it. Read live. */
+  lassoAnyPart?: () => boolean;
   /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
@@ -7430,6 +7432,7 @@ export class InkSurface {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
+    const anyPart = this.callbacks.lassoAnyPart?.() === true;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
       strokes: page.strokes.filter(
@@ -7437,7 +7440,7 @@ export class InkSurface {
           stroke !== except &&
           near.has(stroke.id) &&
           lassoTakesStroke(stroke, filter) &&
-          strokeInLasso(stroke, poly),
+          strokeInLasso(stroke, poly, anyPart),
       ),
       images: filter.images
         ? page.images.filter((image) => image.locked !== true && boxInLasso(image, poly))
@@ -7903,11 +7906,14 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
     const filter = lassoFilterFor(this.toolState);
+    const anyPart = this.callbacks.lassoAnyPart?.() === true;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     this.select(page.id, {
       strokes: page.strokes.filter(
         (stroke) =>
-          near.has(stroke.id) && lassoTakesStroke(stroke, filter) && strokeInLasso(stroke, poly),
+          near.has(stroke.id) &&
+          lassoTakesStroke(stroke, filter) &&
+          strokeInLasso(stroke, poly, anyPart),
       ),
       // A locked picture is never picked up (until it is unlocked).
       images: filter.images
