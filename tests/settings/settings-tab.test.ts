@@ -153,8 +153,9 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
-    applyOnlyStylusSettings: vi.fn(() => {
-      calls.push("onlyStylus");
+    setOnlyStylusMode: vi.fn((on: boolean) => {
+      calls.push(`onlyStylus:${on}`);
+      settings.onlyStylusMode = on;
       return Promise.resolve();
     }),
     files,
@@ -403,9 +404,6 @@ describe("the rows", () => {
       [PENS, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
       [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
-      [PENS, "Mode button on the toolbar", "toggle:onlyStylusToolbarButton"],
-      [PENS, "Hand tool", "toggle:onlyStylusHandTool"],
-      [PENS, "Magnifier", "toggle:onlyStylusZoomTool"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
@@ -635,7 +633,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 37)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -971,30 +969,12 @@ describe("control values", () => {
     expect(plugin.calls).toEqual(["pressureWidth:true", "update"]);
   });
 
-  it("hands Only stylus mode to the plugin, which updates every notebook and opens its rows", async () => {
+  it("hands Only stylus mode to the plugin, which updates every notebook", async () => {
     const plugin = makePlugin();
-    const { tab } = makeTab(plugin);
-    const detail = (name: string) => named(rows(makeTab(plugin, false).tab), name);
-    expect(shown(detail("Mode button on the toolbar"))).toBe(false);
-    await tab.setControlValue("onlyStylusMode", true);
+    await makeTab(plugin).tab.setControlValue("onlyStylusMode", true);
+    expect(plugin.setOnlyStylusMode).toHaveBeenCalledWith(true);
     expect(plugin.settings.onlyStylusMode).toBe(true);
-    expect(plugin.applyOnlyStylusSettings).toHaveBeenCalledOnce();
-    expect(plugin.calls).toEqual(["onlyStylus", "update"]);
-    expect(shown(detail("Mode button on the toolbar"))).toBe(true);
-    expect(shown(detail("Hand tool"))).toBe(true);
-    expect(shown(detail("Magnifier"))).toBe(true);
-  });
-
-  it("hands each Only stylus detail switch to the plugin without rebuilding the tab", async () => {
-    const plugin = makePlugin({ onlyStylusMode: true });
-    const { tab } = makeTab(plugin);
-    await tab.setControlValue("onlyStylusToolbarButton", false);
-    await tab.setControlValue("onlyStylusHandTool", false);
-    await tab.setControlValue("onlyStylusZoomTool", true);
-    expect(plugin.calls).toEqual(["onlyStylus", "onlyStylus", "onlyStylus"]);
-    expect(plugin.settings.onlyStylusToolbarButton).toBe(false);
-    expect(plugin.settings.onlyStylusHandTool).toBe(false);
-    expect(plugin.settings.onlyStylusZoomTool).toBe(true);
+    expect(plugin.calls).toEqual(["onlyStylus:true"]);
   });
 });
 

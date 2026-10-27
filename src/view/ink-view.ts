@@ -23,7 +23,6 @@ import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
-import { onlyStylusChromeOf } from "../input/only-stylus";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
@@ -872,22 +871,12 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Only stylus mode's settings changed: the mode's button, hand and
-   * magnifier follow in this notebook. The hand or magnifier just hidden
-   * hands back to the pen, so a tool the bar no longer carries is never in
-   * hand.
+   * Only stylus mode was switched here or through the toolbar: its toggle
+   * follows in this notebook. The hand and magnifier are ordinary toolbar
+   * items now, so the choice of placing them does not change with the mode.
    */
-  syncOnlyStylusChrome(): void {
-    const chrome = onlyStylusChromeOf(this.settings);
-    this.toolbar?.setOnlyStylus(chrome);
-    const tool = this.toolState.tool;
-    const gone =
-      (tool === "pan" && !(chrome.mode && chrome.hand)) ||
-      (tool === "zoom" && !(chrome.mode && chrome.zoom));
-    if (!gone) return;
-    this.toolState.tool = "pen";
-    this.surface?.setTool("pen");
-    this.toolbar?.setState(this.toolState);
+  setOnlyStylusMode(on: boolean): void {
+    this.toolbar?.setOnlyStylusMode(on);
   }
 
   override async onClose(): Promise<void> {
@@ -2532,7 +2521,7 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         items: this.settings.toolbarItems,
-        onlyStylus: onlyStylusChromeOf(this.settings),
+        onlyStylusMode: this.settings.onlyStylusMode === true,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);

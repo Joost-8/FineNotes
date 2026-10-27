@@ -91,7 +91,6 @@ export default defineConfig({
         "src/canvas/page-detect.ts",
         "src/canvas/scan-filters.ts",
         "src/input/palm-rejection.ts",
-        "src/input/only-stylus.ts",
         "src/input/pen-rejoin.ts",
         "src/input/pen-modifiers.ts",
         "src/input/finger-gesture.ts",

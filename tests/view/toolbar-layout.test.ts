@@ -46,8 +46,15 @@ describe("normalizeBar", () => {
 });
 
 describe("the default bar", () => {
-  it("leaves stickers, sticky notes, the ruler and the mic to the menu", () => {
-    expect(hiddenItems(DEFAULT_BAR)).toEqual(["sticker", "sticky", "ruler", "record"]);
+  it("leaves the hand, the magnifier, stickers, sticky notes, the ruler and the mic to the menu", () => {
+    expect(hiddenItems(DEFAULT_BAR)).toEqual([
+      "pan",
+      "zoom",
+      "sticker",
+      "sticky",
+      "ruler",
+      "record",
+    ]);
   });
 
   it("names every item", () => {
@@ -59,7 +66,15 @@ describe("hiding and showing", () => {
   it("hides an item, and lists it among the hidden in catalogue order", () => {
     const bar = hideItem(DEFAULT_BAR, "eraser");
     expect(bar).not.toContain("eraser");
-    expect(hiddenItems(bar)).toEqual(["eraser", "sticker", "sticky", "ruler", "record"]);
+    expect(hiddenItems(bar)).toEqual([
+      "eraser",
+      "pan",
+      "zoom",
+      "sticker",
+      "sticky",
+      "ruler",
+      "record",
+    ]);
   });
 
   it("never hides the pen", () => {

@@ -131,9 +131,6 @@ const FRESH_INSTALL = {
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
-  onlyStylusToolbarButton: true,
-  onlyStylusHandTool: true,
-  onlyStylusZoomTool: true,
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
@@ -229,9 +226,6 @@ const USED_VAULT = {
   penCursor: "crosshair",
   straightHighlighter: false,
   onlyStylusMode: true,
-  onlyStylusToolbarButton: false,
-  onlyStylusHandTool: false,
-  onlyStylusZoomTool: false,
   settingsOpen: ["writing", "ai"],
   scribbleTipDismissed: true,
   experimentalFutureFlag: 7,
@@ -392,13 +386,7 @@ describe("control values", () => {
 
   it("rebuilds the tab only for the keys that add or remove rows", () => {
     // pressureWidth shows or hides its warning.
-    for (const key of [
-      "recognitionProviderId",
-      "llmVendor",
-      "imageVendor",
-      "pressureWidth",
-      "onlyStylusMode",
-    ]) {
+    for (const key of ["recognitionProviderId", "llmVendor", "imageVendor", "pressureWidth"]) {
       expect(changesTabLayout(key)).toBe(true);
     }
     for (const key of [
@@ -407,7 +395,7 @@ describe("control values", () => {
       "debugHud",
       "paperWidth",
       "defaultTool",
-      "onlyStylusHandTool",
+      "onlyStylusMode",
     ]) {
       expect(changesTabLayout(key)).toBe(false);
     }

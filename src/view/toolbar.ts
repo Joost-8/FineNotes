@@ -78,7 +78,6 @@ import {
   normalizeBar,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
-import type { OnlyStylusChrome } from "../input/only-stylus";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
 import {
@@ -638,8 +637,8 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
-  /** Only stylus mode's chrome, as the settings leave it. */
-  onlyStylus?: OnlyStylusChrome;
+  /** Only stylus mode is on, so its toolbar toggle starts on. */
+  onlyStylusMode?: boolean;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -807,17 +806,9 @@ export class Toolbar {
   private items: BarItemId[] = [...DEFAULT_BAR];
   /** The last button of the tools: the hidden items and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
-  /** Only stylus mode's toggle and the tools it brings; null when not built. */
+  /** Only stylus mode's toggle, beside the tools; its state follows `onlyStylusOn`. */
   private stylusButton: HTMLButtonElement | null = null;
-  private panButton: HTMLButtonElement | null = null;
-  private zoomButton: HTMLButtonElement | null = null;
-  /** Only stylus mode's chrome, as the settings leave it now. */
-  private onlyStylus: OnlyStylusChrome = {
-    mode: false,
-    button: true,
-    hand: true,
-    zoom: true,
-  };
+  private onlyStylusOn = false;
   /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
   private stickyButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
@@ -913,7 +904,7 @@ export class Toolbar {
   ) {
     this.palette = [...palette];
     this.optionsTool = state.tool;
-    if (options.onlyStylus) this.onlyStylus = { ...options.onlyStylus };
+    this.onlyStylusOn = options.onlyStylusMode === true;
     this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
@@ -1070,6 +1061,10 @@ export class Toolbar {
     tool("eraser", "eraser", "Eraser (E)");
     tool("text", "type", "Text box (T)");
     tool("shape", "shapes", "Shapes (S)");
+    // Only stylus mode's navigation tools. Hidden by default: they wait in
+    // the accessories menu until "Customize toolbar" puts them on the bar.
+    tool("pan", "hand", "Hand — move the page");
+    tool("zoom", "zoom-in", "Magnifier — zoom");
     if (cb.onRuler) {
       item("ruler", this.addRulerButton(tools), () => {
         this.closePopover();
@@ -1113,8 +1108,7 @@ export class Toolbar {
     this.accessoriesButton = accessories;
     keep(accessories);
     this.setItems(this.options.items ?? DEFAULT_BAR, false);
-    this.buildOnlyStylusButtons(tools);
-    this.syncOnlyStylusChrome(false);
+    this.buildOnlyStylusToggle();
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1411,7 +1405,11 @@ export class Toolbar {
           ? FOLD_RANK.text
           : tool === "shape"
             ? FOLD_RANK.shape
-            : undefined;
+            : tool === "pan"
+              ? FOLD_RANK.pan
+              : tool === "zoom"
+                ? FOLD_RANK.zoom
+                : undefined;
     if (rank !== undefined) {
       this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
     }
@@ -1430,82 +1428,41 @@ export class Toolbar {
   }
 
   /**
-   * Only stylus mode's own chrome: the hand, the magnifier, then the mode's
-   * toggle. Not part of "Customize toolbar": they come and go with the mode,
-   * and the mode's own settings say which of them show. Built once, after the
-   * bar's items, and kept before the accessories button.
+   * Only stylus mode's toggle: beside the tools, before the accessories
+   * button. Not part of "Customize toolbar": the mode's switch stays one tap
+   * away. Its state follows the settings ({@link setOnlyStylusMode}).
    */
-  private buildOnlyStylusButtons(tools: HTMLElement): void {
-    const toggle = this.callbacks.onOnlyStylusMode;
-    if (!toggle) return;
-    this.panButton = this.addToolButton(tools, "pan", "hand", "Hand — move the page");
-    this.fold(
-      FOLD_RANK.pan,
-      this.panButton,
-      "hand",
-      "Hand",
-      (anchor) => this.tapTool("pan", anchor),
-      "pan",
-    );
-    this.zoomButton = this.addToolButton(tools, "zoom", "zoom-in", "Magnifier — zoom");
-    this.fold(
-      FOLD_RANK.zoom,
-      this.zoomButton,
-      "zoom-in",
-      "Magnifier",
-      (anchor) => this.tapTool("zoom", anchor),
-      "zoom",
-    );
+  private buildOnlyStylusToggle(): void {
+    const tools = this.toolsGroup;
+    if (!tools || !this.callbacks.onOnlyStylusMode) return;
     const stylus = this.barButton(tools, "tablet", "Only stylus mode: off", () => {
-      this.callbacks.onOnlyStylusMode?.(!this.onlyStylus.mode);
+      this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
     });
     stylus.addClass("goodobsidian-only-stylus");
-    stylus.setAttribute("aria-pressed", "false");
     this.stylusButton = stylus;
     this.fold(FOLD_RANK.onlyStylusMode, stylus, "tablet", "Only stylus mode", () =>
-      this.callbacks.onOnlyStylusMode?.(!this.onlyStylus.mode),
+      this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn),
     );
-    this.placeOnlyStylusButtons();
+    this.setOnlyStylusMode(this.onlyStylusOn);
+    this.placeOnlyStylusToggle();
   }
 
-  /** Put the mode's buttons after the bar's items, in their order, before the accessories. */
-  private placeOnlyStylusButtons(): void {
+  /** Keep the mode's toggle where it belongs when the bar's items are reordered. */
+  private placeOnlyStylusToggle(): void {
     const tools = this.toolsGroup;
     const accessories = this.accessoriesButton;
-    if (!tools || !accessories) return;
-    for (const button of [this.panButton, this.zoomButton, this.stylusButton]) {
-      if (button) tools.insertBefore(button, accessories);
-    }
-  }
-
-  /**
-   * Take on Only stylus mode's switches: whether the mode is on, and which
-   * of its toggle, hand and magnifier the bar carries. The host switches the
-   * tool away from a hidden hand or magnifier.
-   */
-  setOnlyStylus(chrome: OnlyStylusChrome): void {
-    this.onlyStylus = { ...chrome };
-    this.syncOnlyStylusChrome();
-  }
-
-  private syncOnlyStylusChrome(relayout = true): void {
-    const chrome = this.onlyStylus;
     const stylus = this.stylusButton;
-    if (stylus) {
-      stylus.toggleClass("is-unlisted", !chrome.button);
-      stylus.toggleClass("is-on", chrome.mode);
-      stylus.setAttribute("aria-pressed", String(chrome.mode));
-      stylus.setAttribute(
-        "aria-label",
-        chrome.mode ? "Only stylus mode: on" : "Only stylus mode: off",
-      );
-    }
-    this.panButton?.toggleClass("is-unlisted", !(chrome.mode && chrome.hand));
-    this.zoomButton?.toggleClass("is-unlisted", !(chrome.mode && chrome.zoom));
-    if (!relayout) return;
-    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
-    this.fitBar(tool);
-    this.placeIndicator(tool, null);
+    if (tools && accessories && stylus) tools.insertBefore(stylus, accessories);
+  }
+
+  /** Show whether Only stylus mode is on, on the bar and in the folded row that reads it. */
+  setOnlyStylusMode(on: boolean): void {
+    this.onlyStylusOn = on;
+    const stylus = this.stylusButton;
+    if (!stylus) return;
+    stylus.toggleClass("is-on", on);
+    stylus.setAttribute("aria-pressed", String(on));
+    stylus.setAttribute("aria-label", on ? "Only stylus mode: on" : "Only stylus mode: off");
   }
 
   /**
@@ -1526,7 +1483,7 @@ export class Toolbar {
       if (button) tools.appendChild(button);
     }
     if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
-    this.placeOnlyStylusButtons();
+    this.placeOnlyStylusToggle();
     if (this.popoverKind === "accessories") this.popoverRender?.();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;

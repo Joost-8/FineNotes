@@ -15,10 +15,11 @@ extracted from the matching section of this file by `release.yml`.
   glass moves neither the ink nor the page, and a finger's scroll, pinch and
   taps are off. While it is on, a hand tool moves the page with the pen (with
   its fling) and a magnifier zooms it: drag up or down, tap to zoom in a step,
-  or use the pill's zoom out, fit page and zoom in. A new toolbar button
-  switches the mode on and off; the button, the hand and the magnifier can
-  each be turned off in its settings. A command,
-  "Turn Only stylus mode on or off", is there for a hardware key too.
+  or use the pill's zoom out, fit page and zoom in. A toolbar button switches
+  the mode on and off. The hand and magnifier are ordinary toolbar items, at
+  first in More tools: add them to the bar with Customize toolbar when you
+  want them there. A command, "Turn Only stylus mode on or off", is there for
+  a hardware key too.
 
 ### Changed
 

@@ -1318,19 +1318,13 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * Only stylus mode's toolbar button was tapped: save the mode and give
-   * every open notebook its hand, magnifier and toggle in one go.
+   * Only stylus mode was switched from the toolbar or a command: save it and
+   * give every open notebook its toggle in one go.
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
     this.settings.onlyStylusMode = on;
     await this.saveSettings();
-    for (const view of this.openNotebooks()) view.syncOnlyStylusChrome();
-  }
-
-  /** A switch in the mode's own settings changed: save it and every notebook follows. */
-  async applyOnlyStylusSettings(): Promise<void> {
-    await this.saveSettings();
-    for (const view of this.openNotebooks()) view.syncOnlyStylusChrome();
+    for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

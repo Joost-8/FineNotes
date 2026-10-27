@@ -291,17 +291,9 @@ export interface GoodObsidianSettings {
   straightHighlighter: boolean;
   /**
    * Only stylus mode: every pointer but the pen is ignored on the page, so
-   * a hand resting on the glass moves neither the ink nor the page. The hand
-   * and magnifier tools move and zoom it with the pen instead
-   * (`input/only-stylus.ts`).
+   * a hand resting on the glass moves neither the ink nor the page.
    */
   onlyStylusMode: boolean;
-  /** Show the mode's on/off button on the tool bar. */
-  onlyStylusToolbarButton: boolean;
-  /** Show the hand tool while Only stylus mode is on. */
-  onlyStylusHandTool: boolean;
-  /** Show the magnifier tool while Only stylus mode is on. */
-  onlyStylusZoomTool: boolean;
 
   /**
    * The settings tab's sections shown open, by id; every other one is
@@ -399,9 +391,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
-  onlyStylusToolbarButton: true,
-  onlyStylusHandTool: true,
-  onlyStylusZoomTool: true,
 
   settingsOpen: [],
   scribbleTipDismissed: false,
@@ -657,7 +646,6 @@ export function changesTabLayout(key: string): boolean {
     key === "imageVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
-    key === "useLearnedHandwriting" ||
-    key === "onlyStylusMode"
+    key === "useLearnedHandwriting"
   );
 }

@@ -18,6 +18,8 @@ export type BarItemId =
   | "eraser"
   | "text"
   | "shape"
+  | "pan"
+  | "zoom"
   | "image"
   | "pdf"
   | "sticker"
@@ -32,6 +34,8 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "eraser",
   "text",
   "shape",
+  "pan",
+  "zoom",
   "image",
   "pdf",
   "sticker",
@@ -40,7 +44,10 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "record",
 ];
 
-/** The bar a new install starts with; stickers, sticky notes, the ruler and the mic wait in the menu. */
+/**
+ * The bar a new install starts with; the hand, the magnifier, stickers, sticky
+ * notes, the ruler and the mic wait in the menu.
+ */
 export const DEFAULT_BAR: readonly BarItemId[] = [
   "select",
   "pen",
@@ -61,6 +68,8 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   eraser: "Eraser",
   text: "Text",
   shape: "Shapes",
+  pan: "Hand",
+  zoom: "Magnifier",
   image: "Image",
   pdf: "PDF",
   sticker: "Stickers",
@@ -76,6 +85,8 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   eraser: "eraser",
   text: "type",
   shape: "shapes",
+  pan: "hand",
+  zoom: "zoom-in",
   image: "image",
   pdf: "file-text",
   sticker: "sticker",
