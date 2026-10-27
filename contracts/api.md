@@ -422,6 +422,18 @@ tail and tip, and its head follows the shaft. Dragging a corner of a whole
 One drag is one `ReshapeStroke` (`selection-commands.ts`), which gives the
 stroke a fresh points array and puts the old one back on undo.
 
+**Snapping to shapes (2026-10-27, discussion #51).** While a shape is
+drawn, its ends and corners land on another shape's points within 12 screen
+px (`src/ink/shape-snap.ts`): the Shape tool's line and arrow ends and
+rectangle corners, a held line's start (at the hold) and far end, and a held
+polygon's corners (the pen position is solved so the shape stays the shape).
+What a stroke offers is read off its points, never its kind's layout: a
+polygonal shape or piece (≤ 12 vertices) its vertices and side midpoints, a
+whole arrow its tail, tip and shaft midpoint, a circle or ellipse its centre
+and outermost points, a rounded rectangle or cloud its centre, a curved
+piece its ends, handwriting nothing. Candidates come from the stroke index
+(`forEachNear`, no set built); targets are cached per points array.
+
 ### Three deliberate limits (decided 2026-09-20, not accidents)
 
 1. **Minimum size.** A stroke whose bounding-box diagonal is under 24 px is

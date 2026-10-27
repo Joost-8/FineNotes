@@ -16,7 +16,6 @@ extracted from the matching section of this file by `release.yml`.
   upright: a held line, an arrow, the Shape tool's line and arrow, and the
   highlighter's straight line. While the pen still holds a snapped line, it
   settles level as you turn it past.
-
 - **Move a shape's corners and ends**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
   shape on its own and a ring sits on each of its corners or ends: drag one
@@ -24,6 +23,11 @@ extracted from the matching section of this file by `release.yml`.
   and its knob still turns it. A rectangle with a corner moved becomes a
   four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
   rounded rectangles and clouds have no rings.
+- **Shapes snap to each other**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). While you
+  draw a line, an arrow or a rectangle with the Shape tool, or hold a shape
+  you drew, its ends and corners snap to the corners, ends and midpoints of
+  the shapes already on the page, and a small ring shows where.
 
 ### Changed
 

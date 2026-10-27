@@ -174,6 +174,14 @@ describe("the Shape tool's connectors level about where the pen went down", () =
     expect(up[4]).toBeLessThan(200);
   });
 
+  it("an end that snapped to another shape's point stays on it, level or not", () => {
+    // d51-shapes-all: the Shape tool passes `level: false` once its end has
+    // snapped to a shape (src/ink/shape-snap.ts).
+    expect(presetGeometry("line", { x: 100, y: 200 }, { x: 300, y: 212 }, 0.5, false)).toEqual([
+      100, 200, 0.5, 300, 212, 0.5,
+    ]);
+  });
+
   it("outside the band the connector goes where it was dragged", () => {
     expect(presetGeometry("line", { x: 0, y: 0 }, { x: 200, y: 40 }, 0.5)).toEqual([
       0, 0, 0.5, 200, 40, 0.5,

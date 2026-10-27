@@ -6826,6 +6826,26 @@ textarea.goodobsidian-chat-input:focus-visible {
   visibility: hidden;
 }
 
+/* Where a shape being drawn snapped to another shape's corner, end or
+   midpoint (discussion #51): a small ring on the point, as long as it holds.
+   Screen-sized at any zoom, and never in the way of the pen. */
+.goodobsidian-snap-marker {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.goodobsidian-snap-marker.is-hidden {
+  display: none;
+}
+
 /* The action bar and its "…" menu, after GoodNotes: dark in every theme.
    Both carry Obsidian's own `theme-dark` class, which re-declares the
    --color-base-* palette (and --color-red) on them, so these are Obsidian's
