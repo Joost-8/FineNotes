@@ -19,8 +19,8 @@ extracted from the matching section of this file by `release.yml`.
   picks the lasso and selects it with its handles and bar, as a tap on a
   picture does.
 - **Pinch and turn a selection with two fingers.** Two fingers on a
-  selection, or either side of a small one, scale it, turn it and move it
-  at once, and the lift is one undo step. Two fingers elsewhere still zoom
+  selection or a selected picture, or either side of a small one, scale
+  it, turn it and move it at once, and the lift is one undo step. Two fingers elsewhere still zoom
   the page.
 
 ### Changed

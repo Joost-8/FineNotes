@@ -1020,6 +1020,8 @@ interface ImageDrag {
   draft: ImageTransform;
   /** Whether the image has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /** A finger holds it, so a second finger may pinch the picture. */
+  finger?: boolean;
 }
 
 /**
@@ -1142,6 +1144,11 @@ interface GroupPinch {
   max: number;
   /** The fingers are the page's: they landed round the selection, not on its frame. */
   page: boolean;
+  /**
+   * The drag was made for the pinch (by the page's fingers, or from a lone
+   * picture's drag): there is no finger's drag of the frame to go back to.
+   */
+  owned: boolean;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -2034,6 +2041,14 @@ export class InkSurface {
     const knob = this.imageFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(knob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.imageFrameEl.addEventListener("pointerdown", this.onImagePointerDown);
+    for (const type of [
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "lostpointercapture",
+    ] as const) {
+      this.imageFrameEl.addEventListener(type, this.onSelectionFinger);
+    }
 
     // Crop mode: a box over the whole picture, which takes every press on
     // it, with the crop frame and its handles inside.
@@ -10390,7 +10405,8 @@ export class InkSurface {
     if (finger && this.activePage !== null) return;
     if (this.groupDrag) {
       // A second finger beside the one dragging it: a pinch of the selection.
-      if (finger && this.groupDrag.finger === true) this.addFrameFinger(event);
+      if (finger && this.groupDrag.finger === true)
+        this.addFrameFinger(this.selectionFrameEl, event);
       return;
     }
     const box = this.boxForPage(sel.pageId);
@@ -10427,10 +10443,10 @@ export class InkSurface {
     }
   };
 
-  /** Another finger landed on the frame while one drags the selection: it joins, to pinch. */
-  private addFrameFinger(event: PointerEvent): void {
+  /** Another finger landed on a frame while one drags its selection or picture: it joins, to pinch. */
+  private addFrameFinger(frame: HTMLElement, event: PointerEvent): void {
     try {
-      this.selectionFrameEl.setPointerCapture(event.pointerId);
+      frame.setPointerCapture(event.pointerId);
     } catch {
       // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
     }
@@ -10458,7 +10474,8 @@ export class InkSurface {
       this.selectionFingers.down(PAGE_FINGER_ID, x, y, t);
       return true;
     }
-    if (this.groupDrag?.finger !== true || this.touchPanning) return false;
+    const held = this.groupDrag?.finger === true || this.imageDrag?.finger === true;
+    if (!held || this.touchPanning) return false;
     if (!this.selectionFingers.down(PAGE_FINGER_ID, x, y, t)) return false;
     this.pageFingerOnFrame = true;
     return true;
@@ -10466,43 +10483,115 @@ export class InkSurface {
 
   /**
    * Two fingers began a pinch at client point (x, y): on the frame of the
-   * selection a finger is dragging, or (`page`) both on the page with their
-   * midpoint over the selection. Returns whether the selection took it. A
-   * drag by a corner handle or the knob stays what it was.
+   * selection or picture a finger is dragging, or (`page`) both on the page
+   * with their midpoint over the selection or the selected picture. Returns
+   * whether it took the pinch. A drag by a handle or a knob stays what it was.
    */
   private startGroupPinch(x: number, y: number, page: boolean): boolean {
     if (this.callbacks.isLocked?.()) return false;
-    const sel = this.liveSelection();
-    const box = sel ? this.boxForPage(sel.pageId) : null;
-    const bounds = sel ? this.groupBounds(sel) : null;
-    if (!sel || !box || !bounds) return false;
-    const at = this.pagePoint(box, x, y);
     let drag = this.groupDrag;
+    let owned = false;
     if (page) {
-      if (drag || this.activePage !== null) return false;
-      const frame = this.selectionFrameOf(bounds);
-      if (!pinchOnSelection(frame, at, PINCH_MARGIN_PX / this.unitScale)) return false;
-      drag = {
-        pointerId: -1,
-        selection: sel,
-        bounds,
-        from: at,
-        clientX: x,
-        clientY: y,
-        dx: 0,
-        dy: 0,
-        scale: null,
-        turn: null,
-        lifted: false,
-      };
-      this.groupDrag = drag;
+      if (drag || this.imageDrag || this.activePage !== null) return false;
+      drag = this.pinchableAt(x, y);
+      owned = true;
+    } else if (!drag) {
+      drag = this.groupDragFromPicture();
+      owned = true;
     }
     if (!drag || drag.scale || drag.turn || drag.pinch) return false;
     if (!page && drag.finger !== true) return false;
+    const box = this.boxForPage(drag.selection.pageId);
+    if (!box) return false;
+    this.groupDrag = drag;
     const range = this.groupScaleRange(drag.selection, drag.bounds);
-    const pinch = startPinch(at, { x: drag.dx, y: drag.dy });
-    drag.pinch = { pinch, motion: pinchMotion(pinch, range.min, range.max), ...range, page };
+    const pinch = startPinch(this.pagePoint(box, x, y), { x: drag.dx, y: drag.dy });
+    const motion = pinchMotion(pinch, range.min, range.max);
+    drag.pinch = { pinch, motion, ...range, page, owned };
     return true;
+  }
+
+  /**
+   * A drag for two page fingers whose midpoint (client px) lands over the
+   * lasso selection, or over the selected picture, within a margin; `null`
+   * when it lands elsewhere and the page should zoom.
+   */
+  private pinchableAt(x: number, y: number): GroupDrag | null {
+    const sel = this.liveSelection() ?? this.pictureAsSelection();
+    const box = sel ? this.boxForPage(sel.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!sel || !box || !bounds) return null;
+    const at = this.pagePoint(box, x, y);
+    const frame = this.selectionFrameOf(bounds);
+    if (!pinchOnSelection(frame, at, PINCH_MARGIN_PX / this.unitScale)) return null;
+    return {
+      pointerId: -1,
+      selection: sel,
+      bounds,
+      from: at,
+      clientX: x,
+      clientY: y,
+      dx: 0,
+      dy: 0,
+      scale: null,
+      turn: null,
+      lifted: false,
+    };
+  }
+
+  /** The selected picture as a selection of its own, a sticky note with its ink. */
+  private pictureAsSelection(): GroupSelection | null {
+    const picked = this.liveImageSelection();
+    if (!picked) return null;
+    return {
+      pageId: picked.pageId,
+      strokes: this.noteInk(picked),
+      images: [picked.image],
+      textBoxes: [],
+      tables: [],
+      graphs: [],
+    };
+  }
+
+  /**
+   * A finger dragging the selected picture by its body was joined by a
+   * second: the picture's drag becomes a selection drag the pinch carries on
+   * from, with any move the finger made. The finger keeps its capture.
+   */
+  private groupDragFromPicture(): GroupDrag | null {
+    const held = this.imageDrag;
+    const sel = held?.finger === true && held.part === "body" ? this.pictureAsSelection() : null;
+    const box = held ? this.boxForPage(held.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!held || !sel || !box || !bounds || sel.images[0] !== held.image) return null;
+    this.imageDrag = null;
+    this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
+    this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
+    this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);
+    this.imageUiEl.removeClass("is-dragging");
+    if (held.lifted) this.renderer?.setHiddenImages(NO_IMAGES);
+    const drag: GroupDrag = {
+      pointerId: held.pointerId,
+      selection: sel,
+      bounds,
+      from: held.from,
+      clientX: held.clientX,
+      clientY: held.clientY,
+      dx: held.draft.x - held.start.x,
+      dy: held.draft.y - held.start.y,
+      scale: null,
+      turn: null,
+      finger: true,
+      lifted: false,
+    };
+    // Drawn where the finger had already carried it.
+    if (held.lifted) {
+      this.groupDrag = drag;
+      this.liftSelection(drag, box);
+      this.renderGroupDraft();
+      this.syncImageOverlay();
+    }
+    return drag;
   }
 
   /** The pinch's fingers moved: the selection follows, drawn on the wet layer until the lift. */
@@ -10516,7 +10605,10 @@ export class InkSurface {
     grip.pinch = stepPinch(grip.pinch, step, TAP_SLOP_PX / this.unitScale);
     if (!grip.pinch.engaged) return;
     grip.motion = clampPinch(pinchMotion(grip.pinch, grip.min, grip.max), drag.bounds, box);
-    if (!drag.lifted) this.liftSelection(drag, box);
+    if (!drag.lifted) {
+      this.liftSelection(drag, box);
+      this.syncImageOverlay();
+    }
     this.renderGroupDraft();
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
@@ -10530,11 +10622,12 @@ export class InkSurface {
     const drag = this.groupDrag;
     const grip = drag?.pinch;
     if (!drag || !grip) return;
-    if (!grip.pinch.engaged && !grip.page) {
+    if (!grip.pinch.engaged && !grip.owned) {
       drag.pinch = undefined;
       return;
     }
     this.endGroupDrag(true);
+    this.syncImageOverlay();
   }
 
   private readonly onSelectionPointerMove = (event: PointerEvent): void => {
@@ -11627,7 +11720,9 @@ export class InkSurface {
     this.syncExplore();
     const sel = this.liveImageSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
-    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null);
+    // A pinch carries it as a selection, drawn on the wet layer: no chrome meanwhile.
+    const pinched = sel !== null && this.groupDrag?.selection.images.includes(sel.image) === true;
+    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null || pinched);
     this.syncCropOverlay();
     this.syncActionBar();
     if (!sel || !box || this.cropping) return;
@@ -11658,7 +11753,13 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveImageSelection();
-    if (!sel || this.imageDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    const finger = event.pointerType === "touch";
+    if (this.imageDrag) {
+      // A second finger beside the one dragging it: a pinch of the picture.
+      if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
+      return;
+    }
     const box = this.boxForPage(sel.pageId);
     if (!box) return;
     const from = this.pagePoint(box, event.clientX, event.clientY);
@@ -11685,11 +11786,17 @@ export class InkSurface {
       clientY: event.clientY,
       draft: start,
       lifted: false,
+      finger,
     };
     this.imageUiEl.addClass("is-dragging");
     this.imageFrameEl.addEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.addEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.addEventListener("pointercancel", this.onImagePointerEnd);
+    if (finger) {
+      // No drag was under way, so any finger still counted lost its lift.
+      if (!this.pageFingerOnFrame) this.selectionFingers.cancel();
+      this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    }
   };
 
   private readonly onImagePointerMove = (event: PointerEvent): void => {
