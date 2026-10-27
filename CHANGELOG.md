@@ -18,6 +18,10 @@ extracted from the matching section of this file by `release.yml`.
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
   selects it with its handles and bar, and the pen stays in hand: a pen
   stroke beside it lets go and writes.
+- **Pinch and turn a selection with two fingers.** Two fingers on a
+  selection, or either side of a small one, scale it, turn it and move it
+  at once, and the lift is one undo step. Two fingers elsewhere still zoom
+  the page.
 
 ### Changed
 

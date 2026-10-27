@@ -17,6 +17,12 @@
 export interface PinchInfo {
   /** Incremental zoom factor since the previous pinch event. */
   scaleFactor: number;
+  /**
+   * How far the line between the two fingers turned since the previous
+   * pinch event, radians clockwise (y down), within (-π, π]. The page's zoom
+   * ignores it; a selection being pinched turns by it.
+   */
+  rotation: number;
   /** The pinch midpoint, client px. */
   centerX: number;
   centerY: number;
@@ -48,6 +54,8 @@ export class FingerGesture {
    * while there is no pinch. Zero until they spread, so no step divides by it.
    */
   private spread: number | null = null;
+  /** The direction from the first finger to the second at the last pinch report, radians. */
+  private heading = 0;
 
   constructor(private readonly listener: FingerGestureListener) {}
 
@@ -78,11 +86,13 @@ export class FingerGesture {
       if (this.spread) {
         this.listener.onPinch?.({
           scaleFactor: focus.spread / this.spread,
+          rotation: turnBetween(this.heading, focus.heading),
           centerX: focus.x,
           centerY: focus.y,
         });
       }
       this.spread = focus.spread;
+      this.heading = focus.heading;
     }
     this.listener.onPanMove?.(focus.x, focus.y, t);
   }
@@ -123,6 +133,7 @@ export class FingerGesture {
     } else {
       const starting = this.spread === null;
       this.spread = focus.spread;
+      this.heading = focus.heading;
       if (starting) this.listener.onPinchStart?.(focus.x, focus.y);
     }
     this.listener.onPanStart?.(focus.x, focus.y, t);
@@ -135,16 +146,27 @@ export class FingerGesture {
   }
 
   /**
-   * Where the gesture is, and the distance between its two fingers (null
-   * with one). Only called while at least one finger is down.
+   * Where the gesture is, the distance between its two fingers (null with
+   * one) and the direction from the first to the second. Only called while
+   * at least one finger is down.
    */
-  private focus(): { x: number; y: number; spread: number | null } {
+  private focus(): { x: number; y: number; spread: number | null; heading: number } {
     const [a, b] = [...this.fingers.values()];
-    if (!b) return { x: a.x, y: a.y, spread: null };
+    if (!b) return { x: a.x, y: a.y, spread: null, heading: 0 };
     return {
       x: (a.x + b.x) / 2,
       y: (a.y + b.y) / 2,
       spread: Math.hypot(b.x - a.x, b.y - a.y),
+      heading: Math.atan2(b.y - a.y, b.x - a.x),
     };
   }
+}
+
+/** The turn from direction `from` to `to`, the short way round: within (-π, π]. */
+function turnBetween(from: number, to: number): number {
+  const turn = Math.PI * 2;
+  let d = (to - from) % turn;
+  if (d <= -Math.PI) d += turn;
+  if (d > Math.PI) d -= turn;
+  return d;
 }
