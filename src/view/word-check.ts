@@ -11,7 +11,7 @@
  *   underline, one a line, added to the public list bundled with the plugin
  *   (models/words.txt, built by scripts/build-words.mjs). Without either
  *   nothing is underlined.
- * - `FineNotes handwriting sheets/corrections.json`, the answers, ink
+ * - `FineNotes assets/Handwriting sheets/corrections.json`, the answers, ink
  *   included; "Learn my handwriting" and the nightly loop learn from them.
  *   In the vault, beside the practice sheets, so reinstalling the plugin
  *   keeps them (they were in the plugin's folder before 2.6).

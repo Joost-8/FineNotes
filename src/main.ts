@@ -2234,7 +2234,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /**
    * Practice set `set` as a new `.practice.md` file in FineNotes
-   * handwriting sheets, opened at its cover. Sheets made elsewhere before
+   * assets/Handwriting sheets, opened at its cover. Sheets made elsewhere before
    * 2.6 stay where they are: learning finds them anywhere in the vault.
    */
   async createPracticeFile(set: number): Promise<TFile | null> {

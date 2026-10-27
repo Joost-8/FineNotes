@@ -2,10 +2,11 @@
  * The vault folders FineNotes keeps its own files in, and the move from the
  * folders it used before 2.6.
  *
- * - `FineNotes assets`: templates (with the My templates papers) and stickers,
- *   each a folder the settings can point elsewhere;
- * - `FineNotes handwriting sheets`: the practice sheets FineNotes makes, and
- *   the corrected words (`corrections.json`), which used to live in the
+ * All in one folder at the vault's root, `FineNotes assets`:
+ * - `Templates` (with the My templates papers) and `Stickers`, each a folder
+ *   the settings can point elsewhere;
+ * - `Handwriting sheets`: the practice sheets FineNotes makes, and the
+ *   corrected words (`corrections.json`), which used to live in the
  *   plugin's own folder, where reinstalling the plugin deleted them.
  *
  * A vault still set to an old default moves to the new one: the setting, the
@@ -18,7 +19,7 @@
 export const ASSETS_FOLDER = "FineNotes assets";
 export const DEFAULT_TEMPLATE_FOLDER = `${ASSETS_FOLDER}/Templates`;
 export const DEFAULT_STICKER_FOLDER = `${ASSETS_FOLDER}/Stickers`;
-export const HANDWRITING_FOLDER = "FineNotes handwriting sheets";
+export const HANDWRITING_FOLDER = `${ASSETS_FOLDER}/Handwriting sheets`;
 
 /** The defaults before 2.6, each at the vault's root. */
 export const LEGACY_TEMPLATE_FOLDER = "FineNotes templates";

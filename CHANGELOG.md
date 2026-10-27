@@ -21,9 +21,9 @@ extracted from the matching section of this file by `release.yml`.
   `FineNotes assets` (as `Templates` and `Stickers`); a vault still using
   the old default folders has them moved there on the next start, and a
   folder you chose yourself stays where it is. New handwriting practice
-  sheets go into `FineNotes handwriting sheets`, and so do your corrected
-  words, which were kept in the plugin's own folder, where reinstalling
-  FineNotes deleted them.
+  sheets go into `FineNotes assets/Handwriting sheets`, and so do your
+  corrected words, which were kept in the plugin's own folder, where
+  reinstalling FineNotes deleted them.
 - **Learning your handwriting again.** After every 50 corrected words, a
   notice offers to learn again. Learning again keeps the new model only if
   it reads your test lines better than the one you have, not just better

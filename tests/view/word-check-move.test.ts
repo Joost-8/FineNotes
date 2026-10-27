@@ -12,7 +12,7 @@ const { addCorrection, emptyCorrections, parseCorrections, serializeCorrections 
   await import("../../src/recognition/hwr/corrections");
 
 const OLD = "plug/handwriting/corrections.json";
-const NEW = "FineNotes handwriting sheets/corrections.json";
+const NEW = "FineNotes assets/Handwriting sheets/corrections.json";
 
 function correction(page: string, text: string) {
   return {

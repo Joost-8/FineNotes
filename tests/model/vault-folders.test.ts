@@ -14,7 +14,7 @@ describe("FineNotes' folders", () => {
   it("keeps templates and stickers under FineNotes assets, corrections beside the sheets", () => {
     expect(DEFAULT_TEMPLATE_FOLDER).toBe("FineNotes assets/Templates");
     expect(DEFAULT_STICKER_FOLDER).toBe("FineNotes assets/Stickers");
-    expect(correctionsFile()).toBe("FineNotes handwriting sheets/corrections.json");
+    expect(correctionsFile()).toBe("FineNotes assets/Handwriting sheets/corrections.json");
     expect(legacyCorrectionsFile("/.obsidian/plugins/finenotes/")).toBe(
       ".obsidian/plugins/finenotes/handwriting/corrections.json",
     );
