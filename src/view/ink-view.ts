@@ -1000,6 +1000,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setStickyArmed(color !== null);
   }
 
+  /** "Join pages" was switched: lay the pages out with or without their gap. */
+  syncJoinedPages(): void {
+    this.relayout();
+  }
+
   setPenCursor(style: unknown): void {
     this.surface?.setPenCursor(Platform.isMobile ? "arrow" : penCursorStyleOf(style));
   }
@@ -2634,6 +2639,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        joinedPages: () => this.settings.joinedPages === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onShortcuts: () => this.toggleShortcuts(),

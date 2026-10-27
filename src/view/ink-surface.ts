@@ -671,6 +671,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** "Join pages": no gap between pages (`JOINED_PAGE_GAP`); off when absent. */
+  joinedPages?: () => boolean;
   /**
    * Where the box the text pill acts on is on screen (client px), or `null`
    * when there is none: the host floats the pill beside it, as GoodNotes
@@ -3233,7 +3235,8 @@ export class InkSurface {
     const priorAt = this.scroller.position;
     const anchored = this.zoomInitialised && !turned && direction === "vertical" && !this.pinch;
     this.direction = direction;
-    this.pageLayout = layoutPages(this.doc.pages, { direction });
+    const joined = this.callbacks.joinedPages?.() === true;
+    this.pageLayout = layoutPages(this.doc.pages, { direction, joined });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
     // on a wide desktop pane an upscaled page looks like a zoom bug, and the
@@ -3250,7 +3253,8 @@ export class InkSurface {
       // changes neither the fit width nor the tallest page, so the scale and
       // floor just computed still hold.
       // Zoomed in, the gap closes so the next page shows beside this one.
-      this.rowSlot = rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
+      // Joined pages have no gap to space or close: 0 keeps `syncRowGap` out.
+      this.rowSlot = joined ? 0 : rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
       this.rowGap = Number.NaN;
       this.syncRowGap();
     }

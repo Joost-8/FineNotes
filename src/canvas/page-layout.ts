@@ -38,6 +38,13 @@ export type { ScrollDirection };
 export const PAGE_GAP = 36;
 
 /**
+ * The gap between pages with "Join pages" on (discussion #51): none, so
+ * the pages run on as one sheet, down or across. Only the layout changes:
+ * every page keeps its own box and its own page space.
+ */
+export const JOINED_PAGE_GAP = 0;
+
+/**
  * Horizontal breathing room either side of the widest page, as a fraction of
  * that page's width. The design brief asks for "generous margins either side -
  * the page is an object on a desk, not a region that fills the pane".
@@ -79,6 +86,8 @@ export interface DocumentLayout {
 
 export interface LayoutOptions {
   gap?: number;
+  /** "Join pages": {@link JOINED_PAGE_GAP} between pages, whatever `gap` says. */
+  joined?: boolean;
   marginX?: number;
   marginY?: number;
   direction?: ScrollDirection;
@@ -103,7 +112,7 @@ function fallbackBox(geometry: PageGeometry, marginX: number, marginY: number): 
  * device.
  */
 export function layoutPages(pages: readonly Page[], options: LayoutOptions = {}): DocumentLayout {
-  const gap = options.gap ?? PAGE_GAP;
+  const gap = options.joined ? JOINED_PAGE_GAP : (options.gap ?? PAGE_GAP);
   const marginX = options.marginX;
   const marginY = options.marginY ?? PAGE_MARGIN_Y;
   const direction = options.direction ?? "vertical";

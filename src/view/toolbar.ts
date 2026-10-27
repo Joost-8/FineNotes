@@ -4150,8 +4150,9 @@ export class Toolbar {
   private pillArea(hostBox: DOMRect, pillWidth: number): PillArea {
     const win = this.host.ownerDocument.defaultView;
     const windowBottom = (win?.innerHeight ?? Infinity) - keyboardHeight();
-    // Obsidian pads the view's foot (32 px on mobile, for its own bar); the
-    // page ends above it, and so does the pill's room.
+    // The view's foot is padded for the home indicator or the desktop's
+    // status bar (styles.css): the page reaches under it, the pill's room
+    // ends above it.
     const foot = parseFloat(win?.getComputedStyle(this.host).paddingBottom ?? "") || 0;
     return {
       left: Math.min(this.leftInset, Math.max(0, hostBox.width - pillWidth)),

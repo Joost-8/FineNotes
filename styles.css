@@ -248,6 +248,31 @@ body,
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* What the bottom chrome keeps clear of: the iPad's home indicator. */
+  --gob-view-foot: var(--safe-area-inset-bottom, 0px);
+}
+
+/* On the desktop, Obsidian's status bar floats over the bottom right of
+   the window, and Obsidian's own foot padding is what kept the zoom
+   readout clear of it. */
+body:not(.is-mobile) .goodobsidian-view {
+  --gob-view-foot: var(--size-4-8, 32px);
+}
+
+/* The page uses the whole view (discussion #51): Obsidian pads every view
+   12 px, and 32 px at the foot, which framed the desk in the theme's
+   background. Only the foot above stays padded (the home indicator's safe
+   area, or the desktop's status bar), so the pill (toolbar.ts, pillArea)
+   still rests above it, and the page body reaches under it. Two classes beside Obsidian's to outrank its rule,
+   whose `overflow: auto` also beat the view's `hidden`: a pill tucked away
+   below the bottom edge gave the view a scroll bar. */
+.workspace-leaf-content > .view-content.goodobsidian-view {
+  padding: 0 0 var(--gob-view-foot);
+  overflow: hidden;
+}
+
+.goodobsidian-view > .goodobsidian-body {
+  margin-bottom: calc(-1 * var(--gob-view-foot));
 }
 
 /* --------------------------------------------------- toolbar, tier 1 */
@@ -12847,12 +12872,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    several components (CLAUDE.md ledger). Under the tool bar it reaches
    nothing, and all of these sit where they always have. */
 .goodobsidian-pageindicator {
-  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(12px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 .goodobsidian-zoomreadout {
   right: calc(12px + var(--gob-pill-clear-right, 0px));
-  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(12px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 .goodobsidian-rec-pill {
@@ -12860,7 +12885,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 }
 
 .goodobsidian-player {
-  bottom: calc(44px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(44px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 /* --- The customizable tool bar ------------------------------------------------

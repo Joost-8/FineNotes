@@ -248,6 +248,11 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.penCursor = style;
       return Promise.resolve();
     }),
+    setJoinedPages: vi.fn((joined: boolean) => {
+      calls.push(`joinedPages:${joined}`);
+      settings.joinedPages = joined;
+      return Promise.resolve();
+    }),
   };
   return plugin;
 }
@@ -403,6 +408,7 @@ describe("the rows", () => {
       [PENS, "Keyboard shortcuts", "render"],
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
+      [PAGES, "Join pages", "toggle:joinedPages"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
       [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
@@ -616,6 +622,7 @@ describe("which rows show", () => {
       ...PEN_ROWS,
       "Page appearance",
       "Paper width",
+      "Join pages",
       "More",
       "New notebooks go in",
       "Each notebook gets its own folder",
@@ -626,7 +633,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -953,6 +960,14 @@ describe("control values", () => {
     await makeTab(plugin).tab.setControlValue("debugHud", true);
     expect(plugin.setDebugHud).toHaveBeenCalledWith(true);
     expect(plugin.calls).toEqual(["debugHud:true"]);
+  });
+
+  it("hands Join pages to the plugin, which saves it and lays open notebooks out again", async () => {
+    const plugin = makePlugin();
+    await makeTab(plugin).tab.setControlValue("joinedPages", true);
+    expect(plugin.setJoinedPages).toHaveBeenCalledWith(true);
+    expect(plugin.settings.joinedPages).toBe(true);
+    expect(plugin.calls).toEqual(["joinedPages:true"]);
   });
 
   it("hands pressure to the plugin, which redraws open notebooks, and shows the warning", async () => {

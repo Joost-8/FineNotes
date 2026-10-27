@@ -1311,6 +1311,13 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.setPenCursor(style);
   }
 
+  /** "Join pages": save it, and lay out every open notebook with or without the gaps. */
+  async setJoinedPages(joined: boolean): Promise<void> {
+    this.settings.joinedPages = joined;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncJoinedPages();
+  }
+
   /** Remember the lasso's type and what it picks up, for the next session. */
   saveLasso(mode: LassoMode, filter: LassoFilter): void {
     this.settings.lassoMode = mode;
