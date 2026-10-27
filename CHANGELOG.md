@@ -8,6 +8,24 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Move the toolbar to any edge**
+  ([#50](https://github.com/Joost-8/FineNotes/issues/50)). Hold the main
+  toolbar for a moment and drag it: a square shows the edge it will land on,
+  and when you let go it springs to the nearest one: the top, the bottom, or
+  upright along the left or right side. The page makes room on that side and
+  keeps the spot you were reading. Upright, the toolbar's buttons stack, and
+  what does not fit folds into ⋯ as it does along the top. Its menus open
+  toward the page from every edge, a tool's bar resting by the toolbar goes
+  with it, and each device remembers its own place.
+
+### Fixed
+
+- The notebook could scroll by a few pixels in Obsidian when a tool's bar
+  along the bottom was tucked away, which narrowed the page by a scrollbar's
+  width and changed its zoom a little.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

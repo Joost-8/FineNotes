@@ -13042,3 +13042,186 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
 }
+
+/* ------------------------------------------- the tool bar at another edge */
+
+/* Held and dragged, the tool bar rests along the top, the bottom, or upright
+   at either side (toolbar.ts, setBarDock; bar-dock-model.ts). The page gives
+   way on that side: the bar stays in the view's flow, so the surface shrinks
+   and lays out again around the page point it showed. Last in the file: these
+   restyle the view, the bar and its buttons, whose own rules come earlier. */
+
+/* The view never scrolls. Obsidian's `.workspace-leaf-content .view-content
+   { overflow: auto }` outranks `.goodobsidian-view` above, so a pill tucked
+   away past the view's edge made the whole view scroll: a 12 px scrollbar
+   narrowed the page and changed its fit (CLAUDE.md ledger, 2026-10-27). */
+.workspace-leaf-content .view-content.goodobsidian-view {
+  overflow: hidden;
+}
+
+/* Carried: the bar stays where it was, faded, while a square shows the edge
+   it would land on. */
+.goodobsidian-toolbar.is-lifted {
+  opacity: 0.35;
+}
+
+/* Along the bottom: after the page and the text layer, its hairline above. */
+.goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-toolbar {
+  order: 1;
+  border-bottom: none;
+  border-top: var(--gob-bar-border);
+}
+
+/* At a side: the view becomes two columns, the bar spanning every row of
+   the other (the page, then the text layer under it). */
+.goodobsidian-view.goodobsidian-bar-at-left,
+.goodobsidian-view.goodobsidian-bar-at-right {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* Only the children in the flow: an absolutely placed one (the pill, a
+   popover) given a column would be placed inside it, not in the view. */
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-textpanel {
+  grid-column: 2;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-textpanel {
+  grid-column: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-toolbar,
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-toolbar {
+  grid-row: 1 / -1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-toolbar {
+  grid-column: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-toolbar {
+  grid-column: 2;
+}
+
+/* Upright: the groups stack, the tools centred down the bar, the document's
+   actions at its foot. What does not fit folds into ⋯ as along the top
+   (fitBar measures down the bar); anything still taller scrolls. */
+.goodobsidian-toolbar.is-upright {
+  flex-direction: column;
+  min-height: 0;
+  min-width: var(--gob-bar-h);
+  padding: 10px 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  touch-action: pan-y;
+  border-bottom: none;
+}
+
+.goodobsidian-toolbar.is-upright::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-toolbar.is-upright.is-dock-left {
+  border-right: var(--gob-bar-border);
+}
+
+.goodobsidian-toolbar.is-upright.is-dock-right {
+  border-left: var(--gob-bar-border);
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group {
+  flex-direction: column;
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group.is-centre {
+  padding: 8px 0 0;
+  border-left: none;
+  border-top: 1px solid var(--gob-line);
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin: auto 0 0;
+}
+
+.goodobsidian-toolbar.is-upright.is-crowded .goodobsidian-bar-group.is-tools {
+  margin: auto 0;
+}
+
+.goodobsidian-toolbar.is-upright.is-crowded .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin: 0;
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-sep {
+  width: 22px;
+  height: 1px;
+  margin: 2px 0;
+}
+
+/* A tool with a menu grows downwards, not sideways, its ▾ under the icon. */
+.goodobsidian-toolbar.is-upright button.has-caret.is-active,
+.goodobsidian-toolbar.is-upright button.goodobsidian-ruler-button.is-on,
+.goodobsidian-toolbar.is-upright button.goodobsidian-accessories-button {
+  min-width: var(--gob-touch);
+  height: 58px;
+  padding: 0 6px 14px;
+}
+
+.goodobsidian-toolbar.is-upright button .goodobsidian-tool-caret {
+  top: auto;
+  right: 50%;
+  bottom: 1px;
+  transform: translateX(50%);
+}
+
+/* The ▾ points where its menu opens: toward the page. */
+.goodobsidian-toolbar.is-dock-bottom button .goodobsidian-tool-caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.goodobsidian-toolbar.is-dock-left button .goodobsidian-tool-caret {
+  transform: translateX(50%) rotate(-90deg);
+}
+
+.goodobsidian-toolbar.is-dock-right button .goodobsidian-tool-caret {
+  transform: translateX(50%) rotate(90deg);
+}
+
+/* "Update available" opens toward the page too, its point at the gear. */
+.goodobsidian-update-tip.points-up::before {
+  top: auto;
+  bottom: -4px;
+}
+
+.goodobsidian-update-tip.points-right::before,
+.goodobsidian-update-tip.points-left::before {
+  top: calc(50% - 4px);
+}
+
+.goodobsidian-update-tip.points-right::before {
+  right: auto;
+  left: -4px;
+}
+
+.goodobsidian-update-tip.points-left::before {
+  right: -4px;
+}
+
+/* The Grape download card rests on the window's foot, where a bar along the
+   bottom of the open notebook now is: it rises above the bar (the bar, plus
+   Obsidian's foot padding under it). */
+body:has(.workspace-leaf.mod-active .goodobsidian-bar-at-bottom) .goodobsidian-download-card {
+  bottom: calc(
+    24px + var(--gob-bar-h) + 34px + var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px)
+  );
+}

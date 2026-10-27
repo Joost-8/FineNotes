@@ -4,7 +4,7 @@
  * turns its text into a notebook and back, and puts the pieces on screen:
  *
  *   .goodobsidian-view                the tab's content
- *     .goodobsidian-toolbar           tools and actions (toolbar.ts)
+ *     .goodobsidian-toolbar           tools and actions (toolbar.ts), at any edge (bar-dock-model.ts)
  *     .goodobsidian-body              a row:
  *       .goodobsidian-pagesidebar       page thumbnails, shown on request (page-sidebar.ts)
  *       .goodobsidian-surface           the pages themselves (ink-surface.ts)
@@ -288,6 +288,7 @@ import {
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import type { PillDock } from "./pill-dock-model";
+import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
@@ -868,6 +869,11 @@ export class InkView extends TextFileView {
   /** The options pill was moved in some notebook (the plugin's, per device): this one's follows. */
   showPillDock(dock: PillDock): void {
     this.toolbar?.setPillDock(dock);
+  }
+
+  /** The tool bar was moved in some notebook (the plugin's, per device): this one's follows. */
+  showBarDock(dock: BarDock): void {
+    this.toolbar?.setBarDock(dock);
   }
 
   override async onClose(): Promise<void> {
@@ -2502,11 +2508,13 @@ export class InkView extends TextFileView {
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onBarDock: (dock) => this.plugin.setBarDock(dock),
       },
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
+        barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
       },
     );

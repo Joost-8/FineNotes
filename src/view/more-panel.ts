@@ -32,6 +32,7 @@ import { setIcon } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
+import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -326,10 +327,23 @@ export class MorePanel {
     row.addEventListener("click", () => input.focus());
   }
 
-  /** Below ⋯, right-aligned to it, as tall as the window allows; the rest scrolls. */
+  /**
+   * Below ⋯, right-aligned to it, as tall as the window allows; the rest
+   * scrolls. From a tool bar at another edge, toward the page (`menuAnchor`).
+   */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
     const width = Math.min(PANEL_WIDTH, window.innerWidth - 16);
+    const { side, box } = menuAnchor(this.anchor);
+    if (side !== "down") {
+      const room = { width: window.innerWidth, height: window.innerHeight };
+      const maxHeight = Math.max(160, menuRoom(side, box, room, 6, 8));
+      this.el.setCssStyles({ width: `${width}px`, maxHeight: `${maxHeight}px` });
+      const size = { width, height: Math.min(this.el.offsetHeight, maxHeight) };
+      const at = menuPlace(side, box, size, room, "end", 6, 8);
+      this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px` });
+      return;
+    }
     const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
     const top = r.bottom + 6;
     this.el.setCssStyles({

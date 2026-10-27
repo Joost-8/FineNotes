@@ -48,6 +48,7 @@ import { type PageAppearance, shownPaperTheme } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
+import { type BarDock, parseBarDock } from "./view/bar-dock-model";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -1585,6 +1586,27 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillDockSeen = dock;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY, dock);
     for (const view of this.openNotebooks()) view.showPillDock(dock);
+  }
+
+  private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";
+
+  /**
+   * Where the tool bar rests (bar-dock-model.ts): along the top until it is
+   * dragged elsewhere, in every notebook, kept per device as the pill is.
+   */
+  get barDock(): BarDock {
+    this.barDockSeen ??= parseBarDock(this.app.loadLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY));
+    return this.barDockSeen;
+  }
+
+  private barDockSeen: BarDock | null = null;
+
+  /** The bar was dragged to `dock` in one notebook: keep it, and move every other's. */
+  setBarDock(dock: BarDock): void {
+    if (dock === this.barDock) return;
+    this.barDockSeen = dock;
+    this.app.saveLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY, dock);
+    for (const view of this.openNotebooks()) view.showBarDock(dock);
   }
 
   /** Every notebook view open in the workspace. */

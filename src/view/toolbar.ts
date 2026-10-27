@@ -160,6 +160,17 @@ import {
   pillClearance,
   popoverSide,
 } from "./pill-dock-model";
+import {
+  type BarDock,
+  DEFAULT_BAR_DOCK,
+  barDockIcon,
+  barMenuSide,
+  isBarUpright,
+  nearestBarDock,
+  pageArea,
+  parseBarDock,
+  pillAfterBarMove,
+} from "./bar-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
@@ -551,6 +562,8 @@ export interface ToolbarCallbacks {
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
   onPillDock?: (dock: PillDock) => void;
+  /** The user dragged the tool bar to `dock`; the host keeps it for this device. */
+  onBarDock?: (dock: BarDock) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -626,6 +639,8 @@ export interface ToolbarOptions {
   reservedColors?: readonly string[];
   /** Where the options pill rests (`pill-dock-model.ts`); under the tool bar by default. */
   pillDock?: PillDock;
+  /** Where the tool bar rests (`bar-dock-model.ts`); along the top by default. */
+  barDock?: BarDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
 }
@@ -733,7 +748,7 @@ const POPOVER_RISE = 6;
 /** Where the tool indicator and each tool button's contents are on screen, before a pick. */
 interface ToolPlaces {
   indicator: DOMRect;
-  contents: Map<Element, number>;
+  contents: Map<Element, { left: number; top: number }>;
 }
 
 /** The options pill's box in host px, for gliding it from one place to the next. */
@@ -758,6 +773,8 @@ export class Toolbar {
   private readonly colorSwatches = new Map<string, HTMLElement>();
   /** Where the pill rests when it is not by a text box (pill-dock-model.ts). */
   private pillDock: PillDock = DEFAULT_PILL_DOCK;
+  /** Where the bar rests (bar-dock-model.ts). */
+  private barDock: BarDock = DEFAULT_BAR_DOCK;
   /** Watches the pen's colour row give way to a narrow pane (`fitColorRow`). */
   private colorRowWatch: ResizeObserver | null = null;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
@@ -799,6 +816,8 @@ export class Toolbar {
   private updateTip: HTMLElement | null = null;
   /** Sets `is-crowded` from the groups' widths (`watchCrowding`). */
   private measureCrowding: () => void = () => {};
+  /** Folds, centres and marks the bar again (`watchCrowding`), as after a resize. */
+  private measureBar: () => void = () => {};
   /** The selected tool's square: one element sliding between the tool buttons. */
   private toolIndicator: HTMLElement | null = null;
   /** The tool the indicator stands under, so a pick of the same tool does not slide. */
@@ -891,6 +910,17 @@ export class Toolbar {
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", "Handwriting tools");
+    this.barDock = parseBarDock(options.barDock);
+    this.applyBarDock();
+    // Held, the bar lifts and is carried to an edge, as the pill is: a square
+    // shows the edge it would land on.
+    bindPillDrag(this.barEl, {
+      host,
+      canDrag: () => true,
+      icon: () => barDockIcon(this.barDock),
+      iconAt: (x, y) => barDockIcon(this.nearestBarDock(x, y)),
+      onDrop: (x, y) => this.dropBar(x, y),
+    });
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -1124,20 +1154,22 @@ export class Toolbar {
     const check = (): void => {
       const tools = this.toolsGroup;
       if (!tools) return;
-      const bar = this.barEl.getBoundingClientRect();
-      if (bar.width === 0) return;
-      const half = tools.getBoundingClientRect().width / 2;
-      let leftEdge = bar.left;
-      let rightEdge = bar.right;
+      // Along the bar: across it for a bar along an edge, down it for an upright one.
+      const along = this.barAxis();
+      const bar = along(this.barEl.getBoundingClientRect());
+      if (bar.length === 0) return;
+      const half = along(tools.getBoundingClientRect()).length / 2;
+      let leftEdge = bar.start;
+      let rightEdge = bar.end;
       for (const group of Array.from(this.barEl.children)) {
         if (group === tools || !group.instanceOf(HTMLElement)) continue;
-        const box = group.getBoundingClientRect();
-        if (box.width === 0) continue;
+        const box = along(group.getBoundingClientRect());
+        if (box.length === 0) continue;
         // Where each side's groups sit while the tools are centred.
-        if (group.hasClass("goodobsidian-bar-doc")) rightEdge = Math.min(rightEdge, box.left);
-        else leftEdge = Math.max(leftEdge, box.right);
+        if (group.hasClass("goodobsidian-bar-doc")) rightEdge = Math.min(rightEdge, box.start);
+        else leftEdge = Math.max(leftEdge, box.end);
       }
-      const centre = bar.left + bar.width / 2;
+      const centre = bar.start + bar.length / 2;
       const crowded = centre - half < leftEdge + BAR_GAP || centre + half > rightEdge - BAR_GAP;
       this.barEl.toggleClass("is-crowded", crowded);
     };
@@ -1152,6 +1184,7 @@ export class Toolbar {
       this.placeIndicator(this.indicatorTool, null);
       this.placeUpdateTip();
     };
+    this.measureBar = measure;
     if (typeof ResizeObserver === "function") {
       const observer = new ResizeObserver(measure);
       observer.observe(this.barEl);
@@ -1168,18 +1201,20 @@ export class Toolbar {
    */
   private fitBar(active: ActiveTool | null): void {
     const bar = this.barEl;
-    const box = bar.getBoundingClientRect();
-    if (box.width === 0) return;
+    const along = this.barAxis();
+    const box = along(bar.getBoundingClientRect());
+    if (box.length === 0) return;
     for (const item of this.foldable) item.button.removeClass("is-overflowed");
     this.measureCrowding();
     const style = getComputedStyle(bar);
-    const left = box.left + parseFloat(style.paddingLeft);
-    const right = box.right - parseFloat(style.paddingRight);
+    const upright = isBarUpright(this.barDock);
+    const left = box.start + parseFloat(upright ? style.paddingTop : style.paddingLeft);
+    const right = box.end - parseFloat(upright ? style.paddingBottom : style.paddingRight);
     const overflows = (): boolean =>
       Array.from(bar.children).some((group) => {
         if (!group.instanceOf(HTMLElement)) return false;
-        const at = group.getBoundingClientRect();
-        return at.width > 0 && (at.right > right + 0.5 || at.left < left - 0.5);
+        const at = along(group.getBoundingClientRect());
+        return at.length > 0 && (at.end > right + 0.5 || at.start < left - 0.5);
       });
     const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
     for (const item of order) {
@@ -1249,9 +1284,23 @@ export class Toolbar {
     tip.toggleClass("is-hidden", !shown);
     if (!shown) return;
     const width = tip.offsetWidth;
-    const room = (tip.ownerDocument.defaultView ?? window).innerWidth;
-    const left = Math.min(Math.max(8, at.left + at.width / 2 + 22 - width), room - width - 8);
-    tip.setCssStyles({ top: `${Math.round(at.bottom + 6)}px`, left: `${Math.round(left)}px` });
+    const height = tip.offsetHeight;
+    const win = tip.ownerDocument.defaultView ?? window;
+    const room = win.innerWidth;
+    const side = barMenuSide(this.barDock);
+    for (const s of ["up", "right", "left"] as const) tip.toggleClass(`points-${s}`, s === side);
+    let left = Math.min(Math.max(8, at.left + at.width / 2 + 22 - width), room - width - 8);
+    let top = at.bottom + 6;
+    // From a bar at another edge it opens toward the page, as the menus do.
+    if (side === "up") top = at.top - 6 - height;
+    else if (side !== "down") {
+      left = side === "right" ? at.right + 6 : at.left - 6 - width;
+      top = Math.min(
+        Math.max(8, at.top + at.height / 2 - height / 2),
+        win.innerHeight - height - 8,
+      );
+    }
+    tip.setCssStyles({ top: `${Math.round(top)}px`, left: `${Math.round(left)}px` });
   }
 
   /** Take "Update available" away, if it shows. */
@@ -3881,11 +3930,12 @@ export class Toolbar {
   }
 
   /**
-   * Which way a popover opens from `anchor`: toward the page from the pill
-   * at its place; down from the tool bar, and from a pill floating by a
+   * Which way a popover opens from `anchor`: toward the page from the bar
+   * and from the pill, wherever each rests; down from a pill floating by a
    * text box, whose own placing (`keepPopoverAboveKeyboard`) decides.
    */
   private popoverSideFor(anchor: HTMLElement): PopoverSide {
+    if (this.barEl.contains(anchor)) return barMenuSide(this.barDock);
     if (!this.optionsEl.contains(anchor) || this.optionsEl.hasClass("is-anchored")) return "down";
     return popoverSide(this.pillDock);
   }
@@ -3986,11 +4036,13 @@ export class Toolbar {
     const anchorBox = anchor.getBoundingClientRect();
     const box = popover.getBoundingClientRect();
     if (popover.hasClass("opens-right") || popover.hasClass("opens-left")) {
-      // Beside an upright pill it hangs centred on its button: slide it up
-      // or down instead, below the tool bar, the arrow still on the button.
-      const top = hostBox.top + this.barBottom();
+      // Beside an upright pill or bar it hangs centred on its button: slide
+      // it up or down instead, clear of the tool bar, the arrow still on the button.
+      const area = this.pillArea(hostBox, 0);
+      const top = hostBox.top + area.top;
+      const floor = hostBox.top + area.bottom - EDGE_INSET;
       let lift = 0;
-      if (box.bottom > hostBox.bottom - EDGE_INSET) lift = hostBox.bottom - EDGE_INSET - box.bottom;
+      if (box.bottom > floor) lift = floor - box.bottom;
       if (box.top + lift < top) lift = top - box.top;
       popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-lift)}px` });
       if (lift === 0) return;
@@ -4039,11 +4091,101 @@ export class Toolbar {
 
   // --- Placing the options pill --------------------------------------------
 
-  /** Where tier 1 ends, in host coordinates: the pill hangs below it. */
-  private barBottom(): number {
+  // --- Placing the tool bar ------------------------------------------------
+
+  /**
+   * Show the bar at its place: its edge as a class on the bar (`is-dock-*`,
+   * `is-upright`, and `data-dock` for the menus that open from it,
+   * `menuSideOf`) and on the view, whose layout gives it that edge
+   * (styles.css, "The tool bar at another edge").
+   */
+  private applyBarDock(): void {
+    const dock = this.barDock;
+    for (const edge of ["top", "bottom", "left", "right"] as const) {
+      this.barEl.toggleClass(`is-dock-${edge}`, edge === dock);
+      this.host.toggleClass(`goodobsidian-bar-at-${edge}`, edge === dock);
+    }
+    this.barEl.toggleClass("is-upright", isBarUpright(dock));
+    this.barEl.setAttribute("data-dock", dock);
+  }
+
+  /** A box's span along the bar: across the screen for a bar along an edge, down it upright. */
+  private barAxis(): (box: DOMRect) => { start: number; end: number; length: number } {
+    return isBarUpright(this.barDock)
+      ? (box) => ({ start: box.top, end: box.bottom, length: box.height })
+      : (box) => ({ start: box.left, end: box.right, length: box.width });
+  }
+
+  /** The edge nearest to (`x`, `y`), host px, for a bar let go there. */
+  private nearestBarDock(x: number, y: number): BarDock {
     const hostBox = this.host.getBoundingClientRect();
-    const barBox = this.barEl.getBoundingClientRect();
-    return barBox.bottom - hostBox.top + EDGE_INSET;
+    return nearestBarDock(hostBox.width, this.pageBottom(hostBox), x, y);
+  }
+
+  /**
+   * Rest the bar at `dock` (another notebook's bar was moved there, or this
+   * one was dropped there). The page area gives way on that side, and the
+   * surface lays out again through its own ResizeObserver, keeping the page
+   * point it showed.
+   */
+  setBarDock(dock: BarDock): void {
+    const next = parseBarDock(dock);
+    if (next === this.barDock) return;
+    this.closePopover();
+    this.barDock = next;
+    this.applyBarDock();
+    // A bar moved from top to bottom keeps its size, so its observer is quiet.
+    this.measureBar();
+    this.applyPosition();
+  }
+
+  /**
+   * The bar was carried and let go at (`x`, `y`), host px: rest it at the
+   * nearest edge, and slide it in from there. A pill resting by the bar
+   * goes with it (`pillAfterBarMove`).
+   */
+  private dropBar(x: number, y: number): void {
+    const from = this.barDock;
+    const dock = this.nearestBarDock(x, y);
+    if (dock === from) return;
+    const pill = pillAfterBarMove(this.pillDock, from, dock);
+    this.setBarDock(dock);
+    this.callbacks.onBarDock?.(dock);
+    if (pill !== this.pillDock) {
+      this.setPillDock(pill);
+      this.callbacks.onPillDock?.(pill);
+    }
+    if (prefersReducedMotion() || typeof this.barEl.animate !== "function") return;
+    const offEdge = { top: "0 -100%", bottom: "0 100%", left: "-100% 0", right: "100% 0" }[dock];
+    this.barEl.animate(
+      [
+        { translate: offEdge, opacity: 0 },
+        { translate: "0 0", opacity: 1 },
+      ],
+      { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) },
+    );
+  }
+
+  /**
+   * Where the page body ends, host px: above Obsidian's foot padding (32 px
+   * on mobile, for its own bar) and above the keyboard.
+   */
+  private pageBottom(hostBox: DOMRect): number {
+    const win = this.host.ownerDocument.defaultView;
+    const windowBottom = (win?.innerHeight ?? Infinity) - keyboardHeight();
+    const foot = parseFloat(win?.getComputedStyle(this.host).paddingBottom ?? "") || 0;
+    return Math.min(hostBox.height - foot, windowBottom - hostBox.top);
+  }
+
+  /** The bar's box in host px. */
+  private barBox(hostBox: DOMRect): { left: number; top: number; right: number; bottom: number } {
+    const bar = this.barEl.getBoundingClientRect();
+    return {
+      left: bar.left - hostBox.left,
+      top: bar.top - hostBox.top,
+      right: bar.right - hostBox.left,
+      bottom: bar.bottom - hostBox.top,
+    };
   }
 
   /**
@@ -4061,7 +4203,8 @@ export class Toolbar {
 
   /** The bar and the pill as shown, as vertical spans in screen px (`toastSide`). */
   chromeSpans(): Array<{ top: number; bottom: number }> {
-    const spans = [this.barEl.getBoundingClientRect()];
+    // An upright bar stands beside the page, clear of a toast centred on it.
+    const spans = isBarUpright(this.barDock) ? [] : [this.barEl.getBoundingClientRect()];
     const pill = this.optionsEl;
     // An upright pill stands at a side, clear of a toast centred on the page.
     const upright = pill.hasClass("is-upright") && !pill.hasClass("is-anchored");
@@ -4143,22 +4286,26 @@ export class Toolbar {
   }
 
   /**
-   * The part of the view the pill rests in, host px: below the tool bar,
-   * right of a docked panel (unless the pill would not fit beside it), and
-   * above the keyboard.
+   * The part of the view the pill rests in, host px: the page area, clear
+   * of the tool bar wherever it rests, right of a docked panel (unless the
+   * pill would not fit beside it), and above the keyboard (`pageArea`).
    */
   private pillArea(hostBox: DOMRect, pillWidth: number): PillArea {
-    const win = this.host.ownerDocument.defaultView;
-    const windowBottom = (win?.innerHeight ?? Infinity) - keyboardHeight();
-    // Obsidian pads the view's foot (32 px on mobile, for its own bar); the
-    // page ends above it, and so does the pill's room.
-    const foot = parseFloat(win?.getComputedStyle(this.host).paddingBottom ?? "") || 0;
-    return {
-      left: Math.min(this.leftInset, Math.max(0, hostBox.width - pillWidth)),
-      top: this.barBottom(),
-      right: hostBox.width,
-      bottom: Math.min(hostBox.height - foot, windowBottom - hostBox.top),
-    };
+    // The page runs inside the view's padding, as the bar does.
+    const style = this.host.ownerDocument.defaultView?.getComputedStyle(this.host);
+    const pad = (value: string | undefined): number => parseFloat(value ?? "") || 0;
+    return pageArea(
+      this.barDock,
+      this.barBox(hostBox),
+      {
+        left: pad(style?.paddingLeft),
+        right: hostBox.width - pad(style?.paddingRight),
+        bottom: this.pageBottom(hostBox),
+      },
+      EDGE_INSET,
+      this.leftInset,
+      pillWidth,
+    );
   }
 
   /** The pill was carried and let go at (`x`, `y`), host px: rest it at the nearest place. */
@@ -4222,7 +4369,10 @@ export class Toolbar {
     this.pillDecision = "toolbar";
     if (!anchor || !this.textTarget || !this.optionsEl.hasClass("is-text")) return null;
     if (pill.width === 0 || pill.height === 0) return null;
-    const minTop = this.barBottom();
+    // Inside the page area: clear of the tool bar wherever it rests.
+    const area = this.pillArea(hostBox, pill.width);
+    const minTop = area.top;
+    const barTop = this.barDock === "bottom" ? this.barBox(hostBox).top : Infinity;
     // The keyboard covers the bottom of the window, whatever the host's height.
     const windowBottom =
       (this.host.ownerDocument.defaultView?.innerHeight ?? Infinity) - keyboardHeight();
@@ -4231,6 +4381,7 @@ export class Toolbar {
     const visibleTop = Math.max(minTop, (anchor.clipTop ?? -Infinity) - hostBox.top);
     const visibleBottom = Math.min(
       hostBox.height,
+      barTop,
       windowBottom - hostBox.top,
       (anchor.clipBottom ?? Infinity) - hostBox.top,
     );
@@ -4269,9 +4420,8 @@ export class Toolbar {
       return null;
     }
     this.pillDecision = top === below ? "below the box" : "above the box";
-    const inset = Math.min(this.leftInset, Math.max(0, hostBox.width - pill.width));
-    const minLeft = inset + EDGE_INSET;
-    const maxLeft = Math.max(minLeft, hostBox.width - pill.width - EDGE_INSET);
+    const minLeft = area.left + EDGE_INSET;
+    const maxLeft = Math.max(minLeft, area.right - pill.width - EDGE_INSET);
     const centre = (anchor.left + anchor.right) / 2 - hostBox.left;
     const left = Math.min(maxLeft, Math.max(minLeft, centre - pill.width / 2));
     return { left, top };
@@ -4343,7 +4493,8 @@ export class Toolbar {
     const pill = this.optionsEl;
     pill.removeClass("is-compact");
     if (!pill.hasClass("is-text")) return;
-    const room = this.host.getBoundingClientRect().width - this.leftInset - 2 * EDGE_INSET;
+    const area = this.pillArea(this.host.getBoundingClientRect(), 0);
+    const room = area.right - area.left - 2 * EDGE_INSET;
     if (pill.scrollWidth > room) pill.addClass("is-compact");
   }
 
@@ -4490,11 +4641,12 @@ export class Toolbar {
     if (!indicator || indicator.hasClass("is-hidden") || !this.toolsGroup) return null;
     const box = indicator.getBoundingClientRect();
     if (box.width === 0) return null;
-    const contents = new Map<Element, number>();
+    const contents = new Map<Element, { left: number; top: number }>();
     for (const button of Array.from(this.toolsGroup.children)) {
       if (button === indicator) continue;
       for (const child of Array.from(button.children)) {
-        contents.set(child, child.getBoundingClientRect().left);
+        const at = child.getBoundingClientRect();
+        contents.set(child, { left: at.left, top: at.top });
       }
     }
     return { indicator: box, contents };
@@ -4543,25 +4695,35 @@ export class Toolbar {
     const to = indicator.getBoundingClientRect();
     if (to.width === 0) return;
     const timing = { duration: springMs(TOOL_INDICATOR), easing: this.curve(TOOL_INDICATOR) };
+    // Across an upright bar's tools it slides down, not along.
     const dx = from.indicator.left - to.left;
+    const dy = from.indicator.top - to.top;
     const sx = from.indicator.width / to.width;
-    if (Math.abs(dx) >= 0.5 || Math.abs(sx - 1) > 0.01) {
+    const sy = to.height > 0 ? from.indicator.height / to.height : 1;
+    if (
+      Math.abs(dx) >= 0.5 ||
+      Math.abs(dy) >= 0.5 ||
+      Math.abs(sx - 1) > 0.01 ||
+      Math.abs(sy - 1) > 0.01
+    ) {
       this.toolSlides.push(
         indicator.animate(
           [
-            { translate: `${dx}px 0`, scale: `${sx} 1` },
+            { translate: `${dx}px ${dy}px`, scale: `${sx} ${sy}` },
             { translate: "0 0", scale: "1 1" },
           ],
           timing,
         ),
       );
     }
-    for (const [child, left] of from.contents) {
+    for (const [child, was] of from.contents) {
       if (!child.isConnected) continue;
-      const shift = left - child.getBoundingClientRect().left;
-      if (Math.abs(shift) < 0.5) continue;
+      const now = child.getBoundingClientRect();
+      const shiftX = was.left - now.left;
+      const shiftY = was.top - now.top;
+      if (Math.abs(shiftX) < 0.5 && Math.abs(shiftY) < 0.5) continue;
       this.toolSlides.push(
-        child.animate([{ translate: `${shift}px 0` }, { translate: "0 0" }], timing),
+        child.animate([{ translate: `${shiftX}px ${shiftY}px` }, { translate: "0 0" }], timing),
       );
     }
   }
