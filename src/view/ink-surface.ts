@@ -5723,7 +5723,7 @@ export class InkSurface {
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
     const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
     if (route === "ignore") return "ignore";
-    // The hand tool moves the page wherever the stylus lands, as space does,
+    // The hand tool moves the page wherever the pointer lands, as space does,
     // but it stays chosen until another tool is picked. A lent tool (the
     // eraser, the lasso, Alt's zoom) still wins for that press.
     if (route === "pan" || (route === null && this.toolState.tool === "pan")) {

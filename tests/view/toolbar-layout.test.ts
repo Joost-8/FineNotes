@@ -46,10 +46,11 @@ describe("normalizeBar", () => {
 });
 
 describe("the default bar", () => {
-  it("leaves the hand, the magnifier, stickers, sticky notes, the ruler and the mic to the menu", () => {
+  it("leaves the hand, magnifier, Only stylus mode, stickers and the rest to the menu", () => {
     expect(hiddenItems(DEFAULT_BAR)).toEqual([
       "pan",
       "zoom",
+      "stylus",
       "sticker",
       "sticky",
       "ruler",
@@ -70,6 +71,7 @@ describe("hiding and showing", () => {
       "eraser",
       "pan",
       "zoom",
+      "stylus",
       "sticker",
       "sticky",
       "ruler",

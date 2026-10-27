@@ -20,6 +20,7 @@ export type BarItemId =
   | "shape"
   | "pan"
   | "zoom"
+  | "stylus"
   | "image"
   | "pdf"
   | "sticker"
@@ -36,6 +37,7 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "shape",
   "pan",
   "zoom",
+  "stylus",
   "image",
   "pdf",
   "sticker",
@@ -45,8 +47,8 @@ export const BAR_ITEMS: readonly BarItemId[] = [
 ];
 
 /**
- * The bar a new install starts with; the hand, the magnifier, stickers, sticky
- * notes, the ruler and the mic wait in the menu.
+ * The bar a new install starts with; the hand, the magnifier, Only stylus mode,
+ * stickers, sticky notes, the ruler and the mic wait in the menu.
  */
 export const DEFAULT_BAR: readonly BarItemId[] = [
   "select",
@@ -70,6 +72,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   shape: "Shapes",
   pan: "Hand",
   zoom: "Magnifier",
+  stylus: "Only stylus mode",
   image: "Image",
   pdf: "PDF",
   sticker: "Stickers",
@@ -87,6 +90,7 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   shape: "shapes",
   pan: "hand",
   zoom: "zoom-in",
+  stylus: "tablet",
   image: "image",
   pdf: "file-text",
   sticker: "sticker",

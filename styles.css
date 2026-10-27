@@ -696,8 +696,8 @@ body,
   height: 18px;
 }
 
-/* The laser pointer has nothing to set: the pill only says what it is. */
-.goodobsidian-laser-note {
+/* A tool with nothing to set: its pill only says what it is. */
+.goodobsidian-tool-note {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -708,8 +708,12 @@ body,
   white-space: nowrap;
 }
 
-.goodobsidian-laser-note-icon {
+.goodobsidian-tool-note-icon {
   display: inline-flex;
+}
+
+/* The laser pointer's mark keeps its warning red; the hand and magnifier share the muted text. */
+.goodobsidian-tool-note-icon.is-laser {
   color: var(--color-red);
 }
 
@@ -2310,7 +2314,7 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
-/* The hand tool (Only stylus mode): the same grab as space, but chosen. */
+/* The hand tool: the same grab as space, but chosen. */
 .goodobsidian-scroll.is-hand-tool,
 .goodobsidian-scroll.is-hand-tool * {
   cursor: grab;
@@ -2325,7 +2329,7 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
-/* The magnifier (Only stylus mode): a drag up or down zooms about where it began. */
+/* The magnifier: a drag up or down zooms about where it began. */
 .goodobsidian-scroll.is-zoom-tool,
 .goodobsidian-scroll.is-zoom-tool * {
   cursor: zoom-in;
@@ -12909,8 +12913,8 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   opacity: 0.85;
 }
 
-/* On, like the ruler: a sticky note waits for a tap, or a hidden ruler or
-   sticky note is out behind the accessories button. */
+/* On, like the ruler: a sticky note waits for a tap, or a hidden ruler,
+   sticky note or Only stylus mode is on behind the accessories button. */
 .goodobsidian-toolbar button.goodobsidian-tool.is-on,
 .goodobsidian-toolbar button.goodobsidian-tool.is-on:hover:not(:disabled) {
   background: var(--gob-active-bg);

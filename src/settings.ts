@@ -328,9 +328,10 @@ const DESC = {
     "pen always erases.",
   onlyStylusMode:
     "Only the pen writes on the page: finger and palm contacts do nothing there, nor does a " +
-    "mouse press, so a hand resting on the glass cannot move the page. The toolbar's button " +
-    "switches the mode on and off; the hand tool moves the page and the magnifier zooms it " +
-    "with the pen (find them in More tools, or add them with Customize toolbar).",
+    "mouse press, so a hand resting on the glass cannot move the page. The Only stylus mode " +
+    "button switches it on and off; it waits in More tools with the Hand and Magnifier tools, " +
+    "and all three can be added to the bar with Customize toolbar. The Hand tool moves the " +
+    "page and the Magnifier zooms it.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
