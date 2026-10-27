@@ -306,7 +306,7 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { attachmentDefaults, shownPaperTheme } from "../settings-data";
+import { attachmentDefaults, penPreferencesOf, shownPaperTheme } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -859,6 +859,14 @@ export class InkView extends TextFileView {
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
     if (this.writeHold.savePending) void this.saveNow();
+  }
+
+  /**
+   * A pen menu changed a setting held for every pen: the surface reads
+   * "Hold to make shapes" from the tool state, the rest it asks for live.
+   */
+  syncPenPreferences(): void {
+    this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -2482,6 +2490,8 @@ export class InkView extends TextFileView {
         onPenColors: (colors) => this.plugin.savePenColors(colors),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
         onPenStabilization: (all) => this.plugin.savePenStabilization(all),
+        penPreferences: () => penPreferencesOf(this.settings),
+        onPenPreferences: (patch) => this.plugin.savePenPreferences(patch),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),

@@ -83,18 +83,15 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
-  type ReturnToPen,
   type SettingsSection,
   appearanceChoiceOf,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
   parseColorList,
-  returnToPenOf,
   sectionOpen,
   shownValue,
   storeAppearanceChoice,
-  storeReturnToPen,
   storeShownValue,
   withSection,
 } from "./settings-data";
@@ -213,14 +210,6 @@ const APPEARANCE_CHOICES: Record<AppearanceChoice, string> = {
   "system-pdf-light": "Match Obsidian, PDFs as they are",
 };
 
-/** "Back to the pen", as its dropdown names the choices. */
-const RETURN_TO_PEN_NAMES: Record<ReturnToPen, string> = {
-  never: "Never",
-  reselect: "Tap the tool again",
-  "after-use": "After one use",
-  both: "Both",
-};
-
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
 const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
@@ -272,13 +261,6 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
-  drawAndHold:
-    "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
-  returnToPen:
-    "After the eraser, lasso, text or shape tool, go back to the pen or highlighter you had. " +
-    "Tap the tool again: select the active tool once more. After one use: after an eraser " +
-    "stroke, a shape or finished text (unless Text is pinned); the lasso returns when you " +
-    "tap outside its selection, or delete or cut it.",
   textDragSize:
     "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
   desynchronized:
@@ -981,26 +963,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "default ink color",
           "pen color",
         ]),
-        this.info(
-          toggle("drawAndHold", "Hold to make shapes", "", [
-            "draw and hold",
-            "shape recognition",
-            "straighten",
-            "snap",
-          ]),
-          DESC.drawAndHold,
-        ),
-        this.info(
-          drawnRow("Back to the pen", "", (s) => this.drawReturnToPen(s), [
-            "return to pen",
-            "tool",
-            "eraser",
-            "lasso",
-            "text",
-            "shape",
-          ]),
-          DESC.returnToPen,
-        ),
         toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
           "undo",
           "redo",
@@ -1092,18 +1054,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /** "Back to the pen": both return-to-pen switches as one choice. */
-  private drawReturnToPen(setting: Setting): void {
-    const settings = this.plugin.settings;
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(RETURN_TO_PEN_NAMES)) d.addOption(id, name);
-      d.setValue(returnToPenOf(settings));
-      d.onChange(async (value) => {
-        storeReturnToPen(settings, value);
-        await this.plugin.saveSettings();
-      });
-    });
-  }
-
   /**
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the

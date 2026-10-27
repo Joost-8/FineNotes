@@ -193,6 +193,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
+import type { PenPreferences, ReturnToPen } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -572,6 +573,10 @@ export interface ToolbarCallbacks {
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** A pen type's stroke stabilization changed (every step of a drag). Hosts persist it. */
   onPenStabilization?: (all: PenStabilization) => void;
+  /** The settings the pen's menu holds for every pen, as they are now. */
+  penPreferences?: () => PenPreferences;
+  /** One of them changed in the pen's menu. Hosts persist and apply it. */
+  onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
   /** "Header row" for new tables changed. Hosts persist it. */
@@ -3747,10 +3752,46 @@ export class Toolbar {
     head.createDiv({ cls: "goodobsidian-popover-title", text: title });
   }
 
-  /** The pen in hand's own settings, behind "Pen settings" in the pen type menu. */
+  /**
+   * The pen in hand's own settings, behind "Pen settings" in the pen type
+   * menu, then two that hold for every pen: "Hide pen options while
+   * writing", and "Back to the pen" with its four choices, as the eraser's
+   * mode menu shows a choice.
+   */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
     this.renderStabilization(body);
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (!prefs || !save) return;
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const tuck = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(tuck, "Hide pen options while writing", prefs.tuckOnWrite, (on) =>
+      save({ tuckOnWrite: on }),
+    );
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Back to the pen" });
+    const choices: ReadonlyArray<[ReturnToPen, string]> = [
+      ["never", "Never"],
+      ["reselect", "Tap the tool again"],
+      ["after-use", "After one use"],
+      ["both", "Both"],
+    ];
+    for (const [choice, label] of choices) {
+      const row = body.createEl("button", {
+        cls: "goodobsidian-wide",
+        text: label,
+        attr: { role: "menuitemradio", "aria-checked": String(choice === prefs.returnToPen) },
+      });
+      row.toggleClass("is-active", choice === prefs.returnToPen);
+      row.addEventListener("click", () => {
+        save({ returnToPen: choice });
+        this.popoverRender?.();
+      });
+    }
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
+    });
   }
 
   /**
@@ -3799,12 +3840,25 @@ export class Toolbar {
   }
 
   /**
-   * GoodNotes' Pen Gestures page: Scribble to erase (and whether it takes
-   * shapes and highlighter too), and Circle to lasso. The second switch is
+   * GoodNotes' Pen Gestures page: Hold to make shapes, Scribble to erase
+   * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, "Pen gestures", "Back to pen types", back);
+
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (prefs && save) {
+      const hold = body.createDiv({ cls: "goodobsidian-switch-list" });
+      this.switchRow(hold, "Hold to make shapes", prefs.drawAndHold, (on) =>
+        save({ drawAndHold: on }),
+      );
+      body.createDiv({
+        cls: "goodobsidian-popover-hint",
+        text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
+      });
+    }
 
     const gestures = penGesturesOf(this.state.penGestures);
     const set = (patch: Partial<PenGestures>): void => {

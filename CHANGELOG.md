@@ -10,14 +10,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Hide pen options while writing.** A new switch under Settings ›
-  Writing › More: the pen's options (pen type, widths and colors) tuck
-  away as soon as the pen or highlighter starts writing, wherever they
-  sit, as a second tap on the pen does. Tap the pen to bring them back.
-  Off by default; the eraser, lasso and other tools keep their options.
+- **Hide pen options while writing.** A new switch in the pen menu's Pen
+  settings and under Settings › Writing › More: the pen's options (pen
+  type, widths and colors) tuck away as soon as the pen or highlighter
+  starts writing, wherever they sit, as a second tap on the pen does. Tap
+  the pen to bring them back. Off by default; the eraser, lasso and other
+  tools keep their options.
 
 ### Changed
 
+- **Pen settings in the pen menu.** The pen menu's Pen settings page now
+  also holds "Hide pen options while writing" and "Back to the pen", with
+  all four choices, and its Pen gestures page holds "Hold to make shapes".
+  "Hold to make shapes" and "Back to the pen" are no longer in Settings ›
+  Writing; what you had chosen is kept.
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's

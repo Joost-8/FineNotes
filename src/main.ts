@@ -44,7 +44,12 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
-import { type PageAppearance, shownPaperTheme } from "./settings-data";
+import {
+  type PageAppearance,
+  type PenPreferences,
+  shownPaperTheme,
+  storePenPreferences,
+} from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
@@ -1192,6 +1197,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   savePenGestures(gestures: PenGestures): void {
     this.settings.penGestures = penGesturesOf(gestures);
+    void this.saveSettings();
+  }
+
+  /** Store what a pen menu changed for every pen, and give it to every open notebook. */
+  savePenPreferences(patch: Partial<PenPreferences>): void {
+    storePenPreferences(this.settings, patch);
+    for (const view of this.openNotebooks()) view.syncPenPreferences();
     void this.saveSettings();
   }
 

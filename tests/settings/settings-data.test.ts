@@ -19,6 +19,7 @@ import {
   endpointWarning,
   openSectionsOf,
   pagesAreDark,
+  penPreferencesOf,
   paperWidthFrom,
   parseColorList,
   returnToPenOf,
@@ -26,6 +27,7 @@ import {
   shownPaperTheme,
   shownValue,
   storeAppearanceChoice,
+  storePenPreferences,
   storeReturnToPen,
   storeShownValue,
   withSection,
@@ -448,6 +450,39 @@ describe("choices that set two switches", () => {
     }
     storeReturnToPen(settings, "nonsense");
     expect(returnToPenOf(settings)).toBe("never");
+  });
+
+  it("reads and writes the pen menu's settings, leaving out what a change leaves out", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: true,
+      tuckOnWrite: false,
+      returnToPen: "never",
+    });
+    storePenPreferences(settings, { tuckOnWrite: true });
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: true,
+      tuckOnWrite: true,
+      returnToPen: "never",
+    });
+    storePenPreferences(settings, { drawAndHold: false, returnToPen: "both" });
+    expect(settings.drawAndHold).toBe(false);
+    expect([settings.returnToPenOnReselect, settings.returnToPenAfterUse]).toEqual([true, true]);
+    expect(settings.tuckPenOptionsOnWrite).toBe(true);
+    storePenPreferences(settings, {});
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: false,
+      tuckOnWrite: true,
+      returnToPen: "both",
+    });
+  });
+
+  it("reads a pen setting a file holds in another shape as its default", () => {
+    const odd = { drawAndHold: "no", tuckPenOptionsOnWrite: 1 } as never;
+    expect(penPreferencesOf({ ...DEFAULT_SETTINGS, ...(odd as object) })).toMatchObject({
+      drawAndHold: true,
+      tuckOnWrite: false,
+    });
   });
 
   it("reads and writes Page appearance with the PDF choice folded in", () => {

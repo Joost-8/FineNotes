@@ -471,6 +471,40 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
 }
 
 /**
+ * The settings the pen's menu holds beside the pen in hand's own: "Hold to
+ * make shapes" (Pen gestures), and "Hide pen options while writing" and
+ * "Back to the pen" (Pen settings). They are the same for every pen.
+ */
+export interface PenPreferences {
+  drawAndHold: boolean;
+  tuckOnWrite: boolean;
+  returnToPen: ReturnToPen;
+}
+
+export function penPreferencesOf(
+  settings: Pick<
+    GoodObsidianSettings,
+    "drawAndHold" | "tuckPenOptionsOnWrite" | "returnToPenOnReselect" | "returnToPenAfterUse"
+  >,
+): PenPreferences {
+  return {
+    drawAndHold: settings.drawAndHold !== false,
+    tuckOnWrite: settings.tuckPenOptionsOnWrite === true,
+    returnToPen: returnToPenOf(settings),
+  };
+}
+
+/** Store what the pen's menu changed; what `patch` leaves out stays as it is. */
+export function storePenPreferences(
+  settings: GoodObsidianSettings,
+  patch: Partial<PenPreferences>,
+): void {
+  if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
+  if ("tuckOnWrite" in patch) settings.tuckPenOptionsOnWrite = patch.tuckOnWrite === true;
+  if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
+}
+
+/**
  * "Page appearance" with "Dark PDF pages" folded in: each dark choice comes
  * once with PDFs turned dark and once with them as they are.
  */
