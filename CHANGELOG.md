@@ -16,8 +16,8 @@ extracted from the matching section of this file by `release.yml`.
   it is inside the loop, as Notability does, instead of at least half of it.
 - **Tap a shape with a finger to select it.** With the pen (or another
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
-  selects it with its handles and bar, and the pen stays in hand: a pen
-  stroke beside it lets go and writes.
+  picks the lasso and selects it with its handles and bar, as a tap on a
+  picture does.
 - **Pinch and turn a selection with two fingers.** Two fingers on a
   selection, or either side of a small one, scale it, turn it and move it
   at once, and the lift is one undo step. Two fingers elsewhere still zoom

@@ -10910,10 +10910,9 @@ export class InkSurface {
 
   /**
    * A finger tapped the page (client px). With the lasso it selects, like a
-   * Pencil tap; with any other tool it lets go of a selected image, a tap
-   * on a shape or a table selects it with the pen still in hand
-   * (`fingerPicksShape`), and a tap on a picture picks the lasso and
-   * selects it (`fingerPicksPicture`) — fingers never draw. While audio replay is open, a tap on ink goes to
+   * Pencil tap; with any other tool it lets go of a selected image, and a
+   * tap on a shape, a table or a picture picks the lasso and selects it
+   * (`fingerPicksShape`, `fingerPicksPicture`) — fingers never draw. While audio replay is open, a tap on ink goes to
    * it first, whatever the tool.
    */
   private onFingerTap(clientX: number, clientY: number): void {
@@ -11356,17 +11355,17 @@ export class InkSurface {
 
   /**
    * A finger tapped a shape (a snapped shape or an arrow) with a pen, or any
-   * tool but the lasso and Text: it is selected as a lasso tap selects it,
-   * with its frame, handles and bar, and the pen stays in hand, as in
-   * Notability (discussion #51). A pen press beside the frame lets go of it
-   * and writes, as after Circle to lasso. Handwriting is left to the pen.
-   * Not in a practice file. Returns whether it did.
+   * tool but the lasso and Text: the lasso is picked and the shape selected
+   * as a lasso tap selects it, with its frame, handles and bar, as a tap on
+   * a picture does (discussion #51). Handwriting is left to the pen. Not in
+   * a practice file. Returns whether it did.
    */
   private fingerPicksShape(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
     const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
     if (!stroke) return false;
+    this.pickLasso();
     this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
     return true;
   }
@@ -11377,8 +11376,15 @@ export class InkSurface {
     const filter = lassoFilterFor(this.toolState);
     const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
     if (!table) return false;
+    this.pickLasso();
     this.select(page.id, this.tableWithInk(page, table, filter));
     return true;
+  }
+
+  /** Hand the lasso to a finger's selection, as the toolbar would. */
+  private pickLasso(): void {
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
   }
 
   // --- Graphs: exploring one on a live canvas ---------------------------------------

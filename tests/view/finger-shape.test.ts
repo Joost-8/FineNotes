@@ -1,6 +1,6 @@
 /**
  * A finger tap on a shape or a table with a pen in hand selects it, as a
- * lasso tap would, and the pen stays in hand (`InkSurface.fingerPicksShape`,
+ * lasso tap would, and picks the lasso, as a tap on a picture does (`InkSurface.fingerPicksShape`,
  * `fingerPicksTable`; discussion #51). Handwriting is left to the pen.
  */
 
@@ -56,14 +56,14 @@ const page = { id: "p1", strokes: [rect, arrow, writing], images: [], tables: [t
 
 describe("a finger tap on a shape", () => {
   it.each(["pen", "highlighter", "eraser", "shape"] as ActiveTool[])(
-    "with the %s in hand selects it and keeps the tool",
+    "with the %s in hand picks the lasso and selects it",
     (tool) => {
       const s = surface(tool);
       // On the rectangle's top side, a few px off the line.
       expect(run(s, "fingerPicksShape", page, { x: 200, y: 108 })).toBe(true);
       expect(s.select).toHaveBeenCalledWith("p1", { strokes: [rect], images: [], textBoxes: [] });
-      expect(s.setTool).not.toHaveBeenCalled();
-      expect((s.callbacks as Fake).onToolChange).not.toHaveBeenCalled();
+      expect(s.setTool).toHaveBeenCalledWith("select");
+      expect((s.callbacks as Fake).onToolChange).toHaveBeenCalledWith("select");
     },
   );
 
@@ -98,18 +98,19 @@ describe("a finger tap on a shape", () => {
     for (const s of cases) {
       expect(run(s, "fingerPicksShape", page, { x: 200, y: 108 })).toBe(false);
       expect(s.select).not.toHaveBeenCalled();
+      expect(s.setTool).not.toHaveBeenCalled();
     }
     expect(run(surface("pen"), "fingerPicksShape", page, { x: 200, y: 150 })).toBe(false);
   });
 });
 
 describe("a finger tap on a table", () => {
-  it("selects it with its ink and keeps the tool", () => {
+  it("picks the lasso and selects it with its ink", () => {
     const s = surface("pen");
     expect(run(s, "fingerPicksTable", page, { x: 150, y: 450 })).toBe(true);
     expect(s.tableWithInk).toHaveBeenCalledWith(page, table, expect.anything());
     expect(s.select).toHaveBeenCalledWith("p1", expect.objectContaining({ tables: [table] }));
-    expect(s.setTool).not.toHaveBeenCalled();
+    expect(s.setTool).toHaveBeenCalledWith("select");
   });
 
   it("does nothing beside it, with the Text tool, or with tables switched off", () => {
@@ -121,6 +122,7 @@ describe("a finger tap on a table", () => {
     for (const [s, at] of cases) {
       expect(run(s, "fingerPicksTable", page, at)).toBe(false);
       expect(s.select).not.toHaveBeenCalled();
+      expect(s.setTool).not.toHaveBeenCalled();
     }
   });
 });
