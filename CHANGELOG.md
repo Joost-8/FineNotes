@@ -10,6 +10,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
+  the page listen to the stylus alone: a palm, a finger or a mouse resting on
+  the glass moves neither the ink nor the page, and a finger's scroll, pinch
+  and taps are off. Its toolbar button, Stylus only, switches the mode on and
+  off, and the command "Turn Stylus-only mode on or off" can take a hardware
+  key. The Hand tool moves the page (with its fling) and the Magnifier zooms
+  it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
+  page and zoom in. All three wait in the toolbar's More tools menu at first.
 - **Hide pen options while writing.** A new switch in the pen menu's Pen
   settings and under Settings › Writing › More: the pen's options (pen
   type, widths and colors) tuck away as soon as the pen or highlighter
@@ -19,6 +27,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Hide toolbar tools.** Customize toolbar, at the end of the More tools
+  menu, now has three places for every tool: on the bar (drag to reorder,
+  the top is leftmost), in the More tools menu, or hidden. A tool in the
+  menu hides with its crossed eye, and (+) brings it back.
 - **Pen settings in the pen menu.** The pen menu's Pen settings page now
   also holds "Hide pen options while writing" and "Back to the pen", with
   all four choices, and its Pen gestures page holds "Hold to make shapes".

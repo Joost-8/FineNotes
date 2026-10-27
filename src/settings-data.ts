@@ -272,8 +272,13 @@ export interface GoodObsidianSettings {
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
-  /** The tools the bar shows, left to right ("Customize toolbar"); the rest wait in its menu. */
+  /**
+   * The tools the bar shows, left to right ("Customize toolbar"); the rest wait
+   * in its More tools menu, except those in `toolbarOff`.
+   */
   toolbarItems: BarItemId[];
+  /** The tools shown nowhere, neither on the bar nor in its menu (`toolbar-layout.ts`). */
+  toolbarOff: BarItemId[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -289,6 +294,11 @@ export interface GoodObsidianSettings {
    * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
    */
   straightHighlighter: boolean;
+  /**
+   * Stylus-only mode: every pointer but the pen is ignored on the page, so
+   * a hand resting on the glass moves neither the ink nor the page.
+   */
+  onlyStylusMode: boolean;
   /**
    * The pen's options pill tucks away as soon as the pen or highlighter
    * writes, as a second tap on its button does (`tool-return.ts`).
@@ -387,9 +397,11 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
+  toolbarOff: [],
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
+  onlyStylusMode: false,
   tuckPenOptionsOnWrite: false,
 
   settingsOpen: [],

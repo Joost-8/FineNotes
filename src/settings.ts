@@ -608,7 +608,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
   /** Which saved pen each drawn pen row shows, behind the one click listener it gets. */
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
-
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -1053,12 +1052,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     });
   }
 
-  /** "Back to the pen": both return-to-pen switches as one choice. */
   /**
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row.
+   * from its row. Stylus only, the Hand and the Magnifier are toolbar
+   * items, placed with Customize toolbar, not settings.
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
