@@ -323,6 +323,7 @@ import {
   type PageElements,
   RecolorStrokes,
   RemoveElements,
+  ReshapeStroke,
   RestyleShapes,
   ReorientElements,
   type Reorientation,
@@ -477,6 +478,7 @@ import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
+import { type PointHandles, movePoint, pickPointHandle, pointHandles } from "../ink/shape-points";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -940,6 +942,14 @@ const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
 const IMAGE_DRAG_SLOP_PX = 3;
 /**
+ * How far from a shape's corner or end a press still takes its point
+ * handle, screen px: the Pencil's reach, short of the frame's 22 px corner
+ * handles, which win any press nearer to them (`pickPointHandle`).
+ */
+const POINT_HIT_RADIUS_PX = 18;
+/** The frame's pad round a lone shape with point handles, screen px (else `SELECTION_PAD_PX`). */
+const SHAPE_FRAME_PAD_PX = 20;
+/**
  * A lasso press on the paper held this long without moving opens the small
  * bar with Paste — or Unlock, on a locked picture (GoodNotes' long press).
  * Noticed by a timer: a pen held still sends no moves (ledger).
@@ -1102,6 +1112,30 @@ interface GroupDrag {
   turn: GroupTurn | null;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+}
+
+/**
+ * One corner or end of a lone selected shape dragged by its point handle
+ * (discussion #51), from pointerdown to lift. Like a group drag, the shape
+ * leaves the tiles once and is drawn on the wet layer; the lift commits one
+ * `ReshapeStroke`.
+ */
+interface PointDrag {
+  pointerId: number;
+  pageId: string;
+  stroke: Stroke;
+  handles: PointHandles;
+  handle: number;
+  /** The handle less the pointer-down point: the point follows the pen from where it was. */
+  grab: Pt;
+  clientX: number;
+  clientY: number;
+  /** The shape's bounds before the drag, page space. */
+  before: Bounds;
+  /** Whether the shape has left the tiles for the wet layer yet. */
+  lifted: boolean;
+  /** The points and kind the shape has now, and where the dragged handle is. */
+  draft: { pts: number[]; kind: ShapeKind; at: Pt } | null;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -8279,13 +8313,14 @@ export class InkSurface {
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     if (box && bounds) {
       const scale = this.unitScale;
-      const x = (box.x + bounds.minX) * scale - SELECTION_PAD_PX;
-      const y = (box.y + bounds.minY) * scale - SELECTION_PAD_PX;
+      const pad = this.framePad;
+      const x = (box.x + bounds.minX) * scale - pad;
+      const y = (box.y + bounds.minY) * scale - pad;
       this.selectionFrameEl.setCssStyles({
         left: `${x}px`,
         top: `${y}px`,
-        width: `${(bounds.maxX - bounds.minX) * scale + 2 * SELECTION_PAD_PX}px`,
-        height: `${(bounds.maxY - bounds.minY) * scale + 2 * SELECTION_PAD_PX}px`,
+        width: `${(bounds.maxX - bounds.minX) * scale + 2 * pad}px`,
+        height: `${(bounds.maxY - bounds.minY) * scale + 2 * pad}px`,
       });
       this.selectionFrameEl.toggleClass("is-dragging", drag !== null);
       // While the knob turns it, the frame turns with the selection about its middle.
@@ -8299,13 +8334,14 @@ export class InkSurface {
       if (shown) {
         // The loop is relative to the bounds' corner, so a resize scales it too.
         const k = drag?.scale?.k ?? 1;
-        const at = (v: number): string => (SELECTION_PAD_PX + v * k * scale).toFixed(1);
+        const at = (v: number): string => (pad + v * k * scale).toFixed(1);
         const pts = outline.loop;
         let d = `M${at(pts[0])} ${at(pts[1])}`;
         for (let i = 2; i + 1 < pts.length; i += 2) d += `L${at(pts[i])} ${at(pts[i + 1])}`;
         this.selectionPathEl.setAttribute("d", `${d}Z`);
       }
     }
+    this.syncShapePoints(drag ? null : sel, box);
     this.syncActionBar();
   }
 
@@ -8321,7 +8357,10 @@ export class InkSurface {
     const press = crop || group || image ? null : this.pressMenu;
     const pageId = crop?.pageId ?? group?.pageId ?? image?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
-    const dragging = this.groupDrag?.lifted === true || this.imageDrag?.lifted === true;
+    const dragging =
+      this.groupDrag?.lifted === true ||
+      this.imageDrag?.lifted === true ||
+      this.pointDrag?.lifted === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -8332,7 +8371,7 @@ export class InkSurface {
     } else if (group) {
       bounds = this.groupChromeBounds(group);
       // Clear of the corner handles on the frame, as of a picture's.
-      clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
+      clearAbove = clearBelow = this.framePad + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
     } else if (image) {
       // The picture and its rotate knob, wherever a turn has put the knob.
@@ -8370,7 +8409,7 @@ export class InkSurface {
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
-    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - SELECTION_PAD_PX / scale) };
+    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - this.framePad / scale) };
   }
 
   /** What a lone picture's chrome covers, page space: the rotated picture and its knob. */
@@ -10279,7 +10318,7 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveSelection();
-    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.groupDrag || this.pointDrag || this.callbacks.isLocked?.()) return;
     // A palm landing on the frame while the Pencil is busy elsewhere is a palm.
     if (event.pointerType === "touch" && this.activePage !== null) return;
     const box = this.boxForPage(sel.pageId);
@@ -10292,6 +10331,7 @@ export class InkSurface {
     }
     const from = this.pagePoint(box, event.clientX, event.clientY);
     const turn = this.knobGrabbed(bounds, from);
+    if (!turn && this.grabShapePoint(event, sel, bounds, from)) return;
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
@@ -10325,11 +10365,11 @@ export class InkSurface {
   /**
    * The corner resize a press at page point `from` starts on the selection's
    * frame, or `null` when it grabbed no corner handle. The handles sit on the
-   * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
+   * dashed frame, which is `framePad` outside the bounds.
    */
-  /** The selection's dashed frame, page space: its bounds grown by `SELECTION_PAD_PX`. */
+  /** The selection's dashed frame, page space: its bounds grown by `framePad`. */
   private selectionFrameOf(bounds: Bounds): Bounds {
-    const pad = SELECTION_PAD_PX / this.unitScale;
+    const pad = this.framePad / this.unitScale;
     return {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10353,7 +10393,7 @@ export class InkSurface {
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
     const scale = this.unitScale;
-    const pad = SELECTION_PAD_PX / scale;
+    const pad = this.framePad / scale;
     const frame: Bounds = {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10602,6 +10642,198 @@ export class InkSurface {
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
   private cancelGroupDrag(): void {
     this.endGroupDrag(false);
+    this.endPointDrag(false);
+  }
+
+  // --- A lone shape's point handles (discussion #51) ------------------------
+
+  /** The dots on a lone selected shape's corners and ends; made on first use. */
+  private shapePointsEl: HTMLElement | null = null;
+  private pointDrag: PointDrag | null = null;
+
+  /**
+   * How far the selection's frame stands outside its bounds, screen px. A
+   * lone shape with point handles gets a wider frame, so that the frame's
+   * corner squares stand clear of the rings on the shape's own corners.
+   */
+  private get framePad(): number {
+    return this.loneShape(this.selection) ? SHAPE_FRAME_PAD_PX : SELECTION_PAD_PX;
+  }
+
+  /** The one shape a selection holds on its own, and its point handles; null otherwise. */
+  private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
+    if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
+      return null;
+    }
+    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    const stroke = sel.strokes[0];
+    const handles = pointHandles(stroke.shape, stroke.pts);
+    return handles ? { stroke, handles } : null;
+  }
+
+  /**
+   * Put a dot on each corner and end of the lone shape selected, where a
+   * point drag has them now; none for any other selection, or while the
+   * whole selection is dragged (`sel` null). The frame takes the presses.
+   */
+  private syncShapePoints(sel: GroupSelection | null, box: PageBox | null): void {
+    const drag = this.pointDrag;
+    const lone = drag ?? (box ? this.loneShape(sel) : null);
+    if (!lone || !box) {
+      this.shapePointsEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.shapePointsEl ??= this.selectionUiEl.createDiv({
+      cls: "goodobsidian-shape-points",
+    }));
+    el.removeClass("is-hidden");
+    const at = lone.handles.at;
+    const count = at.length / 2;
+    while (el.childElementCount < count) el.createDiv({ cls: "goodobsidian-shape-point" });
+    while (el.childElementCount > count) el.lastElementChild?.remove();
+    const scale = this.unitScale;
+    for (let h = 0; h < count; h++) {
+      const dot = el.children[h] as HTMLElement;
+      const moved = drag?.draft && drag.handle === h ? drag.draft.at : null;
+      const x = moved ? moved.x : at[h * 2];
+      const y = moved ? moved.y : at[h * 2 + 1];
+      dot.setCssStyles({ left: `${(box.x + x) * scale}px`, top: `${(box.y + y) * scale}px` });
+      dot.toggleClass("is-dragging", drag?.lifted === true && drag.handle === h);
+    }
+  }
+
+  /**
+   * A press at page point `from` on the frame of a lone shape: start
+   * dragging the corner or end it took, and say so. Nearer one of the
+   * frame's own corner handles, the frame keeps the press.
+   */
+  private grabShapePoint(
+    event: PointerEvent,
+    sel: GroupSelection,
+    bounds: Bounds,
+    from: Pt,
+  ): boolean {
+    const lone = this.loneShape(sel);
+    const before = lone ? strokeBounds(lone.stroke) : null;
+    if (!lone || !before) return false;
+    const f = this.selectionFrameOf(bounds);
+    const corners = [
+      { x: f.minX, y: f.minY },
+      { x: f.maxX, y: f.minY },
+      { x: f.maxX, y: f.maxY },
+      { x: f.minX, y: f.maxY },
+    ];
+    const reach = POINT_HIT_RADIUS_PX / this.unitScale;
+    const handle = pickPointHandle(lone.handles.at, from, reach, corners);
+    if (handle < 0) return false;
+    const at = lone.handles.at;
+    this.pointDrag = {
+      pointerId: event.pointerId,
+      pageId: sel.pageId,
+      stroke: lone.stroke,
+      handles: lone.handles,
+      handle,
+      grab: { x: at[handle * 2] - from.x, y: at[handle * 2 + 1] - from.y },
+      clientX: event.clientX,
+      clientY: event.clientY,
+      before,
+      lifted: false,
+      draft: null,
+    };
+    this.selectionFrameEl.addEventListener("pointermove", this.onPointPointerMove);
+    this.selectionFrameEl.addEventListener("pointerup", this.onPointPointerEnd);
+    this.selectionFrameEl.addEventListener("pointercancel", this.onPointPointerEnd);
+    return true;
+  }
+
+  private readonly onPointPointerMove = (event: PointerEvent): void => {
+    const drag = this.pointDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
+    if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
+    const box = this.boxForPage(drag.pageId);
+    if (!box) return;
+    const p = this.pagePoint(box, event.clientX, event.clientY);
+    const to = {
+      x: clamp(p.x + drag.grab.x, 0, box.width),
+      y: clamp(p.y + drag.grab.y, 0, box.height),
+    };
+    const stroke = drag.stroke;
+    const next = movePoint(stroke.shape ?? "polygon", stroke.pts, drag.handles, drag.handle, to);
+    if (!next) return;
+    drag.draft = { ...next, at: to };
+    if (!drag.lifted) {
+      // Out of the tiles once, as a dragged selection is: each frame after
+      // this is one shape on the wet layer, never a tile rasterised again.
+      drag.lifted = true;
+      this.renderer?.setHiddenStrokes(new Set([stroke.id]));
+      this.renderer?.invalidateRegion(box.index, drag.before);
+      this.renderDry();
+      this.selectionFrameEl.addClass("is-pointing");
+      this.syncActionBar();
+    }
+    this.renderer?.renderWet(box.index, next.pts, {
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      usePressure: this.inkPressure,
+      shape: true,
+      decor: decorOf({ ...stroke, shape: next.kind }),
+    });
+    this.syncShapePoints(null, box);
+  };
+
+  /** The lift commits the point's move; a pointercancel too, as a group drag's does. */
+  private readonly onPointPointerEnd = (event: PointerEvent): void => {
+    const drag = this.pointDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endPointDrag(true);
+  };
+
+  /**
+   * Finish a point drag: commit it as one `ReshapeStroke` (`commit`) or
+   * drop it, then put the shape back into the tiles over the region it
+   * covered before and covers now.
+   */
+  private endPointDrag(commit: boolean): void {
+    const drag = this.pointDrag;
+    if (!drag) return;
+    this.pointDrag = null;
+    this.selectionFrameEl.removeEventListener("pointermove", this.onPointPointerMove);
+    this.selectionFrameEl.removeEventListener("pointerup", this.onPointPointerEnd);
+    this.selectionFrameEl.removeEventListener("pointercancel", this.onPointPointerEnd);
+    if (this.selectionFrameEl.hasPointerCapture(drag.pointerId)) {
+      this.selectionFrameEl.releasePointerCapture(drag.pointerId);
+    }
+    this.selectionFrameEl.removeClass("is-pointing");
+    if (!drag.lifted) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    this.renderer?.setHiddenStrokes(NO_STROKES);
+    this.renderer?.clearWet();
+    const { pageId, stroke } = drag;
+    const draft = commit ? drag.draft : null;
+    const done = draft !== null && this.doc.pages.some((page) => page.id === pageId);
+    let after: Bounds | null = null;
+    if (done) {
+      this.history.push(this.doc, new ReshapeStroke(pageId, stroke, draft.pts, draft.kind));
+      this.strokeIndex.remove(stroke.id, pageId);
+      this.strokeIndex.add(pageId, stroke);
+      after = strokeBounds(stroke);
+      // The lasso's loop no longer goes round the shape it was drawn round.
+      this.selectionOutline = null;
+    }
+    const box = this.boxForPage(pageId);
+    if (box) {
+      this.renderer?.invalidateRegion(box.index, unionBounds(drag.before, after) ?? drag.before);
+    }
+    this.renderDry();
+    this.syncSelectionOverlay();
+    if (done) this.changed([pageId]);
   }
 
   /**

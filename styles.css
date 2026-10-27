@@ -6784,6 +6784,48 @@ textarea.goodobsidian-chat-input:focus-visible {
   stroke-linejoin: round;
 }
 
+/* A lone shape's corners and ends (discussion #51): the scan sheet's corner
+   ring, the one mark for "drag this corner alone". Hollow, so the corner
+   shows through, and smaller while dragged. The frame decides which handle
+   a press takes, so the dots take no presses themselves. */
+.goodobsidian-shape-points {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-shape-points.is-hidden {
+  display: none;
+}
+
+.goodobsidian-shape-point {
+  position: absolute;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-shape-point.is-dragging {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+/* While a point is dragged, the frame and its handles step aside (the frame
+   keeps the pointer capture, so it stays in the layout). */
+.goodobsidian-selection-frame.is-pointing {
+  border-color: transparent;
+}
+
+.goodobsidian-selection-frame.is-pointing > * {
+  visibility: hidden;
+}
+
 /* The action bar and its "…" menu, after GoodNotes: dark in every theme.
    Both carry Obsidian's own `theme-dark` class, which re-declares the
    --color-base-* palette (and --color-red) on them, so these are Obsidian's
