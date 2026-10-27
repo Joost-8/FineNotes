@@ -226,7 +226,7 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
-import { tiltFactor, tiltShapes } from "../ink/tilt";
+import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
@@ -604,6 +604,12 @@ interface StrokeDiagnostic {
  * reaches that far past a stroke's centreline.
  */
 const MAX_STROKE_HALF_WIDTH = 24;
+
+/**
+ * The standard eraser's margin for a brush stroke the Pencil's tilt widened
+ * (`ink/tilt`): the cut reaches as far as its widest edge.
+ */
+const MAX_TILTED_HALF_WIDTH = MAX_STROKE_HALF_WIDTH * TILT_MAX_FACTOR;
 
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
@@ -7287,7 +7293,7 @@ export class InkSurface {
     filter: EraserFilter,
   ): boolean {
     // The cut widens by half the stroke width, so the broad phase must too.
-    const reach = radius + MAX_STROKE_HALF_WIDTH;
+    const reach = radius + MAX_TILTED_HALF_WIDTH;
     const candidates = this.strokeIndex.near(page.id, sample.x, sample.y, reach);
     const nextId = (): string => this.strokeIds.next();
     const notes = noteIdsOf(page.images);
