@@ -7,6 +7,8 @@
  * PURE: flat `[x, y, pressure, …]` in, the same out.
  */
 
+import { levelLine } from "./level-line";
+
 /** Samples are `[x, y, pressure]` triples. */
 const STRIDE = 3;
 
@@ -29,7 +31,8 @@ const LINE_MAX_BACKTRACK = 0.1;
  * a path no longer than {@link LINE_MAX_DETOUR} times it, never doubling
  * back) and it is at least `minLength` page px long, the two ends of that
  * line — where the first and last samples fall on the best-fit line, each
- * with its own pressure. Otherwise `null`: a curve, a corner, a zigzag over
+ * with its own pressure, levelled when it runs within a few degrees of level
+ * or upright (`level-line.ts`). Otherwise `null`: a curve, a corner, a zigzag over
  * several lines of text, or a dab is kept as drawn.
  *
  * The best-fit line is the total least-squares one (the principal axis of
@@ -99,5 +102,6 @@ export function lineOfHighlight(pts: readonly number[], minLength: number): numb
     const along = (pts[i * STRIDE] - mx) * dx + (pts[i * STRIDE + 1] - my) * dy;
     return [mx + along * dx, my + along * dy, pts[i * STRIDE + 2]];
   };
-  return [...end(0), ...end(count - 1)];
+  // Within a few degrees of level (a line of text) or upright, exactly so.
+  return levelLine([...end(0), ...end(count - 1)], "middle");
 }

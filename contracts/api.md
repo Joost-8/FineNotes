@@ -403,6 +403,14 @@ them up. A piece does not follow the layout table above — half a `rect` has
 three or four points, not five. Nothing may read a kind's layout off a
 stored stroke; the table describes what recognition and the Shape tool emit.
 
+**Lines are levelled (2026-10-27, discussion #51).** A `line` or an
+`arrow` whose first two points (a line's ends, an arrow's tail and tip) run
+within 5° of level or upright (Xournal's axis snap) is turned onto it,
+the arrow's head with it (`src/ink/level-line.ts`). Recognition levels about
+the middle, after scoring: the confidence is the drawn ink's. The Shape
+tool's connectors and a held snapped line level about their start; the
+highlighter's straight line about its middle.
+
 ### Three deliberate limits (decided 2026-09-20, not accidents)
 
 1. **Minimum size.** A stroke whose bounding-box diagonal is under 24 px is

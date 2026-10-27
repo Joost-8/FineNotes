@@ -227,6 +227,7 @@ import {
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { lineOfHighlight } from "../ink/straighten";
+import { levelLine } from "../ink/level-line";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -6071,8 +6072,12 @@ export class InkSurface {
     }
     const snap = this.snap;
     if (snap) {
-      // Snapped and still held: the shape follows the pen.
-      if (last) snap.pts = transformShape(snap.base, snap.pivot, snap.from, this.toPage(box, last));
+      // Snapped and still held: the shape follows the pen. A line or an
+      // arrow turned near level or upright settles there, about its tail.
+      if (last) {
+        const pts = transformShape(snap.base, snap.pivot, snap.from, this.toPage(box, last));
+        snap.pts = snap.kind === "line" || snap.kind === "arrow" ? levelLine(pts, "start") : pts;
+      }
       this.scheduleWet();
       return;
     }
