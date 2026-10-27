@@ -275,13 +275,17 @@ export class PointerController {
   }
 
   /**
-   * A hovering pen's move over the rest of the view, off this element: the
-   * tool bar, or the popover the click opened. The side button's click is
-   * heard there too, so the click that closes the pen menu need not find the
-   * page (the pen is often over the menu by then).
+   * A pen over the rest of the view, off this element: the tool bar, or the
+   * popover the click opened. The side button's click is heard in its
+   * hovering moves there too, so the click that closes the pen menu need not
+   * find the page (the pen is often over the menu by then); and a pen pressed
+   * there is down until it lifts, so its moves are no click.
    */
-  hoverElsewhere(event: PointerEvent): void {
-    if (this.held === null) this.hearHover(event);
+  penElsewhere(event: PointerEvent): void {
+    if (event.pointerType !== "pen" || this.held !== null) return;
+    if (event.type === "pointermove") this.hearHover(event);
+    else if (event.type === "pointerdown") this.clicks.landed();
+    else this.clicks.lifted(event.timeStamp);
   }
 
   /** A hovering pen's move: the side button's click, if it makes one (`stylus-click.ts`). */
@@ -302,6 +306,7 @@ export class PointerController {
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
+    if (event.pointerType === "pen") this.clicks.landed();
     const onlyStylus = this.onlyStylus();
     // The right mouse button opens the page's menu (`contextmenu`); it never draws.
     if (event.pointerType === "mouse" && event.button === 2) {
@@ -419,7 +424,7 @@ export class PointerController {
       }
       return;
     }
-    if (event.pointerType === "pen") this.clicks.lifted();
+    if (event.pointerType === "pen") this.clicks.lifted(event.timeStamp);
     if (id !== this.stroke) {
       // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
       if (cancelled) this.taps.cancel(id, event.timeStamp);

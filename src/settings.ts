@@ -1140,15 +1140,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.barrel,
         ),
-        this.info(
-          dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
-            "barrel click",
-            "s pen",
-            "pen menu",
-            "stylus",
-          ]),
-          DESC.stylusClick,
-        ),
+        {
+          ...this.info(
+            dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
+              "barrel click",
+              "s pen",
+              "pen menu",
+              "stylus",
+            ]),
+            DESC.stylusClick,
+          ),
+          // The Apple Pencil has no side button (`stylus-click.ts`).
+          visible: !Platform.isIosApp,
+        },
         {
           ...this.info(
             dropdown("penCursor", "Cursor over the page", "", PEN_CURSOR_NAMES, [

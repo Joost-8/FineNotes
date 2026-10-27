@@ -19,12 +19,17 @@
  *   hovering `pointermove`s, with no press: the bit coming and going again
  *   is the click. Android's WebView (Obsidian on a Samsung tablet, S Pen)
  *   sets the contact bit for it, 1 rather than 2, with no pressure and no
- *   `pointerdown`; a pen on the glass always has its `pointerdown` first.
+ *   `pointerdown`; a pen on the glass always has its `pointerdown` first, so
+ *   that bit counts only while no pen is down ({@link StylusClicks.landed}).
  *   There, the pen touching down with the button held is a `contextmenu`
  *   alone, as a mouse's ({@link StylusClicks.touched}).
  * - **`contextmenu`.** A WebView may hand the button over as nothing but a
  *   right-click with `pointerType` "pen"; that counts when the pointer events
- *   saw no button.
+ *   saw no button, and not just after the pen lifted
+ *   ({@link MENU_AFTER_LIFT_MS}).
+ *
+ * The iPad has none of this: the Apple Pencil has no side button, and its
+ * view leaves the click off.
  *
  * Pure: no DOM, no Obsidian.
  */
@@ -54,6 +59,13 @@ export const CLICK_SLOP_PX = 12;
  * and the `contextmenu` as it came up.
  */
 export const CLICK_REPEAT_MS = 300;
+
+/**
+ * A pen's `contextmenu` this soon (ms) after it lifted is no click: Windows'
+ * press-and-hold sends one as the pen lifts after a stroke held still at its
+ * end, as a shape is drawn.
+ */
+export const MENU_AFTER_LIFT_MS = 1500;
 
 /** The parts of a `PointerEvent` this module reads. */
 export interface PenReading {
@@ -114,6 +126,10 @@ export class StylusClicks {
   private barrelInAir = false;
   /** The button went down for something else (the pen touched, or travelled): no click until it is up. */
   private spent = false;
+  /** A pen is down, here or on the tool bar: its moves' contact bit is the glass, not the button. */
+  private penDown = false;
+  /** When a pen last lifted, ms ({@link MENU_AFTER_LIFT_MS}). */
+  private liftedAt = Number.NEGATIVE_INFINITY;
 
   /**
    * A `pointerdown`. True when it is the side button pressed in the air,
@@ -160,7 +176,9 @@ export class StylusClicks {
   hover(e: PenReading): boolean {
     if (e.pointerType !== "pen") return false;
     const buttons = e.buttons ?? 0;
-    const airContact = (buttons & CONTACT_BIT) !== 0 && e.pressure === 0;
+    // No button at all: the pen is in the air, whatever lift went unheard.
+    if (buttons === 0) this.penDown = false;
+    const airContact = !this.penDown && (buttons & CONTACT_BIT) !== 0 && e.pressure === 0;
     const touching = ((buttons & CONTACT_BIT) !== 0 && !airContact) || (buttons & ERASER_BIT) !== 0;
     const barrel = (buttons & BARREL_BIT) !== 0 || airContact;
     this.barrelInAir = barrel && !touching;
@@ -194,21 +212,38 @@ export class StylusClicks {
   }
 
   /**
-   * A `pointerup` or `pointercancel` of a pen not held back: whatever the
-   * hovering moves were watching is over, so the moves that follow it with
-   * the button up are no click. (A press this page never heard of, as when a
-   * popover took its `pointerdown`, still sends its `pointerup` here.)
+   * A pen's `pointerdown` not held back, on the page or off it (the tool
+   * bar, a popover): until it lifts, its moves' contact bit is the pen on the
+   * glass, even with no pressure, and never the button.
    */
-  lifted(): void {
+  landed(): void {
     this.press = null;
+    this.penDown = true;
+  }
+
+  /**
+   * A `pointerup` or `pointercancel` of a pen not held back, at this time
+   * (ms): whatever the hovering moves were watching is over, so the moves
+   * that follow it with the button up are no click. (A press this page never
+   * heard of, as when a popover took its `pointerdown`, still sends its
+   * `pointerup` here.)
+   */
+  lifted(t: number): void {
+    this.press = null;
+    this.barrelInAir = false;
+    this.penDown = false;
+    this.liftedAt = t;
   }
 
   /**
    * A `contextmenu` from a pen, the pen not writing: a click unless the
-   * pointer events have the button in hand or heard this click already.
+   * pointer events have the button in hand or heard this click already, or
+   * the pen has only just lifted ({@link MENU_AFTER_LIFT_MS}).
    */
   menu(t: number): boolean {
     if (this.press !== null) return false;
+    const sinceLift = t - this.liftedAt;
+    if (sinceLift >= 0 && sinceLift < MENU_AFTER_LIFT_MS) return false;
     if (this.heardAlready("menu", t)) return false;
     this.last = { report: "menu", t };
     return true;

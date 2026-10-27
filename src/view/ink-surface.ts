@@ -5831,13 +5831,14 @@ export class InkSurface {
   }
 
   /**
-   * A pen's hovering move anywhere in the view. Those over the page reach the
-   * pointer input already; the rest (the tool bar, an open popover) are passed
-   * on, so the side button's click is heard there too.
+   * A pen's press, move or lift anywhere in the view. Those on the page reach
+   * the pointer input already; the rest (the tool bar, an open popover) are
+   * passed on, so the side button's click is heard there too, and a pen
+   * pressed there is not taken for it.
    */
-  hoverInView(event: PointerEvent): void {
+  penInView(event: PointerEvent): void {
     if (event.target instanceof Node && this.scrollEl.contains(event.target)) return;
-    this.pointerInput?.hoverElsewhere(event);
+    this.pointerInput?.penElsewhere(event);
   }
 
   /** The barrel button clicked in the air (`stylus-click.ts`): the host's pen menu. */

@@ -23,7 +23,7 @@ extracted from the matching section of this file by `release.yml`.
   Samsung tablet, and the next click closes it. Holding the button while
   you write still erases, lassos or moves the page, as set. A new setting
   in Settings → Pens and shortcuts, **Side button click**, turns the click
-  off.
+  off. Not on iPad: the Apple Pencil has no side button.
 
 ### Changed
 

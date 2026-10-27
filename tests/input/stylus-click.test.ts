@@ -9,6 +9,7 @@ import {
   CLICK_MAX_MS,
   CLICK_REPEAT_MS,
   CLICK_SLOP_PX,
+  MENU_AFTER_LIFT_MS,
   type PenReading,
   StylusClicks,
   isAirPress,
@@ -116,7 +117,7 @@ describe("hovering moves", () => {
     // moves have the bit, its pointerup ends the watch, and the moves after
     // it are no click.
     clicks.hover(pen(AIR, 2000));
-    clicks.lifted();
+    clicks.lifted(2050);
     expect(clicks.hover(pen(0, 2100))).toBe(false);
   });
 });
@@ -138,6 +139,30 @@ describe("hovering moves from Android's WebView", () => {
     expect(clicks.hover(android(false, 100))).toBe(false);
   });
 
+  it("the contact bit with no pressure is the glass while a pen is down, until it lifts", () => {
+    // A pen pressed on the tool bar: its pointerup may reach no one but the view.
+    const clicks = new StylusClicks();
+    clicks.landed();
+    clicks.hover(android(true, 0));
+    clicks.hover(android(true, 40, 2));
+    expect(clicks.hover(android(false, 100, 2))).toBe(false);
+    clicks.landed();
+    clicks.hover(android(true, 200));
+    clicks.lifted(250);
+    expect(clicks.hover(android(false, 300))).toBe(false);
+    // Lifted, the button is the button again.
+    clicks.hover(android(true, 600));
+    expect(clicks.hover(android(false, 700))).toBe(true);
+  });
+
+  it("a pen whose lift went unheard is up again at its first move with no button", () => {
+    const clicks = new StylusClicks();
+    clicks.landed();
+    clicks.hover(android(false, 0));
+    clicks.hover(android(true, 100));
+    expect(clicks.hover(android(false, 200))).toBe(true);
+  });
+
   it("touching down with the button held is a contextmenu, and the press is then no click", () => {
     const clicks = new StylusClicks();
     expect(clicks.touched()).toBe(false); // no button: a mouse's right-click is a right-click
@@ -150,6 +175,13 @@ describe("hovering moves from Android's WebView", () => {
     // The next press is a click again.
     clicks.hover(android(true, 600, 4));
     expect(clicks.hover(android(false, 700, 4))).toBe(true);
+  });
+
+  it("a lift forgets the button held in the air: a contextmenu after it is a right-click", () => {
+    const clicks = new StylusClicks();
+    clicks.hover(android(true, 0));
+    clicks.lifted(50);
+    expect(clicks.touched()).toBe(false);
   });
 });
 
@@ -181,6 +213,15 @@ describe("contextmenu from the pen", () => {
     expect(clicks.heldUp(pen(0, 100))).toBe(true);
     expect(clicks.menu(120)).toBe(false);
     expect(clicks.menu(100 + CLICK_MAX_MS + 1)).toBe(true);
+  });
+
+  it("is none just after the pen lifted: Windows' press-and-hold at a stroke's end", () => {
+    const clicks = new StylusClicks();
+    clicks.landed();
+    clicks.lifted(1000);
+    expect(clicks.menu(1020)).toBe(false);
+    expect(clicks.menu(1000 + MENU_AFTER_LIFT_MS - 1)).toBe(false);
+    expect(clicks.menu(1000 + MENU_AFTER_LIFT_MS + 1)).toBe(true);
   });
 
   it("keeps the press from making a second click right after it", () => {

@@ -1397,7 +1397,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("offers the barrel's four choices, its click's two, and the cursor's three only on a computer", () => {
+  it("offers the barrel's four choices, its click's two but not on an iPad, and the cursor's three only on a computer", () => {
     const all = rows(makeTab(makePlugin()).tab);
     expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
       "erase",
@@ -1409,6 +1409,11 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       "pen-menu": "Open the pen menu",
       none: "Nothing",
     });
+    expect(shown(named(all, "Side button click"))).toBe(true);
+    Platform.isIosApp = true;
+    expect(shown(named(rows(makeTab(makePlugin()).tab), "Side button click"))).toBe(false);
+    expect(shown(named(rows(makeTab(makePlugin()).tab), "Stylus side button"))).toBe(true);
+    Platform.isIosApp = false;
     const cursor = named(all, "Cursor over the page");
     expect(cursor.control?.options).toEqual({
       ink: "Ink dot",

@@ -19,6 +19,7 @@ import {
   type PointerSample,
   type PressRoute,
 } from "../../src/input/pointer-controller";
+import { MENU_AFTER_LIFT_MS } from "../../src/input/stylus-click";
 
 type Listener = (event: unknown) => void;
 
@@ -1055,10 +1056,14 @@ describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
     expect(log).toEqual(["click 11,10"]);
   });
 
+  /** A pen event over the rest of the view, off the controller's element. */
+  function elsewhere(controller: PointerController, type: Phase, c: Contact): void {
+    controller.penElsewhere({ ...eventFor(1, "pen", c), type } as unknown as PointerEvent);
+  }
+
   it("hears the click over the rest of the view, off its element (the popover the click opened)", () => {
     const { controller, log, wanted } = clickRig();
-    const over = (c: Contact) =>
-      controller.hoverElsewhere(eventFor(1, "pen", c) as unknown as PointerEvent);
+    const over = (c: Contact) => elsewhere(controller, "pointermove", c);
     over({ x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
     over({ x: 10, y: 10, t: 150, buttons: 0, pressure: 0 });
     expect(log).toEqual(["click 10,10"]);
@@ -1067,6 +1072,27 @@ describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
     over({ x: 10, y: 10, t: 900, buttons: 1, pressure: 0 });
     over({ x: 10, y: 10, t: 1000, buttons: 0, pressure: 0 });
     expect(log).toEqual(["click 10,10"]);
+  });
+
+  it("hears no click from a pen down on the tool bar, though its moves have no pressure", () => {
+    const { controller, log } = clickRig();
+    elsewhere(controller, "pointerdown", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointerup", { x: 10, y: 10, t: 80, buttons: 0, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 120, buttons: 0, pressure: 0 });
+    // Its pointerup never came: the first move with no button is the pen in the air.
+    elsewhere(controller, "pointerdown", { x: 10, y: 10, t: 500, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 520, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 600, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+  });
+
+  it("hears no click from a pen down on the page that writes nothing (the margin)", () => {
+    const { log, fire } = clickRig("ignore");
+    fire("pointerdown", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0.3 });
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 60, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
   });
 
   it("hears no click after a press it never had: its pointerup ends the watch", () => {
@@ -1091,5 +1117,13 @@ describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
     fire("pointerup", { x: 10, y: 10, t: 5700 });
     wanted.on = false;
     expect(controller.stylusMenu(9000)).toBe(false);
+  });
+
+  it("takes no contextmenu for the click just after a stroke (Windows' press-and-hold)", () => {
+    const { controller, fire } = clickRig();
+    fire("pointerdown", { x: 10, y: 10, t: 0, buttons: 1 });
+    fire("pointerup", { x: 40, y: 10, t: 2000 });
+    expect(controller.stylusMenu(2050)).toBe(false);
+    expect(controller.stylusMenu(2000 + MENU_AFTER_LIFT_MS + 1)).toBe(true);
   });
 });
