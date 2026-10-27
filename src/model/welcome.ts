@@ -1353,7 +1353,7 @@ const TOUR: readonly TourPage[] = [
       );
       s.card(
         "• Drag inside the frame to move it.\n" +
-          "• Drag a corner to resize it, or the knob below to turn it.\n" +
+          "• Pinch it with two fingers to resize it; the knob below turns it.\n" +
           "• Its bar cuts, duplicates and deletes; ⋯ copies, pastes, flips and recolours.\n" +
           "• Copy and paste work between pages and between notebooks.",
         "A selection",

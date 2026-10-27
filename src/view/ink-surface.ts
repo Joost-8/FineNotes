@@ -75,16 +75,12 @@ import {
   type LassoMode,
   LassoPath,
   type Polygon,
-  anchorCorner,
   boundsCentre,
-  boundsCorner,
   boxInLasso,
   clampGroupDelta,
   cornerScale,
-  hitSelectionCorner,
   hitSelectionKnob,
   lassoTakesStroke,
-  minScaleForSide,
   polygonOf,
   rectLoop,
   scaleBounds,
@@ -284,7 +280,6 @@ import {
   setCellStyle,
   setCellText,
   stepCell,
-  tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
 import {
@@ -332,7 +327,6 @@ import {
   elementsOnPage,
   isEmptySelection,
   reorientPoint,
-  textScaleRange,
 } from "../model/selection-commands";
 import {
   CropImage,
@@ -912,8 +906,6 @@ const TAP_SLOP_PX = 8;
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
 const SELECTION_PAD_PX = 8;
-/** Smallest a corner resize may make a lasso selection's longer side, screen px. */
-const MIN_SELECTION_SIDE_PX = 32;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far off ink or a picture a Pencil tap may land and still pick it, screen px. */
 const PEN_TAP_TOLERANCE_PX = 6;
@@ -2014,13 +2006,11 @@ export class InkSurface {
     this.selectionPathEl = activeDocument.createElementNS(SVG_NS, "path");
     outline.append(this.selectionPathEl);
     this.selectionFrameEl.append(outline);
-    // A square handle at each corner resizes the selection, the aspect kept,
-    // drawn as a picture's corner handles are, from the same sizes.
+    // No corner handles (discussion #51, Joost): a lasso selection of ink or
+    // shapes is resized only by pinching it, as in Notability; a picture on
+    // its own keeps its handles. The knob and stem share a picture's sizes.
     this.selectionUiEl.setCssProps(chromeSizes);
-    for (const corner of IMAGE_CORNERS) {
-      this.selectionFrameEl.createDiv({ cls: `goodobsidian-image-handle is-corner is-${corner}` });
-    }
-    // And a rotate knob below it on a stem, as below a picture.
+    // A rotate knob below it on a stem, as below a picture.
     const groupKnob = this.selectionFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(groupKnob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
@@ -10267,12 +10257,10 @@ export class InkSurface {
 
   /**
    * A press on the selection's frame: the whole selection follows it, and
-   * the lift commits one `TranslateElements`. A press on a corner handle
-   * resizes it instead, about the opposite corner, the aspect kept, and the
-   * lift commits one `ScaleElements`; the knob below turns it about its
-   * middle, and the lift commits one `ReorientElements`. The pure hit tests
-   * decide which, so the handles answer across 44 screen px at any zoom. A
-   * finger works it too.
+   * the lift commits one `TranslateElements`. The knob below turns it
+   * about its middle instead, and the lift commits one `ReorientElements`;
+   * the pure hit test answers across 44 screen px at any zoom. A finger
+   * works it too. There are no corner handles: a pinch resizes it.
    */
   private readonly onSelectionPointerDown = (event: PointerEvent): void => {
     // Everything on the frame is the frame's: the page below never sees it.
@@ -10301,7 +10289,7 @@ export class InkSurface {
       clientY: event.clientY,
       dx: 0,
       dy: 0,
-      scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
+      scale: null,
       turn,
       lifted: false,
     };
@@ -10349,31 +10337,6 @@ export class InkSurface {
       HANDLE_HIT_RADIUS_PX / scale,
     );
     return hit ? { centre: boundsCentre(bounds), from, angle: 0 } : null;
-  }
-
-  private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
-    const scale = this.unitScale;
-    const pad = SELECTION_PAD_PX / scale;
-    const frame: Bounds = {
-      minX: bounds.minX - pad,
-      minY: bounds.minY - pad,
-      maxX: bounds.maxX + pad,
-      maxY: bounds.maxY + pad,
-    };
-    const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
-    if (!corner) return null;
-    const at = boundsCorner(bounds, corner);
-    const fonts = textScaleRange(sel.textBoxes);
-    const cells = tableScaleRange(sel.tables ?? []);
-    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
-    return {
-      corner,
-      anchor: anchorCorner(bounds, corner),
-      grab: { x: at.x - from.x, y: at.y - from.y },
-      k: 1,
-      min: Math.max(minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / scale), text.min),
-      max: text.max,
-    };
   }
 
   /** Carry a selection being dragged to page point `p`, from where the drag began. */

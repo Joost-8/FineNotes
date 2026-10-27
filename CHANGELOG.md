@@ -10,6 +10,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **A lasso selection is resized by pinching it**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The square
+  handles at the corners of a selection of handwriting or shapes are gone:
+  pinch the selection with two fingers to make it bigger or smaller, as in
+  Notability. The knob below still turns it, and a picture selected on its
+  own keeps its handles.
+
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's
