@@ -75,16 +75,12 @@ import {
   type LassoMode,
   LassoPath,
   type Polygon,
-  anchorCorner,
   boundsCentre,
-  boundsCorner,
   boxInLasso,
   clampGroupDelta,
   cornerScale,
-  hitSelectionCorner,
   hitSelectionKnob,
   lassoTakesStroke,
-  minScaleForSide,
   polygonOf,
   rectLoop,
   scaleBounds,
@@ -288,7 +284,6 @@ import {
   setCellStyle,
   setCellText,
   stepCell,
-  tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
 import {
@@ -337,7 +332,6 @@ import {
   elementsOnPage,
   isEmptySelection,
   reorientPoint,
-  textScaleRange,
   translatePoints,
 } from "../model/selection-commands";
 import {
@@ -919,8 +913,6 @@ const TAP_SLOP_PX = 8;
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
 const SELECTION_PAD_PX = 8;
-/** Smallest a corner resize may make a lasso selection's longer side, screen px. */
-const MIN_SELECTION_SIDE_PX = 32;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far off ink or a picture a Pencil tap may land and still pick it, screen px. */
 const PEN_TAP_TOLERANCE_PX = 6;
@@ -946,14 +938,8 @@ interface ZoomSettle {
 const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
 const IMAGE_DRAG_SLOP_PX = 3;
-/**
- * How far from a shape's corner or end a press still takes its point
- * handle, screen px: the Pencil's reach, short of the frame's 22 px corner
- * handles, which win any press nearer to them (`pickPointHandle`).
- */
+/** How far from a shape's corner or end a press still takes its point handle, screen px. */
 const POINT_HIT_RADIUS_PX = 18;
-/** The frame's pad round a lone shape with point handles, screen px (else `SELECTION_PAD_PX`). */
-const SHAPE_FRAME_PAD_PX = 20;
 /**
  * A lasso press on the paper held this long without moving opens the small
  * bar with Paste — or Unlock, on a locked picture (GoodNotes' long press).
@@ -2059,13 +2045,11 @@ export class InkSurface {
     this.selectionPathEl = activeDocument.createElementNS(SVG_NS, "path");
     outline.append(this.selectionPathEl);
     this.selectionFrameEl.append(outline);
-    // A square handle at each corner resizes the selection, the aspect kept,
-    // drawn as a picture's corner handles are, from the same sizes.
+    // No corner handles (discussion #51, Joost): a lasso selection of ink or
+    // shapes is resized only by pinching it, as in Notability; a picture on
+    // its own keeps its handles. The knob and stem share a picture's sizes.
     this.selectionUiEl.setCssProps(chromeSizes);
-    for (const corner of IMAGE_CORNERS) {
-      this.selectionFrameEl.createDiv({ cls: `goodobsidian-image-handle is-corner is-${corner}` });
-    }
-    // And a rotate knob below it on a stem, as below a picture.
+    // A rotate knob below it on a stem, as below a picture.
     const groupKnob = this.selectionFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(groupKnob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
@@ -8458,7 +8442,7 @@ export class InkSurface {
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     if (box && bounds) {
       const scale = this.unitScale;
-      const pad = this.framePad;
+      const pad = SELECTION_PAD_PX;
       const x = (box.x + bounds.minX) * scale - pad;
       const y = (box.y + bounds.minY) * scale - pad;
       this.selectionFrameEl.setCssStyles({
@@ -8516,7 +8500,7 @@ export class InkSurface {
     } else if (group) {
       bounds = this.groupChromeBounds(group);
       // Clear of the corner handles on the frame, as of a picture's.
-      clearAbove = clearBelow = this.framePad + IMAGE_CHROME_CLEAR_PX;
+      clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
     } else if (image) {
       // The picture and its rotate knob, wherever a turn has put the knob.
@@ -8554,7 +8538,7 @@ export class InkSurface {
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
-    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - this.framePad / scale) };
+    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - SELECTION_PAD_PX / scale) };
   }
 
   /** What a lone picture's chrome covers, page space: the rotated picture and its knob. */
@@ -10451,12 +10435,10 @@ export class InkSurface {
 
   /**
    * A press on the selection's frame: the whole selection follows it, and
-   * the lift commits one `TranslateElements`. A press on a corner handle
-   * resizes it instead, about the opposite corner, the aspect kept, and the
-   * lift commits one `ScaleElements`; the knob below turns it about its
-   * middle, and the lift commits one `ReorientElements`. The pure hit tests
-   * decide which, so the handles answer across 44 screen px at any zoom. A
-   * finger works it too.
+   * the lift commits one `TranslateElements`. The knob below turns it
+   * about its middle instead, and the lift commits one `ReorientElements`;
+   * the pure hit test answers across 44 screen px at any zoom. A finger
+   * works it too. There are no corner handles: a pinch resizes it.
    */
   private readonly onSelectionPointerDown = (event: PointerEvent): void => {
     // Everything on the frame is the frame's: the page below never sees it.
@@ -10476,7 +10458,7 @@ export class InkSurface {
     }
     const from = this.pagePoint(box, event.clientX, event.clientY);
     const turn = this.knobGrabbed(bounds, from);
-    if (!turn && this.grabShapePoint(event, sel, bounds, from)) return;
+    if (!turn && this.grabShapePoint(event, sel, from)) return;
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
@@ -10486,7 +10468,7 @@ export class InkSurface {
       clientY: event.clientY,
       dx: 0,
       dy: 0,
-      scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
+      scale: null,
       turn,
       lifted: false,
     };
@@ -10510,11 +10492,11 @@ export class InkSurface {
   /**
    * The corner resize a press at page point `from` starts on the selection's
    * frame, or `null` when it grabbed no corner handle. The handles sit on the
-   * dashed frame, which is `framePad` outside the bounds.
+   * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
    */
-  /** The selection's dashed frame, page space: its bounds grown by `framePad`. */
+  /** The selection's dashed frame, page space: its bounds grown by `SELECTION_PAD_PX`. */
   private selectionFrameOf(bounds: Bounds): Bounds {
-    const pad = this.framePad / this.unitScale;
+    const pad = SELECTION_PAD_PX / this.unitScale;
     return {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10588,31 +10570,6 @@ export class InkSurface {
     el.toggleClass("is-snapped", snapped);
     el.setCssStyles({ left: `${(box.x + at.x) * scale}px`, top: `${(box.y + at.y) * scale}px` });
     el.removeClass("is-hidden");
-  }
-
-  private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
-    const scale = this.unitScale;
-    const pad = this.framePad / scale;
-    const frame: Bounds = {
-      minX: bounds.minX - pad,
-      minY: bounds.minY - pad,
-      maxX: bounds.maxX + pad,
-      maxY: bounds.maxY + pad,
-    };
-    const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
-    if (!corner) return null;
-    const at = boundsCorner(bounds, corner);
-    const fonts = textScaleRange(sel.textBoxes);
-    const cells = tableScaleRange(sel.tables ?? []);
-    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
-    return {
-      corner,
-      anchor: anchorCorner(bounds, corner),
-      grab: { x: at.x - from.x, y: at.y - from.y },
-      k: 1,
-      min: Math.max(minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / scale), text.min),
-      max: text.max,
-    };
   }
 
   /** Carry a selection being dragged to page point `p`, from where the drag began. */
@@ -10852,15 +10809,6 @@ export class InkSurface {
   private shapePointsEl: HTMLElement | null = null;
   private pointDrag: PointDrag | null = null;
 
-  /**
-   * How far the selection's frame stands outside its bounds, screen px. A
-   * lone shape with point handles gets a wider frame, so that the frame's
-   * corner squares stand clear of the rings on the shape's own corners.
-   */
-  private get framePad(): number {
-    return this.loneShape(this.selection) ? SHAPE_FRAME_PAD_PX : SELECTION_PAD_PX;
-  }
-
   /** The one shape a selection holds on its own, and its point handles; null otherwise. */
   private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
@@ -10905,27 +10853,14 @@ export class InkSurface {
 
   /**
    * A press at page point `from` on the frame of a lone shape: start
-   * dragging the corner or end it took, and say so. Nearer one of the
-   * frame's own corner handles, the frame keeps the press.
+   * dragging the corner or end it took, and say so.
    */
-  private grabShapePoint(
-    event: PointerEvent,
-    sel: GroupSelection,
-    bounds: Bounds,
-    from: Pt,
-  ): boolean {
+  private grabShapePoint(event: PointerEvent, sel: GroupSelection, from: Pt): boolean {
     const lone = this.loneShape(sel);
     const before = lone ? strokeBounds(lone.stroke) : null;
     if (!lone || !before) return false;
-    const f = this.selectionFrameOf(bounds);
-    const corners = [
-      { x: f.minX, y: f.minY },
-      { x: f.maxX, y: f.minY },
-      { x: f.maxX, y: f.maxY },
-      { x: f.minX, y: f.maxY },
-    ];
     const reach = POINT_HIT_RADIUS_PX / this.unitScale;
-    const handle = pickPointHandle(lone.handles.at, from, reach, corners);
+    const handle = pickPointHandle(lone.handles.at, from, reach);
     if (handle < 0) return false;
     const at = lone.handles.at;
     this.pointDrag = {

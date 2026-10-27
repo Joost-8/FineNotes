@@ -19,8 +19,8 @@ extracted from the matching section of this file by `release.yml`.
 - **Move a shape's corners and ends**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
   shape on its own and a ring sits on each of its corners or ends: drag one
-  to move that point alone, while the frame's corners still resize the shape
-  and its knob still turns it. A rectangle with a corner moved becomes a
+  to move that point alone, while a pinch still resizes the shape and the
+  knob still turns it. A rectangle with a corner moved becomes a
   four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
   rounded rectangles and clouds have no rings.
 - **Shapes snap to each other**
@@ -38,6 +38,12 @@ extracted from the matching section of this file by `release.yml`.
   longest edge, a picture's own tilt) from several degrees away, and rests
   lightly on every 15°, free between. A small readout beside the pen shows
   the angle while you turn.
+- **A lasso selection is resized by pinching it**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The square
+  handles at the corners of a selection of handwriting or shapes are gone:
+  pinch the selection with two fingers to make it bigger or smaller, as in
+  Notability. The knob below still turns it, and a picture selected on its
+  own keeps its handles.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
