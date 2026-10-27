@@ -290,7 +290,7 @@ export interface GoodObsidianSettings {
    */
   straightHighlighter: boolean;
   /**
-   * Only stylus mode: every pointer but the pen is ignored on the page, so
+   * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a hand resting on the glass moves neither the ink nor the page.
    */
   onlyStylusMode: boolean;

@@ -407,7 +407,7 @@ describe("the rows", () => {
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
       [PENS, "More", "action"],
-      [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
+      [PENS, "Stylus-only mode", "toggle:onlyStylusMode"],
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
@@ -580,7 +580,7 @@ const PEN_ROWS = [
   "Cursor over the page",
   "Keyboard shortcuts",
   "More",
-  "Only stylus mode",
+  "Stylus-only mode",
 ];
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
@@ -971,7 +971,7 @@ describe("control values", () => {
     expect(plugin.calls).toEqual(["pressureWidth:true", "update"]);
   });
 
-  it("hands Only stylus mode to the plugin, which updates every notebook", async () => {
+  it("hands Stylus-only mode to the plugin, which updates every notebook", async () => {
     const plugin = makePlugin();
     await makeTab(plugin).tab.setControlValue("onlyStylusMode", true);
     expect(plugin.setOnlyStylusMode).toHaveBeenCalledWith(true);

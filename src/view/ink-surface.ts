@@ -684,7 +684,7 @@ export interface InkSurfaceCallbacks {
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
   /**
-   * Only stylus mode: every pointer but the pen is ignored on the page, so
+   * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a resting hand moves neither the ink nor the page. Read live, as the
    * toolbar and the settings may switch it while the note is open.
    */
@@ -2155,7 +2155,7 @@ export class InkSurface {
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
       if (type === "touch" || type === "pen" || this.touchPanning) return;
-      // Only stylus mode: a right-click is no more the pen's than a press is.
+      // Stylus-only mode: a right-click is no more the pen's than a press is.
       if (this.callbacks.onlyStylusMode?.() === true) return;
       // A tablet driver can send a stylus button as a right click (FineNotes#25).
       if (now() < this.stylusMenuUntil) return;

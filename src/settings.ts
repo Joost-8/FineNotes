@@ -327,8 +327,8 @@ const DESC = {
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
   onlyStylusMode:
-    "Only the pen writes on the page: finger and palm contacts do nothing there, nor does a " +
-    "mouse press, so a hand resting on the glass cannot move the page. The Only stylus mode " +
+    "Only the stylus writes on the page: finger and palm contacts do nothing there, nor does a " +
+    "mouse press, so a hand resting on the glass cannot move the page. The Stylus only " +
     "button switches it on and off; it waits in More tools with the Hand and Magnifier tools, " +
     "and all three can be added to the bar with Customize toolbar. The Hand tool moves the " +
     "page and the Magnifier zooms it.",
@@ -1104,7 +1104,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row. Only stylus mode is a row few people need, so it sits last,
+   * from its row. Stylus-only mode is a row few people need, so it sits last,
    * under More.
    */
   private pensGroup(): SettingDefinitionItem {
@@ -1162,20 +1162,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.shortcuts,
         ),
-        this.more("pens", "Only stylus mode"),
+        this.more("pens", "Stylus-only mode"),
         this.info(
           toggle(
             "onlyStylusMode",
-            "Only stylus mode",
-            "The pen alone writes; a resting hand does nothing.",
-            ["palm rejection", "stylus", "finger", "touch", "hand", "tablet"],
+            "Stylus-only mode",
+            "The stylus alone writes; a resting hand does nothing.",
+            ["palm rejection", "stylus only", "pen only", "finger", "touch", "hand", "tablet"],
           ),
           DESC.onlyStylusMode,
         ),
       ],
       () => [
         { text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` },
-        ...(this.plugin.settings.onlyStylusMode ? [{ text: "Only stylus" }] : []),
+        ...(this.plugin.settings.onlyStylusMode ? [{ text: "Stylus only" }] : []),
       ],
     );
   }

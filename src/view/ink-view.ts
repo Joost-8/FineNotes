@@ -871,7 +871,7 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Only stylus mode was switched here or through the toolbar: its toggle
+   * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
    * items now, so the choice of placing them does not change with the mode.
    */

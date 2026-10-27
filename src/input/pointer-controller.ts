@@ -11,7 +11,7 @@
  * Fingers scroll and zoom, through `FingerGesture`. The page has
  * `touch-action: none` because on iOS a Pencil drag over anything the browser
  * could scroll turns into a scroll, which cancels the stroke part-way; the
- * price is that the fingers' movement is ours to report. With Only stylus
+ * price is that the fingers' movement is ours to report. With Stylus-only
  * mode on, every pointer but the pen is ignored instead (`roleOf`), so a
  * resting hand has nothing to move.
  *
@@ -135,7 +135,7 @@ export interface PointerControllerOptions {
   handHeld?: () => boolean;
   /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
   route?: (event: PointerEvent) => PressRoute;
-  /** Only stylus mode: every pointer but the pen is ignored on the page. */
+  /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
 }
 
@@ -236,7 +236,7 @@ export class PointerController {
     const route = free ? (this.handHeld() ? "pan" : this.pressRoute(event)) : "draw";
     if (route === "ignore" || role === "ignore") {
       // A palm that lands during a stroke leaves the browser's contact alone;
-      // in Only stylus mode the pointer is not the page's at all, so nothing
+      // in Stylus-only mode the pointer is not the page's at all, so nothing
       // else may take it either.
       if (onlyStylus) event.preventDefault();
       return;
@@ -286,7 +286,7 @@ export class PointerController {
   private moved(event: PointerEvent): void {
     this.notePenSeen(event);
     if (event.pointerId !== this.stroke) {
-      // Only stylus mode: a finger already down when the mode came on must
+      // Stylus-only mode: a finger already down when the mode came on must
       // not carry on moving the page; its lift still releases it.
       if (this.onlyStylus() && event.pointerType !== "pen") return;
       if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);

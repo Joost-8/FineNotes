@@ -46,7 +46,7 @@ describe("normalizeBar", () => {
 });
 
 describe("the default bar", () => {
-  it("leaves the hand, magnifier, Only stylus mode, stickers and the rest to the menu", () => {
+  it("leaves the hand, magnifier, Stylus-only mode, stickers and the rest to the menu", () => {
     expect(hiddenItems(DEFAULT_BAR)).toEqual([
       "pan",
       "zoom",

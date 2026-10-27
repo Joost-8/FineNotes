@@ -127,7 +127,7 @@ class Rig {
   readonly controller: PointerController;
   /** Space held down (FineNotes#7). */
   readonly hand = { held: false };
-  /** Only stylus mode on (the toolbar's switch). */
+  /** Stylus-only mode on (the toolbar's switch). */
   readonly onlyStylus = { on: false };
 
   constructor(only?: "required") {
@@ -700,7 +700,7 @@ describe("pen and fingers together", () => {
     expect(rig.take()).toEqual(["panStart 1,2 t=3"]);
   });
 
-  it("Only stylus mode lets the pen draw and ignores every other pointer, live", () => {
+  it("Stylus-only mode lets the pen draw and ignores every other pointer, live", () => {
     const rig = new Rig();
     rig.onlyStylus.on = true;
     const finger = rig.finger("pointerdown", 10, 1, 2, 3);

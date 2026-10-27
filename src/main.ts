@@ -40,6 +40,8 @@ import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
   ICON_NEW_NOTEBOOK,
+  ICON_STYLUS_ONLY,
+  ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
   VIEW_TYPE_INK,
 } from "./constants";
@@ -399,6 +401,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
+    addIcon(ICON_STYLUS_ONLY, ICON_STYLUS_ONLY_SVG);
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
     this.register(
@@ -708,7 +711,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
     this.addCommand({
       id: "toggle-only-stylus-mode",
-      name: "Turn Only stylus mode on or off",
+      name: "Turn Stylus-only mode on or off",
       callback: () => void this.setOnlyStylusMode(!this.settings.onlyStylusMode),
     });
 
@@ -1318,7 +1321,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * Only stylus mode was switched from the toolbar or a command: save it and
+   * Stylus-only mode was switched from the toolbar or a command: save it and
    * give every open notebook its toggle in one go.
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
