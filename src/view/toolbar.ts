@@ -4601,6 +4601,16 @@ export class Toolbar {
     }
   }
 
+  /**
+   * Tuck the pill away as a second tap on the tool's button does, until
+   * that button is tapped again ("Hide pen options while writing").
+   */
+  tuckOptions(): void {
+    if (!this.optionsVisible) return;
+    this.optionsVisible = false;
+    this.showOptions(false);
+  }
+
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
   setState(next: ToolbarState): void {
     this.drawingTool = drawingToolOf(this.drawingTool, next.tool);

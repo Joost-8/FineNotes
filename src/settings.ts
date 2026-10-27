@@ -326,6 +326,10 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
+  tuckPenOptionsOnWrite:
+    "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
+    "type, widths and colors) tuck away, as a second tap on the pen does. Tap the pen to " +
+    "bring them back. The other tools keep theirs.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -1004,7 +1008,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Text boxes, colors, highlighter"),
+        this.more("writing", "Pen options, text boxes, colors, highlighter"),
+        this.info(
+          toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
+            "pen",
+            "options",
+            "pill",
+            "hide",
+            "tuck",
+            "toolbar",
+          ]),
+          DESC.tuckPenOptionsOnWrite,
+        ),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
             "text",

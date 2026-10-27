@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Hide pen options while writing.** A new switch under Settings ›
+  Writing › More: the pen's options (pen type, widths and colors) tuck
+  away as soon as the pen or highlighter starts writing, wherever they
+  sit, as a second tap on the pen does. Tap the pen to bring them back.
+  Off by default; the eraser, lasso and other tools keep their options.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

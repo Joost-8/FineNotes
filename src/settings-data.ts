@@ -289,6 +289,11 @@ export interface GoodObsidianSettings {
    * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
    */
   straightHighlighter: boolean;
+  /**
+   * The pen's options pill tucks away as soon as the pen or highlighter
+   * writes, as a second tap on its button does (`tool-return.ts`).
+   */
+  tuckPenOptionsOnWrite: boolean;
 
   /**
    * The settings tab's sections shown open, by id; every other one is
@@ -385,6 +390,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
+  tuckPenOptionsOnWrite: false,
 
   settingsOpen: [],
   scribbleTipDismissed: false,

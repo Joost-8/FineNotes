@@ -642,6 +642,11 @@ export interface InkSurfaceCallbacks {
    * puts off work that would stall the ink until it has been up a moment.
    */
   onPen?: (down: boolean) => void;
+  /**
+   * A pen or mouse gesture began on a page with `tool`; `lent` when a stylus
+   * button or a key lent that tool for this press only.
+   */
+  onGestureStart?: (tool: ActiveTool, lent: boolean) => void;
   /** A freehand pen stroke was drawn and committed on page `pageId` (calculation notes). */
   onStrokeDrawn?: (pageId: string, stroke: Stroke) => void;
   /**
@@ -5646,6 +5651,7 @@ export class InkSurface {
       // cancelled, so the box would otherwise keep focus and the keyboard.)
       this.blurTextBox();
     }
+    this.callbacks.onGestureStart?.(this.gestureTool(), this.pressTool !== null);
     this.gestureOf(this.gestureTool()).down(box, local, sample);
   }
 

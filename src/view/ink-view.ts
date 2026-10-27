@@ -100,6 +100,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
+import { tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -2629,6 +2630,11 @@ export class InkView extends TextFileView {
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
         onPen: (down) => this.penActivity(down),
+        onGestureStart: (tool, lent) => {
+          if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
+            this.toolbar?.tuckOptions();
+          }
+        },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
