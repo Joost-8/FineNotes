@@ -316,6 +316,8 @@ function pieceOf(stroke: Stroke, pts: number[], nextId: () => string): Stroke {
   if (stroke.radius !== undefined) piece.radius = stroke.radius;
   // A piece of a note's ink stays on the note.
   if (stroke.onSticky !== undefined) piece.onSticky = stroke.onSticky;
+  // A piece of calligraphy keeps its flat nib. A shape is drawn at one width.
+  if (stroke.nib !== undefined && stroke.shape === undefined) piece.nib = stroke.nib;
   return piece;
 }
 
