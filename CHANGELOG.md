@@ -17,6 +17,19 @@ extracted from the matching section of this file by `release.yml`.
   an Update button and "Don't show again". Settings › Advanced › Updates
   chooses between Remind me (the default), a dot on the gear only, or no
   checking at all.
+- **FineNotes' own folders.** Templates and stickers now live in one folder,
+  `FineNotes assets` (as `Templates` and `Stickers`); a vault still using
+  the old default folders has them moved there on the next start, and a
+  folder you chose yourself stays where it is. New handwriting practice
+  sheets go into `FineNotes handwriting sheets`, and so do your corrected
+  words, which were kept in the plugin's own folder, where reinstalling
+  FineNotes deleted them.
+- **Learning your handwriting again.** After every 50 corrected words, a
+  notice offers to learn again. Learning again keeps the new model only if
+  it reads your test lines better than the one you have, not just better
+  than Grape, so it never makes reading worse. Practice sheets now say to
+  keep them: each time FineNotes learns, it learns from every sheet in the
+  vault.
 
 ## [2.5.0] - 2026-10-25
 

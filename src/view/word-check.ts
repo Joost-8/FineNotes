@@ -6,12 +6,15 @@
  * - `flags` says which words of a page's reading to underline;
  * - `ask` shows the card for a tapped word (word-popover.ts) and records the answer.
  *
- * Files, all in `<plugin>/handwriting/`:
- * - `words.txt`, the user's own words not to underline, one a line, added
- *   to the public list bundled with the plugin (models/words.txt, built by
- *   scripts/build-words.mjs). Without either nothing is underlined.
- * - `corrections.json`, the answers, ink included; "Learn my handwriting"
- *   and the nightly loop learn from them.
+ * Files:
+ * - `<plugin>/handwriting/words.txt`, the user's own words not to
+ *   underline, one a line, added to the public list bundled with the plugin
+ *   (models/words.txt, built by scripts/build-words.mjs). Without either
+ *   nothing is underlined.
+ * - `FineNotes handwriting sheets/corrections.json`, the answers, ink
+ *   included; "Learn my handwriting" and the nightly loop learn from them.
+ *   In the vault, beside the practice sheets, so reinstalling the plugin
+ *   keeps them (they were in the plugin's folder before 2.6).
  */
 
 import { type App, Modal, Notice, normalizePath } from "obsidian";
@@ -24,6 +27,7 @@ import {
   emptyCorrections,
   flagWords,
   ignoredWords,
+  mergeCorrections,
   parseCorrections,
   parseWordList,
   serializeCorrections,
@@ -34,6 +38,7 @@ import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { WordPopover, type WordPopoverRow } from "./word-popover";
 import { errorMessage } from "../util/errors";
+import { HANDWRITING_FOLDER, correctionsFile, legacyCorrectionsFile } from "../model/vault-folders";
 
 export function wordListPath(pluginDir: string): string {
   return normalizePath(`${pluginDir}/handwriting/words.txt`);
@@ -45,8 +50,8 @@ export async function bundledWords(): Promise<string> {
   return text;
 }
 
-export function correctionsPath(pluginDir: string): string {
-  return normalizePath(`${pluginDir}/handwriting/corrections.json`);
+export function correctionsPath(): string {
+  return normalizePath(correctionsFile());
 }
 
 /** A word on a page, as the menu needs it. */
@@ -68,6 +73,8 @@ export class WordCheck {
   private loading: Promise<void> | null = null;
   /** Said once a session: there is no word list, so nothing is underlined. */
   private toldNoList = false;
+  /** Told after each answer is saved, with how many answers there are now. */
+  answered: (count: number) => void = () => {};
 
   constructor(
     private readonly app: App,
@@ -95,10 +102,43 @@ export class WordCheck {
     const shared = text === null ? null : parseWordList(text);
     this.words = own && shared ? new Set([...shared, ...own]) : (own ?? shared);
     this.version++;
-    const file = correctionsPath(this.pluginDir());
+    const file = correctionsPath();
     this.corrections = (await adapter.exists(file))
       ? parseCorrections(await adapter.read(file))
       : emptyCorrections();
+    await this.moveLegacy();
+  }
+
+  /**
+   * Corrections kept in the plugin's folder before 2.6 join the vault's
+   * file, and the old one goes. Done on every read, since a device on an
+   * older FineNotes may still write there. A file that is not JSON at all
+   * is left where it is, never thrown away.
+   */
+  private async moveLegacy(): Promise<void> {
+    const adapter = this.app.vault.adapter;
+    const old = normalizePath(legacyCorrectionsFile(this.pluginDir()));
+    try {
+      if (!(await adapter.exists(old))) return;
+      const raw = await adapter.read(old);
+      try {
+        JSON.parse(raw);
+      } catch {
+        return;
+      }
+      this.corrections = mergeCorrections(this.corrections, parseCorrections(raw));
+      await this.save();
+      await adapter.remove(old);
+    } catch (error) {
+      console.warn("FineNotes: could not move the old corrections file", error);
+    }
+  }
+
+  private async save(): Promise<void> {
+    const adapter = this.app.vault.adapter;
+    const folder = normalizePath(HANDWRITING_FOLDER);
+    if (!(await adapter.exists(folder))) await adapter.mkdir(folder);
+    await adapter.write(correctionsPath(), serializeCorrections(this.corrections));
   }
 
   /** The words of a reading to underline on page `pageId` of `note`. */
@@ -210,16 +250,12 @@ export class WordCheck {
       at: Date.now(),
     });
     try {
-      const adapter = this.app.vault.adapter;
-      const folder = normalizePath(`${this.pluginDir()}/handwriting`);
-      if (!(await adapter.exists(folder))) await adapter.mkdir(folder);
-      await adapter.write(
-        correctionsPath(this.pluginDir()),
-        serializeCorrections(this.corrections),
-      );
+      await this.save();
     } catch (error) {
       new Notice(`FineNotes: could not save the correction — ${errorMessage(error)}`, 8000);
+      return;
     }
+    this.answered(this.count);
   }
 }
 

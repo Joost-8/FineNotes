@@ -57,7 +57,7 @@ import {
   setIcon,
 } from "obsidian";
 import { SIZES } from "./constants";
-import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
+import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
 import {
@@ -1335,7 +1335,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           controlRow(
             "Templates folder",
             "",
-            { type: "text", key: "templateFolder", placeholder: "FineNotes templates" },
+            { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
             ["template", "folder", "share"],
           ),
           "Where Save as template puts .finetemplate files, and New notebook from template looks first.",

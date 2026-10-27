@@ -131,7 +131,8 @@ export class HwrWorkerClient {
 
   /**
    * Learn a writer's handwriting from `lines`, starting from the model in
-   * `bytes` (transferred). Null when there was nothing to learn from.
+   * `bytes` (transferred); `rival`, the learned model in use, must be beaten
+   * too. Null when there was nothing to learn from.
    */
   async tune(
     bytes: ArrayBuffer,
@@ -139,11 +140,12 @@ export class HwrWorkerClient {
     steps: number,
     name: string,
     onProgress: (progress: HwrProgress) => void,
+    rival?: ArrayBuffer,
   ): Promise<HwrTuned | null> {
     const result = await this.send(
-      { type: "tune", bytes, lines, steps, name },
+      { type: "tune", bytes, lines, steps, name, rival },
       TUNE_TIMEOUT_MS,
-      [bytes],
+      rival ? [bytes, rival] : [bytes],
       onProgress,
     );
     if (result.type !== "tune") throw new Error("unexpected reply");

@@ -141,6 +141,17 @@ export function addCorrection(file: CorrectionsFile, correction: Correction): Co
   };
 }
 
+/**
+ * `older`'s answers added to `file`, except for ink `file` already answers:
+ * `file` is the newer of the two (the old file in the plugin's folder is
+ * merged into the vault's, and sync may bring either back).
+ */
+export function mergeCorrections(file: CorrectionsFile, older: CorrectionsFile): CorrectionsFile {
+  const have = new Set(file.corrections.map(inkKey));
+  const added = older.corrections.filter((c) => !have.has(inkKey(c)));
+  return { version: 1, corrections: [...added, ...file.corrections] };
+}
+
 function inkKey(c: Pick<Correction, "note" | "page" | "strokes">): string {
   return JSON.stringify([c.note, c.page, strokeKey(c.strokes.map((s) => s.id))]);
 }

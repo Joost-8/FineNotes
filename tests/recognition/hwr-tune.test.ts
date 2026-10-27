@@ -136,6 +136,22 @@ describe("tune", () => {
     expect(result!.trained + result!.heldOut).toBe(6);
   }, 120000);
 
+  it("must also beat the learned model it would replace (a rival), which is scored on the same lines", () => {
+    const lines = ["hello", "world", "notes", "ink", "pages", "lines"].map((t, i) => line(t, i));
+    const first = tune(BYTES, lines, { steps: 2, batch: 2 })!;
+    // The same run again (same seed) against its own result: it reads exactly
+    // as well as the rival, which is not better.
+    const rival = writeBundle(BYTES, first.net, { name: "personal" });
+    const again = tune(BYTES, lines, { steps: 2, batch: 2, rival })!;
+    expect(again.after).toEqual(first.after);
+    expect(again.rival).toEqual(first.after);
+    expect(again.better).toBe(false);
+    // Bytes that are no model are no rival.
+    const none = tune(BYTES, lines, { steps: 1, batch: 2, rival: new Uint8Array(16) })!;
+    expect(none.rival).toBeUndefined();
+    expect(none.better).toBe(none.after.errors < none.before.errors);
+  }, 240000);
+
   it("stops when told to, and does nothing without lines to learn from", () => {
     const lines = ["hello", "world"].map((t, i) => line(t, i));
     expect(tune(BYTES, lines, { steps: 5, batch: 1 }, () => false)).toBeNull();

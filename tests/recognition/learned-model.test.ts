@@ -19,6 +19,9 @@ import {
   learnedResult,
   learnedStatus,
   nextSheetAction,
+  RELEARN_AFTER,
+  relearnDue,
+  relearnMessage,
   sheetText,
   sheetUse,
   undoText,
@@ -138,6 +141,28 @@ describe("the practice sheets against the model", () => {
     expect(hasUnusedLines([sheet(1, 30), sheet(2, 20)], model)).toBe(false);
     expect(hasUnusedLines([sheet(1, 30), sheet(2, 21)], model)).toBe(true);
     expect(hasUnusedLines([sheet(1, 30), sheet(3, 1)], model)).toBe(true);
+  });
+});
+
+describe("the reminder to learn again", () => {
+  it("comes once every 50 corrected words since the model learned, or since the last reminder", () => {
+    expect(RELEARN_AFTER).toBe(50);
+    // Never learned: corrections alone are enough to start.
+    expect(relearnDue(49, undefined, undefined)).toBe(0);
+    expect(relearnDue(50, undefined, undefined)).toBe(50);
+    // Learned from 30: 50 more.
+    expect(relearnDue(79, 30, undefined)).toBe(0);
+    expect(relearnDue(80, 30, undefined)).toBe(50);
+    // Reminded (or learned and lost the gate) at 80: next at 130, counting from the model.
+    expect(relearnDue(129, 30, 80)).toBe(0);
+    expect(relearnDue(130, 30, 80)).toBe(100);
+    // A corrections file that shrank says nothing.
+    expect(relearnDue(10, 30, 80)).toBe(0);
+  });
+
+  it("says how many, and whether there is a model to learn again", () => {
+    expect(relearnMessage(50, true)).toContain("50 words corrected since it last learned");
+    expect(relearnMessage(50, false)).toContain("can learn your handwriting from them");
   });
 });
 

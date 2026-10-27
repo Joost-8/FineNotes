@@ -25,7 +25,7 @@ import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR } from "./model/colors";
-import { DEFAULT_STICKER_FOLDER } from "./model/stickers";
+import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
 import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
@@ -249,6 +249,11 @@ export interface GoodObsidianSettings {
    * off); off reads with Grape alone and keeps the file.
    */
   useLearnedHandwriting?: boolean;
+  /**
+   * How many words were corrected at the last reminder to learn again, or
+   * when learning last started (learned-model.ts `relearnDue`).
+   */
+  relearnRemindedAt?: number;
   /** Where the practice notebook was written. */
   practiceNotebookPath?: string;
 
@@ -355,7 +360,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   transcriptsFolder: "",
   chatsFolder: "",
   exportsFolder: "",
-  templateFolder: "FineNotes templates",
+  templateFolder: DEFAULT_TEMPLATE_FOLDER,
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,

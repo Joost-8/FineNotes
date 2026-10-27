@@ -257,10 +257,10 @@ const COVER: readonly { heading?: string; text: string }[] = [
   {
     heading: "Afterwards",
     text:
-      "You can delete this file: what was learned stays. Keep it if you want to learn again " +
-      "later, for example after a FineNotes update. For better results, write another set " +
-      "(this is set {set} of {sets}): each has different lines, and learning uses every set " +
-      "you have written.",
+      "Keep this file: every time FineNotes learns again (after you have corrected more " +
+      "words, or after an update), it starts from scratch and learns from every sheet you " +
+      "have written, so a deleted sheet is forgotten. For better results, write another set " +
+      "(this is set {set} of {sets}): each has different lines.",
   },
   {
     heading: "Your data",

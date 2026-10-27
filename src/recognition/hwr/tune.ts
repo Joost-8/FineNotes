@@ -50,6 +50,12 @@ export interface TuneOptions {
    * (tuneRoom).
    */
   deviceMemory?: number;
+  /**
+   * The learned model in use, whose file this run would replace: the tuned
+   * model is kept only if it reads the held-out lines better than this one
+   * too, so learning again never makes reading worse.
+   */
+  rival?: Uint8Array;
 }
 
 /**
@@ -259,7 +265,9 @@ export interface TuneResult {
   /** Characters wrong on the held-out lines: before and after. */
   before: { errors: number; chars: number };
   after: { errors: number; chars: number };
-  /** Whether the tuned model reads them better (fewer characters wrong). */
+  /** The same for `TuneOptions.rival`, when one was given. */
+  rival?: { errors: number; chars: number };
+  /** Whether the tuned model reads them better (fewer characters wrong) than the base, and than the rival. */
   better: boolean;
   /** Lines trained on, and held out. */
   trained: number;
@@ -316,6 +324,16 @@ function makeTrainer(
   return { engine, fallback: engine ? null : { net, adam: adamState(net) } };
 }
 
+/** The rival's model, when it parses and spells with the same alphabet. */
+function rivalOf(bytes: Uint8Array, alphabet: HwrBundle["meta"]["alphabet"]): HwrBundle | null {
+  try {
+    const rival = parseBundle(bytes);
+    return JSON.stringify(rival.meta.alphabet) === JSON.stringify(alphabet) ? rival : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Tune the model in `bytes` on `lines`: the recipe's steps, then the gate.
  * `onStep` hears after every step (step number, mean loss), and may return
@@ -357,11 +375,18 @@ export function tune(
   const candidate: HwrBundle = { ...base, net: tuned };
   const before = scoreLines(base, holdout);
   const after = scoreLines(candidate, holdout);
+  // A rival that does not parse, or has another alphabet, is not one to beat.
+  const rivalBundle = o.rival ? rivalOf(o.rival, alphabet) : null;
+  const rival = rivalBundle ? scoreLines(rivalBundle, holdout) : undefined;
   return {
     net: tuned,
     before,
     after,
-    better: holdout.length > 0 && after.errors < before.errors,
+    rival,
+    better:
+      holdout.length > 0 &&
+      after.errors < before.errors &&
+      (rival === undefined || after.errors < rival.errors),
     trained: train.length,
     heldOut: holdout.length,
   };

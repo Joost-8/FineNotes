@@ -54,7 +54,7 @@ describe("the practice file", () => {
       .join(" ");
     expect(words).toMatch(/Handwriting practice/);
     expect(words).toMatch(/Learn now/);
-    expect(words).toMatch(/delete this file/);
+    expect(words).toMatch(/Keep this file/);
     expect(words).toMatch(/set 1 of 3/);
     expect(promptsOf(cover)).toEqual([]);
     expect(pages.flatMap(promptsOf).map((line) => line.text)).toEqual(PRACTICE_LINES);

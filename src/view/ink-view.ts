@@ -20,6 +20,7 @@ import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
+import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
@@ -2870,7 +2871,7 @@ export class InkView extends TextFileView {
         files,
         ...(preview ? { preview } : {}),
       });
-      const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
+      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const taken = new Set(
         this.app.vault.getFolderByPath(folder)?.children.map((child) => child.name) ?? [],
@@ -4328,7 +4329,7 @@ export class InkView extends TextFileView {
     if (!this.thumbBackdrops) return undefined;
     return new VaultPaperLibrary(
       this.app,
-      () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
       (canvas, backdrop, geometry, cssWidth) =>
         this.paintPaperThumbnail(canvas, backdrop, geometry, cssWidth),
       () => this.plugin.openTemplateGallery(),
@@ -4340,7 +4341,7 @@ export class InkView extends TextFileView {
   private templateNames(): Set<string> {
     return templateNamesIn(
       this.app,
-      normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+      templateFolderOf(normalizeFolder(this.settings.templateFolder)),
     );
   }
 

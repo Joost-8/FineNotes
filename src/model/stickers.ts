@@ -8,6 +8,8 @@
  * Pure: no DOM, no Obsidian. `stickerSvg` gives the file's text.
  */
 
+import { DEFAULT_STICKER_FOLDER } from "./vault-folders";
+
 export type StickerCategory = "arrows" | "labels" | "tape" | "icons" | "doodles";
 
 export const STICKER_CATEGORIES: ReadonlyArray<{ id: StickerCategory; label: string }> = [
@@ -434,7 +436,7 @@ export function stickerFileName(sticker: Sticker, color: string): string {
 }
 
 /** Where the user's sticker collections live until they choose another folder. */
-export const DEFAULT_STICKER_FOLDER = "FineNotes stickers";
+export { DEFAULT_STICKER_FOLDER };
 
 /** The stickers folder as set, or the default for a blank or unreadable one; no slashes at the ends. */
 export function stickerFolderOf(value: unknown): string {

@@ -7,6 +7,7 @@ import {
   emptyCorrections,
   flagWords,
   ignoredWords,
+  mergeCorrections,
   parseCorrections,
   parseWordList,
   plainWord,
@@ -94,6 +95,18 @@ describe("the corrections file", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("merging an older corrections file", () => {
+  it("adds the older file's answers, except for ink the newer one answers", () => {
+    const newer = addCorrection(emptyCorrections(), correction({ text: "integers", at: 2 }));
+    let older = addCorrection(emptyCorrections(), correction({ text: "old answer", at: 1 }));
+    older = addCorrection(older, correction({ page: "p9", text: "monic" }));
+    const merged = mergeCorrections(newer, older);
+    expect(merged.corrections.map((c) => c.text)).toEqual(["monic", "integers"]);
+    expect(mergeCorrections(merged, older)).toEqual(merged);
+    expect(mergeCorrections(emptyCorrections(), older)).toEqual(older);
   });
 });
 

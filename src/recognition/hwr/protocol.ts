@@ -31,9 +31,18 @@ export type HwrRequest =
   /**
    * Learn a writer's handwriting from labelled lines, starting from the model
    * in `bytes` (the general one): the tuned model file, and how both read
-   * the held-out lines. Progress comes as messages along the way.
+   * the held-out lines. `rival` is the learned model in use, if any: the
+   * new one must read them better than it too. Progress comes as messages
+   * along the way.
    */
-  | { type: "tune"; bytes: ArrayBuffer; lines: LabelledLine[]; steps: number; name: string };
+  | {
+      type: "tune";
+      bytes: ArrayBuffer;
+      lines: LabelledLine[];
+      steps: number;
+      name: string;
+      rival?: ArrayBuffer;
+    };
 
 /** A word of a kept page's line: the token's `[start, end)` in the line's text. */
 export interface SuggestItem {
@@ -60,6 +69,8 @@ export interface HwrTuned {
   /** Characters wrong on the held-out lines, before and after. */
   before: { errors: number; chars: number };
   after: { errors: number; chars: number };
+  /** The same for the learned model it would replace, when there was one. */
+  rival?: { errors: number; chars: number };
   better: boolean;
   trained: number;
   heldOut: number;

@@ -91,6 +91,13 @@ import {
 import { ConfirmModal } from "./ui/confirm-modal";
 import { WhatsNewModal } from "./ui/whats-new-modal";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
+import {
+  HANDWRITING_FOLDER,
+  folderMoves,
+  legacyCorrectionsFile,
+  movedPath,
+  templateFolderOf,
+} from "./model/vault-folders";
 import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
@@ -163,10 +170,13 @@ import {
   HandwritingLearner,
   type LearningHost,
   learnedModelPath,
+  learnedRecord,
+  showRelearnNotice,
   writePracticePage,
   writeSymbolPractice,
 } from "./view/handwriting-learning";
 import { buildPracticeFile, isSymbolSet } from "./recognition/practice";
+import { relearnDue } from "./recognition/hwr/learned-model";
 import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX, SINGLE_PAGE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
@@ -473,6 +483,7 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.register(() => this.fileMoves.destroy());
+    this.wordCheck.answered = (count) => this.remindToRelearn(count);
     // The reader's and the learner's workers end with the plugin.
     this.register(() => {
       this.learner.dispose();
@@ -493,6 +504,9 @@ export default class GoodObsidianPlugin extends Plugin {
       this.register(() => window.clearTimeout(timer));
       const check = window.setTimeout(() => void this.updates.check(), UPDATE_CHECK_DELAY_MS);
       this.register(() => window.clearTimeout(check));
+      this.moveOwnFolders().catch((error: unknown) => {
+        console.warn("FineNotes: could not move its folders", error);
+      });
     });
 
     this.register(() => this.explorerNotebookButton.destroy());
@@ -773,6 +787,81 @@ export default class GoodObsidianPlugin extends Plugin {
     // Settings found under the old id are written to this id's folder at
     // once, so the carry-over happens exactly one time.
     if (own === null && saved !== null) await this.saveSettings();
+  }
+
+  /**
+   * After every `RELEARN_AFTER` corrected words, a notice offers to learn
+   * the handwriting again (or for the first time, from corrections alone).
+   */
+  private remindToRelearn(count: number): void {
+    if (this.learner.progress) return;
+    const record = learnedRecord(this.settings, this.grape.id);
+    const fresh = relearnDue(count, record?.corrections, this.settings.relearnRemindedAt);
+    if (fresh === 0) return;
+    this.settings.relearnRemindedAt = count;
+    void this.saveSettings();
+    showRelearnNotice(fresh, record !== undefined, () => void this.learner.start());
+  }
+
+  /**
+   * FineNotes' own folders, moved to where 2.6 keeps them
+   * (model/vault-folders.ts): templates and stickers into FineNotes assets,
+   * with the last template the New notebook dialog remembers; the corrected
+   * words out of the plugin's folder (word-check.ts does that part). Run on
+   * every start: each step does nothing once done, and catches an old folder
+   * that sync brings back from a device on an older FineNotes.
+   */
+  private async moveOwnFolders(): Promise<void> {
+    let changed = false;
+    for (const move of folderMoves(this.settings)) {
+      const old = this.app.vault.getFolderByPath(move.from);
+      try {
+        if (old) await this.mergeFolder(old, move.to);
+      } catch (error) {
+        console.warn(`FineNotes: could not move ${move.from} to ${move.to}`, error);
+        continue;
+      }
+      const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
+      const path = remembered && movedPath(remembered.path, move.from, move.to);
+      if (move.key === "templateFolder" && remembered && path) {
+        this.settings.lastNotebookTemplate = { path, page: remembered.page };
+        changed = true;
+      }
+      if (this.settings[move.key] !== move.to) {
+        this.settings[move.key] = move.to;
+        changed = true;
+      }
+    }
+    if (changed) await this.saveSettings();
+    if (await this.app.vault.adapter.exists(normalizePath(legacyCorrectionsFile(this.pluginDir)))) {
+      await this.wordCheck.reload();
+    }
+  }
+
+  /**
+   * Folder `from` moved to `to`; when `to` is there already, its contents
+   * moved into it one by one. A file whose name is taken on both sides
+   * stays where it was, and so does the old folder then.
+   */
+  private async mergeFolder(from: TFolder, to: string): Promise<void> {
+    const { vault, fileManager } = this.app;
+    const there = vault.getAbstractFileByPath(to);
+    if (!there) {
+      const parent = to.includes("/") ? to.slice(0, to.lastIndexOf("/")) : "";
+      if (parent && !vault.getFolderByPath(parent)) await vault.createFolder(parent);
+      await fileManager.renameFile(from, to);
+      return;
+    }
+    if (!(there instanceof TFolder)) return;
+    for (const child of [...from.children]) {
+      const target = `${to}/${child.name}`;
+      const taken = vault.getAbstractFileByPath(target);
+      if (!taken) await fileManager.renameFile(child, target);
+      else if (child instanceof TFolder && taken instanceof TFolder) {
+        await this.mergeFolder(child, target);
+      }
+    }
+    if (from.children.length === 0) await fileManager.trashFile(from);
   }
 
   /**
@@ -1697,13 +1786,13 @@ export default class GoodObsidianPlugin extends Plugin {
       if (entry.kind === "paper") {
         const library = new VaultPaperLibrary(
           this.app,
-          () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+          () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
           () => undefined,
         );
         const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
         return await library.addFile(bytes, `${entry.name}.${ext}`);
       }
-      const folder = normalizeFolder(this.settings.templateFolder) || "FineNotes templates";
+      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;
       const path = normalizePath(`${folder}/${name}`);
@@ -1854,7 +1943,7 @@ export default class GoodObsidianPlugin extends Plugin {
   ): VaultPaperLibrary {
     return new VaultPaperLibrary(
       this.app,
-      () => normalizeFolder(this.settings.templateFolder) || "FineNotes templates",
+      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
       paint,
       () => this.openTemplateGallery(),
       (path) => void this.openShareTemplate(path),
@@ -2144,11 +2233,12 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * Practice set `set` as a new `.practice.md` file in the new-notebook
-   * folder, opened at its cover.
+   * Practice set `set` as a new `.practice.md` file in FineNotes
+   * handwriting sheets, opened at its cover. Sheets made elsewhere before
+   * 2.6 stay where they are: learning finds them anywhere in the vault.
    */
   async createPracticeFile(set: number): Promise<TFile | null> {
-    const dir = normalizeFolder(this.newNotebookFolder());
+    const dir = HANDWRITING_FOLDER;
     try {
       if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();

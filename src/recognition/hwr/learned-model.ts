@@ -32,6 +32,38 @@ export interface LearnedModel {
 /** Fewer copied lines than this, and there is not enough to learn from. */
 export const MIN_PRACTICE_LINES = 10;
 
+/**
+ * New corrected words that make learning again worth it. About 300
+ * characters, as much as 8 copied practice lines: Joost's first learned
+ * model, from 16 lines, halved what Grape got wrong (15.2 to 7.6 %), and a
+ * run holds back every fifth item to test on, so 50 new words put 10 of
+ * them in the test. Fewer, and a run is mostly the same data again.
+ */
+export const RELEARN_AFTER = 50;
+
+/**
+ * Whether to remind the user to learn again, `corrections` words corrected
+ * in all: how many are new since the learned model (0 when it is not time).
+ * `remindedAt` is the count at the last reminder or the last run, so a
+ * reminder comes once per `RELEARN_AFTER` words, whatever the answer.
+ */
+export function relearnDue(
+  corrections: number,
+  learnedFrom: number | undefined,
+  remindedAt: number | undefined,
+): number {
+  const learned = learnedFrom ?? 0;
+  const since = corrections - Math.max(learned, remindedAt ?? 0);
+  return since >= RELEARN_AFTER ? corrections - learned : 0;
+}
+
+/** The reminder's words, for `fresh` new corrected words. */
+export function relearnMessage(fresh: number, learned: boolean): string {
+  return learned
+    ? `FineNotes: ${fresh} words corrected since it last learned your handwriting.`
+    : `FineNotes: ${fresh} words corrected. It can learn your handwriting from them.`;
+}
+
 /** "21 Oct 2026": a learned date as the settings show it, the same on every device. */
 export function learnedDate(iso: string): string {
   const [year, month, day] = iso.slice(0, 10).split("-").map(Number);

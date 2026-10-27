@@ -33,6 +33,7 @@ import {
   type LearnedSource,
   MIN_PRACTICE_LINES,
   type PracticeSheet,
+  relearnMessage,
 } from "../recognition/hwr/learned-model";
 import { errorMessage } from "../util/errors";
 
@@ -54,6 +55,8 @@ export interface LearningHost {
     grape2ModelPrevious?: LearnedModel;
     /** Read with the learned model when its file is here; off, with Grape alone. */
     useLearnedHandwriting?: boolean;
+    /** Corrected words there were at the last reminder to learn again, or the last run (`relearnDue`). */
+    relearnRemindedAt?: number;
     /** The practice notebook made before practice files, if any. */
     practiceNotebookPath?: string;
   };
@@ -103,6 +106,19 @@ function learnedFolder(pluginDir: string, base: string): string {
 /** A share of characters wrong, in %, to one decimal. */
 const percent = (s: { errors: number; chars: number }): number =>
   s.chars > 0 ? Math.round((1000 * s.errors) / s.chars) / 10 : 0;
+
+/** The learned model's file as it is now, to beat; null when there is none. */
+async function readLearnedModel(host: LearningHost): Promise<ArrayBuffer | null> {
+  const file = learnedModelPath(host.pluginDir, false, host.baseId);
+  try {
+    if (!learnedRecord(host.settings, host.baseId)) return null;
+    return (await host.app.vault.adapter.exists(file))
+      ? await host.app.vault.adapter.readBinary(file)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Which learned model files are on this device: the one in use, and the one before it. */
 export async function learnedFiles(
@@ -186,7 +202,7 @@ export async function readPracticeLines(
  */
 export async function readCorrectionLines(host: LearningHost): Promise<LabelledLine[]> {
   const adapter = host.app.vault.adapter;
-  const file = correctionsPath(host.pluginDir);
+  const file = correctionsPath();
   if (!(await adapter.exists(file))) return [];
   return correctionLines(parseCorrections(await adapter.read(file)));
 }
@@ -285,6 +301,28 @@ async function saveLearned(host: LearningHost, tuned: HwrTuned): Promise<void> {
   await adapter.writeBinary(file, tuned.bytes);
 }
 
+/**
+ * The reminder to learn again (`relearnDue`): its words, and a button that
+ * starts learning. It stays until tapped or closed.
+ */
+export function showRelearnNotice(fresh: number, learned: boolean, learn: () => void): Notice {
+  const notice = new Notice(
+    createFragment((fragment) => {
+      fragment.createSpan({ text: relearnMessage(fresh, learned) });
+      const button = fragment.createEl("button", {
+        cls: "goodobsidian-notice-action clickable-icon",
+        text: learned ? "Learn again" : "Learn now",
+      });
+      button.addEventListener("click", () => {
+        notice.hide();
+        learn();
+      });
+    }),
+    0,
+  );
+  return notice;
+}
+
 /** A run in progress: how far along, and since when. */
 export interface LearningProgress {
   step: number;
@@ -349,6 +387,11 @@ export class HandwritingLearner {
       new Notice("FineNotes: learning starts from Grape, which is not downloaded yet.", 8000);
       return;
     }
+    // The learned model this run would replace: the new one must beat it too.
+    const rival = await readLearnedModel(host);
+    // These corrections are spoken for: the next reminder counts from here.
+    host.settings.relearnRemindedAt = corrections.length;
+    void host.saveSettings();
     this.stopped = false;
     this.current = { step: 0, steps: LEARN_STEPS, startedAt: Date.now() };
     this.emit();
@@ -366,6 +409,7 @@ export class HandwritingLearner {
           if (this.current) this.current = { ...this.current, step: p.step, steps: p.steps };
           this.emit();
         },
+        rival ?? undefined,
       );
     } catch (error) {
       if (!this.stopped) new Notice(`FineNotes: learning stopped — ${errorMessage(error)}`, 10000);
@@ -404,9 +448,16 @@ export class HandwritingLearner {
     }
     const before = percent(tuned.before);
     const after = percent(tuned.after);
+    if (!tuned.better && tuned.rival && tuned.after.errors < tuned.before.errors) {
+      new Notice(
+        `FineNotes: on ${tuned.heldOut} test lines the new reader got ${after} % of characters wrong, against ${percent(tuned.rival)} % with the one you have, so FineNotes keeps the one you have. Correct more words or write another practice set, and try again.`,
+        0,
+      );
+      return;
+    }
     if (!tuned.better) {
       new Notice(
-        `FineNotes: on ${tuned.heldOut} test lines the learned reader got ${after} % of characters wrong, against ${before} % with the built-in one, so FineNotes keeps the built-in one. Copy more practice lines (another set helps) and try again.`,
+        `FineNotes: on ${tuned.heldOut} test lines the learned reader got ${after} % of characters wrong, against ${before} % with the built-in one, so FineNotes keeps ${tuned.rival ? "the one you have" : "the built-in one"}. Copy more practice lines (another set helps) and try again.`,
         0,
       );
       return;
