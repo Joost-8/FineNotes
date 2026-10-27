@@ -17,7 +17,7 @@ describe("roleOf", () => {
     expect(roleOf("touch", true)).toBe("ignore");
   });
 
-  it("with Only stylus mode on, lets the pen write and ignores every other pointer", () => {
+  it("with Stylus-only mode on, lets the pen write and ignores every other pointer", () => {
     expect(roleOf("pen", false, true)).toBe("draw");
     expect(roleOf("pen", true, true)).toBe("draw");
     for (const type of ["touch", "mouse", "", "stylus"]) {

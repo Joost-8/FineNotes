@@ -10,14 +10,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Only stylus mode, the Hand and the Magnifier.** Only stylus mode makes
-  the page listen to the pen alone: a palm, a finger or a mouse resting on
+- **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
+  the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch
-  and taps are off. Its toolbar button switches the mode on and off, and the
-  command "Turn Only stylus mode on or off" can take a hardware key. The Hand
-  tool moves the page (with its fling) and the Magnifier zooms it: drag up or
-  down, tap to zoom in a step, or use the pill's zoom out, fit page and zoom
-  in. All three wait in the toolbar's More tools menu at first.
+  and taps are off. Its toolbar button, Stylus only, switches the mode on and
+  off, and the command "Turn Stylus-only mode on or off" can take a hardware
+  key. The Hand tool moves the page (with its fling) and the Magnifier zooms
+  it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
+  page and zoom in. All three wait in the toolbar's More tools menu at first.
 
 ### Changed
 

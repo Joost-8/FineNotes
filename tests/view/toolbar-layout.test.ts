@@ -50,7 +50,7 @@ describe("normalizeBar", () => {
 });
 
 describe("the default bar", () => {
-  it("leaves the hand, magnifier, Only stylus mode, stickers and the rest to the menu", () => {
+  it("leaves the hand, magnifier, Stylus-only mode, stickers and the rest to the menu", () => {
     expect(hiddenItems(DEFAULT_BAR)).toEqual([
       "pan",
       "zoom",
@@ -95,7 +95,7 @@ describe("normalizeLayout", () => {
 });
 
 describe("three places", () => {
-  it("starts the hand, magnifier and Only stylus mode in the menu", () => {
+  it("starts the hand, magnifier and Stylus only in the menu", () => {
     const layout = defaultLayout();
     for (const id of ["pan", "zoom", "stylus"] as const) expect(placeOf(layout, id)).toBe("menu");
     expect(placeOf(layout, "pen")).toBe("bar");

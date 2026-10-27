@@ -78,7 +78,7 @@ import {
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { setIcon } from "obsidian";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -616,7 +616,7 @@ export interface ToolbarCallbacks {
   onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
-  /** Only stylus mode's toolbar button was tapped: turn the mode on or off. */
+  /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
   onOnlyStylusMode?: (on: boolean) => void;
   /** The magnifier's own pill: one zoom step in or out, or the page fitted. */
   onZoomIn?: () => void;
@@ -638,7 +638,7 @@ export interface ToolbarOptions {
   items?: readonly BarItemId[];
   /** The tools shown nowhere, not even in the accessories menu; none when absent. */
   offItems?: readonly BarItemId[];
-  /** Only stylus mode is on, so its toolbar toggle starts on. */
+  /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
 }
 
@@ -809,7 +809,7 @@ export class Toolbar {
   private offItems: BarItemId[] = [];
   /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
-  /** Only stylus mode's state, for its button's toggle and on/off mark. */
+  /** Stylus-only mode's state, for its button's toggle and on/off mark. */
   private onlyStylusOn = false;
   /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
   private stickyButton: HTMLButtonElement | null = null;
@@ -1069,9 +1069,9 @@ export class Toolbar {
     tool("zoom", "zoom-in", "Magnifier — zoom");
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
-      const stylus = this.barButton(tools, "tablet", "Only stylus mode: off", toggle);
+      const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
       item("stylus", stylus, toggle);
-      this.fold(FOLD_RANK.stylus, stylus, "tablet", "Only stylus mode", toggle);
+      this.fold(FOLD_RANK.stylus, stylus, ICON_STYLUS_ONLY, "Stylus only", toggle);
       this.setOnlyStylusMode(this.onlyStylusOn);
     }
     if (cb.onRuler) {
@@ -1435,19 +1435,19 @@ export class Toolbar {
     return button;
   }
 
-  /** The Only stylus mode button was tapped, on the bar or in a menu. */
+  /** The Stylus only button was tapped, on the bar or in a menu. */
   private toggleOnlyStylusMode(): void {
     this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
   }
 
-  /** Show whether Only stylus mode is on, on the bar and in the folded row that reads it. */
+  /** Show whether Stylus-only mode is on, on the bar and in the folded row that reads it. */
   setOnlyStylusMode(on: boolean): void {
     this.onlyStylusOn = on;
     const stylus = this.barItems.get("stylus");
     if (!stylus) return;
     stylus.toggleClass("is-on", on);
     stylus.setAttribute("aria-pressed", String(on));
-    stylus.setAttribute("aria-label", on ? "Only stylus mode: on" : "Only stylus mode: off");
+    stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
     this.syncAccessoriesMark();
   }
 

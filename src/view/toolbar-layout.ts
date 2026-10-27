@@ -15,6 +15,8 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { ICON_STYLUS_ONLY } from "../constants";
+
 /** Every item the tool bar's centre can show. */
 export type BarItemId =
   | "select"
@@ -51,7 +53,7 @@ export const BAR_ITEMS: readonly BarItemId[] = [
 ];
 
 /**
- * The bar a new install starts with; the hand, the magnifier, Only stylus mode,
+ * The bar a new install starts with; the hand, the magnifier, Stylus-only mode,
  * stickers, sticky notes, the ruler and the mic wait in the menu, and nothing
  * is off.
  */
@@ -77,7 +79,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   shape: "Shapes",
   pan: "Hand",
   zoom: "Magnifier",
-  stylus: "Only stylus mode",
+  stylus: "Stylus only",
   image: "Image",
   pdf: "PDF",
   sticker: "Stickers",
@@ -86,7 +88,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   record: "Record audio",
 };
 
-/** Each item's Lucide icon: its bar button's, in the menu and the list too. */
+/** Each item's icon: its bar button's, in the menu and the list too. */
 export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   select: "lasso",
   pen: "pen-tool",
@@ -95,7 +97,7 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   shape: "shapes",
   pan: "hand",
   zoom: "zoom-in",
-  stylus: "tablet",
+  stylus: ICON_STYLUS_ONLY,
   image: "image",
   pdf: "file-text",
   sticker: "sticker",

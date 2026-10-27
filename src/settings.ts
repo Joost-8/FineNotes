@@ -1092,7 +1092,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row. Only stylus mode, the Hand and the Magnifier are toolbar
+   * from its row. Stylus only, the Hand and the Magnifier are toolbar
    * items, placed with Customize toolbar, not settings.
    */
   private pensGroup(): SettingDefinitionItem {

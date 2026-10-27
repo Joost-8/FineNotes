@@ -17,7 +17,7 @@
  * fingertip) and left pinches and swipes dead now and then, since a touch
  * left out stays out until it lifts.
  *
- * "Only stylus" mode is the switch for the other way round: every pointer
+ * "Stylus-only" mode is the switch for the other way round: every pointer
  * but the pen is ignored on the page, so a hand that rests there can move
  * neither the ink nor the page. The hand and magnifier tools give the pen
  * back the moving and zooming the fingers did.
@@ -28,7 +28,7 @@ export type PointerRole = "draw" | "finger" | "ignore";
 
 /**
  * The role of a pointer going down, from its `PointerEvent.pointerType`,
- * whether a stroke is still open, and whether Only stylus mode is on. The
+ * whether a stroke is still open, and whether Stylus-only mode is on. The
  * mode ignores every pointer but the pen: fingers, palms and a mouse alike.
  */
 export function roleOf(pointerType: string, strokeOpen: boolean, onlyStylus = false): PointerRole {
