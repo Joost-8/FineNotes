@@ -31,6 +31,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Turning a selection or a picture settles**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
+  knob no longer follows every tremor of the pen: a tap or a wobble turns
+  nothing, the turn lands on quarter turns and on level (a tilted shape's
+  longest edge, a picture's own tilt) from several degrees away, and rests
+  lightly on every 15°, free between. A small readout beside the pen shows
+  the angle while you turn.
+
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's
