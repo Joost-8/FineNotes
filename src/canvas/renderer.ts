@@ -817,6 +817,23 @@ export class Renderer {
     ctx.clip();
   }
 
+  /**
+   * Enter a page's local coordinate space for ink being drawn: clipped to
+   * the sheet, or with joined pages to all of them, so a stroke shows on
+   * the next page as it crosses the join (and is stored there on lift).
+   */
+  private enterWetPage(ctx: CanvasRenderingContext2D, box: PageBox): void {
+    if (this.layout.joined !== true) {
+      this.enterPage(ctx, box);
+      return;
+    }
+    ctx.save();
+    ctx.beginPath();
+    for (const b of this.layout.boxes) ctx.rect(b.x, b.y, b.width, b.height);
+    ctx.clip();
+    ctx.translate(box.x, box.y);
+  }
+
   // --- Backdrop layer -------------------------------------------------------
 
   /** Repaint the backdrop layer: the desk, and a shadow under each visible page. */
@@ -1795,7 +1812,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
     for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha, night);
     ctx.restore();
@@ -1813,7 +1830,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
       fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
@@ -1832,7 +1849,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     paintStroke(ctx, { runs }, style, this.highlighterAlpha, this.nightAt(pageIndex));
     ctx.restore();
     this.setWetVisible(true);

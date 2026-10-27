@@ -289,9 +289,6 @@ const DESC = {
     "color. Only the view changes: ink is saved, exported and printed in its true color, " +
     "and pictures are left as they are. PDF pages turn dark too, unless you pick “PDFs as " +
     "they are”, for slides that are dark already.",
-  joinedPages:
-    "No gap between pages: they run on as one sheet, down or across. Each page stays its " +
-    "own page, in the page list, in exports and on every other device.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
     "folder of the note that is open.",
@@ -884,11 +881,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       await this.plugin.setDebugHud(value as boolean);
       return;
     }
-    if (key === "joinedPages") {
-      // Saved by the plugin, which lays out every open notebook again.
-      await this.plugin.setJoinedPages(value === true);
-      return;
-    }
     if (key === "penCursor") {
       // Saved by the plugin, which changes the cursor in every open notebook.
       await this.plugin.setPenCursor(penCursorStyleOf(value));
@@ -1309,16 +1301,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "In pixels, before it is fitted to the screen.",
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
-        ),
-        this.info(
-          toggle("joinedPages", "Join pages", "", [
-            "gap",
-            "no gap",
-            "continuous",
-            "seamless",
-            "page break",
-          ]),
-          DESC.joinedPages,
         ),
         this.more("pages", "Folders, templates, file explorer"),
         this.info(

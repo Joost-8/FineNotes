@@ -166,6 +166,7 @@ interface StoredStroke {
   nib?: number;
   t0?: number;
   samples?: number[];
+  join?: string;
 }
 
 interface StoredPage {
@@ -195,6 +196,7 @@ interface StoredMeta {
   endless?: true;
   folders?: AttachmentFolders;
   scroll?: "horizontal";
+  joined?: true;
   readOnly?: true;
   practice?: PracticeInfo;
   palette?: { id: string; name: string; colors: string[] };
@@ -242,6 +244,7 @@ function storeStroke(stroke: Stroke): StoredStroke {
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
     samples: stroke.samples?.length ? quantizeSamples(stroke.samples) : undefined,
+    join: typeof stroke.join === "string" && stroke.join ? stroke.join : undefined,
   };
 }
 
@@ -340,6 +343,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     endless: doc.endless === true && doc.pages.length === 1 ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
+    joined: doc.joined === true ? true : undefined,
     readOnly: doc.readOnly === true ? true : undefined,
     practice: normalizePractice(doc.practice),
     palette: readPalette(doc.palette),
@@ -718,6 +722,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;
+  if (typeof raw.join === "string" && raw.join) stroke.join = raw.join;
   return stroke;
 }
 
@@ -1123,6 +1128,7 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
+  if (meta.joined === true) doc.joined = true;
   if (meta.readOnly === true) doc.readOnly = true;
   const practice = normalizePractice(meta.practice);
   if (practice) doc.practice = practice;

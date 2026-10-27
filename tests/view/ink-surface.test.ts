@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
 import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/freehand";
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
+import { layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
@@ -1592,6 +1593,73 @@ describe("smoothing a pen whose positions arrive rounded (FineNotes#1)", () => {
 });
 
 // --- A Pencil whose contact flickered (2026-10-01) ---------------------------------
+
+// --- Writing over the join of joined pages (discussion #51) ------------------------
+
+describe("commitStroke with the pages joined", () => {
+  function joined() {
+    const doc = documentOf(page("p1", []), page("p2", []));
+    const w = ink(doc);
+    const layout = layoutPages(doc.pages, { joined: true });
+    Object.assign(w.surface, {
+      joined: true,
+      board: false,
+      pageLayout: layout,
+      joinCopies: new WeakMap(),
+    });
+    const commit = (stroke: Stroke): unknown =>
+      run(w.surface, "commitStroke", layout.boxes[0], doc.pages[0], stroke);
+    return { w, doc, layout, commit };
+  }
+
+  it("stores a stroke over the join on both pages, in each page's space, as one undo step", () => {
+    const { w, doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    // Ids come from the surface's sequence, as a drawn stroke's do.
+    const id = (w.surface.strokeIds as IdSequence).next();
+    const stroke: Stroke = {
+      id,
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [100, height - 50, 0.5, 120, height + 40, 0.5],
+      samples: [1, 2, 3, 4],
+    };
+    commit(stroke);
+    const [own] = doc.pages[0].strokes;
+    const [copy] = doc.pages[1].strokes;
+    expect(own.join).toBe(id);
+    expect(copy.join).toBe(id);
+    expect(copy.id).not.toBe(id);
+    expect(copy.pts).toEqual([100, -50, 0.5, 120, 40, 0.5]);
+    expect(copy.samples).toBeUndefined();
+    expect(w.strokeAt(1, 120, 40)).toBe(copy);
+    w.undo();
+    expect(doc.pages[0].strokes).toEqual([]);
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("leaves a stroke inside its page alone, and so does a notebook with its pages apart", () => {
+    const { w, doc, commit } = joined();
+    commit(line("s1", 10, 110, 100));
+    expect(doc.pages[0].strokes[0].join).toBeUndefined();
+    expect(doc.pages[1].strokes).toEqual([]);
+    w.surface.joined = false;
+    commit({ ...line("s2", 10, 110, 100), pts: [100, 1400, 0.5, 100, 1500, 0.5] });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("a stroke written on a sticky note stays on the note", () => {
+    const { doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    commit({
+      ...line("s1", 0, 0, 0),
+      pts: [100, height - 5, 0.5, 100, height + 5, 0.5],
+      onSticky: "n1",
+    });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+});
 
 describe("resumeLifted", () => {
   /** A page with one stroke just committed, lifted at (40, 10) a moment ago. */

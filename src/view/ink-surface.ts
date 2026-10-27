@@ -181,6 +181,8 @@ import {
   boardScrollToCentre,
   layoutBoard,
 } from "../canvas/page-layout";
+import { inkReach, movePagePts, pagesReached } from "../canvas/page-join";
+import { HEAD_MAX } from "../canvas/shape-decor";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import {
   EYEDROP_REACH_PX,
@@ -457,6 +459,7 @@ import {
 } from "./system-clipboard";
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
+import { joinedPagesOf } from "../model/joined-pages";
 import type { SelectionAction } from "./selection-bar-model";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
@@ -575,6 +578,13 @@ const DIAGNOSTICS_MAX = 24;
  * the hold and at the lift, and the retained points so the verdict can be
  * reproduced offline. Page px, rounded to 0.1.
  */
+/** A stroke's copy on a page its ink ran on to, over a join (`canvas/page-join.ts`). */
+interface JoinCopy {
+  index: number;
+  page: Page;
+  stroke: Stroke;
+}
+
 interface StrokeDiagnostic {
   /** ms since the surface was created. */
   at: number;
@@ -671,8 +681,6 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
-  /** "Join pages": no gap between pages (`JOINED_PAGE_GAP`); off when absent. */
-  joinedPages?: () => boolean;
   /**
    * Where the box the text pill acts on is on screen (client px), or `null`
    * when there is none: the host floats the pill beside it, as GoodNotes
@@ -1438,6 +1446,8 @@ export class InkSurface {
   } | null = null;
   /** Which way the pages run; read from the document on every layout. */
   private direction: ScrollDirection = "vertical";
+  /** Whether the pages are laid out joined (`model/joined-pages.ts`), as of the last layout. */
+  private joined = false;
   /** The page a finger swipe started on: a row of pages turns at most one page per swipe. */
   private swipeFromPage = 0;
   /** A pinch ended zoomed out on a row: centre the page once the zoom settles. */
@@ -1712,6 +1722,11 @@ export class InkSurface {
    * could still carry it on (`input/pen-rejoin.ts`): when and where it
    * lifted, the builder that holds its points, and the step that added it.
    */
+  /**
+   * The copies a committed stroke left on the pages beside it, by its
+   * command, while that command may still be taken back unrecorded.
+   */
+  private readonly joinCopies = new WeakMap<Command, JoinCopy[]>();
   private lastLift: {
     t: number;
     boxIndex: number;
@@ -3235,7 +3250,8 @@ export class InkSurface {
     const priorAt = this.scroller.position;
     const anchored = this.zoomInitialised && !turned && direction === "vertical" && !this.pinch;
     this.direction = direction;
-    const joined = this.callbacks.joinedPages?.() === true;
+    const joined = joinedPagesOf(this.doc);
+    this.joined = joined;
     this.pageLayout = layoutPages(this.doc.pages, { direction, joined });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
@@ -3569,11 +3585,11 @@ export class InkSurface {
     // pull past one shows the next page and, far enough, turns to it
     // (`rowEdgeTurn`). While a pinch is on, the whole row is free, so the
     // neighbours show beside the page; letting go settles on the page then
-    // in the middle (`onPinchEnd`).
+    // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
     const last = this.pageLayout.boxes.length - 1;
     const rangeX =
       row && !this.turnsPages && last >= 0
-        ? this.pinch
+        ? this.pinch || this.joined
           ? {
               min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
               max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max,
@@ -4036,7 +4052,9 @@ export class InkSurface {
 
   /** A row zoomed in, held to the page being read (`ensurePaperSize`). */
   private get heldRow(): boolean {
-    return this.direction === "horizontal" && !this.turnsPages;
+    // Joined pages are one strip: zoomed in, it pans freely over the joins,
+    // so writing can run on from one page into the next.
+    return this.direction === "horizontal" && !this.turnsPages && !this.joined;
   }
 
   /** The page a zoomed-in row is held to: `heldPage`, or the page being read. */
@@ -6027,6 +6045,7 @@ export class InkSurface {
     if (!rejoinsStroke(now() - lift.t, distance, this.atFitZoom(REJOIN_PX))) return null;
     if (!this.history.withdraw(this.doc, lift.command)) return null;
     this.strokeIndex.remove(stroke.id, page.id);
+    if (stroke.join !== undefined) this.forgetJoinCopies(lift.command);
     const drawn = selectionBounds([stroke], [], []);
     if (drawn) this.renderer?.invalidateRegion(box.index, drawn);
     if (this.circleLoop?.command === lift.command) this.circleLoop = null;
@@ -6053,7 +6072,11 @@ export class InkSurface {
       if (last) {
         const local = this.toPage(box, last);
         const drag = this.shapeDrag;
-        drag.to = { x: clamp(local.x, 0, box.width), y: clamp(local.y, 0, box.height) };
+        const room = this.shapeRoom(box);
+        drag.to = {
+          x: clamp(local.x, room.minX, room.maxX),
+          y: clamp(local.y, room.minY, room.maxY),
+        };
         const travelled = Math.hypot(drag.to.x - drag.origin.x, drag.to.y - drag.origin.y);
         if (travelled >= this.atFitZoom(SHAPE_TAP_SLOP)) drag.moved = true;
         this.showShapeDraft(box);
@@ -6707,7 +6730,8 @@ export class InkSurface {
     const command = this.commitStroke(box, page, stroke);
     this.noteCircleLoop(page, stroke, command);
     // A board grows to hold ink past its edge (`growBoard`): nothing is lost.
-    if (!this.board) this.noteOffPage(box, stroke, command);
+    // Ink run on over a join is on the page beside it, not off the paper.
+    if (!this.board && stroke.join === undefined) this.noteOffPage(box, stroke, command);
     if (!shape) this.callbacks.onStrokeDrawn?.(page.id, stroke);
     // A stroke the pen was held on ended on purpose; any other may be a
     // flicker of the Pencil's contact, which the next pen-down carries on.
@@ -6780,17 +6804,101 @@ export class InkSurface {
       const note = noteAt(page, stroke.pts[0], stroke.pts[1]);
       if (note) stroke.onSticky = note.id;
     }
-    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    const copies = this.joinedCopiesOf(box, stroke);
+    const own = addStrokesTimed(page, [stroke], this.penDownAt);
+    // Ink run on over a join is one undo step, on every page it reaches.
+    const command =
+      copies.length === 0
+        ? own
+        : new CompositeCommand(own.label, [
+            own,
+            ...copies.map((copy) => addStrokesTimed(copy.page, [copy.stroke], this.penDownAt)),
+          ]);
     this.history.push(this.doc, command);
     this.strokeIndex.add(page.id, stroke);
     this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    for (const copy of copies) {
+      this.strokeIndex.add(copy.page.id, copy.stroke);
+      this.renderer?.appendCommittedStroke(copy.index, copy.stroke, this.inkPressure);
+    }
+    if (copies.length > 0) this.joinCopies.set(command, copies);
     // The wet layer was just cleared: blit the tiles now, or the stroke
     // would be missing for a frame.
-    this.inkChanged([page.id]);
+    this.inkChanged([page.id, ...copies.map((copy) => copy.page.id)]);
     return command;
   }
 
+  /**
+   * With the pages joined, the copies a stroke needs on the pages its ink
+   * runs on to (`canvas/page-join.ts`): the same points in each page's own
+   * space, clipped there as every stroke is, so each page shows its part
+   * and the parts are one line. The copies and the stroke share a `join`
+   * id. Ink on a sticky note stays on the note.
+   */
+  private joinedCopiesOf(box: PageBox, stroke: Stroke): JoinCopy[] {
+    if (!this.joined || this.board || stroke.onSticky !== undefined) return [];
+    const reach = inkReach(stroke.size, stroke.heads ? HEAD_MAX : 0);
+    const reached = pagesReached(this.pageLayout, box.index, stroke.pts, reach);
+    const copies: JoinCopy[] = [];
+    for (const index of reached) {
+      const page = this.pageAt(index);
+      const to = this.pageLayout.boxes[index];
+      if (!page || !to) continue;
+      const copy: Stroke = {
+        ...stroke,
+        id: this.strokeIds.next(),
+        pts: movePagePts(stroke.pts, box, to),
+      };
+      // The pen's raw samples stay with the stroke it drew; the page's own
+      // clock stamps the copy.
+      delete copy.samples;
+      delete copy.t0;
+      copies.push({ index, page, stroke: copy });
+    }
+    if (copies.length > 0) {
+      stroke.join = stroke.id;
+      for (const copy of copies) copy.stroke.join = stroke.id;
+    }
+    return copies;
+  }
+
+  /**
+   * A stroke's command was taken back before anything else happened (the
+   * pen came down again to go on with it, or the loop became a lasso): its
+   * copies on the pages beside it go from the index and the tiles too.
+   */
+  private forgetJoinCopies(command: Command): void {
+    const copies = this.joinCopies.get(command);
+    if (!copies) return;
+    this.joinCopies.delete(command);
+    for (const copy of copies) {
+      this.strokeIndex.remove(copy.stroke.id, copy.page.id);
+      const drawn = selectionBounds([copy.stroke], [], []);
+      if (drawn) this.renderer?.invalidateRegion(copy.index, drawn);
+    }
+  }
+
   // --- Shape tool presets ------------------------------------------------------
+
+  /**
+   * Where a preset dragged out on `box` may reach, in its page space: the
+   * page, or with the pages joined every page, so a shape can run over the
+   * join (and is stored on each page it reaches, as ink is).
+   */
+  private shapeRoom(box: PageBox): Bounds {
+    const boxes = this.joined && !this.board ? this.pageLayout.boxes : [box];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const b of boxes) {
+      minX = Math.min(minX, b.x - box.x);
+      minY = Math.min(minY, b.y - box.y);
+      maxX = Math.max(maxX, b.x - box.x + b.width);
+      maxY = Math.max(maxY, b.y - box.y + b.height);
+    }
+    return { minX, minY, maxX, maxY };
+  }
 
   /**
    * Geometry of the preset being dragged; a tap places a default size,
@@ -7503,6 +7611,7 @@ export class InkSurface {
     if (!this.history.withdraw(this.doc, candidate.command)) return;
     const { stroke } = candidate;
     this.strokeIndex.remove(stroke.id, page.id);
+    if (stroke.join !== undefined) this.forgetJoinCopies(candidate.command);
     const drawn = selectionBounds([stroke], [], []);
     if (drawn) this.renderer?.invalidateRegion(press.box.index, drawn);
     this.renderDry();
@@ -11576,6 +11685,7 @@ export class InkSurface {
     const page = this.doc.pages[0];
     return (
       (!isBoard(this.doc) && scrollDirectionOf(this.doc) !== this.direction) ||
+      (!isBoard(this.doc) && joinedPagesOf(this.doc) !== this.joined) ||
       this.pageLayout.boxes.length !== this.doc.pages.length ||
       isBoard(this.doc) !== this.board ||
       // A board's one page grew, or an undo took the growth back.

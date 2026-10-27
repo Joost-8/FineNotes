@@ -128,6 +128,14 @@ export interface Stroke {
    * plain page ink.
    */
   onSticky?: string;
+  /**
+   * The same ink on the page beside it: a stroke drawn over the join of
+   * joined pages is stored on every page it reaches, each copy in its own
+   * page's space, and the copies share this id (`canvas/page-join.ts`).
+   * It counts only while a copy is on a neighbouring page; an older build
+   * drops it, and each copy then stands alone, which loses nothing.
+   */
+  join?: string;
 }
 
 /** Values per entry of {@link Stroke.samples}: x, y, pressure, time. */
@@ -785,6 +793,12 @@ export interface InkDocument {
    * "Scroll direction" setting). Only ever stored as `"horizontal"`.
    */
   scroll?: "horizontal";
+  /**
+   * No gap between the pages, so writing runs on from one into the next
+   * (the notebook's "Join pages" setting, `model/joined-pages.ts`). Only
+   * ever stored as `true`.
+   */
+  joined?: true;
   /**
    * The pen and every other edit leave the notebook alone (its "Read-only"
    * setting, `model/read-only.ts`). Only ever stored as `true`.

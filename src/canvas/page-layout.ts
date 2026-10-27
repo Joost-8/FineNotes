@@ -82,6 +82,8 @@ export interface DocumentLayout {
    * down, one page and its side margins when they run across.
    */
   fitWidth: number;
+  /** Laid out joined ({@link LayoutOptions.joined}): ink may run on over a join. */
+  joined?: boolean;
 }
 
 export interface LayoutOptions {
@@ -132,7 +134,10 @@ export function layoutPages(pages: readonly Page[], options: LayoutOptions = {})
   let contentWidth = 0;
   for (const page of pages) contentWidth = Math.max(contentWidth, page.geometry.width);
   const side = marginX ?? Math.max(PAGE_MARGIN_X, contentWidth * PAGE_MARGIN_X_RATIO);
-  if (direction === "horizontal") return layoutRow(pages, gap, side, marginY, contentWidth);
+  if (direction === "horizontal") {
+    const row = layoutRow(pages, gap, side, marginY, contentWidth);
+    return options.joined ? { ...row, joined: true } : row;
+  }
 
   const boxes: PageBox[] = [];
   let y = marginY;
@@ -156,6 +161,7 @@ export function layoutPages(pages: readonly Page[], options: LayoutOptions = {})
     height: y - gap + marginY,
     direction,
     fitWidth: contentWidth + side * 2,
+    ...(options.joined ? { joined: true } : {}),
   };
 }
 

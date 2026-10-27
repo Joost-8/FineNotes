@@ -129,9 +129,12 @@ describe("layoutPages, joined (Join pages)", () => {
       PAGE_MARGIN_Y + 2 * 1448,
     ]);
     expect(down.height).toBe(3 * 1448 + 2 * PAGE_MARGIN_Y);
+    expect(down.joined).toBe(true);
+    expect("joined" in layoutPages(uniform())).toBe(false);
     const across = layoutPages(uniform(), { joined: true, direction: "horizontal" });
     const [a, b] = across.boxes;
     expect(b.x).toBe(a.x + a.width);
+    expect(across.joined).toBe(true);
   });
 
   it("wins over a gap the caller passes (a row's slot gap)", () => {

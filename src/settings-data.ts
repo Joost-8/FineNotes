@@ -268,8 +268,6 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
-  /** "Join pages" (discussion #51): no gap between pages. A view setting, like the two above. */
-  joinedPages: boolean;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -381,7 +379,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
-  joinedPages: false,
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],

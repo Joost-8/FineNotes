@@ -244,6 +244,7 @@ import { isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
+import { SetJoinedPages, joinedPagesOf } from "../model/joined-pages";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
 import { SetReadOnly, isReadOnly } from "../model/read-only";
 import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
@@ -998,11 +999,6 @@ export class InkView extends TextFileView {
           },
     );
     this.toolbar?.setStickyArmed(color !== null);
-  }
-
-  /** "Join pages" was switched: lay the pages out with or without their gap. */
-  syncJoinedPages(): void {
-    this.relayout();
   }
 
   setPenCursor(style: unknown): void {
@@ -2639,7 +2635,6 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
-        joinedPages: () => this.settings.joinedPages === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onShortcuts: () => this.toggleShortcuts(),
@@ -2929,6 +2924,8 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
+      setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
       update: this.plugin.updates.available,
       openUpdate: () => this.plugin.openUpdatePage(),
