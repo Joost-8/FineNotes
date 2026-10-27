@@ -403,10 +403,11 @@ describe("the rows", () => {
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
-      [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
+      [PENS, "More", "action"],
+      [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
@@ -575,10 +576,11 @@ describe("the rows", () => {
 const PEN_ROWS = [
   "Saved pens",
   ...DEFAULT_PEN_NAMES,
-  "Only stylus mode",
   "Stylus side button",
   "Cursor over the page",
   "Keyboard shortcuts",
+  "More",
+  "Only stylus mode",
 ];
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
@@ -633,7 +635,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 34)",
+      "(block 35)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -1562,7 +1564,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(14);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

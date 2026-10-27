@@ -1104,7 +1104,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row.
+   * from its row. Only stylus mode is a row few people need, so it sits last,
+   * under More.
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
@@ -1131,15 +1132,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "edit pen",
             "delete pen",
           ]),
-        ),
-        this.info(
-          toggle(
-            "onlyStylusMode",
-            "Only stylus mode",
-            "The pen alone writes; a resting hand does nothing.",
-            ["palm rejection", "stylus", "finger", "touch", "hand", "tablet"],
-          ),
-          DESC.onlyStylusMode,
         ),
         this.info(
           dropdown("barrelButton", "Stylus side button", "", BARREL_NAMES, [
@@ -1169,6 +1161,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "stylus shortcuts",
           ]),
           DESC.shortcuts,
+        ),
+        this.more("pens", "Only stylus mode"),
+        this.info(
+          toggle(
+            "onlyStylusMode",
+            "Only stylus mode",
+            "The pen alone writes; a resting hand does nothing.",
+            ["palm rejection", "stylus", "finger", "touch", "hand", "tablet"],
+          ),
+          DESC.onlyStylusMode,
         ),
       ],
       () => [
