@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Shapes snap to each other**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). While you
+  draw a line, an arrow or a rectangle with the Shape tool, or hold a shape
+  you drew, its ends and corners snap to the corners, ends and midpoints of
+  the shapes already on the page, and a small ring shows where.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

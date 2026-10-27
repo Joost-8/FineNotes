@@ -228,6 +228,7 @@ import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { lineOfHighlight } from "../ink/straighten";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
+import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
 import {
   SCRIBBLE_COVERAGE,
   detectScribble,
@@ -333,6 +334,7 @@ import {
   isEmptySelection,
   reorientPoint,
   textScaleRange,
+  translatePoints,
 } from "../model/selection-commands";
 import {
   CropImage,
@@ -5982,7 +5984,8 @@ export class InkSurface {
     const mode = this.toolState.tool === "shape" ? shapeModeFor(this.toolState) : "auto";
     if (mode !== "auto") {
       // A preset is dragged out as its bounding box, as in GoodNotes.
-      this.shapeDrag = { preset: mode, origin: at, to: at, moved: false };
+      const origin = this.snapDragEnd(box, mode, at);
+      this.shapeDrag = { preset: mode, origin, to: origin, moved: false };
       this.showShapeDraft(box);
       return;
     }
@@ -6049,7 +6052,8 @@ export class InkSurface {
       if (last) {
         const local = this.toPage(box, last);
         const drag = this.shapeDrag;
-        drag.to = { x: clamp(local.x, 0, box.width), y: clamp(local.y, 0, box.height) };
+        const to = { x: clamp(local.x, 0, box.width), y: clamp(local.y, 0, box.height) };
+        drag.to = this.snapDragEnd(box, drag.preset, to);
         const travelled = Math.hypot(drag.to.x - drag.origin.x, drag.to.y - drag.origin.y);
         if (travelled >= this.atFitZoom(SHAPE_TAP_SLOP)) drag.moved = true;
         this.showShapeDraft(box);
@@ -6071,8 +6075,9 @@ export class InkSurface {
     }
     const snap = this.snap;
     if (snap) {
-      // Snapped and still held: the shape follows the pen.
-      if (last) snap.pts = transformShape(snap.base, snap.pivot, snap.from, this.toPage(box, last));
+      // Snapped and still held: the shape follows the pen, and a corner or
+      // its far end lands on another shape's when it comes near one.
+      if (last) snap.pts = this.snapHeldShape(box, snap, this.toPage(box, last));
       this.scheduleWet();
       return;
     }
@@ -6194,14 +6199,16 @@ export class InkSurface {
     this.diagHold = { fired: true, verdict: verdictOf(builder.points(), true) };
     this.hudVerdict("hold", builder.points(), result, true);
     if (!result) return;
-    const pivot = shapePivot(result.kind, result.pts);
+    const box = this.activePage;
+    const base = box ? this.snapShapeStart(box, result.kind, result.pts) : result.pts;
+    const pivot = shapePivot(result.kind, base);
     if (!pivot) return;
     this.snap = {
       kind: result.kind,
-      base: result.pts,
+      base,
       pivot,
       from: { x: anchor.x, y: anchor.y },
-      pts: result.pts,
+      pts: base,
     };
     this.scheduleWet();
   }
@@ -6524,6 +6531,7 @@ export class InkSurface {
     this.wetTracer = null;
     this.stopHold();
     this.renderer?.clearWet();
+    this.showSnapMarker(null, null);
     return builder;
   }
 
@@ -6786,6 +6794,122 @@ export class InkSurface {
     return command;
   }
 
+  // --- Snapping to other shapes (discussion #51) -----------------------------
+
+  /**
+   * Finds the corner, end or midpoint of another shape near a point, on
+   * `snapPageId`, through the stroke index: one per surface, and a query
+   * allocates nothing (`ink/shape-snap.ts`).
+   */
+  private readonly shapeSnapper = new ShapeSnapper((x, y, reach, visit) => {
+    this.strokeIndex.forEachNear(this.snapPageId, x, y, reach, visit);
+  });
+  private snapPageId = "";
+  /** The ring shown where a point snapped; made on first use. */
+  private snapMarkerEl: HTMLElement | null = null;
+
+  /**
+   * Snap page point (x, y) of `box` to another shape within
+   * {@link SNAP_RADIUS_PX} screen px; true when it did, the target then in
+   * `shapeSnapper.hit`.
+   */
+  private snapNear(box: PageBox, x: number, y: number): boolean {
+    this.snapPageId = this.pageAt(box.index)?.id ?? "";
+    return this.shapeSnapper.snap(x, y, SNAP_RADIUS_PX / this.unitScale);
+  }
+
+  /**
+   * Where a Shape tool drag starts or is now, snapped to another shape's
+   * corner, end or midpoint when it is a line's or arrow's end or a
+   * rectangle's corner: the presets whose drag points lie on the shape.
+   */
+  private snapDragEnd(box: PageBox, preset: ShapePreset | "table", p: Pt): Pt {
+    const snaps = preset === "line" || preset === "arrow" || preset === "rect";
+    if (!snaps || !this.snapNear(box, p.x, p.y)) {
+      this.showSnapMarker(null, null);
+      return p;
+    }
+    const hit = this.shapeSnapper.hit;
+    this.showSnapMarker(box, hit);
+    return { x: hit.x, y: hit.y };
+  }
+
+  /**
+   * A shape snapped by a hold, moved so that a line's or arrow's start lies
+   * on another shape's point when it began near one (the start is where
+   * the held shape turns about, so it is placed now or not at all).
+   */
+  private snapShapeStart(box: PageBox, kind: ShapeKind, pts: number[]): number[] {
+    if (kind !== "line" && kind !== "arrow") return pts;
+    if (!this.snapNear(box, pts[0], pts[1])) return pts;
+    const hit = this.shapeSnapper.hit;
+    this.showSnapMarker(box, hit);
+    return translatePoints(pts, hit.x - pts[0], hit.y - pts[1]);
+  }
+
+  /**
+   * The held shape following the pen at `pen`, turned and sized about its
+   * pivot, with the corner or far end nearest another shape's point carried
+   * onto it: the pen position that does that is solved exactly
+   * (`penForPoint`), so the shape stays the shape. Circles and ellipses
+   * have no corners to snap.
+   */
+  private snapHeldShape(
+    box: PageBox,
+    snap: { kind: ShapeKind; base: number[]; pivot: Pt; from: Pt },
+    pen: Pt,
+  ): number[] {
+    const pts = transformShape(snap.base, snap.pivot, snap.from, pen);
+    const open = snap.kind === "line" || snap.kind === "arrow";
+    const corners = open ? 2 : snap.base.length / 3 - 1;
+    if (snap.kind === "circle" || snap.kind === "ellipse" || corners > 12) {
+      this.showSnapMarker(null, null);
+      return pts;
+    }
+    // The far end of a line or arrow (its start is the pivot), or each corner.
+    let best = Infinity;
+    let vertex = -1;
+    let tx = 0;
+    let ty = 0;
+    for (let i = open ? 1 : 0; i < corners; i++) {
+      const x = pts[i * 3];
+      const y = pts[i * 3 + 1];
+      if (!this.snapNear(box, x, y)) continue;
+      const hit = this.shapeSnapper.hit;
+      const d = Math.hypot(hit.x - x, hit.y - y);
+      if (d < best) {
+        best = d;
+        vertex = i;
+        tx = hit.x;
+        ty = hit.y;
+      }
+    }
+    if (vertex < 0) {
+      this.showSnapMarker(null, null);
+      return pts;
+    }
+    const v0 = { x: snap.base[vertex * 3], y: snap.base[vertex * 3 + 1] };
+    const target = { x: tx, y: ty };
+    const at = penForPoint(snap.pivot, snap.from, v0, target);
+    if (!at) return pts;
+    this.showSnapMarker(box, target);
+    return transformShape(snap.base, snap.pivot, snap.from, at);
+  }
+
+  /** Show the snap ring at page point `at` of `box`, or hide it (`null`). */
+  private showSnapMarker(box: PageBox | null, at: { x: number; y: number } | null): void {
+    if (!box || !at) {
+      this.snapMarkerEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.snapMarkerEl ??= this.paperEl.createDiv({
+      cls: "goodobsidian-snap-marker is-hidden",
+    }));
+    const scale = this.unitScale;
+    el.setCssStyles({ left: `${(box.x + at.x) * scale}px`, top: `${(box.y + at.y) * scale}px` });
+    el.removeClass("is-hidden");
+  }
+
   // --- Shape tool presets ------------------------------------------------------
 
   /**
@@ -6858,6 +6982,7 @@ export class InkSurface {
     const pts = this.shapeDragGeometry(box);
     this.shapeDrag = null;
     this.activePage = null;
+    this.showSnapMarker(null, null);
     this.renderer?.clearWet();
     const page = this.pageAt(box.index);
     if (!drag || !page) return;
