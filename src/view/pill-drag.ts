@@ -5,8 +5,9 @@
  * go and the host springs the pill to the nearest place (`pill-dock-model.ts`).
  *
  * - A colour in the row is not a handle: holding one drags the colour off
- *   instead (`swatch-drag.ts`). Anywhere else on the pill is, buttons
- *   included; the click a hold ends in is swallowed.
+ *   instead (`swatch-drag.ts`), and holding a pen type moves it in its row
+ *   (`pen-type-drag.ts`). Anywhere else on the pill is, buttons included;
+ *   the click a hold ends in is swallowed.
  * - **Finger and Pencil:** touch events, as `page-drag.ts`: `touchstart` is
  *   never cancelled (the colour row must still swipe), a touch that moves
  *   past the slop before the hold is a swipe or a tap, and once the pill has
@@ -32,8 +33,8 @@ export interface PillDragHost {
 /** How long after a hold ends its click is swallowed, ms. */
 const SWALLOW_CLICK_MS = 700;
 
-/** What on the pill is not a handle: a colour, which has its own hold. */
-const NOT_A_HANDLE = ".goodobsidian-swatch";
+/** What on the pill is not a handle: a colour or a pen type, which have their own holds. */
+const NOT_A_HANDLE = ".goodobsidian-swatch, .goodobsidian-pentype";
 
 export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
   let timer = 0;

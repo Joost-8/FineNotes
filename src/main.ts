@@ -1225,6 +1225,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember the pen types' order in the pen's row, for every notebook. */
+  savePenTypeOrder(order: readonly string[]): void {
+    this.settings.penTypeOrder = [...order];
+    void this.saveSettings();
+  }
+
   /**
    * Remember each pen type's stroke stabilization, for every notebook. Saved
    * once the slider rests: it reports every step of a drag.
