@@ -69,13 +69,12 @@ import {
 } from "../canvas/ruler-geometry";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import {
-  BAR_ITEMS,
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
   DEFAULT_BAR,
-  hiddenItems,
-  normalizeBar,
+  menuItems,
+  normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { setIcon } from "obsidian";
@@ -613,8 +612,12 @@ export interface ToolbarCallbacks {
   onStickyColor?: (color: string) => void;
   /** The sticky notes button was tapped while a note waited to be placed: it waits no more. */
   onStickyCancel?: () => void;
-  /** Open "Customize toolbar". Without it the accessories menu has no such row. */
-  onCustomize?: () => void;
+  /**
+   * The accessories menu's last entry, "More tools": where the bar's tools are
+   * placed (Settings › Pens and shortcuts › Toolbar). Without it the menu has
+   * no such row.
+   */
+  onMoreTools?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
   /** Only stylus mode's toolbar button was tapped: turn the mode on or off. */
@@ -637,6 +640,8 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
+  /** The tools shown nowhere, not even in the accessories menu; none when absent. */
+  offItems?: readonly BarItemId[];
   /** Only stylus mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
 }
@@ -804,7 +809,9 @@ export class Toolbar {
   private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
   /** The centre items shown, left to right. */
   private items: BarItemId[] = [...DEFAULT_BAR];
-  /** The last button of the tools: the hidden items and "Customize toolbar". */
+  /** The centre items shown nowhere, not even in the accessories menu. */
+  private offItems: BarItemId[] = [];
+  /** The last button of the tools: the hidden items and "More tools". */
   private accessoriesButton: HTMLButtonElement | null = null;
   /** Only stylus mode's state, for its button's toggle and on/off mark. */
   private onlyStylusOn = false;
@@ -1060,8 +1067,8 @@ export class Toolbar {
     tool("eraser", "eraser", "Eraser (E)");
     tool("text", "type", "Text box (T)");
     tool("shape", "shapes", "Shapes (S)");
-    // Page navigation tools. Hidden by default: they wait in the accessories
-    // menu until "Customize toolbar" puts them on the bar.
+    // Page navigation tools. Off the bar by default: they wait in the
+    // accessories menu until the Toolbar setting puts them on the bar.
     tool("pan", "hand", "Hand — move the page");
     tool("zoom", "zoom-in", "Magnifier — zoom");
     if (cb.onOnlyStylusMode) {
@@ -1113,7 +1120,7 @@ export class Toolbar {
     accessories.setAttribute("aria-haspopup", "menu");
     this.accessoriesButton = accessories;
     keep(accessories);
-    this.setItems(this.options.items ?? DEFAULT_BAR, false);
+    this.setItems(this.options.items ?? DEFAULT_BAR, this.options.offItems ?? [], false);
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1214,7 +1221,7 @@ export class Toolbar {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
-      // the bar in "Customize toolbar"): nothing to fold.
+      // the bar in the Toolbar setting): nothing to fold.
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
       this.measureCrowding();
@@ -1448,24 +1455,28 @@ export class Toolbar {
     this.syncAccessoriesMark();
   }
 
-  /** Light the accessories button while one of its hidden items is on. */
+  /** Light the accessories button while one of the items its menu lists is on. */
   private syncAccessoriesMark(): void {
+    const listed = menuItems({ bar: this.items, off: this.offItems });
     const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
       const button = this.barItems.get(id);
-      return button !== undefined && button.hasClass("is-on") && button.hasClass("is-unlisted");
+      return button !== undefined && button.hasClass("is-on") && listed.includes(id);
     });
     this.accessoriesButton?.toggleClass("is-on", hiddenOn);
   }
 
   /**
    * Show the centre items `items`, left to right, and take the rest off the
-   * bar (they wait in the accessories menu). Unknown or unavailable items
-   * are skipped; the pen always shows (`normalizeBar`). `relayout` refits
-   * the bar and moves the indicator, as a live change needs.
+   * bar: they wait in the accessories menu, except the `off` ones, which are
+   * shown nowhere. Unknown or unavailable items are skipped; the pen always
+   * shows (`normalizeLayout`). `relayout` refits the bar and moves the
+   * indicator, as a live change needs.
    */
-  setItems(items: readonly BarItemId[], relayout = true): void {
-    const shown = normalizeBar(items).filter((id) => this.barItems.has(id));
+  setItems(items: readonly BarItemId[], off: readonly BarItemId[] = [], relayout = true): void {
+    const layout = normalizeLayout(items, off);
+    const shown = layout.bar.filter((id) => this.barItems.has(id));
     this.items = shown;
+    this.offItems = layout.off;
     const tools = this.toolsGroup;
     if (!tools) return;
     for (const [id, button] of this.barItems)
@@ -1488,15 +1499,16 @@ export class Toolbar {
     return this.items;
   }
 
-  /** The centre items this bar can show at all (the ruler, stickers and sticky notes need a host). */
-  get availableItems(): readonly BarItemId[] {
-    return BAR_ITEMS.filter((id) => this.barItems.has(id));
+  /** The centre items its accessories menu lists now, in catalogue order. */
+  get menuListed(): readonly BarItemId[] {
+    return menuItems({ bar: this.items, off: this.offItems }).filter((id) => this.itemRuns.has(id));
   }
 
   /**
    * Goodnotes' accessories menu, hanging from the last button of the tools:
-   * every item taken off the bar, which a tap runs as its button would, then
-   * "Customize toolbar".
+   * every item taken off the bar and not turned off, which a tap runs as its
+   * button would, then "More tools", which opens the settings where the
+   * tools are placed.
    */
   private toggleAccessories(anchor: HTMLElement): void {
     if (this.popoverKind === "accessories") {
@@ -1508,7 +1520,7 @@ export class Toolbar {
     this.popover?.setAttribute("role", "menu");
     this.popoverRender = () => {
       body.empty();
-      const hidden = hiddenItems(this.items).filter((id) => this.itemRuns.has(id));
+      const hidden = this.menuListed;
       for (const id of hidden) {
         const button = this.barItems.get(id);
         const run = this.itemRuns.get(id);
@@ -1526,17 +1538,17 @@ export class Toolbar {
           run(anchor);
         });
       }
-      if (this.callbacks.onCustomize) {
+      if (this.callbacks.onMoreTools) {
         if (hidden.length > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
-        const customize = body.createEl("button", {
+        const more = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
           attr: { role: "menuitem" },
         });
-        iconOrText(customize.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
-        customize.createSpan({ text: "Customize toolbar" });
-        customize.addEventListener("click", () => {
+        iconOrText(more.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
+        more.createSpan({ text: "More tools" });
+        more.addEventListener("click", () => {
           this.closePopover();
-          this.callbacks.onCustomize?.();
+          this.callbacks.onMoreTools?.();
         });
       }
       this.keepPopoverInside(anchor);

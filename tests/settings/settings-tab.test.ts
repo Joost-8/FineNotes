@@ -153,11 +153,13 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
-    setOnlyStylusMode: vi.fn((on: boolean) => {
-      calls.push(`onlyStylus:${on}`);
-      settings.onlyStylusMode = on;
-      return Promise.resolve();
-    }),
+    saveToolbarLayout: vi.fn(
+      (layout: { bar: Settings["toolbarItems"]; off: Settings["toolbarOff"] }) => {
+        calls.push(`toolbar:${layout.bar.join(",")}|${layout.off.join(",")}`);
+        settings.toolbarItems = layout.bar;
+        settings.toolbarOff = layout.off;
+      },
+    ),
     files,
     models: { all: () => [grapeStore, speechStore] },
     speech: { store: () => speechStore },
@@ -406,8 +408,7 @@ describe("the rows", () => {
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
-      [PENS, "More", "action"],
-      [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
+      [PENS, "Toolbar", "render"],
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
@@ -579,8 +580,7 @@ const PEN_ROWS = [
   "Stylus side button",
   "Cursor over the page",
   "Keyboard shortcuts",
-  "More",
-  "Only stylus mode",
+  "Toolbar",
 ];
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
@@ -635,7 +635,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 35)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -969,14 +969,6 @@ describe("control values", () => {
     await makeTab(plugin).tab.setControlValue("pressureWidth", true);
     expect(plugin.setPressureWidth).toHaveBeenCalledWith(true);
     expect(plugin.calls).toEqual(["pressureWidth:true", "update"]);
-  });
-
-  it("hands Only stylus mode to the plugin, which updates every notebook", async () => {
-    const plugin = makePlugin();
-    await makeTab(plugin).tab.setControlValue("onlyStylusMode", true);
-    expect(plugin.setOnlyStylusMode).toHaveBeenCalledWith(true);
-    expect(plugin.settings.onlyStylusMode).toBe(true);
-    expect(plugin.calls).toEqual(["onlyStylus:true"]);
   });
 });
 
@@ -1551,6 +1543,69 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
 
 const HEADINGS = [WRITING, PENS, PAGES, MODELS, AI, ADVANCED];
 
+describe("the Toolbar row", () => {
+  /** The row drawn, and its lists' item names by heading. */
+  function toolbarRow(overrides: Partial<Settings> = {}) {
+    const plugin = makePlugin(overrides);
+    const row = renderRow(named(rows(makeTab(plugin).tab), "Toolbar"));
+    const lists = () => {
+      const body = row.find("goodobsidian-toolbar-items");
+      const out: Record<string, string[]> = {};
+      let heading = "";
+      for (const child of body?.children ?? []) {
+        if (child.hasClass("goodobsidian-customize-label")) heading = child.text;
+        else if (child.hasClass("goodobsidian-customize-list")) {
+          out[heading] = child.findAll("goodobsidian-customize-name").map((el) => el.text);
+        }
+      }
+      return out;
+    };
+    return { plugin, row, lists };
+  }
+
+  it("lists the tools in their three places: the bar, More tools, and not shown", () => {
+    const { lists } = toolbarRow({ toolbarOff: ["record"] });
+    expect(lists()).toEqual({
+      "On the toolbar": ["Lasso", "Pen", "Eraser", "Text", "Shapes", "Image", "PDF"],
+      "In More tools": [
+        "Hand",
+        "Magnifier",
+        "Only stylus mode",
+        "Stickers",
+        "Sticky notes",
+        "Ruler",
+      ],
+      "Not shown": ["Record audio"],
+    });
+  });
+
+  it("moves a tool live: off the bar into More tools, then out of the menu", () => {
+    const { plugin, row, lists } = toolbarRow();
+    const rowOf = (name: string) =>
+      row
+        .find("goodobsidian-toolbar-items")
+        ?.findAll("goodobsidian-customize-row")
+        .find((el) => el.find("goodobsidian-customize-name")?.text === name);
+    rowOf("Eraser")?.find("is-remove")?.dispatch("click");
+    expect(plugin.calls.at(-1)).toBe("toolbar:select,pen,text,shape,image,pdf|");
+    rowOf("Eraser")?.find("is-off")?.dispatch("click");
+    expect(plugin.calls.at(-1)).toBe("toolbar:select,pen,text,shape,image,pdf|eraser");
+    expect(lists()["Not shown"]).toEqual(["Eraser"]);
+    rowOf("Hand")?.find("is-add")?.dispatch("click");
+    expect(plugin.settings.toolbarItems.at(-1)).toBe("pan");
+  });
+
+  it("gives the pen no way off the bar", () => {
+    const { row } = toolbarRow();
+    const pen = row
+      .find("goodobsidian-toolbar-items")
+      ?.findAll("goodobsidian-customize-row")
+      .find((el) => el.find("goodobsidian-customize-name")?.text === "Pen");
+    expect(pen?.find("is-remove")).toBeUndefined();
+    expect(pen?.find("is-blank")).toBeDefined();
+  });
+});
+
 describe("folding sections", () => {
   it("folds every section at first, leaving only their headers and the footer", () => {
     const { tab } = makeTab(makePlugin(), false);
@@ -1564,7 +1619,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(14);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

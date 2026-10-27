@@ -10,18 +10,23 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Only stylus mode.** Settings › Pens and shortcuts › More › Only stylus mode
-  makes the page listen to the pen alone: a palm, a finger or a mouse resting
-  on the glass moves neither the ink nor the page, and a finger's scroll, pinch
-  and taps are off. Its button switches the mode on and off. The Hand tool moves
-  the page (with its fling) and the Magnifier zooms it: drag up or down, tap
-  to zoom in a step, or use the pill's zoom out, fit page and zoom in. All
-  three are ordinary toolbar items, at first in More tools: add them to the
-  bar with Customize toolbar when you want them there. A command, "Turn Only
-  stylus mode on or off", is there for a hardware key too.
+- **Only stylus mode, the Hand and the Magnifier.** Only stylus mode makes
+  the page listen to the pen alone: a palm, a finger or a mouse resting on
+  the glass moves neither the ink nor the page, and a finger's scroll, pinch
+  and taps are off. Its toolbar button switches the mode on and off, and the
+  command "Turn Only stylus mode on or off" can take a hardware key. The Hand
+  tool moves the page (with its fling) and the Magnifier zooms it: drag up or
+  down, tap to zoom in a step, or use the pill's zoom out, fit page and zoom
+  in. All three wait in the toolbar's More tools menu at first.
 
 ### Changed
 
+- **Choose your tools in Settings.** Settings › Pens and shortcuts › Toolbar
+  lists every tool in one of three places: on the bar (drag to reorder, the
+  top is leftmost), in the More tools menu, or not shown at all. Changes show
+  at once in every open notebook. The last entry of the More tools menu,
+  "More tools", opens the settings right at that list; it replaces the
+  Customize toolbar dialog.
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's

@@ -118,8 +118,7 @@ import {
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
 import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
-import type { BarItemId } from "./toolbar-layout";
-import { CustomizeToolbarModal } from "./customize-toolbar-modal";
+import type { ToolbarLayout } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -977,18 +976,9 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
-  /** Show the tool bar's items `items` ("Customize toolbar", here or in another notebook). */
-  setToolbarItems(items: readonly BarItemId[]): void {
-    this.toolbar?.setItems(items);
-  }
-
-  /** "Customize toolbar": the bar's items, changed live and kept for every notebook. */
-  private openCustomizeToolbar(): void {
-    const toolbar = this.toolbar;
-    if (!toolbar) return;
-    new CustomizeToolbarModal(this.app, toolbar.shownItems, toolbar.availableItems, (items) =>
-      this.plugin.saveToolbarItems(items),
-    ).open();
+  /** Show the tool bar's tools in their places (the Toolbar setting changed). */
+  setToolbarItems(layout: ToolbarLayout): void {
+    this.toolbar?.setItems(layout.bar, layout.off);
   }
 
   /**
@@ -2499,7 +2489,7 @@ export class InkView extends TextFileView {
         },
         onStickyColor: (color) => this.armStickyNote(color),
         onStickyCancel: () => this.armStickyNote(null),
-        onCustomize: () => this.openCustomizeToolbar(),
+        onMoreTools: () => this.plugin.openToolbarSettings(),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
@@ -2521,6 +2511,7 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         items: this.settings.toolbarItems,
+        offItems: this.settings.toolbarOff,
         onlyStylusMode: this.settings.onlyStylusMode === true,
       },
     );

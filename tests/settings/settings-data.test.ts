@@ -127,6 +127,7 @@ const FRESH_INSTALL = {
     { type: "highlighter", color: "#fab005", size: 5 },
   ],
   toolbarItems: ["select", "pen", "eraser", "text", "shape", "image", "pdf"],
+  toolbarOff: [],
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
@@ -221,6 +222,7 @@ const USED_VAULT = {
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],
+  toolbarOff: ["pan", "record"],
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   penCursor: "crosshair",
@@ -389,14 +391,7 @@ describe("control values", () => {
     for (const key of ["recognitionProviderId", "llmVendor", "imageVendor", "pressureWidth"]) {
       expect(changesTabLayout(key)).toBe(true);
     }
-    for (const key of [
-      "llmModel",
-      "llmBaseUrl",
-      "debugHud",
-      "paperWidth",
-      "defaultTool",
-      "onlyStylusMode",
-    ]) {
+    for (const key of ["llmModel", "llmBaseUrl", "debugHud", "paperWidth", "defaultTool"]) {
       expect(changesTabLayout(key)).toBe(false);
     }
   });

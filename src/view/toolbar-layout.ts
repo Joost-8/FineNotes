@@ -1,12 +1,17 @@
 /**
- * Which tools the tool bar shows, in what order, and which wait in its
- * accessories menu: the model behind "Customize toolbar", after Goodnotes'
- * own (Joost's recording, 2026-10-25), in one list rather than its two tabs.
+ * Which tools the tool bar shows, in what order, which wait in its
+ * accessories menu ("More tools"), and which are not shown at all: the model
+ * behind the Toolbar row in Settings › Pens and shortcuts, after Goodnotes'
+ * own Customize toolbar (Joost's recording, 2026-10-25), in one list rather
+ * than its two tabs.
  *
- * The bar's centre holds the items in `shown` order, left to right; every
- * other item is hidden, and the accessories menu (the last button of the
- * centre group) lists the hidden ones in catalogue order. The pen never
- * hides: a bar needs a writing tool, and Goodnotes keeps at least one too.
+ * Every item has one of three places. The bar's centre holds the items in
+ * `bar` order, left to right; the items in `off` are shown nowhere; every
+ * other item is hidden from the bar and waits in the accessories menu (the
+ * last button of the centre group), in catalogue order. So a layout stored
+ * before `off` existed keeps its meaning: what was hidden is in the menu.
+ * The pen never leaves the bar: a bar needs a writing tool, and Goodnotes
+ * keeps at least one too.
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -48,7 +53,8 @@ export const BAR_ITEMS: readonly BarItemId[] = [
 
 /**
  * The bar a new install starts with; the hand, the magnifier, Only stylus mode,
- * stickers, sticky notes, the ruler and the mic wait in the menu.
+ * stickers, sticky notes, the ruler and the mic wait in the menu, and nothing
+ * is off.
  */
 export const DEFAULT_BAR: readonly BarItemId[] = [
   "select",
@@ -60,7 +66,7 @@ export const DEFAULT_BAR: readonly BarItemId[] = [
   "pdf",
 ];
 
-/** The item that can never be hidden. */
+/** The item that can never leave the bar. */
 export const ALWAYS_SHOWN: BarItemId = "pen";
 
 /** What each item is called, in the bar's tooltip, the menu and the list. */
@@ -116,20 +122,65 @@ export function normalizeBar(raw: unknown): BarItemId[] {
   return shown;
 }
 
-/** The hidden items, in catalogue order. */
+/** The items off the bar (in the menu or not shown), in catalogue order. */
 export function hiddenItems(shown: readonly BarItemId[]): BarItemId[] {
   return BAR_ITEMS.filter((id) => !shown.includes(id));
 }
 
-/** `shown` without `id`; the pen stays. */
-export function hideItem(shown: readonly BarItemId[], id: BarItemId): BarItemId[] {
-  if (id === ALWAYS_SHOWN) return [...shown];
-  return shown.filter((item) => item !== id);
+/** Where an item is: on the bar, in the accessories menu, or not shown at all. */
+export type ItemPlace = "bar" | "menu" | "off";
+
+/** Every item's place: the bar, left to right, and the items shown nowhere. */
+export interface ToolbarLayout {
+  bar: BarItemId[];
+  off: BarItemId[];
 }
 
-/** `shown` with `id` added at the right end, where Goodnotes adds it. */
-export function showItem(shown: readonly BarItemId[], id: BarItemId): BarItemId[] {
-  return shown.includes(id) ? [...shown] : [...shown, id];
+/** A new install's layout: the default bar, the rest in the menu. */
+export function defaultLayout(): ToolbarLayout {
+  return { bar: [...DEFAULT_BAR], off: [] };
+}
+
+/**
+ * The layout two stored values name: `bar` as `normalizeBar` reads it, and
+ * of `off` the known items that are not on the bar, each once, in catalogue
+ * order. The pen is never off. Anything that is not a list is no item off,
+ * as a layout stored before there was an "off" means.
+ */
+export function normalizeLayout(bar: unknown, off: unknown): ToolbarLayout {
+  const shown = normalizeBar(bar);
+  const listed = Array.isArray(off) ? off : [];
+  return {
+    bar: shown,
+    off: BAR_ITEMS.filter((id) => listed.includes(id) && !shown.includes(id)),
+  };
+}
+
+/** Where `id` is in `layout`. */
+export function placeOf(layout: ToolbarLayout, id: BarItemId): ItemPlace {
+  if (layout.bar.includes(id)) return "bar";
+  return layout.off.includes(id) ? "off" : "menu";
+}
+
+/** The items the accessories menu lists, in catalogue order. */
+export function menuItems(layout: ToolbarLayout): BarItemId[] {
+  return BAR_ITEMS.filter((id) => placeOf(layout, id) === "menu");
+}
+
+/**
+ * `layout` with `id` moved to `place`. An item put on the bar goes to its
+ * right end, where Goodnotes adds it; one already there keeps its place. The
+ * pen stays on the bar.
+ */
+export function placeItem(layout: ToolbarLayout, id: BarItemId, place: ItemPlace): ToolbarLayout {
+  if (id === ALWAYS_SHOWN || placeOf(layout, id) === place) {
+    return { bar: [...layout.bar], off: [...layout.off] };
+  }
+  const bar = layout.bar.filter((item) => item !== id);
+  const off = layout.off.filter((item) => item !== id);
+  if (place === "bar") bar.push(id);
+  if (place === "off") off.push(id);
+  return { bar, off: BAR_ITEMS.filter((item) => off.includes(item)) };
 }
 
 /** `shown` with the item at `from` moved to `to` (both clamped into the list). */
@@ -155,4 +206,9 @@ export function dropIndex(offset: number, rowHeight: number, rows: number): numb
 /** Whether two bars show the same items in the same order. */
 export function sameBar(a: readonly BarItemId[], b: readonly BarItemId[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/** Whether two layouts put every item in the same place, the bar in the same order. */
+export function sameLayout(a: ToolbarLayout, b: ToolbarLayout): boolean {
+  return sameBar(a.bar, b.bar) && sameBar(a.off, b.off);
 }

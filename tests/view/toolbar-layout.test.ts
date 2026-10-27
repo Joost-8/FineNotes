@@ -1,6 +1,6 @@
 /**
- * `src/view/toolbar-layout.ts`: which items the tool bar shows and which wait
- * in its accessories menu.
+ * `src/view/toolbar-layout.ts`: which items the tool bar shows, which wait
+ * in its accessories menu, and which are not shown at all.
  */
 
 import { describe, expect, it } from "vitest";
@@ -9,13 +9,17 @@ import {
   BAR_ITEMS,
   BAR_ITEM_LABELS,
   DEFAULT_BAR,
+  defaultLayout,
   dropIndex,
   hiddenItems,
-  hideItem,
+  menuItems,
   moveItem,
   normalizeBar,
+  normalizeLayout,
+  placeItem,
+  placeOf,
   sameBar,
-  showItem,
+  sameLayout,
 } from "../../src/view/toolbar-layout";
 
 describe("normalizeBar", () => {
@@ -63,11 +67,44 @@ describe("the default bar", () => {
   });
 });
 
-describe("hiding and showing", () => {
-  it("hides an item, and lists it among the hidden in catalogue order", () => {
-    const bar = hideItem(DEFAULT_BAR, "eraser");
-    expect(bar).not.toContain("eraser");
-    expect(hiddenItems(bar)).toEqual([
+describe("normalizeLayout", () => {
+  it("reads a layout stored before items could be off: every hidden item is in the menu", () => {
+    const layout = normalizeLayout(["pen", "sticky", "select", "ruler"], undefined);
+    expect(layout).toEqual({ bar: ["pen", "sticky", "select", "ruler"], off: [] });
+    expect(menuItems(layout)).toEqual(hiddenItems(layout.bar));
+    expect(placeOf(layout, "eraser")).toBe("menu");
+  });
+
+  it("is the default layout for a new install", () => {
+    expect(normalizeLayout(undefined, undefined)).toEqual(defaultLayout());
+    expect(defaultLayout()).toEqual({ bar: DEFAULT_BAR, off: [] });
+  });
+
+  it("drops unknown items, repeats, the pen and items on the bar from off", () => {
+    const layout = normalizeLayout(
+      ["pen", "eraser"],
+      ["record", "nope", 7, "pen", "eraser", "pan", "record"],
+    );
+    expect(layout.off).toEqual(["pan", "record"]);
+  });
+
+  it("keeps off in catalogue order, and copes with a damaged value", () => {
+    expect(normalizeLayout(DEFAULT_BAR, ["record", "zoom"]).off).toEqual(["zoom", "record"]);
+    expect(normalizeLayout(DEFAULT_BAR, "record").off).toEqual([]);
+  });
+});
+
+describe("three places", () => {
+  it("starts the hand, magnifier and Only stylus mode in the menu", () => {
+    const layout = defaultLayout();
+    for (const id of ["pan", "zoom", "stylus"] as const) expect(placeOf(layout, id)).toBe("menu");
+    expect(placeOf(layout, "pen")).toBe("bar");
+  });
+
+  it("moves an item from the bar to the menu, and lists it in catalogue order", () => {
+    const layout = placeItem(defaultLayout(), "eraser", "menu");
+    expect(layout.bar).not.toContain("eraser");
+    expect(menuItems(layout)).toEqual([
       "eraser",
       "pan",
       "zoom",
@@ -79,13 +116,39 @@ describe("hiding and showing", () => {
     ]);
   });
 
-  it("never hides the pen", () => {
-    expect(hideItem(DEFAULT_BAR, ALWAYS_SHOWN)).toEqual(DEFAULT_BAR);
+  it("takes an item out of the menu without putting it on the bar", () => {
+    const layout = placeItem(defaultLayout(), "record", "off");
+    expect(placeOf(layout, "record")).toBe("off");
+    expect(menuItems(layout)).not.toContain("record");
+    expect(layout.bar).toEqual(DEFAULT_BAR);
   });
 
-  it("shows a hidden item at the right end, once", () => {
-    expect(showItem(DEFAULT_BAR, "sticky").at(-1)).toBe("sticky");
-    expect(showItem(DEFAULT_BAR, "pen")).toEqual(DEFAULT_BAR);
+  it("puts an item on the bar at its right end, from the menu or from off", () => {
+    expect(placeItem(defaultLayout(), "sticky", "bar").bar.at(-1)).toBe("sticky");
+    const off = placeItem(defaultLayout(), "zoom", "off");
+    const shown = placeItem(off, "zoom", "bar");
+    expect(shown.bar.at(-1)).toBe("zoom");
+    expect(shown.off).toEqual([]);
+  });
+
+  it("takes an item off the bar straight to off", () => {
+    const layout = placeItem(defaultLayout(), "pdf", "off");
+    expect(layout.bar).not.toContain("pdf");
+    expect(layout.off).toEqual(["pdf"]);
+  });
+
+  it("never moves the pen, and leaves an item already in place where it is", () => {
+    expect(placeItem(defaultLayout(), ALWAYS_SHOWN, "off")).toEqual(defaultLayout());
+    expect(placeItem(defaultLayout(), ALWAYS_SHOWN, "menu")).toEqual(defaultLayout());
+    const moved = moveItem(DEFAULT_BAR, 0, 3);
+    expect(placeItem({ bar: moved, off: [] }, "select", "bar").bar).toEqual(moved);
+  });
+
+  it("does not change the layout it was given", () => {
+    const layout = defaultLayout();
+    placeItem(layout, "pan", "bar");
+    placeItem(layout, "eraser", "off");
+    expect(layout).toEqual(defaultLayout());
   });
 });
 
@@ -116,5 +179,13 @@ describe("sameBar", () => {
     expect(sameBar(["pen", "select"], ["pen", "select"])).toBe(true);
     expect(sameBar(["pen", "select"], ["select", "pen"])).toBe(false);
     expect(sameBar(["pen"], ["pen", "select"])).toBe(false);
+  });
+});
+
+describe("sameLayout", () => {
+  it("compares the bar and what is off", () => {
+    expect(sameLayout(defaultLayout(), defaultLayout())).toBe(true);
+    expect(sameLayout(defaultLayout(), placeItem(defaultLayout(), "record", "off"))).toBe(false);
+    expect(sameLayout(defaultLayout(), placeItem(defaultLayout(), "record", "bar"))).toBe(false);
   });
 });

@@ -12894,10 +12894,10 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 /* --- The customizable tool bar ------------------------------------------------
    toolbar.ts (setItems, toggleAccessories, tapSticky) and
-   customize-toolbar-modal.ts. Last in the file: these restyle buttons that
+   toolbar-items-list.ts. Last in the file: these restyle buttons that
    the bar's own rules above also style. */
 
-/* An item taken off the bar in "Customize toolbar"; it waits in the accessories menu. */
+/* An item taken off the bar in the Toolbar setting; it waits in the accessories menu, or nowhere. */
 .goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-unlisted {
   display: none;
 }
@@ -12957,9 +12957,16 @@ button.goodobsidian-ns-update-mute.clickable-icon {
     0 0 0 4px var(--interactive-accent);
 }
 
-/* "Customize toolbar": one list, the bar's items above the hidden ones. */
-.goodobsidian-customize-modal {
-  width: min(420px, 92vw);
+/* Settings › Pens and shortcuts › Toolbar: one list under the row's name,
+   the bar's items, then More tools, then the ones not shown. */
+.setting-item.goodobsidian-toolbar-items-row {
+  flex-wrap: wrap;
+}
+
+/* A whole line of its own: a max-width here would let it share the name's. */
+.goodobsidian-toolbar-items-row .goodobsidian-toolbar-items {
+  flex: 1 0 100%;
+  margin-top: 8px;
 }
 
 .goodobsidian-customize-body {
@@ -13030,6 +13037,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 .goodobsidian-customize-toggle.is-add {
   color: var(--color-green);
+}
+
+/* Last in a More tools row, where a bar row has its grip: shown nowhere. */
+.goodobsidian-customize-toggle.is-off {
+  margin-right: -4px;
+  color: var(--text-faint);
 }
 
 .goodobsidian-customize-icon {

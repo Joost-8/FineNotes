@@ -272,8 +272,13 @@ export interface GoodObsidianSettings {
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
-  /** The tools the bar shows, left to right ("Customize toolbar"); the rest wait in its menu. */
+  /**
+   * The tools the bar shows, left to right (the Toolbar row); the rest wait
+   * in its More tools menu, except those in `toolbarOff`.
+   */
   toolbarItems: BarItemId[];
+  /** The tools shown nowhere, neither on the bar nor in its menu (`toolbar-layout.ts`). */
+  toolbarOff: BarItemId[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -387,6 +392,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
+  toolbarOff: [],
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,

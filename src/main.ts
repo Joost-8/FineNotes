@@ -185,7 +185,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type BarItemId, normalizeBar } from "./view/toolbar-layout";
+import { type ToolbarLayout, normalizeLayout } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -787,7 +787,9 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
-    this.settings.toolbarItems = normalizeBar(this.settings.toolbarItems);
+    const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    this.settings.toolbarItems = toolbar.bar;
+    this.settings.toolbarOff = toolbar.off;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
@@ -1140,7 +1142,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Open this plugin's settings tab (an undocumented but long-stable app API). */
-  openSettingsTab(): void {
+  openSettingsTab(fallback = "Open Settings → FineNotes to set up AI."): void {
     const setting = (
       this.app as unknown as {
         setting?: { open?: () => void; openTabById?: (id: string) => unknown };
@@ -1151,7 +1153,7 @@ export default class GoodObsidianPlugin extends Plugin {
       setting.openTabById(this.manifest.id);
       return;
     }
-    new Notice("Open Settings → FineNotes to set up AI.");
+    new Notice(fallback);
   }
 
   /**
@@ -1303,11 +1305,22 @@ export default class GoodObsidianPlugin extends Plugin {
     }).open();
   }
 
-  /** "Customize toolbar" changed the bar: every open notebook shows the new one. */
-  saveToolbarItems(items: readonly BarItemId[]): void {
-    this.settings.toolbarItems = normalizeBar(items);
+  /** The Toolbar row changed the bar or its menu: every open notebook shows the new one. */
+  saveToolbarLayout(layout: ToolbarLayout): void {
+    const toolbar = normalizeLayout(layout.bar, layout.off);
+    this.settings.toolbarItems = toolbar.bar;
+    this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
-    for (const view of this.openNotebooks()) view.setToolbarItems(this.settings.toolbarItems);
+    for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
+  }
+
+  /**
+   * The More tools menu's last entry: Settings › Pens and shortcuts, opened
+   * and scrolled to the Toolbar row, where the tools are added and removed.
+   */
+  openToolbarSettings(): void {
+    this.settingTab?.revealToolbarRow();
+    this.openSettingsTab("Open Settings → FineNotes → Pens and shortcuts → Toolbar.");
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
