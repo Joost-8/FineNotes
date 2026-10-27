@@ -14,6 +14,10 @@ extracted from the matching section of this file by `release.yml`.
   [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
   under Writing › More: the lasso takes a stroke or shape when any part of
   it is inside the loop, as Notability does, instead of at least half of it.
+- **Tap a shape with a finger to select it.** With the pen (or another
+  drawing tool) in hand, a finger tap on a shape, an arrow or a table
+  selects it with its handles and bar, and the pen stays in hand: a pen
+  stroke beside it lets go and writes.
 
 ### Changed
 

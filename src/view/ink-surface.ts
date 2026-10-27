@@ -7984,27 +7984,32 @@ export class InkSurface {
     // where the table goes.
     const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
     if (table) {
-      const f = this.tableFrameOf(table);
-      const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
-      const near = this.strokeIndex.within(page.id, frame);
-      const inked = page.strokes.filter((stroke) => {
-        const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
-        return (
-          b !== null &&
-          lassoTakesStroke(stroke, filter) &&
-          b.minX >= frame.minX &&
-          b.minY >= frame.minY &&
-          b.maxX <= frame.maxX &&
-          b.maxY <= frame.maxY
-        );
-      });
-      this.select(page.id, { strokes: inked, images: [], textBoxes: [], tables: [table] });
+      this.select(page.id, this.tableWithInk(page, table, filter));
       return;
     }
     // A locked picture is passed over, as if it were part of the paper.
     const unlocked = page.images.filter((candidate) => candidate.locked !== true);
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
     if (image) this.setImageSelection(page.id, image);
+  }
+
+  /** A table with the ink that lies wholly inside its frame, as far as the lasso's switches allow. */
+  private tableWithInk(page: Page, table: TableElement, filter: LassoFilter): ElementLists {
+    const f = this.tableFrameOf(table);
+    const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
+    const near = this.strokeIndex.within(page.id, frame);
+    const inked = page.strokes.filter((stroke) => {
+      const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
+      return (
+        b !== null &&
+        lassoTakesStroke(stroke, filter) &&
+        b.minX >= frame.minX &&
+        b.minY >= frame.minY &&
+        b.maxX <= frame.maxX &&
+        b.maxY <= frame.maxY
+      );
+    });
+    return { strokes: inked, images: [], textBoxes: [], tables: [table] };
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -10633,9 +10638,10 @@ export class InkSurface {
 
   /**
    * A finger tapped the page (client px). With the lasso it selects, like a
-   * Pencil tap; with any other tool it lets go of a selected image, and a
-   * tap on a picture picks the lasso and selects it (`fingerPicksPicture`)
-   * — fingers never draw. While audio replay is open, a tap on ink goes to
+   * Pencil tap; with any other tool it lets go of a selected image, a tap
+   * on a shape or a table selects it with the pen still in hand
+   * (`fingerPicksShape`), and a tap on a picture picks the lasso and
+   * selects it (`fingerPicksPicture`) — fingers never draw. While audio replay is open, a tap on ink goes to
    * it first, whatever the tool.
    */
   private onFingerTap(clientX: number, clientY: number): void {
@@ -10691,9 +10697,12 @@ export class InkSurface {
       if (box && tapped) {
         const p = this.toPage(box, at);
         // Typed text sits above the pictures, so a box is tried first.
+        // Then as a lasso tap reads the layers: ink, graphs, tables, pictures.
         if (
           this.fingerHoldsTextBox(tapped, p) ||
+          this.fingerPicksShape(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
+          this.fingerPicksTable(tapped, p) ||
           this.fingerPicksPicture(tapped, p)
         ) {
           return;
@@ -11070,6 +11079,33 @@ export class InkSurface {
     this.setTool("select");
     this.callbacks.onToolChange?.("select");
     this.select(page.id, { strokes: [], images: [], textBoxes: [], graphs: [graph] });
+    return true;
+  }
+
+  /**
+   * A finger tapped a shape (a snapped shape or an arrow) with a pen, or any
+   * tool but the lasso and Text: it is selected as a lasso tap selects it,
+   * with its frame, handles and bar, and the pen stays in hand, as in
+   * Notability (discussion #51). A pen press beside the frame lets go of it
+   * and writes, as after Circle to lasso. Handwriting is left to the pen.
+   * Not in a practice file. Returns whether it did.
+   */
+  private fingerPicksShape(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
+    const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
+    if (!stroke) return false;
+    this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+    return true;
+  }
+
+  /** The same for a table: it is selected with the ink in its cells, as a lasso tap takes it. */
+  private fingerPicksTable(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = lassoFilterFor(this.toolState);
+    const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
+    if (!table) return false;
+    this.select(page.id, this.tableWithInk(page, table, filter));
     return true;
   }
 
