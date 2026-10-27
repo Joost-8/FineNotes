@@ -145,6 +145,14 @@ describe("erasedPieces", () => {
     });
   });
 
+  it("keep a calligraphy stroke's flat nib, as the surviving pieces do, but not a shape's", () => {
+    const rect = [{ minX: 40, maxX: 60, minY: 0, maxY: 20 }];
+    const pen = { id: "c", color: "#1a1a1a", size: 4, tool: "pen" as const, nib: 30 };
+    const pts = [0, 10, 0.5, 100, 10, 0.5];
+    expect(erasedPieces({ ...pen, pts }, rect)[0].nib).toBe(30);
+    expect("nib" in erasedPieces({ ...pen, pts, shape: "line" }, rect)[0]).toBe(false);
+  });
+
   it("keep the stroke's own round end, trimming only where a piece stays", () => {
     const pen = { id: "p", color: "#1a1a1a", size: 4, tool: "pen" as const };
     const line = { ...pen, pts: [0, 10, 0.2, 50, 10, 0.4, 100, 10, 0.6] };

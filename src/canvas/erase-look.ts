@@ -116,7 +116,8 @@ export function erasedPieces(stroke: Stroke, rects: readonly EraseRect[]): Strok
       tool: stroke.tool,
       pts,
     };
-    if (stroke.nib !== undefined) piece.nib = stroke.nib;
+    // As the surviving pieces: calligraphy keeps its flat nib, a shape does not.
+    if (stroke.nib !== undefined && stroke.shape === undefined) piece.nib = stroke.nib;
     if (stroke.shape !== undefined) piece.shape = stroke.shape;
     if (stroke.dash !== undefined) piece.dash = stroke.dash;
     if (stroke.radius !== undefined) piece.radius = stroke.radius;
