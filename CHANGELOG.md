@@ -21,12 +21,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
-- **Choose your tools in Settings.** Settings › Pens and shortcuts › Toolbar
-  lists every tool in one of three places: on the bar (drag to reorder, the
-  top is leftmost), in the More tools menu, or not shown at all. Changes show
-  at once in every open notebook. The last entry of the More tools menu,
-  "More tools", opens the settings right at that list; it replaces the
-  Customize toolbar dialog.
+- **Hide toolbar tools.** Customize toolbar, at the end of the More tools
+  menu, now has three places for every tool: on the bar (drag to reorder,
+  the top is leftmost), in the More tools menu, or hidden. A tool in the
+  menu hides with its crossed eye, and (+) brings it back.
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's

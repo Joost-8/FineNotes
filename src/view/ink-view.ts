@@ -118,6 +118,7 @@ import {
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
 import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
+import { CustomizeToolbarModal } from "./customize-toolbar-modal";
 import type { ToolbarLayout } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
@@ -976,9 +977,19 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
-  /** Show the tool bar's tools in their places (the Toolbar setting changed). */
+  /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
   setToolbarItems(layout: ToolbarLayout): void {
     this.toolbar?.setItems(layout.bar, layout.off);
+  }
+
+  /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
+  private openCustomizeToolbar(): void {
+    const settings = this.settings;
+    new CustomizeToolbarModal(
+      this.app,
+      { bar: settings.toolbarItems, off: settings.toolbarOff },
+      (layout) => this.plugin.saveToolbarLayout(layout),
+    ).open();
   }
 
   /**
@@ -2489,7 +2500,7 @@ export class InkView extends TextFileView {
         },
         onStickyColor: (color) => this.armStickyNote(color),
         onStickyCancel: () => this.armStickyNote(null),
-        onMoreTools: () => this.plugin.openToolbarSettings(),
+        onCustomize: () => this.openCustomizeToolbar(),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),

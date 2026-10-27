@@ -1142,7 +1142,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Open this plugin's settings tab (an undocumented but long-stable app API). */
-  openSettingsTab(fallback = "Open Settings → FineNotes to set up AI."): void {
+  openSettingsTab(): void {
     const setting = (
       this.app as unknown as {
         setting?: { open?: () => void; openTabById?: (id: string) => unknown };
@@ -1153,7 +1153,7 @@ export default class GoodObsidianPlugin extends Plugin {
       setting.openTabById(this.manifest.id);
       return;
     }
-    new Notice(fallback);
+    new Notice("Open Settings → FineNotes to set up AI.");
   }
 
   /**
@@ -1305,22 +1305,13 @@ export default class GoodObsidianPlugin extends Plugin {
     }).open();
   }
 
-  /** The Toolbar row changed the bar or its menu: every open notebook shows the new one. */
+  /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
   saveToolbarLayout(layout: ToolbarLayout): void {
     const toolbar = normalizeLayout(layout.bar, layout.off);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
-  }
-
-  /**
-   * The More tools menu's last entry: Settings › Pens and shortcuts, opened
-   * and scrolled to the Toolbar row, where the tools are added and removed.
-   */
-  openToolbarSettings(): void {
-    this.settingTab?.revealToolbarRow();
-    this.openSettingsTab("Open Settings → FineNotes → Pens and shortcuts → Toolbar.");
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */

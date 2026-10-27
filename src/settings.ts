@@ -134,7 +134,6 @@ import {
 import { pushRecentColor } from "./model/colors";
 import { relativeLuminance } from "./model/cover";
 import { SavedPenModal } from "./view/saved-pen-modal";
-import { ToolbarItemsList } from "./view/toolbar-items-list";
 import type { BarrelAction } from "./input/pen-modifiers";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 
@@ -327,13 +326,6 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
-  toolbar:
-    "Which tools the toolbar shows, left to right, which wait in its More tools menu, and " +
-    "which are not shown at all. Drag a tool by its grip to move it along the bar: the top " +
-    "is leftmost. The pen always stays on the bar. The Hand moves the page and the Magnifier " +
-    "zooms it. Only stylus mode makes the page listen to the pen alone: a palm, a finger or a " +
-    "mouse resting on it moves neither the ink nor the page; its button turns it on and off, " +
-    'and the command "Turn Only stylus mode on or off" can take a hotkey.',
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -630,12 +622,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
   /** Which saved pen each drawn pen row shows, behind the one click listener it gets. */
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
-  /**
-   * Until when the Toolbar row is scrolled to as it is drawn on the page
-   * (ms since the epoch): More tools opened the settings.
-   */
-  private revealToolbarUntil = 0;
-
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -1106,8 +1092,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row. The Toolbar row, last, is where the bar's tools are placed;
-   * the More tools menu's last entry opens the settings at it.
+   * from its row. Only stylus mode, the Hand and the Magnifier are toolbar
+   * items, placed with Customize toolbar, not settings.
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
@@ -1164,61 +1150,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.shortcuts,
         ),
-        this.info(
-          drawnRow("Toolbar", "", (s) => this.drawToolbarRow(s), [
-            "customize toolbar",
-            "more tools",
-            "tools",
-            "hand",
-            "magnifier",
-            "zoom",
-            "only stylus mode",
-            "palm rejection",
-            "stylus",
-          ]),
-          DESC.toolbar,
-        ),
       ],
       () => [{ text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` }],
     );
-  }
-
-  /**
-   * Scroll to the Toolbar row when it is next drawn on the page, within a few
-   * seconds (`openToolbarSettings`). A draw that is not on the page (yet)
-   * leaves it to the next one.
-   */
-  revealToolbarRow(): void {
-    this.revealToolbarUntil = Date.now() + 5000;
-  }
-
-  /**
-   * The Toolbar row: its tools in their three places, under its name, each
-   * change live on every open notebook's bar. Opened from More tools, it is
-   * revealed as a search result is: flashed, which unfolds its section
-   * (`revealOnFlash`), and scrolled to.
-   */
-  private drawToolbarRow(setting: Setting): void {
-    const settingEl = setting.settingEl;
-    settingEl.addClass("goodobsidian-toolbar-items-row");
-    removeOwn(settingEl, "goodobsidian-toolbar-items");
-    const settings = this.plugin.settings;
-    new ToolbarItemsList(
-      settingEl.createDiv({ cls: "goodobsidian-toolbar-items" }),
-      { bar: settings.toolbarItems, off: settings.toolbarOff },
-      (layout) => this.plugin.saveToolbarLayout(layout),
-    );
-    if (Date.now() > this.revealToolbarUntil) return;
-    // After Obsidian has put the row in the page.
-    window.setTimeout(() => {
-      if (Date.now() > this.revealToolbarUntil || !settingEl.isConnected) return;
-      this.revealToolbarUntil = 0;
-      settingEl.addClass("is-flashing");
-      // After the flash has unfolded the section and centred the row: the
-      // row is taller than most windows, so its name goes to the top.
-      window.setTimeout(() => settingEl.scrollIntoView({ block: "start" }), 0);
-      window.setTimeout(() => settingEl.removeClass("is-flashing"), 750);
-    }, 50);
   }
 
   private savePens(pens: readonly SavedPen[]): void {

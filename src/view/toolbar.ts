@@ -612,12 +612,8 @@ export interface ToolbarCallbacks {
   onStickyColor?: (color: string) => void;
   /** The sticky notes button was tapped while a note waited to be placed: it waits no more. */
   onStickyCancel?: () => void;
-  /**
-   * The accessories menu's last entry, "More tools": where the bar's tools are
-   * placed (Settings › Pens and shortcuts › Toolbar). Without it the menu has
-   * no such row.
-   */
-  onMoreTools?: () => void;
+  /** Open "Customize toolbar". Without it the accessories menu has no such row. */
+  onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
   /** Only stylus mode's toolbar button was tapped: turn the mode on or off. */
@@ -811,7 +807,7 @@ export class Toolbar {
   private items: BarItemId[] = [...DEFAULT_BAR];
   /** The centre items shown nowhere, not even in the accessories menu. */
   private offItems: BarItemId[] = [];
-  /** The last button of the tools: the hidden items and "More tools". */
+  /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
   /** Only stylus mode's state, for its button's toggle and on/off mark. */
   private onlyStylusOn = false;
@@ -1068,7 +1064,7 @@ export class Toolbar {
     tool("text", "type", "Text box (T)");
     tool("shape", "shapes", "Shapes (S)");
     // Page navigation tools. Off the bar by default: they wait in the
-    // accessories menu until the Toolbar setting puts them on the bar.
+    // accessories menu until "Customize toolbar" puts them on the bar.
     tool("pan", "hand", "Hand — move the page");
     tool("zoom", "zoom-in", "Magnifier — zoom");
     if (cb.onOnlyStylusMode) {
@@ -1221,7 +1217,7 @@ export class Toolbar {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
-      // the bar in the Toolbar setting): nothing to fold.
+      // the bar in "Customize toolbar"): nothing to fold.
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
       this.measureCrowding();
@@ -1506,9 +1502,8 @@ export class Toolbar {
 
   /**
    * Goodnotes' accessories menu, hanging from the last button of the tools:
-   * every item taken off the bar and not turned off, which a tap runs as its
-   * button would, then "More tools", which opens the settings where the
-   * tools are placed.
+   * every item taken off the bar and not hidden, which a tap runs as its
+   * button would, then "Customize toolbar".
    */
   private toggleAccessories(anchor: HTMLElement): void {
     if (this.popoverKind === "accessories") {
@@ -1538,17 +1533,17 @@ export class Toolbar {
           run(anchor);
         });
       }
-      if (this.callbacks.onMoreTools) {
+      if (this.callbacks.onCustomize) {
         if (hidden.length > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
-        const more = body.createEl("button", {
+        const customize = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
           attr: { role: "menuitem" },
         });
-        iconOrText(more.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
-        more.createSpan({ text: "More tools" });
-        more.addEventListener("click", () => {
+        iconOrText(customize.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
+        customize.createSpan({ text: "Customize toolbar" });
+        customize.addEventListener("click", () => {
           this.closePopover();
-          this.callbacks.onMoreTools?.();
+          this.callbacks.onCustomize?.();
         });
       }
       this.keepPopoverInside(anchor);

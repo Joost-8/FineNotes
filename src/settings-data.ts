@@ -273,7 +273,7 @@ export interface GoodObsidianSettings {
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
   /**
-   * The tools the bar shows, left to right (the Toolbar row); the rest wait
+   * The tools the bar shows, left to right ("Customize toolbar"); the rest wait
    * in its More tools menu, except those in `toolbarOff`.
    */
   toolbarItems: BarItemId[];

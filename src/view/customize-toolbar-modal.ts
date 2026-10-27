@@ -1,29 +1,30 @@
 /**
- * The Toolbar row of Settings › Pens and shortcuts: which tools the bar
- * shows, left to right, which wait in its More tools menu, and which are not
- * shown at all (`toolbar-layout.ts`). Goodnotes' Customize toolbar sheet
- * (Joost's recording, 2026-10-25) in one list instead of its two tabs, with
- * a third place:
+ * "Customize toolbar", the last entry of the tool bar's More tools menu:
+ * which tools the bar shows, left to right, which wait in the More tools
+ * menu, and which are hidden altogether (`toolbar-layout.ts`). Goodnotes'
+ * own sheet (Joost's recording, 2026-10-25) in one list instead of its two
+ * tabs, with a third place:
  *
+ *   Customize toolbar                              ✕
  *   ON THE TOOLBAR
  *   (−)  ⌇  Lasso                                   ⋮⋮
  *        ✎  Pen                                     ⋮⋮   (the pen never leaves)
  *   …
  *   IN MORE TOOLS
- *   (+)  ✋  Hand                                    (eye-off)
+ *   (+)  ✋  Hand                               (eye-off)
  *   …
- *   NOT SHOWN
+ *   HIDDEN
  *   (+)  🎤  Record audio
  *   Reset toolbar
  *
  * A row's grip drags it to another place on the bar (top is leftmost). (−)
  * moves a bar item into More tools, (+) moves an item one place up (from
- * More tools onto the bar's right end, from Not shown into More tools), and
- * the crossed eye takes an item out of More tools. Every change is live: it
+ * More tools onto the bar's right end, from Hidden into More tools), and
+ * the crossed eye hides an item of More tools. Every change is live: it
  * goes to `onChange` at once, and every open notebook's bar follows.
  */
 
-import { setIcon } from "obsidian";
+import { type App, Modal, setIcon } from "obsidian";
 import {
   ALWAYS_SHOWN,
   BAR_ITEMS,
@@ -40,17 +41,29 @@ import {
   sameLayout,
 } from "./toolbar-layout";
 
-export class ToolbarItemsList {
+export class CustomizeToolbarModal extends Modal {
   private layout: ToolbarLayout;
+  private listEl: HTMLElement | null = null;
 
   constructor(
-    private readonly el: HTMLElement,
+    app: App,
     layout: ToolbarLayout,
     private readonly onChange: (layout: ToolbarLayout) => void,
   ) {
+    super(app);
     this.layout = { bar: [...layout.bar], off: [...layout.off] };
-    this.el.addClass("goodobsidian-customize-body");
+  }
+
+  override onOpen(): void {
+    this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-customize-modal");
+    this.titleEl.setText("Customize toolbar");
+    this.listEl = this.contentEl.createDiv({ cls: "goodobsidian-customize-body" });
     this.render();
+  }
+
+  override onClose(): void {
+    this.contentEl.empty();
+    this.listEl = null;
   }
 
   private set(layout: ToolbarLayout): void {
@@ -65,7 +78,8 @@ export class ToolbarItemsList {
   }
 
   private render(): void {
-    const body = this.el;
+    const body = this.listEl;
+    if (!body) return;
     body.empty();
     body.createDiv({ cls: "goodobsidian-customize-label", text: "On the toolbar" });
     const bar = body.createDiv({ cls: "goodobsidian-customize-list is-shown" });
@@ -79,11 +93,11 @@ export class ToolbarItemsList {
       for (const id of menu) this.menuRow(list, id);
     }
 
-    const off = BAR_ITEMS.filter((id) => this.layout.off.includes(id));
-    if (off.length > 0) {
-      body.createDiv({ cls: "goodobsidian-customize-label", text: "Not shown" });
+    const hidden = BAR_ITEMS.filter((id) => this.layout.off.includes(id));
+    if (hidden.length > 0) {
+      body.createDiv({ cls: "goodobsidian-customize-label", text: "Hidden" });
       const list = this.list(body);
-      for (const id of off) this.offRow(list, id);
+      for (const id of hidden) this.hiddenRow(list, id);
     }
 
     const reset = body.createEl("button", {
@@ -151,10 +165,10 @@ export class ToolbarItemsList {
     const name = BAR_ITEM_LABELS[id];
     this.mover(row, id, "bar", "circle-plus", "is-add", `Put ${name} on the toolbar`);
     this.rowStart(row, id);
-    this.mover(row, id, "off", "eye-off", "is-off", `Stop showing ${name}`);
+    this.mover(row, id, "off", "eye-off", "is-off", `Hide ${name}`);
   }
 
-  private offRow(list: HTMLElement, id: BarItemId): void {
+  private hiddenRow(list: HTMLElement, id: BarItemId): void {
     const row = this.row(list);
     this.mover(
       row,

@@ -1,9 +1,8 @@
 /**
  * Which tools the tool bar shows, in what order, which wait in its
- * accessories menu ("More tools"), and which are not shown at all: the model
- * behind the Toolbar row in Settings › Pens and shortcuts, after Goodnotes'
- * own Customize toolbar (Joost's recording, 2026-10-25), in one list rather
- * than its two tabs.
+ * accessories menu ("More tools"), and which are hidden altogether: the
+ * model behind "Customize toolbar", after Goodnotes' own (Joost's recording,
+ * 2026-10-25), in one list rather than its two tabs.
  *
  * Every item has one of three places. The bar's centre holds the items in
  * `bar` order, left to right; the items in `off` are shown nowhere; every
