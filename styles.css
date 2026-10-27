@@ -12626,6 +12626,77 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   font-size: 16px;
 }
 
+/* The reminder to learn the handwriting again (handwriting-learning.ts
+   showRelearnNotice): a wider notice, the learn icon in a soft accent disc,
+   a title and one line, and a full-size button. On the notice's own
+   colours, whatever the theme gives it. */
+.notice:has(.goodobsidian-relearn-notice) {
+  max-width: min(400px, calc(100vw - 20px));
+  padding: 14px 16px;
+  border-radius: var(--gob-radius-l);
+  white-space: normal;
+}
+
+.goodobsidian-relearn-notice {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: 12px;
+  align-items: start;
+}
+
+.goodobsidian-relearn-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: hsla(var(--interactive-accent-hsl), 0.28);
+}
+
+.goodobsidian-relearn-notice-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-relearn-notice-words {
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.goodobsidian-relearn-notice-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.goodobsidian-relearn-notice-body {
+  margin-top: 2px;
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+  opacity: 0.8;
+}
+
+/* Obsidian's iPad button padding (0,2,1) is matched and comes later. */
+.notice button.goodobsidian-relearn-notice-button {
+  grid-column: 2;
+  justify-self: start;
+  height: 36px;
+  margin-top: 12px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: var(--interactive-accent);
+  box-shadow: none;
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.notice button.goodobsidian-relearn-notice-button:hover {
+  background: var(--interactive-accent-hover);
+}
+
 /* A notice with an action in it (pages moved, with Undo). */
 .notice .goodobsidian-notice-action.clickable-icon {
   display: inline-flex;

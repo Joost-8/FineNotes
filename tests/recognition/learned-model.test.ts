@@ -21,7 +21,7 @@ import {
   nextSheetAction,
   RELEARN_AFTER,
   relearnDue,
-  relearnMessage,
+  relearnText,
   sheetText,
   sheetUse,
   undoText,
@@ -161,8 +161,12 @@ describe("the reminder to learn again", () => {
   });
 
   it("says how many, and whether there is a model to learn again", () => {
-    expect(relearnMessage(50, true)).toContain("50 words corrected since it last learned");
-    expect(relearnMessage(50, false)).toContain("can learn your handwriting from them");
+    expect(relearnText(50, true)).toEqual({
+      title: "Learn your handwriting again",
+      body: "50 words corrected since the last time.",
+    });
+    expect(relearnText(60, false).title).toBe("Learn your handwriting");
+    expect(relearnText(60, false).body).toContain("60 words corrected");
   });
 });
 

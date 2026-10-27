@@ -18,7 +18,7 @@
  * learned model to a "Use Grape" button that deleted it, 2026-10-21).
  */
 
-import { type App, Notice, type TFile, normalizePath } from "obsidian";
+import { type App, Notice, type TFile, normalizePath, setIcon } from "obsidian";
 import { correctionLines, parseCorrections } from "../recognition/hwr/corrections";
 import { correctionsPath } from "./word-check";
 import { PRACTICE_FILE_SUFFIX } from "../constants";
@@ -33,7 +33,7 @@ import {
   type LearnedSource,
   MIN_PRACTICE_LINES,
   type PracticeSheet,
-  relearnMessage,
+  relearnText,
 } from "../recognition/hwr/learned-model";
 import { errorMessage } from "../util/errors";
 
@@ -302,18 +302,25 @@ async function saveLearned(host: LearningHost, tuned: HwrTuned): Promise<void> {
 }
 
 /**
- * The reminder to learn again (`relearnDue`): its words, and a button that
- * starts learning. It stays until tapped or closed.
+ * The reminder to learn again (`relearnDue`): the learn icon (the AI menu's),
+ * a title, how many words, and a button that starts learning. It stays
+ * until tapped; a tap anywhere else on it closes it, as on any notice.
  */
 export function showRelearnNotice(fresh: number, learned: boolean, learn: () => void): Notice {
+  const text = relearnText(fresh, learned);
   const notice = new Notice(
     createFragment((fragment) => {
-      fragment.createSpan({ text: relearnMessage(fresh, learned) });
-      const button = fragment.createEl("button", {
-        cls: "goodobsidian-notice-action clickable-icon",
+      const card = fragment.createDiv({ cls: "goodobsidian-relearn-notice" });
+      setIcon(card.createDiv({ cls: "goodobsidian-relearn-notice-icon" }), "graduation-cap");
+      const words = card.createDiv({ cls: "goodobsidian-relearn-notice-words" });
+      words.createDiv({ cls: "goodobsidian-relearn-notice-title", text: text.title });
+      words.createDiv({ cls: "goodobsidian-relearn-notice-body", text: text.body });
+      const button = card.createEl("button", {
+        cls: "goodobsidian-relearn-notice-button mod-cta",
         text: learned ? "Learn again" : "Learn now",
       });
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
         notice.hide();
         learn();
       });

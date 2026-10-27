@@ -57,11 +57,17 @@ export function relearnDue(
   return since >= RELEARN_AFTER ? corrections - learned : 0;
 }
 
-/** The reminder's words, for `fresh` new corrected words. */
-export function relearnMessage(fresh: number, learned: boolean): string {
+/** The reminder's words, for `fresh` new corrected words: a title and one line under it. */
+export function relearnText(fresh: number, learned: boolean): { title: string; body: string } {
   return learned
-    ? `FineNotes: ${fresh} words corrected since it last learned your handwriting.`
-    : `FineNotes: ${fresh} words corrected. It can learn your handwriting from them.`;
+    ? {
+        title: "Learn your handwriting again",
+        body: `${fresh} words corrected since the last time.`,
+      }
+    : {
+        title: "Learn your handwriting",
+        body: `${fresh} words corrected: enough to learn from.`,
+      };
 }
 
 /** "21 Oct 2026": a learned date as the settings show it, the same on every device. */
