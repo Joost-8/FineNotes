@@ -21,6 +21,8 @@ export interface UpdateNoticeOptions {
   current: string;
   /** Whether checking is on (Settings › Advanced). */
   enabled: () => boolean;
+  /** Whether "Update available" may pop up, or the dot alone says it. */
+  remind: () => boolean;
   /** This device's record of the last check, as stored. */
   load: () => unknown;
   save: (record: UpdateRecord) => void;
@@ -51,13 +53,21 @@ export class UpdateNotice {
    * null; {@link announced} records that it was.
    */
   pendingAnnouncement(): string | null {
-    if (!this.options.enabled()) return null;
-    return toAnnounce(updateRecordOf(this.options.load()), this.options.current);
+    if (!this.options.enabled() || !this.options.remind()) return null;
+    return toAnnounce(updateRecordOf(this.options.load()), this.options.current, this.now());
   }
 
-  /** "Update available" was shown for `version` on this device: once is enough. */
+  /** "Update available" was shown for `version` on this device: not again for two days. */
   announced(version: string): void {
-    this.options.save({ ...updateRecordOf(this.options.load()), announced: version });
+    this.options.save({
+      ...updateRecordOf(this.options.load()),
+      announced: version,
+      announcedAt: this.now(),
+    });
+  }
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
   }
 
   /** Checking was switched on or off: the marks follow. */
@@ -72,7 +82,7 @@ export class UpdateNotice {
    */
   async check(): Promise<void> {
     if (!this.options.enabled()) return;
-    const now = (this.options.now ?? Date.now)();
+    const now = this.now();
     if (!checkDue(updateRecordOf(this.options.load()), now)) return;
     let latest: string | null = null;
     try {

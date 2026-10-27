@@ -2,7 +2,9 @@
  * The toolbar's settings button: this notebook's own settings, the ones that
  * belong to one notebook rather than to every one.
  *
- *   [cover] Name (tap to rename)          the notebook itself, first
+ *   FineNotes 2.6.0 is out      [Update]  only while one is out
+ *   Don't show again
+ *   [cover] Name (tap to rename)          the notebook itself
  *           23 pages · 911 KB · edited 19 Oct
  *           folder
  *   Pages         Scroll direction · Page numbers · Header
@@ -60,6 +62,12 @@ export interface NoteSettingsHost {
   openPluginSettings: () => void;
   /** A newer FineNotes that is out, marked on the way to the settings; null when none. */
   update?: string | null;
+  /** Open FineNotes' page under Community plugins, with Obsidian's Update button. */
+  openUpdate?: () => void;
+  /** Whether "Update available" still pops up under the gear every other day. */
+  updateReminders?: () => boolean;
+  /** "Don't show again": the gear's dot alone says it from now on. */
+  stopUpdateReminders?: () => void;
   /**
    * Paint the cover page, title and all, into `canvas` at `cssWidth`.
    * Resolves `false` when there is no cover to paint.
@@ -112,10 +120,45 @@ export class NoteSettingsModal extends Modal {
     this.keyboard.end();
     contentEl.empty();
     const info = this.host.info();
+    this.renderUpdate(contentEl);
     this.renderSummary(contentEl, info);
     this.renderPages(contentEl);
     this.renderEditing(contentEl);
     this.renderFooter(contentEl, info);
+  }
+
+  /**
+   * While a newer FineNotes is out, above the notebook: its version and
+   * Obsidian's Update a tap away, so it is reached from the gear as well as
+   * from the "Update available" bubble; and, while that bubble still comes
+   * back, the way to stop it.
+   */
+  private renderUpdate(parent: HTMLElement): void {
+    const { update, openUpdate } = this.host;
+    if (!update || !openUpdate) return;
+    const box = parent.createDiv({
+      cls: "goodobsidian-callout goodobsidian-update-callout goodobsidian-ns-update",
+    });
+    const line = box.createDiv({ cls: "goodobsidian-callout-title" });
+    line.createSpan({ text: `FineNotes ${update} is out` });
+    const open = line.createEl("button", { cls: "mod-cta", text: "Update" });
+    open.setAttribute("aria-label", "Open FineNotes in Community plugins to update it");
+    open.addEventListener("click", () => {
+      this.close();
+      openUpdate();
+    });
+    const stop = this.host.stopUpdateReminders;
+    if (!stop || this.host.updateReminders?.() !== true) return;
+    const mute = box.createEl("button", {
+      cls: "goodobsidian-ns-update-mute clickable-icon",
+      text: "Don't show again",
+      attr: { type: "button" },
+    });
+    mute.setAttribute("aria-label", 'Stop showing "Update available"; the gear\'s dot stays');
+    mute.addEventListener("click", () => {
+      stop();
+      mute.remove();
+    });
   }
 
   /** A titled group of rows: the title above, the rows in one rounded frame. */

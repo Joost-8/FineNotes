@@ -2,8 +2,10 @@
  * "A newer FineNotes is out" (2.4.2). Once a day the plugin reads the
  * version in `manifest.json` on GitHub's `main`, the same file Obsidian's
  * own updater reads, so a beta (which never touches `main`) is never
- * announced. It only says so: updating stays Obsidian's, through
- * Settings › Community plugins, which the mark's Update button opens.
+ * announced. It only says so: updating stays Obsidian's, on FineNotes' page
+ * under Community plugins, which every Update button opens. "Update
+ * available" comes back every other day until then (2.5.1), unless the user
+ * keeps to the dot alone (Settings › Advanced › Updates).
  *
  * What was last read is kept per device (`app.saveLocalStorage`), not in
  * the synced settings, so two devices never write the same file for it.
@@ -21,14 +23,19 @@ export const PLUGIN_PAGE_URL = "obsidian://show-plugin?id=finenotes";
 /** How often the version is read at most. */
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/** How long "Update available" stays away once shown, until the update is installed. */
+export const UPDATE_REMIND_INTERVAL_MS = 2 * UPDATE_CHECK_INTERVAL_MS;
+
 /**
  * What the last check found: when it ran (ms since 1970) and the version on
- * `main`; and the version whose "Update available" this device has shown.
+ * `main`; and the version whose "Update available" this device last showed,
+ * and when.
  */
 export interface UpdateRecord {
   checkedAt: number;
   latest: string;
   announced?: string;
+  announcedAt?: number;
 }
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
@@ -66,11 +73,12 @@ export function versionOfManifest(json: unknown): string | null {
 /** A stored record as a record; anything else reads as "never checked". */
 export function updateRecordOf(value: unknown): UpdateRecord {
   if (typeof value === "object" && value !== null) {
-    const { checkedAt, latest, announced } = value as Record<string, unknown>;
+    const { checkedAt, latest, announced, announcedAt } = value as Record<string, unknown>;
     if (typeof checkedAt === "number" && Number.isFinite(checkedAt) && typeof latest === "string") {
-      return typeof announced === "string"
-        ? { checkedAt, latest, announced }
-        : { checkedAt, latest };
+      if (typeof announced !== "string") return { checkedAt, latest };
+      return typeof announcedAt === "number" && Number.isFinite(announcedAt)
+        ? { checkedAt, latest, announced, announcedAt }
+        : { checkedAt, latest, announced };
     }
   }
   return { checkedAt: 0, latest: "" };
@@ -88,10 +96,16 @@ export function newerVersion(record: UpdateRecord, current: string): string | nu
 }
 
 /**
- * The newer version whose "Update available" is still to be shown on this
- * device, or null: it is said once per version, the dot stays.
+ * The newer version whose "Update available" is due on this device, or
+ * null: said at once for a new version, then again every other day until it
+ * is installed (a record from before `announcedAt` counts as due). The dot
+ * stays throughout.
  */
-export function toAnnounce(record: UpdateRecord, current: string): string | null {
+export function toAnnounce(record: UpdateRecord, current: string, now: number): string | null {
   const newer = newerVersion(record, current);
-  return newer !== null && record.announced !== newer ? newer : null;
+  if (newer === null) return null;
+  if (record.announced !== newer || record.announcedAt === undefined) return newer;
+  const since = now - record.announcedAt;
+  // A clock that went back must not silence it for good.
+  return since >= UPDATE_REMIND_INTERVAL_MS || since < 0 ? newer : null;
 }

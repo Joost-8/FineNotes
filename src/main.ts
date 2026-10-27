@@ -90,6 +90,7 @@ import {
 } from "./recognition/openrouter-auth";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { WhatsNewModal } from "./ui/whats-new-modal";
+import { PLUGIN_PAGE_URL } from "./model/update-check";
 import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
@@ -281,6 +282,7 @@ export default class GoodObsidianPlugin extends Plugin {
   readonly updates = new UpdateNotice({
     current: this.manifest.version,
     enabled: () => this.settings.checkForUpdates,
+    remind: () => this.settings.updateReminders,
     load: () => this.app.loadLocalStorage(UPDATE_KEY) as unknown,
     save: (record) => this.app.saveLocalStorage(UPDATE_KEY, record),
   });
@@ -1028,6 +1030,18 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Close the settings window, to show a note opened from it (the same app API as below). */
   closeSettings(): void {
     (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
+  }
+
+  /** FineNotes' page under Community plugins, where Obsidian's own Update button is. */
+  openUpdatePage(): void {
+    window.open(PLUGIN_PAGE_URL);
+  }
+
+  /** "Update available" pops up every other day (on), or the gear's dot alone says it. */
+  async setUpdateReminders(on: boolean): Promise<void> {
+    this.settings.updateReminders = on;
+    await this.saveSettings();
+    this.updates.changed();
   }
 
   /** Open this plugin's settings tab (an undocumented but long-stable app API). */

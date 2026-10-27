@@ -432,7 +432,7 @@ describe("the rows", () => {
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
-      [ADVANCED, "Check for updates", "toggle:checkForUpdates"],
+      [ADVANCED, "Updates", "dropdown:checkForUpdates"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
       [ADVANCED, "Handwriting model file", "text:hwrModelPath"],
       [ADVANCED, "More", "action"],
@@ -631,7 +631,7 @@ describe("which rows show", () => {
       "Set up an AI service",
       "Pressure-sensitive pens",
       "Desynchronized canvas",
-      "Check for updates",
+      "Updates",
       "Input debug overlay",
       "Handwriting model file",
       "More",
@@ -693,13 +693,27 @@ describe("which rows show", () => {
   it("switching update checks tells the marks at once, and checks when switched on", async () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin);
-    await tab.setControlValue("checkForUpdates", false);
+    expect(tab.getControlValue("checkForUpdates")).toBe("remind");
+    await tab.setControlValue("checkForUpdates", "off");
     expect(plugin.settings.checkForUpdates).toBe(false);
+    expect(tab.getControlValue("checkForUpdates")).toBe("off");
     expect(plugin.updates.changed).toHaveBeenCalledTimes(1);
     expect(plugin.updates.check).not.toHaveBeenCalled();
-    await tab.setControlValue("checkForUpdates", true);
+    await tab.setControlValue("checkForUpdates", "remind");
+    expect(plugin.settings.checkForUpdates).toBe(true);
+    expect(plugin.settings.updateReminders).toBe(true);
     expect(plugin.updates.check).toHaveBeenCalledTimes(1);
     expect(plugin.calls).toContain("save");
+  });
+
+  it('"Dot on the gear" keeps checking and stops the pop-up; the choice reads back', async () => {
+    const plugin = makePlugin();
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("checkForUpdates", "dot");
+    expect(plugin.settings.checkForUpdates).toBe(true);
+    expect(plugin.settings.updateReminders).toBe(false);
+    expect(tab.getControlValue("checkForUpdates")).toBe("dot");
+    expect(plugin.updates.changed).toHaveBeenCalledTimes(1);
   });
 
   it("shows the Scribble tip on an iPad only, in one line, until it is dismissed", () => {

@@ -228,6 +228,19 @@ const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   arrow: "Arrow",
 };
 
+/** "Updates": how a newer FineNotes is told, as its dropdown names the choices. */
+const UPDATE_CHOICES = {
+  remind: "Remind me",
+  dot: "Dot on the gear",
+  off: "Off",
+} as const;
+
+/** The "Updates" choice the two stored switches add up to. */
+function updateChoiceOf(settings: GoodObsidianSettings): keyof typeof UPDATE_CHOICES {
+  if (!settings.checkForUpdates) return "off";
+  return settings.updateReminders ? "remind" : "dot";
+}
+
 /** What the barrel button can do, as its dropdown names it. */
 const BARREL_NAMES: Record<BarrelAction, string> = {
   erase: "Erase",
@@ -322,8 +335,9 @@ const DESC = {
   checkForUpdates:
     "Once a day, FineNotes reads the number of its newest release from GitHub " +
     "(github.com/Joost-8/FineNotes) and puts a dot on the toolbar's gear when it is newer. " +
-    "Nothing about you or your notes is sent. Updating is still Obsidian's: its Update " +
-    "button, under Community plugins.",
+    'With Remind me, "Update available" also pops up under the gear every other day until ' +
+    "you update. Nothing about you or your notes is sent. Updating is still Obsidian's: its " +
+    "Update button, under Community plugins.",
   debugHud:
     "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
     "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
@@ -851,6 +865,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   override getControlValue(key: string): unknown {
+    if (key === "checkForUpdates") return updateChoiceOf(this.plugin.settings);
     return shownValue(this.plugin.settings, key);
   }
 
@@ -872,11 +887,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       return;
     }
     if (key === "checkForUpdates") {
-      this.plugin.settings.checkForUpdates = value === true;
+      // One choice, two switches: whether to check, and whether to pop up.
+      const on = value !== "off";
+      this.plugin.settings.checkForUpdates = on;
+      this.plugin.settings.updateReminders = value !== "dot";
       await this.plugin.saveSettings();
       // The marks follow at once; switched on, the check runs if it is due.
       this.plugin.updates.changed();
-      if (value === true) void this.plugin.updates.check();
+      if (on) void this.plugin.updates.check();
       this.update();
       return;
     }
@@ -1408,11 +1426,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           DESC.desynchronized,
         ),
         this.info(
-          toggle("checkForUpdates", "Check for updates", "", [
-            "update",
+          dropdown("checkForUpdates", "Updates", "", UPDATE_CHOICES, [
+            "check for updates",
             "new version",
             "release",
             "notification",
+            "reminder",
           ]),
           DESC.checkForUpdates,
         ),

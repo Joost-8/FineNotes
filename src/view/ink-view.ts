@@ -2511,19 +2511,24 @@ export class InkView extends TextFileView {
     );
     this.showFullScreen(this.plugin.fullScreen);
     // The gear's dot while a newer FineNotes is out, and "Update available"
-    // under it until it is tapped or closed, once per version (update-notice.ts).
+    // under it until it is tapped or closed, again every other day until the
+    // update is in (update-notice.ts). A tap goes straight to Obsidian's Update.
     const updates = this.plugin.updates;
     const markUpdate = (): void => {
       this.toolbar?.setUpdateMark(updates.available);
       const version = updates.pendingAnnouncement();
-      if (!version) return;
+      if (!version) {
+        // "Don't show again", or checking switched off, while it showed.
+        this.toolbar?.hideUpdateTip();
+        return;
+      }
       // After the bar is laid out; if it is not yet, the next change or open says it.
       window.setTimeout(() => {
         if (updates.pendingAnnouncement() !== version) return;
         this.toolbar?.showUpdateTip(
           () => {
             updates.announced(version);
-            this.plugin.openSettingsTab();
+            this.plugin.openUpdatePage();
           },
           () => updates.announced(version),
         );
@@ -2919,6 +2924,9 @@ export class InkView extends TextFileView {
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
       update: this.plugin.updates.available,
+      openUpdate: () => this.plugin.openUpdatePage(),
+      updateReminders: () => this.plugin.settings.updateReminders,
+      stopUpdateReminders: () => void this.plugin.setUpdateReminders(false),
       furniture: () => ({ ...this.doc.furniture }),
       setFurniture: (furniture) => {
         apply(new SetFurniture(furniture));

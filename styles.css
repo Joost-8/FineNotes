@@ -12672,8 +12672,24 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   font-size: var(--font-ui-small);
 }
 
+/* The gear's dialog, while a newer FineNotes is out: the same callout as
+   the settings tab's, and under it a quiet "Don't show again". */
+.goodobsidian-ns-update {
+  margin-bottom: var(--size-4-3);
+}
+
+button.goodobsidian-ns-update-mute.clickable-icon {
+  min-height: var(--gob-touch-compact);
+  margin-top: 2px;
+  margin-inline-start: calc(-1 * var(--size-4-1));
+  padding: 0 var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
 /* "Update available" under the gear's dot until its ✕ or a tap on it
-   (Toolbar.showUpdateTip), once per version; a tap opens the settings. */
+   (Toolbar.showUpdateTip), again every other day until the update is in;
+   a tap opens FineNotes under Community plugins. */
 .goodobsidian-update-tip {
   position: fixed;
   z-index: var(--layer-popover, 30);

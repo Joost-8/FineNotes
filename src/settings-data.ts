@@ -103,6 +103,11 @@ export interface GoodObsidianSettings {
   lastSeenVersion: string;
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
   checkForUpdates: boolean;
+  /**
+   * While one is out, "Update available" pops up under the gear every other
+   * day; off, the dot alone says it ("Don't show again").
+   */
+  updateReminders: boolean;
 
   // AI with the user's own key.
   /** The vendor that transcribes pages and answers questions. */
@@ -321,6 +326,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   checkForUpdates: true,
+  updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
   llmApiKey: "",

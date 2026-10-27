@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   UPDATE_CHECK_INTERVAL_MS,
+  UPDATE_REMIND_INTERVAL_MS,
   checkDue,
   compareVersions,
   newerVersion,
@@ -79,16 +80,38 @@ describe("the record and when to check", () => {
     expect(newerVersion({ checkedAt: 0, latest: "" }, "2.4.1")).toBeNull();
   });
 
-  it('says "Update available" once per version, and keeps what it said through a load', () => {
-    const record = updateRecordOf({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2" });
-    expect(record.announced).toBe("2.4.2");
-    expect(toAnnounce(record, "2.4.1")).toBeNull();
-    expect(toAnnounce({ ...record, latest: "2.5.0" }, "2.4.1")).toBe("2.5.0");
-    expect(toAnnounce({ checkedAt: 1, latest: "2.4.2" }, "2.4.1")).toBe("2.4.2");
-    expect(toAnnounce({ checkedAt: 1, latest: "2.4.1" }, "2.4.1")).toBeNull();
+  it('says "Update available" at once, then every other day, and keeps when through a load', () => {
+    const now = 10 * day;
+    const record = updateRecordOf({
+      checkedAt: 1,
+      latest: "2.4.2",
+      announced: "2.4.2",
+      announcedAt: now,
+    });
+    expect(record.announcedAt).toBe(now);
+    expect(toAnnounce(record, "2.4.1", now)).toBeNull();
+    expect(toAnnounce(record, "2.4.1", now + UPDATE_REMIND_INTERVAL_MS - 1)).toBeNull();
+    expect(toAnnounce(record, "2.4.1", now + UPDATE_REMIND_INTERVAL_MS)).toBe("2.4.2");
+    expect(UPDATE_REMIND_INTERVAL_MS).toBe(2 * day);
+    // A clock that went back says it again rather than never.
+    expect(toAnnounce(record, "2.4.1", now - 60_000)).toBe("2.4.2");
+    // A newer version is said at once; updated, nothing is.
+    expect(toAnnounce({ ...record, latest: "2.5.0" }, "2.4.1", now)).toBe("2.5.0");
+    expect(toAnnounce(record, "2.4.2", now + 5 * day)).toBeNull();
+    expect(toAnnounce({ checkedAt: 1, latest: "2.4.2" }, "2.4.1", now)).toBe("2.4.2");
+    expect(toAnnounce({ checkedAt: 1, latest: "2.4.1" }, "2.4.1", now)).toBeNull();
+  });
+
+  it("reads a record from before the reminder as due, and drops odd fields", () => {
+    const old = updateRecordOf({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2" });
+    expect(old).toEqual({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2" });
+    expect(toAnnounce(old, "2.4.1", 10 * day)).toBe("2.4.2");
     expect(updateRecordOf({ checkedAt: 1, latest: "", announced: 3 })).toEqual({
       checkedAt: 1,
       latest: "",
     });
+    expect(
+      updateRecordOf({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2", announcedAt: "x" }),
+    ).toEqual({ checkedAt: 1, latest: "2.4.2", announced: "2.4.2" });
   });
 });

@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Update reminders.** While a newer FineNotes is out, "Update available"
+  comes back under the toolbar's gear every other day until you update, and
+  tapping it opens FineNotes' page in Community plugins, where Obsidian's
+  Update button is. The gear's Notebook settings show the new version with
+  an Update button and "Don't show again". Settings › Advanced › Updates
+  chooses between Remind me (the default), a dot on the gear only, or no
+  checking at all.
+
 ## [2.5.0] - 2026-10-25
 
 ### Added

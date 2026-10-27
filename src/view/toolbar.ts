@@ -1212,7 +1212,7 @@ export class Toolbar {
     const tip = anchor.ownerDocument.body.createDiv({ cls: "goodobsidian-update-tip" });
     const text = tip.createSpan({ cls: "goodobsidian-update-tip-text", text: "Update available" });
     text.setAttribute("role", "button");
-    text.setAttribute("aria-label", "Update available: open FineNotes' settings");
+    text.setAttribute("aria-label", "Update available: open FineNotes in Community plugins");
     text.addEventListener("click", () => {
       this.hideUpdateTip();
       open();
@@ -1254,7 +1254,8 @@ export class Toolbar {
     tip.setCssStyles({ top: `${Math.round(at.bottom + 6)}px`, left: `${Math.round(left)}px` });
   }
 
-  private hideUpdateTip(): void {
+  /** Take "Update available" away, if it shows. */
+  hideUpdateTip(): void {
     this.updateTip?.remove();
     this.updateTip = null;
   }
