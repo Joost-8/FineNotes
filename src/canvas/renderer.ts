@@ -77,6 +77,8 @@ import { type Affine, isNoteInk, noteIdsOf, noteMove } from "../model/sticky-not
 import { paintGraph } from "./graph-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
+import { joinLines, joinedSides } from "./page-join";
+import { relativeLuminance } from "../model/cover";
 import {
   baselineOffset,
   canvasFont,
@@ -373,6 +375,15 @@ const PREVIEW_BUDGET = 24 * 1024 * 1024;
 const INK_PAD = 24;
 /** Tiles this far (device px) beyond the viewport are rasterised ahead of a scroll. */
 const PREFETCH_MARGIN = TILE_SIZE;
+/** A join's mark on the desk: CSS px from the paper, long and wide. Short enough
+ * for the 12 px of desk above and below a row of pages at the fit. */
+const JOIN_MARK_GAP = 3;
+const JOIN_MARK_LENGTH = 7;
+const JOIN_MARK_WIDTH = 2;
+/** Its colour on a dark desk and on a light one. */
+const JOIN_MARK_ON_DARK = "rgba(255, 255, 255, 0.4)";
+const JOIN_MARK_ON_LIGHT = "rgba(0, 0, 0, 0.3)";
+
 /** The page shadow: blur and downward offset, in CSS px. */
 const SHADOW_BLUR = 14;
 const SHADOW_OFFSET_Y = 3;
@@ -862,6 +873,49 @@ export class Renderer {
       ctx.fillStyle = page ? paperColorOf(page, this.paper) : this.paper.paper;
       ctx.fillRect(r.x, r.y, r.w, r.h);
     }
+    this.paintJoinMarks(ctx, boxes);
+  }
+
+  /**
+   * A short mark on the desk at each end of a join between pages on screen
+   * (`canvas/page-join.ts`): where one page ends, shown beside the paper
+   * rather than as a line over it. In screen px, so it reads the same at
+   * every zoom.
+   */
+  private paintJoinMarks(ctx: CanvasRenderingContext2D, boxes: readonly PageBox[]): void {
+    if (this.layout.joined !== true || boxes.length === 0) return;
+    const shown = new Set(boxes.map((box) => box.index));
+    const dpr = this.screen.dpr;
+    const k = this.deviceScale;
+    const gap = JOIN_MARK_GAP * dpr;
+    const length = JOIN_MARK_LENGTH * dpr;
+    ctx.save();
+    ctx.strokeStyle = relativeLuminance(this.desk) < 0.3 ? JOIN_MARK_ON_DARK : JOIN_MARK_ON_LIGHT;
+    ctx.lineWidth = JOIN_MARK_WIDTH * dpr;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const line of joinLines(this.layout)) {
+      if (!shown.has(line.index) && !shown.has(line.index - 1)) continue;
+      if (line.across) {
+        const y = (line.at - this.view.scrollY) * k;
+        const left = (this.originX + line.from * this.view.scale) * dpr;
+        const right = (this.originX + line.to * this.view.scale) * dpr;
+        ctx.moveTo(left - gap, y);
+        ctx.lineTo(left - gap - length, y);
+        ctx.moveTo(right + gap, y);
+        ctx.lineTo(right + gap + length, y);
+      } else {
+        const x = (this.originX + line.at * this.view.scale) * dpr;
+        const top = (line.from - this.view.scrollY) * k;
+        const bottom = (line.to - this.view.scrollY) * k;
+        ctx.moveTo(x, top - gap);
+        ctx.lineTo(x, top - gap - length);
+        ctx.moveTo(x, bottom + gap);
+        ctx.lineTo(x, bottom + gap + length);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**
@@ -1322,10 +1376,24 @@ export class Renderer {
     this.paintTables(ctx, page, region);
     this.paintGraphs(ctx, page, region, level);
     // Inset by half a device pixel so the hairline lies inside the clip.
+    // Not along a join: joined pages read as one sheet, and the desk beside
+    // the join carries a mark instead (`renderBackdrops`).
     const hair = 1 / level;
+    const joined = joinedSides(this.layout, box.index);
+    const [x0, y0] = [hair / 2, hair / 2];
+    const [x1, y1] = [box.width - hair / 2, box.height - hair / 2];
     ctx.strokeStyle = this.paper.edge;
     ctx.lineWidth = hair;
-    ctx.strokeRect(hair / 2, hair / 2, box.width - hair, box.height - hair);
+    if (!joined.top && !joined.bottom && !joined.left && !joined.right) {
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      return;
+    }
+    ctx.beginPath();
+    if (!joined.top) ctx.rect(x0, y0, x1 - x0, 0);
+    if (!joined.bottom) ctx.rect(x0, y1, x1 - x0, 0);
+    if (!joined.left) ctx.rect(x0, y0, 0, y1 - y0);
+    if (!joined.right) ctx.rect(x1, y0, 0, y1 - y0);
+    ctx.stroke();
   }
 
   /**

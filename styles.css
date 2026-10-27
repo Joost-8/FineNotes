@@ -4039,8 +4039,9 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 8px;
 }
 
-/* The ∞: the ✕'s round shape, lit with the accent while it is on. */
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon {
+/* The ∞ and Join pages: the ✕'s round shape, lit with the accent while on. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon,
+.goodobsidian-newnb-header button.goodobsidian-newnb-join.clickable-icon {
   width: 36px;
   height: 36px;
   padding: 0;
@@ -4049,7 +4050,8 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   --icon-size: 20px;
 }
 
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon.is-active {
+.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon.is-active,
+.goodobsidian-newnb-header button.goodobsidian-newnb-join.clickable-icon.is-active {
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }

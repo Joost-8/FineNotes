@@ -128,3 +128,72 @@ export function movePagePts(pts: readonly number[], from: PageBox, to: PageBox):
   }
   return out;
 }
+
+/** Which edges of a page meet the page beside it, in a joined layout. */
+export interface JoinedSides {
+  top: boolean;
+  bottom: boolean;
+  left: boolean;
+  right: boolean;
+}
+
+/**
+ * The edges of page `index` that are a join: no hairline is drawn there, so
+ * joined pages read as one sheet. None when the layout is not joined.
+ */
+export function joinedSides(layout: DocumentLayout, index: number): JoinedSides {
+  const none = { top: false, bottom: false, left: false, right: false };
+  const n = layout.boxes.length;
+  if (layout.joined !== true || index < 0 || index >= n) return none;
+  const before = index > 0;
+  const after = index < n - 1;
+  return layout.direction === "horizontal"
+    ? { ...none, left: before, right: after }
+    : { ...none, top: before, bottom: after };
+}
+
+/**
+ * Where two joined pages meet, layout px: the line between page `index - 1`
+ * and page `index`, at `at` (a y for pages down, an x for pages across),
+ * running from `from` to `to` across the wider of the two pages. The desk
+ * beside each end gets a small mark, so the join shows without a line over
+ * the paper.
+ */
+export interface JoinLine {
+  /** The page below (or to the right of) the join. */
+  index: number;
+  /** True for pages down: the join runs left to right. */
+  across: boolean;
+  at: number;
+  from: number;
+  to: number;
+}
+
+/** Every join of a joined layout, in page order; none when the pages are apart. */
+export function joinLines(layout: DocumentLayout): JoinLine[] {
+  if (layout.joined !== true) return [];
+  const lines: JoinLine[] = [];
+  const across = layout.direction !== "horizontal";
+  for (let i = 1; i < layout.boxes.length; i++) {
+    const a = layout.boxes[i - 1];
+    const b = layout.boxes[i];
+    lines.push(
+      across
+        ? {
+            index: b.index,
+            across,
+            at: b.y,
+            from: Math.min(a.x, b.x),
+            to: Math.max(a.x + a.width, b.x + b.width),
+          }
+        : {
+            index: b.index,
+            across,
+            at: b.x,
+            from: Math.min(a.y, b.y),
+            to: Math.max(a.y + a.height, b.y + b.height),
+          },
+    );
+  }
+  return lines;
+}

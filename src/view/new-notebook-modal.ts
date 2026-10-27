@@ -112,6 +112,7 @@ export class NewNotebookModal extends Modal {
   private folderLabel: HTMLElement | null = null;
   private heading: HTMLElement | null = null;
   private boardToggle: HTMLElement | null = null;
+  private joinToggle: HTMLElement | null = null;
   /** Cover and Paper: what a notebook asks and a board does not. */
   private notebookSections: HTMLElement[] = [];
   /** A board's three paper cards. */
@@ -220,6 +221,18 @@ export class NewNotebookModal extends Modal {
     create.addEventListener("click", () => this.create());
     this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
     const end = header.createDiv({ cls: "goodobsidian-newnb-header-end" });
+    // Join pages (`model/joined-pages.ts`): no gap between them, so writing
+    // runs on over the join. Lit like the ∞; a board has no pages to join.
+    const join = end.createEl("button", {
+      cls: "goodobsidian-newnb-join clickable-icon",
+      attr: { type: "button", "aria-label": "Join pages" },
+    });
+    setIcon(join, "rows-2");
+    join.addEventListener("click", () => {
+      this.choices.joined = !this.choices.joined;
+      this.syncKind();
+    });
+    this.joinToggle = join;
     const board = end.createEl("button", {
       cls: "goodobsidian-newnb-board clickable-icon",
       attr: { type: "button", "aria-label": "Endless board" },
@@ -411,6 +424,10 @@ export class NewNotebookModal extends Modal {
     const board = this.choices.type === "endless";
     this.boardToggle?.toggleClass("is-active", board);
     this.boardToggle?.setAttribute("aria-pressed", String(board));
+    const joined = this.choices.joined === true;
+    this.joinToggle?.toggleClass("is-active", joined);
+    this.joinToggle?.setAttribute("aria-pressed", String(joined));
+    this.joinToggle?.toggleClass("is-hidden", board);
     this.heading?.setText(board ? "New board" : "New notebook");
     this.titleInput?.setAttribute("placeholder", defaultTitle(board ? "endless" : "notebook"));
     for (const section of this.notebookSections) section.toggleClass("is-hidden", board);

@@ -4,7 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { inkReach, inkReachesPage, movePagePts, pagesReached } from "../../src/canvas/page-join";
+import {
+  inkReach,
+  inkReachesPage,
+  joinLines,
+  joinedSides,
+  movePagePts,
+  pagesReached,
+} from "../../src/canvas/page-join";
 import { layoutPages } from "../../src/canvas/page-layout";
 import { type Page, blankPage } from "../../src/model/document";
 
@@ -104,5 +111,51 @@ describe("movePagePts", () => {
     const pts = [1, 2, 0.5, 9];
     expect(movePagePts(pts, down.boxes[0], down.boxes[1])).toEqual([1, -1398, 0.5, 9]);
     expect(pts).toEqual([1, 2, 0.5, 9]);
+  });
+});
+
+describe("joinedSides", () => {
+  it("pages down: the top of every page but the first, the bottom of every page but the last", () => {
+    expect(joinedSides(down, 0)).toEqual({ top: false, bottom: true, left: false, right: false });
+    expect(joinedSides(down, 1)).toEqual({ top: true, bottom: true, left: false, right: false });
+    expect(joinedSides(down, 2)).toEqual({ top: true, bottom: false, left: false, right: false });
+  });
+
+  it("pages across: left and right", () => {
+    expect(joinedSides(across, 0)).toEqual({ top: false, bottom: false, left: false, right: true });
+    expect(joinedSides(across, 2)).toEqual({ top: false, bottom: false, left: true, right: false });
+  });
+
+  it("none for pages apart, a lone page, or a page that is not there", () => {
+    const apart = layoutPages(pages([1000, 1400], [1000, 1400]));
+    const none = { top: false, bottom: false, left: false, right: false };
+    expect(joinedSides(apart, 0)).toEqual(none);
+    expect(joinedSides(layoutPages(pages([1000, 1400]), { joined: true }), 0)).toEqual(none);
+    expect(joinedSides(down, 5)).toEqual(none);
+    expect(joinedSides(down, -1)).toEqual(none);
+  });
+});
+
+describe("joinLines", () => {
+  it("one per join, across the wider page, at the lower page's top", () => {
+    const mixed = layoutPages(pages([1000, 1400], [800, 1400]), { joined: true });
+    const [a, b] = mixed.boxes;
+    expect(joinLines(mixed)).toEqual([
+      { index: 1, across: true, at: b.y, from: a.x, to: a.x + 1000 },
+    ]);
+    expect(joinLines(down).map((line) => line.at)).toEqual([down.boxes[1].y, down.boxes[2].y]);
+  });
+
+  it("pages across: upright lines at each left edge", () => {
+    const lines = joinLines(across);
+    expect(lines.map((line) => [line.index, line.across, line.at])).toEqual([
+      [1, false, across.boxes[1].x],
+      [2, false, across.boxes[2].x],
+    ]);
+    expect(lines[0].to - lines[0].from).toBe(1400);
+  });
+
+  it("none for pages apart", () => {
+    expect(joinLines(layoutPages(pages([1000, 1400], [1000, 1400])))).toEqual([]);
   });
 });
