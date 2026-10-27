@@ -23,6 +23,7 @@ import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { notebookKeyScope } from "./notebook-keys";
+import { onlyStylusChromeOf } from "../input/only-stylus";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
@@ -868,6 +869,25 @@ export class InkView extends TextFileView {
   /** The options pill was moved in some notebook (the plugin's, per device): this one's follows. */
   showPillDock(dock: PillDock): void {
     this.toolbar?.setPillDock(dock);
+  }
+
+  /**
+   * Only stylus mode's settings changed: the mode's button, hand and
+   * magnifier follow in this notebook. The hand or magnifier just hidden
+   * hands back to the pen, so a tool the bar no longer carries is never in
+   * hand.
+   */
+  syncOnlyStylusChrome(): void {
+    const chrome = onlyStylusChromeOf(this.settings);
+    this.toolbar?.setOnlyStylus(chrome);
+    const tool = this.toolState.tool;
+    const gone =
+      (tool === "pan" && !(chrome.mode && chrome.hand)) ||
+      (tool === "zoom" && !(chrome.mode && chrome.zoom));
+    if (!gone) return;
+    this.toolState.tool = "pen";
+    this.surface?.setTool("pen");
+    this.toolbar?.setState(this.toolState);
   }
 
   override async onClose(): Promise<void> {
@@ -2502,12 +2522,17 @@ export class InkView extends TextFileView {
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
+        onZoomIn: () => this.surface?.zoomIn(),
+        onZoomOut: () => this.surface?.zoomOut(),
+        onZoomFit: () => this.surface?.resetView(),
       },
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         items: this.settings.toolbarItems,
+        onlyStylus: onlyStylusChromeOf(this.settings),
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2636,6 +2661,7 @@ export class InkView extends TextFileView {
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];

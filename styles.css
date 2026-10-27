@@ -2310,6 +2310,31 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
+/* The hand tool (Only stylus mode): the same grab as space, but chosen. */
+.goodobsidian-scroll.is-hand-tool,
+.goodobsidian-scroll.is-hand-tool * {
+  cursor: grab;
+}
+
+.goodobsidian-scroll.is-hand-tool.is-hand-dragging,
+.goodobsidian-scroll.is-hand-tool.is-hand-dragging * {
+  cursor: grabbing;
+}
+
+.goodobsidian-scroll.is-hand-tool .goodobsidian-eraser-cursor {
+  display: none;
+}
+
+/* The magnifier (Only stylus mode): a drag up or down zooms about where it began. */
+.goodobsidian-scroll.is-zoom-tool,
+.goodobsidian-scroll.is-zoom-tool * {
+  cursor: zoom-in;
+}
+
+.goodobsidian-scroll.is-zoom-tool .goodobsidian-eraser-cursor {
+  display: none;
+}
+
 /* A pen, the highlighter or the laser in hand on a computer: a small
    crosshair, 17 screen px, in place of the arrow (FineNotes#25). The white
    halo keeps it legible on dark ink and dark paper. Space's hand wins. */

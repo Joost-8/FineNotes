@@ -326,6 +326,20 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
+  onlyStylusMode:
+    "Only the pen writes on the page: finger and palm contacts do nothing there, nor does a " +
+    "mouse press, so a hand resting on the glass cannot move the page. The toolbar's button " +
+    "switches the mode on and off; while it is on, the hand tool moves the page and the " +
+    "magnifier zooms it with the pen, since the fingers' scroll and pinch are off.",
+  onlyStylusButton:
+    "Put the mode's on/off button on the tool bar, so it can be switched without opening the " +
+    "settings. The button stays there while the mode is off too, ready to turn it on.",
+  onlyStylusHand:
+    "Show the hand tool while Only stylus mode is on: drag the pen anywhere on the page to " +
+    "move it, and let go to keep a fling. The fingers do not move the page in this mode.",
+  onlyStylusZoom:
+    "Show the magnifier while Only stylus mode is on: drag the pen up or down to zoom, or tap " +
+    "to zoom in a step. Its pill also has zoom out, fit page and zoom in.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -904,6 +918,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (
+      key === "onlyStylusMode" ||
+      key === "onlyStylusToolbarButton" ||
+      key === "onlyStylusHandTool" ||
+      key === "onlyStylusZoomTool"
+    ) {
+      // Saved by the plugin, which gives every open notebook the mode's
+      // button, hand and magnifier at once. The mode opens its own rows.
+      storeShownValue(this.plugin.settings, key, value);
+      await this.plugin.applyOnlyStylusSettings();
+      if (changesTabLayout(key)) this.update();
+      return;
+    }
     if (key === "llmVendor") {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
@@ -1097,6 +1124,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
+    const showOnlyStylus = (): boolean => this.plugin.settings.onlyStylusMode === true;
     return this.section(
       "pens",
       "Pens and shortcuts",
@@ -1121,6 +1149,40 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "delete pen",
           ]),
         ),
+        this.info(
+          toggle(
+            "onlyStylusMode",
+            "Only stylus mode",
+            "The pen alone writes; a resting hand does nothing.",
+            ["palm rejection", "stylus", "finger", "touch", "hand", "tablet"],
+          ),
+          DESC.onlyStylusMode,
+        ),
+        {
+          ...this.info(
+            toggle("onlyStylusToolbarButton", "Mode button on the toolbar", "", [
+              "button",
+              "toolbar",
+              "switch",
+            ]),
+            DESC.onlyStylusButton,
+          ),
+          visible: showOnlyStylus,
+        },
+        {
+          ...this.info(
+            toggle("onlyStylusHandTool", "Hand tool", "", ["pan", "move", "page", "drag"]),
+            DESC.onlyStylusHand,
+          ),
+          visible: showOnlyStylus,
+        },
+        {
+          ...this.info(
+            toggle("onlyStylusZoomTool", "Magnifier", "", ["zoom", "magnify", "lens", "pinch"]),
+            DESC.onlyStylusZoom,
+          ),
+          visible: showOnlyStylus,
+        },
         this.info(
           dropdown("barrelButton", "Stylus side button", "", BARREL_NAMES, [
             "barrel button",
@@ -1151,7 +1213,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           DESC.shortcuts,
         ),
       ],
-      () => [{ text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` }],
+      () => [
+        { text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` },
+        ...(this.plugin.settings.onlyStylusMode ? [{ text: "Only stylus" }] : []),
+      ],
     );
   }
 

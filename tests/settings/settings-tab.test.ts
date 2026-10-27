@@ -153,6 +153,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.pressureWidth = on;
       return Promise.resolve();
     }),
+    applyOnlyStylusSettings: vi.fn(() => {
+      calls.push("onlyStylus");
+      return Promise.resolve();
+    }),
     files,
     models: { all: () => [grapeStore, speechStore] },
     speech: { store: () => speechStore },
@@ -398,6 +402,10 @@ describe("the rows", () => {
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [PENS, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
+      [PENS, "Only stylus mode", "toggle:onlyStylusMode"],
+      [PENS, "Mode button on the toolbar", "toggle:onlyStylusToolbarButton"],
+      [PENS, "Hand tool", "toggle:onlyStylusHandTool"],
+      [PENS, "Magnifier", "toggle:onlyStylusZoomTool"],
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
@@ -569,6 +577,7 @@ describe("the rows", () => {
 const PEN_ROWS = [
   "Saved pens",
   ...DEFAULT_PEN_NAMES,
+  "Only stylus mode",
   "Stylus side button",
   "Cursor over the page",
   "Keyboard shortcuts",
@@ -626,7 +635,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block 37)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -960,6 +969,32 @@ describe("control values", () => {
     await makeTab(plugin).tab.setControlValue("pressureWidth", true);
     expect(plugin.setPressureWidth).toHaveBeenCalledWith(true);
     expect(plugin.calls).toEqual(["pressureWidth:true", "update"]);
+  });
+
+  it("hands Only stylus mode to the plugin, which updates every notebook and opens its rows", async () => {
+    const plugin = makePlugin();
+    const { tab } = makeTab(plugin);
+    const detail = (name: string) => named(rows(makeTab(plugin, false).tab), name);
+    expect(shown(detail("Mode button on the toolbar"))).toBe(false);
+    await tab.setControlValue("onlyStylusMode", true);
+    expect(plugin.settings.onlyStylusMode).toBe(true);
+    expect(plugin.applyOnlyStylusSettings).toHaveBeenCalledOnce();
+    expect(plugin.calls).toEqual(["onlyStylus", "update"]);
+    expect(shown(detail("Mode button on the toolbar"))).toBe(true);
+    expect(shown(detail("Hand tool"))).toBe(true);
+    expect(shown(detail("Magnifier"))).toBe(true);
+  });
+
+  it("hands each Only stylus detail switch to the plugin without rebuilding the tab", async () => {
+    const plugin = makePlugin({ onlyStylusMode: true });
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("onlyStylusToolbarButton", false);
+    await tab.setControlValue("onlyStylusHandTool", false);
+    await tab.setControlValue("onlyStylusZoomTool", true);
+    expect(plugin.calls).toEqual(["onlyStylus", "onlyStylus", "onlyStylus"]);
+    expect(plugin.settings.onlyStylusToolbarButton).toBe(false);
+    expect(plugin.settings.onlyStylusHandTool).toBe(false);
+    expect(plugin.settings.onlyStylusZoomTool).toBe(true);
   });
 });
 
@@ -1547,7 +1582,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

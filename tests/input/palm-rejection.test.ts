@@ -16,6 +16,15 @@ describe("roleOf", () => {
   it("takes a finger that lands during a stroke for the writing hand's palm", () => {
     expect(roleOf("touch", true)).toBe("ignore");
   });
+
+  it("with Only stylus mode on, lets the pen write and ignores every other pointer", () => {
+    expect(roleOf("pen", false, true)).toBe("draw");
+    expect(roleOf("pen", true, true)).toBe("draw");
+    for (const type of ["touch", "mouse", "", "stylus"]) {
+      expect(roleOf(type, false, true)).toBe("ignore");
+      expect(roleOf(type, true, true)).toBe("ignore");
+    }
+  });
 });
 
 describe("undoesPalm", () => {

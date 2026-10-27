@@ -127,6 +127,8 @@ class Rig {
   readonly controller: PointerController;
   /** Space held down (FineNotes#7). */
   readonly hand = { held: false };
+  /** Only stylus mode on (the toolbar's switch). */
+  readonly onlyStylus = { on: false };
 
   constructor(only?: "required") {
     const log = this.log;
@@ -167,6 +169,8 @@ class Rig {
       toSurface,
       callbacks,
       () => this.hand.held,
+      () => "draw",
+      () => this.onlyStylus.on,
     );
     this.controller.attach();
   }
@@ -692,6 +696,41 @@ describe("pen and fingers together", () => {
     rig.take();
     rig.finger("pointerdown", 10, 1, 2, 3);
     expect(rig.take()).toEqual(["panStart 1,2 t=3"]);
+  });
+
+  it("Only stylus mode lets the pen draw and ignores every other pointer, live", () => {
+    const rig = new Rig();
+    rig.onlyStylus.on = true;
+    const finger = rig.finger("pointerdown", 10, 1, 2, 3);
+    const mouse = rig.fire("pointerdown", 11, "mouse", { x: 5, y: 6, t: 4 });
+    rig.finger("pointermove", 10, 20, 30, 5);
+    rig.fire("pointermove", 11, "mouse", { x: 25, y: 35, t: 6 });
+    rig.finger("pointerup", 10, 20, 30, 7);
+    rig.fire("pointerup", 11, "mouse", { x: 25, y: 35, t: 8 });
+    expect(rig.take()).toEqual([]);
+    expect(finger.prevented).toBe(true);
+    expect(mouse.prevented).toBe(true);
+    expect(rig.captured).toEqual([]);
+
+    const pen = rig.pen("pointerdown", 1, { x: 0, y: 0, t: 9 });
+    expect(rig.take()).toEqual([
+      "debug down pen#1 p=0.5 c=0 t=9",
+      "start 1000,2000 p=0.5 tilt=0,0",
+    ]);
+    expect(pen.prevented).toBe(true);
+    // A hand on the glass while the pen writes stays ignored too.
+    rig.finger("pointerdown", 12, 300, 300, 10);
+    rig.finger("pointermove", 12, 310, 305, 11);
+    expect(rig.take()).toEqual([]);
+    rig.pen("pointerup", 1, { x: 9, y: 9, t: 12 });
+    rig.take();
+    rig.finger("pointerup", 12, 310, 305, 13);
+    expect(rig.take()).toEqual([]);
+
+    // The switch is read for every press: off again, the same finger pans.
+    rig.onlyStylus.on = false;
+    rig.finger("pointerdown", 13, 1, 2, 14);
+    expect(rig.take()).toEqual(["panStart 1,2 t=14"]);
   });
 
   it("a hovering pen and a wide contact do not keep a finger out", () => {

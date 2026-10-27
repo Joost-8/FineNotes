@@ -8,6 +8,18 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Only stylus mode.** Settings › Pens and shortcuts › Only stylus mode makes
+  the page listen to the pen alone: a palm, a finger or a mouse resting on the
+  glass moves neither the ink nor the page, and a finger's scroll, pinch and
+  taps are off. While it is on, a hand tool moves the page with the pen (with
+  its fling) and a magnifier zooms it: drag up or down, tap to zoom in a step,
+  or use the pill's zoom out, fit page and zoom in. A new toolbar button
+  switches the mode on and off; the button, the hand and the magnifier can
+  each be turned off in its settings. A command,
+  "Turn Only stylus mode on or off", is there for a hardware key too.
+
 ### Changed
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"

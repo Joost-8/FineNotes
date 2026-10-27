@@ -11,7 +11,9 @@
  * Fingers scroll and zoom, through `FingerGesture`. The page has
  * `touch-action: none` because on iOS a Pencil drag over anything the browser
  * could scroll turns into a scroll, which cancels the stroke part-way; the
- * price is that the fingers' movement is ours to report.
+ * price is that the fingers' movement is ours to report. With Only stylus
+ * mode on, every pointer but the pen is ignored instead (`roleOf`), so a
+ * resting hand has nothing to move.
  *
  * Two quirks of the iPad shape the stroke's lifecycle:
  *
@@ -149,6 +151,8 @@ export class PointerController {
     private readonly handHeld: () => boolean = () => false,
     /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
     private readonly route: (event: PointerEvent) => PressRoute = () => "draw",
+    /** Only stylus mode: every pointer but the pen is ignored on the page. */
+    private readonly onlyStylus: () => boolean = () => false,
   ) {
     this.fingers = new FingerGesture(listener);
     this.taps = new MultiFingerTap(
@@ -198,13 +202,20 @@ export class PointerController {
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
+    const onlyStylus = this.onlyStylus();
     // The right mouse button opens the page's menu (`contextmenu`); it never draws.
-    if (event.pointerType === "mouse" && event.button === 2) return;
-    const role = roleOf(event.pointerType, this.stroke !== null);
+    if (event.pointerType === "mouse" && event.button === 2) {
+      if (onlyStylus) event.preventDefault();
+      return;
+    }
+    const role = roleOf(event.pointerType, this.stroke !== null, onlyStylus);
     const free = role === "draw" && this.stroke === null;
     const route = free ? (this.handHeld() ? "pan" : this.route(event)) : "draw";
-    if (route === "ignore") {
-      event.preventDefault();
+    if (route === "ignore" || role === "ignore") {
+      // A palm that lands during a stroke leaves the browser's contact alone;
+      // in Only stylus mode the pointer is not the page's at all, so nothing
+      // else may take it either.
+      if (onlyStylus) event.preventDefault();
       return;
     }
     if (free && route === "pan") {
@@ -252,6 +263,9 @@ export class PointerController {
   private moved(event: PointerEvent): void {
     this.notePenSeen(event);
     if (event.pointerId !== this.stroke) {
+      // Only stylus mode: a finger already down when the mode came on must
+      // not carry on moving the page; its lift still releases it.
+      if (this.onlyStylus() && event.pointerType !== "pen") return;
       if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);
       this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);

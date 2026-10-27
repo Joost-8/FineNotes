@@ -78,6 +78,7 @@ import {
   normalizeBar,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import type { OnlyStylusChrome } from "../input/only-stylus";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
 import {
@@ -220,7 +221,8 @@ import {
  * strokes. The laser pointer draws a fading trail that is never kept; it has
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
-export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser";
+export type ActiveTool =
+  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -298,6 +300,8 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   eraser: "eraser",
   text: "type",
   shape: "shapes",
+  pan: "hand",
+  zoom: "zoom-in",
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -614,6 +618,12 @@ export interface ToolbarCallbacks {
   onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
+  /** Only stylus mode's toolbar button was tapped: turn the mode on or off. */
+  onOnlyStylusMode?: (on: boolean) => void;
+  /** The magnifier's own pill: one zoom step in or out, or the page fitted. */
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onZoomFit?: () => void;
 }
 
 export interface ToolbarOptions {
@@ -628,6 +638,8 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
+  /** Only stylus mode's chrome, as the settings leave it. */
+  onlyStylus?: OnlyStylusChrome;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -694,11 +706,14 @@ const FOLD_RANK = {
   ai: 5,
   search: 6,
   share: 7,
+  zoom: 8.2,
+  pan: 8.3,
   settings: 8,
   ruler: 8.5,
   shape: 9,
   text: 10,
   select: 11,
+  onlyStylusMode: 11.8,
   addPage: 12,
   redo: 13,
   thumbnails: 14,
@@ -792,6 +807,17 @@ export class Toolbar {
   private items: BarItemId[] = [...DEFAULT_BAR];
   /** The last button of the tools: the hidden items and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
+  /** Only stylus mode's toggle and the tools it brings; null when not built. */
+  private stylusButton: HTMLButtonElement | null = null;
+  private panButton: HTMLButtonElement | null = null;
+  private zoomButton: HTMLButtonElement | null = null;
+  /** Only stylus mode's chrome, as the settings leave it now. */
+  private onlyStylus: OnlyStylusChrome = {
+    mode: false,
+    button: true,
+    hand: true,
+    zoom: true,
+  };
   /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
   private stickyButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
@@ -887,6 +913,7 @@ export class Toolbar {
   ) {
     this.palette = [...palette];
     this.optionsTool = state.tool;
+    if (options.onlyStylus) this.onlyStylus = { ...options.onlyStylus };
     this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
@@ -1086,6 +1113,8 @@ export class Toolbar {
     this.accessoriesButton = accessories;
     keep(accessories);
     this.setItems(this.options.items ?? DEFAULT_BAR, false);
+    this.buildOnlyStylusButtons(tools);
+    this.syncOnlyStylusChrome(false);
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1401,6 +1430,85 @@ export class Toolbar {
   }
 
   /**
+   * Only stylus mode's own chrome: the hand, the magnifier, then the mode's
+   * toggle. Not part of "Customize toolbar": they come and go with the mode,
+   * and the mode's own settings say which of them show. Built once, after the
+   * bar's items, and kept before the accessories button.
+   */
+  private buildOnlyStylusButtons(tools: HTMLElement): void {
+    const toggle = this.callbacks.onOnlyStylusMode;
+    if (!toggle) return;
+    this.panButton = this.addToolButton(tools, "pan", "hand", "Hand — move the page");
+    this.fold(
+      FOLD_RANK.pan,
+      this.panButton,
+      "hand",
+      "Hand",
+      (anchor) => this.tapTool("pan", anchor),
+      "pan",
+    );
+    this.zoomButton = this.addToolButton(tools, "zoom", "zoom-in", "Magnifier — zoom");
+    this.fold(
+      FOLD_RANK.zoom,
+      this.zoomButton,
+      "zoom-in",
+      "Magnifier",
+      (anchor) => this.tapTool("zoom", anchor),
+      "zoom",
+    );
+    const stylus = this.barButton(tools, "tablet", "Only stylus mode: off", () => {
+      this.callbacks.onOnlyStylusMode?.(!this.onlyStylus.mode);
+    });
+    stylus.addClass("goodobsidian-only-stylus");
+    stylus.setAttribute("aria-pressed", "false");
+    this.stylusButton = stylus;
+    this.fold(FOLD_RANK.onlyStylusMode, stylus, "tablet", "Only stylus mode", () =>
+      this.callbacks.onOnlyStylusMode?.(!this.onlyStylus.mode),
+    );
+    this.placeOnlyStylusButtons();
+  }
+
+  /** Put the mode's buttons after the bar's items, in their order, before the accessories. */
+  private placeOnlyStylusButtons(): void {
+    const tools = this.toolsGroup;
+    const accessories = this.accessoriesButton;
+    if (!tools || !accessories) return;
+    for (const button of [this.panButton, this.zoomButton, this.stylusButton]) {
+      if (button) tools.insertBefore(button, accessories);
+    }
+  }
+
+  /**
+   * Take on Only stylus mode's switches: whether the mode is on, and which
+   * of its toggle, hand and magnifier the bar carries. The host switches the
+   * tool away from a hidden hand or magnifier.
+   */
+  setOnlyStylus(chrome: OnlyStylusChrome): void {
+    this.onlyStylus = { ...chrome };
+    this.syncOnlyStylusChrome();
+  }
+
+  private syncOnlyStylusChrome(relayout = true): void {
+    const chrome = this.onlyStylus;
+    const stylus = this.stylusButton;
+    if (stylus) {
+      stylus.toggleClass("is-unlisted", !chrome.button);
+      stylus.toggleClass("is-on", chrome.mode);
+      stylus.setAttribute("aria-pressed", String(chrome.mode));
+      stylus.setAttribute(
+        "aria-label",
+        chrome.mode ? "Only stylus mode: on" : "Only stylus mode: off",
+      );
+    }
+    this.panButton?.toggleClass("is-unlisted", !(chrome.mode && chrome.hand));
+    this.zoomButton?.toggleClass("is-unlisted", !(chrome.mode && chrome.zoom));
+    if (!relayout) return;
+    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    this.fitBar(tool);
+    this.placeIndicator(tool, null);
+  }
+
+  /**
    * Show the centre items `items`, left to right, and take the rest off the
    * bar (they wait in the accessories menu). Unknown or unavailable items
    * are skipped; the pen always shows (`normalizeBar`). `relayout` refits
@@ -1418,6 +1526,7 @@ export class Toolbar {
       if (button) tools.appendChild(button);
     }
     if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
+    this.placeOnlyStylusButtons();
     if (this.popoverKind === "accessories") this.popoverRender?.();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
@@ -1830,6 +1939,12 @@ export class Toolbar {
           break;
         case "laser":
           this.buildLaserOptions();
+          break;
+        case "pan":
+          this.buildPanOptions();
+          break;
+        case "zoom":
+          this.buildZoomOptions();
           break;
       }
     }
@@ -2246,6 +2361,40 @@ export class Toolbar {
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
     iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "pointer", "");
     note.createSpan({ text: "Laser pointer (L): its trail fades and is never saved" });
+  }
+
+  /** The hand has nothing to set: its pill says what the pen does with it. */
+  private buildPanOptions(): void {
+    const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
+    iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "hand", "");
+    note.createSpan({ text: "Drag with the stylus to move the page" });
+  }
+
+  /** The magnifier: the pen's drag, and the steps and fit a stylus-only page needs. */
+  private buildZoomOptions(): void {
+    const cb = this.callbacks;
+    this.barButton(
+      this.optionsEl,
+      "zoom-out",
+      "Zoom out",
+      cb.onZoomOut ? () => cb.onZoomOut?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "maximize-2",
+      "Fit page",
+      cb.onZoomFit ? () => cb.onZoomFit?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "zoom-in",
+      "Zoom in",
+      cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
+    );
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
+    iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "zoom-in", "");
+    note.createSpan({ text: "Drag up or down with the stylus to zoom" });
   }
 
   /**

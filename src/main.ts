@@ -707,6 +707,12 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("zoom-out", "Zoom out", (view) => view.zoomOut());
 
     this.addCommand({
+      id: "toggle-only-stylus-mode",
+      name: "Turn Only stylus mode on or off",
+      callback: () => void this.setOnlyStylusMode(!this.settings.onlyStylusMode),
+    });
+
+    this.addCommand({
       id: "toggle-input-debug-overlay",
       name: "Show or hide the input debug overlay",
       callback: () => void this.setDebugHud(!this.settings.debugHud, true),
@@ -1309,6 +1315,22 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.penCursor = style;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setPenCursor(style);
+  }
+
+  /**
+   * Only stylus mode's toolbar button was tapped: save the mode and give
+   * every open notebook its hand, magnifier and toggle in one go.
+   */
+  async setOnlyStylusMode(on: boolean): Promise<void> {
+    this.settings.onlyStylusMode = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncOnlyStylusChrome();
+  }
+
+  /** A switch in the mode's own settings changed: save it and every notebook follows. */
+  async applyOnlyStylusSettings(): Promise<void> {
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncOnlyStylusChrome();
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */
