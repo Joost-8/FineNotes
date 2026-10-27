@@ -25,6 +25,7 @@ export default defineConfig({
         "src/canvas/backdrop.ts",
         "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",
+        "src/canvas/erase-look.ts",
         "src/canvas/cover-patterns.ts",
         "src/canvas/page-layout.ts",
         "src/canvas/hit-test.ts",

@@ -682,6 +682,8 @@ function ink(doc: InkDocument): Ink {
     strokeIds,
     eraseIds: new Set(),
     erasePieces: new Map(),
+    eraseGrey: false,
+    eraseGreyCuts: new Map(),
     eraseDirty: new Set(),
     eraseLast: null,
     erasePreview: null,
@@ -891,6 +893,62 @@ describe("ruled erase", () => {
     expect(w.surface.eraseRuled).not.toBeNull();
     w.lift(0);
     expect(w.surface.eraseRuled).toBeNull();
+  });
+
+  it("greyed, draws the cut stretch grey beside what survives, and commits only that", () => {
+    const highlight: Stroke = {
+      id: "hl",
+      color: "#ffd43b",
+      size: 20,
+      tool: "highlighter",
+      shape: "line",
+      pts: [90, 110, 0.5, 400, 110, 0.5],
+    };
+    const w = ruledInk("ruled-wide", [highlight]);
+    w.surface.eraseGrey = true;
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const cuts = w.surface.eraseGreyCuts as Map<string, Stroke[]>;
+    const grey = cuts.get("hl") ?? [];
+    // The grey stretch is what the cut takes, from the highlight's own end at
+    // 90 up to where the survivor's round end begins: 179 less half its width.
+    expect(grey.map((p) => [p.id, p.pts[0], p.pts[p.pts.length - 3]])).toEqual([
+      ["hl~erasing0", 90, 169],
+    ]);
+    const survivor = (w.pieces().get("hl") ?? [])[0];
+
+    // What the renderer is handed: the words and the stretch grey, nothing hidden.
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    const [, , hidden, , replaced, , , greyed] = calls[0] as [
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      Map<string, Stroke[]>,
+      unknown,
+      unknown,
+      Set<string>,
+    ];
+    expect(hidden).toBeUndefined();
+    expect(replaced.get("hl")?.map((p) => p.id)).toEqual(["hl~erasing0", survivor.id]);
+    expect([...greyed].sort()).toEqual(["comma", "dolor", "hl~erasing0"]);
+
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["below", survivor.id]);
+    expect((w.surface.eraseGreyCuts as Map<string, Stroke[]>).size).toBe(0);
+  });
+
+  it("not greyed, hides the words and draws only what survives", () => {
+    const w = ruledInk();
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    expect([...(calls[0][2] as Set<string>)].sort()).toEqual(["comma", "dolor"]);
+    expect(calls[0][7]).toBeUndefined();
   });
 });
 

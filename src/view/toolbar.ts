@@ -469,6 +469,11 @@ export interface ToolbarState {
   eraserSize?: number;
   /** What the eraser may erase. `undefined` counts as everything. */
   eraserFilter?: EraserFilter;
+  /**
+   * "Grey out while erasing": Whole stroke and By line draw what they take
+   * grey until the pen lifts, instead of hiding it. `undefined` counts as off.
+   */
+  eraserGrey?: boolean;
   /** The lasso's type. `undefined` counts as freehand. */
   lassoMode?: LassoMode;
   /** What the lasso picks up. `undefined` counts as everything. */
@@ -522,6 +527,8 @@ export interface ToolbarCallbacks {
   paintSizePaper?: (canvas: HTMLCanvasElement, width: number, height: number) => boolean;
   /** "Erase highlighter only" / "Erase pen only" changed. Hosts persist it. */
   onEraserFilterChange?: (filter: EraserFilter) => void;
+  /** "Grey out while erasing" was switched. Hosts persist it. */
+  onEraserGreyChange?: (on: boolean) => void;
   /** The lasso's type, or what it picks up, changed. Hosts persist it. */
   onLassoChange?: (mode: LassoMode, filter: LassoFilter) => void;
   /** Add a page; `anchor` is the button, for a popover to hang from. */
@@ -3607,6 +3614,13 @@ export class Toolbar {
         this.syncActive();
       });
     }
+    // How the modes that take ink whole show it going (discussion #51).
+    const list = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(list, "Grey out while erasing", this.state.eraserGrey === true, (on) => {
+      this.state.eraserGrey = on;
+      this.callbacks.onEraserGreyChange?.(on);
+    });
+    body.createDiv({ cls: "goodobsidian-popover-hint", text: "Whole stroke and By line." });
   }
 
   /**

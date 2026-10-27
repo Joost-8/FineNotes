@@ -289,6 +289,13 @@ export interface GoodObsidianSettings {
    * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
    */
   straightHighlighter: boolean;
+  /**
+   * "Grey out while erasing", the eraser's mode list: Whole stroke and By
+   * line draw what they take grey until the pen lifts, as Notability does,
+   * instead of hiding it (discussion #51). Off by default; read through
+   * {@link greyWhileErasingOf}.
+   */
+  greyWhileErasing: boolean;
 
   /**
    * The settings tab's sections shown open, by id; every other one is
@@ -385,6 +392,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
+  greyWhileErasing: false,
 
   settingsOpen: [],
   scribbleTipDismissed: false,
@@ -442,6 +450,17 @@ export function withSection(
   if (open && alone) return [id];
   const rest = openSectionsOf(raw).filter((section) => section !== id);
   return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
+}
+
+// --- The eraser ------------------------------------------------------------------
+
+/**
+ * Whether the Whole stroke and By line erasers grey what they take. Only a stored
+ * `true` turns it on: a missing key (every vault before it) or a hand-edited
+ * value of any other kind leaves the eraser hiding strokes, as it always did.
+ */
+export function greyWhileErasingOf(raw: unknown): boolean {
+  return raw === true;
 }
 
 // --- Choices that set two switches -------------------------------------------------

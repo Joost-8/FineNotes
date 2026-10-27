@@ -17,6 +17,7 @@ import {
   changesTabLayout,
   appearanceChoiceOf,
   endpointWarning,
+  greyWhileErasingOf,
   openSectionsOf,
   pagesAreDark,
   paperWidthFrom,
@@ -130,6 +131,7 @@ const FRESH_INSTALL = {
   barrelButton: "erase",
   penCursor: "ink",
   straightHighlighter: true,
+  greyWhileErasing: false,
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
@@ -224,6 +226,7 @@ const USED_VAULT = {
   barrelButton: "pan",
   penCursor: "crosshair",
   straightHighlighter: false,
+  greyWhileErasing: true,
   settingsOpen: ["writing", "ai"],
   scribbleTipDismissed: true,
   experimentalFutureFlag: 7,
@@ -306,6 +309,21 @@ describe("dark pages", () => {
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.
     expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
+  });
+});
+
+describe("grey out while erasing", () => {
+  it("is off by default, and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.greyWhileErasing).toBe(false);
+    const { greyWhileErasing } = loadAndSave({ straightHighlighter: false });
+    expect(greyWhileErasingOf(greyWhileErasing)).toBe(false);
+  });
+
+  it("is on only for a stored true, whatever else a hand-edited file holds", () => {
+    expect(greyWhileErasingOf(true)).toBe(true);
+    for (const value of [false, undefined, null, "true", 1, "yes", {}]) {
+      expect(greyWhileErasingOf(value)).toBe(false);
+    }
   });
 });
 

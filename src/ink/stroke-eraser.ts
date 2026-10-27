@@ -329,7 +329,7 @@ function inside(r: EraseRect, x: number, y: number): boolean {
  * that only grazes a corner (zero length) counts as outside, as the circle's
  * graze does; a segment of zero length is inside wholly or not at all.
  */
-function insideSpans(
+export function insideSpans(
   rects: readonly EraseRect[],
   ax: number,
   ay: number,
