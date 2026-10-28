@@ -1228,6 +1228,96 @@ export class Renderer {
     }
   }
 
+  /**
+   * A page region painted afresh into `ctx`, at `level` CSS px per page px:
+   * paper, backdrop, pictures, tables, graphs and committed ink, exactly as a
+   * tile has them, up to (not including) what sits over the ink. The Zoom
+   * box's window uses this so its magnified view keeps the page's template and
+   * PDF background, not just the ink. `hidden`, `replaced` and `greyed` are a
+   * live erase gesture's preview, as the dry tiles get them. The caller sets
+   * the context's transform (page space, device scale included) and clips to
+   * the window.
+   */
+  paintZoomView(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    box: PageBox,
+    window: Bounds,
+    level: number,
+    usePressure: boolean,
+    hidden?: ReadonlySet<string>,
+    replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
+  ): void {
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
+    this.paintPage(ctx, page, box, level, window, ink);
+    const inked: Bounds = {
+      minX: window.minX - INK_PAD,
+      minY: window.minY - INK_PAD,
+      maxX: window.maxX + INK_PAD,
+      maxY: window.maxY + INK_PAD,
+    };
+    this.paintStrokes(ctx, page, inked, usePressure, hidden, replaced, greyed);
+  }
+
+  /**
+   * What sits over the ink: a checklist's box, pictures in front of the
+   * handwriting, and text boxes. The Zoom box paints these after copying in
+   * the wet layer, so a stroke in flight goes under them as it will once it
+   * is committed, not over them for the rest of the gesture.
+   */
+  paintZoomForeground(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    window: Bounds,
+    level: number,
+    usePressure: boolean,
+    hidden?: ReadonlySet<string>,
+    replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
+  ): void {
+    const look = pageLook(page.backdrop, this.paper);
+    // A checklist box sits over its ink but under a picture in front of it.
+    for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
+    this.paintImages(ctx, page, window, level, ink, true);
+    // Text boxes are DOM on the page, so the tile never has them; a
+    // magnified view has no DOM above it, and paints them here as exports do.
+    for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  }
+
+  /**
+   * Copy the part of the wet layer inside `source` (CSS px of this renderer's
+   * canvases) into `dest` (CSS px of `ctx`, whose transform is dpr). The Zoom
+   * box overlays the in-progress stroke this way, so a stroke drawn in either
+   * view appears in both without tracing it twice. Source is clipped to the
+   * viewport; a partly off-screen target copies the part that is on screen.
+   */
+  blitWet(ctx: CanvasRenderingContext2D, source: Bounds, dest: Bounds): void {
+    const left = Math.max(0, source.minX);
+    const top = Math.max(0, source.minY);
+    const right = Math.min(this.screen.width, source.maxX);
+    const bottom = Math.min(this.screen.height, source.maxY);
+    const sourceW = source.maxX - source.minX;
+    const sourceH = source.maxY - source.minY;
+    const destW = dest.maxX - dest.minX;
+    const destH = dest.maxY - dest.minY;
+    if (right <= left || bottom <= top || sourceW <= 0 || sourceH <= 0) return;
+    if (destW <= 0 || destH <= 0) return;
+    const dpr = this.screen.dpr;
+    ctx.drawImage(
+      this.wet.canvas,
+      left * dpr,
+      top * dpr,
+      (right - left) * dpr,
+      (bottom - top) * dpr,
+      dest.minX + ((left - source.minX) / sourceW) * destW,
+      dest.minY + ((top - source.minY) / sourceH) * destH,
+      ((right - left) / sourceW) * destW,
+      ((bottom - top) / sourceH) * destH,
+    );
+  }
+
   /** The whole page at thumbnail resolution: the fallback while tiles catch up. */
   private buildPreview(page: Page, box: PageBox, usePressure: boolean): Preview | null {
     const window = this.previewWindow ? clampToPage(this.previewWindow(box), box) : null;

@@ -508,6 +508,12 @@ export interface ToolbarState {
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
   rulerSnap?: number;
+  /**
+   * The Magnifier's mode: `true` writes in a floating Zoom box, `false` (or
+   * absent) zooms the page itself. The box stays open while another tool is
+   * picked; only the Magnifier's own switch and its × close it.
+   */
+  zoomBox?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -650,6 +656,8 @@ export interface ToolbarCallbacks {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomFit?: () => void;
+  /** The Magnifier's mode switched: open or close the Zoom box. */
+  onZoomBox?: (on: boolean) => void;
 }
 
 export interface ToolbarOptions {
@@ -2448,9 +2456,34 @@ export class Toolbar {
     this.toolNote("hand", "Drag to move the page");
   }
 
-  /** The magnifier: its drag, and the steps and fit the page needs. */
+  /** The magnifier: page zoom or a Zoom box, then its steps and fit. */
   private buildZoomOptions(): void {
     const cb = this.callbacks;
+    const boxMode = this.state.zoomBox === true;
+    for (const mode of [
+      { box: false, label: "Page zoom", icon: "zoom-in", fallback: "＋" },
+      { box: true, label: "Zoom box", icon: "scan", fallback: "▣" },
+    ]) {
+      const active = boxMode === mode.box;
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-zoommode",
+      });
+      button.toggleClass("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.setAttribute("aria-label", mode.box ? "Zoom box" : "Page zoom");
+      const glyph = button.createSpan({ cls: "goodobsidian-zoommode-icon" });
+      iconOrText(glyph, mode.icon, mode.fallback);
+      button.createSpan({ text: mode.label });
+      button.addEventListener("click", () => {
+        // A second tap on Zoom box is the switch's own off position.
+        const next = mode.box && active ? false : mode.box;
+        if (next === boxMode) return;
+        this.state.zoomBox = next;
+        this.callbacks.onZoomBox?.(next);
+        this.buildOptions();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     this.barButton(
       this.optionsEl,
       "zoom-out",
@@ -2470,7 +2503,10 @@ export class Toolbar {
       cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
     );
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    this.toolNote("zoom-in", "Drag up or down to zoom");
+    this.toolNote(
+      boxMode ? "scan" : "zoom-in",
+      boxMode ? "Drag out or move the writing box" : "Drag up or down to zoom",
+    );
   }
 
   /**
@@ -4918,6 +4954,19 @@ export class Toolbar {
     this.state = next;
     this.buildOptions();
     this.syncActive();
+  }
+
+  /**
+   * The surface opened the Zoom box from a marquee or closed it with its ×.
+   * The toolbar's switch follows without calling back, so the host is not
+   * asked to open what is already open.
+   */
+  setZoomBox(on: boolean): void {
+    this.state.zoomBox = on;
+    // Rebuild even when the shared state already says so: the surface sets
+    // the flag before telling the bar, and a close must still turn the
+    // switch back to Page zoom.
+    if (this.state.tool === "zoom") this.buildOptions();
   }
 
   /** Show the record button as live (tinted) while a recording runs. */

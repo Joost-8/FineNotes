@@ -28,7 +28,8 @@ import {
 } from "../model/calculator-store";
 
 /** Every floating window's class, for bringing one over the others. */
-const FLOATING_WINDOWS = ".goodobsidian-graph-window, .goodobsidian-calc-window";
+const FLOATING_WINDOWS =
+  ".goodobsidian-graph-window, .goodobsidian-calc-window, .goodobsidian-zoombox-window";
 
 export interface FloatingWindowButton {
   icon: string;

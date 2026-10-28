@@ -2540,6 +2540,7 @@ export class InkView extends TextFileView {
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
         onZoomFit: () => this.surface?.resetView(),
+        onZoomBox: (on) => this.surface?.setZoomBox(on),
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2668,6 +2669,7 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
+        onZoomBoxChange: (open) => this.toolbar?.setZoomBox(open),
         onPen: (down) => this.penActivity(down),
         onGestureStart: (tool, lent) => {
           if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
