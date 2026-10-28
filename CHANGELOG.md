@@ -28,6 +28,23 @@ extracted from the matching section of this file by `release.yml`.
   draw a line, an arrow or a rectangle with the Shape tool, or hold a shape
   you drew, its ends and corners snap to the corners, ends and midpoints of
   the shapes already on the page, and a small ring shows where.
+- **Lasso takes what it touches** (discussion
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
+  under Writing › More: the lasso takes a stroke or shape when any part of
+  it is inside the loop, as Notability does, instead of at least half of it.
+- **Tap a shape with a finger to select it.** With the pen (or another
+  drawing tool) in hand, a finger tap on a shape, an arrow or a table
+  picks the lasso and selects it with its handles and bar, as a tap on a
+  picture does.
+- **The lasso's menu fits what you selected.** One kind of thing keeps its
+  own options (a shape its fill and line, a table Edit table), and
+  handwriting counts as one kind however many strokes it is. A mix of
+  kinds gets only its ink's colour, and Turn into offers only what fits: a
+  shape is not offered Text, Contents heading or Task.
+- **Turn a selection with two fingers.** Two fingers on a selection or a
+  selected picture, or either side of a small one, turn it about its
+  middle, settling on the page's 45° steps as the knob does; the lift is one
+  undo step. Two fingers elsewhere still zoom the page.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch
@@ -53,20 +70,19 @@ extracted from the matching section of this file by `release.yml`.
   switch in the eraser's mode list: Whole stroke and By line draw what they
   take grey until the pen lifts, as Notability does, instead of hiding it
   at once. Off by default.
-- **Lasso takes what it touches** (discussion
-  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
-  under Writing › More: the lasso takes a stroke or shape when any part of
-  it is inside the loop, as Notability does, instead of at least half of it.
-- **Tap a shape with a finger to select it.** With the pen (or another
-  drawing tool) in hand, a finger tap on a shape, an arrow or a table
-  picks the lasso and selects it with its handles and bar, as a tap on a
-  picture does.
-- **Pinch and turn a selection with two fingers.** Two fingers on a
-  selection or a selected picture, or either side of a small one, scale
-  it, turn it and move it at once, and the lift is one undo step. Two fingers elsewhere still zoom
-  the page.
 
 ### Changed
+
+- **Resize handles on request**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
+  selection of handwriting, text or several things no longer shows its
+  corner handles at once: the corners button in its bar shows them (and
+  hides them again). One shape on its own still shows them straight away.
+  knob no longer follows every tremor of the pen: the turn lands on every
+  45° of the page (0°, 45°, 90° …) from several degrees away, whatever
+  angle the item started at, so a shape drawn slightly crooked lands
+  level, never at 89°; it is free between. A small readout beside the pen
+  shows the angle on the page while you turn.
 
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
@@ -92,12 +108,6 @@ extracted from the matching section of this file by `release.yml`.
   longest edge, a picture's own tilt) from several degrees away, and rests
   lightly on every 15°, free between. A small readout beside the pen shows
   the angle while you turn.
-- **Resize handles on request**
-  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
-  selection of handwriting, text or several things no longer shows its
-  corner handles at once: the corners button in its bar shows them (and
-  hides them again). One shape on its own still shows them straight away.
-
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's
