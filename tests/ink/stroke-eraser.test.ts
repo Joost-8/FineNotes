@@ -182,6 +182,19 @@ describe("eraseCircleFromStroke", () => {
     }
   });
 
+  it("keeps a calligraphy stroke's flat nib on every piece", () => {
+    // Regression: the pieces lost `nib` and were drawn with a round nib.
+    const { shape: _shape, ...ink } = stroke;
+    const pieces = eraseCircleFromStroke({ ...ink, nib: 40 }, 50, 0, 10, () => "x")!;
+    expect(pieces).toHaveLength(2);
+    for (const piece of pieces) expect(piece.nib).toBe(40);
+  });
+
+  it("gives a shape's pieces no nib", () => {
+    const pieces = eraseCircleFromStroke({ ...stroke, nib: 40 }, 50, 0, 10, () => "x")!;
+    for (const piece of pieces) expect("nib" in piece).toBe(false);
+  });
+
   it("omits t0 when the original has none", () => {
     const { t0: _t0, ...noTime } = stroke;
     const pieces = eraseCircleFromStroke(noTime, 50, 0, 10, () => "x")!;
@@ -287,6 +300,24 @@ describe("eraseRectsFromStroke", () => {
       ["1", "line", "highlighter", 20, 9, "#ffd400"],
       ["2", "line", "highlighter", 20, 9, "#ffd400"],
     ]);
+  });
+
+  it("keeps a calligraphy stroke's flat nib on every piece", () => {
+    const pen: Stroke = {
+      id: "c",
+      color: "#000",
+      size: 6,
+      tool: "pen",
+      pts: sampled(0, 400),
+      nib: 40,
+    };
+    const pieces = eraseRectsFromStroke(
+      pen,
+      [{ minX: 100, maxX: 200, minY: -5, maxY: 5 }],
+      () => "p",
+    )!;
+    expect(pieces).toHaveLength(2);
+    for (const piece of pieces) expect(piece.nib).toBe(40);
   });
 });
 

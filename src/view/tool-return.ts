@@ -93,3 +93,13 @@ export function optionsAfterSwitch(
   if (!remembered) return false;
   return shown || secondTapReturns;
 }
+
+/**
+ * Whether a gesture's start on the page tucks the options pill away: only
+ * with "Hide pen options while writing" on (`enabled`, as stored), only for
+ * the pen or highlighter, and never for a tool a stylus button or a key
+ * lent for this press (`lent`): that is not writing with the pen.
+ */
+export function tucksOnWrite(enabled: unknown, tool: ActiveTool, lent: boolean): boolean {
+  return enabled === true && !lent && (tool === "pen" || tool === "highlighter");
+}
