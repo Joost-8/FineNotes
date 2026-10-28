@@ -1559,6 +1559,48 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     await vi.waitFor(() => expect(plugin.shortcuts.customized).toBe(0));
     expect(dialogs.confirms[0]?.title).toBe("Reset every shortcut on this device?");
   });
+
+  it("keeps the toolbar actions under Tools, and folds the other categories", () => {
+    const { tab } = makeTab(makePlugin());
+    const all = rows(tab);
+    const heading = (title: string): Def => {
+      for (const row of all) {
+        if (row.heading !== SHORTCUTS || row.def.name !== "") continue;
+        const setting = renderRow(row.def);
+        if (setting.find("goodobsidian-shortcut-category-name")?.text === title) return row.def;
+      }
+      throw new Error(`no shortcut category "${title}"`);
+    };
+    expect(SHORTCUT_ACTION_GROUPS.map((group) => group.title)).toEqual([
+      "Tools",
+      "Saved pens",
+      "Selection and editing",
+      "View and zoom",
+    ]);
+    expect(SHORTCUT_ACTION_GROUPS[0]?.actions.map((action) => action.id)).toContain("bar.image");
+
+    const tools = renderRow(heading("Tools"));
+    const saved = renderRow(heading("Saved pens"));
+    const image = renderRow(named(all, "Insert image"));
+    const pen = renderRow(named(all, SHORTCUT_ACTION_GROUPS[1]?.actions[0]?.label ?? ""));
+    const toolsButton = tools.find("goodobsidian-shortcut-category");
+    const savedButton = saved.find("goodobsidian-shortcut-category");
+    expect(toolsButton?.attrs["aria-expanded"]).toBe("true");
+    expect(savedButton?.attrs["aria-expanded"]).toBe("false");
+    expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(false);
+    expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(true);
+
+    const items = new FakeEl("div", "setting-items");
+    for (const setting of [tools, image, saved, pen]) items.append(setting.settingEl);
+    toolsButton?.dispatch("click");
+    expect(toolsButton?.attrs["aria-expanded"]).toBe("false");
+    expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(true);
+    expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(true);
+    savedButton?.dispatch("click");
+    expect(savedButton?.attrs["aria-expanded"]).toBe("true");
+    expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(false);
+    expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(true);
+  });
 });
 
 // --- Folding sections ----------------------------------------------------------

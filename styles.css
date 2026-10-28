@@ -3186,9 +3186,10 @@ kbd.goodobsidian-key.is-glyph {
   font-size: var(--font-ui-smaller);
 }
 
-/* Settings → Shortcuts: the reference and the key map in one place. The
-   table's heading rows are drawn blocks, the rows are normal settings rows,
-   so search still finds every action by its name. */
+/* Settings → Shortcuts: the reference and the key map in one place. Each
+   category's header folds its rows: title left, chevron right, no divider.
+   Rows are hidden by a class, never by `visible`, so search still finds
+   every action; a search result opens its category. */
 .goodobsidian-shortcuts-intro {
   padding: 10px 12px;
   border-radius: var(--gob-radius-l, var(--radius-m));
@@ -3220,18 +3221,53 @@ kbd.goodobsidian-key.is-glyph {
   min-height: var(--gob-touch, 32px);
 }
 
-.goodobsidian-shortcut-table-title {
-  margin-top: var(--size-4-4);
+.goodobsidian-shortcut-category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+  width: 100%;
+  margin: var(--size-4-4) 0 0;
   padding: var(--size-2-2) 0 var(--size-2-1);
-  border-bottom: var(--border-width) solid var(--background-modifier-border);
+  border: none;
+  border-radius: var(--radius-s);
+  background-color: transparent;
+  box-shadow: none;
   color: var(--text-muted);
+  font-family: inherit;
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-semibold);
   letter-spacing: 0.02em;
+  text-align: start;
+  cursor: var(--cursor);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.goodobsidian-shortcut-table-title:first-child {
-  margin-top: 0;
+.goodobsidian-shortcut-category:hover {
+  background-color: transparent;
+  color: var(--text-normal);
+}
+
+.goodobsidian-shortcut-category-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint);
+  --icon-size: 16px;
+}
+
+.goodobsidian-shortcut-category-chevron .svg-icon {
+  transform: rotate(90deg);
+  transition: transform 150ms ease;
+}
+
+.goodobsidian-shortcut-category[aria-expanded="false"]
+  .goodobsidian-shortcut-category-chevron
+  .svg-icon {
+  transform: none;
+}
+
+.setting-item.goodobsidian-shortcut-row.is-shortcut-folded {
+  display: none;
 }
 
 /* One action: its name on the left, its slot and mode on the right. */

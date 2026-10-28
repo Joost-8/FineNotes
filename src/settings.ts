@@ -432,6 +432,11 @@ function drawnRow(
   return { name, desc: desc || undefined, aliases, visible, render: draw };
 }
 
+/** The class that ties a shortcut category's rows to its fold. */
+function shortcutCategoryClass(title: string): string {
+  return `goodobsidian-shortcut-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
 /** What each on-device model is and does: the start of its row's ⓘ. */
 const MODEL_PURPOSE = {
   voice:
@@ -635,6 +640,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
   /** The binding slot listening for an input, while one records. */
   private shortcutRecorder: ShortcutRecorder | null = null;
+  /** Shortcut categories open in this opening of the settings; Tools starts open. */
+  private readonly shortcutCategoriesOpen = new Set<string>(["Tools"]);
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -1265,6 +1272,58 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
+   * A category header inside Shortcuts: its title at the left, a chevron at
+   * the right, and a tap folds the category's rows. The rows carry the
+   * category class (not `visible`), so Obsidian's search still finds them.
+   */
+  private shortcutCategoryHeading(title: string): SettingDefinition {
+    return block((el) => {
+      const header = el.createEl("button", { cls: "goodobsidian-shortcut-category" });
+      header.setAttribute("type", "button");
+      header.createSpan({ cls: "goodobsidian-shortcut-category-name", text: title });
+      const chevron = header.createSpan({ cls: "goodobsidian-shortcut-category-chevron" });
+      setIcon(chevron, "chevron-right");
+      const rows = (): HTMLElement[] =>
+        Array.from((el.parentElement?.children ?? []) as ArrayLike<HTMLElement>).filter((row) =>
+          row.hasClass(shortcutCategoryClass(title)),
+        );
+      const show = (): void => {
+        const open = this.shortcutCategoriesOpen.has(title);
+        header.setAttribute("aria-expanded", String(open));
+        header.setAttribute("aria-label", `${open ? "Fold" : "Unfold"} ${title}`);
+        for (const row of rows()) row.toggleClass("is-shortcut-folded", !open);
+      };
+      const setOpen = (open: boolean): void => {
+        if (open) this.shortcutCategoriesOpen.add(title);
+        else this.shortcutCategoriesOpen.delete(title);
+        show();
+      };
+      header.addEventListener("click", () => setOpen(!this.shortcutCategoriesOpen.has(title)));
+      show();
+      // A search result flashes its row; open the category so it can be seen.
+      if (typeof MutationObserver === "undefined") return;
+      const group = el.closest<HTMLElement>(".setting-group");
+      if (!group) return;
+      new MutationObserver((changes) => {
+        if (this.shortcutCategoriesOpen.has(title)) return;
+        for (const change of changes) {
+          const target = change.target;
+          if (
+            !target.instanceOf(HTMLElement) ||
+            !target.hasClass("is-flashing") ||
+            !target.hasClass(shortcutCategoryClass(title))
+          ) {
+            continue;
+          }
+          setOpen(true);
+          target.scrollIntoView({ block: "center" });
+          return;
+        }
+      }).observe(group, { subtree: true, attributes: true, attributeFilter: ["class"] });
+    });
+  }
+
+  /**
    * The shortcuts as both a reference and a keyboard map: every action the
    * notebook has, its input as key caps, and a slot that records a new one.
    * A tool can be pressed (switch to it) or held (lend it for the next
@@ -1287,9 +1346,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           () => this.plugin.shortcuts.table.conflicts.length > 0,
         ),
         ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
-          block((el) =>
-            el.createDiv({ cls: "goodobsidian-shortcut-table-title", text: group.title }),
-          ),
+          this.shortcutCategoryHeading(group.title),
           ...group.actions.map((action) =>
             drawnRow(
               action.label,
@@ -1388,6 +1445,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
     if (!row) return;
     setting.setClass("goodobsidian-shortcut-row");
+    setting.settingEl.addClass(shortcutCategoryClass(action.group));
+    setting.settingEl.toggleClass(
+      "is-shortcut-folded",
+      !this.shortcutCategoriesOpen.has(action.group),
+    );
     setting.settingEl.toggleClass("is-conflicted", row.conflicted);
     setting.settingEl.toggleClass("is-customized", row.customized);
     const slot = setting.controlEl.createEl("button", { cls: "goodobsidian-shortcut-slot" });

@@ -293,11 +293,11 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     defaultMode: "press",
   },
 
-  // Tool bar items that are actions rather than tools.
+  // Tool bar items that are actions rather than tools: they are tools too.
   {
     id: "bar.image",
     label: "Insert image",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -305,7 +305,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.pdf",
     label: "Insert PDF",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -313,7 +313,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.sticker",
     label: "Stickers",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -321,7 +321,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.sticky",
     label: "Sticky notes",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -329,7 +329,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.ruler",
     label: "Ruler",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -337,7 +337,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.record",
     label: "Record audio",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -345,7 +345,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "bar.stylus",
     label: "Stylus only mode",
-    group: "Tool bar actions",
+    group: "Tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -361,12 +361,10 @@ export const SHORTCUT_ACTIONS_BY_ID: ReadonlyMap<string, ShortcutAction> = new M
 export const SHORTCUT_ACTION_GROUPS: readonly {
   title: string;
   actions: readonly ShortcutAction[];
-}[] = ["Tools", "Saved pens", "Selection and editing", "View and zoom", "Tool bar actions"].map(
-  (title) => ({
-    title,
-    actions: SHORTCUT_ACTIONS.filter((action) => action.group === title),
-  }),
-);
+}[] = ["Tools", "Saved pens", "Selection and editing", "View and zoom"].map((title) => ({
+  title,
+  actions: SHORTCUT_ACTIONS.filter((action) => action.group === title),
+}));
 
 // --- Inputs -------------------------------------------------------------------
 
