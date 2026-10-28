@@ -8828,6 +8828,7 @@ export class InkSurface {
         icon: "copy",
         label: "Copy",
         group: "edit",
+        bar: true,
         menu: "tile",
         run: () => this.copySelection(),
       },
@@ -8841,19 +8842,6 @@ export class InkSurface {
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
-      {
-        id: "corners",
-        icon: "scan",
-        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
-        group: "edit",
-        bar: true,
-        menu: "none",
-        checked: this.selectionCorners,
-        run: () => {
-          this.selectionCorners = !this.selectionCorners;
-          this.syncSelectionOverlay();
-        },
-      },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -9015,6 +9003,21 @@ export class InkSurface {
       bar: true,
       destructive: true,
       run: () => this.deleteSelection(),
+    });
+    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
+    // the resize handles, then the "…".
+    actions.push({
+      id: "corners",
+      icon: "scan",
+      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+      group: "edit",
+      bar: true,
+      menu: "none",
+      checked: this.selectionCorners,
+      run: () => {
+        this.selectionCorners = !this.selectionCorners;
+        this.syncSelectionOverlay();
+      },
     });
     return actions;
   }
