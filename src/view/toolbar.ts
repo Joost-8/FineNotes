@@ -69,17 +69,16 @@ import {
 } from "../canvas/ruler-geometry";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import {
-  BAR_ITEMS,
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
   DEFAULT_BAR,
-  hiddenItems,
-  normalizeBar,
+  menuItems,
+  normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { setIcon } from "obsidian";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -222,7 +221,8 @@ import {
  * strokes. The laser pointer draws a fading trail that is never kept; it has
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
-export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser";
+export type ActiveTool =
+  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -306,6 +306,8 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   eraser: "eraser",
   text: "type",
   shape: "shapes",
+  pan: "hand",
+  zoom: "zoom-in",
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -629,6 +631,12 @@ export interface ToolbarCallbacks {
   onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
+  /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
+  onOnlyStylusMode?: (on: boolean) => void;
+  /** The magnifier's own pill: one zoom step in or out, or the page fitted. */
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onZoomFit?: () => void;
 }
 
 export interface ToolbarOptions {
@@ -643,6 +651,10 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
+  /** The tools shown nowhere, not even in the accessories menu; none when absent. */
+  offItems?: readonly BarItemId[];
+  /** Stylus-only mode is on, so its toolbar toggle starts on. */
+  onlyStylusMode?: boolean;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -709,11 +721,14 @@ const FOLD_RANK = {
   ai: 5,
   search: 6,
   share: 7,
+  zoom: 8.2,
+  pan: 8.3,
   settings: 8,
   ruler: 8.5,
   shape: 9,
   text: 10,
   select: 11,
+  stylus: 11.8,
   addPage: 12,
   redo: 13,
   thumbnails: 14,
@@ -807,8 +822,12 @@ export class Toolbar {
   private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
   /** The centre items shown, left to right. */
   private items: BarItemId[] = [...DEFAULT_BAR];
-  /** The last button of the tools: the hidden items and "Customize toolbar". */
+  /** The centre items shown nowhere, not even in the accessories menu. */
+  private offItems: BarItemId[] = [];
+  /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
+  /** Stylus-only mode's state, for its button's toggle and on/off mark. */
+  private onlyStylusOn = false;
   /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
   private stickyButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
@@ -902,6 +921,7 @@ export class Toolbar {
   ) {
     this.palette = [...palette];
     this.optionsTool = state.tool;
+    this.onlyStylusOn = options.onlyStylusMode === true;
     this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
@@ -1058,6 +1078,17 @@ export class Toolbar {
     tool("eraser", "eraser", "Eraser (E)");
     tool("text", "type", "Text box (T)");
     tool("shape", "shapes", "Shapes (S)");
+    // Page navigation tools. Off the bar by default: they wait in the
+    // accessories menu until "Customize toolbar" puts them on the bar.
+    tool("pan", "hand", "Hand — move the page");
+    tool("zoom", "zoom-in", "Magnifier — zoom");
+    if (cb.onOnlyStylusMode) {
+      const toggle = (): void => this.toggleOnlyStylusMode();
+      const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
+      item("stylus", stylus, toggle);
+      this.fold(FOLD_RANK.stylus, stylus, ICON_STYLUS_ONLY, "Stylus only", toggle);
+      this.setOnlyStylusMode(this.onlyStylusOn);
+    }
     if (cb.onRuler) {
       item("ruler", this.addRulerButton(tools), () => {
         this.closePopover();
@@ -1100,7 +1131,7 @@ export class Toolbar {
     accessories.setAttribute("aria-haspopup", "menu");
     this.accessoriesButton = accessories;
     keep(accessories);
-    this.setItems(this.options.items ?? DEFAULT_BAR, false);
+    this.setItems(this.options.items ?? DEFAULT_BAR, this.options.offItems ?? [], false);
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1397,7 +1428,11 @@ export class Toolbar {
           ? FOLD_RANK.text
           : tool === "shape"
             ? FOLD_RANK.shape
-            : undefined;
+            : tool === "pan"
+              ? FOLD_RANK.pan
+              : tool === "zoom"
+                ? FOLD_RANK.zoom
+                : undefined;
     if (rank !== undefined) {
       this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
     }
@@ -1415,15 +1450,44 @@ export class Toolbar {
     return button;
   }
 
+  /** The Stylus only button was tapped, on the bar or in a menu. */
+  private toggleOnlyStylusMode(): void {
+    this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
+  }
+
+  /** Show whether Stylus-only mode is on, on the bar and in the folded row that reads it. */
+  setOnlyStylusMode(on: boolean): void {
+    this.onlyStylusOn = on;
+    const stylus = this.barItems.get("stylus");
+    if (!stylus) return;
+    stylus.toggleClass("is-on", on);
+    stylus.setAttribute("aria-pressed", String(on));
+    stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
+    this.syncAccessoriesMark();
+  }
+
+  /** Light the accessories button while one of the items its menu lists is on. */
+  private syncAccessoriesMark(): void {
+    const listed = menuItems({ bar: this.items, off: this.offItems });
+    const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
+      const button = this.barItems.get(id);
+      return button !== undefined && button.hasClass("is-on") && listed.includes(id);
+    });
+    this.accessoriesButton?.toggleClass("is-on", hiddenOn);
+  }
+
   /**
    * Show the centre items `items`, left to right, and take the rest off the
-   * bar (they wait in the accessories menu). Unknown or unavailable items
-   * are skipped; the pen always shows (`normalizeBar`). `relayout` refits
-   * the bar and moves the indicator, as a live change needs.
+   * bar: they wait in the accessories menu, except the `off` ones, which are
+   * shown nowhere. Unknown or unavailable items are skipped; the pen always
+   * shows (`normalizeLayout`). `relayout` refits the bar and moves the
+   * indicator, as a live change needs.
    */
-  setItems(items: readonly BarItemId[], relayout = true): void {
-    const shown = normalizeBar(items).filter((id) => this.barItems.has(id));
+  setItems(items: readonly BarItemId[], off: readonly BarItemId[] = [], relayout = true): void {
+    const layout = normalizeLayout(items, off);
+    const shown = layout.bar.filter((id) => this.barItems.has(id));
     this.items = shown;
+    this.offItems = layout.off;
     const tools = this.toolsGroup;
     if (!tools) return;
     for (const [id, button] of this.barItems)
@@ -1433,6 +1497,7 @@ export class Toolbar {
       if (button) tools.appendChild(button);
     }
     if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
+    this.syncAccessoriesMark();
     if (this.popoverKind === "accessories") this.popoverRender?.();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
@@ -1445,15 +1510,15 @@ export class Toolbar {
     return this.items;
   }
 
-  /** The centre items this bar can show at all (the ruler, stickers and sticky notes need a host). */
-  get availableItems(): readonly BarItemId[] {
-    return BAR_ITEMS.filter((id) => this.barItems.has(id));
+  /** The centre items its accessories menu lists now, in catalogue order. */
+  get menuListed(): readonly BarItemId[] {
+    return menuItems({ bar: this.items, off: this.offItems }).filter((id) => this.itemRuns.has(id));
   }
 
   /**
    * Goodnotes' accessories menu, hanging from the last button of the tools:
-   * every item taken off the bar, which a tap runs as its button would, then
-   * "Customize toolbar".
+   * every item taken off the bar and not hidden, which a tap runs as its
+   * button would, then "Customize toolbar".
    */
   private toggleAccessories(anchor: HTMLElement): void {
     if (this.popoverKind === "accessories") {
@@ -1465,7 +1530,7 @@ export class Toolbar {
     this.popover?.setAttribute("role", "menu");
     this.popoverRender = () => {
       body.empty();
-      const hidden = hiddenItems(this.items).filter((id) => this.itemRuns.has(id));
+      const hidden = this.menuListed;
       for (const id of hidden) {
         const button = this.barItems.get(id);
         const run = this.itemRuns.get(id);
@@ -1551,7 +1616,7 @@ export class Toolbar {
       "aria-label",
       armed ? "Sticky notes: tap the page to place one" : "Sticky notes",
     );
-    this.accessoriesButton?.toggleClass("is-on", armed && button.hasClass("is-unlisted"));
+    this.syncAccessoriesMark();
     // The note is on the page (or stopped waiting): its colours go.
     if (was && !armed && this.popoverKind === "sticky") this.closePopover();
   }
@@ -1592,7 +1657,7 @@ export class Toolbar {
     if (!button || button.hasClass("is-on") === out) return;
     button.toggleClass("is-on", out);
     button.setAttribute("aria-pressed", String(out));
-    this.accessoriesButton?.toggleClass("is-on", out && button.hasClass("is-unlisted"));
+    this.syncAccessoriesMark();
     if (!out && this.popoverKind === "ruler") this.closePopover();
     // It is wider while it shows its chevron: the bar may fold differently,
     // and the centred tools move under the tool indicator, which follows.
@@ -1845,6 +1910,12 @@ export class Toolbar {
           break;
         case "laser":
           this.buildLaserOptions();
+          break;
+        case "pan":
+          this.buildPanOptions();
+          break;
+        case "zoom":
+          this.buildZoomOptions();
           break;
       }
     }
@@ -2345,11 +2416,48 @@ export class Toolbar {
     return swatch;
   }
 
+  /** A tool pill with nothing to set: an icon and one line; the laser's mark is red. */
+  private toolNote(icon: string, text: string, laser = false): void {
+    const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
+    const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
+    mark.toggleClass("is-laser", laser);
+    iconOrText(mark, icon, "");
+    note.createSpan({ text });
+  }
+
   /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
   private buildLaserOptions(): void {
-    const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
-    iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "pointer", "");
-    note.createSpan({ text: "Laser pointer (L): its trail fades and is never saved" });
+    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved", true);
+  }
+
+  /** The hand has nothing to set: its pill says what dragging does with it. */
+  private buildPanOptions(): void {
+    this.toolNote("hand", "Drag to move the page");
+  }
+
+  /** The magnifier: its drag, and the steps and fit the page needs. */
+  private buildZoomOptions(): void {
+    const cb = this.callbacks;
+    this.barButton(
+      this.optionsEl,
+      "zoom-out",
+      "Zoom out",
+      cb.onZoomOut ? () => cb.onZoomOut?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "maximize-2",
+      "Fit page",
+      cb.onZoomFit ? () => cb.onZoomFit?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "zoom-in",
+      "Zoom in",
+      cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
+    );
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    this.toolNote("zoom-in", "Drag up or down to zoom");
   }
 
   /**

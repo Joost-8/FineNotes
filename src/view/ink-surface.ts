@@ -684,6 +684,12 @@ export interface InkSurfaceCallbacks {
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
   /**
+   * Stylus-only mode: every pointer but the pen is ignored on the page, so
+   * a resting hand moves neither the ink nor the page. Read live, as the
+   * toolbar and the settings may switch it while the note is open.
+   */
+  onlyStylusMode?: () => boolean;
+  /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
    */
@@ -1391,7 +1397,15 @@ export class InkSurface {
   /** A pen or mouse is moving the page from beside the pages, or with the barrel. */
   private penPanning = false;
   /** An Alt-drag zooming: the zoom it began at, and the client point it zooms about. */
-  private zoomDrag: { from: number; x: number; y: number } | null = null;
+  private zoomDrag: {
+    from: number;
+    x: number;
+    y: number;
+    /** The pen has moved far enough to be a drag, not a tap. */
+    moved: boolean;
+    /** A tap with the magnifier zooms in a step; an Alt-drag does not. */
+    tapZoom: boolean;
+  } | null = null;
   /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
   private stylusMenuUntil = 0;
   /** The cursor over the page for the pens, on a computer (FineNotes#25, #27). */
@@ -2028,6 +2042,7 @@ export class InkSurface {
     // With the lasso, a text box is something to select, not to type in.
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", toolState.tool === "text");
+    this.syncNavigationCursor(toolState.tool);
 
     this.paneLayers = [backdropCanvas, dryCanvas];
     const renderer = new Renderer(
@@ -2058,8 +2073,11 @@ export class InkSurface {
         return this.toLayout(at.x, at.y);
       },
       this.pointerCallbacks,
-      () => this.handHeld,
-      (event) => this.pressRoute(event),
+      {
+        handHeld: () => this.handHeld,
+        route: (event) => this.pressRoute(event),
+        onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+      },
     );
     input.attach();
     this.pointerInput = input;
@@ -2137,6 +2155,8 @@ export class InkSurface {
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
       if (type === "touch" || type === "pen" || this.touchPanning) return;
+      // Stylus-only mode: a right-click is no more the pen's than a press is.
+      if (this.callbacks.onlyStylusMode?.() === true) return;
       // A tablet driver can send a stylus button as a right click (FineNotes#25).
       if (now() < this.stylusMenuUntil) return;
       const target = event.target as Node | null;
@@ -2862,6 +2882,7 @@ export class InkSurface {
     this.prefetchText();
     this.surfaceEl.toggleClass("is-lasso", tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", tool === "text");
+    this.syncNavigationCursor(tool);
     this.syncPenCursor();
     if (tool !== "select") this.dropSelection();
     // Locked pictures wear a badge only while the lasso could select them.
@@ -2874,6 +2895,12 @@ export class InkSurface {
       // tool is no longer Text, finishing it switches nothing back.
       this.blurTextBox(`tool:${tool}`);
     }
+  }
+
+  /** The hand and magnifier tools show the cursor they act with (styles.css). */
+  private syncNavigationCursor(tool: ActiveTool): void {
+    this.scrollEl?.toggleClass("is-hand-tool", tool === "pan");
+    this.scrollEl?.toggleClass("is-zoom-tool", tool === "zoom");
   }
 
   /** Called only after a complete tool operation, never during pointer movement. */
@@ -5277,8 +5304,11 @@ export class InkSurface {
     onStart: (sample, press) => {
       this.callbacks.onPen?.(true);
       this.pressTool = this.pressOverrideOf(press);
-      if (this.pressTool === "zoom") {
-        this.startZoomDrag(sample);
+      if (
+        this.pressTool === "zoom" ||
+        (this.pressTool === null && this.toolState.tool === "zoom")
+      ) {
+        this.startZoomDrag(sample, this.pressTool === null);
         return;
       }
       this.markDrawing(true);
@@ -5296,7 +5326,7 @@ export class InkSurface {
     onEnd: (sample) => {
       this.callbacks.onPen?.(false);
       this.markDrawing(false);
-      if (this.endZoomDrag()) return;
+      if (this.endZoomDrag(sample)) return;
       if (this.finishCellTap(sample)) return;
       if (this.finishTextDismiss()) return;
       const box = this.activePage;
@@ -5323,7 +5353,10 @@ export class InkSurface {
       // A pan with space held is never a tap (FineNotes#7).
       if (this.handHeld || this.penPanning) this.scrollEl.addClass("is-hand-dragging");
       if (!this.touchPanning) {
-        this.fingerTap = this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
+        // A pen moving the page (space, the hand tool, a barrel set to pan)
+        // is no finger tap: lifting it must not undo, open a link or double-tap.
+        this.fingerTap =
+          this.penPanning || this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
         if (this.fingerTap && !this.lasso) {
           this.fingerHold.begin(x, y, t);
           this.startPress(() => this.fingerHeld(), FINGER_HOLD_MS);
@@ -5692,9 +5725,14 @@ export class InkSurface {
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
     const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
     if (route === "ignore") return "ignore";
-    if (route !== "pan") return "draw";
-    this.penPanning = true;
-    return "pan";
+    // The hand tool moves the page wherever the pointer lands, as space does,
+    // but it stays chosen until another tool is picked. A lent tool (the
+    // eraser, the lasso, Alt's zoom) still wins for that press.
+    if (route === "pan" || (route === null && this.toolState.tool === "pan")) {
+      this.penPanning = true;
+      return "pan";
+    }
+    return "draw";
   }
 
   /**
@@ -5776,12 +5814,12 @@ export class InkSurface {
     };
   }
 
-  /** Alt held as the pen came down: drawing up zooms in, down out, about that point. */
-  private startZoomDrag(sample: Pt): void {
+  /** Alt held as the pen came down, or the magnifier: drawing up zooms in, down out, about that point. */
+  private startZoomDrag(sample: Pt, tapZoom = false): void {
     const at = this.toClient(sample);
     this.zoomAnim = null;
     this.rowSettle = null;
-    this.zoomDrag = { from: this.userZoom, x: at.x, y: at.y };
+    this.zoomDrag = { from: this.userZoom, x: at.x, y: at.y, moved: false, tapZoom };
   }
 
   private moveZoomDrag(sample: Pt): void {
@@ -5789,15 +5827,26 @@ export class InkSurface {
     if (!drag) return;
     // The sample was mapped with the view as it is now, so this is where the pen is.
     const at = this.toClient(sample);
+    if (Math.hypot(at.x - drag.x, at.y - drag.y) > TAP_SLOP_PX) drag.moved = true;
+    if (!drag.moved) return;
     const zoom = dragZoom(drag.from, at.y - drag.y, this.minZoom, MAX_SCALE);
     if (zoom !== this.userZoom) this.applyZoom(zoom, drag.x, drag.y);
   }
 
-  /** The Alt-drag ended; true if there was one. A row zoomed back out settles on its page. */
-  private endZoomDrag(): boolean {
-    if (!this.zoomDrag) return false;
+  /**
+   * The zoom drag ended; true if there was one. A row zoomed back out settles
+   * on its page. A tap with the magnifier, which moved nowhere, is one zoom
+   * step in at the tap.
+   */
+  private endZoomDrag(sample: Pt | null = null): boolean {
+    const drag = this.zoomDrag;
+    if (!drag) return false;
     this.zoomDrag = null;
     this.pressTool = null;
+    if (sample && drag.tapZoom && !drag.moved) {
+      const at = this.toClient(sample);
+      this.applyZoom(this.clampZoom(this.userZoom * ZOOM_STEP), at.x, at.y);
+    }
     this.snapRowAfterZoom =
       this.direction === "horizontal" && rowTurnsPages(this.userZoom, this.minZoom);
     this.settleRowAfterZoom();
