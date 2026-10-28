@@ -10,14 +10,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
-- **The pen types as a row, as in Goodnotes.** Every pen type, the
-  highlighter included, now sits at the start of the pen's bar, each drawn
-  in its own ink: tap one to write with it. Hold a pen and drag it to put
-  the row in your order; none can be added or taken away. When the bar is
-  short of room the row scrolls, and upright at a side it runs down the bar.
-  The ⌄ after the pens (or a tap on the pen in hand) keeps the laser
-  pointer, Pen settings and Pen gestures; the Pen type list it used to open
-  is gone.
+- **The pen types as a row, as in Goodnotes.** Every pen type, the highlighter included, now sits at the start of the pen's bar, each drawn in its own ink: tap one to write with it. Hold a pen and drag it to put the row in your order; none can be added or taken away. Four show at a time and the fifth is a swipe away; upright at a side the row runs down the bar. The ⌄ after the pens (or a tap on the pen in hand) keeps the laser pointer, Pen settings and Pen gestures; the Pen type list it used to open is gone.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and

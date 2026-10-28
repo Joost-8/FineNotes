@@ -656,9 +656,9 @@ body,
 }
 
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
-   all five fit along a pill with room; on a narrow pane the row gives way,
-   down to two, and scrolls, an end that hides more fading as the colour
-   row's does. Upright it runs down the pill, three pens tall. */
+   four in view at a time, the rest a swipe away (Joost's call); on a narrow
+   pane the row gives way, down to two. An end that hides more fades as the
+   colour row's does. Upright it runs down the pill, four pens tall. */
 .goodobsidian-pen-types {
   position: relative;
   display: flex;
@@ -666,6 +666,7 @@ body,
   align-items: center;
   gap: 2px;
   min-width: calc(34px * 2 + 2px);
+  max-width: calc(34px * 4 + 2px * 3);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -701,7 +702,8 @@ body,
 .goodobsidian-options.is-upright .goodobsidian-pen-types {
   flex-direction: column;
   min-width: 0;
-  max-height: calc(var(--gob-touch-compact) * 3 + 4px);
+  max-width: none;
+  max-height: calc(var(--gob-touch-compact) * 4 + 2px * 3);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;

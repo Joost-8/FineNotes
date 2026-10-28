@@ -1964,8 +1964,8 @@ export class Toolbar {
    * the one in hand marked. A tap picks one; a tap on the one in hand opens
    * its menu (as a tap on the colour in use opens its picker). Hold one and
    * drag it to put it elsewhere (`pen-type-drag.ts`); none can be added or
-   * taken away. More than there is room for scroll, across the pill or, upright,
-   * down it.
+   * taken away. Four show at a time (styles.css); the rest scroll, across the
+   * pill or, upright, down it.
    */
   private buildPenRow(upright: boolean): void {
     const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
