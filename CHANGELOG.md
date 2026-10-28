@@ -53,6 +53,18 @@ extracted from the matching section of this file by `release.yml`.
   switch in the eraser's mode list: Whole stroke and By line draw what they
   take grey until the pen lifts, as Notability does, instead of hiding it
   at once. Off by default.
+- **Lasso takes what it touches** (discussion
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
+  under Writing › More: the lasso takes a stroke or shape when any part of
+  it is inside the loop, as Notability does, instead of at least half of it.
+- **Tap a shape with a finger to select it.** With the pen (or another
+  drawing tool) in hand, a finger tap on a shape, an arrow or a table
+  picks the lasso and selects it with its handles and bar, as a tap on a
+  picture does.
+- **Pinch and turn a selection with two fingers.** Two fingers on a
+  selection or a selected picture, or either side of a small one, scale
+  it, turn it and move it at once, and the lift is one undo step. Two fingers elsewhere still zoom
+  the page.
 
 ### Changed
 
@@ -80,12 +92,11 @@ extracted from the matching section of this file by `release.yml`.
   longest edge, a picture's own tilt) from several degrees away, and rests
   lightly on every 15°, free between. A small readout beside the pen shows
   the angle while you turn.
-- **A lasso selection is resized by pinching it**
-  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The square
-  handles at the corners of a selection of handwriting or shapes are gone:
-  pinch the selection with two fingers to make it bigger or smaller, as in
-  Notability. The knob below still turns it, and a picture selected on its
-  own keeps its handles.
+- **Resize handles on request**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
+  selection of handwriting, text or several things no longer shows its
+  corner handles at once: the corners button in its bar shows them (and
+  hides them again). One shape on its own still shows them straight away.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and

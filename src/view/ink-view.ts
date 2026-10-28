@@ -2682,6 +2682,7 @@ export class InkView extends TextFileView {
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        lassoAnyPart: () => this.settings.lassoAnyPart === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];

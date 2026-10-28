@@ -75,18 +75,23 @@ import {
   type LassoMode,
   LassoPath,
   type Polygon,
+  anchorCorner,
   boundsCentre,
+  boundsCorner,
   boxInLasso,
   clampGroupDelta,
   cornerScale,
+  hitSelectionCorner,
   hitSelectionKnob,
   lassoTakesStroke,
+  minScaleForSide,
   polygonOf,
   rectLoop,
   scaleBounds,
   selectionKnobPoint,
   smoothLoop,
   selectionBounds,
+  isLoneShape,
   strokeInLasso,
   textBoxFrame,
 } from "../canvas/lasso";
@@ -285,6 +290,7 @@ import {
   setCellStyle,
   setCellText,
   stepCell,
+  tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
 import {
@@ -333,6 +339,7 @@ import {
   elementsOnPage,
   isEmptySelection,
   reorientPoint,
+  textScaleRange,
   translatePoints,
 } from "../model/selection-commands";
 import {
@@ -422,6 +429,20 @@ import {
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
+import { FingerGesture, type PinchInfo } from "../input/finger-gesture";
+import {
+  type PinchMotion,
+  type SelectionPinch,
+  clampPinch,
+  isStill,
+  pinchCommand,
+  pinchFrame,
+  pinchMotion,
+  pinchOnSelection,
+  pinchPoint,
+  startPinch,
+  stepPinch,
+} from "../canvas/selection-pinch";
 import {
   type BarrelAction,
   type PressInput,
@@ -695,6 +716,8 @@ export interface InkSurfaceCallbacks {
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
+  /** "Lasso takes what it touches" (settings): any part of a stroke inside takes it. Read live. */
+  lassoAnyPart?: () => boolean;
   /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a resting hand moves neither the ink nor the page. Read live, as the
@@ -930,6 +953,17 @@ const TAP_SLOP_PX = 8;
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
 const SELECTION_PAD_PX = 8;
+/**
+ * The frame's pad round a lone shape whose point rings and corner handles
+ * both show, screen px: the corner squares stand clear of the rings.
+ */
+const SHAPE_FRAME_PAD_PX = 20;
+/** Smallest a corner resize may make a lasso selection's longer side, screen px. */
+const MIN_SELECTION_SIDE_PX = 32;
+/** Two fingers whose midpoint lands this close to a selection's frame pinch it, screen px. */
+const PINCH_MARGIN_PX = 24;
+/** The id a finger on the page has among the fingers on a selection's frame. */
+const PAGE_FINGER_ID = -2;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far off ink or a picture a Pencil tap may land and still pick it, screen px. */
 const PEN_TAP_TOLERANCE_PX = 6;
@@ -1020,6 +1054,8 @@ interface ImageDrag {
   lifted: boolean;
   /** The knob's turn settles here, when the knob was grabbed. */
   turn?: TurnSnap;
+  /** A finger holds it, so a second finger may pinch the picture. */
+  finger?: boolean;
 }
 
 /**
@@ -1120,6 +1156,10 @@ interface GroupDrag {
   scale: GroupScale | null;
   /** Set when the rotate knob was grabbed: the drag turns instead of moving. */
   turn: GroupTurn | null;
+  /** A finger on the frame drags it, so a second finger may pinch it. */
+  finger?: boolean;
+  /** Set while two fingers pinch it: it scales, turns and moves at once. */
+  pinch?: GroupPinch;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
 }
@@ -1146,6 +1186,27 @@ interface PointDrag {
   lifted: boolean;
   /** The points and kind the shape has now, and where the dragged handle is. */
   draft: { pts: number[]; kind: ShapeKind; at: Pt } | null;
+}
+
+/**
+ * Two fingers pinching a lasso selection (`canvas/selection-pinch.ts`): on
+ * its frame, one on the frame and one beside it, or both round it on the
+ * page (`page`). The lift commits it as one step.
+ */
+interface GroupPinch {
+  pinch: SelectionPinch;
+  /** What the pinch does now, clamped as a resize and a move are. */
+  motion: PinchMotion;
+  /** The scale's range, as a corner resize has it. */
+  min: number;
+  max: number;
+  /** The fingers are the page's: they landed round the selection, not on its frame. */
+  page: boolean;
+  /**
+   * The drag was made for the pinch (by the page's fingers, or from a lone
+   * picture's drag): there is no finger's drag of the frame to go back to.
+   */
+  owned: boolean;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -1628,10 +1689,24 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /**
+   * Whether the selection shows its corner handles (discussion #51, Joost):
+   * hidden when a lasso picks something up, shown at once for a lone shape,
+   * and switched by the bar's corners button.
+   */
+  private selectionCorners = false;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
   private groupDrag: GroupDrag | null = null;
+  /** Every finger on the selection's frame: a second one makes the drag a pinch. */
+  private readonly selectionFingers = new FingerGesture({
+    onPinchStart: (x, y) => void this.startGroupPinch(x, y, false),
+    onPinch: (info) => this.stepGroupPinch(info),
+    onPinchEnd: () => this.endGroupPinch(),
+  });
+  /** A finger on the page joined the one dragging the selection by its frame. */
+  private pageFingerOnFrame = false;
   private readonly selectionUiEl: HTMLElement;
   private readonly selectionFrameEl: HTMLElement;
   /** The rounded lasso loop drawn in the frame, for a freehand selection. */
@@ -2052,6 +2127,14 @@ export class InkSurface {
     const knob = this.imageFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(knob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.imageFrameEl.addEventListener("pointerdown", this.onImagePointerDown);
+    for (const type of [
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "lostpointercapture",
+    ] as const) {
+      this.imageFrameEl.addEventListener(type, this.onSelectionFinger);
+    }
 
     // Crop mode: a box over the whole picture, which takes every press on
     // it, with the crop frame and its handles inside.
@@ -2080,14 +2163,26 @@ export class InkSurface {
     this.selectionPathEl = activeDocument.createElementNS(SVG_NS, "path");
     outline.append(this.selectionPathEl);
     this.selectionFrameEl.append(outline);
-    // No corner handles (discussion #51, Joost): a lasso selection of ink or
-    // shapes is resized only by pinching it, as in Notability; a picture on
-    // its own keeps its handles. The knob and stem share a picture's sizes.
+    // A square handle at each corner resizes the selection, the aspect kept,
+    // drawn as a picture's corner handles are, from the same sizes.
     this.selectionUiEl.setCssProps(chromeSizes);
-    // A rotate knob below it on a stem, as below a picture.
+    for (const corner of IMAGE_CORNERS) {
+      this.selectionFrameEl.createDiv({ cls: `goodobsidian-image-handle is-corner is-${corner}` });
+    }
+    // And a rotate knob below it on a stem, as below a picture.
     const groupKnob = this.selectionFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(groupKnob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
+    // Every finger on the frame, to its lift, for a pinch of the selection.
+    const fingerEvents = [
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "lostpointercapture",
+    ] as const;
+    for (const type of fingerEvents) {
+      this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
+    }
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
     // With the lasso, a text box is something to select, not to type in.
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
@@ -5418,6 +5513,8 @@ export class InkSurface {
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
     onPanStart: (x, y, t) => {
+      // A finger beside one dragging the selection by its frame: the two pinch it.
+      if (this.joinFramePinch(x, y, t)) return;
       // A resting palm must not scroll the page out from under an image or a
       // selection being dragged; without a dragStart the moves and the end
       // are no-ops.
@@ -5458,6 +5555,10 @@ export class InkSurface {
       this.requestFrame();
     },
     onPanMove: (x, y, t) => {
+      if (this.pageFingerOnFrame) {
+        this.selectionFingers.move(PAGE_FINGER_ID, x, y, t);
+        return;
+      }
       const tap = this.fingerTap;
       if (tap && Math.hypot(x - tap.x, y - tap.y) > TAP_SLOP_PX) {
         this.fingerTap = null;
@@ -5472,6 +5573,11 @@ export class InkSurface {
       this.requestFrame();
     },
     onPanEnd: (t) => {
+      if (this.pageFingerOnFrame) {
+        this.pageFingerOnFrame = false;
+        this.selectionFingers.lift(PAGE_FINGER_ID, t);
+        return;
+      }
       const tap = this.fingerTap;
       this.fingerTap = null;
       this.stopPress();
@@ -5529,6 +5635,12 @@ export class InkSurface {
     },
     // Only a landing pen voids a finger gesture.
     onPanCancel: () => {
+      // A pinch of the selection is kept as far as it went, as a cancelled drag is.
+      if (this.pageFingerOnFrame) {
+        this.pageFingerOnFrame = false;
+        this.selectionFingers.lift(PAGE_FINGER_ID, now());
+      }
+      if (this.groupDrag?.pinch?.page) this.endGroupPinch();
       this.fingerTap = null;
       this.fingerGesture = null;
       this.pullGesture = null;
@@ -5550,11 +5662,20 @@ export class InkSurface {
       this.stopPress();
       this.fingerHold.end();
       if (this.imageDrag || this.groupDrag) return;
+      // Two fingers meeting over the selection pinch it, not the page.
+      if (this.startGroupPinch(centerX, centerY, true)) {
+        this.scroller.cancel();
+        return;
+      }
       this.zoomAnim = null;
       this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
     },
     onPinch: (info) => {
+      if (this.groupDrag?.pinch?.page) {
+        this.stepGroupPinch(info);
+        return;
+      }
       const pinch = this.pinch;
       if (!pinch) return;
       pinch.raw *= info.scaleFactor;
@@ -5564,6 +5685,10 @@ export class InkSurface {
       this.applyZoom(softZoom(pinch.raw, this.minZoom, MAX_SCALE), info.centerX, info.centerY);
     },
     onPinchEnd: () => {
+      if (this.groupDrag?.pinch?.page) {
+        this.endGroupPinch();
+        return;
+      }
       const pinch = this.pinch;
       const overview = this.pinchOverviewArmed;
       this.pinch = null;
@@ -7730,6 +7855,7 @@ export class InkSurface {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
+    const anyPart = this.callbacks.lassoAnyPart?.() === true;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
       strokes: page.strokes.filter(
@@ -7737,7 +7863,7 @@ export class InkSurface {
           stroke !== except &&
           near.has(stroke.id) &&
           lassoTakesStroke(stroke, filter) &&
-          strokeInLasso(stroke, poly),
+          strokeInLasso(stroke, poly, anyPart),
       ),
       images: filter.images
         ? page.images.filter((image) => image.locked !== true && boxInLasso(image, poly))
@@ -8203,11 +8329,14 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
     const filter = lassoFilterFor(this.toolState);
+    const anyPart = this.callbacks.lassoAnyPart?.() === true;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     this.select(page.id, {
       strokes: page.strokes.filter(
         (stroke) =>
-          near.has(stroke.id) && lassoTakesStroke(stroke, filter) && strokeInLasso(stroke, poly),
+          near.has(stroke.id) &&
+          lassoTakesStroke(stroke, filter) &&
+          strokeInLasso(stroke, poly, anyPart),
       ),
       // A locked picture is never picked up (until it is unlocked).
       images: filter.images
@@ -8278,27 +8407,32 @@ export class InkSurface {
     // where the table goes.
     const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
     if (table) {
-      const f = this.tableFrameOf(table);
-      const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
-      const near = this.strokeIndex.within(page.id, frame);
-      const inked = page.strokes.filter((stroke) => {
-        const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
-        return (
-          b !== null &&
-          lassoTakesStroke(stroke, filter) &&
-          b.minX >= frame.minX &&
-          b.minY >= frame.minY &&
-          b.maxX <= frame.maxX &&
-          b.maxY <= frame.maxY
-        );
-      });
-      this.select(page.id, { strokes: inked, images: [], textBoxes: [], tables: [table] });
+      this.select(page.id, this.tableWithInk(page, table, filter));
       return;
     }
     // A locked picture is passed over, as if it were part of the paper.
     const unlocked = page.images.filter((candidate) => candidate.locked !== true);
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
     if (image) this.setImageSelection(page.id, image);
+  }
+
+  /** A table with the ink that lies wholly inside its frame, as far as the lasso's switches allow. */
+  private tableWithInk(page: Page, table: TableElement, filter: LassoFilter): ElementLists {
+    const f = this.tableFrameOf(table);
+    const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
+    const near = this.strokeIndex.within(page.id, frame);
+    const inked = page.strokes.filter((stroke) => {
+      const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
+      return (
+        b !== null &&
+        lassoTakesStroke(stroke, filter) &&
+        b.minX >= frame.minX &&
+        b.minY >= frame.minY &&
+        b.maxX <= frame.maxX &&
+        b.maxY <= frame.maxY
+      );
+    });
+    return { strokes: inked, images: [], textBoxes: [], tables: [table] };
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -8465,6 +8599,9 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
+    // A lone shape shows its handles at once: its point rings when it has
+    // them (as Goodnotes), else the corner squares.
+    this.selectionCorners = isLoneShape(this.selection) && this.loneShape(this.selection) === null;
     this.syncSelectionOverlay();
   }
 
@@ -8530,6 +8667,13 @@ export class InkSurface {
     const drag = this.groupDrag;
     if (!drag?.lifted || drag.selection.pageId !== pageId) return { x: 0, y: 0 };
     if (!drag.selection.textBoxes.includes(textBox)) return { x: 0, y: 0 };
+    const pinch = drag.pinch?.motion;
+    if (pinch) {
+      // Upright, as under a turn: its middle goes round, and its size is a transform.
+      const f = this.textBoxFrameOf(pageId, textBox);
+      const mid = pinchPoint(pinch, { x: f.x + f.w / 2, y: f.y + f.h / 2 });
+      return { x: mid.x - (f.w * pinch.k) / 2 - f.x, y: mid.y - (f.h * pinch.k) / 2 - f.y };
+    }
     const turn = drag.turn;
     if (turn) {
       // A box stays upright: only its middle goes round.
@@ -8553,6 +8697,7 @@ export class InkSurface {
    * leaves them where they were: the frame turns with the selection instead.
    */
   private draggedBounds(drag: GroupDrag): Bounds {
+    if (drag.pinch) return pinchFrame(drag.bounds, drag.pinch.motion);
     if (drag.turn) return drag.bounds;
     return drag.scale
       ? scaleBounds(drag.bounds, drag.scale.anchor, drag.scale.k)
@@ -8577,9 +8722,10 @@ export class InkSurface {
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
     const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
+    this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
       const scale = this.unitScale;
-      const pad = SELECTION_PAD_PX;
+      const pad = this.framePad;
       const x = (box.x + bounds.minX) * scale - pad;
       const y = (box.y + bounds.minY) * scale - pad;
       this.selectionFrameEl.setCssStyles({
@@ -8590,7 +8736,7 @@ export class InkSurface {
       });
       this.selectionFrameEl.toggleClass("is-dragging", drag !== null);
       // While the knob turns it, the frame turns with the selection about its middle.
-      const angle = drag?.turn?.angle ?? 0;
+      const angle = drag?.pinch?.motion.angle ?? drag?.turn?.angle ?? 0;
       this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
@@ -8599,7 +8745,7 @@ export class InkSurface {
       this.selectionFrameEl.toggleClass("has-outline", shown);
       if (shown) {
         // The loop is relative to the bounds' corner, so a resize scales it too.
-        const k = drag?.scale?.k ?? 1;
+        const k = drag?.pinch?.motion.k ?? drag?.scale?.k ?? 1;
         const at = (v: number): string => (pad + v * k * scale).toFixed(1);
         const pts = outline.loop;
         let d = `M${at(pts[0])} ${at(pts[1])}`;
@@ -8637,7 +8783,7 @@ export class InkSurface {
     } else if (group) {
       bounds = this.groupChromeBounds(group);
       // Clear of the corner handles on the frame, as of a picture's.
-      clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
+      clearAbove = clearBelow = this.framePad + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
     } else if (image) {
       // The picture and its rotate knob, wherever a turn has put the knob.
@@ -8675,7 +8821,7 @@ export class InkSurface {
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
-    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - SELECTION_PAD_PX / scale) };
+    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - this.framePad / scale) };
   }
 
   /** What a lone picture's chrome covers, page space: the rotated picture and its knob. */
@@ -8874,6 +9020,19 @@ export class InkSurface {
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
+      {
+        id: "corners",
+        icon: "scan",
+        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.selectionCorners,
+        run: () => {
+          this.selectionCorners = !this.selectionCorners;
+          this.syncSelectionOverlay();
+        },
+      },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -10572,19 +10731,28 @@ export class InkSurface {
 
   /**
    * A press on the selection's frame: the whole selection follows it, and
-   * the lift commits one `TranslateElements`. The knob below turns it
-   * about its middle instead, and the lift commits one `ReorientElements`;
-   * the pure hit test answers across 44 screen px at any zoom. A finger
-   * works it too. There are no corner handles: a pinch resizes it.
+   * the lift commits one `TranslateElements`. A press on a corner handle
+   * resizes it instead, about the opposite corner, the aspect kept, and the
+   * lift commits one `ScaleElements`; the knob below turns it about its
+   * middle, and the lift commits one `ReorientElements`. The pure hit tests
+   * decide which, so the handles answer across 44 screen px at any zoom. A
+   * finger works it too.
    */
   private readonly onSelectionPointerDown = (event: PointerEvent): void => {
     // Everything on the frame is the frame's: the page below never sees it.
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveSelection();
-    if (!sel || this.groupDrag || this.pointDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.pointDrag || this.callbacks.isLocked?.()) return;
     // A palm landing on the frame while the Pencil is busy elsewhere is a palm.
-    if (event.pointerType === "touch" && this.activePage !== null) return;
+    const finger = event.pointerType === "touch";
+    if (finger && this.activePage !== null) return;
+    if (this.groupDrag) {
+      // A second finger beside the one dragging it: a pinch of the selection.
+      if (finger && this.groupDrag.finger === true)
+        this.addFrameFinger(this.selectionFrameEl, event);
+      return;
+    }
     const box = this.boxForPage(sel.pageId);
     const bounds = this.groupBounds(sel);
     if (!box || !bounds) return;
@@ -10605,20 +10773,215 @@ export class InkSurface {
       clientY: event.clientY,
       dx: 0,
       dy: 0,
-      scale: null,
+      scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
       turn,
+      finger,
       lifted: false,
     };
     this.selectionFrameEl.addEventListener("pointermove", this.onSelectionPointerMove);
     this.selectionFrameEl.addEventListener("pointerup", this.onSelectionPointerEnd);
     this.selectionFrameEl.addEventListener("pointercancel", this.onSelectionPointerEnd);
+    if (finger) {
+      // No drag was under way, so any finger still counted lost its lift.
+      if (!this.pageFingerOnFrame) this.selectionFingers.cancel();
+      this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    }
   };
+
+  /** Another finger landed on a frame while one drags its selection or picture: it joins, to pinch. */
+  private addFrameFinger(frame: HTMLElement, event: PointerEvent): void {
+    try {
+      frame.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
+    }
+    this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+  }
+
+  /** A finger on the frame moved or lifted: the pinch hears of it, before the drag does. */
+  private readonly onSelectionFinger = (event: PointerEvent): void => {
+    if (event.pointerType !== "touch") return;
+    if (event.type === "pointermove") {
+      this.selectionFingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    } else {
+      this.selectionFingers.lift(event.pointerId, event.timeStamp);
+    }
+  };
+
+  /**
+   * A finger landed on the page (client px) while another drags the
+   * selection by its frame: it joins that finger, and the two pinch the
+   * selection. Its moves and its lift come through the page's pan.
+   */
+  private joinFramePinch(x: number, y: number, t: number): boolean {
+    if (this.pageFingerOnFrame) {
+      // Another page finger joined it: the page's gesture moved its focus.
+      this.selectionFingers.down(PAGE_FINGER_ID, x, y, t);
+      return true;
+    }
+    const held = this.groupDrag?.finger === true || this.imageDrag?.finger === true;
+    if (!held || this.touchPanning) return false;
+    if (!this.selectionFingers.down(PAGE_FINGER_ID, x, y, t)) return false;
+    this.pageFingerOnFrame = true;
+    return true;
+  }
+
+  /**
+   * Two fingers began a pinch at client point (x, y): on the frame of the
+   * selection or picture a finger is dragging, or (`page`) both on the page
+   * with their midpoint over the selection or the selected picture. Returns
+   * whether it took the pinch. A drag by a handle or a knob stays what it was.
+   */
+  private startGroupPinch(x: number, y: number, page: boolean): boolean {
+    if (this.callbacks.isLocked?.()) return false;
+    let drag = this.groupDrag;
+    let owned = false;
+    if (page) {
+      if (drag || this.imageDrag || this.activePage !== null) return false;
+      drag = this.pinchableAt(x, y);
+      owned = true;
+    } else if (!drag) {
+      drag = this.groupDragFromPicture();
+      owned = true;
+    }
+    if (!drag || drag.scale || drag.turn || drag.pinch) return false;
+    if (!page && drag.finger !== true) return false;
+    const box = this.boxForPage(drag.selection.pageId);
+    if (!box) return false;
+    this.groupDrag = drag;
+    const range = this.groupScaleRange(drag.selection, drag.bounds);
+    const pinch = startPinch(this.pagePoint(box, x, y), { x: drag.dx, y: drag.dy });
+    const motion = pinchMotion(pinch, range.min, range.max);
+    drag.pinch = { pinch, motion, ...range, page, owned };
+    return true;
+  }
+
+  /**
+   * A drag for two page fingers whose midpoint (client px) lands over the
+   * lasso selection, or over the selected picture, within a margin; `null`
+   * when it lands elsewhere and the page should zoom.
+   */
+  private pinchableAt(x: number, y: number): GroupDrag | null {
+    const sel = this.liveSelection() ?? this.pictureAsSelection();
+    const box = sel ? this.boxForPage(sel.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!sel || !box || !bounds) return null;
+    const at = this.pagePoint(box, x, y);
+    const frame = this.selectionFrameOf(bounds);
+    if (!pinchOnSelection(frame, at, PINCH_MARGIN_PX / this.unitScale)) return null;
+    return {
+      pointerId: -1,
+      selection: sel,
+      bounds,
+      from: at,
+      clientX: x,
+      clientY: y,
+      dx: 0,
+      dy: 0,
+      scale: null,
+      turn: null,
+      lifted: false,
+    };
+  }
+
+  /** The selected picture as a selection of its own, a sticky note with its ink. */
+  private pictureAsSelection(): GroupSelection | null {
+    const picked = this.liveImageSelection();
+    if (!picked) return null;
+    return {
+      pageId: picked.pageId,
+      strokes: this.noteInk(picked),
+      images: [picked.image],
+      textBoxes: [],
+      tables: [],
+      graphs: [],
+    };
+  }
+
+  /**
+   * A finger dragging the selected picture by its body was joined by a
+   * second: the picture's drag becomes a selection drag the pinch carries on
+   * from, with any move the finger made. The finger keeps its capture.
+   */
+  private groupDragFromPicture(): GroupDrag | null {
+    const held = this.imageDrag;
+    const sel = held?.finger === true && held.part === "body" ? this.pictureAsSelection() : null;
+    const box = held ? this.boxForPage(held.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!held || !sel || !box || !bounds || sel.images[0] !== held.image) return null;
+    this.imageDrag = null;
+    this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
+    this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
+    this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);
+    this.imageUiEl.removeClass("is-dragging");
+    if (held.lifted) this.renderer?.setHiddenImages(NO_IMAGES);
+    const drag: GroupDrag = {
+      pointerId: held.pointerId,
+      selection: sel,
+      bounds,
+      from: held.from,
+      clientX: held.clientX,
+      clientY: held.clientY,
+      dx: held.draft.x - held.start.x,
+      dy: held.draft.y - held.start.y,
+      scale: null,
+      turn: null,
+      finger: true,
+      lifted: false,
+    };
+    // Drawn where the finger had already carried it.
+    if (held.lifted) {
+      this.groupDrag = drag;
+      this.liftSelection(drag, box);
+      this.renderGroupDraft();
+      this.syncImageOverlay();
+    }
+    return drag;
+  }
+
+  /** The pinch's fingers moved: the selection follows, drawn on the wet layer until the lift. */
+  private stepGroupPinch(info: PinchInfo): void {
+    const drag = this.groupDrag;
+    const grip = drag?.pinch;
+    const box = drag ? this.boxForPage(drag.selection.pageId) : null;
+    if (!drag || !grip || !box) return;
+    const centre = this.pagePoint(box, info.centerX, info.centerY);
+    const step = { scaleFactor: info.scaleFactor, rotation: info.rotation, centre };
+    grip.pinch = stepPinch(grip.pinch, step, TAP_SLOP_PX / this.unitScale);
+    if (!grip.pinch.engaged) return;
+    grip.motion = clampPinch(pinchMotion(grip.pinch, grip.min, grip.max), drag.bounds, box);
+    if (!drag.lifted) {
+      this.liftSelection(drag, box);
+      this.syncImageOverlay();
+    }
+    this.renderGroupDraft();
+    this.placeDraggedTextBoxes(drag, box);
+    this.syncSelectionOverlay();
+  }
+
+  /**
+   * Fewer than two fingers are left: the pinch is one step. Fingers that
+   * never pinched leave a finger's drag of the frame going as it was.
+   */
+  private endGroupPinch(): void {
+    const drag = this.groupDrag;
+    const grip = drag?.pinch;
+    if (!drag || !grip) return;
+    if (!grip.pinch.engaged && !grip.owned) {
+      drag.pinch = undefined;
+      return;
+    }
+    this.endGroupDrag(true);
+    this.syncImageOverlay();
+  }
 
   private readonly onSelectionPointerMove = (event: PointerEvent): void => {
     const drag = this.groupDrag;
     if (!drag || event.pointerId !== drag.pointerId) return;
     event.stopPropagation();
     event.preventDefault();
+    // A pinch moves it through its fingers (`onSelectionFinger`).
+    if (drag.pinch) return;
     const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
     if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
     const box = this.boxForPage(drag.selection.pageId);
@@ -10629,11 +10992,11 @@ export class InkSurface {
   /**
    * The corner resize a press at page point `from` starts on the selection's
    * frame, or `null` when it grabbed no corner handle. The handles sit on the
-   * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
+   * dashed frame, which is `framePad` outside the bounds.
    */
-  /** The selection's dashed frame, page space: its bounds grown by `SELECTION_PAD_PX`. */
+  /** The selection's dashed frame, page space: its bounds grown by `framePad`. */
   private selectionFrameOf(bounds: Bounds): Bounds {
-    const pad = SELECTION_PAD_PX / this.unitScale;
+    const pad = this.framePad / this.unitScale;
     return {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10709,6 +11072,37 @@ export class InkSurface {
     el.removeClass("is-hidden");
   }
 
+  private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
+    if (!this.selectionCorners) return null;
+    const scale = this.unitScale;
+    const pad = this.framePad / scale;
+    const frame: Bounds = {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+    const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
+    if (!corner) return null;
+    const at = boundsCorner(bounds, corner);
+    return {
+      corner,
+      anchor: anchorCorner(bounds, corner),
+      grab: { x: at.x - from.x, y: at.y - from.y },
+      k: 1,
+      ...this.groupScaleRange(sel, bounds),
+    };
+  }
+
+  /** How far a selection may be scaled: not below the smallest side, nor past its text's sizes. */
+  private groupScaleRange(sel: GroupSelection, bounds: Bounds): { min: number; max: number } {
+    const fonts = textScaleRange(sel.textBoxes);
+    const cells = tableScaleRange(sel.tables ?? []);
+    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
+    const side = minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / this.unitScale);
+    return { min: Math.max(side, text.min), max: text.max };
+  }
+
   /** Carry a selection being dragged to page point `p`, from where the drag began. */
   private moveGroupDrag(drag: GroupDrag, box: PageBox, p: Pt): void {
     const scale = drag.scale;
@@ -10762,6 +11156,24 @@ export class InkSurface {
     const box = drag ? this.boxForPage(drag.selection.pageId) : null;
     if (!drag?.lifted || !box) return;
     const { strokes, images } = drag.selection;
+    const pinch = drag.pinch?.motion;
+    if (pinch) {
+      // A pinch is a turn, a scale and a move about one point, drawn as one.
+      const { anchor, k, angle } = pinch;
+      this.renderer?.renderSelectionDraft(
+        box.index,
+        strokes,
+        images,
+        pinch.dx,
+        pinch.dy,
+        this.inkPressure,
+        { x: anchor.x, y: anchor.y, k },
+        { x: anchor.x, y: anchor.y, angle },
+        drag.selection.tables ?? [],
+        drag.selection.graphs ?? [],
+      );
+      return;
+    }
     const scale = drag.scale;
     this.renderer?.renderSelectionDraft(
       box.index,
@@ -10786,7 +11198,7 @@ export class InkSurface {
    */
   private placeDraggedTextBoxes(drag: GroupDrag, box: PageBox): void {
     const scale = this.unitScale;
-    const k = drag.scale?.k;
+    const k = drag.pinch?.motion.k ?? drag.scale?.k;
     for (const textBox of drag.selection.textBoxes) {
       const view = this.textBoxInputs.get(`${drag.selection.pageId}:${textBox.id}`);
       const shift = this.dragShift(drag.selection.pageId, textBox);
@@ -10818,7 +11230,8 @@ export class InkSurface {
       // A tap in a cell of a table picked up on its own types in that cell,
       // as a second tap on a table does in Keynote and Numbers. Inside the
       // pointerup, so iPadOS raises the keyboard for the focus.
-      const table = commit && !drag.scale && !drag.turn ? this.loneTable(drag.selection) : null;
+      const table =
+        commit && !drag.scale && !drag.turn && !drag.pinch ? this.loneTable(drag.selection) : null;
       const cell = table ? cellAt(this.tableLayout(table), drag.from.x, drag.from.y) : null;
       if (table && cell) {
         this.startCellEdit(drag.selection.pageId, table, cell);
@@ -10835,7 +11248,8 @@ export class InkSurface {
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
     const scale = drag.scale;
-    if (scale) {
+    const pinch = drag.pinch?.motion;
+    if (scale || pinch) {
       for (const textBox of drag.selection.textBoxes) {
         this.textBoxInputs
           .get(`${pageId}:${textBox.id}`)
@@ -10843,14 +11257,18 @@ export class InkSurface {
       }
     }
     const turn = drag.turn;
-    const changed = turn
-      ? turn.angle !== 0
-      : scale
-        ? scale.k !== 1
-        : drag.dx !== 0 || drag.dy !== 0;
+    const changed = pinch
+      ? !isStill(pinch)
+      : turn
+        ? turn.angle !== 0
+        : scale
+          ? scale.k !== 1
+          : drag.dx !== 0 || drag.dy !== 0;
     const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
     let after: Bounds | null = null;
-    if (moved && turn) {
+    if (moved && pinch) {
+      after = this.pinchSelection(drag.selection, drag.bounds, pinch);
+    } else if (moved && turn) {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
     } else if (moved) {
@@ -10889,30 +11307,55 @@ export class InkSurface {
     motion: Reorientation,
     centre: Pt,
   ): Bounds | null {
-    const heights = new Map<TextBoxElement | TableElement, number>();
-    for (const textBox of sel.textBoxes) {
-      heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
-    }
-    for (const table of sel.tables ?? []) heights.set(table, this.tableFrameOf(table).h);
+    const heights = this.measuredHeights(sel);
     this.history.push(
       this.doc,
       new ReorientElements(sel.pageId, sel, motion, centre.x, centre.y, heights),
     );
     this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     const after = this.groupBounds(sel);
-    // The loop is stored relative to the bounds' corner, which has moved.
-    const outline = this.selectionOutline;
-    if (outline && after) {
-      const loop: number[] = [];
-      for (let i = 0; i + 1 < outline.loop.length; i += 2) {
-        const x = before.minX + outline.loop[i];
-        const y = before.minY + outline.loop[i + 1];
-        const p = reorientPoint(motion, centre.x, centre.y, x, y);
-        loop.push(p.x - after.minX, p.y - after.minY);
-      }
-      this.selectionOutline = { ...outline, loop };
-    }
+    this.carryOutline(before, after, (x, y) => reorientPoint(motion, centre.x, centre.y, x, y));
     return after;
+  }
+
+  /** Commit a pinch of a selection as one step (`pinchCommand`); returns its bounds after. */
+  private pinchSelection(sel: GroupSelection, before: Bounds, motion: PinchMotion): Bounds | null {
+    const command = pinchCommand(sel.pageId, sel, motion, this.measuredHeights(sel));
+    if (!command) return before;
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    const after = this.groupBounds(sel);
+    this.carryOutline(before, after, (x, y) => pinchPoint(motion, { x, y }));
+    return after;
+  }
+
+  /** The heights the view measured for a selection's text boxes and tables, for a turn. */
+  private measuredHeights(sel: GroupSelection): Map<TextBoxElement | TableElement, number> {
+    const heights = new Map<TextBoxElement | TableElement, number>();
+    for (const textBox of sel.textBoxes) {
+      heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
+    }
+    for (const table of sel.tables ?? []) heights.set(table, this.tableFrameOf(table).h);
+    return heights;
+  }
+
+  /**
+   * Carry the freehand loop along with a motion of its selection: it is
+   * stored relative to the bounds' corner, which has moved.
+   */
+  private carryOutline(
+    before: Bounds,
+    after: Bounds | null,
+    map: (x: number, y: number) => Pt,
+  ): void {
+    const outline = this.selectionOutline;
+    if (!outline || !after) return;
+    const loop: number[] = [];
+    for (let i = 0; i + 1 < outline.loop.length; i += 2) {
+      const p = map(before.minX + outline.loop[i], before.minY + outline.loop[i + 1]);
+      loop.push(p.x - after.minX, p.y - after.minY);
+    }
+    this.selectionOutline = { ...outline, loop };
   }
 
   /**
@@ -10945,6 +11388,16 @@ export class InkSurface {
   /** The dots on a lone selected shape's corners and ends; made on first use. */
   private shapePointsEl: HTMLElement | null = null;
   private pointDrag: PointDrag | null = null;
+
+  /**
+   * How far the selection's frame stands outside its bounds, screen px:
+   * wider round a lone shape whose rings and corner squares both show.
+   */
+  private get framePad(): number {
+    return this.selectionCorners && this.loneShape(this.selection)
+      ? SHAPE_FRAME_PAD_PX
+      : SELECTION_PAD_PX;
+  }
 
   /** The one shape a selection holds on its own, and its point handles; null otherwise. */
   private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
@@ -10997,7 +11450,16 @@ export class InkSurface {
     const before = lone ? strokeBounds(lone.stroke) : null;
     if (!lone || !before) return false;
     const reach = POINT_HIT_RADIUS_PX / this.unitScale;
-    const handle = pickPointHandle(lone.handles.at, from, reach);
+    const f = this.selectionFrameOf(this.groupBounds(sel) ?? before);
+    const corners = this.selectionCorners
+      ? [
+          { x: f.minX, y: f.minY },
+          { x: f.maxX, y: f.minY },
+          { x: f.maxX, y: f.maxY },
+          { x: f.minX, y: f.maxY },
+        ]
+      : [];
+    const handle = pickPointHandle(lone.handles.at, from, reach, corners);
     if (handle < 0) return false;
     const at = lone.handles.at;
     this.pointDrag = {
@@ -11165,8 +11627,8 @@ export class InkSurface {
   /**
    * A finger tapped the page (client px). With the lasso it selects, like a
    * Pencil tap; with any other tool it lets go of a selected image, and a
-   * tap on a picture picks the lasso and selects it (`fingerPicksPicture`)
-   * — fingers never draw. While audio replay is open, a tap on ink goes to
+   * tap on a shape, a table or a picture picks the lasso and selects it
+   * (`fingerPicksShape`, `fingerPicksPicture`) — fingers never draw. While audio replay is open, a tap on ink goes to
    * it first, whatever the tool.
    */
   private onFingerTap(clientX: number, clientY: number): void {
@@ -11222,9 +11684,12 @@ export class InkSurface {
       if (box && tapped) {
         const p = this.toPage(box, at);
         // Typed text sits above the pictures, so a box is tried first.
+        // Then as a lasso tap reads the layers: ink, graphs, tables, pictures.
         if (
           this.fingerHoldsTextBox(tapped, p) ||
+          this.fingerPicksShape(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
+          this.fingerPicksTable(tapped, p) ||
           this.fingerPicksPicture(tapped, p)
         ) {
           return;
@@ -11604,6 +12069,40 @@ export class InkSurface {
     return true;
   }
 
+  /**
+   * A finger tapped a shape (a snapped shape or an arrow) with a pen, or any
+   * tool but the lasso and Text: the lasso is picked and the shape selected
+   * as a lasso tap selects it, with its frame, handles and bar, as a tap on
+   * a picture does (discussion #51). Handwriting is left to the pen. Not in
+   * a practice file. Returns whether it did.
+   */
+  private fingerPicksShape(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
+    const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
+    if (!stroke) return false;
+    this.pickLasso();
+    this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+    return true;
+  }
+
+  /** The same for a table: it is selected with the ink in its cells, as a lasso tap takes it. */
+  private fingerPicksTable(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = lassoFilterFor(this.toolState);
+    const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
+    if (!table) return false;
+    this.pickLasso();
+    this.select(page.id, this.tableWithInk(page, table, filter));
+    return true;
+  }
+
+  /** Hand the lasso to a finger's selection, as the toolbar would. */
+  private pickLasso(): void {
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+  }
+
   // --- Graphs: exploring one on a live canvas ---------------------------------------
 
   /** Select a graph by id (after the host placed it). Returns whether it is there. */
@@ -11844,7 +12343,9 @@ export class InkSurface {
     this.syncExplore();
     const sel = this.liveImageSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
-    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null);
+    // A pinch carries it as a selection, drawn on the wet layer: no chrome meanwhile.
+    const pinched = sel !== null && this.groupDrag?.selection.images.includes(sel.image) === true;
+    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null || pinched);
     this.syncCropOverlay();
     this.syncActionBar();
     if (!sel || !box || this.cropping) return;
@@ -11875,7 +12376,13 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveImageSelection();
-    if (!sel || this.imageDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    const finger = event.pointerType === "touch";
+    if (this.imageDrag) {
+      // A second finger beside the one dragging it: a pinch of the picture.
+      if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
+      return;
+    }
     const box = this.boxForPage(sel.pageId);
     if (!box) return;
     const from = this.pagePoint(box, event.clientX, event.clientY);
@@ -11903,11 +12410,17 @@ export class InkSurface {
       draft: start,
       lifted: false,
       ...(part === "rotate" ? { turn: this.imageTurnSnap(start, from) } : {}),
+      finger,
     };
     this.imageUiEl.addClass("is-dragging");
     this.imageFrameEl.addEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.addEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.addEventListener("pointercancel", this.onImagePointerEnd);
+    if (finger) {
+      // No drag was under way, so any finger still counted lost its lift.
+      if (!this.pageFingerOnFrame) this.selectionFingers.cancel();
+      this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    }
   };
 
   private readonly onImagePointerMove = (event: PointerEvent): void => {

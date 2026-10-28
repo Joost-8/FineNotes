@@ -52,6 +52,7 @@ export default defineConfig({
         "src/canvas/paper-texture.ts",
         "src/canvas/lasso.ts",
         "src/canvas/turn-snap.ts",
+        "src/canvas/selection-pinch.ts",
         "src/canvas/writing-lines.ts",
         "src/canvas/ruled-ink.ts",
         "src/canvas/insert-space.ts",
