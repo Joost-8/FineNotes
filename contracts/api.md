@@ -404,8 +404,8 @@ three or four points, not five. Nothing may read a kind's layout off a
 stored stroke; the table describes what recognition and the Shape tool emit.
 
 **Snapping to shapes (2026-10-27, discussion #51).** While a shape is
-drawn, its ends and corners land on another shape's points within 12 screen
-px (`src/ink/shape-snap.ts`): the Shape tool's line and arrow ends and
+drawn, its ends and corners land on another shape's points within 8 px at
+fit-to-width zoom (`atFitZoom`; 12 screen px at first, too eager) (`src/ink/shape-snap.ts`): the Shape tool's line and arrow ends and
 rectangle corners, a held line's start (at the hold) and far end, and a held
 polygon's corners (the pen position is solved so the shape stays the shape).
 What a stroke offers is read off its points, never its kind's layout: a

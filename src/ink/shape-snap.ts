@@ -38,8 +38,13 @@ import { POINT_STRIDE, type ShapeKind, type Stroke } from "../model/document";
 /** More distinct vertices than a star's ten is a curve's samples, not corners. */
 export const MAX_CORNERS = 12;
 
-/** Snap within this many screen px of a target (callers divide by the zoom). */
-export const SNAP_RADIUS_PX = 12;
+/**
+ * Snap within this many px of a target at fit-to-width zoom, where a page
+ * px is about a screen px (callers pass `atFitZoom(SNAP_RADIUS_PX)`). It was
+ * 12 at first, and Joost found drawing near other shapes too eager
+ * (2026-10-28): 8 still lands a Pencil on a corner it aims at.
+ */
+export const SNAP_RADIUS_PX = 8;
 
 /**
  * Visit every stroke that may lie within `reach` of (`x`, `y`), more than
