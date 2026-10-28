@@ -23,8 +23,10 @@ import { SCHEMA_VERSION } from "../constants";
 /**
  * Every feature this build reads, in the order a label lists them.
  * - `sticky`: sticky notes, paper with ink of its own (`model/sticky-notes`).
+ * - `connectors`: arrows joining two shapes, routed from them as they are
+ *   (`model/connectors`); an older reader would drop them on its next save.
  */
-export const FORMAT_FEATURES = ["sticky"] as const;
+export const FORMAT_FEATURES = ["sticky", "connectors"] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 

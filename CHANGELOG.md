@@ -10,6 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Linked shapes**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
+  shape on its own and a dot sits beside each of its sides, as in Goodnotes:
+  drag one out, or tap it, for a copy of the shape joined to it by an arrow
+  with right-angled bends. The arrow stays joined when either shape moves.
+  Right after, a bar beside the new shape turns it into a rectangle, circle,
+  triangle, diamond or rounded rectangle. Notebooks with linked shapes open
+  read-only in older versions of FineNotes, so update FineNotes on every
+  device first.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch

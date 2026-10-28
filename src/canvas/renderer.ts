@@ -76,6 +76,7 @@ import { imageBounds, rotationOf } from "./image-geometry";
 import { paintStickyPaper, withinNote } from "./sticky-paper";
 import { type Affine, isNoteInk, noteIdsOf, noteMove } from "../model/sticky-notes";
 import { paintGraph } from "./graph-paint";
+import { type RoutedConnector, paintConnector, paintConnectors } from "./connector-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import {
@@ -529,6 +530,8 @@ export class Renderer {
   private hiddenTables: ReadonlySet<TableElement> = new Set();
   /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
   private hiddenGraphs: ReadonlySet<GraphElement> = new Set();
+  /** Connectors (by id) left out of tiles and previews: drawn on the wet layer while dragged. */
+  private hiddenConnectors: ReadonlySet<string> = new Set();
   /** The cell being typed in, whose text its textarea shows instead. */
   private editingCell: { table: TableElement; cell: CellRef } | null = null;
 
@@ -675,6 +678,11 @@ export class Renderer {
   /** Leave these graphs out of tiles and previews; as above, the caller invalidates. */
   setHiddenGraphs(graphs: ReadonlySet<GraphElement>): void {
     this.hiddenGraphs = graphs;
+  }
+
+  /** Leave these connectors (by id) out of tiles and previews; as above, the caller invalidates. */
+  setHiddenConnectors(ids: ReadonlySet<string>): void {
+    this.hiddenConnectors = ids;
   }
 
   /**
@@ -1313,6 +1321,9 @@ export class Renderer {
     this.paintImages(ctx, page, region, level, ink);
     this.paintTables(ctx, page, region);
     this.paintGraphs(ctx, page, region, level);
+    // Arrows joining shapes lie under the ink, as the tables and graphs do.
+    const night = pageLook(page.backdrop, this.paper).night;
+    paintConnectors(ctx, page, night, region, this.hiddenConnectors);
     // Inset by half a device pixel so the hairline lies inside the clip.
     const hair = 1 / level;
     ctx.strokeStyle = this.paper.edge;
@@ -1517,6 +1528,24 @@ export class Renderer {
     selectionLine(ctx, this.safeScale);
     ctx.strokeRect(minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad);
     ctx.restore();
+  }
+
+  /**
+   * Draw connectors over what the wet layer already shows (a dragged
+   * selection's draft, drawn just before), routed to where the drag has
+   * their shapes: they follow the drag, out of the tiles meanwhile.
+   */
+  paintWetConnectors(pageIndex: number, routed: readonly RoutedConnector[]): void {
+    const box = this.layout.boxes[pageIndex];
+    const page = this.doc?.pages[pageIndex];
+    if (!box || !page || routed.length === 0) return;
+    const ctx = this.wet.ctx;
+    this.toLayoutSpace(ctx);
+    this.enterPage(ctx, box);
+    const night = pageLook(page.backdrop, this.paper).night;
+    for (const item of routed) paintConnector(ctx, item, night);
+    ctx.restore();
+    this.setWetVisible(true);
   }
 
   /**
@@ -2081,6 +2110,8 @@ export function renderPageThumbnail(
   for (const graph of page.graphs ?? []) {
     paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
   }
+  // And the arrows joining shapes.
+  paintConnectors(ctx, page, look.night);
 
   for (const stroke of page.strokes) {
     if (isNoteInk(stroke, notes)) continue;

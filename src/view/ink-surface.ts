@@ -243,6 +243,8 @@ import {
   type Pt,
   STAR_ASPECT,
   type ShapePreset,
+  type BoxPreset,
+  isClosedKind,
   isConnectorPreset,
   presetGeometry,
   shapePivot,
@@ -264,6 +266,9 @@ import {
   type PageGeometry,
   type PdfBackdrop,
   type ShapeKind,
+  CONNECTOR_SIDES,
+  type ConnectorSide,
+  type ShapeConnector,
   type Stroke,
   type GraphElement,
   type TableElement,
@@ -335,6 +340,9 @@ import {
   elementsOnPage,
   isEmptySelection,
   reorientPoint,
+  reorientPoints,
+  scalePoints,
+  translatePoints,
   textScaleRange,
 } from "../model/selection-commands";
 import {
@@ -481,6 +489,16 @@ import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
+import {
+  besideOffset,
+  boundsOfPts,
+  connectorRoute,
+  draggedOffset,
+  facingSide,
+  sideMiddle,
+} from "../ink/connector-route";
+import { type RoutedConnector, connectorBounds, routeConnectors } from "../canvas/connector-paint";
+import { AddLinkedCopy, RetypeShape, liveConnectors, nextConnectorId } from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -958,6 +976,21 @@ interface ZoomSettle {
 const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
 const IMAGE_DRAG_SLOP_PX = 3;
+/** A side dot of a lone shape sits this far outside the selection frame, screen px. */
+const LINK_DOT_GAP_PX = 10;
+/** How far from a side dot a press still takes it, screen px. */
+const LINK_DOT_HIT_RADIUS_PX = 16;
+/** A tap on a side dot puts the linked copy this far beside the original, screen px at fit. */
+const LINK_GAP_PX = 48;
+
+/** The shapes a new linked shape can be turned into, in the order its bar shows them. */
+const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }> = [
+  { kind: "rect", icon: "square", label: "Rectangle" },
+  { kind: "ellipse", icon: "circle", label: "Circle" },
+  { kind: "triangle", icon: "triangle", label: "Triangle" },
+  { kind: "diamond", icon: "diamond", label: "Diamond" },
+  { kind: "roundrect", icon: "squircle", label: "Rounded rectangle" },
+];
 /**
  * A lasso press on the paper held this long without moving opens the small
  * bar with Paste — or Unlock, on a locked picture (GoodNotes' long press).
@@ -1071,6 +1104,7 @@ const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
 const NO_TABLES: ReadonlySet<TableElement> = new Set();
 const NO_GRAPHS: ReadonlySet<GraphElement> = new Set();
+const NO_CONNECTORS: ReadonlySet<string> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
 interface GroupSelection extends ElementLists {
@@ -1123,6 +1157,25 @@ interface GroupDrag {
   turn: GroupTurn | null;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /** The connectors joined to the selection's shapes, drawn on the wet layer while it moves. */
+  connectors?: Set<string>;
+}
+
+/**
+ * A lone shape's side dot dragged out into a linked copy (discussion #51),
+ * from pointerdown to lift: the copy and its arrow follow the pen on the
+ * wet layer; the lift commits one `AddLinkedCopy`.
+ */
+interface LinkDrag {
+  pointerId: number;
+  pageId: string;
+  stroke: Stroke;
+  side: ConnectorSide;
+  clientX: number;
+  clientY: number;
+  lifted: boolean;
+  /** How far the copy is moved from the original, page px, once the pen has left the dot. */
+  offset: Pt | null;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -2672,6 +2725,8 @@ export class InkSurface {
    * host's save cache trusts it; see InkSurfaceCallbacks.onChange).
    */
   private changed(pages?: readonly string[]): void {
+    // An arrow between two shapes reaches outside what a move of either repainted.
+    this.syncConnectorTiles();
     this.growBoard();
     this.reportStatus();
     this.syncPageTabs();
@@ -8324,6 +8379,7 @@ export class InkSurface {
   /** Let go of the lasso selection, if any, and of the tap-and-hold bar. */
   private clearSelection(): void {
     this.cancelGroupDrag();
+    this.linkBar = null;
     const pressed = this.pressMenu !== null;
     this.pressMenu = null;
     this.selectionOutline = null;
@@ -8445,6 +8501,7 @@ export class InkSurface {
         this.selectionPathEl.setAttribute("d", `${d}Z`);
       }
     }
+    this.syncLinkDots(drag ? null : sel, box);
     this.syncActionBar();
   }
 
@@ -8460,7 +8517,10 @@ export class InkSurface {
     const press = crop || group || image ? null : this.pressMenu;
     const pageId = crop?.pageId ?? group?.pageId ?? image?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
-    const dragging = this.groupDrag?.lifted === true || this.imageDrag?.lifted === true;
+    const dragging =
+      this.groupDrag?.lifted === true ||
+      this.imageDrag?.lifted === true ||
+      this.linkDrag?.lifted === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -8487,6 +8547,7 @@ export class InkSurface {
     this.actionBar.el.toggleClass("is-provisional", press?.provisional === true);
     if (!box || !bounds || dragging) {
       this.actionBar.hide();
+      this.typeBar?.hide();
       return;
     }
     const scale = this.unitScale;
@@ -8496,6 +8557,13 @@ export class InkSurface {
       maxX: (box.x + bounds.maxX) * scale,
       maxY: (box.y + bounds.maxY) * scale,
     };
+    // A shape a side dot just made: the shapes it can become, in place of the actions.
+    if (group && this.linkBarFor(group)) {
+      this.actionBar.hide();
+      this.showTypeBar(anchor, clearAbove, clearBelow);
+      return;
+    }
+    this.typeBar?.hide();
     this.actionBar.show(anchor, this.visiblePaperRect(), { clearAbove, clearBelow });
   }
 
@@ -10418,7 +10486,7 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveSelection();
-    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.groupDrag || this.linkDrag || this.callbacks.isLocked?.()) return;
     // A palm landing on the frame while the Pencil is busy elsewhere is a palm.
     if (event.pointerType === "touch" && this.activePage !== null) return;
     const box = this.boxForPage(sel.pageId);
@@ -10430,6 +10498,9 @@ export class InkSurface {
       // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
     }
     const from = this.pagePoint(box, event.clientX, event.clientY);
+    if (this.grabLinkDot(event, sel, bounds, from)) return;
+    // Anything else done with the selection puts the bar of shapes away.
+    this.linkBar = null;
     const turn = this.knobGrabbed(bounds, from);
     this.groupDrag = {
       pointerId: event.pointerId,
@@ -10613,6 +10684,12 @@ export class InkSurface {
     this.renderer?.setHiddenImages(new Set(drag.selection.images));
     this.renderer?.setHiddenTables(new Set(drag.selection.tables ?? []));
     this.renderer?.setHiddenGraphs(new Set(drag.selection.graphs ?? []));
+    // Its connectors leave the tiles too, and follow it on the wet layer.
+    drag.connectors = this.connectorIdsOf(drag.selection.pageId, drag.selection.strokes);
+    if (drag.connectors.size > 0) {
+      this.renderer?.setHiddenConnectors(drag.connectors);
+      this.invalidateConnectors(drag.selection.pageId, drag.connectors);
+    }
     this.renderer?.invalidateRegion(box.index, drag.bounds);
     this.renderDry();
   }
@@ -10637,6 +10714,7 @@ export class InkSurface {
       drag.selection.tables ?? [],
       drag.selection.graphs ?? [],
     );
+    this.renderDraggedConnectors(drag, box);
   }
 
   /**
@@ -10691,6 +10769,11 @@ export class InkSurface {
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.setHiddenGraphs(NO_GRAPHS);
+    if (drag.connectors && drag.connectors.size > 0) {
+      this.renderer?.setHiddenConnectors(NO_CONNECTORS);
+      // Back into the tiles where they are; a move repaints where they were too (`changed`).
+      this.invalidateConnectors(drag.selection.pageId, drag.connectors);
+    }
     this.renderer?.clearWet();
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
@@ -10797,6 +10880,404 @@ export class InkSurface {
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
   private cancelGroupDrag(): void {
     this.endGroupDrag(false);
+    this.endLinkDrag(false);
+  }
+
+  /** Repaint the tiles under page `pageId`'s connectors in `ids`, where they are now. */
+  private invalidateConnectors(pageId: string, ids: ReadonlySet<string>): void {
+    const box = this.boxForPage(pageId);
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    if (!box || !page) return;
+    for (const routed of routeConnectors(page, undefined, (c) => ids.has(c.id))) {
+      const b = connectorBounds(routed);
+      if (b) this.renderer?.invalidateRegion(box.index, b);
+    }
+  }
+
+  // --- Linked shapes: a side dot drags out a joined copy (discussion #51) ------
+
+  /** The four dots beside a lone shape's sides; made on first use. */
+  private linkDotsEl: HTMLElement | null = null;
+  /** A side dot being dragged out into a linked copy, from pointerdown to lift. */
+  private linkDrag: LinkDrag | null = null;
+  /**
+   * The shape a side dot just made, while the bar of shapes to turn it into
+   * shows in place of the action bar; null once anything else happens.
+   */
+  private linkBar: { pageId: string; stroke: Stroke } | null = null;
+  /** That bar; made on first use. */
+  private typeBar: SelectionActionBar | null = null;
+  /** Where each connector was last drawn, so a move repaints both places. */
+  private connectorShown: Map<string, { pageId: string; bounds: Bounds }> | null = null;
+
+  /** The one closed shape a selection holds on its own; null for anything else. */
+  private loneLinkShape(sel: GroupSelection | null): Stroke | null {
+    if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
+      return null;
+    }
+    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    const stroke = sel.strokes[0];
+    if (stroke.shape === undefined || !isClosedKind(stroke.shape)) return null;
+    // An erased piece of a closed shape is open: nothing to copy whole.
+    const n = Math.floor(stroke.pts.length / 3);
+    if (n < 3 || stroke.pts[0] !== stroke.pts[(n - 1) * 3]) return null;
+    if (stroke.pts[1] !== stroke.pts[(n - 1) * 3 + 1]) return null;
+    return stroke;
+  }
+
+  /** Where the dot for `side` sits, page space: just outside the frame's side. */
+  private linkDotPoint(bounds: Bounds, side: ConnectorSide): Pt {
+    const pad = (SELECTION_PAD_PX + LINK_DOT_GAP_PX) / this.unitScale;
+    const grown: Bounds = {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+    return sideMiddle(grown, side);
+  }
+
+  /** Put a dot beside each side of the lone closed shape selected; none otherwise. */
+  private syncLinkDots(sel: GroupSelection | null, box: PageBox | null): void {
+    const stroke = this.loneLinkShape(sel);
+    const bounds = stroke && sel ? this.groupBounds(sel) : null;
+    if (!box || !bounds || this.groupDrag?.lifted === true || this.linkDrag?.lifted === true) {
+      this.linkDotsEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.linkDotsEl ??= this.selectionUiEl.createDiv({
+      cls: "goodobsidian-link-dots is-hidden",
+    }));
+    while (el.childElementCount < CONNECTOR_SIDES.length) {
+      // Outside the frame, so a press on one is handed to the frame's own
+      // handler, which captures the pointer on the frame (as the knob, a
+      // child of the frame, has its presses bubble there).
+      const dot = el.createDiv({ cls: "goodobsidian-link-dot" });
+      dot.addEventListener("pointerdown", this.onSelectionPointerDown);
+    }
+    const scale = this.unitScale;
+    CONNECTOR_SIDES.forEach((side, i) => {
+      const at = this.linkDotPoint(bounds, side);
+      (el.children[i] as HTMLElement).setCssStyles({
+        left: `${(box.x + at.x) * scale}px`,
+        top: `${(box.y + at.y) * scale}px`,
+      });
+    });
+    el.removeClass("is-hidden");
+  }
+
+  /**
+   * A press at page point `from` on the frame of a lone closed shape: when
+   * it is on a side dot (and nearer to it than to the rotate knob), start
+   * dragging out a linked copy from that side, and say so.
+   */
+  private grabLinkDot(event: PointerEvent, sel: GroupSelection, bounds: Bounds, from: Pt): boolean {
+    const stroke = this.loneLinkShape(sel);
+    if (!stroke) return false;
+    const scale = this.unitScale;
+    const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
+    const toKnob = Math.hypot(knob.x - from.x, knob.y - from.y);
+    let side: ConnectorSide | null = null;
+    let best = LINK_DOT_HIT_RADIUS_PX / scale;
+    for (const s of CONNECTOR_SIDES) {
+      const at = this.linkDotPoint(bounds, s);
+      const d = Math.hypot(at.x - from.x, at.y - from.y);
+      if (d <= best) {
+        best = d;
+        side = s;
+      }
+    }
+    if (!side || toKnob < best) return false;
+    this.linkDrag = {
+      pointerId: event.pointerId,
+      pageId: sel.pageId,
+      stroke,
+      side,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      lifted: false,
+      offset: null,
+    };
+    this.linkBar = null;
+    this.selectionFrameEl.addEventListener("pointermove", this.onLinkPointerMove);
+    this.selectionFrameEl.addEventListener("pointerup", this.onLinkPointerEnd);
+    this.selectionFrameEl.addEventListener("pointercancel", this.onLinkPointerEnd);
+    return true;
+  }
+
+  /** How far the copy is moved from the original, page px, with the drag at page point `pen`. */
+  private linkOffset(drag: LinkDrag, box: PageBox, pen: Pt | null): Pt | null {
+    const b = strokeBounds(drag.stroke);
+    if (!b) return null;
+    const raw = pen
+      ? draggedOffset(b, drag.side, pen)
+      : besideOffset(b, drag.side, this.atFitZoom(LINK_GAP_PX));
+    // The whole copy stays on the page (a shape too big for it, its middle).
+    const fit = (lo: number, hi: number, d: number, size: number): number =>
+      hi - lo <= size ? clamp(d, -lo, size - hi) : clamp(d, -(lo + hi) / 2, size - (lo + hi) / 2);
+    return {
+      x: fit(b.minX, b.maxX, raw.x, box.width),
+      y: fit(b.minY, b.maxY, raw.y, box.height),
+    };
+  }
+
+  /** The copy and its connector as they would be with the copy moved by `offset`. */
+  private linkDraft(
+    drag: LinkDrag,
+    offset: Pt,
+  ): { pts: number[]; toSide: ConnectorSide; routed: RoutedConnector | null } | null {
+    const pts = translatePoints(drag.stroke.pts, offset.x, offset.y);
+    const a = strokeBounds(drag.stroke);
+    const b = boundsOfPts(pts);
+    if (!a || !b) return null;
+    const toSide = facingSide(a, b);
+    const route = connectorRoute(drag.stroke.pts, drag.side, pts, toSide);
+    const connector: ShapeConnector = {
+      id: "",
+      from: { stroke: drag.stroke.id, side: drag.side },
+      to: { stroke: "", side: toSide },
+      color: drag.stroke.color,
+      size: drag.stroke.size,
+    };
+    return { pts, toSide, routed: route ? { connector, route } : null };
+  }
+
+  private readonly onLinkPointerMove = (event: PointerEvent): void => {
+    const drag = this.linkDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
+    if (!drag.lifted && moved < this.linkSlopPx()) return;
+    const box = this.boxForPage(drag.pageId);
+    if (!box) return;
+    const offset = this.linkOffset(drag, box, this.pagePoint(box, event.clientX, event.clientY));
+    const draft = offset ? this.linkDraft(drag, offset) : null;
+    if (!offset || !draft) return;
+    drag.offset = offset;
+    if (!drag.lifted) {
+      drag.lifted = true;
+      this.syncSelectionOverlay();
+    }
+    // The copy and its arrow on the wet layer; nothing in the tiles changes until the lift.
+    const stroke = drag.stroke;
+    this.renderer?.renderWet(box.index, draft.pts, {
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      usePressure: this.inkPressure,
+      shape: true,
+      decor: decorOf(stroke),
+    });
+    if (draft.routed) this.renderer?.paintWetConnectors(box.index, [draft.routed]);
+  };
+
+  /** A drag shorter than this is a tap on the dot, screen px. */
+  private linkSlopPx(): number {
+    return IMAGE_DRAG_SLOP_PX * 2;
+  }
+
+  private readonly onLinkPointerEnd = (event: PointerEvent): void => {
+    const drag = this.linkDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endLinkDrag(event.type === "pointerup" || drag.lifted);
+  };
+
+  /**
+   * Finish a side-dot drag: make the linked copy where the drag left it (a
+   * tap puts it beside the original, a gap away) as one `AddLinkedCopy`,
+   * select it, and offer the bar of shapes to turn it into.
+   */
+  private endLinkDrag(commit: boolean): void {
+    const drag = this.linkDrag;
+    if (!drag) return;
+    this.linkDrag = null;
+    this.selectionFrameEl.removeEventListener("pointermove", this.onLinkPointerMove);
+    this.selectionFrameEl.removeEventListener("pointerup", this.onLinkPointerEnd);
+    this.selectionFrameEl.removeEventListener("pointercancel", this.onLinkPointerEnd);
+    if (this.selectionFrameEl.hasPointerCapture(drag.pointerId)) {
+      this.selectionFrameEl.releasePointerCapture(drag.pointerId);
+    }
+    this.renderer?.clearWet();
+    const box = this.boxForPage(drag.pageId);
+    const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
+    const offset = box ? (drag.offset ?? this.linkOffset(drag, box, null)) : null;
+    const draft = offset ? this.linkDraft(drag, offset) : null;
+    if (!commit || !box || !page || !draft || !page.strokes.includes(drag.stroke)) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    const source = drag.stroke;
+    const copy: Stroke = { ...structuredClone(source), id: this.strokeIds.next(), pts: draft.pts };
+    // A copy is not handwriting of that moment, and does not sit on a note.
+    delete copy.t0;
+    delete copy.samples;
+    delete copy.onSticky;
+    const connector: ShapeConnector = {
+      id: nextConnectorId(this.doc),
+      from: { stroke: source.id, side: drag.side },
+      to: { stroke: copy.id, side: draft.toSide },
+      color: source.color,
+      size: source.size,
+    };
+    this.history.push(this.doc, new AddLinkedCopy(page.id, copy, connector));
+    this.strokeIndex.add(page.id, copy);
+    const made = boundsOfPts(copy.pts);
+    if (made) this.renderer?.invalidateRegion(box.index, made);
+    this.renderDry();
+    this.changed([page.id]);
+    this.select(page.id, { strokes: [copy], images: [], textBoxes: [] });
+    this.linkBar = { pageId: page.id, stroke: copy };
+    this.syncActionBar();
+  }
+
+  /** Whether the bar of shapes shows for `group`: it is exactly the shape a side dot just made. */
+  private linkBarFor(group: GroupSelection): boolean {
+    const bar = this.linkBar;
+    const ok =
+      bar !== null &&
+      group.pageId === bar.pageId &&
+      group.strokes.length === 1 &&
+      group.strokes[0] === bar.stroke &&
+      group.images.length === 0 &&
+      group.textBoxes.length === 0 &&
+      (group.tables?.length ?? 0) === 0 &&
+      (group.graphs?.length ?? 0) === 0;
+    if (!ok) this.linkBar = null;
+    return ok;
+  }
+
+  /** Show the bar of shapes the new linked shape can become, above `anchor` (paper px). */
+  private showTypeBar(anchor: Bounds, clearAbove: number, clearBelow: number): void {
+    const bar = this.linkBar;
+    if (!bar) return;
+    const kind = bar.stroke.shape;
+    const bar2 = (this.typeBar ??= new SelectionActionBar(this.selectionUiEl, "Shape"));
+    bar2.setActions(
+      LINK_TYPES.map((t) => ({
+        id: `type-${t.kind}`,
+        icon: t.icon,
+        label: t.label,
+        group: "type",
+        bar: true,
+        // The bar is the whole choice: no "…" menu behind it.
+        menu: "none" as const,
+        checked: kind === t.kind,
+        run: () => this.retypeLinked(t.kind),
+      })),
+    );
+    bar2.show(anchor, this.visiblePaperRect(), { clearAbove, clearBelow });
+  }
+
+  /**
+   * Turn the shape a side dot just made into `kind`, in its box, as one
+   * `RetypeShape`: its colour, width and style stay, and so does its arrow.
+   */
+  private retypeLinked(kind: BoxPreset): void {
+    const bar = this.linkBar;
+    const page = bar ? this.doc.pages.find((candidate) => candidate.id === bar.pageId) : null;
+    const box = bar ? this.boxForPage(bar.pageId) : null;
+    if (!bar || !page || !box || bar.stroke.shape === kind) return;
+    const stroke = bar.stroke;
+    const before = strokeBounds(stroke);
+    if (!before || !page.strokes.includes(stroke)) return;
+    const pressure = stroke.pts[2] ?? FALLBACK_PRESSURE;
+    const pts = presetGeometry(
+      kind,
+      { x: before.minX, y: before.minY },
+      { x: before.maxX, y: before.maxY },
+      pressure,
+    );
+    if (pts.length === 0) return;
+    this.history.push(this.doc, new RetypeShape(page.id, stroke, pts, kind));
+    this.strokeIndex.remove(stroke.id, page.id);
+    this.strokeIndex.add(page.id, stroke);
+    this.renderer?.invalidateRegion(box.index, unionBounds(before, strokeBounds(stroke)) ?? before);
+    this.renderDry();
+    this.changed([page.id]);
+    this.syncSelectionOverlay();
+  }
+
+  /**
+   * Repaint the tiles where a connector was drawn and where it is now, for
+   * every connector whose route changed since the last look (a shape at
+   * either end moved, was erased, or came back with an undo). Connectors
+   * reach between their shapes, outside the region a move of either shape
+   * invalidates, so this runs after every change.
+   */
+  private syncConnectorTiles(): void {
+    const shown = (this.connectorShown ??= new Map<string, { pageId: string; bounds: Bounds }>());
+    const seen = new Set<string>();
+    let dirty = false;
+    this.doc.pages.forEach((page, index) => {
+      if (!page.connectors || page.connectors.length === 0) return;
+      for (const routed of routeConnectors(page)) {
+        const id = routed.connector.id;
+        const now = connectorBounds(routed);
+        if (!now) continue;
+        seen.add(id);
+        const was = shown.get(id);
+        if (was && was.pageId === page.id && sameBounds(was.bounds, now)) continue;
+        if (was) {
+          const at = this.boxForPage(was.pageId);
+          if (at) this.renderer?.invalidateRegion(at.index, was.bounds);
+        }
+        this.renderer?.invalidateRegion(index, now);
+        shown.set(id, { pageId: page.id, bounds: now });
+        dirty = true;
+      }
+    });
+    for (const [id, was] of shown) {
+      if (seen.has(id)) continue;
+      const at = this.boxForPage(was.pageId);
+      if (at) this.renderer?.invalidateRegion(at.index, was.bounds);
+      shown.delete(id);
+      dirty = true;
+    }
+    if (dirty) this.requestFrame();
+  }
+
+  /** The connectors joined to any of `strokes` on page `pageId`, by id. */
+  private connectorIdsOf(pageId: string, strokes: readonly Stroke[]): Set<string> {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const ids = new Set<string>();
+    if (!page?.connectors) return ids;
+    const moved = new Set(strokes.map((stroke) => stroke.id));
+    for (const c of liveConnectors(page)) {
+      if (moved.has(c.from.stroke) || moved.has(c.to.stroke)) ids.add(c.id);
+    }
+    return ids;
+  }
+
+  /**
+   * While a lasso selection is dragged, the connectors joined to it are
+   * drawn on the wet layer over its draft, routed from where the drag has
+   * its shapes (moved, resized or turned as the draft is).
+   */
+  private renderDraggedConnectors(drag: GroupDrag, box: PageBox): void {
+    const ids = drag.connectors;
+    const page = this.doc.pages[box.index];
+    if (!ids || ids.size === 0 || !page) return;
+    const moved = new Map<string, readonly number[]>();
+    for (const stroke of drag.selection.strokes) {
+      let pts: number[];
+      if (drag.turn) {
+        const motion: Reorientation = { kind: "rotate", angle: drag.turn.angle };
+        pts = reorientPoints(stroke.pts, motion, drag.turn.centre.x, drag.turn.centre.y);
+      } else if (drag.scale) {
+        pts = scalePoints(stroke.pts, drag.scale.anchor.x, drag.scale.anchor.y, drag.scale.k);
+      } else {
+        pts = translatePoints(stroke.pts, drag.dx, drag.dy);
+      }
+      moved.set(stroke.id, pts);
+    }
+    const routed = routeConnectors(
+      page,
+      (id) => moved.get(id),
+      (c) => ids.has(c.id),
+    );
+    this.renderer?.paintWetConnectors(box.index, routed);
   }
 
   /**
@@ -12863,6 +13344,11 @@ function iconInto(el: HTMLElement, icon: string, fallback: string): void {
     el.empty();
     el.setText(fallback);
   }
+}
+
+/** Whether two bounds are the same rectangle. */
+function sameBounds(a: Bounds, b: Bounds): boolean {
+  return a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY;
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -643,6 +643,44 @@ export interface Page {
   links?: InkLink[];
   /** Handwritten lines made checklist items (2.5). Absent when there are none. */
   tasks?: InkTask[];
+  /**
+   * Arrows joining two shapes on this page (`model/connectors`), drawn under
+   * the ink. Absent when there are none.
+   */
+  connectors?: ShapeConnector[];
+}
+
+/** A side of a shape's bounds: where a connector meets the shape. */
+export type ConnectorSide = "top" | "right" | "bottom" | "left";
+
+export const CONNECTOR_SIDES: readonly ConnectorSide[] = ["top", "right", "bottom", "left"];
+
+/** One end of a connector: a shape on the page, by stroke id, and the side it meets. */
+export interface ConnectorEnd {
+  stroke: string;
+  side: ConnectorSide;
+}
+
+/**
+ * An arrow joining two shapes, as Goodnotes draws one when a shape's side
+ * dot is dragged out into a linked copy (discussion #51). It holds no
+ * points: its right-angled path is routed afresh from the two shapes as
+ * they are now (`ink/connector-route`), so it stays joined whichever of them
+ * moves. Drawn while both shapes are on the page; one whose shape is gone
+ * is neither drawn nor saved, so an undo that brings the shape back brings
+ * the arrow back with it.
+ */
+export interface ShapeConnector {
+  /** `cn<N>`, unique in the notebook. */
+  id: string;
+  /** Where it starts. */
+  from: ConnectorEnd;
+  /** Where it ends, with the arrowhead. */
+  to: ConnectorEnd;
+  /** Ink colour, `#rrggbb`; the colour of the shape it was drawn from. */
+  color: string;
+  /** Line width, page px. */
+  size: number;
 }
 
 /**

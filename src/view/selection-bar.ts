@@ -189,6 +189,11 @@ export class SelectionActionBar {
 
   private decorate(button: HTMLButtonElement, action: SelectionAction): void {
     button.toggleClass("mod-warning", action.destructive === true);
+    // A choice in the bar itself (a linked shape's type) marks the one it is.
+    if (action.checked !== undefined && action.bar === true) {
+      button.toggleClass("is-on", action.checked);
+      button.setAttribute("aria-pressed", String(action.checked));
+    }
     button.disabled = !isEnabled(action);
     button.setAttribute("aria-disabled", String(!isEnabled(action)));
   }
