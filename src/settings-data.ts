@@ -21,6 +21,7 @@ import { type PaperTheme, paperTheme } from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
@@ -194,6 +195,8 @@ export interface GoodObsidianSettings {
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
   penColors?: string[];
+  /** The pen types' order in the pen's row (`model/pen-type-order.ts`). Checked where it is read. */
+  penTypeOrder?: string[];
   /**
    * Each pen type's own colour and row (`model/pen-inks.ts`), so switching
    * pens brings each one's colours back. Checked where it is read.
@@ -277,12 +280,22 @@ export interface GoodObsidianSettings {
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
-  /** The tools the bar shows, left to right ("Customize toolbar"); the rest wait in its menu. */
+  /**
+   * The tools the bar shows, left to right ("Customize toolbar"); the rest wait
+   * in its More tools menu, except those in `toolbarOff`.
+   */
   toolbarItems: BarItemId[];
+  /** The tools shown nowhere, neither on the bar nor in its menu (`toolbar-layout.ts`). */
+  toolbarOff: BarItemId[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
   barrelButton: BarrelAction;
+  /**
+   * What a click of that button does with the pen in the air, not writing:
+   * open the pen menu (and close it again), or nothing. Checked where read.
+   */
+  stylusButtonClick: StylusClickAction;
   /**
    * The cursor over the page for the pens, on a computer: the ink dot, a
    * small crosshair or the arrow. A boolean before FineNotes#27 (on is the
@@ -294,6 +307,23 @@ export interface GoodObsidianSettings {
    * pen turned, as GoodNotes draws them (`ink/straighten.ts`).
    */
   straightHighlighter: boolean;
+  /**
+   * Stylus-only mode: every pointer but the pen is ignored on the page, so
+   * a hand resting on the glass moves neither the ink nor the page.
+   */
+  onlyStylusMode: boolean;
+  /**
+   * The pen's options pill tucks away as soon as the pen or highlighter
+   * writes, as a second tap on its button does (`tool-return.ts`).
+   */
+  tuckPenOptionsOnWrite: boolean;
+  /**
+   * "Grey out while erasing", the eraser's mode list: Whole stroke and By
+   * line draw what they take grey until the pen lifts, as Notability does,
+   * instead of hiding it (discussion #51). Off by default; read through
+   * {@link greyWhileErasingOf}.
+   */
+  greyWhileErasing: boolean;
 
   /**
    * The settings tab's sections shown open, by id; every other one is
@@ -388,9 +418,14 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
+  toolbarOff: [],
   barrelButton: "erase",
+  stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
+  onlyStylusMode: false,
+  tuckPenOptionsOnWrite: false,
+  greyWhileErasing: false,
 
   settingsOpen: [],
   scribbleTipDismissed: false,
@@ -450,6 +485,17 @@ export function withSection(
   return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
 }
 
+// --- The eraser ------------------------------------------------------------------
+
+/**
+ * Whether the Whole stroke and By line erasers grey what they take. Only a stored
+ * `true` turns it on: a missing key (every vault before it) or a hand-edited
+ * value of any other kind leaves the eraser hiding strokes, as it always did.
+ */
+export function greyWhileErasingOf(raw: unknown): boolean {
+  return raw === true;
+}
+
 // --- Choices that set two switches -------------------------------------------------
 
 /** "Back to the pen": the two return-to-pen switches as one choice. */
@@ -468,6 +514,40 @@ export function returnToPenOf(
 export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown): void {
   settings.returnToPenOnReselect = choice === "reselect" || choice === "both";
   settings.returnToPenAfterUse = choice === "after-use" || choice === "both";
+}
+
+/**
+ * The settings the pen's menu holds beside the pen in hand's own: "Hold to
+ * make shapes" (Pen gestures), and "Hide pen options while writing" and
+ * "Back to the pen" (Pen settings). They are the same for every pen.
+ */
+export interface PenPreferences {
+  drawAndHold: boolean;
+  tuckOnWrite: boolean;
+  returnToPen: ReturnToPen;
+}
+
+export function penPreferencesOf(
+  settings: Pick<
+    GoodObsidianSettings,
+    "drawAndHold" | "tuckPenOptionsOnWrite" | "returnToPenOnReselect" | "returnToPenAfterUse"
+  >,
+): PenPreferences {
+  return {
+    drawAndHold: settings.drawAndHold !== false,
+    tuckOnWrite: settings.tuckPenOptionsOnWrite === true,
+    returnToPen: returnToPenOf(settings),
+  };
+}
+
+/** Store what the pen's menu changed; what `patch` leaves out stays as it is. */
+export function storePenPreferences(
+  settings: GoodObsidianSettings,
+  patch: Partial<PenPreferences>,
+): void {
+  if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
+  if ("tuckOnWrite" in patch) settings.tuckPenOptionsOnWrite = patch.tuckOnWrite === true;
+  if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
 }
 
 /**

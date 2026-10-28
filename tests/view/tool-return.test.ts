@@ -7,6 +7,7 @@ import {
   optionsAfterSwitch,
   selectedTool,
   toolAfterUse,
+  tucksOnWrite,
   type ToolUse,
 } from "../../src/view/tool-return";
 
@@ -67,5 +68,27 @@ describe("first tap selects, second tap opens options", () => {
   it("shows the remembered pill when the second tap returns to the pen", () => {
     expect(optionsAfterSwitch(false, true, true)).toBe(true);
     expect(optionsAfterSwitch(false, false, true)).toBe(false);
+  });
+});
+
+describe("hide pen options while writing", () => {
+  it("tucks the pill when the pen or the highlighter starts writing", () => {
+    expect(tucksOnWrite(true, "pen", false)).toBe(true);
+    expect(tucksOnWrite(true, "highlighter", false)).toBe(true);
+  });
+  it("leaves every other tool's pill alone", () => {
+    for (const tool of ["eraser", "select", "text", "shape", "laser"] as ActiveTool[]) {
+      expect(tucksOnWrite(true, tool, false)).toBe(false);
+    }
+  });
+  it("leaves it alone for a tool the stylus button or a key lent", () => {
+    expect(tucksOnWrite(true, "eraser", true)).toBe(false);
+    expect(tucksOnWrite(true, "select", true)).toBe(false);
+    expect(tucksOnWrite(true, "pen", true)).toBe(false);
+  });
+  it("does nothing while the setting is off or not a stored true", () => {
+    for (const off of [false, undefined, null, "true", 1]) {
+      expect(tucksOnWrite(off, "pen", false)).toBe(false);
+    }
   });
 });

@@ -83,18 +83,15 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
-  type ReturnToPen,
   type SettingsSection,
   appearanceChoiceOf,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
   parseColorList,
-  returnToPenOf,
   sectionOpen,
   shownValue,
   storeAppearanceChoice,
-  storeReturnToPen,
   storeShownValue,
   withSection,
 } from "./settings-data";
@@ -135,6 +132,7 @@ import { pushRecentColor } from "./model/colors";
 import { relativeLuminance } from "./model/cover";
 import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
@@ -213,14 +211,6 @@ const APPEARANCE_CHOICES: Record<AppearanceChoice, string> = {
   "system-pdf-light": "Match Obsidian, PDFs as they are",
 };
 
-/** "Back to the pen", as its dropdown names the choices. */
-const RETURN_TO_PEN_NAMES: Record<ReturnToPen, string> = {
-  never: "Never",
-  reselect: "Tap the tool again",
-  "after-use": "After one use",
-  both: "Both",
-};
-
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
 const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
@@ -249,6 +239,12 @@ const BARREL_NAMES: Record<BarrelAction, string> = {
   none: "Nothing",
 };
 
+/** What a click of the barrel button in the air can do, as its dropdown names it. */
+const STYLUS_CLICK_NAMES: Record<StylusClickAction, string> = {
+  "pen-menu": "Open the pen menu",
+  none: "Nothing",
+};
+
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
  * each, in the order the shortcut sheet lists them (FineNotes#25). `apple`
@@ -272,13 +268,6 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
-  drawAndHold:
-    "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
-  returnToPen:
-    "After the eraser, lasso, text or shape tool, go back to the pen or highlighter you had. " +
-    "Tap the tool again: select the active tool once more. After one use: after an eraser " +
-    "stroke, a shape or finished text (unless Text is pinned); the lasso returns when you " +
-    "tap outside its selection, or delete or cut it.",
   textDragSize:
     "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
   desynchronized:
@@ -326,6 +315,13 @@ const DESC = {
   barrel:
     "What a pen tablet's side button does while you write with it. The eraser end of the " +
     "pen always erases.",
+  stylusClick:
+    "What a click of the side button does with the pen held just above the page, not " +
+    "touching it. A second click closes the menu again.",
+  tuckPenOptionsOnWrite:
+    "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
+    "type, widths and colors) tuck away, as a second tap on the pen does. Tap the pen to " +
+    "bring them back. The other tools keep theirs.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -626,7 +622,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
   /** Which saved pen each drawn pen row shows, behind the one click listener it gets. */
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
-
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -981,26 +976,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "default ink color",
           "pen color",
         ]),
-        this.info(
-          toggle("drawAndHold", "Hold to make shapes", "", [
-            "draw and hold",
-            "shape recognition",
-            "straighten",
-            "snap",
-          ]),
-          DESC.drawAndHold,
-        ),
-        this.info(
-          drawnRow("Back to the pen", "", (s) => this.drawReturnToPen(s), [
-            "return to pen",
-            "tool",
-            "eraser",
-            "lasso",
-            "text",
-            "shape",
-          ]),
-          DESC.returnToPen,
-        ),
         toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
           "undo",
           "redo",
@@ -1008,7 +983,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Text boxes, colors, highlighter, lasso"),
+        this.more("writing", "Pen options, text boxes, colors, highlighter, lasso"),
+        this.info(
+          toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
+            "pen",
+            "options",
+            "pill",
+            "hide",
+            "tuck",
+            "toolbar",
+          ]),
+          DESC.tuckPenOptionsOnWrite,
+        ),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
             "text",
@@ -1089,24 +1075,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     });
   }
 
-  /** "Back to the pen": both return-to-pen switches as one choice. */
-  private drawReturnToPen(setting: Setting): void {
-    const settings = this.plugin.settings;
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(RETURN_TO_PEN_NAMES)) d.addOption(id, name);
-      d.setValue(returnToPenOf(settings));
-      d.onChange(async (value) => {
-        storeReturnToPen(settings, value);
-        await this.plugin.saveSettings();
-      });
-    });
-  }
-
   /**
    * The saved pens as a list, the stylus button, the cursor, and the
    * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
    * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row.
+   * from its row. Stylus only, the Hand and the Magnifier are toolbar
+   * items, placed with Customize toolbar, not settings.
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
@@ -1143,6 +1117,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.barrel,
         ),
+        {
+          ...this.info(
+            dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
+              "barrel click",
+              "s pen",
+              "pen menu",
+              "stylus",
+            ]),
+            DESC.stylusClick,
+          ),
+          // The Apple Pencil has no side button (`stylus-click.ts`).
+          visible: !Platform.isIosApp,
+        },
         {
           ...this.info(
             dropdown("penCursor", "Cursor over the page", "", PEN_CURSOR_NAMES, [
