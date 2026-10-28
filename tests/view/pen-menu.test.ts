@@ -167,3 +167,52 @@ describe("saved pens on the toolbar (FineNotes#24, #25)", () => {
     });
   });
 });
+
+describe("the pen menu from the pen's side button (stylus-click.ts)", () => {
+  /** A stand-in element: its classes, and whether it is in the document. */
+  const el = (name: string, classes: string[] = [], connected = true) => ({
+    name,
+    isConnected: connected,
+    style: { display: "" },
+    hasClass: (cls: string) => classes.includes(cls),
+  });
+
+  async function bar(parts: { popover?: unknown; typeShown?: boolean; pen?: unknown }) {
+    const { Toolbar } = await import("../../src/view/toolbar");
+    const opened: string[] = [];
+    const type = el("pen type");
+    const toolbar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      state: { tool: "pen", penType: "fountain", color: "#000000", size: 3 },
+      popover: parts.popover ?? null,
+      penTypeButtons: new Map(parts.typeShown === undefined ? [] : [["fountain", type]]),
+      optionsEl: el("pill", parts.typeShown === false ? ["is-collapsed"] : []),
+      penToolButton: parts.pen === undefined ? el("bar pen") : parts.pen,
+      moreButton: el("more"),
+      barEl: el("bar"),
+      togglePenTypeList: (from: { name: string }) => opened.push(`open from ${from.name}`),
+      closePopover: () => opened.push("close"),
+    }) as unknown as InstanceType<typeof Toolbar>;
+    return { toolbar, opened };
+  }
+
+  it("hangs from the pen type button while the pen's options show", async () => {
+    const { toolbar, opened } = await bar({ typeShown: true });
+    toolbar.togglePenMenu();
+    expect(opened).toEqual(["open from pen type"]);
+  });
+
+  it("hangs from the pen on the bar when the options are tucked away, else from ⋯", async () => {
+    const tucked = await bar({ typeShown: false });
+    tucked.toolbar.togglePenMenu();
+    expect(tucked.opened).toEqual(["open from bar pen"]);
+    const folded = await bar({ pen: el("bar pen", ["is-overflowed"]) });
+    folded.toolbar.togglePenMenu();
+    expect(folded.opened).toEqual(["open from more"]);
+  });
+
+  it("closes whichever popover is open: the next click shuts what the last one opened", async () => {
+    const { toolbar, opened } = await bar({ popover: {}, typeShown: true });
+    toolbar.togglePenMenu();
+    expect(opened).toEqual(["close"]);
+  });
+});
