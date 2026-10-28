@@ -21,6 +21,7 @@ import { type PaperTheme, paperTheme } from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
@@ -284,6 +285,11 @@ export interface GoodObsidianSettings {
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
   barrelButton: BarrelAction;
   /**
+   * What a click of that button does with the pen in the air, not writing:
+   * open the pen menu (and close it again), or nothing. Checked where read.
+   */
+  stylusButtonClick: StylusClickAction;
+  /**
    * The cursor over the page for the pens, on a computer: the ink dot, a
    * small crosshair or the arrow. A boolean before FineNotes#27 (on is the
    * ink dot now); checked where read.
@@ -394,6 +400,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   toolbarItems: [...DEFAULT_BAR],
   toolbarOff: [],
   barrelButton: "erase",
+  stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
