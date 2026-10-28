@@ -100,6 +100,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
+import { tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -118,8 +119,8 @@ import {
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
 import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
-import type { BarItemId } from "./toolbar-layout";
 import { CustomizeToolbarModal } from "./customize-toolbar-modal";
+import type { ToolbarLayout } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -289,6 +290,7 @@ import {
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import type { PillDock } from "./pill-dock-model";
 import { penInksOf } from "../model/pen-inks";
+import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
@@ -305,7 +307,12 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { attachmentDefaults, shownPaperTheme } from "../settings-data";
+import {
+  attachmentDefaults,
+  greyWhileErasingOf,
+  penPreferencesOf,
+  shownPaperTheme,
+} from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -353,6 +360,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
+    eraserGrey: greyWhileErasingOf(s.greyWhileErasing),
     lassoMode: lassoModeOf(s.lassoMode),
     lassoFilter: lassoFilterOf(s.lassoFilter),
     textStyle: sanitizeTextStyle(s.textStyle),
@@ -367,6 +375,10 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
     penInks: inks,
+    penTypeOrder: penTypeOrderOf(
+      s.penTypeOrder,
+      PEN_TYPES.map((type) => type.id),
+    ),
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
@@ -860,6 +872,14 @@ export class InkView extends TextFileView {
     if (this.writeHold.savePending) void this.saveNow();
   }
 
+  /**
+   * A pen menu changed a setting held for every pen: the surface reads
+   * "Hold to make shapes" from the tool state, the rest it asks for live.
+   */
+  syncPenPreferences(): void {
+    this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
+  }
+
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
   showFullScreen(on: boolean): void {
     this.toolbar?.setFullScreen(on);
@@ -868,6 +888,15 @@ export class InkView extends TextFileView {
   /** The options pill was moved in some notebook (the plugin's, per device): this one's follows. */
   showPillDock(dock: PillDock): void {
     this.toolbar?.setPillDock(dock);
+  }
+
+  /**
+   * Stylus-only mode was switched here or through the toolbar: its toggle
+   * follows in this notebook. The hand and magnifier are ordinary toolbar
+   * items now, so the choice of placing them does not change with the mode.
+   */
+  setOnlyStylusMode(on: boolean): void {
+    this.toolbar?.setOnlyStylusMode(on);
   }
 
   override async onClose(): Promise<void> {
@@ -968,17 +997,18 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
-  /** Show the tool bar's items `items` ("Customize toolbar", here or in another notebook). */
-  setToolbarItems(items: readonly BarItemId[]): void {
-    this.toolbar?.setItems(items);
+  /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
+  setToolbarItems(layout: ToolbarLayout): void {
+    this.toolbar?.setItems(layout.bar, layout.off);
   }
 
-  /** "Customize toolbar": the bar's items, changed live and kept for every notebook. */
+  /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
   private openCustomizeToolbar(): void {
-    const toolbar = this.toolbar;
-    if (!toolbar) return;
-    new CustomizeToolbarModal(this.app, toolbar.shownItems, toolbar.availableItems, (items) =>
-      this.plugin.saveToolbarItems(items),
+    const settings = this.settings;
+    new CustomizeToolbarModal(
+      this.app,
+      { bar: settings.toolbarItems, off: settings.toolbarOff },
+      (layout) => this.plugin.saveToolbarLayout(layout),
     ).open();
   }
 
@@ -2453,6 +2483,7 @@ export class InkView extends TextFileView {
         paintSizePaper: (canvas, width, height) =>
           this.surface?.paintPaperSample(canvas, width, height) ?? false,
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
+        onEraserGreyChange: (on) => this.plugin.saveEraserGrey(on),
         onLassoChange: (mode, filter) => {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
@@ -2479,8 +2510,11 @@ export class InkView extends TextFileView {
           else done(null);
         },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
+        onPenTypeOrder: (order) => this.plugin.savePenTypeOrder(order),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
         onPenStabilization: (all) => this.plugin.savePenStabilization(all),
+        penPreferences: () => penPreferencesOf(this.settings),
+        onPenPreferences: (patch) => this.plugin.savePenPreferences(patch),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
@@ -2502,12 +2536,18 @@ export class InkView extends TextFileView {
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
+        onZoomIn: () => this.surface?.zoomIn(),
+        onZoomOut: () => this.surface?.zoomOut(),
+        onZoomFit: () => this.surface?.resetView(),
       },
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         items: this.settings.toolbarItems,
+        offItems: this.settings.toolbarOff,
+        onlyStylusMode: this.settings.onlyStylusMode === true,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2629,6 +2669,11 @@ export class InkView extends TextFileView {
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
         onPen: (down) => this.penActivity(down),
+        onGestureStart: (tool, lent) => {
+          if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
+            this.toolbar?.tuckOptions();
+          }
+        },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
@@ -2637,12 +2682,19 @@ export class InkView extends TextFileView {
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         lassoAnyPart: () => this.settings.lassoAnyPart === true,
+        onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
         },
         barrelAction: () => this.settings.barrelButton,
+        // The Apple Pencil has no side button, and a Pencil tap on the tool
+        // bar could pass for its click (`stylus-click.ts`).
+        stylusClick: () => (Platform.isIosApp ? "none" : this.settings.stylusButtonClick),
+        onStylusClick: () => {
+          if (!this.isProtected()) this.toolbar?.togglePenMenu();
+        },
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
@@ -2803,6 +2855,13 @@ export class InkView extends TextFileView {
       (event) =>
         this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
     );
+    // The side button's click with the pen over the tool bar or a popover, not
+    // the page, and a pen pressed there. Heard on the way down, before the
+    // tool bar's own handlers.
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const)
+      this.registerDomEvent(this.contentEl, type, (e) => this.surface?.penInView(e), {
+        capture: true,
+      });
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.

@@ -17,8 +17,10 @@ import {
   changesTabLayout,
   appearanceChoiceOf,
   endpointWarning,
+  greyWhileErasingOf,
   openSectionsOf,
   pagesAreDark,
+  penPreferencesOf,
   paperWidthFrom,
   parseColorList,
   returnToPenOf,
@@ -26,6 +28,7 @@ import {
   shownPaperTheme,
   shownValue,
   storeAppearanceChoice,
+  storePenPreferences,
   storeReturnToPen,
   storeShownValue,
   withSection,
@@ -128,9 +131,14 @@ const FRESH_INSTALL = {
     { type: "highlighter", color: "#fab005", size: 5 },
   ],
   toolbarItems: ["select", "pen", "eraser", "text", "shape", "image", "pdf"],
+  toolbarOff: [],
   barrelButton: "erase",
+  stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
+  onlyStylusMode: false,
+  tuckPenOptionsOnWrite: false,
+  greyWhileErasing: false,
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
@@ -222,10 +230,15 @@ const USED_VAULT = {
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],
+  toolbarOff: ["pan", "record"],
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
+  stylusButtonClick: "none",
   penCursor: "crosshair",
   straightHighlighter: false,
+  onlyStylusMode: true,
+  tuckPenOptionsOnWrite: true,
+  greyWhileErasing: true,
   settingsOpen: ["writing", "ai"],
   scribbleTipDismissed: true,
   experimentalFutureFlag: 7,
@@ -308,6 +321,21 @@ describe("dark pages", () => {
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.
     expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
+  });
+});
+
+describe("grey out while erasing", () => {
+  it("is off by default, and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.greyWhileErasing).toBe(false);
+    const { greyWhileErasing } = loadAndSave({ straightHighlighter: false });
+    expect(greyWhileErasingOf(greyWhileErasing)).toBe(false);
+  });
+
+  it("is on only for a stored true, whatever else a hand-edited file holds", () => {
+    expect(greyWhileErasingOf(true)).toBe(true);
+    for (const value of [false, undefined, null, "true", 1, "yes", {}]) {
+      expect(greyWhileErasingOf(value)).toBe(false);
+    }
   });
 });
 
@@ -448,6 +476,39 @@ describe("choices that set two switches", () => {
     }
     storeReturnToPen(settings, "nonsense");
     expect(returnToPenOf(settings)).toBe("never");
+  });
+
+  it("reads and writes the pen menu's settings, leaving out what a change leaves out", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: true,
+      tuckOnWrite: false,
+      returnToPen: "never",
+    });
+    storePenPreferences(settings, { tuckOnWrite: true });
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: true,
+      tuckOnWrite: true,
+      returnToPen: "never",
+    });
+    storePenPreferences(settings, { drawAndHold: false, returnToPen: "both" });
+    expect(settings.drawAndHold).toBe(false);
+    expect([settings.returnToPenOnReselect, settings.returnToPenAfterUse]).toEqual([true, true]);
+    expect(settings.tuckPenOptionsOnWrite).toBe(true);
+    storePenPreferences(settings, {});
+    expect(penPreferencesOf(settings)).toEqual({
+      drawAndHold: false,
+      tuckOnWrite: true,
+      returnToPen: "both",
+    });
+  });
+
+  it("reads a pen setting a file holds in another shape as its default", () => {
+    const odd = { drawAndHold: "no", tuckPenOptionsOnWrite: 1 } as never;
+    expect(penPreferencesOf({ ...DEFAULT_SETTINGS, ...(odd as object) })).toMatchObject({
+      drawAndHold: true,
+      tuckOnWrite: false,
+    });
   });
 
   it("reads and writes Page appearance with the PDF choice folded in", () => {

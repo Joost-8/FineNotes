@@ -34,7 +34,8 @@ export interface FingerGestureListener {
   onPanMove?: (x: number, y: number, t: number) => void;
   onPanEnd?: (t: number) => void;
   onPanCancel?: () => void;
-  onPinchStart?: (centerX: number, centerY: number) => void;
+  /** Two fingers are down: the pinch begins about their midpoint, `spread` px apart. */
+  onPinchStart?: (centerX: number, centerY: number, spread: number) => void;
   onPinch?: (info: PinchInfo) => void;
   onPinchEnd?: () => void;
 }
@@ -134,7 +135,7 @@ export class FingerGesture {
       const starting = this.spread === null;
       this.spread = focus.spread;
       this.heading = focus.heading;
-      if (starting) this.listener.onPinchStart?.(focus.x, focus.y);
+      if (starting) this.listener.onPinchStart?.(focus.x, focus.y, focus.spread);
     }
     this.listener.onPanStart?.(focus.x, focus.y, t);
   }
