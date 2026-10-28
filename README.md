@@ -92,8 +92,8 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 - A freehand or rectangular lasso, with switches for what it picks up:
   handwriting, pictures, shapes, arrows and text boxes.
 - Move, cut, copy, paste and recolour a selection, between pages and between
-  notebooks. Resize it by pinching it with two fingers, turn it by the knob
-  below it, or flip it from its **…** menu. Pictures and text boxes can be resized, and pictures
+  notebooks. Resize it by its corners, turn it by the knob below it, or flip
+  it from its **…** menu. Pictures and text boxes can be resized, and pictures
   rotated.
 
 **Text, pictures and PDFs**
