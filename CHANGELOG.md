@@ -30,6 +30,11 @@ extracted from the matching section of this file by `release.yml`.
   you write still erases, lassos or moves the page, as set. A new setting
   in Settings → Pens and shortcuts, **Side button click**, turns the click
   off. Not on iPad: the Apple Pencil has no side button.
+- **Grey out while erasing**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A new
+  switch in the eraser's mode list: Whole stroke and By line draw what they
+  take grey until the pen lifts, as Notability does, instead of hiding it
+  at once. Off by default.
 
 ### Changed
 
