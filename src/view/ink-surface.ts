@@ -475,6 +475,7 @@ import {
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
+import { selectionKind, selectionMenu } from "./selection-kind";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
   type ToolLift,
@@ -8796,9 +8797,13 @@ export class InkSurface {
    * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
    * Duplicate · Paste across the top; Colour when it holds ink; one segmented
    * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
-   * into ›, which holds what the selection can become; and Delete.
+   * into ›, which holds what the selection can become; and Delete. What it
+   * holds decides the rest (`selectionMenu`): one kind keeps its own options,
+   * a mix gets only its ink's colour, and Turn into offers what fits.
    */
   private groupActions(sel: GroupSelection): SelectionAction[] {
+    // What it holds decides what the menu offers (`selection-kind.ts`).
+    const menu = selectionMenu(selectionKind(sel, this.loneTable(sel) !== null));
     const actions: SelectionAction[] = [
       {
         id: "cut",
@@ -8867,7 +8872,7 @@ export class InkSurface {
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
       });
     }
-    if (sel.strokes.length > 0) {
+    if (menu.colour && sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
       actions.push({
         id: "colour",
@@ -8896,12 +8901,12 @@ export class InkSurface {
         },
       });
     }
-    actions.push(...this.shapeStyleActions(sel.strokes));
+    if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Text first under Turn into: the plainest thing ink can become.
     const toText = this.callbacks.onTurnIntoText;
-    if (toText && index >= 0 && sel.strokes.length > 0) {
+    if (menu.handwriting && toText && index >= 0 && sel.strokes.length > 0) {
       const ids = sel.strokes.map((stroke) => stroke.id);
       actions.push({
         id: "to-text",
@@ -8916,9 +8921,10 @@ export class InkSurface {
       });
     }
     // Highlighter ink over a PDF's text: the text it covers can be copied.
-    const highlighted = sel.strokes.some(isHighlight)
-      ? this.highlightedText(index, sel.strokes)
-      : null;
+    const highlighted =
+      menu.handwriting && sel.strokes.some(isHighlight)
+        ? this.highlightedText(index, sel.strokes)
+        : null;
     if (highlighted) {
       actions.push({
         id: "copy-text",
@@ -8928,7 +8934,7 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
-    if (heading && index >= 0 && this.callbacks.onAddSection) {
+    if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
         id: "contents",
@@ -8947,8 +8953,8 @@ export class InkSurface {
         },
       });
     }
-    actions.push(...this.linkActions(sel, index));
-    if (this.callbacks.onSaveSticker) {
+    if (menu.link) actions.push(...this.linkActions(sel, index));
+    if (menu.sticker && this.callbacks.onSaveSticker) {
       actions.push({
         id: "save-sticker",
         icon: "sticker",
@@ -8959,7 +8965,7 @@ export class InkSurface {
       });
     }
     const comment = this.callbacks.onAddComment;
-    if (heading && index >= 0 && comment) {
+    if (menu.comment && heading && index >= 0 && comment) {
       actions.push({
         id: "comment",
         icon: "message-square-plus",
@@ -8975,7 +8981,7 @@ export class InkSurface {
       });
     }
     // Task last under Turn into.
-    actions.push(...this.taskActions(sel, index));
+    if (menu.handwriting) actions.push(...this.taskActions(sel, index));
     // Flip after "Turn into": what a selection becomes reads before how it is turned.
     actions.push(...flipActions((axis) => this.flipSelection(axis), "flip"));
     actions.push({

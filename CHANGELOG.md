@@ -18,6 +18,11 @@ extracted from the matching section of this file by `release.yml`.
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
   picks the lasso and selects it with its handles and bar, as a tap on a
   picture does.
+- **The lasso's menu fits what you selected.** One kind of thing keeps its
+  own options (a shape its fill and line, a table Edit table), and
+  handwriting counts as one kind however many strokes it is. A mix of
+  kinds gets only its ink's colour, and Turn into offers only what fits: a
+  shape is not offered Text, Contents heading or Task.
 - **Turn a selection with two fingers.** Two fingers on a selection or a
   selected picture, or either side of a small one, turn it about its
   middle, settling on the page's 45° steps as the knob does; the lift is one
