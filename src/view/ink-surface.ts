@@ -432,6 +432,7 @@ import {
 } from "../input/pen-modifiers";
 import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
+import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
 import {
   type ActiveTool,
   type ToolbarState,
@@ -667,6 +668,10 @@ export interface InkSurfaceCallbacks {
   onShortcuts?: () => void;
   /** What the stylus barrel button does (the settings); erase when absent. */
   barrelAction?: () => BarrelAction;
+  /** What a click of the barrel button in the air does (the settings); the pen menu when absent. */
+  stylusClick?: () => StylusClickAction;
+  /** The barrel button was clicked in the air, at this client point; the host opens or closes the pen menu. */
+  onStylusClick?: (clientX: number, clientY: number) => void;
   returnToPenOnReselect?: () => boolean;
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
@@ -2077,6 +2082,7 @@ export class InkSurface {
         handHeld: () => this.handHeld,
         route: (event) => this.pressRoute(event),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+        stylusClicks: () => this.stylusClickWanted(),
       },
     );
     input.attach();
@@ -2154,6 +2160,14 @@ export class InkSurface {
       if (onTextBox(event.target) || isEditable(event.target)) return;
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
+      // Android's WebView: the pen touching down with its side button held is
+      // this alone, as a mouse's. It is no click of the button, and no menu.
+      if (type !== "touch" && this.pointerInput?.stylusTouched()) return;
+      // A WebView may hand the barrel button's click in the air over as this alone.
+      if (type === "pen" && this.pointerInput?.stylusMenu(event.timeStamp)) {
+        this.stylusClicked(event.clientX, event.clientY);
+        return;
+      }
       if (type === "touch" || type === "pen" || this.touchPanning) return;
       // Stylus-only mode: a right-click is no more the pen's than a press is.
       if (this.callbacks.onlyStylusMode?.() === true) return;
@@ -5301,6 +5315,7 @@ export class InkSurface {
   }
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
+    onStylusClick: (clientX, clientY) => this.stylusClicked(clientX, clientY),
     onStart: (sample, press) => {
       this.callbacks.onPen?.(true);
       this.pressTool = this.pressOverrideOf(press);
@@ -5802,6 +5817,35 @@ export class InkSurface {
 
   private barrel(): BarrelAction {
     return barrelActionOf(this.callbacks.barrelAction?.());
+  }
+
+  /**
+   * Whether a click of the barrel button in the air does anything here: the
+   * setting asks for one, and no text is being typed (a press there is the
+   * text box's, as it always was).
+   */
+  private stylusClickWanted(): boolean {
+    if (!this.callbacks.onStylusClick) return false;
+    if (stylusClickActionOf(this.callbacks.stylusClick?.()) === "none") return false;
+    return !this.editingTextView() && !this.heldText && !this.cellEdit;
+  }
+
+  /**
+   * A pen's press, move or lift anywhere in the view. Those on the page reach
+   * the pointer input already; the rest (the tool bar, an open popover) are
+   * passed on, so the side button's click is heard there too, and a pen
+   * pressed there is not taken for it.
+   */
+  penInView(event: PointerEvent): void {
+    if (event.target instanceof Node && this.scrollEl.contains(event.target)) return;
+    this.pointerInput?.penElsewhere(event);
+  }
+
+  /** The barrel button clicked in the air (`stylus-click.ts`): the host's pen menu. */
+  private stylusClicked(clientX: number, clientY: number): void {
+    // A tablet driver may send the click as a right-click too (FineNotes#25).
+    this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    this.callbacks.onStylusClick?.(clientX, clientY);
   }
 
   /** Layout space -> client px, at the view as it is now: the inverse of {@link toLayout}. */

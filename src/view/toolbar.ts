@@ -160,6 +160,7 @@ import {
   popoverSide,
 } from "./pill-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
+import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
@@ -3752,12 +3753,41 @@ export class Toolbar {
     this.keepPopoverInside(anchor);
   }
 
-  private togglePenTypeList(): void {
+  /**
+   * The pen menu, for a click of the pen's side button in the air
+   * (`input/stylus-click.ts`): the pen type menu opens, and the next click
+   * closes it, or whichever popover is open then. It hangs from the pen type
+   * button while the pen's options show, else from the pen on the bar.
+   */
+  togglePenMenu(): void {
+    if (this.popover) {
+      this.closePopover();
+      return;
+    }
+    this.togglePenTypeList(this.penMenuAnchor());
+  }
+
+  /** What the pen menu hangs from: the pen type button on show, the bar's pen button, or ⋯. */
+  private penMenuAnchor(): HTMLElement {
+    const type = this.penTypeButtons.get(this.activePenType().id);
+    if (type && !this.optionsEl.hasClass("is-collapsed")) return type;
+    const pen = this.penToolButton;
+    const onBar =
+      pen !== null &&
+      pen.isConnected &&
+      !pen.hasClass("is-overflowed") &&
+      !pen.hasClass("is-unlisted") &&
+      pen.style.display !== "none";
+    if (onBar) return pen;
+    return this.moreButton ?? this.barEl;
+  }
+
+  private togglePenTypeList(from?: HTMLElement): void {
     if (this.popoverKind === "pens") {
       this.closePopover();
       return;
     }
-    const anchor = this.penTypeButtons.get(this.activePenType().id) ?? this.optionsEl;
+    const anchor = from ?? this.penTypeButtons.get(this.activePenType().id) ?? this.optionsEl;
     const body = this.openPopover("pens", anchor);
     // One popover, three pages, as in GoodNotes: the pen types, and behind
     // rows at their foot the pen in hand's settings and the pen gestures,
@@ -4132,6 +4162,12 @@ export class Toolbar {
         return;
       }
       this.closePopover();
+      // On the page, the pen or mouse press that closed it only closes it: it writes nothing.
+      const onPage = (target as Element | null)?.closest?.(".goodobsidian-scroll") != null;
+      if (closingPressStops(event, onPage)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") this.closePopover();

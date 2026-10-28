@@ -2659,6 +2659,12 @@ export class InkView extends TextFileView {
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
         },
         barrelAction: () => this.settings.barrelButton,
+        // The Apple Pencil has no side button, and a Pencil tap on the tool
+        // bar could pass for its click (`stylus-click.ts`).
+        stylusClick: () => (Platform.isIosApp ? "none" : this.settings.stylusButtonClick),
+        onStylusClick: () => {
+          if (!this.isProtected()) this.toolbar?.togglePenMenu();
+        },
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
@@ -2819,6 +2825,13 @@ export class InkView extends TextFileView {
       (event) =>
         this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
     );
+    // The side button's click with the pen over the tool bar or a popover, not
+    // the page, and a pen pressed there. Heard on the way down, before the
+    // tool bar's own handlers.
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const)
+      this.registerDomEvent(this.contentEl, type, (e) => this.surface?.penInView(e), {
+        capture: true,
+      });
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.
