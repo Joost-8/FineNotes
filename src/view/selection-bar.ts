@@ -174,6 +174,11 @@ export class SelectionActionBar {
       } else {
         iconInto(button, iconsFor(action.icon), action.label.slice(0, 2));
       }
+      if (action.checked !== undefined) {
+        // A switch in the bar (the resize handles): pressed while on.
+        button.setAttribute("aria-pressed", String(action.checked));
+        button.toggleClass("is-on", action.checked);
+      }
       this.decorate(button, action);
       onTap(button, () => this.run(action.id, true));
     }

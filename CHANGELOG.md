@@ -25,6 +25,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Resize handles on request**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
+  selection of handwriting, text or several things no longer shows its
+  corner handles at once: the corners button in its bar shows them (and
+  hides them again). One shape on its own still shows them straight away.
+
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's

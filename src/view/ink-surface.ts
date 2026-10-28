@@ -91,6 +91,7 @@ import {
   selectionKnobPoint,
   smoothLoop,
   selectionBounds,
+  isLoneShape,
   strokeInLasso,
   textBoxFrame,
 } from "../canvas/lasso";
@@ -1611,6 +1612,12 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /**
+   * Whether the selection shows its corner handles (discussion #51, Joost):
+   * hidden when a lasso picks something up, shown at once for a lone shape,
+   * and switched by the bar's corners button.
+   */
+  private selectionCorners = false;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
@@ -8277,6 +8284,7 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
+    this.selectionCorners = isLoneShape(this.selection);
     this.syncSelectionOverlay();
   }
 
@@ -8397,6 +8405,7 @@ export class InkSurface {
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
     const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
+    this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
       const scale = this.unitScale;
       const x = (box.x + bounds.minX) * scale - SELECTION_PAD_PX;
@@ -8689,6 +8698,19 @@ export class InkSurface {
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
+      {
+        id: "corners",
+        icon: "scan",
+        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.selectionCorners,
+        run: () => {
+          this.selectionCorners = !this.selectionCorners;
+          this.syncSelectionOverlay();
+        },
+      },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -10674,6 +10696,7 @@ export class InkSurface {
   }
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
+    if (!this.selectionCorners) return null;
     const scale = this.unitScale;
     const pad = SELECTION_PAD_PX / scale;
     const frame: Bounds = {
