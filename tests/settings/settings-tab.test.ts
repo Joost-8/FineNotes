@@ -393,11 +393,10 @@ describe("the rows", () => {
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
       [WRITING, "Start with", "render"],
-      [WRITING, "Hold to make shapes", "toggle:drawAndHold"],
-      [WRITING, "Back to the pen", "render"],
-      [WRITING, "Toolbar", "render"],
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
+      [WRITING, "Toolbar", "render"],
       [WRITING, "More", "action"],
+      [WRITING, "Hide pen options while writing", "toggle:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
@@ -473,8 +472,8 @@ describe("the rows", () => {
     // Rows whose name says it all have no line at all, and an ⓘ for the rest.
     const { tab } = makeTab(makePlugin());
     const all = rows(tab);
-    expect(named(all, "Hold to make shapes").desc).toBeUndefined();
-    expect(tab.infoOf("Hold to make shapes")).toMatch(/keep the pen still/);
+    expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
+    expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
     expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
@@ -486,8 +485,6 @@ describe("the rows", () => {
     expect(words("Start with")).toEqual(
       expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    expect(words("Back to the pen")).toContain("return to pen");
-    expect(words("Hold to make shapes")).toContain("draw and hold");
     expect(words("Page appearance")).toEqual(
       expect.arrayContaining(["dark mode", "dark PDF pages"]),
     );
@@ -526,12 +523,6 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
-    expect(Object.keys(renderRow(named(all, "Back to the pen")).dropdowns[0].options)).toEqual([
-      "never",
-      "reselect",
-      "after-use",
-      "both",
-    ]);
     expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
       "light",
       "dark",
@@ -613,11 +604,10 @@ describe("which rows show", () => {
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
       "Start with",
-      "Hold to make shapes",
-      "Back to the pen",
-      "Toolbar",
       "Two-finger double-tap to undo",
+      "Toolbar",
       "More",
+      "Hide pen options while writing",
       "Drag to size text boxes",
       "Custom colors",
       "Highlighter opacity",
@@ -635,7 +625,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 35)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -843,21 +833,6 @@ describe("control values", () => {
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
-  it.each(["returnToPenOnReselect", "returnToPenAfterUse"] as const)(
-    "persists %s independently, disabled by default",
-    async (key) => {
-      const plugin = makePlugin();
-      const { tab } = makeTab(plugin);
-      expect(plugin.settings[key]).toBe(false);
-      await tab.setControlValue(key, true);
-      expect(plugin.settings[key]).toBe(true);
-      const other =
-        key === "returnToPenOnReselect" ? "returnToPenAfterUse" : "returnToPenOnReselect";
-      expect(plugin.settings[other]).toBe(false);
-      expect(plugin.saveSettings).toHaveBeenCalledOnce();
-    },
-  );
-
   it("moves the tool bar from Toolbar, on this device only, without touching the settings", async () => {
     const plugin = makePlugin();
     const row = renderRow(named(rows(makeTab(plugin).tab), "Toolbar"));
@@ -873,18 +848,6 @@ describe("control values", () => {
     expect(plugin.barDock).toBe("left");
     expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(Object.keys(plugin.settings)).not.toContain("barDock");
-  });
-
-  it("sets both return-to-pen switches from Back to the pen", async () => {
-    const plugin = makePlugin({ returnToPenAfterUse: true });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Back to the pen"));
-    expect(row.dropdowns[0].value).toBe("after-use");
-    await row.dropdowns[0].pick("both");
-    expect([plugin.settings.returnToPenOnReselect, plugin.settings.returnToPenAfterUse]).toEqual([
-      true,
-      true,
-    ]);
-    expect(plugin.saveSettings).toHaveBeenCalledOnce();
   });
 
   it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
@@ -936,16 +899,14 @@ describe("control values", () => {
     await tab.setControlValue("customColors", " #ff8800,#00CCAA , #abc,red, #12345, #1234567,,");
     await tab.setControlValue("llmModel", "  claude-haiku-4-5 ");
     await tab.setControlValue("imageModel", " gpt-image-1\n");
-    await tab.setControlValue("drawAndHold", false);
     await tab.setControlValue("defaultColor", "#123456");
     expect(plugin.settings.defaultSize).toBe(4);
     expect(plugin.settings.highlighterAlpha).toBe(0.4);
     expect(plugin.settings.customColors).toEqual(["#ff8800", "#00CCAA", "#abc"]);
     expect(plugin.settings.llmModel).toBe("claude-haiku-4-5");
     expect(plugin.settings.imageModel).toBe("gpt-image-1");
-    expect(plugin.settings.drawAndHold).toBe(false);
     expect(plugin.settings.defaultColor).toBe("#123456");
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(7);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(6);
     expect(plugin.calls).not.toContain("update");
   });
 

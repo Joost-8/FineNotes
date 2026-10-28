@@ -83,18 +83,15 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
-  type ReturnToPen,
   type SettingsSection,
   appearanceChoiceOf,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
   parseColorList,
-  returnToPenOf,
   sectionOpen,
   shownValue,
   storeAppearanceChoice,
-  storeReturnToPen,
   storeShownValue,
   withSection,
 } from "./settings-data";
@@ -215,14 +212,6 @@ const APPEARANCE_CHOICES: Record<AppearanceChoice, string> = {
   "system-pdf-light": "Match Obsidian, PDFs as they are",
 };
 
-/** "Back to the pen", as its dropdown names the choices. */
-const RETURN_TO_PEN_NAMES: Record<ReturnToPen, string> = {
-  never: "Never",
-  reselect: "Tap the tool again",
-  "after-use": "After one use",
-  both: "Both",
-};
-
 /** Where the tool bar sits, as "Toolbar" names the places (bar-dock-model.ts, FineNotes#50). */
 const BAR_DOCK_NAMES: Record<BarDock, string> = {
   top: "Top",
@@ -288,17 +277,10 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
-  drawAndHold:
-    "Draw a rough line, circle or polygon in one stroke and keep the pen still at the end: it snaps to a clean shape, which you can still resize and rotate before lifting.",
   barDock:
     "Where the toolbar sits in your notebooks: along the top or the bottom, or upright at " +
     "the left or right, where what does not fit folds into ⋯. Each device keeps its own " +
     "place, so an iPad and a laptop can differ.",
-  returnToPen:
-    "After the eraser, lasso, text or shape tool, go back to the pen or highlighter you had. " +
-    "Tap the tool again: select the active tool once more. After one use: after an eraser " +
-    "stroke, a shape or finished text (unless Text is pinned); the lasso returns when you " +
-    "tap outside its selection, or delete or cut it.",
   textDragSize:
     "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
   desynchronized:
@@ -349,6 +331,10 @@ const DESC = {
   stylusClick:
     "What a click of the side button does with the pen held just above the page, not " +
     "touching it. A second click closes the menu again.",
+  tuckPenOptionsOnWrite:
+    "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
+    "type, widths and colors) tuck away, as a second tap on the pen does. Tap the pen to " +
+    "bring them back. The other tools keep theirs.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -999,26 +985,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "default ink color",
           "pen color",
         ]),
-        this.info(
-          toggle("drawAndHold", "Hold to make shapes", "", [
-            "draw and hold",
-            "shape recognition",
-            "straighten",
-            "snap",
-          ]),
-          DESC.drawAndHold,
-        ),
-        this.info(
-          drawnRow("Back to the pen", "", (s) => this.drawReturnToPen(s), [
-            "return to pen",
-            "tool",
-            "eraser",
-            "lasso",
-            "text",
-            "shape",
-          ]),
-          DESC.returnToPen,
-        ),
+        toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
+          "undo",
+          "redo",
+          "gesture",
+          "fingers",
+          "tap",
+        ]),
         this.info(
           drawnRow("Toolbar", "", (s) => this.drawBarDock(s), [
             "toolbar position",
@@ -1032,14 +1005,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.barDock,
         ),
-        toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
-          "undo",
-          "redo",
-          "gesture",
-          "fingers",
-          "tap",
-        ]),
-        this.more("writing", "Text boxes, colors, highlighter"),
+        this.more("writing", "Pen options, text boxes, colors, highlighter"),
+        this.info(
+          toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
+            "pen",
+            "options",
+            "pill",
+            "hide",
+            "tuck",
+            "toolbar",
+          ]),
+          DESC.tuckPenOptionsOnWrite,
+        ),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
             "text",
@@ -1121,19 +1098,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       for (const [id, name] of Object.entries(BAR_DOCK_NAMES)) d.addOption(id, name);
       d.setValue(this.plugin.barDock);
       d.onChange((value) => this.plugin.setBarDock(parseBarDock(value)));
-    });
-  }
-
-  /** "Back to the pen": both return-to-pen switches as one choice. */
-  private drawReturnToPen(setting: Setting): void {
-    const settings = this.plugin.settings;
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(RETURN_TO_PEN_NAMES)) d.addOption(id, name);
-      d.setValue(returnToPenOf(settings));
-      d.onChange(async (value) => {
-        storeReturnToPen(settings, value);
-        await this.plugin.saveSettings();
-      });
     });
   }
 

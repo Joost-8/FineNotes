@@ -249,11 +249,14 @@ tool's bar moves by holding it and dragging it to an edge.
 
 ### Writing and erasing
 
-- **Pen type:** tap the nib at the start of the pen options. **Ball pen** and
-  **Fountain pen** draw an even line and **Brush pen** a thicker one;
-  **Highlighter** draws a wide, see-through stroke. With **Pressure-sensitive
-  pens** on (Settings, advanced), the Fountain and Brush pens get wider the
-  harder you press.
+- **Pen type:** the pens at the start of the pen options, each in its own
+  ink: tap one to write with it. **Ball pen** and **Fountain pen** draw an
+  even line and **Brush pen** a thicker one; **Highlighter** draws a wide,
+  see-through stroke. Hold a pen and drag it to put it elsewhere in the row.
+  The ⌄ after them (or a tap on the pen in hand) holds the **Laser pointer**,
+  **Pen settings** and **Pen gestures**. With **Pressure-sensitive pens** on
+  (Settings, advanced), the Fountain and Brush pens get wider the harder you
+  press.
 - **Width:** three widths, and a ⌄ for a slider in millimetres.
 - **Colour:** three quick colours. Tap the colour in use again to change it,
   or tap **+** for more. **Custom colour…** mixes any colour: pick the shade
@@ -275,7 +278,7 @@ tool's bar moves by holding it and dragging it to an edge.
   the line, then hold. The setting **Draw and hold to make shapes** turns this off.
 - **Auto shape**, the last button in the pen options: a stroke that is
   plainly a shape snaps as you lift.
-- **Pen gestures**, at the foot of the pen menu, both on at first:
+- **Pen gestures**, in the pen's ⌄ menu, both on at first:
   - **Scribble to erase:** scribble back and forth over writing to erase it.
     A scribble on empty paper stays as ink. **Erase shapes and highlighter**
     lets it take those too.

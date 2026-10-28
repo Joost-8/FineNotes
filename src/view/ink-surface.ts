@@ -106,16 +106,18 @@ import {
   fromImageLocal,
   hitImagePart,
   imageBounds,
+  imageCentre,
   imageHandlePoint,
   moveImage,
   rotateHandlePoint,
-  rotateImage,
   rotationOf,
   sameTransform,
   sweptTurn,
   topImageAt,
   transformOf,
+  withRotation,
 } from "../canvas/image-geometry";
+import { TurnSnap, levelTurnOf } from "../canvas/turn-snap";
 import {
   cropResult,
   croppedBox,
@@ -134,6 +136,7 @@ import {
   shownColor,
   writingLines,
 } from "../canvas/backdrop";
+import { erasedPieces, erasesGrey } from "../canvas/erase-look";
 import { nightHighlighter } from "../canvas/night";
 import {
   type LineSpan,
@@ -643,6 +646,11 @@ export interface InkSurfaceCallbacks {
    * puts off work that would stall the ink until it has been up a moment.
    */
   onPen?: (down: boolean) => void;
+  /**
+   * A pen or mouse gesture began on a page with `tool`; `lent` when a stylus
+   * button or a key lent that tool for this press only.
+   */
+  onGestureStart?: (tool: ActiveTool, lent: boolean) => void;
   /** A freehand pen stroke was drawn and committed on page `pageId` (calculation notes). */
   onStrokeDrawn?: (pageId: string, stroke: Stroke) => void;
   /**
@@ -1011,6 +1019,8 @@ interface ImageDrag {
   draft: ImageTransform;
   /** Whether the image has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /** The knob's turn settles here, when the knob was grabbed. */
+  turn?: TurnSnap;
 }
 
 /**
@@ -1121,8 +1131,10 @@ interface GroupTurn {
   centre: Pt;
   /** Page-local point where the knob was grabbed. */
   from: Pt;
-  /** Radians clockwise so far, snapped onto quarter turns. */
+  /** Radians clockwise so far, settled by `snap`. */
   angle: number;
+  /** Where the turn settles: held at the start, quarter turns, level, 15° steps. */
+  snap: TurnSnap;
 }
 
 /** A corner resize of a lasso selection, about the opposite corner of its bounds. */
@@ -1548,6 +1560,16 @@ export class InkSurface {
   private readonly strokeIndex = new StrokeIndex();
   /** Whole-stroke erase in progress: the strokes the eraser has touched so far. */
   private eraseIds = new Set<string>();
+  /**
+   * "Grey out while erasing" (the eraser's mode list): this erase draws what
+   * it takes grey rather than hiding it; decided on its first dab.
+   */
+  private eraseGrey = false;
+  /**
+   * By line, greyed: each cut stroke's stretches being cut away, drawn grey
+   * beside its surviving pieces. Only drawn: the commit never sees them.
+   */
+  private eraseGreyCuts = new Map<string, Stroke[]>();
   /**
    * Standard (partial) erase in progress: original stroke id -> the pieces
    * that survive so far. The document is untouched until the gesture ends;
@@ -5018,14 +5040,29 @@ export class InkSurface {
     this.flushEraseDirty();
     // `eraseIds` / `erasePieces` are empty except during a live erase gesture.
     // The lasso selection's frame is DOM (it takes presses), not canvas.
+    const grey = this.eraseGrey;
+    let greyed: ReadonlySet<string> = this.eraseIds;
+    let pieces: ReadonlyMap<string, readonly Stroke[]> = this.erasePieces;
+    if (grey && this.eraseGreyCuts.size > 0) {
+      // A cut stroke shows its grey stretches with what survives of it.
+      const shown = new Map<string, readonly Stroke[]>(this.erasePieces);
+      const ids = new Set(this.eraseIds);
+      for (const [id, stretches] of this.eraseGreyCuts) {
+        shown.set(id, [...stretches, ...(this.erasePieces.get(id) ?? [])]);
+        for (const stretch of stretches) ids.add(stretch.id);
+      }
+      pieces = shown;
+      greyed = ids;
+    }
     return this.renderer.renderDocument(
       this.doc,
       this.inkPressure,
-      this.eraseIds,
+      grey ? undefined : this.eraseIds,
       null,
-      this.erasePieces,
+      pieces,
       budgetMs,
       this.viewMoving,
+      grey ? greyed : undefined,
     );
   }
 
@@ -5694,6 +5731,7 @@ export class InkSurface {
       // cancelled, so the box would otherwise keep focus and the keyboard.)
       this.blurTextBox();
     }
+    this.callbacks.onGestureStart?.(this.gestureTool(), this.pressTool !== null);
     this.gestureOf(this.gestureTool()).down(box, local, sample);
   }
 
@@ -7177,6 +7215,8 @@ export class InkSurface {
   /** Drop any in-progress erase preview (the document was never touched). */
   private eraseReset(): void {
     this.eraseIds = new Set();
+    this.eraseGrey = false;
+    this.eraseGreyCuts = new Map();
     this.erasePieces = new Map();
     this.eraseLast = null;
     this.eraseRuled = null;
@@ -7227,6 +7267,10 @@ export class InkSurface {
     const filter = eraserFilterFor(this.toolState);
     if (mode === "ruled" && this.eraseLast === null) this.startRuledErase(page, sample, filter);
     const ruled = this.eraseRuled;
+    // Whole stroke and By line grey what they take, as Notability does.
+    if (this.eraseLast === null) {
+      this.eraseGrey = erasesGrey(mode, ruled !== null, this.toolState.eraserGrey === true);
+    }
     const whole = mode === "stroke";
 
     // Samples of a fast drag can land further apart than the eraser is wide.
@@ -7297,6 +7341,7 @@ export class InkSurface {
         continue;
       }
       this.erasePieces.set(id, pieces);
+      if (this.eraseGrey) this.eraseGreyCuts.set(id, erasedPieces(original, regions));
       this.eraseDirty.add(id);
       changed = true;
     }
@@ -7316,6 +7361,7 @@ export class InkSurface {
       this.eraseDirty.add(each);
       // Cut pieces of it, from earlier in the pass, go with it.
       this.erasePieces.delete(each);
+      this.eraseGreyCuts.delete(each);
       marked = true;
     }
     return marked;
@@ -10441,7 +10487,61 @@ export class InkSurface {
       ROTATE_HANDLE_OFFSET_PX / scale,
       HANDLE_HIT_RADIUS_PX / scale,
     );
-    return hit ? { centre: boundsCentre(bounds), from, angle: 0 } : null;
+    if (!hit) return null;
+    const centre = boundsCentre(bounds);
+    const radius = Math.hypot(from.x - centre.x, from.y - centre.y) * scale;
+    // A lone shape also settles with its longest edge level or upright.
+    const sel = this.selection;
+    const lone =
+      sel?.strokes.length === 1 &&
+      sel.images.length === 0 &&
+      sel.textBoxes.length === 0 &&
+      (sel.tables?.length ?? 0) === 0 &&
+      (sel.graphs?.length ?? 0) === 0 &&
+      sel.strokes[0].shape !== undefined
+        ? sel.strokes[0]
+        : null;
+    const level = lone ? levelTurnOf(lone.pts) : null;
+    return { centre, from, angle: 0, snap: new TurnSnap(radius, level) };
+  }
+
+  /** The small angle readout beside the pen while a knob turns; made on first use. */
+  private turnLabelEl: HTMLElement | null = null;
+
+  /**
+   * The turn a picture's knob starts: settling on quarter turns, every 15°,
+   * and level (the turn that brings the picture's own rotation back to a
+   * quarter turn), measured on the knob's circle on screen.
+   */
+  private imageTurnSnap(start: ImageTransform, from: Pt): TurnSnap {
+    const c = imageCentre(start);
+    const radius = Math.hypot(from.x - c.x, from.y - c.y) * this.unitScale;
+    const rotation = rotationOf(start);
+    const quarter = Math.PI / 2;
+    const level = Math.round(rotation / quarter) * quarter - rotation;
+    return new TurnSnap(radius, Math.abs(level) > 1e-9 ? level : null);
+  }
+
+  /**
+   * Show the turn so far, in whole degrees, beside page point `at` of
+   * `box` (where the pen is), marked when it has settled on a detent; or
+   * hide it (`box` null).
+   */
+  private showTurnLabel(box: PageBox | null, at: Pt | null, turn: number, snapped: boolean): void {
+    if (!box || !at) {
+      this.turnLabelEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.turnLabelEl ??= this.paperEl.createDiv({
+      cls: "goodobsidian-turn-label is-hidden",
+    }));
+    const scale = this.unitScale;
+    const degrees = Math.round((turn * 180) / Math.PI);
+    // A true minus sign, as a number is typeset.
+    el.setText(`${degrees < 0 ? "−" : ""}${Math.abs(degrees)}°`);
+    el.toggleClass("is-snapped", snapped);
+    el.setCssStyles({ left: `${(box.x + at.x) * scale}px`, top: `${(box.y + at.y) * scale}px` });
+    el.removeClass("is-hidden");
   }
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
@@ -10474,7 +10574,8 @@ export class InkSurface {
     const scale = drag.scale;
     const turn = drag.turn;
     if (turn) {
-      turn.angle = sweptTurn(turn.centre, turn.from, p);
+      turn.angle = turn.snap.turn(sweptTurn(turn.centre, turn.from, p, 0));
+      this.showTurnLabel(box, p, turn.angle, turn.snap.snapped);
     } else if (scale) {
       const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
       scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
@@ -10566,6 +10667,7 @@ export class InkSurface {
     if (!drag) return;
     this.groupDrag = null;
     this.circleDrag = false;
+    this.showTurnLabel(null, null, 0, false);
     this.selectionFrameEl.removeEventListener("pointermove", this.onSelectionPointerMove);
     this.selectionFrameEl.removeEventListener("pointerup", this.onSelectionPointerEnd);
     this.selectionFrameEl.removeEventListener("pointercancel", this.onSelectionPointerEnd);
@@ -11458,6 +11560,7 @@ export class InkSurface {
       clientY: event.clientY,
       draft: start,
       lifted: false,
+      ...(part === "rotate" ? { turn: this.imageTurnSnap(start, from) } : {}),
     };
     this.imageUiEl.addClass("is-dragging");
     this.imageFrameEl.addEventListener("pointermove", this.onImagePointerMove);
@@ -11479,9 +11582,13 @@ export class InkSurface {
       case "body":
         drag.draft = moveImage(drag.start, p.x - drag.from.x, p.y - drag.from.y, box);
         break;
-      case "rotate":
-        drag.draft = rotateImage(drag.start, drag.from, p);
+      case "rotate": {
+        const swept = sweptTurn(imageCentre(drag.start), drag.from, p, 0);
+        const turn = drag.turn ? drag.turn.turn(swept) : swept;
+        drag.draft = withRotation(drag.start, rotationOf(drag.start) + turn);
+        this.showTurnLabel(box, p, turn, drag.turn?.snapped === true);
         break;
+      }
       default:
         drag.draft = dragImageHandle(drag.start, drag.part, {
           x: p.x + drag.grab.x,
@@ -11529,6 +11636,7 @@ export class InkSurface {
     const drag = this.imageDrag;
     if (!drag) return;
     this.imageDrag = null;
+    this.showTurnLabel(null, null, 0, false);
     this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);

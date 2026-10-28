@@ -100,6 +100,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
+import { tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -290,6 +291,7 @@ import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from ".
 import type { PillDock } from "./pill-dock-model";
 import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
+import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
@@ -306,7 +308,12 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { attachmentDefaults, shownPaperTheme } from "../settings-data";
+import {
+  attachmentDefaults,
+  greyWhileErasingOf,
+  penPreferencesOf,
+  shownPaperTheme,
+} from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -354,6 +361,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
+    eraserGrey: greyWhileErasingOf(s.greyWhileErasing),
     lassoMode: lassoModeOf(s.lassoMode),
     lassoFilter: lassoFilterOf(s.lassoFilter),
     textStyle: sanitizeTextStyle(s.textStyle),
@@ -368,6 +376,10 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
     penInks: inks,
+    penTypeOrder: penTypeOrderOf(
+      s.penTypeOrder,
+      PEN_TYPES.map((type) => type.id),
+    ),
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
@@ -859,6 +871,14 @@ export class InkView extends TextFileView {
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
     if (this.writeHold.savePending) void this.saveNow();
+  }
+
+  /**
+   * A pen menu changed a setting held for every pen: the surface reads
+   * "Hold to make shapes" from the tool state, the rest it asks for live.
+   */
+  syncPenPreferences(): void {
+    this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -2469,6 +2489,7 @@ export class InkView extends TextFileView {
         paintSizePaper: (canvas, width, height) =>
           this.surface?.paintPaperSample(canvas, width, height) ?? false,
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
+        onEraserGreyChange: (on) => this.plugin.saveEraserGrey(on),
         onLassoChange: (mode, filter) => {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
@@ -2495,8 +2516,11 @@ export class InkView extends TextFileView {
           else done(null);
         },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
+        onPenTypeOrder: (order) => this.plugin.savePenTypeOrder(order),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
         onPenStabilization: (all) => this.plugin.savePenStabilization(all),
+        penPreferences: () => penPreferencesOf(this.settings),
+        onPenPreferences: (patch) => this.plugin.savePenPreferences(patch),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
@@ -2652,6 +2676,11 @@ export class InkView extends TextFileView {
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
         onPen: (down) => this.penActivity(down),
+        onGestureStart: (tool, lent) => {
+          if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
+            this.toolbar?.tuckOptions();
+          }
+        },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,

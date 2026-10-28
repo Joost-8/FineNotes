@@ -46,7 +46,12 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
-import { type PageAppearance, shownPaperTheme } from "./settings-data";
+import {
+  type PageAppearance,
+  type PenPreferences,
+  shownPaperTheme,
+  storePenPreferences,
+} from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
@@ -1189,6 +1194,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember "Grey out while erasing" (the eraser's mode list), for the next session. */
+  saveEraserGrey(on: boolean): void {
+    this.settings.greyWhileErasing = on;
+    void this.saveSettings();
+  }
+
   /** Remember the pen's auto-shape toggle, for the next session. */
   savePenAutoShape(enabled: boolean): void {
     this.settings.penAutoShape = enabled;
@@ -1204,6 +1215,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   savePenGestures(gestures: PenGestures): void {
     this.settings.penGestures = penGesturesOf(gestures);
+    void this.saveSettings();
+  }
+
+  /** Store what a pen menu changed for every pen, and give it to every open notebook. */
+  savePenPreferences(patch: Partial<PenPreferences>): void {
+    storePenPreferences(this.settings, patch);
+    for (const view of this.openNotebooks()) view.syncPenPreferences();
     void this.saveSettings();
   }
 
@@ -1234,6 +1252,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the pen row's picked colours, for every notebook. */
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
+    void this.saveSettings();
+  }
+
+  /** Remember the pen types' order in the pen's row, for every notebook. */
+  savePenTypeOrder(order: readonly string[]): void {
+    this.settings.penTypeOrder = [...order];
     void this.saveSettings();
   }
 
