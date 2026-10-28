@@ -696,8 +696,8 @@ body,
   height: 18px;
 }
 
-/* The laser pointer has nothing to set: the pill only says what it is. */
-.goodobsidian-laser-note {
+/* A tool with nothing to set: its pill only says what it is. */
+.goodobsidian-tool-note {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -708,8 +708,12 @@ body,
   white-space: nowrap;
 }
 
-.goodobsidian-laser-note-icon {
+.goodobsidian-tool-note-icon {
   display: inline-flex;
+}
+
+/* The laser pointer's mark keeps its warning red; the hand and magnifier share the muted text. */
+.goodobsidian-tool-note-icon.is-laser {
   color: var(--color-red);
 }
 
@@ -2307,6 +2311,31 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
 }
 
 .goodobsidian-scroll.is-hand .goodobsidian-eraser-cursor {
+  display: none;
+}
+
+/* The hand tool: the same grab as space, but chosen. */
+.goodobsidian-scroll.is-hand-tool,
+.goodobsidian-scroll.is-hand-tool * {
+  cursor: grab;
+}
+
+.goodobsidian-scroll.is-hand-tool.is-hand-dragging,
+.goodobsidian-scroll.is-hand-tool.is-hand-dragging * {
+  cursor: grabbing;
+}
+
+.goodobsidian-scroll.is-hand-tool .goodobsidian-eraser-cursor {
+  display: none;
+}
+
+/* The magnifier: a drag up or down zooms about where it began. */
+.goodobsidian-scroll.is-zoom-tool,
+.goodobsidian-scroll.is-zoom-tool * {
+  cursor: zoom-in;
+}
+
+.goodobsidian-scroll.is-zoom-tool .goodobsidian-eraser-cursor {
   display: none;
 }
 
@@ -12868,7 +12897,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    customize-toolbar-modal.ts. Last in the file: these restyle buttons that
    the bar's own rules above also style. */
 
-/* An item taken off the bar in "Customize toolbar"; it waits in the accessories menu. */
+/* An item taken off the bar in "Customize toolbar"; it waits in the accessories menu, or is hidden. */
 .goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-unlisted {
   display: none;
 }
@@ -12884,8 +12913,8 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   opacity: 0.85;
 }
 
-/* On, like the ruler: a sticky note waits for a tap, or a hidden ruler or
-   sticky note is out behind the accessories button. */
+/* On, like the ruler: a sticky note waits for a tap, or a hidden ruler,
+   sticky note or Only stylus mode is on behind the accessories button. */
 .goodobsidian-toolbar button.goodobsidian-tool.is-on,
 .goodobsidian-toolbar button.goodobsidian-tool.is-on:hover:not(:disabled) {
   background: var(--gob-active-bg);
@@ -12928,7 +12957,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
     0 0 0 4px var(--interactive-accent);
 }
 
-/* "Customize toolbar": one list, the bar's items above the hidden ones. */
+/* "Customize toolbar": one list, the bar's items, then More tools, then the hidden ones. */
 .goodobsidian-customize-modal {
   width: min(420px, 92vw);
 }
@@ -13001,6 +13030,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 .goodobsidian-customize-toggle.is-add {
   color: var(--color-green);
+}
+
+/* Last in a More tools row, where a bar row has its grip: hide it. */
+.goodobsidian-customize-toggle.is-off {
+  margin-right: -4px;
+  color: var(--text-faint);
 }
 
 .goodobsidian-customize-icon {

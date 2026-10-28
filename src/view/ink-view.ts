@@ -118,8 +118,8 @@ import {
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
 import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
-import type { BarItemId } from "./toolbar-layout";
 import { CustomizeToolbarModal } from "./customize-toolbar-modal";
+import type { ToolbarLayout } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -876,6 +876,15 @@ export class InkView extends TextFileView {
     this.toolbar?.setBarDock(dock);
   }
 
+  /**
+   * Stylus-only mode was switched here or through the toolbar: its toggle
+   * follows in this notebook. The hand and magnifier are ordinary toolbar
+   * items now, so the choice of placing them does not change with the mode.
+   */
+  setOnlyStylusMode(on: boolean): void {
+    this.toolbar?.setOnlyStylusMode(on);
+  }
+
   override async onClose(): Promise<void> {
     this.recordLastPage();
     this.audio?.destroy();
@@ -974,17 +983,18 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
-  /** Show the tool bar's items `items` ("Customize toolbar", here or in another notebook). */
-  setToolbarItems(items: readonly BarItemId[]): void {
-    this.toolbar?.setItems(items);
+  /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
+  setToolbarItems(layout: ToolbarLayout): void {
+    this.toolbar?.setItems(layout.bar, layout.off);
   }
 
-  /** "Customize toolbar": the bar's items, changed live and kept for every notebook. */
+  /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
   private openCustomizeToolbar(): void {
-    const toolbar = this.toolbar;
-    if (!toolbar) return;
-    new CustomizeToolbarModal(this.app, toolbar.shownItems, toolbar.availableItems, (items) =>
-      this.plugin.saveToolbarItems(items),
+    const settings = this.settings;
+    new CustomizeToolbarModal(
+      this.app,
+      { bar: settings.toolbarItems, off: settings.toolbarOff },
+      (layout) => this.plugin.saveToolbarLayout(layout),
     ).open();
   }
 
@@ -2508,6 +2518,10 @@ export class InkView extends TextFileView {
         onMore: (anchor) => this.toggleMorePanel(anchor),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
+        onZoomIn: () => this.surface?.zoomIn(),
+        onZoomOut: () => this.surface?.zoomOut(),
+        onZoomFit: () => this.surface?.resetView(),
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2515,6 +2529,8 @@ export class InkView extends TextFileView {
         pillDock: this.plugin.pillDock,
         barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
+        offItems: this.settings.toolbarOff,
+        onlyStylusMode: this.settings.onlyStylusMode === true,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2643,6 +2659,7 @@ export class InkView extends TextFileView {
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
