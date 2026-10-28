@@ -6915,11 +6915,6 @@ textarea.goodobsidian-chat-input:focus-visible {
   display: none;
 }
 
-/* A switch in the bar (the resize handles) while on: lit in the accent. */
-.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on {
-  color: var(--interactive-accent);
-}
-
 /* A freehand lasso's selection is drawn by its own rounded loop, as in
    GoodNotes; the (now invisible) frame still takes the drags. The loop may
    reach past the frame, so the SVG does not clip. */
@@ -7068,6 +7063,14 @@ textarea.goodobsidian-chat-input:focus-visible {
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-active {
   background: var(--gob-sel-well);
   color: var(--color-base-100);
+}
+
+/* A switch in the bar (the resize handles) while on: lit in the accent,
+   hovered or not. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on,
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.is-on:hover:not(:disabled) {
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.mod-warning {
