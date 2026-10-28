@@ -6973,12 +6973,12 @@ export class InkSurface {
 
   /**
    * Snap page point (x, y) of `box` to another shape within
-   * {@link SNAP_RADIUS_PX} screen px; true when it did, the target then in
-   * `shapeSnapper.hit`.
+   * {@link SNAP_RADIUS_PX}, a screen length; true when it did, the target
+   * then in `shapeSnapper.hit`.
    */
   private snapNear(box: PageBox, x: number, y: number): boolean {
     this.snapPageId = this.pageAt(box.index)?.id ?? "";
-    return this.shapeSnapper.snap(x, y, SNAP_RADIUS_PX / this.unitScale);
+    return this.shapeSnapper.snap(x, y, this.atFitZoom(SNAP_RADIUS_PX));
   }
 
   /**
