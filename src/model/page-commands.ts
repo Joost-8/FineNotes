@@ -22,6 +22,7 @@ import {
   pageById,
 } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { nextConnectorId, remapConnectors } from "./connectors";
 import { paperPageFor, repeatedPaper } from "./templates";
 
 /** Append a freshly-drawn stroke to a specific page. */
@@ -386,7 +387,19 @@ export function duplicatePageAfter(
   // Its strokes get new ids, so links and tasks on the old ones would hold nothing.
   delete copy.links;
   delete copy.tasks;
-  for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
+  const strokeIds = new Map<string, string>();
+  for (const stroke of copy.strokes) {
+    const id = `s${++strokeSeq}`;
+    strokeIds.set(stroke.id, id);
+    stroke.id = id;
+  }
+  // Its arrows join the copies of their shapes.
+  if (copy.connectors) {
+    let connectorSeq = Number(nextConnectorId(doc).slice(2)) - 1;
+    const connectors = remapConnectors(copy.connectors, strokeIds, () => `cn${++connectorSeq}`);
+    if (connectors.length > 0) copy.connectors = connectors;
+    else delete copy.connectors;
+  }
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
   const imageIds = new Map<string, string>();
   for (const image of copy.images) {

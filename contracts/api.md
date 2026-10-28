@@ -1141,3 +1141,49 @@ without the ink (an older reader drops a pathless image and every unknown
 field). This reader refuses a label naming a feature it does not know in the
 same way; a later feature adds its own `+name`. A notebook without notes keeps
 the plain `v2:` label and opens in older builds as before.
+
+## Linked shapes (2026-10-28)
+
+Goodnotes' linked copies (discussion #51). One closed shape selected on its
+own shows a dot beside each side; dragging a dot out (or tapping it) adds a
+copy of the shape and an arrow joining the two, as one `AddLinkedCopy`
+(`src/model/connectors.ts`). A bar beside the new shape turns it into a
+rectangle, circle, triangle, diamond or rounded rectangle in its box
+(`RetypeShape`, one step each).
+
+The arrow is a new page element, `Page.connectors` (absent when none):
+
+```ts
+interface ShapeConnector {
+  id: string; // `cn<N>`, unique in the notebook
+  from: { stroke: string; side: "top" | "right" | "bottom" | "left" };
+  to: { stroke: string; side: "top" | "right" | "bottom" | "left" }; // the arrowhead
+  color: string; // `#rrggbb`
+  size: number; // page px, > 0
+}
+```
+
+- **It holds no points.** Its path is routed from the two shapes as they
+  are, every time it is drawn (`src/ink/connector-route.ts`): out of each
+  anchor (where the line from the middle of the shape's bounds towards that
+  side leaves the outline) to a stub `CONNECTOR_STUB` px past the bounds,
+  then the first of an L, a Z or U through the middle, or a detour round
+  both shapes that leaves and arrives the right way and crosses neither
+  shape's bounds, fewest bends first. So it stays joined whatever moves
+  either shape: a lasso move, resize or turn (drawn on the wet layer during
+  the drag), undo and redo.
+- **A connector draws only while both its shapes are on its page**
+  (`liveConnectors`). Erasing or deleting a shape stops its arrows being
+  drawn and saved; the undo that restores the shape restores them. No erase,
+  cut or delete command knows about connectors, and each stays one step.
+- **Copies of pages** (`duplicatePageAfter`, `prepareTransfer`) carry their
+  connectors to the renumbered strokes; a lasso copy does not (pasted
+  strokes are new shapes).
+- **On disk** each page writes its live connectors after `tasks`, checked on
+  read (two different shapes of the page, a side each, a colour, a positive
+  width, a fresh id). **This is a format change**: a notebook with any live
+  connector is labelled `v2+connectors:` (`requires: ["connectors"]`, after
+  `sticky` when both). An older FineNotes cannot decode the label and holds
+  the notebook read-only (`unreadable-ink`), as it does a notebook with
+  sticky notes, instead of saving the arrows away. A notebook without
+  connectors keeps the plain `v2:` label.

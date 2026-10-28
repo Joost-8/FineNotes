@@ -25,6 +25,7 @@ export default defineConfig({
         "src/ink/level-line.ts",
         "src/ink/shape-points.ts",
         "src/ink/shape-snap.ts",
+        "src/ink/connector-route.ts",
         "src/canvas/backdrop.ts",
         "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",

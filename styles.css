@@ -7008,6 +7008,48 @@ textarea.goodobsidian-chat-input:focus-visible {
   display: none;
 }
 
+/* A lone shape's side dots (discussion #51): drag one out, or tap it, for
+   a copy joined to the shape by an arrow, as in Goodnotes. Small accent
+   dots just outside the frame, each in a 32 px target that hands its press
+   to the frame; the frame decides which handle a press takes. */
+.goodobsidian-link-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-link-dots.is-hidden {
+  display: none;
+}
+
+.goodobsidian-link-dot {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: copy;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-link-dot::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow:
+    0 0 0 1.5px var(--gob-mark),
+    var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+}
+
 /* The action bar and its "…" menu, after GoodNotes: dark in every theme.
    Both carry Obsidian's own `theme-dark` class, which re-declares the
    --color-base-* palette (and --color-red) on them, so these are Obsidian's
@@ -7075,6 +7117,11 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.mod-warning {
   color: var(--color-red);
+}
+
+/* The one a bar of choices is now (a linked shape's type): in the accent. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on {
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon:disabled {

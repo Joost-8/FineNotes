@@ -33,6 +33,7 @@ import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
+import { liveConnectors, readConnectors } from "./connectors";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
@@ -59,6 +60,7 @@ import {
   type PageSection,
   type InkLink,
   type InkTask,
+  type ShapeConnector,
   type PageGeometry,
   type Recording,
   type PracticeInfo,
@@ -180,6 +182,7 @@ interface StoredPage {
   sections?: PageSection[];
   links?: InkLink[];
   tasks?: InkTask[];
+  connectors?: ShapeConnector[];
   images: Array<ImageElement | StoredNote>;
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
@@ -300,6 +303,7 @@ function storePage(page: Page): StoredPage {
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
+    connectors: storedConnectors(page),
     images: page.images.some(isStickyNote)
       ? page.images.map((image) => storeImage(image, noteInk))
       : page.images,
@@ -327,9 +331,21 @@ function storeImage(
   };
 }
 
+/**
+ * A page's connectors as stored: only those whose two shapes are on it (one
+ * whose shape was erased is not saved), or `undefined` for none.
+ */
+function storedConnectors(page: Page): ShapeConnector[] | undefined {
+  const live = liveConnectors(page);
+  return live.length > 0 ? live : undefined;
+}
+
 /** The features a document uses that an older reader would lose. */
 function featuresOf(doc: InkDocument): FormatFeature[] {
-  return doc.pages.some((page) => page.images.some(isStickyNote)) ? ["sticky"] : [];
+  const features: FormatFeature[] = [];
+  if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
+  if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
+  return features;
 }
 
 /** The meta block, or `undefined` when none of its fields has anything to say. */
@@ -952,6 +968,7 @@ function normalizePage(
   seenSections: Set<string> = new Set(),
   seenLinks: Set<string> = new Set(),
   seenTasks: Set<string> = new Set(),
+  seenConnectors: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -1015,6 +1032,7 @@ function normalizePage(
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
+    ...connectorsIn(page.connectors, strokes, seenConnectors),
     ...(tables.length > 0 ? { tables } : {}),
     ...(graphs.length > 0 ? { graphs } : {}),
     ...(comments.length > 0 ? { comments } : {}),
@@ -1029,6 +1047,16 @@ function linksOf(
 ): { links?: InkLink[] } {
   const links = normalizeLinks(raw, new Set(strokes.map((s) => s.id)), seen);
   return links.length > 0 ? { links } : {};
+}
+
+/** A page's connectors, spread into the page only when any joins two of its shapes. */
+function connectorsIn(
+  raw: unknown,
+  strokes: readonly Stroke[],
+  seen: Set<string>,
+): { connectors?: ShapeConnector[] } {
+  const connectors = readConnectors(raw, new Set(strokes.map((s) => s.id)), seen);
+  return connectors.length > 0 ? { connectors } : {};
 }
 
 /** A page's tasks, spread into the page only when any of them still holds ink there. */
@@ -1091,8 +1119,9 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
     const seenSections = new Set<string>();
     const seenLinks = new Set<string>();
     const seenTasks = new Set<string>();
+    const seenConnectors = new Set<string>();
     pages = raw.pages.map((p, i) =>
-      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks),
+      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks, seenConnectors),
     );
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
