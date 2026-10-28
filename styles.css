@@ -13220,6 +13220,20 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   overflow: hidden;
 }
 
+/* Away from the top, the bar gives back the room above it too: Obsidian's
+   file margin over the view (`.workspace-leaf-content .view-content`, 12 px)
+   framed the bar there, and without it is an empty strip over the page. The
+   page runs up to the view header. Its foot padding stays (Obsidian's own
+   bar sits there on a phone). */
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-bottom,
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-left,
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-right,
+.view-content.goodobsidian-view.goodobsidian-bar-at-bottom,
+.view-content.goodobsidian-view.goodobsidian-bar-at-left,
+.view-content.goodobsidian-view.goodobsidian-bar-at-right {
+  padding-top: 0;
+}
+
 /* Along the bottom: after the page and the text layer, its hairline above. */
 .goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-toolbar {
   order: 1;
