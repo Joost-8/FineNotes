@@ -1,7 +1,7 @@
 /**
  * Lines that snap level or upright (FineNotes discussion #51): a line drawn
- * within a few degrees of horizontal or vertical is meant to be horizontal
- * or vertical, so it is made exactly so. Used wherever a line is made — a
+ * nearly horizontal or vertical is meant to be horizontal or vertical, so it
+ * is made exactly so. Used wherever a line is made — a
  * hold-to-snap line or arrow (and while the pen still holds it), the Shape
  * tool's line and arrow, and the highlighter's straightened line.
  *
@@ -16,12 +16,18 @@
 const STRIDE = 3;
 
 /**
- * Within this many degrees of level or upright a line is made exactly so.
- * Xournal's axis snap (`ShapeRecognizerConfig.h`, ±5°), the ledger's
- * reference for real-ink tolerances; the rectangle snaps at 6°, the ellipse
- * and the star at 8°, but a line has no other sides to show it is square.
+ * How far a line's two ends may be off level (or off upright) and still be
+ * levelled, px at fit-to-width zoom, where a page px is about a screen px:
+ * callers pass `atFitZoom(LINE_LEVEL_RISE)`, and the recogniser works at
+ * that size already (`recognizeAtZoom`). A first cut levelled anything
+ * within 5°, which moved the end of a long line by 20 px or more and
+ * ignored the zoom; Joost found it too eager (2026-10-28). A rise is what
+ * the eye sees: 8 px is 1.5° over 300 px, 4.6° over 100 px.
  */
-export const LINE_LEVEL_DEG = 5;
+export const LINE_LEVEL_RISE = 8;
+
+/** And never further off than this many degrees, however short the line. */
+export const LINE_LEVEL_DEG = 4;
 
 /** Where a levelled line turns about: its first point, or its middle. */
 export type LevelPivot = "start" | "middle";
@@ -31,34 +37,43 @@ function round2(value: number): number {
 }
 
 /**
- * The turn, in radians, that brings the direction (`dx`, `dy`) onto the
- * nearest of level or upright, or 0 when it is further than `deg` from both
- * (or already on one, or has no direction).
+ * The turn, in radians, that brings the segment (`dx`, `dy`) onto the
+ * nearest of level or upright, or 0 when its ends are more than `maxRise`
+ * off it or it is more than `deg` off it (or it is already on one, or has
+ * no direction).
  */
-export function levelTurn(dx: number, dy: number, deg = LINE_LEVEL_DEG): number {
-  if (!(Math.hypot(dx, dy) > 0)) return 0;
+export function levelTurn(
+  dx: number,
+  dy: number,
+  maxRise = LINE_LEVEL_RISE,
+  deg = LINE_LEVEL_DEG,
+): number {
+  const length = Math.hypot(dx, dy);
+  if (!(length > 0)) return 0;
   const angle = Math.atan2(dy, dx);
   const quarter = Math.PI / 2;
   const turn = Math.round(angle / quarter) * quarter - angle;
-  return Math.abs(turn) <= (deg * Math.PI) / 180 ? turn : 0;
+  if (Math.abs(turn) > (deg * Math.PI) / 180) return 0;
+  return length * Math.abs(Math.sin(turn)) <= maxRise ? turn : 0;
 }
 
 /**
  * `pts` with its line levelled: the segment from its first point to its
  * second (a line's two ends; an arrow's tail and tip, contracts/api.md §2)
- * turned onto level or upright when it is within `deg` of one, and every
+ * turned onto level or upright when its ends are within `maxRise` of it
+ * ({@link levelTurn}), and every
  * other point turned rigidly with it, so an arrow's head stays on its
  * shaft. The two ends come out exactly level (or upright), not merely
  * rounded close to it. A fresh array when anything moved; `pts` itself when
  * nothing did, so a caller may compare identity. Pressures are kept.
  */
-export function levelLine(pts: number[], pivot: LevelPivot, deg = LINE_LEVEL_DEG): number[] {
+export function levelLine(pts: number[], pivot: LevelPivot, maxRise = LINE_LEVEL_RISE): number[] {
   if (pts.length < 2 * STRIDE) return pts;
   const ax = pts[0];
   const ay = pts[1];
   const bx = pts[STRIDE];
   const by = pts[STRIDE + 1];
-  const turn = levelTurn(bx - ax, by - ay, deg);
+  const turn = levelTurn(bx - ax, by - ay, maxRise);
   if (turn === 0) return pts;
   const cx = pivot === "start" ? ax : (ax + bx) / 2;
   const cy = pivot === "start" ? ay : (ay + by) / 2;

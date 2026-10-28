@@ -7,7 +7,7 @@
  * PURE: flat `[x, y, pressure, …]` in, the same out.
  */
 
-import { levelLine } from "./level-line";
+import { LINE_LEVEL_RISE, levelLine } from "./level-line";
 
 /** Samples are `[x, y, pressure]` triples. */
 const STRIDE = 3;
@@ -38,7 +38,11 @@ const LINE_MAX_BACKTRACK = 0.1;
  * The best-fit line is the total least-squares one (the principal axis of
  * the samples), so a steep line fits as well as a level one.
  */
-export function lineOfHighlight(pts: readonly number[], minLength: number): number[] | null {
+export function lineOfHighlight(
+  pts: readonly number[],
+  minLength: number,
+  levelRise = LINE_LEVEL_RISE,
+): number[] | null {
   const count = Math.floor(pts.length / STRIDE);
   if (count < 2) return null;
   let mx = 0;
@@ -103,5 +107,5 @@ export function lineOfHighlight(pts: readonly number[], minLength: number): numb
     return [mx + along * dx, my + along * dy, pts[i * STRIDE + 2]];
   };
   // Within a few degrees of level (a line of text) or upright, exactly so.
-  return levelLine([...end(0), ...end(count - 1)], "middle");
+  return levelLine([...end(0), ...end(count - 1)], "middle", levelRise);
 }

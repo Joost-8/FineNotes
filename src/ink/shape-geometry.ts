@@ -9,7 +9,7 @@
  */
 
 import { POINT_STRIDE, type ShapeKind } from "../model/document";
-import { levelTurn } from "./level-line";
+import { LINE_LEVEL_RISE, levelTurn } from "./level-line";
 
 /**
  * The Shape tool's closed presets, in the order its options pill shows them.
@@ -311,14 +311,20 @@ export function arrowPoints(tail: Pt, tip: Pt, headDeg = ARROW_HEAD_DEG): Pt[] {
 
 /**
  * A connector preset dragged from `from` to `to`: a line, or an arrow whose
- * head is at `to`. Returns `[]` when the two points coincide. Dragged within
- * a few degrees of level or upright it is made exactly so, turned about
- * `from`, where the pen went down (`level-line.ts`).
+ * head is at `to`. Returns `[]` when the two points coincide. Dragged with
+ * its end within `levelRise` page px of level or upright it is made exactly
+ * so, turned about `from`, where the pen went down (`level-line.ts`).
  */
-function connectorGeometry(preset: ConnectorPreset, from: Pt, to: Pt, pressure: number): number[] {
+function connectorGeometry(
+  preset: ConnectorPreset,
+  from: Pt,
+  to: Pt,
+  pressure: number,
+  levelRise: number,
+): number[] {
   const span = Math.hypot(to.x - from.x, to.y - from.y);
   if (!(span > 0) || !Number.isFinite(span)) return [];
-  const turn = levelTurn(to.x - from.x, to.y - from.y);
+  const turn = levelTurn(to.x - from.x, to.y - from.y, levelRise);
   const end =
     turn === 0
       ? to
@@ -335,8 +341,16 @@ function connectorGeometry(preset: ConnectorPreset, from: Pt, to: Pt, pressure: 
  * degenerate box — callers treat that as "nothing to draw". Connectors (line,
  * arrow) run from `from` to `to` instead.
  */
-export function presetGeometry(preset: ShapePreset, from: Pt, to: Pt, pressure: number): number[] {
-  if (preset === "line" || preset === "arrow") return connectorGeometry(preset, from, to, pressure);
+export function presetGeometry(
+  preset: ShapePreset,
+  from: Pt,
+  to: Pt,
+  pressure: number,
+  levelRise = LINE_LEVEL_RISE,
+): number[] {
+  if (preset === "line" || preset === "arrow") {
+    return connectorGeometry(preset, from, to, pressure, levelRise);
+  }
   const x0 = Math.min(from.x, to.x);
   const y0 = Math.min(from.y, to.y);
   const x1 = Math.max(from.x, to.x);

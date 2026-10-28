@@ -12,10 +12,10 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Lines snap level or upright**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A line or
-  arrow drawn within 5° of level or upright comes out exactly level or
-  upright: a held line, an arrow, the Shape tool's line and arrow, and the
-  highlighter's straight line. While the pen still holds a snapped line, it
-  settles level as you turn it past.
+  arrow drawn with its ends within a few pixels of level or upright on
+  screen (and at most 4° off) comes out exactly level or upright: a held
+  line, an arrow, the Shape tool's line and arrow, and the highlighter's
+  straight line. A long line drawn at a slope keeps it, at any zoom.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch

@@ -230,7 +230,7 @@ import {
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { lineOfHighlight } from "../ink/straighten";
-import { levelLine } from "../ink/level-line";
+import { LINE_LEVEL_RISE, levelLine } from "../ink/level-line";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import {
   SCRIBBLE_COVERAGE,
@@ -6207,7 +6207,8 @@ export class InkSurface {
       // arrow turned near level or upright settles there, about its tail.
       if (last) {
         const pts = transformShape(snap.base, snap.pivot, snap.from, this.toPage(box, last));
-        snap.pts = snap.kind === "line" || snap.kind === "arrow" ? levelLine(pts, "start") : pts;
+        const open = snap.kind === "line" || snap.kind === "arrow";
+        snap.pts = open ? levelLine(pts, "start", this.atFitZoom(LINE_LEVEL_RISE)) : pts;
       }
       this.scheduleWet();
       return;
@@ -6644,7 +6645,8 @@ export class InkSurface {
   private highlightLine(tool: Tool, pts: readonly number[]): number[] | null {
     if (tool !== "highlighter") return null;
     if (this.callbacks.straightenHighlighter?.() === false) return null;
-    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX));
+    const rise = this.atFitZoom(LINE_LEVEL_RISE);
+    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX), rise);
   }
 
   /**
@@ -6945,7 +6947,7 @@ export class InkSurface {
       origin = { x: cx - halfW, y: cy - halfH };
       to = { x: cx + halfW, y: cy + halfH };
     }
-    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE);
+    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE, this.atFitZoom(LINE_LEVEL_RISE));
   }
 
   /**
@@ -6975,7 +6977,8 @@ export class InkSurface {
     }
     // While dragging, preview the real size — even a tiny one; the tap
     // default only applies if the pen lifts without having moved.
-    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE);
+    const rise = this.atFitZoom(LINE_LEVEL_RISE);
+    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE, rise);
     if (pts.length === 0) {
       this.renderer?.clearWet();
       return;
