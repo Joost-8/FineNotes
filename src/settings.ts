@@ -96,6 +96,14 @@ import {
   withSection,
 } from "./settings-data";
 import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
+import {
+  type ShortcutAction,
+  type ShortcutRow,
+  SHORTCUT_ACTION_GROUPS,
+  inputCaps,
+  inputsText,
+} from "./model/shortcut-bindings";
+import { type ShortcutRecorder, recordShortcut } from "./view/shortcut-recorder";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { ShortcutsModal } from "./ui/shortcuts-modal";
@@ -259,6 +267,15 @@ export function shortcutList(apple: boolean): Array<[string, string]> {
   );
 }
 
+/** The words that find an action row: its name, its group, and what it is. */
+function shortcutAliases(action: ShortcutAction): string[] {
+  const words = action.label
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  return [action.group.toLowerCase(), ...words, "shortcut", "key", "hotkey", "stylus"];
+}
+
 /** The tools an ink note can open with, as the dropdown names them. */
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
 
@@ -337,8 +354,6 @@ const DESC = {
   debugHud:
     "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
     "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
-  shortcuts:
-    "The keys and stylus gestures FineNotes knows. None of them act while you type in a text box.",
 };
 
 function modelDesc(vendor: LlmVendor): string {
@@ -618,6 +633,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
   /** Which saved pen each drawn pen row shows, behind the one click listener it gets. */
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
+  /** The binding slot listening for an input, while one records. */
+  private shortcutRecorder: ShortcutRecorder | null = null;
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -851,6 +868,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ...this.topRows(),
       this.writingGroup(),
       this.pensGroup(),
+      this.shortcutsGroup(),
       this.pagesGroup(),
       this.modelsGroup(),
       this.aiGroup(),
@@ -1063,17 +1081,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * The saved pens as a list, the stylus button, the cursor, and the
-   * shortcuts (FineNotes#24, #25). A pen is added with the + here or the
-   * toolbar's star (eight at most), changed by tapping its row, and deleted
-   * from its row. Stylus only, the Hand and the Magnifier are toolbar
-   * items, placed with Customize toolbar, not settings.
+   * The saved pens and the stylus button. A pen is added with the + here or
+   * the toolbar's star (eight at most), changed by tapping its row, and
+   * deleted from its row. Stylus only, the Hand and the Magnifier are toolbar
+   * items, placed with Customize toolbar, not settings. The keys are their
+   * own section now (`shortcutsGroup`).
    */
   private pensGroup(): SettingDefinitionItem {
     const pens = savedPensOf(this.plugin.settings.savedPens);
     return this.section(
       "pens",
-      "Pens and shortcuts",
+      "Pens",
       "star",
       [
         this.info(
@@ -1128,15 +1146,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           visible: !Platform.isMobile,
         },
-        this.info(
-          drawnRow("Keyboard shortcuts", "", (s) => this.drawShortcutsButton(s), [
-            "hotkeys",
-            "keys",
-            "modifier",
-            "stylus shortcuts",
-          ]),
-          DESC.shortcuts,
-        ),
       ],
       () => [{ text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` }],
     );
@@ -1255,13 +1264,254 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }).open();
   }
 
-  /** The shortcuts are a sheet of their own, the one `?` opens in a notebook. */
-  private drawShortcutsButton(setting: Setting): void {
-    setting.addButton((button) =>
-      button.setButtonText("Show all").onClick(() => {
-        new ShortcutsModal(this.app, Platform.isMacOS || Platform.isIosApp).open();
-      }),
+  /**
+   * The shortcuts as both a reference and a keyboard map: every action the
+   * notebook has, its input as key caps, and a slot that records a new one.
+   * A tool can be pressed (switch to it) or held (lend it for the next
+   * press); one-shot commands only press. Everything here is per device
+   * (`view/shortcut-store.ts`), so the laptop and the tablet keep their own.
+   *
+   * The section is drawn by the tab, not by plain controls: each row's slot
+   * is a button, and recording replaces the slot's content until an input
+   * arrives.
+   */
+  private shortcutsGroup(): SettingDefinitionItem {
+    return this.section(
+      "shortcuts",
+      "Shortcuts",
+      "keyboard",
+      [
+        block((el) => this.drawShortcutsIntro(el)),
+        block(
+          (el) => this.drawShortcutConflicts(el),
+          () => this.plugin.shortcuts.table.conflicts.length > 0,
+        ),
+        ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
+          block((el) =>
+            el.createDiv({ cls: "goodobsidian-shortcut-table-title", text: group.title }),
+          ),
+          ...group.actions.map((action) =>
+            drawnRow(
+              action.label,
+              action.hint ?? action.resetHint ?? "",
+              (setting) => this.drawShortcutRow(setting, action),
+              shortcutAliases(action),
+            ),
+          ),
+        ]),
+        block((el) => this.drawShortcutsFooter(el)),
+      ],
+      () => {
+        const current = this.plugin.shortcuts.table;
+        return [
+          { text: `${current.rows.length} actions` },
+          ...(current.customized > 0
+            ? [{ text: `${current.customized} custom`, tone: "ready" as const }]
+            : []),
+          ...(current.conflicts.length > 0
+            ? [
+                {
+                  text: `${current.conflicts.length} conflict${current.conflicts.length === 1 ? "" : "s"}`,
+                  tone: "failed" as const,
+                },
+              ]
+            : []),
+        ];
+      },
     );
+  }
+
+  /** The table's few words above it: how to record, and what stays on this device. */
+  private drawShortcutsIntro(el: HTMLElement): void {
+    const box = el.createDiv({ cls: "goodobsidian-shortcuts-intro" });
+    box.createDiv({
+      cls: "goodobsidian-shortcuts-intro-title",
+      text: "Click a slot, then press the key or button you want.",
+    });
+    box.createDiv({
+      cls: "goodobsidian-shortcuts-intro-line",
+      text:
+        "Everything here is kept on this device, not in the vault: the laptop's keys and " +
+        "the tablet's stylus button are different hardware. Escape cancels recording.",
+    });
+    const buttons = box.createDiv({ cls: "goodobsidian-shortcuts-intro-buttons" });
+    const reset = buttons.createEl("button", { cls: "mod-warning", text: "Reset all" });
+    reset.setAttribute("type", "button");
+    reset.addEventListener("click", () => void this.resetAllShortcuts());
+    const sheet = buttons.createEl("button", { text: "Show the reference sheet" });
+    sheet.setAttribute("type", "button");
+    sheet.addEventListener("click", () => this.openShortcutsSheet());
+  }
+
+  /** The paused rows, with their shared input and the actions that want it. */
+  private drawShortcutConflicts(el: HTMLElement): void {
+    const conflicts = this.plugin.shortcuts.table.conflicts;
+    if (conflicts.length === 0) return;
+    const apple = this.apple;
+    const box = el.createDiv({ cls: "goodobsidian-callout is-conflict" });
+    box.createDiv({
+      cls: "goodobsidian-callout-title",
+      text: "These shortcuts are paused: two rows share one input",
+    });
+    for (const conflict of conflicts) {
+      const line = box.createDiv({ cls: "goodobsidian-shortcut-conflict" });
+      line.createSpan({
+        cls: "goodobsidian-shortcut-conflict-keys",
+        text: inputsText([conflict.input], apple),
+      });
+      line.createSpan({
+        cls: "goodobsidian-shortcut-conflict-actions",
+        text: conflict.rows.map((row) => row.action.label).join(" and "),
+      });
+    }
+    box.createDiv({
+      cls: "goodobsidian-shortcuts-conflict-hint",
+      text: "Neither acts until one row is changed, cleared or reset.",
+    });
+  }
+
+  /** Under the table: what Hold does, and what Reset restores. */
+  private drawShortcutsFooter(el: HTMLElement): void {
+    el.createDiv({
+      cls: "goodobsidian-shortcuts-footer",
+      text:
+        "Reset restores one row's built-in keys. A tool set to Hold is lent while the key " +
+        "is down and the tool returns when it is let go, as Shift erases. A pen button " +
+        "lends its tool for that press; a command bound to one runs once.",
+    });
+  }
+
+  /** One action: its key slot, how it triggers, and a reset. */
+  private drawShortcutRow(setting: Setting, action: ShortcutAction): void {
+    const row = this.plugin.shortcuts.table.rows.find(
+      (candidate) => candidate.action.id === action.id,
+    );
+    if (!row) return;
+    setting.setClass("goodobsidian-shortcut-row");
+    setting.settingEl.toggleClass("is-conflicted", row.conflicted);
+    setting.settingEl.toggleClass("is-customized", row.customized);
+    const slot = setting.controlEl.createEl("button", { cls: "goodobsidian-shortcut-slot" });
+    slot.setAttribute("type", "button");
+    this.paintShortcutSlot(slot, row);
+    slot.addEventListener("click", () => this.startRecording(setting, action, slot, row));
+    if (action.holdable) {
+      setting.addDropdown((dropdown) => {
+        dropdown.addOption("press", "Press");
+        dropdown.addOption("hold", "Hold");
+        dropdown.setValue(row.mode);
+        dropdown.selectEl.setAttribute("aria-label", `${action.label}: when it triggers`);
+        dropdown.onChange((value) => {
+          this.plugin.shortcuts.setMode(action.id, value === "hold" ? "hold" : "press");
+          this.update();
+        });
+      });
+    }
+    setting.addExtraButton((button) =>
+      button
+        .setIcon("rotate-ccw")
+        .setTooltip("Reset to FineNotes' own keys")
+        .setDisabled(!row.customized)
+        .onClick(() => {
+          this.plugin.shortcuts.reset(action.id);
+          this.update();
+        }),
+    );
+  }
+
+  /** A slot's key caps, its "hold" tag, and what a conflict says. */
+  private paintShortcutSlot(slot: HTMLElement, row: ShortcutRow): void {
+    const apple = this.apple;
+    slot.empty();
+    slot.removeClass("is-recording", "is-conflicted");
+    slot.toggleClass("is-conflicted", row.conflicted);
+    const text = inputsText(row.inputs, apple);
+    slot.setAttribute("aria-label", `${row.action.label}: ${text}`);
+    if (row.inputs.length === 0) {
+      slot.createSpan({ cls: "goodobsidian-shortcut-unset", text: "Not set" });
+    } else {
+      for (const [index, input] of row.inputs.entries()) {
+        if (index > 0) {
+          slot.createSpan({ cls: "goodobsidian-shortcut-sep", text: "or" });
+        }
+        const way = slot.createSpan({ cls: "goodobsidian-shortcut-way" });
+        for (const [capIndex, cap] of inputCaps(input, apple).entries()) {
+          if (capIndex > 0 && !apple) {
+            way.createSpan({ cls: "goodobsidian-shortcut-plus", text: "+" });
+          }
+          way.createEl("kbd", { cls: "goodobsidian-key", text: cap });
+        }
+      }
+    }
+    if (row.mode === "hold" && row.action.holdable) {
+      slot.createSpan({ cls: "goodobsidian-shortcut-hold", text: "hold" });
+    }
+    if (row.conflicted) {
+      const others = this.plugin.shortcuts.table.conflicts
+        .find((conflict) => conflict.rows.includes(row))
+        ?.rows.filter((other) => other !== row)
+        .map((other) => other.action.label)
+        .join(", ");
+      slot.setAttribute(
+        "title",
+        `Conflicts with ${others || "another row"}: change, clear or reset one of the rows.`,
+      );
+    }
+  }
+
+  /** Listen for one input and keep it; Escape cancels, as a second call does. */
+  private startRecording(
+    setting: Setting,
+    action: ShortcutAction,
+    slot: HTMLElement,
+    row: ShortcutRow,
+  ): void {
+    if (this.shortcutRecorder) {
+      this.shortcutRecorder.cancel();
+      return;
+    }
+    slot.addClass("is-recording");
+    slot.empty();
+    slot.setAttribute("aria-label", `${action.label}: press a key or a pen button`);
+    slot.createSpan({
+      cls: "goodobsidian-shortcut-recording",
+      text: "Press key or stylus button…",
+    });
+    slot.createSpan({ cls: "goodobsidian-shortcut-recording-hint", text: "Esc cancels" });
+    const doc = setting.settingEl.ownerDocument ?? activeDocument;
+    this.shortcutRecorder = recordShortcut(doc, {
+      record: (input) => {
+        this.shortcutRecorder = null;
+        this.plugin.shortcuts.set(action.id, input, row.mode);
+        this.update();
+      },
+      cancel: () => {
+        this.shortcutRecorder = null;
+        // Redraw the row as it was. The listeners are gone first, so the key
+        // that cancelled recording never reaches the notebook.
+        this.update();
+      },
+    });
+  }
+
+  private async resetAllShortcuts(): Promise<void> {
+    const yes = await ConfirmModal.confirm(this.app, {
+      title: "Reset every shortcut on this device?",
+      message: "Every row goes back to FineNotes' own keys. Other devices keep theirs.",
+      cta: "Reset",
+    });
+    if (!yes) return;
+    this.plugin.shortcuts.resetAll();
+    this.update();
+  }
+
+  /** The reference sheet `?` opens, with the built-in list and the user's own keys. */
+  private openShortcutsSheet(): void {
+    new ShortcutsModal(this.app, this.apple).open();
+  }
+
+  /** Whether this device's keys are named with ⌘ ⌥ ⇧ or with Ctrl, Alt, Shift. */
+  private get apple(): boolean {
+    return Platform.isMacOS || Platform.isIosApp;
   }
 
   /** The paper, and where new notebooks go and how they are made. */
@@ -2015,6 +2265,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   override hide(): void {
+    // A binding slot must not keep listening once the tab is gone.
+    this.shortcutRecorder?.cancel();
+    this.shortcutRecorder = null;
     this.learningState = null;
     this.moreOpen.clear();
     super.hide();

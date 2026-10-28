@@ -69,6 +69,8 @@ const { ExtraButtonComponent, FakeEl, Menu, Modal, Platform, Setting } =
   await import("../fakes/obsidian");
 const { DEFAULT_SETTINGS, GoodObsidianSettingTab, addInfo, shortcutList } =
   await import("../../src/settings");
+const { ShortcutStore } = await import("../../src/view/shortcut-store");
+const { SHORTCUT_ACTION_GROUPS } = await import("../../src/model/shortcut-bindings");
 const { SIZES } = await import("../../src/constants");
 const { DEFAULT_MODELS, LLM_PROVIDER_ID, VENDOR_LABELS, VENDORS } =
   await import("../../src/recognition/llm-request");
@@ -120,6 +122,7 @@ function fakeStore(asset: ModelAsset, calls: string[]) {
 function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, string> = {}) {
   const calls: string[] = [];
   const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+  const deviceStorage = new Map<string, string>();
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const speechStore = fakeStore(speechAsset("whisper-base"), calls);
   /** The vault the learning rows look in: practice files and model files by path. */
@@ -129,6 +132,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     settings,
     calls,
     keys: { secure: true },
+    shortcuts: new ShortcutStore({
+      loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
+      saveLocalStorage: (key: string, value: string) => {
+        deviceStorage.set(key, value);
+      },
+    }),
     // No newer FineNotes known (update-notice.ts), unless a test says one is out.
     updates: {
       available: null as string | null,
@@ -344,14 +353,34 @@ const MODELS = "Models on this device";
 const WRITING = "Writing";
 const PAGES = "Pages and notebooks";
 const ADVANCED = "Advanced";
-const PENS = "Pens and shortcuts";
+const PENS = "Pens";
+const SHORTCUTS = "Shortcuts";
 const FOOTER = "Feedback and community";
+
+/**
+ * The Shortcuts section, top to bottom: the introduction, the (hidden)
+ * conflict callout, each group's heading and its actions, then the footer.
+ * The group titles are unnamed blocks, so search still finds every action.
+ */
+const SHORTCUT_ROWS = [
+  [SHORTCUTS, "(block)", "render"],
+  [SHORTCUTS, "(block)", "render"],
+  ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
+    [SHORTCUTS, "(block)", "render"],
+    ...group.actions.map((action) => [SHORTCUTS, action.label, "render"]),
+  ]),
+  [SHORTCUTS, "(block)", "render"],
+] as const;
 
 beforeEach(() => {
   // The pen icons are SVG made in the row's document: a stand-in document.
   vi.stubGlobal("activeDocument", {
     body: { hasClass: () => false },
     createElementNS: (_ns: string, tag: string) => new FakeEl(tag),
+    defaultView: {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    },
   });
   dialogs.keyModals.length = 0;
   dialogs.confirms.length = 0;
@@ -400,7 +429,7 @@ describe("the rows", () => {
       [PENS, "Stylus side button", "dropdown:barrelButton"],
       [PENS, "Side button click", "dropdown:stylusButtonClick"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
-      [PENS, "Keyboard shortcuts", "render"],
+      ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
@@ -557,14 +586,23 @@ describe("the rows", () => {
 
 // --- Visibility --------------------------------------------------------------
 
-/** The "Pens and shortcuts" rows a fresh install shows, on a computer. */
+/** The "Pens" rows a fresh install shows, on a computer. */
 const PEN_ROWS = [
   "Saved pens",
   ...DEFAULT_PEN_NAMES,
   "Stylus side button",
   "Side button click",
   "Cursor over the page",
-  "Keyboard shortcuts",
+];
+
+/** The Shortcuts rows shown by default: no conflict callout, every action. */
+const SHORTCUT_VISIBLE = [
+  "(block)",
+  ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
+    "(block)",
+    ...group.actions.map((action) => action.label),
+  ]),
+  "(block)",
 ];
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
@@ -584,7 +622,7 @@ describe("which rows show", () => {
   function visibleNames(plugin: Plugin, aiOpen = true): string[] {
     const { tab } = makeTab(plugin, aiOpen);
     const all = rows(tab);
-    return all.map((r, i) => (shown(r.def) ? r.def.name || `(block ${i})` : "")).filter(Boolean);
+    return all.map((r) => (shown(r.def) ? r.def.name || "(block)" : "")).filter(Boolean);
   }
 
   it("warns about pressure only while it is on", () => {
@@ -592,7 +630,7 @@ describe("which rows show", () => {
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens";
     expect(off[off.indexOf(toggle) + 1]).toBe("Desynchronized canvas");
-    expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
+    expect(on[on.indexOf(toggle) + 1]).toBe("(block)");
   });
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
@@ -606,6 +644,7 @@ describe("which rows show", () => {
       "Highlighter opacity",
       "Straighten highlighter strokes",
       ...PEN_ROWS,
+      ...SHORTCUT_VISIBLE,
       "Page appearance",
       "Paper width",
       "More",
@@ -618,7 +657,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -649,7 +688,7 @@ describe("which rows show", () => {
       "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      expect.stringMatching(/^\(block \d+\)$/),
+      "(block)",
     ]);
   });
 
@@ -1398,10 +1437,14 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.calls).toEqual(["penCursor:crosshair", "penCursor:arrow"]);
   });
 
-  /** Open the shortcut sheet from its row; the sheet's list. */
+  /** Open the reference sheet from the Shortcuts introduction; the sheet's list. */
   function shortcutSheet() {
-    const row = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard shortcuts"));
-    void row.button("Show all").click();
+    const all = rows(makeTab(makePlugin()).tab);
+    const intro = renderRow(blockAfter(all, "Cursor over the page"));
+    const buttons = intro.find("goodobsidian-shortcuts-intro-buttons");
+    const sheet = buttons?.children.find((child) => child.text === "Show the reference sheet");
+    if (!sheet) throw new Error("no reference sheet button");
+    sheet.dispatch("click");
     const modal = Modal.made.at(-1);
     expect(modal?.isOpen).toBe(true);
     return modal?.contentEl.find("goodobsidian-shortcuts");
@@ -1462,6 +1505,60 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(pc["Show or hide this list"]).toBe("?");
     expect(shortcutList(false)).toHaveLength(19);
   });
+
+  it("draws each action as a key slot, with Press or Hold only where it means something", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    const pen = renderRow(named(all, "Pen"));
+    const slot = pen.find("goodobsidian-shortcut-slot");
+    expect(slot?.findAll("goodobsidian-key").map((key) => key.text)).toEqual(["P", "W"]);
+    expect(slot?.find("goodobsidian-shortcut-sep")?.text).toBe("or");
+    expect(pen.dropdowns[0]?.options).toEqual({ press: "Press", hold: "Hold" });
+    expect(pen.dropdowns[0]?.value).toBe("press");
+    // The hand's built-in way is held, as Space has always been.
+    const hand = renderRow(named(all, "Hand"));
+    expect(hand.dropdowns[0]?.value).toBe("hold");
+    // Undo is one shot: there is nothing to hold.
+    expect(renderRow(named(all, "Undo")).dropdowns).toEqual([]);
+    // A row the user has not touched offers nothing to reset.
+    expect(pen.extras[0]?.disabled).toBe(true);
+  });
+
+  it("opens recording in the slot, and Escape puts the row back", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    const pen = renderRow(named(all, "Pen"));
+    const slot = pen.find("goodobsidian-shortcut-slot");
+    slot?.dispatch("click");
+    expect(slot?.find("goodobsidian-shortcut-recording")?.text).toBe("Press key or stylus button…");
+    slot?.dispatch("click");
+    // Cancelling redraws the tab; the slot built here is the one that was
+    // in recording mode.
+    expect(slot?.hasClass("is-recording")).toBe(true);
+  });
+
+  it("shows the rows a shared input pauses, and why", () => {
+    const plugin = makePlugin();
+    plugin.shortcuts.set("edit.undo", { type: "key", key: "p", mods: [] }, "press");
+    const all = rows(makeTab(plugin).tab);
+    const conflict = renderRow(blockAfter(all, "Cursor over the page", 1));
+    expect(conflict.find("goodobsidian-callout-title")?.text).toBe(
+      "These shortcuts are paused: two rows share one input",
+    );
+    expect(conflict.find("goodobsidian-shortcut-conflict-keys")?.text).toBe("P");
+    expect(conflict.find("goodobsidian-shortcut-conflict-actions")?.text).toBe("Pen and Undo");
+  });
+
+  it("resets every row on this device after asking", async () => {
+    const plugin = makePlugin();
+    plugin.shortcuts.set("tool.pen", { type: "key", key: "k", mods: [] }, "press");
+    const all = rows(makeTab(plugin).tab);
+    const intro = renderRow(blockAfter(all, "Cursor over the page"));
+    const reset = intro
+      .find("goodobsidian-shortcuts-intro-buttons")
+      ?.children.find((child) => child.text === "Reset all");
+    reset?.dispatch("click");
+    await vi.waitFor(() => expect(plugin.shortcuts.customized).toBe(0));
+    expect(dialogs.confirms[0]?.title).toBe("Reset every shortcut on this device?");
+  });
 });
 
 // --- Folding sections ----------------------------------------------------------
@@ -1504,7 +1601,7 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
   return out.filter((row) => shown(row.def));
 }
 
-const HEADINGS = [WRITING, PENS, PAGES, MODELS, AI, ADVANCED];
+const HEADINGS = [WRITING, PENS, SHORTCUTS, PAGES, MODELS, AI, ADVANCED];
 
 describe("folding sections", () => {
   it("folds every section at first, leaving only their headers and the footer", () => {
@@ -1519,7 +1616,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
@@ -1537,7 +1634,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ defaultTool: "highlighter", defaultSize: 5, paperWidth: 900 });
     const { tab } = makeTab(plugin, false);
     const drawn = groups(tab).map(drawGroup);
-    const [writing, pens, pages, models, ai, advanced] = drawn;
+    const [writing, pens, shortcuts, pages, models, ai, advanced] = drawn;
     expect(writing.header.find("goodobsidian-section-icon")?.attrs["data-icon"]).toBe("pencil");
     expect(
       writing.header.find("setting-item-name")?.children[0].hasClass("goodobsidian-section-icon"),
@@ -1549,6 +1646,7 @@ describe("folding sections", () => {
       plugin.settings.defaultColor,
     );
     expect(status(pens)).toBe("8 saved");
+    expect(status(shortcuts)).toBe("39 actions");
     expect(status(pages)).toBe("Light · 900 px");
     expect(status(models)).toBe("VoiceHandwriting");
     expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
@@ -1609,6 +1707,7 @@ describe("folding sections", () => {
       expect(groups(tab).map((g) => g.cls?.includes("is-folded"))).toEqual([
         true,
         false,
+        true,
         true,
         true,
         true,

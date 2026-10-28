@@ -71,6 +71,8 @@ export default defineConfig({
         "src/view/notebook-keys.ts",
         "src/view/scroll-thumb-drag.ts",
         "src/view/tool-return.ts",
+        "src/view/shortcut-store.ts",
+        "src/view/shortcut-recorder.ts",
         "src/view/pen-glyphs.ts",
         "src/view/springs.ts",
         "src/view/pen-cursor.ts",

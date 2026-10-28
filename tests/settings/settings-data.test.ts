@@ -434,6 +434,7 @@ describe("settings sections", () => {
     // Unknown ids go; known ones come back in the tab's order, once each.
     expect(openSectionsOf(["ai", "nope", "pens", "ai", 7, "toString", "shortcuts"])).toEqual([
       "pens",
+      "shortcuts",
       "ai",
     ]);
   });

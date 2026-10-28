@@ -3186,6 +3186,165 @@ kbd.goodobsidian-key.is-glyph {
   font-size: var(--font-ui-smaller);
 }
 
+/* Settings → Shortcuts: the reference and the key map in one place. The
+   table's heading rows are drawn blocks, the rows are normal settings rows,
+   so search still finds every action by its name. */
+.goodobsidian-shortcuts-intro {
+  padding: 10px 12px;
+  border-radius: var(--gob-radius-l, var(--radius-m));
+  background-color: var(--background-secondary);
+}
+
+.goodobsidian-shortcuts-intro-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.goodobsidian-shortcuts-intro-line,
+.goodobsidian-shortcuts-footer {
+  margin-top: var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+}
+
+.goodobsidian-shortcuts-intro-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
+
+.goodobsidian-shortcuts-intro-buttons button {
+  min-height: var(--gob-touch, 32px);
+}
+
+.goodobsidian-shortcut-table-title {
+  margin-top: var(--size-4-4);
+  padding: var(--size-2-2) 0 var(--size-2-1);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.02em;
+}
+
+.goodobsidian-shortcut-table-title:first-child {
+  margin-top: 0;
+}
+
+/* One action: its name on the left, its slot and mode on the right. */
+.setting-item.goodobsidian-shortcut-row {
+  padding-top: var(--size-2-2);
+  padding-bottom: var(--size-2-2);
+  border-top: none;
+}
+
+.goodobsidian-shortcut-row .setting-item-description {
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-shortcut-row .setting-item-control {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-2-2);
+}
+
+.goodobsidian-shortcut-row.is-conflicted .setting-item-name {
+  color: var(--text-error);
+}
+
+/* The binding slot is a button that shows key caps and listens when tapped. */
+.goodobsidian-shortcut-slot {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2-1) var(--size-2-2);
+  min-height: 30px;
+  max-width: min(100%, 320px);
+  margin: 0;
+  padding: 2px 8px;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.goodobsidian-shortcut-slot:hover {
+  border-color: var(--background-modifier-border-hover);
+  background-color: var(--background-modifier-hover);
+}
+
+.goodobsidian-shortcut-slot.is-conflicted {
+  border-color: var(--text-error);
+  background-color: rgba(var(--color-red-rgb, 255, 0, 0), 0.08);
+}
+
+.goodobsidian-shortcut-slot.is-recording {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus, transparent);
+  background-color: var(--background-primary);
+}
+
+.goodobsidian-shortcut-way {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+}
+
+.goodobsidian-shortcut-unset {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-style: italic;
+}
+
+.goodobsidian-shortcut-hold {
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  text-transform: lowercase;
+}
+
+.goodobsidian-shortcut-recording {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-shortcut-recording-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The conflict callout: red's bar, and one line per shared input. */
+.goodobsidian-callout.is-conflict {
+  border-left-color: var(--text-error);
+}
+
+.goodobsidian-shortcut-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+  margin-top: var(--size-2-2);
+}
+
+.goodobsidian-shortcut-conflict-keys {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.goodobsidian-shortcuts-conflict-hint {
+  margin-top: var(--size-2-2);
+  font-size: var(--font-ui-smaller);
+}
+
 /* ------------------------------------------- tier-2 swatch sizing (late) */
 
 /* A colour swatch must be a >= 44pt target without looking like a 44px blob:
