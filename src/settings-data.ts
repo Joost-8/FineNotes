@@ -190,6 +190,8 @@ export interface GoodObsidianSettings {
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
   penColors?: string[];
+  /** The pen types' order in the pen's row (`model/pen-type-order.ts`). Checked where it is read. */
+  penTypeOrder?: string[];
   /**
    * Each pen type's own colour and row (`model/pen-inks.ts`), so switching
    * pens brings each one's colours back. Checked where it is read.

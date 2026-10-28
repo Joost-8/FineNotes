@@ -655,6 +655,104 @@ body,
   color: var(--text-normal);
 }
 
+/* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
+   four in view at a time, the rest a swipe away (Joost's call); on a narrow
+   pane the row gives way, down to two. An end that hides more fades as the
+   colour row's does. Upright it runs down the pill, four pens tall. */
+.goodobsidian-pen-types {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: calc(34px * 2 + 2px);
+  max-width: calc(34px * 4 + 2px * 3);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  --gob-fade-start: #000;
+  --gob-fade-end: #000;
+  mask-image: linear-gradient(
+    90deg,
+    var(--gob-fade-start) 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    var(--gob-fade-end) 100%
+  );
+}
+
+.goodobsidian-pen-types::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-pen-types > * {
+  flex: none;
+}
+
+.goodobsidian-pen-types.has-more-start {
+  --gob-fade-start: transparent;
+}
+
+.goodobsidian-pen-types.has-more-end {
+  --gob-fade-end: transparent;
+}
+
+.goodobsidian-options.is-upright .goodobsidian-pen-types {
+  flex-direction: column;
+  min-width: 0;
+  max-width: none;
+  max-height: calc(var(--gob-touch-compact) * 4 + 2px * 3);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  mask-image: linear-gradient(
+    180deg,
+    var(--gob-fade-start) 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    var(--gob-fade-end) 100%
+  );
+}
+
+/* A pen held to be moved: it lifts and follows the finger along the row,
+   and a line marks the gap it would land in (pen-type-drag.ts). */
+.goodobsidian-options button.goodobsidian-pentype.is-lifted {
+  z-index: 1;
+  background: var(--gob-pill-bg);
+  box-shadow: var(--gob-shadow-float);
+  translate: var(--gob-pen-shift, 0px) 0;
+  scale: 1.08;
+}
+
+.goodobsidian-options.is-upright button.goodobsidian-pentype.is-lifted {
+  translate: 0 var(--gob-pen-shift, 0px);
+}
+
+.goodobsidian-pentype-gap {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: var(--gob-pen-gap, 0px);
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+
+.goodobsidian-options.is-upright .goodobsidian-pentype-gap {
+  top: var(--gob-pen-gap, 0px);
+  right: 4px;
+  bottom: auto;
+  left: 4px;
+  width: auto;
+  height: 2px;
+  margin: -1px 0 0;
+}
+
 /* A stroke width, drawn as a literal stroke; the active one is boxed. */
 .goodobsidian-options .goodobsidian-width {
   min-width: 34px;
