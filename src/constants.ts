@@ -201,3 +201,22 @@ export const ICON_IMPORT_NOTEBOOK_SVG =
   '<path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>' +
   '<path d="M21 3l-8 8"/><path d="M13 6v5h5"/>' +
   "</g>";
+
+/**
+ * "Stylus only": FineNotes' own icon, registered with `addIcon` on load.
+ * Lucide's hand with a slash through it, so it reads as "the hand does
+ * nothing" on a tablet, where Lucide's touchpad icons look like a laptop's
+ * trackpad. The hand's paths are Lucide's; the slash is the one its "off"
+ * icons use. Drawn in the same 100 × 100 box as the import icon.
+ */
+export const ICON_STYLUS_ONLY = "finenotes-stylus-only";
+
+export const ICON_STYLUS_ONLY_SVG =
+  '<g transform="scale(4.1667)" fill="none" stroke="currentColor" ' +
+  'stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>' +
+  '<path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>' +
+  '<path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>' +
+  '<path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>' +
+  '<path d="m2 2 20 20"/>' +
+  "</g>";
