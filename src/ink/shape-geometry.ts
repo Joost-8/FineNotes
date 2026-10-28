@@ -9,7 +9,7 @@
  */
 
 import { POINT_STRIDE, type ShapeKind } from "../model/document";
-import { levelTurn } from "./level-line";
+import { LINE_LEVEL_RISE, levelTurn } from "./level-line";
 
 /**
  * The Shape tool's closed presets, in the order its options pill shows them.
@@ -311,21 +311,20 @@ export function arrowPoints(tail: Pt, tip: Pt, headDeg = ARROW_HEAD_DEG): Pt[] {
 
 /**
  * A connector preset dragged from `from` to `to`: a line, or an arrow whose
- * head is at `to`. Returns `[]` when the two points coincide. Dragged within
- * a few degrees of level or upright it is made exactly so, turned about
- * `from`, where the pen went down (`level-line.ts`), unless `level` is off
- * (its end has snapped to another shape's point and must stay there).
+ * head is at `to`. Returns `[]` when the two points coincide. Dragged with
+ * its end within `levelRise` page px of level or upright it is made exactly
+ * so, turned about `from`, where the pen went down (`level-line.ts`).
  */
 function connectorGeometry(
   preset: ConnectorPreset,
   from: Pt,
   to: Pt,
   pressure: number,
-  level: boolean,
+  levelRise: number,
 ): number[] {
   const span = Math.hypot(to.x - from.x, to.y - from.y);
   if (!(span > 0) || !Number.isFinite(span)) return [];
-  const turn = level ? levelTurn(to.x - from.x, to.y - from.y) : 0;
+  const turn = levelTurn(to.x - from.x, to.y - from.y, levelRise);
   const end =
     turn === 0
       ? to
@@ -340,18 +339,17 @@ function connectorGeometry(
  * A preset shape inscribed in the box spanned by two corners, drawn clockwise
  * on screen from the top-left, closing point repeated. Returns `[]` for a
  * degenerate box — callers treat that as "nothing to draw". Connectors (line,
- * arrow) run from `from` to `to` instead, levelled near level or upright
- * unless `level` is false.
+ * arrow) run from `from` to `to` instead.
  */
 export function presetGeometry(
   preset: ShapePreset,
   from: Pt,
   to: Pt,
   pressure: number,
-  level = true,
+  levelRise = LINE_LEVEL_RISE,
 ): number[] {
   if (preset === "line" || preset === "arrow") {
-    return connectorGeometry(preset, from, to, pressure, level);
+    return connectorGeometry(preset, from, to, pressure, levelRise);
   }
   const x0 = Math.min(from.x, to.x);
   const y0 = Math.min(from.y, to.y);

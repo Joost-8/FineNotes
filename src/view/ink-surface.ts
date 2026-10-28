@@ -226,7 +226,7 @@ import {
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { lineOfHighlight } from "../ink/straighten";
-import { levelLine, levelTurn } from "../ink/level-line";
+import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
 import {
@@ -6235,7 +6235,8 @@ export class InkSurface {
       if (last) {
         const pts = this.snapHeldShape(box, snap, this.toPage(box, last));
         const open = snap.kind === "line" || snap.kind === "arrow";
-        snap.pts = open && !this.snapShown ? levelLine(pts, "start") : pts;
+        const rise = this.atFitZoom(LINE_LEVEL_RISE);
+        snap.pts = open && !this.snapShown ? levelLine(pts, "start", rise) : pts;
       }
       this.scheduleWet();
       return;
@@ -6674,7 +6675,8 @@ export class InkSurface {
   private highlightLine(tool: Tool, pts: readonly number[]): number[] | null {
     if (tool !== "highlighter") return null;
     if (this.callbacks.straightenHighlighter?.() === false) return null;
-    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX));
+    const rise = this.atFitZoom(LINE_LEVEL_RISE);
+    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX), rise);
   }
 
   /**
@@ -7095,7 +7097,9 @@ export class InkSurface {
       origin = { x: cx - halfW, y: cy - halfH };
       to = { x: cx + halfW, y: cy + halfH };
     }
-    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE, drag.snapped !== true);
+    // An end that snapped to another shape's point is not levelled off it.
+    const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
+    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE, rise);
   }
 
   /**
@@ -7125,8 +7129,8 @@ export class InkSurface {
     }
     // While dragging, preview the real size — even a tiny one; the tap
     // default only applies if the pen lifts without having moved.
-    const level = drag.snapped !== true;
-    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE, level);
+    const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
+    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE, rise);
     if (pts.length === 0) {
       this.renderer?.clearWet();
       return;
@@ -11076,7 +11080,7 @@ export class InkSurface {
     const other = 1 - drag.handle;
     const ox = at[other * 2];
     const oy = at[other * 2 + 1];
-    const turn = levelTurn(p.x - ox, p.y - oy);
+    const turn = levelTurn(p.x - ox, p.y - oy, this.atFitZoom(LINE_LEVEL_RISE));
     if (turn === 0) return p;
     const c = Math.cos(turn);
     const s = Math.sin(turn);
