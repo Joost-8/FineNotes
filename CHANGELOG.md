@@ -18,6 +18,12 @@ extracted from the matching section of this file by `release.yml`.
   key. The Hand tool moves the page (with its fling) and the Magnifier zooms
   it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
   page and zoom in. All three wait in the toolbar's More tools menu at first.
+- **Click the pen's side button for the pen menu.** With the pen held just
+  above the page, a click of its side button opens the pen menu, as on a
+  Samsung tablet, and the next click closes it. Holding the button while
+  you write still erases, lassos or moves the page, as set. A new setting
+  in Settings → Pens and shortcuts, **Side button click**, turns the click
+  off. Not on iPad: the Apple Pencil has no side button.
 
 ### Changed
 
@@ -53,6 +59,9 @@ extracted from the matching section of this file by `release.yml`.
   than Grape, so it never makes reading worse. Practice sheets now say to
   keep them: each time FineNotes learns, it learns from every sheet in the
   vault.
+- **The tap that closes a popover only closes it.** A pen or mouse press on
+  the page while a tool bar menu is open closes the menu and writes
+  nothing; the next press writes. A finger still scrolls.
 
 ## [2.5.0] - 2026-10-25
 

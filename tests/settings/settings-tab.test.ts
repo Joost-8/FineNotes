@@ -399,6 +399,7 @@ describe("the rows", () => {
       [PENS, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
       [PENS, "Stylus side button", "dropdown:barrelButton"],
+      [PENS, "Side button click", "dropdown:stylusButtonClick"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
       [PAGES, "Page appearance", "render"],
@@ -570,6 +571,7 @@ const PEN_ROWS = [
   "Saved pens",
   ...DEFAULT_PEN_NAMES,
   "Stylus side button",
+  "Side button click",
   "Cursor over the page",
   "Keyboard shortcuts",
 ];
@@ -626,7 +628,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block 34)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -1395,7 +1397,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("offers the barrel's four choices, and the cursor's three only on a computer", () => {
+  it("offers the barrel's four choices, its click's two but not on an iPad, and the cursor's three only on a computer", () => {
     const all = rows(makeTab(makePlugin()).tab);
     expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
       "erase",
@@ -1403,6 +1405,15 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       "pan",
       "none",
     ]);
+    expect(named(all, "Side button click").control?.options).toEqual({
+      "pen-menu": "Open the pen menu",
+      none: "Nothing",
+    });
+    expect(shown(named(all, "Side button click"))).toBe(true);
+    Platform.isIosApp = true;
+    expect(shown(named(rows(makeTab(makePlugin()).tab), "Side button click"))).toBe(false);
+    expect(shown(named(rows(makeTab(makePlugin()).tab), "Stylus side button"))).toBe(true);
+    Platform.isIosApp = false;
     const cursor = named(all, "Cursor over the page");
     expect(cursor.control?.options).toEqual({
       ink: "Ink dot",
@@ -1547,7 +1558,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
+    expect(headings.filter((h) => h === PENS)).toHaveLength(13);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

@@ -162,6 +162,7 @@ import {
   popoverSide,
 } from "./pill-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
+import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
@@ -1938,7 +1939,7 @@ export class Toolbar {
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
     if (!upright && !this.practice) {
-      this.chevron("Pen options", (button) => this.togglePenMenu(button));
+      this.chevron("Pen options", (button) => this.openPenMenu(button));
     }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -2055,7 +2056,7 @@ export class Toolbar {
         if (spec.id !== this.activePenType().id) {
           this.closePopover();
           this.choosePenType(spec);
-        } else if (!this.practice) this.togglePenMenu(pen);
+        } else if (!this.practice) this.openPenMenu(pen);
       });
       bindPenTypeDrag(pen, {
         row: () => row,
@@ -3857,11 +3858,41 @@ export class Toolbar {
   }
 
   /**
-   * The pen's menu, from its ⌄ or a tap on the pen in hand: the laser
-   * pointer, and the pen in hand's settings and the pen gestures behind
-   * rows, each a page with a way back. The pen types themselves are the row.
+   * The pen menu, for a click of the pen's side button in the air
+   * (`input/stylus-click.ts`): the pen menu opens, and the next click
+   * closes it, or whichever popover is open then. It hangs from the pen type
+   * button while the pen's options show, else from the pen on the bar.
    */
-  private togglePenMenu(anchor: HTMLElement): void {
+  togglePenMenu(): void {
+    if (this.popover) {
+      this.closePopover();
+      return;
+    }
+    this.openPenMenu(this.penMenuAnchor());
+  }
+
+  /** What the pen menu hangs from: the pen type button on show, the bar's pen button, or ⋯. */
+  private penMenuAnchor(): HTMLElement {
+    const type = this.penTypeButtons.get(this.activePenType().id);
+    if (type && !this.optionsEl.hasClass("is-collapsed")) return type;
+    const pen = this.penToolButton;
+    const onBar =
+      pen !== null &&
+      pen.isConnected &&
+      !pen.hasClass("is-overflowed") &&
+      !pen.hasClass("is-unlisted") &&
+      pen.style.display !== "none";
+    if (onBar) return pen;
+    return this.moreButton ?? this.barEl;
+  }
+
+  /**
+   * The pen's menu, from its ⌄, a tap on the pen in hand, or the side
+   * button: the laser pointer, and the pen in hand's settings and the pen
+   * gestures behind rows, each a page with a way back. The pen types
+   * themselves are the row in the pen's bar.
+   */
+  private openPenMenu(anchor: HTMLElement): void {
     if (this.popoverKind === "pens") {
       this.closePopover();
       return;
@@ -4222,6 +4253,12 @@ export class Toolbar {
         return;
       }
       this.closePopover();
+      // On the page, the pen or mouse press that closed it only closes it: it writes nothing.
+      const onPage = (target as Element | null)?.closest?.(".goodobsidian-scroll") != null;
+      if (closingPressStops(event, onPage)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") this.closePopover();
