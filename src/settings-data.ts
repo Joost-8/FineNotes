@@ -433,7 +433,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
  */
 export const SETTINGS_SECTIONS = [
   "writing",
-  "pens",
   "shortcuts",
   "pages",
   "on-device",

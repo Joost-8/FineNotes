@@ -139,8 +139,6 @@ import {
 import { pushRecentColor } from "./model/colors";
 import { relativeLuminance } from "./model/cover";
 import { SavedPenModal } from "./view/saved-pen-modal";
-import type { BarrelAction } from "./input/pen-modifiers";
-import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
@@ -238,20 +236,6 @@ function updateChoiceOf(settings: GoodObsidianSettings): keyof typeof UPDATE_CHO
   if (!settings.checkForUpdates) return "off";
   return settings.updateReminders ? "remind" : "dot";
 }
-
-/** What the barrel button can do, as its dropdown names it. */
-const BARREL_NAMES: Record<BarrelAction, string> = {
-  erase: "Erase",
-  lasso: "Lasso select",
-  pan: "Move the page",
-  none: "Nothing",
-};
-
-/** What a click of the barrel button in the air can do, as its dropdown names it. */
-const STYLUS_CLICK_NAMES: Record<StylusClickAction, string> = {
-  "pen-menu": "Open the pen menu",
-  none: "Nothing",
-};
 
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
@@ -881,12 +865,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.infos.clear();
     this.statuses.clear();
     this.folds.clear();
-    // By theme: writing, pens, pages, the models on this device, AI, then
-    // the switches few people need; feedback last.
+    // By theme: writing (pens included), shortcuts, pages, the models on this
+    // device, AI, then the switches few people need; feedback last.
     return [
       ...this.topRows(),
       this.writingGroup(),
-      this.pensGroup(),
       this.shortcutsGroup(),
       this.pagesGroup(),
       this.modelsGroup(),
@@ -1009,6 +992,25 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "default ink color",
           "pen color",
         ]),
+        this.info(
+          drawnRow("Saved pens", "", (s) => this.drawSavedPensRow(s), [
+            "favorite pens",
+            "presets",
+            "number key",
+            "add pen",
+            "new pen",
+            "restore defaults",
+          ]),
+          DESC.savedPens,
+        ),
+        ...savedPensOf(settings.savedPens).map((pen, index) =>
+          drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
+            "saved pen",
+            "preset",
+            "edit pen",
+            "delete pen",
+          ]),
+        ),
         toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
           "undo",
           "redo",
@@ -1056,6 +1058,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.straightHighlighter,
         ),
+        {
+          ...this.info(
+            dropdown("penCursor", "Cursor over the page", "", PEN_CURSOR_NAMES, [
+              "cursor",
+              "pointer",
+              "crosshair",
+            ]),
+            DESC.penCursor,
+          ),
+          visible: !Platform.isMobile,
+        },
       ],
       () => [
         {
@@ -1097,77 +1110,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       c.setValue(String(shownValue(settings, "defaultColor")));
       c.onChange((value) => void this.setControlValue("defaultColor", value));
     });
-  }
-
-  /**
-   * The saved pens and the stylus button. A pen is added with the + here or
-   * the toolbar's star (eight at most), changed by tapping its row, and
-   * deleted from its row. Stylus only, the Hand and the Magnifier are toolbar
-   * items, placed with Customize toolbar, not settings. The keys are their
-   * own section now (`shortcutsGroup`).
-   */
-  private pensGroup(): SettingDefinitionItem {
-    const pens = savedPensOf(this.plugin.settings.savedPens);
-    return this.section(
-      "pens",
-      "Pens",
-      "star",
-      [
-        this.info(
-          drawnRow("Saved pens", "", (s) => this.drawSavedPensRow(s), [
-            "favorite pens",
-            "presets",
-            "number key",
-            "add pen",
-            "new pen",
-            "restore defaults",
-          ]),
-          DESC.savedPens,
-        ),
-        ...pens.map((pen, index) =>
-          drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
-            "saved pen",
-            "preset",
-            "edit pen",
-            "delete pen",
-          ]),
-        ),
-        this.info(
-          dropdown("barrelButton", "Stylus side button", "", BARREL_NAMES, [
-            "barrel button",
-            "pen tablet",
-            "wacom",
-            "stylus",
-          ]),
-          DESC.barrel,
-        ),
-        {
-          ...this.info(
-            dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
-              "barrel click",
-              "s pen",
-              "pen menu",
-              "stylus",
-            ]),
-            DESC.stylusClick,
-          ),
-          // The Apple Pencil has no side button (`stylus-click.ts`).
-          visible: !Platform.isIosApp,
-        },
-        {
-          ...this.info(
-            dropdown("penCursor", "Cursor over the page", "", PEN_CURSOR_NAMES, [
-              "cursor",
-              "pointer",
-              "crosshair",
-            ]),
-            DESC.penCursor,
-          ),
-          visible: !Platform.isMobile,
-        },
-      ],
-      () => [{ text: `${savedPensOf(this.plugin.settings.savedPens).length} saved` }],
-    );
   }
 
   private savePens(pens: readonly SavedPen[]): void {

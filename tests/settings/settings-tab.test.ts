@@ -353,7 +353,6 @@ const MODELS = "Models on this device";
 const WRITING = "Writing";
 const PAGES = "Pages and notebooks";
 const ADVANCED = "Advanced";
-const PENS = "Pens";
 const SHORTCUTS = "Shortcuts";
 const FOOTER = "Feedback and community";
 
@@ -417,6 +416,8 @@ describe("the rows", () => {
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
       [WRITING, "Start with", "render"],
+      [WRITING, "Saved pens", "render"],
+      ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
       [WRITING, "Hide pen options while writing", "toggle:tuckPenOptionsOnWrite"],
@@ -424,11 +425,7 @@ describe("the rows", () => {
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
-      [PENS, "Saved pens", "render"],
-      ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
-      [PENS, "Stylus side button", "dropdown:barrelButton"],
-      [PENS, "Side button click", "dropdown:stylusButtonClick"],
-      [PENS, "Cursor over the page", "dropdown:penCursor"],
+      [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "render"],
       [PAGES, "Paper width", "render"],
@@ -586,14 +583,8 @@ describe("the rows", () => {
 
 // --- Visibility --------------------------------------------------------------
 
-/** The "Pens" rows a fresh install shows, on a computer. */
-const PEN_ROWS = [
-  "Saved pens",
-  ...DEFAULT_PEN_NAMES,
-  "Stylus side button",
-  "Side button click",
-  "Cursor over the page",
-];
+/** The "Saved pens" rows a fresh install shows, on a computer. */
+const SAVED_PEN_ROWS = ["Saved pens", ...DEFAULT_PEN_NAMES];
 
 /** The Shortcuts rows shown by default: no conflict callout, every action. */
 const SHORTCUT_VISIBLE = [
@@ -636,6 +627,7 @@ describe("which rows show", () => {
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
       "Start with",
+      ...SAVED_PEN_ROWS,
       "Two-finger double-tap to undo",
       "More",
       "Hide pen options while writing",
@@ -643,7 +635,7 @@ describe("which rows show", () => {
       "Custom colors",
       "Highlighter opacity",
       "Straighten highlighter strokes",
-      ...PEN_ROWS,
+      "Cursor over the page",
       ...SHORTCUT_VISIBLE,
       "Page appearance",
       "Paper width",
@@ -1273,7 +1265,7 @@ describe("refresh", () => {
 describe("pens and shortcuts (FineNotes#24, #25)", () => {
   /** The rows of the saved pens, drawn: one per pen, after "Saved pens". */
   function penRows(plugin: Plugin) {
-    const all = rows(makeTab(plugin).tab).filter((r) => r.heading === PENS);
+    const all = rows(makeTab(plugin).tab).filter((r) => r.heading === WRITING);
     const from = all.findIndex((r) => r.def.name === "Saved pens");
     const count = plugin.settings.savedPens.length;
     return all.slice(from + 1, from + 1 + count).map((r) => renderRow(r.def));
@@ -1397,23 +1389,11 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("offers the barrel's four choices, its click's two but not on an iPad, and the cursor's three only on a computer", () => {
+  it("no longer shows the stylus button rows, and offers the cursor's three only on a computer", () => {
     const all = rows(makeTab(makePlugin()).tab);
-    expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
-      "erase",
-      "lasso",
-      "pan",
-      "none",
-    ]);
-    expect(named(all, "Side button click").control?.options).toEqual({
-      "pen-menu": "Open the pen menu",
-      none: "Nothing",
-    });
-    expect(shown(named(all, "Side button click"))).toBe(true);
-    Platform.isIosApp = true;
-    expect(shown(named(rows(makeTab(makePlugin()).tab), "Side button click"))).toBe(false);
-    expect(shown(named(rows(makeTab(makePlugin()).tab), "Stylus side button"))).toBe(true);
-    Platform.isIosApp = false;
+    expect(all.some((row) => row.def.name === "Stylus side button")).toBe(false);
+    expect(all.some((row) => row.def.name === "Side button click")).toBe(false);
+    expect(all.some((row) => row.heading === "Pens")).toBe(false);
     const cursor = named(all, "Cursor over the page");
     expect(cursor.control?.options).toEqual({
       ink: "Ink dot",
@@ -1637,7 +1617,7 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
   return out.filter((row) => shown(row.def));
 }
 
-const HEADINGS = [WRITING, PENS, SHORTCUTS, PAGES, MODELS, AI, ADVANCED];
+const HEADINGS = [WRITING, SHORTCUTS, PAGES, MODELS, AI, ADVANCED];
 
 describe("folding sections", () => {
   it("folds every section at first, leaving only their headers and the footer", () => {
@@ -1649,10 +1629,10 @@ describe("folding sections", () => {
   });
 
   it("shows the rows of the sections that are open", () => {
-    const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
+    const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
-    expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
+    expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(18);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
@@ -1670,7 +1650,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ defaultTool: "highlighter", defaultSize: 5, paperWidth: 900 });
     const { tab } = makeTab(plugin, false);
     const drawn = groups(tab).map(drawGroup);
-    const [writing, pens, shortcuts, pages, models, ai, advanced] = drawn;
+    const [writing, shortcuts, pages, models, ai, advanced] = drawn;
     expect(writing.header.find("goodobsidian-section-icon")?.attrs["data-icon"]).toBe("pencil");
     expect(
       writing.header.find("setting-item-name")?.children[0].hasClass("goodobsidian-section-icon"),
@@ -1681,7 +1661,6 @@ describe("folding sections", () => {
     expect(writing.header.find("goodobsidian-status-swatch")?.style.backgroundColor).toBe(
       plugin.settings.defaultColor,
     );
-    expect(status(pens)).toBe("8 saved");
     expect(status(shortcuts)).toBe("39 actions");
     expect(status(pages)).toBe("Light · 900 px");
     expect(status(models)).toBe("VoiceHandwriting");
@@ -1699,60 +1678,59 @@ describe("folding sections", () => {
   it("folds and unfolds from the header, and remembers it", () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin, false);
-    const pens = drawGroup(groups(tab)[1]);
-    expect(pens.groupEl.hasClass("is-folded")).toBe(true);
-    expect(pens.header.hasClass("goodobsidian-fold-header")).toBe(true);
-    expect(pens.chevron?.attrs).toMatchObject({
+    const writing = drawGroup(groups(tab)[0]);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(writing.header.hasClass("goodobsidian-fold-header")).toBe(true);
+    expect(writing.chevron?.attrs).toMatchObject({
       role: "button",
       "aria-expanded": "false",
-      "aria-label": `Unfold ${PENS}`,
+      "aria-label": `Unfold ${WRITING}`,
     });
 
     // A tap anywhere on the header, the chevron included, is one toggle.
-    pens.chevron?.dispatch("click");
-    expect(pens.groupEl.hasClass("is-folded")).toBe(false);
-    expect(pens.chevron?.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
+    writing.chevron?.dispatch("click");
+    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+    expect(writing.chevron?.attrs["aria-expanded"]).toBe("true");
+    expect(plugin.settings.settingsOpen).toEqual(["writing"]);
     expect(plugin.calls).toEqual(["save"]);
 
     // Reopening the settings (or Obsidian) draws it open.
     const reopened = makeTab(plugin, false).tab;
-    expect(groups(reopened)[1].cls).toBe("goodobsidian-section");
-    expect(unfoldedRows(reopened).some((r) => r.def.name === "Stylus side button")).toBe(true);
+    expect(groups(reopened)[0].cls).toBe("goodobsidian-section");
+    expect(unfoldedRows(reopened).some((r) => r.def.name === "Saved pens")).toBe(true);
 
     // On a computer several stay open.
-    const writing = drawGroup(groups(reopened)[0]);
-    writing.header.find("setting-item-name")?.dispatch("click");
-    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-    expect(plugin.settings.settingsOpen).toEqual(["writing", "pens"]);
+    const shortcuts = drawGroup(groups(reopened)[1]);
+    shortcuts.header.find("setting-item-name")?.dispatch("click");
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(false);
+    expect(plugin.settings.settingsOpen).toEqual(["writing", "shortcuts"]);
     // Space on the chevron, as on any button.
-    const space = writing.chevron?.dispatch("keydown", { key: " " });
+    const space = shortcuts.chevron?.dispatch("keydown", { key: " " });
     expect(space?.defaultPrevented).toBe(true);
-    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
-    writing.chevron?.dispatch("keydown", { key: "a" });
-    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(true);
+    expect(plugin.settings.settingsOpen).toEqual(["writing"]);
+    shortcuts.chevron?.dispatch("keydown", { key: "a" });
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(true);
   });
 
   it("keeps one section open at a time on an iPad", () => {
     Platform.isMobile = true;
     try {
-      const plugin = makePlugin({ settingsOpen: ["pens", "pages"] });
+      const plugin = makePlugin({ settingsOpen: ["pages", "advanced"] });
       const { tab } = makeTab(plugin, false);
       // Of two open on a computer and synced, the iPad shows the first.
       expect(groups(tab).map((g) => g.cls?.includes("is-folded"))).toEqual([
+        true,
         true,
         false,
         true,
         true,
         true,
-        true,
-        true,
       ]);
-      const [writing, pens] = groups(tab).map(drawGroup);
+      const [writing, , pages] = groups(tab).map(drawGroup);
       writing.chevron?.dispatch("click");
       expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-      expect(pens.groupEl.hasClass("is-folded")).toBe(true);
+      expect(pages.groupEl.hasClass("is-folded")).toBe(true);
       expect(writing.header.scrolledIntoView).toBe(1);
       expect(plugin.settings.settingsOpen).toEqual(["writing"]);
     } finally {
