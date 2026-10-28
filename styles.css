@@ -2331,6 +2331,34 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   opacity: 0.85;
 }
 
+/* "15°": the turn so far, beside the pen while a knob turns a selection or a
+   picture (discussion #51), the zoom readout's pill. In the accent while
+   the turn rests on a detent (level, a quarter turn, a 15° step). */
+.goodobsidian-turn-label {
+  position: absolute;
+  z-index: 10;
+  padding: 3px 10px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium, 500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--gob-shadow-float);
+  transform: translate(20px, -140%);
+  pointer-events: none;
+}
+
+.goodobsidian-turn-label.is-snapped {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-turn-label.is-hidden {
+  display: none;
+}
+
 /* A pinch closed far enough that letting go shows every page: the overview's grid, in the accent. */
 .goodobsidian-zoomreadout.is-overview {
   display: flex;
