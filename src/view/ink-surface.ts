@@ -71,8 +71,10 @@ import {
   scaleZoomBox,
   stepZoomBox,
   zoomBoxFromPoints,
+  zoomTargetPress,
   zoomView,
   zoomViewPoint,
+  zoomWindowDragAllowed,
   type ZoomHandle,
   type ZoomRect,
 } from "../model/zoom-box";
@@ -2123,6 +2125,12 @@ export class InkSurface {
       });
       grip.dataset.zoomHandle = handle;
     }
+    // The viewfinder's badge sits on the top-left corner: an obvious grip
+    // that moves the box even with a writing tool in hand.
+    const badge = this.zoomTargetEl.createDiv({ cls: "goodobsidian-zoom-badge" });
+    badge.dataset.zoomMove = "true";
+    badge.setAttribute("aria-hidden", "true");
+    setIcon(badge, "zoom-in");
     this.zoomTargetEl.addEventListener("pointerdown", (event) =>
       this.onZoomTargetPointerDown(event),
     );
@@ -6141,7 +6149,7 @@ export class InkSurface {
     this.syncZoomTarget();
   }
 
-  /** The target frame takes presses with the magnifier in hand; handles always do. */
+  /** With the Magnifier in hand the frame shows its move cursor; handles are always live. */
   private syncZoomTargetInteractive(): void {
     this.zoomTargetEl?.toggleClass("is-interactive", this.toolState.tool === "zoom");
   }
@@ -6298,6 +6306,10 @@ export class InkSurface {
       label: "Zoom box",
       closeLabel: "Close zoom box",
       min: { w: 304, h: 160 },
+      // A palm resting inside the window while the Pencil writes must not
+      // drag or resize it; the bar's buttons stay tappable.
+      allowDrag: (event) =>
+        zoomWindowDragAllowed(event.pointerType, this.callbacks.onlyStylusMode?.() === true),
       buttons: [
         { icon: "arrow-left", label: "Step box left", run: () => this.stepZoomBox(-1) },
         { icon: "arrow-right", label: "Step box right", run: () => this.stepZoomBox(1) },
@@ -6613,7 +6625,7 @@ export class InkSurface {
     this.syncZoomCatcher();
   }
 
-  /** A press on the target's frame or a handle; handles work with any tool. */
+  /** A press on the target's frame, badge or a handle; handles work with any tool. */
   private onZoomTargetPointerDown(event: PointerEvent): void {
     if (this.zoomTargetDrag) return;
     const state = this.zoomBox;
@@ -6622,9 +6634,16 @@ export class InkSurface {
     const target = event.target instanceof HTMLElement ? event.target : null;
     const grip = target?.closest<HTMLElement>("[data-zoom-handle]");
     const handle = (grip?.dataset.zoomHandle ?? null) as ZoomHandle | null;
-    // With another tool, only the handles take a press: the box's inside is
-    // the page, where the pen writes.
-    if (!handle && this.toolState.tool !== "zoom") return;
+    const badge = target?.closest<HTMLElement>("[data-zoom-move]") !== null;
+    // The Magnifier, the badge and a finger move the box; with a writing tool
+    // a pen or mouse on its body still reaches the page and draws.
+    const press = zoomTargetPress(
+      this.toolState.tool === "zoom",
+      event.pointerType === "touch",
+      handle,
+      badge,
+    );
+    if (press === "draw") return;
     event.preventDefault();
     event.stopPropagation();
     try {
@@ -6634,7 +6653,7 @@ export class InkSurface {
     }
     this.zoomTargetDrag = {
       pointerId: event.pointerId,
-      handle: handle ?? "move",
+      handle: press,
       from: this.pagePoint(pageBox, event.clientX, event.clientY),
       start: { ...state.box },
     };

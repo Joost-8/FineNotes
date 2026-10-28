@@ -13,6 +13,42 @@ export interface ZoomRect {
 
 export type ZoomHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
+/** What a press on the target frame does: move it, resize from a handle, or draw. */
+export type ZoomTargetPress = "move" | ZoomHandle | "draw";
+
+/**
+ * A press on the target frame's badge, body or handles. The magnifier, the
+ * badge and a finger always move the box, even with a writing tool in hand;
+ * a pen or mouse on the body keeps drawing. A handle is a resize first.
+ */
+export function zoomTargetPress(
+  magnifier: boolean,
+  touch: boolean,
+  handle: ZoomHandle | null,
+  badge: boolean,
+): ZoomTargetPress {
+  if (handle) return handle;
+  return badge || magnifier || touch ? "move" : "draw";
+}
+
+/** Whether the window may be dragged or resized by this pointer. */
+export function zoomWindowDragAllowed(pointerType: string, onlyStylus: boolean): boolean {
+  return !(onlyStylus && pointerType === "touch");
+}
+
+/** How the Magnifier button reads while a target box may be open. */
+export function zoomButtonState(
+  tool: string,
+  boxOpen: boolean,
+): { highlighted: boolean; pressed: boolean } {
+  return { highlighted: boxOpen, pressed: tool === "zoom" || boxOpen };
+}
+
+/** A tap on the Magnifier button with a Zoom box open dismisses it. */
+export function magnifierTapClosesZoomBox(tool: string, boxOpen: boolean): boolean {
+  return tool === "zoom" && boxOpen;
+}
+
 /** The smallest target box a marquee or a resize may make, in page px. */
 export const ZOOM_BOX_MIN = 24;
 /** A step left or right moves the box this much of its own width. */

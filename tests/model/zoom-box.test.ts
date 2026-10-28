@@ -3,6 +3,7 @@ import {
   ZOOM_BOX_MIN,
   ZOOM_BOX_STEP,
   clampZoomBox,
+  magnifierTapClosesZoomBox,
   moveZoomBox,
   newLineZoomBox,
   panToShow,
@@ -10,8 +11,11 @@ import {
   scaleZoomBox,
   stepZoomBox,
   zoomBoxFromPoints,
+  zoomButtonState,
+  zoomTargetPress,
   zoomView,
   zoomViewPoint,
+  zoomWindowDragAllowed,
 } from "../../src/model/zoom-box";
 
 const box = { x: 100, y: 200, w: 160, h: 80 };
@@ -166,5 +170,49 @@ describe("panning the page to keep the box in view", () => {
       x: 4,
       y: 14,
     });
+  });
+});
+
+describe("the viewfinder target's presses", () => {
+  it("resizes from a corner or edge before anything else", () => {
+    expect(zoomTargetPress(true, true, "nw", true)).toBe("nw");
+    expect(zoomTargetPress(false, false, "e", false)).toBe("e");
+  });
+
+  it("moves from the badge with any pointer, even a writing tool", () => {
+    expect(zoomTargetPress(false, false, null, true)).toBe("move");
+    expect(zoomTargetPress(false, true, null, true)).toBe("move");
+  });
+
+  it("moves the body with a finger or the Magnifier, and draws with a pen otherwise", () => {
+    expect(zoomTargetPress(false, true, null, false)).toBe("move");
+    expect(zoomTargetPress(true, false, null, false)).toBe("move");
+    expect(zoomTargetPress(false, false, null, false)).toBe("draw");
+  });
+});
+
+describe("stylus-only window drags", () => {
+  it("keeps a palm's touch from moving or resizing the floating window", () => {
+    expect(zoomWindowDragAllowed("touch", true)).toBe(false);
+    expect(zoomWindowDragAllowed("touch", false)).toBe(true);
+  });
+
+  it("always lets the stylus and a mouse drag it", () => {
+    expect(zoomWindowDragAllowed("pen", true)).toBe(true);
+    expect(zoomWindowDragAllowed("mouse", true)).toBe(true);
+  });
+});
+
+describe("the Magnifier's button and toggle", () => {
+  it("stays highlighted while a box is open under another tool", () => {
+    expect(zoomButtonState("pen", true)).toEqual({ highlighted: true, pressed: true });
+    expect(zoomButtonState("zoom", false)).toEqual({ highlighted: false, pressed: true });
+    expect(zoomButtonState("pen", false)).toEqual({ highlighted: false, pressed: false });
+  });
+
+  it("closes the box when the Magnifier is tapped with one open", () => {
+    expect(magnifierTapClosesZoomBox("zoom", true)).toBe(true);
+    expect(magnifierTapClosesZoomBox("zoom", false)).toBe(false);
+    expect(magnifierTapClosesZoomBox("pen", true)).toBe(false);
   });
 });

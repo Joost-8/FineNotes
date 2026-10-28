@@ -53,6 +53,11 @@ export interface FloatingWindowOptions {
   closeLabel?: string;
   /** The smallest it may be sized to. */
   min?: { w: number; h: number };
+  /**
+   * Whether this press may drag or resize the window. The Zoom box uses it
+   * to ignore a palm's touch while a stylus writes inside.
+   */
+  allowDrag?: (event: PointerEvent) => boolean;
   /** Where it opens the first time, for a view of `bounds`. */
   firstPlace?: (bounds: { w: number; h: number }) => WindowPlace;
   place(): WindowPlace | null;
@@ -201,6 +206,7 @@ export class FloatingWindow {
     let moved = false;
     const down = (event: PointerEvent): void => {
       if ((event.target as Element | null)?.closest("button")) return;
+      if (this.options.allowDrag && !this.options.allowDrag(event)) return;
       event.preventDefault();
       try {
         handle.setPointerCapture(event.pointerId);

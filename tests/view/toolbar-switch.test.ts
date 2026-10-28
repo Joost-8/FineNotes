@@ -132,3 +132,100 @@ describe("the eraser's mode list", () => {
     expect(grey?.attrs["aria-checked"]).toBe("true");
   });
 });
+
+describe("the Magnifier's Zoom box", () => {
+  /** A tool button that keeps the classes and attributes `syncActive` writes. */
+  function toolButton() {
+    const classes = new Set<string>();
+    const attrs: Record<string, string> = {};
+    return {
+      toggleClass: (cls: string, on: boolean) => {
+        if (on) classes.add(cls);
+        else classes.delete(cls);
+      },
+      setAttribute: (name: string, value: string) => {
+        attrs[name] = value;
+      },
+      hasClass: (cls: string) => classes.has(cls),
+      attrs,
+    };
+  }
+
+  function toolbarWith(state: Record<string, unknown>, buttons: Map<string, unknown>) {
+    return Object.assign(Object.create(Toolbar.prototype) as object, {
+      state,
+      indicatorTool: "pen",
+      toolButtons: buttons,
+      colorSwatches: new Map(),
+      widthButtons: new Map(),
+      eraserSizeButtons: new Map(),
+      penTypeButtons: new Map(),
+      shapeButtons: new Map(),
+      activePenType: () => ({ id: "pen" }),
+      toolPlaces: () => null,
+      placeIndicator: () => {},
+      fitBar: () => {},
+      drawPenPreview: () => {},
+      drawLassoIcon: () => {},
+      drawEraserIcon: () => {},
+      inkColorOf: () => "#000000",
+      callbacks: {},
+    }) as unknown as { state: Record<string, unknown>; syncActive(): void };
+  }
+
+  it("keeps the Magnifier lit while a Zoom box is open under another tool", () => {
+    const pen = toolButton();
+    const zoom = toolButton();
+    const toolbar = toolbarWith(
+      { tool: "pen", color: "#000000", size: 4, zoomBoxOpen: true },
+      new Map<string, unknown>([
+        ["pen", pen],
+        ["zoom", zoom],
+      ]),
+    );
+    toolbar.syncActive();
+    expect(pen.hasClass("is-active")).toBe(true);
+    expect(zoom.hasClass("is-active")).toBe(true);
+    expect(zoom.hasClass("is-on")).toBe(true);
+    expect(zoom.attrs["aria-pressed"]).toBe("true");
+  });
+
+  it("leaves the Magnifier a plain tool button when no box is open", () => {
+    const pen = toolButton();
+    const zoom = toolButton();
+    const toolbar = toolbarWith(
+      { tool: "pen", color: "#000000", size: 4, zoomBoxOpen: false },
+      new Map<string, unknown>([
+        ["pen", pen],
+        ["zoom", zoom],
+      ]),
+    );
+    toolbar.syncActive();
+    expect(zoom.hasClass("is-active")).toBe(false);
+    expect(zoom.hasClass("is-on")).toBe(false);
+    expect(zoom.attrs["aria-pressed"]).toBe("false");
+  });
+
+  it("dismisses the open box from the Magnifier's button, keeping the pen in hand", () => {
+    const onZoomBox = vi.fn();
+    const syncActive = vi.fn();
+    const buildOptions = vi.fn();
+    const toolbar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      state: { tool: "pen", zoomBox: true, zoomBoxOpen: true },
+      drawingTool: "pen",
+      callbacks: { onZoomBox, returnToPenOnReselect: () => false },
+      syncActive,
+      buildOptions,
+    }) as unknown as {
+      state: Record<string, unknown>;
+      tapTool(tool: string, button: unknown): void;
+    };
+    toolbar.tapTool("zoom", {});
+    expect(onZoomBox).toHaveBeenCalledWith(false);
+    expect(toolbar.state.tool).toBe("pen");
+    expect(toolbar.state.zoomBox).toBe(false);
+    expect(toolbar.state.zoomBoxOpen).toBe(false);
+    expect(syncActive).toHaveBeenCalledOnce();
+    expect(buildOptions).not.toHaveBeenCalled();
+  });
+});

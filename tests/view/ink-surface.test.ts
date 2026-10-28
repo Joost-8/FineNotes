@@ -2152,3 +2152,83 @@ describe("size preview scales", () => {
     expect(told).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("the Zoom box target's presses", () => {
+  class FakeElement {
+    closest(_selector?: string): unknown {
+      return null;
+    }
+  }
+
+  function pressOn(kind: "body" | "badge" | "handle", pointerType: string, tool: string) {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "se" },
+      setPointerCapture: capture,
+    });
+    const badge = Object.assign(new FakeElement(), { dataset: { zoomMove: "true" } });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) =>
+        selector === "[data-zoom-handle]"
+          ? kind === "handle"
+            ? handle
+            : null
+          : selector === "[data-zoom-move]" && kind === "badge"
+            ? badge
+            : null,
+    });
+    const frameCapture = vi.fn();
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 } },
+      toolState: { tool },
+      zoomTargetEl: { setPointerCapture: frameCapture },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType,
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    return { surface, event, capture, frameCapture };
+  }
+
+  it("moves the frame with a finger even while a writing tool is selected", () => {
+    const { surface, event, frameCapture } = pressOn("body", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(frameCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("lets a pen on the frame body through to the page with a writing tool", () => {
+    const { surface, event } = pressOn("body", "pen", "pen");
+    expect(surface.zoomTargetDrag).toBeNull();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+  });
+
+  it("moves from the badge with the pen, whatever the tool", () => {
+    const { surface } = pressOn("badge", "pen", "highlighter");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+  });
+
+  it("resizes from a corner bracket before considering the tool", () => {
+    const { surface, capture } = pressOn("handle", "pen", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("moves the frame body under the Magnifier with a mouse", () => {
+    const { surface } = pressOn("body", "mouse", "zoom");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+  });
+});

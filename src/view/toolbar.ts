@@ -77,6 +77,7 @@ import {
   normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import { magnifierTapClosesZoomBox, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
@@ -514,6 +515,8 @@ export interface ToolbarState {
    * picked; only the Magnifier's own switch and its × close it.
    */
   zoomBox?: boolean;
+  /** A target box and its window are open on the page right now. */
+  zoomBoxOpen?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -1850,6 +1853,16 @@ export class Toolbar {
       this.toggleLassoPopover(button);
       return;
     }
+    // With a Zoom box open, the Magnifier's button is its off switch: the
+    // target and window go, and the tool in hand stays in hand.
+    if (magnifierTapClosesZoomBox(tool, this.state.zoomBoxOpen === true)) {
+      this.callbacks.onZoomBox?.(false);
+      this.state.zoomBox = false;
+      this.state.zoomBoxOpen = false;
+      if (current === "zoom") this.buildOptions();
+      this.syncActive();
+      return;
+    }
     this.closePopover();
     if (tool === current) {
       this.optionsVisible = !this.optionsVisible;
@@ -2479,8 +2492,12 @@ export class Toolbar {
         const next = mode.box && active ? false : mode.box;
         if (next === boxMode) return;
         this.state.zoomBox = next;
+        // Page zoom closes whatever target box was open; Zoom box arms the
+        // first-drag catcher and does not claim an open box yet.
+        this.state.zoomBoxOpen = false;
         this.callbacks.onZoomBox?.(next);
         this.buildOptions();
+        this.syncActive();
       });
     }
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -4917,6 +4934,14 @@ export class Toolbar {
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
     const from = tool === this.indicatorTool ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // An open Zoom box keeps the Magnifier lit while another tool writes.
+    const zoom = this.toolButtons.get("zoom");
+    if (zoom) {
+      const mark = zoomButtonState(this.state.tool, this.state.zoomBoxOpen === true);
+      zoom.toggleClass("is-active", mark.pressed);
+      zoom.toggleClass("is-on", mark.highlighted);
+      zoom.setAttribute("aria-pressed", String(mark.pressed));
+    }
     // The tool in hand stays on the bar, and a chosen tool is wider.
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
@@ -4963,10 +4988,12 @@ export class Toolbar {
    */
   setZoomBox(on: boolean): void {
     this.state.zoomBox = on;
+    this.state.zoomBoxOpen = on;
     // Rebuild even when the shared state already says so: the surface sets
     // the flag before telling the bar, and a close must still turn the
     // switch back to Page zoom.
     if (this.state.tool === "zoom") this.buildOptions();
+    this.syncActive();
   }
 
   /** Show the record button as live (tinted) while a recording runs. */
