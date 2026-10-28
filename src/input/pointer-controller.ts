@@ -111,8 +111,8 @@ export interface PointerControllerCallbacks {
   onPanEnd?(t: number): void;
   /** Every finger gesture is void (a pen landed). */
   onPanCancel?(): void;
-  /** A second finger landed: a pinch begins about the midpoint. */
-  onPinchStart?(centerX: number, centerY: number): void;
+  /** A second finger landed: a pinch begins about the midpoint, the fingers `spread` px apart. */
+  onPinchStart?(centerX: number, centerY: number, spread: number): void;
   onPinch?(info: PinchInfo): void;
   /** Fewer than two fingers remain. */
   onPinchEnd?(): void;

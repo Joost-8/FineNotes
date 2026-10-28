@@ -18,10 +18,10 @@ extracted from the matching section of this file by `release.yml`.
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
   picks the lasso and selects it with its handles and bar, as a tap on a
   picture does.
-- **Pinch and turn a selection with two fingers.** Two fingers on a
-  selection or a selected picture, or either side of a small one, scale
-  it, turn it and move it at once, and the lift is one undo step. Two fingers elsewhere still zoom
-  the page.
+- **Turn a selection with two fingers.** Two fingers on a selection or a
+  selected picture, or either side of a small one, turn it about its
+  middle, settling on the page's 45° steps as the knob does; the lift is one
+  undo step. Two fingers elsewhere still zoom the page.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch
@@ -69,11 +69,11 @@ extracted from the matching section of this file by `release.yml`.
   open is gone.
 - **Turning a selection or a picture settles**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
-  knob no longer follows every tremor of the pen: a tap or a wobble turns
-  nothing, the turn lands on quarter turns and on level (a tilted shape's
-  longest edge, a picture's own tilt) from several degrees away, and rests
-  lightly on every 15°, free between. A small readout beside the pen shows
-  the angle while you turn.
+  knob no longer follows every tremor of the pen: the turn lands on every
+  45° of the page (0°, 45°, 90° …) from several degrees away, whatever
+  angle the item started at, so a shape drawn slightly crooked lands
+  level, never at 89°; it is free between. A small readout beside the pen
+  shows the angle on the page while you turn.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
