@@ -6939,10 +6939,10 @@ textarea.goodobsidian-chat-input:focus-visible {
   stroke-linejoin: round;
 }
 
-/* A lone shape's corners and ends (discussion #51): the scan sheet's corner
-   ring, the one mark for "drag this corner alone". Hollow, so the corner
-   shows through, and smaller while dragged. The frame decides which handle
-   a press takes, so the dots take no presses themselves. */
+/* A lone shape's corners and ends (discussion #51), as Goodnotes draws
+   them (Joost's recording, 2026-10-28): a white ring with an accent edge
+   on each corner, a solid accent dot while it is dragged. The frame
+   decides which handle a press takes, so the dots take no presses. */
 .goodobsidian-shape-points {
   position: absolute;
   inset: 0;
@@ -6956,11 +6956,11 @@ textarea.goodobsidian-chat-input:focus-visible {
 .goodobsidian-shape-point {
   position: absolute;
   box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--interactive-accent);
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--interactive-accent);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--gob-mark);
   box-shadow: var(--gob-shadow-mark);
   transform: translate(-50%, -50%);
 }
@@ -6968,7 +6968,8 @@ textarea.goodobsidian-chat-input:focus-visible {
 .goodobsidian-shape-point.is-dragging {
   width: 10px;
   height: 10px;
-  background: transparent;
+  border-color: var(--gob-mark);
+  background: var(--interactive-accent);
 }
 
 /* While a point is dragged, the frame and its handles step aside (the frame
