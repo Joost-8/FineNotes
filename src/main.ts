@@ -1193,6 +1193,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember "Grey out while erasing" (the eraser's mode list), for the next session. */
+  saveEraserGrey(on: boolean): void {
+    this.settings.greyWhileErasing = on;
+    void this.saveSettings();
+  }
+
   /** Remember the pen's auto-shape toggle, for the next session. */
   savePenAutoShape(enabled: boolean): void {
     this.settings.penAutoShape = enabled;

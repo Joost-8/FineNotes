@@ -306,7 +306,12 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { attachmentDefaults, penPreferencesOf, shownPaperTheme } from "../settings-data";
+import {
+  attachmentDefaults,
+  greyWhileErasingOf,
+  penPreferencesOf,
+  shownPaperTheme,
+} from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -354,6 +359,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
+    eraserGrey: greyWhileErasingOf(s.greyWhileErasing),
     lassoMode: lassoModeOf(s.lassoMode),
     lassoFilter: lassoFilterOf(s.lassoFilter),
     textStyle: sanitizeTextStyle(s.textStyle),
@@ -2472,6 +2478,7 @@ export class InkView extends TextFileView {
         paintSizePaper: (canvas, width, height) =>
           this.surface?.paintPaperSample(canvas, width, height) ?? false,
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
+        onEraserGreyChange: (on) => this.plugin.saveEraserGrey(on),
         onLassoChange: (mode, filter) => {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);

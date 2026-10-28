@@ -134,6 +134,7 @@ import {
   shownColor,
   writingLines,
 } from "../canvas/backdrop";
+import { erasedPieces, erasesGrey } from "../canvas/erase-look";
 import { nightHighlighter } from "../canvas/night";
 import {
   type LineSpan,
@@ -1553,6 +1554,16 @@ export class InkSurface {
   private readonly strokeIndex = new StrokeIndex();
   /** Whole-stroke erase in progress: the strokes the eraser has touched so far. */
   private eraseIds = new Set<string>();
+  /**
+   * "Grey out while erasing" (the eraser's mode list): this erase draws what
+   * it takes grey rather than hiding it; decided on its first dab.
+   */
+  private eraseGrey = false;
+  /**
+   * By line, greyed: each cut stroke's stretches being cut away, drawn grey
+   * beside its surviving pieces. Only drawn: the commit never sees them.
+   */
+  private eraseGreyCuts = new Map<string, Stroke[]>();
   /**
    * Standard (partial) erase in progress: original stroke id -> the pieces
    * that survive so far. The document is untouched until the gesture ends;
@@ -5023,14 +5034,29 @@ export class InkSurface {
     this.flushEraseDirty();
     // `eraseIds` / `erasePieces` are empty except during a live erase gesture.
     // The lasso selection's frame is DOM (it takes presses), not canvas.
+    const grey = this.eraseGrey;
+    let greyed: ReadonlySet<string> = this.eraseIds;
+    let pieces: ReadonlyMap<string, readonly Stroke[]> = this.erasePieces;
+    if (grey && this.eraseGreyCuts.size > 0) {
+      // A cut stroke shows its grey stretches with what survives of it.
+      const shown = new Map<string, readonly Stroke[]>(this.erasePieces);
+      const ids = new Set(this.eraseIds);
+      for (const [id, stretches] of this.eraseGreyCuts) {
+        shown.set(id, [...stretches, ...(this.erasePieces.get(id) ?? [])]);
+        for (const stretch of stretches) ids.add(stretch.id);
+      }
+      pieces = shown;
+      greyed = ids;
+    }
     return this.renderer.renderDocument(
       this.doc,
       this.inkPressure,
-      this.eraseIds,
+      grey ? undefined : this.eraseIds,
       null,
-      this.erasePieces,
+      pieces,
       budgetMs,
       this.viewMoving,
+      grey ? greyed : undefined,
     );
   }
 
@@ -7183,6 +7209,8 @@ export class InkSurface {
   /** Drop any in-progress erase preview (the document was never touched). */
   private eraseReset(): void {
     this.eraseIds = new Set();
+    this.eraseGrey = false;
+    this.eraseGreyCuts = new Map();
     this.erasePieces = new Map();
     this.eraseLast = null;
     this.eraseRuled = null;
@@ -7233,6 +7261,10 @@ export class InkSurface {
     const filter = eraserFilterFor(this.toolState);
     if (mode === "ruled" && this.eraseLast === null) this.startRuledErase(page, sample, filter);
     const ruled = this.eraseRuled;
+    // Whole stroke and By line grey what they take, as Notability does.
+    if (this.eraseLast === null) {
+      this.eraseGrey = erasesGrey(mode, ruled !== null, this.toolState.eraserGrey === true);
+    }
     const whole = mode === "stroke";
 
     // Samples of a fast drag can land further apart than the eraser is wide.
@@ -7303,6 +7335,7 @@ export class InkSurface {
         continue;
       }
       this.erasePieces.set(id, pieces);
+      if (this.eraseGrey) this.eraseGreyCuts.set(id, erasedPieces(original, regions));
       this.eraseDirty.add(id);
       changed = true;
     }
@@ -7322,6 +7355,7 @@ export class InkSurface {
       this.eraseDirty.add(each);
       // Cut pieces of it, from earlier in the pass, go with it.
       this.erasePieces.delete(each);
+      this.eraseGreyCuts.delete(each);
       marked = true;
     }
     return marked;
