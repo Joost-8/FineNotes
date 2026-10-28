@@ -432,11 +432,6 @@ function drawnRow(
   return { name, desc: desc || undefined, aliases, visible, render: draw };
 }
 
-/** The class that ties a shortcut category's rows to its fold. */
-function shortcutCategoryClass(title: string): string {
-  return `goodobsidian-shortcut-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-}
-
 /** What each on-device model is and does: the start of its row's ⓘ. */
 const MODEL_PURPOSE = {
   voice:
@@ -839,25 +834,42 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * "More": the section's rows after it stay hidden until it is tapped, by
-   * a class on the group (so search still finds them, and opens it). It
-   * says what is under it. An action row, so Obsidian draws it as one of
-   * its own tappable rows and handles the tap.
+   * A row that opens or closes the rows below it, like "More": Obsidian
+   * draws the action row and its chevron; the caller says whether it is
+   * open and what a tap does.
    */
-  private more(id: SettingsSection, what: string): SettingDefinition {
+  private disclosure(
+    name: string,
+    what: string,
+    open: (row: HTMLElement) => boolean,
+    toggle: (row: HTMLElement, open: boolean) => void,
+  ): SettingDefinition {
     return {
-      name: "More",
+      name,
       desc: what,
       searchable: false,
-      action: (row) => {
+      action: (row) => toggle(row, !open(row)),
+    };
+  }
+
+  /**
+   * "More": the section's rows after it stay hidden until it is tapped, by
+   * a class on the group (so search still finds them, and opens it). It
+   * says what is under it.
+   */
+  private more(id: SettingsSection, what: string): SettingDefinition {
+    return this.disclosure(
+      "More",
+      what,
+      (row) => row.closest<HTMLElement>(".setting-group")?.hasClass("is-more-open") ?? false,
+      (row, open) => {
         const group = row.closest<HTMLElement>(".setting-group");
         if (!group) return;
-        const open = !group.hasClass("is-more-open");
         group.toggleClass("is-more-open", open);
         if (open) this.moreOpen.add(id);
         else this.moreOpen.delete(id);
       },
-    };
+    );
   }
 
   /** Redraw every section header's state, after a value changed. */
@@ -1272,55 +1284,30 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * A category header inside Shortcuts: its title at the left, a chevron at
-   * the right, and a tap folds the category's rows. The rows carry the
-   * category class (not `visible`), so Obsidian's search still finds them.
+   * A category inside Shortcuts, drawn as a "More" row: its title, how many
+   * shortcuts it holds, and a chevron. A tap hides or shows the rows below
+   * it, up to the next category. Rows are hidden by a class, not `visible`,
+   * so Obsidian's search still finds them.
    */
-  private shortcutCategoryHeading(title: string): SettingDefinition {
-    return block((el) => {
-      const header = el.createEl("button", { cls: "goodobsidian-shortcut-category" });
-      header.setAttribute("type", "button");
-      header.createSpan({ cls: "goodobsidian-shortcut-category-name", text: title });
-      const chevron = header.createSpan({ cls: "goodobsidian-shortcut-category-chevron" });
-      setIcon(chevron, "chevron-right");
-      const rows = (): HTMLElement[] =>
-        Array.from((el.parentElement?.children ?? []) as ArrayLike<HTMLElement>).filter((row) =>
-          row.hasClass(shortcutCategoryClass(title)),
-        );
-      const show = (): void => {
-        const open = this.shortcutCategoriesOpen.has(title);
-        header.setAttribute("aria-expanded", String(open));
-        header.setAttribute("aria-label", `${open ? "Fold" : "Unfold"} ${title}`);
-        for (const row of rows()) row.toggleClass("is-shortcut-folded", !open);
-      };
-      const setOpen = (open: boolean): void => {
+  private shortcutCategory(title: string, count: number): SettingDefinition {
+    return this.disclosure(
+      title,
+      `${count} shortcut${count === 1 ? "" : "s"}`,
+      () => this.shortcutCategoriesOpen.has(title),
+      (row, open) => {
         if (open) this.shortcutCategoriesOpen.add(title);
         else this.shortcutCategoriesOpen.delete(title);
-        show();
-      };
-      header.addEventListener("click", () => setOpen(!this.shortcutCategoriesOpen.has(title)));
-      show();
-      // A search result flashes its row; open the category so it can be seen.
-      if (typeof MutationObserver === "undefined") return;
-      const group = el.closest<HTMLElement>(".setting-group");
-      if (!group) return;
-      new MutationObserver((changes) => {
-        if (this.shortcutCategoriesOpen.has(title)) return;
-        for (const change of changes) {
-          const target = change.target;
-          if (
-            !target.instanceOf(HTMLElement) ||
-            !target.hasClass("is-flashing") ||
-            !target.hasClass(shortcutCategoryClass(title))
-          ) {
-            continue;
+        for (
+          let item = row.nextElementSibling;
+          item && !item.hasClass("mod-action");
+          item = item.nextElementSibling
+        ) {
+          if (item.hasClass("goodobsidian-shortcut-row")) {
+            item.toggleClass("is-shortcut-folded", !open);
           }
-          setOpen(true);
-          target.scrollIntoView({ block: "center" });
-          return;
         }
-      }).observe(group, { subtree: true, attributes: true, attributeFilter: ["class"] });
-    });
+      },
+    );
   }
 
   /**
@@ -1346,7 +1333,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           () => this.plugin.shortcuts.table.conflicts.length > 0,
         ),
         ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
-          this.shortcutCategoryHeading(group.title),
+          this.shortcutCategory(group.title, group.actions.length),
           ...group.actions.map((action) =>
             drawnRow(
               action.label,
@@ -1445,7 +1432,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
     if (!row) return;
     setting.setClass("goodobsidian-shortcut-row");
-    setting.settingEl.addClass(shortcutCategoryClass(action.group));
     setting.settingEl.toggleClass(
       "is-shortcut-folded",
       !this.shortcutCategoriesOpen.has(action.group),

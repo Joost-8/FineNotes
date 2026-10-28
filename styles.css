@@ -2782,8 +2782,11 @@ input.goodobsidian-color-list.is-invalid {
 
 /* "More": an action row (Obsidian's own tappable row); the section's rows
    after it stay hidden until it is tapped. By class, so search still finds
-   them (and opens it). Its chevron points down while they show. */
-.setting-group.goodobsidian-section:not(.is-more-open) .setting-item.mod-action ~ .setting-item {
+   them (and opens it). Its chevron points down while they show. Shortcuts
+   has its own categories, so its action rows opt out. */
+.setting-group.goodobsidian-section:not(.is-more-open):not(:has(.goodobsidian-shortcut-row))
+  .setting-item.mod-action
+  ~ .setting-item {
   display: none;
 }
 
@@ -3187,9 +3190,8 @@ kbd.goodobsidian-key.is-glyph {
 }
 
 /* Settings → Shortcuts: the reference and the key map in one place. Each
-   category's header folds its rows: title left, chevron right, no divider.
-   Rows are hidden by a class, never by `visible`, so search still finds
-   every action; a search result opens its category. */
+   category is a "More" row; its rows fold by class, never by `visible`, so
+   search still finds every action. */
 .goodobsidian-shortcuts-intro {
   padding: 10px 12px;
   border-radius: var(--gob-radius-l, var(--radius-m));
@@ -3221,53 +3223,14 @@ kbd.goodobsidian-key.is-glyph {
   min-height: var(--gob-touch, 32px);
 }
 
-.goodobsidian-shortcut-category {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--size-4-2);
-  width: 100%;
-  margin: var(--size-4-4) 0 0;
-  padding: var(--size-2-2) 0 var(--size-2-1);
-  border: none;
-  border-radius: var(--radius-s);
-  background-color: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  letter-spacing: 0.02em;
-  text-align: start;
-  cursor: var(--cursor);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.goodobsidian-shortcut-category:hover {
-  background-color: transparent;
-  color: var(--text-normal);
-}
-
-.goodobsidian-shortcut-category-chevron {
-  display: inline-flex;
-  flex: none;
-  color: var(--text-faint);
-  --icon-size: 16px;
-}
-
-.goodobsidian-shortcut-category-chevron .svg-icon {
-  transform: rotate(90deg);
-  transition: transform 150ms ease;
-}
-
-.goodobsidian-shortcut-category[aria-expanded="false"]
-  .goodobsidian-shortcut-category-chevron
-  .svg-icon {
-  transform: none;
-}
-
-.setting-item.goodobsidian-shortcut-row.is-shortcut-folded {
+.setting-item.goodobsidian-shortcut-row.is-shortcut-folded:not(.is-flashing) {
   display: none;
+}
+
+/* The category's chevron follows its first row: open when that row shows. */
+.goodobsidian-section
+  .setting-item.mod-action:has(+ .goodobsidian-shortcut-row:not(.is-shortcut-folded))::after {
+  transform: rotate(45deg);
 }
 
 /* One action: its name on the left, its slot and mode on the right. */

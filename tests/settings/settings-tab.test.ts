@@ -359,14 +359,14 @@ const FOOTER = "Feedback and community";
 
 /**
  * The Shortcuts section, top to bottom: the introduction, the (hidden)
- * conflict callout, each group's heading and its actions, then the footer.
- * The group titles are unnamed blocks, so search still finds every action.
+ * conflict callout, each category and its actions, then the footer.
+ * Categories are "More" rows, so search still finds every action.
  */
 const SHORTCUT_ROWS = [
   [SHORTCUTS, "(block)", "render"],
   [SHORTCUTS, "(block)", "render"],
   ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
-    [SHORTCUTS, "(block)", "render"],
+    [SHORTCUTS, group.title, "action"],
     ...group.actions.map((action) => [SHORTCUTS, action.label, "render"]),
   ]),
   [SHORTCUTS, "(block)", "render"],
@@ -599,7 +599,7 @@ const PEN_ROWS = [
 const SHORTCUT_VISIBLE = [
   "(block)",
   ...SHORTCUT_ACTION_GROUPS.flatMap((group) => [
-    "(block)",
+    group.title,
     ...group.actions.map((action) => action.label),
   ]),
   "(block)",
@@ -1560,17 +1560,9 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(dialogs.confirms[0]?.title).toBe("Reset every shortcut on this device?");
   });
 
-  it("keeps the toolbar actions under Tools, and folds the other categories", () => {
+  it("keeps the toolbar actions under Tools, and folds the categories like More", () => {
     const { tab } = makeTab(makePlugin());
     const all = rows(tab);
-    const heading = (title: string): Def => {
-      for (const row of all) {
-        if (row.heading !== SHORTCUTS || row.def.name !== "") continue;
-        const setting = renderRow(row.def);
-        if (setting.find("goodobsidian-shortcut-category-name")?.text === title) return row.def;
-      }
-      throw new Error(`no shortcut category "${title}"`);
-    };
     expect(SHORTCUT_ACTION_GROUPS.map((group) => group.title)).toEqual([
       "Tools",
       "Saved pens",
@@ -1579,25 +1571,27 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     ]);
     expect(SHORTCUT_ACTION_GROUPS[0]?.actions.map((action) => action.id)).toContain("bar.image");
 
-    const tools = renderRow(heading("Tools"));
-    const saved = renderRow(heading("Saved pens"));
+    const tools = named(all, "Tools");
+    const saved = all.find(
+      (row) => row.heading === SHORTCUTS && row.def.name === "Saved pens",
+    )?.def;
+    if (!saved) throw new Error("no Saved pens shortcut category");
+    expect(kind(tools)).toBe("action");
+    expect(tools.searchable).toBe(false);
     const image = renderRow(named(all, "Insert image"));
     const pen = renderRow(named(all, SHORTCUT_ACTION_GROUPS[1]?.actions[0]?.label ?? ""));
-    const toolsButton = tools.find("goodobsidian-shortcut-category");
-    const savedButton = saved.find("goodobsidian-shortcut-category");
-    expect(toolsButton?.attrs["aria-expanded"]).toBe("true");
-    expect(savedButton?.attrs["aria-expanded"]).toBe("false");
     expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(false);
     expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(true);
 
     const items = new FakeEl("div", "setting-items");
-    for (const setting of [tools, image, saved, pen]) items.append(setting.settingEl);
-    toolsButton?.dispatch("click");
-    expect(toolsButton?.attrs["aria-expanded"]).toBe("false");
+    const toolsRow = items.createDiv("setting-item mod-action");
+    items.append(image.settingEl);
+    const savedRow = items.createDiv("setting-item mod-action");
+    items.append(pen.settingEl);
+    tools.action?.(toolsRow, 0);
     expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(true);
     expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(true);
-    savedButton?.dispatch("click");
-    expect(savedButton?.attrs["aria-expanded"]).toBe("true");
+    saved.action?.(savedRow, 3);
     expect(pen.settingEl.hasClass("is-shortcut-folded")).toBe(false);
     expect(image.settingEl.hasClass("is-shortcut-folded")).toBe(true);
   });
