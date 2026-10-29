@@ -63,9 +63,12 @@ export interface GoodObsidianSettings {
   lassoFilter: LassoFilter;
   /**
    * The lasso takes a stroke when any part of it is inside the loop, as
-   * Notability does; off, at least half of it (Goodnotes, `canvas/lasso.ts`).
+   * Notability does (the default); off, at least half of it (Goodnotes,
+   * `canvas/lasso.ts`). It was `lassoAnyPart`, off by default, in the
+   * unreleased PR #59 build: a new key, so a vault that saved that `false`
+   * still gets the new default.
    */
-  lassoAnyPart: boolean;
+  lassoTouches: boolean;
   /** 0–1. The settings tab shows it as a percentage. */
   highlighterAlpha: number;
   paperWidth: number;
@@ -355,7 +358,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   eraserFilter: "all",
   lassoMode: "freehand",
   lassoFilter: { ...DEFAULT_LASSO_FILTER },
-  lassoAnyPart: false,
+  lassoTouches: true,
   highlighterAlpha: DEFAULT_HIGHLIGHTER_ALPHA,
   paperWidth: DEFAULT_PAPER_WIDTH,
   newNotebookFolder: "",

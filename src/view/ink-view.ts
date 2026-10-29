@@ -428,6 +428,17 @@ interface CheckedPage {
   suggestions?: Map<string, LexiconSuggestion | null>;
 }
 
+/**
+ * The ink a lassoed action acts on: what was selected, and the rest of any
+ * word the lasso only touched (`selectionWords` reads such a word whole, so
+ * the ink that word is made of goes with it).
+ */
+function touchedInk(strokeIds: readonly string[], read: SelectionText | null): string[] {
+  const ids = new Set(strokeIds);
+  for (const word of read?.words ?? []) for (const id of word.strokeIds) ids.add(id);
+  return [...ids];
+}
+
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
   private doc: InkDocument;
@@ -2681,7 +2692,7 @@ export class InkView extends TextFileView {
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
-        lassoAnyPart: () => this.settings.lassoAnyPart === true,
+        lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
@@ -3566,7 +3577,7 @@ export class InkView extends TextFileView {
         // By identity: the page may move or go while the list is open.
         if (this.isProtected() || this.surface !== surface) return;
         if (!surface.document.pages.includes(page)) return;
-        const commands = linkStrokes(surface.document, page, strokeIds, target);
+        const commands = linkStrokes(surface.document, page, touchedInk(strokeIds, read), target);
         if (commands.length === 0) return;
         const label = target === null ? "Remove link" : "Link";
         surface.applyCommand(new CompositeCommand(label, commands));
@@ -3599,7 +3610,7 @@ export class InkView extends TextFileView {
       if (this.isProtected() || this.surface !== surface) return;
       if (!surface.document.pages.includes(page)) return;
       if (read) this.recordEdits(page, read.words, text);
-      const commands = makeTask(surface.document, page, strokeIds, text);
+      const commands = makeTask(surface.document, page, touchedInk(strokeIds, read), text);
       if (commands.length === 0) return;
       surface.applyCommand(new CompositeCommand("Task", commands));
       this.requestSave();
@@ -3625,7 +3636,7 @@ export class InkView extends TextFileView {
       // By identity: the page may move or go while the dialog is open.
       if (this.isProtected() || this.surface !== surface) return;
       if (read) this.recordEdits(page, read.words, text);
-      if (surface.turnInkIntoText(page, strokeIds, text)) this.requestSave();
+      if (surface.turnInkIntoText(page, touchedInk(strokeIds, read), text)) this.requestSave();
     });
     modal.open();
     void this.readSelection(page, strokeIds, true).then((found) => {

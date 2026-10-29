@@ -476,6 +476,7 @@ import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
 import { selectionKind, selectionMenu } from "./selection-kind";
+import { writePngToClipboard } from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
   type ToolLift,
@@ -710,7 +711,7 @@ export interface InkSurfaceCallbacks {
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
-  /** "Lasso takes what it touches" (settings): any part of a stroke inside takes it. Read live. */
+  /** "Lasso takes what it touches" (settings, on unless it says false): any part of a stroke inside takes it. Read live. */
   lassoAnyPart?: () => boolean;
   /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
@@ -7672,7 +7673,7 @@ export class InkSurface {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
-    const anyPart = this.callbacks.lassoAnyPart?.() === true;
+    const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
       strokes: page.strokes.filter(
@@ -8146,7 +8147,7 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
     const filter = lassoFilterFor(this.toolState);
-    const anyPart = this.callbacks.lassoAnyPart?.() === true;
+    const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     this.select(page.id, {
       strokes: page.strokes.filter(
@@ -8795,7 +8796,7 @@ export class InkSurface {
   /**
    * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
    * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
-   * Duplicate · Paste across the top; Colour when it holds ink; one segmented
+   * Duplicate · Paste across the top, then Screenshot; Colour when it holds ink; one segmented
    * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
    * into ›, which holds what the selection can become; and Delete. What it
    * holds decides the rest (`selectionMenu`): one kind keeps its own options,
@@ -8833,6 +8834,14 @@ export class InkSurface {
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
+      // Any selection, whatever it holds.
+      {
+        id: "screenshot",
+        icon: "camera",
+        label: "Screenshot",
+        group: "edit",
+        run: () => this.copySelectionScreenshot(),
+      },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -9564,9 +9573,42 @@ export class InkSurface {
    */
   private async saveSelectionAsSticker(): Promise<void> {
     const sel = this.liveSelection();
-    const bounds = sel ? this.groupBounds(sel) : null;
     const save = this.callbacks.onSaveSticker;
-    if (!sel || !bounds || !save) return;
+    const shot = sel && save ? await this.selectionPicture(sel, null) : null;
+    if (!shot || !save) return;
+    save(await shot.blob.arrayBuffer(), shot.width, shot.height);
+  }
+
+  /**
+   * Screenshot (Joost on PR #59): what is selected, as it is drawn, on its
+   * page's paper, copied to the clipboard as a picture to paste anywhere.
+   * The readout says whether it got there. The clipboard item is handed
+   * over within the tap, with a promise of the pixels, as WebKit needs.
+   */
+  private copySelectionScreenshot(): void {
+    const sel = this.liveSelection();
+    const page = sel ? this.doc.pages.find((candidate) => candidate.id === sel.pageId) : null;
+    if (!sel || !page) return;
+    const png = this.selectionPicture(sel, paperColorOf(page, this.paper)).then((shot) => {
+      if (!shot) throw new Error("Nothing to draw");
+      return shot.blob;
+    });
+    void writePngToClipboard(png).then((copied) =>
+      this.flashReadout(copied ? "Copied as a picture" : "Couldn't copy the picture"),
+    );
+  }
+
+  /**
+   * The selection drawn on its own, cut to its bounds with a small margin:
+   * on `paper`, or transparent when that is null. Sharp at three times its
+   * size, no side past 2048 px. `null` when there is nothing to draw.
+   */
+  private async selectionPicture(
+    sel: GroupSelection,
+    paper: string | null,
+  ): Promise<{ blob: Blob; width: number; height: number } | null> {
+    const bounds = this.groupBounds(sel);
+    if (!bounds) return null;
     const pad = STICKER_PAD;
     const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
     const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
@@ -9587,11 +9629,25 @@ export class InkSurface {
       usePressure: this.inkPressure,
       ...(this.imagePainter ? { images: this.imagePainter } : {}),
     });
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    canvas.width = 0;
-    canvas.height = 0;
-    if (!blob) return;
-    save(await blob.arrayBuffer(), width, height);
+    let out = canvas;
+    if (paper) {
+      // The paper behind it, as the page shows it.
+      out = createEl("canvas");
+      out.width = canvas.width;
+      out.height = canvas.height;
+      const ctx = out.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = paper;
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(canvas, 0, 0);
+      }
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
+    out.width = 0;
+    out.height = 0;
+    return blob ? { blob, width, height } : null;
   }
 
   /** Put the selected picture in front of the ink, or back under it, as one undo step. */
@@ -10773,6 +10829,8 @@ export class InkSurface {
       drag.fingers = undefined;
       return;
     }
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (grip.state.engaged) grip.motion = fingerTurnMotion(grip.state, () => grip.snap.settled());
     this.endGroupDrag(true);
     this.syncImageOverlay();
   }
@@ -11061,6 +11119,8 @@ export class InkSurface {
       }
     }
     const turn = drag.turn;
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && turn) turn.angle = turn.snap.settled();
     const changed = fingers
       ? !isStill(fingers)
       : turn
@@ -12089,6 +12149,10 @@ export class InkSurface {
     }
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.clearWet();
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && drag.turn && drag.part === "rotate") {
+      drag.draft = withRotation(drag.start, rotationOf(drag.start) + drag.turn.settled());
+    }
     const box = this.boxForPage(drag.pageId);
     const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
     const changed =

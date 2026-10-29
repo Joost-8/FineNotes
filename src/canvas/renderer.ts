@@ -117,9 +117,8 @@ import type { ViewportState } from "./viewport";
 const FADED_INK_ALPHA = 0.22;
 /** The veil over the part of a picture a crop leaves out. A real colour: canvas ignores `var(--…)`. */
 const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
-/** The lasso's and the selection box's line, and the lasso's fill. Real colours, as above. */
+/** The lasso's and the selection box's line. A real colour, as above. */
 const SELECTION_LINE = "rgba(120,170,255,0.95)";
-const SELECTION_FILL = "rgba(120,170,255,0.12)";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
 
@@ -1521,8 +1520,8 @@ export class Renderer {
 
   /**
    * Draw the lasso being drawn (page space, flat `[x, y, …]`) on the wet
-   * layer: a dashed loop closed back to its start, over a faint fill — the
-   * same affordance colour as the selection box.
+   * layer: a dashed loop closed back to its start, its line only (Joost on
+   * PR #59: no filled area while drawing), in the selection box's colour.
    */
   renderLasso(pageIndex: number, loop: readonly number[]): void {
     const box = this.layout.boxes[pageIndex];
@@ -1535,9 +1534,6 @@ export class Renderer {
     ctx.moveTo(loop[0], loop[1]);
     for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
     ctx.closePath();
-    ctx.fillStyle = SELECTION_FILL;
-    // Even–odd, as the lasso's own hit rule reads a loop that crosses itself.
-    ctx.fill("evenodd");
     selectionLine(ctx, this.safeScale);
     ctx.lineJoin = "round";
     ctx.stroke();

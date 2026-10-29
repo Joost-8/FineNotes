@@ -11,13 +11,19 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Lasso takes what it touches** (discussion
-  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
-  under Writing › More: the lasso takes a stroke or shape when any part of
-  it is inside the loop, as Notability does, instead of at least half of it.
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). The lasso
+  now takes a stroke or shape when any part of it is inside the loop, as
+  Notability does; Settings › Writing › More brings back Goodnotes' rule
+  (at least half of it). While you draw it, the lasso shows only its line.
+  Turn into › Text, Task, Link to… and Contents heading read every word the
+  lasso touched, whole.
 - **Tap a shape with a finger to select it.** With the pen (or another
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
   picks the lasso and selects it with its handles and bar, as a tap on a
   picture does.
+- **Screenshot from the lasso.** The lasso's menu has Screenshot for any
+  selection: what is selected, as drawn on its page's paper, goes to the
+  clipboard as a picture to paste into another app or note.
 - **The lasso's menu fits what you selected.** One kind of thing keeps its
   own options (a shape its fill and line, a table Edit table), and
   handwriting counts as one kind however many strokes it is. A mix of
@@ -25,7 +31,7 @@ extracted from the matching section of this file by `release.yml`.
   shape is not offered Text, Contents heading or Task.
 - **Turn a selection with two fingers.** Two fingers on a selection or a
   selected picture, or either side of a small one, turn it about its
-  middle, settling on the page's 45° steps as the knob does; the lift is one
+  middle, drawn toward the page's 45° steps as the knob is; the lift is one
   undo step. Two fingers elsewhere still zoom the page.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
@@ -77,11 +83,11 @@ extracted from the matching section of this file by `release.yml`.
   open is gone.
 - **Turning a selection or a picture settles**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
-  knob no longer follows every tremor of the pen: the turn lands on every
-  45° of the page (0°, 45°, 90° …) from several degrees away, whatever
-  angle the item started at, so a shape drawn slightly crooked lands
-  level, never at 89°; it is free between. A small readout beside the pen
-  shows the angle on the page while you turn.
+  knob, and now two fingers, draw the turn gently toward every 45° of the
+  page (0°, 45°, 90° …), whatever angle the item started at: it slows near
+  a step and goes on through it, never stopping, and let go close to one
+  it lands there exactly, so a shape drawn slightly crooked ends level,
+  never at 89°. A small readout shows the angle on the page while you turn.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and

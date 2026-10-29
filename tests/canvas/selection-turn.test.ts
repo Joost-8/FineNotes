@@ -72,11 +72,15 @@ describe("two fingers turning a selection", () => {
     expect(stepFingerTurn(on, NaN)).toBe(on);
   });
 
-  it("settles as the knob does: on every 45° of the page", () => {
+  it("is drawn toward the page's 45° steps as the knob is, and lands on them", () => {
     // A shape 2° off level on the page, fingers turned 47°: it lands on 45°.
     const snap = new TurnSnap(100, 2 * DEG);
     const t = stepFingerTurn(startFingerTurn({ x: 0, y: 0 }), 47 * DEG);
-    const m = fingerTurnMotion(t, (raw) => snap.turn(raw));
+    // Shown while turning, it is drawn toward the step; on the lift it lands on it.
+    const shown = fingerTurnMotion(t, (raw) => snap.turn(raw));
+    expect(shown.angle / DEG).toBeGreaterThan(43);
+    expect(shown.angle / DEG).toBeLessThan(47);
+    const m = fingerTurnMotion(t, () => snap.settled());
     expect(m.angle / DEG).toBeCloseTo(43, 9);
     expect(snap.pageAngle(m.angle) / DEG).toBeCloseTo(45, 9);
   });
