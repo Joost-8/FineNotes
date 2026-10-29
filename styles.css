@@ -6909,6 +6909,12 @@ textarea.goodobsidian-chat-input:focus-visible {
   -webkit-user-select: none;
 }
 
+/* The corner handles show only when asked for (discussion #51): a lone
+   shape shows them at once; anything else after the bar's corners button. */
+.goodobsidian-selection-frame.no-corners .goodobsidian-image-handle.is-corner {
+  display: none;
+}
+
 /* A freehand lasso's selection is drawn by its own rounded loop, as in
    GoodNotes; the (now invisible) frame still takes the drags. The loop may
    reach past the frame, so the SVG does not clip. */
@@ -7101,8 +7107,8 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--color-base-100);
 }
 
-/* A switch in the bar (a shape's corner points) while on: lit in the
-   accent, hovered or not. */
+/* A switch in the bar (the resize handles, a shape's corner points) while
+   on: lit in the accent, hovered or not. */
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on,
 .goodobsidian-selection-bar
   .goodobsidian-selection-button.clickable-icon.is-on:hover:not(:disabled) {

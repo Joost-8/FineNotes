@@ -91,6 +91,7 @@ import {
   selectionKnobPoint,
   smoothLoop,
   selectionBounds,
+  isLoneShape,
   strokeInLasso,
   textBoxFrame,
 } from "../canvas/lasso";
@@ -1752,6 +1753,12 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /**
+   * Whether the selection shows its corner handles (discussion #51, Joost):
+   * hidden when a lasso picks something up, shown at once for a lone shape,
+   * and switched by the bar's corners button.
+   */
+  private selectionCorners = false;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
@@ -8658,6 +8665,7 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
+    this.selectionCorners = isLoneShape(this.selection);
     this.shapePointsOn = false;
     this.syncSelectionOverlay();
   }
@@ -8780,6 +8788,7 @@ export class InkSurface {
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
     const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
+    this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
       const scale = this.unitScale;
       const pad = this.framePad;
@@ -9261,6 +9270,21 @@ export class InkSurface {
       bar: true,
       destructive: true,
       run: () => this.deleteSelection(),
+    });
+    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
+    // the resize handles, then the "…".
+    actions.push({
+      id: "corners",
+      icon: "scan",
+      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+      group: "edit",
+      bar: true,
+      menu: "none",
+      checked: this.selectionCorners,
+      run: () => {
+        this.selectionCorners = !this.selectionCorners;
+        this.syncSelectionOverlay();
+      },
     });
     if (this.loneShape(sel)) {
       actions.push({
@@ -11211,6 +11235,7 @@ export class InkSurface {
   }
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
+    if (!this.selectionCorners) return null;
     const scale = this.unitScale;
     const pad = this.framePad / scale;
     const frame: Bounds = {
@@ -12060,7 +12085,8 @@ export class InkSurface {
    * wider round a lone shape whose rings and corner squares both show.
    */
   private get framePad(): number {
-    return this.shapePointsOn && this.loneShape(this.selection)
+    // Rings and corner squares both showing: the squares stand clear.
+    return this.shapePointsOn && this.selectionCorners && this.loneShape(this.selection)
       ? SHAPE_FRAME_PAD_PX
       : SELECTION_PAD_PX;
   }
@@ -12118,12 +12144,15 @@ export class InkSurface {
     if (!lone || !before) return false;
     const reach = POINT_HIT_RADIUS_PX / this.unitScale;
     const f = this.selectionFrameOf(this.groupBounds(sel) ?? before);
-    const corners = [
-      { x: f.minX, y: f.minY },
-      { x: f.maxX, y: f.minY },
-      { x: f.maxX, y: f.maxY },
-      { x: f.minX, y: f.maxY },
-    ];
+    // The frame's corner squares, while they show, keep the presses nearer them.
+    const corners = this.selectionCorners
+      ? [
+          { x: f.minX, y: f.minY },
+          { x: f.maxX, y: f.minY },
+          { x: f.maxX, y: f.maxY },
+          { x: f.minX, y: f.maxY },
+        ]
+      : [];
     const handle = pickPointHandle(lone.handles.at, from, reach, corners);
     if (handle < 0) return false;
     const at = lone.handles.at;

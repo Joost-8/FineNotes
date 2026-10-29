@@ -575,6 +575,28 @@ function pointsBounds(pts: readonly number[]): Bounds | null {
 }
 
 /**
+ * Whether a selection is one shape on its own (a stroke with `shape`, and
+ * nothing else): it shows its corner handles at once, where any other
+ * selection starts without them (discussion #51, Joost).
+ */
+export function isLoneShape(sel: {
+  strokes: readonly Stroke[];
+  images: readonly unknown[];
+  textBoxes: readonly unknown[];
+  tables?: readonly unknown[];
+  graphs?: readonly unknown[];
+}): boolean {
+  return (
+    sel.strokes.length === 1 &&
+    sel.strokes[0].shape !== undefined &&
+    sel.images.length === 0 &&
+    sel.textBoxes.length === 0 &&
+    (sel.tables?.length ?? 0) === 0 &&
+    (sel.graphs?.length ?? 0) === 0
+  );
+}
+
+/**
  * Clamp a move of the whole selection so its centre stays on the page — as
  * `moveImage` does for one picture: it may hang off the edge, as ink may, but
  * never so far that nothing is left to grab. A selection whose centre is
