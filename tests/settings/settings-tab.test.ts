@@ -395,7 +395,7 @@ describe("the rows", () => {
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
-      [WRITING, "Lasso takes what it touches", "toggle:lassoAnyPart"],
+      [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
       [PENS, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
       [PENS, "Stylus side button", "dropdown:barrelButton"],

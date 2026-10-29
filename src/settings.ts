@@ -326,7 +326,7 @@ const DESC = {
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
   lassoAnyPart:
-    "On, the lasso takes a stroke or shape when any part of it is inside the loop or " +
+    "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
     "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
     "Goodnotes. Pictures and text boxes are taken by their middle either way.",
   penCursor:
@@ -1024,7 +1024,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           DESC.straightHighlighter,
         ),
         this.info(
-          toggle("lassoAnyPart", "Lasso takes what it touches", "", [
+          toggle("lassoTouches", "Lasso takes what it touches", "", [
             "lasso",
             "select",
             "selection",
