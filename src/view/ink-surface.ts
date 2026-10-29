@@ -495,9 +495,15 @@ import {
   connectorRoute,
   draggedOffset,
   facingSide,
+  nearestSide,
   sideMiddle,
 } from "../ink/connector-route";
-import { type RoutedConnector, connectorBounds, routeConnectors } from "../canvas/connector-paint";
+import {
+  CONNECTOR_WIDTH,
+  type RoutedConnector,
+  connectorBounds,
+  routeConnectors,
+} from "../canvas/connector-paint";
 import {
   AddConnector,
   AddLinkedCopy,
@@ -1187,6 +1193,8 @@ interface LinkDrag {
    * two, and no copy is made (Joost, 2026-10-29).
    */
   target: Stroke | null;
+  /** The side of `target` nearest the pen: where the dropped arrow meets it. */
+  targetSide: ConnectorSide;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -11004,6 +11012,7 @@ export class InkSurface {
       lifted: false,
       offset: null,
       target: null,
+      targetSide: "left",
     };
     this.linkBar = null;
     this.selectionFrameEl.addEventListener("pointermove", this.onLinkPointerMove);
@@ -11044,7 +11053,7 @@ export class InkSurface {
       from: { stroke: drag.stroke.id, side: drag.side },
       to: { stroke: "", side: toSide },
       color: drag.stroke.color,
-      size: drag.stroke.size,
+      size: CONNECTOR_WIDTH,
     };
     return { pts, toSide, routed: route ? { connector, route } : null };
   }
@@ -11060,7 +11069,9 @@ export class InkSurface {
     if (!box) return;
     const pen = this.pagePoint(box, event.clientX, event.clientY);
     drag.target = this.linkTargetAt(drag, pen);
-    if (drag.target) {
+    const targetBounds = drag.target ? strokeBounds(drag.target) : null;
+    if (drag.target && targetBounds) {
+      drag.targetSide = nearestSide(targetBounds, pen);
       const joined = this.linkToTarget(drag, drag.target);
       if (!drag.lifted) {
         drag.lifted = true;
@@ -11143,7 +11154,7 @@ export class InkSurface {
       from: { stroke: source.id, side: drag.side },
       to: { stroke: copy.id, side: draft.toSide },
       color: source.color,
-      size: source.size,
+      size: CONNECTOR_WIDTH,
     };
     this.history.push(this.doc, new AddLinkedCopy(page.id, copy, connector));
     this.strokeIndex.add(page.id, copy);
@@ -11196,10 +11207,7 @@ export class InkSurface {
     drag: LinkDrag,
     target: Stroke,
   ): { routed: RoutedConnector; toSide: ConnectorSide } | null {
-    const a = strokeBounds(drag.stroke);
-    const b = strokeBounds(target);
-    if (!a || !b) return null;
-    const toSide = facingSide(a, b);
+    const toSide = drag.targetSide;
     const route = connectorRoute(drag.stroke.pts, drag.side, target.pts, toSide);
     if (!route) return null;
     const connector: ShapeConnector = {
@@ -11207,7 +11215,7 @@ export class InkSurface {
       from: { stroke: drag.stroke.id, side: drag.side },
       to: { stroke: target.id, side: toSide },
       color: drag.stroke.color,
-      size: drag.stroke.size,
+      size: CONNECTOR_WIDTH,
     };
     return { routed: { connector, route }, toSide };
   }

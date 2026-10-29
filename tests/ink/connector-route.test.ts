@@ -7,12 +7,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  CONNECTOR_STUB,
   besideOffset,
   boundsOfPts,
+  CONNECTOR_STUB,
   connectorRoute,
   draggedOffset,
   facingSide,
+  nearestSide,
   oppositeSide,
   routeBounds,
   routeElbow,
@@ -233,5 +234,27 @@ describe("where a linked copy goes", () => {
     const d = draggedOffset(b, "right", { x: 400, y: 300 });
     expect(b.minX + d.x).toBe(400);
     expect((b.minY + b.maxY) / 2 + d.y).toBe(300);
+  });
+});
+
+describe("nearestSide", () => {
+  // Joost, 2026-10-29: an arrow dropped on a shape meets it where it was dropped.
+  const b = { minX: 100, minY: 100, maxX: 300, maxY: 200 };
+
+  it("outside the box: the edge nearest the drop", () => {
+    expect(nearestSide(b, { x: 200, y: 60 })).toBe("top");
+    expect(nearestSide(b, { x: 200, y: 260 })).toBe("bottom");
+    expect(nearestSide(b, { x: 40, y: 150 })).toBe("left");
+    expect(nearestSide(b, { x: 360, y: 150 })).toBe("right");
+    // Off a corner: whichever edge is nearer.
+    expect(nearestSide(b, { x: 320, y: 90 })).toBe("top");
+    expect(nearestSide(b, { x: 330, y: 105 })).toBe("right");
+  });
+
+  it("inside the box: the edge it is closest to", () => {
+    expect(nearestSide(b, { x: 200, y: 110 })).toBe("top");
+    expect(nearestSide(b, { x: 290, y: 150 })).toBe("right");
+    expect(nearestSide(b, { x: 110, y: 160 })).toBe("left");
+    expect(nearestSide(b, { x: 180, y: 195 })).toBe("bottom");
   });
 });
