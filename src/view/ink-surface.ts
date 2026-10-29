@@ -74,7 +74,6 @@ import {
   type LassoFilter,
   type LassoMode,
   LassoPath,
-  type Polygon,
   anchorCorner,
   boundsCentre,
   boundsCorner,
@@ -184,8 +183,19 @@ import {
   boardScrollToCentre,
   layoutBoard,
 } from "../canvas/page-layout";
-import { inkReach, movePagePts, pagesReached } from "../canvas/page-join";
-import { HEAD_MAX } from "../canvas/shape-decor";
+import { movePagePts, pagesReached } from "../canvas/page-join";
+import {
+  MirrorSync,
+  MoveToPage,
+  elementBounds,
+  findOwner,
+  isMirror,
+  mirrorRegions,
+  mirrorsBefore,
+  ownerKey,
+  planMirrors,
+  strokeReach,
+} from "../canvas/mirrors";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import {
   EYEDROP_REACH_PX,
@@ -582,13 +592,6 @@ const DIAGNOSTICS_MAX = 24;
  * the hold and at the lift, and the retained points so the verdict can be
  * reproduced offline. Page px, rounded to 0.1.
  */
-/** A stroke's copy on a page its ink ran on to, over a join (`canvas/page-join.ts`). */
-interface JoinCopy {
-  index: number;
-  page: Page;
-  stroke: Stroke;
-}
-
 interface StrokeDiagnostic {
   /** ms since the surface was created. */
   at: number;
@@ -1569,7 +1572,12 @@ export class InkSurface {
   /** The undo/redo availability last reported to the host, as "undo/redo". */
   private historyShown = "";
   /** Every stroke by page position and by id; kept in step with each edit. */
-  private readonly strokeIndex = new StrokeIndex();
+  private readonly strokeIndex = (() => {
+    const index = new StrokeIndex();
+    // With the pages joined no tool acts on a mirror: tools find its owner.
+    index.skip = (stroke) => this.joined && isMirror(stroke);
+    return index;
+  })();
   /** Whole-stroke erase in progress: the strokes the eraser has touched so far. */
   private eraseIds = new Set<string>();
   /**
@@ -1597,9 +1605,19 @@ export class InkSurface {
    * back from the document when it ends.
    */
   private eraseDirty = new Set<string>();
-  private erasePreview: { pageIndex: number; bounds: Bounds } | null = null;
-  /** The ruled eraser's pass, from its first dab; null in the other modes and on unlined pages. */
-  private eraseRuled: RuledEraser | null = null;
+  private erasePreview = new Map<number, Bounds>();
+  /**
+   * The ruled eraser's pass on each page it reached, from its first dab
+   * there; null on an unlined page. With the pages joined the eraser goes
+   * on over the join, page by page.
+   */
+  private eraseRuled = new Map<string, RuledEraser | null>();
+  /**
+   * With the pages joined, the mirrors on other pages of the strokes the
+   * eraser may touch, by owner key, read once a gesture: the erase preview
+   * shows on them too (`canvas/mirrors.ts`).
+   */
+  private eraseMirrors: Map<string, Array<{ box: PageBox; stroke: Stroke }>> | null = null;
   /** The eraser's footprint, shown on the page while erasing. */
   private readonly eraserCursorEl: HTMLElement;
   /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
@@ -1763,11 +1781,6 @@ export class InkSurface {
    * could still carry it on (`input/pen-rejoin.ts`): when and where it
    * lifted, the builder that holds its points, and the step that added it.
    */
-  /**
-   * The copies a committed stroke left on the pages beside it, by its
-   * command, while that command may still be taken back unrecorded.
-   */
-  private readonly joinCopies = new WeakMap<Command, JoinCopy[]>();
   private lastLift: {
     t: number;
     boxIndex: number;
@@ -2689,6 +2702,7 @@ export class InkSurface {
    * host's save cache trusts it; see InkSurfaceCallbacks.onChange).
    */
   private changed(pages?: readonly string[]): void {
+    this.syncMirrors();
     this.growBoard();
     this.reportStatus();
     this.syncPageTabs();
@@ -3314,7 +3328,10 @@ export class InkSurface {
     const anchored = this.zoomInitialised && !turned && direction === "vertical" && !this.pinch;
     this.direction = direction;
     const joined = joinedPagesOf(this.doc);
+    // Mirrors leave the index while the pages are joined, and join it apart.
+    const rejoined = joined !== (this.joined === true);
     this.joined = joined;
+    if (rejoined) this.strokeIndex?.rebuild(this.doc.pages);
     this.pageLayout = layoutPages(this.doc.pages, { direction, joined });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
@@ -4340,6 +4357,8 @@ export class InkSurface {
       // Dark pages show a box's colours as its ink is shown (`./night`).
       const night = pageLook(page.backdrop, this.paper).night;
       for (const textBox of page.textBoxes) {
+        // A mirror is drawn by its owner's box, which runs over the join.
+        if (this.joined && isMirror(textBox)) continue;
         const key = `${page.id}:${textBox.id}`;
         expected.add(key);
         let view = this.textBoxInputs.get(key);
@@ -4778,6 +4797,7 @@ export class InkSurface {
       const live = this.liveTextBox(pageId, textBox.id);
       if (!live) return;
       live.text = input.value;
+      this.followTextBox(pageId, live);
       this.renderShownText(view, live.text);
       // A fitted box widens with its text: a full sync sets the width first.
       // The height is measured after it either way: a new line adds height
@@ -4820,6 +4840,26 @@ export class InkSurface {
     }
     this.syncTextBoxes();
     this.changed();
+  }
+
+  /**
+   * Typing changes a box in place, outside the undo steps; its mirrors over
+   * the join (`canvas/mirrors.ts`) follow the same way, so they are never
+   * behind what the owner shows. The next step's sync puts everything else
+   * right.
+   */
+  private followTextBox(pageId: string, owner: TextBoxElement): void {
+    if (!this.joined) return;
+    const key = ownerKey(pageId, owner.id);
+    for (const page of this.doc.pages) {
+      for (const mirror of page.textBoxes) {
+        if (mirror.join !== key) continue;
+        mirror.text = owner.text;
+        mirror.w = owner.w;
+        if (owner.h === undefined) delete mirror.h;
+        else mirror.h = owner.h;
+      }
+    }
   }
 
   /** Record a command on a text box; one on the newest box is withdrawn with it if left empty. */
@@ -5076,10 +5116,17 @@ export class InkSurface {
       pieces = shown;
       greyed = ids;
     }
+    let hidden: ReadonlySet<string> = this.eraseIds;
+    if (this.joined && (greyed.size > 0 || pieces.size > 0)) {
+      const onMirrors = this.mirrorErasePreview(grey ? greyed : hidden, pieces);
+      pieces = onMirrors.pieces;
+      if (grey) greyed = onMirrors.hidden;
+      else hidden = onMirrors.hidden;
+    }
     return this.renderer.renderDocument(
       this.doc,
       this.inkPressure,
-      grey ? undefined : this.eraseIds,
+      grey ? undefined : hidden,
       null,
       pieces,
       budgetMs,
@@ -5088,30 +5135,93 @@ export class InkSurface {
     );
   }
 
-  /** Re-rasterise the tiles under the strokes the erase gesture changed since the last paint. */
+  /**
+   * Re-rasterise the tiles under the strokes the erase gesture changed since
+   * the last paint, on whichever page each is (with the pages joined the
+   * eraser goes on over the join), and under their mirrors.
+   */
   private flushEraseDirty(): void {
-    const box = this.activePage;
-    if (this.eraseDirty.size === 0 || !box) {
+    if (this.eraseDirty.size === 0 || !this.activePage) {
       this.eraseDirty.clear();
       return;
     }
-    let dirty: Bounds | null = null;
+    const dirty = new Map<number, Bounds>();
+    const add = (index: number, bounds: Bounds | null): void => {
+      if (bounds) dirty.set(index, unionBounds(dirty.get(index) ?? null, bounds) ?? bounds);
+    };
     for (const id of this.eraseDirty) {
       const stroke = this.strokeIndex.get(id);
-      const bounds = stroke ? strokeBounds(stroke) : null;
-      if (bounds) dirty = unionBounds(dirty, bounds);
+      const pageId = this.strokeIndex.pageOf(id);
+      const box = this.pageLayout.boxes.find((b) => b.id === pageId);
+      if (!stroke || !box) continue;
+      add(box.index, strokeBounds(stroke));
+      for (const mirror of this.eraseMirrorsOf(box.id, id)) {
+        add(mirror.box.index, strokeBounds(mirror.stroke));
+      }
     }
     this.eraseDirty.clear();
-    if (!dirty) return;
-    this.renderer?.invalidateRegion(box.index, dirty);
-    const preview = this.erasePreview;
-    this.erasePreview = {
-      pageIndex: box.index,
-      bounds:
-        preview && preview.pageIndex === box.index
-          ? (unionBounds(preview.bounds, dirty) ?? dirty)
-          : dirty,
+    for (const [index, bounds] of dirty) {
+      this.renderer?.invalidateRegion(index, bounds);
+      const seen = this.erasePreview.get(index);
+      this.erasePreview.set(index, seen ? (unionBounds(seen, bounds) ?? bounds) : bounds);
+    }
+  }
+
+  /** The mirrors of stroke `id` of page `pageId`, for the erase preview; none apart. */
+  private eraseMirrorsOf(pageId: string, id: string): Array<{ box: PageBox; stroke: Stroke }> {
+    if (!this.joined) return [];
+    if (!this.eraseMirrors) {
+      const found = new Map<string, Array<{ box: PageBox; stroke: Stroke }>>();
+      for (const box of this.pageLayout.boxes) {
+        for (const stroke of this.pageAt(box.index)?.strokes ?? []) {
+          if (!stroke.join) continue;
+          const list = found.get(stroke.join) ?? [];
+          list.push({ box, stroke });
+          found.set(stroke.join, list);
+        }
+      }
+      this.eraseMirrors = found;
+    }
+    return this.eraseMirrors.get(ownerKey(pageId, id)) ?? [];
+  }
+
+  /**
+   * The erase preview on mirrors: `hidden` and `pieces` (by owner id) with
+   * each owner's mirrors hidden too, and drawn as the owner's pieces moved
+   * into the mirror's page.
+   */
+  private mirrorErasePreview(
+    hidden: ReadonlySet<string>,
+    pieces: ReadonlyMap<string, readonly Stroke[]>,
+  ): { hidden: Set<string>; pieces: Map<string, readonly Stroke[]> } {
+    const outHidden = new Set(hidden);
+    const outPieces = new Map(pieces);
+    const ownerBox = (id: string): PageBox | undefined => {
+      const pageId = this.strokeIndex.pageOf(id);
+      return this.pageLayout.boxes.find((b) => b.id === pageId);
     };
+    for (const id of hidden) {
+      const box = ownerBox(id);
+      if (!box) continue;
+      for (const mirror of this.eraseMirrorsOf(box.id, id)) outHidden.add(mirror.stroke.id);
+    }
+    for (const [id, survivors] of pieces) {
+      const box = ownerBox(id);
+      if (!box) continue;
+      for (const mirror of this.eraseMirrorsOf(box.id, id)) {
+        const moved = survivors.map((piece) => ({
+          ...piece,
+          id: `${piece.id}@${mirror.box.id}`,
+          pts: movePagePts(piece.pts, box, mirror.box),
+        }));
+        outPieces.set(mirror.stroke.id, moved);
+        // A stretch greyed on the owner is greyed on its mirror too.
+        for (const [i, piece] of survivors.entries()) {
+          if (hidden.has(piece.id)) outHidden.add(moved[i].id);
+        }
+      }
+    }
+    return { hidden: outHidden, pieces: outPieces };
   }
 
   /**
@@ -6113,7 +6223,12 @@ export class InkSurface {
       const last = samples[samples.length - 1];
       if (!this.textDrag || !last) return;
       const local = this.toPage(box, last);
-      this.textDrag.to = { x: clamp(local.x, 0, box.width), y: clamp(local.y, 0, box.height) };
+      // With the pages joined a box may be drawn over the join (`shapeRoom`).
+      const room = this.shapeRoom(box);
+      this.textDrag.to = {
+        x: clamp(local.x, room.minX, room.maxX),
+        y: clamp(local.y, room.minY, room.maxY),
+      };
       this.showTextDraft(box);
     },
     up: (box) => this.finishTextDrag(box),
@@ -6174,9 +6289,10 @@ export class InkSurface {
     }
     const distance = Math.hypot(at.x - lift.x, at.y - lift.y);
     if (!rejoinsStroke(now() - lift.t, distance, this.atFitZoom(REJOIN_PX))) return null;
+    const mirrors = this.strokeMirrors(page.id, stroke.id);
     if (!this.history.withdraw(this.doc, lift.command)) return null;
     this.strokeIndex.remove(stroke.id, page.id);
-    if (stroke.join !== undefined) this.forgetJoinCopies(lift.command);
+    this.repaintMirrors(mirrors);
     const drawn = selectionBounds([stroke], [], []);
     if (drawn) this.renderer?.invalidateRegion(box.index, drawn);
     if (this.circleLoop?.command === lift.command) this.circleLoop = null;
@@ -6737,9 +6853,10 @@ export class InkSurface {
     }
     const w = Math.max(TEXT_MIN_W, rect.w);
     const h = Math.max(TEXT_MIN_H, rect.h);
+    const room = this.shapeRoom(box);
     this.addTextBox(box, {
-      x: clamp(rect.x, 0, Math.max(0, box.width - w)),
-      y: clamp(rect.y, 0, Math.max(0, box.height - h)),
+      x: clamp(rect.x, room.minX, Math.max(room.minX, room.maxX - w)),
+      y: clamp(rect.y, room.minY, Math.max(room.minY, room.maxY - h)),
       w,
       h,
     });
@@ -6858,15 +6975,19 @@ export class InkSurface {
     };
     if (shape) this.styleShape(stroke);
     this.notePracticeInput();
-    const command = this.commitStroke(box, page, stroke);
-    this.noteCircleLoop(page, stroke, command);
+    // Ink on the mirror of a sticky note goes on the note it mirrors.
+    const home = this.strokeHome(box, page, stroke);
+    const command = this.commitStroke(home.box, home.page, stroke);
+    this.noteCircleLoop(home.page, stroke, command);
     // A board grows to hold ink past its edge (`growBoard`): nothing is lost.
     // Ink run on over a join is on the page beside it, not off the paper.
-    if (!this.board && stroke.join === undefined) this.noteOffPage(box, stroke, command);
-    if (!shape) this.callbacks.onStrokeDrawn?.(page.id, stroke);
+    if (!this.board && !this.runsOnOverJoin(home.box, stroke)) {
+      this.noteOffPage(home.box, stroke, command);
+    }
+    if (!shape) this.callbacks.onStrokeDrawn?.(home.page.id, stroke);
     // A stroke the pen was held on ended on purpose; any other may be a
     // flicker of the Pencil's contact, which the next pen-down carries on.
-    if (!snap && !heldLongEnough) {
+    if (!snap && !heldLongEnough && home.box === box) {
       const end = builder.length - 1;
       const raw = builder.view;
       this.lastLift = {
@@ -6889,6 +7010,12 @@ export class InkSurface {
    * the page" notice, without dropping the stroke as GoodNotes does. The
    * notice goes the moment anything else is done (`syncHistory`).
    */
+  /** With the pages joined, whether a stroke's ink runs on to another page: then it is not off the paper. */
+  private runsOnOverJoin(box: PageBox, stroke: Stroke): boolean {
+    if (!this.joined) return false;
+    return pagesReached(this.pageLayout, box.index, stroke.pts, strokeReach(stroke)).length > 0;
+  }
+
   private noteOffPage(box: PageBox, stroke: Stroke, command: Command): void {
     const beyond = inkBeyondPage(stroke.pts, box.width, box.height);
     if (beyond < this.atFitZoom(OFF_PAGE_TOLERANCE_PX)) return;
@@ -6935,78 +7062,104 @@ export class InkSurface {
       const note = noteAt(page, stroke.pts[0], stroke.pts[1]);
       if (note) stroke.onSticky = note.id;
     }
-    const copies = this.joinedCopiesOf(box, stroke);
-    const own = addStrokesTimed(page, [stroke], this.penDownAt);
-    // Ink run on over a join is one undo step, on every page it reaches.
-    const command =
-      copies.length === 0
-        ? own
-        : new CompositeCommand(own.label, [
-            own,
-            ...copies.map((copy) => addStrokesTimed(copy.page, [copy.stroke], this.penDownAt)),
-          ]);
+    const command = addStrokesTimed(page, [stroke], this.penDownAt);
     this.history.push(this.doc, command);
     this.strokeIndex.add(page.id, stroke);
     this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
-    for (const copy of copies) {
-      this.strokeIndex.add(copy.page.id, copy.stroke);
-      this.renderer?.appendCommittedStroke(copy.index, copy.stroke, this.inkPressure);
-    }
-    if (copies.length > 0) this.joinCopies.set(command, copies);
     // The wet layer was just cleared: blit the tiles now, or the stroke
-    // would be missing for a frame.
-    this.inkChanged([page.id, ...copies.map((copy) => copy.page.id)]);
+    // would be missing for a frame. Ink run on over a join is mirrored on
+    // the pages it reaches as part of the same step (`syncMirrors`).
+    this.inkChanged([page.id]);
     return command;
   }
 
   /**
-   * With the pages joined, the copies a stroke needs on the pages its ink
-   * runs on to (`canvas/page-join.ts`): the same points in each page's own
-   * space, clipped there as every stroke is, so each page shows its part
-   * and the parts are one line. The copies and the stroke share a `join`
-   * id. Ink on a sticky note stays on the note.
+   * Where a stroke drawn on `box` belongs: there, unless the pages are
+   * joined and it starts on the mirror of a sticky note from the page
+   * beside it, whose ink is the owner's. Then the owner's page, the stroke
+   * moved into its space and stuck on the owner note.
    */
-  private joinedCopiesOf(box: PageBox, stroke: Stroke): JoinCopy[] {
-    if (!this.joined || this.board || stroke.onSticky !== undefined) return [];
-    const reach = inkReach(stroke.size, stroke.heads ? HEAD_MAX : 0);
-    const reached = pagesReached(this.pageLayout, box.index, stroke.pts, reach);
-    const copies: JoinCopy[] = [];
-    for (const index of reached) {
-      const page = this.pageAt(index);
-      const to = this.pageLayout.boxes[index];
-      if (!page || !to) continue;
-      const copy: Stroke = {
-        ...stroke,
-        id: this.strokeIds.next(),
-        pts: movePagePts(stroke.pts, box, to),
-      };
-      // The pen's raw samples stay with the stroke it drew; the page's own
-      // clock stamps the copy.
-      delete copy.samples;
-      delete copy.t0;
-      copies.push({ index, page, stroke: copy });
+  private strokeHome(box: PageBox, page: Page, stroke: Stroke): { box: PageBox; page: Page } {
+    if (!this.joined || stroke.pts.length < 3 || stroke.onSticky !== undefined) {
+      return { box, page };
     }
-    if (copies.length > 0) {
-      stroke.join = stroke.id;
-      for (const copy of copies) copy.stroke.join = stroke.id;
-    }
-    return copies;
+    const note = noteAt(page, stroke.pts[0], stroke.pts[1]);
+    if (!note || !isMirror(note)) return { box, page };
+    const owner = findOwner(this.doc, this.pageLayout, "images", note);
+    if (!owner) return { box, page };
+    stroke.pts = movePagePts(stroke.pts, box, owner.box);
+    stroke.onSticky = owner.element.id;
+    return { box: owner.box, page: owner.page };
   }
 
   /**
-   * A stroke's command was taken back before anything else happened (the
-   * pen came down again to go on with it, or the loop became a lasso): its
-   * copies on the pages beside it go from the index and the tiles too.
+   * The mirrors of stroke `id` of page `pageId` on the other pages, where
+   * they are drawn: to repaint after the step that made them is taken back.
    */
-  private forgetJoinCopies(command: Command): void {
-    const copies = this.joinCopies.get(command);
-    if (!copies) return;
-    this.joinCopies.delete(command);
-    for (const copy of copies) {
-      this.strokeIndex.remove(copy.stroke.id, copy.page.id);
-      const drawn = selectionBounds([copy.stroke], [], []);
-      if (drawn) this.renderer?.invalidateRegion(copy.index, drawn);
+  private strokeMirrors(pageId: string, id: string): Array<{ index: number; stroke: Stroke }> {
+    if (!this.joined) return [];
+    const key = ownerKey(pageId, id);
+    const out: Array<{ index: number; stroke: Stroke }> = [];
+    this.doc.pages.forEach((other, index) => {
+      for (const stroke of other.strokes) if (stroke.join === key) out.push({ index, stroke });
+    });
+    return out;
+  }
+
+  /** Repaint where the mirrors of a stroke were. */
+  private repaintMirrors(mirrors: ReadonlyArray<{ index: number; stroke: Stroke }>): void {
+    for (const { index, stroke } of mirrors) {
+      const drawn = selectionBounds([stroke], [], []);
+      if (drawn) this.renderer?.invalidateRegion(index, drawn);
     }
+  }
+
+  // --- Mirrors over the join (`canvas/mirrors.ts`) -------------------------------
+
+  /** The newest undo step the mirrors were brought in line after (`syncMirrors`). */
+  private mirroredStep: Command | null = null;
+
+  /**
+   * With the pages joined, bring every mirror in line with its owner after
+   * an edit, as part of the same undo step (`History.attach`), and repaint
+   * where they changed. Runs once for each new step; a notebook already in
+   * line plans nothing. After an undo it plans nothing either: the step
+   * taken back held its mirrors.
+   */
+  private syncMirrors(): void {
+    const history = this.history as History | undefined;
+    if (!history || !this.joined || this.board) return;
+    const latest = history.latest;
+    if (latest === this.mirroredStep) return;
+    this.mirroredStep = latest;
+    if (!latest) return;
+    const ops = planMirrors(this.doc, this.pageLayout, {
+      strokeBounds: (pageId, stroke) => this.ownerBounds(pageId, stroke),
+    });
+    if (ops.length === 0) return;
+    const before = mirrorsBefore(this.doc, ops);
+    if (!history.attach(this.doc, new MirrorSync(ops))) return;
+    this.mirroredStep = history.latest;
+    const indexOf = new Map(this.pageLayout.boxes.map((box) => [box.id, box.index]));
+    for (const { pageId, bounds } of mirrorRegions(ops, before)) {
+      const index = indexOf.get(pageId);
+      if (index !== undefined) this.renderer?.invalidateRegion(index, bounds);
+    }
+    if (ops.some((op) => op.kind === "textBoxes")) this.syncTextBoxes();
+    this.renderDry();
+  }
+
+  /**
+   * A stroke's bounds for planning its mirrors: the index's cells when they
+   * lie well inside the page (it reaches no other), its ink otherwise.
+   */
+  private ownerBounds(pageId: string, stroke: Stroke): Bounds | null {
+    const cells = this.strokeIndex.cellBounds(stroke.id);
+    const box = this.pageLayout.boxes.find((b) => b.id === pageId);
+    if (cells && box && cells.minX > 0 && cells.minY > 0) {
+      if (cells.maxX < box.width && cells.maxY < box.height) return cells;
+    }
+    return elementBounds("strokes", stroke);
   }
 
   // --- Shape tool presets ------------------------------------------------------
@@ -7064,11 +7217,16 @@ export class InkSurface {
     const drag = this.shapeDrag;
     if (!drag || drag.preset !== "table") return [];
     const size = tableSizeFor(this.toolState);
-    const page = { width: box.width, height: box.height };
-    const frame = drag.moved
-      ? draggedTableBox(drag.origin, drag.to, size, page, this.atFitZoom(1))
-      : tappedTableBox(drag.origin, size, page, this.atFitZoom(1));
-    return tableStrokes(frame.from, frame.to, size, FALLBACK_PRESSURE);
+    // Fitted into the page, or with the pages joined into all of them: a
+    // table may be drawn over the join. Worked out from the room's corner.
+    const room = this.shapeRoom(box);
+    const at = (p: Pt): Pt => ({ x: p.x - room.minX, y: p.y - room.minY });
+    const page = { width: room.maxX - room.minX, height: room.maxY - room.minY };
+    const fitted = drag.moved
+      ? draggedTableBox(at(drag.origin), at(drag.to), size, page, this.atFitZoom(1))
+      : tappedTableBox(at(drag.origin), size, page, this.atFitZoom(1));
+    const back = (p: Pt): Pt => ({ x: p.x + room.minX, y: p.y + room.minY });
+    return tableStrokes(back(fitted.from), back(fitted.to), size, FALLBACK_PRESSURE);
   }
 
   private showShapeDraft(box: PageBox): void {
@@ -7331,12 +7489,13 @@ export class InkSurface {
     this.eraseGreyCuts = new Map();
     this.erasePieces = new Map();
     this.eraseLast = null;
-    this.eraseRuled = null;
+    this.eraseRuled = new Map();
+    this.eraseMirrors = null;
     this.eraseDirty.clear();
     // Whatever the preview touched is drawn from the document again.
     const preview = this.erasePreview;
-    this.erasePreview = null;
-    if (preview) this.renderer?.invalidateRegion(preview.pageIndex, preview.bounds);
+    this.erasePreview = new Map();
+    for (const [index, bounds] of preview) this.renderer?.invalidateRegion(index, bounds);
     this.eraserCursorEl.addClass("is-hidden");
   }
 
@@ -7377,13 +7536,17 @@ export class InkSurface {
     // "Erase highlighter only" / "Erase pen only": a stroke it may not touch
     // is passed over, as if the eraser were not there.
     const filter = eraserFilterFor(this.toolState);
-    if (mode === "ruled" && this.eraseLast === null) this.startRuledErase(page, sample, filter);
-    const ruled = this.eraseRuled;
+    const first = this.eraseLast === null;
     // Whole stroke and By line grey what they take, as Notability does.
-    if (this.eraseLast === null) {
-      this.eraseGrey = erasesGrey(mode, ruled !== null, this.toolState.eraserGrey === true);
+    if (first) {
+      const lined = mode === "ruled" && this.ruledFor(page, sample, filter, true) !== null;
+      this.eraseGrey = erasesGrey(mode, lined, this.toolState.eraserGrey === true);
     }
     const whole = mode === "stroke";
+    // With the pages joined the eraser goes on over the join: the pages
+    // beside this one have ink here too (their own, running over), and
+    // only owners are erased (`canvas/mirrors.ts`); their mirrors follow.
+    const targets = this.eraseTargets(box);
 
     // Samples of a fast drag can land further apart than the eraser is wide.
     // Dab along the gap at half-radius steps so the swept path is solid.
@@ -7395,28 +7558,56 @@ export class InkSurface {
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const at = { x: last.x + (sample.x - last.x) * t, y: last.y + (sample.y - last.y) * t };
-      const hit = ruled
-        ? this.eraseRuledAt(page, ruled, at, radius)
-        : whole
-          ? this.eraseWholeAt(page, at, radius, filter)
-          : this.erasePartialAt(page, at, radius, filter);
-      if (hit) changed = true;
+      for (const target of targets) {
+        const onPage = this.pageAt(target.index);
+        if (!onPage) continue;
+        const local = { x: at.x + box.x - target.x, y: at.y + box.y - target.y };
+        const ruled = mode === "ruled" ? this.ruledFor(onPage, local, filter, false) : null;
+        const hit = ruled
+          ? this.eraseRuledAt(onPage, ruled, local, radius)
+          : whole
+            ? this.eraseWholeAt(onPage, local, radius, filter)
+            : this.erasePartialAt(onPage, local, radius, filter);
+        if (hit) changed = true;
+      }
     }
     return changed;
   }
 
+  /** The pages an eraser on `box` erases: it alone, or with the pages joined, it and its neighbours. */
+  private eraseTargets(box: PageBox): PageBox[] {
+    if (!this.joined || this.board) return [box];
+    const boxes = this.pageLayout.boxes;
+    return [boxes[box.index - 1], box, boxes[box.index + 1]].filter(
+      (b): b is PageBox => b !== undefined,
+    );
+  }
+
   /**
-   * The ruled eraser's first dab: read the page's lines and its ink once for
-   * the whole pass. A page without lines erases as the standard eraser does,
-   * and says so, so the mode never silently does nothing.
+   * The ruled eraser's pass on `page`, started at its first dab there: its
+   * lines and its ink read once for the whole pass. A page without lines
+   * erases as the standard eraser does; the page the pen went down on
+   * says so (`announce`), so the mode never silently does nothing.
    */
-  private startRuledErase(page: Page, start: Pt, filter: EraserFilter): void {
+  private ruledFor(
+    page: Page,
+    start: Pt,
+    filter: EraserFilter,
+    announce: boolean,
+  ): RuledEraser | null {
+    const known = this.eraseRuled.get(page.id);
+    if (known !== undefined) return known;
     const blocks = writingLines(page.backdrop, page.geometry);
     if (blocks.length === 0) {
-      this.flashReadout("No lines on this page: erasing normally");
-      return;
+      if (announce) this.flashReadout("No lines on this page: erasing normally");
+      this.eraseRuled.set(page.id, null);
+      return null;
     }
-    this.eraseRuled = new RuledEraser(blocks, page.strokes, start, page.geometry.width, filter);
+    // Only owners: a mirror is erased with its owner (`canvas/mirrors.ts`).
+    const ink = this.joined ? page.strokes.filter((stroke) => !isMirror(stroke)) : page.strokes;
+    const ruled = new RuledEraser(blocks, ink, start, page.geometry.width, filter);
+    this.eraseRuled.set(page.id, ruled);
+    return ruled;
   }
 
   /**
@@ -7580,15 +7771,24 @@ export class InkSurface {
     }
   }
 
-  /** The cut strokes, each replaced by what is left of it. */
+  /**
+   * The cut strokes, each replaced by what is left of it: one step for each
+   * page they are on (with the pages joined, the eraser goes over the join).
+   */
   private cutSteps(box: PageBox | null, pieces: ReadonlyMap<string, Stroke[]>): Command[] {
-    const page = box ? this.pageAt(box.index) : null;
-    const replacements: StrokeReplacement[] = [];
+    if (!box) return [];
+    const byPage = new Map<string, StrokeReplacement[]>();
     for (const [id, survivors] of pieces) {
       const original = this.strokeIndex.get(id);
-      if (original) replacements.push({ original, pieces: survivors });
+      const pageId = this.strokeIndex.pageOf(id);
+      if (!original || !pageId) continue;
+      const list = byPage.get(pageId) ?? [];
+      list.push({ original, pieces: survivors });
+      byPage.set(pageId, list);
     }
-    return page && replacements.length > 0 ? [new ReplaceStrokesOnPage(page.id, replacements)] : [];
+    return [...byPage].map(
+      ([pageId, replacements]) => new ReplaceStrokesOnPage(pageId, replacements),
+    );
   }
 
   /** The marked strokes, off their pages. */
@@ -7678,10 +7878,21 @@ export class InkSurface {
 
   /** What `loop` encloses on `page`, as far as the lasso's switches allow; never `except`. */
   private enclosedBy(page: Page, loop: readonly number[], except: Stroke): ElementLists {
+    return this.lassoed(page, loop, except);
+  }
+
+  /**
+   * What `loop` (page space) encloses on `page`, as far as the lasso's
+   * switches allow; never `except`. With the pages joined, owners only: a
+   * mirror is picked up as its owner (`selectInside`).
+   */
+  private lassoed(page: Page, loop: readonly number[], except?: Stroke): ElementLists {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
     const near = this.strokeIndex.within(page.id, poly.bounds);
+    const own = <T extends { join?: string }>(list: readonly T[]): T[] =>
+      this.joined ? list.filter((element) => !isMirror(element)) : [...list];
     return {
       strokes: page.strokes.filter(
         (stroke) =>
@@ -7690,19 +7901,20 @@ export class InkSurface {
           lassoTakesStroke(stroke, filter) &&
           strokeInLasso(stroke, poly),
       ),
+      // A locked picture is never picked up (until it is unlocked).
       images: filter.images
-        ? page.images.filter((image) => image.locked !== true && boxInLasso(image, poly))
+        ? own(page.images).filter((image) => image.locked !== true && boxInLasso(image, poly))
         : [],
       textBoxes: filter.textBoxes
-        ? page.textBoxes.filter((textBox) =>
+        ? own(page.textBoxes).filter((textBox) =>
             boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
       tables: filter.tables
-        ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
+        ? own(page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
         : [],
       graphs: filter.graphs
-        ? (page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
+        ? own(page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
         : [],
     };
   }
@@ -7747,10 +7959,11 @@ export class InkSurface {
     if (!page || page.id !== candidate.pageId) return;
     // The pen went down to hold, not to write: what it drew so far goes.
     this.endWetStroke();
-    if (!this.history.withdraw(this.doc, candidate.command)) return;
     const { stroke } = candidate;
+    const mirrors = this.strokeMirrors(page.id, stroke.id);
+    if (!this.history.withdraw(this.doc, candidate.command)) return;
     this.strokeIndex.remove(stroke.id, page.id);
-    if (stroke.join !== undefined) this.forgetJoinCopies(candidate.command);
+    this.repaintMirrors(mirrors);
     const drawn = selectionBounds([stroke], [], []);
     if (drawn) this.renderer?.invalidateRegion(press.box.index, drawn);
     this.renderDry();
@@ -7861,7 +8074,8 @@ export class InkSurface {
   private selectStart(box: PageBox, local: Pt): void {
     this.clearSelection();
     this.deselectImage();
-    const path = new LassoPath(box, LASSO_SPACING_PX / this.unitScale);
+    const room = this.joined && !this.board ? this.shapeRoom(box) : undefined;
+    const path = new LassoPath(box, LASSO_SPACING_PX / this.unitScale, undefined, room);
     path.add(local);
     let mode = lassoModeFor(this.toolState);
     let lines: LineBlock[] = [];
@@ -7995,7 +8209,9 @@ export class InkSurface {
       const span = this.lassoSpan(lasso);
       return span ? spanOutline(lasso.lines[span.block], span) : [];
     }
-    return lasso.mode === "rect" ? rectLoop(lasso.origin, lasso.to, lasso.box) : lasso.path.points;
+    if (lasso.mode !== "rect") return lasso.path.points;
+    const room = this.joined && !this.board ? this.shapeRoom(lasso.box) : undefined;
+    return rectLoop(lasso.origin, lasso.to, lasso.box, room);
   }
 
   /**
@@ -8075,7 +8291,8 @@ export class InkSurface {
       if (plan?.command) this.applyCommand(plan.command);
       return;
     }
-    const poly = polygonOf(this.lassoLoop(lasso));
+    const loop = this.lassoLoop(lasso);
+    const poly = polygonOf(loop);
     const b = poly?.bounds;
     // A by-line span is a line tall from the start: only the pen's travel says it was drawn.
     const extent =
@@ -8096,7 +8313,7 @@ export class InkSurface {
       this.keepOutline(this.lassoLoop(lasso));
       return;
     }
-    this.selectInside(lasso.box, poly);
+    this.selectInside(lasso.box, loop);
     if (lasso.mode !== "rect") this.keepOutline(smoothLoop(this.lassoLoop(lasso)));
   }
 
@@ -8151,32 +8368,91 @@ export class InkSurface {
   }
 
   /** Select what the lasso encloses on its page, as far as its switches allow. */
-  private selectInside(box: PageBox, poly: Polygon): void {
+  private selectInside(box: PageBox, loop: readonly number[]): void {
     const page = this.pageAt(box.index);
     if (!page) return;
-    const filter = lassoFilterFor(this.toolState);
-    const near = this.strokeIndex.within(page.id, poly.bounds);
-    this.select(page.id, {
-      strokes: page.strokes.filter(
-        (stroke) =>
-          near.has(stroke.id) && lassoTakesStroke(stroke, filter) && strokeInLasso(stroke, poly),
-      ),
-      // A locked picture is never picked up (until it is unlocked).
-      images: filter.images
-        ? page.images.filter((image) => image.locked !== true && boxInLasso(image, poly))
-        : [],
-      textBoxes: filter.textBoxes
-        ? page.textBoxes.filter((textBox) =>
-            boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
-          )
-        : [],
-      tables: filter.tables
-        ? (page.tables ?? []).filter((table) => boxInLasso(this.tableFrameOf(table), poly))
-        : [],
-      graphs: filter.graphs
-        ? (page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
-        : [],
+    // A new selection: what an earlier one picked up and left unused goes back.
+    this.clearSelection();
+    const lists = this.lassoed(page, loop);
+    let picked: MoveToPage | null = null;
+    // With the pages joined a loop may reach over the join: what it encloses
+    // on the page beside this one comes onto this page (nothing moves on
+    // screen), as part of whatever the selection does next.
+    if (this.joined && !this.board) {
+      for (const other of this.eraseTargets(box)) {
+        if (other === box) continue;
+        const otherPage = this.pageAt(other.index);
+        if (!otherPage) continue;
+        const moved = loop.map((v, i) => v + (i % 2 === 0 ? box.x - other.x : box.y - other.y));
+        const found = this.lassoed(otherPage, moved);
+        if (isEmptySelection(found)) continue;
+        picked = this.pickUpOverJoin(other, otherPage, box, page, found);
+        lists.strokes.push(...picked.movedOf("strokes"));
+        lists.images.push(...picked.movedOf("images"));
+        lists.textBoxes.push(...picked.movedOf("textBoxes"));
+        (lists.tables ??= []).push(...picked.movedOf("tables"));
+        (lists.graphs ??= []).push(...picked.movedOf("graphs"));
+      }
+    }
+    this.select(page.id, lists);
+    // Kept to take back if the selection goes unused (`dropPickUp`).
+    if (picked && this.selection) this.pickUp = picked;
+    else if (picked) this.dropPickUpOf(picked);
+  }
+
+  /**
+   * Move what a lasso found on page `fromPage` onto `toPage` (`MoveToPage`),
+   * with the ink on any sticky note among it, and return it as it now is
+   * there. The step joins the selection's next one; letting go without
+   * doing anything takes it back (`dropPickUp`).
+   */
+  private pickUpOverJoin(
+    from: PageBox,
+    fromPage: Page,
+    to: PageBox,
+    toPage: Page,
+    found: ElementLists,
+  ): MoveToPage {
+    const withInk = withNoteInk(fromPage, { strokes: found.strokes, images: found.images });
+    const ids = (list: ReadonlyArray<{ id: string }> | undefined): string[] =>
+      (list ?? []).map((element) => element.id);
+    const move = new MoveToPage(fromPage.id, toPage.id, from, to, {
+      strokes: ids(withInk),
+      images: ids(found.images),
+      textBoxes: ids(found.textBoxes),
+      tables: ids(found.tables),
+      graphs: ids(found.graphs),
     });
+    this.history.push(this.doc, move);
+    this.strokeIndex.refreshPages(this.doc.pages, [fromPage.id, toPage.id]);
+    this.renderer?.invalidateAll();
+    this.syncTextBoxes();
+    this.changed([fromPage.id, toPage.id]);
+    return move;
+  }
+
+  /** The last pick-up over a join, while it may still be taken back unused. */
+  private pickUp: MoveToPage | null = null;
+
+  /**
+   * The selection was let go: if nothing was done with what a lasso picked
+   * up over a join, put it back on its page, leaving no step behind.
+   */
+  private dropPickUp(): void {
+    const move = this.pickUp;
+    this.pickUp = null;
+    if (move) this.dropPickUpOf(move);
+  }
+
+  /** Take back pick-up `move` if it is still the newest step, unused. */
+  private dropPickUpOf(move: MoveToPage): void {
+    if (!this.history.isLatest(move)) return;
+    if (!this.history.withdraw(this.doc, move)) return;
+    this.strokeIndex.refreshPages(this.doc.pages, [move.fromPageId, move.toPageId]);
+    this.renderer?.invalidateAll();
+    this.syncTextBoxes();
+    this.mirroredStep = this.history.latest;
+    this.changed([move.fromPageId, move.toPageId]);
   }
 
   /**
@@ -8196,8 +8472,21 @@ export class InkSurface {
     if (!page) return;
     const tolerance = tolerancePx / this.unitScale;
     const filter = lassoFilterFor(this.toolState);
+    if (this.tapSelectOn(page, p, tolerance, filter)) return;
+    // With the pages joined, what shows here may be the page beside's,
+    // running over the join: its owner is picked up, where it is.
+    for (const other of this.joined ? this.eraseTargets(box) : []) {
+      const otherPage = other === box ? null : this.pageAt(other.index);
+      const q = { x: p.x + box.x - other.x, y: p.y + box.y - other.y };
+      if (otherPage && this.tapSelectOn(otherPage, q, tolerance, filter)) return;
+    }
+  }
+
+  /** Select what a tap at page point `p` lands on, on `page`; whether anything was. */
+  private tapSelectOn(page: Page, p: Pt, tolerance: number, filter: LassoFilter): boolean {
     if (filter.textBoxes) {
-      const frames = page.textBoxes.map((textBox) => ({
+      const shown = this.joined ? page.textBoxes.filter((t) => !isMirror(t)) : page.textBoxes;
+      const frames = shown.map((textBox) => ({
         textBox,
         ...this.textBoxFrameOf(page.id, textBox),
       }));
@@ -8207,23 +8496,23 @@ export class InkSurface {
         // GoodNotes: the lasso edits text. A tap selects the box with its
         // text options beside it; a second tap types, the lasso in hand.
         this.holdTextBox(view, null, true);
-        return;
+        return true;
       }
       if (hit) {
         this.select(page.id, { strokes: [], images: [], textBoxes: [hit.textBox] });
-        return;
+        return true;
       }
     }
     const stroke = this.strokeAt(page, p, tolerance, filter);
     if (stroke) {
       this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
-      return;
+      return true;
     }
     // A graph lies under the ink and over the tables; it is picked up on its own.
-    const graph = filter.graphs ? graphAt(page, p) : null;
+    const graph = filter.graphs ? this.ownGraphAt(page, p) : null;
     if (graph) {
       this.select(page.id, { strokes: [], images: [], textBoxes: [], graphs: [graph] });
-      return;
+      return true;
     }
     // A table lies under the ink and over the pictures. It is picked up with
     // the handwriting in its cells, which stays ink of its own but goes
@@ -8245,12 +8534,22 @@ export class InkSurface {
         );
       });
       this.select(page.id, { strokes: inked, images: [], textBoxes: [], tables: [table] });
-      return;
+      return true;
     }
-    // A locked picture is passed over, as if it were part of the paper.
-    const unlocked = page.images.filter((candidate) => candidate.locked !== true);
+    // A locked picture is passed over, as if it were part of the paper; a
+    // mirror is picked up as its owner, from its own page.
+    const unlocked = page.images.filter(
+      (candidate) => candidate.locked !== true && !(this.joined && isMirror(candidate)),
+    );
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
     if (image) this.setImageSelection(page.id, image);
+    return image !== null;
+  }
+
+  /** The topmost graph at `p` that is not a mirror of another page's (with the pages joined). */
+  private ownGraphAt(page: Page, p: Pt): GraphElement | null {
+    if (!this.joined) return graphAt(page, p);
+    return graphAt({ ...page, graphs: (page.graphs ?? []).filter((g) => !isMirror(g)) }, p);
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -8436,6 +8735,7 @@ export class InkSurface {
 
   /** Let go of the lasso selection, if any, and of the tap-and-hold bar. */
   private clearSelection(): void {
+    this.dropPickUp();
     this.cancelGroupDrag();
     const pressed = this.pressMenu !== null;
     this.pressMenu = null;
@@ -10722,12 +11022,68 @@ export class InkSurface {
    */
   private liftSelection(drag: GroupDrag, box: PageBox): void {
     drag.lifted = true;
-    this.renderer?.setHiddenStrokes(new Set(drag.selection.strokes.map((stroke) => stroke.id)));
-    this.renderer?.setHiddenImages(new Set(drag.selection.images));
-    this.renderer?.setHiddenTables(new Set(drag.selection.tables ?? []));
-    this.renderer?.setHiddenGraphs(new Set(drag.selection.graphs ?? []));
+    // Their mirrors over the join go too, or the old place would show there.
+    const mirrors = this.selectionMirrors(drag.selection);
+    this.renderer?.setHiddenStrokes(
+      new Set([...drag.selection.strokes.map((stroke) => stroke.id), ...mirrors.strokeIds]),
+    );
+    this.renderer?.setHiddenImages(new Set([...drag.selection.images, ...mirrors.images]));
+    this.renderer?.setHiddenTables(new Set([...(drag.selection.tables ?? []), ...mirrors.tables]));
+    this.renderer?.setHiddenGraphs(new Set([...(drag.selection.graphs ?? []), ...mirrors.graphs]));
     this.renderer?.invalidateRegion(box.index, drag.bounds);
+    this.invalidateMirrorRegions(mirrors.regions);
     this.renderDry();
+  }
+
+  /** The mirrors on other pages of what a selection holds (`canvas/mirrors.ts`): to hide while it moves. */
+  private selectionMirrors(selection: GroupSelection): {
+    strokeIds: string[];
+    images: ImageElement[];
+    tables: TableElement[];
+    graphs: GraphElement[];
+    regions: Array<{ index: number; bounds: Bounds }>;
+  } {
+    const out = {
+      strokeIds: [] as string[],
+      images: [] as ImageElement[],
+      tables: [] as TableElement[],
+      graphs: [] as GraphElement[],
+      regions: [] as Array<{ index: number; bounds: Bounds }>,
+    };
+    if (!this.joined) return out;
+    const keys = (list: ReadonlyArray<{ id: string }> | undefined): Set<string> =>
+      new Set((list ?? []).map((element) => ownerKey(selection.pageId, element.id)));
+    const wanted = {
+      strokes: keys(selection.strokes),
+      images: keys(selection.images),
+      tables: keys(selection.tables),
+      graphs: keys(selection.graphs),
+    };
+    this.pageLayout.boxes.forEach((box) => {
+      const page = this.pageAt(box.index);
+      if (!page || page.id === selection.pageId) return;
+      const take = <T extends { join?: string }>(
+        kind: "strokes" | "images" | "tables" | "graphs",
+        list: readonly T[] | undefined,
+        into: (element: T) => void,
+      ): void => {
+        for (const element of list ?? []) {
+          if (!element.join || !wanted[kind].has(element.join)) continue;
+          into(element);
+          const bounds = elementBounds(kind, element as never);
+          if (bounds) out.regions.push({ index: box.index, bounds });
+        }
+      };
+      take("strokes", page.strokes, (stroke) => out.strokeIds.push(stroke.id));
+      take("images", page.images, (image) => out.images.push(image));
+      take("tables", page.tables, (table) => out.tables.push(table));
+      take("graphs", page.graphs, (graph) => out.graphs.push(graph));
+    });
+    return out;
+  }
+
+  private invalidateMirrorRegions(regions: ReadonlyArray<{ index: number; bounds: Bounds }>): void {
+    for (const { index, bounds } of regions) this.renderer?.invalidateRegion(index, bounds);
   }
 
   private renderGroupDraft(): void {
@@ -10805,6 +11161,8 @@ export class InkSurface {
     this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.setHiddenGraphs(NO_GRAPHS);
     this.renderer?.clearWet();
+    // Mirrors hidden for the drag show again; moved, they are rebuilt (`syncMirrors`).
+    this.invalidateMirrorRegions(this.selectionMirrors(drag.selection).regions);
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
     const scale = drag.scale;
@@ -11693,7 +12051,12 @@ export class InkSurface {
     const p = this.pagePoint(box, event.clientX, event.clientY);
     switch (drag.part) {
       case "body":
-        drag.draft = moveImage(drag.start, p.x - drag.from.x, p.y - drag.from.y, box);
+        drag.draft = moveImage(
+          drag.start,
+          p.x - drag.from.x,
+          p.y - drag.from.y,
+          this.imageRoom(box),
+        );
         break;
       case "rotate": {
         const swept = sweptTurn(imageCentre(drag.start), drag.from, p, 0);
@@ -11725,11 +12088,30 @@ export class InkSurface {
     this.endImageDrag(true);
   };
 
+  /** Where a dragged picture's middle may go: its page, or with the pages joined, every page. */
+  private imageRoom(box: PageBox): { width: number; height: number; minX: number; minY: number } {
+    const room = this.joined && !this.board ? this.shapeRoom(box) : null;
+    return room
+      ? { minX: room.minX, minY: room.minY, width: room.maxX, height: room.maxY }
+      : { minX: 0, minY: 0, width: box.width, height: box.height };
+  }
+
+  /** A dragged picture as a selection, its note's ink with it: to find its mirrors. */
+  private imageAsSelection(pageId: string, image: ImageElement): GroupSelection {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const ink = image.sticky && page ? page.strokes.filter((s) => s.onSticky === image.id) : [];
+    return { pageId, strokes: ink, images: [image], textBoxes: [], tables: [], graphs: [] };
+  }
+
   /** Take the dragged image out of the tiles and draw it on the wet layer instead. */
   private liftImage(drag: ImageDrag, box: PageBox): void {
     drag.lifted = true;
-    this.renderer?.setHiddenImages(new Set([drag.image]));
+    // Its mirrors over the join go too, or the old place would show there.
+    const mirrors = this.selectionMirrors(this.imageAsSelection(drag.pageId, drag.image));
+    this.renderer?.setHiddenImages(new Set([drag.image, ...mirrors.images]));
+    if (mirrors.strokeIds.length > 0) this.renderer?.setHiddenStrokes(new Set(mirrors.strokeIds));
     this.renderer?.invalidateRegion(box.index, imageBounds(drag.start));
+    this.invalidateMirrorRegions(mirrors.regions);
     this.renderDry();
   }
 
@@ -11762,7 +12144,12 @@ export class InkSurface {
       return;
     }
     this.renderer?.setHiddenImages(NO_IMAGES);
+    this.renderer?.setHiddenStrokes(NO_STROKES);
     this.renderer?.clearWet();
+    // Mirrors hidden for the drag show again; moved, they are rebuilt (`syncMirrors`).
+    this.invalidateMirrorRegions(
+      this.selectionMirrors(this.imageAsSelection(drag.pageId, drag.image)).regions,
+    );
     const box = this.boxForPage(drag.pageId);
     const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
     const changed =
@@ -11968,7 +12355,8 @@ export class InkSurface {
 
   /** The topmost table with a cell under page point `p`, and that cell. */
   private tableAt(page: Page, p: Pt): { table: TableElement; cell: CellRef } | null {
-    const tables = page.tables ?? [];
+    // A mirror is typed in as its owner, on its own page (`editCellAt`).
+    const tables = (page.tables ?? []).filter((table) => !(this.joined && isMirror(table)));
     for (let i = tables.length - 1; i >= 0; i--) {
       const cell = cellAt(this.tableLayout(tables[i]), p.x, p.y);
       if (cell) return { table: tables[i], cell };
@@ -11995,9 +12383,21 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page || this.practice || this.callbacks.isLocked?.()) return false;
     const hit = this.tableAt(page, p);
-    if (!hit) return false;
-    this.startCellEdit(page.id, hit.table, hit.cell);
-    return true;
+    if (hit) {
+      this.startCellEdit(page.id, hit.table, hit.cell);
+      return true;
+    }
+    // With the pages joined, the table may be the page beside's, over the join.
+    for (const other of this.joined ? this.eraseTargets(box) : []) {
+      const otherPage = other === box ? null : this.pageAt(other.index);
+      const q = { x: p.x + box.x - other.x, y: p.y + box.y - other.y };
+      const over = otherPage ? this.tableAt(otherPage, q) : null;
+      if (otherPage && over) {
+        this.startCellEdit(otherPage.id, over.table, over.cell);
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

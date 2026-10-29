@@ -1615,7 +1615,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || loop.length < 4) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     ctx.beginPath();
     ctx.moveTo(loop[0], loop[1]);
     for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
@@ -1659,7 +1659,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     // A table stays upright under a turn (its middle goes round, as
     // `ReorientElements` commits), so it is drawn before the turn is applied.
     const night = this.nightAt(pageIndex);
@@ -1825,7 +1825,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || (!this.imagePainter && !image.sticky)) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     drawPlacedImage(
       ctx,
       image,
@@ -1875,7 +1875,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || !this.imagePainter || !(picture.w > 0) || !(picture.h > 0)) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     drawPlacedImage(ctx, picture, this.imagePainter, this.deviceScale);
     const { w, h } = picture;
     ctx.translate(picture.x + w / 2, picture.y + h / 2);

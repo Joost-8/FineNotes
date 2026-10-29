@@ -950,6 +950,12 @@ function maxNumericId(raw: readonly unknown[], prefix: string): number {
   return max;
 }
 
+/** A mirror's owner (`canvas/mirrors.ts`), kept when it is a non-empty string. */
+function readJoin<T extends { join?: string }>(raw: unknown, element: T): T {
+  if (isRecord(raw) && typeof raw.join === "string" && raw.join) element.join = raw.join;
+  return element;
+}
+
 function normalizePage(
   raw: unknown,
   index: number,
@@ -968,6 +974,7 @@ function normalizePage(
   imagesRaw.forEach((im) => {
     const image = normalizeImage(im, () => `i${++lastImageId}`);
     if (!image) return;
+    readJoin(im, image);
     images.push(image);
     // An id two notes share would make one note's ink the other's too.
     if (!image.sticky || noteIds.has(image.id)) return;
@@ -980,21 +987,21 @@ function normalizePage(
   let lastTextBoxId = maxNumericId(textBoxesRaw, "t");
   textBoxesRaw.forEach((textBox) => {
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
-    if (normalized) textBoxes.push(normalized);
+    if (normalized) textBoxes.push(readJoin(textBox, normalized));
   });
   const tables: TableElement[] = [];
   const tablesRaw = Array.isArray(page.tables) ? page.tables : [];
   let lastTableId = maxNumericId(tablesRaw, "g");
   tablesRaw.forEach((table) => {
     const normalized = normalizeTable(table, () => `g${++lastTableId}`);
-    if (normalized) tables.push(normalized);
+    if (normalized) tables.push(readJoin(table, normalized));
   });
   const graphs: GraphElement[] = [];
   const graphsRaw = Array.isArray(page.graphs) ? page.graphs : [];
   let lastGraphId = maxNumericId(graphsRaw, "f");
   graphsRaw.forEach((graph) => {
     const normalized = normalizeGraph(graph, () => `f${++lastGraphId}`);
-    if (normalized) graphs.push(normalized);
+    if (normalized) graphs.push(readJoin(graph, normalized));
   });
   const comments: PageComment[] = [];
   const commentsRaw = Array.isArray(page.comments) ? page.comments : [];

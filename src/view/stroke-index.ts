@@ -28,6 +28,13 @@ export class StrokeIndex {
   private readonly grids = new Map<string, SpatialIndex>();
   private readonly placed = new Map<string, Placed>();
 
+  /**
+   * Strokes the index leaves out: with joined pages, the mirrors
+   * (`canvas/mirrors.ts`), which no tool may act on; tools find their
+   * owners instead. Read whenever a stroke is added.
+   */
+  skip: ((stroke: Stroke) => boolean) | null = null;
+
   /** Drop everything known and read `pages` afresh. */
   rebuild(pages: readonly Page[]): void {
     this.grids.clear();
@@ -58,6 +65,7 @@ export class StrokeIndex {
 
   /** `stroke` was added to page `pageId`. */
   add(pageId: string, stroke: Stroke): void {
+    if (this.skip?.(stroke)) return;
     let grid = this.grids.get(pageId);
     if (!grid) {
       grid = new SpatialIndex();
@@ -83,6 +91,12 @@ export class StrokeIndex {
     for (const [id, where] of this.placed) {
       if (where.pageId === pageId) this.placed.delete(id);
     }
+  }
+
+  /** The page px of the cells stroke `id` is listed in (`SpatialIndex.cellBoundsOf`), or null. */
+  cellBounds(id: string): Bounds | null {
+    const pageId = this.placed.get(id)?.pageId;
+    return pageId ? (this.grids.get(pageId)?.cellBoundsOf(id) ?? null) : null;
   }
 
   get(id: string): Stroke | undefined {

@@ -29,6 +29,7 @@ export default defineConfig({
         "src/canvas/cover-patterns.ts",
         "src/canvas/page-layout.ts",
         "src/canvas/page-join.ts",
+        "src/canvas/mirrors.ts",
         "src/canvas/hit-test.ts",
         "src/canvas/spatial-index.ts",
         "src/canvas/zoom.ts",

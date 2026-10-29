@@ -4194,19 +4194,43 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 8px;
 }
 
-/* The ∞ and Join pages: the ✕'s round shape, lit with the accent while on. */
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon,
-.goodobsidian-newnb-header button.goodobsidian-newnb-join.clickable-icon {
-  width: 36px;
+/* "Joined pages" and "New board": a symbol and its name in a pill as tall
+   as the ✕, lit with the accent while on. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
   height: 36px;
-  padding: 0;
-  border-radius: 50%;
+  padding: 0 12px 0 10px;
+  border-radius: 18px;
   color: var(--text-muted);
-  --icon-size: 20px;
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  --icon-size: 18px;
 }
 
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon.is-active,
-.goodobsidian-newnb-header button.goodobsidian-newnb-join.clickable-icon.is-active {
+.goodobsidian-newnb-choice-icon {
+  display: inline-flex;
+}
+
+/* On a phone the header has no room for two names: the symbols stay, named in their tooltips. */
+.is-phone .goodobsidian-newnb-choice > span:not(.goodobsidian-newnb-choice-icon) {
+  display: none;
+}
+
+.is-phone .goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* Its own display outranks the shared .is-hidden (ledger): hidden for a board. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-hidden {
+  display: none;
+}
+
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-active {
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }

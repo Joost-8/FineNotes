@@ -67,6 +67,21 @@ export class SpatialIndex {
     }
   }
 
+  /**
+   * The cells stroke `id` is listed in, as a box in page px: its bounding
+   * box, rounded out to whole cells. Null for a stroke never listed.
+   */
+  cellBoundsOf(id: string): Bounds | null {
+    const block = this.listed.get(id);
+    if (!block) return null;
+    return {
+      minX: block.left * this.cell,
+      minY: block.top * this.cell,
+      maxX: (block.right + 1) * this.cell,
+      maxY: (block.bottom + 1) * this.cell,
+    };
+  }
+
   /** The strokes listed in the cells `box` reaches, each once, in the order above. */
   queryBounds(box: Bounds): Set<string> {
     return this.gather(this.blockOf(box));

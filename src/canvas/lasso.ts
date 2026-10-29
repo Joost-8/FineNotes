@@ -147,14 +147,20 @@ export class LassoPath {
     private readonly page: { width: number; height: number },
     spacing = LASSO_MIN_SPACING,
     private readonly maxPoints = LASSO_MAX_POINTS,
+    /**
+     * Where the loop may go, page px; the page when absent. With the pages
+     * joined, every page: a loop may reach over the join.
+     */
+    private readonly room?: Bounds,
   ) {
     this.spacing = Math.max(0, spacing);
   }
 
   /** Add a point; returns whether it was kept. */
   add(p: Pt): boolean {
-    const x = clamp(p.x, 0, this.page.width);
-    const y = clamp(p.y, 0, this.page.height);
+    const room = this.room ?? { minX: 0, minY: 0, maxX: this.page.width, maxY: this.page.height };
+    const x = clamp(p.x, room.minX, room.maxX);
+    const y = clamp(p.y, room.minY, room.maxY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
     const n = this.pts.length;
     if (n >= 2 && Math.hypot(x - this.pts[n - 2], y - this.pts[n - 1]) < this.spacing) {
@@ -217,11 +223,18 @@ export function smoothLoop(loop: readonly number[], passes = 2): number[] {
 }
 
 /** A rectangular lasso from one corner to the other, clamped to the page, as a closed loop. */
-export function rectLoop(a: Pt, b: Pt, page: { width: number; height: number }): number[] {
-  const x0 = clamp(Math.min(a.x, b.x), 0, page.width);
-  const x1 = clamp(Math.max(a.x, b.x), 0, page.width);
-  const y0 = clamp(Math.min(a.y, b.y), 0, page.height);
-  const y1 = clamp(Math.max(a.y, b.y), 0, page.height);
+export function rectLoop(
+  a: Pt,
+  b: Pt,
+  page: { width: number; height: number },
+  /** Where it may go instead of the page (joined pages: every page). */
+  room?: Bounds,
+): number[] {
+  const r = room ?? { minX: 0, minY: 0, maxX: page.width, maxY: page.height };
+  const x0 = clamp(Math.min(a.x, b.x), r.minX, r.maxX);
+  const x1 = clamp(Math.max(a.x, b.x), r.minX, r.maxX);
+  const y0 = clamp(Math.min(a.y, b.y), r.minY, r.maxY);
+  const y1 = clamp(Math.max(a.y, b.y), r.minY, r.maxY);
   return [x0, y0, x1, y0, x1, y1, x0, y1];
 }
 

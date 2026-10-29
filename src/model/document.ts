@@ -129,11 +129,11 @@ export interface Stroke {
    */
   onSticky?: string;
   /**
-   * The same ink on the page beside it: a stroke drawn over the join of
-   * joined pages is stored on every page it reaches, each copy in its own
-   * page's space, and the copies share this id (`canvas/page-join.ts`).
-   * It counts only while a copy is on a neighbouring page; an older build
-   * drops it, and each copy then stands alone, which loses nothing.
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the stroke owned by `<pageId>/<id>` on another page, kept here because
+   * its ink reaches over the join. Derived: rebuilt from its owner after
+   * every edit, never edited itself. Absent on the owner. An older build
+   * drops it, and the copy then stands alone, which loses nothing.
    */
   join?: string;
 }
@@ -354,6 +354,13 @@ export type Backdrop = SyntheticBackdrop | PdfBackdrop;
 
 export interface ImageElement {
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** Vault-relative path to the image attachment. */
   path: string;
   /** Top-left and size, in page space. */
@@ -455,6 +462,13 @@ export const TEXT_ALIGNS: readonly TextAlign[] = ["left", "center", "right", "ju
 /** A typed note placed directly on a page, in the page's intrinsic space. */
 export interface TextBoxElement {
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   x: number;
   y: number;
   /** Width in page pixels. */
@@ -519,6 +533,13 @@ export interface TextBorder {
 export interface TableElement {
   /** `g<N>`, unique on the page. */
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** Top-left, page px. */
   x: number;
   y: number;
@@ -591,6 +612,13 @@ export interface GraphSpecData {
 export interface GraphElement {
   /** `f<N>`, unique on the page. */
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** The frame's top-left and size, page px. */
   x: number;
   y: number;

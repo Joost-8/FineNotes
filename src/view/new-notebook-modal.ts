@@ -213,8 +213,9 @@ export class NewNotebookModal extends Modal {
   // --- Sections ---------------------------------------------------------------
 
   /**
-   * Create on the left, the title in the middle; on the right the ∞ that
-   * makes it an endless board, and a round ✕ that closes.
+   * Create on the left, the title in the middle; on the right "Joined
+   * pages" and "New board" (the ∞), each a symbol with its name, and a
+   * round ✕ that closes.
    */
   private buildHeader(header: HTMLElement): void {
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
@@ -224,20 +225,22 @@ export class NewNotebookModal extends Modal {
     // Join pages (`model/joined-pages.ts`): no gap between them, so writing
     // runs on over the join. Lit like the ∞; a board has no pages to join.
     const join = end.createEl("button", {
-      cls: "goodobsidian-newnb-join clickable-icon",
-      attr: { type: "button", "aria-label": "Join pages" },
+      cls: "goodobsidian-newnb-join goodobsidian-newnb-choice clickable-icon",
+      attr: { type: "button", "aria-label": "Joined pages" },
     });
-    setIcon(join, "rows-2");
+    setIcon(join.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "rows-2");
+    join.createSpan({ text: "Joined pages" });
     join.addEventListener("click", () => {
       this.choices.joined = !this.choices.joined;
       this.syncKind();
     });
     this.joinToggle = join;
     const board = end.createEl("button", {
-      cls: "goodobsidian-newnb-board clickable-icon",
-      attr: { type: "button", "aria-label": "Endless board" },
+      cls: "goodobsidian-newnb-board goodobsidian-newnb-choice clickable-icon",
+      attr: { type: "button", "aria-label": "New board" },
     });
-    setIcon(board, "infinity");
+    setIcon(board.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "infinity");
+    board.createSpan({ text: "New board" });
     board.addEventListener("click", () => {
       this.choices.type = this.choices.type === "endless" ? "notebook" : "endless";
       this.syncKind();
