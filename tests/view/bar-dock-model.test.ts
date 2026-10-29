@@ -11,6 +11,7 @@ import {
   pageArea,
   parseBarDock,
   pillAfterBarMove,
+  sideLift,
   uprightButtonSize,
 } from "../../src/view/bar-dock-model";
 import { PILL_DOCKS, dockPlace } from "../../src/view/pill-dock-model";
@@ -285,5 +286,22 @@ describe("an upright bar too tall for its room", () => {
     expect(uprightButtonSize(400, 980, 100)).toBe(32);
     expect(uprightButtonSize(50, 980, 100)).toBe(32);
     expect(uprightButtonSize(50, 90, 100)).toBe(32);
+  });
+});
+
+describe("a popover beside an upright pill", () => {
+  it("hangs centred on its button when there is room", () => {
+    expect(sideLift(300, 200, 8, 700)).toBe(0);
+  });
+
+  it("comes down to the page area's top rather than leave the view (Joost's iPad)", () => {
+    // The text style list, 332 tall, beside a button 39 px from the view's top.
+    expect(sideLift(39, 332, 8, 700)).toBe(135);
+    expect(39 + 135 - 332 / 2).toBe(8);
+  });
+
+  it("goes up to clear the bottom, and keeps its top inside when it is taller than the room", () => {
+    expect(sideLift(650, 200, 8, 700)).toBe(-50);
+    expect(sideLift(300, 900, 8, 700)).toBe(158);
   });
 });

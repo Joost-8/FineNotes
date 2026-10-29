@@ -169,6 +169,7 @@ import {
   UPRIGHT_BUTTON_MAX,
   pageArea,
   parseBarDock,
+  sideLift,
   uprightButtonSize,
 } from "./bar-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
@@ -4238,6 +4239,13 @@ export class Toolbar {
     this.popover = popover;
     this.popoverKind = kind;
     this.growPopover(popover);
+    // Once the caller has filled it: beside an upright pill, every popover is
+    // kept inside the page area, whether or not its caller asks again.
+    if (side === "left" || side === "right") {
+      queueMicrotask(() => {
+        if (this.popover === popover && anchor.isConnected) this.keepPopoverInside(anchor);
+      });
+    }
     return body;
   }
 
@@ -4346,22 +4354,26 @@ export class Toolbar {
     if (!popover) return;
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    const box = popover.getBoundingClientRect();
     if (popover.hasClass("opens-right") || popover.hasClass("opens-left")) {
       // Beside an upright pill or bar it hangs centred on its button: slide
-      // it up or down instead, clear of the tool bar, the arrow still on the button.
+      // it up or down instead, inside the page area (clear of the tool bar),
+      // the arrow still on the button. Worked out from where it rests, not
+      // from its box: it is still growing in (scale, translate) when this
+      // first runs, and a box read then put it 100 px above the view on the
+      // iPad (CLAUDE.md ledger, "Measuring an element that is still gliding").
       const area = this.pillArea(hostBox, 0);
-      const top = hostBox.top + area.top;
-      const floor = hostBox.top + area.bottom - EDGE_INSET;
-      let lift = 0;
-      if (box.bottom > floor) lift = floor - box.bottom;
-      if (box.top + lift < top) lift = top - box.top;
-      popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-lift)}px` });
-      if (lift === 0) return;
+      const top = area.top;
+      const floor = Math.max(top, area.bottom - EDGE_INSET);
+      const room = floor - top;
+      if (popover.offsetHeight > room) popover.setCssStyles({ maxHeight: `${Math.round(room)}px` });
+      const height = Math.min(popover.offsetHeight, room);
       const centre = anchorBox.top - hostBox.top + anchorBox.height / 2;
+      const lift = sideLift(centre, height, top, floor);
+      popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-lift)}px` });
       popover.setCssStyles({ top: `${Math.round(centre + lift)}px` });
       return;
     }
+    const box = popover.getBoundingClientRect();
     let shift = 0;
     if (box.right > hostBox.right - EDGE_INSET) shift = hostBox.right - EDGE_INSET - box.right;
     if (box.left + shift < hostBox.left + EDGE_INSET) shift = hostBox.left + EDGE_INSET - box.left;

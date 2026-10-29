@@ -211,3 +211,16 @@ export function uprightButtonSize(room: number, need: number, fixed: number): nu
   const scale = Math.max(0, room - fixed) / buttons;
   return Math.max(UPRIGHT_BUTTON_MIN, Math.floor(UPRIGHT_BUTTON_MAX * scale));
 }
+
+/**
+ * How far a popover beside an upright pill or bar moves from where it hangs,
+ * centred on its button at `centre`, to rest between `top` and `bottom` (the
+ * page area, host px): down when it would rise past the top, up when it would
+ * hang past the bottom. A popover taller than the room keeps its top inside.
+ */
+export function sideLift(centre: number, height: number, top: number, bottom: number): number {
+  const from = centre - height / 2;
+  if (from < top) return top - from;
+  if (from + height > bottom) return Math.max(top - from, bottom - (from + height));
+  return 0;
+}
