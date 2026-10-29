@@ -24,14 +24,15 @@ export type ScreenshotSecond = "share" | "save";
 
 /**
  * Share when the platform takes a file through Web Share, else save.
- * `share`/`canShare` are passed in (`navigator`'s), so the rule is testable.
+ * Whether there is `navigator.share`, and `navigator.canShare`, are passed
+ * in, so the rule is testable.
  */
 export function screenshotSecond(
-  share: unknown,
+  hasShare: boolean,
   canShare: ((data: { files: File[] }) => boolean) | undefined,
   file: File,
 ): ScreenshotSecond {
-  if (typeof share !== "function" || typeof canShare !== "function") return "save";
+  if (!hasShare || typeof canShare !== "function") return "save";
   try {
     return canShare({ files: [file] }) ? "share" : "save";
   } catch {
@@ -72,9 +73,10 @@ export class ScreenshotModal extends Modal {
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
 
     const file = new File([this.png], this.name, { type: "image/png" });
+    const web = typeof navigator !== "undefined" ? navigator : undefined;
     const second = screenshotSecond(
-      typeof navigator !== "undefined" ? navigator.share : undefined,
-      typeof navigator !== "undefined" ? navigator.canShare?.bind(navigator) : undefined,
+      typeof web?.share === "function",
+      typeof web?.canShare === "function" ? (data) => web.canShare(data) : undefined,
       file,
     );
     if (second === "share") {

@@ -9,22 +9,21 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 const { screenshotSecond } = await import("../../src/view/screenshot-modal");
 
 const file = new File([new Uint8Array([1])], "Screenshot.png", { type: "image/png" });
-const share = (): Promise<void> => Promise.resolve();
 
 describe("screenshotSecond", () => {
   it("shares where Web Share takes the file", () => {
     const canShare = vi.fn(() => true);
-    expect(screenshotSecond(share, canShare, file)).toBe("share");
+    expect(screenshotSecond(true, canShare, file)).toBe("share");
     expect(canShare).toHaveBeenCalledWith({ files: [file] });
   });
 
   it("saves where the platform shares no files, has no Web Share, or throws asking", () => {
-    expect(screenshotSecond(share, () => false, file)).toBe("save");
-    expect(screenshotSecond(undefined, () => true, file)).toBe("save");
-    expect(screenshotSecond(share, undefined, file)).toBe("save");
+    expect(screenshotSecond(true, () => false, file)).toBe("save");
+    expect(screenshotSecond(false, () => true, file)).toBe("save");
+    expect(screenshotSecond(true, undefined, file)).toBe("save");
     expect(
       screenshotSecond(
-        share,
+        true,
         () => {
           throw new Error("no");
         },
