@@ -710,7 +710,7 @@ export interface InkSurfaceCallbacks {
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
-  /** "Lasso takes what it touches" (settings): any part of a stroke inside takes it. Read live. */
+  /** "Lasso takes what it touches" (settings, on unless it says false): any part of a stroke inside takes it. Read live. */
   lassoAnyPart?: () => boolean;
   /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
@@ -7672,7 +7672,7 @@ export class InkSurface {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
-    const anyPart = this.callbacks.lassoAnyPart?.() === true;
+    const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     return {
       strokes: page.strokes.filter(
@@ -8146,7 +8146,7 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
     const filter = lassoFilterFor(this.toolState);
-    const anyPart = this.callbacks.lassoAnyPart?.() === true;
+    const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     this.select(page.id, {
       strokes: page.strokes.filter(

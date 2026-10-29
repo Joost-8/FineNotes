@@ -11,9 +11,12 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Lasso takes what it touches** (discussion
-  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). A setting
-  under Writing › More: the lasso takes a stroke or shape when any part of
-  it is inside the loop, as Notability does, instead of at least half of it.
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). The lasso
+  now takes a stroke or shape when any part of it is inside the loop, as
+  Notability does; Settings › Writing › More brings back Goodnotes' rule
+  (at least half of it). While you draw it, the lasso shows only its line.
+  Turn into › Text, Task, Link to… and Contents heading read every word the
+  lasso touched, whole.
 - **Tap a shape with a finger to select it.** With the pen (or another
   drawing tool) in hand, a finger tap on a shape, an arrow or a table
   picks the lasso and selects it with its handles and bar, as a tap on a

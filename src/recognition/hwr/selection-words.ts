@@ -12,11 +12,12 @@
 import { type ReadWord, plainWord } from "./corrections";
 
 /**
- * The read words a selection is made of, in reading order; null when it
- * does not line up with whole words: a word only partly selected, or
- * selected ink the reading put in no word (a line whose words it could not
- * pair). Selected strokes it did not read at all (`read`: every stroke on
- * its lines), such as shapes and highlighter, are ignored.
+ * The read words a selection touches, in reading order: a word with any of
+ * its strokes selected is taken whole, since a lasso that clips a word
+ * means that word (Joost on PR #59: read all the ink the lasso touched).
+ * Null when selected ink is in no word (a line whose words the reading
+ * could not pair). Selected strokes it did not read at all (`read`: every
+ * stroke on its lines), such as shapes and highlighter, are ignored.
  */
 export function selectionWords(
   words: readonly ReadWord[],
@@ -27,9 +28,7 @@ export function selectionWords(
   const out: ReadWord[] = [];
   const covered = new Set<string>();
   for (const word of words) {
-    const inside = word.strokeIds.filter((id) => chosen.has(id)).length;
-    if (inside === 0) continue;
-    if (inside !== word.strokeIds.length) return null;
+    if (!word.strokeIds.some((id) => chosen.has(id))) continue;
     out.push(word);
     for (const id of word.strokeIds) covered.add(id);
   }
