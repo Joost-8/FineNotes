@@ -3638,7 +3638,8 @@ export class InkView extends TextFileView {
         try {
           const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
           const folder = this.attachmentFolder("images");
-          const name = `${note.basename} screenshot`;
+          // "Biology.notebook" names the notebook "Biology".
+          const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
           return (
             await saveImageAttachment(
               this.app,
