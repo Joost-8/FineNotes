@@ -16,6 +16,7 @@ import {
   clampGroupDelta,
   cornerScale,
   hitSelectionCorner,
+  isLoneShape,
   minScaleForSide,
   scaleBounds,
   lassoFilterOf,
@@ -362,6 +363,32 @@ describe("the any-part rule", () => {
       }
       expect(strokeTouchesLasso(pts, lasso)).toBe(brute);
     }
+  });
+});
+
+describe("isLoneShape", () => {
+  const stroke = (shape?: Stroke["shape"]): Stroke => ({
+    id: "s",
+    color: "#000",
+    size: 2,
+    tool: "pen",
+    pts: [0, 0, 0.5, 10, 10, 0.5],
+    ...(shape ? { shape } : {}),
+  });
+  const none = { images: [], textBoxes: [] };
+
+  it("is one shape and nothing else: it shows its corner handles at once", () => {
+    expect(isLoneShape({ strokes: [stroke("rect")], ...none })).toBe(true);
+    expect(isLoneShape({ strokes: [stroke("line")], ...none, tables: [], graphs: [] })).toBe(true);
+  });
+
+  it("is not handwriting, two shapes, or a shape with anything beside it", () => {
+    expect(isLoneShape({ strokes: [stroke()], ...none })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect"), stroke("line")], ...none })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], images: [{}], textBoxes: [] })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], images: [], textBoxes: [{}] })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], ...none, tables: [{}] })).toBe(false);
+    expect(isLoneShape({ strokes: [], ...none })).toBe(false);
   });
 });
 
