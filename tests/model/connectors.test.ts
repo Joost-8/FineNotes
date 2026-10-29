@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { inflateFromBase64 } from "../../src/model/compress";
 import {
+  AddConnector,
   AddLinkedCopy,
   RetypeShape,
   connectorsOf,
@@ -212,6 +213,37 @@ describe("AddLinkedCopy", () => {
     expect(doc.pages[0].connectors).toEqual([link("cn1", "s1", "s2")]);
     // A page that is gone: nothing to do.
     new AddLinkedCopy("p9", rect("s4", 0, 0), link("cn3", "s1", "s4")).invert(doc);
+  });
+});
+
+describe("AddConnector", () => {
+  it("joins two shapes already on the page as one step, and undo leaves the page exactly as it was", () => {
+    // Joost, 2026-10-29: a side dot's arrow dropped on another shape.
+    const doc = emptyDocument(1024);
+    doc.pages[0].strokes.push(rect("s1", 100, 100), rect("s2", 400, 100));
+    const before = JSON.stringify(doc);
+    const arrow = link("cn1", "s1", "s2");
+    const history = new History();
+    history.push(doc, new AddConnector("p1", arrow));
+    expect(doc.pages[0].strokes).toHaveLength(2);
+    expect(liveConnectors(doc.pages[0])).toEqual([arrow]);
+    history.undo(doc);
+    expect(JSON.stringify(doc)).toBe(before);
+    history.redo(doc);
+    expect(doc.pages[0].connectors).toEqual([arrow]);
+  });
+
+  it("keeps a page's other arrows on undo, and does nothing on a page that is gone", () => {
+    const doc = linked();
+    const command = new AddConnector("p1", link("cn2", "s2", "s1"));
+    command.apply(doc);
+    expect(doc.pages[0].connectors).toHaveLength(2);
+    command.invert(doc);
+    expect(doc.pages[0].connectors).toEqual([link("cn1", "s1", "s2")]);
+    const lost = new AddConnector("p9", link("cn3", "s1", "s2"));
+    lost.apply(doc);
+    lost.invert(doc);
+    expect(doc.pages[0].connectors).toEqual([link("cn1", "s1", "s2")]);
   });
 });
 

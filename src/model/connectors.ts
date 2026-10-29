@@ -155,6 +155,37 @@ export class AddLinkedCopy implements Command {
 }
 
 /**
+ * Join two shapes already on the page with a connector (a side dot's arrow
+ * dropped on another shape), as one undo step. Held by identity; undo
+ * leaves a page that had no connectors without the key.
+ */
+export class AddConnector implements Command {
+  readonly label = "Join shapes";
+  private hadList = false;
+
+  constructor(
+    readonly pageId: string,
+    private readonly connector: ShapeConnector,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    const page = pageById(doc, this.pageId);
+    if (!page) return;
+    this.hadList = page.connectors !== undefined;
+    (page.connectors ??= []).push(this.connector);
+  }
+
+  invert(doc: InkDocument): void {
+    const list = pageById(doc, this.pageId)?.connectors;
+    const page = pageById(doc, this.pageId);
+    if (!page || !list) return;
+    const c = list.lastIndexOf(this.connector);
+    if (c >= 0) list.splice(c, 1);
+    if (list.length === 0 && !this.hadList) delete page.connectors;
+  }
+}
+
+/**
  * Turn a shape into another kind in place (the bar beside a new linked
  * shape: rectangle, circle, triangle, diamond, rounded rectangle): new
  * points, a fresh array, and the new kind; its id, style and connectors

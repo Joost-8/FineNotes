@@ -1115,7 +1115,9 @@ own shows a dot beside each side; dragging a dot out (or tapping it) adds a
 copy of the shape and an arrow joining the two, as one `AddLinkedCopy`
 (`src/model/connectors.ts`). A bar beside the new shape turns it into a
 rectangle, circle, triangle, diamond or rounded rectangle in its box
-(`RetypeShape`, one step each).
+(`RetypeShape`, one step each). Dropping the dot's arrow on another whole
+closed shape (2026-10-29) joins the two instead, as one `AddConnector`: no
+copy, no bar of shapes, and the shape dragged from stays selected.
 
 The arrow is a new page element, `Page.connectors` (absent when none):
 

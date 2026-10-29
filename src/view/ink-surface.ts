@@ -498,7 +498,13 @@ import {
   sideMiddle,
 } from "../ink/connector-route";
 import { type RoutedConnector, connectorBounds, routeConnectors } from "../canvas/connector-paint";
-import { AddLinkedCopy, RetypeShape, liveConnectors, nextConnectorId } from "../model/connectors";
+import {
+  AddConnector,
+  AddLinkedCopy,
+  RetypeShape,
+  liveConnectors,
+  nextConnectorId,
+} from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -1176,6 +1182,11 @@ interface LinkDrag {
   lifted: boolean;
   /** How far the copy is moved from the original, page px, once the pen has left the dot. */
   offset: Pt | null;
+  /**
+   * Another shape the pen is over: the arrow is dropped on it and joins the
+   * two, and no copy is made (Joost, 2026-10-29).
+   */
+  target: Stroke | null;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -10917,12 +10928,7 @@ export class InkSurface {
     }
     if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
     const stroke = sel.strokes[0];
-    if (stroke.shape === undefined || !isClosedKind(stroke.shape)) return null;
-    // An erased piece of a closed shape is open: nothing to copy whole.
-    const n = Math.floor(stroke.pts.length / 3);
-    if (n < 3 || stroke.pts[0] !== stroke.pts[(n - 1) * 3]) return null;
-    if (stroke.pts[1] !== stroke.pts[(n - 1) * 3 + 1]) return null;
-    return stroke;
+    return isWholeClosedShape(stroke) ? stroke : null;
   }
 
   /** Where the dot for `side` sits, page space: just outside the frame's side. */
@@ -10997,6 +11003,7 @@ export class InkSurface {
       clientY: event.clientY,
       lifted: false,
       offset: null,
+      target: null,
     };
     this.linkBar = null;
     this.selectionFrameEl.addEventListener("pointermove", this.onLinkPointerMove);
@@ -11051,7 +11058,19 @@ export class InkSurface {
     if (!drag.lifted && moved < this.linkSlopPx()) return;
     const box = this.boxForPage(drag.pageId);
     if (!box) return;
-    const offset = this.linkOffset(drag, box, this.pagePoint(box, event.clientX, event.clientY));
+    const pen = this.pagePoint(box, event.clientX, event.clientY);
+    drag.target = this.linkTargetAt(drag, pen);
+    if (drag.target) {
+      const joined = this.linkToTarget(drag, drag.target);
+      if (!drag.lifted) {
+        drag.lifted = true;
+        this.syncSelectionOverlay();
+      }
+      if (joined) this.renderer?.paintWetConnectors(box.index, [joined.routed]);
+      else this.renderer?.clearWet();
+      return;
+    }
+    const offset = this.linkOffset(drag, box, pen);
     const draft = offset ? this.linkDraft(drag, offset) : null;
     if (!offset || !draft) return;
     drag.offset = offset;
@@ -11102,6 +11121,10 @@ export class InkSurface {
     this.renderer?.clearWet();
     const box = this.boxForPage(drag.pageId);
     const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
+    if (drag.target) {
+      this.joinLinkTarget(drag, drag.target, commit, box, page);
+      return;
+    }
     const offset = box ? (drag.offset ?? this.linkOffset(drag, box, null)) : null;
     const draft = offset ? this.linkDraft(drag, offset) : null;
     if (!commit || !box || !page || !draft || !page.strokes.includes(drag.stroke)) {
@@ -11130,6 +11153,91 @@ export class InkSurface {
     this.select(page.id, { strokes: [copy], images: [], textBoxes: [] });
     this.linkBar = { pageId: page.id, stroke: copy };
     this.syncActionBar();
+  }
+
+  /**
+   * The shape a side dot's arrow would be dropped on with the pen at page
+   * point `pen`: the topmost closed shape on the page, other than the one
+   * dragged from, whose bounds (and a finger's width round them) hold the
+   * pen. Null for none.
+   */
+  private linkTargetAt(drag: LinkDrag, pen: Pt): Stroke | null {
+    const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
+    if (!page) return null;
+    const reach = this.atFitZoom(LINK_DOT_HIT_RADIUS_PX / 2);
+    const near = this.strokeIndex.near(page.id, pen.x, pen.y, reach);
+    let target: Stroke | null = null;
+    let order = -1;
+    for (const id of near) {
+      const stroke = this.strokeIndex.get(id);
+      if (!stroke || stroke === drag.stroke || !isWholeClosedShape(stroke)) {
+        continue;
+      }
+      const b = strokeBounds(stroke);
+      if (!b) continue;
+      const inside =
+        pen.x >= b.minX - reach &&
+        pen.x <= b.maxX + reach &&
+        pen.y >= b.minY - reach &&
+        pen.y <= b.maxY + reach;
+      if (!inside) continue;
+      const at = page.strokes.indexOf(stroke);
+      if (at > order) {
+        order = at;
+        target = stroke;
+      }
+    }
+    return target;
+  }
+
+  /** The arrow from the dragged side to the side of `target` that faces it. */
+  private linkToTarget(
+    drag: LinkDrag,
+    target: Stroke,
+  ): { routed: RoutedConnector; toSide: ConnectorSide } | null {
+    const a = strokeBounds(drag.stroke);
+    const b = strokeBounds(target);
+    if (!a || !b) return null;
+    const toSide = facingSide(a, b);
+    const route = connectorRoute(drag.stroke.pts, drag.side, target.pts, toSide);
+    if (!route) return null;
+    const connector: ShapeConnector = {
+      id: "",
+      from: { stroke: drag.stroke.id, side: drag.side },
+      to: { stroke: target.id, side: toSide },
+      color: drag.stroke.color,
+      size: drag.stroke.size,
+    };
+    return { routed: { connector, route }, toSide };
+  }
+
+  /**
+   * A side dot's arrow dropped on `target`: one `AddConnector` joining the
+   * two (no copy, no bar of shapes); the shape dragged from stays selected.
+   */
+  private joinLinkTarget(
+    drag: LinkDrag,
+    target: Stroke,
+    commit: boolean,
+    box: PageBox | null,
+    page: Page | undefined,
+  ): void {
+    const joined = this.linkToTarget(drag, target);
+    const live = page?.strokes.includes(drag.stroke) && page.strokes.includes(target);
+    if (!commit || !box || !page || !joined || !live) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    const connector: ShapeConnector = {
+      ...joined.routed.connector,
+      id: nextConnectorId(this.doc),
+    };
+    this.history.push(this.doc, new AddConnector(page.id, connector));
+    const drawn = connectorBounds({ connector, route: joined.routed.route });
+    if (drawn) this.renderer?.invalidateRegion(box.index, drawn);
+    this.renderDry();
+    this.changed([page.id]);
+    this.syncSelectionOverlay();
   }
 
   /** Whether the bar of shapes shows for `group`: it is exactly the shape a side dot just made. */
@@ -13337,6 +13445,17 @@ function imageFileOf(data: DataTransfer | null): File | null {
 }
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
+/**
+ * A closed shape, whole: a side dot copies it, and a side dot's arrow may be
+ * dropped on it. An erased piece of a closed shape is open, so it is not.
+ */
+function isWholeClosedShape(stroke: Stroke): boolean {
+  if (stroke.shape === undefined || !isClosedKind(stroke.shape)) return false;
+  const n = Math.floor(stroke.pts.length / 3);
+  if (n < 3) return false;
+  return stroke.pts[0] === stroke.pts[(n - 1) * 3] && stroke.pts[1] === stroke.pts[(n - 1) * 3 + 1];
+}
+
 function iconInto(el: HTMLElement, icon: string, fallback: string): void {
   setIcon(el, icon);
   const svg = el.querySelector("svg");
