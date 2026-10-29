@@ -91,7 +91,6 @@ import {
   selectionKnobPoint,
   smoothLoop,
   selectionBounds,
-  isLoneShape,
   strokeInLasso,
   textBoxFrame,
 } from "../canvas/lasso";
@@ -1741,12 +1740,6 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
-  /**
-   * Whether the selection shows its corner handles (discussion #51, Joost):
-   * hidden when a lasso picks something up, shown at once for a lone shape,
-   * and switched by the bar's corners button.
-   */
-  private selectionCorners = false;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
@@ -8653,9 +8646,7 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
-    // A lone shape shows its handles at once: its point rings when it has
-    // them (as Goodnotes), else the corner squares.
-    this.selectionCorners = isLoneShape(this.selection) && this.loneShape(this.selection) === null;
+    this.shapePointsOn = false;
     this.syncSelectionOverlay();
   }
 
@@ -8777,7 +8768,6 @@ export class InkSurface {
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
     const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
-    this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
       const scale = this.unitScale;
       const pad = this.framePad;
@@ -9252,21 +9242,21 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…".
-    actions.push({
-      id: "corners",
-      icon: "scan",
-      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
-      group: "edit",
-      bar: true,
-      menu: "none",
-      checked: this.selectionCorners,
-      run: () => {
-        this.selectionCorners = !this.selectionCorners;
-        this.syncSelectionOverlay();
-      },
-    });
+    if (this.loneShape(sel)) {
+      actions.push({
+        id: "corner-points",
+        icon: "vector-square",
+        label: this.shapePointsOn ? "Hide corner points" : "Edit corner points",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.shapePointsOn,
+        run: () => {
+          this.shapePointsOn = !this.shapePointsOn;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
     return actions;
   }
 
@@ -11152,7 +11142,6 @@ export class InkSurface {
   }
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
-    if (!this.selectionCorners) return null;
     const scale = this.unitScale;
     const pad = this.framePad / scale;
     const frame: Bounds = {
@@ -11889,6 +11878,12 @@ export class InkSurface {
 
   /** The dots on a lone selected shape's corners and ends; made on first use. */
   private shapePointsEl: HTMLElement | null = null;
+  /**
+   * Whether the lone shape selected shows its corner rings: off when it is
+   * selected, switched by the bar's corner points button (Joost,
+   * 2026-10-29), so a tap on a shape shows only its resize handles.
+   */
+  private shapePointsOn = false;
   private pointDrag: PointDrag | null = null;
 
   /**
@@ -11896,7 +11891,7 @@ export class InkSurface {
    * wider round a lone shape whose rings and corner squares both show.
    */
   private get framePad(): number {
-    return this.selectionCorners && this.loneShape(this.selection)
+    return this.shapePointsOn && this.loneShape(this.selection)
       ? SHAPE_FRAME_PAD_PX
       : SELECTION_PAD_PX;
   }
@@ -11919,7 +11914,7 @@ export class InkSurface {
    */
   private syncShapePoints(sel: GroupSelection | null, box: PageBox | null): void {
     const drag = this.pointDrag;
-    const lone = drag ?? (box ? this.loneShape(sel) : null);
+    const lone = drag ?? (box && this.shapePointsOn ? this.loneShape(sel) : null);
     if (!lone || !box) {
       this.shapePointsEl?.addClass("is-hidden");
       return;
@@ -11948,19 +11943,18 @@ export class InkSurface {
    * dragging the corner or end it took, and say so.
    */
   private grabShapePoint(event: PointerEvent, sel: GroupSelection, from: Pt): boolean {
+    if (!this.shapePointsOn) return false;
     const lone = this.loneShape(sel);
     const before = lone ? strokeBounds(lone.stroke) : null;
     if (!lone || !before) return false;
     const reach = POINT_HIT_RADIUS_PX / this.unitScale;
     const f = this.selectionFrameOf(this.groupBounds(sel) ?? before);
-    const corners = this.selectionCorners
-      ? [
-          { x: f.minX, y: f.minY },
-          { x: f.maxX, y: f.minY },
-          { x: f.maxX, y: f.maxY },
-          { x: f.minX, y: f.maxY },
-        ]
-      : [];
+    const corners = [
+      { x: f.minX, y: f.minY },
+      { x: f.maxX, y: f.minY },
+      { x: f.maxX, y: f.maxY },
+      { x: f.minX, y: f.maxY },
+    ];
     const handle = pickPointHandle(lone.handles.at, from, reach, corners);
     if (handle < 0) return false;
     const at = lone.handles.at;

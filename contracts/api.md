@@ -414,8 +414,9 @@ after scoring: the confidence is the drawn ink's. The Shape tool's
 connectors and a held snapped line level about their start; the
 highlighter's straight line about its middle.
 
-**Point handles (2026-10-27, discussion #51).** One shape selected on its
-own shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
+**Point handles (2026-10-27, discussion #51; revised 2026-10-29).** One
+shape selected on its own, with the bar's corner points switch on (off for
+each new selection), shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
 off its points, not its kind: copies of one point (a closed outline's
 repeated first point) are one handle. Curved kinds (`circle`, `ellipse`,
 `roundrect`, `cloud`) get none, pieces included, nor does anything with more

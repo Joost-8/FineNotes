@@ -18,11 +18,11 @@ extracted from the matching section of this file by `release.yml`.
   straight line. A long line drawn at a slope keeps it, at any zoom.
 - **Move a shape's corners and ends**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
-  shape on its own and a ring sits on each of its corners or ends: drag one
-  to move that point alone, while the frame's corners still resize the shape
-  and its knob still turns it. A rectangle with a corner moved becomes a
+  shape on its own and tap the corner points button in its bar: a ring
+  sits on each of its corners or ends, and dragging one moves that point
+  alone, as in Goodnotes. A rectangle with a corner moved becomes a
   four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
-  rounded rectangles and clouds have no rings.
+  rounded rectangles and clouds have no corner points.
 - **Shapes snap to each other**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). While you
   draw a line, an arrow or a rectangle with the Shape tool, or hold a shape
@@ -82,17 +82,9 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
-- **Resize handles on request**
-  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
-  selection of handwriting, text or several things no longer shows its
-  corner handles at once: the corners button in its bar shows them (and
-  hides them again). One shape on its own still shows them straight away.
-  knob no longer follows every tremor of the pen: the turn lands on every
-  45° of the page (0°, 45°, 90° …) from several degrees away, whatever
-  angle the item started at, so a shape drawn slightly crooked lands
-  level, never at 89°; it is free between. A small readout beside the pen
-  shows the angle on the page while you turn.
-
+- **Copy in the lasso's bar**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The bar
+  over a lasso selection is now Cut · Copy · Duplicate · Delete · ⋯.
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
   the top is leftmost), in the More tools menu, or hidden. A tool in the
