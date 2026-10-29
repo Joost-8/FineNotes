@@ -24,9 +24,13 @@ const {
   nextPracticeSet,
   practiceSetOf,
   progressLabel,
+  symbolsToWrite,
+  writePracticePage,
+  writeSymbolPractice,
   MIN_PRACTICE_LINES,
   LEARN_STEPS,
 } = await import("../../src/view/handwriting-learning");
+const { learnSummary, nextSheetAction } = await import("../../src/recognition/hwr/learned-model");
 const { buildPracticeFile, PRACTICE_LINES, SYMBOL_SET } =
   await import("../../src/recognition/practice");
 
@@ -264,5 +268,101 @@ describe("practice sheets", () => {
     const { lines, sources } = await readAllPracticeLines(host);
     expect(lines).toHaveLength(2);
     expect(sources).toEqual([{ path: "a 1.practice.md", lines: 2 }]);
+  });
+
+  /** A practice notebook from before practice files: set 1's first `prompts` lines in text boxes. */
+  function legacy(prompts: number, copied: number) {
+    const doc = buildPracticeFile(1, DEFAULT_PAGE_GEOMETRY);
+    delete doc.practice;
+    const page = doc.pages[1];
+    page.backdrop = { kind: "ruled-wide" };
+    page.textBoxes = PRACTICE_LINES.slice(0, prompts).map((text, k) => ({
+      id: `practice-${k + 1}`,
+      x: 60,
+      y: 120 * (k + 1),
+      w: 900,
+      h: 40,
+      text,
+      color: "#777",
+      fontSize: 20,
+    }));
+    page.strokes = Array.from({ length: copied }, (_, k) => {
+      const y = 120 * (k + 1) + 64;
+      return {
+        id: `s${k}`,
+        color: "#000",
+        size: 2,
+        tool: "pen" as const,
+        pts: [80, y - 8, 0.5, 300, y + 8, 0.5],
+      };
+    });
+    doc.pages = [doc.pages[0], page];
+    return doc;
+  }
+
+  it("finds the old practice notebook by its name after it moved, as set 1 with its own lines", async () => {
+    // Joost's: the settings kept the path it was made at; it had moved since.
+    const moved = "Miscellaneous/Handwriting practice.notebook.md";
+    const { host, settings } = fakeHost({ [moved]: "" }, { [moved]: legacy(20, 20) });
+    settings.practiceNotebookPath = "Computer Science/Handwriting practice.notebook.md";
+    const sheets = await practiceSheets(host);
+    expect(sheets).toEqual([
+      { path: moved, title: "Handwriting practice", set: 1, written: 20, prompts: 20 },
+    ]);
+    expect(learnSummary(sheets, 3)).toBe("1 of 3 sheets · 20 lines");
+    // Finished, so the next sheet is set 2, not the rest of set 1.
+    expect(nextSheetAction(sheets, 3)).toEqual({ kind: "write", label: "Write sheet 2" });
+    expect((await readAllPracticeLines(host)).lines).toHaveLength(20);
+  });
+
+  it("leaves out a notebook that only has the old name", async () => {
+    const plain = buildPracticeFile(1, DEFAULT_PAGE_GEOMETRY);
+    delete plain.practice;
+    plain.pages = [plain.pages[0]];
+    const { host } = fakeHost(
+      { "Handwriting practice.notebook.md": "" },
+      { "Handwriting practice.notebook.md": plain },
+    );
+    expect(await practiceSheets(host)).toEqual([]);
+  });
+
+  it("writes the set after the old notebook's", async () => {
+    const path = "Handwriting practice.notebook.md";
+    const { host } = fakeHost({ [path]: "" }, { [path]: legacy(20, 20) });
+    const made: unknown[] = [];
+    (host as { createPracticeFile: unknown }).createPracticeFile = async (...a: unknown[]) =>
+      void made.push(a);
+    await writePracticePage(host);
+    expect(made).toEqual([[2]]);
+  });
+
+  it("writes only the symbols added since a symbol sheet was written", async () => {
+    const old = buildPracticeFile(SYMBOL_SET, DEFAULT_PAGE_GEOMETRY);
+    for (const page of old.pages.slice(1)) {
+      const backdrop = page.backdrop as { printed?: { prompt?: string }[] };
+      backdrop.printed = backdrop.printed?.filter(
+        (line) => !line.prompt || Number(line.prompt.split("-")[2]) <= 53,
+      );
+    }
+    const path = "Symbol practice.practice.md";
+    const made: unknown[] = [];
+    const none = fakeHost({});
+    expect(await symbolsToWrite(none.host)).toBeNull();
+    const { host } = fakeHost({ [path]: "" }, { [path]: old });
+    (host as { createPracticeFile: unknown }).createPracticeFile = async (...a: unknown[]) =>
+      void made.push(a);
+    const missing = await symbolsToWrite(host);
+    expect(missing?.[0]).toBe(53);
+    await writeSymbolPractice(host);
+    expect(made).toEqual([[SYMBOL_SET, missing]]);
+    // A whole symbol sheet: another whole one.
+    const whole = fakeHost(
+      { [path]: "" },
+      { [path]: buildPracticeFile(SYMBOL_SET, DEFAULT_PAGE_GEOMETRY) },
+    );
+    (whole.host as { createPracticeFile: unknown }).createPracticeFile = async (...a: unknown[]) =>
+      void made.push(a);
+    await writeSymbolPractice(whole.host);
+    expect(made[1]).toEqual([SYMBOL_SET, undefined]);
   });
 });

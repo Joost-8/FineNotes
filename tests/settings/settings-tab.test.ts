@@ -194,6 +194,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
           getFileByPath: () => null,
           adapter: {
             exists: (path: string) => Promise.resolve(files.has(path)),
+            read: (path: string) => Promise.resolve(files.get(path) ?? ""),
             stat: (path: string) =>
               Promise.resolve(
                 files.has(path) ? { type: "file", size: files.get(path)?.length ?? 0 } : null,
@@ -426,11 +427,12 @@ describe("the rows", () => {
       ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
-      [WRITING, "Hide pen options while writing", "toggle:tuckPenOptionsOnWrite"],
+      [WRITING, "Hide pen options while writing", "dropdown:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
+      [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "render"],
@@ -463,6 +465,7 @@ describe("the rows", () => {
       [AI, `${label} API key for images`, "render"],
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
+      [ADVANCED, "Pencil tilt", "toggle:pencilTilt"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       [ADVANCED, "Updates", "dropdown:checkForUpdates"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
@@ -549,6 +552,11 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
+    expect(named(all, "Hide pen options while writing").control?.options).toEqual({
+      off: "Never",
+      "until-tap": "Until you tap the pen",
+      "until-lift": "Until the pen lifts",
+    });
     expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
       "light",
       "dark",
@@ -612,15 +620,15 @@ describe("which rows show", () => {
   function visibleNames(plugin: Plugin, aiOpen = true): string[] {
     const { tab } = makeTab(plugin, aiOpen);
     const all = rows(tab);
-    return all.map((r) => (shown(r.def) ? r.def.name || "(block)" : "")).filter(Boolean);
+    return all.map((r, i) => (shown(r.def) ? r.def.name || `(block ${i})` : "")).filter(Boolean);
   }
 
   it("warns about pressure only while it is on", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Desynchronized canvas");
-    expect(on[on.indexOf(toggle) + 1]).toBe("(block)");
+    expect(off[off.indexOf(toggle) + 1]).toBe("Pencil tilt");
+    expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
@@ -634,6 +642,7 @@ describe("which rows show", () => {
       "Custom colors",
       "Highlighter opacity",
       "Straighten highlighter strokes",
+      "Lasso takes what it touches",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
       "Page appearance",
@@ -648,10 +657,11 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block)",
+      expect.stringMatching(/^\(block \d+\)$/),
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
+      "Pencil tilt",
       "Desynchronized canvas",
       "Updates",
       "Input debug overlay",
@@ -679,7 +689,7 @@ describe("which rows show", () => {
       "More",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
-      "(block)",
+      expect.stringMatching(/^\(block \d+\)$/),
     ]);
   });
 
@@ -896,6 +906,15 @@ describe("control values", () => {
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     },
   );
+
+  it("shows Hide pen options while writing from when it was a switch, and stores a choice", async () => {
+    const plugin = makePlugin({ tuckPenOptionsOnWrite: true as never });
+    const { tab } = makeTab(plugin);
+    expect(tab.getControlValue("tuckPenOptionsOnWrite")).toBe("until-tap");
+    await tab.setControlValue("tuckPenOptionsOnWrite", "until-lift");
+    expect(plugin.settings.tuckPenOptionsOnWrite).toBe("until-lift");
+    expect(plugin.saveSettings).toHaveBeenCalledOnce();
+  });
 
   it("stores what a control sets in data.json's units", async () => {
     const plugin = makePlugin();
@@ -1654,7 +1673,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(18);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(19);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
@@ -1951,7 +1970,8 @@ describe("the learned handwriting model", () => {
       ["Learn now", false],
     ]);
     expect(learn.buttons[1].disabled).toBe(true);
-    expect(tab.infoOf(LEARN)).toMatch(/Copy at least 10 lines first \(0 so far\)/);
+    expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
+    expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
   });
 
   it("offers the symbol sheet beside the text sheets, before either is written", async () => {
@@ -1959,11 +1979,45 @@ describe("the learned handwriting model", () => {
     const { tab } = await loaded(plugin);
     const learn = renderRow(named(rows(tab), LEARN));
     const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
-    expect(chips.map((c) => c.textContent)).toEqual(["Symbols"]);
+    // The symbol sheet, then the tracker of corrected words toward the next round.
+    expect(chips.map((c) => c.textContent)).toEqual(["Symbols", "Words0/50"]);
+    expect(chips[1].attrs["aria-label"]).toMatch(/^Corrected words: none yet\./);
     chips[0].dispatch("click");
     await flush();
     expect(plugin.calls).toContain("closeSettings");
     expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
+  });
+
+  it("tracks the corrected words the model has not learned from, toward the next round", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const learned = Date.parse(record.learnedAt);
+    const word = (at: number, i: number) => ({
+      kind: "misread",
+      read: "wrd",
+      text: "word",
+      note: "n.notebook.md",
+      page: "p1",
+      strokes: [{ id: `s${i}`, pts: [0, 0, 0.5], t0: null }],
+      at,
+    });
+    plugin.files.set(
+      "FineNotes assets/Handwriting sheets/corrections.json",
+      JSON.stringify({
+        version: 1,
+        corrections: [learned - 5, learned + 5, learned + 9].map(word),
+      }),
+    );
+    const { tab } = await loaded(plugin);
+    const learn = renderRow(named(rows(tab), LEARN));
+    const words = learn.settingEl.findAll("goodobsidian-words-chip");
+    expect(words.map((c) => c.textContent)).toEqual(["Words2/50"]);
+    expect(words[0].attrs["aria-label"]).toBe(
+      "Corrected words: 2 new since your model learned, of 3 saved. " +
+        "At 50 new words, FineNotes offers to learn again.",
+    );
+    expect(tab.infoOf(LEARN)).toContain("and 3 corrected words (2 new since your model learned)");
+    expect(tab.infoOf(LEARN)).toContain("Next: 7 more lines or words, then Learn now.");
   });
 
   it("describes a learned model in one line: in use, and how much better it reads", async () => {

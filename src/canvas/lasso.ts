@@ -9,7 +9,8 @@
  *
  * - a **stroke** is selected when at least half of its length lies inside
  *   (measured at {@link STROKE_SAMPLES} evenly spaced points along it, so a
- *   five-point rectangle is judged by its edges, not by its corners);
+ *   five-point rectangle is judged by its edges, not by its corners), or,
+ *   with the "Lasso takes any part" setting, when any part of it is;
  * - an **image** or a **text box** when its centre lies inside, or more than
  *   half of its (rotated) rectangle does.
  *
@@ -147,14 +148,20 @@ export class LassoPath {
     private readonly page: { width: number; height: number },
     spacing = LASSO_MIN_SPACING,
     private readonly maxPoints = LASSO_MAX_POINTS,
+    /**
+     * Where the loop may go, page px; the page when absent. With the pages
+     * joined, every page: a loop may reach over the join.
+     */
+    private readonly room?: Bounds,
   ) {
     this.spacing = Math.max(0, spacing);
   }
 
   /** Add a point; returns whether it was kept. */
   add(p: Pt): boolean {
-    const x = clamp(p.x, 0, this.page.width);
-    const y = clamp(p.y, 0, this.page.height);
+    const room = this.room ?? { minX: 0, minY: 0, maxX: this.page.width, maxY: this.page.height };
+    const x = clamp(p.x, room.minX, room.maxX);
+    const y = clamp(p.y, room.minY, room.maxY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
     const n = this.pts.length;
     if (n >= 2 && Math.hypot(x - this.pts[n - 2], y - this.pts[n - 1]) < this.spacing) {
@@ -217,11 +224,18 @@ export function smoothLoop(loop: readonly number[], passes = 2): number[] {
 }
 
 /** A rectangular lasso from one corner to the other, clamped to the page, as a closed loop. */
-export function rectLoop(a: Pt, b: Pt, page: { width: number; height: number }): number[] {
-  const x0 = clamp(Math.min(a.x, b.x), 0, page.width);
-  const x1 = clamp(Math.max(a.x, b.x), 0, page.width);
-  const y0 = clamp(Math.min(a.y, b.y), 0, page.height);
-  const y1 = clamp(Math.max(a.y, b.y), 0, page.height);
+export function rectLoop(
+  a: Pt,
+  b: Pt,
+  page: { width: number; height: number },
+  /** Where it may go instead of the page (joined pages: every page). */
+  room?: Bounds,
+): number[] {
+  const r = room ?? { minX: 0, minY: 0, maxX: page.width, maxY: page.height };
+  const x0 = clamp(Math.min(a.x, b.x), r.minX, r.maxX);
+  const x1 = clamp(Math.max(a.x, b.x), r.minX, r.maxX);
+  const y0 = clamp(Math.min(a.y, b.y), r.minY, r.maxY);
+  const y1 = clamp(Math.max(a.y, b.y), r.minY, r.maxY);
   return [x0, y0, x1, y0, x1, y1, x0, y1];
 }
 
@@ -320,9 +334,164 @@ export function strokeShareInside(
   return inside / n;
 }
 
-/** The lasso's rule for a stroke: at least half of its length inside. */
-export function strokeInLasso(stroke: Pick<Stroke, "pts">, poly: Polygon): boolean {
+/**
+ * The lasso's rule for a stroke: at least half of its length inside, or,
+ * with `anyPart` (the "Lasso takes any part" setting, as Notability selects),
+ * any part of it ({@link strokeTouchesLasso}).
+ */
+export function strokeInLasso(
+  stroke: Pick<Stroke, "pts">,
+  poly: Polygon,
+  anyPart = false,
+): boolean {
+  if (anyPart) return strokeTouchesLasso(stroke.pts, poly);
   return strokeShareInside(stroke.pts, poly) >= STROKE_SHARE;
+}
+
+/**
+ * Whether any part of a polyline (`[x, y, p, …]`) lies inside `poly` or on
+ * its line: a point inside, or a piece that meets the loop's line. A loop
+ * drawn across a straight shape without enclosing either of its ends takes
+ * it, since the part between the crossings is inside; one that only touches
+ * it, at a corner or with an end on its line, takes it too. The centreline
+ * is read, not the ink's width.
+ */
+export function strokeTouchesLasso(pts: readonly number[], poly: Polygon): boolean {
+  const usable = pts.length - (pts.length % POINT_STRIDE);
+  if (usable === 0) return false;
+  const bands = edgeBandsOf(poly);
+  for (let i = 0; i < usable; i += POINT_STRIDE) {
+    if (insideByBands(pts[i], pts[i + 1], poly, bands)) return true;
+  }
+  // No point inside: only a piece crossing or touching the loop's line is left.
+  const last = Math.max(0, usable - POINT_STRIDE);
+  for (let i = 0; i <= last; i += POINT_STRIDE) {
+    const j = Math.min(i + POINT_STRIDE, last);
+    if (segmentMeetsLoop(pts[i], pts[i + 1], pts[j], pts[j + 1], poly, bands)) return true;
+  }
+  return false;
+}
+
+/**
+ * A loop's edges sorted into horizontal bands, so a point or a short piece
+ * is tested against the few edges at its height rather than all of them: a
+ * freehand loop has up to {@link LASSO_MAX_POINTS} edges, and the any-part
+ * rule reads every point of every stroke near it.
+ */
+interface EdgeBands {
+  minY: number;
+  height: number;
+  /** For each band, the index into `pts` of each edge's first vertex. */
+  edges: number[][];
+}
+
+const edgeBandCache = new WeakMap<Polygon, EdgeBands>();
+
+function edgeBandsOf(poly: Polygon): EdgeBands {
+  const cached = edgeBandCache.get(poly);
+  if (cached) return cached;
+  const { pts, bounds } = poly;
+  const n = pts.length;
+  const count = Math.max(1, Math.ceil(Math.sqrt(n / 2)));
+  const span = bounds.maxY - bounds.minY;
+  const height = span > 0 ? span / count : 1;
+  const bands: EdgeBands = { minY: bounds.minY, height, edges: [] };
+  for (let b = 0; b < count; b++) bands.edges.push([]);
+  for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
+    const [from, to] = bandRange(
+      bands,
+      Math.min(pts[i + 1], pts[j + 1]),
+      Math.max(pts[i + 1], pts[j + 1]),
+    );
+    for (let b = from; b <= to; b++) bands.edges[b].push(j);
+  }
+  edgeBandCache.set(poly, bands);
+  return bands;
+}
+
+/** The bands a height range covers, clamped to the loop's. */
+function bandRange(bands: EdgeBands, y0: number, y1: number): [number, number] {
+  const last = bands.edges.length - 1;
+  const at = (y: number): number =>
+    Math.min(last, Math.max(0, Math.floor((y - bands.minY) / bands.height)));
+  return [at(y0), at(y1)];
+}
+
+/** {@link pointInPolygon}, reading only the edges at the point's height. */
+function insideByBands(x: number, y: number, poly: Polygon, bands: EdgeBands): boolean {
+  const { pts, bounds } = poly;
+  if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) return false;
+  const n = pts.length;
+  let inside = false;
+  for (const j of bands.edges[bandRange(bands, y, y)[0]]) {
+    const i = (j + 2) % n;
+    const xi = pts[i];
+    const yi = pts[i + 1];
+    const xj = pts[j];
+    const yj = pts[j + 1];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Whether the piece from (ax, ay) to (bx, by) meets any edge of the loop, ends included. */
+function segmentMeetsLoop(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  poly: Polygon,
+  bands: EdgeBands,
+): boolean {
+  const { pts, bounds } = poly;
+  const minX = Math.min(ax, bx);
+  const maxX = Math.max(ax, bx);
+  const minY = Math.min(ay, by);
+  const maxY = Math.max(ay, by);
+  if (maxX < bounds.minX || minX > bounds.maxX || maxY < bounds.minY || minY > bounds.maxY) {
+    return false;
+  }
+  const n = pts.length;
+  const [from, to] = bandRange(bands, minY, maxY);
+  for (let b = from; b <= to; b++) {
+    for (const j of bands.edges[b]) {
+      const i = (j + 2) % n;
+      if (segmentsMeet(ax, ay, bx, by, pts[j], pts[j + 1], pts[i], pts[i + 1])) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether segments ab and cd share a point, touching counted. */
+function segmentsMeet(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): boolean {
+  if (
+    Math.max(ax, bx) < Math.min(cx, dx) ||
+    Math.max(cx, dx) < Math.min(ax, bx) ||
+    Math.max(ay, by) < Math.min(cy, dy) ||
+    Math.max(cy, dy) < Math.min(ay, by)
+  ) {
+    return false;
+  }
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  // With the boxes overlapping, a zero is a touch along the shared line.
+  return d1 * d2 <= 0 && d3 * d4 <= 0;
+}
+
+/** The z of (b − a) × (p − a): which side of the line ab the point p is on. */
+function cross(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
 }
 
 /** Grid the rectangle rule reads, per side. */
@@ -416,6 +585,28 @@ function pointsBounds(pts: readonly number[]): Bounds | null {
     maxY = Math.max(maxY, pts[i + 1]);
   }
   return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Whether a selection is one shape on its own (a stroke with `shape`, and
+ * nothing else): it shows its corner handles at once, where any other
+ * selection starts without them (discussion #51, Joost).
+ */
+export function isLoneShape(sel: {
+  strokes: readonly Stroke[];
+  images: readonly unknown[];
+  textBoxes: readonly unknown[];
+  tables?: readonly unknown[];
+  graphs?: readonly unknown[];
+}): boolean {
+  return (
+    sel.strokes.length === 1 &&
+    sel.strokes[0].shape !== undefined &&
+    sel.images.length === 0 &&
+    sel.textBoxes.length === 0 &&
+    (sel.tables?.length ?? 0) === 0 &&
+    (sel.graphs?.length ?? 0) === 0
+  );
 }
 
 /**

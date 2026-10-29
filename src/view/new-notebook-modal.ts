@@ -112,6 +112,7 @@ export class NewNotebookModal extends Modal {
   private folderLabel: HTMLElement | null = null;
   private heading: HTMLElement | null = null;
   private boardToggle: HTMLElement | null = null;
+  private joinToggle: HTMLElement | null = null;
   /** Cover and Paper: what a notebook asks and a board does not. */
   private notebookSections: HTMLElement[] = [];
   /** A board's three paper cards. */
@@ -212,19 +213,34 @@ export class NewNotebookModal extends Modal {
   // --- Sections ---------------------------------------------------------------
 
   /**
-   * Create on the left, the title in the middle; on the right the ∞ that
-   * makes it an endless board, and a round ✕ that closes.
+   * Create on the left, the title in the middle; on the right "Joined
+   * pages" and "New board" (the ∞), each a symbol with its name, and a
+   * round ✕ that closes.
    */
   private buildHeader(header: HTMLElement): void {
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
     create.addEventListener("click", () => this.create());
     this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
     const end = header.createDiv({ cls: "goodobsidian-newnb-header-end" });
-    const board = end.createEl("button", {
-      cls: "goodobsidian-newnb-board clickable-icon",
-      attr: { type: "button", "aria-label": "Endless board" },
+    // Join pages (`model/joined-pages.ts`): no gap between them, so writing
+    // runs on over the join. Lit like the ∞; a board has no pages to join.
+    const join = end.createEl("button", {
+      cls: "goodobsidian-newnb-join goodobsidian-newnb-choice clickable-icon",
+      attr: { type: "button", "aria-label": "Joined pages" },
     });
-    setIcon(board, "infinity");
+    setIcon(join.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "rows-2");
+    join.createSpan({ text: "Joined pages" });
+    join.addEventListener("click", () => {
+      this.choices.joined = !this.choices.joined;
+      this.syncKind();
+    });
+    this.joinToggle = join;
+    const board = end.createEl("button", {
+      cls: "goodobsidian-newnb-board goodobsidian-newnb-choice clickable-icon",
+      attr: { type: "button", "aria-label": "New board" },
+    });
+    setIcon(board.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "infinity");
+    board.createSpan({ text: "New board" });
     board.addEventListener("click", () => {
       this.choices.type = this.choices.type === "endless" ? "notebook" : "endless";
       this.syncKind();
@@ -411,6 +427,10 @@ export class NewNotebookModal extends Modal {
     const board = this.choices.type === "endless";
     this.boardToggle?.toggleClass("is-active", board);
     this.boardToggle?.setAttribute("aria-pressed", String(board));
+    const joined = this.choices.joined === true;
+    this.joinToggle?.toggleClass("is-active", joined);
+    this.joinToggle?.setAttribute("aria-pressed", String(joined));
+    this.joinToggle?.toggleClass("is-hidden", board);
     this.heading?.setText(board ? "New board" : "New notebook");
     this.titleInput?.setAttribute("placeholder", defaultTitle(board ? "endless" : "notebook"));
     for (const section of this.notebookSections) section.toggleClass("is-hidden", board);

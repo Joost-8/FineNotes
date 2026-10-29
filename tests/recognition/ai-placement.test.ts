@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { type InkDocument, blankPage, emptyDocument } from "../../src/model/document";
-import { nextElementId, textBoxFrame } from "../../src/recognition/ai-placement";
+import {
+  BELOW_GAP,
+  nextElementId,
+  textBoxBelow,
+  textBoxFrame,
+} from "../../src/recognition/ai-placement";
 
 const page = { width: 1000, height: 1400 };
 
@@ -18,6 +23,26 @@ describe("textBoxFrame", () => {
     expect(frame.w).toBeCloseTo(320);
     expect(frame.x).toBeCloseTo(40);
     expect(frame.y).toBeCloseTo(48);
+  });
+});
+
+describe("textBoxBelow", () => {
+  const view = { x: 0, y: 0, w: 1000, h: 900 };
+
+  it("goes under what is drawn, in the same column", () => {
+    const frame = textBoxBelow(page, view, 400);
+    expect(frame.y).toBe(400 + BELOW_GAP);
+    expect(frame.x).toBeCloseTo(textBoxFrame(page, view).x);
+  });
+
+  it("stays at the view's spot on an empty page or when the drawing ends above the view", () => {
+    expect(textBoxBelow(page, view, null)).toEqual(textBoxFrame(page, view));
+    const lower = { x: 0, y: 700, w: 1000, h: 700 };
+    expect(textBoxBelow(page, lower, 300)).toEqual(textBoxFrame(page, lower));
+  });
+
+  it("goes back to the view's spot when the page has no room left under the drawing", () => {
+    expect(textBoxBelow(page, view, 1360)).toEqual(textBoxFrame(page, view));
   });
 });
 

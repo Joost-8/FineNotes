@@ -85,5 +85,36 @@ describe("moving the corrections out of the plugin's folder", () => {
     await check.record({ ...word, pageId: "p2" }, "ignore", "integets");
     expect(counts).toEqual([1, 2]);
     expect(parseCorrections(store.get(NEW) ?? null).corrections).toHaveLength(2);
+    expect(check.answeredAt).toHaveLength(2);
+  });
+
+  const word = {
+    note: "n.notebook.md",
+    pageId: "p9",
+    word: { text: "integets", strokeIds: ["s1"] },
+    strokes: [{ id: "s1", pts: new Float32Array([0, 0, 0.5]), t0: 0 }] as never,
+  };
+
+  it("keeps the answers sync brought from another device since the file was read", async () => {
+    const { app, store } = fakeApp({ [NEW]: fileOf(correction("p1", "first")) });
+    const check = new WordCheck(app, () => "plug", noList);
+    await check.load();
+    // The iPad's answer arrives by sync while this copy is open.
+    store.set(NEW, fileOf(correction("p1", "first"), correction("p2", "from the iPad")));
+    await check.record(word, "misread", "integers");
+    const texts = parseCorrections(store.get(NEW) ?? null).corrections.map((c) => c.text);
+    expect(texts).toEqual(["from the iPad", "first", "integers"]);
+    expect(check.count).toBe(3);
+  });
+
+  it("never writes over a corrections file it cannot read, but keeps a copy", async () => {
+    const { app, store } = fakeApp({});
+    const check = new WordCheck(app, () => "plug", noList);
+    await check.load();
+    store.set(NEW, "{ half synced");
+    await check.record(word, "misread", "integers");
+    const copy = [...store.keys()].find((k) => k.startsWith(`${NEW}.unreadable-`));
+    expect(copy && store.get(copy)).toBe("{ half synced");
+    expect(parseCorrections(store.get(NEW) ?? null).corrections).toHaveLength(1);
   });
 });

@@ -403,6 +403,41 @@ them up. A piece does not follow the layout table above — half a `rect` has
 three or four points, not five. Nothing may read a kind's layout off a
 stored stroke; the table describes what recognition and the Shape tool emit.
 
+**Lines are levelled (2026-10-27, discussion #51; revised 2026-10-28).** A
+`line` or an `arrow` whose first two points (a line's ends, an arrow's tail
+and tip) are within 8 px of level or upright, measured at fit-to-width zoom
+(`LINE_LEVEL_RISE`, `atFitZoom`), and no more than 4° off, is turned onto
+it, the arrow's head with it (`src/ink/level-line.ts`). A rise, not an
+angle: the first cut levelled anything within 5°, which moved a long line's
+end by 20 px and ignored the zoom. Recognition levels about the middle,
+after scoring: the confidence is the drawn ink's. The Shape tool's
+connectors and a held snapped line level about their start; the
+highlighter's straight line about its middle.
+
+**Point handles (2026-10-27, discussion #51; revised 2026-10-29).** One
+shape selected on its own, with the bar's corner points switch on (off for
+each new selection), shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
+off its points, not its kind: copies of one point (a closed outline's
+repeated first point) are one handle. Curved kinds (`circle`, `ellipse`,
+`roundrect`, `cloud`) get none, pieces included, nor does anything with more
+than 12 vertices. A whole arrow (its six-point layout, checked) has two, its
+tail and tip, and its head follows the shaft. Dragging a corner of a whole
+`rect` or `diamond` makes it a `polygon`; every other kind keeps its kind.
+One drag is one `ReshapeStroke` (`selection-commands.ts`), which gives the
+stroke a fresh points array and puts the old one back on undo.
+
+**Snapping to shapes (2026-10-27, discussion #51).** While a shape is
+drawn, its ends and corners land on another shape's points within 8 px at
+fit-to-width zoom (`atFitZoom`; 12 screen px at first, too eager) (`src/ink/shape-snap.ts`): the Shape tool's line and arrow ends and
+rectangle corners, a held line's start (at the hold) and far end, and a held
+polygon's corners (the pen position is solved so the shape stays the shape).
+What a stroke offers is read off its points, never its kind's layout: a
+polygonal shape or piece (≤ 12 vertices) its vertices and side midpoints, a
+whole arrow its tail, tip and shaft midpoint, a circle or ellipse its centre
+and outermost points, a rounded rectangle or cloud its centre, a curved
+piece its ends, handwriting nothing. Candidates come from the stroke index
+(`forEachNear`, no set built); targets are cached per points array.
+
 ### Three deliberate limits (decided 2026-09-20, not accidents)
 
 1. **Minimum size.** A stroke whose bounding-box diagonal is under 24 px is
@@ -1107,3 +1142,85 @@ without the ink (an older reader drops a pathless image and every unknown
 field). This reader refuses a label naming a feature it does not know in the
 same way; a later feature adds its own `+name`. A notebook without notes keeps
 the plain `v2:` label and opens in older builds as before.
+
+## Linked shapes (2026-10-28)
+
+Goodnotes' linked copies (discussion #51). One closed shape selected on its
+own shows a dot beside each side; dragging a dot out (or tapping it) adds a
+copy of the shape and an arrow joining the two, as one `AddLinkedCopy`
+(`src/model/connectors.ts`). A bar beside the new shape turns it into a
+rectangle, circle, triangle, diamond or rounded rectangle in its box
+(`RetypeShape`, one step each). Dropping the dot's arrow on another whole
+closed shape (2026-10-29) joins the two instead, as one `AddConnector`: no
+copy, no bar of shapes, and the shape dragged from stays selected. The
+arrow meets that shape on the side of its bounds nearest the drop
+(`nearestSide`). Every connector is drawn `CONNECTOR_WIDTH` (1.5 page px)
+wide with a head of at most 10 px, whatever its stored `size`, which new
+connectors set to that width.
+
+The arrow is a new page element, `Page.connectors` (absent when none):
+
+```ts
+interface ShapeConnector {
+  id: string; // `cn<N>`, unique in the notebook
+  from: { stroke: string; side: "top" | "right" | "bottom" | "left" };
+  to: { stroke: string; side: "top" | "right" | "bottom" | "left" }; // the arrowhead
+  color: string; // `#rrggbb`
+  size: number; // page px, > 0
+}
+```
+
+- **It holds no points.** Its path is routed from the two shapes as they
+  are, every time it is drawn (`src/ink/connector-route.ts`): out of each
+  anchor (where the line from the middle of the shape's bounds towards that
+  side leaves the outline) to a stub `CONNECTOR_STUB` px past the bounds,
+  then the first of an L, a Z or U through the middle, or a detour round
+  both shapes that leaves and arrives the right way and crosses neither
+  shape's bounds, fewest bends first. So it stays joined whatever moves
+  either shape: a lasso move, resize or turn (drawn on the wet layer during
+  the drag), undo and redo.
+- **A connector draws only while both its shapes are on its page**
+  (`liveConnectors`). Erasing or deleting a shape stops its arrows being
+  drawn and saved; the undo that restores the shape restores them. No erase,
+  cut or delete command knows about connectors, and each stays one step.
+- **Copies of pages** (`duplicatePageAfter`, `prepareTransfer`) carry their
+  connectors to the renumbered strokes; a lasso copy does not (pasted
+  strokes are new shapes).
+- **On disk** each page writes its live connectors after `tasks`, checked on
+  read (two different shapes of the page, a side each, a colour, a positive
+  width, a fresh id). **This is a format change**: a notebook with any live
+  connector is labelled `v2+connectors:` (`requires: ["connectors"]`, after
+  `sticky` when both). An older FineNotes cannot decode the label and holds
+  the notebook read-only (`unreadable-ink`), as it does a notebook with
+  sticky notes, instead of saving the arrows away. A notebook without
+  connectors keeps the plain `v2:` label.
+
+## Pencil tilt (2026-10-27, discussion #51)
+
+`Stroke` gains one optional field:
+
+```ts
+/** The pen's altitude above the page at each point, degrees (90 upright). */
+tilt?: number[];
+```
+
+- **One per point** of `pts`, in order; points stay stride 3, so nothing that
+  walks points changes. Stored as integers in **tenths of a degree**, 0..900
+  (`"tilt": [520, 313, 180]`), after `samples`.
+- **Kept only where it matters:** the Brush pen with the advanced "Pencil
+  tilt" setting on, and only on a stroke that leaned past 45° somewhere
+  (`ink/tilt` `tiltShapes`). Every other stroke, and every notebook written
+  without the setting, is byte-for-byte as before.
+- **Absent is upright.** A `tilt` whose length is not the point count, or one
+  on a shape, is dropped on save and ignored when drawn; a bad entry reads as
+  90, keeping the rest in place.
+- **Drawn, not baked:** the width at a point is the pen's width there times
+  `tiltFactor(altitude)` (1 from 45° up, a smoothstep to 3× at 15° and
+  below), so the curve can be retuned and every stroke follows. Stored tilt
+  is drawn whether or not the setting is on.
+- **Eraser pieces** carry the altitudes along them (`tiltAlong`); copy, move,
+  turn, resize and sticky notes keep the field with the stroke.
+- **Label:** a notebook with any such stroke is written `v2+tilt:` (after
+  `sticky`, `v2+sticky+tilt:`) with `"requires": ["tilt"]`, so an older
+  FineNotes holds it read-only instead of saving the shading back at the
+  nib's width (§ "Payload label: refusing instead of dropping").

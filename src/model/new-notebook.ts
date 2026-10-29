@@ -67,6 +67,8 @@ export interface NotebookChoices {
   /** A {@link PAGE_SIZES} id. */
   size: string;
   landscape: boolean;
+  /** "Join pages" (`model/joined-pages.ts`): no gap between them. Ignored for a board. */
+  joined: boolean;
 }
 
 export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
@@ -79,6 +81,7 @@ export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   paper: "white",
   size: PAGE_SIZES[0].id,
   landscape: false,
+  joined: false,
 };
 
 /**
@@ -112,6 +115,7 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
   if (typeof r.landscape === "boolean") out.landscape = r.landscape;
+  if (typeof r.joined === "boolean") out.joined = r.joined;
   return out;
 }
 
@@ -407,6 +411,7 @@ export function buildNewDocument(
     doc.endless = true;
     return doc;
   }
+  if (choices.joined === true) doc.joined = true;
   if (choices.cover !== "none") {
     const backdrop = coverBackdrop(choices.cover, choices.coverColor);
     const cover = page("p1", geometry, backdrop);

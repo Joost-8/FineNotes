@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  JOINED_PAGE_GAP,
   PAGE_GAP,
   PAGE_MARGIN_X,
   PAGE_MARGIN_X_RATIO,
@@ -115,6 +116,46 @@ describe("layoutPages", () => {
     const layout = layoutPages(list);
     list[0].geometry.width = 1;
     expect(layout.boxes[0].width).toBe(1024);
+  });
+});
+
+describe("layoutPages, joined (Join pages)", () => {
+  it("runs the pages on with no gap, down and across", () => {
+    expect(JOINED_PAGE_GAP).toBe(0);
+    const down = layoutPages(uniform(), { joined: true });
+    expect(down.boxes.map((b) => b.y)).toEqual([
+      PAGE_MARGIN_Y,
+      PAGE_MARGIN_Y + 1448,
+      PAGE_MARGIN_Y + 2 * 1448,
+    ]);
+    expect(down.height).toBe(3 * 1448 + 2 * PAGE_MARGIN_Y);
+    expect(down.joined).toBe(true);
+    expect("joined" in layoutPages(uniform())).toBe(false);
+    const across = layoutPages(uniform(), { joined: true, direction: "horizontal" });
+    const [a, b] = across.boxes;
+    expect(b.x).toBe(a.x + a.width);
+    expect(across.joined).toBe(true);
+  });
+
+  it("wins over a gap the caller passes (a row's slot gap)", () => {
+    const across = layoutPages(uniform(), { joined: true, gap: 400, direction: "horizontal" });
+    expect(across.boxes[1].x - (across.boxes[0].x + 1024)).toBe(0);
+  });
+
+  it("keeps every page's own box and page space, and the margins round the sheet", () => {
+    const apart = layoutPages(uniform());
+    const joined = layoutPages(uniform(), { joined: true });
+    expect(joined.boxes.map((b) => [b.width, b.height, b.x])).toEqual(
+      apart.boxes.map((b) => [b.width, b.height, b.x]),
+    );
+    expect(joined.width).toBe(apart.width);
+    expect(joined.fitWidth).toBe(apart.fitWidth);
+    // The join belongs to the page above it; just below, the page below.
+    const join = joined.boxes[1].y;
+    expect(boxAtPoint(joined, 500, join)?.index).toBe(0);
+    expect(boxAtPoint(joined, 500, join + 0.01)?.index).toBe(1);
+    const box = joined.boxes[1];
+    expect(toPageSpace(box, box.x + 500, join + 10)).toEqual({ x: 500, y: 10 });
   });
 });
 

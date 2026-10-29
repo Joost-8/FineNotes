@@ -243,6 +243,10 @@ A tool's options appear in a bar under the toolbar. Tap the tool again to
 slide them away, and once more to bring them back. The lasso has no options
 bar: tap it again to open its menu.
 
+To put the toolbar along the bottom, or upright at the left or right, choose
+its place in **More** (⋯) › **Toolbar**. Each device keeps its own. A tool's
+bar moves by holding it and dragging it to an edge.
+
 ### Writing and erasing
 
 - **Pen type:** the pens at the start of the pen options, each in its own
