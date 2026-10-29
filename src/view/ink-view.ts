@@ -100,7 +100,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
-import { tucksOnWrite } from "./tool-return";
+import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -512,6 +512,8 @@ export class InkView extends TextFileView {
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
   private quietTimer = 0;
+  /** "Until the pen lifts": brings back the pen's options once the pen has rested. */
+  private optionsReturnTimer = 0;
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
@@ -856,6 +858,21 @@ export class InkView extends TextFileView {
     await this.saver.save();
   }
 
+  /**
+   * "Hide pen options while writing", until the pen lifts: once the pen
+   * has rested {@link PEN_OPTIONS_RETURN_MS}, the options a stroke tucked
+   * away come back; the next pen-down keeps them away.
+   */
+  private returnPenOptions(down: boolean): void {
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
+    if (down || !returnsAfterLift(this.settings.tuckPenOptionsOnWrite)) return;
+    this.optionsReturnTimer = window.setTimeout(() => {
+      this.optionsReturnTimer = 0;
+      this.toolbar?.showTuckedOptions();
+    }, PEN_OPTIONS_RETURN_MS);
+  }
+
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
   private penActivity(down: boolean): void {
     this.penIsDown = down;
@@ -930,6 +947,8 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
     this.saver.stop();
     this.calcNotes.dispose();
     this.surface?.destroy();
@@ -2688,7 +2707,10 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
-        onPen: (down) => this.penActivity(down),
+        onPen: (down) => {
+          this.penActivity(down);
+          this.returnPenOptions(down);
+        },
         onGestureStart: (tool, lent) => {
           if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
             this.toolbar?.tuckOptions();

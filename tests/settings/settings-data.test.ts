@@ -138,7 +138,7 @@ const FRESH_INSTALL = {
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
-  tuckPenOptionsOnWrite: false,
+  tuckPenOptionsOnWrite: "off",
   greyWhileErasing: false,
   settingsOpen: [],
   scribbleTipDismissed: false,
@@ -239,7 +239,7 @@ const USED_VAULT = {
   penCursor: "crosshair",
   straightHighlighter: false,
   onlyStylusMode: true,
-  tuckPenOptionsOnWrite: true,
+  tuckPenOptionsOnWrite: "until-lift",
   greyWhileErasing: true,
   settingsOpen: ["writing", "ai"],
   scribbleTipDismissed: true,
@@ -484,33 +484,46 @@ describe("choices that set two switches", () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
     expect(penPreferencesOf(settings)).toEqual({
       drawAndHold: true,
-      tuckOnWrite: false,
+      tuckOnWrite: "off",
       returnToPen: "never",
     });
-    storePenPreferences(settings, { tuckOnWrite: true });
+    storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
       drawAndHold: true,
-      tuckOnWrite: true,
+      tuckOnWrite: "until-lift",
       returnToPen: "never",
     });
     storePenPreferences(settings, { drawAndHold: false, returnToPen: "both" });
     expect(settings.drawAndHold).toBe(false);
     expect([settings.returnToPenOnReselect, settings.returnToPenAfterUse]).toEqual([true, true]);
-    expect(settings.tuckPenOptionsOnWrite).toBe(true);
+    expect(settings.tuckPenOptionsOnWrite).toBe("until-lift");
     storePenPreferences(settings, {});
     expect(penPreferencesOf(settings)).toEqual({
       drawAndHold: false,
-      tuckOnWrite: true,
+      tuckOnWrite: "until-lift",
       returnToPen: "both",
     });
+    storePenPreferences(settings, { tuckOnWrite: "until-tap" });
+    expect(settings.tuckPenOptionsOnWrite).toBe("until-tap");
   });
 
   it("reads a pen setting a file holds in another shape as its default", () => {
     const odd = { drawAndHold: "no", tuckPenOptionsOnWrite: 1 } as never;
     expect(penPreferencesOf({ ...DEFAULT_SETTINGS, ...(odd as object) })).toMatchObject({
       drawAndHold: true,
-      tuckOnWrite: false,
+      tuckOnWrite: "off",
     });
+  });
+
+  it("reads Hide pen options while writing from when it was a switch", () => {
+    const was = (on: boolean) => ({ ...DEFAULT_SETTINGS, tuckPenOptionsOnWrite: on as never });
+    expect(penPreferencesOf(was(true)).tuckOnWrite).toBe("until-tap");
+    expect(penPreferencesOf(was(false)).tuckOnWrite).toBe("off");
+    // The settings tab's dropdown shows it the same way.
+    expect(shownValue(was(true), "tuckPenOptionsOnWrite")).toBe("until-tap");
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    storeShownValue(settings, "tuckPenOptionsOnWrite", "until-lift");
+    expect(settings.tuckPenOptionsOnWrite).toBe("until-lift");
   });
 
   it("reads and writes Page appearance with the PDF choice folded in", () => {
