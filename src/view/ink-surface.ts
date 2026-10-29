@@ -3943,7 +3943,7 @@ export class InkSurface {
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
     this.viewport = { scrollY: y / scale, scale, width: this.pageLayout.width };
-    this.renderer.setViewport(this.viewport, this.offsetX, this.userZoom);
+    this.renderer.setViewport(this.viewport, this.offsetX);
     this.updatePageIndicator();
   }
 
@@ -6972,6 +6972,7 @@ export class InkSurface {
     return (
       `fps=${this.hudFps.toFixed(0)} paint=${this.hudPaintMs.toFixed(1)}ms ` +
       `tiles=${tiles} prev=${stats?.previews ?? 0} lvl=${stats?.level.toFixed(2) ?? "-"} ` +
+      `${this.backdropPainter?.diagnostics?.() ?? "pdf=-"} ` +
       `v=${(v.x * 1000).toFixed(0)},${(v.y * 1000).toFixed(0)}px/s ` +
       `${this.scroller.isDragging ? "drag" : this.scroller.isAnimating ? "fling" : "rest"}` +
       `${this.pinch ? " pinch" : ""}${this.zoomAnim ? " zoom-spring" : ""}`

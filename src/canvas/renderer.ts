@@ -234,8 +234,8 @@ export interface BackdropPainter {
   /** Called once per screen paint, never once per ink tile or sidebar thumbnail. */
   prepare?: (
     visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
+    /** The ink tiles' level: device px per page px. */
     deviceScale: number,
-    zoom: number,
     /** The zoom is mid-change: the level is not settled. */
     transient: boolean,
     /** The view is moving (or rested less than `REST_MS` ago). */
@@ -254,6 +254,8 @@ export interface BackdropPainter {
     weight?: number,
     target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
   ): void;
+  /** What it holds, for the diagnostic HUD. */
+  diagnostics?: () => string;
 }
 
 /**
@@ -521,7 +523,6 @@ export class Renderer {
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
   private screen = { width: 0, height: 0, dpr: 1 };
   /** The view, in layout space; see {@link setViewport}. */
-  private pdfZoom = 1;
   private view: ViewportState = { scrollY: 0, scale: 1, width: 0 };
   /** How far right of the canvases' left edge the layout's origin sits, in CSS px. */
   private originX = 0;
@@ -611,8 +612,7 @@ export class Renderer {
    * and the layout's origin sits `originX` CSS px right of the canvases'
    * left edge (negative once the view has scrolled past it sideways).
    */
-  setViewport(view: ViewportState, originX = 0, pdfZoom = 1): void {
-    this.pdfZoom = pdfZoom;
+  setViewport(view: ViewportState, originX = 0): void {
     this.view = view;
     this.originX = originX;
   }
@@ -1087,7 +1087,6 @@ export class Renderer {
         };
       }),
       level,
-      this.pdfZoom,
       transient,
       detailTransient,
     );

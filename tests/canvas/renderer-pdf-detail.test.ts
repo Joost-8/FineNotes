@@ -16,7 +16,6 @@ describe("renderer visible PDF request boundary", () => {
       view: { scale: 4, scrollY: 25, width: 1000 },
       originX: -100,
       level: 8,
-      pdfZoom: 4,
       painter: { paint: vi.fn(), prepare } as BackdropPainter,
       wipe: vi.fn(),
       boxesOnScreen: () => [box],
@@ -35,7 +34,6 @@ describe("renderer visible PDF request boundary", () => {
         },
       ],
       8,
-      4,
       false,
       false,
     );
@@ -43,7 +41,7 @@ describe("renderer visible PDF request boundary", () => {
     prepare.mockClear();
     renderer.renderDocument(doc, false, undefined, null, undefined, Infinity, true);
     // Moving is passed on as such, not as a zoom in progress.
-    expect(prepare.mock.calls[0][3]).toBe(false);
-    expect(prepare.mock.calls[0][4]).toBe(true);
+    expect(prepare.mock.calls[0][2]).toBe(false);
+    expect(prepare.mock.calls[0][3]).toBe(true);
   });
 });

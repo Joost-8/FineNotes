@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
+import type { Bounds } from "../../src/model/document";
 import {
   DETAIL_MARGIN,
   boundsCover,
   boundsMeet,
   detailPdfArea,
+  needsDetail,
+  pageRasterScale,
   pdfAreaKey,
   planPdfRaster,
   visiblePdfArea,
+  wholePageScale,
 } from "../../src/canvas/pdf-raster";
 
 const source = { width: 600, height: 800 };
@@ -72,12 +76,47 @@ describe("PDF display raster planning", () => {
   });
 });
 
+describe("page image or detail (FineNotes#80)", () => {
+  // The reporter's 7-page A4 study sheet on an iPad (device pixel ratio 2).
+  const a4 = { width: 595.28, height: 841.89 };
+
+  it("bounds a whole page at 2400 px a side and 4 MP", () => {
+    expect(wholePageScale(a4)).toBeCloseTo(2.825, 3);
+    const plan = planPdfRaster(a4, wholePageScale(a4), { geometry: a4 });
+    expect(plan.width * plan.height).toBeLessThanOrEqual(4_000_000 * 1.01);
+    // A wide page is held to its edge instead.
+    expect(wholePageScale({ width: 4800, height: 100 })).toBe(0.5);
+    expect(wholePageScale({ width: 0, height: 100 })).toBe(1);
+  });
+
+  it("draws the page image at exactly the tiles' level while it fits, never a rounded neighbour", () => {
+    // Capture A, zoom 0.68: it was drawn from a 1.25 raster, softening 8 pt text.
+    expect(pageRasterScale(a4, 1.36)).toBe(1.36);
+    expect(pageRasterScale(a4, 2.8)).toBe(2.8);
+    expect(needsDetail(a4, 1.36)).toBe(false);
+    expect(needsDetail(a4, 2.8)).toBe(false);
+  });
+
+  it("draws detail over the page from where the page image falls short, not from 2.5x zoom", () => {
+    // Captures B-D, zoom 1.99 to 2.32 (level 3.98 to 4.64): soft, with no detail.
+    for (const level of [2.9, 3.98, 4.33, 4.64, 5.84]) {
+      expect(needsDetail(a4, level)).toBe(true);
+      expect(pageRasterScale(a4, level)).toBeCloseTo(2.825, 3);
+    }
+    // A 16:9 slide fits sharper, which is why slides rarely showed it.
+    expect(needsDetail({ width: 720, height: 405 }, 3.2)).toBe(false);
+    expect(needsDetail(a4, Number.NaN)).toBe(false);
+    expect(needsDetail(a4, Infinity)).toBe(false);
+  });
+});
+
 describe("visible PDF detail policy", () => {
   const visible = { minX: -10, minY: 100, maxX: 200, maxY: 2000 };
-  it("uses whole pages through 2.5x and clips the actual visible region above it", () => {
-    for (const zoom of [0, 1, 2, 2.5, NaN, Infinity])
-      expect(visiblePdfArea(geometry, visible, zoom)).toBeNull();
-    expect(visiblePdfArea(geometry, visible, 2.501)).toEqual({
+  it("uses the whole page while it is sharp enough and clips the actual visible region past it", () => {
+    // 1024 x 1365 page px: a whole page is at most 1.69 device px per page px.
+    for (const level of [0, 1, 1.69, NaN, Infinity])
+      expect(visiblePdfArea(geometry, visible, level)).toBeNull();
+    expect(visiblePdfArea(geometry, visible, 1.7)).toEqual({
       geometry,
       region: { minX: 0, minY: 100, maxX: 200, maxY: geometry.height },
     });
@@ -109,8 +148,30 @@ describe("detail margin and coverage", () => {
     });
   });
 
-  it("asks for no detail at or below 2.5x, or off the page", () => {
-    expect(detailPdfArea(geometry, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 2.5)).toBeNull();
+  it("lays a patch on whole device pixels, where the ink tiles' pixels are", () => {
+    const level = 3.98;
+    const area = detailPdfArea(
+      geometry,
+      { minX: 101.3, minY: 207.7, maxX: 400.1, maxY: 500.9 },
+      level,
+    );
+    const region = area?.region as Bounds;
+    for (const edge of [region.minX, region.minY, region.maxX, region.maxY]) {
+      expect(Math.abs(edge * level - Math.round(edge * level))).toBeLessThan(1e-6);
+    }
+    // Out, never in: all of the margin is kept.
+    expect(region.minX).toBeLessThanOrEqual(101.3 - 298.8 * DETAIL_MARGIN);
+    expect(region.maxY).toBeGreaterThanOrEqual(500.9 + 293.2 * DETAIL_MARGIN);
+    const plan = planPdfRaster(
+      { width: 600, height: 840 },
+      level,
+      area as NonNullable<typeof area>,
+    );
+    expect(Math.abs(plan.box.x * level - Math.round(plan.box.x * level))).toBeLessThan(1e-6);
+  });
+
+  it("asks for no detail where the page image is sharp enough, or off the page", () => {
+    expect(detailPdfArea(geometry, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 1.69)).toBeNull();
     expect(detailPdfArea(geometry, { minX: 2000, minY: 0, maxX: 2100, maxY: 100 }, 4)).toBeNull();
   });
 
@@ -121,7 +182,7 @@ describe("detail margin and coverage", () => {
     const area = detailPdfArea(
       geometry,
       { minX: 300, minY: 300, maxX: 300 + w, maxY: 300 + h },
-      4.8,
+      6.4,
     );
     const plan = planPdfRaster({ width: 600, height: 840 }, 6.4, area as NonNullable<typeof area>);
     expect(plan.width * plan.height).toBeLessThanOrEqual(9_000_000);

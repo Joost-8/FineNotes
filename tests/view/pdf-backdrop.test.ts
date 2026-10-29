@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 interface FakeCanvas {
   width: number;
   height: number;
-  getContext: () => object;
+  getContext: () => object | null;
 }
 
 /** Each test's pdf.js: pages of 600 x 800 pt, counting renders. */
@@ -72,8 +72,9 @@ vi.mock("obsidian", async () => ({
 }));
 
 const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
-const { PdfBackdropCache } = await import("../../src/view/pdf-backdrop");
-const { PdfRenderCancelled } = await import("../../src/view/pdf-worker");
+const { PDF_BUDGET, PDF_BUDGET_LOW, PdfBackdropCache, lowMemoryDevice } =
+  await import("../../src/view/pdf-backdrop");
+const { PdfCanvasUnavailable, PdfRenderCancelled } = await import("../../src/view/pdf-worker");
 
 const globals = globalThis as Record<string, unknown>;
 let clock = 0;
@@ -104,7 +105,8 @@ function cache(): InstanceType<typeof PdfBackdropCache> {
       readBinary: () => Promise.resolve(new ArrayBuffer(8)),
     },
   };
-  return new PdfBackdropCache(app as never);
+  // The default depends on the device the tests run on.
+  return new PdfBackdropCache(app as never, PDF_BUDGET);
 }
 
 /** Let every pending rasterisation land. */
@@ -387,41 +389,46 @@ describe("63-page deck at DPR 2", () => {
     for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
     await settle();
     const before = pdf.renders;
-    for (const zoom of [1, 2, 2.5]) {
-      painter.prepare([{ backdrop, geometry, region }], 2 * zoom, zoom, false);
+    // Up to 1.44 device px per page px a whole 1200 x 1600 page fits in 4 MP.
+    for (const level of [0.5, 1, 1.4]) {
+      painter.prepare([{ backdrop, geometry, region }], level, false);
       for (let tile = 0; tile < 64; tile++)
         painter.paint(ctx, backdrop, geometry, 1, {
-          deviceScale: 2 * zoom,
+          deviceScale: level,
           region: { ...region, minX: tile },
         });
       // The main-page preview reuses the same source image, not another render.
       painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 0.5 });
       await settle();
+      // One render per level, at exactly that level: 2 notebook px per point.
+      expect(pdf.calls.at(-1)?.viewport.width).toBeCloseTo(600 * 2 * level);
     }
-    expect(pdf.renders - before).toBe(2);
+    expect(pdf.renders - before).toBe(3);
     expect(pdf.calls.every((call) => !call.transform || call.transform[4] === 0)).toBe(true);
     const fullPageBytes = c.bytes;
     expect(fullPageBytes).toBeLessThan(48 * 1024 * 1024);
     for (let x = 0; x < 30; x++) {
       const visible = { minX: x, minY: 100, maxX: x + 200, maxY: 400 };
-      painter.prepare([{ backdrop, geometry, region: visible }], 8, 4, false);
+      painter.prepare([{ backdrop, geometry, region: visible }], 8, false);
       for (let tile = 0; tile < 32; tile++)
         painter.paint(ctx, backdrop, geometry, 1, { deviceScale: 8, region: visible });
       await settle();
-      // The page image plus one 9 MP patch (36 MB) with its margin.
-      expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
+      // The sharpest page image (4 MP, 16 MB) under one 9 MP patch (36 MB)
+      // with its margin.
+      expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + (16 + 36) * 1000 * 1000);
     }
-    // The 25% margin covers the next 29 one-pixel moves: one detail render.
-    expect(pdf.renders - before).toBe(3);
+    // The 25% margin covers the next 29 one-pixel moves: one page render and
+    // one detail render.
+    expect(pdf.renders - before).toBe(5);
     expect(pdf.peak).toBeLessThanOrEqual(2);
     const renders = pdf.renders;
     for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
     await settle();
     expect(pdf.renders).toBe(renders);
     // Scrolled off the page: its patch stays, as one of the recent ones.
-    painter.prepare([], 8, 4, false);
-    expect(c.bytes).toBeGreaterThan(fullPageBytes);
-    expect(c.bytes).toBeLessThanOrEqual(fullPageBytes + 36 * 1000 * 1000);
+    const shown = c.bytes;
+    painter.prepare([], 8, false);
+    expect(c.bytes).toBe(shown);
     c.destroy();
   });
 });
@@ -704,6 +711,148 @@ describe("rendering in the PDF worker", () => {
     expect(c.usesWorker).toBe(false);
     await c.resolve("a.pdf", 1, 1);
     expect(worker.render).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+});
+
+// FineNotes#80 and the old iPads it asked about: iOS refuses a web view more
+// canvases once they hold too much memory (`getContext` answers null), and a
+// 2 GB iPad gets there first.
+describe("memory on devices short of it", () => {
+  const app = {
+    vault: {
+      getFileByPath: (path: string) => ({ path, extension: "pdf" }),
+      readBinary: () => Promise.resolve(new ArrayBuffer(8)),
+    },
+  };
+  /** Canvases the next `count` renders on this thread are refused. */
+  function refuse(count: number): void {
+    globals.createEl = (): FakeCanvas => ({
+      width: 0,
+      height: 0,
+      getContext: () => (count-- > 0 ? null : {}),
+    });
+  }
+
+  it("knows such a device by what it says of itself", () => {
+    // Chromium gives its memory in GB.
+    expect(lowMemoryDevice({ navigator: { deviceMemory: 2 }, OffscreenCanvas: class {} })).toBe(
+      true,
+    );
+    expect(lowMemoryDevice({ navigator: { deviceMemory: 8 } })).toBe(false);
+    // WebKit gives none; without OffscreenCanvas it is iPadOS 16.3 or older.
+    expect(lowMemoryDevice({ navigator: {} })).toBe(true);
+    expect(lowMemoryDevice({ navigator: {}, OffscreenCanvas: class {} })).toBe(false);
+    expect(lowMemoryDevice({})).toBe(true);
+  });
+
+  it("keeps less there from the start", () => {
+    const location = { origin: "app://obsidian.md" };
+    vi.stubGlobal("window", { location, navigator: {} });
+    expect(new PdfBackdropCache(app as never).memoryBudget).toEqual(PDF_BUDGET_LOW);
+    vi.stubGlobal("window", { location, navigator: {}, OffscreenCanvas: class {} });
+    expect(new PdfBackdropCache(app as never).memoryBudget).toEqual(PDF_BUDGET);
+  });
+
+  it("evicts down to its smaller soft budget, but never a page drawn just now", async () => {
+    const c = new PdfBackdropCache(app as never, PDF_BUDGET_LOW);
+    // 1200 x 1600 px at scale 2: 7.7 MB a page.
+    for (let page = 0; page < 3; page++) c.request("a.pdf", page, 2);
+    await settle();
+    clock += 5000;
+    expect(c.peek("a.pdf", 0, 2)).not.toBeNull();
+    for (let page = 3; page < 5; page++) c.request("a.pdf", page, 2);
+    await settle();
+    // Five pages are 38 MB: the two old, undrawn ones go.
+    expect(c.bytes).toBeLessThanOrEqual(24 * 1024 * 1024);
+    expect(c.peek("a.pdf", 2, 2)).toBeNull();
+    expect(c.peek("a.pdf", 0, 2)).not.toBeNull();
+    expect(c.peek("a.pdf", 1, 2)).toBeNull();
+  });
+
+  it("never caches a refused canvas as a missing PDF, frees memory and tries once more", async () => {
+    const c = cache();
+    c.request("a.pdf", 0, 1);
+    c.request("a.pdf", 1, 1);
+    await settle();
+    clock += 5000;
+    // Page 1 is still on screen.
+    expect(c.peek("a.pdf", 1, 1)).not.toBeNull();
+    const landed = vi.fn();
+    c.onReady = landed;
+    refuse(1);
+    c.request("a.pdf", 2, 1);
+    await settle();
+    // Tried again at once, with what was not drawn just now given back.
+    expect(c.peek("a.pdf", 2, 1)).toMatchObject({ ok: true });
+    expect(c.peek("a.pdf", 0, 1)).toBeNull();
+    expect(c.peek("a.pdf", 1, 1)).not.toBeNull();
+    expect(c.memoryBudget).toEqual(PDF_BUDGET_LOW);
+    expect(landed).toHaveBeenCalledOnce();
+    c.destroy();
+  });
+
+  it("says in the debug overlay what it holds, of what, and where pdf.js draws", async () => {
+    const c = cache();
+    c.request("a.pdf", 0, 2);
+    c.request("a.pdf", 0, 8, {
+      geometry: { width: 1200, height: 1600 },
+      region: { minX: 0, minY: 0, maxX: 64, maxY: 64 },
+    });
+    await settle();
+    // 7.3 MiB of page and 1 MiB of detail.
+    expect(c.diagnostics()).toBe("pdf=8/96MB detail=1 main");
+    c.lowMemory();
+    expect(c.diagnostics()).toBe("pdf=8/64MB detail=1 main low");
+    c.destroy();
+  });
+
+  it("refused twice, leaves it for the next paint that asks", async () => {
+    const c = cache();
+    const landed = vi.fn();
+    c.onReady = landed;
+    refuse(2);
+    c.request("a.pdf", 0, 1);
+    await settle();
+    expect(c.peek("a.pdf", 0, 1)).toBeNull();
+    expect(landed).not.toHaveBeenCalled();
+    // Nothing is cached as a miss, so it is asked for again.
+    c.request("a.pdf", 0, 1);
+    await settle();
+    expect(c.peek("a.pdf", 0, 1)).toMatchObject({ ok: true });
+    c.destroy();
+  });
+
+  it("in the worker, a refused canvas is not tried on this thread, whose canvases share the memory", async () => {
+    const c = cache();
+    let refusals = 2;
+    const worker = {
+      alive: true,
+      open: vi.fn(async () => 12),
+      close: vi.fn(),
+      pageSize: vi.fn(async () => ({ width: 600, height: 800 })),
+      render: vi.fn((_path: string, _page: number, plan: { width: number; height: number }) => ({
+        promise:
+          refusals-- > 0
+            ? Promise.reject(new PdfCanvasUnavailable())
+            : Promise.resolve({ width: plan.width, height: plan.height, close: vi.fn() }),
+        cancel: vi.fn(),
+      })),
+    };
+    c.setWorker(worker as never);
+    const tile = {
+      geometry: { width: 1200, height: 1600 },
+      region: { minX: 0, minY: 0, maxX: 64, maxY: 64 },
+    };
+    c.request("a.pdf", 0, 16, tile);
+    await settle();
+    expect(worker.render).toHaveBeenCalledTimes(2);
+    expect(pdf.renders).toBe(0);
+    expect(c.usesWorker).toBe(true);
+    expect(c.peek("a.pdf", 0, 16, tile)).toBeNull();
+    c.request("a.pdf", 0, 16, tile);
+    await settle();
+    expect(c.peek("a.pdf", 0, 16, tile)).toMatchObject({ ok: true });
     c.destroy();
   });
 });

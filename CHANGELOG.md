@@ -119,6 +119,21 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Sharp PDF pages at every zoom**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Small text and
+  pictures in a PDF looked soft on an iPad, most between about 1.4× and
+  2.5× zoom on an A4 page, and a little even at the zoom a notebook opens
+  at. A PDF page is now drawn at exactly the resolution of the screen, and
+  zoomed in past what one picture of the whole page can hold, the part on
+  screen is drawn sharp on top of it, from whatever zoom that happens at
+  rather than from 2.5×. Those sharp parts come in larger pieces, so a
+  screenful takes about a third of the time it did.
+- On an iPad short of memory, a PDF page no longer shows as a missing
+  source when the iPad runs out of room for it: FineNotes frees what is
+  not on screen, keeps fewer pages around from then on, and draws the page
+  again. Older iPads (iPadOS 15 and earlier) and Android tablets with 2 GB
+  or less keep fewer from the start. The debug overlay shows how much PDF
+  memory is in use.
 - The notebook could scroll by a few pixels in Obsidian when a tool's bar
   along the bottom was tucked away, which narrowed the page by a scrollbar's
   width and changed its zoom a little.
