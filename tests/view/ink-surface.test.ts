@@ -2221,7 +2221,7 @@ describe("the Zoom box target's presses", () => {
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
   });
 
-  it("resizes from a corner bracket before considering the tool", () => {
+  it("resizes from an invisible corner handle before considering the tool", () => {
     const { surface, capture } = pressOn("handle", "pen", "pen");
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
     expect(capture).toHaveBeenCalledWith(7);

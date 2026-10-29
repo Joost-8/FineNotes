@@ -185,7 +185,9 @@ describe("the Magnifier's Zoom box", () => {
     );
     toolbar.syncActive();
     expect(pen.hasClass("is-active")).toBe(true);
-    expect(zoom.hasClass("is-active")).toBe(true);
+    // Stylus only carries `is-on` alone; the Magnifier must too, or the
+    // indicator's transparent-active rule leaves only the icon tinted.
+    expect(zoom.hasClass("is-active")).toBe(false);
     expect(zoom.hasClass("is-on")).toBe(true);
     expect(zoom.attrs["aria-pressed"]).toBe("true");
   });

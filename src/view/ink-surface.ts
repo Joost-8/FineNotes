@@ -2125,8 +2125,8 @@ export class InkSurface {
       });
       grip.dataset.zoomHandle = handle;
     }
-    // The viewfinder's badge sits on the top-left corner: an obvious grip
-    // that moves the box even with a writing tool in hand.
+    // The viewfinder's badge sits inside the bottom-right corner: an obvious
+    // grip that moves the box even with a writing tool in hand.
     const badge = this.zoomTargetEl.createDiv({ cls: "goodobsidian-zoom-badge" });
     badge.dataset.zoomMove = "true";
     badge.setAttribute("aria-hidden", "true");

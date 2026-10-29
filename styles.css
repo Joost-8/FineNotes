@@ -12478,6 +12478,7 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 .goodobsidian-zoombox-window-title {
   min-width: 0;
+  margin-left: 8px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -13268,10 +13269,10 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   pointer-events: none;
 }
 
-/* The target box reads as a camera viewfinder: a thin solid accent frame
-   with a faint tint, L-shaped corner brackets and its magnifier badge. The
-   frame itself is the grip, so a finger, Pencil or mouse can move it; with
-   a writing tool a pen on the body still reaches the page and writes. */
+/* The target box is a clean viewfinder frame: a thin solid accent border,
+   a faint tint and the magnifier badge. The frame itself is the grip, so a
+   finger, Pencil or mouse can move it; with a writing tool a pen on the body
+   still reaches the page and writes. */
 .goodobsidian-zoom-target {
   position: absolute;
   box-sizing: border-box;
@@ -13295,71 +13296,17 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   pointer-events: auto;
 }
 
-/* Corner handles draw inward-facing L brackets, not the image's squares. */
+/* The solid frame is the only mark; the 44 px corner and edge handles stay
+   invisible, so a tap near an edge still resizes without lasso-like nodes. */
 .goodobsidian-zoom-target .goodobsidian-image-handle::after {
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.goodobsidian-zoom-target .goodobsidian-image-handle.is-nw::after {
-  left: 50%;
-  top: 50%;
-  right: auto;
-  bottom: auto;
-  transform: none;
-  border-top: 3px solid var(--interactive-accent);
-  border-left: 3px solid var(--interactive-accent);
-  border-top-left-radius: 6px;
-}
-
-.goodobsidian-zoom-target .goodobsidian-image-handle.is-ne::after {
-  left: auto;
-  top: 50%;
-  right: 50%;
-  bottom: auto;
-  transform: none;
-  border-top: 3px solid var(--interactive-accent);
-  border-right: 3px solid var(--interactive-accent);
-  border-top-right-radius: 6px;
-}
-
-.goodobsidian-zoom-target .goodobsidian-image-handle.is-se::after {
-  left: auto;
-  top: auto;
-  right: 50%;
-  bottom: 50%;
-  transform: none;
-  border-right: 3px solid var(--interactive-accent);
-  border-bottom: 3px solid var(--interactive-accent);
-  border-bottom-right-radius: 6px;
-}
-
-.goodobsidian-zoom-target .goodobsidian-image-handle.is-sw::after {
-  left: 50%;
-  top: auto;
-  right: auto;
-  bottom: 50%;
-  transform: none;
-  border-bottom: 3px solid var(--interactive-accent);
-  border-left: 3px solid var(--interactive-accent);
-  border-bottom-left-radius: 6px;
-}
-
-/* Mid-edge handles keep their 44 px hit areas, but the solid frame is the
-   only mark they need. */
-.goodobsidian-zoom-target .goodobsidian-image-handle.is-edge::after {
   display: none;
 }
 
-/* The magnifier badge on the top-left corner: the obvious grip. */
+/* The magnifier badge sits inside the bottom-right corner: the obvious grip. */
 .goodobsidian-zoom-badge {
   position: absolute;
-  left: 0;
-  top: 0;
+  right: 8px;
+  bottom: 8px;
   z-index: 4;
   display: inline-flex;
   align-items: center;
@@ -13371,7 +13318,6 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
-  transform: translate(-10%, -100%);
   cursor: move;
   pointer-events: auto;
   touch-action: none;

@@ -4935,10 +4935,11 @@ export class Toolbar {
     const from = tool === this.indicatorTool ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
     // An open Zoom box keeps the Magnifier lit while another tool writes.
+    // `is-on` is exactly what Stylus only uses: the whole button takes the
+    // active background and icon colour, not just the glyph.
     const zoom = this.toolButtons.get("zoom");
     if (zoom) {
       const mark = zoomButtonState(this.state.tool, this.state.zoomBoxOpen === true);
-      zoom.toggleClass("is-active", mark.pressed);
       zoom.toggleClass("is-on", mark.highlighted);
       zoom.setAttribute("aria-pressed", String(mark.pressed));
     }
