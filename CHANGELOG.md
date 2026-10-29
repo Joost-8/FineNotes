@@ -38,8 +38,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
-- **Six colours in the pen's bar.** The colour row shows six colours at a
-  time; the rest, and the +, are a swipe away.
+- **Six colours and larger pens in the pen's bar.** The colour row shows six
+  colours at a time; the rest, and the +, are a swipe away. The pen types
+  are a little larger, each its own button with a border, the pen in hand
+  ringed in the accent colour.
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
   the top is leftmost), in the More tools menu, or hidden. A tool in the
