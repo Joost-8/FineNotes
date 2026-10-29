@@ -655,6 +655,27 @@ body,
   color: var(--text-normal);
 }
 
+/* In the row, each pen is its own button, a little larger than the pill's
+   other controls so the pens read (Joost's call): a 42 px square with a
+   hairline border, the pen in hand ringed in the accent. */
+.goodobsidian-pen-types button.goodobsidian-pentype {
+  width: var(--gob-pen-type, 42px);
+  min-width: var(--gob-pen-type, 42px);
+  height: var(--gob-pen-type, 42px);
+  padding: 0;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+}
+
+.goodobsidian-pen-types button.goodobsidian-pentype.is-active {
+  border-color: var(--interactive-accent);
+}
+
+.goodobsidian-pen-types button.goodobsidian-pentype svg {
+  width: 30px;
+  height: 30px;
+}
+
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
    four in view at a time, the rest a swipe away (Joost's call); on a narrow
    pane the row gives way, down to two. An end that hides more fades as the
@@ -664,9 +685,9 @@ body,
   display: flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 2px;
-  min-width: calc(34px * 2 + 2px);
-  max-width: calc(34px * 4 + 2px * 3);
+  gap: 4px;
+  min-width: calc(var(--gob-pen-type, 42px) * 2 + 4px);
+  max-width: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -703,7 +724,7 @@ body,
   flex-direction: column;
   min-width: 0;
   max-width: none;
-  max-height: calc(var(--gob-touch-compact) * 4 + 2px * 3);
+  max-height: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -9561,9 +9582,9 @@ button.goodobsidian-color-delete.clickable-icon {
   stroke-width: 2.25px;
 }
 
-/* The pen's colour row, as GoodNotes': it takes the room the pill has, up to
-   ten colours and the "+" (a pill much wider would cross the whole page),
-   the rest a swipe away. On a narrow pane it gives way first, down to two
+/* The pen's colour row, as GoodNotes': six whole colours in view (Joost's
+   call) and half of the next, fading, to say there is more; the rest and
+   the "+" a swipe away. With five colours or fewer the "+" shows after them. On a narrow pane it gives way first, down to two
    swatches. An end that hides more fades over 14 px (COLOR_ROW_FADE_PX in
    toolbar.ts), so a colour cut there reads as "more". */
 .goodobsidian-pen-colors {
@@ -9571,7 +9592,7 @@ button.goodobsidian-color-delete.clickable-icon {
   flex: 0 1 auto;
   align-items: center;
   min-width: calc(var(--gob-touch-compact) * 2);
-  max-width: calc(var(--gob-touch-compact) * 11);
+  max-width: calc(var(--gob-touch-compact) * 6.5);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;

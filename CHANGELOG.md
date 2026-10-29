@@ -122,6 +122,10 @@ extracted from the matching section of this file by `release.yml`.
   corner handles at once: the corners button in its bar shows them (and
   hides them again). One shape on its own still shows them straight away.
   The bar is now Cut · Copy · Duplicate · Delete · corners · ⋯.
+- **Six colours and larger pens in the pen's bar.** The colour row shows six
+  colours at a time; the rest, and the +, are a swipe away. The pen types
+  are a little larger, each its own button with a border, the pen in hand
+  ringed in the accent colour.
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
   the top is leftmost), in the More tools menu, or hidden. A tool in the
