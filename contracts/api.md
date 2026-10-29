@@ -1194,3 +1194,33 @@ interface ShapeConnector {
   the notebook read-only (`unreadable-ink`), as it does a notebook with
   sticky notes, instead of saving the arrows away. A notebook without
   connectors keeps the plain `v2:` label.
+
+## Pencil tilt (2026-10-27, discussion #51)
+
+`Stroke` gains one optional field:
+
+```ts
+/** The pen's altitude above the page at each point, degrees (90 upright). */
+tilt?: number[];
+```
+
+- **One per point** of `pts`, in order; points stay stride 3, so nothing that
+  walks points changes. Stored as integers in **tenths of a degree**, 0..900
+  (`"tilt": [520, 313, 180]`), after `samples`.
+- **Kept only where it matters:** the Brush pen with the advanced "Pencil
+  tilt" setting on, and only on a stroke that leaned past 45° somewhere
+  (`ink/tilt` `tiltShapes`). Every other stroke, and every notebook written
+  without the setting, is byte-for-byte as before.
+- **Absent is upright.** A `tilt` whose length is not the point count, or one
+  on a shape, is dropped on save and ignored when drawn; a bad entry reads as
+  90, keeping the rest in place.
+- **Drawn, not baked:** the width at a point is the pen's width there times
+  `tiltFactor(altitude)` (1 from 45° up, a smoothstep to 3× at 15° and
+  below), so the curve can be retuned and every stroke follows. Stored tilt
+  is drawn whether or not the setting is on.
+- **Eraser pieces** carry the altitudes along them (`tiltAlong`); copy, move,
+  turn, resize and sticky notes keep the field with the stroke.
+- **Label:** a notebook with any such stroke is written `v2+tilt:` (after
+  `sticky`, `v2+sticky+tilt:`) with `"requires": ["tilt"]`, so an older
+  FineNotes holds it read-only instead of saving the shading back at the
+  nib's width (§ "Payload label: refusing instead of dropping").

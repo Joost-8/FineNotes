@@ -120,6 +120,14 @@ export interface Stroke {
    */
   samples?: number[];
   /**
+   * The pen's altitude above the page at each point, degrees (90 upright):
+   * one per point of `pts`. Kept for a brush stroke written with "Pencil
+   * tilt" on that leaned flat enough to widen (`ink/tilt`); the width is
+   * worked out from it when drawn, so the curve can change. Absent, or not
+   * one per point: upright, drawn at the nib's width.
+   */
+  tilt?: number[];
+  /**
    * The id of the sticky note (an {@link ImageElement} with `sticky`) this
    * ink was written on: it is drawn on the note, clipped to it, and moves,
    * turns, mirrors and copies with it (`model/sticky-notes.ts`). In memory

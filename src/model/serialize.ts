@@ -168,6 +168,7 @@ interface StoredStroke {
   nib?: number;
   t0?: number;
   samples?: number[];
+  tilt?: number[];
 }
 
 interface StoredPage {
@@ -245,7 +246,47 @@ function storeStroke(stroke: Stroke): StoredStroke {
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
     samples: stroke.samples?.length ? quantizeSamples(stroke.samples) : undefined,
+    tilt: hasTilt(stroke) ? quantizeTilt(stroke.tilt) : undefined,
   };
+}
+
+/** Stored tilt counts tenths of a degree, 0..900: the width steps 2%, a tenth moves it ~1%. */
+const TILT_STEPS = 10;
+const TILT_MAX = 90 * TILT_STEPS;
+
+/** A handwritten stroke whose `tilt` holds one altitude per point (a shape draws none). */
+function hasTilt(stroke: Stroke): stroke is Stroke & { tilt: number[] } {
+  const tilt = stroke.tilt;
+  return (
+    stroke.shape === undefined &&
+    Array.isArray(tilt) &&
+    tilt.length > 0 &&
+    tilt.length * POINT_STRIDE === stroke.pts.length
+  );
+}
+
+function quantizeTilt(tilt: readonly number[]): number[] {
+  return tilt.map((altitude) =>
+    Math.min(TILT_MAX, Math.max(0, Math.round(finiteOr(altitude, 90) * TILT_STEPS))),
+  );
+}
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Stored tilt back to degrees, when it holds one number per point; anything
+ * else is dropped (the stroke is drawn upright). A bad entry is upright,
+ * keeping the rest in place.
+ */
+function readTilt(raw: unknown, points: number): number[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length !== points) return undefined;
+  return raw.map((value: unknown) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(TILT_MAX, Math.max(0, value)) / TILT_STEPS
+      : 90,
+  );
 }
 
 /** Steps per unit a sample's pressure is stored in. */
@@ -345,6 +386,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   const features: FormatFeature[] = [];
   if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
   if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
+  if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
   return features;
 }
 
@@ -734,6 +776,8 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;
+  const tilt = readTilt(raw.tilt, stroke.pts.length / POINT_STRIDE);
+  if (tilt) stroke.tilt = tilt;
   return stroke;
 }
 

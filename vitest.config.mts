@@ -19,6 +19,7 @@ export default defineConfig({
         "src/ink/shape-geometry.ts",
         "src/ink/table-geometry.ts",
         "src/ink/stroke-eraser.ts",
+        "src/ink/tilt.ts",
         "src/ink/scribble.ts",
         "src/ink/pen-gestures.ts",
         "src/ink/straighten.ts",

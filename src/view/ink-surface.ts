@@ -230,6 +230,7 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
@@ -658,6 +659,12 @@ interface StrokeDiagnostic {
  */
 const MAX_STROKE_HALF_WIDTH = 24;
 
+/**
+ * The standard eraser's margin for a brush stroke the Pencil's tilt widened
+ * (`ink/tilt`): the cut reaches as far as its widest edge.
+ */
+const MAX_TILTED_HALF_WIDTH = MAX_STROKE_HALF_WIDTH * TILT_MAX_FACTOR;
+
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
   /**
@@ -736,6 +743,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
+  pencilTilt?: () => boolean;
   /**
    * Where the box the text pill acts on is on screen (client px), or `null`
    * when there is none: the host floats the pill beside it, as GoodNotes
@@ -5525,7 +5534,23 @@ export class InkSurface {
       stabilize: this.atFitZoom(stabilizationReach(percent / 100)),
       // A practice file is training data: keep the pen's samples as they came.
       record: this.practice !== null,
+      tilt: this.keepsTilt(),
     };
+  }
+
+  /**
+   * Whether the stroke about to start keeps the Pencil's tilt: the Brush pen
+   * with "Pencil tilt" on, outside practice files. Other pens draw the same
+   * at any angle (a ball, a nib) or are translucent and kept to one width
+   * (the highlighter).
+   */
+  private keepsTilt(): boolean {
+    return (
+      this.toolState.tool === "pen" &&
+      penTypeFor(this.toolState).id === "brush" &&
+      this.practice === null &&
+      this.callbacks.pencilTilt?.() === true
+    );
   }
 
   // --- Pen and finger input ------------------------------------------------------
@@ -6759,6 +6784,7 @@ export class InkSurface {
       this.hud.summary(strokeCount(this.doc)) +
         `shape ${this.hudLastVerdict}\n` +
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
+        `${this.hud.tilt()}\n` +
         (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
         this.hudGeometry(),
     );
@@ -6853,9 +6879,11 @@ export class InkSurface {
       this.wetTracer = tracer;
       this.wetRevision = builder.revision;
     }
-    // Only the points kept since the last frame: what is traced stays.
+    // Only the points kept since the last frame: what is traced stays. A
+    // point's tilt widens it as it arrives, never after.
+    const tilt = builder.tiltView;
     for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
-      tracer.push(pts[i], pts[i + 1], pts[i + 2]);
+      tracer.push(pts[i], pts[i + 1], pts[i + 2], tiltFactor(tilt[i / 3]));
     }
     const runs = tracer.runs();
     // Samples still provisional (`densify` waits for the next to fix the
@@ -7057,16 +7085,23 @@ export class InkSurface {
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
     const { color, size, tool, nib } = this.currentStyle();
     const samples = builder.recorded();
+    const pts = shape
+      ? shape.pts
+      : (this.highlightLine(tool, builder.points()) ?? builder.points());
+    // The Pencil's tilt, kept only where it widened the brush.
+    const tilt = shape ? null : builder.tilts();
+    const tilted = tilt !== null && tilt.length * 3 === pts.length && tiltShapes(tilt);
     const stroke: Stroke = {
       id: this.strokeIds.next(),
       color,
       size,
       tool,
-      pts: shape ? shape.pts : (this.highlightLine(tool, builder.points()) ?? builder.points()),
+      pts,
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
       // A snapped shape is clean geometry, drawn at one width: no nib.
       ...(nib !== undefined && !shape ? { nib } : {}),
+      ...(tilted ? { tilt } : {}),
     };
     if (shape) this.styleShape(stroke);
     this.notePracticeInput();
@@ -7759,7 +7794,7 @@ export class InkSurface {
     filter: EraserFilter,
   ): boolean {
     // The cut widens by half the stroke width, so the broad phase must too.
-    const reach = radius + MAX_STROKE_HALF_WIDTH;
+    const reach = radius + MAX_TILTED_HALF_WIDTH;
     const candidates = this.strokeIndex.near(page.id, sample.x, sample.y, reach);
     const nextId = (): string => this.strokeIds.next();
     const notes = noteIdsOf(page.images);
