@@ -13305,14 +13305,14 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 /* The magnifier badge sits inside the bottom-right corner: the obvious grip. */
 .goodobsidian-zoom-badge {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 4px;
+  bottom: 4px;
   z-index: 4;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 22px;
+  width: 22px;
+  height: 18px;
   box-sizing: border-box;
   border-radius: 999px;
   background: var(--interactive-accent);
@@ -13324,8 +13324,8 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 }
 
 .goodobsidian-zoom-badge .svg-icon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 /* The window's magnification, between − and +. */
