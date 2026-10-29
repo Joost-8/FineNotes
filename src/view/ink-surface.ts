@@ -90,6 +90,7 @@ import {
   selectionKnobPoint,
   smoothLoop,
   selectionBounds,
+  isLoneShape,
   strokeInLasso,
   textBoxFrame,
 } from "../canvas/lasso";
@@ -116,7 +117,7 @@ import {
   transformOf,
   withRotation,
 } from "../canvas/image-geometry";
-import { TurnSnap, levelTurnOf } from "../canvas/turn-snap";
+import { TurnSnap, shapeAngleOf } from "../canvas/turn-snap";
 import {
   cropResult,
   croppedBox,
@@ -241,8 +242,11 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
+import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
+import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
 import {
   SCRIBBLE_COVERAGE,
   detectScribble,
@@ -255,6 +259,8 @@ import {
   type Pt,
   STAR_ASPECT,
   type ShapePreset,
+  type BoxPreset,
+  isClosedKind,
   isConnectorPreset,
   presetGeometry,
   shapePivot,
@@ -276,6 +282,9 @@ import {
   type PageGeometry,
   type PdfBackdrop,
   type ShapeKind,
+  CONNECTOR_SIDES,
+  type ConnectorSide,
+  type ShapeConnector,
   type Stroke,
   type GraphElement,
   type TableElement,
@@ -338,6 +347,7 @@ import {
   type PageElements,
   RecolorStrokes,
   RemoveElements,
+  ReshapeStroke,
   RestyleShapes,
   ReorientElements,
   type Reorientation,
@@ -347,6 +357,9 @@ import {
   elementsOnPage,
   isEmptySelection,
   reorientPoint,
+  reorientPoints,
+  scalePoints,
+  translatePoints,
   textScaleRange,
 } from "../model/selection-commands";
 import {
@@ -436,6 +449,19 @@ import {
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
+import { FingerGesture, type PinchInfo } from "../input/finger-gesture";
+import {
+  type FingerTurn,
+  type TurnMotion,
+  fingerTurnMotion,
+  fingersOnSelection,
+  isStill,
+  startFingerTurn,
+  stepFingerTurn,
+  turnCommand,
+  turnFrame,
+  turnPoint,
+} from "../canvas/selection-turn";
 import {
   type BarrelAction,
   type PressInput,
@@ -475,6 +501,8 @@ import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import { joinedPagesOf } from "../model/joined-pages";
 import type { SelectionAction } from "./selection-bar-model";
+import { selectionKind, selectionMenu } from "./selection-kind";
+import { writePngToClipboard } from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
   type ToolLift,
@@ -494,6 +522,29 @@ import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
+import { type PointHandles, movePoint, pickPointHandle, pointHandles } from "../ink/shape-points";
+import {
+  besideOffset,
+  boundsOfPts,
+  connectorRoute,
+  draggedOffset,
+  facingSide,
+  nearestSide,
+  sideMiddle,
+} from "../ink/connector-route";
+import {
+  CONNECTOR_WIDTH,
+  type RoutedConnector,
+  connectorBounds,
+  routeConnectors,
+} from "../canvas/connector-paint";
+import {
+  AddConnector,
+  AddLinkedCopy,
+  RetypeShape,
+  liveConnectors,
+  nextConnectorId,
+} from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
@@ -621,6 +672,12 @@ interface StrokeDiagnostic {
  */
 const MAX_STROKE_HALF_WIDTH = 24;
 
+/**
+ * The standard eraser's margin for a brush stroke the Pencil's tilt widened
+ * (`ink/tilt`): the cut reaches as far as its widest edge.
+ */
+const MAX_TILTED_HALF_WIDTH = MAX_STROKE_HALF_WIDTH * TILT_MAX_FACTOR;
+
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
   /**
@@ -675,6 +732,8 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** "Save as sticker": the selection drawn as a transparent PNG, its size in page px. */
   onSaveSticker?: (png: ArrayBuffer, width: number, height: number) => void;
+  /** Screenshot: the selection drawn on its paper as a PNG; the host offers Copy and Share. */
+  onScreenshot?: (png: Blob, width: number, height: number) => void;
   /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
@@ -697,6 +756,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
+  pencilTilt?: () => boolean;
   /**
    * Where the box the text pill acts on is on screen (client px), or `null`
    * when there is none: the host floats the pill beside it, as GoodNotes
@@ -709,6 +770,8 @@ export interface InkSurfaceCallbacks {
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
   fingerTapUndo?: () => boolean;
+  /** "Lasso takes what it touches" (settings, on unless it says false): any part of a stroke inside takes it. Read live. */
+  lassoAnyPart?: () => boolean;
   /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a resting hand moves neither the ink nor the page. Read live, as the
@@ -944,8 +1007,17 @@ const TAP_SLOP_PX = 8;
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
 const SELECTION_PAD_PX = 8;
+/**
+ * The frame's pad round a lone shape whose point rings and corner handles
+ * both show, screen px: the corner squares stand clear of the rings.
+ */
+const SHAPE_FRAME_PAD_PX = 20;
 /** Smallest a corner resize may make a lasso selection's longer side, screen px. */
 const MIN_SELECTION_SIDE_PX = 32;
+/** Two fingers whose midpoint lands this close to a selection's frame turn it, screen px. */
+const FINGER_TURN_MARGIN_PX = 24;
+/** The id a finger on the page has among the fingers on a selection's frame. */
+const PAGE_FINGER_ID = -2;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far off ink or a picture a Pencil tap may land and still pick it, screen px. */
 const PEN_TAP_TOLERANCE_PX = 6;
@@ -971,6 +1043,23 @@ interface ZoomSettle {
 const DOUBLE_TAP_SETTLE_MS = 160;
 /** A press on a selected image, or a lasso selection, drags once it has moved this far, screen px. */
 const IMAGE_DRAG_SLOP_PX = 3;
+/** How far from a shape's corner or end a press still takes its point handle, screen px. */
+const POINT_HIT_RADIUS_PX = 18;
+/** A side dot of a lone shape sits this far outside the selection frame, screen px. */
+const LINK_DOT_GAP_PX = 10;
+/** How far from a side dot a press still takes it, screen px. */
+const LINK_DOT_HIT_RADIUS_PX = 16;
+/** A tap on a side dot puts the linked copy this far beside the original, screen px at fit. */
+const LINK_GAP_PX = 48;
+
+/** The shapes a new linked shape can be turned into, in the order its bar shows them. */
+const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }> = [
+  { kind: "rect", icon: "square", label: "Rectangle" },
+  { kind: "ellipse", icon: "circle", label: "Circle" },
+  { kind: "triangle", icon: "triangle", label: "Triangle" },
+  { kind: "diamond", icon: "diamond", label: "Diamond" },
+  { kind: "roundrect", icon: "squircle", label: "Rounded rectangle" },
+];
 /**
  * A lasso press on the paper held this long without moving opens the small
  * bar with Paste — or Unlock, on a locked picture (GoodNotes' long press).
@@ -1032,6 +1121,8 @@ interface ImageDrag {
   draft: ImageTransform;
   /** Whether the image has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /** A finger holds it, so a second finger may turn the picture. */
+  finger?: boolean;
   /** The knob's turn settles here, when the knob was grabbed. */
   turn?: TurnSnap;
 }
@@ -1084,6 +1175,7 @@ const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
 const NO_TABLES: ReadonlySet<TableElement> = new Set();
 const NO_GRAPHS: ReadonlySet<GraphElement> = new Set();
+const NO_CONNECTORS: ReadonlySet<string> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
 interface GroupSelection extends ElementLists {
@@ -1134,8 +1226,83 @@ interface GroupDrag {
   scale: GroupScale | null;
   /** Set when the rotate knob was grabbed: the drag turns instead of moving. */
   turn: GroupTurn | null;
+  /** A finger on the frame drags it, so a second finger may turn it. */
+  finger?: boolean;
+  /** Set while two fingers turn it. */
+  fingers?: GroupFingerTurn;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /** The connectors joined to the selection's shapes, drawn on the wet layer while it moves. */
+  connectors?: Set<string>;
+}
+
+/**
+ * A lone shape's side dot dragged out into a linked copy (discussion #51),
+ * from pointerdown to lift: the copy and its arrow follow the pen on the
+ * wet layer; the lift commits one `AddLinkedCopy`.
+ */
+interface LinkDrag {
+  pointerId: number;
+  pageId: string;
+  stroke: Stroke;
+  side: ConnectorSide;
+  clientX: number;
+  clientY: number;
+  lifted: boolean;
+  /** How far the copy is moved from the original, page px, once the pen has left the dot. */
+  offset: Pt | null;
+  /**
+   * Another shape the pen is over: the arrow is dropped on it and joins the
+   * two, and no copy is made (Joost, 2026-10-29).
+   */
+  target: Stroke | null;
+  /** The side of `target` nearest the pen: where the dropped arrow meets it. */
+  targetSide: ConnectorSide;
+}
+
+/**
+ * One corner or end of a lone selected shape dragged by its point handle
+ * (discussion #51), from pointerdown to lift. Like a group drag, the shape
+ * leaves the tiles once and is drawn on the wet layer; the lift commits one
+ * `ReshapeStroke`.
+ */
+interface PointDrag {
+  pointerId: number;
+  pageId: string;
+  stroke: Stroke;
+  handles: PointHandles;
+  handle: number;
+  /** The handle less the pointer-down point: the point follows the pen from where it was. */
+  grab: Pt;
+  clientX: number;
+  clientY: number;
+  /** The shape's bounds before the drag, page space. */
+  before: Bounds;
+  /** Whether the shape has left the tiles for the wet layer yet. */
+  lifted: boolean;
+  /** The points and kind the shape has now, and where the dragged handle is. */
+  draft: { pts: number[]; kind: ShapeKind; at: Pt } | null;
+}
+
+/**
+ * Two fingers turning a lasso selection or a selected picture
+ * (`canvas/selection-turn.ts`): on its frame, one on the frame and one
+ * beside it, or both round it on the page (`page`). The lift commits it as
+ * one step.
+ */
+interface GroupFingerTurn {
+  state: FingerTurn;
+  /** Where the turn settles: every 45° of the page, as the knob's does. */
+  snap: TurnSnap;
+  /** What the turn does now. */
+  motion: TurnMotion;
+  /** The fingers are the page's: they landed round the selection, not on its frame. */
+  page: boolean;
+  /**
+   * The drag was made for the turn (by the page's fingers, or from a lone
+   * picture's drag): there is no finger's drag of the frame to go back to.
+   */
+  owned: boolean;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -1635,10 +1802,24 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /**
+   * Whether the selection shows its corner handles (discussion #51, Joost):
+   * hidden when a lasso picks something up, shown at once for a lone shape,
+   * and switched by the bar's corners button.
+   */
+  private selectionCorners = false;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
   private groupDrag: GroupDrag | null = null;
+  /** Every finger on the selection's frame: a second one makes the drag a turn. */
+  private readonly selectionFingers = new FingerGesture({
+    onPinchStart: (x, y, spread) => void this.startGroupTurn(x, y, spread, false),
+    onPinch: (info) => this.stepGroupTurn(info),
+    onPinchEnd: () => this.endGroupTurn(),
+  });
+  /** A finger on the page joined the one dragging the selection by its frame. */
+  private pageFingerOnFrame = false;
   private readonly selectionUiEl: HTMLElement;
   private readonly selectionFrameEl: HTMLElement;
   /** The rounded lasso loop drawn in the frame, for a freehand selection. */
@@ -1765,6 +1946,8 @@ export class InkSurface {
     origin: Pt;
     to: Pt;
     moved: boolean;
+    /** The end is on another shape's point: a connector is not levelled off it. */
+    snapped?: boolean;
   } | null = null;
 
   /**
@@ -2057,6 +2240,14 @@ export class InkSurface {
     const knob = this.imageFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(knob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.imageFrameEl.addEventListener("pointerdown", this.onImagePointerDown);
+    for (const type of [
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "lostpointercapture",
+    ] as const) {
+      this.imageFrameEl.addEventListener(type, this.onSelectionFinger);
+    }
 
     // Crop mode: a box over the whole picture, which takes every press on
     // it, with the crop frame and its handles inside.
@@ -2095,6 +2286,16 @@ export class InkSurface {
     const groupKnob = this.selectionFrameEl.createDiv({ cls: "goodobsidian-image-rotate" });
     iconInto(groupKnob.createDiv({ cls: "goodobsidian-image-rotate-knob" }), "refresh-cw", "↻");
     this.selectionFrameEl.addEventListener("pointerdown", this.onSelectionPointerDown);
+    // Every finger on the frame, to its lift, for a two-finger turn of the selection.
+    const fingerEvents = [
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "lostpointercapture",
+    ] as const;
+    for (const type of fingerEvents) {
+      this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
+    }
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
     // With the lasso, a text box is something to select, not to type in.
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
@@ -2703,6 +2904,8 @@ export class InkSurface {
    */
   private changed(pages?: readonly string[]): void {
     this.syncMirrors();
+    // An arrow between two shapes reaches outside what a move of either repainted.
+    this.syncConnectorTiles();
     this.growBoard();
     this.reportStatus();
     this.syncPageTabs();
@@ -2782,6 +2985,8 @@ export class InkSurface {
     this.ensurePaperSize();
     this.centreBoard(false);
     this.reportStatus();
+    // The zoom jumped without a layout: the size marks follow it.
+    this.reportSizeScale();
   }
 
   /** Put the middle of a board's drawing (or of its page) in the middle of the pane. */
@@ -5463,7 +5668,23 @@ export class InkSurface {
       stabilize: this.atFitZoom(stabilizationReach(percent / 100)),
       // A practice file is training data: keep the pen's samples as they came.
       record: this.practice !== null,
+      tilt: this.keepsTilt(),
     };
+  }
+
+  /**
+   * Whether the stroke about to start keeps the Pencil's tilt: the Brush pen
+   * with "Pencil tilt" on, outside practice files. Other pens draw the same
+   * at any angle (a ball, a nib) or are translucent and kept to one width
+   * (the highlighter).
+   */
+  private keepsTilt(): boolean {
+    return (
+      this.toolState.tool === "pen" &&
+      penTypeFor(this.toolState).id === "brush" &&
+      this.practice === null &&
+      this.callbacks.pencilTilt?.() === true
+    );
   }
 
   // --- Pen and finger input ------------------------------------------------------
@@ -5527,6 +5748,8 @@ export class InkSurface {
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
     onPanStart: (x, y, t) => {
+      // A finger beside one dragging the selection by its frame: the two turn it.
+      if (this.joinFrameFingers(x, y, t)) return;
       // A resting palm must not scroll the page out from under an image or a
       // selection being dragged; without a dragStart the moves and the end
       // are no-ops.
@@ -5567,6 +5790,10 @@ export class InkSurface {
       this.requestFrame();
     },
     onPanMove: (x, y, t) => {
+      if (this.pageFingerOnFrame) {
+        this.selectionFingers.move(PAGE_FINGER_ID, x, y, t);
+        return;
+      }
       const tap = this.fingerTap;
       if (tap && Math.hypot(x - tap.x, y - tap.y) > TAP_SLOP_PX) {
         this.fingerTap = null;
@@ -5581,6 +5808,11 @@ export class InkSurface {
       this.requestFrame();
     },
     onPanEnd: (t) => {
+      if (this.pageFingerOnFrame) {
+        this.pageFingerOnFrame = false;
+        this.selectionFingers.lift(PAGE_FINGER_ID, t);
+        return;
+      }
       const tap = this.fingerTap;
       this.fingerTap = null;
       this.stopPress();
@@ -5638,6 +5870,12 @@ export class InkSurface {
     },
     // Only a landing pen voids a finger gesture.
     onPanCancel: () => {
+      // A turn of the selection is kept as far as it went, as a cancelled drag is.
+      if (this.pageFingerOnFrame) {
+        this.pageFingerOnFrame = false;
+        this.selectionFingers.lift(PAGE_FINGER_ID, now());
+      }
+      if (this.groupDrag?.fingers?.page) this.endGroupTurn();
       this.fingerTap = null;
       this.fingerGesture = null;
       this.pullGesture = null;
@@ -5651,7 +5889,7 @@ export class InkSurface {
       this.undoPalm();
       this.requestFrame();
     },
-    onPinchStart: (centerX, centerY) => {
+    onPinchStart: (centerX, centerY, spread) => {
       // A pinch is never a pull: the ring goes, and stays gone for this gesture.
       if (this.pullGesture) this.pullGesture.pinched = true;
       this.pullAdd.hide();
@@ -5659,11 +5897,20 @@ export class InkSurface {
       this.stopPress();
       this.fingerHold.end();
       if (this.imageDrag || this.groupDrag) return;
+      // Two fingers meeting over the selection turn it, not the page.
+      if (this.startGroupTurn(centerX, centerY, spread, true)) {
+        this.scroller.cancel();
+        return;
+      }
       this.zoomAnim = null;
       this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
     },
     onPinch: (info) => {
+      if (this.groupDrag?.fingers?.page) {
+        this.stepGroupTurn(info);
+        return;
+      }
       const pinch = this.pinch;
       if (!pinch) return;
       pinch.raw *= info.scaleFactor;
@@ -5673,6 +5920,10 @@ export class InkSurface {
       this.applyZoom(softZoom(pinch.raw, this.minZoom, MAX_SCALE), info.centerX, info.centerY);
     },
     onPinchEnd: () => {
+      if (this.groupDrag?.fingers?.page) {
+        this.endGroupTurn();
+        return;
+      }
       const pinch = this.pinch;
       const overview = this.pinchOverviewArmed;
       this.pinch = null;
@@ -6250,7 +6501,8 @@ export class InkSurface {
     const mode = this.toolState.tool === "shape" ? shapeModeFor(this.toolState) : "auto";
     if (mode !== "auto") {
       // A preset is dragged out as its bounding box, as in GoodNotes.
-      this.shapeDrag = { preset: mode, origin: at, to: at, moved: false };
+      const origin = this.snapDragEnd(box, mode, at);
+      this.shapeDrag = { preset: mode, origin, to: origin, moved: false };
       this.showShapeDraft(box);
       return;
     }
@@ -6320,10 +6572,12 @@ export class InkSurface {
         const local = this.toPage(box, last);
         const drag = this.shapeDrag;
         const room = this.shapeRoom(box);
-        drag.to = {
+        const to = {
           x: clamp(local.x, room.minX, room.maxX),
           y: clamp(local.y, room.minY, room.maxY),
         };
+        drag.to = this.snapDragEnd(box, drag.preset, to);
+        drag.snapped = this.snapShown;
         const travelled = Math.hypot(drag.to.x - drag.origin.x, drag.to.y - drag.origin.y);
         if (travelled >= this.atFitZoom(SHAPE_TAP_SLOP)) drag.moved = true;
         this.showShapeDraft(box);
@@ -6345,8 +6599,16 @@ export class InkSurface {
     }
     const snap = this.snap;
     if (snap) {
-      // Snapped and still held: the shape follows the pen.
-      if (last) snap.pts = transformShape(snap.base, snap.pivot, snap.from, this.toPage(box, last));
+      // Snapped and still held: the shape follows the pen, and a corner or
+      // its far end lands on another shape's when it comes near one. A line
+      // or an arrow that did not, turned near level or upright, settles
+      // there about its tail.
+      if (last) {
+        const pts = this.snapHeldShape(box, snap, this.toPage(box, last));
+        const open = snap.kind === "line" || snap.kind === "arrow";
+        const rise = this.atFitZoom(LINE_LEVEL_RISE);
+        snap.pts = open && !this.snapShown ? levelLine(pts, "start", rise) : pts;
+      }
       this.scheduleWet();
       return;
     }
@@ -6468,14 +6730,16 @@ export class InkSurface {
     this.diagHold = { fired: true, verdict: verdictOf(builder.points(), true) };
     this.hudVerdict("hold", builder.points(), result, true);
     if (!result) return;
-    const pivot = shapePivot(result.kind, result.pts);
+    const box = this.activePage;
+    const base = box ? this.snapShapeStart(box, result.kind, result.pts) : result.pts;
+    const pivot = shapePivot(result.kind, base);
     if (!pivot) return;
     this.snap = {
       kind: result.kind,
-      base: result.pts,
+      base,
       pivot,
       from: { x: anchor.x, y: anchor.y },
-      pts: result.pts,
+      pts: base,
     };
     this.scheduleWet();
   }
@@ -6665,6 +6929,7 @@ export class InkSurface {
       this.hud.summary(strokeCount(this.doc)) +
         `shape ${this.hudLastVerdict}\n` +
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
+        `${this.hud.tilt()}\n` +
         (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
         this.hudGeometry(),
     );
@@ -6759,9 +7024,11 @@ export class InkSurface {
       this.wetTracer = tracer;
       this.wetRevision = builder.revision;
     }
-    // Only the points kept since the last frame: what is traced stays.
+    // Only the points kept since the last frame: what is traced stays. A
+    // point's tilt widens it as it arrives, never after.
+    const tilt = builder.tiltView;
     for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
-      tracer.push(pts[i], pts[i + 1], pts[i + 2]);
+      tracer.push(pts[i], pts[i + 1], pts[i + 2], tiltFactor(tilt[i / 3]));
     }
     const runs = tracer.runs();
     // Samples still provisional (`densify` waits for the next to fix the
@@ -6782,7 +7049,8 @@ export class InkSurface {
   private highlightLine(tool: Tool, pts: readonly number[]): number[] | null {
     if (tool !== "highlighter") return null;
     if (this.callbacks.straightenHighlighter?.() === false) return null;
-    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX));
+    const rise = this.atFitZoom(LINE_LEVEL_RISE);
+    return lineOfHighlight(pts, this.atFitZoom(HIGHLIGHT_LINE_MIN_PX), rise);
   }
 
   /**
@@ -6798,6 +7066,7 @@ export class InkSurface {
     this.wetTracer = null;
     this.stopHold();
     this.renderer?.clearWet();
+    this.showSnapMarker(null, null);
     return builder;
   }
 
@@ -6962,16 +7231,23 @@ export class InkSurface {
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
     const { color, size, tool, nib } = this.currentStyle();
     const samples = builder.recorded();
+    const pts = shape
+      ? shape.pts
+      : (this.highlightLine(tool, builder.points()) ?? builder.points());
+    // The Pencil's tilt, kept only where it widened the brush.
+    const tilt = shape ? null : builder.tilts();
+    const tilted = tilt !== null && tilt.length * 3 === pts.length && tiltShapes(tilt);
     const stroke: Stroke = {
       id: this.strokeIds.next(),
       color,
       size,
       tool,
-      pts: shape ? shape.pts : (this.highlightLine(tool, builder.points()) ?? builder.points()),
+      pts,
       ...(shape ? { shape: shape.kind } : {}),
       ...(samples ? { samples } : {}),
       // A snapped shape is clean geometry, drawn at one width: no nib.
       ...(nib !== undefined && !shape ? { nib } : {}),
+      ...(tilted ? { tilt } : {}),
     };
     if (shape) this.styleShape(stroke);
     this.notePracticeInput();
@@ -7162,6 +7438,125 @@ export class InkSurface {
     return elementBounds("strokes", stroke);
   }
 
+  // --- Snapping to other shapes (discussion #51) -----------------------------
+
+  /**
+   * Finds the corner, end or midpoint of another shape near a point, on
+   * `snapPageId`, through the stroke index: one per surface, and a query
+   * allocates nothing (`ink/shape-snap.ts`).
+   */
+  private readonly shapeSnapper = new ShapeSnapper((x, y, reach, visit) => {
+    this.strokeIndex.forEachNear(this.snapPageId, x, y, reach, visit);
+  });
+  private snapPageId = "";
+  /** The ring shown where a point snapped; made on first use. */
+  private snapMarkerEl: HTMLElement | null = null;
+  /** Whether the ring is up: the last point placed snapped to a shape. */
+  private snapShown = false;
+
+  /**
+   * Snap page point (x, y) of `box` to another shape within
+   * {@link SNAP_RADIUS_PX}, a screen length; true when it did, the target
+   * then in `shapeSnapper.hit`.
+   */
+  private snapNear(box: PageBox, x: number, y: number): boolean {
+    this.snapPageId = this.pageAt(box.index)?.id ?? "";
+    return this.shapeSnapper.snap(x, y, this.atFitZoom(SNAP_RADIUS_PX));
+  }
+
+  /**
+   * Where a Shape tool drag starts or is now, snapped to another shape's
+   * corner, end or midpoint when it is a line's or arrow's end or a
+   * rectangle's corner: the presets whose drag points lie on the shape.
+   */
+  private snapDragEnd(box: PageBox, preset: ShapePreset | "table", p: Pt): Pt {
+    const snaps = preset === "line" || preset === "arrow" || preset === "rect";
+    if (!snaps || !this.snapNear(box, p.x, p.y)) {
+      this.showSnapMarker(null, null);
+      return p;
+    }
+    const hit = this.shapeSnapper.hit;
+    this.showSnapMarker(box, hit);
+    return { x: hit.x, y: hit.y };
+  }
+
+  /**
+   * A shape snapped by a hold, moved so that a line's or arrow's start lies
+   * on another shape's point when it began near one (the start is where
+   * the held shape turns about, so it is placed now or not at all).
+   */
+  private snapShapeStart(box: PageBox, kind: ShapeKind, pts: number[]): number[] {
+    if (kind !== "line" && kind !== "arrow") return pts;
+    if (!this.snapNear(box, pts[0], pts[1])) return pts;
+    const hit = this.shapeSnapper.hit;
+    this.showSnapMarker(box, hit);
+    return translatePoints(pts, hit.x - pts[0], hit.y - pts[1]);
+  }
+
+  /**
+   * The held shape following the pen at `pen`, turned and sized about its
+   * pivot, with the corner or far end nearest another shape's point carried
+   * onto it: the pen position that does that is solved exactly
+   * (`penForPoint`), so the shape stays the shape. Circles and ellipses
+   * have no corners to snap.
+   */
+  private snapHeldShape(
+    box: PageBox,
+    snap: { kind: ShapeKind; base: number[]; pivot: Pt; from: Pt },
+    pen: Pt,
+  ): number[] {
+    const pts = transformShape(snap.base, snap.pivot, snap.from, pen);
+    const open = snap.kind === "line" || snap.kind === "arrow";
+    const corners = open ? 2 : snap.base.length / 3 - 1;
+    if (snap.kind === "circle" || snap.kind === "ellipse" || corners > 12) {
+      this.showSnapMarker(null, null);
+      return pts;
+    }
+    // The far end of a line or arrow (its start is the pivot), or each corner.
+    let best = Infinity;
+    let vertex = -1;
+    let tx = 0;
+    let ty = 0;
+    for (let i = open ? 1 : 0; i < corners; i++) {
+      const x = pts[i * 3];
+      const y = pts[i * 3 + 1];
+      if (!this.snapNear(box, x, y)) continue;
+      const hit = this.shapeSnapper.hit;
+      const d = Math.hypot(hit.x - x, hit.y - y);
+      if (d < best) {
+        best = d;
+        vertex = i;
+        tx = hit.x;
+        ty = hit.y;
+      }
+    }
+    if (vertex < 0) {
+      this.showSnapMarker(null, null);
+      return pts;
+    }
+    const v0 = { x: snap.base[vertex * 3], y: snap.base[vertex * 3 + 1] };
+    const target = { x: tx, y: ty };
+    const at = penForPoint(snap.pivot, snap.from, v0, target);
+    if (!at) return pts;
+    this.showSnapMarker(box, target);
+    return transformShape(snap.base, snap.pivot, snap.from, at);
+  }
+
+  /** Show the snap ring at page point `at` of `box`, or hide it (`null`). */
+  private showSnapMarker(box: PageBox | null, at: { x: number; y: number } | null): void {
+    this.snapShown = box !== null && at !== null;
+    if (!box || !at) {
+      this.snapMarkerEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.snapMarkerEl ??= this.paperEl.createDiv({
+      cls: "goodobsidian-snap-marker is-hidden",
+    }));
+    const scale = this.unitScale;
+    el.setCssStyles({ left: `${(box.x + at.x) * scale}px`, top: `${(box.y + at.y) * scale}px` });
+    el.removeClass("is-hidden");
+  }
+
   // --- Shape tool presets ------------------------------------------------------
 
   /**
@@ -7205,7 +7600,9 @@ export class InkSurface {
       origin = { x: cx - halfW, y: cy - halfH };
       to = { x: cx + halfW, y: cy + halfH };
     }
-    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE);
+    // An end that snapped to another shape's point is not levelled off it.
+    const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
+    return presetGeometry(preset, origin, to, FALLBACK_PRESSURE, rise);
   }
 
   /**
@@ -7240,7 +7637,8 @@ export class InkSurface {
     }
     // While dragging, preview the real size — even a tiny one; the tap
     // default only applies if the pen lifts without having moved.
-    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE);
+    const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
+    const pts = presetGeometry(drag.preset, drag.origin, drag.to, FALLBACK_PRESSURE, rise);
     if (pts.length === 0) {
       this.renderer?.clearWet();
       return;
@@ -7259,6 +7657,7 @@ export class InkSurface {
     const pts = this.shapeDragGeometry(box);
     this.shapeDrag = null;
     this.activePage = null;
+    this.showSnapMarker(null, null);
     this.renderer?.clearWet();
     const page = this.pageAt(box.index);
     if (!drag || !page) return;
@@ -7700,7 +8099,7 @@ export class InkSurface {
     filter: EraserFilter,
   ): boolean {
     // The cut widens by half the stroke width, so the broad phase must too.
-    const reach = radius + MAX_STROKE_HALF_WIDTH;
+    const reach = radius + MAX_TILTED_HALF_WIDTH;
     const candidates = this.strokeIndex.near(page.id, sample.x, sample.y, reach);
     const nextId = (): string => this.strokeIds.next();
     const notes = noteIdsOf(page.images);
@@ -7890,6 +8289,7 @@ export class InkSurface {
     const poly = polygonOf(loop);
     if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
     const filter = lassoFilterFor(this.toolState);
+    const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
     const own = <T extends { join?: string }>(list: readonly T[]): T[] =>
       this.joined ? list.filter((element) => !isMirror(element)) : [...list];
@@ -7899,7 +8299,7 @@ export class InkSurface {
           stroke !== except &&
           near.has(stroke.id) &&
           lassoTakesStroke(stroke, filter) &&
-          strokeInLasso(stroke, poly),
+          strokeInLasso(stroke, poly, anyPart),
       ),
       // A locked picture is never picked up (until it is unlocked).
       images: filter.images
@@ -8519,21 +8919,7 @@ export class InkSurface {
     // where the table goes.
     const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
     if (table) {
-      const f = this.tableFrameOf(table);
-      const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
-      const near = this.strokeIndex.within(page.id, frame);
-      const inked = page.strokes.filter((stroke) => {
-        const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
-        return (
-          b !== null &&
-          lassoTakesStroke(stroke, filter) &&
-          b.minX >= frame.minX &&
-          b.minY >= frame.minY &&
-          b.maxX <= frame.maxX &&
-          b.maxY <= frame.maxY
-        );
-      });
-      this.select(page.id, { strokes: inked, images: [], textBoxes: [], tables: [table] });
+      this.select(page.id, this.tableWithInk(page, table, filter));
       return true;
     }
     // A locked picture is passed over, as if it were part of the paper; a
@@ -8550,6 +8936,25 @@ export class InkSurface {
   private ownGraphAt(page: Page, p: Pt): GraphElement | null {
     if (!this.joined) return graphAt(page, p);
     return graphAt({ ...page, graphs: (page.graphs ?? []).filter((g) => !isMirror(g)) }, p);
+  }
+
+  /** A table with the ink that lies wholly inside its frame, as far as the lasso's switches allow. */
+  private tableWithInk(page: Page, table: TableElement, filter: LassoFilter): ElementLists {
+    const f = this.tableFrameOf(table);
+    const frame: Bounds = { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
+    const near = this.strokeIndex.within(page.id, frame);
+    const inked = page.strokes.filter((stroke) => {
+      const b = near.has(stroke.id) ? strokeBounds(stroke) : null;
+      return (
+        b !== null &&
+        lassoTakesStroke(stroke, filter) &&
+        b.minX >= frame.minX &&
+        b.minY >= frame.minY &&
+        b.maxX <= frame.maxX &&
+        b.maxY <= frame.maxY
+      );
+    });
+    return { strokes: inked, images: [], textBoxes: [], tables: [table] };
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -8716,6 +9121,8 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
+    this.selectionCorners = isLoneShape(this.selection);
+    this.shapePointsOn = false;
     this.syncSelectionOverlay();
   }
 
@@ -8737,6 +9144,7 @@ export class InkSurface {
   private clearSelection(): void {
     this.dropPickUp();
     this.cancelGroupDrag();
+    this.linkBar = null;
     const pressed = this.pressMenu !== null;
     this.pressMenu = null;
     this.selectionOutline = null;
@@ -8782,6 +9190,13 @@ export class InkSurface {
     const drag = this.groupDrag;
     if (!drag?.lifted || drag.selection.pageId !== pageId) return { x: 0, y: 0 };
     if (!drag.selection.textBoxes.includes(textBox)) return { x: 0, y: 0 };
+    const fingers = drag.fingers?.motion;
+    if (fingers) {
+      // Upright, as under the knob's turn: only its middle goes round.
+      const f = this.textBoxFrameOf(pageId, textBox);
+      const mid = turnPoint(fingers, { x: f.x + f.w / 2, y: f.y + f.h / 2 });
+      return { x: mid.x - f.w / 2 - f.x, y: mid.y - f.h / 2 - f.y };
+    }
     const turn = drag.turn;
     if (turn) {
       // A box stays upright: only its middle goes round.
@@ -8805,6 +9220,7 @@ export class InkSurface {
    * leaves them where they were: the frame turns with the selection instead.
    */
   private draggedBounds(drag: GroupDrag): Bounds {
+    if (drag.fingers) return turnFrame(drag.bounds, drag.fingers.motion);
     if (drag.turn) return drag.bounds;
     return drag.scale
       ? scaleBounds(drag.bounds, drag.scale.anchor, drag.scale.k)
@@ -8829,19 +9245,21 @@ export class InkSurface {
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
     const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
+    this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
       const scale = this.unitScale;
-      const x = (box.x + bounds.minX) * scale - SELECTION_PAD_PX;
-      const y = (box.y + bounds.minY) * scale - SELECTION_PAD_PX;
+      const pad = this.framePad;
+      const x = (box.x + bounds.minX) * scale - pad;
+      const y = (box.y + bounds.minY) * scale - pad;
       this.selectionFrameEl.setCssStyles({
         left: `${x}px`,
         top: `${y}px`,
-        width: `${(bounds.maxX - bounds.minX) * scale + 2 * SELECTION_PAD_PX}px`,
-        height: `${(bounds.maxY - bounds.minY) * scale + 2 * SELECTION_PAD_PX}px`,
+        width: `${(bounds.maxX - bounds.minX) * scale + 2 * pad}px`,
+        height: `${(bounds.maxY - bounds.minY) * scale + 2 * pad}px`,
       });
       this.selectionFrameEl.toggleClass("is-dragging", drag !== null);
       // While the knob turns it, the frame turns with the selection about its middle.
-      const angle = drag?.turn?.angle ?? 0;
+      const angle = drag?.fingers?.motion.angle ?? drag?.turn?.angle ?? 0;
       this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
@@ -8851,13 +9269,15 @@ export class InkSurface {
       if (shown) {
         // The loop is relative to the bounds' corner, so a resize scales it too.
         const k = drag?.scale?.k ?? 1;
-        const at = (v: number): string => (SELECTION_PAD_PX + v * k * scale).toFixed(1);
+        const at = (v: number): string => (pad + v * k * scale).toFixed(1);
         const pts = outline.loop;
         let d = `M${at(pts[0])} ${at(pts[1])}`;
         for (let i = 2; i + 1 < pts.length; i += 2) d += `L${at(pts[i])} ${at(pts[i + 1])}`;
         this.selectionPathEl.setAttribute("d", `${d}Z`);
       }
     }
+    this.syncShapePoints(drag ? null : sel, box);
+    this.syncLinkDots(drag ? null : sel, box);
     this.syncActionBar();
   }
 
@@ -8873,7 +9293,11 @@ export class InkSurface {
     const press = crop || group || image ? null : this.pressMenu;
     const pageId = crop?.pageId ?? group?.pageId ?? image?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
-    const dragging = this.groupDrag?.lifted === true || this.imageDrag?.lifted === true;
+    const dragging =
+      this.groupDrag?.lifted === true ||
+      this.imageDrag?.lifted === true ||
+      this.pointDrag?.lifted === true ||
+      this.linkDrag?.lifted === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -8884,7 +9308,7 @@ export class InkSurface {
     } else if (group) {
       bounds = this.groupChromeBounds(group);
       // Clear of the corner handles on the frame, as of a picture's.
-      clearAbove = clearBelow = SELECTION_PAD_PX + IMAGE_CHROME_CLEAR_PX;
+      clearAbove = clearBelow = this.framePad + IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.groupActions(group));
     } else if (image) {
       // The picture and its rotate knob, wherever a turn has put the knob.
@@ -8900,6 +9324,7 @@ export class InkSurface {
     this.actionBar.el.toggleClass("is-provisional", press?.provisional === true);
     if (!box || !bounds || dragging) {
       this.actionBar.hide();
+      this.typeBar?.hide();
       return;
     }
     const scale = this.unitScale;
@@ -8909,6 +9334,13 @@ export class InkSurface {
       maxX: (box.x + bounds.maxX) * scale,
       maxY: (box.y + bounds.maxY) * scale,
     };
+    // A shape a side dot just made: the shapes it can become, in place of the actions.
+    if (group && this.linkBarFor(group)) {
+      this.actionBar.hide();
+      this.showTypeBar(anchor, clearAbove, clearBelow);
+      return;
+    }
+    this.typeBar?.hide();
     this.actionBar.show(anchor, this.visiblePaperRect(), { clearAbove, clearBelow });
   }
 
@@ -8922,7 +9354,7 @@ export class InkSurface {
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
-    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - SELECTION_PAD_PX / scale) };
+    return { ...bounds, maxY: Math.max(bounds.maxY, knob.y + r - this.framePad / scale) };
   }
 
   /** What a lone picture's chrome covers, page space: the rotated picture and its knob. */
@@ -9088,11 +9520,15 @@ export class InkSurface {
   /**
    * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
    * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
-   * Duplicate · Paste across the top; Colour when it holds ink; one segmented
+   * Duplicate · Paste across the top, then Screenshot; Colour when it holds ink; one segmented
    * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
-   * into ›, which holds what the selection can become; and Delete.
+   * into ›, which holds what the selection can become; and Delete. What it
+   * holds decides the rest (`selectionMenu`): one kind keeps its own options,
+   * a mix gets only its ink's colour, and Turn into offers what fits.
    */
   private groupActions(sel: GroupSelection): SelectionAction[] {
+    // What it holds decides what the menu offers (`selection-kind.ts`).
+    const menu = selectionMenu(selectionKind(sel, this.loneTable(sel) !== null));
     const actions: SelectionAction[] = [
       {
         id: "cut",
@@ -9108,6 +9544,7 @@ export class InkSurface {
         icon: "copy",
         label: "Copy",
         group: "edit",
+        bar: true,
         menu: "tile",
         run: () => this.copySelection(),
       },
@@ -9121,6 +9558,14 @@ export class InkSurface {
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
+      // Any selection, whatever it holds.
+      {
+        id: "screenshot",
+        icon: "camera",
+        label: "Screenshot",
+        group: "edit",
+        run: () => void this.showSelectionScreenshot(),
+      },
     ];
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
@@ -9161,7 +9606,7 @@ export class InkSurface {
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
       });
     }
-    if (sel.strokes.length > 0) {
+    if (menu.colour && sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
       actions.push({
         id: "colour",
@@ -9190,12 +9635,12 @@ export class InkSurface {
         },
       });
     }
-    actions.push(...this.shapeStyleActions(sel.strokes));
+    if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Text first under Turn into: the plainest thing ink can become.
     const toText = this.callbacks.onTurnIntoText;
-    if (toText && index >= 0 && sel.strokes.length > 0) {
+    if (menu.handwriting && toText && index >= 0 && sel.strokes.length > 0) {
       const ids = sel.strokes.map((stroke) => stroke.id);
       actions.push({
         id: "to-text",
@@ -9210,9 +9655,10 @@ export class InkSurface {
       });
     }
     // Highlighter ink over a PDF's text: the text it covers can be copied.
-    const highlighted = sel.strokes.some(isHighlight)
-      ? this.highlightedText(index, sel.strokes)
-      : null;
+    const highlighted =
+      menu.handwriting && sel.strokes.some(isHighlight)
+        ? this.highlightedText(index, sel.strokes)
+        : null;
     if (highlighted) {
       actions.push({
         id: "copy-text",
@@ -9222,7 +9668,7 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
-    if (heading && index >= 0 && this.callbacks.onAddSection) {
+    if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
         id: "contents",
@@ -9241,8 +9687,8 @@ export class InkSurface {
         },
       });
     }
-    actions.push(...this.linkActions(sel, index));
-    if (this.callbacks.onSaveSticker) {
+    if (menu.link) actions.push(...this.linkActions(sel, index));
+    if (menu.sticker && this.callbacks.onSaveSticker) {
       actions.push({
         id: "save-sticker",
         icon: "sticker",
@@ -9253,7 +9699,7 @@ export class InkSurface {
       });
     }
     const comment = this.callbacks.onAddComment;
-    if (heading && index >= 0 && comment) {
+    if (menu.comment && heading && index >= 0 && comment) {
       actions.push({
         id: "comment",
         icon: "message-square-plus",
@@ -9269,7 +9715,7 @@ export class InkSurface {
       });
     }
     // Task last under Turn into.
-    actions.push(...this.taskActions(sel, index));
+    if (menu.handwriting) actions.push(...this.taskActions(sel, index));
     // Flip after "Turn into": what a selection becomes reads before how it is turned.
     actions.push(...flipActions((axis) => this.flipSelection(axis), "flip"));
     actions.push({
@@ -9282,6 +9728,36 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
+    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
+    // the resize handles, then the "…".
+    actions.push({
+      id: "corners",
+      icon: "scan",
+      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+      group: "edit",
+      bar: true,
+      menu: "none",
+      checked: this.selectionCorners,
+      run: () => {
+        this.selectionCorners = !this.selectionCorners;
+        this.syncSelectionOverlay();
+      },
+    });
+    if (this.loneShape(sel)) {
+      actions.push({
+        id: "corner-points",
+        icon: "vector-square",
+        label: this.shapePointsOn ? "Hide corner points" : "Edit corner points",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.shapePointsOn,
+        run: () => {
+          this.shapePointsOn = !this.shapePointsOn;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
     return actions;
   }
 
@@ -9851,9 +10327,48 @@ export class InkSurface {
    */
   private async saveSelectionAsSticker(): Promise<void> {
     const sel = this.liveSelection();
-    const bounds = sel ? this.groupBounds(sel) : null;
     const save = this.callbacks.onSaveSticker;
-    if (!sel || !bounds || !save) return;
+    const shot = sel && save ? await this.selectionPicture(sel, null) : null;
+    if (!shot || !save) return;
+    save(await shot.blob.arrayBuffer(), shot.width, shot.height);
+  }
+
+  /**
+   * Screenshot (Joost on PR #59): what is selected, as it is drawn, on its
+   * page's paper, as a PNG the host shows with Copy and Share
+   * (`screenshot-modal.ts`). Without a host, it goes straight to the
+   * clipboard, and the readout says whether it got there.
+   */
+  private async showSelectionScreenshot(): Promise<void> {
+    const sel = this.liveSelection();
+    const page = sel ? this.doc.pages.find((candidate) => candidate.id === sel.pageId) : null;
+    if (!sel || !page) return;
+    const show = this.callbacks.onScreenshot;
+    const shot = this.selectionPicture(sel, paperColorOf(page, this.paper));
+    if (!show) {
+      const png = shot.then((made) => {
+        if (!made) throw new Error("Nothing to draw");
+        return made.blob;
+      });
+      const copied = await writePngToClipboard(png);
+      this.flashReadout(copied ? "Copied as a picture" : "Couldn't copy the picture");
+      return;
+    }
+    const made = await shot;
+    if (made) show(made.blob, made.width, made.height);
+  }
+
+  /**
+   * The selection drawn on its own, cut to its bounds with a small margin:
+   * on `paper`, or transparent when that is null. Sharp at three times its
+   * size, no side past 2048 px. `null` when there is nothing to draw.
+   */
+  private async selectionPicture(
+    sel: GroupSelection,
+    paper: string | null,
+  ): Promise<{ blob: Blob; width: number; height: number } | null> {
+    const bounds = this.groupBounds(sel);
+    if (!bounds) return null;
     const pad = STICKER_PAD;
     const width = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
     const height = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
@@ -9874,11 +10389,25 @@ export class InkSurface {
       usePressure: this.inkPressure,
       ...(this.imagePainter ? { images: this.imagePainter } : {}),
     });
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    canvas.width = 0;
-    canvas.height = 0;
-    if (!blob) return;
-    save(await blob.arrayBuffer(), width, height);
+    let out = canvas;
+    if (paper) {
+      // The paper behind it, as the page shows it.
+      out = createEl("canvas");
+      out.width = canvas.width;
+      out.height = canvas.height;
+      const ctx = out.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = paper;
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(canvas, 0, 0);
+      }
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
+    out.width = 0;
+    out.height = 0;
+    return blob ? { blob, width, height } : null;
   }
 
   /** Put the selected picture in front of the ink, or back under it, as one undo step. */
@@ -10831,9 +11360,16 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveSelection();
-    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.pointDrag || this.linkDrag || this.callbacks.isLocked?.()) return;
     // A palm landing on the frame while the Pencil is busy elsewhere is a palm.
-    if (event.pointerType === "touch" && this.activePage !== null) return;
+    const finger = event.pointerType === "touch";
+    if (finger && this.activePage !== null) return;
+    if (this.groupDrag) {
+      // A second finger beside the one dragging it: a turn of the selection.
+      if (finger && this.groupDrag.finger === true)
+        this.addFrameFinger(this.selectionFrameEl, event);
+      return;
+    }
     const box = this.boxForPage(sel.pageId);
     const bounds = this.groupBounds(sel);
     if (!box || !bounds) return;
@@ -10843,7 +11379,11 @@ export class InkSurface {
       // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
     }
     const from = this.pagePoint(box, event.clientX, event.clientY);
+    if (this.grabLinkDot(event, sel, bounds, from)) return;
+    // Anything else done with the selection puts the bar of shapes away.
+    this.linkBar = null;
     const turn = this.knobGrabbed(bounds, from);
+    if (!turn && this.grabShapePoint(event, sel, from)) return;
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
@@ -10855,18 +11395,217 @@ export class InkSurface {
       dy: 0,
       scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
       turn,
+      finger,
       lifted: false,
     };
     this.selectionFrameEl.addEventListener("pointermove", this.onSelectionPointerMove);
     this.selectionFrameEl.addEventListener("pointerup", this.onSelectionPointerEnd);
     this.selectionFrameEl.addEventListener("pointercancel", this.onSelectionPointerEnd);
+    if (finger) {
+      // No drag was under way, so any finger still counted lost its lift.
+      if (!this.pageFingerOnFrame) this.selectionFingers.cancel();
+      this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    }
   };
+
+  /** Another finger landed on a frame while one drags its selection or picture: it joins, to turn. */
+  private addFrameFinger(frame: HTMLElement, event: PointerEvent): void {
+    try {
+      frame.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
+    }
+    this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+  }
+
+  /** A finger on the frame moved or lifted: the turn hears of it, before the drag does. */
+  private readonly onSelectionFinger = (event: PointerEvent): void => {
+    if (event.pointerType !== "touch") return;
+    if (event.type === "pointermove") {
+      this.selectionFingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    } else {
+      this.selectionFingers.lift(event.pointerId, event.timeStamp);
+    }
+  };
+
+  /**
+   * A finger landed on the page (client px) while another drags the
+   * selection by its frame: it joins that finger, and the two turn the
+   * selection. Its moves and its lift come through the page's pan.
+   */
+  private joinFrameFingers(x: number, y: number, t: number): boolean {
+    if (this.pageFingerOnFrame) {
+      // Another page finger joined it: the page's gesture moved its focus.
+      this.selectionFingers.down(PAGE_FINGER_ID, x, y, t);
+      return true;
+    }
+    const held = this.groupDrag?.finger === true || this.imageDrag?.finger === true;
+    if (!held || this.touchPanning) return false;
+    if (!this.selectionFingers.down(PAGE_FINGER_ID, x, y, t)) return false;
+    this.pageFingerOnFrame = true;
+    return true;
+  }
+
+  /**
+   * Two fingers began a turn at client point (x, y), `spread` px apart: on
+   * the frame of the selection or picture a finger is dragging, or (`page`)
+   * both on the page with their midpoint over the selection or the selected
+   * picture. Returns whether it took the gesture. A drag by a handle or a
+   * knob stays what it was.
+   */
+  private startGroupTurn(x: number, y: number, spread: number, page: boolean): boolean {
+    if (this.callbacks.isLocked?.()) return false;
+    let drag = this.groupDrag;
+    let owned = false;
+    if (page) {
+      if (drag || this.imageDrag || this.activePage !== null) return false;
+      drag = this.turnableAt(x, y);
+      owned = true;
+    } else if (!drag) {
+      drag = this.groupDragFromPicture();
+      owned = true;
+    }
+    if (!drag || drag.scale || drag.turn || drag.fingers) return false;
+    if (!page && drag.finger !== true) return false;
+    if (!this.boxForPage(drag.selection.pageId)) return false;
+    this.groupDrag = drag;
+    const state = startFingerTurn(boundsCentre(drag.bounds), { x: drag.dx, y: drag.dy });
+    // The turn's circle on screen is the fingers': it sizes the snap's catch.
+    const snap = new TurnSnap(spread / 2, this.pageAngleOf(drag.selection));
+    const motion = fingerTurnMotion(state, (raw) => snap.turn(raw));
+    drag.fingers = { state, snap, motion, page, owned };
+    return true;
+  }
+  /**
+   * A drag for two page fingers whose midpoint (client px) lands over the
+   * lasso selection, or over the selected picture, within a margin; `null`
+   * when it lands elsewhere and the page should zoom.
+   */
+  private turnableAt(x: number, y: number): GroupDrag | null {
+    const sel = this.liveSelection() ?? this.pictureAsSelection();
+    const box = sel ? this.boxForPage(sel.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!sel || !box || !bounds) return null;
+    const at = this.pagePoint(box, x, y);
+    const frame = this.selectionFrameOf(bounds);
+    if (!fingersOnSelection(frame, at, FINGER_TURN_MARGIN_PX / this.unitScale)) return null;
+    return {
+      pointerId: -1,
+      selection: sel,
+      bounds,
+      from: at,
+      clientX: x,
+      clientY: y,
+      dx: 0,
+      dy: 0,
+      scale: null,
+      turn: null,
+      lifted: false,
+    };
+  }
+
+  /** The selected picture as a selection of its own, a sticky note with its ink. */
+  private pictureAsSelection(): GroupSelection | null {
+    const picked = this.liveImageSelection();
+    if (!picked) return null;
+    return {
+      pageId: picked.pageId,
+      strokes: this.noteInk(picked),
+      images: [picked.image],
+      textBoxes: [],
+      tables: [],
+      graphs: [],
+    };
+  }
+
+  /**
+   * A finger dragging the selected picture by its body was joined by a
+   * second: the picture's drag becomes a selection drag the turn carries on
+   * from, with any move the finger made. The finger keeps its capture.
+   */
+  private groupDragFromPicture(): GroupDrag | null {
+    const held = this.imageDrag;
+    const sel = held?.finger === true && held.part === "body" ? this.pictureAsSelection() : null;
+    const box = held ? this.boxForPage(held.pageId) : null;
+    const bounds = sel ? this.groupBounds(sel) : null;
+    if (!held || !sel || !box || !bounds || sel.images[0] !== held.image) return null;
+    this.imageDrag = null;
+    this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
+    this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
+    this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);
+    this.imageUiEl.removeClass("is-dragging");
+    if (held.lifted) this.renderer?.setHiddenImages(NO_IMAGES);
+    const drag: GroupDrag = {
+      pointerId: held.pointerId,
+      selection: sel,
+      bounds,
+      from: held.from,
+      clientX: held.clientX,
+      clientY: held.clientY,
+      dx: held.draft.x - held.start.x,
+      dy: held.draft.y - held.start.y,
+      scale: null,
+      turn: null,
+      finger: true,
+      lifted: false,
+    };
+    // Drawn where the finger had already carried it.
+    if (held.lifted) {
+      this.groupDrag = drag;
+      this.liftSelection(drag, box);
+      this.renderGroupDraft();
+      this.syncImageOverlay();
+    }
+    return drag;
+  }
+
+  /** The fingers turned: the selection follows, drawn on the wet layer until the lift. */
+  private stepGroupTurn(info: PinchInfo): void {
+    const drag = this.groupDrag;
+    const grip = drag?.fingers;
+    const box = drag ? this.boxForPage(drag.selection.pageId) : null;
+    if (!drag || !grip || !box) return;
+    grip.state = stepFingerTurn(grip.state, info.rotation);
+    if (!grip.state.engaged) return;
+    grip.motion = fingerTurnMotion(grip.state, (raw) => grip.snap.turn(raw));
+    if (!drag.lifted) {
+      this.liftSelection(drag, box);
+      this.syncImageOverlay();
+    }
+    this.renderGroupDraft();
+    this.placeDraggedTextBoxes(drag, box);
+    this.syncSelectionOverlay();
+    // The page angle it has come to, by the fingers.
+    const at = this.pagePoint(box, info.centerX, info.centerY);
+    this.showTurnLabel(box, at, grip.snap.pageAngle(grip.motion.angle), grip.snap.snapped);
+  }
+
+  /**
+   * Fewer than two fingers are left: the turn is one step. Fingers that
+   * never turned leave a finger's drag of the frame going as it was.
+   */
+  private endGroupTurn(): void {
+    const drag = this.groupDrag;
+    const grip = drag?.fingers;
+    if (!drag || !grip) return;
+    this.showTurnLabel(null, null, 0, false);
+    if (!grip.state.engaged && !grip.owned) {
+      drag.fingers = undefined;
+      return;
+    }
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (grip.state.engaged) grip.motion = fingerTurnMotion(grip.state, () => grip.snap.settled());
+    this.endGroupDrag(true);
+    this.syncImageOverlay();
+  }
 
   private readonly onSelectionPointerMove = (event: PointerEvent): void => {
     const drag = this.groupDrag;
     if (!drag || event.pointerId !== drag.pointerId) return;
     event.stopPropagation();
     event.preventDefault();
+    // Two fingers turn it through `onSelectionFinger`.
+    if (drag.fingers) return;
     const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
     if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
     const box = this.boxForPage(drag.selection.pageId);
@@ -10877,11 +11616,11 @@ export class InkSurface {
   /**
    * The corner resize a press at page point `from` starts on the selection's
    * frame, or `null` when it grabbed no corner handle. The handles sit on the
-   * dashed frame, which is `SELECTION_PAD_PX` outside the bounds.
+   * dashed frame, which is `framePad` outside the bounds.
    */
-  /** The selection's dashed frame, page space: its bounds grown by `SELECTION_PAD_PX`. */
+  /** The selection's dashed frame, page space: its bounds grown by `framePad`. */
   private selectionFrameOf(bounds: Bounds): Bounds {
-    const pad = SELECTION_PAD_PX / this.unitScale;
+    const pad = this.framePad / this.unitScale;
     return {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10903,44 +11642,45 @@ export class InkSurface {
     if (!hit) return null;
     const centre = boundsCentre(bounds);
     const radius = Math.hypot(from.x - centre.x, from.y - centre.y) * scale;
-    // A lone shape also settles with its longest edge level or upright.
     const sel = this.selection;
-    const lone =
-      sel?.strokes.length === 1 &&
-      sel.images.length === 0 &&
-      sel.textBoxes.length === 0 &&
-      (sel.tables?.length ?? 0) === 0 &&
-      (sel.graphs?.length ?? 0) === 0 &&
-      sel.strokes[0].shape !== undefined
-        ? sel.strokes[0]
-        : null;
-    const level = lone ? levelTurnOf(lone.pts) : null;
-    return { centre, from, angle: 0, snap: new TurnSnap(radius, level) };
+    return { centre, from, angle: 0, snap: new TurnSnap(radius, sel ? this.pageAngleOf(sel) : 0) };
+  }
+
+  /**
+   * The angle a selection has on the page, which its turns snap from: a
+   * lone shape's main edge or axis, a lone picture's rotation, and 0 for
+   * anything else (taken as drawn).
+   */
+  private pageAngleOf(sel: GroupSelection): number {
+    const only = selectedCount(sel) === 1;
+    if (only && sel.strokes.length === 1 && sel.strokes[0].shape !== undefined) {
+      return shapeAngleOf(sel.strokes[0].pts) ?? 0;
+    }
+    // A picture, or a sticky note with its ink.
+    if (sel.images.length === 1 && loneNote(sel) !== null) return rotationOf(sel.images[0]);
+    if (only && sel.images.length === 1) return rotationOf(sel.images[0]);
+    return 0;
   }
 
   /** The small angle readout beside the pen while a knob turns; made on first use. */
   private turnLabelEl: HTMLElement | null = null;
 
   /**
-   * The turn a picture's knob starts: settling on quarter turns, every 15°,
-   * and level (the turn that brings the picture's own rotation back to a
-   * quarter turn), measured on the knob's circle on screen.
+   * The turn a picture's knob starts: settling on every 45° of the page from
+   * the picture's own rotation, measured on the knob's circle on screen.
    */
   private imageTurnSnap(start: ImageTransform, from: Pt): TurnSnap {
     const c = imageCentre(start);
     const radius = Math.hypot(from.x - c.x, from.y - c.y) * this.unitScale;
-    const rotation = rotationOf(start);
-    const quarter = Math.PI / 2;
-    const level = Math.round(rotation / quarter) * quarter - rotation;
-    return new TurnSnap(radius, Math.abs(level) > 1e-9 ? level : null);
+    return new TurnSnap(radius, rotationOf(start));
   }
 
   /**
-   * Show the turn so far, in whole degrees, beside page point `at` of
-   * `box` (where the pen is), marked when it has settled on a detent; or
-   * hide it (`box` null).
+   * Show the angle on the page a turn has brought the item to, in whole
+   * degrees, beside page point `at` of `box` (where the pen or the fingers
+   * are), marked when it has settled on a page step; or hide it (`box` null).
    */
-  private showTurnLabel(box: PageBox | null, at: Pt | null, turn: number, snapped: boolean): void {
+  private showTurnLabel(box: PageBox | null, at: Pt | null, angle: number, snapped: boolean): void {
     if (!box || !at) {
       this.turnLabelEl?.addClass("is-hidden");
       return;
@@ -10949,7 +11689,7 @@ export class InkSurface {
       cls: "goodobsidian-turn-label is-hidden",
     }));
     const scale = this.unitScale;
-    const degrees = Math.round((turn * 180) / Math.PI);
+    const degrees = Math.round((angle * 180) / Math.PI);
     // A true minus sign, as a number is typeset.
     el.setText(`${degrees < 0 ? "−" : ""}${Math.abs(degrees)}°`);
     el.toggleClass("is-snapped", snapped);
@@ -10958,8 +11698,9 @@ export class InkSurface {
   }
 
   private cornerGrabbed(sel: GroupSelection, bounds: Bounds, from: Pt): GroupScale | null {
+    if (!this.selectionCorners) return null;
     const scale = this.unitScale;
-    const pad = SELECTION_PAD_PX / scale;
+    const pad = this.framePad / scale;
     const frame: Bounds = {
       minX: bounds.minX - pad,
       minY: bounds.minY - pad,
@@ -10969,17 +11710,22 @@ export class InkSurface {
     const corner = hitSelectionCorner(frame, from, HANDLE_HIT_RADIUS_PX / scale);
     if (!corner) return null;
     const at = boundsCorner(bounds, corner);
-    const fonts = textScaleRange(sel.textBoxes);
-    const cells = tableScaleRange(sel.tables ?? []);
-    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
     return {
       corner,
       anchor: anchorCorner(bounds, corner),
       grab: { x: at.x - from.x, y: at.y - from.y },
       k: 1,
-      min: Math.max(minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / scale), text.min),
-      max: text.max,
+      ...this.groupScaleRange(sel, bounds),
     };
+  }
+
+  /** How far a selection may be scaled: not below the smallest side, nor past its text's sizes. */
+  private groupScaleRange(sel: GroupSelection, bounds: Bounds): { min: number; max: number } {
+    const fonts = textScaleRange(sel.textBoxes);
+    const cells = tableScaleRange(sel.tables ?? []);
+    const text = { min: Math.max(fonts.min, cells.min), max: Math.min(fonts.max, cells.max) };
+    const side = minScaleForSide(bounds, MIN_SELECTION_SIDE_PX / this.unitScale);
+    return { min: Math.max(side, text.min), max: text.max };
   }
 
   /** Carry a selection being dragged to page point `p`, from where the drag began. */
@@ -10988,7 +11734,7 @@ export class InkSurface {
     const turn = drag.turn;
     if (turn) {
       turn.angle = turn.snap.turn(sweptTurn(turn.centre, turn.from, p, 0));
-      this.showTurnLabel(box, p, turn.angle, turn.snap.snapped);
+      this.showTurnLabel(box, p, turn.snap.pageAngle(turn.angle), turn.snap.snapped);
     } else if (scale) {
       const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
       scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
@@ -11030,6 +11776,12 @@ export class InkSurface {
     this.renderer?.setHiddenImages(new Set([...drag.selection.images, ...mirrors.images]));
     this.renderer?.setHiddenTables(new Set([...(drag.selection.tables ?? []), ...mirrors.tables]));
     this.renderer?.setHiddenGraphs(new Set([...(drag.selection.graphs ?? []), ...mirrors.graphs]));
+    // Its connectors leave the tiles too, and follow it on the wet layer.
+    drag.connectors = this.connectorIdsOf(drag.selection.pageId, drag.selection.strokes);
+    if (drag.connectors.size > 0) {
+      this.renderer?.setHiddenConnectors(drag.connectors);
+      this.invalidateConnectors(drag.selection.pageId, drag.connectors);
+    }
     this.renderer?.invalidateRegion(box.index, drag.bounds);
     this.invalidateMirrorRegions(mirrors.regions);
     this.renderDry();
@@ -11091,6 +11843,24 @@ export class InkSurface {
     const box = drag ? this.boxForPage(drag.selection.pageId) : null;
     if (!drag?.lifted || !box) return;
     const { strokes, images } = drag.selection;
+    const fingers = drag.fingers?.motion;
+    if (fingers) {
+      // A turn about the middle, after the move a finger made first.
+      const { anchor, angle } = fingers;
+      this.renderer?.renderSelectionDraft(
+        box.index,
+        strokes,
+        images,
+        fingers.dx,
+        fingers.dy,
+        this.inkPressure,
+        undefined,
+        { x: anchor.x, y: anchor.y, angle },
+        drag.selection.tables ?? [],
+        drag.selection.graphs ?? [],
+      );
+      return;
+    }
     const scale = drag.scale;
     this.renderer?.renderSelectionDraft(
       box.index,
@@ -11106,6 +11876,7 @@ export class InkSurface {
       drag.selection.tables ?? [],
       drag.selection.graphs ?? [],
     );
+    this.renderDraggedConnectors(drag, box);
   }
 
   /**
@@ -11147,7 +11918,10 @@ export class InkSurface {
       // A tap in a cell of a table picked up on its own types in that cell,
       // as a second tap on a table does in Keynote and Numbers. Inside the
       // pointerup, so iPadOS raises the keyboard for the focus.
-      const table = commit && !drag.scale && !drag.turn ? this.loneTable(drag.selection) : null;
+      const table =
+        commit && !drag.scale && !drag.turn && !drag.fingers
+          ? this.loneTable(drag.selection)
+          : null;
       const cell = table ? cellAt(this.tableLayout(table), drag.from.x, drag.from.y) : null;
       if (table && cell) {
         this.startCellEdit(drag.selection.pageId, table, cell);
@@ -11160,12 +11934,18 @@ export class InkSurface {
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.setHiddenGraphs(NO_GRAPHS);
+    if (drag.connectors && drag.connectors.size > 0) {
+      this.renderer?.setHiddenConnectors(NO_CONNECTORS);
+      // Back into the tiles where they are; a move repaints where they were too (`changed`).
+      this.invalidateConnectors(drag.selection.pageId, drag.connectors);
+    }
     this.renderer?.clearWet();
     // Mirrors hidden for the drag show again; moved, they are rebuilt (`syncMirrors`).
     this.invalidateMirrorRegions(this.selectionMirrors(drag.selection).regions);
     const { pageId } = drag.selection;
     const box = this.boxForPage(pageId);
     const scale = drag.scale;
+    const fingers = drag.fingers?.motion;
     if (scale) {
       for (const textBox of drag.selection.textBoxes) {
         this.textBoxInputs
@@ -11174,14 +11954,20 @@ export class InkSurface {
       }
     }
     const turn = drag.turn;
-    const changed = turn
-      ? turn.angle !== 0
-      : scale
-        ? scale.k !== 1
-        : drag.dx !== 0 || drag.dy !== 0;
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && turn) turn.angle = turn.snap.settled();
+    const changed = fingers
+      ? !isStill(fingers)
+      : turn
+        ? turn.angle !== 0
+        : scale
+          ? scale.k !== 1
+          : drag.dx !== 0 || drag.dy !== 0;
     const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
     let after: Bounds | null = null;
-    if (moved && turn) {
+    if (moved && fingers) {
+      after = this.commitFingerTurn(drag.selection, drag.bounds, fingers);
+    } else if (moved && turn) {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
     } else if (moved) {
@@ -11220,30 +12006,55 @@ export class InkSurface {
     motion: Reorientation,
     centre: Pt,
   ): Bounds | null {
-    const heights = new Map<TextBoxElement | TableElement, number>();
-    for (const textBox of sel.textBoxes) {
-      heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
-    }
-    for (const table of sel.tables ?? []) heights.set(table, this.tableFrameOf(table).h);
+    const heights = this.measuredHeights(sel);
     this.history.push(
       this.doc,
       new ReorientElements(sel.pageId, sel, motion, centre.x, centre.y, heights),
     );
     this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     const after = this.groupBounds(sel);
-    // The loop is stored relative to the bounds' corner, which has moved.
-    const outline = this.selectionOutline;
-    if (outline && after) {
-      const loop: number[] = [];
-      for (let i = 0; i + 1 < outline.loop.length; i += 2) {
-        const x = before.minX + outline.loop[i];
-        const y = before.minY + outline.loop[i + 1];
-        const p = reorientPoint(motion, centre.x, centre.y, x, y);
-        loop.push(p.x - after.minX, p.y - after.minY);
-      }
-      this.selectionOutline = { ...outline, loop };
-    }
+    this.carryOutline(before, after, (x, y) => reorientPoint(motion, centre.x, centre.y, x, y));
     return after;
+  }
+
+  /** Commit two fingers' turn of a selection as one step (`turnCommand`); returns its bounds after. */
+  private commitFingerTurn(sel: GroupSelection, before: Bounds, motion: TurnMotion): Bounds | null {
+    const command = turnCommand(sel.pageId, sel, motion, this.measuredHeights(sel));
+    if (!command) return before;
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    const after = this.groupBounds(sel);
+    this.carryOutline(before, after, (x, y) => turnPoint(motion, { x, y }));
+    return after;
+  }
+
+  /** The heights the view measured for a selection's text boxes and tables, for a turn. */
+  private measuredHeights(sel: GroupSelection): Map<TextBoxElement | TableElement, number> {
+    const heights = new Map<TextBoxElement | TableElement, number>();
+    for (const textBox of sel.textBoxes) {
+      heights.set(textBox, this.textBoxFrameOf(sel.pageId, textBox).h);
+    }
+    for (const table of sel.tables ?? []) heights.set(table, this.tableFrameOf(table).h);
+    return heights;
+  }
+
+  /**
+   * Carry the freehand loop along with a motion of its selection: it is
+   * stored relative to the bounds' corner, which has moved.
+   */
+  private carryOutline(
+    before: Bounds,
+    after: Bounds | null,
+    map: (x: number, y: number) => Pt,
+  ): void {
+    const outline = this.selectionOutline;
+    if (!outline || !after) return;
+    const loop: number[] = [];
+    for (let i = 0; i + 1 < outline.loop.length; i += 2) {
+      const p = map(before.minX + outline.loop[i], before.minY + outline.loop[i + 1]);
+      loop.push(p.x - after.minX, p.y - after.minY);
+    }
+    this.selectionOutline = { ...outline, loop };
   }
 
   /**
@@ -11268,6 +12079,745 @@ export class InkSurface {
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
   private cancelGroupDrag(): void {
     this.endGroupDrag(false);
+    this.endPointDrag(false);
+    this.endLinkDrag(false);
+  }
+
+  /** Repaint the tiles under page `pageId`'s connectors in `ids`, where they are now. */
+  private invalidateConnectors(pageId: string, ids: ReadonlySet<string>): void {
+    const box = this.boxForPage(pageId);
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    if (!box || !page) return;
+    for (const routed of routeConnectors(page, undefined, (c) => ids.has(c.id))) {
+      const b = connectorBounds(routed);
+      if (b) this.renderer?.invalidateRegion(box.index, b);
+    }
+  }
+
+  // --- Linked shapes: a side dot drags out a joined copy (discussion #51) ------
+
+  /** The four dots beside a lone shape's sides; made on first use. */
+  private linkDotsEl: HTMLElement | null = null;
+  /** A side dot being dragged out into a linked copy, from pointerdown to lift. */
+  private linkDrag: LinkDrag | null = null;
+  /**
+   * The shape a side dot just made, while the bar of shapes to turn it into
+   * shows in place of the action bar; null once anything else happens.
+   */
+  private linkBar: { pageId: string; stroke: Stroke } | null = null;
+  /** That bar; made on first use. */
+  private typeBar: SelectionActionBar | null = null;
+  /** Where each connector was last drawn, so a move repaints both places. */
+  private connectorShown: Map<string, { pageId: string; bounds: Bounds }> | null = null;
+
+  /** The one closed shape a selection holds on its own; null for anything else. */
+  private loneLinkShape(sel: GroupSelection | null): Stroke | null {
+    if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
+      return null;
+    }
+    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    const stroke = sel.strokes[0];
+    return isWholeClosedShape(stroke) ? stroke : null;
+  }
+
+  /** Where the dot for `side` sits, page space: just outside the frame's side. */
+  private linkDotPoint(bounds: Bounds, side: ConnectorSide): Pt {
+    // Just outside the frame, however far out the frame stands.
+    const pad = (this.framePad + LINK_DOT_GAP_PX) / this.unitScale;
+    const grown: Bounds = {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+    return sideMiddle(grown, side);
+  }
+
+  /** Put a dot beside each side of the lone closed shape selected; none otherwise. */
+  private syncLinkDots(sel: GroupSelection | null, box: PageBox | null): void {
+    const stroke = this.loneLinkShape(sel);
+    const bounds = stroke && sel ? this.groupBounds(sel) : null;
+    const dragging =
+      this.groupDrag?.lifted === true ||
+      this.linkDrag?.lifted === true ||
+      this.pointDrag?.lifted === true;
+    if (!box || !bounds || dragging) {
+      this.linkDotsEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.linkDotsEl ??= this.selectionUiEl.createDiv({
+      cls: "goodobsidian-link-dots is-hidden",
+    }));
+    while (el.childElementCount < CONNECTOR_SIDES.length) {
+      // Outside the frame, so a press on one is handed to the frame's own
+      // handler, which captures the pointer on the frame (as the knob, a
+      // child of the frame, has its presses bubble there).
+      const dot = el.createDiv({ cls: "goodobsidian-link-dot" });
+      dot.addEventListener("pointerdown", this.onSelectionPointerDown);
+    }
+    const scale = this.unitScale;
+    CONNECTOR_SIDES.forEach((side, i) => {
+      const at = this.linkDotPoint(bounds, side);
+      (el.children[i] as HTMLElement).setCssStyles({
+        left: `${(box.x + at.x) * scale}px`,
+        top: `${(box.y + at.y) * scale}px`,
+      });
+    });
+    el.removeClass("is-hidden");
+  }
+
+  /**
+   * A press at page point `from` on the frame of a lone closed shape: when
+   * it is on a side dot (and nearer to it than to the rotate knob), start
+   * dragging out a linked copy from that side, and say so.
+   */
+  private grabLinkDot(event: PointerEvent, sel: GroupSelection, bounds: Bounds, from: Pt): boolean {
+    const stroke = this.loneLinkShape(sel);
+    if (!stroke) return false;
+    const scale = this.unitScale;
+    const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
+    const toKnob = Math.hypot(knob.x - from.x, knob.y - from.y);
+    let side: ConnectorSide | null = null;
+    let best = LINK_DOT_HIT_RADIUS_PX / scale;
+    for (const s of CONNECTOR_SIDES) {
+      const at = this.linkDotPoint(bounds, s);
+      const d = Math.hypot(at.x - from.x, at.y - from.y);
+      if (d <= best) {
+        best = d;
+        side = s;
+      }
+    }
+    if (!side || toKnob < best) return false;
+    // A corner ring nearer the press than the dot keeps it (a diamond's
+    // corners sit on its sides' middles, a dot's width from the dots).
+    const rings = this.shapePointsOn ? (this.loneShape(sel)?.handles.at ?? []) : [];
+    for (let i = 0; i + 1 < rings.length; i += 2) {
+      if (Math.hypot(rings[i] - from.x, rings[i + 1] - from.y) < best) return false;
+    }
+    this.linkDrag = {
+      pointerId: event.pointerId,
+      pageId: sel.pageId,
+      stroke,
+      side,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      lifted: false,
+      offset: null,
+      target: null,
+      targetSide: "left",
+    };
+    this.linkBar = null;
+    this.selectionFrameEl.addEventListener("pointermove", this.onLinkPointerMove);
+    this.selectionFrameEl.addEventListener("pointerup", this.onLinkPointerEnd);
+    this.selectionFrameEl.addEventListener("pointercancel", this.onLinkPointerEnd);
+    return true;
+  }
+
+  /** How far the copy is moved from the original, page px, with the drag at page point `pen`. */
+  private linkOffset(drag: LinkDrag, box: PageBox, pen: Pt | null): Pt | null {
+    const b = strokeBounds(drag.stroke);
+    if (!b) return null;
+    const raw = pen
+      ? draggedOffset(b, drag.side, pen)
+      : besideOffset(b, drag.side, this.atFitZoom(LINK_GAP_PX));
+    // The whole copy stays on the page (a shape too big for it, its middle).
+    const fit = (lo: number, hi: number, d: number, size: number): number =>
+      hi - lo <= size ? clamp(d, -lo, size - hi) : clamp(d, -(lo + hi) / 2, size - (lo + hi) / 2);
+    return {
+      x: fit(b.minX, b.maxX, raw.x, box.width),
+      y: fit(b.minY, b.maxY, raw.y, box.height),
+    };
+  }
+
+  /** The copy and its connector as they would be with the copy moved by `offset`. */
+  private linkDraft(
+    drag: LinkDrag,
+    offset: Pt,
+  ): { pts: number[]; toSide: ConnectorSide; routed: RoutedConnector | null } | null {
+    const pts = translatePoints(drag.stroke.pts, offset.x, offset.y);
+    const a = strokeBounds(drag.stroke);
+    const b = boundsOfPts(pts);
+    if (!a || !b) return null;
+    const toSide = facingSide(a, b);
+    const route = connectorRoute(drag.stroke.pts, drag.side, pts, toSide);
+    const connector: ShapeConnector = {
+      id: "",
+      from: { stroke: drag.stroke.id, side: drag.side },
+      to: { stroke: "", side: toSide },
+      color: drag.stroke.color,
+      size: CONNECTOR_WIDTH,
+    };
+    return { pts, toSide, routed: route ? { connector, route } : null };
+  }
+
+  private readonly onLinkPointerMove = (event: PointerEvent): void => {
+    const drag = this.linkDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
+    if (!drag.lifted && moved < this.linkSlopPx()) return;
+    const box = this.boxForPage(drag.pageId);
+    if (!box) return;
+    const pen = this.pagePoint(box, event.clientX, event.clientY);
+    drag.target = this.linkTargetAt(drag, pen);
+    const targetBounds = drag.target ? strokeBounds(drag.target) : null;
+    if (drag.target && targetBounds) {
+      drag.targetSide = nearestSide(targetBounds, pen);
+      const joined = this.linkToTarget(drag, drag.target);
+      if (!drag.lifted) {
+        drag.lifted = true;
+        this.syncSelectionOverlay();
+      }
+      // Only the arrow: the copy a move away from it drew is wiped first.
+      this.renderer?.clearWet();
+      if (joined) this.renderer?.paintWetConnectors(box.index, [joined.routed]);
+      return;
+    }
+    const offset = this.linkOffset(drag, box, pen);
+    const draft = offset ? this.linkDraft(drag, offset) : null;
+    if (!offset || !draft) return;
+    drag.offset = offset;
+    if (!drag.lifted) {
+      drag.lifted = true;
+      this.syncSelectionOverlay();
+    }
+    // The copy and its arrow on the wet layer; nothing in the tiles changes until the lift.
+    const stroke = drag.stroke;
+    this.renderer?.renderWet(box.index, draft.pts, {
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      usePressure: this.inkPressure,
+      shape: true,
+      decor: decorOf(stroke),
+    });
+    if (draft.routed) this.renderer?.paintWetConnectors(box.index, [draft.routed]);
+  };
+
+  /** A drag shorter than this is a tap on the dot, screen px. */
+  private linkSlopPx(): number {
+    return IMAGE_DRAG_SLOP_PX * 2;
+  }
+
+  private readonly onLinkPointerEnd = (event: PointerEvent): void => {
+    const drag = this.linkDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endLinkDrag(event.type === "pointerup" || drag.lifted);
+  };
+
+  /**
+   * Finish a side-dot drag: make the linked copy where the drag left it (a
+   * tap puts it beside the original, a gap away) as one `AddLinkedCopy`,
+   * select it, and offer the bar of shapes to turn it into.
+   */
+  private endLinkDrag(commit: boolean): void {
+    const drag = this.linkDrag;
+    if (!drag) return;
+    this.linkDrag = null;
+    this.selectionFrameEl.removeEventListener("pointermove", this.onLinkPointerMove);
+    this.selectionFrameEl.removeEventListener("pointerup", this.onLinkPointerEnd);
+    this.selectionFrameEl.removeEventListener("pointercancel", this.onLinkPointerEnd);
+    if (this.selectionFrameEl.hasPointerCapture(drag.pointerId)) {
+      this.selectionFrameEl.releasePointerCapture(drag.pointerId);
+    }
+    this.renderer?.clearWet();
+    const box = this.boxForPage(drag.pageId);
+    const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
+    if (drag.target) {
+      this.joinLinkTarget(drag, drag.target, commit, box, page);
+      return;
+    }
+    const offset = box ? (drag.offset ?? this.linkOffset(drag, box, null)) : null;
+    const draft = offset ? this.linkDraft(drag, offset) : null;
+    if (!commit || !box || !page || !draft || !page.strokes.includes(drag.stroke)) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    const source = drag.stroke;
+    const copy: Stroke = { ...structuredClone(source), id: this.strokeIds.next(), pts: draft.pts };
+    // A copy is not handwriting of that moment, and does not sit on a note.
+    delete copy.t0;
+    delete copy.samples;
+    delete copy.onSticky;
+    const connector: ShapeConnector = {
+      id: nextConnectorId(this.doc),
+      from: { stroke: source.id, side: drag.side },
+      to: { stroke: copy.id, side: draft.toSide },
+      color: source.color,
+      size: CONNECTOR_WIDTH,
+    };
+    this.history.push(this.doc, new AddLinkedCopy(page.id, copy, connector));
+    this.strokeIndex.add(page.id, copy);
+    const made = boundsOfPts(copy.pts);
+    if (made) this.renderer?.invalidateRegion(box.index, made);
+    this.renderDry();
+    this.changed([page.id]);
+    this.select(page.id, { strokes: [copy], images: [], textBoxes: [] });
+    this.linkBar = { pageId: page.id, stroke: copy };
+    this.syncActionBar();
+  }
+
+  /**
+   * The shape a side dot's arrow would be dropped on with the pen at page
+   * point `pen`: the topmost closed shape on the page, other than the one
+   * dragged from, whose bounds (and a finger's width round them) hold the
+   * pen. Null for none.
+   */
+  private linkTargetAt(drag: LinkDrag, pen: Pt): Stroke | null {
+    const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
+    if (!page) return null;
+    const reach = this.atFitZoom(LINK_DOT_HIT_RADIUS_PX / 2);
+    const near = this.strokeIndex.near(page.id, pen.x, pen.y, reach);
+    let target: Stroke | null = null;
+    let order = -1;
+    for (const id of near) {
+      const stroke = this.strokeIndex.get(id);
+      if (!stroke || stroke === drag.stroke || !isWholeClosedShape(stroke)) {
+        continue;
+      }
+      const b = strokeBounds(stroke);
+      if (!b) continue;
+      const inside =
+        pen.x >= b.minX - reach &&
+        pen.x <= b.maxX + reach &&
+        pen.y >= b.minY - reach &&
+        pen.y <= b.maxY + reach;
+      if (!inside) continue;
+      const at = page.strokes.indexOf(stroke);
+      if (at > order) {
+        order = at;
+        target = stroke;
+      }
+    }
+    return target;
+  }
+
+  /** The arrow from the dragged side to the side of `target` that faces it. */
+  private linkToTarget(
+    drag: LinkDrag,
+    target: Stroke,
+  ): { routed: RoutedConnector; toSide: ConnectorSide } | null {
+    const toSide = drag.targetSide;
+    const route = connectorRoute(drag.stroke.pts, drag.side, target.pts, toSide);
+    if (!route) return null;
+    const connector: ShapeConnector = {
+      id: "",
+      from: { stroke: drag.stroke.id, side: drag.side },
+      to: { stroke: target.id, side: toSide },
+      color: drag.stroke.color,
+      size: CONNECTOR_WIDTH,
+    };
+    return { routed: { connector, route }, toSide };
+  }
+
+  /**
+   * A side dot's arrow dropped on `target`: one `AddConnector` joining the
+   * two (no copy, no bar of shapes); the shape dragged from stays selected.
+   */
+  private joinLinkTarget(
+    drag: LinkDrag,
+    target: Stroke,
+    commit: boolean,
+    box: PageBox | null,
+    page: Page | undefined,
+  ): void {
+    const joined = this.linkToTarget(drag, target);
+    const live = page?.strokes.includes(drag.stroke) && page.strokes.includes(target);
+    if (!commit || !box || !page || !joined || !live) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    const connector: ShapeConnector = {
+      ...joined.routed.connector,
+      id: nextConnectorId(this.doc),
+    };
+    this.history.push(this.doc, new AddConnector(page.id, connector));
+    const drawn = connectorBounds({ connector, route: joined.routed.route });
+    if (drawn) this.renderer?.invalidateRegion(box.index, drawn);
+    this.renderDry();
+    this.changed([page.id]);
+    this.syncSelectionOverlay();
+  }
+
+  /** Whether the bar of shapes shows for `group`: it is exactly the shape a side dot just made. */
+  private linkBarFor(group: GroupSelection): boolean {
+    const bar = this.linkBar;
+    const ok =
+      bar !== null &&
+      group.pageId === bar.pageId &&
+      group.strokes.length === 1 &&
+      group.strokes[0] === bar.stroke &&
+      group.images.length === 0 &&
+      group.textBoxes.length === 0 &&
+      (group.tables?.length ?? 0) === 0 &&
+      (group.graphs?.length ?? 0) === 0;
+    if (!ok) this.linkBar = null;
+    return ok;
+  }
+
+  /** Show the bar of shapes the new linked shape can become, above `anchor` (paper px). */
+  private showTypeBar(anchor: Bounds, clearAbove: number, clearBelow: number): void {
+    const bar = this.linkBar;
+    if (!bar) return;
+    const kind = bar.stroke.shape;
+    const bar2 = (this.typeBar ??= new SelectionActionBar(this.selectionUiEl, "Shape"));
+    bar2.setActions(
+      LINK_TYPES.map((t) => ({
+        id: `type-${t.kind}`,
+        icon: t.icon,
+        label: t.label,
+        group: "type",
+        bar: true,
+        // The bar is the whole choice: no "…" menu behind it.
+        menu: "none" as const,
+        checked: kind === t.kind,
+        run: () => this.retypeLinked(t.kind),
+      })),
+    );
+    bar2.show(anchor, this.visiblePaperRect(), { clearAbove, clearBelow });
+  }
+
+  /**
+   * Turn the shape a side dot just made into `kind`, in its box, as one
+   * `RetypeShape`: its colour, width and style stay, and so does its arrow.
+   */
+  private retypeLinked(kind: BoxPreset): void {
+    const bar = this.linkBar;
+    const page = bar ? this.doc.pages.find((candidate) => candidate.id === bar.pageId) : null;
+    const box = bar ? this.boxForPage(bar.pageId) : null;
+    if (!bar || !page || !box || bar.stroke.shape === kind) return;
+    const stroke = bar.stroke;
+    const before = strokeBounds(stroke);
+    if (!before || !page.strokes.includes(stroke)) return;
+    const pressure = stroke.pts[2] ?? FALLBACK_PRESSURE;
+    const pts = presetGeometry(
+      kind,
+      { x: before.minX, y: before.minY },
+      { x: before.maxX, y: before.maxY },
+      pressure,
+    );
+    if (pts.length === 0) return;
+    this.history.push(this.doc, new RetypeShape(page.id, stroke, pts, kind));
+    this.strokeIndex.remove(stroke.id, page.id);
+    this.strokeIndex.add(page.id, stroke);
+    this.renderer?.invalidateRegion(box.index, unionBounds(before, strokeBounds(stroke)) ?? before);
+    this.renderDry();
+    this.changed([page.id]);
+    this.syncSelectionOverlay();
+  }
+
+  /**
+   * Repaint the tiles where a connector was drawn and where it is now, for
+   * every connector whose route changed since the last look (a shape at
+   * either end moved, was erased, or came back with an undo). Connectors
+   * reach between their shapes, outside the region a move of either shape
+   * invalidates, so this runs after every change.
+   */
+  private syncConnectorTiles(): void {
+    const shown = (this.connectorShown ??= new Map<string, { pageId: string; bounds: Bounds }>());
+    const seen = new Set<string>();
+    let dirty = false;
+    this.doc.pages.forEach((page, index) => {
+      if (!page.connectors || page.connectors.length === 0) return;
+      for (const routed of routeConnectors(page)) {
+        const id = routed.connector.id;
+        const now = connectorBounds(routed);
+        if (!now) continue;
+        seen.add(id);
+        const was = shown.get(id);
+        if (was && was.pageId === page.id && sameBounds(was.bounds, now)) continue;
+        if (was) {
+          const at = this.boxForPage(was.pageId);
+          if (at) this.renderer?.invalidateRegion(at.index, was.bounds);
+        }
+        this.renderer?.invalidateRegion(index, now);
+        shown.set(id, { pageId: page.id, bounds: now });
+        dirty = true;
+      }
+    });
+    for (const [id, was] of shown) {
+      if (seen.has(id)) continue;
+      const at = this.boxForPage(was.pageId);
+      if (at) this.renderer?.invalidateRegion(at.index, was.bounds);
+      shown.delete(id);
+      dirty = true;
+    }
+    if (dirty) this.requestFrame();
+  }
+
+  /** The connectors joined to any of `strokes` on page `pageId`, by id. */
+  private connectorIdsOf(pageId: string, strokes: readonly Stroke[]): Set<string> {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const ids = new Set<string>();
+    if (!page?.connectors) return ids;
+    const moved = new Set(strokes.map((stroke) => stroke.id));
+    for (const c of liveConnectors(page)) {
+      if (moved.has(c.from.stroke) || moved.has(c.to.stroke)) ids.add(c.id);
+    }
+    return ids;
+  }
+
+  /**
+   * While a lasso selection is dragged, the connectors joined to it are
+   * drawn on the wet layer over its draft, routed from where the drag has
+   * its shapes (moved, resized or turned as the draft is).
+   */
+  private renderDraggedConnectors(drag: GroupDrag, box: PageBox): void {
+    const ids = drag.connectors;
+    const page = this.doc.pages[box.index];
+    if (!ids || ids.size === 0 || !page) return;
+    const moved = new Map<string, readonly number[]>();
+    for (const stroke of drag.selection.strokes) {
+      let pts: number[];
+      if (drag.turn) {
+        const motion: Reorientation = { kind: "rotate", angle: drag.turn.angle };
+        pts = reorientPoints(stroke.pts, motion, drag.turn.centre.x, drag.turn.centre.y);
+      } else if (drag.scale) {
+        pts = scalePoints(stroke.pts, drag.scale.anchor.x, drag.scale.anchor.y, drag.scale.k);
+      } else {
+        pts = translatePoints(stroke.pts, drag.dx, drag.dy);
+      }
+      moved.set(stroke.id, pts);
+    }
+    const routed = routeConnectors(
+      page,
+      (id) => moved.get(id),
+      (c) => ids.has(c.id),
+    );
+    this.renderer?.paintWetConnectors(box.index, routed);
+  }
+
+  // --- A lone shape's point handles (discussion #51) ------------------------
+
+  /** The dots on a lone selected shape's corners and ends; made on first use. */
+  private shapePointsEl: HTMLElement | null = null;
+  /**
+   * Whether the lone shape selected shows its corner rings: off when it is
+   * selected, switched by the bar's corner points button (Joost,
+   * 2026-10-29), so a tap on a shape shows only its resize handles.
+   */
+  private shapePointsOn = false;
+  private pointDrag: PointDrag | null = null;
+
+  /**
+   * How far the selection's frame stands outside its bounds, screen px:
+   * wider round a lone shape whose rings and corner squares both show.
+   */
+  private get framePad(): number {
+    // Rings and corner squares both showing: the squares stand clear.
+    return this.shapePointsOn && this.selectionCorners && this.loneShape(this.selection)
+      ? SHAPE_FRAME_PAD_PX
+      : SELECTION_PAD_PX;
+  }
+
+  /** The one shape a selection holds on its own, and its point handles; null otherwise. */
+  private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
+    if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
+      return null;
+    }
+    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    const stroke = sel.strokes[0];
+    const handles = pointHandles(stroke.shape, stroke.pts);
+    return handles ? { stroke, handles } : null;
+  }
+
+  /**
+   * Put a dot on each corner and end of the lone shape selected, where a
+   * point drag has them now; none for any other selection, or while the
+   * whole selection is dragged (`sel` null). The frame takes the presses.
+   */
+  private syncShapePoints(sel: GroupSelection | null, box: PageBox | null): void {
+    const drag = this.pointDrag;
+    const lone = drag ?? (box && this.shapePointsOn ? this.loneShape(sel) : null);
+    if (!lone || !box) {
+      this.shapePointsEl?.addClass("is-hidden");
+      return;
+    }
+    const el = (this.shapePointsEl ??= this.selectionUiEl.createDiv({
+      cls: "goodobsidian-shape-points",
+    }));
+    el.removeClass("is-hidden");
+    const at = lone.handles.at;
+    const count = at.length / 2;
+    while (el.childElementCount < count) el.createDiv({ cls: "goodobsidian-shape-point" });
+    while (el.childElementCount > count) el.lastElementChild?.remove();
+    const scale = this.unitScale;
+    for (let h = 0; h < count; h++) {
+      const dot = el.children[h] as HTMLElement;
+      const moved = drag?.draft && drag.handle === h ? drag.draft.at : null;
+      const x = moved ? moved.x : at[h * 2];
+      const y = moved ? moved.y : at[h * 2 + 1];
+      dot.setCssStyles({ left: `${(box.x + x) * scale}px`, top: `${(box.y + y) * scale}px` });
+      dot.toggleClass("is-dragging", drag?.lifted === true && drag.handle === h);
+    }
+  }
+
+  /**
+   * A press at page point `from` on the frame of a lone shape: start
+   * dragging the corner or end it took, and say so.
+   */
+  private grabShapePoint(event: PointerEvent, sel: GroupSelection, from: Pt): boolean {
+    if (!this.shapePointsOn) return false;
+    const lone = this.loneShape(sel);
+    const before = lone ? strokeBounds(lone.stroke) : null;
+    if (!lone || !before) return false;
+    const reach = POINT_HIT_RADIUS_PX / this.unitScale;
+    const f = this.selectionFrameOf(this.groupBounds(sel) ?? before);
+    // The frame's corner squares, while they show, keep the presses nearer them.
+    const corners = this.selectionCorners
+      ? [
+          { x: f.minX, y: f.minY },
+          { x: f.maxX, y: f.minY },
+          { x: f.maxX, y: f.maxY },
+          { x: f.minX, y: f.maxY },
+        ]
+      : [];
+    const handle = pickPointHandle(lone.handles.at, from, reach, corners);
+    if (handle < 0) return false;
+    const at = lone.handles.at;
+    this.pointDrag = {
+      pointerId: event.pointerId,
+      pageId: sel.pageId,
+      stroke: lone.stroke,
+      handles: lone.handles,
+      handle,
+      grab: { x: at[handle * 2] - from.x, y: at[handle * 2 + 1] - from.y },
+      clientX: event.clientX,
+      clientY: event.clientY,
+      before,
+      lifted: false,
+      draft: null,
+    };
+    this.selectionFrameEl.addEventListener("pointermove", this.onPointPointerMove);
+    this.selectionFrameEl.addEventListener("pointerup", this.onPointPointerEnd);
+    this.selectionFrameEl.addEventListener("pointercancel", this.onPointPointerEnd);
+    return true;
+  }
+
+  private readonly onPointPointerMove = (event: PointerEvent): void => {
+    const drag = this.pointDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
+    if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
+    const box = this.boxForPage(drag.pageId);
+    if (!box) return;
+    const p = this.pagePoint(box, event.clientX, event.clientY);
+    const stroke = drag.stroke;
+    const to = this.snapDraggedPoint(box, drag, {
+      x: clamp(p.x + drag.grab.x, 0, box.width),
+      y: clamp(p.y + drag.grab.y, 0, box.height),
+    });
+    const next = movePoint(stroke.shape ?? "polygon", stroke.pts, drag.handles, drag.handle, to);
+    if (!next) return;
+    drag.draft = { ...next, at: to };
+    if (!drag.lifted) {
+      // Out of the tiles once, as a dragged selection is: each frame after
+      // this is one shape on the wet layer, never a tile rasterised again.
+      drag.lifted = true;
+      this.renderer?.setHiddenStrokes(new Set([stroke.id]));
+      this.renderer?.invalidateRegion(box.index, drag.before);
+      this.renderDry();
+      this.selectionFrameEl.addClass("is-pointing");
+      this.syncActionBar();
+      // The side dots step aside with the frame.
+      this.syncLinkDots(null, box);
+    }
+    this.renderer?.renderWet(box.index, next.pts, {
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      usePressure: this.inkPressure,
+      shape: true,
+      decor: decorOf({ ...stroke, shape: next.kind }),
+    });
+    this.syncShapePoints(null, box);
+  };
+
+  /**
+   * Where a dragged corner or end goes: onto another shape's corner, end or
+   * midpoint near it (never its own shape's), with the snap ring; else, for
+   * a line's or arrow's end, level or upright with the other end when it is
+   * within a few degrees of either.
+   */
+  private snapDraggedPoint(box: PageBox, drag: PointDrag, p: Pt): Pt {
+    this.shapeSnapper.exclude = drag.stroke;
+    const snapped = this.snapNear(box, p.x, p.y);
+    this.shapeSnapper.exclude = null;
+    if (snapped) {
+      const hit = this.shapeSnapper.hit;
+      this.showSnapMarker(box, hit);
+      return { x: hit.x, y: hit.y };
+    }
+    this.showSnapMarker(null, null);
+    const { at, points, arrow } = drag.handles;
+    const line = arrow || (points.length === 2 && points.every((list) => list.length === 1));
+    if (!line) return p;
+    const other = 1 - drag.handle;
+    const ox = at[other * 2];
+    const oy = at[other * 2 + 1];
+    const turn = levelTurn(p.x - ox, p.y - oy, this.atFitZoom(LINE_LEVEL_RISE));
+    if (turn === 0) return p;
+    const c = Math.cos(turn);
+    const s = Math.sin(turn);
+    const dx = p.x - ox;
+    const dy = p.y - oy;
+    return { x: ox + dx * c - dy * s, y: oy + dx * s + dy * c };
+  }
+
+  /** The lift commits the point's move; a pointercancel too, as a group drag's does. */
+  private readonly onPointPointerEnd = (event: PointerEvent): void => {
+    const drag = this.pointDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endPointDrag(true);
+  };
+
+  /**
+   * Finish a point drag: commit it as one `ReshapeStroke` (`commit`) or
+   * drop it, then put the shape back into the tiles over the region it
+   * covered before and covers now.
+   */
+  private endPointDrag(commit: boolean): void {
+    const drag = this.pointDrag;
+    if (!drag) return;
+    this.pointDrag = null;
+    this.selectionFrameEl.removeEventListener("pointermove", this.onPointPointerMove);
+    this.selectionFrameEl.removeEventListener("pointerup", this.onPointPointerEnd);
+    this.selectionFrameEl.removeEventListener("pointercancel", this.onPointPointerEnd);
+    if (this.selectionFrameEl.hasPointerCapture(drag.pointerId)) {
+      this.selectionFrameEl.releasePointerCapture(drag.pointerId);
+    }
+    this.selectionFrameEl.removeClass("is-pointing");
+    this.showSnapMarker(null, null);
+    if (!drag.lifted) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    this.renderer?.setHiddenStrokes(NO_STROKES);
+    this.renderer?.clearWet();
+    const { pageId, stroke } = drag;
+    const draft = commit ? drag.draft : null;
+    const done = draft !== null && this.doc.pages.some((page) => page.id === pageId);
+    let after: Bounds | null = null;
+    if (done) {
+      this.history.push(this.doc, new ReshapeStroke(pageId, stroke, draft.pts, draft.kind));
+      this.strokeIndex.remove(stroke.id, pageId);
+      this.strokeIndex.add(pageId, stroke);
+      after = strokeBounds(stroke);
+      // The lasso's loop no longer goes round the shape it was drawn round.
+      this.selectionOutline = null;
+    }
+    const box = this.boxForPage(pageId);
+    if (box) {
+      this.renderer?.invalidateRegion(box.index, unionBounds(drag.before, after) ?? drag.before);
+    }
+    this.renderDry();
+    this.syncSelectionOverlay();
+    if (done) this.changed([pageId]);
   }
 
   /**
@@ -11294,8 +12844,8 @@ export class InkSurface {
   /**
    * A finger tapped the page (client px). With the lasso it selects, like a
    * Pencil tap; with any other tool it lets go of a selected image, and a
-   * tap on a picture picks the lasso and selects it (`fingerPicksPicture`)
-   * — fingers never draw. While audio replay is open, a tap on ink goes to
+   * tap on a shape, a table or a picture picks the lasso and selects it
+   * (`fingerPicksShape`, `fingerPicksPicture`) — fingers never draw. While audio replay is open, a tap on ink goes to
    * it first, whatever the tool.
    */
   private onFingerTap(clientX: number, clientY: number): void {
@@ -11351,9 +12901,12 @@ export class InkSurface {
       if (box && tapped) {
         const p = this.toPage(box, at);
         // Typed text sits above the pictures, so a box is tried first.
+        // Then as a lasso tap reads the layers: ink, graphs, tables, pictures.
         if (
           this.fingerHoldsTextBox(tapped, p) ||
+          this.fingerPicksShape(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
+          this.fingerPicksTable(tapped, p) ||
           this.fingerPicksPicture(tapped, p)
         ) {
           return;
@@ -11733,6 +13286,40 @@ export class InkSurface {
     return true;
   }
 
+  /**
+   * A finger tapped a shape (a snapped shape or an arrow) with a pen, or any
+   * tool but the lasso and Text: the lasso is picked and the shape selected
+   * as a lasso tap selects it, with its frame, handles and bar, as a tap on
+   * a picture does (discussion #51). Handwriting is left to the pen. Not in
+   * a practice file. Returns whether it did.
+   */
+  private fingerPicksShape(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
+    const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
+    if (!stroke) return false;
+    this.pickLasso();
+    this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+    return true;
+  }
+
+  /** The same for a table: it is selected with the ink in its cells, as a lasso tap takes it. */
+  private fingerPicksTable(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = lassoFilterFor(this.toolState);
+    const table = filter.tables ? this.tableAt(page, p)?.table : undefined;
+    if (!table) return false;
+    this.pickLasso();
+    this.select(page.id, this.tableWithInk(page, table, filter));
+    return true;
+  }
+
+  /** Hand the lasso to a finger's selection, as the toolbar would. */
+  private pickLasso(): void {
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+  }
+
   // --- Graphs: exploring one on a live canvas ---------------------------------------
 
   /** Select a graph by id (after the host placed it). Returns whether it is there. */
@@ -11973,7 +13560,9 @@ export class InkSurface {
     this.syncExplore();
     const sel = this.liveImageSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
-    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null);
+    // Two fingers carry it as a selection, drawn on the wet layer: no chrome meanwhile.
+    const pinched = sel !== null && this.groupDrag?.selection.images.includes(sel.image) === true;
+    this.imageUiEl.toggleClass("is-hidden", !sel || !box || this.cropping !== null || pinched);
     this.syncCropOverlay();
     this.syncActionBar();
     if (!sel || !box || this.cropping) return;
@@ -12004,7 +13593,13 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveImageSelection();
-    if (!sel || this.imageDrag || this.callbacks.isLocked?.()) return;
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    const finger = event.pointerType === "touch";
+    if (this.imageDrag) {
+      // A second finger beside the one dragging it: a turn of the picture.
+      if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
+      return;
+    }
     const box = this.boxForPage(sel.pageId);
     if (!box) return;
     const from = this.pagePoint(box, event.clientX, event.clientY);
@@ -12031,12 +13626,18 @@ export class InkSurface {
       clientY: event.clientY,
       draft: start,
       lifted: false,
+      finger,
       ...(part === "rotate" ? { turn: this.imageTurnSnap(start, from) } : {}),
     };
     this.imageUiEl.addClass("is-dragging");
     this.imageFrameEl.addEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.addEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.addEventListener("pointercancel", this.onImagePointerEnd);
+    if (finger) {
+      // No drag was under way, so any finger still counted lost its lift.
+      if (!this.pageFingerOnFrame) this.selectionFingers.cancel();
+      this.selectionFingers.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    }
   };
 
   private readonly onImagePointerMove = (event: PointerEvent): void => {
@@ -12062,7 +13663,8 @@ export class InkSurface {
         const swept = sweptTurn(imageCentre(drag.start), drag.from, p, 0);
         const turn = drag.turn ? drag.turn.turn(swept) : swept;
         drag.draft = withRotation(drag.start, rotationOf(drag.start) + turn);
-        this.showTurnLabel(box, p, turn, drag.turn?.snapped === true);
+        const page = drag.turn ? drag.turn.pageAngle(turn) : rotationOf(drag.start) + turn;
+        this.showTurnLabel(box, p, page, drag.turn?.snapped === true);
         break;
       }
       default:
@@ -12150,6 +13752,10 @@ export class InkSurface {
     this.invalidateMirrorRegions(
       this.selectionMirrors(this.imageAsSelection(drag.pageId, drag.image)).regions,
     );
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && drag.turn && drag.part === "rotate") {
+      drag.draft = withRotation(drag.start, rotationOf(drag.start) + drag.turn.settled());
+    }
     const box = this.boxForPage(drag.pageId);
     const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
     const changed =
@@ -13370,6 +14976,17 @@ function imageFileOf(data: DataTransfer | null): File | null {
 }
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
+/**
+ * A closed shape, whole: a side dot copies it, and a side dot's arrow may be
+ * dropped on it. An erased piece of a closed shape is open, so it is not.
+ */
+function isWholeClosedShape(stroke: Stroke): boolean {
+  if (stroke.shape === undefined || !isClosedKind(stroke.shape)) return false;
+  const n = Math.floor(stroke.pts.length / 3);
+  if (n < 3) return false;
+  return stroke.pts[0] === stroke.pts[(n - 1) * 3] && stroke.pts[1] === stroke.pts[(n - 1) * 3 + 1];
+}
+
 function iconInto(el: HTMLElement, icon: string, fallback: string): void {
   setIcon(el, icon);
   const svg = el.querySelector("svg");
@@ -13377,6 +14994,11 @@ function iconInto(el: HTMLElement, icon: string, fallback: string): void {
     el.empty();
     el.setText(fallback);
   }
+}
+
+/** Whether two bounds are the same rectangle. */
+function sameBounds(a: Bounds, b: Bounds): boolean {
+  return a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY;
 }
 
 function clamp(value: number, min: number, max: number): number {

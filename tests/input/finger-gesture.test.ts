@@ -50,6 +50,36 @@ describe("FingerGesture", () => {
     ]);
   });
 
+  it("reports how far the fingers turned, the short way round", () => {
+    const turns: number[] = [];
+    const g = new FingerGesture({ onPinch: (i) => turns.push(i.rotation) });
+    g.down(1, 0, 0, 1);
+    g.down(2, 10, 0, 2);
+    // A quarter turn clockwise (y down) about the first finger, spread kept.
+    g.move(2, 0, 10, 3);
+    expect(turns[0]).toBeCloseTo(Math.PI / 2);
+    // Across the ±π seam: from pointing left-and-up to left-and-down is a
+    // small turn anticlockwise, not most of a circle.
+    g.move(2, -10, -0.1, 4);
+    g.move(2, -10, 0.1, 5);
+    expect(turns[2]).toBeCloseTo(-0.02, 3);
+    // A pinch that only spreads turns nothing.
+    g.move(2, -20, 0.2, 6);
+    expect(turns[3]).toBeCloseTo(0);
+  });
+
+  it("starts the turn again when a finger joins", () => {
+    const turns: number[] = [];
+    const g = new FingerGesture({ onPinch: (i) => turns.push(i.rotation) });
+    g.down(1, 0, 0, 1);
+    g.down(2, 10, 0, 2);
+    g.lift(2, 3);
+    // Lands straight below: no turn is reported for the jump in direction.
+    g.down(3, 0, 10, 4);
+    g.move(3, 0, 11, 5);
+    expect(turns).toEqual([0]);
+  });
+
   it("measures the spread as a distance, whatever the direction", () => {
     const { g, log } = gesture();
     g.down(1, 0, 0, 1);

@@ -116,6 +116,31 @@ export class StrokeIndex {
     return this.grids.get(pageId)?.queryPoint(x, y, radius) ?? new Set();
   }
 
+  /**
+   * Call `visit` with each stroke on page `pageId` that may pass within
+   * `radius` of (x, y), possibly more than once — a broad phase that builds
+   * nothing, for a query on every pointer move (snapping to shapes).
+   */
+  forEachNear(
+    pageId: string,
+    x: number,
+    y: number,
+    radius: number,
+    visit: (stroke: Stroke) => void,
+  ): void {
+    const grid = this.grids.get(pageId);
+    if (!grid) return;
+    this.visiting = visit;
+    grid.forEachNear(x, y, radius, this.visitId);
+    this.visiting = null;
+  }
+
+  private visiting: ((stroke: Stroke) => void) | null = null;
+  private readonly visitId = (id: string): void => {
+    const where = this.placed.get(id);
+    if (where) this.visiting?.(where.stroke);
+  };
+
   /** Ids of the strokes on page `pageId` whose bounds may meet `bounds` (a broad phase too). */
   within(pageId: string, bounds: Bounds): Set<string> {
     return this.grids.get(pageId)?.queryBounds(bounds) ?? new Set();

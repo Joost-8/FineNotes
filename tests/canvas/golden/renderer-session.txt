@@ -699,8 +699,7 @@ wet clearRect 0,0 780,0 780,1400 0,1400
 # lasso, drafts and clear
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clip nonzero [R(24,-108 744,-108 744,792 24,792)]
-wet fill evenodd [M114,-18 L294,0 L258,162 L132,144 Z] {fillStyle=rgba(120,170,255,0.12)}
-wet stroke [M114,-18 L294,0 L258,162 L132,144 Z] {fillStyle=rgba(120,170,255,0.12) strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineJoin=round lineDash=[13.3333,8.8889]}
+wet stroke [M114,-18 L294,0 L258,162 L132,144 Z] {strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineJoin=round lineDash=[13.3333,8.8889]}
 wet.classList - goodobsidian-wet-hidden
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clearRect 0,0 780,0 780,1400 0,1400

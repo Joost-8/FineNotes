@@ -134,11 +134,32 @@ export class WordCheck {
     }
   }
 
+  /**
+   * Write the answers, after taking in any the file has that this copy does
+   * not: sync may have brought another device's answers since they were
+   * read, and writing this copy over them would lose them.
+   */
   private async save(): Promise<void> {
     const adapter = this.app.vault.adapter;
     const folder = normalizePath(HANDWRITING_FOLDER);
     if (!(await adapter.exists(folder))) await adapter.mkdir(folder);
-    await adapter.write(correctionsPath(), serializeCorrections(this.corrections));
+    const file = correctionsPath();
+    if (await adapter.exists(file)) {
+      const raw = await adapter.read(file);
+      try {
+        JSON.parse(raw);
+      } catch {
+        // Not JSON (a write cut short?): kept beside it, never written over.
+        await adapter.write(`${file}.unreadable-${Date.now()}`, raw);
+      }
+      this.corrections = mergeCorrections(this.corrections, parseCorrections(raw));
+    }
+    await adapter.write(file, serializeCorrections(this.corrections));
+  }
+
+  /** When each answer was given (ms since the epoch), for counting the new ones. */
+  get answeredAt(): number[] {
+    return this.corrections.corrections.map((c) => c.at);
   }
 
   /** The words of a reading to underline on page `pageId` of `note`. */

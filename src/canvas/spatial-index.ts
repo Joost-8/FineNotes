@@ -93,6 +93,25 @@ export class SpatialIndex {
     return this.gather(this.blockOf({ minX: x0, minY: y0, maxX: x1, maxY: y1 }));
   }
 
+  /**
+   * Call `visit` with each id listed in the cells within `reach` of (x, y),
+   * once per cell it is listed in (so possibly more than once). Unlike
+   * {@link queryPoint} it builds no set and allocates nothing: for queries on
+   * every pointer move, whose callers do not mind a repeat (snapping).
+   */
+  forEachNear(x: number, y: number, reach: number, visit: (id: string) => void): void {
+    const cell = this.cell;
+    const top = Math.floor((y - reach) / cell);
+    const bottom = Math.floor((y + reach) / cell);
+    const left = Math.floor((x - reach) / cell);
+    const right = Math.floor((x + reach) / cell);
+    for (let row = top; row <= bottom; row++) {
+      const columns = this.rows.get(row);
+      if (!columns) continue;
+      for (let col = left; col <= right; col++) columns.get(col)?.forEach(visit);
+    }
+  }
+
   /** Forget everything, then list a page's strokes in order. */
   rebuild(page: readonly Stroke[]): void {
     this.clear();

@@ -11,7 +11,8 @@ import {
   deleteQuestion,
   fewerMistakes,
   hasUnusedLines,
-  learnStepText,
+  correctionsText,
+  learnInfoText,
   learnSummary,
   learnedBadge,
   learnedDate,
@@ -24,8 +25,8 @@ import {
   relearnText,
   sheetText,
   sheetUse,
+  newCorrections,
   undoText,
-  writeStepText,
 } from "../../src/recognition/hwr/learned-model";
 
 const model: LearnedModel = {
@@ -49,6 +50,16 @@ function sheet(set: number, written: number): PracticeSheet {
     prompts: 30,
   };
 }
+
+/** What `learnInfoText` goes on: nothing yet. */
+const facts = {
+  sheets: [] as PracticeSheet[],
+  sets: 3,
+  corrections: 0,
+  fresh: 0,
+  model: undefined as LearnedModel | undefined,
+  onDevice: false,
+};
 
 describe("the learned model in words", () => {
   it("dates it the same on every device", () => {
@@ -145,19 +156,38 @@ describe("the practice sheets against the model", () => {
 });
 
 describe("the reminder to learn again", () => {
-  it("comes once every 50 corrected words since the model learned, or since the last reminder", () => {
+  it("comes once every 50 new corrected words, and once per 50 since the last reminder", () => {
     expect(RELEARN_AFTER).toBe(50);
     // Never learned: corrections alone are enough to start.
-    expect(relearnDue(49, undefined, undefined)).toBe(0);
-    expect(relearnDue(50, undefined, undefined)).toBe(50);
-    // Learned from 30: 50 more.
-    expect(relearnDue(79, 30, undefined)).toBe(0);
-    expect(relearnDue(80, 30, undefined)).toBe(50);
+    expect(relearnDue(49, 49, undefined)).toBe(0);
+    expect(relearnDue(50, 50, undefined)).toBe(50);
+    // Learned from 30 of 80: 50 new.
+    expect(relearnDue(49, 79, undefined)).toBe(0);
+    expect(relearnDue(50, 80, undefined)).toBe(50);
     // Reminded (or learned and lost the gate) at 80: next at 130, counting from the model.
-    expect(relearnDue(129, 30, 80)).toBe(0);
-    expect(relearnDue(130, 30, 80)).toBe(100);
+    expect(relearnDue(99, 129, 80)).toBe(0);
+    expect(relearnDue(100, 130, 80)).toBe(100);
     // A corrections file that shrank says nothing.
-    expect(relearnDue(10, 30, 80)).toBe(0);
+    expect(relearnDue(50, 10, 80)).toBe(0);
+  });
+
+  it("counts corrections as new by when they were saved, so a failed run loses none", () => {
+    const learned = Date.parse(model.learnedAt);
+    const at = [learned - 2, learned - 1, learned + 1, learned + 5000];
+    expect(newCorrections(at, undefined)).toBe(4);
+    expect(newCorrections(at, model)).toBe(2);
+    // A record without a usable date: what it says it learned from.
+    expect(newCorrections(at, { learnedAt: "?", corrections: 1 })).toBe(3);
+    expect(newCorrections(at, { learnedAt: "?" })).toBe(4);
+  });
+
+  it("tracks the corrected words in a line that says what they are for", () => {
+    expect(correctionsText(0, 0, false)).toMatch(/none yet\. Tap an underlined word/);
+    expect(correctionsText(17, 67, true)).toBe(
+      "Corrected words: 17 new since your model learned, of 67 saved. " +
+        "At 50 new words, FineNotes offers to learn again.",
+    );
+    expect(correctionsText(4, 4, false)).toMatch(/^Corrected words: 4 new, of 4 saved\./);
   });
 
   it("says how many, and whether there is a model to learn again", () => {
@@ -187,15 +217,6 @@ describe("the steps", () => {
     );
   });
 
-  it("says what to do on a sheet, and how far along", () => {
-    expect(writeStepText([], 3)).toMatch(
-      /copy: write each one on the empty line under it.*There are 3 sheets; start with the first\.$/,
-    );
-    expect(writeStepText([sheet(1, 30), sheet(1, 4), sheet(2, 0)], 3)).toMatch(
-      /1 of 3 sheets written/,
-    );
-  });
-
   it("does not count the symbol sheet as one of the sets, and names it by its title", () => {
     const symbols = {
       path: "P/Symbol practice.practice.md",
@@ -205,7 +226,9 @@ describe("the steps", () => {
       prompts: 53,
     };
     expect(learnSummary([sheet(1, 30), symbols], 3)).toBe("1 of 3 sheets · 50 lines");
-    expect(writeStepText([symbols], 3)).toMatch(/0 of 3 sheets written/);
+    expect(learnInfoText({ ...facts, sheets: [symbols] })).toMatch(
+      /20 copied lines on 0 of 3 sheets/,
+    );
     // An unfinished symbol sheet never blocks the text sheets (it has its own chip).
     expect(nextSheetAction([symbols], 3)).toEqual({ kind: "write", label: "Write sheet 1" });
     expect(nextSheetAction([sheet(1, 30), symbols], 3)).toEqual({
@@ -217,15 +240,39 @@ describe("the steps", () => {
     expect(nextSheetAction([{ ...symbols, written: 53 }], 3).label).toBe("Write sheet 1");
   });
 
-  it("asks for ten lines before learning, then says what it learns from", () => {
-    expect(learnStepText(4, 2, false)).toMatch(
-      new RegExp(`at least ${MIN_PRACTICE_LINES} lines first \\(6 so far\\)`),
+  it("says what learning needs, what there is, and what comes next", () => {
+    // Too little yet: how much more.
+    const few = learnInfoText({ ...facts, sheets: [sheet(1, 4)], corrections: 2, fresh: 2 });
+    expect(few).toMatch(
+      new RegExp(`^Needs: at least ${MIN_PRACTICE_LINES} copied lines or corrected words\\.`),
     );
-    expect(learnStepText(30, 0, false)).toMatch(
-      /^Learns from your 30 copied lines on this device.*better than Grape alone\.$/,
+    expect(few).toContain(
+      "Has: 4 copied lines on 1 of 3 sheets, and 2 corrected words. " +
+        "Corrections are kept, also when a learning run fails or is stopped.",
     );
-    expect(learnStepText(30, 3, true)).toMatch(
-      /30 copied lines and 3 corrected words.*stays as the one to go back to\.$/,
+    expect(few).toMatch(/Next: 4 more lines or words, then Learn now\.$/);
+    // Enough, no model yet.
+    expect(learnInfoText({ ...facts, sheets: [sheet(1, 30)] })).toMatch(
+      /Next: Learn now\. .*better than Grape alone\.$/,
+    );
+    // A model: the words new since it, and how many until the reminder.
+    const learned = { ...facts, model, onDevice: true, sheets: [sheet(1, 30), sheet(2, 20)] };
+    const some = learnInfoText({ ...learned, corrections: 67, fresh: 17 });
+    expect(some).toContain("and 67 corrected words (17 new since your model learned)");
+    expect(some).toContain(
+      "Next: after 33 more corrected words, FineNotes offers to learn again; " +
+        "Learn again starts it now.",
+    );
+    expect(learnInfoText({ ...learned, corrections: 60, fresh: 55 })).toContain(
+      "Next: enough new words to learn again;",
+    );
+    // Nothing new: say so.
+    expect(learnInfoText({ ...learned, corrections: 5 })).toContain(
+      "Next: your model has all of it.",
+    );
+    // A model that does not say what it learned from never claims that.
+    expect(learnInfoText({ ...learned, model: { ...model, sources: undefined } })).toContain(
+      "Next: after 50 more corrected words",
     );
   });
 

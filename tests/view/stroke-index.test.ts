@@ -32,6 +32,16 @@ describe("StrokeIndex", () => {
     expect([...index.near("p1", 50, 600, 2)]).toEqual(["s2"]);
   });
 
+  it("visits the strokes near a point on their own page, as strokes", () => {
+    const index = new StrokeIndex();
+    index.rebuild(twoPages());
+    const seen: string[] = [];
+    index.forEachNear("p1", 50, 10, 2, (stroke) => seen.push(stroke.id));
+    expect(seen).toEqual(["s1"]);
+    index.forEachNear("nowhere", 50, 10, 2, (stroke) => seen.push(stroke.id));
+    expect(seen).toEqual(["s1"]);
+  });
+
   it("finds strokes whose bounds meet a box", () => {
     const index = new StrokeIndex();
     index.rebuild(twoPages());

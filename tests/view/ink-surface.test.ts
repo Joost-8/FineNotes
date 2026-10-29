@@ -575,7 +575,7 @@ function hud(debug = true): Hud {
 describe("the HUD's pointer lines", () => {
   it("starts empty", () => {
     expect(hud().text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -583,7 +583,7 @@ describe("the HUD's pointer lines", () => {
     const h = hud();
     for (const r of strokeRecords(100)) h.record(r);
     expect(h.text()).toBe(
-      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -601,7 +601,7 @@ describe("the HUD's pointer lines", () => {
     h.record({ type: "move", pointerType: "touch", pressure: 0.1, coalesced: 4, timeStamp: 505 });
     h.record({ type: "cancel", pointerType: "touch", pressure: 0.1, timeStamp: 510 });
     expect(h.text()).toBe(
-      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\nGEOMETRY",
+      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -631,7 +631,7 @@ describe("the HUD's pointer lines", () => {
     h.setDebug(true);
     expect(h.hidden()).toBe(false);
     expect(h.text()).toBe(
-      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -642,7 +642,7 @@ describe("the HUD's pointer lines", () => {
     for (const r of strokeRecords(0)) h.record(r);
     h.setDebug(true);
     expect(h.text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 });
