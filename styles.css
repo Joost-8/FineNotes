@@ -13203,3 +13203,13 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
 }
+
+/* The Theme row's chevron: pointing down while its three settings show. */
+.goodobsidian-fold-chevron.is-folded .svg-icon {
+  transform: none;
+}
+
+/* The three settings under Theme sit indented beneath it. */
+.setting-item.goodobsidian-theme-child {
+  padding-left: var(--size-4-6);
+}

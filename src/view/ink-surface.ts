@@ -623,6 +623,8 @@ export interface InkSurfaceOptions {
    * (contracts/design-brief.md).
    */
   paper?: PaperTheme;
+  /** The desk colour behind the pages. */
+  workspace?: string;
   /** Open with the diagnostics HUD showing (see {@link InkSurface.setDebug}). */
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
@@ -1595,6 +1597,8 @@ export class InkSurface {
   private readonly laserCanvas: HTMLCanvasElement;
   /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
   private readonly paneLayers: HTMLCanvasElement[];
+  /** The desk colour behind the pages. */
+  private workspace: string;
   private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
@@ -1840,6 +1844,7 @@ export class InkSurface {
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
     this.paper = options.paper ?? LIGHT_PAPER;
+    this.workspace = options.workspace ?? this.paper.desk;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -1851,6 +1856,7 @@ export class InkSurface {
           cls: `goodobsidian-canvas goodobsidian-canvas-${layer}`,
         }),
     );
+    this.surfaceEl.style.backgroundColor = this.workspace;
     this.scrollEl = this.surfaceEl.createDiv({ cls: "goodobsidian-scroll" });
     this.paperEl = this.scrollEl.createDiv({ cls: "goodobsidian-paper" });
     this.textBoxesEl = this.paperEl.createDiv({ cls: "goodobsidian-textboxes" });
@@ -2080,6 +2086,8 @@ export class InkSurface {
     );
     renderer.highlighterAlpha = options.highlighterAlpha;
     renderer.paper = this.paper;
+    renderer.deskOverride = this.workspace;
+    renderer.desk = this.workspace;
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -2706,6 +2714,18 @@ export class InkSurface {
     this.renderer.invalidateAll();
     this.syncTextBoxes();
     this.syncInkCursor();
+    this.requestFrame();
+  }
+
+  /** The workspace desk colour changed: redraw the desk only. */
+  setWorkspaceBackground(color: string): void {
+    if (color === this.workspace) return;
+    this.workspace = color;
+    this.surfaceEl.style.backgroundColor = color;
+    if (this.renderer) {
+      this.renderer.deskOverride = color;
+      this.renderer.desk = color;
+    }
     this.requestFrame();
   }
 
@@ -5181,7 +5201,9 @@ export class InkSurface {
         shown = true;
       }
     });
-    if (shown) this.requestFrame();
+    if (shown) {
+      this.requestFrame();
+    }
   }
 
   /**
@@ -5211,7 +5233,9 @@ export class InkSurface {
       else renderer.invalidatePage(page.id);
       shown = true;
     });
-    if (shown) this.requestFrame();
+    if (shown) {
+      this.requestFrame();
+    }
   }
 
   /** The part of page `index` that is on screen, in page space; `null` when none is. */

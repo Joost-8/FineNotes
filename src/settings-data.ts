@@ -17,7 +17,15 @@ import {
   PALETTE,
   SIZES,
 } from "./constants";
-import { type PaperTheme, paperTheme } from "./canvas/backdrop";
+import {
+  DEFAULT_CUSTOM_WORKSPACE,
+  isPdfTheme,
+  isWorkspaceBackground,
+  pdfThemeOf,
+  type PdfTheme,
+  type WorkspaceBackground,
+} from "./model/appearance-theme";
+import { parseHexColor } from "./model/colors";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
@@ -269,7 +277,16 @@ export interface GoodObsidianSettings {
   // Dark pages (#25): a view setting. What is stored never changes.
   /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */
   pageAppearance: PageAppearance;
-  /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
+  /** The desk behind the pages: auto, light, dark, custom, or blurred. */
+  workspaceBackground: WorkspaceBackground;
+  /** The custom desk colour, `#rrggbb`, used when `workspaceBackground` is custom. */
+  workspaceBackgroundColor: string;
+  /** How imported/background PDF pages are shown, independent of the page theme. */
+  pdfTheme: PdfTheme;
+  /**
+   * The legacy "PDF pages turn dark with dark pages" switch. It is kept so old
+   * data.json files load unchanged; new writes use `pdfTheme`.
+   */
   invertPdfPages: boolean;
 
   // Pens and shortcuts (FineNotes#24, #25).
@@ -408,6 +425,9 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   showNewNotebookInExplorer: false,
   folderNotebooks: true,
   pageAppearance: "light",
+  workspaceBackground: "auto",
+  workspaceBackgroundColor: DEFAULT_CUSTOM_WORKSPACE,
+  pdfTheme: "dark",
   invertPdfPages: true,
 
   savedPens: defaultSavedPens(),
@@ -551,13 +571,14 @@ export function storePenPreferences(
 export type AppearanceChoice = PageAppearance | "dark-pdf-light" | "system-pdf-light";
 
 export function appearanceChoiceOf(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
+  settings: Pick<GoodObsidianSettings, "pageAppearance"> &
+    Partial<Pick<GoodObsidianSettings, "pdfTheme" | "invertPdfPages">>,
 ): AppearanceChoice {
   const appearance: PageAppearance =
     settings.pageAppearance === "dark" || settings.pageAppearance === "system"
       ? settings.pageAppearance
       : "light";
-  if (appearance === "light" || settings.invertPdfPages !== false) return appearance;
+  if (appearance === "light" || pdfThemeOf(settings) !== "as-is") return appearance;
   return appearance === "dark" ? "dark-pdf-light" : "system-pdf-light";
 }
 
@@ -567,14 +588,17 @@ export function storeAppearanceChoice(settings: GoodObsidianSettings, choice: un
     case "system":
       settings.pageAppearance = choice;
       settings.invertPdfPages = true;
+      settings.pdfTheme = "dark";
       return;
     case "dark-pdf-light":
       settings.pageAppearance = "dark";
       settings.invertPdfPages = false;
+      settings.pdfTheme = "as-is";
       return;
     case "system-pdf-light":
       settings.pageAppearance = "system";
       settings.invertPdfPages = false;
+      settings.pdfTheme = "as-is";
       return;
     default:
       // Light pages leave the PDF switch as it was, for the next dark choice.
@@ -598,28 +622,41 @@ export function attachmentDefaults(
   };
 }
 
-// --- Dark pages ----------------------------------------------------------------
+// --- Dark pages and the workspace ---------------------------------------------
+
+export {
+  pagesAreDark,
+  pdfThemeOf,
+  shownPaperTheme,
+  workspaceBackgroundOf,
+} from "./model/appearance-theme";
 
 /**
- * Whether pages are shown dark, from the `pageAppearance` setting (anything
- * it does not know is light) and whether Obsidian's theme is dark.
+ * Carry the appearance settings a data.json from before the split holds.
+ * `invertPdfPages` was folded into Page appearance; it becomes the PDF theme.
+ * Unknown or missing values land on the defaults a fresh install writes.
  */
-export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolean {
-  if (appearance === "dark") return true;
-  return appearance === "system" && obsidianDark;
-}
-
-/**
- * The paper theme notebooks and page embeds are shown in, by the dark pages
- * settings and Obsidian's theme. A view setting only: export, printing and
- * AI reading always paint `paperTheme(false)`.
- */
-export function shownPaperTheme(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
-  obsidianDark: boolean,
-): PaperTheme {
-  const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
-  return paperTheme(dark, settings.invertPdfPages === false);
+export function migrateAppearanceSettings(
+  settings: Pick<
+    GoodObsidianSettings,
+    "workspaceBackground" | "workspaceBackgroundColor" | "pdfTheme" | "invertPdfPages"
+  >,
+  saved: Partial<GoodObsidianSettings> | null,
+): void {
+  settings.pdfTheme = isPdfTheme(saved?.pdfTheme)
+    ? saved.pdfTheme
+    : saved?.invertPdfPages === false
+      ? "as-is"
+      : "dark";
+  settings.invertPdfPages = settings.pdfTheme !== "as-is";
+  settings.workspaceBackground = isWorkspaceBackground(saved?.workspaceBackground)
+    ? saved.workspaceBackground
+    : "auto";
+  const custom =
+    typeof saved?.workspaceBackgroundColor === "string"
+      ? parseHexColor(saved.workspaceBackgroundColor)
+      : null;
+  settings.workspaceBackgroundColor = custom ?? DEFAULT_CUSTOM_WORKSPACE;
 }
 
 // --- Paper width -------------------------------------------------------------
