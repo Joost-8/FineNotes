@@ -1403,7 +1403,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       for (const [capIndex, cap] of inputCaps(input, apple).entries()) {
         if (capIndex > 0 && !apple)
           way.createSpan({ cls: "goodobsidian-shortcut-plus", text: "+" });
-        way.createEl("kbd", { cls: "goodobsidian-key", text: cap });
+        const key = way.createEl("kbd", { cls: "goodobsidian-key", text: cap });
+        // ⌘ ⌥ ⇧ are small in most fonts: their caps set them larger, as the ? sheet does.
+        if (/^[⌘⌥⇧]$/.test(cap)) key.addClass("is-glyph");
       }
     }
   }
