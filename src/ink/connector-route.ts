@@ -118,6 +118,26 @@ export function sideAnchor(pts: readonly number[], side: ConnectorSide): Pt | nu
   return best > -Infinity ? { x: c.x + n.x * best, y: c.y + n.y * best } : sideMiddle(b, side);
 }
 
+/**
+ * The side of `b` nearest point `p`: where an arrow dropped at `p` on a
+ * shape of bounds `b` meets it (Joost, 2026-10-29: the part of the shape
+ * nearest the drop, not a side fixed by where the shapes sit). Inside the
+ * box, the edge it is closest to; outside, the edge nearest it.
+ */
+export function nearestSide(b: Bounds, p: Pt): ConnectorSide {
+  const clampX = Math.min(b.maxX, Math.max(b.minX, p.x));
+  const clampY = Math.min(b.maxY, Math.max(b.minY, p.y));
+  const edges: Array<[ConnectorSide, number]> = [
+    ["top", Math.hypot(p.x - clampX, p.y - b.minY)],
+    ["bottom", Math.hypot(p.x - clampX, p.y - b.maxY)],
+    ["left", Math.hypot(p.x - b.minX, p.y - clampY)],
+    ["right", Math.hypot(p.x - b.maxX, p.y - clampY)],
+  ];
+  let best = edges[0];
+  for (const edge of edges) if (edge[1] < best[1]) best = edge;
+  return best[0];
+}
+
 /** The side of `to` that faces `from`: along whichever axis the two are further apart. */
 export function facingSide(from: Bounds, to: Bounds): ConnectorSide {
   const fx = (from.minX + from.maxX) / 2;

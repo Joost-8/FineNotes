@@ -1152,7 +1152,11 @@ copy of the shape and an arrow joining the two, as one `AddLinkedCopy`
 rectangle, circle, triangle, diamond or rounded rectangle in its box
 (`RetypeShape`, one step each). Dropping the dot's arrow on another whole
 closed shape (2026-10-29) joins the two instead, as one `AddConnector`: no
-copy, no bar of shapes, and the shape dragged from stays selected.
+copy, no bar of shapes, and the shape dragged from stays selected. The
+arrow meets that shape on the side of its bounds nearest the drop
+(`nearestSide`). Every connector is drawn `CONNECTOR_WIDTH` (1.5 page px)
+wide with a head of at most 10 px, whatever its stored `size`, which new
+connectors set to that width.
 
 The arrow is a new page element, `Page.connectors` (absent when none):
 

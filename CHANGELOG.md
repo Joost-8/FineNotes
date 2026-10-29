@@ -56,8 +56,9 @@ extracted from the matching section of this file by `release.yml`.
   shape on its own and a dot sits beside each of its sides, as in Goodnotes:
   drag one out, or tap it, for a copy of the shape joined to it by an arrow
   with right-angled bends; drop the arrow on another shape instead and it
-  joins the two, with no copy. The arrow stays joined when either shape
-  moves.
+  joins the two at the side nearest where you let go, with no copy. Arrows
+  are drawn thin, one width for all. The arrow stays joined when either
+  shape moves.
   Right after, a bar beside the new shape turns it into a rectangle, circle,
   triangle, diamond or rounded rectangle. Notebooks with linked shapes open
   read-only in older versions of FineNotes, so update FineNotes on every

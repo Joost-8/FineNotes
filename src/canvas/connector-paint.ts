@@ -44,9 +44,19 @@ export function routeConnectors(
   return out;
 }
 
+/**
+ * Every connector is drawn this wide, page px, whatever its shapes' pens
+ * (Joost, 2026-10-29: one standard, thin width, elegant rather than thick).
+ * A connector's stored `size` is kept for the file, and not drawn.
+ */
+export const CONNECTOR_WIDTH = 1.5;
+
+/** And its open head is at most this long a side, page px: small, as the line is thin. */
+const CONNECTOR_HEAD = 10;
+
 /** What a routed connector covers, its width and head included, page px. */
 export function connectorBounds(routed: RoutedConnector): Bounds | null {
-  return routeBounds(routed.route, routed.connector.size + HEAD_MAX);
+  return routeBounds(routed.route, CONNECTOR_WIDTH + HEAD_MAX);
 }
 
 /** Paint one routed connector in page space, in its colour (made dark-page legible on `night`). */
@@ -59,7 +69,7 @@ export function paintConnector(
   const n = route.length / 2;
   if (n < 2) return;
   const color = night ? nightColor(connector.color) : connector.color;
-  const width = connector.size;
+  const width = CONNECTOR_WIDTH;
   // The arrowhead at the end, along the last run; the line stops at its tip.
   const tip = { x: route[(n - 1) * 2], y: route[(n - 1) * 2 + 1] };
   const before = { x: route[(n - 2) * 2], y: route[(n - 2) * 2 + 1] };
@@ -68,8 +78,10 @@ export function paintConnector(
   for (let i = 1; i < n; i++) {
     total += Math.hypot(route[i * 2] - route[i * 2 - 2], route[i * 2 + 1] - route[i * 2 - 1]);
   }
-  // A head no longer than the last run, or its barbs would cross the bend.
-  const head = arrowHead(before, tip, width, "open", Math.min(total, last / 0.45));
+  // A head no longer than the last run, or its barbs would cross the bend,
+  // and never past CONNECTOR_HEAD (arrowHead keeps a side to 45 % of the span).
+  const span = Math.min(total, last / 0.45, CONNECTOR_HEAD / 0.45);
+  const head = arrowHead(before, tip, width, "open", span);
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
