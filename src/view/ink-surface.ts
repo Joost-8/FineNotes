@@ -11660,8 +11660,9 @@ export class InkSurface {
         drag.lifted = true;
         this.syncSelectionOverlay();
       }
+      // Only the arrow: the copy a move away from it drew is wiped first.
+      this.renderer?.clearWet();
       if (joined) this.renderer?.paintWetConnectors(box.index, [joined.routed]);
-      else this.renderer?.clearWet();
       return;
     }
     const offset = this.linkOffset(drag, box, pen);
