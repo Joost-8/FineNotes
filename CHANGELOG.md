@@ -35,9 +35,24 @@ extracted from the matching section of this file by `release.yml`.
   switch in the eraser's mode list: Whole stroke and By line draw what they
   take grey until the pen lifts, as Notability does, instead of hiding it
   at once. Off by default.
+- **Joined pages**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A notebook
+  can join its pages: no gap between them, down or across, and everything
+  runs on over the join, as on one sheet. Pen, highlighter, shapes, the
+  eraser, the lasso, pictures, sticky notes, text boxes and tables all
+  work across it. Choose **Joined pages** in the New notebook dialog, or
+  switch it in the notebook's settings under Pages. Each page still stores
+  and exports its own part, so the pages stay pages in the page list, in a
+  PDF and on every other device. A small mark beside the page shows where
+  one page ends. Off by default.
 
 ### Changed
 
+- **The page uses the whole view.** Obsidian's padding around the notebook
+  (a frame round the toolbar and a band at the foot) is gone, so the page is
+  larger. The page counter, the zoom readout and a toolbar along the bottom
+  keep clear of the iPad's home indicator and of Obsidian's status bar.
+- **New board, named.** The New notebook dialog's ∞ now says "New board".
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
   the top is leftmost), in the More tools menu, or hidden. A tool in the
