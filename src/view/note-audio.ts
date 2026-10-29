@@ -40,6 +40,7 @@ import {
   seekTargetMs,
   strokeTime,
   transcriptPathFor,
+  transcriptText,
   uploadSizeProblem,
 } from "../audio/recording";
 import {
@@ -83,6 +84,8 @@ export interface NoteAudioHost {
   toolbar(): Toolbar | null;
   /** Whether the note is protected (its ink failed to load). Silent. */
   isLocked(): boolean;
+  /** Put `text` on the page in view as a text box, one undo step; false when it could not. */
+  insertText(text: string): boolean;
 }
 
 /** Why a recording stopped. */
@@ -416,6 +419,7 @@ export class NoteAudio {
       transcribeOnDevice: (recording) => void this.transcribeOnDevice(recording),
       stopDevice: () => this.host.plugin.speech.cancel(),
       openTranscript: (recording) => this.openTranscript(recording),
+      pasteTranscript: (recording) => void this.pasteTranscript(recording),
       remove: (recording) => this.remove(recording),
       record: () => this.toggleRecording(),
       openAiSettings: () => this.host.plugin.openSettingsTab(),
@@ -474,6 +478,28 @@ export class NoteAudio {
     const path = recording.transcript;
     if (!path) return;
     void this.host.app.workspace.openLinkText(path, this.host.file()?.path ?? "", true);
+  }
+
+  /** The transcript's text, as the user left it, onto the page in view. */
+  private async pasteTranscript(recording: Recording): Promise<void> {
+    const { app } = this.host;
+    if (this.host.isLocked()) {
+      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      return;
+    }
+    const file = recording.transcript ? app.vault.getFileByPath(recording.transcript) : null;
+    if (!file) {
+      new Notice("FineNotes: this recording's transcript note is missing.");
+      return;
+    }
+    const text = transcriptText(await app.vault.cachedRead(file));
+    if (!text) {
+      new Notice("FineNotes: the transcript is empty.");
+      return;
+    }
+    if (!this.alive || !this.host.insertText(text)) {
+      new Notice("FineNotes: couldn't paste the transcript here.");
+    }
   }
 
   // --- Player and tap-to-seek -------------------------------------------------------

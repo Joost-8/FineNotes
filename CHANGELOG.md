@@ -65,6 +65,11 @@ extracted from the matching section of this file by `release.yml`.
   triangle, diamond or rounded rectangle. Notebooks with linked shapes open
   read-only in older versions of FineNotes, so update FineNotes on every
   device first.
+- **Paste a transcript onto the page.** A transcribed recording in the
+  sidebar's Recordings list has a paste button beside Transcript: it puts
+  the transcript's text, as you left it in its note and without the
+  times, onto the page in view as a text box, under what is drawn there.
+  Undo takes it off again.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch
