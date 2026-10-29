@@ -90,6 +90,21 @@ extracted from the matching section of this file by `release.yml`.
   switch in the eraser's mode list: Whole stroke and By line draw what they
   take grey until the pen lifts, as Notability does, instead of hiding it
   at once. Off by default.
+- **The toolbar at any edge**
+  ([#50](https://github.com/Joost-8/FineNotes/issues/50)). The Toolbar row
+  in a notebook's ⋯ panel puts it along the top (as before) or the bottom,
+  or upright at the left or right. The page makes room on that side, up to
+  the tab's header, and keeps the spot you were reading. Upright, every tool
+  stays on the bar: its buttons shrink to fit, and past their smallest the
+  bar scrolls. Its menus open toward the page from every edge, a tool's bar
+  resting by the toolbar goes with it, and each device keeps its own place,
+  so an iPad and a laptop can differ.
+
+### Fixed
+
+- The notebook could scroll by a few pixels in Obsidian when a tool's bar
+  along the bottom was tucked away, which narrowed the page by a scrollbar's
+  width and changed its zoom a little.
 
 ### Changed
 
