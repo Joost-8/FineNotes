@@ -185,6 +185,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
           getFileByPath: () => null,
           adapter: {
             exists: (path: string) => Promise.resolve(files.has(path)),
+            read: (path: string) => Promise.resolve(files.get(path) ?? ""),
             stat: (path: string) =>
               Promise.resolve(
                 files.has(path) ? { type: "file", size: files.get(path)?.length ?? 0 } : null,
@@ -1813,7 +1814,8 @@ describe("the learned handwriting model", () => {
       ["Learn now", false],
     ]);
     expect(learn.buttons[1].disabled).toBe(true);
-    expect(tab.infoOf(LEARN)).toMatch(/Copy at least 10 lines first \(0 so far\)/);
+    expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
+    expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
   });
 
   it("offers the symbol sheet beside the text sheets, before either is written", async () => {
@@ -1821,11 +1823,45 @@ describe("the learned handwriting model", () => {
     const { tab } = await loaded(plugin);
     const learn = renderRow(named(rows(tab), LEARN));
     const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
-    expect(chips.map((c) => c.textContent)).toEqual(["Symbols"]);
+    // The symbol sheet, then the tracker of corrected words toward the next round.
+    expect(chips.map((c) => c.textContent)).toEqual(["Symbols", "Words0/50"]);
+    expect(chips[1].attrs["aria-label"]).toMatch(/^Corrected words: none yet\./);
     chips[0].dispatch("click");
     await flush();
     expect(plugin.calls).toContain("closeSettings");
     expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
+  });
+
+  it("tracks the corrected words the model has not learned from, toward the next round", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const learned = Date.parse(record.learnedAt);
+    const word = (at: number, i: number) => ({
+      kind: "misread",
+      read: "wrd",
+      text: "word",
+      note: "n.notebook.md",
+      page: "p1",
+      strokes: [{ id: `s${i}`, pts: [0, 0, 0.5], t0: null }],
+      at,
+    });
+    plugin.files.set(
+      "FineNotes assets/Handwriting sheets/corrections.json",
+      JSON.stringify({
+        version: 1,
+        corrections: [learned - 5, learned + 5, learned + 9].map(word),
+      }),
+    );
+    const { tab } = await loaded(plugin);
+    const learn = renderRow(named(rows(tab), LEARN));
+    const words = learn.settingEl.findAll("goodobsidian-words-chip");
+    expect(words.map((c) => c.textContent)).toEqual(["Words2/50"]);
+    expect(words[0].attrs["aria-label"]).toBe(
+      "Corrected words: 2 new since your model learned, of 3 saved. " +
+        "At 50 new words, FineNotes offers to learn again.",
+    );
+    expect(tab.infoOf(LEARN)).toContain("and 3 corrected words (2 new since your model learned)");
+    expect(tab.infoOf(LEARN)).toContain("Next: 7 more lines or words, then Learn now.");
   });
 
   it("describes a learned model in one line: in use, and how much better it reads", async () => {
