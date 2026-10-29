@@ -166,8 +166,10 @@ import {
   DEFAULT_BAR_DOCK,
   barMenuSide,
   isBarUpright,
+  UPRIGHT_BUTTON_MAX,
   pageArea,
   parseBarDock,
+  uprightButtonSize,
 } from "./bar-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
@@ -1250,9 +1252,18 @@ export class Toolbar {
     const box = along(bar.getBoundingClientRect());
     if (box.length === 0) return;
     for (const item of this.foldable) item.button.removeClass("is-overflowed");
-    this.measureCrowding();
-    const style = getComputedStyle(bar);
     const upright = isBarUpright(this.barDock);
+    // Upright, nothing folds (a tool added to the bar must show): the
+    // buttons shrink to fit, and past their smallest the bar scrolls.
+    bar.style.removeProperty("--gob-bar-button");
+    this.measureCrowding();
+    if (upright) {
+      this.fitUprightBar();
+      this.moreButton?.removeClass("has-folded");
+      this.moreButton?.removeClass("has-mark");
+      return;
+    }
+    const style = getComputedStyle(bar);
     const left = box.start + parseFloat(upright ? style.paddingTop : style.paddingLeft);
     const right = box.end - parseFloat(upright ? style.paddingBottom : style.paddingRight);
     const overflows = (): boolean =>
@@ -1276,6 +1287,24 @@ export class Toolbar {
       "has-mark",
       this.foldedItems().some((item) => item.marked),
     );
+  }
+
+  /**
+   * An upright bar taller than its room: its buttons shrink in proportion
+   * (`uprightButtonSize`), down to their smallest; what still does not fit
+   * scrolls (styles.css, `.is-upright`).
+   */
+  private fitUprightBar(): void {
+    const bar = this.barEl;
+    const room = bar.clientHeight;
+    const need = bar.scrollHeight;
+    if (need <= room + 0.5) return;
+    const buttons = Array.from(
+      bar.querySelectorAll<HTMLElement>("button.goodobsidian-tool"),
+    ).filter((button) => button.offsetHeight > 0).length;
+    const size = uprightButtonSize(room, need, need - buttons * UPRIGHT_BUTTON_MAX);
+    bar.setCssProps({ "--gob-bar-button": `${size}px` });
+    this.measureCrowding();
   }
 
   /**

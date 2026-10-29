@@ -134,7 +134,6 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
-import { type BarDock, parseBarDock } from "./view/bar-dock-model";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -212,14 +211,6 @@ const APPEARANCE_CHOICES: Record<AppearanceChoice, string> = {
   "system-pdf-light": "Match Obsidian, PDFs as they are",
 };
 
-/** Where the tool bar sits, as "Toolbar" names the places (bar-dock-model.ts, FineNotes#50). */
-const BAR_DOCK_NAMES: Record<BarDock, string> = {
-  top: "Top",
-  bottom: "Bottom",
-  left: "Left",
-  right: "Right",
-};
-
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
 const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
@@ -277,10 +268,6 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
-  barDock:
-    "Where the toolbar sits in your notebooks: along the top or the bottom, or upright at " +
-    "the left or right, where what does not fit folds into ⋯. Each device keeps its own " +
-    "place, so an iPad and a laptop can differ.",
   textDragSize:
     "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
   desynchronized:
@@ -992,19 +979,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.info(
-          drawnRow("Toolbar", "", (s) => this.drawBarDock(s), [
-            "toolbar position",
-            "toolbar place",
-            "bottom",
-            "left",
-            "right",
-            "side",
-            "vertical",
-            "dock",
-          ]),
-          DESC.barDock,
-        ),
         this.more("writing", "Pen options, text boxes, colors, highlighter"),
         this.info(
           toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
@@ -1085,19 +1059,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addColorPicker((c) => {
       c.setValue(String(shownValue(settings, "defaultColor")));
       c.onChange((value) => void this.setControlValue("defaultColor", value));
-    });
-  }
-
-  /**
-   * "Toolbar": the place of the tool bar on this device. Not a stored setting
-   * (settings.ts syncs with the vault); the plugin keeps it in app local
-   * storage, as it does the pill's place.
-   */
-  private drawBarDock(setting: Setting): void {
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(BAR_DOCK_NAMES)) d.addOption(id, name);
-      d.setValue(this.plugin.barDock);
-      d.onChange((value) => this.plugin.setBarDock(parseBarDock(value)));
     });
   }
 

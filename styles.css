@@ -8563,7 +8563,8 @@ input[type="range"].goodobsidian-player-scrubber {
 }
 
 .goodobsidian-more .goodobsidian-more-row.clickable-icon,
-.goodobsidian-more .goodobsidian-more-row.is-goto {
+.goodobsidian-more .goodobsidian-more-row.is-goto,
+.goodobsidian-more .goodobsidian-more-row.is-bar-dock {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -8609,6 +8610,36 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-more .goodobsidian-more-row.clickable-icon:hover {
   background: var(--background-modifier-hover);
   background-color: var(--gob-well);
+}
+
+/* Toolbar: the bar's four places as panel icons at the row's end, the one
+   in use in an accent square (more-panel.ts, barDockRow). */
+.goodobsidian-more .goodobsidian-more-row.is-bar-dock {
+  cursor: default;
+}
+
+.goodobsidian-more-docks {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.goodobsidian-more .goodobsidian-more-docks button.goodobsidian-more-dock {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--gob-tool-radius);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-more .goodobsidian-more-docks button.goodobsidian-more-dock.is-active {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+}
+
+.goodobsidian-more .goodobsidian-more-docks .svg-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .goodobsidian-more .goodobsidian-more-row.clickable-icon:disabled {
@@ -13337,12 +13368,25 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   margin: 2px 0;
 }
 
+/* Too tall for its room, the upright bar's buttons shrink (toolbar.ts,
+   fitUprightBar sets --gob-bar-button, 44 px down to 32) and then it scrolls:
+   nothing folds into ⋯, so a tool put on the bar always shows. */
+.goodobsidian-toolbar.is-upright button {
+  min-width: var(--gob-bar-button, var(--gob-touch));
+  height: var(--gob-bar-button, var(--gob-touch));
+}
+
+.goodobsidian-toolbar.is-upright button .svg-icon {
+  width: min(var(--gob-icon-size), calc(var(--gob-bar-button, var(--gob-touch)) - 12px));
+  height: min(var(--gob-icon-size), calc(var(--gob-bar-button, var(--gob-touch)) - 12px));
+}
+
 /* A tool with a menu grows downwards, not sideways, its ▾ under the icon. */
 .goodobsidian-toolbar.is-upright button.has-caret.is-active,
 .goodobsidian-toolbar.is-upright button.goodobsidian-ruler-button.is-on,
 .goodobsidian-toolbar.is-upright button.goodobsidian-accessories-button {
-  min-width: var(--gob-touch);
-  height: 58px;
+  min-width: var(--gob-bar-button, var(--gob-touch));
+  height: calc(var(--gob-bar-button, var(--gob-touch)) + 14px);
   padding: 0 6px 14px;
 }
 

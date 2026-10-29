@@ -191,3 +191,23 @@ export function menuAnchor(anchor: MenuAnchor): { side: PopoverSide; box: Box } 
   else if (side === "left") box.left = edge.left;
   return { side, box };
 }
+
+/** An upright bar's buttons at full size, px (`--gob-touch`). */
+export const UPRIGHT_BUTTON_MAX = 44;
+/** The smallest an upright bar's buttons get before the bar scrolls instead, px. */
+export const UPRIGHT_BUTTON_MIN = 32;
+
+/**
+ * The size of an upright bar's buttons, px, so its `count` buttons fit a bar
+ * `room` px tall that needs `need` px at full size: full size when they fit,
+ * else smaller in proportion, never under {@link UPRIGHT_BUTTON_MIN} (past
+ * that the bar scrolls). Only the buttons shrink, so the part of `need` that
+ * is gaps and padding (`fixed`) stays.
+ */
+export function uprightButtonSize(room: number, need: number, fixed: number): number {
+  if (need <= room) return UPRIGHT_BUTTON_MAX;
+  const buttons = need - fixed;
+  if (buttons <= 0) return UPRIGHT_BUTTON_MIN;
+  const scale = Math.max(0, room - fixed) / buttons;
+  return Math.max(UPRIGHT_BUTTON_MIN, Math.floor(UPRIGHT_BUTTON_MAX * scale));
+}

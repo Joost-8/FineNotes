@@ -14,6 +14,7 @@
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
  *   ┌ Dark pages / Light pages            ┐
+ *   │ Toolbar          [▔] [▁] [▏] [▕]    │
  *   │ Keyboard shortcuts                  │
  *   │ Copy home screen link               │
  *   Clear or delete page
@@ -32,7 +33,7 @@ import { setIcon } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
-import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
+import { type BarDock, menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -58,6 +59,8 @@ export interface MorePanelPage {
   darkPages?: boolean;
   /** Tool bar buttons folded in here because the bar had no room for them. */
   folded?: FoldedBarItem[];
+  /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
+  barDock?: BarDock;
 }
 
 export interface MorePanelActions {
@@ -80,7 +83,17 @@ export interface MorePanelActions {
   showShortcuts: () => void;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
   copyHomeLink: () => void;
+  /** Put the tool bar at `dock`, on this device. Without it the row is not offered. */
+  setBarDock?: (dock: BarDock) => void;
 }
+
+/** The tool bar's places in the Toolbar row, each its Lucide panel icon. */
+const BAR_DOCKS: ReadonlyArray<{ dock: BarDock; label: string }> = [
+  { dock: "top", label: "Toolbar at the top" },
+  { dock: "bottom", label: "Toolbar at the bottom" },
+  { dock: "left", label: "Toolbar on the left" },
+  { dock: "right", label: "Toolbar on the right" },
+];
 
 const PANEL_WIDTH = 330;
 const THUMB_WIDTH = 34;
@@ -243,6 +256,7 @@ export class MorePanel {
       text: page.darkPages ? "Light pages" : "Dark pages",
       run: () => actions.toggleDarkPages(),
     });
+    this.barDockRow(view);
     this.row(view, {
       icon: "keyboard",
       text: "Keyboard shortcuts",
@@ -253,6 +267,37 @@ export class MorePanel {
       text: "Copy home screen link",
       run: () => actions.copyHomeLink(),
     });
+  }
+
+  /**
+   * "Toolbar": where the tool bar rests on this device (FineNotes#50), as
+   * four panel icons at the row's end, the one in use marked. A choice moves
+   * the bar this panel hangs from, so the panel closes first.
+   */
+  private barDockRow(parent: HTMLElement): void {
+    const set = this.actions.setBarDock;
+    if (!set) return;
+    const row = parent.createDiv({ cls: "goodobsidian-more-row is-bar-dock" });
+    setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "layout-panel-top");
+    row.createSpan({ cls: "goodobsidian-more-label", text: "Toolbar" });
+    const places = row.createDiv({ cls: "goodobsidian-more-docks" });
+    places.setAttribute("role", "radiogroup");
+    places.setAttribute("aria-label", "Toolbar");
+    for (const { dock, label } of BAR_DOCKS) {
+      const button = places.createEl("button", {
+        cls: "goodobsidian-more-dock clickable-icon",
+      });
+      setIcon(button, `panel-${dock}`);
+      const chosen = dock === (this.page.barDock ?? "top");
+      button.toggleClass("is-active", chosen);
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(chosen));
+      button.setAttribute("aria-label", label);
+      button.addEventListener("click", () => {
+        this.close();
+        set(dock);
+      });
+    }
   }
 
   private group(): HTMLElement {

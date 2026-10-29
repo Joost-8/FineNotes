@@ -143,11 +143,6 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       calls.push("save");
       return Promise.resolve();
     }),
-    // The tool bar's place, kept on the device, not in the settings (main.ts, barDock).
-    barDock: "top",
-    setBarDock: vi.fn(function (this: { barDock: string }, dock: string) {
-      this.barDock = dock;
-    }),
     setDebugHud: vi.fn((on: boolean) => {
       calls.push(`debugHud:${on}`);
       settings.debugHud = on;
@@ -394,7 +389,6 @@ describe("the rows", () => {
       ["", "(block)", "render"],
       [WRITING, "Start with", "render"],
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
-      [WRITING, "Toolbar", "render"],
       [WRITING, "More", "action"],
       [WRITING, "Hide pen options while writing", "toggle:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
@@ -605,7 +599,6 @@ describe("which rows show", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
       "Start with",
       "Two-finger double-tap to undo",
-      "Toolbar",
       "More",
       "Hide pen options while writing",
       "Drag to size text boxes",
@@ -625,7 +618,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 34)",
+      "(block 33)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -831,23 +824,6 @@ describe("control values", () => {
     expect(tab.getControlValue("defaultColor")).toBe("#223344");
     expect(tab.getControlValue("defaultTool")).toBe("eraser");
     expect(tab.getControlValue("pressureWidth")).toBe(false);
-  });
-
-  it("moves the tool bar from Toolbar, on this device only, without touching the settings", async () => {
-    const plugin = makePlugin();
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Toolbar"));
-    expect(Object.entries(row.dropdowns[0].options)).toEqual([
-      ["top", "Top"],
-      ["bottom", "Bottom"],
-      ["left", "Left"],
-      ["right", "Right"],
-    ]);
-    expect(row.dropdowns[0].value).toBe("top");
-    await row.dropdowns[0].pick("left");
-    expect(plugin.setBarDock).toHaveBeenCalledWith("left");
-    expect(plugin.barDock).toBe("left");
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(Object.keys(plugin.settings)).not.toContain("barDock");
   });
 
   it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {

@@ -11,6 +11,7 @@ import {
   pageArea,
   parseBarDock,
   pillAfterBarMove,
+  uprightButtonSize,
 } from "../../src/view/bar-dock-model";
 import { PILL_DOCKS, dockPlace } from "../../src/view/pill-dock-model";
 
@@ -263,5 +264,26 @@ describe("which way a menu opens from a button", () => {
       side: "down",
       box: button,
     });
+  });
+});
+
+describe("an upright bar too tall for its room", () => {
+  it("keeps full-size buttons while they fit", () => {
+    expect(uprightButtonSize(700, 640, 100)).toBe(44);
+    expect(uprightButtonSize(700, 700, 100)).toBe(44);
+  });
+
+  it("shrinks only the buttons, in proportion, so they fit", () => {
+    // 20 buttons of 44 and 100 px of gaps and padding in a 760 px bar.
+    expect(uprightButtonSize(760, 980, 100)).toBe(33);
+    const size = uprightButtonSize(860, 980, 100);
+    expect(size).toBe(38);
+    expect(20 * size + 100).toBeLessThanOrEqual(860);
+  });
+
+  it("stops at the smallest size, where the bar scrolls instead", () => {
+    expect(uprightButtonSize(400, 980, 100)).toBe(32);
+    expect(uprightButtonSize(50, 980, 100)).toBe(32);
+    expect(uprightButtonSize(50, 90, 100)).toBe(32);
   });
 });

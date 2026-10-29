@@ -4239,6 +4239,7 @@ export class InkView extends TextFileView {
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
         folded: this.toolbar?.foldedItems() ?? [],
+        barDock: this.plugin.barDock,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -4261,6 +4262,7 @@ export class InkView extends TextFileView {
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
+        setBarDock: (dock) => this.plugin.setBarDock(dock),
       },
     );
   }
