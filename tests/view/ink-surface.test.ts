@@ -2116,6 +2116,46 @@ describe("ink pressure", () => {
   });
 });
 
+describe("Blur workspace background", () => {
+  it("copies the active page, not the pane, into the ambient layer", () => {
+    const pageA = blankPage("p0");
+    const pageB = blankPage("p1");
+    const snapshot = { width: 480, height: 640 };
+    const drawImage = vi.fn();
+    const workspaceSnapshot = vi.fn(() => snapshot);
+    const canvas = { width: 0, height: 0, getContext: () => ({ drawImage }) };
+    const s = surfaceWith({
+      workspace: { color: "#000000", blur: true },
+      workspaceSnapshot,
+      workspaceAmbientCanvas: canvas,
+      doc: { pages: [pageA, pageB] },
+      pageIndex: 1,
+    });
+    run(s, "renderWorkspaceAmbient");
+    expect(workspaceSnapshot).toHaveBeenCalledWith(pageB, 480);
+    expect([canvas.width, canvas.height]).toEqual([480, 640]);
+    expect(drawImage).toHaveBeenCalledWith(snapshot, 0, 0);
+  });
+
+  it("shows the ambient layer only while Blur is chosen", () => {
+    const toggleClass = vi.fn();
+    const schedule = vi.fn();
+    const s = surfaceWith({
+      workspace: { color: "#000000", blur: false },
+      workspaceAmbientEl: { toggleClass },
+      surfaceEl: { style: {} },
+      renderer: null,
+      scheduleWorkspaceAmbient: schedule,
+      requestFrame: vi.fn(),
+    });
+    run(s, "setWorkspaceBackground", { color: "#000000", blur: true });
+    expect(toggleClass).toHaveBeenCalledWith("is-hidden", false);
+    expect(schedule).toHaveBeenCalled();
+    run(s, "setWorkspaceBackground", { color: "#000000", blur: false });
+    expect(toggleClass).toHaveBeenLastCalledWith("is-hidden", true);
+  });
+});
+
 describe("size preview scales", () => {
   it("pen widths and the eraser both grow with the zoom: their sizes are the paper's", () => {
     const s = surfaceWith({ baseScale: 0.8, userZoom: 2.5 });

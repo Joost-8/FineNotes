@@ -195,14 +195,14 @@ const PAPER_WIDTH_ERROR = `Use ${PAPER_WIDTH_RANGE.min} to ${PAPER_WIDTH_RANGE.m
 
 /** The page themes, as the page-theme dropdown names them. */
 const PAGE_APPEARANCES: Record<PageAppearance, string> = {
-  light: "Light paper",
-  dark: "Dark paper",
-  system: "Follow Obsidian theme",
+  light: "Light",
+  dark: "Dark",
+  system: "Auto",
 };
 
 /** The workspace backgrounds, as its dropdown names them. */
 const WORKSPACE_BACKGROUND_NAMES: Record<WorkspaceBackground, string> = {
-  auto: "Follow Obsidian theme (Auto)",
+  auto: "Auto",
   light: "Light",
   dark: "Dark",
   custom: "Custom color",
@@ -211,7 +211,7 @@ const WORKSPACE_BACKGROUND_NAMES: Record<WorkspaceBackground, string> = {
 
 /** How PDF pages are drawn, as the PDF dropdown names them. */
 const PDF_THEME_NAMES: Record<PdfTheme, string> = {
-  "as-is": "As is (Original)",
+  "as-is": "As is",
   dark: "Adapt to dark mode",
 };
 
@@ -282,9 +282,9 @@ const DESC = {
     "only the view changes, so ink is saved, exported and printed as it really is and pictures " +
     "are left alone. PDF pages follow their own setting below.",
   workspaceBackground:
-    "The desk around the pages. Auto follows Obsidian's light or dark theme; Custom color " +
-    "opens a color picker; Blur dims and blurs the desk with a GPU layer, while pages and ink " +
-    "stay sharp and panning stays smooth.",
+    "The desk around the pages. Auto follows Obsidian's theme; Custom color opens a picker; " +
+    "Blur stretches a soft, dimmed copy of the page across the whole desk, while pages and ink " +
+    "stay sharp.",
   pdfTheme:
     "How imported and background PDF pages are shown. As is keeps their original colors, even " +
     "with dark paper or a dark workspace. Adapt to dark mode darkens them with dark pages.",
@@ -1299,7 +1299,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         this.info(
           drawnRow(
-            "Custom workspace color",
+            "Custom color",
             "",
             (s) => this.drawWorkspaceColor(s),
             ["background", "desk", "color", "picker"],
@@ -1408,11 +1408,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ],
       () => [
         {
-          text:
-            `${PAGE_APPEARANCES[settings.pageAppearance] ?? PAGE_APPEARANCES.light} · ` +
-            `${WORKSPACE_BACKGROUND_NAMES[settings.workspaceBackground] ?? "Auto"} · ` +
-            `PDF ${PDF_THEME_NAMES[settings.pdfTheme] ?? "Adapt to dark mode"} · ` +
-            `${settings.paperWidth} px`,
+          text: `${PAGE_APPEARANCES[settings.pageAppearance] ?? "Light"} · ${settings.paperWidth} px`,
         },
       ],
     );

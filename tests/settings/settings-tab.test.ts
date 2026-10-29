@@ -410,7 +410,7 @@ describe("the rows", () => {
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
       [PAGES, "Workspace background", "render"],
-      [PAGES, "Custom workspace color", "render"],
+      [PAGES, "Custom color", "render"],
       [PAGES, "Page theme", "render"],
       [PAGES, "PDF appearance", "render"],
       [PAGES, "Paper width", "render"],
@@ -480,7 +480,7 @@ describe("the rows", () => {
     expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
     expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
     expect(tab.infoOf("Page theme")).toMatch(/PDF pages follow their own setting/);
-    expect(tab.infoOf("Workspace background")).toMatch(/GPU layer/);
+    expect(tab.infoOf("Workspace background")).toMatch(/stretches a soft/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
   });
@@ -659,10 +659,10 @@ describe("which rows show", () => {
   it("shows the custom workspace colour only when Custom color is chosen", () => {
     const names = (background: string) =>
       visibleNames(makePlugin({ workspaceBackground: background as never }));
-    expect(names("auto")).not.toContain("Custom workspace color");
-    expect(names("dark")).not.toContain("Custom workspace color");
-    expect(names("blur")).not.toContain("Custom workspace color");
-    expect(names("custom")).toContain("Custom workspace color");
+    expect(names("auto")).not.toContain("Custom color");
+    expect(names("dark")).not.toContain("Custom color");
+    expect(names("blur")).not.toContain("Custom color");
+    expect(names("custom")).toContain("Custom color");
   });
 
   it("opens the AI group on Show: Manual recognition, Claude, keys in the keychain", () => {
@@ -883,7 +883,7 @@ describe("control values", () => {
     await row.dropdowns[0].pick("dark");
     expect(plugin.settings.workspaceBackground).toBe("dark");
     expect(plugin.applyWorkspaceBackground).toHaveBeenCalledOnce();
-    const custom = renderRow(named(all, "Custom workspace color"));
+    const custom = renderRow(named(all, "Custom color"));
     expect(custom.colors[0].value).toBe(plugin.settings.workspaceBackgroundColor);
     await custom.colors[0].pick("#123456");
     expect(plugin.settings.workspaceBackgroundColor).toBe("#123456");
@@ -1599,9 +1599,7 @@ describe("folding sections", () => {
       plugin.settings.defaultColor,
     );
     expect(status(pens)).toBe("8 saved");
-    expect(status(pages)).toBe(
-      "Light paper · Follow Obsidian theme (Auto) · PDF Adapt to dark mode · 900 px",
-    );
+    expect(status(pages)).toBe("Light · 900 px");
     expect(status(models)).toBe("VoiceHandwriting");
     expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
       ["goodobsidian-status-part", "is-ready"],
