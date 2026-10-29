@@ -134,6 +134,7 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { PEN_OPTIONS_ON_WRITE_NAMES } from "./view/tool-return";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -320,8 +321,9 @@ const DESC = {
     "touching it. A second click closes the menu again.",
   tuckPenOptionsOnWrite:
     "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
-    "type, widths and colors) tuck away, as a second tap on the pen does. Tap the pen to " +
-    "bring them back. The other tools keep theirs.",
+    "type, widths and colors) tuck away, as a second tap on the pen does. Until you tap " +
+    "the pen: they stay away until you tap it. Until the pen lifts: they come back by " +
+    "themselves a second after the pen leaves the page. The other tools keep theirs.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
@@ -981,14 +983,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ]),
         this.more("writing", "Pen options, text boxes, colors, highlighter"),
         this.info(
-          toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
-            "pen",
-            "options",
-            "pill",
-            "hide",
-            "tuck",
-            "toolbar",
-          ]),
+          dropdown(
+            "tuckPenOptionsOnWrite",
+            "Hide pen options while writing",
+            "",
+            PEN_OPTIONS_ON_WRITE_NAMES,
+            ["pen", "options", "pill", "hide", "tuck", "toolbar"],
+          ),
           DESC.tuckPenOptionsOnWrite,
         ),
         this.info(

@@ -35,6 +35,7 @@ import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognitio
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
+import { type PenOptionsOnWrite, penOptionsOnWriteOf } from "./view/tool-return";
 
 /** The tools an ink note can open with (`defaultTool`). */
 export type ToolId = "pen" | "highlighter" | "eraser" | "select";
@@ -308,10 +309,12 @@ export interface GoodObsidianSettings {
    */
   onlyStylusMode: boolean;
   /**
-   * The pen's options pill tucks away as soon as the pen or highlighter
-   * writes, as a second tap on its button does (`tool-return.ts`).
+   * "Hide pen options while writing": the pen's options pill tucks away as
+   * soon as the pen or highlighter writes, as a second tap on its button
+   * does, until the pen is tapped or until it lifts (`tool-return.ts`). A
+   * switch before (true is until tapped); checked where read.
    */
-  tuckPenOptionsOnWrite: boolean;
+  tuckPenOptionsOnWrite: PenOptionsOnWrite;
   /**
    * "Grey out while erasing", the eraser's mode list: Whole stroke and By
    * line draw what they take grey until the pen lifts, as Notability does,
@@ -418,7 +421,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
-  tuckPenOptionsOnWrite: false,
+  tuckPenOptionsOnWrite: "off",
   greyWhileErasing: false,
 
   settingsOpen: [],
@@ -517,7 +520,7 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
  */
 export interface PenPreferences {
   drawAndHold: boolean;
-  tuckOnWrite: boolean;
+  tuckOnWrite: PenOptionsOnWrite;
   returnToPen: ReturnToPen;
 }
 
@@ -529,7 +532,7 @@ export function penPreferencesOf(
 ): PenPreferences {
   return {
     drawAndHold: settings.drawAndHold !== false,
-    tuckOnWrite: settings.tuckPenOptionsOnWrite === true,
+    tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
     returnToPen: returnToPenOf(settings),
   };
 }
@@ -540,7 +543,9 @@ export function storePenPreferences(
   patch: Partial<PenPreferences>,
 ): void {
   if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
-  if ("tuckOnWrite" in patch) settings.tuckPenOptionsOnWrite = patch.tuckOnWrite === true;
+  if ("tuckOnWrite" in patch) {
+    settings.tuckPenOptionsOnWrite = penOptionsOnWriteOf(patch.tuckOnWrite);
+  }
   if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
 }
 
@@ -689,6 +694,7 @@ const CONVERSIONS: Record<
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
+  tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },
 };
 
 function conversion(key: string) {

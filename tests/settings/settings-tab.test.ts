@@ -390,7 +390,7 @@ describe("the rows", () => {
       [WRITING, "Start with", "render"],
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
-      [WRITING, "Hide pen options while writing", "toggle:tuckPenOptionsOnWrite"],
+      [WRITING, "Hide pen options while writing", "dropdown:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
@@ -517,6 +517,11 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
+    expect(named(all, "Hide pen options while writing").control?.options).toEqual({
+      off: "Never",
+      "until-tap": "Until you tap the pen",
+      "until-lift": "Until the pen lifts",
+    });
     expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
       "light",
       "dark",
@@ -866,6 +871,15 @@ describe("control values", () => {
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     },
   );
+
+  it("shows Hide pen options while writing from when it was a switch, and stores a choice", async () => {
+    const plugin = makePlugin({ tuckPenOptionsOnWrite: true as never });
+    const { tab } = makeTab(plugin);
+    expect(tab.getControlValue("tuckPenOptionsOnWrite")).toBe("until-tap");
+    await tab.setControlValue("tuckPenOptionsOnWrite", "until-lift");
+    expect(plugin.settings.tuckPenOptionsOnWrite).toBe("until-lift");
+    expect(plugin.saveSettings).toHaveBeenCalledOnce();
+  });
 
   it("stores what a control sets in data.json's units", async () => {
     const plugin = makePlugin();

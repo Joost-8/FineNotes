@@ -18,12 +18,14 @@ extracted from the matching section of this file by `release.yml`.
   key. The Hand tool moves the page (with its fling) and the Magnifier zooms
   it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
   page and zoom in. All three wait in the toolbar's More tools menu at first.
-- **Hide pen options while writing.** A new switch in the pen menu's Pen
+- **Hide pen options while writing.** A new choice in the pen menu's Pen
   settings and under Settings › Writing › More: the pen's options (pen
   type, widths and colors) tuck away as soon as the pen or highlighter
-  starts writing, wherever they sit, as a second tap on the pen does. Tap
-  the pen to bring them back. Off by default; the eraser, lasso and other
-  tools keep their options.
+  starts writing, wherever they sit, as a second tap on the pen does.
+  "Until you tap the pen" keeps them away until you tap it; "Until the pen
+  lifts" brings them back by themselves once the pen has been off the page
+  for a second. Never by default; the eraser, lasso and other tools keep
+  their options.
 - **Click the pen's side button for the pen menu.** With the pen held just
   above the page, a click of its side button opens the pen menu, as on a
   Samsung tablet, and the next click closes it. Holding the button while

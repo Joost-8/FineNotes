@@ -417,6 +417,52 @@ describe("secondary tool integration", () => {
     run(bar, "setState", state);
     expect(bar.optionsVisible).toBe(false);
   });
+  it("brings back only the options a stroke tucked away, until a tap or a tool has a say", () => {
+    const state: { tool: ActiveTool } = { tool: "pen" };
+    const showOptions = vi.fn();
+    const bar: Fake = Object.assign(Object.create(Toolbar.prototype), {
+      state,
+      drawingTool: "pen",
+      optionsVisible: true,
+      tuckedTools: new Set(),
+      tuckedByStroke: false,
+      optionsTool: "pen",
+      callbacks: { returnToPenOnReselect: () => false, onToolChange: vi.fn() },
+      closePopover: vi.fn(),
+      showOptions,
+      buildOptions: vi.fn(),
+      syncActive: vi.fn(),
+    });
+    // A stroke tucks them, the pen rests: they come back, once.
+    run(bar, "tuckOptions");
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(true);
+    expect(showOptions).toHaveBeenLastCalledWith(true);
+    showOptions.mockClear();
+    run(bar, "showTuckedOptions");
+    expect(showOptions).not.toHaveBeenCalled();
+    // Tucked with a tap on the pen, they stay tucked after a stroke's lift.
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(false);
+    run(bar, "tuckOptions");
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(false);
+    // A stroke tucks them, then a tap on the pen in the pause: the tap wins.
+    run(bar, "tapTool", "pen", {});
+    run(bar, "tuckOptions");
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "pen", {});
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(false);
+    // A stroke tucks them, then another tool is picked: nothing comes back.
+    run(bar, "tapTool", "pen", {});
+    run(bar, "tuckOptions");
+    run(bar, "tapTool", "eraser", {});
+    showOptions.mockClear();
+    run(bar, "showTuckedOptions");
+    expect(showOptions).not.toHaveBeenCalled();
+  });
   it("tells the host which tool a gesture starts with, and whether it was lent", () => {
     const onGestureStart = vi.fn();
     const down = vi.fn();

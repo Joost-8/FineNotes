@@ -67,7 +67,14 @@ import {
   RULER_SNAP_STEPS,
   type RulerKind,
 } from "../canvas/ruler-geometry";
-import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
+import {
+  drawingToolOf,
+  optionsAfterSwitch,
+  PEN_OPTIONS_ON_WRITE,
+  PEN_OPTIONS_ON_WRITE_NAMES,
+  type PenOptionsOnWrite,
+  selectedTool,
+} from "./tool-return";
 import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
@@ -903,6 +910,8 @@ export class Toolbar {
   private optionsVisible: boolean;
   /** Tools whose options were tucked away when they were left: they come back tucked. */
   private readonly tuckedTools = new Set<ActiveTool>();
+  /** A stroke tucked the options away ({@link tuckOptions}), not a tap: they may come back. */
+  private tuckedByStroke = false;
   /**
    * The tool `optionsVisible` belongs to. Not `state.tool`: the surface shares
    * the state object and changes its tool before `setState` is called.
@@ -1843,6 +1852,7 @@ export class Toolbar {
       return;
     }
     this.closePopover();
+    this.tuckedByStroke = false;
     if (tool === current) {
       this.optionsVisible = !this.optionsVisible;
       this.showOptions(this.optionsVisible);
@@ -1865,6 +1875,7 @@ export class Toolbar {
    */
   private leaveToolFor(next: ActiveTool): void {
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
+    this.tuckedByStroke = false;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
     else this.tuckedTools.add(optionsKey(this.optionsTool));
     const remembered =
@@ -3998,8 +4009,8 @@ export class Toolbar {
   /**
    * The pen in hand's own settings, behind "Pen settings" in the pen type
    * menu, then two that hold for every pen: "Hide pen options while
-   * writing", and "Back to the pen" with its four choices, as the eraser's
-   * mode menu shows a choice.
+   * writing" with its three choices, and "Back to the pen" with its four,
+   * as the eraser's mode menu shows a choice.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
@@ -4008,33 +4019,52 @@ export class Toolbar {
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return;
     body.createDiv({ cls: "goodobsidian-popover-divider" });
-    const tuck = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(tuck, "Hide pen options while writing", prefs.tuckOnWrite, (on) =>
-      save({ tuckOnWrite: on }),
+    this.choiceRows<PenOptionsOnWrite>(
+      body,
+      "Hide pen options while writing",
+      PEN_OPTIONS_ON_WRITE.map((id) => [id, PEN_OPTIONS_ON_WRITE_NAMES[id]]),
+      prefs.tuckOnWrite,
+      (choice) => save({ tuckOnWrite: choice }),
     );
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Back to the pen" });
-    const choices: ReadonlyArray<[ReturnToPen, string]> = [
-      ["never", "Never"],
-      ["reselect", "Tap the tool again"],
-      ["after-use", "After one use"],
-      ["both", "Both"],
-    ];
-    for (const [choice, label] of choices) {
-      const row = body.createEl("button", {
-        cls: "goodobsidian-wide",
-        text: label,
-        attr: { role: "menuitemradio", "aria-checked": String(choice === prefs.returnToPen) },
-      });
-      row.toggleClass("is-active", choice === prefs.returnToPen);
-      row.addEventListener("click", () => {
-        save({ returnToPen: choice });
-        this.popoverRender?.();
-      });
-    }
+    this.choiceRows<ReturnToPen>(
+      body,
+      "Back to the pen",
+      [
+        ["never", "Never"],
+        ["reselect", "Tap the tool again"],
+        ["after-use", "After one use"],
+        ["both", "Both"],
+      ],
+      prefs.returnToPen,
+      (choice) => save({ returnToPen: choice }),
+    );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
       text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
     });
+  }
+
+  /** A label and one row per choice, the one in use filled, as the eraser's mode menu has it. */
+  private choiceRows<T extends string>(
+    body: HTMLElement,
+    label: string,
+    choices: ReadonlyArray<[T, string]>,
+    current: T,
+    pick: (choice: T) => void,
+  ): void {
+    body.createDiv({ cls: "goodobsidian-popover-label", text: label });
+    for (const [choice, name] of choices) {
+      const row = body.createEl("button", {
+        cls: "goodobsidian-wide",
+        text: name,
+        attr: { role: "menuitemradio", "aria-checked": String(choice === current) },
+      });
+      row.toggleClass("is-active", choice === current);
+      row.addEventListener("click", () => {
+        pick(choice);
+        this.popoverRender?.();
+      });
+    }
   }
 
   /**
@@ -4903,12 +4933,27 @@ export class Toolbar {
 
   /**
    * Tuck the pill away as a second tap on the tool's button does, until
-   * that button is tapped again ("Hide pen options while writing").
+   * that button is tapped again or {@link showTuckedOptions} ("Hide pen
+   * options while writing").
    */
   tuckOptions(): void {
     if (!this.optionsVisible) return;
     this.optionsVisible = false;
+    this.tuckedByStroke = true;
     this.showOptions(false);
+  }
+
+  /**
+   * Bring back the options a stroke tucked away ("until the pen lifts"),
+   * unless a tap or another tool has had a say since: a pill the user
+   * tucked stays tucked.
+   */
+  showTuckedOptions(): void {
+    if (!this.tuckedByStroke) return;
+    this.tuckedByStroke = false;
+    if (this.optionsVisible) return;
+    this.optionsVisible = true;
+    this.showOptions(true);
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
