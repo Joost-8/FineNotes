@@ -11584,7 +11584,7 @@ export class InkSurface {
     if (!side || toKnob < best) return false;
     // A corner ring nearer the press than the dot keeps it (a diamond's
     // corners sit on its sides' middles, a dot's width from the dots).
-    const rings = this.loneShape(sel)?.handles.at ?? [];
+    const rings = this.shapePointsOn ? (this.loneShape(sel)?.handles.at ?? []) : [];
     for (let i = 0; i + 1 < rings.length; i += 2) {
       if (Math.hypot(rings[i] - from.x, rings[i + 1] - from.y) < best) return false;
     }
