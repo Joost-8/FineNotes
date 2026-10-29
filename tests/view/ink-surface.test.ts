@@ -683,6 +683,8 @@ function ink(doc: InkDocument): Ink {
     strokeIds,
     eraseIds: new Set(),
     erasePieces: new Map(),
+    eraseGrey: false,
+    eraseGreyCuts: new Map(),
     eraseDirty: new Set(),
     eraseLast: null,
     erasePreview: null,
@@ -892,6 +894,62 @@ describe("ruled erase", () => {
     expect(w.surface.eraseRuled).not.toBeNull();
     w.lift(0);
     expect(w.surface.eraseRuled).toBeNull();
+  });
+
+  it("greyed, draws the cut stretch grey beside what survives, and commits only that", () => {
+    const highlight: Stroke = {
+      id: "hl",
+      color: "#ffd43b",
+      size: 20,
+      tool: "highlighter",
+      shape: "line",
+      pts: [90, 110, 0.5, 400, 110, 0.5],
+    };
+    const w = ruledInk("ruled-wide", [highlight]);
+    w.surface.eraseGrey = true;
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const cuts = w.surface.eraseGreyCuts as Map<string, Stroke[]>;
+    const grey = cuts.get("hl") ?? [];
+    // The grey stretch is what the cut takes, from the highlight's own end at
+    // 90 up to where the survivor's round end begins: 179 less half its width.
+    expect(grey.map((p) => [p.id, p.pts[0], p.pts[p.pts.length - 3]])).toEqual([
+      ["hl~erasing0", 90, 169],
+    ]);
+    const survivor = (w.pieces().get("hl") ?? [])[0];
+
+    // What the renderer is handed: the words and the stretch grey, nothing hidden.
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    const [, , hidden, , replaced, , , greyed] = calls[0] as [
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      Map<string, Stroke[]>,
+      unknown,
+      unknown,
+      Set<string>,
+    ];
+    expect(hidden).toBeUndefined();
+    expect(replaced.get("hl")?.map((p) => p.id)).toEqual(["hl~erasing0", survivor.id]);
+    expect([...greyed].sort()).toEqual(["comma", "dolor", "hl~erasing0"]);
+
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["below", survivor.id]);
+    expect((w.surface.eraseGreyCuts as Map<string, Stroke[]>).size).toBe(0);
+  });
+
+  it("not greyed, hides the words and draws only what survives", () => {
+    const w = ruledInk();
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    expect([...(calls[0][2] as Set<string>)].sort()).toEqual(["comma", "dolor"]);
+    expect(calls[0][7]).toBeUndefined();
   });
 });
 
@@ -1878,6 +1936,14 @@ describe("pens and shortcuts (FineNotes#25)", () => {
     expect(run(typing, "pressRoute", pen())).toBe("draw");
   });
 
+  it("moves the page with the hand tool wherever the pen lands; a lent tool still wins", () => {
+    const hand = routed({ toolState: { tool: "pan" } });
+    expect(run(hand, "pressRoute", pen())).toBe("pan");
+    expect(hand.penPanning).toBe(true);
+    const lent = routed({ toolState: { tool: "pan" } });
+    expect(run(lent, "pressRoute", pen({ shiftKey: true }))).toBe("draw");
+  });
+
   it("ignores a barrel set to nothing pressed while hovering, and keeps its menu away", () => {
     const surface = routed({ callbacks: { barrelAction: () => "none" } });
     expect(run(surface, "pressRoute", pen({ button: 2, buttons: 2 }))).toBe("ignore");
@@ -1932,12 +1998,45 @@ describe("pens and shortcuts (FineNotes#25)", () => {
       requestFrame: vi.fn(),
     });
     run(surface, "startZoomDrag", { x: 40, y: 300 });
-    expect(surface.zoomDrag).toEqual({ from: 1, x: 40, y: 300 });
+    expect(surface.zoomDrag).toEqual({
+      from: 1,
+      x: 40,
+      y: 300,
+      moved: false,
+      tapZoom: false,
+    });
     run(surface, "moveZoomDrag", { x: 40, y: 150 });
     expect(applyZoom).toHaveBeenLastCalledWith(2, 40, 300);
     expect(run(surface, "endZoomDrag")).toBe(true);
     expect(surface.zoomDrag).toBeNull();
     expect(run(surface, "endZoomDrag")).toBe(false);
+  });
+
+  it("zooms a step in where the magnifier was tapped, unless the pen moved", () => {
+    const applyZoom = vi.fn((zoom: number) => {
+      surface.userZoom = zoom;
+    });
+    const surface = routed({
+      minZoom: 0.5,
+      zoomAnim: null,
+      zoomDrag: null,
+      direction: "vertical",
+      applyZoom,
+      snapRowAfterZoom: false,
+      settleRowAfterZoom: vi.fn(),
+      requestFrame: vi.fn(),
+    });
+    run(surface, "startZoomDrag", { x: 40, y: 300 }, true);
+    run(surface, "endZoomDrag", { x: 41, y: 301 });
+    expect(applyZoom).toHaveBeenLastCalledWith(1.25, 41, 301);
+
+    applyZoom.mockClear();
+    run(surface, "startZoomDrag", { x: 40, y: 300 }, true);
+    run(surface, "moveZoomDrag", { x: 40, y: 260 });
+    run(surface, "endZoomDrag", { x: 40, y: 260 });
+    // The drag zoomed; its lift adds no tap step.
+    expect(applyZoom).toHaveBeenCalledOnce();
+    expect(applyZoom.mock.calls[0][0]).toBeGreaterThan(1.25);
   });
 
   it("shows the crosshair for the pens only, and only when it is picked", () => {

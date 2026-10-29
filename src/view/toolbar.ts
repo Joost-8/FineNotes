@@ -69,17 +69,16 @@ import {
 } from "../canvas/ruler-geometry";
 import { drawingToolOf, optionsAfterSwitch, selectedTool } from "./tool-return";
 import {
-  BAR_ITEMS,
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
   DEFAULT_BAR,
-  hiddenItems,
-  normalizeBar,
+  menuItems,
+  normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { setIcon } from "obsidian";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, PALETTE, SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -146,6 +145,8 @@ import {
   sameColor,
 } from "../model/colors";
 import { bindSwatchDrag } from "./swatch-drag";
+import { bindPenTypeDrag } from "./pen-type-drag";
+import { movePenType, penTypeOrderOf, shownPenTypes } from "../model/pen-type-order";
 import { bindPillDrag } from "./pill-drag";
 import {
   DEFAULT_PILL_DOCK,
@@ -161,6 +162,7 @@ import {
   popoverSide,
 } from "./pill-dock-model";
 import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
+import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { syncRangeFill } from "./range-fill";
@@ -193,6 +195,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
+import type { PenPreferences, ReturnToPen } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -220,7 +223,8 @@ import {
  * strokes. The laser pointer draws a fading trail that is never kept; it has
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
-export type ActiveTool = "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser";
+export type ActiveTool =
+  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -259,11 +263,17 @@ export const PEN_TYPES: readonly PenTypeSpec[] = [
 ];
 
 /**
- * The pen-type menu: every pen type, the highlighter included. The toolbar
- * has no highlighter button of its own (the pen button stands for both, as in
- * GoodNotes), so this menu is the only way to it without a keyboard.
+ * The pen types in the pen's row, in the user's order (`penTypeOrder`):
+ * every one, the highlighter included, as the toolbar has no highlighter
+ * button of its own (the pen button stands for both, as in Goodnotes).
  */
-export const PEN_MENU_TYPES: readonly PenTypeSpec[] = PEN_TYPES;
+export function penRowTypes(state: ToolbarState): PenTypeSpec[] {
+  const order = penTypeOrderOf(
+    state.penTypeOrder,
+    PEN_TYPES.map((spec) => spec.id),
+  );
+  return order.map((id) => PEN_TYPES.find((spec) => spec.id === id) ?? PEN_TYPES[0]);
+}
 /** The pen type a toolbar state implies. Used by the surface to size strokes. */
 export function penTypeFor(state: ToolbarState): PenTypeSpec {
   const id = state.penType ?? (state.tool === "highlighter" ? "highlighter" : "fountain");
@@ -298,6 +308,8 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   eraser: "eraser",
   text: "type",
   shape: "shapes",
+  pan: "hand",
+  zoom: "zoom-in",
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -461,6 +473,11 @@ export interface ToolbarState {
   tableHeader?: boolean;
   /** Active pen type. `undefined` counts as "fountain". */
   penType?: PenType;
+  /**
+   * The pen types' order in the pen's row (`model/pen-type-order.ts`).
+   * `undefined`: their own order.
+   */
+  penTypeOrder?: PenType[];
   /** Scribble to erase and Circle to lasso. `undefined` counts as GoodNotes' defaults. */
   penGestures?: PenGestures;
   /** Eraser mode. `undefined` counts as "standard". */
@@ -469,6 +486,11 @@ export interface ToolbarState {
   eraserSize?: number;
   /** What the eraser may erase. `undefined` counts as everything. */
   eraserFilter?: EraserFilter;
+  /**
+   * "Grey out while erasing": Whole stroke and By line draw what they take
+   * grey until the pen lifts, instead of hiding it. `undefined` counts as off.
+   */
+  eraserGrey?: boolean;
   /** The lasso's type. `undefined` counts as freehand. */
   lassoMode?: LassoMode;
   /** What the lasso picks up. `undefined` counts as everything. */
@@ -522,6 +544,8 @@ export interface ToolbarCallbacks {
   paintSizePaper?: (canvas: HTMLCanvasElement, width: number, height: number) => boolean;
   /** "Erase highlighter only" / "Erase pen only" changed. Hosts persist it. */
   onEraserFilterChange?: (filter: EraserFilter) => void;
+  /** "Grey out while erasing" was switched. Hosts persist it. */
+  onEraserGreyChange?: (on: boolean) => void;
   /** The lasso's type, or what it picks up, changed. Hosts persist it. */
   onLassoChange?: (mode: LassoMode, filter: LassoFilter) => void;
   /** Add a page; `anchor` is the button, for a popover to hang from. */
@@ -572,6 +596,10 @@ export interface ToolbarCallbacks {
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** A pen type's stroke stabilization changed (every step of a drag). Hosts persist it. */
   onPenStabilization?: (all: PenStabilization) => void;
+  /** The settings the pen's menu holds for every pen, as they are now. */
+  penPreferences?: () => PenPreferences;
+  /** One of them changed in the pen's menu. Hosts persist and apply it. */
+  onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
   /** "Header row" for new tables changed. Hosts persist it. */
@@ -590,6 +618,8 @@ export interface ToolbarCallbacks {
   onPickFromPage?: (done: (color: string | null) => void) => void;
   /** The pen row's picked slots changed. Hosts persist them. */
   onPenColors?: (colors: string[]) => void;
+  /** The pen types were put in another order in the pen's row; the host keeps it. */
+  onPenTypeOrder?: (order: PenType[]) => void;
   /** A pen type's own colour or row changed (`ToolbarState.penInks`). Hosts persist them. */
   onPenInks?: (inks: PenInks) => void;
   // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
@@ -614,6 +644,12 @@ export interface ToolbarCallbacks {
   onCustomize?: () => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
+  /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
+  onOnlyStylusMode?: (on: boolean) => void;
+  /** The magnifier's own pill: one zoom step in or out, or the page fitted. */
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onZoomFit?: () => void;
 }
 
 export interface ToolbarOptions {
@@ -628,6 +664,10 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
+  /** The tools shown nowhere, not even in the accessories menu; none when absent. */
+  offItems?: readonly BarItemId[];
+  /** Stylus-only mode is on, so its toolbar toggle starts on. */
+  onlyStylusMode?: boolean;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -694,11 +734,14 @@ const FOLD_RANK = {
   ai: 5,
   search: 6,
   share: 7,
+  zoom: 8.2,
+  pan: 8.3,
   settings: 8,
   ruler: 8.5,
   shape: 9,
   text: 10,
   select: 11,
+  stylus: 11.8,
   addPage: 12,
   redo: 13,
   thumbnails: 14,
@@ -762,6 +805,8 @@ export class Toolbar {
   private colorRowWatch: ResizeObserver | null = null;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
   private colorRowScroll = 0;
+  /** How far the pen type row was scrolled, kept across rebuilds of the pill. */
+  private penRowScroll = 0;
   /** A colour was just added with the "+": the row scrolls to its end once to show it. */
   private revealNewColor = false;
   private readonly widthButtons = new Map<number, HTMLElement>();
@@ -790,8 +835,12 @@ export class Toolbar {
   private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
   /** The centre items shown, left to right. */
   private items: BarItemId[] = [...DEFAULT_BAR];
-  /** The last button of the tools: the hidden items and "Customize toolbar". */
+  /** The centre items shown nowhere, not even in the accessories menu. */
+  private offItems: BarItemId[] = [];
+  /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
+  /** Stylus-only mode's state, for its button's toggle and on/off mark. */
+  private onlyStylusOn = false;
   /** The sticky notes button, on while a note waits to be placed (`setStickyArmed`). */
   private stickyButton: HTMLButtonElement | null = null;
   private settingsButton: HTMLButtonElement | null = null;
@@ -867,8 +916,6 @@ export class Toolbar {
   private palette: string[];
   /** The pen or highlighter last in use, which "select again" goes back to. */
   private drawingTool: ActiveTool = "pen";
-  /** The open pen menu's rows, by pen type, so a colour change repaints their icons. */
-  private readonly penMenuRows = new Map<PenType, HTMLElement>();
   /** Keeps the width popover's mm field above the iPad keyboard while it is typed in. */
   private popoverKeyboard: DialogKeyboard | null = null;
 
@@ -887,6 +934,7 @@ export class Toolbar {
   ) {
     this.palette = [...palette];
     this.optionsTool = state.tool;
+    this.onlyStylusOn = options.onlyStylusMode === true;
     this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
@@ -1043,6 +1091,17 @@ export class Toolbar {
     tool("eraser", "eraser", "Eraser (E)");
     tool("text", "type", "Text box (T)");
     tool("shape", "shapes", "Shapes (S)");
+    // Page navigation tools. Off the bar by default: they wait in the
+    // accessories menu until "Customize toolbar" puts them on the bar.
+    tool("pan", "hand", "Hand — move the page");
+    tool("zoom", "zoom-in", "Magnifier — zoom");
+    if (cb.onOnlyStylusMode) {
+      const toggle = (): void => this.toggleOnlyStylusMode();
+      const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
+      item("stylus", stylus, toggle);
+      this.fold(FOLD_RANK.stylus, stylus, ICON_STYLUS_ONLY, "Stylus only", toggle);
+      this.setOnlyStylusMode(this.onlyStylusOn);
+    }
     if (cb.onRuler) {
       item("ruler", this.addRulerButton(tools), () => {
         this.closePopover();
@@ -1085,7 +1144,7 @@ export class Toolbar {
     accessories.setAttribute("aria-haspopup", "menu");
     this.accessoriesButton = accessories;
     keep(accessories);
-    this.setItems(this.options.items ?? DEFAULT_BAR, false);
+    this.setItems(this.options.items ?? DEFAULT_BAR, this.options.offItems ?? [], false);
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1382,7 +1441,11 @@ export class Toolbar {
           ? FOLD_RANK.text
           : tool === "shape"
             ? FOLD_RANK.shape
-            : undefined;
+            : tool === "pan"
+              ? FOLD_RANK.pan
+              : tool === "zoom"
+                ? FOLD_RANK.zoom
+                : undefined;
     if (rank !== undefined) {
       this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
     }
@@ -1400,15 +1463,44 @@ export class Toolbar {
     return button;
   }
 
+  /** The Stylus only button was tapped, on the bar or in a menu. */
+  private toggleOnlyStylusMode(): void {
+    this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
+  }
+
+  /** Show whether Stylus-only mode is on, on the bar and in the folded row that reads it. */
+  setOnlyStylusMode(on: boolean): void {
+    this.onlyStylusOn = on;
+    const stylus = this.barItems.get("stylus");
+    if (!stylus) return;
+    stylus.toggleClass("is-on", on);
+    stylus.setAttribute("aria-pressed", String(on));
+    stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
+    this.syncAccessoriesMark();
+  }
+
+  /** Light the accessories button while one of the items its menu lists is on. */
+  private syncAccessoriesMark(): void {
+    const listed = menuItems({ bar: this.items, off: this.offItems });
+    const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
+      const button = this.barItems.get(id);
+      return button !== undefined && button.hasClass("is-on") && listed.includes(id);
+    });
+    this.accessoriesButton?.toggleClass("is-on", hiddenOn);
+  }
+
   /**
    * Show the centre items `items`, left to right, and take the rest off the
-   * bar (they wait in the accessories menu). Unknown or unavailable items
-   * are skipped; the pen always shows (`normalizeBar`). `relayout` refits
-   * the bar and moves the indicator, as a live change needs.
+   * bar: they wait in the accessories menu, except the `off` ones, which are
+   * shown nowhere. Unknown or unavailable items are skipped; the pen always
+   * shows (`normalizeLayout`). `relayout` refits the bar and moves the
+   * indicator, as a live change needs.
    */
-  setItems(items: readonly BarItemId[], relayout = true): void {
-    const shown = normalizeBar(items).filter((id) => this.barItems.has(id));
+  setItems(items: readonly BarItemId[], off: readonly BarItemId[] = [], relayout = true): void {
+    const layout = normalizeLayout(items, off);
+    const shown = layout.bar.filter((id) => this.barItems.has(id));
     this.items = shown;
+    this.offItems = layout.off;
     const tools = this.toolsGroup;
     if (!tools) return;
     for (const [id, button] of this.barItems)
@@ -1418,6 +1510,7 @@ export class Toolbar {
       if (button) tools.appendChild(button);
     }
     if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
+    this.syncAccessoriesMark();
     if (this.popoverKind === "accessories") this.popoverRender?.();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
@@ -1430,15 +1523,15 @@ export class Toolbar {
     return this.items;
   }
 
-  /** The centre items this bar can show at all (the ruler, stickers and sticky notes need a host). */
-  get availableItems(): readonly BarItemId[] {
-    return BAR_ITEMS.filter((id) => this.barItems.has(id));
+  /** The centre items its accessories menu lists now, in catalogue order. */
+  get menuListed(): readonly BarItemId[] {
+    return menuItems({ bar: this.items, off: this.offItems }).filter((id) => this.itemRuns.has(id));
   }
 
   /**
    * Goodnotes' accessories menu, hanging from the last button of the tools:
-   * every item taken off the bar, which a tap runs as its button would, then
-   * "Customize toolbar".
+   * every item taken off the bar and not hidden, which a tap runs as its
+   * button would, then "Customize toolbar".
    */
   private toggleAccessories(anchor: HTMLElement): void {
     if (this.popoverKind === "accessories") {
@@ -1450,7 +1543,7 @@ export class Toolbar {
     this.popover?.setAttribute("role", "menu");
     this.popoverRender = () => {
       body.empty();
-      const hidden = hiddenItems(this.items).filter((id) => this.itemRuns.has(id));
+      const hidden = this.menuListed;
       for (const id of hidden) {
         const button = this.barItems.get(id);
         const run = this.itemRuns.get(id);
@@ -1536,7 +1629,7 @@ export class Toolbar {
       "aria-label",
       armed ? "Sticky notes: tap the page to place one" : "Sticky notes",
     );
-    this.accessoriesButton?.toggleClass("is-on", armed && button.hasClass("is-unlisted"));
+    this.syncAccessoriesMark();
     // The note is on the page (or stopped waiting): its colours go.
     if (was && !armed && this.popoverKind === "sticky") this.closePopover();
   }
@@ -1577,7 +1670,7 @@ export class Toolbar {
     if (!button || button.hasClass("is-on") === out) return;
     button.toggleClass("is-on", out);
     button.setAttribute("aria-pressed", String(out));
-    this.accessoriesButton?.toggleClass("is-on", out && button.hasClass("is-unlisted"));
+    this.syncAccessoriesMark();
     if (!out && this.popoverKind === "ruler") this.closePopover();
     // It is wider while it shows its chevron: the bar may fold differently,
     // and the centred tools move under the tool indicator, which follows.
@@ -1831,6 +1924,12 @@ export class Toolbar {
         case "laser":
           this.buildLaserOptions();
           break;
+        case "pan":
+          this.buildPanOptions();
+          break;
+        case "zoom":
+          this.buildZoomOptions();
+          break;
       }
     }
     // A held or edited box always shows its pill, floating beside it.
@@ -1844,19 +1943,16 @@ export class Toolbar {
   }
 
   private buildPenOptions(): void {
-    // One live pen button, not four permanent swatches. The three pen styles
-    // remain one tap away in its menu, keeping the writing area clear.
     const active = this.activePenType();
-    const pen = this.optionsEl.createEl("button", { cls: "goodobsidian-pentype" });
-    pen.append(penGlyph(active.id, this.state.color));
-    pen.setAttribute("aria-label", `${active.label} options`);
-    pen.setAttribute("title", `${active.label} options`);
-    pen.addEventListener("click", () => this.togglePenTypeList());
-    this.penTypeButtons.set(active.id, pen);
-    // Upright at a side, the pill folds as GoodNotes' does: the pen type is
-    // one button, the widths one, and the colours three and a ⌄.
+    // Upright at a side, the pill folds as GoodNotes' does: the widths are
+    // one button, and the colours three and a ⌄.
     const upright = isUpright(this.pillDock);
-    if (!upright) this.chevron("Pen options", () => this.togglePenTypeList());
+    this.buildPenRow(upright);
+    // The rest of the old pen menu: the laser pointer, the pen's settings and
+    // the pen gestures. A practice sheet has none of them.
+    if (!upright && !this.practice) {
+      this.chevron("Pen options", (button) => this.openPenMenu(button));
+    }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
@@ -1945,6 +2041,98 @@ export class Toolbar {
       saved.setAttribute("aria-haspopup", "dialog");
       saved.addEventListener("click", () => this.toggleSavedPens(saved));
     }
+  }
+
+  /**
+   * The pen types as a row, as Goodnotes has them: each drawn in its own ink,
+   * the one in hand marked. A tap picks one; a tap on the one in hand opens
+   * its menu (as a tap on the colour in use opens its picker). Hold one and
+   * drag it to put it elsewhere (`pen-type-drag.ts`); none can be added or
+   * taken away. Four show at a time (styles.css); the rest scroll, across the
+   * pill or, upright, down it.
+   */
+  private buildPenRow(upright: boolean): void {
+    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
+    // A swipe here scrolls the row, never Obsidian's sidebars.
+    row.dataset.ignoreSwipe = "true";
+    const order = penRowTypes(this.state).map((spec) => spec.id);
+    const shown = shownPenTypes(order, this.practice, "highlighter");
+    for (const id of shown) {
+      const spec = PEN_TYPES.find((type) => type.id === id);
+      if (!spec) continue;
+      const pen = row.createEl("button", { cls: "goodobsidian-pentype clickable-icon" });
+      pen.append(penGlyph(spec.id, this.inkColorOf(spec)));
+      pen.setAttribute("aria-label", spec.label);
+      pen.setAttribute("title", spec.label);
+      pen.addEventListener("click", () => {
+        if (spec.id !== this.activePenType().id) {
+          this.closePopover();
+          this.choosePenType(spec);
+        } else if (!this.practice) this.openPenMenu(pen);
+      });
+      bindPenTypeDrag(pen, {
+        row: () => row,
+        upright: () => isUpright(this.pillDock),
+        onMove: (gap) => {
+          // Gaps count the pens shown; a practice sheet hides the highlighter.
+          const before = shown[gap];
+          const at = before === undefined ? order.length : order.indexOf(before);
+          const next = movePenType(order, spec.id, at);
+          if (next.join() === order.join()) return;
+          this.state.penTypeOrder = next;
+          this.callbacks.onPenTypeOrder?.(next);
+          this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
+          this.buildOptions();
+          this.syncActive();
+        },
+      });
+      this.penTypeButtons.set(spec.id, pen);
+    }
+    this.fitPenRow(row, upright);
+  }
+
+  /**
+   * Keep the rebuilt pen row where it was scrolled, with the pen in hand in
+   * view, and fade the ends that hide more, as the colour row does.
+   */
+  private fitPenRow(row: HTMLElement, upright: boolean): void {
+    const fade = (): void => {
+      const ends = upright
+        ? hiddenEnds(row.scrollTop, row.clientHeight, row.scrollHeight)
+        : hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
+      row.toggleClass("has-more-start", ends.start);
+      row.toggleClass("has-more-end", ends.end);
+    };
+    const chosen = this.penTypeButtons.get(this.activePenType().id);
+    if (upright) {
+      row.scrollTop = this.penRowScroll;
+      if (chosen) {
+        row.scrollTop = scrollToShow(
+          row.scrollTop,
+          row.clientHeight,
+          chosen.offsetTop - row.offsetTop,
+          chosen.offsetHeight,
+          COLOR_ROW_FADE_PX,
+        );
+      }
+    } else {
+      row.scrollLeft = this.penRowScroll;
+      if (chosen) {
+        row.scrollLeft = scrollToShow(
+          row.scrollLeft,
+          row.clientWidth,
+          chosen.offsetLeft - row.offsetLeft,
+          chosen.offsetWidth,
+          COLOR_ROW_FADE_PX,
+        );
+      }
+    }
+    this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
+    fade();
+    row.addEventListener("scroll", () => {
+      this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
+      fade();
+    });
   }
 
   /**
@@ -2241,11 +2429,48 @@ export class Toolbar {
     return swatch;
   }
 
+  /** A tool pill with nothing to set: an icon and one line; the laser's mark is red. */
+  private toolNote(icon: string, text: string, laser = false): void {
+    const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
+    const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
+    mark.toggleClass("is-laser", laser);
+    iconOrText(mark, icon, "");
+    note.createSpan({ text });
+  }
+
   /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
   private buildLaserOptions(): void {
-    const note = this.optionsEl.createDiv({ cls: "goodobsidian-laser-note" });
-    iconOrText(note.createSpan({ cls: "goodobsidian-laser-note-icon" }), "pointer", "");
-    note.createSpan({ text: "Laser pointer (L): its trail fades and is never saved" });
+    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved", true);
+  }
+
+  /** The hand has nothing to set: its pill says what dragging does with it. */
+  private buildPanOptions(): void {
+    this.toolNote("hand", "Drag to move the page");
+  }
+
+  /** The magnifier: its drag, and the steps and fit the page needs. */
+  private buildZoomOptions(): void {
+    const cb = this.callbacks;
+    this.barButton(
+      this.optionsEl,
+      "zoom-out",
+      "Zoom out",
+      cb.onZoomOut ? () => cb.onZoomOut?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "maximize-2",
+      "Fit page",
+      cb.onZoomFit ? () => cb.onZoomFit?.() : undefined,
+    );
+    this.barButton(
+      this.optionsEl,
+      "zoom-in",
+      "Zoom in",
+      cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
+    );
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    this.toolNote("zoom-in", "Drag up or down to zoom");
   }
 
   /**
@@ -3607,6 +3832,13 @@ export class Toolbar {
         this.syncActive();
       });
     }
+    // How the modes that take ink whole show it going (discussion #51).
+    const list = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(list, "Grey out while erasing", this.state.eraserGrey === true, (on) => {
+      this.state.eraserGrey = on;
+      this.callbacks.onEraserGreyChange?.(on);
+    });
+    body.createDiv({ cls: "goodobsidian-popover-hint", text: "Whole stroke and By line." });
   }
 
   /**
@@ -3644,29 +3876,60 @@ export class Toolbar {
     this.keepPopoverInside(anchor);
   }
 
-  private togglePenTypeList(): void {
+  /**
+   * The pen menu, for a click of the pen's side button in the air
+   * (`input/stylus-click.ts`): the pen menu opens, and the next click
+   * closes it, or whichever popover is open then. It hangs from the pen type
+   * button while the pen's options show, else from the pen on the bar.
+   */
+  togglePenMenu(): void {
+    if (this.popover) {
+      this.closePopover();
+      return;
+    }
+    this.openPenMenu(this.penMenuAnchor());
+  }
+
+  /** What the pen menu hangs from: the pen type button on show, the bar's pen button, or ⋯. */
+  private penMenuAnchor(): HTMLElement {
+    const type = this.penTypeButtons.get(this.activePenType().id);
+    if (type && !this.optionsEl.hasClass("is-collapsed")) return type;
+    const pen = this.penToolButton;
+    const onBar =
+      pen !== null &&
+      pen.isConnected &&
+      !pen.hasClass("is-overflowed") &&
+      !pen.hasClass("is-unlisted") &&
+      pen.style.display !== "none";
+    if (onBar) return pen;
+    return this.moreButton ?? this.barEl;
+  }
+
+  /**
+   * The pen's menu, from its ⌄, a tap on the pen in hand, or the side
+   * button: the laser pointer, and the pen in hand's settings and the pen
+   * gestures behind rows, each a page with a way back. The pen types
+   * themselves are the row in the pen's bar.
+   */
+  private openPenMenu(anchor: HTMLElement): void {
     if (this.popoverKind === "pens") {
       this.closePopover();
       return;
     }
-    const anchor = this.penTypeButtons.get(this.activePenType().id) ?? this.optionsEl;
     const body = this.openPopover("pens", anchor);
-    // One popover, three pages, as in GoodNotes: the pen types, and behind
-    // rows at their foot the pen in hand's settings and the pen gestures,
-    // each with a way back.
-    let page: "types" | "settings" | "gestures" = "types";
+    let page: "menu" | "settings" | "gestures" = "menu";
     this.popoverRender = () => {
       body.empty();
-      this.popover?.toggleClass("is-pen-gestures", page !== "types");
+      this.popover?.toggleClass("is-pen-gestures", page !== "menu");
       const go =
         (to: typeof page): (() => void) =>
         () => {
           page = to;
           this.popoverRender?.();
         };
-      if (page === "gestures") this.renderPenGestures(body, go("types"));
-      else if (page === "settings") this.renderPenSettings(body, go("types"));
-      else this.renderPenTypes(body, go("settings"), go("gestures"));
+      if (page === "gestures") this.renderPenGestures(body, go("menu"));
+      else if (page === "settings") this.renderPenSettings(body, go("menu"));
+      else this.renderPenMenu(body, go("settings"), go("gestures"));
       this.keepPopoverInside(anchor);
     };
     this.popoverRender();
@@ -3678,26 +3941,11 @@ export class Toolbar {
     return penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand()).color;
   }
 
-  private renderPenTypes(
+  private renderPenMenu(
     body: HTMLElement,
     openSettings: () => void,
     openGestures: () => void,
   ): void {
-    this.penMenuRows.clear();
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Pen type" });
-    for (const spec of PEN_MENU_TYPES) {
-      if (this.practice && spec.tool === "highlighter") continue;
-      const button = body.createEl("button", { cls: "goodobsidian-wide goodobsidian-pen-row" });
-      button.append(penGlyph(spec.id, this.inkColorOf(spec)));
-      this.penMenuRows.set(spec.id, button);
-      button.createSpan({ text: spec.label });
-      button.toggleClass("is-active", spec.id === this.activePenType().id);
-      button.addEventListener("click", () => {
-        this.closePopover();
-        this.choosePenType(spec);
-      });
-    }
-    if (this.practice) return;
     // The laser pointer has no bar button (FineNotes#25): here, and L.
     const laser = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
@@ -3747,10 +3995,46 @@ export class Toolbar {
     head.createDiv({ cls: "goodobsidian-popover-title", text: title });
   }
 
-  /** The pen in hand's own settings, behind "Pen settings" in the pen type menu. */
+  /**
+   * The pen in hand's own settings, behind "Pen settings" in the pen type
+   * menu, then two that hold for every pen: "Hide pen options while
+   * writing", and "Back to the pen" with its four choices, as the eraser's
+   * mode menu shows a choice.
+   */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
     this.renderStabilization(body);
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (!prefs || !save) return;
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const tuck = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(tuck, "Hide pen options while writing", prefs.tuckOnWrite, (on) =>
+      save({ tuckOnWrite: on }),
+    );
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "Back to the pen" });
+    const choices: ReadonlyArray<[ReturnToPen, string]> = [
+      ["never", "Never"],
+      ["reselect", "Tap the tool again"],
+      ["after-use", "After one use"],
+      ["both", "Both"],
+    ];
+    for (const [choice, label] of choices) {
+      const row = body.createEl("button", {
+        cls: "goodobsidian-wide",
+        text: label,
+        attr: { role: "menuitemradio", "aria-checked": String(choice === prefs.returnToPen) },
+      });
+      row.toggleClass("is-active", choice === prefs.returnToPen);
+      row.addEventListener("click", () => {
+        save({ returnToPen: choice });
+        this.popoverRender?.();
+      });
+    }
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
+    });
   }
 
   /**
@@ -3799,12 +4083,25 @@ export class Toolbar {
   }
 
   /**
-   * GoodNotes' Pen Gestures page: Scribble to erase (and whether it takes
-   * shapes and highlighter too), and Circle to lasso. The second switch is
+   * GoodNotes' Pen Gestures page: Hold to make shapes, Scribble to erase
+   * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, "Pen gestures", "Back to pen types", back);
+
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (prefs && save) {
+      const hold = body.createDiv({ cls: "goodobsidian-switch-list" });
+      this.switchRow(hold, "Hold to make shapes", prefs.drawAndHold, (on) =>
+        save({ drawAndHold: on }),
+      );
+      body.createDiv({
+        cls: "goodobsidian-popover-hint",
+        text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
+      });
+    }
 
     const gestures = penGesturesOf(this.state.penGestures);
     const set = (patch: Partial<PenGestures>): void => {
@@ -4024,6 +4321,12 @@ export class Toolbar {
         return;
       }
       this.closePopover();
+      // On the page, the pen or mouse press that closed it only closes it: it writes nothing.
+      const onPage = (target as Element | null)?.closest?.(".goodobsidian-scroll") != null;
+      if (closingPressStops(event, onPage)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") this.closePopover();
@@ -4590,16 +4893,23 @@ export class Toolbar {
     this.drawPenPreview();
     this.drawLassoIcon();
     this.drawEraserIcon();
-    // The pen menu, if it is open, shows each pen in its colour now.
-    if (this.popoverKind === "pens") {
-      for (const [id, row] of this.penMenuRows) {
-        if (!row.isConnected) continue;
-        const spec = PEN_TYPES.find((type) => type.id === id);
-        const glyph = row.querySelector("svg");
-        if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.inkColorOf(spec)));
-        row.toggleClass("is-active", id === this.activePenType().id);
-      }
+    // The pen row shows each pen in its own ink now.
+    for (const [id, button] of this.penTypeButtons) {
+      if (!button.isConnected) continue;
+      const spec = PEN_TYPES.find((type) => type.id === id);
+      const glyph = button.querySelector("svg");
+      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.inkColorOf(spec)));
     }
+  }
+
+  /**
+   * Tuck the pill away as a second tap on the tool's button does, until
+   * that button is tapped again ("Hide pen options while writing").
+   */
+  tuckOptions(): void {
+    if (!this.optionsVisible) return;
+    this.optionsVisible = false;
+    this.showOptions(false);
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */

@@ -40,11 +40,18 @@ import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
   ICON_NEW_NOTEBOOK,
+  ICON_STYLUS_ONLY,
+  ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
-import { type PageAppearance, shownPaperTheme } from "./settings-data";
+import {
+  type PageAppearance,
+  type PenPreferences,
+  shownPaperTheme,
+  storePenPreferences,
+} from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
@@ -185,7 +192,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type BarItemId, normalizeBar } from "./view/toolbar-layout";
+import { type ToolbarLayout, normalizeLayout } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -399,6 +406,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
+    addIcon(ICON_STYLUS_ONLY, ICON_STYLUS_ONLY_SVG);
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
     this.register(
@@ -707,6 +715,12 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("zoom-out", "Zoom out", (view) => view.zoomOut());
 
     this.addCommand({
+      id: "toggle-only-stylus-mode",
+      name: "Turn Stylus-only mode on or off",
+      callback: () => void this.setOnlyStylusMode(!this.settings.onlyStylusMode),
+    });
+
+    this.addCommand({
       id: "toggle-input-debug-overlay",
       name: "Show or hide the input debug overlay",
       callback: () => void this.setDebugHud(!this.settings.debugHud, true),
@@ -781,7 +795,9 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
-    this.settings.toolbarItems = normalizeBar(this.settings.toolbarItems);
+    const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    this.settings.toolbarItems = toolbar.bar;
+    this.settings.toolbarOff = toolbar.off;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
@@ -1177,6 +1193,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember "Grey out while erasing" (the eraser's mode list), for the next session. */
+  saveEraserGrey(on: boolean): void {
+    this.settings.greyWhileErasing = on;
+    void this.saveSettings();
+  }
+
   /** Remember the pen's auto-shape toggle, for the next session. */
   savePenAutoShape(enabled: boolean): void {
     this.settings.penAutoShape = enabled;
@@ -1192,6 +1214,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   savePenGestures(gestures: PenGestures): void {
     this.settings.penGestures = penGesturesOf(gestures);
+    void this.saveSettings();
+  }
+
+  /** Store what a pen menu changed for every pen, and give it to every open notebook. */
+  savePenPreferences(patch: Partial<PenPreferences>): void {
+    storePenPreferences(this.settings, patch);
+    for (const view of this.openNotebooks()) view.syncPenPreferences();
     void this.saveSettings();
   }
 
@@ -1222,6 +1251,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the pen row's picked colours, for every notebook. */
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
+    void this.saveSettings();
+  }
+
+  /** Remember the pen types' order in the pen's row, for every notebook. */
+  savePenTypeOrder(order: readonly string[]): void {
+    this.settings.penTypeOrder = [...order];
     void this.saveSettings();
   }
 
@@ -1297,11 +1332,13 @@ export default class GoodObsidianPlugin extends Plugin {
     }).open();
   }
 
-  /** "Customize toolbar" changed the bar: every open notebook shows the new one. */
-  saveToolbarItems(items: readonly BarItemId[]): void {
-    this.settings.toolbarItems = normalizeBar(items);
+  /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
+  saveToolbarLayout(layout: ToolbarLayout): void {
+    const toolbar = normalizeLayout(layout.bar, layout.off);
+    this.settings.toolbarItems = toolbar.bar;
+    this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
-    for (const view of this.openNotebooks()) view.setToolbarItems(this.settings.toolbarItems);
+    for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
@@ -1309,6 +1346,16 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.penCursor = style;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setPenCursor(style);
+  }
+
+  /**
+   * Stylus-only mode was switched from the toolbar or a command: save it and
+   * give every open notebook its toggle in one go.
+   */
+  async setOnlyStylusMode(on: boolean): Promise<void> {
+    this.settings.onlyStylusMode = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

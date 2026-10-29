@@ -36,6 +36,7 @@
 
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
+import { erasingLook } from "./erase-look";
 import {
   DAY_HIGHLIGHTER_BLEND,
   NIGHT_HIGHLIGHTER_BLEND,
@@ -491,6 +492,8 @@ interface InkPass {
   hidden?: ReadonlySet<string>;
   /** Strokes the eraser is cutting, and the pieces they leave. */
   replaced?: ReadonlyMap<string, readonly Stroke[]>;
+  /** Strokes (or cut pieces) the eraser is taking away, drawn grey until it lifts (`erase-look`). */
+  greyed?: ReadonlySet<string>;
 }
 
 export class Renderer {
@@ -1008,9 +1011,11 @@ export class Renderer {
    * from the page's preview, and rasterised regardless when there is none.
    * Returns whether everything on screen is drawn at full resolution.
    *
-   * `hidden` strokes are skipped and `replaced` strokes are drawn as their
-   * listed pieces (the eraser's live preview); the caller invalidates the
-   * region they cover first, so the affected tiles rasterise afresh.
+   * `hidden` strokes are skipped, `greyed` ones (strokes or pieces) drawn
+   * grey, and `replaced` strokes are drawn as their listed pieces (the
+   * eraser's live preview);
+   * the caller invalidates the region they cover first, so the affected
+   * tiles rasterise afresh.
    */
   renderDocument(
     doc: InkDocument,
@@ -1020,6 +1025,7 @@ export class Renderer {
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
     budgetMs = Infinity,
     detailTransient = false,
+    greyed?: ReadonlySet<string>,
   ): boolean {
     this.doc = doc;
     const ctx = this.dry.ctx;
@@ -1119,7 +1125,9 @@ export class Renderer {
             if (!transient) complete = false;
             continue;
           }
-          tile = this.rasterTile(page, box, tr, level, usePressure, hidden, replaced) ?? undefined;
+          tile =
+            this.rasterTile(page, box, tr, level, usePressure, hidden, replaced, greyed) ??
+            undefined;
           if (!tile) continue;
         }
         if (exact) {
@@ -1204,6 +1212,7 @@ export class Renderer {
     usePressure: boolean,
     hidden?: ReadonlySet<string>,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
   ): Tile | null {
     const canvas = createEl("canvas");
     canvas.width = tr.w;
@@ -1211,7 +1220,7 @@ export class Renderer {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.setTransform(level, 0, 0, level, -tr.x, -tr.y);
-    const ink: InkPass = { usePressure, hidden, replaced };
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
     this.paintPage(
       ctx,
       page,
@@ -1231,7 +1240,7 @@ export class Renderer {
       maxX: (tr.x + tr.w) / level + INK_PAD,
       maxY: (tr.y + tr.h) / level + INK_PAD,
     };
-    this.paintStrokes(ctx, page, region, usePressure, hidden, replaced);
+    this.paintStrokes(ctx, page, region, usePressure, hidden, replaced, greyed);
     this.paintImages(ctx, page, region, level, ink, true);
     const tile: Tile = { canvas, pageId: page.id, level, rect: tr };
     this.tiles.set(tileKey(page.id, level, tr.col, tr.row), tile, tr.w * tr.h * 4);
@@ -1429,6 +1438,7 @@ export class Renderer {
                 false,
                 ink.hidden,
                 ink.replaced,
+                ink.greyed,
               );
             }
           }
@@ -1485,17 +1495,22 @@ export class Renderer {
     usePressure: boolean,
     hidden?: ReadonlySet<string>,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
   ): void {
     const night = pageLook(page.backdrop, this.paper).night;
     // A sticky note's ink is drawn with its note (`paintImages`).
     const notes = noteIdsOf(page.images);
     for (const stroke of page.strokes) {
       if (isNoteInk(stroke, notes)) continue;
-      this.paintStroke(ctx, stroke, region, usePressure, night, hidden, replaced);
+      this.paintStroke(ctx, stroke, region, usePressure, night, hidden, replaced, greyed);
     }
   }
 
-  /** One stroke as the tiles draw it: left out when hidden, its pieces while the eraser cuts it. */
+  /**
+   * One stroke as the tiles draw it: left out when hidden, grey while the
+   * eraser holds it, its pieces while the eraser cuts it (a piece grey when
+   * it is the stretch being cut away).
+   */
   private paintStroke(
     ctx: CanvasRenderingContext2D,
     stroke: Stroke,
@@ -1504,14 +1519,17 @@ export class Renderer {
     night: boolean,
     hidden?: ReadonlySet<string>,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
   ): void {
     if (hidden?.has(stroke.id) || this.hiddenStrokes.has(stroke.id)) return;
     const pieces = replaced?.get(stroke.id);
     if (pieces) {
-      for (const piece of pieces) this.paintEntry(ctx, piece, region, usePressure, night);
+      for (const piece of pieces) {
+        this.paintEntry(ctx, piece, region, usePressure, night, greyed?.has(piece.id) === true);
+      }
       return;
     }
-    this.paintEntry(ctx, stroke, region, usePressure, night);
+    this.paintEntry(ctx, stroke, region, usePressure, night, greyed?.has(stroke.id) === true);
   }
 
   private paintEntry(
@@ -1520,6 +1538,7 @@ export class Renderer {
     region: Bounds,
     usePressure: boolean,
     night: boolean,
+    grey = false,
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
     if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) return;
@@ -1528,7 +1547,9 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha *= FADED_INK_ALPHA;
     }
-    paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
+    // Grey is only a colour: the outline traced for the stroke is the same.
+    const look = grey ? erasingLook(stroke) : stroke;
+    paintStroke(ctx, entry, look, this.highlighterAlpha, night, decorOf(look), stroke.pts);
     if (faded) ctx.restore();
   }
 

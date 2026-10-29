@@ -8,7 +8,60 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
+  the page listen to the stylus alone: a palm, a finger or a mouse resting on
+  the glass moves neither the ink nor the page, and a finger's scroll, pinch
+  and taps are off. Its toolbar button, Stylus only, switches the mode on and
+  off, and the command "Turn Stylus-only mode on or off" can take a hardware
+  key. The Hand tool moves the page (with its fling) and the Magnifier zooms
+  it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
+  page and zoom in. All three wait in the toolbar's More tools menu at first.
+- **Hide pen options while writing.** A new switch in the pen menu's Pen
+  settings and under Settings › Writing › More: the pen's options (pen
+  type, widths and colors) tuck away as soon as the pen or highlighter
+  starts writing, wherever they sit, as a second tap on the pen does. Tap
+  the pen to bring them back. Off by default; the eraser, lasso and other
+  tools keep their options.
+- **Click the pen's side button for the pen menu.** With the pen held just
+  above the page, a click of its side button opens the pen menu, as on a
+  Samsung tablet, and the next click closes it. Holding the button while
+  you write still erases, lassos or moves the page, as set. A new setting
+  in Settings → Pens and shortcuts, **Side button click**, turns the click
+  off. Not on iPad: the Apple Pencil has no side button.
+- **Grey out while erasing**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A new
+  switch in the eraser's mode list: Whole stroke and By line draw what they
+  take grey until the pen lifts, as Notability does, instead of hiding it
+  at once. Off by default.
+
 ### Changed
+
+- **Hide toolbar tools.** Customize toolbar, at the end of the More tools
+  menu, now has three places for every tool: on the bar (drag to reorder,
+  the top is leftmost), in the More tools menu, or hidden. A tool in the
+  menu hides with its crossed eye, and (+) brings it back.
+- **Pen settings in the pen menu.** The pen menu's Pen settings page now
+  also holds "Hide pen options while writing" and "Back to the pen", with
+  all four choices, and its Pen gestures page holds "Hold to make shapes".
+  "Hold to make shapes" and "Back to the pen" are no longer in Settings ›
+  Writing; what you had chosen is kept.
+- **The pen types as a row, as in Goodnotes.** Every pen type, the
+  highlighter included, now sits at the start of the pen's bar, each drawn
+  in its own ink: tap one to write with it. Hold a pen and drag it to put
+  the row in your order; none can be added or taken away. Four show at a
+  time and the fifth is a swipe away; upright at a side the row runs down
+  the bar. The ⌄ after the pens (or a tap on the pen in hand) keeps the
+  laser pointer, Pen settings and Pen gestures; the Pen type list it used to
+  open is gone.
+- **Turning a selection or a picture settles**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
+  knob no longer follows every tremor of the pen: a tap or a wobble turns
+  nothing, the turn lands on quarter turns and on level (a tilted shape's
+  longest edge, a picture's own tilt) from several degrees away, and rests
+  lightly on every 15°, free between. A small readout beside the pen shows
+  the angle while you turn.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
@@ -30,6 +83,9 @@ extracted from the matching section of this file by `release.yml`.
   than Grape, so it never makes reading worse. Practice sheets now say to
   keep them: each time FineNotes learns, it learns from every sheet in the
   vault.
+- **The tap that closes a popover only closes it.** A pen or mouse press on
+  the page while a tool bar menu is open closes the menu and writes
+  nothing; the next press writes. A finger still scrolls.
 
 ## [2.5.0] - 2026-10-25
 
