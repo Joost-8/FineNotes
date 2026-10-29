@@ -92,7 +92,12 @@ import {
   storeShownValue,
   withSection,
 } from "./settings-data";
-import type { PdfTheme, WorkspaceBackground } from "./model/appearance-theme";
+import {
+  type PdfTheme,
+  type ThemePreset,
+  type WorkspaceBackground,
+  themePresetOf,
+} from "./model/appearance-theme";
 import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import { ApiKeyModal } from "./ui/api-key-modal";
 import { ConfirmModal } from "./ui/confirm-modal";
@@ -206,13 +211,31 @@ const WORKSPACE_BACKGROUND_NAMES: Record<WorkspaceBackground, string> = {
   light: "Light",
   dark: "Dark",
   custom: "Custom color",
-  blur: "Blur",
 };
 
 /** How PDF pages are drawn, as the PDF dropdown names them. */
 const PDF_THEME_NAMES: Record<PdfTheme, string> = {
+  auto: "Auto",
   "as-is": "As is",
-  dark: "Adapt to dark mode",
+  dark: "Dark",
+};
+
+/** What each Theme preset sets the three settings to. */
+const THEME_PRESETS = {
+  auto: { workspace: "auto", page: "system", pdf: "auto" },
+  light: { workspace: "light", page: "light", pdf: "as-is" },
+  dark: { workspace: "dark", page: "dark", pdf: "dark" },
+} as const satisfies Record<
+  Exclude<ThemePreset, "custom">,
+  { workspace: WorkspaceBackground; page: PageAppearance; pdf: PdfTheme }
+>;
+
+/** The top-level Theme row's choices; Custom means the three below differ. */
+const THEME_NAMES: Record<ThemePreset, string> = {
+  auto: "Auto",
+  light: "Light",
+  dark: "Dark",
+  custom: "Custom",
 };
 
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
@@ -281,13 +304,15 @@ const DESC = {
     "The paper blank and template pages use. Dark paper keeps ink light and its true color; " +
     "only the view changes, so ink is saved, exported and printed as it really is and pictures " +
     "are left alone. PDF pages follow their own setting below.",
+  theme:
+    "One choice for the workspace background, the page theme and PDF appearance. Auto follows " +
+    "Obsidian's theme, Light and Dark set all three alike, and Custom lets you set each below.",
   workspaceBackground:
-    "The desk around the pages. Auto follows Obsidian's theme; Custom color opens a picker; " +
-    "Blur stretches a soft, dimmed copy of the page across the whole desk, while pages and ink " +
-    "stay sharp.",
+    "The desk around the pages. Auto follows Obsidian's theme; Custom opens a color picker.",
   pdfTheme:
-    "How imported and background PDF pages are shown. As is keeps their original colors, even " +
-    "with dark paper or a dark workspace. Adapt to dark mode darkens them with dark pages.",
+    "How imported and background PDF pages are shown. Auto darkens them when Obsidian is dark; " +
+    "As is keeps their original colors, even with dark paper or a dark workspace; Dark darkens " +
+    "them with dark pages.",
   customWorkspace:
     "The exact color of the desk around the pages. Pick any color; it is separate from the " +
     "paper and from how PDF pages are shown.",
@@ -619,6 +644,10 @@ const FOLDER_ROWS = [
 export class GoodObsidianSettingTab extends PluginSettingTab {
   /** The AI group, opened by hand when no AI service is set up. */
   private aiOpen = false;
+  /** Whether the Theme row shows its three settings, for this opening of the tab. */
+  private themeOpen = false;
+  /** The Theme dropdown was set to Custom by hand: it stays there until a preset is picked. */
+  private themeCustom = false;
   /** Sections whose "More" rows are shown, for this opening of the settings. */
   private readonly moreOpen = new Set<SettingsSection>();
   /** Each row's ⓘ text, by row name; filled as the rows are defined. */
@@ -1286,15 +1315,24 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       "file-text",
       [
         this.info(
-          drawnRow("Workspace background", "", (s) => this.drawWorkspaceBackground(s), [
-            "desk",
-            "canvas",
-            "background",
+          drawnRow("Theme", "", (s) => this.drawTheme(s), [
             "dark mode",
-            "theme",
-            "blur",
-            "custom color",
+            "light mode",
+            "appearance",
+            "workspace",
+            "page",
+            "pdf",
           ]),
+          DESC.theme,
+        ),
+        this.info(
+          drawnRow(
+            "Workspace background",
+            "",
+            (s) => this.drawWorkspaceBackground(s),
+            ["desk", "canvas", "background", "dark mode", "theme", "custom"],
+            () => this.themeOpen,
+          ),
           DESC.workspaceBackground,
         ),
         this.info(
@@ -1303,28 +1341,28 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "",
             (s) => this.drawWorkspaceColor(s),
             ["background", "desk", "color", "picker"],
-            () => settings.workspaceBackground === "custom",
+            () => this.themeOpen && settings.workspaceBackground === "custom",
           ),
           DESC.customWorkspace,
         ),
         this.info(
-          drawnRow("Page theme", "", (s) => this.drawPageTheme(s), [
-            "dark mode",
-            "night mode",
-            "paper",
-            "theme",
-          ]),
+          drawnRow(
+            "Page theme",
+            "",
+            (s) => this.drawPageTheme(s),
+            ["dark mode", "night mode", "paper", "theme"],
+            () => this.themeOpen,
+          ),
           DESC.pageAppearance,
         ),
         this.info(
-          drawnRow("PDF appearance", "", (s) => this.drawPdfTheme(s), [
-            "pdf",
-            "dark",
-            "dark PDF pages",
-            "invert",
-            "original",
-            "slides",
-          ]),
+          drawnRow(
+            "PDF appearance",
+            "",
+            (s) => this.drawPdfTheme(s),
+            ["pdf", "dark", "dark PDF pages", "invert", "original", "slides"],
+            () => this.themeOpen,
+          ),
           DESC.pdfTheme,
         ),
         drawnRow(
@@ -1414,9 +1452,61 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** The desk behind the pages: follow Obsidian, light, dark, custom or blurred. */
+  /**
+   * The Theme row: one choice for the desk, the paper and PDF pages, and the
+   * chevron that shows the three. Custom is what the row reads once they
+   * differ (or when picked, which opens them).
+   */
+  private drawTheme(setting: Setting): void {
+    const settings = this.plugin.settings;
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(THEME_NAMES)) d.addOption(id, name);
+      d.setValue(this.themeCustom ? "custom" : themePresetOf(settings));
+      d.onChange(async (value) => {
+        const preset = value as ThemePreset;
+        this.themeCustom = preset === "custom";
+        if (preset === "custom") {
+          this.themeOpen = true;
+        } else {
+          const set = THEME_PRESETS[preset];
+          settings.workspaceBackground = set.workspace;
+          settings.pageAppearance = set.page;
+          settings.pdfTheme = set.pdf;
+          settings.invertPdfPages = set.pdf !== "as-is";
+          // Saved by the plugin, which redraws every open notebook.
+          await this.plugin.applyWorkspaceBackground();
+          await this.plugin.applyPageAppearance();
+        }
+        this.update();
+        this.syncStatuses();
+      });
+    });
+    setting.addExtraButton((button) => {
+      const chevron = button.extraSettingsEl;
+      button.setIcon("chevron-right");
+      chevron.addClass("goodobsidian-fold-chevron");
+      chevron.toggleClass("is-folded", !this.themeOpen);
+      chevron.setAttribute("role", "button");
+      chevron.setAttribute("aria-expanded", String(this.themeOpen));
+      chevron.setAttribute("aria-label", `${this.themeOpen ? "Fold" : "Unfold"} Theme settings`);
+      button.onClick(() => {
+        this.themeOpen = !this.themeOpen;
+        this.update();
+      });
+    });
+  }
+
+  /** The three child rows changed by hand: the Theme row reads the result. */
+  private themeEdited(): void {
+    this.themeCustom = false;
+    this.update();
+    this.syncStatuses();
+  }
+
+  /** The desk behind the pages: follow Obsidian, light, dark or custom. */
   private drawWorkspaceBackground(setting: Setting): void {
     const settings = this.plugin.settings;
+    setting.settingEl.addClass("goodobsidian-theme-child");
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(WORKSPACE_BACKGROUND_NAMES)) {
         d.addOption(id, name);
@@ -1427,8 +1517,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         // Saved by the plugin, which redraws every open notebook.
         await this.plugin.applyWorkspaceBackground();
         // Custom color sits below and appears or goes with this choice.
-        this.update();
-        this.syncStatuses();
+        this.themeEdited();
       });
     });
   }
@@ -1436,6 +1525,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** The colour picked for the Custom workspace background. */
   private drawWorkspaceColor(setting: Setting): void {
     const settings = this.plugin.settings;
+    setting.settingEl.addClass("goodobsidian-theme-child");
     setting.addColorPicker((picker) => {
       picker.setValue(settings.workspaceBackgroundColor);
       picker.onChange(async (value) => {
@@ -1448,6 +1538,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Blank/template paper: light, dark, or following Obsidian's theme. */
   private drawPageTheme(setting: Setting): void {
     const settings = this.plugin.settings;
+    setting.settingEl.addClass("goodobsidian-theme-child");
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(PAGE_APPEARANCES)) d.addOption(id, name);
       d.setValue(settings.pageAppearance);
@@ -1455,14 +1546,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         settings.pageAppearance = value as PageAppearance;
         // Saved by the plugin, which redraws every open notebook.
         await this.plugin.applyPageAppearance();
-        this.syncStatuses();
+        this.themeEdited();
       });
     });
   }
 
-  /** PDF pages: their true colors, or adapted to dark pages. */
+  /** PDF pages: following Obsidian, their true colors, or adapted to dark pages. */
   private drawPdfTheme(setting: Setting): void {
     const settings = this.plugin.settings;
+    setting.settingEl.addClass("goodobsidian-theme-child");
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(PDF_THEME_NAMES)) d.addOption(id, name);
       d.setValue(settings.pdfTheme);
@@ -1471,7 +1563,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         settings.invertPdfPages = value !== "as-is";
         // Saved by the plugin, which redraws every open notebook.
         await this.plugin.applyPageAppearance();
-        this.syncStatuses();
+        this.themeEdited();
       });
     });
   }

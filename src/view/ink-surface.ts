@@ -413,7 +413,6 @@ import {
 import { keyboardHeight } from "./keyboard";
 import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
-import type { WorkspaceLook } from "../model/appearance-theme";
 import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
 import { History, historyNotice } from "../model/history";
 import {
@@ -609,11 +608,6 @@ interface StrokeDiagnostic {
  */
 const MAX_STROKE_HALF_WIDTH = 24;
 
-/** Width of the small page render behind a Blur workspace background. */
-const WORKSPACE_AMBIENT_WIDTH = 480;
-/** Idle delay before that render, so an edit does not redraw it per stroke. */
-const WORKSPACE_AMBIENT_DELAY_MS = 220;
-
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
   /**
@@ -629,13 +623,8 @@ export interface InkSurfaceOptions {
    * (contracts/design-brief.md).
    */
   paper?: PaperTheme;
-  /** The desk colour and whether the GPU blur layer is on. */
-  workspace?: WorkspaceLook;
-  /**
-   * A low-resolution canvas of one page, for the Blur workspace background.
-   * Called only when the active page or its content changes, never per frame.
-   */
-  workspaceSnapshot?: (page: Page, width: number) => HTMLCanvasElement | null;
+  /** The desk colour behind the pages. */
+  workspace?: string;
   /** Open with the diagnostics HUD showing (see {@link InkSurface.setDebug}). */
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
@@ -1608,12 +1597,8 @@ export class InkSurface {
   private readonly laserCanvas: HTMLCanvasElement;
   /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
   private readonly paneLayers: HTMLCanvasElement[];
-  /** The desk colour and the full-bleed blurred page behind the pages. */
-  private workspace: WorkspaceLook;
-  private readonly workspaceAmbientEl: HTMLElement;
-  private readonly workspaceAmbientCanvas: HTMLCanvasElement;
-  private readonly workspaceSnapshot?: (page: Page, width: number) => HTMLCanvasElement | null;
-  private workspaceAmbientTimer = 0;
+  /** The desk colour behind the pages. */
+  private workspace: string;
   private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
@@ -1859,8 +1844,7 @@ export class InkSurface {
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
     this.paper = options.paper ?? LIGHT_PAPER;
-    this.workspace = options.workspace ?? { color: this.paper.desk, blur: false };
-    this.workspaceSnapshot = options.workspaceSnapshot;
+    this.workspace = options.workspace ?? this.paper.desk;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -1872,17 +1856,7 @@ export class InkSurface {
           cls: `goodobsidian-canvas goodobsidian-canvas-${layer}`,
         }),
     );
-    // Above the desk and below the pages: a soft, full-bleed copy of the
-    // active page. CSS does the blur once, so panning and zooming add no work.
-    this.workspaceAmbientEl = this.surfaceEl.createDiv({
-      cls: "goodobsidian-workspace-ambient is-hidden",
-    });
-    this.workspaceAmbientEl.setAttribute("aria-hidden", "true");
-    this.workspaceAmbientCanvas = this.workspaceAmbientEl.createEl("canvas", {
-      cls: "goodobsidian-workspace-ambient-image",
-    });
-    this.workspaceAmbientEl.toggleClass("is-hidden", !this.workspace.blur);
-    this.surfaceEl.style.backgroundColor = this.workspace.color;
+    this.surfaceEl.style.backgroundColor = this.workspace;
     this.scrollEl = this.surfaceEl.createDiv({ cls: "goodobsidian-scroll" });
     this.paperEl = this.scrollEl.createDiv({ cls: "goodobsidian-paper" });
     this.textBoxesEl = this.paperEl.createDiv({ cls: "goodobsidian-textboxes" });
@@ -2112,10 +2086,9 @@ export class InkSurface {
     );
     renderer.highlighterAlpha = options.highlighterAlpha;
     renderer.paper = this.paper;
-    renderer.deskOverride = this.workspace.color;
-    renderer.desk = this.workspace.color;
+    renderer.deskOverride = this.workspace;
+    renderer.desk = this.workspace;
     this.renderer = renderer;
-    if (this.workspace.blur) this.scheduleWorkspaceAmbient(0);
 
     // The ruler hears every press first (capture, on the surface): a finger
     // on it moves it, and a pen within reach of an edge follows the edge,
@@ -2327,8 +2300,6 @@ export class InkSurface {
     window.clearTimeout(this.wheelSnapTimer);
     this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
-    window.clearTimeout(this.workspaceAmbientTimer);
-    this.workspaceAmbientTimer = 0;
     this.hideOffPage();
     for (const frame of [
       this.frameReq,
@@ -2581,7 +2552,6 @@ export class InkSurface {
   /** Repaint without touching layout or indexes (a PDF raster arrived). */
   repaint(): void {
     this.renderer?.invalidateAll();
-    this.scheduleWorkspaceAmbient();
     this.requestFrame();
   }
 
@@ -2712,7 +2682,6 @@ export class InkSurface {
   private changed(pages?: readonly string[]): void {
     this.growBoard();
     this.reportStatus();
-    this.scheduleWorkspaceAmbient();
     this.syncPageTabs();
     // Ink moved or went: the underlines and ribbons follow it.
     this.syncSectionRibbons();
@@ -2745,48 +2714,23 @@ export class InkSurface {
     this.renderer.invalidateAll();
     this.syncTextBoxes();
     this.syncInkCursor();
-    this.scheduleWorkspaceAmbient();
     this.requestFrame();
   }
 
-  /** The workspace desk or blur setting changed: redraw the desk only. */
-  setWorkspaceBackground(look: WorkspaceLook): void {
-    if (look.color === this.workspace.color && look.blur === this.workspace.blur) return;
-    this.workspace = { ...look };
-    this.workspaceAmbientEl.toggleClass("is-hidden", !look.blur);
-    this.surfaceEl.style.backgroundColor = look.color;
+  /** The workspace desk colour changed: redraw the desk only. */
+  setWorkspaceBackground(color: string): void {
+    if (color === this.workspace) return;
+    this.workspace = color;
+    this.surfaceEl.style.backgroundColor = color;
     if (this.renderer) {
-      this.renderer.deskOverride = look.color;
-      this.renderer.desk = look.color;
+      this.renderer.deskOverride = color;
+      this.renderer.desk = color;
     }
-    if (look.blur) this.scheduleWorkspaceAmbient(0);
     this.requestFrame();
   }
 
   get paperTheme(): PaperTheme {
     return this.paper;
-  }
-
-  /** Queue the Blur background's page copy, after a short idle. */
-  private scheduleWorkspaceAmbient(delay = WORKSPACE_AMBIENT_DELAY_MS): void {
-    if (!this.workspace?.blur) return;
-    window.clearTimeout(this.workspaceAmbientTimer);
-    this.workspaceAmbientTimer = window.setTimeout(() => {
-      this.workspaceAmbientTimer = 0;
-      this.renderWorkspaceAmbient();
-    }, delay);
-  }
-
-  /** Draw the active page small into the backdrop; CSS stretches and blurs it. */
-  private renderWorkspaceAmbient(): void {
-    if (!this.workspace?.blur) return;
-    const page = this.doc.pages[this.pageIndex];
-    const snapshot = page ? this.workspaceSnapshot?.(page, WORKSPACE_AMBIENT_WIDTH) : null;
-    if (!snapshot) return;
-    const canvas = this.workspaceAmbientCanvas;
-    canvas.width = snapshot.width;
-    canvas.height = snapshot.height;
-    canvas.getContext("2d")?.drawImage(snapshot, 0, 0);
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
@@ -3802,7 +3746,6 @@ export class InkSurface {
       this.markCurrentTab();
       this.callbacks.onPageChange?.(index, total);
       this.reportStatus();
-      this.scheduleWorkspaceAmbient(0);
       this.prefetchText();
       // A page of its own paper may show the ink in another colour.
       this.syncInkCursor();
@@ -5259,7 +5202,6 @@ export class InkSurface {
       }
     });
     if (shown) {
-      this.scheduleWorkspaceAmbient();
       this.requestFrame();
     }
   }
@@ -5292,7 +5234,6 @@ export class InkSurface {
       shown = true;
     });
     if (shown) {
-      this.scheduleWorkspaceAmbient();
       this.requestFrame();
     }
   }

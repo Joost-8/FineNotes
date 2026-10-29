@@ -354,25 +354,15 @@ describe("dark pages", () => {
 
 describe("independent appearance layers", () => {
   it("resolves the workspace desk without looking at the page or PDF theme", () => {
-    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, false)).toEqual({
-      color: LIGHT_WORKSPACE,
-      blur: false,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, true)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: false,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "light" }, true).color).toBe(
-      LIGHT_WORKSPACE,
-    );
-    expect(workspaceBackgroundOf({ workspaceBackground: "dark" }, false).color).toBe(
-      DARK_WORKSPACE,
-    );
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, false)).toBe(LIGHT_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, true)).toBe(DARK_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "light" }, true)).toBe(LIGHT_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "dark" }, false)).toBe(DARK_WORKSPACE);
     const pageOnly = { workspaceBackground: "dark" } as const;
-    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "dark" }, true).color).toBe(
+    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "dark" }, true)).toBe(
       DARK_WORKSPACE,
     );
-    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "light" }, true).color).toBe(
+    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "light" }, true)).toBe(
       DARK_WORKSPACE,
     );
   });
@@ -383,17 +373,13 @@ describe("independent appearance layers", () => {
         { workspaceBackground: "custom", workspaceBackgroundColor: "#ABC" },
         true,
       ),
-    ).toEqual({ color: "#aabbcc", blur: false });
+    ).toBe("#aabbcc");
     expect(
       workspaceBackgroundOf(
         { workspaceBackground: "custom", workspaceBackgroundColor: "nope" },
         false,
       ),
-    ).toEqual({ color: DEFAULT_CUSTOM_WORKSPACE, blur: false });
-    expect(workspaceBackgroundOf({ workspaceBackground: "blur" }, true)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: true,
-    });
+    ).toBe(DEFAULT_CUSTOM_WORKSPACE);
   });
 
   it("reads the stored PDF theme, with the old switch as its fallback", () => {

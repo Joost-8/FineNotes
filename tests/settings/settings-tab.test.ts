@@ -263,9 +263,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
 type Plugin = ReturnType<typeof makePlugin>;
 
 /** The tab, with its AI group opened (as Show does) unless `aiOpen` is false. */
-function makeTab(plugin: Plugin, aiOpen = true) {
+function makeTab(plugin: Plugin, aiOpen = true, themeOpen = false) {
   const tab = new GoodObsidianSettingTab({} as never, plugin as never);
   (tab as unknown as { aiOpen: boolean }).aiOpen = aiOpen;
+  (tab as unknown as { themeOpen: boolean }).themeOpen = themeOpen;
   const fake = tab as unknown as { updates: number; domRefreshes: number };
   const origUpdate = (tab as unknown as { update: () => void }).update.bind(tab);
   (tab as unknown as { update: () => void }).update = () => {
@@ -409,6 +410,7 @@ describe("the rows", () => {
       [PENS, "Side button click", "dropdown:stylusButtonClick"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
+      [PAGES, "Theme", "render"],
       [PAGES, "Workspace background", "render"],
       [PAGES, "Custom color", "render"],
       [PAGES, "Page theme", "render"],
@@ -480,7 +482,7 @@ describe("the rows", () => {
     expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
     expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
     expect(tab.infoOf("Page theme")).toMatch(/PDF pages follow their own setting/);
-    expect(tab.infoOf("Workspace background")).toMatch(/stretches a soft/);
+    expect(tab.infoOf("Workspace background")).toMatch(/color picker/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
   });
@@ -531,7 +533,7 @@ describe("the rows", () => {
     );
     expect(start.colors).toHaveLength(1);
     expect(Object.keys(renderRow(named(all, "Workspace background")).dropdowns[0].options)).toEqual(
-      ["auto", "light", "dark", "custom", "blur"],
+      ["auto", "light", "dark", "custom"],
     );
     expect(Object.keys(renderRow(named(all, "Page theme")).dropdowns[0].options)).toEqual([
       "light",
@@ -539,6 +541,7 @@ describe("the rows", () => {
       "system",
     ]);
     expect(Object.keys(renderRow(named(all, "PDF appearance")).dropdowns[0].options)).toEqual([
+      "auto",
       "as-is",
       "dark",
     ]);
@@ -599,8 +602,8 @@ const DEFAULT_MODEL_ROWS = [
 
 describe("which rows show", () => {
   /** The rows shown; `aiOpen`: the AI group opened, as Show does when no key is set up. */
-  function visibleNames(plugin: Plugin, aiOpen = true): string[] {
-    const { tab } = makeTab(plugin, aiOpen);
+  function visibleNames(plugin: Plugin, aiOpen = true, themeOpen = false): string[] {
+    const { tab } = makeTab(plugin, aiOpen, themeOpen);
     const all = rows(tab);
     return all.map((r, i) => (shown(r.def) ? r.def.name || `(block ${i})` : "")).filter(Boolean);
   }
@@ -624,9 +627,7 @@ describe("which rows show", () => {
       "Highlighter opacity",
       "Straighten highlighter strokes",
       ...PEN_ROWS,
-      "Workspace background",
-      "Page theme",
-      "PDF appearance",
+      "Theme",
       "Paper width",
       "More",
       "New notebooks go in",
@@ -638,7 +639,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 36)",
+      "(block 37)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -661,8 +662,7 @@ describe("which rows show", () => {
       visibleNames(makePlugin({ workspaceBackground: background as never }));
     expect(names("auto")).not.toContain("Custom color");
     expect(names("dark")).not.toContain("Custom color");
-    expect(names("blur")).not.toContain("Custom color");
-    expect(names("custom")).toContain("Custom color");
+    expect(names("custom")).not.toContain("Custom color");
   });
 
   it("opens the AI group on Show: Manual recognition, Claude, keys in the keychain", () => {
@@ -864,6 +864,7 @@ describe("control values", () => {
     const all = rows(makeTab(plugin).tab);
     const page = renderRow(named(all, "Page theme"));
     const pdf = renderRow(named(all, "PDF appearance"));
+    expect(Object.keys(pdf.dropdowns[0].options)).toEqual(["auto", "as-is", "dark"]);
     expect([page.dropdowns[0].value, pdf.dropdowns[0].value]).toEqual(["dark", "as-is"]);
     await page.dropdowns[0].pick("system");
     // The PDF choice is untouched by the page theme.
@@ -873,6 +874,72 @@ describe("control values", () => {
     expect([plugin.settings.pdfTheme, plugin.settings.invertPdfPages]).toEqual(["dark", true]);
     expect(plugin.settings.pageAppearance).toBe("system");
     expect(plugin.applyPageAppearance).toHaveBeenCalledTimes(2);
+    await pdf.dropdowns[0].pick("auto");
+    expect([plugin.settings.pdfTheme, plugin.settings.invertPdfPages]).toEqual(["auto", true]);
+  });
+
+  describe("the Theme row", () => {
+    it("hides its three settings until the chevron opens them", async () => {
+      const children = ["Workspace background", "Page theme", "PDF appearance"];
+      const visible = (themeOpen: boolean) =>
+        rows(makeTab(makePlugin(), true, themeOpen).tab)
+          .filter((r) => shown(r.def))
+          .map((r) => r.def.name);
+      const closed = visible(false);
+      expect(closed).toContain("Theme");
+      for (const name of children) expect(closed).not.toContain(name);
+      const open = visible(true);
+      for (const name of children) expect(open).toContain(name);
+
+      const { tab } = makeTab(makePlugin());
+      const row = renderRow(named(rows(tab), "Theme"));
+      const chevron = row.extras[0];
+      expect(chevron.extraSettingsEl.hasClass("goodobsidian-fold-chevron")).toBe(true);
+      expect(chevron.extraSettingsEl.hasClass("is-folded")).toBe(true);
+      await chevron.click();
+      expect((tab as unknown as { themeOpen: boolean }).themeOpen).toBe(true);
+    });
+
+    it("sets all three settings from Auto, Light and Dark", async () => {
+      const plugin = makePlugin({ workspaceBackground: "custom", pageAppearance: "light" });
+      const row = renderRow(named(rows(makeTab(plugin).tab), "Theme"));
+      expect(Object.keys(row.dropdowns[0].options)).toEqual(["auto", "light", "dark", "custom"]);
+      expect(row.dropdowns[0].value).toBe("custom");
+      const stored = () => [
+        plugin.settings.workspaceBackground,
+        plugin.settings.pageAppearance,
+        plugin.settings.pdfTheme,
+      ];
+      await row.dropdowns[0].pick("dark");
+      expect(stored()).toEqual(["dark", "dark", "dark"]);
+      await row.dropdowns[0].pick("light");
+      expect(stored()).toEqual(["light", "light", "as-is"]);
+      await row.dropdowns[0].pick("auto");
+      expect(stored()).toEqual(["auto", "system", "auto"]);
+      expect(plugin.applyWorkspaceBackground).toHaveBeenCalledTimes(3);
+      expect(plugin.applyPageAppearance).toHaveBeenCalledTimes(3);
+    });
+
+    it("reads Custom once any child differs, and opens the block when picked", async () => {
+      const plugin = makePlugin({
+        workspaceBackground: "auto",
+        pageAppearance: "system",
+        pdfTheme: "auto",
+      });
+      const { tab } = makeTab(plugin);
+      const valueOf = () => renderRow(named(rows(tab), "Theme")).dropdowns[0].value;
+      expect(valueOf()).toBe("auto");
+      const pdf = renderRow(named(rows(tab), "PDF appearance"));
+      await pdf.dropdowns[0].pick("as-is");
+      expect(valueOf()).toBe("custom");
+      await pdf.dropdowns[0].pick("auto");
+      expect(valueOf()).toBe("auto");
+
+      const theme = renderRow(named(rows(tab), "Theme"));
+      await theme.dropdowns[0].pick("custom");
+      expect((tab as unknown as { themeOpen: boolean }).themeOpen).toBe(true);
+      expect(valueOf()).toBe("custom");
+    });
   });
 
   it("sets the workspace background and its custom colour, and redraws notebooks", async () => {

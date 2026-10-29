@@ -7,17 +7,18 @@
 import { type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { parseHexColor } from "./colors";
 
-export type WorkspaceBackground = "auto" | "light" | "dark" | "custom" | "blur";
-export type PdfTheme = "as-is" | "dark";
+export type WorkspaceBackground = "auto" | "light" | "dark" | "custom";
+export type PdfTheme = "auto" | "as-is" | "dark";
+/** The top-level Theme row: a uniform preset, or Custom once the three differ. */
+export type ThemePreset = "auto" | "light" | "dark" | "custom";
 
 export const WORKSPACE_BACKGROUNDS: readonly WorkspaceBackground[] = [
   "auto",
   "light",
   "dark",
   "custom",
-  "blur",
 ];
-export const PDF_THEMES: readonly PdfTheme[] = ["as-is", "dark"];
+export const PDF_THEMES: readonly PdfTheme[] = ["auto", "as-is", "dark"];
 
 /** The light and dark desks, independent of the page theme. */
 export const LIGHT_WORKSPACE = "#e6e7ea";
@@ -34,12 +35,6 @@ export interface AppearanceSettings {
   invertPdfPages?: unknown;
 }
 
-/** A desk colour, and whether the GPU blur/tint layer sits over it. */
-export interface WorkspaceLook {
-  color: string;
-  blur: boolean;
-}
-
 export function isWorkspaceBackground(value: unknown): value is WorkspaceBackground {
   return WORKSPACE_BACKGROUNDS.includes(value as WorkspaceBackground);
 }
@@ -49,35 +44,45 @@ export function isPdfTheme(value: unknown): value is PdfTheme {
 }
 
 /**
- * The desk behind the pages. Auto follows Obsidian's light/dark theme; Blur
- * uses that desk and adds the GPU blur layer; Custom is the picked colour.
+ * The desk colour behind the pages. Auto follows Obsidian's light/dark
+ * theme; Custom is the picked colour.
  */
-export function workspaceBackgroundOf(
-  settings: AppearanceSettings,
-  obsidianDark: boolean,
-): WorkspaceLook {
+export function workspaceBackgroundOf(settings: AppearanceSettings, obsidianDark: boolean): string {
   const choice = isWorkspaceBackground(settings.workspaceBackground)
     ? settings.workspaceBackground
     : "auto";
   if (choice === "custom") {
-    return {
-      color:
-        (typeof settings.workspaceBackgroundColor === "string"
-          ? parseHexColor(settings.workspaceBackgroundColor)
-          : null) ?? DEFAULT_CUSTOM_WORKSPACE,
-      blur: false,
-    };
+    return (
+      (typeof settings.workspaceBackgroundColor === "string"
+        ? parseHexColor(settings.workspaceBackgroundColor)
+        : null) ?? DEFAULT_CUSTOM_WORKSPACE
+    );
   }
-  const auto = obsidianDark ? DARK_WORKSPACE : LIGHT_WORKSPACE;
-  if (choice === "light") return { color: LIGHT_WORKSPACE, blur: false };
-  if (choice === "dark") return { color: DARK_WORKSPACE, blur: false };
-  return { color: auto, blur: choice === "blur" };
+  if (choice === "light") return LIGHT_WORKSPACE;
+  if (choice === "dark") return DARK_WORKSPACE;
+  return obsidianDark ? DARK_WORKSPACE : LIGHT_WORKSPACE;
 }
 
 /** Whether pages are shown dark, from the Page theme and Obsidian's theme. */
 export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolean {
   if (appearance === "dark") return true;
   return appearance === "system" && obsidianDark;
+}
+
+/** Whether PDF pages are drawn dark: Auto follows Obsidian's theme. */
+export function pdfIsDark(theme: PdfTheme, obsidianDark: boolean): boolean {
+  return theme === "dark" || (theme === "auto" && obsidianDark);
+}
+
+/** The Theme row's value for the three settings: a uniform preset or Custom. */
+export function themePresetOf(
+  settings: Pick<AppearanceSettings, "workspaceBackground" | "pageAppearance" | "pdfTheme">,
+): ThemePreset {
+  const { workspaceBackground: bg, pageAppearance: page, pdfTheme: pdf } = settings;
+  if (bg === "auto" && page === "system" && pdf === "auto") return "auto";
+  if (bg === "light" && page === "light" && pdf === "as-is") return "light";
+  if (bg === "dark" && page === "dark" && pdf === "dark") return "dark";
+  return "custom";
 }
 
 /** How PDF pages are shown, including the legacy folded switch. */
@@ -97,5 +102,5 @@ export function shownPaperTheme(
   obsidianDark: boolean,
 ): PaperTheme {
   const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
-  return paperTheme(dark, dark && pdfThemeOf(settings) === "as-is");
+  return paperTheme(dark, dark && !pdfIsDark(pdfThemeOf(settings), obsidianDark));
 }

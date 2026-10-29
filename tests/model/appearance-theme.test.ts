@@ -14,6 +14,7 @@ import {
   pagesAreDark,
   pdfThemeOf,
   shownPaperTheme,
+  themePresetOf,
   workspaceBackgroundOf,
 } from "../../src/model/appearance-theme";
 import {
@@ -26,22 +27,10 @@ import {
 
 describe("workspace background", () => {
   it("follows Obsidian for auto, and honours fixed light and dark", () => {
-    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, false)).toEqual({
-      color: LIGHT_WORKSPACE,
-      blur: false,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, true)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: false,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "light" }, true)).toEqual({
-      color: LIGHT_WORKSPACE,
-      blur: false,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "dark" }, false)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: false,
-    });
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, false)).toBe(LIGHT_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, true)).toBe(DARK_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "light" }, true)).toBe(LIGHT_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "dark" }, false)).toBe(DARK_WORKSPACE);
   });
 
   it("uses the picked custom colour, normalised, and rejects a bad value", () => {
@@ -50,24 +39,18 @@ describe("workspace background", () => {
         { workspaceBackground: "custom", workspaceBackgroundColor: "#ABC" },
         true,
       ),
-    ).toEqual({ color: "#aabbcc", blur: false });
+    ).toBe("#aabbcc");
     expect(
       workspaceBackgroundOf(
         { workspaceBackground: "custom", workspaceBackgroundColor: "not a colour" },
         true,
       ),
-    ).toEqual({ color: DEFAULT_CUSTOM_WORKSPACE, blur: false });
+    ).toBe(DEFAULT_CUSTOM_WORKSPACE);
   });
 
-  it("keeps the desk colour on Blur and asks for the GPU layer", () => {
-    expect(workspaceBackgroundOf({ workspaceBackground: "blur" }, false)).toEqual({
-      color: LIGHT_WORKSPACE,
-      blur: true,
-    });
-    expect(workspaceBackgroundOf({ workspaceBackground: "blur" }, true)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: true,
-    });
+  it("has no Blur choice: a stored one falls back to auto", () => {
+    expect(isWorkspaceBackground("blur")).toBe(false);
+    expect(workspaceBackgroundOf({ workspaceBackground: "blur" }, true)).toBe(DARK_WORKSPACE);
   });
 
   it("does not read the page theme, and falls back on unknown stored values", () => {
@@ -80,11 +63,21 @@ describe("workspace background", () => {
         },
         false,
       ),
-    ).toEqual({ color: DARK_WORKSPACE, blur: false });
-    expect(workspaceBackgroundOf({ workspaceBackground: "sepia" }, true)).toEqual({
-      color: DARK_WORKSPACE,
-      blur: false,
-    });
+    ).toBe(DARK_WORKSPACE);
+    expect(workspaceBackgroundOf({ workspaceBackground: "sepia" }, true)).toBe(DARK_WORKSPACE);
+  });
+});
+
+describe("theme preset", () => {
+  it("reads a uniform Auto, Light or Dark, and Custom for anything else", () => {
+    const set = (workspaceBackground: string, pageAppearance: string, pdfTheme: string) =>
+      themePresetOf({ workspaceBackground, pageAppearance, pdfTheme });
+    expect(set("auto", "system", "auto")).toBe("auto");
+    expect(set("light", "light", "as-is")).toBe("light");
+    expect(set("dark", "dark", "dark")).toBe("dark");
+    expect(set("auto", "system", "as-is")).toBe("custom");
+    expect(set("dark", "light", "as-is")).toBe("custom");
+    expect(set("custom", "dark", "dark")).toBe("custom");
   });
 });
 
@@ -134,8 +127,17 @@ describe("page theme and PDF theme", () => {
     expect(pageLook({ kind: "pdf", path: "a.pdf", page: 0 }, theme).night).toBe(true);
   });
 
+  it("follows Obsidian for PDFs on Auto: dark only when Obsidian is dark", () => {
+    const pdf = { kind: "pdf", path: "a.pdf", page: 0 } as const;
+    const dark = shownPaperTheme({ pageAppearance: "dark", pdfTheme: "auto" }, true);
+    expect(pageLook(pdf, dark).night).toBe(true);
+    const light = shownPaperTheme({ pageAppearance: "dark", pdfTheme: "auto" }, false);
+    expect(light.night).toBe(true);
+    expect(pageLook(pdf, light).night).toBe(false);
+  });
+
   it("leaves PDFs alone on light paper, whatever the PDF setting", () => {
-    for (const pdfTheme of ["as-is", "dark"] as const) {
+    for (const pdfTheme of ["auto", "as-is", "dark"] as const) {
       const theme = shownPaperTheme({ pageAppearance: "light", pdfTheme }, false);
       expect(theme).toBe(LIGHT_PAPER);
       expect(pageLook({ kind: "pdf", path: "a.pdf", page: 0 }, theme).night).toBe(false);
@@ -149,12 +151,13 @@ describe("page theme and PDF theme", () => {
 
 describe("stored appearance values", () => {
   it("recognises only the values the dropdowns can store", () => {
-    for (const value of ["auto", "light", "dark", "custom", "blur"]) {
+    for (const value of ["auto", "light", "dark", "custom"]) {
       expect(isWorkspaceBackground(value)).toBe(true);
     }
     for (const value of [undefined, null, "Auto", "sepia", 1]) {
       expect(isWorkspaceBackground(value)).toBe(false);
     }
+    expect(isPdfTheme("auto")).toBe(true);
     expect(isPdfTheme("as-is")).toBe(true);
     expect(isPdfTheme("dark")).toBe(true);
     expect(isPdfTheme("light")).toBe(false);

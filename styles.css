@@ -2030,34 +2030,6 @@ body,
   z-index: 0;
 }
 
-/* The Blur workspace background: a small copy of the active page, stretched
-   over the whole desk. CSS does the blur and dim once, so panning and zooming
-   add no canvas work; the crisp page stays on the layer above. */
-.goodobsidian-workspace-ambient {
-  position: absolute;
-  inset: -40px;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--gob-desk);
-}
-
-.goodobsidian-workspace-ambient-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: blur(34px) brightness(0.48) saturate(1.15);
-  transform: scale(1.08);
-}
-
-.goodobsidian-workspace-ambient::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.28);
-}
-
 .goodobsidian-canvas-dry {
   z-index: 1;
 }
@@ -13230,4 +13202,14 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
+}
+
+/* The Theme row's chevron: pointing down while its three settings show. */
+.goodobsidian-fold-chevron.is-folded .svg-icon {
+  transform: none;
+}
+
+/* The three settings under Theme sit indented beneath it. */
+.setting-item.goodobsidian-theme-child {
+  padding-left: var(--size-4-6);
 }

@@ -2662,18 +2662,6 @@ export class InkView extends TextFileView {
           this.settings,
           this.containerEl.doc.body.hasClass("theme-dark"),
         ),
-        workspaceSnapshot: (page, width) => {
-          const painter = this.thumbBackdrops ?? this.backdrops;
-          if (!painter) return null;
-          const canvas = createEl("canvas");
-          renderPageThumbnail(canvas, page, painter, width, 1, {
-            usePressure: this.settings.pressureWidth,
-            highlighterAlpha: this.settings.highlighterAlpha,
-            images: this.images ?? undefined,
-            paper: this.shownPaper(),
-          });
-          return canvas;
-        },
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
