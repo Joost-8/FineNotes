@@ -59,17 +59,14 @@ describe("the per-device shortcut store", () => {
   it("changes only the mode, keeping every built-in input", () => {
     const storage = new FakeStorage();
     const store = new ShortcutStore(storage);
-    // The pen has two keys; changing only Press/Hold must not drop one.
-    store.setMode("tool.pen", "hold");
-    const pen = store.table.rows.find((candidate) => candidate.action.id === "tool.pen");
-    expect(pen?.mode).toBe("hold");
-    expect(pen?.inputs).toEqual([
-      { type: "key", key: "p", mods: [] },
-      { type: "key", key: "w", mods: [] },
-    ]);
+    // Changing only Press/Hold must not drop the built-in key.
+    store.setMode("tool.eraser", "hold");
+    const eraser = store.table.rows.find((candidate) => candidate.action.id === "tool.eraser");
+    expect(eraser?.mode).toBe("hold");
+    expect(eraser?.inputs).toEqual([{ type: "key", key: "e", mods: [] }]);
     // A stored mode-only row survives the round trip.
     const again = new ShortcutStore(storage);
-    expect(again.table.rows.find((candidate) => candidate.action.id === "tool.pen")?.mode).toBe(
+    expect(again.table.rows.find((candidate) => candidate.action.id === "tool.eraser")?.mode).toBe(
       "hold",
     );
     expect(again.customized).toBe(1);

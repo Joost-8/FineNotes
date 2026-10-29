@@ -9,13 +9,17 @@
  * listens for. Per device, because a laptop, an iPad and an Android tablet
  * with a stylus button have different keys.
  *
+ * Keys only, for now: a pen's side button keeps its own two settings
+ * (`input/pen-modifiers.ts`, `input/stylus-click.ts`) until they can move
+ * into this table with their stored values.
+ *
  * Conflicting rows are invalid: the notebook refuses every input they share
- * until one row is changed, cleared or reset.
+ * until one row is changed or reset.
  *
  * PURE: no DOM, no Obsidian.
  */
 
-import { type Modifier, keyLabel } from "./shortcuts";
+import { type Modifier, type Shortcut, type ShortcutGroup, keyLabel } from "./shortcuts";
 
 /** A stored input's modifiers, named as the reference sheet names them. */
 export type ShortcutModifier = Modifier;
@@ -27,15 +31,8 @@ export interface ShortcutKeyInput {
   mods: readonly ShortcutModifier[];
 }
 
-/** A pen, mouse or stylus button, with the keys held at the time. */
-export interface ShortcutPointerInput {
-  type: "pointer";
-  /** `PointerEvent.button`: 2 barrel, 5 eraser end, 1 middle (never 0: the contact). */
-  button: number;
-  mods: readonly ShortcutModifier[];
-}
-
-export type ShortcutInput = ShortcutKeyInput | ShortcutPointerInput;
+/** One input. Tagged, so pen and mouse buttons can join it later. */
+export type ShortcutInput = ShortcutKeyInput;
 
 /** Press switches to a tool; hold lends it until the input is let go. */
 export type ShortcutMode = "press" | "hold";
@@ -46,9 +43,13 @@ export interface ShortcutAction {
   label: string;
   /** The table's heading. */
   group: string;
-  /** One line under the name when the label alone is not enough. */
+  /** What the row's ⓘ says, when the label alone is not enough. */
   hint?: string;
-  /** Whether Hold means anything: tools and the hand, not one-shot commands. */
+  /**
+   * Whether Hold means anything: a tool whose press does not depend on the
+   * pen in hand (the eraser, the lasso, the hand…). The pen, the highlighter
+   * and Shapes draw with the pen's own style, so they are pressed only.
+   */
   holdable: boolean;
   /** What the notebook does when the row is not customized. */
   defaults: readonly ShortcutInput[];
@@ -59,8 +60,6 @@ export interface ShortcutAction {
    * Paste): left to `surface-keys.ts` until the row is customized.
    */
   contextual?: boolean;
-  /** FineNotes' own list of the inputs, for a row whose user input is cleared. */
-  resetHint?: string;
 }
 
 // --- The registry -------------------------------------------------------------
@@ -80,7 +79,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.pen",
     label: "Pen",
     group: "Tools",
-    holdable: true,
+    holdable: false,
     defaults: [key("p"), key("w")],
     defaultMode: "press",
   },
@@ -88,7 +87,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.highlighter",
     label: "Highlighter",
     group: "Tools",
-    holdable: true,
+    holdable: false,
     defaults: [key("h")],
     defaultMode: "press",
   },
@@ -112,7 +111,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.shape",
     label: "Shapes",
     group: "Tools",
-    holdable: true,
+    holdable: false,
     defaults: [key("s")],
     defaultMode: "press",
   },
@@ -180,7 +179,6 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     holdable: false,
     defaults: [key("z", "Mod", "Shift")],
     defaultMode: "press",
-    resetHint: "Ctrl + Shift + Z; Ctrl + Y also redoes",
   },
   {
     id: "edit.select-all",
@@ -425,16 +423,6 @@ export interface KeyboardReading {
   shiftKey: boolean;
 }
 
-/** The parts of a `PointerEvent` or `MouseEvent` this module reads. */
-export interface PointerReading {
-  button: number;
-  buttons?: number;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-}
-
 /**
  * A key press as one input, or null for a bare modifier (nothing to bind
  * yet). Shift is a modifier for letters, digits and named keys; a character
@@ -453,28 +441,6 @@ export function keyInput(reading: KeyboardReading): ShortcutKeyInput | null {
   return { type: "key", key: value, mods };
 }
 
-/** The `buttons` bit of a pen's eraser end. */
-const ERASER_BIT = 32;
-
-/**
- * A pen, stylus or mouse button as one input, or null for the primary
- * contact (left click, the pen's tip): that is drawing, never a shortcut.
- * The eraser end is accepted even where a driver reports it as button 0 with
- * the eraser bit set.
- */
-export function pointerInput(reading: PointerReading): ShortcutPointerInput | null {
-  const eraser = reading.button === 5 || ((reading.buttons ?? 0) & ERASER_BIT) !== 0;
-  if (reading.button === 0 && !eraser) return null;
-  if (!Number.isInteger(reading.button) || reading.button < 0) return null;
-  const mods: ShortcutModifier[] = [];
-  if (reading.metaKey || reading.ctrlKey) mods.push("Mod");
-  if (reading.altKey) mods.push("Alt");
-  if (reading.shiftKey) mods.push("Shift");
-  // Drivers that report the eraser end as button 0 still store it as the
-  // eraser's own button, so it survives a save and matches the next one.
-  return { type: "pointer", button: eraser && reading.button === 0 ? 5 : reading.button, mods };
-}
-
 /** Whether Shift changes the key rather than merely accompanying it. */
 function shiftIsSeparate(value: string): boolean {
   if (value.length !== 1) return true;
@@ -483,8 +449,7 @@ function shiftIsSeparate(value: string): boolean {
 
 /** One input's identity, for maps and conflicts. */
 export function inputKey(input: ShortcutInput): string {
-  const mods = normalizeMods(input.mods).join("+");
-  return input.type === "key" ? `key:${mods}:${input.key}` : `pointer:${mods}:${input.button}`;
+  return `key:${normalizeMods(input.mods).join("+")}:${input.key}`;
 }
 
 /** Whether two inputs are the same one. */
@@ -523,11 +488,6 @@ export function keyCap(value: string): string {
 /** One input as key caps and words, e.g. `["Ctrl", "Shift", "Z"]`. */
 export function inputCaps(input: ShortcutInput, apple: boolean): string[] {
   const mods = normalizeMods(input.mods).map((mod) => keyLabel(mod, apple));
-  if (input.type === "pointer") {
-    if (input.button === 5) return [...mods, "Eraser end"];
-    if (input.button === 2) return [...mods, "Pen button 2"];
-    return [...mods, `Button ${input.button}`];
-  }
   return [...mods, keyCap(input.key)];
 }
 
@@ -691,15 +651,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseInput(raw: unknown): ShortcutInput | null {
   if (!isRecord(raw)) return null;
   const mods = Array.isArray(raw.mods) ? raw.mods.filter(isShortcutModifier) : [];
-  if (raw.type === "key") {
-    if (typeof raw.key !== "string" || raw.key.length === 0) return null;
-    return { type: "key", key: raw.key, mods: normalizeMods(mods) };
-  }
-  if (raw.type === "pointer") {
-    if (!Number.isInteger(raw.button) || (raw.button as number) < 1) return null;
-    return { type: "pointer", button: raw.button as number, mods: normalizeMods(mods) };
-  }
-  return null;
+  if (raw.type !== "key" || typeof raw.key !== "string" || raw.key.length === 0) return null;
+  return { type: "key", key: raw.key, mods: normalizeMods(mods) };
 }
 
 /**
@@ -791,4 +744,49 @@ export function withoutShortcut(overrides: ShortcutOverrides, actionId: string):
 /** No changes: every row back to the built-in keys. */
 export function noShortcutOverrides(): ShortcutOverrides {
   return {};
+}
+
+// --- The reference sheet ------------------------------------------------------
+
+/** A recorded input as the sheet writes a way: modifiers by name, then the key cap. */
+function sheetKeys(input: ShortcutInput): string[] {
+  return [...normalizeMods(input.mods), keyCap(input.key)];
+}
+
+/**
+ * The ? sheet (`./shortcuts.ts`) with this device's own keys: a line whose
+ * row the user changed shows the inputs in force (none: the line goes), and
+ * a held tool keeps the line's gesture ("Space + drag"). Saved pens are one
+ * line, "1 – 8", until one of them is changed; then each is its own. Lines
+ * nobody changed stay as written.
+ */
+export function boundShortcutGroups(
+  table: ShortcutTable,
+  groups: readonly ShortcutGroup[],
+): ShortcutGroup[] {
+  const rows = new Map(table.rows.map((row) => [row.action.id, row]));
+  const bound = (shortcut: Shortcut): Shortcut[] => {
+    const id = shortcut.binding;
+    if (id === "pen.saved") {
+      const pens = table.rows.filter((row) => row.action.id.startsWith("pen.saved."));
+      if (!pens.some((row) => row.customized)) return [shortcut];
+      return pens
+        .filter((row) => row.inputs.length > 0)
+        .map((row) => ({
+          action: row.action.label,
+          ways: row.inputs.map((input) => ({ keys: sheetKeys(input) })),
+        }));
+    }
+    const row = id ? rows.get(id) : undefined;
+    if (!row?.customized) return [shortcut];
+    if (row.inputs.length === 0) return [];
+    const gesture = row.mode === "hold" ? shortcut.ways[0]?.gesture : undefined;
+    return [
+      {
+        action: shortcut.action,
+        ways: row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })),
+      },
+    ];
+  };
+  return groups.map((group) => ({ title: group.title, shortcuts: group.shortcuts.flatMap(bound) }));
 }

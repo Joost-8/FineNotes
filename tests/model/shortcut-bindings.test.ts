@@ -1,6 +1,6 @@
 /**
  * The shortcut table (`src/model/shortcut-bindings.ts`): the built-in keys,
- * what `KeyboardEvent` and `PointerEvent` become, the conflicts that pause
+ * what a `KeyboardEvent` becomes, the conflicts that pause
  * rows, and the per-device JSON. The rules here are the ones the settings tab
  * and the notebook both rely on: a changed row replaces its built-in key, and
  * two rows sharing an input do nothing at all.
@@ -11,6 +11,7 @@ import {
   SHORTCUT_ACTIONS,
   SHORTCUT_STORAGE_VERSION,
   SHORTCUTS_STORAGE_KEY,
+  boundShortcutGroups,
   inputCaps,
   inputKey,
   inputText,
@@ -19,31 +20,19 @@ import {
   matchShortcut,
   normalizeMods,
   parseShortcutOverrides,
-  pointerInput,
   serializeShortcutOverrides,
   shortcutTable,
   withMode,
   withShortcut,
   withoutShortcut,
 } from "../../src/model/shortcut-bindings";
+import { SHORTCUT_GROUPS } from "../../src/model/shortcuts";
 
 const keyEvent = (
   key: string,
   mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean } = {},
 ) => ({
   key,
-  metaKey: mods.meta === true,
-  ctrlKey: mods.ctrl === true,
-  altKey: mods.alt === true,
-  shiftKey: mods.shift === true,
-});
-
-const pointerEvent = (
-  button: number,
-  mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean; buttons?: number } = {},
-) => ({
-  button,
-  buttons: mods.buttons ?? 0,
   metaKey: mods.meta === true,
   ctrlKey: mods.ctrl === true,
   altKey: mods.alt === true,
@@ -87,15 +76,18 @@ describe("the built-in shortcut table", () => {
     });
   });
 
-  it("takes the eraser end and the barrel button, never the tip", () => {
-    expect(pointerInput(pointerEvent(0))).toBeNull();
-    expect(pointerInput(pointerEvent(0, { buttons: 32 }))).toMatchObject({
-      type: "pointer",
-      button: 5,
-    });
-    expect(pointerInput(pointerEvent(2))).toMatchObject({ type: "pointer", button: 2 });
-    expect(pointerInput(pointerEvent(5))).toMatchObject({ type: "pointer", button: 5 });
-    expect(pointerInput(pointerEvent(2, { ctrl: true }))).toMatchObject({ mods: ["Mod"] });
+  it("offers Hold only to tools whose press does not draw with the pen in hand", () => {
+    const holdable = SHORTCUT_ACTIONS.filter((action) => action.holdable).map(
+      (action) => action.id,
+    );
+    expect(holdable).toEqual([
+      "tool.eraser",
+      "tool.select",
+      "tool.text",
+      "tool.laser",
+      "tool.pan",
+      "tool.zoom",
+    ]);
   });
 });
 
@@ -182,7 +174,6 @@ describe("labels", () => {
     );
     expect(inputText({ type: "key", key: "z", mods: ["Mod", "Shift"] }, true)).toBe("⌘ ⇧ Z");
     expect(inputText({ type: "key", key: " ", mods: [] }, false)).toBe("Space");
-    expect(inputText({ type: "pointer", button: 2, mods: [] }, false)).toBe("Pen button 2");
     expect(inputsText([], false)).toBe("Not set");
     expect(
       inputsText(
@@ -230,20 +221,17 @@ describe("changing a row", () => {
     expect(command.rows.find((row) => row.action.id === "edit.undo")?.mode).toBe("press");
   });
 
-  it("changes Press/Hold without losing a row's other built-in key", () => {
-    const overrides = withMode({}, "tool.pen", "hold");
+  it("changes Press/Hold without losing a row's built-in key", () => {
+    const overrides = withMode({}, "tool.eraser", "hold");
     const row = shortcutTable(overrides).rows.find(
-      (candidate) => candidate.action.id === "tool.pen",
+      (candidate) => candidate.action.id === "tool.eraser",
     );
     expect(row?.mode).toBe("hold");
-    expect(row?.inputs).toEqual([
-      { type: "key", key: "p", mods: [] },
-      { type: "key", key: "w", mods: [] },
-    ]);
+    expect(row?.inputs).toEqual([{ type: "key", key: "e", mods: [] }]);
     // A cleared row stays cleared when its mode changes.
-    const cleared = withMode(withShortcut({}, "tool.pen", null, "press"), "tool.pen", "hold");
+    const cleared = withMode(withShortcut({}, "tool.eraser", null, "press"), "tool.eraser", "hold");
     const clearedRow = shortcutTable(cleared).rows.find(
-      (candidate) => candidate.action.id === "tool.pen",
+      (candidate) => candidate.action.id === "tool.eraser",
     );
     expect(clearedRow?.inputs).toEqual([]);
     expect(clearedRow?.mode).toBe("hold");
@@ -253,14 +241,15 @@ describe("changing a row", () => {
     );
     expect(hand?.mode).toBe("press");
     expect(hand?.inputs).toEqual([{ type: "key", key: " ", mods: [] }]);
-    // A command has nothing to hold.
+    // A command has nothing to hold, nor has the pen: its ink is the pen in hand's.
     expect(withMode({}, "edit.undo", "hold")).toEqual({});
+    expect(withMode({}, "tool.pen", "hold")).toEqual({});
   });
 
   it("keeps a mode-only change through the store", () => {
-    const overrides = withMode({}, "tool.pen", "hold");
+    const overrides = withMode({}, "tool.eraser", "hold");
     expect(parseShortcutOverrides(serializeShortcutOverrides(overrides))).toEqual(overrides);
-    expect(JSON.parse(serializeShortcutOverrides(overrides)).bindings["tool.pen"]).toEqual({
+    expect(JSON.parse(serializeShortcutOverrides(overrides)).bindings["tool.eraser"]).toEqual({
       mode: "hold",
     });
   });
@@ -291,26 +280,6 @@ describe("conflicts", () => {
     });
   });
 
-  it("counts a pointer button as an input like any other", () => {
-    const overrides = withShortcut(
-      {},
-      "edit.undo",
-      { type: "pointer", button: 2, mods: [] },
-      "press",
-    );
-    const withOther = withShortcut(
-      overrides,
-      "tool.eraser",
-      { type: "pointer", button: 2, mods: [] },
-      "hold",
-    );
-    const table = shortcutTable(withOther);
-    expect(table.conflicts).toHaveLength(1);
-    expect(matchShortcut(table, { type: "pointer", button: 2, mods: [] })).toMatchObject({
-      kind: "conflict",
-    });
-  });
-
   it("resolves when one row is reset", () => {
     const conflicting = withShortcut(
       withShortcut({}, "edit.undo", { type: "key", key: "p", mods: [] }, "press"),
@@ -328,7 +297,7 @@ describe("this device's stored rows", () => {
     const overrides = withShortcut(
       withShortcut({}, "tool.pen", { type: "key", key: "k", mods: ["Mod"] }, "press"),
       "tool.eraser",
-      { type: "pointer", button: 5, mods: [] },
+      { type: "key", key: "x", mods: ["Alt"] },
       "hold",
     );
     const raw = serializeShortcutOverrides(overrides);
@@ -349,13 +318,15 @@ describe("this device's stored rows", () => {
       bindings: {
         "tool.pen": { input: { type: "key", key: "k", mods: ["Mod", "Nope"] }, mode: "press" },
         "tool.gone": { input: { type: "key", key: "g", mods: [] }, mode: "press" },
-        "tool.eraser": { input: { type: "pointer", button: 0, mods: [] }, mode: "hold" },
+        "tool.eraser": { input: { type: "pointer", button: 2, mods: [] }, mode: "hold" },
+        "tool.shape": { mode: "hold" },
         "edit.undo": { input: null, mode: "hold" },
       },
     });
     expect(parseShortcutOverrides(raw)).toEqual({
       "tool.pen": { input: { type: "key", key: "k", mods: ["Mod"] }, mode: "press" },
       "edit.undo": { input: null, mode: "press" },
+      "tool.shape": { mode: "press" },
     });
   });
 
@@ -367,5 +338,41 @@ describe("this device's stored rows", () => {
     expect(inputKey({ type: "key", key: "z", mods: ["Shift", "Mod"] })).toBe(
       inputKey({ type: "key", key: "z", mods: ["Mod", "Shift"] }),
     );
+  });
+});
+
+describe("the ? sheet", () => {
+  const line = (groups: ReturnType<typeof boundShortcutGroups>, action: string) =>
+    groups.flatMap((group) => group.shortcuts).find((shortcut) => shortcut.action === action);
+
+  it("stays as written while nothing is changed", () => {
+    expect(boundShortcutGroups(shortcutTable(), SHORTCUT_GROUPS)).toEqual(SHORTCUT_GROUPS);
+  });
+
+  it("shows a changed key, and keeps a held tool's gesture", () => {
+    const overrides = withShortcut(
+      withShortcut({}, "tool.pen", { type: "key", key: "k", mods: ["Mod"] }, "press"),
+      "tool.pan",
+      { type: "key", key: "g", mods: [] },
+      "hold",
+    );
+    const groups = boundShortcutGroups(shortcutTable(overrides), SHORTCUT_GROUPS);
+    expect(line(groups, "Pen")?.ways).toEqual([{ keys: ["Mod", "K"], gesture: undefined }]);
+    expect(line(groups, "Move the page")?.ways).toEqual([{ keys: ["G"], gesture: "drag" }]);
+    expect(line(groups, "Eraser")?.ways).toEqual([{ keys: ["E"] }]);
+  });
+
+  it("drops a line whose row has no key, and splits the saved pens once one changes", () => {
+    const overrides = withShortcut(
+      withShortcut({}, "tool.eraser", null, "press"),
+      "pen.saved.2",
+      { type: "key", key: "q", mods: [] },
+      "press",
+    );
+    const groups = boundShortcutGroups(shortcutTable(overrides), SHORTCUT_GROUPS);
+    expect(line(groups, "Eraser")).toBeUndefined();
+    expect(line(groups, "Saved pens 1 to 8")).toBeUndefined();
+    expect(line(groups, "Saved pen 2")?.ways).toEqual([{ keys: ["Q"] }]);
+    expect(line(groups, "Saved pen 8")?.ways).toEqual([{ keys: ["8"] }]);
   });
 });

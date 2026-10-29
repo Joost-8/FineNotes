@@ -1,20 +1,14 @@
 /**
- * Recording a shortcut: while a binding slot waits, every key, pen button and
- * mouse button is heard on the way down, before Obsidian or the notebook sees
- * it, and the first one becomes the row's input. Escape cancels, and the
- * primary contact (left click, the pen's tip) is never a binding: it is how
- * the page draws.
+ * Recording a shortcut: while a binding slot waits, every key is heard on
+ * the way down, before Obsidian or the notebook sees it, and the first one
+ * becomes the row's input. Escape cancels, and so does a tap or a click
+ * anywhere: an iPad with no keyboard must always have a way out.
  *
  * Kept out of the settings tab so the listeners are attached, stopped and
  * removed in one place. The reading itself is pure (`model/shortcut-bindings`).
  */
 
-import {
-  type ShortcutInput,
-  isModifierKey,
-  keyInput,
-  pointerInput,
-} from "../model/shortcut-bindings";
+import { type ShortcutInput, isModifierKey, keyInput } from "../model/shortcut-bindings";
 
 export interface ShortcutRecorder {
   /** Stop listening without recording anything. */
@@ -26,10 +20,14 @@ export interface RecorderCallbacks {
   cancel(): void;
 }
 
+/** How long the tap that cancelled recording may take to send its click, ms. */
+const CLICK_AFTER_TAP_MS = 600;
+
 /**
- * Listen for one input on `doc`'s window until one arrives or Escape is
- * pressed. Every event read is consumed: nothing reaches the notebook, the
- * settings search field or a browser menu.
+ * Listen for one key on `doc`'s window until one arrives, Escape is
+ * pressed, or the pointer goes down anywhere. Every event read is consumed:
+ * nothing reaches the notebook, the settings search field or the control
+ * under the tap that cancelled.
  */
 export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): ShortcutRecorder {
   const win = doc.defaultView ?? window;
@@ -42,8 +40,7 @@ export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): Sho
   };
 
   const finish = (input: ShortcutInput | null): void => {
-    if (done) return;
-    if (!input) return;
+    if (done || !input) return;
     done = true;
     cleanup();
     callbacks.record(input);
@@ -63,9 +60,7 @@ export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): Sho
       return;
     }
     if (event.repeat) return;
-    // A modifier alone is not a shortcut yet: wait for the key that follows,
-    // or for Escape. (A bare modifier would be impossible to trigger again,
-    // since the notebook ignores modifiers on their own.)
+    // A modifier alone is not a shortcut yet: wait for the key that follows.
     if (isModifierKey(event.key)) return;
     finish(keyInput(event));
   };
@@ -75,34 +70,21 @@ export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): Sho
     if (isModifierKey(event.key)) stop(event);
   };
 
+  // The tap that cancels must not also press what is under it (the slot
+  // again, or another row): its click is swallowed once, then let be.
+  const swallowClick = (event: MouseEvent): void => {
+    stop(event);
+    win.removeEventListener("click", swallowClick, true);
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
-    // The primary contact is a left click or the pen's tip: it is drawing,
-    // never a binding, and it must not reach a control behind the recorder.
     stop(event);
-    const input = pointerInput(event);
-    if (input) finish(input);
+    win.addEventListener("click", swallowClick, true);
+    win.setTimeout(() => win.removeEventListener("click", swallowClick, true), CLICK_AFTER_TAP_MS);
+    cancel();
   };
 
-  const onAuxClick = (event: MouseEvent): void => {
-    const input = pointerInput(event);
-    if (!input) return;
-    stop(event);
-    finish(input);
-  };
-
-  // A primary click's pointerdown is stopped above, but the click that follows
-  // may still be dispatched; keep it from pressing the slot again or anything
-  // else. Escape is the way to stop recording.
-  const onClick = (event: MouseEvent): void => stop(event);
-  const onMouseDown = (event: MouseEvent): void => {
-    if (event.button === 0) stop(event);
-  };
-
-  const onContextMenu = (event: MouseEvent): void => {
-    // A stylus barrel button often arrives as nothing but a right-click.
-    stop(event);
-    finish(pointerInput(event));
-  };
+  const onContextMenu = (event: MouseEvent): void => stop(event);
 
   const onBlur = (): void => cancel();
 
@@ -110,9 +92,6 @@ export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): Sho
     win.removeEventListener("keydown", onKeyDown, true);
     win.removeEventListener("keyup", onKeyUp, true);
     win.removeEventListener("pointerdown", onPointerDown, true);
-    win.removeEventListener("auxclick", onAuxClick, true);
-    win.removeEventListener("click", onClick, true);
-    win.removeEventListener("mousedown", onMouseDown, true);
     win.removeEventListener("contextmenu", onContextMenu, true);
     win.removeEventListener("blur", onBlur, true);
   };
@@ -120,9 +99,6 @@ export function recordShortcut(doc: Document, callbacks: RecorderCallbacks): Sho
   win.addEventListener("keydown", onKeyDown, true);
   win.addEventListener("keyup", onKeyUp, true);
   win.addEventListener("pointerdown", onPointerDown, true);
-  win.addEventListener("auxclick", onAuxClick, true);
-  win.addEventListener("click", onClick, true);
-  win.addEventListener("mousedown", onMouseDown, true);
   win.addEventListener("contextmenu", onContextMenu, true);
   win.addEventListener("blur", onBlur, true);
 

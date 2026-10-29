@@ -558,6 +558,8 @@ function tablePress(key: string, mods: Mods, table: ShortcutTable) {
   return { taken, prevented, calls, surface };
 }
 
+const noKeys = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+
 const keyOf = (value: string, ...mods: Array<"Mod" | "Alt" | "Shift">) => ({
   type: "key" as const,
   key: value,
@@ -594,9 +596,40 @@ describe("the user's shortcut table", () => {
     const table = shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold"));
     const pressed = tablePress("r", {}, table);
     expect(pressed.calls).toEqual([]);
-    expect(pressed.surface.heldShortcut).toEqual({ key: "r", tool: "eraser" });
+    expect(pressed.surface.heldShortcut).toEqual({ key: "r", mod: false, tool: "eraser" });
     run(pressed.surface, "handleKeyUp", { key: "r" });
     expect(pressed.surface.heldShortcut).toBeNull();
+  });
+
+  it("lets go of a tool held with Cmd when Cmd comes up, as Apple sends no other key-up", () => {
+    const table = shortcutTable(withShortcut({}, "tool.select", keyOf("j", "Mod"), "hold"));
+    const pressed = tablePress("j", { meta: true }, table);
+    expect(pressed.surface.heldShortcut).toEqual({ key: "j", mod: true, tool: "select" });
+    run(pressed.surface, "handleKeyUp", { key: "Meta", metaKey: false });
+    expect(pressed.surface.heldShortcut).toBeNull();
+  });
+
+  it("lends a held tool to the press, with that tool's own gesture", () => {
+    const surface = surfaceWith({
+      practice: null,
+      cellEdit: null,
+      editingTextView: () => null,
+      heldShortcut: { key: "r", mod: false, tool: "laser" },
+      callbacks: {},
+    });
+    const pen = { pointerType: "pen", button: 0, buttons: 1 };
+    expect(run(surface, "pressOverrideOf", { ...pen, ...noKeys })).toBe("laser");
+    // The hand is the press route's (it pans), never a tool the ink path draws with.
+    surface.heldShortcut = { key: "k", mod: false, tool: "pan" };
+    expect(run(surface, "pressOverrideOf", { ...pen, ...noKeys })).toBeNull();
+  });
+
+  it("offers no Hold to the highlighter: its key only switches to it", () => {
+    // A stored Hold from an older build reads as Press.
+    const table = shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold"));
+    const pressed = tablePress("r", {}, table);
+    expect(pressed.surface.heldShortcut).toBeFalsy();
+    expect(pressed.calls).toEqual(["setTool(highlighter)", "onToolChange(highlighter)"]);
   });
 
   it("lets go of a held tool when the window loses focus", () => {
@@ -630,33 +663,19 @@ describe("the user's shortcut table", () => {
     });
   });
 
-  it("lends a pen button's tool for that press, and runs a command bound to it once", () => {
-    const pen = {
-      pointerType: "pen",
-      button: 2,
-      buttons: 2,
-      metaKey: false,
-      ctrlKey: false,
-      altKey: false,
-      shiftKey: false,
-    };
-    // The input is a pointer row in the table; match it by its button.
-    const pointerTable = shortcutTable(
-      withShortcut({}, "tool.laser", { type: "pointer", button: 2, mods: [] }, "hold"),
-    );
+  it("leaves the pen's side button to its own setting, lending only what has a gesture", () => {
+    const barrel = { pointerType: "pen", button: 2, buttons: 2, ...noKeys };
     const surface = surfaceWith({
-      practice: false,
+      practice: null,
       cellEdit: null,
       editingTextView: () => null,
-      callbacks: { shortcuts: () => pointerTable },
+      heldShortcut: null,
+      callbacks: { shortcuts: () => shortcutTable(), barrelAction: () => "lasso" },
     });
-    expect(run(surface, "pressOverrideOf", pen)).toBe("laser");
-
-    const command = shortcutTable(
-      withShortcut({}, "edit.undo", { type: "pointer", button: 2, mods: [] }, "press"),
-    );
-    surface.callbacks = { shortcuts: () => command };
-    expect(run(surface, "pressOverrideOf", pen)).toBe("ignore");
+    expect(run(surface, "pressOverrideOf", barrel)).toBe("select");
+    // Set to move the page, the press route pans it; the stroke path borrows nothing.
+    surface.callbacks = { shortcuts: () => shortcutTable(), barrelAction: () => "pan" };
+    expect(run(surface, "pressOverrideOf", barrel)).toBeNull();
   });
 });
 

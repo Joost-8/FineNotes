@@ -273,6 +273,8 @@ import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-pac
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
+import { SHORTCUT_GROUPS } from "../model/shortcuts";
+import { boundShortcutGroups } from "../model/shortcut-bindings";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
@@ -2770,6 +2772,9 @@ export class InkView extends TextFileView {
       // A page read while the app is away is not blamed if iPadOS ends it.
       this.plugin.readingGuard.setHidden(hidden);
       if (!hidden) return;
+      // A key held as the app goes away never sends its key-up.
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
       this.audio?.onHidden();
       // iPadOS may end the app from the background: keep the page now, and
       // a save the pen put off or one still in the background, made here
@@ -4343,7 +4348,11 @@ export class InkView extends TextFileView {
       open.close();
       return;
     }
-    const modal = new ShortcutsModal(this.app, Platform.isMacOS || Platform.isIosApp);
+    const modal = new ShortcutsModal(
+      this.app,
+      Platform.isMacOS || Platform.isIosApp,
+      boundShortcutGroups(this.plugin.shortcuts.table, SHORTCUT_GROUPS),
+    );
     modal.open();
     this.shortcuts = modal;
   }

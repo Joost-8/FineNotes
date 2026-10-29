@@ -1,7 +1,7 @@
 /**
  * Recording a binding (`src/view/shortcut-recorder.ts`): the listeners are on
- * the capture phase, the first key or non-primary button wins, Escape cancels,
- * and nothing is left listening afterwards. The readings themselves are
+ * the capture phase, the first key wins, Escape or any tap cancels (an iPad
+ * with no keyboard must get out), and nothing is left listening afterwards. The readings themselves are
  * `model/shortcut-bindings.ts`; this pins when a reading is taken.
  */
 
@@ -12,6 +12,12 @@ type Handler = (event: unknown) => void;
 
 class FakeWindow {
   readonly listeners = new Map<string, Set<Handler>>();
+  readonly timers: (() => void)[] = [];
+
+  setTimeout(run: () => void): number {
+    this.timers.push(run);
+    return this.timers.length;
+  }
 
   addEventListener(type: string, handler: Handler): void {
     const set = this.listeners.get(type) ?? new Set<Handler>();
@@ -102,37 +108,38 @@ describe("recording an input", () => {
     expect(cancel).toHaveBeenCalledOnce();
   });
 
-  it("ignores and consumes the primary contact, then takes the barrel button", () => {
-    const { win, record } = recording();
-    const tip = pointerEvent(0);
-    win.emit("pointerdown", tip);
+  it("cancels on a tap anywhere, and swallows that tap's click once", () => {
+    const { win, record, cancel } = recording();
+    const tap = pointerEvent(0);
+    win.emit("pointerdown", tap);
+    expect(cancel).toHaveBeenCalledOnce();
     expect(record).not.toHaveBeenCalled();
-    // It is not a binding, but it must not press a control behind the slot.
-    expect(tip.preventDefault).toHaveBeenCalled();
-    expect(tip.stopImmediatePropagation).toHaveBeenCalled();
-    expect(win.listening).toBeGreaterThan(0);
-
+    // The tap must not press the slot again, or whatever is under it.
+    expect(tap.preventDefault).toHaveBeenCalled();
+    expect(tap.stopImmediatePropagation).toHaveBeenCalled();
     const click = pointerEvent(0);
     win.emit("click", click);
-    expect(click.preventDefault).toHaveBeenCalled();
+    expect(click.stopImmediatePropagation).toHaveBeenCalled();
+    expect(win.listening).toBe(0);
+    // The next click is the page's own again.
+    const next = pointerEvent(0);
+    win.emit("click", next);
+    expect(next.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting for the tap's click when none comes", () => {
+    const { win } = recording();
+    win.emit("pointerdown", pointerEvent(2));
+    expect(win.listening).toBe(1);
+    for (const run of win.timers) run();
+    expect(win.listening).toBe(0);
+  });
+
+  it("keeps a right-click from opening a menu while it waits", () => {
+    const { win, record } = recording();
+    const menu = pointerEvent(2);
+    win.emit("contextmenu", menu);
+    expect(menu.preventDefault).toHaveBeenCalled();
     expect(record).not.toHaveBeenCalled();
-
-    const barrel = pointerEvent(2);
-    win.emit("pointerdown", barrel);
-    expect(record).toHaveBeenCalledWith({ type: "pointer", button: 2, mods: [] });
-    expect(barrel.preventDefault).toHaveBeenCalled();
-    expect(barrel.stopImmediatePropagation).toHaveBeenCalled();
-  });
-
-  it("takes the eraser end reported as no button but with its bit", () => {
-    const { win, record } = recording();
-    win.emit("pointerdown", pointerEvent(0, 32));
-    expect(record).toHaveBeenCalledWith({ type: "pointer", button: 5, mods: [] });
-  });
-
-  it("turns a right-click into the same pointer input", () => {
-    const { win, record } = recording();
-    win.emit("contextmenu", pointerEvent(2));
-    expect(record).toHaveBeenCalledWith({ type: "pointer", button: 2, mods: [] });
   });
 });

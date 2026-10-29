@@ -463,14 +463,11 @@ import { scrollDirectionOf } from "../model/scroll-direction";
 import type { SelectionAction } from "./selection-bar-model";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
-  type PointerReading,
   type ShortcutInput,
-  type ShortcutMatch,
   type ShortcutRow,
   type ShortcutTable,
   keyInput,
   matchShortcut,
-  pointerInput,
 } from "../model/shortcut-bindings";
 import {
   type ToolLift,
@@ -1283,6 +1280,23 @@ function shortcutTool(actionId: string): ActiveTool | null {
   return SHORTCUT_TOOLS[actionId] ?? null;
 }
 
+/**
+ * A tool one press can borrow: each has a gesture of its own, so the press
+ * draws nothing with the pen in hand. The pen, the highlighter and Shapes
+ * are not among them: their ink is the tool in hand's (`inkGesture`).
+ */
+type LentTool = "eraser" | "select" | "zoom" | "text" | "laser";
+
+function lentTool(tool: ActiveTool): LentTool | null {
+  return tool === "eraser" ||
+    tool === "select" ||
+    tool === "zoom" ||
+    tool === "text" ||
+    tool === "laser"
+    ? tool
+    : null;
+}
+
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
   private readonly scrollEl: HTMLElement;
@@ -1448,14 +1462,15 @@ export class InkSurface {
    * What the press under way does instead of the tool in hand, because a
    * key or a stylus button was held as it came down (`pen-modifiers.ts`,
    * FineNotes#25). Null for the tool itself; it lasts for that press only.
-   * A shortcut set to Hold lends any tool here.
+   * A shortcut set to Hold lends its tool here too.
    */
-  private pressTool: ActiveTool | "ignore" | null = null;
+  private pressTool: LentTool | null = null;
   /**
    * The key held for a shortcut set to Hold, with the tool it lends. It
    * outlasts a press: the key's key-up releases it, as Shift stops erasing.
+   * `mod`: it was held with Cmd or Ctrl, whose key-up ends it too.
    */
-  private heldShortcut: { key: string; tool: ActiveTool } | null = null;
+  private heldShortcut: { key: string; mod: boolean; tool: ActiveTool } | null = null;
   /** A pen or mouse is moving the page from beside the pages, or with the barrel. */
   private penPanning = false;
   /** An Alt-drag zooming: the zoom it began at, and the client point it zooms about. */
@@ -2225,22 +2240,6 @@ export class InkSurface {
     // system's menu.
     const onContextMenu = (event: MouseEvent): void => {
       if (onTextBox(event.target) || isEditable(event.target)) return;
-      // The right mouse button never reaches the stroke path, so a command or
-      // tool bound to it acts here, once, instead of opening the page menu.
-      // A pen's button already acted on pointerdown (`pressRoute`).
-      const pointerType = (event as Partial<PointerEvent>).pointerType;
-      if (pointerType !== "pen" && pointerType !== "touch") {
-        const bound = this.shortcutPointerMatch(event);
-        if (bound) {
-          event.preventDefault();
-          if (bound.kind === "action") {
-            const tool = bound.row.action.holdable ? shortcutTool(bound.row.action.id) : null;
-            if (tool) this.applyToolShortcut(tool);
-            else this.runShortcut(bound.row);
-          }
-          return;
-        }
-      }
       event.preventDefault();
       const type = (event as Partial<PointerEvent>).pointerType;
       // Android's WebView: the pen touching down with its side button held is
@@ -3233,11 +3232,11 @@ export class InkSurface {
 
   /** Hold a shortcut's tool until its key is let go. */
   private beginHeldShortcut(row: ShortcutRow, input: ShortcutInput): void {
-    if (this.heldShortcut || input.type !== "key") return;
+    if (this.heldShortcut) return;
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
-    this.heldShortcut = { key: input.key, tool };
+    this.heldShortcut = { key: input.key, mod: input.mods.includes("Mod"), tool };
     // The hand is the one lent tool with a cursor of its own; the others
     // show on the press they lend, as Shift's eraser does.
     if (tool === "pan") this.setHand(true);
@@ -3246,9 +3245,12 @@ export class InkSurface {
   /** The key that held a tool was let go. */
   private endHeldShortcut(event: KeyboardEvent): void {
     const held = this.heldShortcut;
-    if (!held || keyInput(event)?.key !== held.key) return;
-    this.heldShortcut = null;
-    if (held.tool === "pan") this.setHand(false);
+    if (!held) return;
+    // Apple's WebKit sends no key-up for a key let go while ⌘ is down, so
+    // letting go of ⌘ (or Ctrl) ends a tool held with it.
+    const modUp = held.mod && (event.key === "Meta" || event.key === "Control");
+    if (!modUp && keyInput(event)?.key !== held.key) return;
+    this.releaseHeldShortcuts();
   }
 
   /** Let go of a held shortcut where the key-up cannot arrive (blur, view close). */
@@ -5944,8 +5946,9 @@ export class InkSurface {
    * lasso a key or a stylus button lent it.
    */
   private gestureTool(): ActiveTool {
+    // A lent zoom is a zoom drag (`startZoomDrag`), never a gesture of its own.
     const lent = this.pressTool;
-    return lent === undefined || lent === null || lent === "ignore" ? this.toolState.tool : lent;
+    return lent && lent !== "zoom" ? lent : this.toolState.tool;
   }
 
   /**
@@ -5959,15 +5962,7 @@ export class InkSurface {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
     if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
-    // A command bound to this pen or mouse button runs once, here, and the
-    // press draws nothing; a tool binding is lent by `pressOverrideOf`.
-    const bound = this.shortcutPointerMatch(event);
-    if (bound) event.preventDefault();
-    if (bound && bound.kind !== "action") return "ignore";
-    if (bound?.kind === "action" && !bound.row.action.holdable) {
-      this.runShortcut(bound.row);
-      return "ignore";
-    }
+    // The hand held by a shortcut moves the page wherever the pen lands.
     if (this.heldShortcut?.tool === "pan") {
       this.penPanning = true;
       return "pan";
@@ -6042,35 +6037,19 @@ export class InkSurface {
   }
 
   /** The tool a stroke's keys and buttons lend it, or null for the tool in hand. */
-  private pressOverrideOf(press: PressInput): ActiveTool | "ignore" | null {
+  private pressOverrideOf(press: PressInput): LentTool | null {
     // Typing keeps its keys: Shift is a capital there, not an eraser.
     if (this.editingTextView() || this.cellEdit) return null;
-    // A button the user bound in the shortcut table wins for this press, as a
-    // barrel button always has; a command bound to one acts once and draws
-    // nothing (`pressRoute` runs it).
-    const custom = this.shortcutPointerMatch(press);
-    if (custom) {
-      if (custom.kind !== "action") return "ignore";
-      const tool = shortcutTool(custom.row.action.id);
-      return tool && (!this.practice || isPracticeTool(tool)) ? tool : "ignore";
-    }
+    // A tool held by a shortcut; the hand is `pressRoute`'s, as Space is.
     const held = this.heldShortcut;
-    if (held) {
+    if (held && held.tool !== "pan") {
       if (this.practice && !isPracticeTool(held.tool)) return null;
-      return held.tool;
+      return lentTool(held.tool);
     }
     const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
     // A practice file has the pen and the eraser only.
     if (this.practice && lent === "select") return null;
-    return lent;
-  }
-
-  /** The shortcut a pen or mouse button press matches, if any. */
-  private shortcutPointerMatch(press: PointerReading): ShortcutMatch | null {
-    const table = this.callbacks.shortcuts?.();
-    if (!table) return null;
-    const input = pointerInput(press);
-    return input ? matchShortcut(table, input) : null;
+    return lent === "eraser" || lent === "select" || lent === "zoom" ? lent : null;
   }
 
   private barrel(): BarrelAction {
