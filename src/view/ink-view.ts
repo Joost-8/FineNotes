@@ -109,7 +109,8 @@ import {
   prepareImageBytes,
   saveImageAttachment,
 } from "./image-import";
-import { copyPictureToSystemClipboard } from "./picture-clipboard";
+import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
+import { ScreenshotModal } from "./screenshot-modal";
 import {
   ImageMenuPopover,
   type ImageMenuContext,
@@ -2665,6 +2666,7 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
+        onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
@@ -3620,6 +3622,38 @@ export class InkView extends TextFileView {
       read = found;
       if (found.text) modal.suggest(found.text, found.fixes);
     });
+  }
+
+  /**
+   * The lasso's Screenshot: the picture in a small dialog, to copy, or to
+   * share through the system's share sheet (or save into the notebook's
+   * pictures folder where the platform cannot share a file).
+   */
+  private showScreenshot(png: Blob, width: number, height: number): void {
+    const note = this.file;
+    new ScreenshotModal(this.app, png, "Screenshot.png", {
+      copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
+      save: async (picture) => {
+        if (!note) return null;
+        try {
+          const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
+          const folder = this.attachmentFolder("images");
+          const name = `${note.basename} screenshot`;
+          return (
+            await saveImageAttachment(
+              this.app,
+              { ...prepared, width, height },
+              name,
+              note.path,
+              folder,
+            )
+          ).path;
+        } catch {
+          return null;
+        }
+      },
+      tell: (text) => new Notice(text),
+    }).open();
   }
 
   /**
