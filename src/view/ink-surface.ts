@@ -2751,6 +2751,8 @@ export class InkSurface {
     this.ensurePaperSize();
     this.centreBoard(false);
     this.reportStatus();
+    // The zoom jumped without a layout: the size marks follow it.
+    this.reportSizeScale();
   }
 
   /** Put the middle of a board's drawing (or of its page) in the middle of the pane. */

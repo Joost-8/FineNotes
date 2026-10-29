@@ -126,6 +126,7 @@ import { type PenInk, type PenInks, penInkFor, switchPenInk, withPenInk } from "
 import {
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  fitMarks,
   inkNeedsRim,
   sampleStroke,
   swoosh,
@@ -1962,19 +1963,21 @@ export class Toolbar {
         this.optionsEl,
         this.widthMm(width),
         active.id,
-        this.widthMark(width),
+        this.widthMarks([width]).get(width),
         () => this.toggleWidthList(button),
       );
       button.setAttribute("aria-label", `Width ${this.widthMm(width)}: more widths`);
       this.widthButtons.set(width, button);
     } else {
       // Stroke widths, drawn as literal strokes of increasing weight.
-      for (const width of this.quickWidths()) {
+      const quick = this.quickWidths();
+      const marks = this.widthMarks(quick);
+      for (const width of quick) {
         const button = widthButton(
           this.optionsEl,
           this.widthMm(width),
           active.id,
-          this.widthMark(width),
+          marks.get(width),
           () => {
             this.setWidth(width);
             this.syncActive();
@@ -2586,9 +2589,11 @@ export class Toolbar {
     // Sizes, drawn as eraser footprints of increasing diameter: the presets,
     // with a size set on the slider in place of the nearest one. The chevron
     // opens the slider, as the pen's widths do.
-    for (const size of quickEraserSizes(eraserSizeFor(this.state))) {
+    const sizes = quickEraserSizes(eraserSizeFor(this.state));
+    const marks = this.eraserMarks(sizes, PILL_ERASER_BOX);
+    for (const size of sizes) {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
-      button.append(eraserSizeGlyph(this.eraserMark(size)));
+      button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
       button.addEventListener("click", () => {
         this.setEraserSize(size);
@@ -3598,12 +3603,13 @@ export class Toolbar {
       this.buildOptions();
       this.syncActive();
     };
+    const marks = this.widthMarks(this.widths);
     for (const width of this.widths) {
       const preset = widthButton(
         row,
         this.widthMm(width),
         this.activePenType().id,
-        this.widthMark(width),
+        marks.get(width),
         () => {
           pick(width);
           this.closePopover();
@@ -3614,10 +3620,11 @@ export class Toolbar {
     }
     // The zoom changed under the open popover: its marks follow the ink.
     this.sizeMarksRender = () => {
+      const marks = this.widthMarks([...presets.keys()]);
       for (const [width, preset] of presets) {
         preset
           .querySelector("svg")
-          ?.replaceWith(widthGlyph(this.widthMark(width), this.activePenType().id));
+          ?.replaceWith(widthGlyph(marks.get(width), this.activePenType().id));
       }
       show();
     };
@@ -3668,9 +3675,30 @@ export class Toolbar {
     return formatMm(strokeWidthFor({ ...this.state, size: width }));
   }
 
+  /**
+   * One control's width marks (`widthMark`): true size while the thickest
+   * fits the glyph, else shrunk together and dashed (`fitMarks`).
+   */
+  private widthMarks(widths: readonly number[]): Map<number, SizeMark> {
+    return fittedMarks(
+      widths,
+      widths.map((width) => this.widthMark(width)),
+      SWOOSH_HEIGHT,
+    );
+  }
+
   /** How wide an eraser size's mark is drawn, screen px: its footprint on the page. */
   private eraserMark(size: number): number {
     return size * this.previewScales().eraser;
+  }
+
+  /** One control's eraser marks in `box` px squares, fitted as {@link widthMarks} are. */
+  private eraserMarks(sizes: readonly number[], box: number): Map<number, SizeMark> {
+    return fittedMarks(
+      sizes,
+      sizes.map((size) => this.eraserMark(size)),
+      box,
+    );
   }
 
   /**
@@ -3689,11 +3717,13 @@ export class Toolbar {
    */
   refreshSizeMarks(): void {
     const pen = this.activePenType().id;
+    const widths = this.widthMarks([...this.widthButtons.keys()]);
     for (const [width, button] of this.widthButtons) {
-      button.querySelector("svg")?.replaceWith(widthGlyph(this.widthMark(width), pen));
+      button.querySelector("svg")?.replaceWith(widthGlyph(widths.get(width), pen));
     }
+    const sizes = this.eraserMarks([...this.eraserSizeButtons.keys()], PILL_ERASER_BOX);
     for (const [size, button] of this.eraserSizeButtons) {
-      button.querySelector("svg")?.replaceWith(eraserSizeGlyph(this.eraserMark(size)));
+      button.querySelector("svg")?.replaceWith(eraserSizeGlyph(sizes.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
     }
     this.sizeMarksRender?.();
@@ -3765,9 +3795,10 @@ export class Toolbar {
       this.buildOptions();
       this.syncActive();
     };
+    const marks = this.eraserMarks(ERASER_SIZES, POPOVER_ERASER_BOX);
     for (const size of ERASER_SIZES) {
       const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
-      preset.append(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
+      preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
       preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
       preset.setAttribute("title", this.eraserMm(size));
       preset.addEventListener("click", () => {
@@ -3778,10 +3809,11 @@ export class Toolbar {
       presets.set(size, preset);
     }
     this.sizeMarksRender = () => {
+      const marks = this.eraserMarks([...presets.keys()], POPOVER_ERASER_BOX);
       for (const [size, preset] of presets) {
         preset
           .querySelector("svg")
-          ?.replaceWith(eraserSizeGlyph(this.eraserMark(size), POPOVER_ERASER_BOX));
+          ?.replaceWith(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
         preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
         preset.setAttribute("title", this.eraserMm(size));
       }
@@ -5141,15 +5173,42 @@ function eraserPreview(
   };
 }
 
-/** The eraser-size popover's presets are larger than the pill's: they have the room. */
-const POPOVER_ERASER_BOX = 40;
+/**
+ * The eraser-size popover's presets are larger than the pill's: they have
+ * the room, and at fit-to-width zoom the largest eraser (48) fits true size.
+ */
+const POPOVER_ERASER_BOX = 48;
+const PILL_ERASER_BOX = 28;
+
+/**
+ * A size mark as drawn: `size` screen px, and whether its control's marks
+ * were shrunk together to fit (`fitMarks`), so it is not true size.
+ */
+interface SizeMark {
+  size: number;
+  scaled: boolean;
+}
+
+/** Each of `keys` with its mark: `sizes` (screen px) fitted together into `limit`. */
+function fittedMarks(
+  keys: readonly number[],
+  sizes: readonly number[],
+  limit: number,
+): Map<number, SizeMark> {
+  const fit = fitMarks(sizes, limit);
+  return new Map(keys.map((key, i) => [key, { size: fit.sizes[i], scaled: fit.scaled }]));
+}
+
+/** The dashes of a mark that is not true size (`SizeMark.scaled`). */
+const SCALED_DASH = "2.5 2";
 
 /**
  * An eraser-size control: the eraser's footprint at the size it erases
- * (`diameter`, screen px), as the strip under the slider draws it, in a
- * `box` px square. One larger than the box fills it, shaded darker.
+ * (`mark`, screen px), as the strip under the slider draws it, in a `box`
+ * px square; dashed when its control's marks were shrunk to fit.
  */
-function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
+function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
+  const diameter = mark?.size ?? NaN;
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${box} ${box}`);
   svg.setAttribute("width", String(box));
@@ -5159,30 +5218,31 @@ function eraserSizeGlyph(diameter: number, box = 28): SVGElement {
   circle.setAttribute("cx", String(box / 2));
   circle.setAttribute("cy", String(box / 2));
   // The ring alone, drawn inside the footprint as the strip's border is: the
-  // eraser's own size on the page at this zoom, up to the box's edge.
+  // eraser's own size on the page at this zoom, or its share of the box.
   const d = Number.isFinite(diameter) && diameter > 0 ? diameter : 2;
   circle.setAttribute("r", Math.max(0.75, Math.min(d, box) / 2 - 0.75).toFixed(2));
   circle.setAttribute("fill", "none");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
+  if (mark?.scaled) circle.setAttribute("stroke-dasharray", SCALED_DASH);
   svg.append(circle);
   return svg;
 }
 
 /**
  * A preset pen width, in the pill or in the widths popover: the stroke
- * itself, `thickness` screen px as it writes now, named by its ink's width
+ * itself, `mark` screen px as it writes now, named by its ink's width
  * (`mm`, "0.62 mm") for screen readers and on hover.
  */
 function widthButton(
   parent: HTMLElement,
   mm: string,
   pen: string,
-  thickness: number,
+  mark: SizeMark | undefined,
   onPick: () => void,
 ): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
-  button.append(widthGlyph(thickness, pen));
+  button.append(widthGlyph(mark, pen));
   button.setAttribute("aria-label", `Width ${mm}`);
   button.setAttribute("title", mm);
   button.addEventListener("click", onPick);
@@ -5195,16 +5255,23 @@ function widthButton(
  * ballpoint, lifting off for the brush, a flat band for the highlighter
  * (pen-glyphs.ts).
  */
-function widthGlyph(thickness: number, pen: string): SVGElement {
+function widthGlyph(mark: SizeMark | undefined, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${SWOOSH_WIDTH} ${SWOOSH_HEIGHT}`);
   svg.setAttribute("width", String(SWOOSH_WIDTH));
   svg.setAttribute("height", String(SWOOSH_HEIGHT));
   svg.setAttribute("aria-hidden", "true");
-  const shape = swoosh(pen, thickness);
+  const shape = swoosh(pen, mark?.size ?? NaN, mark?.scaled);
   const path = activeDocument.createElementNS(SVG_NS, "path");
   path.setAttribute("d", shape.d);
-  if (shape.strokeWidth === undefined) {
+  if (shape.dashed) {
+    // Shrunk to fit beside larger ones: its outline, dashed, not ink.
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.25");
+    path.setAttribute("stroke-dasharray", SCALED_DASH);
+    path.setAttribute("stroke-linejoin", "round");
+  } else if (shape.strokeWidth === undefined) {
     path.setAttribute("fill", "currentColor");
   } else {
     path.setAttribute("fill", "none");
