@@ -28,7 +28,7 @@ extracted from the matching section of this file by `release.yml`.
   shape is not offered Text, Contents heading or Task.
 - **Turn a selection with two fingers.** Two fingers on a selection or a
   selected picture, or either side of a small one, turn it about its
-  middle, settling on the page's 45° steps as the knob does; the lift is one
+  middle, drawn toward the page's 45° steps as the knob is; the lift is one
   undo step. Two fingers elsewhere still zoom the page.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
@@ -77,11 +77,11 @@ extracted from the matching section of this file by `release.yml`.
   open is gone.
 - **Turning a selection or a picture settles**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
-  knob no longer follows every tremor of the pen: the turn lands on every
-  45° of the page (0°, 45°, 90° …) from several degrees away, whatever
-  angle the item started at, so a shape drawn slightly crooked lands
-  level, never at 89°; it is free between. A small readout beside the pen
-  shows the angle on the page while you turn.
+  knob, and now two fingers, draw the turn gently toward every 45° of the
+  page (0°, 45°, 90° …), whatever angle the item started at: it slows near
+  a step and goes on through it, never stopping, and let go close to one
+  it lands there exactly, so a shape drawn slightly crooked ends level,
+  never at 89°. A small readout shows the angle on the page while you turn.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and

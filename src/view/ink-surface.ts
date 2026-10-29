@@ -10772,6 +10772,8 @@ export class InkSurface {
       drag.fingers = undefined;
       return;
     }
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (grip.state.engaged) grip.motion = fingerTurnMotion(grip.state, () => grip.snap.settled());
     this.endGroupDrag(true);
     this.syncImageOverlay();
   }
@@ -11060,6 +11062,8 @@ export class InkSurface {
       }
     }
     const turn = drag.turn;
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && turn) turn.angle = turn.snap.settled();
     const changed = fingers
       ? !isStill(fingers)
       : turn
@@ -12088,6 +12092,10 @@ export class InkSurface {
     }
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.clearWet();
+    // On the lift a turn that ended close to a page step lands on it exactly.
+    if (commit && drag.turn && drag.part === "rotate") {
+      drag.draft = withRotation(drag.start, rotationOf(drag.start) + drag.turn.settled());
+    }
     const box = this.boxForPage(drag.pageId);
     const page = this.doc.pages.find((candidate) => candidate.id === drag.pageId);
     const changed =

@@ -10,11 +10,6 @@ import { STEP_DEG, TurnSnap, shapeAngleOf } from "../../src/canvas/turn-snap";
 const DEG = Math.PI / 180;
 const deg = (radians: number): number => Math.round((radians / DEG) * 100) / 100;
 
-/** Feed a sweep of angles (degrees) through one turn; the turns shown, in degrees. */
-function sweep(snap: TurnSnap, degrees: number[]): number[] {
-  return degrees.map((d) => deg(snap.turn(d * DEG)));
-}
-
 /** A rectangle's outline, `w` by `h`, turned `angle` degrees about its first corner. */
 function rect(w: number, h: number, angle: number): number[] {
   const c = Math.cos(angle * DEG);
@@ -29,72 +24,75 @@ function rect(w: number, h: number, angle: number): number[] {
 }
 
 describe("TurnSnap", () => {
-  it("snaps every 45° of the page and nothing between", () => {
+  it("draws the turn gently toward the page's 45° steps", () => {
     expect(STEP_DEG).toBe(45);
-    // A turn circle 80 px across: 14 px of arc is 10°, clamped to 8°.
+    // A circle 80 px across pulls within 9° (16 px of arc, clamped).
     const snap = new TurnSnap(80);
-    expect(sweep(snap, [20, 30, 40, 44, 50, 60, 70, 88, 105, 120, 135.5])).toEqual([
-      20, 30, 45, 45, 45, 60, 70, 90, 105, 120, 135,
-    ]);
-    // The old 15° steps are gone.
-    expect(deg(new TurnSnap(200).turn(30.8 * DEG))).toBe(30.8);
+    // 2° past 45°: shown 0.9° past it, pulled but not held.
+    expect(deg(snap.turn(47 * DEG))).toBeCloseTo(45.91, 1);
+    // At the step itself, exactly there.
+    expect(deg(snap.turn(45 * DEG))).toBe(45);
+    // Outside the pull, as the hand has it.
+    expect(deg(snap.turn(30 * DEG))).toBe(30);
+    expect(deg(snap.turn(54 * DEG))).toBe(54);
   });
 
-  it("lands a crooked shape on clean page angles, never 89° or 179°", () => {
-    // A rectangle drawn 2° off level, its page angle 2°.
+  it("never stops: sweeping through a step, the turn keeps moving, and has no jump at the pull's edge", () => {
+    const snap = new TurnSnap(80);
+    let previous = -Infinity;
+    for (let d = 20; d <= 70; d += 0.25) {
+      const shown = snap.turn(d * DEG);
+      // Always onward, and at least 0.3 of the hand's quarter degree.
+      expect(shown - previous).toBeGreaterThan(0.3 * 0.25 * DEG - 1e-9);
+      // And never more than twice it: no jump.
+      if (previous > -Infinity) expect(shown - previous).toBeLessThan(2 * 0.25 * DEG);
+      previous = shown;
+    }
+  });
+
+  it("lands on the step exactly on the lift when the turn ends close to it", () => {
+    const snap = new TurnSnap(80);
+    snap.turn(48 * DEG);
+    expect(deg(snap.settled())).toBe(45);
+    snap.turn(50 * DEG);
+    // 5° off, past the inner half of the 9° pull: kept as shown.
+    expect(deg(snap.settled())).toBeCloseTo(deg(snap.turn(50 * DEG)), 9);
+    expect(deg(snap.settled())).not.toBe(45);
+  });
+
+  it("is page-absolute: a shape drawn 2° off lands on 90° of the page, never 89°", () => {
     const snap = new TurnSnap(80, 2 * DEG);
-    // Near its start the turn is caught at −2°: level on the page.
-    expect(deg(snap.turn(-1 * DEG))).toBe(-2);
-    expect(deg(snap.pageAngle(snap.turn(-1 * DEG)))).toBe(0);
-    // A quarter turn lands at 88° of turn: 90° on the page.
-    expect(deg(snap.turn(89 * DEG))).toBe(88);
-    expect(deg(snap.pageAngle(snap.turn(89 * DEG)))).toBe(90);
-    expect(deg(snap.pageAngle(snap.turn(178 * DEG)))).toBe(180);
-    expect(deg(snap.pageAngle(snap.turn(44 * DEG)))).toBe(45);
+    snap.turn(89 * DEG);
+    expect(deg(snap.settled())).toBe(88);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(90);
+    snap.turn(-1 * DEG);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(0);
+    snap.turn(178.5 * DEG);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(180);
   });
 
-  it("holds the start when the item already sits on a page step, so a tap or wobble turns nothing", () => {
+  it("marks the readout only on a step", () => {
     const snap = new TurnSnap(80);
-    expect(sweep(snap, [0, 1.5, -2, 4, -3.5, 6])).toEqual([0, 0, 0, 0, 0, 0]);
+    snap.turn(45.4 * DEG);
     expect(snap.snapped).toBe(true);
-    // A picture already turned 45°: its start is a page step too.
-    expect(deg(new TurnSnap(80, 45 * DEG).turn(3 * DEG))).toBe(0);
-  });
-
-  it("does not hold an item off the page steps where it started", () => {
-    // 20° on the page: 0 is no detent, so a small turn shows as it is.
-    const snap = new TurnSnap(80, 20 * DEG);
+    snap.turn(48 * DEG);
     expect(snap.snapped).toBe(false);
-    expect(deg(snap.turn(5 * DEG))).toBe(5);
-    // And 25° of turn brings it to 45° on the page.
-    expect(deg(snap.turn(22 * DEG))).toBe(25);
   });
 
-  it("lets go only a little past where it caught: no flicker at the edge", () => {
-    const snap = new TurnSnap(80);
-    sweep(snap, [60, 70]);
-    expect(deg(snap.turn(82.5 * DEG))).toBe(90);
-    expect(sweep(snap, [81.5, 82.5, 81, 82, 79])).toEqual([90, 90, 90, 90, 90]);
-    // Well past it (8° × 1.5): free.
-    expect(deg(snap.turn(77 * DEG))).toBe(77);
-  });
-
-  it("measures the detents along the turn's circle on screen: a large circle catches less of an angle", () => {
+  it("measures the pull along the turn's circle on screen: a large circle pulls a smaller angle", () => {
     const near = new TurnSnap(60);
     const far = new TurnSnap(600);
-    for (const s of [near, far]) s.turn(60 * DEG);
-    expect(deg(near.turn(85 * DEG))).toBe(90);
+    // 5° short of a quarter turn: inside the near circle's 9° pull, outside the far one's 3°.
+    expect(deg(near.turn(85 * DEG))).not.toBe(85);
     expect(deg(far.turn(85 * DEG))).toBe(85);
-    // But even a large circle keeps a 3° detent.
-    expect(deg(far.turn(87.5 * DEG))).toBe(90);
+    far.turn(89 * DEG);
+    expect(deg(far.settled())).toBe(90);
   });
 
   it("wraps a turn past a half turn, and ignores what is not a number", () => {
     const snap = new TurnSnap(80);
-    snap.turn(60 * DEG);
     expect(deg(snap.turn(200 * DEG))).toBe(-160);
     expect(deg(snap.turn(NaN))).toBe(-160);
-    expect(deg(snap.turn(181 * DEG))).toBe(180);
     expect(deg(snap.pageAngle(181 * DEG))).toBe(-179);
     expect(deg(new TurnSnap(80, NaN).pageAngle(10 * DEG))).toBe(10);
   });
