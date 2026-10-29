@@ -1666,7 +1666,7 @@ describe("folding sections", () => {
       plugin.settings.defaultColor,
     );
     expect(status(pens)).toBe("8 saved");
-    expect(status(pages)).toBe("Light · 900 px");
+    expect(status(pages)).toBe("Custom · 900 px");
     expect(status(models)).toBe("VoiceHandwriting");
     expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
       ["goodobsidian-status-part", "is-ready"],

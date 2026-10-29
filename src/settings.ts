@@ -1446,7 +1446,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ],
       () => [
         {
-          text: `${PAGE_APPEARANCES[settings.pageAppearance] ?? "Light"} · ${settings.paperWidth} px`,
+          text: `${THEME_NAMES[this.themeCustom ? "custom" : themePresetOf(settings)]} · ${settings.paperWidth} px`,
         },
       ],
     );
