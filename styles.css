@@ -2678,7 +2678,8 @@ body.is-mobile .goodobsidian-scrollthumb {
   margin-top: var(--size-4-2);
 }
 
-button.goodobsidian-sheet-chip.clickable-icon {
+button.goodobsidian-sheet-chip.clickable-icon,
+.goodobsidian-sheet-chip.goodobsidian-words-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--size-2-3);
@@ -2699,6 +2700,11 @@ button.goodobsidian-sheet-chip.clickable-icon {
 
 .goodobsidian-sheet-chip.is-used .goodobsidian-sheet-mark {
   color: var(--color-green);
+}
+
+/* Enough corrected words for the next learning round. */
+.goodobsidian-words-chip.is-due .goodobsidian-sheet-mark {
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-sheet-state {

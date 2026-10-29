@@ -21,8 +21,9 @@ import {
   practiceSheets,
   previousKey,
   progressLabel,
-  readCorrectionLines,
+  readCorrections,
   swapWithPrevious,
+  symbolsToWrite,
   writePracticePage,
   writeSymbolPractice,
 } from "./view/handwriting-learning";
@@ -30,8 +31,9 @@ import {
   MIN_PRACTICE_LINES,
   type PracticeSheet,
   deleteQuestion,
-  hasUnusedLines,
-  learnStepText,
+  RELEARN_AFTER,
+  correctionsText,
+  learnInfoText,
   learnSummary,
   learnedBadge,
   learnedResult,
@@ -39,8 +41,8 @@ import {
   nextSheetAction,
   sheetText,
   sheetUse,
+  newCorrections,
   undoText,
-  writeStepText,
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS, isSymbolSet } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
@@ -467,7 +469,10 @@ function modelStatus(setting: Setting, status: string, tone: ModelTone): void {
 /** What the learned-model rows show, read once each time the tab opens. */
 interface LearningState {
   sheets: PracticeSheet[];
-  corrections: number;
+  /** When each corrected word was saved (ms), oldest first. */
+  answeredAt: number[];
+  /** Symbol-sheet lines no symbol sheet asks for yet; null without a symbol sheet. */
+  newSymbols: number[] | null;
   files: { current: boolean; previous: boolean; bytes: number };
 }
 
@@ -1888,20 +1893,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** "Learn your handwriting"'s ⓘ: how the sheets work, and what learning will use. */
+  /** "Learn your handwriting"'s ⓘ: what learning needs, what there is, what comes next. */
   private learnInfo(): string {
     const learning = this.learningState;
-    if (!learning) return writeStepText([], PRACTICE_SETS.length);
-    const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
     const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
-    const seen =
-      record && !hasUnusedLines(learning.sheets, record) && record.sources
-        ? " Your model already has every line on your sheets: write another sheet first to improve it."
-        : "";
-    return [
-      writeStepText(learning.sheets, PRACTICE_SETS.length),
-      learnStepText(lines, learning.corrections, learning.files.current) + seen,
-    ].join(" ");
+    const answeredAt = learning?.answeredAt ?? [];
+    return learnInfoText({
+      sheets: learning?.sheets ?? [],
+      sets: PRACTICE_SETS.length,
+      corrections: answeredAt.length,
+      fresh: newCorrections(answeredAt, record),
+      model: record,
+      onDevice: learning?.files.current ?? false,
+    });
   }
 
   /** The voice model's size and spoken language, side by side. */
@@ -2020,17 +2024,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (this.learningState || this.learningLoad) return;
     const host = this.plugin.learningHost();
     this.learningLoad = (async () => {
-      const [sheets, corrections, files] = await Promise.all([
+      const [sheets, corrections, newSymbols, files] = await Promise.all([
         practiceSheets(host),
-        readCorrectionLines(host).then((lines) => lines.length),
+        readCorrections(host),
+        symbolsToWrite(host),
         learnedFiles(host),
       ]);
-      this.learningState = { sheets, corrections, files };
+      const answeredAt = corrections.corrections.map((c) => c.at);
+      this.learningState = { sheets, answeredAt, newSymbols, files };
     })()
       .catch(() => {
         this.learningState = {
           sheets: [],
-          corrections: 0,
+          answeredAt: [],
+          newSymbols: null,
           files: { current: false, previous: false, bytes: 0 },
         };
       })
@@ -2108,7 +2115,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const learner = this.plugin.learner;
     const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
     const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-    const enough = lines + learning.corrections >= MIN_PRACTICE_LINES;
+    const enough = lines + learning.answeredAt.length >= MIN_PRACTICE_LINES;
     setting.setDesc(learnSummary(learning.sheets, PRACTICE_SETS.length));
     const next = nextSheetAction(learning.sheets, PRACTICE_SETS.length);
     setting.addButton((b) => {
@@ -2193,16 +2200,41 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     // The symbol sheet sits among the sheets from the start: learning takes
     // the text sheets, the symbol sheet, or both, whichever were written.
-    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set))) {
+    // Beside a symbol sheet written before symbols were added, a chip writes
+    // a sheet of just those.
+    const added = learning.newSymbols;
+    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set)) || (added && added.length > 0)) {
       const chip = list.createEl("button", { cls: "goodobsidian-sheet-chip clickable-icon" });
-      chip.setAttribute("aria-label", "Write the symbol sheet: digits, operators and signs");
+      chip.setAttribute(
+        "aria-label",
+        added && added.length > 0
+          ? `Write the ${added.length} symbols added since your symbol sheet: links and maths signs`
+          : "Write the symbol sheet: digits, operators and signs",
+      );
       setIcon(chip.createSpan({ cls: "goodobsidian-sheet-mark" }), "circle-plus");
-      chip.createSpan({ cls: "goodobsidian-sheet-title", text: "Symbols" });
+      chip.createSpan({
+        cls: "goodobsidian-sheet-title",
+        text: added && added.length > 0 ? "New symbols" : "Symbols",
+      });
       chip.addEventListener("click", () => {
         this.plugin.closeSettings();
         void writeSymbolPractice(host);
       });
     }
+    // The corrected words the model has not learned from, toward the next
+    // round: a tracker, not a button.
+    const fresh = newCorrections(learning.answeredAt, record);
+    const words = list.createDiv({
+      cls: `goodobsidian-sheet-chip goodobsidian-words-chip${fresh >= RELEARN_AFTER ? " is-due" : ""}`,
+      attr: { role: "img" },
+    });
+    words.setAttribute(
+      "aria-label",
+      correctionsText(fresh, learning.answeredAt.length, record !== undefined),
+    );
+    setIcon(words.createSpan({ cls: "goodobsidian-sheet-mark" }), "spell-check");
+    words.createSpan({ cls: "goodobsidian-sheet-title", text: "Words" });
+    words.createSpan({ cls: "goodobsidian-sheet-state", text: `${fresh}/${RELEARN_AFTER}` });
   }
 
   /** Swap the learned model for the one before the last learning; swapping again goes forward. */
