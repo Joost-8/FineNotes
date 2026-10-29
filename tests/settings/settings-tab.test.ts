@@ -143,6 +143,14 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       calls.push("save");
       return Promise.resolve();
     }),
+    applyPageAppearance: vi.fn(() => {
+      calls.push("pageAppearance");
+      return Promise.resolve();
+    }),
+    applyWorkspaceBackground: vi.fn(() => {
+      calls.push("workspaceBackground");
+      return Promise.resolve();
+    }),
     setDebugHud: vi.fn((on: boolean) => {
       calls.push(`debugHud:${on}`);
       settings.debugHud = on;
@@ -401,7 +409,10 @@ describe("the rows", () => {
       [PENS, "Side button click", "dropdown:stylusButtonClick"],
       [PENS, "Cursor over the page", "dropdown:penCursor"],
       [PENS, "Keyboard shortcuts", "render"],
-      [PAGES, "Page appearance", "render"],
+      [PAGES, "Workspace background", "render"],
+      [PAGES, "Custom workspace color", "render"],
+      [PAGES, "Page theme", "render"],
+      [PAGES, "PDF appearance", "render"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
@@ -468,7 +479,8 @@ describe("the rows", () => {
     const all = rows(tab);
     expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
     expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
-    expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
+    expect(tab.infoOf("Page theme")).toMatch(/PDF pages follow their own setting/);
+    expect(tab.infoOf("Workspace background")).toMatch(/GPU layer/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
   });
@@ -479,8 +491,9 @@ describe("the rows", () => {
     expect(words("Start with")).toEqual(
       expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    expect(words("Page appearance")).toEqual(
-      expect.arrayContaining(["dark mode", "dark PDF pages"]),
+    expect(words("Page theme")).toEqual(expect.arrayContaining(["dark mode", "paper"]));
+    expect(words("PDF appearance")).toEqual(
+      expect.arrayContaining(["dark PDF pages", "invert", "original"]),
     );
     expect(words("New notebooks go in")).toContain("default folder for new notebooks");
     expect(words("Saved pens")).toEqual(expect.arrayContaining(["number key", "restore defaults"]));
@@ -517,12 +530,17 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
-    expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
+    expect(Object.keys(renderRow(named(all, "Workspace background")).dropdowns[0].options)).toEqual(
+      ["auto", "light", "dark", "custom", "blur"],
+    );
+    expect(Object.keys(renderRow(named(all, "Page theme")).dropdowns[0].options)).toEqual([
       "light",
       "dark",
-      "dark-pdf-light",
       "system",
-      "system-pdf-light",
+    ]);
+    expect(Object.keys(renderRow(named(all, "PDF appearance")).dropdowns[0].options)).toEqual([
+      "as-is",
+      "dark",
     ]);
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
@@ -606,7 +624,9 @@ describe("which rows show", () => {
       "Highlighter opacity",
       "Straighten highlighter strokes",
       ...PEN_ROWS,
-      "Page appearance",
+      "Workspace background",
+      "Page theme",
+      "PDF appearance",
       "Paper width",
       "More",
       "New notebooks go in",
@@ -618,7 +638,7 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      "(block 36)",
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
@@ -634,6 +654,15 @@ describe("which rows show", () => {
       "Folder for PDF exports",
       FOOTER,
     ]);
+  });
+
+  it("shows the custom workspace colour only when Custom color is chosen", () => {
+    const names = (background: string) =>
+      visibleNames(makePlugin({ workspaceBackground: background as never }));
+    expect(names("auto")).not.toContain("Custom workspace color");
+    expect(names("dark")).not.toContain("Custom workspace color");
+    expect(names("blur")).not.toContain("Custom workspace color");
+    expect(names("custom")).toContain("Custom workspace color");
   });
 
   it("opens the AI group on Show: Manual recognition, Claude, keys in the keychain", () => {
@@ -826,18 +855,39 @@ describe("control values", () => {
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
-  it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
-    const plugin = Object.assign(makePlugin({ pageAppearance: "dark", invertPdfPages: false }), {
-      applyPageAppearance: vi.fn(() => Promise.resolve()),
+  it("sets Page theme and PDF appearance independently, and redraws notebooks", async () => {
+    const plugin = makePlugin({
+      pageAppearance: "dark",
+      pdfTheme: "as-is",
+      invertPdfPages: false,
     });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Page appearance"));
-    expect(row.dropdowns[0].value).toBe("dark-pdf-light");
-    await row.dropdowns[0].pick("system");
-    expect([plugin.settings.pageAppearance, plugin.settings.invertPdfPages]).toEqual([
-      "system",
-      true,
-    ]);
-    expect(plugin.applyPageAppearance).toHaveBeenCalledOnce();
+    const all = rows(makeTab(plugin).tab);
+    const page = renderRow(named(all, "Page theme"));
+    const pdf = renderRow(named(all, "PDF appearance"));
+    expect([page.dropdowns[0].value, pdf.dropdowns[0].value]).toEqual(["dark", "as-is"]);
+    await page.dropdowns[0].pick("system");
+    // The PDF choice is untouched by the page theme.
+    expect([plugin.settings.pageAppearance, plugin.settings.pdfTheme]).toEqual(["system", "as-is"]);
+    expect(plugin.applyPageAppearance).toHaveBeenCalledTimes(1);
+    await pdf.dropdowns[0].pick("dark");
+    expect([plugin.settings.pdfTheme, plugin.settings.invertPdfPages]).toEqual(["dark", true]);
+    expect(plugin.settings.pageAppearance).toBe("system");
+    expect(plugin.applyPageAppearance).toHaveBeenCalledTimes(2);
+  });
+
+  it("sets the workspace background and its custom colour, and redraws notebooks", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    const row = renderRow(named(all, "Workspace background"));
+    expect(row.dropdowns[0].value).toBe("auto");
+    await row.dropdowns[0].pick("dark");
+    expect(plugin.settings.workspaceBackground).toBe("dark");
+    expect(plugin.applyWorkspaceBackground).toHaveBeenCalledOnce();
+    const custom = renderRow(named(all, "Custom workspace color"));
+    expect(custom.colors[0].value).toBe(plugin.settings.workspaceBackgroundColor);
+    await custom.colors[0].pick("#123456");
+    expect(plugin.settings.workspaceBackgroundColor).toBe("#123456");
+    expect(plugin.applyWorkspaceBackground).toHaveBeenCalledTimes(2);
   });
 
   it("sets the tool, width and colour a note starts with from Start with", async () => {
@@ -1549,7 +1599,9 @@ describe("folding sections", () => {
       plugin.settings.defaultColor,
     );
     expect(status(pens)).toBe("8 saved");
-    expect(status(pages)).toBe("Light · 900 px");
+    expect(status(pages)).toBe(
+      "Light paper · Follow Obsidian theme (Auto) · PDF Adapt to dark mode · 900 px",
+    );
     expect(status(models)).toBe("VoiceHandwriting");
     expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
       ["goodobsidian-status-part", "is-ready"],

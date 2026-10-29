@@ -312,6 +312,7 @@ import {
   greyWhileErasingOf,
   penPreferencesOf,
   shownPaperTheme,
+  workspaceBackgroundOf,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
@@ -1061,6 +1062,13 @@ export class InkView extends TextFileView {
     if (surface.paperTheme === theme) return;
     surface.setPaperTheme(theme);
     this.updateSidebarRendering();
+  }
+
+  /** The workspace background setting or Obsidian's theme changed. */
+  syncWorkspaceBackground(): void {
+    this.surface?.setWorkspaceBackground(
+      workspaceBackgroundOf(this.settings, this.containerEl.doc.body.hasClass("theme-dark")),
+    );
   }
 
   /** The recent strokes and the recogniser's verdicts on them, as JSON, for bug reports. */
@@ -2650,6 +2658,10 @@ export class InkView extends TextFileView {
         debug: this.showHud,
         palette,
         paper: this.shownPaper(),
+        workspace: workspaceBackgroundOf(
+          this.settings,
+          this.containerEl.doc.body.hasClass("theme-dark"),
+        ),
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
@@ -2842,6 +2854,7 @@ export class InkView extends TextFileView {
     this.registerEvent(
       this.app.workspace.on("css-change", () => {
         this.syncPaperTheme();
+        this.syncWorkspaceBackground();
         this.relayout();
       }),
     );

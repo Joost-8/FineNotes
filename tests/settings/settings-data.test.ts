@@ -14,12 +14,15 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
   PAPER_WIDTH_RANGE,
+  type GoodObsidianSettings,
   changesTabLayout,
   appearanceChoiceOf,
   endpointWarning,
   greyWhileErasingOf,
+  migrateAppearanceSettings,
   openSectionsOf,
   pagesAreDark,
+  pdfThemeOf,
   penPreferencesOf,
   paperWidthFrom,
   parseColorList,
@@ -32,7 +35,13 @@ import {
   storeReturnToPen,
   storeShownValue,
   withSection,
+  workspaceBackgroundOf,
 } from "../../src/settings-data";
+import {
+  DARK_WORKSPACE,
+  DEFAULT_CUSTOM_WORKSPACE,
+  LIGHT_WORKSPACE,
+} from "../../src/model/appearance-theme";
 import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
 
 /**
@@ -117,6 +126,9 @@ const FRESH_INSTALL = {
   showNewNotebookInExplorer: false,
   folderNotebooks: true,
   pageAppearance: "light",
+  workspaceBackground: "auto",
+  workspaceBackgroundColor: DEFAULT_CUSTOM_WORKSPACE,
+  pdfTheme: "dark",
   invertPdfPages: true,
 
   savedPens: [
@@ -224,6 +236,9 @@ const USED_VAULT = {
   recentColors: ["#123456", "#abcdef"],
   pressureWidth: true,
   pageAppearance: "system",
+  workspaceBackground: "custom",
+  workspaceBackgroundColor: "#abcdef",
+  pdfTheme: "as-is",
   invertPdfPages: false,
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
@@ -244,7 +259,9 @@ const USED_VAULT = {
 
 /** What `main.ts` does on load, then what `saveData` writes. */
 function loadAndSave(saved: unknown): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(Object.assign({}, DEFAULT_SETTINGS, saved)));
+  const settings: GoodObsidianSettings = Object.assign({}, DEFAULT_SETTINGS, saved);
+  migrateAppearanceSettings(settings, saved as Partial<GoodObsidianSettings> | null);
+  return JSON.parse(JSON.stringify(settings));
 }
 
 describe("data.json", () => {
@@ -319,6 +336,97 @@ describe("dark pages", () => {
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.
     expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
+  });
+
+  it("keeps PDFs as they are in dark mode when the PDF theme says so", () => {
+    const settings = {
+      pageAppearance: "dark",
+      pdfTheme: "as-is",
+      invertPdfPages: false,
+    } as const;
+    const theme = shownPaperTheme(settings, true);
+    expect(theme.night).toBe(true);
+    expect(theme.keepPdf).toBe(true);
+    // A new/loaded document in Obsidian dark mode paints its PDFs in true colour.
+    expect(pdfThemeOf(settings)).toBe("as-is");
+  });
+});
+
+describe("independent appearance layers", () => {
+  it("resolves the workspace desk without looking at the page or PDF theme", () => {
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, false)).toEqual({
+      color: LIGHT_WORKSPACE,
+      blur: false,
+    });
+    expect(workspaceBackgroundOf({ workspaceBackground: "auto" }, true)).toEqual({
+      color: DARK_WORKSPACE,
+      blur: false,
+    });
+    expect(workspaceBackgroundOf({ workspaceBackground: "light" }, true).color).toBe(
+      LIGHT_WORKSPACE,
+    );
+    expect(workspaceBackgroundOf({ workspaceBackground: "dark" }, false).color).toBe(
+      DARK_WORKSPACE,
+    );
+    const pageOnly = { workspaceBackground: "dark" } as const;
+    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "dark" }, true).color).toBe(
+      DARK_WORKSPACE,
+    );
+    expect(workspaceBackgroundOf({ ...pageOnly, pageAppearance: "light" }, true).color).toBe(
+      DARK_WORKSPACE,
+    );
+  });
+
+  it("picks a custom workspace colour, and falls back for a bad one", () => {
+    expect(
+      workspaceBackgroundOf(
+        { workspaceBackground: "custom", workspaceBackgroundColor: "#ABC" },
+        true,
+      ),
+    ).toEqual({ color: "#aabbcc", blur: false });
+    expect(
+      workspaceBackgroundOf(
+        { workspaceBackground: "custom", workspaceBackgroundColor: "nope" },
+        false,
+      ),
+    ).toEqual({ color: DEFAULT_CUSTOM_WORKSPACE, blur: false });
+    expect(workspaceBackgroundOf({ workspaceBackground: "blur" }, true)).toEqual({
+      color: DARK_WORKSPACE,
+      blur: true,
+    });
+  });
+
+  it("reads the stored PDF theme, with the old switch as its fallback", () => {
+    expect(pdfThemeOf({ pdfTheme: "as-is" })).toBe("as-is");
+    expect(pdfThemeOf({ pdfTheme: "dark" })).toBe("dark");
+    expect(pdfThemeOf({ invertPdfPages: false })).toBe("as-is");
+    expect(pdfThemeOf({ invertPdfPages: true })).toBe("dark");
+    expect(pdfThemeOf({})).toBe("dark");
+  });
+
+  it("migrates the old folded switch to the PDF theme", () => {
+    const old = structuredClone(DEFAULT_SETTINGS);
+    old.invertPdfPages = false;
+    delete (old as Partial<GoodObsidianSettings>).pdfTheme;
+    expect(migrateAppearanceSettings(old, { invertPdfPages: false })).toBeUndefined();
+    expect([old.pdfTheme, old.invertPdfPages]).toEqual(["as-is", false]);
+    expect(old.workspaceBackground).toBe("auto");
+
+    const next = structuredClone(DEFAULT_SETTINGS);
+    next.pdfTheme = "as-is";
+    next.invertPdfPages = true;
+    migrateAppearanceSettings(next, { pdfTheme: "as-is", invertPdfPages: true });
+    expect([next.pdfTheme, next.invertPdfPages]).toEqual(["as-is", false]);
+
+    const custom = structuredClone(DEFAULT_SETTINGS);
+    migrateAppearanceSettings(custom, {
+      workspaceBackground: "custom",
+      workspaceBackgroundColor: "#ABCDEF",
+    });
+    expect([custom.workspaceBackground, custom.workspaceBackgroundColor]).toEqual([
+      "custom",
+      "#abcdef",
+    ]);
   });
 });
 

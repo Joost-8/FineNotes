@@ -49,6 +49,7 @@ import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } f
 import {
   type PageAppearance,
   type PenPreferences,
+  migrateAppearanceSettings,
   shownPaperTheme,
   storePenPreferences,
 } from "./settings-data";
@@ -772,6 +773,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const saved = own ?? (await this.settingsFromPreviousId());
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    migrateAppearanceSettings(this.settings, saved);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -1547,6 +1549,12 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.syncPaperTheme();
     this.pageEmbeds?.repaintAll();
+  }
+
+  /** Save the workspace background, and show it in every open notebook. */
+  async applyWorkspaceBackground(): Promise<void> {
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncWorkspaceBackground();
   }
 
   // --- Full screen (tablets) ---------------------------------------------------

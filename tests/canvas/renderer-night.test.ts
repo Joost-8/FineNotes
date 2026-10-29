@@ -228,6 +228,18 @@ describe("the renderer switching theme", () => {
     expect(fills).toContain(DARK_PAPER.desk);
     expect(fills).toContain(NIGHT_PAPER);
   });
+
+  it("uses the workspace background instead of the page theme's desk", () => {
+    const { renderer, doc } = setUp();
+    renderer.paper = DARK_PAPER;
+    renderer.deskOverride = "#abcdef";
+    renderer.renderBackdrops(doc);
+    const fills = styles(log.lines, "fillStyle");
+    expect(fills).toContain("#abcdef");
+    expect(fills).not.toContain(DARK_PAPER.desk);
+    // The page itself is still the dark theme's paper.
+    expect(fills).toContain(NIGHT_PAPER);
+  });
 });
 
 describe("the eyedropper's sample", () => {

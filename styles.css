@@ -2030,6 +2030,19 @@ body,
   z-index: 0;
 }
 
+/* The Blur workspace background: a GPU-composited tint and blur over the desk
+   canvas only, below the page canvas, so pages and ink stay sharp while the
+   view pans and zooms. */
+.goodobsidian-workspace-blur {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.34);
+  -webkit-backdrop-filter: blur(14px) saturate(0.9);
+  backdrop-filter: blur(14px) saturate(0.9);
+}
+
 .goodobsidian-canvas-dry {
   z-index: 1;
 }

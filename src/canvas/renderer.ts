@@ -495,6 +495,8 @@ export class Renderer {
   paper: PaperTheme = LIGHT_PAPER;
   /** The desk the last backdrop was painted on (`deskFor`): the theme's, unless a page matched it. */
   desk = LIGHT_PAPER.desk;
+  /** A workspace background chosen in settings; null keeps the paper theme's desk. */
+  deskOverride: string | null = null;
 
   /** The desk and the page shadows. */
   private readonly backdrop: Layer;
@@ -835,7 +837,7 @@ export class Renderer {
       const page = doc.pages[box.index];
       if (page) papers.push(paperColorOf(page, this.paper));
     }
-    this.desk = deskFor(this.paper, papers);
+    this.desk = this.deskOverride ?? deskFor(this.paper, papers);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = this.desk;
     ctx.fillRect(0, 0, this.dry.canvas.width, this.dry.canvas.height);

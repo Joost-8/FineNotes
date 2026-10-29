@@ -413,6 +413,7 @@ import {
 import { keyboardHeight } from "./keyboard";
 import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
+import type { WorkspaceLook } from "../model/appearance-theme";
 import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
 import { History, historyNotice } from "../model/history";
 import {
@@ -623,6 +624,8 @@ export interface InkSurfaceOptions {
    * (contracts/design-brief.md).
    */
   paper?: PaperTheme;
+  /** The desk colour and whether the GPU blur layer is on. */
+  workspace?: WorkspaceLook;
   /** Open with the diagnostics HUD showing (see {@link InkSurface.setDebug}). */
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
@@ -1595,6 +1598,9 @@ export class InkSurface {
   private readonly laserCanvas: HTMLCanvasElement;
   /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
   private readonly paneLayers: HTMLCanvasElement[];
+  /** The desk colour and the GPU blur/tint layer between the backdrop and the pages. */
+  private workspace: WorkspaceLook;
+  private readonly workspaceBlurEl: HTMLElement;
   private laserFrame = 0;
 
   // The lasso (0.5). A selection is strokes, images and text boxes on one
@@ -1840,6 +1846,7 @@ export class InkSurface {
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
     this.paper = options.paper ?? LIGHT_PAPER;
+    this.workspace = options.workspace ?? { color: this.paper.desk, blur: false };
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -1851,6 +1858,14 @@ export class InkSurface {
           cls: `goodobsidian-canvas goodobsidian-canvas-${layer}`,
         }),
     );
+    // Above the desk and below the pages: CSS blurs only the desk, so panning
+    // stays GPU-cheap and the paper and ink remain sharp.
+    this.workspaceBlurEl = this.surfaceEl.createDiv({
+      cls: "goodobsidian-workspace-blur is-hidden",
+    });
+    this.workspaceBlurEl.setAttribute("aria-hidden", "true");
+    this.workspaceBlurEl.toggleClass("is-hidden", !this.workspace.blur);
+    this.surfaceEl.style.backgroundColor = this.workspace.color;
     this.scrollEl = this.surfaceEl.createDiv({ cls: "goodobsidian-scroll" });
     this.paperEl = this.scrollEl.createDiv({ cls: "goodobsidian-paper" });
     this.textBoxesEl = this.paperEl.createDiv({ cls: "goodobsidian-textboxes" });
@@ -2080,6 +2095,8 @@ export class InkSurface {
     );
     renderer.highlighterAlpha = options.highlighterAlpha;
     renderer.paper = this.paper;
+    renderer.deskOverride = this.workspace.color;
+    renderer.desk = this.workspace.color;
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -2706,6 +2723,19 @@ export class InkSurface {
     this.renderer.invalidateAll();
     this.syncTextBoxes();
     this.syncInkCursor();
+    this.requestFrame();
+  }
+
+  /** The workspace desk or blur setting changed: redraw the desk only. */
+  setWorkspaceBackground(look: WorkspaceLook): void {
+    if (look.color === this.workspace.color && look.blur === this.workspace.blur) return;
+    this.workspace = { ...look };
+    this.workspaceBlurEl.toggleClass("is-hidden", !look.blur);
+    this.surfaceEl.style.backgroundColor = look.color;
+    if (this.renderer) {
+      this.renderer.deskOverride = look.color;
+      this.renderer.desk = look.color;
+    }
     this.requestFrame();
   }
 
