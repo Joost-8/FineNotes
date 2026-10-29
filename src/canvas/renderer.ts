@@ -812,9 +812,10 @@ export class Renderer {
   }
 
   /** Enter a page's local coordinate space, clipped to the sheet. */
-  private enterPage(ctx: CanvasRenderingContext2D, box: PageBox): void {
+  private enterPage(ctx: CanvasRenderingContext2D, box: PageBox, clip = true): void {
     ctx.save();
     ctx.translate(box.x, box.y);
+    if (!clip) return;
     ctx.beginPath();
     ctx.rect(0, 0, box.width, box.height);
     ctx.clip();
@@ -1555,7 +1556,8 @@ export class Renderer {
    * is what `ScaleElements` commits (ink width scales with the ink). A turn
    * passes `turn`: the outlines turned `angle` radians clockwise about
    * (x, y), which is what `ReorientElements` commits for the ink and the
-   * pictures (text boxes are DOM, and stay upright).
+   * pictures (text boxes are DOM, and stay upright). `clip` false draws it
+   * past its page's edge too: a move can carry it onto another page.
    */
   renderSelectionDraft(
     pageIndex: number,
@@ -1568,13 +1570,14 @@ export class Renderer {
     turn?: { x: number; y: number; angle: number },
     tables: readonly TableElement[] = [],
     graphs: readonly GraphElement[] = [],
+    clip = true,
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterPage(ctx, box, clip);
     // A table stays upright under a turn (its middle goes round, as
     // `ReorientElements` commits), so it is drawn before the turn is applied.
     const night = this.nightAt(pageIndex);

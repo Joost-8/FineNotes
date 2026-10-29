@@ -81,6 +81,8 @@ import {
   boxInLasso,
   clampGroupDelta,
   cornerScale,
+  crossPageDelta,
+  dropPageAt,
   hitSelectionCorner,
   hitSelectionKnob,
   lassoTakesStroke,
@@ -324,6 +326,7 @@ import {
   type ElementLists,
   type IdSource,
   type PageElements,
+  MoveElementsToPage,
   RecolorStrokes,
   RemoveElements,
   RestyleShapes,
@@ -450,6 +453,7 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import { SelectionActionBar, onTap } from "./selection-bar";
+import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
@@ -1123,6 +1127,13 @@ interface GroupDrag {
   turn: GroupTurn | null;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /**
+   * The page a move drops it on: its own until the pen crosses onto
+   * another. (dx, dy) stay in its own page's space, where it is drawn.
+   */
+  target?: PageBox;
+  /** Where the pen is in the pane, px, for scrolling near its edges. */
+  screen?: Pt;
 }
 
 /** A turn of a lasso selection by its knob, about the middle of its bounds. */
@@ -3843,7 +3854,9 @@ export class InkSurface {
     const zooming = this.stepZoomAnim(t);
     // After the zoom, which moves the view about the fingers' point.
     const settling = this.stepRowSettle(t);
-    const moving = scrolling || zooming || settling;
+    // A lasso selection held at the pane's edge carries the view along.
+    const carrying = this.stepGroupDragScroll();
+    const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
@@ -10580,14 +10593,61 @@ export class InkSurface {
       const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
       scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
     } else {
-      const d = clampGroupDelta(drag.bounds, p.x - drag.from.x, p.y - drag.from.y, box);
+      // A move may carry it onto another page: the one under the pen.
+      const own = this.boxForPage(drag.selection.pageId) ?? box;
+      const at = { x: box.x + p.x, y: box.y + p.y };
+      const boxes = this.pageLayout.boxes;
+      const target = this.board ? own : (boxes[dropPageAt(boxes, at)] ?? own);
+      const d = crossPageDelta(
+        drag.bounds,
+        at.x - own.x - drag.from.x,
+        at.y - own.y - drag.from.y,
+        own,
+        target,
+      );
       drag.dx = d.dx;
       drag.dy = d.dy;
+      drag.target = target;
+      drag.screen = {
+        x: at.x * this.unitScale + this.offsetX,
+        y: (at.y - this.viewport.scrollY) * this.unitScale,
+      };
+      if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
     this.renderGroupDraft();
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
+  }
+
+  /** How fast a selection held at pane point `at` scrolls the view, px a frame, per axis. */
+  private edgeSpeed(at: Pt): [number, number] {
+    return [edgeScrollSpeed(at.x, 0, this.cssW), edgeScrollSpeed(at.y, 0, this.cssH)];
+  }
+
+  /**
+   * A selection carried near the pane's edge scrolls the notebook under
+   * it, as the page sidebar does a dragged thumbnail, so it can reach a
+   * page that is off screen. One frame's worth; true while it moved.
+   */
+  private stepGroupDragScroll(): boolean {
+    const drag = this.groupDrag;
+    const at = drag?.screen;
+    if (!drag?.lifted || !at || drag.scale || drag.turn) return false;
+    const [vx, vy] = this.edgeSpeed(at);
+    if (vx === 0 && vy === 0) return false;
+    const before = this.scroller.position;
+    this.scroller.scrollBy(vx, vy);
+    const after = this.scroller.position;
+    if (after.x === before.x && after.y === before.y) return false;
+    this.syncViewport();
+    // The pen has not moved, but the page under it has.
+    const box = this.boxForPage(drag.selection.pageId);
+    if (!box) return true;
+    const scale = this.unitScale;
+    const layout = { x: (at.x - this.offsetX) / scale, y: at.y / scale + this.viewport.scrollY };
+    this.moveGroupDrag(drag, box, this.toPage(box, layout));
+    return true;
   }
 
   /**
@@ -10636,6 +10696,8 @@ export class InkSurface {
         : undefined,
       drag.selection.tables ?? [],
       drag.selection.graphs ?? [],
+      // A move is carried over the desk and onto other pages, not cut at its own page's edge.
+      scale !== null || drag.turn !== null,
     );
   }
 
@@ -10703,14 +10765,39 @@ export class InkSurface {
       }
     }
     const turn = drag.turn;
+    // Dropped on another page (that is still there): it moves to that page.
+    const onto =
+      !turn &&
+      !scale &&
+      drag.target &&
+      drag.target.id !== pageId &&
+      this.doc.pages.some((page) => page.id === drag.target?.id)
+        ? drag.target
+        : null;
     const changed = turn
       ? turn.angle !== 0
       : scale
         ? scale.k !== 1
-        : drag.dx !== 0 || drag.dy !== 0;
+        : onto !== null || drag.dx !== 0 || drag.dy !== 0;
     const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
     let after: Bounds | null = null;
-    if (moved && turn) {
+    if (moved && onto && box) {
+      // (dx, dy) are in the selection's own page's space: shift them into the target's.
+      this.history.push(
+        this.doc,
+        new MoveElementsToPage(
+          pageId,
+          onto.id,
+          drag.selection,
+          drag.dx + box.x - onto.x,
+          drag.dy + box.y - onto.y,
+        ),
+      );
+      this.strokeIndex.refreshPages(this.doc.pages, [pageId, onto.id]);
+      this.selection = { ...drag.selection, pageId: onto.id };
+      const landed = this.groupBounds(this.selection);
+      if (landed) this.renderer?.invalidateRegion(onto.index, landed);
+    } else if (moved && turn) {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
     } else if (moved) {
@@ -10735,7 +10822,7 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.syncSelectionOverlay();
-    if (moved) this.changed([pageId]);
+    if (moved) this.changed(onto ? [pageId, onto.id] : [pageId]);
   }
 
   /**

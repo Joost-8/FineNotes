@@ -437,6 +437,64 @@ export function clampGroupDelta(
   return { dx: x - cx, dy: y - cy };
 }
 
+/** A page's box in layout space (1:1 with page px), as `PageBox` has it. */
+export interface DropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The page a dragged selection is dropped on: the one under the pen at
+ * layout point `at`, or, between pages or past the last, the nearest one.
+ * Ties go to the earlier page. `-1` for no pages.
+ */
+export function dropPageAt(boxes: readonly DropBox[], at: { x: number; y: number }): number {
+  let best = -1;
+  let bestDistance = Infinity;
+  boxes.forEach((box, index) => {
+    const ox = Math.max(box.x - at.x, 0, at.x - (box.x + box.width));
+    const oy = Math.max(box.y - at.y, 0, at.y - (box.y + box.height));
+    const distance = Math.hypot(ox, oy);
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+/**
+ * A move of a selection by (dx, dy) in the space of its own page `from`,
+ * clamped so it lands on page `to`: on its own page as
+ * {@link clampGroupDelta} has it; on another wholly inside that page, or,
+ * when it is bigger than the page, covering it from its top-left corner.
+ * Half of it hanging past the target's edge would hide in the next page's
+ * gap. The answer is still in `from`'s space, where the drag draws it; the
+ * drop shifts it by `from - to` into the target's.
+ */
+export function crossPageDelta(
+  bounds: Bounds,
+  dx: number,
+  dy: number,
+  from: DropBox,
+  to: DropBox,
+): { dx: number; dy: number } {
+  if (from === to) return clampGroupDelta(bounds, dx, dy, from);
+  // The corner in the target's space, kept on it, and back.
+  const left = bounds.minX + dx + from.x - to.x;
+  const top = bounds.minY + dy + from.y - to.y;
+  const x = within(left, bounds.maxX - bounds.minX, to.width);
+  const y = within(top, bounds.maxY - bounds.minY, to.height);
+  return { dx: dx + x - left, dy: dy + y - top };
+}
+
+/** A span of `size` starting at `start`, kept inside [0, room]: the start when it is too big. */
+function within(start: number, size: number, room: number): number {
+  return size <= room ? clamp(start, 0, room - size) : 0;
+}
+
 // --- Resizing a selection by its corners -----------------------------------
 //
 // The selection frame has a square handle at each corner, as a picture

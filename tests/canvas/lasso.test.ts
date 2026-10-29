@@ -15,6 +15,8 @@ import {
   boxInLasso,
   clampGroupDelta,
   cornerScale,
+  crossPageDelta,
+  dropPageAt,
   hitSelectionCorner,
   minScaleForSide,
   scaleBounds,
@@ -324,6 +326,43 @@ describe("selection geometry", () => {
     expect(clampGroupDelta(b, 10, -20, PAGE)).toEqual({ dx: 10, dy: -20 });
     expect(clampGroupDelta(b, -500, 0, PAGE)).toEqual({ dx: -150, dy: 0 });
     expect(clampGroupDelta(b, 0, 2000, PAGE)).toEqual({ dx: 0, dy: 850 });
+  });
+
+  it("drops on the page under the pen, or the nearest one between pages", () => {
+    const boxes = [
+      { x: 20, y: 20, width: 800, height: 1000 },
+      { x: 20, y: 1060, width: 800, height: 1000 },
+      { x: 20, y: 2100, width: 400, height: 600 },
+    ];
+    expect(dropPageAt(boxes, { x: 400, y: 500 })).toBe(0);
+    expect(dropPageAt(boxes, { x: 400, y: 1500 })).toBe(1);
+    // In the gap, nearer the second page.
+    expect(dropPageAt(boxes, { x: 400, y: 1045 })).toBe(1);
+    // Exactly between: the earlier page.
+    expect(dropPageAt(boxes, { x: 400, y: 1040 })).toBe(0);
+    // Off to the side of a narrow last page, and past the end.
+    expect(dropPageAt(boxes, { x: 700, y: 2400 })).toBe(2);
+    expect(dropPageAt(boxes, { x: 400, y: 9000 })).toBe(2);
+    expect(dropPageAt([], { x: 0, y: 0 })).toBe(-1);
+  });
+
+  it("lands a move onto another page wholly on it, answered in its own page's space", () => {
+    const from = { x: 20, y: 20, width: 800, height: 1000 };
+    const to = { x: 20, y: 1060, width: 800, height: 1000 };
+    const b = { minX: 100, minY: 900, maxX: 200, maxY: 1000 };
+    // Moved down 300: top 1200 in p1's space, 160 in p2's, all on p2.
+    expect(crossPageDelta(b, 0, 300, from, to)).toEqual({ dx: 0, dy: 300 });
+    // Not hanging over the target's top edge: its top lands on it.
+    expect(crossPageDelta(b, 0, 50, from, to)).toEqual({ dx: 0, dy: 1040 - 900 });
+    // Nor its side, nor its foot.
+    expect(crossPageDelta(b, -500, 300, from, to)).toEqual({ dx: -100, dy: 300 });
+    // Its top at 900 of p2's 1000, its foot on p2's foot: 1940 in p1's space.
+    expect(crossPageDelta(b, 0, 2000, from, to)).toEqual({ dx: 0, dy: 1940 - 900 });
+    // Bigger than the page: from the page's corner.
+    const tall = { minX: 100, minY: 0, maxX: 200, maxY: 1500 };
+    expect(crossPageDelta(tall, 0, 1200, from, to)).toEqual({ dx: 0, dy: 1040 });
+    // On its own page it is the plain clamp.
+    expect(crossPageDelta(b, 0, 300, from, from)).toEqual(clampGroupDelta(b, 0, 300, from));
   });
 
   it("lets a selection already off the page stay, but not go further out", () => {
