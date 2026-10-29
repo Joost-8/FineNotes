@@ -18,7 +18,10 @@ import {
   crossPageDelta,
   dropPageAt,
   hitSelectionCorner,
+  isLoneShape,
+  joinedDelta,
   minScaleForSide,
+  paperBox,
   scaleBounds,
   lassoFilterOf,
   lassoModeOf,
@@ -30,6 +33,7 @@ import {
   strokeInLasso,
   strokeKind,
   strokeShareInside,
+  strokeTouchesLasso,
   textBoxFrame,
   smoothLoop,
 } from "../../src/canvas/lasso";
@@ -256,6 +260,142 @@ describe("strokes", () => {
   });
 });
 
+describe("the any-part rule", () => {
+  it("takes a stroke with any part inside, where the half rule does not", () => {
+    // A tenth of the line inside: the half rule leaves it, any part takes it.
+    const s = stroke(line(0, 100));
+    expect(strokeInLasso(s, square(-10, 0, 10, 100))).toBe(false);
+    expect(strokeInLasso(s, square(-10, 0, 10, 100), true)).toBe(true);
+    expect(strokeTouchesLasso(s.pts, square(200, 0, 300, 100))).toBe(false);
+    // The default stays the half rule.
+    expect(strokeInLasso(s, square(-10, 0, 50, 100), false)).toBe(true);
+  });
+
+  it("takes a stroke that crosses the loop's edge", () => {
+    // Its first point inside, the rest out past the loop's right edge.
+    const crossing = stroke(line(40, 300, 50, 27));
+    expect(strokeTouchesLasso(crossing.pts, square(0, 0, 50, 100))).toBe(true);
+    expect(strokeInLasso(crossing, square(0, 0, 50, 100))).toBe(false);
+  });
+
+  it("takes a straight shape the loop cuts through without holding either end", () => {
+    // A two-point line through a narrow loop: no point of it is inside, but
+    // the piece between the crossings is, so it counts.
+    const twoPoint = [0, 50, 0.5, 100, 50, 0.5];
+    const narrow = square(40, 0, 60, 100);
+    expect(pointInPolygon(0, 50, narrow) || pointInPolygon(100, 50, narrow)).toBe(false);
+    expect(strokeTouchesLasso(twoPoint, narrow)).toBe(true);
+    // A rectangle outline the loop crosses one side of.
+    const rect = [0, 0, 0.5, 100, 0, 0.5, 100, 100, 0.5, 0, 100, 0.5, 0, 0, 0.5];
+    expect(strokeTouchesLasso(rect, square(40, -20, 60, 20))).toBe(true);
+    // A loop drawn inside an unfilled rectangle, touching none of its sides.
+    expect(strokeTouchesLasso(rect, square(20, 20, 80, 80))).toBe(false);
+  });
+
+  it("takes a stroke that only touches the loop at one point", () => {
+    // An end resting on the loop's left edge.
+    expect(strokeTouchesLasso([0, 50, 0.5, 50, 50, 0.5], square(50, 0, 100, 100))).toBe(true);
+    // A level line grazing the tip of a triangle pointing up at it.
+    const tip = poly([0, 0, 20, 40, -20, 40]);
+    expect(strokeTouchesLasso([-50, 0, 0.5, 50, 0, 0.5], tip)).toBe(true);
+    // Half a px above the tip it misses.
+    expect(strokeTouchesLasso([-50, -0.5, 0.5, 50, -0.5, 0.5], tip)).toBe(false);
+    // A dot on the line counts; a dot beside it does not.
+    expect(strokeTouchesLasso([50, 30, 0.5], square(50, 0, 100, 100))).toBe(true);
+    expect(strokeTouchesLasso([49, 30, 0.5], square(50, 0, 100, 100))).toBe(false);
+  });
+
+  it("leaves a stroke in a concave loop's bay, inside its bounds but outside the loop", () => {
+    // A C-shaped loop open to the right; the stroke sits in its mouth.
+    const c = poly([0, 0, 100, 0, 100, 20, 20, 20, 20, 80, 100, 80, 100, 100, 0, 100]);
+    expect(strokeTouchesLasso(line(40, 90, 50), c)).toBe(false);
+    expect(strokeTouchesLasso(line(10, 90, 50), c)).toBe(true);
+  });
+
+  it("reads whole points only, and nothing from an empty stroke", () => {
+    expect(strokeTouchesLasso([], square(0, 0, 10, 10))).toBe(false);
+    // The trailing 5 is half a point: (5, ?) must not become a coordinate.
+    expect(strokeTouchesLasso([200, 200, 0.5, 5], square(0, 0, 10, 10))).toBe(false);
+  });
+
+  it("agrees with testing every point and every edge, on long random loops", () => {
+    // The banded edges are a shortcut: on wobbly loops and scribbles it must
+    // answer exactly as the brute force does.
+    let seed = 7;
+    const random = (): number => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const meets = (a: number[], b: number[], c: number[], d: number[]): boolean => {
+      const cr = (p: number[], q: number[], r: number[]): number =>
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+      const box =
+        Math.max(a[0], b[0]) >= Math.min(c[0], d[0]) &&
+        Math.max(c[0], d[0]) >= Math.min(a[0], b[0]) &&
+        Math.max(a[1], b[1]) >= Math.min(c[1], d[1]) &&
+        Math.max(c[1], d[1]) >= Math.min(a[1], b[1]);
+      return box && cr(c, d, a) * cr(c, d, b) <= 0 && cr(a, b, c) * cr(a, b, d) <= 0;
+    };
+    for (let trial = 0; trial < 40; trial++) {
+      const loop: number[] = [];
+      const n = 30 + Math.floor(random() * 300);
+      for (let i = 0; i < n; i++) {
+        const angle = (i / n) * Math.PI * 2;
+        const r = 150 + random() * 120;
+        loop.push(400 + r * Math.cos(angle), 400 + r * Math.sin(angle));
+      }
+      const lasso = poly(loop);
+      const pts: number[] = [];
+      let x = random() * 800;
+      let y = random() * 800;
+      for (let i = 0; i < 20; i++) {
+        pts.push(x, y, 0.5);
+        x += (random() - 0.5) * 120;
+        y += (random() - 0.5) * 120;
+      }
+      let brute = false;
+      for (let i = 0; i < pts.length && !brute; i += 3) {
+        if (pointInPolygon(pts[i], pts[i + 1], lasso)) brute = true;
+      }
+      for (let i = 3; i < pts.length && !brute; i += 3) {
+        for (let j = 0; j < loop.length && !brute; j += 2) {
+          const k = (j + 2) % loop.length;
+          const a = [pts[i - 3], pts[i - 2]];
+          const b = [pts[i], pts[i + 1]];
+          if (meets(a, b, [loop[j], loop[j + 1]], [loop[k], loop[k + 1]])) brute = true;
+        }
+      }
+      expect(strokeTouchesLasso(pts, lasso)).toBe(brute);
+    }
+  });
+});
+
+describe("isLoneShape", () => {
+  const stroke = (shape?: Stroke["shape"]): Stroke => ({
+    id: "s",
+    color: "#000",
+    size: 2,
+    tool: "pen",
+    pts: [0, 0, 0.5, 10, 10, 0.5],
+    ...(shape ? { shape } : {}),
+  });
+  const none = { images: [], textBoxes: [] };
+
+  it("is one shape and nothing else: it shows its corner handles at once", () => {
+    expect(isLoneShape({ strokes: [stroke("rect")], ...none })).toBe(true);
+    expect(isLoneShape({ strokes: [stroke("line")], ...none, tables: [], graphs: [] })).toBe(true);
+  });
+
+  it("is not handwriting, two shapes, or a shape with anything beside it", () => {
+    expect(isLoneShape({ strokes: [stroke()], ...none })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect"), stroke("line")], ...none })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], images: [{}], textBoxes: [] })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], images: [], textBoxes: [{}] })).toBe(false);
+    expect(isLoneShape({ strokes: [stroke("rect")], ...none, tables: [{}] })).toBe(false);
+    expect(isLoneShape({ strokes: [], ...none })).toBe(false);
+  });
+});
+
 describe("boxInLasso", () => {
   it("selects a box whose centre is inside, even if most of it is not", () => {
     // A small lasso round the centre of a big picture.
@@ -363,6 +503,29 @@ describe("selection geometry", () => {
     expect(crossPageDelta(tall, 0, 1200, from, to)).toEqual({ dx: 0, dy: 1040 });
     // On its own page it is the plain clamp.
     expect(crossPageDelta(b, 0, 300, from, from)).toEqual(clampGroupDelta(b, 0, 300, from));
+  });
+
+  it("with the pages joined, lets a move lie over the join, its centre on the paper", () => {
+    // Two joined pages, no gap, and their paper.
+    const boxes = [
+      { x: 20, y: 20, width: 800, height: 1000 },
+      { x: 20, y: 1020, width: 800, height: 1000 },
+    ];
+    const paper = paperBox(boxes);
+    expect(paper).toEqual({ x: 20, y: 20, width: 800, height: 2000 });
+    const b = { minX: 100, minY: 900, maxX: 200, maxY: 1000 };
+    // Half over the join: no clamp to either page.
+    expect(joinedDelta(b, 0, 50, boxes[0], paper)).toEqual({ dx: 0, dy: 50 });
+    // Down into the second page, in the first page's space.
+    expect(joinedDelta(b, 30, 700, boxes[0], paper)).toEqual({ dx: 30, dy: 700 });
+    // Its centre stops at the paper's foot (2000 in p1's space), and its side.
+    expect(joinedDelta(b, 0, 5000, boxes[0], paper)).toEqual({ dx: 0, dy: 2000 - 950 });
+    expect(joinedDelta(b, -500, 0, boxes[0], paper)).toEqual({ dx: -150, dy: 0 });
+    // From the second page up onto the first: its centre stops at the paper's top.
+    const low = { minX: 100, minY: 100, maxX: 200, maxY: 200 };
+    expect(joinedDelta(low, 0, -5000, boxes[1], paper)).toEqual({ dx: 0, dy: -1150 });
+    // No pages, no paper.
+    expect(paperBox([])).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
 
   it("lets a selection already off the page stay, but not go further out", () => {

@@ -125,6 +125,8 @@ export interface Swoosh {
   strokeWidth?: number;
   cap?: "round" | "butt";
   opacity?: number;
+  /** A scaled mark (`fitMarks`): the stroke's outline, hollow and dashed. */
+  dashed?: boolean;
 }
 
 /** Points along the stroke for a tapered outline. */
@@ -141,6 +143,23 @@ const MIN_THICKNESS = 0.25;
 export function glyphThickness(screenPx: number): number {
   if (!Number.isFinite(screenPx)) return 1.5;
   return Math.max(MIN_THICKNESS, Math.min(SWOOSH_HEIGHT, screenPx));
+}
+
+/**
+ * The marks of one control (the pill's widths, the popover's eraser sizes),
+ * `sizes` screen px each as the ink or the eraser is on the page now: true
+ * size while the largest fits `limit`, the box it is drawn in. Past it they
+ * shrink together, so the sizes keep their ratios and stay apart, and
+ * `scaled` says so: drawn dashed, the marks do not claim to be true size.
+ */
+export function fitMarks(
+  sizes: readonly number[],
+  limit: number,
+): { sizes: number[]; scaled: boolean } {
+  const largest = Math.max(0, ...sizes.filter((size) => Number.isFinite(size) && size > 0));
+  if (!(limit > 0) || largest <= limit) return { sizes: [...sizes], scaled: false };
+  const factor = limit / largest;
+  return { sizes: sizes.map((size) => size * factor), scaled: true };
 }
 
 /** A cubic Bézier: start, two control points, end. */
@@ -227,8 +246,21 @@ function penStroke(pen: string, curve: Curve, thick: number, highlighterOpacity:
 /** The highlighter's width mark: a level band across the glyph, as a highlight lies. */
 const HIGHLIGHT_BAND = `M3 ${SWOOSH_HEIGHT / 2}H${SWOOSH_WIDTH - 3}`;
 
-/** The width button for a stroke `thickness` screen px wide, with pen `pen`. */
-export function swoosh(pen: string, thickness: number): Swoosh {
+/**
+ * The width button for a stroke `thickness` screen px wide, with pen `pen`;
+ * `scaled` (`fitMarks`) draws its outline, hollow, for the dashes to follow.
+ */
+export function swoosh(pen: string, thickness: number, scaled = false): Swoosh {
+  if (scaled) {
+    const thick = glyphThickness(thickness);
+    if (pen === "highlighter") {
+      const top = n((SWOOSH_HEIGHT - thick) / 2);
+      const bottom = n((SWOOSH_HEIGHT + thick) / 2);
+      return { d: `M3 ${top}H${SWOOSH_WIDTH - 3}V${bottom}H3Z`, dashed: true };
+    }
+    const shape = profile(pen) ?? (() => 1);
+    return { d: outline(SWOOSH_CURVE, (t) => (thick / 2) * shape(t)), dashed: true };
+  }
   // A highlight is wide: a level band shows its height whole up to the
   // glyph's, where a slanted one would be cut at its corners.
   if (pen === "highlighter") {

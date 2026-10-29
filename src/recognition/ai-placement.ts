@@ -30,6 +30,30 @@ export function textBoxFrame(page: PageGeometry, view: PageRect | null): PageRec
   return { x, y, w, h: 0 };
 }
 
+/** Room kept between what is drawn and a text box placed under it, page px. */
+export const BELOW_GAP = 24;
+/** Least room a text box placed under the drawing needs above the page's foot, page px. */
+const BELOW_ROOM = 60;
+
+/**
+ * A text box placed under what is drawn (a pasted transcript): the column
+ * of {@link textBoxFrame}, moved down to {@link BELOW_GAP} under `drawnBottom`
+ * (the lowest point of the page's content) while that is lower than the
+ * view's own spot and leaves room on the page. Above the view, or with no
+ * room left, it is the view's spot after all.
+ */
+export function textBoxBelow(
+  page: PageGeometry,
+  view: PageRect | null,
+  drawnBottom: number | null,
+): PageRect {
+  const frame = textBoxFrame(page, view);
+  if (drawnBottom === null) return frame;
+  const y = drawnBottom + BELOW_GAP;
+  if (y <= frame.y || y > page.height - BELOW_ROOM) return frame;
+  return { ...frame, y };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return max < min ? min : Math.min(max, Math.max(min, value));
 }

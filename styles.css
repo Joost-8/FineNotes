@@ -248,6 +248,36 @@ body,
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* What the bottom chrome keeps clear of: the iPad's home indicator. */
+  --gob-view-foot: var(--safe-area-inset-bottom, 0px);
+}
+
+/* On the desktop, Obsidian's status bar floats over the bottom right of
+   the window, and Obsidian's own foot padding is what kept the zoom
+   readout clear of it. */
+body:not(.is-mobile) .goodobsidian-view {
+  --gob-view-foot: var(--size-4-8, 32px);
+}
+
+/* On a phone Obsidian's own bar sits at the foot: keep its padding there. */
+.is-phone .goodobsidian-view {
+  --gob-view-foot: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8, 32px));
+}
+
+/* The page uses the whole view (discussion #51): Obsidian pads every view
+   12 px, and 32 px at the foot, which framed the desk in the theme's
+   background. Only the foot above stays padded (the home indicator's safe
+   area, or the desktop's status bar), so the pill (toolbar.ts, pillArea)
+   still rests above it, and the page body reaches under it. Two classes beside Obsidian's to outrank its rule,
+   whose `overflow: auto` also beat the view's `hidden`: a pill tucked away
+   below the bottom edge gave the view a scroll bar. */
+.workspace-leaf-content > .view-content.goodobsidian-view {
+  padding: 0 0 var(--gob-view-foot);
+  overflow: hidden;
+}
+
+.goodobsidian-view > .goodobsidian-body {
+  margin-bottom: calc(-1 * var(--gob-view-foot));
 }
 
 /* --------------------------------------------------- toolbar, tier 1 */
@@ -655,6 +685,27 @@ body,
   color: var(--text-normal);
 }
 
+/* In the row, each pen is its own button, a little larger than the pill's
+   other controls so the pens read (Joost's call): a 42 px square with a
+   hairline border, the pen in hand ringed in the accent. */
+.goodobsidian-pen-types button.goodobsidian-pentype {
+  width: var(--gob-pen-type, 42px);
+  min-width: var(--gob-pen-type, 42px);
+  height: var(--gob-pen-type, 42px);
+  padding: 0;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+}
+
+.goodobsidian-pen-types button.goodobsidian-pentype.is-active {
+  border-color: var(--interactive-accent);
+}
+
+.goodobsidian-pen-types button.goodobsidian-pentype svg {
+  width: 30px;
+  height: 30px;
+}
+
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
    four in view at a time, the rest a swipe away (Joost's call); on a narrow
    pane the row gives way, down to two. An end that hides more fades as the
@@ -664,9 +715,9 @@ body,
   display: flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 2px;
-  min-width: calc(34px * 2 + 2px);
-  max-width: calc(34px * 4 + 2px * 3);
+  gap: 4px;
+  min-width: calc(var(--gob-pen-type, 42px) * 2 + 4px);
+  max-width: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -703,7 +754,7 @@ body,
   flex-direction: column;
   min-width: 0;
   max-width: none;
-  max-height: calc(var(--gob-touch-compact) * 4 + 2px * 3);
+  max-height: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -960,6 +1011,23 @@ body,
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   font-weight: var(--font-semibold, 600);
+}
+
+/* A choice in a popover: its name, and the choice in use in a dropdown. */
+.goodobsidian-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.goodobsidian-choice-row .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+/* 16 px so the iPad does not zoom in when the picker opens. */
+select.goodobsidian-choice-select {
+  flex: 0 0 auto;
+  font-size: 16px;
 }
 
 .goodobsidian-popover button {
@@ -2657,7 +2725,8 @@ body.is-mobile .goodobsidian-scrollthumb {
   margin-top: var(--size-4-2);
 }
 
-button.goodobsidian-sheet-chip.clickable-icon {
+button.goodobsidian-sheet-chip.clickable-icon,
+.goodobsidian-sheet-chip.goodobsidian-words-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--size-2-3);
@@ -2678,6 +2747,11 @@ button.goodobsidian-sheet-chip.clickable-icon {
 
 .goodobsidian-sheet-chip.is-used .goodobsidian-sheet-mark {
   color: var(--color-green);
+}
+
+/* Enough corrected words for the next learning round. */
+.goodobsidian-words-chip.is-due .goodobsidian-sheet-mark {
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-sheet-state {
@@ -4169,17 +4243,43 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 8px;
 }
 
-/* The ∞: the ✕'s round shape, lit with the accent while it is on. */
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon {
-  width: 36px;
+/* "Joined pages" and "New board": a symbol and its name in a pill as tall
+   as the ✕, lit with the accent while on. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
   height: 36px;
-  padding: 0;
-  border-radius: 50%;
+  padding: 0 12px 0 10px;
+  border-radius: 18px;
   color: var(--text-muted);
-  --icon-size: 20px;
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  --icon-size: 18px;
 }
 
-.goodobsidian-newnb-header button.goodobsidian-newnb-board.clickable-icon.is-active {
+.goodobsidian-newnb-choice-icon {
+  display: inline-flex;
+}
+
+/* On a phone the header has no room for two names: the symbols stay, named in their tooltips. */
+.is-phone .goodobsidian-newnb-choice > span:not(.goodobsidian-newnb-choice-icon) {
+  display: none;
+}
+
+.is-phone .goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* Its own display outranks the shared .is-hidden (ledger): hidden for a board. */
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-hidden {
+  display: none;
+}
+
+.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-active {
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }
@@ -6909,6 +7009,12 @@ textarea.goodobsidian-chat-input:focus-visible {
   -webkit-user-select: none;
 }
 
+/* The corner handles show only when asked for (discussion #51): a lone
+   shape shows them at once; anything else after the bar's corners button. */
+.goodobsidian-selection-frame.no-corners .goodobsidian-image-handle.is-corner {
+  display: none;
+}
+
 /* A freehand lasso's selection is drawn by its own rounded loop, as in
    GoodNotes; the (now invisible) frame still takes the drags. The loop may
    reach past the frame, so the SVG does not clip. */
@@ -6937,6 +7043,111 @@ textarea.goodobsidian-chat-input:focus-visible {
   stroke-width: 1.5px;
   stroke-dasharray: 6 4;
   stroke-linejoin: round;
+}
+
+/* A lone shape's corners and ends (discussion #51), as Goodnotes draws
+   them (Joost's recording, 2026-10-28): a white ring with an accent edge
+   on each corner, a solid accent dot while it is dragged. The frame
+   decides which handle a press takes, so the dots take no presses. */
+.goodobsidian-shape-points {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-shape-points.is-hidden {
+  display: none;
+}
+
+.goodobsidian-shape-point {
+  position: absolute;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 50%;
+  background: var(--gob-mark);
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-shape-point.is-dragging {
+  width: 10px;
+  height: 10px;
+  border-color: var(--gob-mark);
+  background: var(--interactive-accent);
+}
+
+/* While a point is dragged, the frame and its handles step aside (the frame
+   keeps the pointer capture, so it stays in the layout). */
+.goodobsidian-selection-frame.is-pointing {
+  border-color: transparent;
+}
+
+.goodobsidian-selection-frame.is-pointing > * {
+  visibility: hidden;
+}
+
+/* Where a shape being drawn snapped to another shape's corner, end or
+   midpoint (discussion #51): a small ring on the point, as long as it holds.
+   Screen-sized at any zoom, and never in the way of the pen. */
+.goodobsidian-snap-marker {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.goodobsidian-snap-marker.is-hidden {
+  display: none;
+}
+
+/* A lone shape's side dots (discussion #51): drag one out, or tap it, for
+   a copy joined to the shape by an arrow, as in Goodnotes. Small accent
+   dots just outside the frame, each in a 32 px target that hands its press
+   to the frame; the frame decides which handle a press takes. */
+.goodobsidian-link-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-link-dots.is-hidden {
+  display: none;
+}
+
+.goodobsidian-link-dot {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: copy;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-link-dot::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow:
+    0 0 0 1.5px var(--gob-mark),
+    var(--gob-shadow-mark);
+  transform: translate(-50%, -50%);
 }
 
 /* The action bar and its "…" menu, after GoodNotes: dark in every theme.
@@ -6996,8 +7207,21 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--color-base-100);
 }
 
+/* A switch in the bar (the resize handles, a shape's corner points) while
+   on: lit in the accent, hovered or not. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on,
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.is-on:hover:not(:disabled) {
+  color: var(--interactive-accent);
+}
+
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.mod-warning {
   color: var(--color-red);
+}
+
+/* The one a bar of choices is now (a linked shape's type): in the accent. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on {
+  color: var(--interactive-accent);
 }
 
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon:disabled {
@@ -8563,7 +8787,8 @@ input[type="range"].goodobsidian-player-scrubber {
 }
 
 .goodobsidian-more .goodobsidian-more-row.clickable-icon,
-.goodobsidian-more .goodobsidian-more-row.is-goto {
+.goodobsidian-more .goodobsidian-more-row.is-goto,
+.goodobsidian-more .goodobsidian-more-row.is-bar-dock {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -8609,6 +8834,36 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-more .goodobsidian-more-row.clickable-icon:hover {
   background: var(--background-modifier-hover);
   background-color: var(--gob-well);
+}
+
+/* Toolbar: the bar's four places as panel icons at the row's end, the one
+   in use in an accent square (more-panel.ts, barDockRow). */
+.goodobsidian-more .goodobsidian-more-row.is-bar-dock {
+  cursor: default;
+}
+
+.goodobsidian-more-docks {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.goodobsidian-more .goodobsidian-more-docks button.goodobsidian-more-dock {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--gob-tool-radius);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-more .goodobsidian-more-docks button.goodobsidian-more-dock.is-active {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+}
+
+.goodobsidian-more .goodobsidian-more-docks .svg-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .goodobsidian-more .goodobsidian-more-row.clickable-icon:disabled {
@@ -9014,6 +9269,21 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   -webkit-user-select: text;
 }
 
+/* The lasso's Screenshot: the picture it makes, then Copy and Share. */
+.goodobsidian-screenshot-preview {
+  display: flex;
+  justify-content: center;
+  padding: var(--size-4-2) 0;
+}
+
+.goodobsidian-screenshot-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: min(50vh, 420px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
 /* ------------------------------------------------ search this notebook */
 
 .goodobsidian-search-hit {
@@ -9391,9 +9661,9 @@ button.goodobsidian-color-delete.clickable-icon {
   stroke-width: 2.25px;
 }
 
-/* The pen's colour row, as GoodNotes': it takes the room the pill has, up to
-   ten colours and the "+" (a pill much wider would cross the whole page),
-   the rest a swipe away. On a narrow pane it gives way first, down to two
+/* The pen's colour row, as GoodNotes': six whole colours in view (Joost's
+   call) and half of the next, fading, to say there is more; the rest and
+   the "+" a swipe away. With five colours or fewer the "+" shows after them. On a narrow pane it gives way first, down to two
    swatches. An end that hides more fades over 14 px (COLOR_ROW_FADE_PX in
    toolbar.ts), so a colour cut there reads as "more". */
 .goodobsidian-pen-colors {
@@ -9401,7 +9671,7 @@ button.goodobsidian-color-delete.clickable-icon {
   flex: 0 1 auto;
   align-items: center;
   min-width: calc(var(--gob-touch-compact) * 2);
-  max-width: calc(var(--gob-touch-compact) * 11);
+  max-width: calc(var(--gob-touch-compact) * 6.5);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -13002,12 +13272,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    several components (CLAUDE.md ledger). Under the tool bar it reaches
    nothing, and all of these sit where they always have. */
 .goodobsidian-pageindicator {
-  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(12px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 .goodobsidian-zoomreadout {
   right: calc(12px + var(--gob-pill-clear-right, 0px));
-  bottom: calc(12px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(12px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 .goodobsidian-rec-pill {
@@ -13015,7 +13285,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 }
 
 .goodobsidian-player {
-  bottom: calc(44px + var(--gob-pill-clear-bottom, 0px));
+  bottom: calc(44px + var(--gob-view-foot, 0px) + var(--gob-pill-clear-bottom, 0px));
 }
 
 /* --- The customizable tool bar ------------------------------------------------
@@ -13202,4 +13472,208 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
+}
+
+/* ------------------------------------------- the tool bar at another edge */
+
+/* The "Toolbar" setting puts the tool bar along the top, the bottom, or
+   upright at either side (toolbar.ts, setBarDock; bar-dock-model.ts). The page gives
+   way on that side: the bar stays in the view's flow, so the surface shrinks
+   and lays out again around the page point it showed. Last in the file: these
+   restyle the view, the bar and its buttons, whose own rules come earlier. */
+
+/* The view never scrolls. Obsidian's `.workspace-leaf-content .view-content
+   { overflow: auto }` outranks `.goodobsidian-view` above, so a pill tucked
+   away past the view's edge made the whole view scroll: a 12 px scrollbar
+   narrowed the page and changed its fit (CLAUDE.md ledger, 2026-10-27). */
+.workspace-leaf-content .view-content.goodobsidian-view {
+  overflow: hidden;
+}
+
+/* Away from the top, the bar gives back the room above it too: Obsidian's
+   file margin over the view (`.workspace-leaf-content .view-content`, 12 px)
+   framed the bar there, and without it is an empty strip over the page. The
+   page runs up to the view header. Its foot padding stays (Obsidian's own
+   bar sits there on a phone). */
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-bottom,
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-left,
+.workspace-leaf-content .view-content.goodobsidian-view.goodobsidian-bar-at-right,
+.view-content.goodobsidian-view.goodobsidian-bar-at-bottom,
+.view-content.goodobsidian-view.goodobsidian-bar-at-left,
+.view-content.goodobsidian-view.goodobsidian-bar-at-right {
+  padding-top: 0;
+}
+
+/* Along the bottom: after the page and the text layer, its hairline above. */
+.goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-toolbar {
+  order: 1;
+  border-bottom: none;
+  border-top: var(--gob-bar-border);
+}
+
+/* At a side: the view becomes two columns, the bar spanning every row of
+   the other (the page, then the text layer under it). */
+.goodobsidian-view.goodobsidian-bar-at-left,
+.goodobsidian-view.goodobsidian-bar-at-right {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* Only the children in the flow: an absolutely placed one (the pill, a
+   popover) given a column would be placed inside it, not in the view. */
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-textpanel {
+  grid-column: 2;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-textpanel {
+  grid-column: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-toolbar,
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-toolbar {
+  grid-row: 1 / -1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-toolbar {
+  grid-column: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-toolbar {
+  grid-column: 2;
+}
+
+/* Upright: the groups stack, the tools centred down the bar, the document's
+   actions at its foot. What does not fit folds into ⋯ as along the top
+   (fitBar measures down the bar); anything still taller scrolls. */
+.goodobsidian-toolbar.is-upright {
+  flex-direction: column;
+  min-height: 0;
+  min-width: var(--gob-bar-h);
+  padding: 10px 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  touch-action: pan-y;
+  border-bottom: none;
+}
+
+.goodobsidian-toolbar.is-upright::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-toolbar.is-upright.is-dock-left {
+  border-right: var(--gob-bar-border);
+}
+
+.goodobsidian-toolbar.is-upright.is-dock-right {
+  border-left: var(--gob-bar-border);
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group {
+  flex-direction: column;
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group.is-centre {
+  padding: 8px 0 0;
+  border-left: none;
+  border-top: 1px solid var(--gob-line);
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin: auto 0 0;
+}
+
+.goodobsidian-toolbar.is-upright.is-crowded .goodobsidian-bar-group.is-tools {
+  margin: auto 0;
+}
+
+.goodobsidian-toolbar.is-upright.is-crowded .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin: 0;
+}
+
+.goodobsidian-toolbar.is-upright .goodobsidian-sep {
+  width: 22px;
+  height: 1px;
+  margin: 2px 0;
+}
+
+/* Too tall for its room, the upright bar's buttons shrink (toolbar.ts,
+   fitUprightBar sets --gob-bar-button, 44 px down to 32) and then it scrolls:
+   nothing folds into ⋯, so a tool put on the bar always shows. */
+.goodobsidian-toolbar.is-upright button {
+  min-width: var(--gob-bar-button, var(--gob-touch));
+  height: var(--gob-bar-button, var(--gob-touch));
+}
+
+.goodobsidian-toolbar.is-upright button .svg-icon {
+  width: min(var(--gob-icon-size), calc(var(--gob-bar-button, var(--gob-touch)) - 12px));
+  height: min(var(--gob-icon-size), calc(var(--gob-bar-button, var(--gob-touch)) - 12px));
+}
+
+/* A tool with a menu grows downwards, not sideways, its ▾ under the icon. */
+.goodobsidian-toolbar.is-upright button.has-caret.is-active,
+.goodobsidian-toolbar.is-upright button.goodobsidian-ruler-button.is-on,
+.goodobsidian-toolbar.is-upright button.goodobsidian-accessories-button {
+  min-width: var(--gob-bar-button, var(--gob-touch));
+  height: calc(var(--gob-bar-button, var(--gob-touch)) + 14px);
+  padding: 0 6px 14px;
+}
+
+.goodobsidian-toolbar.is-upright button .goodobsidian-tool-caret {
+  top: auto;
+  right: 50%;
+  bottom: 1px;
+  transform: translateX(50%);
+}
+
+/* The ▾ points where its menu opens: toward the page. */
+.goodobsidian-toolbar.is-dock-bottom button .goodobsidian-tool-caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.goodobsidian-toolbar.is-dock-left button .goodobsidian-tool-caret {
+  transform: translateX(50%) rotate(-90deg);
+}
+
+.goodobsidian-toolbar.is-dock-right button .goodobsidian-tool-caret {
+  transform: translateX(50%) rotate(90deg);
+}
+
+/* "Update available" opens toward the page too, its point at the gear. */
+.goodobsidian-update-tip.points-up::before {
+  top: auto;
+  bottom: -4px;
+}
+
+.goodobsidian-update-tip.points-right::before,
+.goodobsidian-update-tip.points-left::before {
+  top: calc(50% - 4px);
+}
+
+.goodobsidian-update-tip.points-right::before {
+  right: auto;
+  left: -4px;
+}
+
+.goodobsidian-update-tip.points-left::before {
+  right: -4px;
+}
+
+/* The Grape download card rests on the window's foot, where a bar along the
+   bottom of the open notebook now is: it rises above the bar (the bar, plus
+   Obsidian's foot padding under it). */
+body:has(.workspace-leaf.mod-active .goodobsidian-bar-at-bottom) .goodobsidian-download-card {
+  bottom: calc(
+    24px + var(--gob-bar-h) + 34px + var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px)
+  );
 }

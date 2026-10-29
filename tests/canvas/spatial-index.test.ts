@@ -121,6 +121,10 @@ describe("SpatialIndex against the cell model", () => {
           const box = { minX: x - r, minY: y - r, maxX: x + r, maxY: y + r };
           const found = r === 0 ? index.queryPoint(x, y) : index.queryPoint(x, y, r);
           expect([...found]).toEqual(model.query(box));
+          // The visiting form reaches the same strokes, a repeat per extra cell aside.
+          const visited: string[] = [];
+          index.forEachNear(x, y, r, (id) => visited.push(id));
+          expect([...new Set(visited)]).toEqual(model.query(box));
         }
       }
     });

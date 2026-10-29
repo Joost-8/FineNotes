@@ -111,7 +111,7 @@ function setup(): { renderer: Renderer; wet: FakeCanvas; wetLog: Call[] } {
 }
 
 describe("renderLasso", () => {
-  it("draws the loop closed, filled even–odd, dashed, and shows the wet layer", () => {
+  it("draws the loop closed and dashed, its line only, and shows the wet layer", () => {
     const { renderer, wet, wetLog } = setup();
     expect(wet.classes.has("goodobsidian-wet-hidden")).toBe(true);
     renderer.renderLasso(0, [10, 10, 100, 10, 60, 80]);
@@ -121,9 +121,10 @@ describe("renderLasso", () => {
       ["lineTo", 100, 10],
       ["lineTo", 60, 80],
     ]);
-    expect(wetLog.find(([name]) => name === "fill")).toEqual(["fill", "evenodd"]);
+    // No filled area inside the loop while it is drawn (Joost on PR #59).
+    expect(names).not.toContain("fill");
     expect(names).toContain("setLineDash");
-    expect(names.indexOf("stroke")).toBeGreaterThan(names.indexOf("fill"));
+    expect(names).toContain("stroke");
     expect(wet.classes.has("goodobsidian-wet-hidden")).toBe(false);
   });
 

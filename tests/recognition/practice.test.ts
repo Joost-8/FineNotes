@@ -14,8 +14,11 @@ import {
   buildPracticeFile,
   isPracticeNotebook,
   isSymbolSet,
+  missingSymbols,
   practiceLines,
   practicePrompts,
+  practiceSetOfDoc,
+  promptCount,
   symbolSamples,
   wrapPrinted,
 } from "../../src/recognition/practice";
@@ -162,8 +165,18 @@ describe("practiceLines", () => {
     expect(practiceLines(doc).map((l) => [l.text, l.strokes.map((s) => s.id)])).toEqual([
       ["Old prompt", ["old"]],
     ]);
+    // Its prompts are no set's lines: no set.
+    doc.pages = [doc.pages[0], page];
+    expect(practiceSetOfDoc(doc)).toBeNull();
+    expect(promptCount(doc)).toBe(1);
+    // The first notebooks had set 1's first lines: that set, with as many lines as it asks.
+    page.textBoxes[0].text = PRACTICE_LINES[3];
+    expect(practiceSetOfDoc(doc)).toBe(1);
     page.textBoxes = [];
     expect(isPracticeNotebook(doc)).toBe(false);
+    expect(practiceSetOfDoc(doc)).toBeNull();
+    expect(practiceSetOfDoc(buildPracticeFile(2, A4))).toBe(2);
+    expect(promptCount(buildPracticeFile(2, A4))).toBe(PRACTICE_SETS[1].length);
   });
 });
 
@@ -196,11 +209,12 @@ describe("the symbol sheet", () => {
     const prompts = pages.flatMap(promptsOf);
     expect(prompts.map((line) => line.text)).toEqual(SYMBOL_LINES.map((line) => line.symbol));
     expect(practicePrompts(SYMBOL_SET)).toEqual(prompts.map((line) => line.text));
-    // Every prompt is one character, and its name is printed text that is no prompt.
+    // Every prompt is one character (a link's bracket pair two), and its
+    // name is printed text that is no prompt.
     for (const p of pages) {
       const printed = printedOf(p);
       for (const prompt of promptsOf(p)) {
-        expect(Array.from(prompt.text)).toHaveLength(1);
+        expect(Array.from(prompt.text).length).toBe(/^(\[\[|\]\])$/.test(prompt.text) ? 2 : 1);
         const name = printed.find((line) => !line.prompt && line.y === prompt.y);
         expect(name?.text.length, prompt.text).toBeGreaterThan(1);
         // The line to write on is on the page.
@@ -209,12 +223,24 @@ describe("the symbol sheet", () => {
     }
   });
 
-  it("asks only for characters the model can write: digits twice, then every sign", () => {
+  it("asks for digits twice, then every sign the model can write, then the signs beyond it", () => {
     const alphabet = parseBundle(readFileSync("models/grape-2.0.bin")).meta.alphabet;
-    for (const { symbol } of SYMBOL_LINES) {
-      expect(encodeLabel(symbol, alphabet), symbol).not.toBeNull();
+    // The lines marked beyond the alphabet are exactly the ones it cannot spell.
+    for (const { symbol, beyond } of SYMBOL_LINES) {
+      expect(encodeLabel(symbol, alphabet) === null, symbol).toBe(beyond === true);
     }
-    const symbols = SYMBOL_LINES.map((line) => line.symbol);
+    // They come last, so no line written before them changed its id.
+    const first = SYMBOL_LINES.findIndex((line) => line.beyond);
+    expect(SYMBOL_LINES.slice(first).every((line) => line.beyond)).toBe(true);
+    expect(SYMBOL_LINES.slice(0, 53).map((line) => line.symbol)).toContain("6");
+    expect(SYMBOL_LINES[52].name).toBe("six, again");
+    for (const sign of ["[[", "]]", "∑", "∫"]) {
+      expect(
+        SYMBOL_LINES.map((line) => line.symbol),
+        sign,
+      ).toContain(sign);
+    }
+    const symbols = SYMBOL_LINES.filter((line) => !line.beyond).map((line) => line.symbol);
     for (const digit of "0123456789") {
       expect(
         symbols.filter((s) => s === digit),
@@ -258,6 +284,43 @@ describe("the symbol sheet", () => {
     const text = buildPracticeFile(1, A4);
     text.pages[1].strokes = [ink("a", 40 * 4 + 20)];
     expect(symbolSamples(text)).toEqual([]);
+  });
+
+  it("labels a link's brackets and a sum sign as written, for a reader that can spell them", () => {
+    const sheet = buildPracticeFile(SYMBOL_SET, A4);
+    const at = (symbol: string) => SYMBOL_LINES.findIndex((line) => line.symbol === symbol);
+    const page = (i: number) => sheet.pages[1 + Math.floor(i / 15)];
+    const y = (i: number) => symbolY(i % 15);
+    page(at("[[")).strokes.push(ink("open", y(at("[["))));
+    page(at("∑")).strokes.push(ink("sum", y(at("∑"))));
+    expect(practiceLines(sheet).map((l) => [l.text, l.strokes.map((s) => s.id)])).toEqual([
+      ["[[", ["open"]],
+      ["∑", ["sum"]],
+    ]);
+    // A glyph sample is one character: the bracket pair is none.
+    expect(symbolSamples(sheet).map((s) => s.symbol)).toEqual(["∑"]);
+  });
+
+  it("makes a sheet of only the symbols added since a sheet was written, ids kept", () => {
+    const old = buildPracticeFile(SYMBOL_SET, A4);
+    // A sheet from before 2026-10-29: its first 53 lines.
+    for (const p of old.pages.slice(1)) {
+      const printed = printedOf(p);
+      (p.backdrop as SyntheticBackdrop).printed = printed.filter(
+        (line) => !line.prompt || Number(line.prompt.split("-")[2]) <= 53,
+      );
+    }
+    const missing = missingSymbols([old]);
+    expect(missing.map((i) => SYMBOL_LINES[i].symbol)).toEqual(
+      SYMBOL_LINES.slice(53).map((line) => line.symbol),
+    );
+    expect(missingSymbols([buildPracticeFile(SYMBOL_SET, A4)])).toEqual([]);
+    const top = buildPracticeFile(SYMBOL_SET, A4, missing);
+    const prompts = top.pages.slice(1).flatMap(promptsOf);
+    expect(prompts.map((line) => line.text)).toEqual(missing.map((i) => SYMBOL_LINES[i].symbol));
+    expect(prompts[0].prompt).toBe(`practice-${SYMBOL_SET}-54`);
+    expect(promptCount(top)).toBe(missing.length);
+    expect(missingSymbols([old, top])).toEqual([]);
   });
 
   it("a text set's prompts are its lines, the nearest set when out of range", () => {

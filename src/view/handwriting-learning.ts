@@ -19,7 +19,11 @@
  */
 
 import { type App, Notice, type TFile, normalizePath, setIcon } from "obsidian";
-import { correctionLines, parseCorrections } from "../recognition/hwr/corrections";
+import {
+  type CorrectionsFile,
+  correctionLines,
+  parseCorrections,
+} from "../recognition/hwr/corrections";
 import { correctionsPath } from "./word-check";
 import { PRACTICE_FILE_SUFFIX } from "../constants";
 import { DEFAULT_PAGE_GEOMETRY, type InkDocument } from "../model/document";
@@ -27,7 +31,16 @@ import { parseInkFile } from "../model/serialize";
 import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { HwrProgress, HwrTuned } from "../recognition/hwr/protocol";
 import type { LabelledLine } from "../recognition/hwr/tune";
-import { PRACTICE_SETS, SYMBOL_SET, practiceLines, practicePrompts } from "../recognition/practice";
+import {
+  PRACTICE_SETS,
+  SYMBOL_SET,
+  isSymbolSet,
+  missingSymbols,
+  practiceLines,
+  practicePrompts,
+  practiceSetOfDoc,
+  promptCount,
+} from "../recognition/practice";
 import {
   type LearnedModel,
   type LearnedSource,
@@ -61,8 +74,8 @@ export interface LearningHost {
     practiceNotebookPath?: string;
   };
   saveSettings(): Promise<void>;
-  /** Create practice file `set` and open it; the file, or null. */
-  createPracticeFile(set: number): Promise<TFile | null>;
+  /** Create practice file `set` (the symbol sheet: only lines `only`) and open it; the file, or null. */
+  createPracticeFile(set: number, only?: readonly number[]): Promise<TFile | null>;
   /** The reader should load its model again (a new one was saved, or reset). */
   reloadReader(): void;
   /** Grape's bytes, to learn from; null (after offering the download) when it is not here. */
@@ -156,26 +169,64 @@ export function nextPracticeSet(written: readonly (number | null)[]): number {
   return counts.indexOf(fewest) + 1;
 }
 
-/** The practice files in the vault, and the practice notebook from before them. */
+/**
+ * The name the practice notebook from before practice files was made with
+ * ("Handwriting practice", or "… 2" beside another).
+ */
+const LEGACY_NOTEBOOK = /^handwriting practice( \d+)?\.notebook\.md$/i;
+
+/**
+ * The practice files in the vault, and the practice notebook from before
+ * them: at the path the settings keep, or, when it was moved while FineNotes
+ * was not looking (Joost's was, and counted for nothing), by its name.
+ */
 export function practiceFiles(host: LearningHost): TFile[] {
-  const files = host.app.vault
-    .getMarkdownFiles()
-    .filter((file) => file.name.toLowerCase().endsWith(PRACTICE_FILE_SUFFIX));
+  const markdown = host.app.vault.getMarkdownFiles();
+  const files = markdown.filter((file) => file.name.toLowerCase().endsWith(PRACTICE_FILE_SUFFIX));
   const legacy = host.settings.practiceNotebookPath;
   const old = legacy ? host.app.vault.getFileByPath(legacy) : null;
-  if (old && !files.includes(old)) files.push(old);
+  const notebooks = old ? [old] : markdown.filter((file) => LEGACY_NOTEBOOK.test(file.name));
+  for (const notebook of notebooks) {
+    if (!files.some((file) => file.path === notebook.path)) files.push(notebook);
+  }
   return files;
 }
 
 /** Write the next practice set to a new file, and open it. */
 export async function writePracticePage(host: LearningHost): Promise<void> {
-  const sets = practiceFiles(host).map((file) => practiceSetOf(file.name));
+  const sets = (await practiceSheets(host)).map((sheet) => sheet.set);
   await host.createPracticeFile(nextPracticeSet(sets));
 }
 
-/** Write the symbol sheet to a new file, and open it. */
+/**
+ * Write the symbol sheet to a new file, and open it. Beside a symbol sheet
+ * written before lines were added to it, the new sheet has only those lines.
+ */
 export async function writeSymbolPractice(host: LearningHost): Promise<void> {
-  await host.createPracticeFile(SYMBOL_SET);
+  const missing = await symbolsToWrite(host);
+  await host.createPracticeFile(SYMBOL_SET, missing && missing.length > 0 ? missing : undefined);
+}
+
+/**
+ * The symbol lines no symbol sheet in the vault asks for yet (indices into
+ * `SYMBOL_LINES`), or null when there is no symbol sheet at all.
+ */
+export async function symbolsToWrite(host: LearningHost): Promise<number[] | null> {
+  const docs: InkDocument[] = [];
+  for (const file of practiceFiles(host)) {
+    const doc = await readPracticeDoc(host, file.path).catch(() => null);
+    if (doc && isSymbolSet(doc.practice?.set)) docs.push(doc);
+  }
+  return docs.length > 0 ? missingSymbols(docs) : null;
+}
+
+/** A practice file's document: the open notebook (unsaved ink included), else its file. */
+async function readPracticeDoc(host: LearningHost, path: string): Promise<InkDocument | null> {
+  const open = host.openNotebook(path);
+  if (open) return open;
+  const file = host.app.vault.getFileByPath(path);
+  if (!file) return null;
+  return parseInkFile(await host.app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
 }
 
 /** The copied lines of one practice file: from the open notebook, else from its file. */
@@ -183,13 +234,11 @@ export async function readPracticeLines(
   host: LearningHost,
   path: string,
 ): Promise<LabelledLine[] | null> {
-  let doc = host.openNotebook(path);
-  if (!doc) {
-    const file = host.app.vault.getFileByPath(path);
-    if (!file) return null;
-    doc = parseInkFile(await host.app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
-  }
-  if (!doc) return null;
+  const doc = await readPracticeDoc(host, path);
+  return doc ? copiedLines(doc) : null;
+}
+
+function copiedLines(doc: InkDocument): LabelledLine[] {
   return practiceLines(doc).map((line) => ({
     text: line.text,
     strokes: line.strokes.map((s) => ({ pts: s.pts, t0: s.t0 ?? null })),
@@ -201,10 +250,14 @@ export async function readPracticeLines(
  * labelled lines (`recognition/hwr/corrections.ts`).
  */
 export async function readCorrectionLines(host: LearningHost): Promise<LabelledLine[]> {
+  return correctionLines(await readCorrections(host));
+}
+
+/** The corrections file as it is in the vault now. */
+export async function readCorrections(host: LearningHost): Promise<CorrectionsFile> {
   const adapter = host.app.vault.adapter;
   const file = correctionsPath();
-  if (!(await adapter.exists(file))) return [];
-  return correctionLines(parseCorrections(await adapter.read(file)));
+  return parseCorrections((await adapter.exists(file)) ? await adapter.read(file) : null);
 }
 
 /** Every practice file's copied lines, in one list, and how many came from each file. */
@@ -221,23 +274,39 @@ export async function readAllPracticeLines(
   return { lines, sources };
 }
 
-/** The practice sheets in the vault, by set, with the lines copied on each. */
+/**
+ * The practice sheets in the vault, by set, with the lines copied on each
+ * and the lines each asks for (its own prompts: a sheet keeps the lines it
+ * was made with). The notebook from before practice files counts as the set
+ * its prompts are; a notebook without prompts is no sheet.
+ */
 export async function practiceSheets(host: LearningHost): Promise<PracticeSheet[]> {
   const sheets: PracticeSheet[] = [];
   for (const file of practiceFiles(host)) {
-    const set = practiceSetOf(file.name);
+    let set = practiceSetOf(file.name);
     let written = 0;
+    let prompts = 0;
     try {
-      written = (await readPracticeLines(host, file.path))?.length ?? 0;
+      const doc = await readPracticeDoc(host, file.path);
+      if (doc) {
+        set ??= practiceSetOfDoc(doc);
+        written = copiedLines(doc).length;
+        prompts = promptCount(doc);
+      }
     } catch {
       // A sheet that does not parse is listed with nothing copied.
     }
+    const practiceFile = file.name.toLowerCase().endsWith(PRACTICE_FILE_SUFFIX);
+    if (prompts === 0 && !practiceFile) continue;
     sheets.push({
       path: file.path,
-      title: file.name.replace(/\.practice\.md$/i, "").replace(/\.md$/i, ""),
+      title: file.name
+        .replace(/\.practice\.md$/i, "")
+        .replace(/\.notebook\.md$/i, "")
+        .replace(/\.md$/i, ""),
       set,
       written,
-      prompts: practicePrompts(set ?? 1).length,
+      prompts: prompts || practicePrompts(set ?? 1).length,
     });
   }
   return sheets.sort((a, b) => (a.set ?? 0) - (b.set ?? 0) || a.title.localeCompare(b.title));
@@ -396,11 +465,9 @@ export class HandwritingLearner {
     }
     // The learned model this run would replace: the new one must beat it too.
     const rival = await readLearnedModel(host);
-    // These corrections are spoken for: the next reminder counts from here.
-    host.settings.relearnRemindedAt = corrections.length;
-    void host.saveSettings();
     this.stopped = false;
-    this.current = { step: 0, steps: LEARN_STEPS, startedAt: Date.now() };
+    const startedAt = Date.now();
+    this.current = { step: 0, steps: LEARN_STEPS, startedAt };
     this.emit();
     let tuned: HwrTuned | null = null;
     try {
@@ -419,20 +486,32 @@ export class HandwritingLearner {
         rival ?? undefined,
       );
     } catch (error) {
-      if (!this.stopped) new Notice(`FineNotes: learning stopped — ${errorMessage(error)}`, 10000);
+      // The corrections are untouched: they still count as new, for the next run.
+      if (!this.stopped) {
+        new Notice(
+          `FineNotes: learning stopped — ${errorMessage(error)}. Your sheets and corrected words are kept.`,
+          10000,
+        );
+      }
       this.finish();
       return;
     }
     this.finish();
-    await this.conclude(host, tuned, practice.sources, corrections.length);
+    // A run that finished has had its say on these corrections: the next
+    // reminder counts from here (a failed or stopped one leaves it be).
+    host.settings.relearnRemindedAt = corrections.length;
+    await host.saveSettings();
+    await this.conclude(host, tuned, practice.sources, corrections.length, startedAt);
   }
 
-  /** Stop the run; nothing is saved. */
+  /** Stop the run; nothing is saved, and nothing is lost. */
   stop(): void {
     if (!this.current) return;
     this.stopped = true;
     this.finish();
-    new Notice("FineNotes: stopped learning your handwriting. Nothing was changed.");
+    new Notice(
+      "FineNotes: stopped learning your handwriting. Nothing was changed; your corrected words are kept.",
+    );
   }
 
   private finish(): void {
@@ -448,6 +527,7 @@ export class HandwritingLearner {
     tuned: HwrTuned | null,
     sources: LearnedSource[],
     corrections: number,
+    startedAt: number,
   ): Promise<void> {
     if (!tuned) {
       new Notice("FineNotes: there was nothing to learn from in the practice lines.", 10000);
@@ -480,7 +560,8 @@ export class HandwritingLearner {
     if (replaced) host.settings[previousKey(host.baseId)] = replaced;
     else delete host.settings[previousKey(host.baseId)];
     host.settings[learnedKey(host.baseId)] = {
-      learnedAt: new Date().toISOString(),
+      // When it started: words corrected while it ran are new to it (`newCorrections`).
+      learnedAt: new Date(startedAt).toISOString(),
       lines: tuned.trained,
       tested: tuned.heldOut,
       before,

@@ -10,6 +10,72 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Drag a lasso selection onto another page.** A selection dragged over
+  another page and let go lands there, as one undo step; held near the top
+  or bottom of the view, the notebook scrolls under it. Ink, pictures, text
+  boxes, tables and graphs go together, with their links, checklist tasks
+  and audio times. With the pages joined it may lie over the join, as ink
+  can, and belongs to the page under the pen.
+- **Lines snap level or upright**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A line or
+  arrow drawn with its ends within a few pixels of level or upright on
+  screen (and at most 4° off) comes out exactly level or upright: a held
+  line, an arrow, the Shape tool's line and arrow, and the highlighter's
+  straight line. A long line drawn at a slope keeps it, at any zoom.
+- **Move a shape's corners and ends**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
+  shape on its own and tap the corner points button in its bar: a ring
+  sits on each of its corners or ends, and dragging one moves that point
+  alone, as in Goodnotes. A rectangle with a corner moved becomes a
+  four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
+  rounded rectangles and clouds have no corner points.
+- **Shapes snap to each other**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). While you
+  draw a line, an arrow or a rectangle with the Shape tool, or hold a shape
+  you drew, its ends and corners snap to the corners, ends and midpoints of
+  the shapes already on the page, and a small ring shows where.
+- **Lasso takes what it touches** (discussion
+  [#51](https://github.com/Joost-8/FineNotes/discussions/51)). The lasso
+  now takes a stroke or shape when any part of it is inside the loop, as
+  Notability does; Settings › Writing › More brings back Goodnotes' rule
+  (at least half of it). While you draw it, the lasso shows only its line.
+  Turn into › Text, Task, Link to… and Contents heading read every word the
+  lasso touched, whole.
+- **Tap a shape with a finger to select it.** With the pen (or another
+  drawing tool) in hand, a finger tap on a shape, an arrow or a table
+  picks the lasso and selects it with its handles and bar, as a tap on a
+  picture does.
+- **Screenshot from the lasso.** The lasso's menu has Screenshot for any
+  selection: a small window shows what is selected, as drawn on its page's
+  paper, with Copy (to the clipboard, to paste into another app or note)
+  and Share… (the system's share sheet). Where the device cannot share a
+  picture, Save image puts it in the notebook's pictures folder instead.
+- **The lasso's menu fits what you selected.** One kind of thing keeps its
+  own options (a shape its fill and line, a table Edit table), and
+  handwriting counts as one kind however many strokes it is. A mix of
+  kinds gets only its ink's colour, and Turn into offers only what fits: a
+  shape is not offered Text, Contents heading or Task.
+- **Turn a selection with two fingers.** Two fingers on a selection or a
+  selected picture, or either side of a small one, turn it about its
+  middle, drawn toward the page's 45° steps as the knob is; the lift is one
+  undo step. Two fingers elsewhere still zoom the page.
+- **Linked shapes**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
+  shape on its own and a dot sits beside each of its sides, as in Goodnotes:
+  drag one out, or tap it, for a copy of the shape joined to it by an arrow
+  with right-angled bends; drop the arrow on another shape instead and it
+  joins the two at the side nearest where you let go, with no copy. Arrows
+  are drawn thin, one width for all. The arrow stays joined when either
+  shape moves.
+  Right after, a bar beside the new shape turns it into a rectangle, circle,
+  triangle, diamond or rounded rectangle. Notebooks with linked shapes open
+  read-only in older versions of FineNotes, so update FineNotes on every
+  device first.
+- **Paste a transcript onto the page.** A transcribed recording in the
+  sidebar's Recordings list has a paste button beside Transcript: it puts
+  the transcript's text, as you left it in its note and without the
+  times, onto the page in view as a text box, under what is drawn there.
+  Undo takes it off again.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch
@@ -18,12 +84,14 @@ extracted from the matching section of this file by `release.yml`.
   key. The Hand tool moves the page (with its fling) and the Magnifier zooms
   it: drag up or down, tap to zoom in a step, or use the pill's zoom out, fit
   page and zoom in. All three wait in the toolbar's More tools menu at first.
-- **Hide pen options while writing.** A new switch in the pen menu's Pen
+- **Hide pen options while writing.** A new choice in the pen menu's Pen
   settings and under Settings › Writing › More: the pen's options (pen
   type, widths and colors) tuck away as soon as the pen or highlighter
-  starts writing, wherever they sit, as a second tap on the pen does. Tap
-  the pen to bring them back. Off by default; the eraser, lasso and other
-  tools keep their options.
+  starts writing, wherever they sit, as a second tap on the pen does.
+  "Until you tap the pen" keeps them away until you tap it; "Until the pen
+  lifts" brings them back by themselves once the pen has been off the page
+  for a second. Never by default; the eraser, lasso and other tools keep
+  their options.
 - **Click the pen's side button for the pen menu.** With the pen held just
   above the page, a click of its side button opens the pen menu, as on a
   Samsung tablet, and the next click closes it. Holding the button while
@@ -35,9 +103,55 @@ extracted from the matching section of this file by `release.yml`.
   switch in the eraser's mode list: Whole stroke and By line draw what they
   take grey until the pen lifts, as Notability does, instead of hiding it
   at once. Off by default.
+- **The toolbar at any edge**
+  ([#50](https://github.com/Joost-8/FineNotes/issues/50)). The Toolbar row
+  in a notebook's ⋯ panel puts it along the top (as before) or the bottom,
+  or upright at the left or right. The page makes room on that side, up to
+  the tab's header, and keeps the spot you were reading. Upright, every tool
+  stays on the bar: its buttons shrink to fit, and past their smallest the
+  bar scrolls. Its menus open toward the page from every edge, a tool's bar
+  resting by the toolbar goes with it, and each device keeps its own place,
+  so an iPad and a laptop can differ.
+- **Joined pages**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A notebook
+  can join its pages: no gap between them, down or across, and everything
+  runs on over the join, as on one sheet. Pen, highlighter, shapes, the
+  eraser, the lasso, pictures, sticky notes, text boxes and tables all
+  work across it. Choose **Joined pages** in the New notebook dialog, or
+  switch it in the notebook's settings under Pages. Each page still stores
+  and exports its own part, so the pages stay pages in the page list, in a
+  PDF and on every other device. A small mark beside the page shows where
+  one page ends. Off by default.
+
+### Fixed
+
+- The notebook could scroll by a few pixels in Obsidian when a tool's bar
+  along the bottom was tucked away, which narrowed the page by a scrollbar's
+  width and changed its zoom a little.
+- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
+  the Pencil flat and the Brush pen paints a wider stroke, up to three times
+  its width, for shading. Held as you write, nothing changes. Only shaded
+  strokes keep the tilt, so other notes stay as they were; an older FineNotes
+  opens a notebook with shaded strokes read-only. The input debug overlay
+  shows what the pen reports.
 
 ### Changed
 
+- **The page uses the whole view.** Obsidian's padding around the notebook
+  (a frame round the toolbar and a band at the foot) is gone, so the page is
+  larger. The page counter, the zoom readout and a toolbar along the bottom
+  keep clear of the iPad's home indicator and of Obsidian's status bar.
+- **New board, named.** The New notebook dialog's ∞ now says "New board".
+- **Resize handles on request**
+  ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A lasso
+  selection of handwriting, text or several things no longer shows its
+  corner handles at once: the corners button in its bar shows them (and
+  hides them again). One shape on its own still shows them straight away.
+  The bar is now Cut · Copy · Duplicate · Delete · corners · ⋯.
+- **Six colours and larger pens in the pen's bar.** The colour row shows six
+  colours at a time; the rest, and the +, are a swipe away. The pen types
+  are a little larger, each its own button with a border, the pen in hand
+  ringed in the accent colour.
 - **Hide toolbar tools.** Customize toolbar, at the end of the More tools
   menu, now has three places for every tool: on the bar (drag to reorder,
   the top is leftmost), in the More tools menu, or hidden. A tool in the
@@ -62,6 +176,11 @@ extracted from the matching section of this file by `release.yml`.
   longest edge, a picture's own tilt) from several degrees away, and rests
   lightly on every 15°, free between. A small readout beside the pen shows
   the angle while you turn.
+  knob, and now two fingers, draw the turn gently toward every 45° of the
+  page (0°, 45°, 90° …), whatever angle the item started at: it slows near
+  a step and goes on through it, never stopping, and let go close to one
+  it lands there exactly, so a shape drawn slightly crooked ends level,
+  never at 89°. A small readout shows the angle on the page while you turn.
 
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and

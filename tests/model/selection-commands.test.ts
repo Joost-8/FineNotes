@@ -9,6 +9,7 @@ import {
   MoveElementsToPage,
   RecolorStrokes,
   RemoveElements,
+  ReshapeStroke,
   ScaleElements,
   TranslateElements,
   copyElements,
@@ -620,5 +621,37 @@ describe("ScaleElements", () => {
     // One already outside the range may stay as it is.
     expect(textScaleRange([textBox("d", { fontSize: 8 })]).min).toBe(1);
     expect(textScaleRange([textBox("e", { fontSize: 500 })]).max).toBe(1);
+  });
+});
+
+describe("ReshapeStroke", () => {
+  it("gives one shape new points and kind, and undo puts back the very same array", () => {
+    const { doc, s } = fixture();
+    const before = snap(doc);
+    const old = s[1].pts;
+    const pts = [0.3, 0.2, 0.5, 50, 60, 0.6];
+    const history = new History();
+    history.push(doc, new ReshapeStroke("p1", s[1], pts, "polygon"));
+    expect(s[1].pts).toBe(pts);
+    expect(s[1].shape).toBe("polygon");
+    history.undo(doc);
+    expect(s[1].pts).toBe(old);
+    expect(s[1].shape).toBe("rect");
+    expect(snap(doc)).toBe(before);
+    history.redo(doc);
+    expect(s[1].pts).toBe(pts);
+    // Saved and read back, as any shape.
+    const back = decodeDocument(encodeDocument(doc));
+    expect(back.pages[0].strokes[1].shape).toBe("polygon");
+  });
+
+  it("does nothing for a stroke no longer on its page", () => {
+    const { doc, s } = fixture();
+    const loose = stroke("gone", 1, { shape: "line" });
+    const command = new ReshapeStroke("p1", loose, [1, 1, 0.5, 9, 9, 0.5], "line");
+    command.apply(doc);
+    expect(loose.pts).not.toEqual([1, 1, 0.5, 9, 9, 0.5]);
+    command.invert();
+    expect(s[1].shape).toBe("rect");
   });
 });

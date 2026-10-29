@@ -21,8 +21,9 @@ import {
   practiceSheets,
   previousKey,
   progressLabel,
-  readCorrectionLines,
+  readCorrections,
   swapWithPrevious,
+  symbolsToWrite,
   writePracticePage,
   writeSymbolPractice,
 } from "./view/handwriting-learning";
@@ -30,8 +31,9 @@ import {
   MIN_PRACTICE_LINES,
   type PracticeSheet,
   deleteQuestion,
-  hasUnusedLines,
-  learnStepText,
+  RELEARN_AFTER,
+  correctionsText,
+  learnInfoText,
   learnSummary,
   learnedBadge,
   learnedResult,
@@ -39,8 +41,8 @@ import {
   nextSheetAction,
   sheetText,
   sheetUse,
+  newCorrections,
   undoText,
-  writeStepText,
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS, isSymbolSet } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
@@ -134,6 +136,7 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { PEN_OPTIONS_ON_WRITE_NAMES } from "./view/tool-return";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -268,6 +271,11 @@ const DESC = {
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
     "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
     "draws one even width, which is the smoothest to write with.",
+  pencilTilt:
+    "Hold the Pencil flat and the Brush pen paints a wider stroke, up to three times its " +
+    "width, for shading. Held as you write, nothing changes. Only pens and tablets that " +
+    "report tilt do this (the Apple Pencil does). Shaded strokes keep their width when this " +
+    "is off. An older FineNotes opens a notebook with them read-only.",
   textDragSize:
     "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
   desynchronized:
@@ -320,11 +328,16 @@ const DESC = {
     "touching it. A second click closes the menu again.",
   tuckPenOptionsOnWrite:
     "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
-    "type, widths and colors) tuck away, as a second tap on the pen does. Tap the pen to " +
-    "bring them back. The other tools keep theirs.",
+    "type, widths and colors) tuck away, as a second tap on the pen does. Until you tap " +
+    "the pen: they stay away until you tap it. Until the pen lifts: they come back by " +
+    "themselves a second after the pen leaves the page. The other tools keep theirs.",
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
+  lassoAnyPart:
+    "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
+    "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
+    "Goodnotes. Pictures and text boxes are taken by their middle either way.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
@@ -456,7 +469,10 @@ function modelStatus(setting: Setting, status: string, tone: ModelTone): void {
 /** What the learned-model rows show, read once each time the tab opens. */
 interface LearningState {
   sheets: PracticeSheet[];
-  corrections: number;
+  /** When each corrected word was saved (ms), oldest first. */
+  answeredAt: number[];
+  /** Symbol-sheet lines no symbol sheet asks for yet; null without a symbol sheet. */
+  newSymbols: number[] | null;
   files: { current: boolean; previous: boolean; bytes: number };
 }
 
@@ -979,16 +995,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Pen options, text boxes, colors, highlighter"),
+        this.more("writing", "Pen options, text boxes, colors, highlighter, lasso"),
         this.info(
-          toggle("tuckPenOptionsOnWrite", "Hide pen options while writing", "", [
-            "pen",
-            "options",
-            "pill",
-            "hide",
-            "tuck",
-            "toolbar",
-          ]),
+          dropdown(
+            "tuckPenOptionsOnWrite",
+            "Hide pen options while writing",
+            "",
+            PEN_OPTIONS_ON_WRITE_NAMES,
+            ["pen", "options", "pill", "hide", "tuck", "toolbar"],
+          ),
           DESC.tuckPenOptionsOnWrite,
         ),
         this.info(
@@ -1018,6 +1033,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "line",
           ]),
           DESC.straightHighlighter,
+        ),
+        this.info(
+          toggle("lassoTouches", "Lasso takes what it touches", "", [
+            "lasso",
+            "select",
+            "selection",
+            "notability",
+          ]),
+          DESC.lassoAnyPart,
         ),
       ],
       () => [
@@ -1405,6 +1429,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         callout(CALLOUTS.pressure, () => settings.pressureWidth),
         this.info(
+          toggle("pencilTilt", "Pencil tilt", "", [
+            "tilt",
+            "shading",
+            "Apple Pencil",
+            "stylus",
+            "brush pen",
+          ]),
+          DESC.pencilTilt,
+        ),
+        this.info(
           toggle("desynchronizedCanvas", "Desynchronized canvas", "", [
             "latency",
             "glitch",
@@ -1454,7 +1488,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
         ),
       ],
-      () => (settings.pressureWidth ? [{ text: "Pressure on" }] : []),
+      () => [
+        ...(settings.pressureWidth ? [{ text: "Pressure on" }] : []),
+        ...(settings.pencilTilt ? [{ text: "Tilt on" }] : []),
+      ],
     );
   }
 
@@ -1856,20 +1893,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     );
   }
 
-  /** "Learn your handwriting"'s ⓘ: how the sheets work, and what learning will use. */
+  /** "Learn your handwriting"'s ⓘ: what learning needs, what there is, what comes next. */
   private learnInfo(): string {
     const learning = this.learningState;
-    if (!learning) return writeStepText([], PRACTICE_SETS.length);
-    const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
     const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
-    const seen =
-      record && !hasUnusedLines(learning.sheets, record) && record.sources
-        ? " Your model already has every line on your sheets: write another sheet first to improve it."
-        : "";
-    return [
-      writeStepText(learning.sheets, PRACTICE_SETS.length),
-      learnStepText(lines, learning.corrections, learning.files.current) + seen,
-    ].join(" ");
+    const answeredAt = learning?.answeredAt ?? [];
+    return learnInfoText({
+      sheets: learning?.sheets ?? [],
+      sets: PRACTICE_SETS.length,
+      corrections: answeredAt.length,
+      fresh: newCorrections(answeredAt, record),
+      model: record,
+      onDevice: learning?.files.current ?? false,
+    });
   }
 
   /** The voice model's size and spoken language, side by side. */
@@ -1988,17 +2024,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (this.learningState || this.learningLoad) return;
     const host = this.plugin.learningHost();
     this.learningLoad = (async () => {
-      const [sheets, corrections, files] = await Promise.all([
+      const [sheets, corrections, newSymbols, files] = await Promise.all([
         practiceSheets(host),
-        readCorrectionLines(host).then((lines) => lines.length),
+        readCorrections(host),
+        symbolsToWrite(host),
         learnedFiles(host),
       ]);
-      this.learningState = { sheets, corrections, files };
+      const answeredAt = corrections.corrections.map((c) => c.at);
+      this.learningState = { sheets, answeredAt, newSymbols, files };
     })()
       .catch(() => {
         this.learningState = {
           sheets: [],
-          corrections: 0,
+          answeredAt: [],
+          newSymbols: null,
           files: { current: false, previous: false, bytes: 0 },
         };
       })
@@ -2076,7 +2115,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const learner = this.plugin.learner;
     const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
     const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-    const enough = lines + learning.corrections >= MIN_PRACTICE_LINES;
+    const enough = lines + learning.answeredAt.length >= MIN_PRACTICE_LINES;
     setting.setDesc(learnSummary(learning.sheets, PRACTICE_SETS.length));
     const next = nextSheetAction(learning.sheets, PRACTICE_SETS.length);
     setting.addButton((b) => {
@@ -2161,16 +2200,41 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     // The symbol sheet sits among the sheets from the start: learning takes
     // the text sheets, the symbol sheet, or both, whichever were written.
-    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set))) {
+    // Beside a symbol sheet written before symbols were added, a chip writes
+    // a sheet of just those.
+    const added = learning.newSymbols;
+    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set)) || (added && added.length > 0)) {
       const chip = list.createEl("button", { cls: "goodobsidian-sheet-chip clickable-icon" });
-      chip.setAttribute("aria-label", "Write the symbol sheet: digits, operators and signs");
+      chip.setAttribute(
+        "aria-label",
+        added && added.length > 0
+          ? `Write the ${added.length} symbols added since your symbol sheet: links and maths signs`
+          : "Write the symbol sheet: digits, operators and signs",
+      );
       setIcon(chip.createSpan({ cls: "goodobsidian-sheet-mark" }), "circle-plus");
-      chip.createSpan({ cls: "goodobsidian-sheet-title", text: "Symbols" });
+      chip.createSpan({
+        cls: "goodobsidian-sheet-title",
+        text: added && added.length > 0 ? "New symbols" : "Symbols",
+      });
       chip.addEventListener("click", () => {
         this.plugin.closeSettings();
         void writeSymbolPractice(host);
       });
     }
+    // The corrected words the model has not learned from, toward the next
+    // round: a tracker, not a button.
+    const fresh = newCorrections(learning.answeredAt, record);
+    const words = list.createDiv({
+      cls: `goodobsidian-sheet-chip goodobsidian-words-chip${fresh >= RELEARN_AFTER ? " is-due" : ""}`,
+      attr: { role: "img" },
+    });
+    words.setAttribute(
+      "aria-label",
+      correctionsText(fresh, learning.answeredAt.length, record !== undefined),
+    );
+    setIcon(words.createSpan({ cls: "goodobsidian-sheet-mark" }), "spell-check");
+    words.createSpan({ cls: "goodobsidian-sheet-title", text: "Words" });
+    words.createSpan({ cls: "goodobsidian-sheet-state", text: `${fresh}/${RELEARN_AFTER}` });
   }
 
   /** Swap the learned model for the one before the last learning; swapping again goes forward. */

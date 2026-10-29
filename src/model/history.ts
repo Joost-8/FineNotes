@@ -31,7 +31,14 @@ export class History {
    */
   push(doc: InkDocument, command: Command): void {
     command.apply(doc);
-    this.done.push(command);
+    // A step made only to make way for the next one (`Command.joinsNext`,
+    // such as picking up over a join) is taken back together with it.
+    const top = this.done[this.done.length - 1];
+    if (top && baseOf(top).joinsNext === true && this.undone.length === 0) {
+      this.done[this.done.length - 1] = new JoinedStep(top, command);
+    } else {
+      this.done.push(command);
+    }
     if (this.done.length > this.limit) this.done.shift();
     this.undone.length = 0;
     this.onChange?.();
@@ -160,8 +167,38 @@ export class AttachedStep implements Command {
   }
 }
 
+/**
+ * A step that made way for the next one (`joinsNext`) and that next one,
+ * as one step that answers to the second's name: it is what was done.
+ */
+export class JoinedStep implements Command {
+  readonly label: string;
+  readonly pageId?: string;
+  readonly keepsReading?: boolean;
+
+  constructor(
+    readonly first: Command,
+    readonly base: Command,
+  ) {
+    this.label = base.label;
+    this.pageId = base.pageId;
+    this.keepsReading = base.keepsReading;
+  }
+
+  apply(doc: InkDocument): void {
+    this.first.apply(doc);
+    this.base.apply(doc);
+  }
+
+  invert(doc: InkDocument): void {
+    this.base.invert(doc);
+    this.first.invert(doc);
+  }
+}
+
 /** The step a command was pushed as, under anything attached to it since. */
 function baseOf(command: Command): Command {
+  if (command instanceof JoinedStep) return baseOf(command.base);
   return command instanceof AttachedStep ? baseOf(command.base) : command;
 }
 

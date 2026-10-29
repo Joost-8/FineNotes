@@ -28,6 +28,13 @@ export class StrokeIndex {
   private readonly grids = new Map<string, SpatialIndex>();
   private readonly placed = new Map<string, Placed>();
 
+  /**
+   * Strokes the index leaves out: with joined pages, the mirrors
+   * (`canvas/mirrors.ts`), which no tool may act on; tools find their
+   * owners instead. Read whenever a stroke is added.
+   */
+  skip: ((stroke: Stroke) => boolean) | null = null;
+
   /** Drop everything known and read `pages` afresh. */
   rebuild(pages: readonly Page[]): void {
     this.grids.clear();
@@ -58,6 +65,7 @@ export class StrokeIndex {
 
   /** `stroke` was added to page `pageId`. */
   add(pageId: string, stroke: Stroke): void {
+    if (this.skip?.(stroke)) return;
     let grid = this.grids.get(pageId);
     if (!grid) {
       grid = new SpatialIndex();
@@ -85,6 +93,12 @@ export class StrokeIndex {
     }
   }
 
+  /** The page px of the cells stroke `id` is listed in (`SpatialIndex.cellBoundsOf`), or null. */
+  cellBounds(id: string): Bounds | null {
+    const pageId = this.placed.get(id)?.pageId;
+    return pageId ? (this.grids.get(pageId)?.cellBoundsOf(id) ?? null) : null;
+  }
+
   get(id: string): Stroke | undefined {
     return this.placed.get(id)?.stroke;
   }
@@ -101,6 +115,31 @@ export class StrokeIndex {
   near(pageId: string, x: number, y: number, radius: number): Set<string> {
     return this.grids.get(pageId)?.queryPoint(x, y, radius) ?? new Set();
   }
+
+  /**
+   * Call `visit` with each stroke on page `pageId` that may pass within
+   * `radius` of (x, y), possibly more than once — a broad phase that builds
+   * nothing, for a query on every pointer move (snapping to shapes).
+   */
+  forEachNear(
+    pageId: string,
+    x: number,
+    y: number,
+    radius: number,
+    visit: (stroke: Stroke) => void,
+  ): void {
+    const grid = this.grids.get(pageId);
+    if (!grid) return;
+    this.visiting = visit;
+    grid.forEachNear(x, y, radius, this.visitId);
+    this.visiting = null;
+  }
+
+  private visiting: ((stroke: Stroke) => void) | null = null;
+  private readonly visitId = (id: string): void => {
+    const where = this.placed.get(id);
+    if (where) this.visiting?.(where.stroke);
+  };
 
   /** Ids of the strokes on page `pageId` whose bounds may meet `bounds` (a broad phase too). */
   within(pageId: string, bounds: Bounds): Set<string> {

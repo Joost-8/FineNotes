@@ -45,6 +45,12 @@ export interface Command {
    * at the old scroll position.
    */
   readonly keepsReading?: boolean;
+  /**
+   * The command only makes way for the next one (picking up over a join,
+   * `canvas/mirrors.ts`): `History.push` joins the next command to it, so
+   * one undo takes back both, under the next one's name.
+   */
+  readonly joinsNext?: boolean;
   /** Make the change. Redo calls it again after an `invert`. */
   apply(doc: InkDocument): void;
   /** Take back what the last `apply` did. */

@@ -7,6 +7,9 @@ import {
   optionsAfterSwitch,
   selectedTool,
   toolAfterUse,
+  PEN_OPTIONS_RETURN_MS,
+  penOptionsOnWriteOf,
+  returnsAfterLift,
   tucksOnWrite,
   type ToolUse,
 } from "../../src/view/tool-return";
@@ -86,9 +89,27 @@ describe("hide pen options while writing", () => {
     expect(tucksOnWrite(true, "select", true)).toBe(false);
     expect(tucksOnWrite(true, "pen", true)).toBe(false);
   });
-  it("does nothing while the setting is off or not a stored true", () => {
-    for (const off of [false, undefined, null, "true", 1]) {
+  it("does nothing while the setting is off, or holds something it does not know", () => {
+    for (const off of ["off", false, undefined, null, "true", 1, "until-forever"]) {
       expect(tucksOnWrite(off, "pen", false)).toBe(false);
     }
+  });
+  it("tucks for both of its hiding choices", () => {
+    expect(tucksOnWrite("until-tap", "pen", false)).toBe(true);
+    expect(tucksOnWrite("until-lift", "highlighter", false)).toBe(true);
+  });
+  it("reads the switch it was before as until tapped", () => {
+    expect(penOptionsOnWriteOf(true)).toBe("until-tap");
+    expect(penOptionsOnWriteOf(false)).toBe("off");
+    expect(penOptionsOnWriteOf("until-lift")).toBe("until-lift");
+    expect(penOptionsOnWriteOf("UNTIL-LIFT")).toBe("off");
+  });
+  it("brings the options back after the pen rests only with until the pen lifts", () => {
+    expect(returnsAfterLift("until-lift")).toBe(true);
+    for (const mode of ["until-tap", "off", true, undefined]) {
+      expect(returnsAfterLift(mode)).toBe(false);
+    }
+    // Longer than the gap between written words, short enough to feel prompt.
+    expect(PEN_OPTIONS_RETURN_MS).toBe(1000);
   });
 });

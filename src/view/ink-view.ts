@@ -4,7 +4,7 @@
  * turns its text into a notebook and back, and puts the pieces on screen:
  *
  *   .goodobsidian-view                the tab's content
- *     .goodobsidian-toolbar           tools and actions (toolbar.ts)
+ *     .goodobsidian-toolbar           tools and actions (toolbar.ts), at any edge (bar-dock-model.ts)
  *     .goodobsidian-body              a row:
  *       .goodobsidian-pagesidebar       page thumbnails, shown on request (page-sidebar.ts)
  *       .goodobsidian-surface           the pages themselves (ink-surface.ts)
@@ -73,7 +73,7 @@ import {
 } from "../recognition/ai-chat";
 import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
 import { generatedImageName } from "../recognition/ai-image";
-import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
+import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
   type AskToolOutcome,
   type GeneratedPicture,
@@ -100,7 +100,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
-import { tucksOnWrite } from "./tool-return";
+import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -109,7 +109,8 @@ import {
   prepareImageBytes,
   saveImageAttachment,
 } from "./image-import";
-import { copyPictureToSystemClipboard } from "./picture-clipboard";
+import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
+import { ScreenshotModal } from "./screenshot-modal";
 import {
   ImageMenuPopover,
   type ImageMenuContext,
@@ -241,10 +242,11 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { isBoard } from "../model/board";
+import { drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
+import { SetJoinedPages, joinedPagesOf } from "../model/joined-pages";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
 import { SetReadOnly, isReadOnly } from "../model/read-only";
 import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
@@ -289,6 +291,7 @@ import {
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import type { PillDock } from "./pill-dock-model";
+import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
 import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
@@ -428,6 +431,17 @@ interface CheckedPage {
   suggestions?: Map<string, LexiconSuggestion | null>;
 }
 
+/**
+ * The ink a lassoed action acts on: what was selected, and the rest of any
+ * word the lasso only touched (`selectionWords` reads such a word whole, so
+ * the ink that word is made of goes with it).
+ */
+function touchedInk(strokeIds: readonly string[], read: SelectionText | null): string[] {
+  const ids = new Set(strokeIds);
+  for (const word of read?.words ?? []) for (const id of word.strokeIds) ids.add(id);
+  return [...ids];
+}
+
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
   private doc: InkDocument;
@@ -499,6 +513,8 @@ export class InkView extends TextFileView {
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
   private quietTimer = 0;
+  /** "Until the pen lifts": brings back the pen's options once the pen has rested. */
+  private optionsReturnTimer = 0;
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
@@ -843,6 +859,21 @@ export class InkView extends TextFileView {
     await this.saver.save();
   }
 
+  /**
+   * "Hide pen options while writing", until the pen lifts: once the pen
+   * has rested {@link PEN_OPTIONS_RETURN_MS}, the options a stroke tucked
+   * away come back; the next pen-down keeps them away.
+   */
+  private returnPenOptions(down: boolean): void {
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
+    if (down || !returnsAfterLift(this.settings.tuckPenOptionsOnWrite)) return;
+    this.optionsReturnTimer = window.setTimeout(() => {
+      this.optionsReturnTimer = 0;
+      this.toolbar?.showTuckedOptions();
+    }, PEN_OPTIONS_RETURN_MS);
+  }
+
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
   private penActivity(down: boolean): void {
     this.penIsDown = down;
@@ -890,6 +921,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setPillDock(dock);
   }
 
+  /** The tool bar's place changed in settings (the plugin's, per device): this notebook's follows. */
+  showBarDock(dock: BarDock): void {
+    this.toolbar?.setBarDock(dock);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -912,6 +948,8 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
     this.saver.stop();
     this.calcNotes.dispose();
     this.surface?.destroy();
@@ -2026,14 +2064,20 @@ export class InkView extends TextFileView {
     }).open();
   }
 
-  /** An answer as a text box near the top of what is in view on the current page. */
-  private insertAnswer(text: string): boolean {
+  /**
+   * An answer as a text box near the top of what is in view on the current
+   * page; `below` (a pasted transcript) puts it under what is drawn there.
+   */
+  private insertAnswer(text: string, below = false): boolean {
     const surface = this.surface;
     if (!surface || !text.trim() || this.isProtected()) return false;
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return false;
-    const frame = textBoxFrame(page.geometry, surface.visiblePageRect(index));
+    const view = surface.visiblePageRect(index);
+    const frame = below
+      ? textBoxBelow(page.geometry, view, drawnBounds(page)?.maxY ?? null)
+      : textBoxFrame(page.geometry, view);
     const box: TextBoxElement = {
       id: nextElementId(surface.document, "t"),
       x: frame.x,
@@ -2545,6 +2589,7 @@ export class InkView extends TextFileView {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
+        barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         onlyStylusMode: this.settings.onlyStylusMode === true,
@@ -2654,6 +2699,7 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
+        onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
@@ -2668,7 +2714,10 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
-        onPen: (down) => this.penActivity(down),
+        onPen: (down) => {
+          this.penActivity(down);
+          this.returnPenOptions(down);
+        },
         onGestureStart: (tool, lent) => {
           if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
             this.toolbar?.tuckOptions();
@@ -2679,8 +2728,10 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
@@ -2753,6 +2804,7 @@ export class InkView extends TextFileView {
       surface: () => this.surface,
       toolbar: () => this.toolbar,
       isLocked: () => this.guard.locked,
+      insertText: (text) => this.insertAnswer(text, true),
     });
     this.audio = audio;
     // The recordings live in the page sidebar's Audio tab, as in GoodNotes.
@@ -2982,6 +3034,8 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
+      setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
       update: this.plugin.updates.available,
       openUpdate: () => this.plugin.openUpdatePage(),
@@ -3565,7 +3619,7 @@ export class InkView extends TextFileView {
         // By identity: the page may move or go while the list is open.
         if (this.isProtected() || this.surface !== surface) return;
         if (!surface.document.pages.includes(page)) return;
-        const commands = linkStrokes(surface.document, page, strokeIds, target);
+        const commands = linkStrokes(surface.document, page, touchedInk(strokeIds, read), target);
         if (commands.length === 0) return;
         const label = target === null ? "Remove link" : "Link";
         surface.applyCommand(new CompositeCommand(label, commands));
@@ -3598,7 +3652,7 @@ export class InkView extends TextFileView {
       if (this.isProtected() || this.surface !== surface) return;
       if (!surface.document.pages.includes(page)) return;
       if (read) this.recordEdits(page, read.words, text);
-      const commands = makeTask(surface.document, page, strokeIds, text);
+      const commands = makeTask(surface.document, page, touchedInk(strokeIds, read), text);
       if (commands.length === 0) return;
       surface.applyCommand(new CompositeCommand("Task", commands));
       this.requestSave();
@@ -3608,6 +3662,39 @@ export class InkView extends TextFileView {
       read = found;
       if (found.text) modal.suggest(found.text, found.fixes);
     });
+  }
+
+  /**
+   * The lasso's Screenshot: the picture in a small dialog, to copy, or to
+   * share through the system's share sheet (or save into the notebook's
+   * pictures folder where the platform cannot share a file).
+   */
+  private showScreenshot(png: Blob, width: number, height: number): void {
+    const note = this.file;
+    new ScreenshotModal(this.app, png, "Screenshot.png", {
+      copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
+      save: async (picture) => {
+        if (!note) return null;
+        try {
+          const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
+          const folder = this.attachmentFolder("images");
+          // "Biology.notebook" names the notebook "Biology".
+          const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
+          return (
+            await saveImageAttachment(
+              this.app,
+              { ...prepared, width, height },
+              name,
+              note.path,
+              folder,
+            )
+          ).path;
+        } catch {
+          return null;
+        }
+      },
+      tell: (text) => new Notice(text),
+    }).open();
   }
 
   /**
@@ -3624,7 +3711,7 @@ export class InkView extends TextFileView {
       // By identity: the page may move or go while the dialog is open.
       if (this.isProtected() || this.surface !== surface) return;
       if (read) this.recordEdits(page, read.words, text);
-      if (surface.turnInkIntoText(page, strokeIds, text)) this.requestSave();
+      if (surface.turnInkIntoText(page, touchedInk(strokeIds, read), text)) this.requestSave();
     });
     modal.open();
     void this.readSelection(page, strokeIds, true).then((found) => {
@@ -4232,6 +4319,7 @@ export class InkView extends TextFileView {
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
         folded: this.toolbar?.foldedItems() ?? [],
+        barDock: this.plugin.barDock,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -4254,6 +4342,7 @@ export class InkView extends TextFileView {
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
+        setBarDock: (dock) => this.plugin.setBarDock(dock),
       },
     );
   }
