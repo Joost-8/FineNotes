@@ -12,11 +12,11 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Move a shape's corners and ends**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). Select one
-  shape on its own and a ring sits on each of its corners or ends: drag one
-  to move that point alone, while the frame's corners still resize the shape
-  and its knob still turns it. A rectangle with a corner moved becomes a
+  shape on its own and tap the corner points button in its bar: a ring
+  sits on each of its corners or ends, and dragging one moves that point
+  alone, as in Goodnotes. A rectangle with a corner moved becomes a
   four-sided shape; an arrow's head turns with its shaft. Circles, ellipses,
-  rounded rectangles and clouds have no rings.
+  rounded rectangles and clouds have no corner points.
 - **Stylus-only mode, the Hand and the Magnifier.** Stylus-only mode makes
   the page listen to the stylus alone: a palm, a finger or a mouse resting on
   the glass moves neither the ink nor the page, and a finger's scroll, pinch

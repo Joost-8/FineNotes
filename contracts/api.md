@@ -403,8 +403,9 @@ them up. A piece does not follow the layout table above — half a `rect` has
 three or four points, not five. Nothing may read a kind's layout off a
 stored stroke; the table describes what recognition and the Shape tool emit.
 
-**Point handles (2026-10-27, discussion #51).** One shape selected on its
-own shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
+**Point handles (2026-10-27, discussion #51; revised 2026-10-29).** One
+shape selected on its own, with the bar's corner points switch on (off for
+each new selection), shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
 off its points, not its kind: copies of one point (a closed outline's
 repeated first point) are one handle. Curved kinds (`circle`, `ellipse`,
 `roundrect`, `cloud`) get none, pieces included, nor does anything with more

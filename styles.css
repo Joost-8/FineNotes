@@ -7039,6 +7039,14 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--color-base-100);
 }
 
+/* A switch in the bar (a shape's corner points) while on: lit in the
+   accent, hovered or not. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on,
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.is-on:hover:not(:disabled) {
+  color: var(--interactive-accent);
+}
+
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.mod-warning {
   color: var(--color-red);
 }

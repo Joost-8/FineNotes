@@ -8338,6 +8338,7 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
+    this.shapePointsOn = false;
     this.syncSelectionOverlay();
   }
 
@@ -8908,6 +8909,21 @@ export class InkSurface {
       destructive: true,
       run: () => this.deleteSelection(),
     });
+    if (this.loneShape(sel)) {
+      actions.push({
+        id: "corner-points",
+        icon: "vector-square",
+        label: this.shapePointsOn ? "Hide corner points" : "Edit corner points",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.shapePointsOn,
+        run: () => {
+          this.shapePointsOn = !this.shapePointsOn;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
     return actions;
   }
 
@@ -10844,6 +10860,12 @@ export class InkSurface {
 
   /** The dots on a lone selected shape's corners and ends; made on first use. */
   private shapePointsEl: HTMLElement | null = null;
+  /**
+   * Whether the lone shape selected shows its corner rings: off when it is
+   * selected, switched by the bar's corner points button (Joost,
+   * 2026-10-29), so a tap on a shape shows only its resize handles.
+   */
+  private shapePointsOn = false;
   private pointDrag: PointDrag | null = null;
 
   /**
@@ -10852,7 +10874,9 @@ export class InkSurface {
    * corner squares stand clear of the rings on the shape's own corners.
    */
   private get framePad(): number {
-    return this.loneShape(this.selection) ? SHAPE_FRAME_PAD_PX : SELECTION_PAD_PX;
+    return this.shapePointsOn && this.loneShape(this.selection)
+      ? SHAPE_FRAME_PAD_PX
+      : SELECTION_PAD_PX;
   }
 
   /** The one shape a selection holds on its own, and its point handles; null otherwise. */
@@ -10873,7 +10897,7 @@ export class InkSurface {
    */
   private syncShapePoints(sel: GroupSelection | null, box: PageBox | null): void {
     const drag = this.pointDrag;
-    const lone = drag ?? (box ? this.loneShape(sel) : null);
+    const lone = drag ?? (box && this.shapePointsOn ? this.loneShape(sel) : null);
     if (!lone || !box) {
       this.shapePointsEl?.addClass("is-hidden");
       return;
@@ -10908,6 +10932,7 @@ export class InkSurface {
     bounds: Bounds,
     from: Pt,
   ): boolean {
+    if (!this.shapePointsOn) return false;
     const lone = this.loneShape(sel);
     const before = lone ? strokeBounds(lone.stroke) : null;
     if (!lone || !before) return false;
