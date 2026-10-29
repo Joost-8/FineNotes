@@ -1280,22 +1280,8 @@ function shortcutTool(actionId: string): ActiveTool | null {
   return SHORTCUT_TOOLS[actionId] ?? null;
 }
 
-/**
- * A tool one press can borrow: each has a gesture of its own, so the press
- * draws nothing with the pen in hand. The pen, the highlighter and Shapes
- * are not among them: their ink is the tool in hand's (`inkGesture`).
- */
-type LentTool = "eraser" | "select" | "zoom" | "text" | "laser";
-
-function lentTool(tool: ActiveTool): LentTool | null {
-  return tool === "eraser" ||
-    tool === "select" ||
-    tool === "zoom" ||
-    tool === "text" ||
-    tool === "laser"
-    ? tool
-    : null;
-}
+/** A tool one press borrows from its keys or a stylus button (`pen-modifiers.ts`). */
+type LentTool = "eraser" | "select" | "zoom";
 
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
@@ -1462,15 +1448,24 @@ export class InkSurface {
    * What the press under way does instead of the tool in hand, because a
    * key or a stylus button was held as it came down (`pen-modifiers.ts`,
    * FineNotes#25). Null for the tool itself; it lasts for that press only.
-   * A shortcut set to Hold lends its tool here too.
    */
   private pressTool: LentTool | null = null;
   /**
-   * The key held for a shortcut set to Hold, with the tool it lends. It
-   * outlasts a press: the key's key-up releases it, as Shift stops erasing.
+   * The key held for a shortcut set to Hold: the tool it put in hand, and
+   * the one to go back to when the key is let go (null: nothing to go back
+   * to, for the hand, which is Space's, or a tool already in hand).
    * `mod`: it was held with Cmd or Ctrl, whose key-up ends it too.
    */
-  private heldShortcut: { key: string; mod: boolean; tool: ActiveTool } | null = null;
+  private heldShortcut: {
+    key: string;
+    mod: boolean;
+    tool: ActiveTool;
+    back: ActiveTool | null;
+  } | null = null;
+  /** A pen or mouse press is under way: a held key's tool switch waits for its lift. */
+  private pressing = false;
+  /** The tool a held key switched to (or back to) while a press was under way. */
+  private pendingHeldTool: ActiveTool | null = null;
   /** A pen or mouse is moving the page from beside the pages, or with the barrel. */
   private penPanning = false;
   /** An Alt-drag zooming: the zoom it began at, and the client point it zooms about. */
@@ -3230,16 +3225,44 @@ export class InkSurface {
     this.callbacks.onToolChange?.(next);
   }
 
-  /** Hold a shortcut's tool until its key is let go. */
+  /**
+   * Hold a shortcut's tool until its key is let go: the tool itself goes in
+   * hand, its own gesture and ink with it (the highlighter writes highlighter
+   * ink), and the tool before it comes back on the key-up. The hand is
+   * Space's way instead: the page moves while the key is down.
+   */
   private beginHeldShortcut(row: ShortcutRow, input: ShortcutInput): void {
     if (this.heldShortcut) return;
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
-    this.heldShortcut = { key: input.key, mod: input.mods.includes("Mod"), tool };
-    // The hand is the one lent tool with a cursor of its own; the others
-    // show on the press they lend, as Shift's eraser does.
-    if (tool === "pan") this.setHand(true);
+    const mod = input.mods.includes("Mod");
+    if (tool === "pan") {
+      this.heldShortcut = { key: input.key, mod, tool, back: null };
+      this.setHand(true);
+      return;
+    }
+    const inHand = this.pendingHeldTool ?? this.toolState.tool;
+    this.heldShortcut = { key: input.key, mod, tool, back: inHand === tool ? null : inHand };
+    if (inHand !== tool) this.switchHeldTool(tool);
+  }
+
+  /** Put `tool` in hand for a held key, after the press under way if there is one. */
+  private switchHeldTool(tool: ActiveTool): void {
+    if (this.pressing) {
+      this.pendingHeldTool = tool;
+      return;
+    }
+    this.pendingHeldTool = null;
+    this.setTool(tool);
+    this.callbacks.onToolChange?.(tool);
+  }
+
+  /** The press is over: a held key's switch that waited for it happens now. */
+  private pressEnded(): void {
+    this.pressing = false;
+    const tool = this.pendingHeldTool;
+    if (tool) this.switchHeldTool(tool);
   }
 
   /** The key that held a tool was let go. */
@@ -3259,6 +3282,7 @@ export class InkSurface {
     if (!held) return;
     this.heldShortcut = null;
     if (held.tool === "pan") this.setHand(false);
+    else if (held.back) this.switchHeldTool(held.back);
   }
 
   /**
@@ -5542,6 +5566,7 @@ export class InkSurface {
   private readonly pointerCallbacks: PointerControllerCallbacks = {
     onStylusClick: (clientX, clientY) => this.stylusClicked(clientX, clientY),
     onStart: (sample, press) => {
+      this.pressing = true;
       this.callbacks.onPen?.(true);
       this.pressTool = this.pressOverrideOf(press);
       if (
@@ -5564,21 +5589,12 @@ export class InkSurface {
       if (box) this.gestureOf(this.gestureTool()).move(box, coalesced);
     },
     onEnd: (sample) => {
-      this.callbacks.onPen?.(false);
-      this.markDrawing(false);
-      if (this.endZoomDrag(sample)) return;
-      if (this.finishCellTap(sample)) return;
-      if (this.finishTextDismiss()) return;
-      const box = this.activePage;
-      this.finishToolGesture(box, sample);
+      this.penLifted(sample);
+      this.pressEnded();
     },
     onCancel: () => {
-      this.callbacks.onPen?.(false);
-      this.markDrawing(false);
-      if (this.endZoomDrag()) return;
-      if (this.finishCellTap(null)) return;
-      if (this.finishTextDismiss()) return;
-      this.finishToolGesture(this.activePage, null);
+      this.penLifted(null);
+      this.pressEnded();
     },
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
@@ -5923,11 +5939,22 @@ export class InkSurface {
     this.gestureOf(this.gestureTool()).down(box, local, sample);
   }
 
+  /** The pen or mouse lifted (`sample`), or its press was cancelled (null). */
+  private penLifted(sample: PointerSample | null): void {
+    this.callbacks.onPen?.(false);
+    this.markDrawing(false);
+    if (this.endZoomDrag(sample)) return;
+    if (this.finishCellTap(sample)) return;
+    if (this.finishTextDismiss()) return;
+    this.finishToolGesture(this.activePage, sample);
+  }
+
   /** Complete the tool before switching; cancelled erasing is rolled back. */
   private finishToolGesture(box: PageBox | null, sample: PointerSample | null): void {
     const tool = this.gestureTool();
-    // A tool a key or a stylus button lent is done with; the tool in hand was not used.
-    const lent = Boolean(this.pressTool);
+    // A tool a key or a stylus button lent is done with; the tool in hand was
+    // not used. A held key's tool goes back on its key-up, not after one use.
+    const lent = Boolean(this.pressTool) || Boolean(this.heldShortcut);
     this.pressTool = null;
     const gesture = this.gestureOf(tool);
     if (sample) {
@@ -5946,9 +5973,8 @@ export class InkSurface {
    * lasso a key or a stylus button lent it.
    */
   private gestureTool(): ActiveTool {
-    // A lent zoom is a zoom drag (`startZoomDrag`), never a gesture of its own.
     const lent = this.pressTool;
-    return lent && lent !== "zoom" ? lent : this.toolState.tool;
+    return lent === "eraser" || lent === "select" ? lent : this.toolState.tool;
   }
 
   /**
@@ -6040,12 +6066,6 @@ export class InkSurface {
   private pressOverrideOf(press: PressInput): LentTool | null {
     // Typing keeps its keys: Shift is a capital there, not an eraser.
     if (this.editingTextView() || this.cellEdit) return null;
-    // A tool held by a shortcut; the hand is `pressRoute`'s, as Space is.
-    const held = this.heldShortcut;
-    if (held && held.tool !== "pan") {
-      if (this.practice && !isPracticeTool(held.tool)) return null;
-      return lentTool(held.tool);
-    }
     const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
     // A practice file has the pen and the eraser only.
     if (this.practice && lent === "select") return null;

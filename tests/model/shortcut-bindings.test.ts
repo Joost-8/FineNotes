@@ -76,13 +76,16 @@ describe("the built-in shortcut table", () => {
     });
   });
 
-  it("offers Hold only to tools whose press does not draw with the pen in hand", () => {
+  it("offers Hold to every tool, and to nothing else", () => {
     const holdable = SHORTCUT_ACTIONS.filter((action) => action.holdable).map(
       (action) => action.id,
     );
     expect(holdable).toEqual([
+      "tool.pen",
+      "tool.highlighter",
       "tool.eraser",
       "tool.select",
+      "tool.shape",
       "tool.text",
       "tool.laser",
       "tool.pan",
@@ -241,9 +244,17 @@ describe("changing a row", () => {
     );
     expect(hand?.mode).toBe("press");
     expect(hand?.inputs).toEqual([{ type: "key", key: " ", mods: [] }]);
-    // A command has nothing to hold, nor has the pen: its ink is the pen in hand's.
+    // The pen's two keys both stay when only its mode changes.
+    expect(
+      shortcutTable(withMode({}, "tool.pen", "hold")).rows.find(
+        (candidate) => candidate.action.id === "tool.pen",
+      )?.inputs,
+    ).toEqual([
+      { type: "key", key: "p", mods: [] },
+      { type: "key", key: "w", mods: [] },
+    ]);
+    // A command has nothing to hold.
     expect(withMode({}, "edit.undo", "hold")).toEqual({});
-    expect(withMode({}, "tool.pen", "hold")).toEqual({});
   });
 
   it("keeps a mode-only change through the store", () => {
@@ -320,13 +331,15 @@ describe("this device's stored rows", () => {
         "tool.gone": { input: { type: "key", key: "g", mods: [] }, mode: "press" },
         "tool.eraser": { input: { type: "pointer", button: 2, mods: [] }, mode: "hold" },
         "tool.shape": { mode: "hold" },
+        "view.zoom-in": { mode: "hold" },
         "edit.undo": { input: null, mode: "hold" },
       },
     });
     expect(parseShortcutOverrides(raw)).toEqual({
       "tool.pen": { input: { type: "key", key: "k", mods: ["Mod"] }, mode: "press" },
       "edit.undo": { input: null, mode: "press" },
-      "tool.shape": { mode: "press" },
+      "tool.shape": { mode: "hold" },
+      "view.zoom-in": { mode: "press" },
     });
   });
 

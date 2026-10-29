@@ -46,9 +46,8 @@ export interface ShortcutAction {
   /** What the row's ⓘ says, when the label alone is not enough. */
   hint?: string;
   /**
-   * Whether Hold means anything: a tool whose press does not depend on the
-   * pen in hand (the eraser, the lasso, the hand…). The pen, the highlighter
-   * and Shapes draw with the pen's own style, so they are pressed only.
+   * Whether Hold means anything: a tool, which the key puts in hand while it
+   * is down (its own gesture and ink), not a one-shot command.
    */
   holdable: boolean;
   /** What the notebook does when the row is not customized. */
@@ -79,7 +78,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.pen",
     label: "Pen",
     group: "Tools",
-    holdable: false,
+    holdable: true,
     defaults: [key("p"), key("w")],
     defaultMode: "press",
   },
@@ -87,7 +86,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.highlighter",
     label: "Highlighter",
     group: "Tools",
-    holdable: false,
+    holdable: true,
     defaults: [key("h")],
     defaultMode: "press",
   },
@@ -111,7 +110,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     id: "tool.shape",
     label: "Shapes",
     group: "Tools",
-    holdable: false,
+    holdable: true,
     defaults: [key("s")],
     defaultMode: "press",
   },

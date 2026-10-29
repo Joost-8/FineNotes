@@ -1498,8 +1498,8 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(slot?.findAll("goodobsidian-key").map((key) => key.text)).toEqual(["P", "W"]);
     expect(slot?.find("goodobsidian-shortcut-sep")?.text).toBe("or");
     expect(slot?.attrs["aria-label"]).toBe("Pen: P or W");
-    // Nothing to hold (its ink is the pen in hand's) and nothing to reset yet.
-    expect(pen.extras).toEqual([]);
+    // Hold is one icon, off; nothing to reset yet; no dropdown.
+    expect(pen.extras.map((extra) => extra.icon)).toEqual(["hand-grab"]);
     expect(pen.dropdowns).toEqual([]);
     // A row with no key shows a dash, and its name says the rest.
     const fit = renderRow(named(all, "Fit the page"));

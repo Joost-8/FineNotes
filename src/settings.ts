@@ -356,7 +356,8 @@ const DESC = {
   shortcuts:
     "Tap a key to record a new one; Escape or a tap anywhere cancels. The keys are kept on " +
     "this device only, so a laptop and a tablet each have their own. A tool with the hand " +
-    "icon on is lent only while its key is held, as Shift erases. Two shortcuts on one key " +
+    "icon on is in hand only while its key is held, then the tool before it is back. Two " +
+    "shortcuts on one key " +
     "both stop until one of them changes. None act while you type in a text box; ? in a " +
     "notebook lists them all.",
   debugHud:
@@ -1370,7 +1371,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       setting.addExtraButton((button) => {
         button
           .setIcon("hand-grab")
-          .setTooltip(hold ? "Only while the key is held" : "Hold the key to lend the tool")
+          .setTooltip(hold ? "Only while the key is held" : "Hold the key to use the tool")
           .onClick(() => {
             this.plugin.shortcuts.setMode(action.id, hold ? "press" : "hold");
             this.update();

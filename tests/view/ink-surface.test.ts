@@ -592,44 +592,126 @@ describe("the user's shortcut table", () => {
     expect(tablePress("e", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
   });
 
-  it("holds a tool for as long as its key is down", () => {
-    const table = shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold"));
-    const pressed = tablePress("r", {}, table);
-    expect(pressed.calls).toEqual([]);
-    expect(pressed.surface.heldShortcut).toEqual({ key: "r", mod: false, tool: "eraser" });
-    run(pressed.surface, "handleKeyUp", { key: "r" });
-    expect(pressed.surface.heldShortcut).toBeNull();
+  /**
+   * A surface whose `setTool` really puts the tool in hand, so a test reads
+   * what a press would then draw with: its gesture and its ink.
+   */
+  function holding(table: ShortcutTable) {
+    const calls: string[] = [];
+    const toolState = { tool: "pen", color: "#112233", shapeColor: "#ff0000" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        shortcuts: () => table,
+      },
+      editingTextView: () => null,
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const key = (type: "keydown" | "keyup", value: string, mods: Mods = {}) => {
+      const event = {
+        key: value,
+        metaKey: mods.meta === true,
+        ctrlKey: mods.ctrl === true,
+        shiftKey: mods.shift === true,
+        altKey: mods.alt === true,
+        target: null,
+        preventDefault: () => {},
+      };
+      if (type === "keydown") run(surface, "handleKeyDown", event);
+      else run(surface, "handleKeyUp", event);
+    };
+    return { surface, toolState, calls, key };
+  }
+
+  it("holds the highlighter: its gesture and its ink while the key is down, the pen after", () => {
+    const { surface, toolState, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(toolState.tool).toBe("highlighter");
+    expect(run(surface, "gestureTool")).toBe("highlighter");
+    // The stroke a press now commits is highlighter ink, not the pen's.
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("highlighter");
+    key("keydown", "r"); // the key repeating changes nothing
+    key("keyup", "r");
+    expect(toolState.tool).toBe("pen");
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("pen");
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("holds Shapes with the Shape tool's own colour", () => {
+    const { surface, key } = holding(
+      shortcutTable(withShortcut({}, "tool.shape", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(run(surface, "gestureTool")).toBe("shape");
+    expect(run(surface, "strokeColor")).toBe("#ff0000");
+  });
+
+  it("holds the eraser: a press erases, and the pen comes back on the key-up", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(surface.heldShortcut).toEqual({ key: "r", mod: false, tool: "eraser", back: "pen" });
+    expect(run(surface, "gestureTool")).toBe("eraser");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("waits for the pen to lift before switching either way", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    surface.pressing = true;
+    key("keydown", "r");
+    // The stroke under way stays the pen's to the end.
+    expect(toolState.tool).toBe("pen");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("highlighter");
+    surface.pressing = true;
+    key("keyup", "r");
+    expect(toolState.tool).toBe("highlighter");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("pen");
   });
 
   it("lets go of a tool held with Cmd when Cmd comes up, as Apple sends no other key-up", () => {
-    const table = shortcutTable(withShortcut({}, "tool.select", keyOf("j", "Mod"), "hold"));
-    const pressed = tablePress("j", { meta: true }, table);
-    expect(pressed.surface.heldShortcut).toEqual({ key: "j", mod: true, tool: "select" });
-    run(pressed.surface, "handleKeyUp", { key: "Meta", metaKey: false });
-    expect(pressed.surface.heldShortcut).toBeNull();
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.select", keyOf("j", "Mod"), "hold")),
+    );
+    key("keydown", "j", { meta: true });
+    expect(toolState.tool).toBe("select");
+    key("keyup", "Meta");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
   });
 
-  it("lends a held tool to the press, with that tool's own gesture", () => {
-    const surface = surfaceWith({
-      practice: null,
-      cellEdit: null,
-      editingTextView: () => null,
-      heldShortcut: { key: "r", mod: false, tool: "laser" },
-      callbacks: {},
-    });
-    const pen = { pointerType: "pen", button: 0, buttons: 1 };
-    expect(run(surface, "pressOverrideOf", { ...pen, ...noKeys })).toBe("laser");
-    // The hand is the press route's (it pans), never a tool the ink path draws with.
-    surface.heldShortcut = { key: "k", mod: false, tool: "pan" };
-    expect(run(surface, "pressOverrideOf", { ...pen, ...noKeys })).toBeNull();
-  });
-
-  it("offers no Hold to the highlighter: its key only switches to it", () => {
-    // A stored Hold from an older build reads as Press.
-    const table = shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold"));
-    const pressed = tablePress("r", {}, table);
-    expect(pressed.surface.heldShortcut).toBeFalsy();
-    expect(pressed.calls).toEqual(["setTool(highlighter)", "onToolChange(highlighter)"]);
+  it("keeps the tool already in hand when its own key is held", () => {
+    const { surface, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.pen", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(calls).toEqual([]);
   });
 
   it("lets go of a held tool when the window loses focus", () => {
