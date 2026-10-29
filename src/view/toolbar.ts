@@ -4107,7 +4107,7 @@ export class Toolbar {
    * The pen in hand's own settings, behind "Pen settings" in the pen type
    * menu, then two that hold for every pen: "Hide pen options while
    * writing" with its three choices, and "Back to the pen" with its four,
-   * as the eraser's mode menu shows a choice.
+   * each one row with its choice in a dropdown.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
@@ -4116,14 +4116,14 @@ export class Toolbar {
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return;
     body.createDiv({ cls: "goodobsidian-popover-divider" });
-    this.choiceRows<PenOptionsOnWrite>(
+    this.choiceMenu<PenOptionsOnWrite>(
       body,
       "Hide pen options while writing",
       PEN_OPTIONS_ON_WRITE.map((id) => [id, PEN_OPTIONS_ON_WRITE_NAMES[id]]),
       prefs.tuckOnWrite,
       (choice) => save({ tuckOnWrite: choice }),
     );
-    this.choiceRows<ReturnToPen>(
+    this.choiceMenu<ReturnToPen>(
       body,
       "Back to the pen",
       [
@@ -4141,27 +4141,32 @@ export class Toolbar {
     });
   }
 
-  /** A label and one row per choice, the one in use filled, as the eraser's mode menu has it. */
-  private choiceRows<T extends string>(
+  /**
+   * One row: the label, and the choice in use in a dropdown that lists the
+   * rest, as the template picker's size and colour do (Obsidian's own
+   * `dropdown`; on the iPad the system's picker).
+   */
+  private choiceMenu<T extends string>(
     body: HTMLElement,
     label: string,
     choices: ReadonlyArray<[T, string]>,
     current: T,
     pick: (choice: T) => void,
   ): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: label });
+    const row = body.createDiv({ cls: "goodobsidian-choice-row" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: label });
+    const select = row.createEl("select", {
+      cls: "dropdown goodobsidian-choice-select",
+      attr: { "aria-label": label },
+    });
     for (const [choice, name] of choices) {
-      const row = body.createEl("button", {
-        cls: "goodobsidian-wide",
-        text: name,
-        attr: { role: "menuitemradio", "aria-checked": String(choice === current) },
-      });
-      row.toggleClass("is-active", choice === current);
-      row.addEventListener("click", () => {
-        pick(choice);
-        this.popoverRender?.();
-      });
+      select.createEl("option", { text: name, value: choice });
     }
+    select.value = current;
+    select.addEventListener("change", () => {
+      const picked = choices.find(([choice]) => choice === select.value);
+      if (picked) pick(picked[0]);
+    });
   }
 
   /**

@@ -1013,6 +1013,23 @@ body:not(.is-mobile) .goodobsidian-view {
   font-weight: var(--font-semibold, 600);
 }
 
+/* A choice in a popover: its name, and the choice in use in a dropdown. */
+.goodobsidian-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.goodobsidian-choice-row .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+/* 16 px so the iPad does not zoom in when the picker opens. */
+select.goodobsidian-choice-select {
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
 .goodobsidian-popover button {
   min-height: var(--gob-touch-compact);
   border-radius: var(--gob-radius-m);
