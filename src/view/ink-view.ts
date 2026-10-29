@@ -73,7 +73,7 @@ import {
 } from "../recognition/ai-chat";
 import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
 import { generatedImageName } from "../recognition/ai-image";
-import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
+import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
   type AskToolOutcome,
   type GeneratedPicture,
@@ -241,7 +241,7 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { isBoard } from "../model/board";
+import { drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
@@ -2026,14 +2026,20 @@ export class InkView extends TextFileView {
     }).open();
   }
 
-  /** An answer as a text box near the top of what is in view on the current page. */
-  private insertAnswer(text: string): boolean {
+  /**
+   * An answer as a text box near the top of what is in view on the current
+   * page; `below` (a pasted transcript) puts it under what is drawn there.
+   */
+  private insertAnswer(text: string, below = false): boolean {
     const surface = this.surface;
     if (!surface || !text.trim() || this.isProtected()) return false;
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return false;
-    const frame = textBoxFrame(page.geometry, surface.visiblePageRect(index));
+    const view = surface.visiblePageRect(index);
+    const frame = below
+      ? textBoxBelow(page.geometry, view, drawnBounds(page)?.maxY ?? null)
+      : textBoxFrame(page.geometry, view);
     const box: TextBoxElement = {
       id: nextElementId(surface.document, "t"),
       x: frame.x,
@@ -2753,6 +2759,7 @@ export class InkView extends TextFileView {
       surface: () => this.surface,
       toolbar: () => this.toolbar,
       isLocked: () => this.guard.locked,
+      insertText: (text) => this.insertAnswer(text, true),
     });
     this.audio = audio;
     // The recordings live in the page sidebar's Audio tab, as in GoodNotes.
