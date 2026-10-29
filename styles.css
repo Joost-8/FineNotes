@@ -9138,6 +9138,21 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   -webkit-user-select: text;
 }
 
+/* The lasso's Screenshot: the picture it makes, then Copy and Share. */
+.goodobsidian-screenshot-preview {
+  display: flex;
+  justify-content: center;
+  padding: var(--size-4-2) 0;
+}
+
+.goodobsidian-screenshot-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: min(50vh, 420px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
 /* ------------------------------------------------ search this notebook */
 
 .goodobsidian-search-hit {

@@ -40,8 +40,10 @@ extracted from the matching section of this file by `release.yml`.
   picks the lasso and selects it with its handles and bar, as a tap on a
   picture does.
 - **Screenshot from the lasso.** The lasso's menu has Screenshot for any
-  selection: what is selected, as drawn on its page's paper, goes to the
-  clipboard as a picture to paste into another app or note.
+  selection: a small window shows what is selected, as drawn on its page's
+  paper, with Copy (to the clipboard, to paste into another app or note)
+  and Share… (the system's share sheet). Where the device cannot share a
+  picture, Save image puts it in the notebook's pictures folder instead.
 - **The lasso's menu fits what you selected.** One kind of thing keeps its
   own options (a shape its fill and line, a table Edit table), and
   handwriting counts as one kind however many strokes it is. A mix of

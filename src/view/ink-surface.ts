@@ -712,6 +712,8 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** "Save as sticker": the selection drawn as a transparent PNG, its size in page px. */
   onSaveSticker?: (png: ArrayBuffer, width: number, height: number) => void;
+  /** Screenshot: the selection drawn on its paper as a PNG; the host offers Copy and Share. */
+  onScreenshot?: (png: Blob, width: number, height: number) => void;
   /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
@@ -9115,7 +9117,7 @@ export class InkSurface {
         icon: "camera",
         label: "Screenshot",
         group: "edit",
-        run: () => this.copySelectionScreenshot(),
+        run: () => void this.showSelectionScreenshot(),
       },
     ];
     // One graph on its own: look around in it, or change what it plots.
@@ -9886,21 +9888,27 @@ export class InkSurface {
 
   /**
    * Screenshot (Joost on PR #59): what is selected, as it is drawn, on its
-   * page's paper, copied to the clipboard as a picture to paste anywhere.
-   * The readout says whether it got there. The clipboard item is handed
-   * over within the tap, with a promise of the pixels, as WebKit needs.
+   * page's paper, as a PNG the host shows with Copy and Share
+   * (`screenshot-modal.ts`). Without a host, it goes straight to the
+   * clipboard, and the readout says whether it got there.
    */
-  private copySelectionScreenshot(): void {
+  private async showSelectionScreenshot(): Promise<void> {
     const sel = this.liveSelection();
     const page = sel ? this.doc.pages.find((candidate) => candidate.id === sel.pageId) : null;
     if (!sel || !page) return;
-    const png = this.selectionPicture(sel, paperColorOf(page, this.paper)).then((shot) => {
-      if (!shot) throw new Error("Nothing to draw");
-      return shot.blob;
-    });
-    void writePngToClipboard(png).then((copied) =>
-      this.flashReadout(copied ? "Copied as a picture" : "Couldn't copy the picture"),
-    );
+    const show = this.callbacks.onScreenshot;
+    const shot = this.selectionPicture(sel, paperColorOf(page, this.paper));
+    if (!show) {
+      const png = shot.then((made) => {
+        if (!made) throw new Error("Nothing to draw");
+        return made.blob;
+      });
+      const copied = await writePngToClipboard(png);
+      this.flashReadout(copied ? "Copied as a picture" : "Couldn't copy the picture");
+      return;
+    }
+    const made = await shot;
+    if (made) show(made.blob, made.width, made.height);
   }
 
   /**
