@@ -158,7 +158,7 @@ export function pushRecentColor(recent: readonly string[], color: string): strin
   return [hex, ...kept].slice(0, MAX_RECENT_COLORS);
 }
 
-/** Colours the pen's row holds before it is first edited (it shows up to ten; styles.css). */
+/** Colours the pen's row holds before it is first edited (it shows six at a time; styles.css). */
 export const PEN_ROW_SIZE = 5;
 
 /** The most colours a pen type's row holds, reserved ones included; more scroll. */
