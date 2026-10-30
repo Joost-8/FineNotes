@@ -13509,13 +13509,10 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 /* ------------------------------------------------------- Magnifier zoom box */
 
 /* The Magnifier's two modes: page zoom, or a target box written in through a
-   floating window. Wells, like the eraser's mode picker. */
+   floating window. Symbols, their names in aria-label; wells, like the
+   eraser's mode picker. */
 .goodobsidian-options button.goodobsidian-zoommode {
-  gap: 6px;
   padding: 0 10px;
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-  white-space: nowrap;
 }
 
 .goodobsidian-options button.goodobsidian-zoommode.is-active {

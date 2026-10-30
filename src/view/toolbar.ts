@@ -2553,7 +2553,7 @@ export class Toolbar {
     const cb = this.callbacks;
     const boxMode = this.state.zoomBox === true;
     for (const mode of [
-      { box: false, label: "Page zoom", icon: "zoom-in", fallback: "＋" },
+      { box: false, label: "Page zoom", icon: "file", fallback: "＋" },
       { box: true, label: "Zoom box", icon: "scan", fallback: "▣" },
     ]) {
       const active = boxMode === mode.box;
@@ -2562,10 +2562,9 @@ export class Toolbar {
       });
       button.toggleClass("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
-      button.setAttribute("aria-label", mode.box ? "Zoom box" : "Page zoom");
+      button.setAttribute("aria-label", mode.label);
       const glyph = button.createSpan({ cls: "goodobsidian-zoommode-icon" });
       iconOrText(glyph, mode.icon, mode.fallback);
-      button.createSpan({ text: mode.label });
       button.addEventListener("click", () => {
         // A second tap on Zoom box is the switch's own off position.
         const next = mode.box && active ? false : mode.box;
@@ -2598,11 +2597,12 @@ export class Toolbar {
       "Zoom in",
       cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
     );
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    this.toolNote(
-      boxMode ? "scan" : "zoom-in",
-      boxMode ? "Drag out or move the writing box" : "Drag up or down to zoom",
-    );
+    // Page zoom keeps the note it always had; the Zoom box needs none: the
+    // target it draws, and the window, show what a drag did.
+    if (!boxMode) {
+      this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+      this.toolNote("zoom-in", "Drag up or down to zoom");
+    }
   }
 
   /**
