@@ -12,6 +12,8 @@ import {
   SHORTCUT_STORAGE_VERSION,
   SHORTCUTS_STORAGE_KEY,
   boundShortcutGroups,
+  buttonBit,
+  buttonInput,
   inputCaps,
   inputKey,
   inputText,
@@ -19,6 +21,7 @@ import {
   keyInput,
   matchShortcut,
   normalizeMods,
+  parseInput,
   parseShortcutOverrides,
   serializeShortcutOverrides,
   shortcutTable,
@@ -329,7 +332,7 @@ describe("this device's stored rows", () => {
       bindings: {
         "tool.pen": { input: { type: "key", key: "k", mods: ["Mod", "Nope"] }, mode: "press" },
         "tool.gone": { input: { type: "key", key: "g", mods: [] }, mode: "press" },
-        "tool.eraser": { input: { type: "pointer", button: 2, mods: [] }, mode: "hold" },
+        "tool.eraser": { input: { type: "gesture", name: "swipe", mods: [] }, mode: "hold" },
         "tool.shape": { mode: "hold" },
         "view.zoom-in": { mode: "hold" },
         "edit.undo": { input: null, mode: "hold" },
@@ -387,5 +390,122 @@ describe("the ? sheet", () => {
     expect(line(groups, "Saved pens 1 to 8")).toBeUndefined();
     expect(line(groups, "Saved pen 2")?.ways).toEqual([{ keys: ["Q"] }]);
     expect(line(groups, "Saved pen 8")?.ways).toEqual([{ keys: ["8"] }]);
+  });
+});
+
+describe("buttons", () => {
+  const press = (
+    pointerType: string,
+    button: number,
+    buttons: number,
+    mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {},
+  ) => ({
+    pointerType,
+    button,
+    buttons,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("reads a right click, a pen's side button and eraser end, and the mouse's other buttons", () => {
+    expect(buttonInput(press("mouse", 2, 2))).toEqual({ type: "button", button: 2, mods: [] });
+    expect(buttonInput(press("pen", 2, 2))).toEqual({
+      type: "button",
+      button: 2,
+      mods: [],
+      pen: true,
+    });
+    // Some drivers report a pen touching down with its side button held as button 0.
+    expect(buttonInput(press("pen", 0, 3))).toMatchObject({ button: 2, pen: true });
+    // The eraser end, by its bit or by its button.
+    expect(buttonInput(press("pen", 0, 32))).toMatchObject({ button: 5 });
+    expect(buttonInput(press("pen", 5, 0))).toMatchObject({ button: 5 });
+    expect(buttonInput(press("mouse", 1, 4))).toMatchObject({ button: 1 });
+    expect(buttonInput(press("mouse", 3, 8))).toMatchObject({ button: 3 });
+    expect(buttonInput(press("mouse", 4, 16))).toMatchObject({ button: 4 });
+    expect(buttonInput(press("mouse", 2, 2, { shiftKey: true, ctrlKey: true }))).toEqual({
+      type: "button",
+      button: 2,
+      mods: ["Mod", "Shift"],
+    });
+  });
+
+  it("is never the contact, a left click or a finger", () => {
+    expect(buttonInput(press("pen", 0, 1))).toBeNull();
+    expect(buttonInput(press("mouse", 0, 1))).toBeNull();
+    // A mouse's left button with the right one held is still the left click.
+    expect(buttonInput(press("mouse", 0, 3))).toBeNull();
+    expect(buttonInput(press("touch", 2, 2))).toBeNull();
+  });
+
+  it("knows which buttons bit each one holds", () => {
+    expect([1, 2, 3, 4, 5].map(buttonBit)).toEqual([4, 2, 8, 16, 32]);
+    expect(buttonBit(0)).toBe(0);
+  });
+
+  it("is one input for a pen and a mouse, named as each", () => {
+    const right = { type: "button", button: 2, mods: [] } as const;
+    const side = { ...right, pen: true };
+    expect(inputKey(side)).toBe(inputKey(right));
+    expect(inputText(right, false)).toBe("Right click");
+    expect(inputText(side, false)).toBe("Side button");
+    expect(inputCaps({ type: "button", button: 5, mods: ["Shift"] }, false)).toEqual([
+      "Shift",
+      "Eraser end",
+    ]);
+    expect(inputText({ type: "button", button: 1, mods: [] }, false)).toBe("Middle click");
+    // Never the same as a key.
+    expect(inputKey(right)).not.toBe(inputKey({ type: "key", key: "2", mods: [] }));
+  });
+
+  it("binds, conflicts and is stored like a key", () => {
+    const side = { type: "button", button: 2, mods: [], pen: true } as const;
+    const overrides = withShortcut({}, "tool.highlighter", side, "hold");
+    const table = shortcutTable(overrides);
+    // Recorded with the pen, a tablet driver's right click finds it too.
+    expect(matchShortcut(table, { type: "button", button: 2, mods: [] })).toMatchObject({
+      kind: "action",
+      row: { mode: "hold", action: { id: "tool.highlighter" } },
+    });
+    const both = withShortcut(
+      overrides,
+      "edit.undo",
+      { type: "button", button: 2, mods: [] },
+      "press",
+    );
+    expect(matchShortcut(shortcutTable(both), side)).toMatchObject({ kind: "conflict" });
+    const stored = parseShortcutOverrides(serializeShortcutOverrides(overrides));
+    expect(stored).toEqual(overrides);
+  });
+
+  it('reads a stored button, the first build\'s "pointer" too, and refuses a bad one', () => {
+    expect(parseInput({ type: "button", button: 5, mods: ["Shift"] })).toEqual({
+      type: "button",
+      button: 5,
+      mods: ["Shift"],
+    });
+    expect(parseInput({ type: "pointer", button: 2, mods: [] })).toEqual({
+      type: "button",
+      button: 2,
+      mods: [],
+    });
+    expect(parseInput({ type: "button", button: 0, mods: [] })).toBeNull();
+    expect(parseInput({ type: "button", button: 1.5, mods: [] })).toBeNull();
+    expect(parseInput({ type: "button", mods: [] })).toBeNull();
+  });
+
+  it("writes a button's own name on the ? sheet", () => {
+    const overrides = withShortcut(
+      {},
+      "edit.undo",
+      { type: "button", button: 2, mods: [], pen: true },
+      "press",
+    );
+    const groups = boundShortcutGroups(shortcutTable(overrides), SHORTCUT_GROUPS);
+    const undo = groups.flatMap((group) => group.shortcuts).find((s) => s.action === "Undo");
+    expect(undo?.ways[0]?.keys).toEqual(["Side button"]);
   });
 });

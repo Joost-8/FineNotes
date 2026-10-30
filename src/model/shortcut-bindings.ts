@@ -9,9 +9,10 @@
  * listens for. Per device, because a laptop, an iPad and an Android tablet
  * with a stylus button have different keys.
  *
- * Keys only, for now: a pen's side button keeps its own two settings
- * (`input/pen-modifiers.ts`, `input/stylus-click.ts`) until they can move
- * into this table with their stored values.
+ * Keys and buttons: a right click, a pen's side button or eraser end, a
+ * mouse's middle, back and forward buttons. A pen's side button nobody
+ * recorded keeps its own two settings (`input/pen-modifiers.ts`,
+ * `input/stylus-click.ts`); a recorded one wins over them.
  *
  * Conflicting rows are invalid: the notebook refuses every input they share
  * until one row is changed or reset.
@@ -31,8 +32,25 @@ export interface ShortcutKeyInput {
   mods: readonly ShortcutModifier[];
 }
 
-/** One input. Tagged, so pen and mouse buttons can join it later. */
-export type ShortcutInput = ShortcutKeyInput;
+/**
+ * A pen or mouse button other than the contact (or left button), with the
+ * keys held at the time. The same button of a pen and a mouse is one input:
+ * a tablet driver may send the side button as a right click.
+ */
+export interface ShortcutButtonInput {
+  type: "button";
+  /**
+   * `PointerEvent.button`: 2 a right click or a pen's side button, 1 the
+   * middle button, 3 back, 4 forward, 5 a pen's eraser end. Never 0.
+   */
+  button: number;
+  mods: readonly ShortcutModifier[];
+  /** Recorded with a pen: it is named as the pen's ("Side button"), nothing more. */
+  pen?: boolean;
+}
+
+/** One input: a key or a button. */
+export type ShortcutInput = ShortcutKeyInput | ShortcutButtonInput;
 
 /** Press switches to a tool; hold lends it until the input is let go. */
 export type ShortcutMode = "press" | "hold";
@@ -446,9 +464,69 @@ function shiftIsSeparate(value: string): boolean {
   return /[a-z0-9]/.test(value);
 }
 
+/** The parts of a `PointerEvent` a button press is read from. */
+export interface PointerReading {
+  pointerType: string;
+  /** The button that changed (0 contact or left, 2 side or right, 5 eraser end). */
+  button: number;
+  /** Every button held, as a bit set (1 contact, 2 side or right, 32 eraser end). */
+  buttons: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}
+
+/** `buttons` bit of a pen's side button, or a mouse's right one. */
+const SIDE_BIT = 2;
+/** `buttons` bit of a pen's eraser end. */
+const ERASER_BIT = 32;
+/** `button` of a pen's eraser end. */
+const ERASER_BUTTON = 5;
+
+/**
+ * A press of a button that can be a shortcut, or null for the contact (a
+ * pen touching, a left click, a finger). A pen that touches down with its
+ * side button or eraser end held reports `button` 0 on some drivers: its
+ * `buttons` say which.
+ */
+export function buttonInput(reading: PointerReading): ShortcutButtonInput | null {
+  if (reading.pointerType === "touch") return null;
+  const pen = reading.pointerType === "pen";
+  let button = reading.button;
+  if (pen && ((reading.buttons & ERASER_BIT) !== 0 || button === ERASER_BUTTON)) {
+    button = ERASER_BUTTON;
+  } else if (pen && button <= 0 && (reading.buttons & SIDE_BIT) !== 0) {
+    button = 2;
+  }
+  if (!Number.isInteger(button) || button < 1) return null;
+  const mods: ShortcutModifier[] = [];
+  if (reading.metaKey || reading.ctrlKey) mods.push("Mod");
+  if (reading.altKey) mods.push("Alt");
+  if (reading.shiftKey) mods.push("Shift");
+  const input: ShortcutButtonInput = { type: "button", button, mods };
+  if (pen) input.pen = true;
+  return input;
+}
+
+/** The `buttons` bit of a button, to see when it is let go. */
+export function buttonBit(button: number): number {
+  switch (button) {
+    case 1:
+      return 4;
+    case 2:
+      return SIDE_BIT;
+    case 5:
+      return ERASER_BIT;
+    default:
+      return button >= 3 && button <= 4 ? 1 << button : 0;
+  }
+}
+
 /** One input's identity, for maps and conflicts. */
 export function inputKey(input: ShortcutInput): string {
-  return `key:${normalizeMods(input.mods).join("+")}:${input.key}`;
+  const mods = normalizeMods(input.mods).join("+");
+  return input.type === "key" ? `key:${mods}:${input.key}` : `button:${mods}:${input.button}`;
 }
 
 /** Whether two inputs are the same one. */
@@ -484,10 +562,33 @@ export function keyCap(value: string): string {
   return KEY_NAMES[value] ?? value;
 }
 
+/** A button as its chip names it. */
+export function buttonCap(input: ShortcutButtonInput): string {
+  switch (input.button) {
+    case 1:
+      return "Middle click";
+    case 2:
+      return input.pen ? "Side button" : "Right click";
+    case 3:
+      return "Back button";
+    case 4:
+      return "Forward button";
+    case 5:
+      return "Eraser end";
+    default:
+      return `Button ${input.button}`;
+  }
+}
+
+/** The last cap of an input: its key or its button. */
+function mainCap(input: ShortcutInput): string {
+  return input.type === "key" ? keyCap(input.key) : buttonCap(input);
+}
+
 /** One input as key caps and words, e.g. `["Ctrl", "Shift", "Z"]`. */
 export function inputCaps(input: ShortcutInput, apple: boolean): string[] {
   const mods = normalizeMods(input.mods).map((mod) => keyLabel(mod, apple));
-  return [...mods, keyCap(input.key)];
+  return [...mods, mainCap(input)];
 }
 
 /** An input as one line, as Obsidian prints a hotkey. */
@@ -650,6 +751,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseInput(raw: unknown): ShortcutInput | null {
   if (!isRecord(raw)) return null;
   const mods = Array.isArray(raw.mods) ? raw.mods.filter(isShortcutModifier) : [];
+  // "pointer" is what the first build of this table (#69) stored a button as.
+  if (raw.type === "button" || raw.type === "pointer") {
+    const button = raw.button;
+    if (typeof button !== "number" || !Number.isInteger(button) || button < 1) return null;
+    const input: ShortcutButtonInput = { type: "button", button, mods: normalizeMods(mods) };
+    if (raw.pen === true) input.pen = true;
+    return input;
+  }
   if (raw.type !== "key" || typeof raw.key !== "string" || raw.key.length === 0) return null;
   return { type: "key", key: raw.key, mods: normalizeMods(mods) };
 }
@@ -749,7 +858,7 @@ export function noShortcutOverrides(): ShortcutOverrides {
 
 /** A recorded input as the sheet writes a way: modifiers by name, then the key cap. */
 function sheetKeys(input: ShortcutInput): string[] {
-  return [...normalizeMods(input.mods), keyCap(input.key)];
+  return [...normalizeMods(input.mods), mainCap(input)];
 }
 
 /**

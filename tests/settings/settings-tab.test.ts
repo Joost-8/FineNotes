@@ -1561,7 +1561,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     const pen = renderRow(named(all, "Pen"));
     const slot = pen.find("goodobsidian-shortcut-slot");
     slot?.dispatch("click");
-    expect(slot?.find("goodobsidian-shortcut-recording")?.text).toBe("Press a key");
+    expect(slot?.find("goodobsidian-shortcut-recording")?.text).toBe("Press a key or button");
     slot?.dispatch("click");
     // Cancelling redraws the tab; the slot built here is the one that was
     // in recording mode.

@@ -1449,7 +1449,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     slot.addClass("is-recording");
     slot.empty();
     slot.setAttribute("aria-label", `${action.label}: press the new key`);
-    slot.createSpan({ cls: "goodobsidian-shortcut-recording", text: "Press a key" });
+    slot.createSpan({ cls: "goodobsidian-shortcut-recording", text: "Press a key or button" });
     const doc = setting.settingEl.ownerDocument ?? activeDocument;
     this.shortcutRecorder = recordShortcut(doc, {
       record: (input) => {

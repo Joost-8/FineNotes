@@ -670,7 +670,14 @@ describe("the user's shortcut table", () => {
       shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold")),
     );
     key("keydown", "r");
-    expect(surface.heldShortcut).toEqual({ key: "r", mod: false, tool: "eraser", back: "pen" });
+    expect(surface.heldShortcut).toEqual({
+      key: "r",
+      pointerId: null,
+      bit: 0,
+      mod: false,
+      tool: "eraser",
+      back: "pen",
+    });
     expect(run(surface, "gestureTool")).toBe("eraser");
     key("keyup", "r");
     expect(surface.heldShortcut).toBeNull();
@@ -759,6 +766,180 @@ describe("the user's shortcut table", () => {
     // Set to move the page, the press route pans it; the stroke path borrows nothing.
     surface.callbacks = { shortcuts: () => shortcutTable(), barrelAction: () => "pan" };
     expect(run(surface, "pressOverrideOf", barrel)).toBeNull();
+  });
+});
+
+describe("buttons in the user's shortcut table", () => {
+  const right = { type: "button" as const, button: 2, mods: [] };
+  const side = { ...right, pen: true };
+
+  /** A window that keeps its listeners, so a test can send the pointer's later events. */
+  function fakeWindow() {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    return {
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        const set = listeners.get(type) ?? new Set();
+        set.add(handler);
+        listeners.set(type, set);
+      },
+      removeEventListener: (type: string, handler: (event: unknown) => void) => {
+        listeners.get(type)?.delete(handler);
+      },
+      emit: (type: string, event: unknown) => {
+        for (const handler of [...(listeners.get(type) ?? [])]) handler(event);
+      },
+      get listening() {
+        return [...listeners.values()].reduce((sum, set) => sum + set.size, 0);
+      },
+    };
+  }
+
+  function buttons(table: ShortcutTable, barrel = "erase") {
+    const calls: string[] = [];
+    const win = fakeWindow();
+    const toolState = { tool: "pen", color: "#112233" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      cellEdit: null,
+      heldText: null,
+      stylusMenuUntil: 0,
+      buttonShortcutUntil: 0,
+      disposers: [],
+      surfaceEl: { ownerDocument: { defaultView: win } },
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        onStylusClick: () => calls.push("onStylusClick"),
+        stylusClick: () => "pen-menu",
+        shortcuts: () => table,
+        barrelAction: () => barrel,
+      },
+      editingTextView: () => null,
+      undo: () => calls.push("undo"),
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const press = (pointerType: string, button: number, held: number, pointerId = 1) => {
+      const event = {
+        pointerType,
+        button,
+        buttons: held,
+        pointerId,
+        ...noKeys,
+        prevented: false,
+        stopped: false,
+        preventDefault() {
+          this.prevented = true;
+        },
+        stopImmediatePropagation() {
+          this.stopped = true;
+        },
+      };
+      run(surface, "onButtonPress", event);
+      return event;
+    };
+    return { surface, toolState, calls, win, press };
+  }
+
+  it("runs a row from a right click, draws nothing and opens no menu", () => {
+    const { surface, calls, press } = buttons(
+      shortcutTable(withShortcut({}, "edit.undo", right, "press")),
+    );
+    const event = press("mouse", 2, 2);
+    expect(calls).toEqual(["undo"]);
+    expect(event.prevented).toBe(true);
+    expect(event.stopped).toBe(true);
+    // The page's own right click menu stays shut.
+    expect(surface.stylusMenuUntil).toBeGreaterThan(0);
+  });
+
+  it("leaves a press with no button bound, a left click or the pen's tip alone", () => {
+    const { calls, press } = buttons(shortcutTable(withShortcut({}, "edit.undo", right, "press")));
+    for (const event of [press("mouse", 0, 1), press("pen", 0, 1), press("touch", 0, 1)]) {
+      expect(event.prevented).toBe(false);
+      expect(event.stopped).toBe(false);
+    }
+    const middle = press("mouse", 1, 4);
+    expect(middle.stopped).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it("holds the highlighter on the side button: the touching pen writes it, the pen after", () => {
+    const { surface, toolState, calls, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.highlighter", side, "hold")),
+    );
+    // The pen touches down with its side button held (a driver reporting button 0).
+    const event = press("pen", 0, 3, 7);
+    expect(event.stopped).toBe(false);
+    expect(toolState.tool).toBe("highlighter");
+    // The side button's own setting (erase) lends nothing over it.
+    expect(run(surface, "pressOverrideOf", event)).toBeNull();
+    // Still held while the pen moves with the button down; another pointer is no matter.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 3 });
+    win.emit("pointerup", { type: "pointerup", pointerId: 9, buttons: 0 });
+    expect(toolState.tool).toBe("highlighter");
+    // Letting the button go gives the pen back, and nothing is left listening.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 1 });
+    expect(toolState.tool).toBe("pen");
+    expect(surface.heldShortcut).toBeNull();
+    expect(win.listening).toBe(0);
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("lends a held tool on a right button until it comes up", () => {
+    const { toolState, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.eraser", right, "hold")),
+    );
+    const event = press("mouse", 2, 2, 3);
+    expect(event.prevented).toBe(true);
+    expect(toolState.tool).toBe("eraser");
+    win.emit("pointerup", { type: "pointerup", pointerId: 3, buttons: 0 });
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("does nothing for a button two rows share", () => {
+    const table = shortcutTable(
+      withShortcut(withShortcut({}, "edit.undo", right, "press"), "tool.eraser", side, "press"),
+    );
+    const { calls, press } = buttons(table);
+    const event = press("pen", 2, 2);
+    expect(calls).toEqual([]);
+    expect(event.stopped).toBe(true);
+  });
+
+  it("runs a side button's click in the air instead of the pen menu, once", () => {
+    const bound = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo"]);
+    // Its press already ran it: the click that follows is no second run.
+    bound.press("pen", 2, 2);
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo", "undo"]);
+    // Nobody recorded it: the pen menu, as before.
+    const free = buttons(shortcutTable());
+    run(free.surface, "stylusClicked", 10, 20);
+    expect(free.calls).toEqual(["onStylusClick"]);
+  });
+
+  it("listens for the side button's click when it is bound, whatever the click setting says", () => {
+    const { surface } = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    surface.callbacks = { ...(surface.callbacks as object), stylusClick: () => "none" };
+    expect(run(surface, "stylusClickWanted")).toBe(true);
+    surface.callbacks = { ...(surface.callbacks as object), shortcuts: () => shortcutTable() };
+    expect(run(surface, "stylusClickWanted")).toBe(false);
   });
 });
 
