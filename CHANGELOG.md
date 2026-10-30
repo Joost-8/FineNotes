@@ -10,15 +10,6 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Your own shortcuts, per device**
-  ([#69](https://github.com/Joost-8/FineNotes/pull/69),
-  [#79](https://github.com/Joost-8/FineNotes/pull/79)). Settings → Shortcuts
-  lists every tool and command with its key. Tap a key to record a new one:
-  a keyboard key, a right click, a pen's side button or eraser end, or a
-  mouse's middle, back or forward button. A tool can switch on a press or be
-  held, back to the tool before when you let go. Each device keeps its own,
-  and two actions on one key do nothing until one is changed. A side button
-  recorded here wins over the side button settings.
 - **Lines snap level or upright**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A line or
   arrow drawn with its ends within a few pixels of level or upright on
@@ -125,6 +116,16 @@ extracted from the matching section of this file by `release.yml`.
   and exports its own part, so the pages stay pages in the page list, in a
   PDF and on every other device. A small mark beside the page shows where
   one page ends. Off by default.
+
+- **Your own shortcuts, per device**
+  ([#69](https://github.com/Joost-8/FineNotes/pull/69),
+  [#79](https://github.com/Joost-8/FineNotes/pull/79)). Settings → Shortcuts
+  lists every tool and command with its key. Tap a key to record a new one:
+  a keyboard key, a right click, a pen's side button or eraser end, or a
+  mouse's middle, back or forward button. A tool can switch on a press or be
+  held, back to the tool before when you let go. Each device keeps its own,
+  and two actions on one key do nothing until one is changed. A side button
+  recorded here wins over the side button settings.
 
 ### Fixed
 
