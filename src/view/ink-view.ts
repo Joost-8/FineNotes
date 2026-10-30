@@ -22,6 +22,7 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
+import { readFillGap } from "../model/fill-region";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -390,6 +391,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
+    fillGap: readFillGap(s.fillGap),
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
@@ -2606,6 +2608,7 @@ export class InkView extends TextFileView {
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        onFillGapChange: (gap) => this.plugin.saveFillGap(gap),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {

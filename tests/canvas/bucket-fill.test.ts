@@ -91,7 +91,13 @@ describe("bucketFill", () => {
   });
 
   it("refuses a tap on the ink", () => {
-    const result = bucketFill({ ...PAGE, ink: square(100, 100, 100, 0, 3), x: 100, y: 150, gap: 0 });
+    const result = bucketFill({
+      ...PAGE,
+      ink: square(100, 100, 100, 0, 3),
+      x: 100,
+      y: 150,
+      gap: 0,
+    });
     expect(result).toEqual({ ok: false, reason: "ink" });
   });
 

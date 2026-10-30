@@ -230,6 +230,7 @@ import {
   withStabilization,
 } from "../model/pen-stabilization";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { FILL_GAPS, type FillGap, readFillGap } from "../model/fill-region";
 import { onEnterKey } from "./enter-key";
 import {
   DEFAULT_ARROW_HEADS,
@@ -244,7 +245,16 @@ import {
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
 export type ActiveTool =
-  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "select"
+  | "text"
+  | "shape"
+  | "laser"
+  | "pan"
+  | "zoom"
+  | "fill";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -330,6 +340,20 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   shape: "shapes",
   pan: "hand",
   zoom: "zoom-in",
+  fill: "paint-bucket",
+};
+
+/** The Fill tool's gap choices: a whole ring, a dashed one, a dotted one. */
+const FILL_GAP_ICONS: Record<FillGap, string> = {
+  exact: "circle",
+  small: "circle-dashed",
+  large: "circle-dotted",
+};
+
+const FILL_GAP_LABELS: Record<FillGap, string> = {
+  exact: "Fill closed outlines only",
+  small: "Fill past small gaps",
+  large: "Fill past wide gaps",
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -524,6 +548,8 @@ export interface ToolbarState {
    * `undefined` counts as off, where every new box fits its text.
    */
   textDragSize?: boolean;
+  /** How far the Fill tool reaches past gaps in an outline. `undefined` counts as "small". */
+  fillGap?: FillGap;
   /** The ruler's kind. `undefined` counts as the straight ruler. */
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
@@ -634,6 +660,8 @@ export interface ToolbarCallbacks {
   notebookColors?: () => readonly string[];
   /** The Shape tool's style changed. Hosts persist it. */
   onShapeStyleChange?: (style: ShapeToolStyle) => void;
+  /** The Fill tool's gap choice changed. Hosts persist it. */
+  onFillGapChange?: (gap: FillGap) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
   /**
@@ -1135,6 +1163,8 @@ export class Toolbar {
     // accessories menu until "Customize toolbar" puts them on the bar.
     tool("pan", "hand", "Hand — move the page");
     tool("zoom", "zoom-in", "Magnifier — zoom");
+    // Off the bar by default too: Customize toolbar puts it there.
+    tool("fill", "paint-bucket", "Fill");
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
       const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
@@ -2035,6 +2065,9 @@ export class Toolbar {
         case "zoom":
           this.buildZoomOptions();
           break;
+        case "fill":
+          this.buildFillOptions();
+          break;
       }
     }
     // A held or edited box always shows its pill, floating beside it.
@@ -2552,6 +2585,48 @@ export class Toolbar {
   /** The hand has nothing to set: its pill says what dragging does with it. */
   private buildPanOptions(): void {
     this.toolNote("hand", "Drag to move the page");
+  }
+
+  /**
+   * The Fill tool: the pen's colours (a fill takes the pen's colour, and
+   * picking one here picks the pen's), then how far a fill reaches past
+   * gaps in a hand-drawn outline, as a ring with no gap, a dashed one and a
+   * dotted one.
+   */
+  private buildFillOptions(): void {
+    const colors = this.quickColors();
+    if (isUpright(this.pillDock)) {
+      const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
+      const first = colorWindow(colors.length, chosen, UPRIGHT_COLORS);
+      for (const color of colors.slice(first, first + UPRIGHT_COLORS)) {
+        this.penSwatch(this.optionsEl, color, colors);
+      }
+      this.chevron("All colours", (button) => this.togglePenColorList(button));
+    } else {
+      const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
+      row.dataset.ignoreSwipe = "true";
+      for (const color of colors) this.penSwatch(row, color, colors);
+      if (colors.length < PEN_ROW_MAX) this.addColorButton(row);
+      this.fitColorRow(row);
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const gap = readFillGap(this.state.fillGap);
+    for (const choice of FILL_GAPS) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-fill-gap clickable-icon",
+      });
+      iconOrText(button, FILL_GAP_ICONS[choice], FILL_GAP_LABELS[choice]);
+      button.setAttribute("aria-label", FILL_GAP_LABELS[choice]);
+      button.setAttribute("aria-pressed", String(choice === gap));
+      button.toggleClass("is-active", choice === gap);
+      button.addEventListener("click", () => {
+        if (choice === readFillGap(this.state.fillGap)) return;
+        this.state.fillGap = choice;
+        this.callbacks.onFillGapChange?.(choice);
+        this.buildOptions();
+        this.syncActive();
+      });
+    }
   }
 
   /** The magnifier: page zoom or a Zoom box, then its steps and fit. */

@@ -8,6 +8,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Fill.** A Fill tool (paint bucket) fills the area inside an outline you
+  drew with the pen's colour, behind the ink: tap inside a circle, a box or
+  any closed shape. Its pill picks the colour and how far a fill reaches
+  past small gaps in a hand-drawn outline. An area that is not closed is
+  left alone. Tap a filled area again to give it another colour. It waits
+  in More tools until Customize toolbar puts it on the bar.
+- **Scribble to fill.** With Scribble to erase on, a scribble inside a
+  closed outline, over nothing to erase, fills that area instead.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

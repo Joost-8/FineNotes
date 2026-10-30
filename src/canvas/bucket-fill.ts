@@ -365,8 +365,7 @@ export function simplifyClosed(xy: readonly number[], tolerance: number): number
     for (let i = a + 1; i < b; i++) {
       const px = xy[2 * i] - ax;
       const py = xy[2 * i + 1] - ay;
-      const d =
-        len2 > 0 ? (px * dy - py * dx) ** 2 / len2 : px * px + py * py;
+      const d = len2 > 0 ? (px * dy - py * dx) ** 2 / len2 : px * px + py * py;
       if (d > worst) {
         worst = d;
         index = i;
