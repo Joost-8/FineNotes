@@ -41,13 +41,16 @@ export interface LaserDot {
   alpha: number;
 }
 
+/** Base distance at the maximum frequency, in page CSS pixels. */
+const LASER_DOT_BASE_SPACING_PX = 300;
+
 /**
- * Points to draw along the beam. Frequency 3 is the standard density; zero
- * is deliberately empty, while larger values reduce the spacing.
+ * Points to draw along the beam. Frequency 3 spaces dots by 100 CSS pixels;
+ * zero is deliberately empty, while larger values reduce the spacing.
  */
 export function laserDots(segments: readonly LaserSegment[], frequency: number): LaserDot[] {
   if (!Number.isFinite(frequency) || frequency <= 0) return [];
-  const spacing = 6 / frequency;
+  const spacing = LASER_DOT_BASE_SPACING_PX / frequency;
   const dots: LaserDot[] = [];
   let distanceSinceDot = 0;
   for (const { a, b, alpha } of segments) {

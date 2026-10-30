@@ -43,26 +43,27 @@ describe("LaserTrail", () => {
     });
 
     it("emits proportionally more dots at higher frequencies", () => {
-      expect(laserDots(segments, 1)).toHaveLength(16);
-      expect(laserDots(segments, 3)).toHaveLength(49);
-      expect(laserDots(segments, 3)[0].point).toMatchObject({ x: 2, y: 0 });
+      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 1000, y: 0, t: 1000 }, alpha: 1 }];
+      expect(laserDots(path, 1)).toHaveLength(3);
+      expect(laserDots(path, 3)).toHaveLength(9);
+      expect(laserDots(path, 10)).toHaveLength(33);
+      expect(laserDots(path, 3)[0].point).toMatchObject({ x: 100, y: 0 });
     });
 
     it("keeps spacing continuous across pointer samples", () => {
       const sampledPath = [
-        { a: { x: 0, y: 0, t: 0 }, b: { x: 1.5, y: 0, t: 1.5 }, alpha: 1 },
-        { a: { x: 1.5, y: 0, t: 1.5 }, b: { x: 3, y: 0, t: 3 }, alpha: 1 },
-        { a: { x: 3, y: 0, t: 3 }, b: { x: 4.5, y: 0, t: 4.5 }, alpha: 1 },
-        { a: { x: 4.5, y: 0, t: 4.5 }, b: { x: 6, y: 0, t: 6 }, alpha: 1 },
+        { a: { x: 0, y: 0, t: 0 }, b: { x: 150, y: 0, t: 150 }, alpha: 1 },
+        { a: { x: 150, y: 0, t: 150 }, b: { x: 350, y: 0, t: 350 }, alpha: 1 },
+        { a: { x: 350, y: 0, t: 350 }, b: { x: 500, y: 0, t: 500 }, alpha: 1 },
       ];
-      expect(laserDots(sampledPath, 3).map(({ point }) => point.x)).toEqual([2, 4]);
+      expect(laserDots(sampledPath, 3).map(({ point }) => point.x)).toEqual([100, 200, 300, 400]);
     });
 
     it("supports disabled, medium, and maximum density", () => {
-      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 100, y: 0, t: 100 }, alpha: 1 }];
+      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 1000, y: 0, t: 1000 }, alpha: 1 }];
       expect(laserDots(path, 0)).toHaveLength(0);
-      expect(laserDots(path, 3)).toHaveLength(49);
-      expect(laserDots(path, 10)).toHaveLength(166);
+      expect(laserDots(path, 3)).toHaveLength(9);
+      expect(laserDots(path, 10)).toHaveLength(33);
     });
   });
 
