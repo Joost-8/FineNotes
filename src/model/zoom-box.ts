@@ -26,9 +26,46 @@ export function zoomTargetPress(selected: boolean, handle: ZoomHandle | null): Z
   return handle ?? "move";
 }
 
-/** Whether the window may be dragged or resized by this pointer. */
-export function zoomWindowDragAllowed(pointerType: string, onlyStylus: boolean): boolean {
-  return !(onlyStylus && pointerType === "touch");
+/**
+ * Whether this pointer may move (`part` "move", the bar) or resize ("resize",
+ * the corner grip) the window. The pen and a mouse always may, and so may a
+ * finger, except while the pen writes in the box (that finger is the writing
+ * hand) and, in Stylus-only mode, on the grip: it sits in the window's
+ * bottom-right corner, where a right hand rests to write.
+ */
+export function zoomWindowDragAllowed(
+  pointerType: string,
+  onlyStylus: boolean,
+  part: "move" | "resize" = "move",
+  penWriting = false,
+): boolean {
+  if (pointerType !== "touch") return true;
+  if (penWriting) return false;
+  return !(onlyStylus && part === "resize");
+}
+
+/**
+ * Whether the first-drag catcher lies over the page while a Zoom box waits
+ * for its target. It takes every pointer, fingers included, so it is only
+ * put down in Stylus-only mode, where fingers do nothing on the page anyway:
+ * otherwise a finger must still pan and pinch, and the pen and a mouse draw
+ * the target through the page's own input.
+ */
+export function zoomCatcherWanted(armed: boolean, onlyStylus: boolean): boolean {
+  return armed && onlyStylus;
+}
+
+/**
+ * The page zoom a Zoom box's magnification amounts to: the `userZoom` at
+ * which the page would show at `viewScale` CSS px per page px, the page's
+ * own fit being `baseScale`. Gesture thresholds are screen lengths tuned at
+ * fit zoom, so a stroke written in the box measures them by this. Null when
+ * either scale is unusable.
+ */
+export function zoomBoxGestureZoom(viewScale: number, baseScale: number): number | null {
+  if (!Number.isFinite(viewScale) || !Number.isFinite(baseScale)) return null;
+  if (!(viewScale > 0) || !(baseScale > 0)) return null;
+  return viewScale / baseScale;
 }
 
 /** How the Magnifier button reads while a target box may be open. */
@@ -283,6 +320,20 @@ export function zoomViewPoint(
 ): { x: number; y: number } | null {
   if (x < view.offsetX || y < view.offsetY) return null;
   if (x > view.offsetX + view.width || y > view.offsetY + view.height) return null;
+  return zoomViewPointFree(box, view, x, y);
+}
+
+/**
+ * A point in the window, in page px, wherever it is: a pen that went down
+ * inside the content keeps its stroke when it runs past the content's edge,
+ * as it does past the edge of the pane on the page.
+ */
+export function zoomViewPointFree(
+  box: ZoomRect,
+  view: ZoomView,
+  x: number,
+  y: number,
+): { x: number; y: number } {
   return {
     x: box.x + (x - view.offsetX) / view.scale,
     y: box.y + (y - view.offsetY) / view.scale,

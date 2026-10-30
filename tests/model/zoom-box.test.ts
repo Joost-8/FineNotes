@@ -20,7 +20,10 @@ import {
   zoomDeskColor,
   zoomTargetPress,
   zoomView,
+  zoomBoxGestureZoom,
+  zoomCatcherWanted,
   zoomViewPoint,
+  zoomViewPointFree,
   zoomWindowDragAllowed,
 } from "../../src/model/zoom-box";
 
@@ -210,6 +213,36 @@ describe("zoom box view", () => {
     expect(zoomViewPoint(box, view, -1, 150)).toBeNull();
     expect(zoomViewPoint(box, view, 100, 50)).toBeNull();
   });
+
+  it("follows a captured pen past the content's edge", () => {
+    const view = zoomView(box, 400, 400);
+    expect(zoomViewPointFree(box, view, 100, 150)).toEqual({ x: 140, y: 220 });
+    // In the margin above the content: above the box, not nowhere.
+    expect(zoomViewPointFree(box, view, 100, 50)).toEqual({ x: 140, y: 180 });
+  });
+});
+
+describe("gesture lengths inside the box", () => {
+  it("measures the box's magnification as a page zoom", () => {
+    // The page fits at 0.8 CSS px per page px; the box shows 4 px per page px.
+    expect(zoomBoxGestureZoom(4, 0.8)).toBeCloseTo(5);
+    expect(zoomBoxGestureZoom(0.8, 0.8)).toBe(1);
+  });
+
+  it("has no answer for a scale it cannot use", () => {
+    expect(zoomBoxGestureZoom(0, 1)).toBeNull();
+    expect(zoomBoxGestureZoom(2, 0)).toBeNull();
+    expect(zoomBoxGestureZoom(Number.NaN, 1)).toBeNull();
+    expect(zoomBoxGestureZoom(2, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe("the first-drag catcher", () => {
+  it("lies over the page only in Stylus-only mode, so fingers still pan and pinch", () => {
+    expect(zoomCatcherWanted(true, true)).toBe(true);
+    expect(zoomCatcherWanted(true, false)).toBe(false);
+    expect(zoomCatcherWanted(false, true)).toBe(false);
+  });
 });
 
 describe("panning the page to keep the box in view", () => {
@@ -248,8 +281,21 @@ describe("the viewfinder target's presses", () => {
 
 describe("stylus-only window drags", () => {
   it("keeps a palm's touch from moving or resizing the floating window", () => {
-    expect(zoomWindowDragAllowed("touch", true)).toBe(false);
-    expect(zoomWindowDragAllowed("touch", false)).toBe(true);
+    expect(zoomWindowDragAllowed("touch", true, "resize")).toBe(false);
+    expect(zoomWindowDragAllowed("touch", false, "resize")).toBe(true);
+  });
+
+  it("lets a finger move the window by its bar in Stylus-only mode", () => {
+    expect(zoomWindowDragAllowed("touch", true, "move")).toBe(true);
+    expect(zoomWindowDragAllowed("touch", true)).toBe(true);
+  });
+
+  it("never lets a finger move or size it while the pen writes in the box", () => {
+    for (const only of [true, false]) {
+      expect(zoomWindowDragAllowed("touch", only, "move", true)).toBe(false);
+      expect(zoomWindowDragAllowed("touch", only, "resize", true)).toBe(false);
+    }
+    expect(zoomWindowDragAllowed("pen", true, "resize", true)).toBe(true);
   });
 
   it("always lets the stylus and a mouse drag it", () => {
