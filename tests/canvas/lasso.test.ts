@@ -31,7 +31,7 @@ import {
   strokeShareInside,
   strokeTouchesLasso,
   textBoxFrame,
-  smoothLoop,
+  smoothPath,
 } from "../../src/canvas/lasso";
 import type { ImageElement, Stroke, TextBoxElement } from "../../src/model/document";
 
@@ -491,23 +491,31 @@ describe("selection geometry", () => {
   });
 });
 
-describe("smoothLoop", () => {
-  const square = [0, 0, 100, 0, 100, 100, 0, 100];
+describe("smoothPath", () => {
+  // Round three sides of a square, as a lasso drawn round from (0, 100).
+  const square = [0, 100, 0, 0, 100, 0, 100, 100];
 
-  it("rounds a rough rectangle's corners, keeping the loop's size", () => {
-    const smooth = smoothLoop(square, 2);
-    expect(smooth.length).toBe(square.length * 4);
+  it("rounds a rough rectangle's corners, keeping the path's size", () => {
+    const smooth = smoothPath(square, 2);
     const xs = smooth.filter((_, i) => i % 2 === 0);
     const ys = smooth.filter((_, i) => i % 2 === 1);
-    // Within the original (the straight edges stay put), with no corner left at its tip.
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...xs)).toBeLessThanOrEqual(100);
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...ys)).toBeLessThanOrEqual(100);
+    // No corner left at its tip; still spans the square.
     const nearCorner = (x: number, y: number): boolean => Math.hypot(x, y) < 10;
     expect(xs.some((x, i) => nearCorner(x, ys[i]))).toBe(false);
-    // Still spans most of the square: a rounding, not a shrink to a blob.
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(80);
+  });
+
+  it("keeps both ends where the pen came down and lifted, so the closing edge is straight", () => {
+    const smooth = smoothPath(square, 2);
+    expect(smooth.slice(0, 2)).toEqual([0, 100]);
+    expect(smooth.slice(-2)).toEqual([100, 100]);
+    // Nothing else sits on the line between the ends: the loop closes in one straight edge.
+    const ys = smooth.filter((_, i) => i % 2 === 1);
+    expect(ys.filter((y) => y === 100)).toHaveLength(2);
   });
 
   it("keeps a loop's own wobble: it stays that person's loop", () => {
@@ -517,21 +525,21 @@ describe("smoothLoop", () => {
       const r = 100 + 12 * Math.sin(5 * a);
       wobbly.push(r * Math.cos(a), r * Math.sin(a));
     }
-    const smooth = smoothLoop(wobbly, 2);
+    const smooth = smoothPath(wobbly, 2);
     const radii: number[] = [];
     for (let i = 0; i < smooth.length; i += 2) radii.push(Math.hypot(smooth[i], smooth[i + 1]));
     expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(15);
   });
 
-  it("returns too short a loop as it is, dropping a dangling coordinate", () => {
-    expect(smoothLoop([1, 2, 3, 4])).toEqual([1, 2, 3, 4]);
-    expect(smoothLoop([1, 2, 3, 4, 5])).toEqual([1, 2, 3, 4]);
-    expect(smoothLoop(square, 0)).toEqual(square);
+  it("returns too short a path as it is, dropping a dangling coordinate", () => {
+    expect(smoothPath([1, 2, 3, 4])).toEqual([1, 2, 3, 4]);
+    expect(smoothPath([1, 2, 3, 4, 5])).toEqual([1, 2, 3, 4]);
+    expect(smoothPath(square, 0)).toEqual(square);
   });
 
-  it("does not change the loop it was given", () => {
+  it("does not change the path it was given", () => {
     const copy = [...square];
-    smoothLoop(square);
+    smoothPath(square);
     expect(square).toEqual(copy);
   });
 });

@@ -36,6 +36,9 @@ body,
      GoodNotes' own and still a comfortable Pencil tap. */
   --gob-touch: 44px;
   --gob-touch-compact: 36px;
+  /* The lasso's line, drawn and kept: Goodnotes' blue (Joost's recording,
+     2026-10-30). The canvas has its own copy (renderer.ts SELECTION_LINE). */
+  --gob-lasso: #1a6fd6;
   --gob-gap: 4px;
   /* A dropdown trigger's caret (icon or label, then a chevron): one size
      and one extra gap before it for every trigger, so the chevron reads as a
@@ -3385,7 +3388,8 @@ kbd.goodobsidian-key.is-glyph {
    on them), restyled as the version's cards. */
 
 .goodobsidian-selection-bar,
-.goodobsidian-selection-menu {
+.goodobsidian-selection-menu,
+.goodobsidian-empty-lasso-pill {
   --gob-sel-bg: var(--color-base-10);
   --gob-sel-line: var(--color-base-30);
   --gob-sel-icon: var(--color-base-70);
@@ -7022,6 +7026,66 @@ textarea.goodobsidian-chat-input:focus-visible {
   border-color: transparent;
 }
 
+/* Goodnotes shows a lasso's loop alone: no knob until the bar's resize
+   handles are asked for, when it comes with the corners. Two fingers turn
+   it meanwhile. */
+.goodobsidian-selection-frame.has-outline.no-corners .goodobsidian-image-rotate {
+  display: none;
+}
+
+/* A lasso drawn round nothing (ink-surface.ts, showEmptyLasso): its loop and
+   a Screenshot button stay a moment, then fade, as Goodnotes leaves them. */
+.goodobsidian-empty-lasso {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.goodobsidian-empty-lasso.is-fading {
+  opacity: 0;
+}
+
+.goodobsidian-empty-lasso > .goodobsidian-selection-outline {
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.goodobsidian-empty-lasso-pill {
+  position: absolute;
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--gob-sel-line);
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-sel-bg);
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-empty-lasso-pill .goodobsidian-empty-lasso-shot.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+}
+
+.goodobsidian-empty-lasso-pill .goodobsidian-empty-lasso-shot.clickable-icon:hover {
+  background: var(--gob-sel-well);
+  color: var(--color-base-100);
+}
+
 .goodobsidian-selection-outline {
   position: absolute;
   top: -1.5px;
@@ -7039,7 +7103,7 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-selection-outline path {
   fill: none;
-  stroke: var(--interactive-accent);
+  stroke: var(--gob-lasso);
   stroke-width: 1.5px;
   stroke-dasharray: 6 4;
   stroke-linejoin: round;

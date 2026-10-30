@@ -36,6 +36,7 @@ import {
 } from "../constants";
 import {
   type AttachmentKind,
+  type Bounds,
   type InkDocument,
   type PageComment,
   type Page,
@@ -2700,6 +2701,7 @@ export class InkView extends TextFileView {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
         onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
+        onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
@@ -2998,6 +3000,43 @@ export class InkView extends TextFileView {
       new Notice(`FineNotes: couldn't save the template — ${errorMessage(error)}`, 8000);
     } finally {
       progress.hide();
+    }
+  }
+
+  /**
+   * A lasso drawn round nothing asked for a screenshot (ink-surface.ts,
+   * showEmptyLasso): the patch of page `index` inside `bounds`, drawn as an
+   * export draws it (paper, PDF, ink), sharp at up to three times its size.
+   */
+  private async screenshotRegion(index: number, bounds: Bounds): Promise<void> {
+    const page = this.doc.pages[index];
+    if (!page) return;
+    const { width, height } = page.geometry;
+    const x0 = Math.max(0, bounds.minX);
+    const y0 = Math.max(0, bounds.minY);
+    const w = Math.min(width, bounds.maxX) - x0;
+    const h = Math.min(height, bounds.maxY) - y0;
+    if (!(w >= 1) || !(h >= 1)) return;
+    // The whole page is painted, so its side caps the scale as well as the patch's.
+    const dpr = Math.min(3, 2048 / Math.max(w, h), 4096 / Math.max(width, height));
+    const canvas = createEl("canvas");
+    const out = createEl("canvas");
+    try {
+      await paintPagePreview(canvas, page, this.previewSources(), width, dpr);
+      out.width = Math.max(1, Math.round(w * dpr));
+      out.height = Math.max(1, Math.round(h * dpr));
+      const kx = canvas.width / width;
+      const ky = canvas.height / height;
+      out
+        .getContext("2d")
+        ?.drawImage(canvas, x0 * kx, y0 * ky, w * kx, h * ky, 0, 0, out.width, out.height);
+      const png = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
+      if (png) this.showScreenshot(png, Math.round(w), Math.round(h));
+    } catch {
+      new Notice("Couldn't take the screenshot");
+    } finally {
+      canvas.width = canvas.height = 0;
+      out.width = out.height = 0;
     }
   }
 
