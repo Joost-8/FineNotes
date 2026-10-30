@@ -439,6 +439,15 @@ interface ShadowSprite {
 }
 
 /** One of the three stacked viewport canvases, and the context it is drawn through. */
+/**
+ * The wet layer's content as a paint call: `paint` draws it in page
+ * `pageIndex`'s local space, `scale` being the target's CSS px per page px.
+ */
+interface WetReplay {
+  pageIndex: number;
+  paint: (ctx: CanvasRenderingContext2D, scale: number) => void;
+}
+
 interface Layer {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -518,6 +527,14 @@ export class Renderer {
   private readonly dry: Layer;
   /** Whatever is in flight: a stroke, a lasso, a dragged selection or picture. */
   private readonly wet: Layer;
+  /**
+   * What the wet layer shows, as a function that paints it again in its
+   * page's space at any resolution, for the Zoom box ({@link paintWetInto});
+   * null when it shows nothing, or something only its pixels hold.
+   */
+  private wetReplay: WetReplay | null = null;
+  /** The wet layer holds pixels {@link wetReplay} cannot paint again. */
+  private wetRaster = false;
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
   private screen = { width: 0, height: 0, dpr: 1 };
   /** The view, in layout space; see {@link setViewport}. */
@@ -795,6 +812,10 @@ export class Renderer {
 
   /** Clear a whole viewport canvas, whatever transform it was left in. */
   private wipe(ctx: CanvasRenderingContext2D): void {
+    if (ctx === this.wet.ctx) {
+      this.wetReplay = null;
+      this.wetRaster = false;
+    }
     const { width, height, dpr } = this.screen;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, dpr * width, dpr * height);
@@ -802,6 +823,8 @@ export class Renderer {
 
   /** Show the wet layer, or hide it (see the constructor). */
   private setWetVisible(visible: boolean): void {
+    // Drawn without saying how to draw it again: only the pixels have it.
+    if (visible && this.wetReplay === null) this.wetRaster = true;
     const classes = this.wet.canvas.classList;
     if (visible) classes.remove(WET_HIDDEN);
     else classes.add(WET_HIDDEN);
@@ -1415,6 +1438,27 @@ export class Renderer {
     );
   }
 
+  /**
+   * Paint what the wet layer shows into `ctx`, which is in page `box`'s local
+   * space at `scale` CSS px per page px: the Zoom box draws the stroke in
+   * flight this way, at its own resolution, so it is as sharp while it is
+   * written as once it is committed, and shows while the target is off
+   * screen. A stroke begun on another (joined) page is placed by the two
+   * pages' layout. False when the layer holds something only its pixels have
+   * (a dragged picture or selection): the caller copies it ({@link blitWet}).
+   */
+  paintWetInto(ctx: CanvasRenderingContext2D, box: PageBox, scale: number): boolean {
+    const replay = this.wetReplay;
+    if (!replay) return !this.wetRaster;
+    const from = this.layout.boxes[replay.pageIndex];
+    if (!from) return true;
+    ctx.save();
+    ctx.translate(from.x - box.x, from.y - box.y);
+    replay.paint(ctx, scale);
+    ctx.restore();
+    return true;
+  }
+
   /** The whole page at thumbnail resolution: the fallback while tiles catch up. */
   private buildPreview(page: Page, box: PageBox, usePressure: boolean): Preview | null {
     const window = this.previewWindow ? clampToPage(this.previewWindow(box), box) : null;
@@ -1743,6 +1787,7 @@ export class Renderer {
     const night = pageLook(page.backdrop, this.paper).night;
     for (const item of routed) paintConnector(ctx, item, night);
     ctx.restore();
+    this.wetReplay = null;
     this.setWetVisible(true);
   }
 
@@ -1758,14 +1803,18 @@ export class Renderer {
     if (!box || loop.length < 4) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    ctx.beginPath();
-    ctx.moveTo(loop[0], loop[1]);
-    for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
-    ctx.closePath();
-    selectionLine(ctx, this.safeScale);
-    ctx.lineJoin = "round";
-    ctx.stroke();
+    const paint = (c: CanvasRenderingContext2D, scale: number): void => {
+      c.beginPath();
+      c.moveTo(loop[0], loop[1]);
+      for (let i = 2; i + 1 < loop.length; i += 2) c.lineTo(loop[i], loop[i + 1]);
+      c.closePath();
+      selectionLine(c, scale);
+      c.lineJoin = "round";
+      c.stroke();
+    };
+    paint(ctx, this.safeScale);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -2042,8 +2091,12 @@ export class Renderer {
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
-    for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha, night);
+    const paint = (c: CanvasRenderingContext2D): void => {
+      for (const pts of strokes) fillStroke(c, pts, style, this.highlighterAlpha, night);
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -2060,10 +2113,14 @@ export class Renderer {
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
-    for (const stroke of strokes) {
-      fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
-    }
+    const paint = (c: CanvasRenderingContext2D): void => {
+      for (const stroke of strokes) {
+        fillStroke(c, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
+      }
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -2078,8 +2135,13 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    paintStroke(ctx, { runs }, style, this.highlighterAlpha, this.nightAt(pageIndex));
+    const night = this.nightAt(pageIndex);
+    const paint = (c: CanvasRenderingContext2D): void => {
+      paintStroke(c, { runs }, style, this.highlighterAlpha, night);
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
