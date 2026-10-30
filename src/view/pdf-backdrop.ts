@@ -28,7 +28,7 @@ import {
   pdfAreaKey,
   planPdfRaster,
 } from "../canvas/pdf-raster";
-import type { Bounds, PageGeometry } from "../model/document";
+import type { Bounds, PageGeometry, PdfFrame } from "../model/document";
 import {
   type PdfAssets,
   type PdfWorker,
@@ -228,7 +228,7 @@ function sameDetail(
   item: { path: string; page: number; area?: PdfRenderArea },
   level: number,
   itemLevel: number,
-  shown: { path: string; page: number; geometry: PageGeometry },
+  shown: { path: string; page: number; geometry: PageGeometry; frame?: PdfFrame },
 ): boolean {
   const region = item.area?.region;
   return (
@@ -237,8 +237,15 @@ function sameDetail(
     item.page === shown.page &&
     itemLevel === level &&
     item.area?.geometry.width === shown.geometry.width &&
-    item.area?.geometry.height === shown.geometry.height
+    item.area?.geometry.height === shown.geometry.height &&
+    sameFrame(item.area?.frame, shown.frame)
   );
+}
+
+/** Two PDF frames (Add space) are one, or both absent. */
+function sameFrame(a: PdfFrame | undefined, b: PdfFrame | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
 export interface PdfRasterRequest {
@@ -472,6 +479,7 @@ export class PdfBackdropCache {
     page: number,
     dprScale: number,
     geometry: PageGeometry,
+    frame?: PdfFrame,
   ): Array<PdfRaster & { box: NonNullable<PdfRaster["box"]> }> {
     const level = quantiseLevel(dprScale);
     const found = [...this.entries.values()]
@@ -479,7 +487,7 @@ export class PdfBackdropCache {
         (cached) =>
           cached.entry.ok &&
           cached.entry.box !== undefined &&
-          sameDetail(cached, level, cached.level, { path, page, geometry }),
+          sameDetail(cached, level, cached.level, { path, page, geometry, frame }),
       )
       .sort((a, b) => a.lastUsed - b.lastUsed);
     const t = now();
@@ -496,9 +504,10 @@ export class PdfBackdropCache {
     dprScale: number,
     geometry: PageGeometry,
     region: Bounds,
+    frame?: PdfFrame,
   ): boolean {
     const level = quantiseLevel(dprScale);
-    const shown = { path, page, geometry };
+    const shown = { path, page, geometry, frame };
     const covers = (item: { path: string; page: number; area?: PdfRenderArea }, at: number) =>
       sameDetail(item, level, at, shown) && boundsCover(item.area?.region as Bounds, region);
     for (const cached of this.entries.values()) {

@@ -275,6 +275,12 @@ export const RULINGS: readonly Ruling[] = [
 /** Procedurally drawn paper. Cheap; redraw freely. */
 export interface SyntheticBackdrop {
   kind: Ruling;
+  /**
+   * Where this paper lies on a page widened with Add space, page px: the
+   * page's own paper keeps its first size there, and the side papers beside
+   * it ({@link Page.sidePapers}) have papers of their own. Absent: the whole page.
+   */
+  frame?: PdfFrame;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
   spacing?: number;
   /** Rule colour, hex. Default per ruling. */
@@ -356,9 +362,40 @@ export interface PdfBackdrop {
    * a page added after this one repeats it. Stored only as `true`.
    */
   template?: true;
+  /**
+   * Where the PDF page is fitted, in page px, when it does not fill the page:
+   * a page widened with Add space keeps its PDF where it was, beside the new
+   * space. Absent means the whole page, as before.
+   */
+  frame?: PdfFrame;
+}
+
+/**
+ * A rectangle of a page, page px: where a page's own paper or PDF lies on a
+ * page widened with Add space ({@link PdfBackdrop.frame}).
+ */
+export interface PdfFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where a page's backdrop lies on a page of `geometry`: its frame, or the whole page. */
+export function pdfFrameOf(backdrop: Backdrop, geometry: PageGeometry): PdfFrame {
+  return backdrop.frame ?? { x: 0, y: 0, width: geometry.width, height: geometry.height };
 }
 
 export type Backdrop = SyntheticBackdrop | PdfBackdrop;
+
+/** A strip of a widened page with a paper of its own ({@link Page.sidePapers}). */
+export interface SidePaper {
+  /** Its left edge and width, page px; it runs the page's full height. */
+  x: number;
+  width: number;
+  /** A paper template: a PDF cannot be a side paper. */
+  backdrop: SyntheticBackdrop;
+}
 
 export interface ImageElement {
   id: string;
@@ -670,6 +707,12 @@ export interface Page {
    * bookmarked pages only. Stored only as `true`; absent means not.
    */
   bookmarked?: true;
+  /**
+   * Papers beside the page's own, added with Add space (a page added
+   * sideways), left to right. Each is a strip of the page, full height, with
+   * a template of its own. Absent: none.
+   */
+  sidePapers?: SidePaper[];
   /** A coloured tab the notebook can be opened at (`model/page-tabs`), `#rrggbb`. */
   tab?: string;
   /**

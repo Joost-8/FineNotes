@@ -25,13 +25,14 @@ import { type PdfDraw, invertPdfArea } from "../canvas/night";
 import type { BackdropPainter } from "../canvas/renderer";
 import { tilesFor } from "../canvas/pdf-tiles";
 import {
+  type PdfRenderArea,
   boundsMeet,
   detailPdfArea,
   needsDetail,
   pageRasterScale,
   visiblePdfArea,
 } from "../canvas/pdf-raster";
-import type { Bounds, Backdrop, PageGeometry, PdfBackdrop } from "../model/document";
+import type { Bounds, Backdrop, PageGeometry, PdfBackdrop, PdfFrame } from "../model/document";
 import {
   type PdfBackdropCache,
   type PdfEntry,
@@ -141,13 +142,15 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
             path,
             page,
             dprScale: deviceScale,
-            area: { geometry, region: tile.region },
+            area: { ...areaFor(backdrop, geometry), region: tile.region },
           });
         }
         continue;
       }
-      if (this.pdf.detailCovers(path, page, deviceScale, geometry, view)) continue;
-      const area = detailPdfArea(geometry, region, deviceScale);
+      // The frame only when the page has one: every other page asks exactly as before.
+      const framed = backdrop.frame ? [backdrop.frame] : [];
+      if (this.pdf.detailCovers(path, page, deviceScale, geometry, view, ...framed)) continue;
+      const area = detailPdfArea(geometry, region, deviceScale, backdrop.frame);
       if (area) detail.push({ path, page, dprScale: deviceScale, area });
     }
     this.centres = centres;
@@ -170,7 +173,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       path: backdrop.path,
       page: backdrop.page,
       dprScale: pageRasterScale(geometry, level),
-      area: { geometry },
+      area: areaFor(backdrop, geometry),
     };
   }
 
@@ -230,15 +233,15 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       this.level !== null
         ? pageRasterScale(geometry, this.level)
         : quantiseScale(target?.deviceScale ?? this.scale);
-    const area = { geometry };
+    const area = areaFor(backdrop, geometry);
     const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
-    if (entry) this.paintEntry(ctx, entry, geometry, paper, draws);
+    if (entry) this.paintEntry(ctx, entry, geometry, paper, draws, backdrop.frame);
     else {
       // Not rasterised at this scale yet: the page at another scale if one is
       // cached (a zoom just changed it), else plain paper; repaint when the
       // bitmap arrives.
       const stand = this.pdf.peekNearest(backdrop.path, backdrop.page, scale, area);
-      if (stand) this.paintEntry(ctx, stand, geometry, paper, draws);
+      if (stand) this.paintEntry(ctx, stand, geometry, paper, draws, backdrop.frame);
       else fillPaper(ctx, geometry, paper);
       this.pdf.request(backdrop.path, backdrop.page, scale, area);
     }
@@ -253,6 +256,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         backdrop.page,
         this.level,
         geometry,
+        ...(backdrop.frame ? [backdrop.frame] : []),
       )) {
         const { box, canvas } = patch;
         const bounds = { minX: box.x, minY: box.y, maxX: box.x + box.w, maxY: box.y + box.h };
@@ -284,8 +288,13 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       return;
     }
     if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
-    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, { geometry });
-    this.paintEntry(ctx, entry, geometry, this.theme);
+    const entry = await this.pdf.resolve(
+      backdrop.path,
+      backdrop.page,
+      this.scale,
+      areaFor(backdrop, geometry),
+    );
+    this.paintEntry(ctx, entry, geometry, this.theme, [], backdrop.frame);
   }
 
   /** Paint a rasterised page on `paper`; each `drawImage` it makes is added to `draws`. */
@@ -295,6 +304,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     geometry: PageGeometry,
     paper: PaperTheme,
     draws: PdfDraw[] = [],
+    frame?: PdfFrame,
   ): void {
     if (!entry.ok) {
       // The page still exists and the ink is still drawn over it.
@@ -308,14 +318,21 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     if (!box) {
       // Contain: a PDF page whose aspect differs from the notebook's page size is
       // centred rather than stretched — stretched slides read as a rendering bug.
-      const k = Math.min(geometry.width / canvas.width, geometry.height / canvas.height);
+      // A widened page (Add space) fits it into its frame instead of the whole page.
+      const f = frame ?? { x: 0, y: 0, width: geometry.width, height: geometry.height };
+      const k = Math.min(f.width / canvas.width, f.height / canvas.height);
       const w = canvas.width * k;
       const h = canvas.height * k;
-      box = { x: (geometry.width - w) / 2, y: (geometry.height - h) / 2, w, h };
+      box = { x: f.x + (f.width - w) / 2, y: f.y + (f.height - h) / 2, w, h };
     }
     ctx.drawImage(canvas, box.x, box.y, box.w, box.h);
     draws.push({ source: canvas, ...box });
   }
+}
+
+/** The render area of a PDF backdrop on a page: its frame goes with it (Add space). */
+function areaFor(backdrop: PdfBackdrop, geometry: PageGeometry): PdfRenderArea {
+  return backdrop.frame ? { geometry, frame: backdrop.frame } : { geometry };
 }
 
 function missingLabel(path: string): string {

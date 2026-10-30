@@ -27,8 +27,11 @@ import { SCHEMA_VERSION } from "../constants";
  *   (`model/connectors`); an older reader would drop them on its next save.
  * - `tilt`: brush strokes that keep the Pencil's tilt (`Stroke.tilt`); an
  *   older build would save them back at the nib's width.
+ * - `side-space`: a PDF page widened with Add space keeps its PDF in a frame
+ *   (`PdfBackdrop.frame`); an older build would re-fit the PDF to the wider
+ *   page, away from the ink written over it, and save it so.
  */
-export const FORMAT_FEATURES = ["sticky", "connectors", "tilt"] as const;
+export const FORMAT_FEATURES = ["sticky", "connectors", "tilt", "side-space"] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 

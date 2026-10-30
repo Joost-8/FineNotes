@@ -8,6 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+A notebook with a widened PDF page opens read-only in FineNotes 2.6 and
+earlier, which would re-fit its PDF away from the ink. Update FineNotes on
+every device first.
+
+### Added
+
+- **Add space left or right of a page.** A page added sideways: Add Page
+  now offers Left and Right beside Before, After and Last page. Pick one and
+  a template, as for a new page; a strip of that paper is added beside the
+  page, at the page's own size or, from More from templates, at the size
+  chosen there. The page's own paper or PDF stays where it was, so ink stays
+  on the words it was written over; space on the left moves everything on
+  the page right with it. One undo takes that strip away.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:
