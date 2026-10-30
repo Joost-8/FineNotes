@@ -305,7 +305,13 @@ export type ShapeKind =
   | "triangle"
   | "diamond"
   | "roundrect"
-  | "polygon";
+  | "polygon"
+  | "star"
+  | "cloud"
+  // added 2026-10-30
+  | "heart"
+  | "arc" // open: part of a circle
+  | "sector"; // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
 
 export interface ShapeResult {
   kind: ShapeKind;
@@ -332,6 +338,14 @@ export interface RecognizeOptions {
    *   closed = gap <= max(closeTolerance, 0.1 * bboxDiagonal)
    */
   closeTolerance?: number;
+  /** The pen rests where the stroke ends (a hold, not a lift). Turns `arcs` on. */
+  held?: boolean;
+  /**
+   * Also fit open arcs and sectors on a lifted stroke. Default false: a C, a
+   * U or a bracket is handwriting, and a D is a semicircle closed by its
+   * diameter, so the pen's Auto shape (snap on lift) must leave them as ink.
+   */
+  arcs?: boolean;
 }
 
 /** Returns null when the stroke is not confidently any known shape. */
@@ -364,6 +378,17 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `ellipse`                        | 65 points: a closed polygon sampled every 5.625°                 |
 | `triangle`, `diamond`, `polygon` | n+1 points, closed: the vertices, first repeated last            |
 | `roundrect`                      | 37 points, closed: four 8-segment quarter-arcs (Shape tool only) |
+| `heart`                          | 73 points, closed: the classic heart curve in 72 steps           |
+| `arc`                            | open: ≥ 3 points, one at least every 5.625° of turn, ends exact  |
+| `sector`                         | closed: the centre, the arc as `arc` lays it out, the centre     |
+
+A recognised `heart` and `sector` begin at the vertex nearest pen-down (a
+sector's outline then need not start at its centre); the Shape tool's
+heart begins at its cusp and goes clockwise. An `arc` or a `sector` whose
+turn is within 15° of a quarter-turn multiple is made exactly that, its
+ends put on an axis when within 8° of one (a slice's angle also snaps to a
+multiple of 15° within 4°). An `arc` takes no fill. Older versions read
+these three kinds as freehand ink.
 
 ### A shape's style (v9)
 

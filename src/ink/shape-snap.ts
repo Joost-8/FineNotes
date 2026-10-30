@@ -91,7 +91,13 @@ function targetsOf(kind: ShapeKind, pts: readonly number[]): Float64Array {
   const closed = n > 2 && pts[0] === pts[(n - 1) * S] && pts[1] === pts[(n - 1) * S + 1];
   const distinct = closed ? n - 1 : n;
   const curved =
-    kind === "circle" || kind === "ellipse" || kind === "roundrect" || kind === "cloud";
+    kind === "circle" ||
+    kind === "ellipse" ||
+    kind === "roundrect" ||
+    kind === "cloud" ||
+    kind === "heart" ||
+    kind === "arc" ||
+    kind === "sector";
   if (!curved && distinct <= MAX_CORNERS) {
     // Every vertex, then the middle of every side (a closed outline's last
     // side runs back to its first vertex).
