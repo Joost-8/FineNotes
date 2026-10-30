@@ -2183,6 +2183,15 @@ describe("selecting the Zoom box target", () => {
     expect((surface.zoomBox as { selected: boolean }).selected).toBe(false);
   });
 
+  it("selects on a finger tap in Stylus-only mode", () => {
+    const { surface, sync } = targetSurface();
+    surface.callbacks = { onlyStylusMode: () => true };
+    surface.toLayout = (x: number, y: number) => ({ x, y });
+    run(surface, "onFingerTap", 50, 50);
+    expect((surface.zoomBox as { selected: boolean }).selected).toBe(true);
+    expect(sync).toHaveBeenCalled();
+  });
+
   it("leaves an already unselected frame alone", () => {
     const { surface, sync } = targetSurface();
     run(surface, "deselectZoomTarget");
@@ -2298,6 +2307,7 @@ describe("the Zoom box target's presses", () => {
       zoomTargetDrag: null,
       zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected },
       toolState: { tool },
+      callbacks: { onlyStylusMode: () => true },
       zoomTargetEl: { setPointerCapture: frameCapture },
       boxForPage: () => ({}),
       pagePoint: () => ({ x: 10, y: 20 }),
@@ -2322,6 +2332,47 @@ describe("the Zoom box target's presses", () => {
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
     expect(frameCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from a corner with a finger in Stylus-only mode", () => {
+    const { surface, event, capture } = pressOn("handle", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from an edge with a finger in Stylus-only mode", () => {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "e" },
+      setPointerCapture: capture,
+    });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) => (selector === "[data-zoom-handle]" ? handle : null),
+    });
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected: true },
+      callbacks: { onlyStylusMode: () => true },
+      zoomTargetEl: { setPointerCapture: vi.fn() },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("e");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
   });
 
   it("leaves an unselected frame to the page, even under the pen", () => {

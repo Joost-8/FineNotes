@@ -2253,6 +2253,14 @@ export class InkSurface {
         handHeld: () => this.handHeld,
         route: (event) => this.pressRoute(event),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+        touchTarget: (event) => {
+          const state = this.zoomBox;
+          return (
+            state !== null &&
+            !state.selected &&
+            this.zoomTargetHitAt(this.toLayout(event.clientX, event.clientY))
+          );
+        },
         stylusClicks: () => this.stylusClickWanted(),
       },
     );
@@ -6481,7 +6489,7 @@ export class InkSurface {
     // otherwise leave a sliver of the old frame at the far edge.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = zoomDeskColor(renderer.desk, this.workspace);
+    ctx.fillStyle = zoomDeskColor(renderer.desk, this.paper.desk);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.save();

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DARK_WORKSPACE,
-  LIGHT_WORKSPACE,
-  workspaceBackgroundOf,
-} from "../../src/model/appearance-theme";
-import {
   ZOOM_AUTO_ADVANCE_STEP,
   ZOOM_BOX_MIN,
   ZOOM_BOX_STEP,
@@ -156,15 +151,9 @@ describe("zoom box geometry", () => {
   });
 
   it("uses the workspace desk inside the Zoom box", () => {
-    const desk = (workspaceBackground: string, dark: boolean, color?: string): string =>
-      zoomDeskColor(
-        undefined,
-        workspaceBackgroundOf({ workspaceBackground, workspaceBackgroundColor: color }, dark),
-      );
-    expect(desk("light", true)).toBe(LIGHT_WORKSPACE);
-    expect(desk("dark", false)).toBe(DARK_WORKSPACE);
-    expect(desk("custom", true, "#abc")).toBe("#aabbcc");
-    expect(zoomDeskColor("#123456", LIGHT_WORKSPACE)).toBe("#123456");
+    expect(zoomDeskColor(undefined, "#e6e7ea")).toBe("#e6e7ea");
+    expect(zoomDeskColor(undefined, "#0e0f11")).toBe("#0e0f11");
+    expect(zoomDeskColor("#123456", "#e6e7ea")).toBe("#123456");
   });
 
   it("trades box size for magnification around its centre", () => {
