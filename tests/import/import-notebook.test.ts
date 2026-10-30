@@ -139,6 +139,7 @@ describe("importNotebooks", () => {
     expect(IMPORT_EXTENSIONS).toEqual([
       "goodnotes",
       "note",
+      "ntb",
       "noteful",
       "zip",
       "pdf",
@@ -376,5 +377,100 @@ describe("importNotebooks: PDFs placed as pictures", () => {
         "1 PDF placed as a picture could not be shown; a note on the page says where it was saved (page 1).",
       ]);
     }
+  });
+});
+
+describe("importNotebooks: the folder each notebook sat in", () => {
+  const draft = (): Uint8Array =>
+    note([{ w: 1000, h: 1400, s: [{ p: [point(1, 1), point(5, 5)], c: 0xff000000 }] }]);
+  const folders = (batch: { results: Array<{ title: string; folder?: string }> }): unknown[] =>
+    batch.results.map((r) => [r.title, r.folder]);
+
+  it("keeps a single notebook's folder absent", async () => {
+    const batch = await importNotebooks(draft(), "Draft.sbn2");
+    expect(folders(batch)).toEqual([["Draft", undefined]]);
+    expect("folder" in batch.results[0]).toBe(false);
+  });
+
+  it("gives each notebook in a backup the folder it sat in", async () => {
+    const batch = await importNotebooks(
+      zip({
+        "Notability/Year 2/Biology/x.sbn2": draft(),
+        "Notability/Zoology/a.sbn2": draft(),
+        "top.sbn2": draft(),
+        "Unpacked.note/Unpacked/Session.plist": keyedArchive({
+          $class: "NoteTakingSession",
+          name: "Unpacked",
+          richText: {},
+        }),
+        "Course/Unpacked2.note/Unpacked2/Session.plist": keyedArchive({
+          $class: "NoteTakingSession",
+          name: "Unpacked2",
+          richText: {},
+        }),
+      }),
+      "notability-export.zip",
+    );
+    expect(batch.failures).toEqual([]);
+    // Packed files in name order, then unzipped package folders in name order.
+    expect(folders(batch)).toEqual([
+      ["x", "Notability/Year 2/Biology"],
+      ["a", "Notability/Zoology"],
+      ["top", undefined],
+      ["Unpacked2", "Course"],
+      ["Unpacked", undefined],
+    ]);
+  });
+
+  it("strips a wrapper folder named after the zip, and only that", async () => {
+    const wrapped = await importNotebooks(
+      zip({ "Backup/Maths/a.sbn2": draft(), "Backup/b.sbn2": draft() }),
+      "Backup.zip",
+    );
+    expect(folders(wrapped)).toEqual([
+      ["a", "Maths"],
+      ["b", undefined],
+    ]);
+    const other = await importNotebooks(zip({ "Backup/Maths/a.sbn2": draft() }), "Export.zip");
+    expect(folders(other)).toEqual([["a", "Backup/Maths"]]);
+    const partly = await importNotebooks(
+      zip({ "Backup/a.sbn2": draft(), "loose.sbn2": draft() }),
+      "Backup.zip",
+    );
+    expect(folders(partly)).toEqual([
+      ["a", "Backup"],
+      ["loose", undefined],
+    ]);
+  });
+
+  it("nests folders through a zip inside a zip", async () => {
+    const inner = zip({ "Pack/Week 1/deep.sbn2": draft(), "shallow.sbn2": draft() });
+    const batch = await importNotebooks(zip({ "Course/inner.zip": inner }), "Backup.zip");
+    expect(batch.failures).toEqual([]);
+    expect(folders(batch)).toEqual([
+      ["deep", "Course/Pack/Week 1"],
+      ["shallow", "Course"],
+    ]);
+  });
+
+  it("makes every folder segment safe to write", async () => {
+    const batch = await importNotebooks(
+      zip({
+        "Bad?Dir/Sub:Name/a.sbn2": draft(),
+        "../escape/b.sbn2": draft(),
+        ".hidden/c.sbn2": draft(),
+        "  padded  /d.sbn2": draft(),
+        "Dots./f.sbn2": draft(),
+      }),
+      "Pack.zip",
+    );
+    expect(batch.failures).toEqual([]);
+    expect(folders(batch)).toEqual([
+      ["d", "padded"],
+      ["b", "escape"],
+      ["c", "hidden"],
+      ["a", "Bad-Dir/Sub-Name"],
+      ["f", "Dots"],
+    ]);
   });
 });
