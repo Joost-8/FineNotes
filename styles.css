@@ -7028,6 +7028,42 @@ textarea.goodobsidian-chat-input:focus-visible {
   border-top: var(--gob-hairline);
 }
 
+/* Pen gestures › Make shapes: its name, then off | after a hold | on lift. */
+.goodobsidian-make-shapes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--gob-touch);
+  padding: 4px 12px;
+}
+
+.goodobsidian-make-shapes .goodobsidian-popover-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  /* As a switch row's name, which takes Obsidian's button weight. */
+  font-weight: var(--input-font-weight);
+}
+
+/* The curve bar under it: a straight line at the strict end, a wave at the loose one. */
+.goodobsidian-snap-curve {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-snap-curve .goodobsidian-width-slider {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.goodobsidian-snap-curve svg {
+  width: 18px;
+  height: 18px;
+}
+
 .goodobsidian-switch {
   position: relative;
   flex: 0 0 auto;

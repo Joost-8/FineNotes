@@ -133,6 +133,66 @@ describe("the eraser's mode list", () => {
   });
 });
 
+describe("Make shapes and the Auto shape button (FineNotes#84)", () => {
+  const globals = globalThis as unknown as Record<string, unknown>;
+  beforeEach(() => {
+    globals.activeDocument = { createElementNS: () => fakeEl() };
+  });
+  afterEach(() => {
+    delete globals.activeDocument;
+  });
+
+  type Patch = Record<string, unknown>;
+  function makeShapes(snapMode: string) {
+    const body = fakeEl();
+    const saved: Patch[] = [];
+    const state: Record<string, unknown> = { tool: "pen", snapMode };
+    const toolbar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      state,
+      callbacks: {},
+    }) as unknown as {
+      renderMakeShapes(body: unknown, prefs: unknown, save: (patch: Patch) => void): void;
+    };
+    toolbar.renderMakeShapes(body, { snapMode, snapCurve: 50 }, (patch) => saved.push(patch));
+    const els = walk(body);
+    const radio = (label: string) => els.find((el) => el.attrs["aria-label"] === label);
+    const bar = els.find((el) => el.attrs["aria-label"]?.startsWith("How curved"));
+    return { state, saved, radio, bar };
+  }
+
+  it("offers off, after a hold and on lift, marks the one in use, and saves a pick", () => {
+    const { state, saved, radio } = makeShapes("hold");
+    expect(radio("When I hold the pen still")?.attrs["aria-checked"]).toBe("true");
+    expect(radio("Off")?.attrs["aria-checked"]).toBe("false");
+    radio("When I lift the pen, too")?.click?.();
+    expect(state.snapMode).toBe("auto");
+    expect(saved).toEqual([{ snapMode: "auto" }]);
+  });
+
+  it("shows the curve bar only while shapes are on", () => {
+    expect(makeShapes("hold").bar).toBeDefined();
+    expect(makeShapes("auto").bar).toBeDefined();
+    expect(makeShapes("disabled").bar).toBeUndefined();
+  });
+
+  it("has the pill's Auto shape button change the same setting, so the pen follows it", () => {
+    const state: Record<string, unknown> = { tool: "pen", snapMode: "hold" };
+    const saved: Patch[] = [];
+    const toolbar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      state,
+      callbacks: { onPenPreferences: (patch: Patch) => saved.push(patch) },
+    }) as unknown as { toggleAutoShape(): void };
+    toolbar.toggleAutoShape();
+    expect(state.snapMode).toBe("auto");
+    toolbar.toggleAutoShape();
+    expect(state.snapMode).toBe("hold");
+    state.snapMode = "disabled";
+    toolbar.toggleAutoShape();
+    expect(state.snapMode).toBe("auto");
+    expect(saved).toEqual([{ snapMode: "auto" }, { snapMode: "hold" }, { snapMode: "auto" }]);
+  });
+});
+
 describe("the Magnifier's Zoom box", () => {
   /** A tool button that keeps the classes and attributes `syncActive` writes. */
   function toolButton() {

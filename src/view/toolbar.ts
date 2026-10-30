@@ -215,7 +215,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
-import type { PenPreferences, ReturnToPen } from "../settings-data";
+import type { PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -458,14 +458,14 @@ export interface ToolbarState {
   color: string;
   size: number;
   pressureEnabled: boolean;
-  /** Draw-and-hold with the pens. `undefined` counts as enabled. */
-  shapeSnapEnabled?: boolean;
   /**
-   * The pen's auto-shape toggle: every pen stroke that is plainly a shape
-   * snaps to it on lift, as the Shape tool's auto mode does. `undefined`
-   * counts as off.
+   * When a pen or highlighter stroke snaps to a shape (Pen gestures › Make
+   * shapes): never, after a hold, or on lift too (the pill's Auto shape
+   * button). `undefined` counts as `"hold"`.
    */
-  penAutoShape?: boolean;
+  snapMode?: SnapMode;
+  /** How curved a stroke may be and still snap, 10–100. `undefined` counts as 50. */
+  snapCurvatureThreshold?: number;
   /** The Shape tool's colour. `undefined` counts as {@link DEFAULT_SHAPE_COLOR}. */
   shapeColor?: string;
   /** Custom colours picked lately, newest first, for every colour picker. */
@@ -618,8 +618,6 @@ export interface ToolbarCallbacks {
   onTextList?: (kind: ListKind) => void;
   /** Delete the text box being edited. */
   onTextDelete?: () => void;
-  /** The pen's auto-shape toggle changed. Hosts persist it. */
-  onPenAutoShapeChange?: (enabled: boolean) => void;
   /** A pen gesture was switched on or off. Hosts persist it. */
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** A pen type's stroke stabilization changed (every step of a drag). Hosts persist it. */
@@ -2124,15 +2122,14 @@ export class Toolbar {
       cls: "goodobsidian-shape goodobsidian-pen-autoshape clickable-icon",
     });
     auto.append(shapeGlyph("auto"));
-    const on = this.state.penAutoShape === true;
+    const on = this.state.snapMode === "auto";
     const label = on ? "Auto shape: on" : "Auto shape: off";
     auto.setAttribute("aria-label", label);
     auto.setAttribute("title", `${label} — a stroke that is a shape becomes one`);
     auto.setAttribute("aria-pressed", String(on));
     auto.toggleClass("is-active", on);
     auto.addEventListener("click", () => {
-      this.state.penAutoShape = !on;
-      this.callbacks.onPenAutoShapeChange?.(!on);
+      this.toggleAutoShape();
       this.buildOptions();
     });
 
@@ -4285,7 +4282,89 @@ export class Toolbar {
   }
 
   /**
-   * GoodNotes' Pen Gestures page: Hold to make shapes, Scribble to erase
+   * The pill's Auto shape button: the same setting as Make shapes, flipped
+   * between on lift and after a hold. The host stores it and gives it to
+   * every open notebook, so the pen follows the button at once.
+   */
+  private toggleAutoShape(): void {
+    const mode: SnapMode = this.state.snapMode === "auto" ? "hold" : "auto";
+    this.state.snapMode = mode;
+    this.callbacks.onPenPreferences?.({ snapMode: mode });
+  }
+
+  /**
+   * "Make shapes": when a pen stroke snaps to a clean shape (never, after a
+   * hold, or on lift too, the pill's Auto shape button), and under it the
+   * curve bar, from straight-only to loose (FineNotes#84). The bar is hidden
+   * while shapes are off, where it means nothing.
+   */
+  private renderMakeShapes(
+    body: HTMLElement,
+    prefs: PenPreferences,
+    save: (patch: Partial<PenPreferences>) => void,
+  ): void {
+    // One card, as the switches below it: the choice, and its bar.
+    const card = body.createDiv({ cls: "goodobsidian-switch-list" });
+    const row = card.createDiv({ cls: "goodobsidian-make-shapes" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: "Make shapes" });
+    const modes = row.createDiv({
+      cls: "goodobsidian-segmented is-icons",
+      attr: { role: "radiogroup", "aria-label": "Make shapes" },
+    });
+    const choices: ReadonlyArray<[SnapMode, string]> = [
+      ["disabled", "Off"],
+      ["hold", "When I hold the pen still"],
+      ["auto", "When I lift the pen, too"],
+    ];
+    for (const [mode, label] of choices) {
+      const on = prefs.snapMode === mode;
+      const button = modes.createEl("button", {
+        cls: "clickable-icon",
+        attr: { role: "radio", "aria-label": label, "aria-checked": String(on) },
+      });
+      // On lift is the pill's Auto shape button: the same symbol for the same thing.
+      if (mode === "auto") button.append(shapeGlyph("auto"));
+      else setIcon(button, mode === "hold" ? "timer" : "ban");
+      button.toggleClass("is-active", on);
+      button.addEventListener("click", () => {
+        this.state.snapMode = mode;
+        save({ snapMode: mode });
+        this.popoverRender?.();
+      });
+    }
+
+    if (prefs.snapMode !== "disabled") {
+      const bar = card.createDiv({ cls: "goodobsidian-snap-curve" });
+      setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "minus");
+      const range = bar.createDiv({ cls: "goodobsidian-width-slider" }).createEl("input", {
+        cls: "goodobsidian-width-range",
+        type: "range",
+        attr: {
+          "aria-label": "How curved a stroke may be and still snap",
+          title: "Straight lines only ↔ looser shapes",
+        },
+      });
+      setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "waves");
+      range.min = "10";
+      range.max = "100";
+      range.step = "5";
+      range.value = String(prefs.snapCurve);
+      syncRangeFill(range);
+      range.addEventListener("input", () => {
+        const curve = Number(range.value);
+        this.state.snapCurvatureThreshold = curve;
+        save({ snapCurve: curve });
+        syncRangeFill(range);
+      });
+    }
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
+    });
+  }
+
+  /**
+   * GoodNotes' Pen Gestures page: Make shapes, Scribble to erase
    * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
@@ -4294,16 +4373,7 @@ export class Toolbar {
 
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
-    if (prefs && save) {
-      const hold = body.createDiv({ cls: "goodobsidian-switch-list" });
-      this.switchRow(hold, "Hold to make shapes", prefs.drawAndHold, (on) =>
-        save({ drawAndHold: on }),
-      );
-      body.createDiv({
-        cls: "goodobsidian-popover-hint",
-        text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
-      });
-    }
+    if (prefs && save) this.renderMakeShapes(body, prefs, save);
 
     const gestures = penGesturesOf(this.state.penGestures);
     const set = (patch: Partial<PenGestures>): void => {

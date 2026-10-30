@@ -587,6 +587,41 @@ describe("real Pencil ink from the iPad recording (2026-09-21)", () => {
     expect(basic.map((s) => s.expect).sort()).toEqual(["circle", "circle", "line", "rect", "rect"]);
   });
 
+  describe("snapping sensitivity and handwriting guards", () => {
+    it("keeps a true straight line snappable at every sensitivity", () => {
+      const pts = inkFrom(segment(100, 200, 500, 200), 301);
+      for (const threshold of [0.1, 0.5, 1]) {
+        expect(recognizeShape(pts, { curvatureThreshold: threshold })?.kind).toBe("line");
+      }
+    });
+
+    it("uses the curvature threshold for slightly bowed lines", () => {
+      const points = Array.from({ length: 81 }, (_, i) => {
+        const t = i / 80;
+        return { x: 100 + 400 * t, y: 200 + 16 * Math.sin(Math.PI * t) };
+      });
+      const pts = inkFrom(points, 302);
+      expect(recognizeShape(pts, { curvatureThreshold: 0.1 })).toBeNull();
+      expect(recognizeShape(pts, { curvatureThreshold: 1 })?.kind).toBe("line");
+    });
+
+    it("does not flatten a shallow parenthesis into a line", () => {
+      const points = Array.from({ length: 81 }, (_, i) => {
+        const t = i / 80;
+        return { x: 260 - 28 * Math.sin(Math.PI * t), y: 100 + 320 * t };
+      });
+      expect(recognizeShape(inkFrom(points, 303))?.kind).not.toBe("line");
+    });
+
+    it("does not flatten an integral-like S curve into a line", () => {
+      const points = Array.from({ length: 121 }, (_, i) => {
+        const t = i / 120;
+        return { x: 260 + 22 * Math.sin(2 * Math.PI * t), y: 80 + 360 * t };
+      });
+      expect(recognizeShape(inkFrom(points, 304))?.kind).not.toBe("line");
+    });
+  });
+
   it.each(basic.map((s) => [s.desc, s] as const))("recognises %s as traced", (_desc, stroke) => {
     const result = recognizeShape(asTraced(stroke));
     expect(accepts(stroke, result?.kind), `got ${result?.kind ?? "null"}`).toBe(true);

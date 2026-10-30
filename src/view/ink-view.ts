@@ -322,6 +322,8 @@ import {
   attachmentDefaults,
   greyWhileErasingOf,
   penPreferencesOf,
+  snapCurveOf,
+  snapModeOf,
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
@@ -367,7 +369,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     size: last?.size ?? s.defaultSize,
     penType: last?.type,
     pressureEnabled: s.pressureWidth && spec.pressure,
-    shapeSnapEnabled: s.drawAndHold,
+    snapMode: snapModeOf(s),
+    snapCurvatureThreshold: snapCurveOf(s.snapCurvatureThreshold),
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
@@ -377,7 +380,6 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     textStyle: sanitizeTextStyle(s.textStyle),
     textPinned: s.textToolPinned === true,
     textDragSize: s.textDragSize === true,
-    penAutoShape: s.penAutoShape === true,
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
@@ -914,10 +916,12 @@ export class InkView extends TextFileView {
 
   /**
    * A pen menu changed a setting held for every pen: the surface reads
-   * "Hold to make shapes" from the tool state, the rest it asks for live.
+   * "Make shapes" and its curve bar from the tool state, the rest it asks
+   * for live.
    */
   syncPenPreferences(): void {
-    this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
+    this.toolState.snapMode = snapModeOf(this.settings);
+    this.toolState.snapCurvatureThreshold = snapCurveOf(this.settings.snapCurvatureThreshold);
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -2550,7 +2554,6 @@ export class InkView extends TextFileView {
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
-        onPenAutoShapeChange: (enabled) => this.plugin.savePenAutoShape(enabled),
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
         onShapeColorChange: (color) => {
           this.surface?.refreshPenCursor();
@@ -2747,6 +2750,9 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onPenShape: () => {
+          if (this.surface) this.plugin.offerShapeHint(this.surface);
+        },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
