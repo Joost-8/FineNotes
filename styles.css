@@ -36,6 +36,9 @@ body,
      GoodNotes' own and still a comfortable Pencil tap. */
   --gob-touch: 44px;
   --gob-touch-compact: 36px;
+  /* The lasso's line, drawn and kept: Goodnotes' blue (Joost's recording,
+     2026-10-30). The canvas has its own copy (renderer.ts SELECTION_LINE). */
+  --gob-lasso: #1a6fd6;
   --gob-gap: 4px;
   /* A dropdown trigger's caret (icon or label, then a chevron): one size
      and one extra gap before it for every trigger, so the chevron reads as a
@@ -2651,6 +2654,27 @@ body.is-mobile .goodobsidian-scrollthumb {
   border-top: none;
 }
 
+/* A callout row that shows nothing (empty while it is false, or hidden)
+   still sits first in its group, and Obsidian draws a divider over every
+   row but the first: a line under the heading (Kirill on #79, the Shortcuts
+   section). The row after it draws none, and takes the first row's corners. */
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading)::before {
+  display: none;
+}
+
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading) {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+
+.setting-item.goodobsidian-plain-row:is(.is-hidden, [hidden]) {
+  display: none;
+}
+
 /* Models on this device. The introduction, muted, at the top of the section. */
 .goodobsidian-models-intro {
   padding: var(--size-4-3) 0 var(--size-4-1);
@@ -3260,6 +3284,57 @@ kbd.goodobsidian-key.is-glyph {
   font-size: var(--font-ui-smaller);
 }
 
+/* Settings → Shortcuts: each action's key caps in a slot that records a new
+   key when tapped. A `clickable-icon`, so Obsidian's button rules (and the
+   iPad's 20 px padding) stay off it; the class pair outranks that class. */
+.goodobsidian-shortcut-row .setting-item-control {
+  flex-shrink: 0;
+  gap: var(--size-2-2);
+}
+
+.goodobsidian-shortcut-row.is-conflicted .setting-item-name {
+  color: var(--text-error);
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2-1) var(--size-2-2);
+  min-width: var(--gob-touch, 32px);
+  min-height: var(--gob-touch, 32px);
+  max-width: min(100%, 240px);
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  opacity: 1;
+  white-space: normal;
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon.is-conflicted {
+  box-shadow: inset 0 0 0 var(--border-width) var(--text-error);
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon.is-recording {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+/* On the settings card the hotkey fill is the card's own: Obsidian's chip instead. */
+.goodobsidian-shortcut-slot kbd.goodobsidian-key {
+  background-color: var(--background-primary);
+  box-shadow: inset 0 0 0 var(--border-width) var(--background-modifier-border);
+}
+
+.goodobsidian-shortcut-unset {
+  color: var(--text-faint);
+}
+
+.goodobsidian-shortcut-recording {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
 /* ------------------------------------------- tier-2 swatch sizing (late) */
 
 /* A colour swatch must be a >= 44pt target without looking like a 44px blob:
@@ -3385,7 +3460,8 @@ kbd.goodobsidian-key.is-glyph {
    on them), restyled as the version's cards. */
 
 .goodobsidian-selection-bar,
-.goodobsidian-selection-menu {
+.goodobsidian-selection-menu,
+.goodobsidian-empty-lasso-pill {
   --gob-sel-bg: var(--color-base-10);
   --gob-sel-line: var(--color-base-30);
   --gob-sel-icon: var(--color-base-70);
@@ -7022,6 +7098,66 @@ textarea.goodobsidian-chat-input:focus-visible {
   border-color: transparent;
 }
 
+/* Goodnotes shows a lasso's loop alone: no knob until the bar's resize
+   handles are asked for, when it comes with the corners. Two fingers turn
+   it meanwhile. */
+.goodobsidian-selection-frame.has-outline.no-corners .goodobsidian-image-rotate {
+  display: none;
+}
+
+/* A lasso drawn round nothing (ink-surface.ts, showEmptyLasso): its loop and
+   a Screenshot button stay a moment, then fade, as Goodnotes leaves them. */
+.goodobsidian-empty-lasso {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.goodobsidian-empty-lasso.is-fading {
+  opacity: 0;
+}
+
+.goodobsidian-empty-lasso > .goodobsidian-selection-outline {
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.goodobsidian-empty-lasso-pill {
+  position: absolute;
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--gob-sel-line);
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-sel-bg);
+  box-shadow: var(--gob-shadow-float);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-empty-lasso-pill .goodobsidian-empty-lasso-shot.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--gob-sel-icon);
+}
+
+.goodobsidian-empty-lasso-pill .goodobsidian-empty-lasso-shot.clickable-icon:hover {
+  background: var(--gob-sel-well);
+  color: var(--color-base-100);
+}
+
 .goodobsidian-selection-outline {
   position: absolute;
   top: -1.5px;
@@ -7039,7 +7175,7 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-selection-outline path {
   fill: none;
-  stroke: var(--interactive-accent);
+  stroke: var(--gob-lasso);
   stroke-width: 1.5px;
   stroke-dasharray: 6 4;
   stroke-linejoin: round;

@@ -279,7 +279,7 @@ el5 stroke path2d#d70b6aa3446c at 0.9,0,0,0.9,-512,-512 {fillStyle=#ffd400 strok
 el5 stroke path2d#1336cc68644a at 0.9,0,0,0.9,-512,-512 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
 dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
 dry clip nonzero [R(24,-108 744,-108 744,792 24,792)] {imageSmoothingEnabled=false}
-dry strokeRect 268.8,406.8 517.2,406.8 517.2,565.2 268.8,565.2 {strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineDash=[13.3333,8.8889] imageSmoothingEnabled=false}
+dry strokeRect 268.8,406.8 517.2,406.8 517.2,565.2 268.8,565.2 {strokeStyle=#1a6fd6 lineWidth=3.3333 lineDash=[13.3333,8.8889] imageSmoothingEnabled=false}
 el6.width = 512
 el6.height = 512
 el6.getContext 2d null
@@ -699,7 +699,7 @@ wet clearRect 0,0 780,0 780,1400 0,1400
 # lasso, drafts and clear
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clip nonzero [R(24,-108 744,-108 744,792 24,792)]
-wet stroke [M114,-18 L294,0 L258,162 L132,144 Z] {strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineJoin=round lineDash=[13.3333,8.8889]}
+wet stroke [M114,-18 L294,0 L258,162 L132,144 Z] {strokeStyle=#1a6fd6 lineWidth=3.3333 lineJoin=round lineDash=[13.3333,8.8889]}
 wet.classList - goodobsidian-wet-hidden
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clearRect 0,0 780,0 780,1400 0,1400

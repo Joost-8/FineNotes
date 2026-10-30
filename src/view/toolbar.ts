@@ -5414,7 +5414,8 @@ const SCALED_DASH = "2.5 2";
 /**
  * An eraser-size control: the eraser's footprint at the size it erases
  * (`mark`, screen px), as the strip under the slider draws it, in a `box`
- * px square; dashed when its control's marks were shrunk to fit.
+ * px square. Shrunk to fit beside larger ones it keeps a solid ring
+ * (Joost, 2026-10-30): the sizes' ratios already say which is which.
  */
 function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
   const diameter = mark?.size ?? NaN;
@@ -5433,7 +5434,6 @@ function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
   circle.setAttribute("fill", "none");
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
-  if (mark?.scaled) circle.setAttribute("stroke-dasharray", SCALED_DASH);
   svg.append(circle);
   return svg;
 }

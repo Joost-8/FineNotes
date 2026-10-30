@@ -121,8 +121,12 @@ import type { ViewportState } from "./viewport";
 const FADED_INK_ALPHA = 0.22;
 /** The veil over the part of a picture a crop leaves out. A real colour: canvas ignores `var(--…)`. */
 const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
-/** The lasso's and the selection box's line. A real colour, as above. */
-const SELECTION_LINE = "rgba(120,170,255,0.95)";
+/**
+ * The lasso's and the selection box's line: Goodnotes' blue (Joost's
+ * recording, 2026-10-30), the same as the kept loop's (`--gob-lasso` in
+ * styles.css). A real colour, as above.
+ */
+const SELECTION_LINE = "#1a6fd6";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
 
@@ -849,9 +853,10 @@ export class Renderer {
   }
 
   /** Enter a page's local coordinate space, clipped to the sheet. */
-  private enterPage(ctx: CanvasRenderingContext2D, box: PageBox): void {
+  private enterPage(ctx: CanvasRenderingContext2D, box: PageBox, clip = true): void {
     ctx.save();
     ctx.translate(box.x, box.y);
+    if (!clip) return;
     ctx.beginPath();
     ctx.rect(0, 0, box.width, box.height);
     ctx.clip();
@@ -1658,10 +1663,12 @@ export class Renderer {
 
   /**
    * Draw the lasso being drawn (page space, flat `[x, y, …]`) on the wet
-   * layer: a dashed loop closed back to its start, its line only (Joost on
-   * PR #59: no filled area while drawing), in the selection box's colour.
+   * layer: a dashed line, no filled area (Joost on PR #59), in the selection
+   * box's colour. `closed` joins its end back to its start (a box, a span of
+   * lines); a freehand lasso is left open while the pen is down, as
+   * Goodnotes draws it, and closes only on the lift.
    */
-  renderLasso(pageIndex: number, loop: readonly number[]): void {
+  renderLasso(pageIndex: number, loop: readonly number[], closed = true): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
@@ -1671,7 +1678,7 @@ export class Renderer {
     ctx.beginPath();
     ctx.moveTo(loop[0], loop[1]);
     for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
-    ctx.closePath();
+    if (closed) ctx.closePath();
     selectionLine(ctx, this.safeScale);
     ctx.lineJoin = "round";
     ctx.stroke();
@@ -1689,7 +1696,8 @@ export class Renderer {
    * is what `ScaleElements` commits (ink width scales with the ink). A turn
    * passes `turn`: the outlines turned `angle` radians clockwise about
    * (x, y), which is what `ReorientElements` commits for the ink and the
-   * pictures (text boxes are DOM, and stay upright).
+   * pictures (text boxes are DOM, and stay upright). `clip` false draws it
+   * past its page's edge too: a move can carry it onto another page.
    */
   renderSelectionDraft(
     pageIndex: number,
@@ -1702,13 +1710,17 @@ export class Renderer {
     turn?: { x: number; y: number; angle: number },
     tables: readonly TableElement[] = [],
     graphs: readonly GraphElement[] = [],
+    clip = true,
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterWetPage(ctx, box);
+    // Moving, the draft may be drawn over another page (it is dropped there);
+    // joined pages are one sheet, so it is clipped to the sheets either way.
+    if (clip || this.layout.joined === true) this.enterWetPage(ctx, box);
+    else this.enterPage(ctx, box, false);
     // A table stays upright under a turn (its middle goes round, as
     // `ReorientElements` commits), so it is drawn before the turn is applied.
     const night = this.nightAt(pageIndex);

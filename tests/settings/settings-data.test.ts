@@ -447,29 +447,30 @@ describe("settings sections", () => {
   });
 
   it("reads a hand-edited value without trusting it", () => {
-    expect(openSectionsOf("pens")).toEqual([]);
+    expect(openSectionsOf("writing")).toEqual([]);
     expect(openSectionsOf(null)).toEqual([]);
     // Unknown ids go; known ones come back in the tab's order, once each.
-    expect(openSectionsOf(["ai", "nope", "pens", "ai", 7, "toString", "shortcuts"])).toEqual([
-      "pens",
+    expect(openSectionsOf(["ai", "nope", "pages", "ai", 7, "toString", "shortcuts"])).toEqual([
+      "shortcuts",
+      "pages",
       "ai",
     ]);
   });
 
   it("opens and folds one section, leaving the others", () => {
-    const open = withSection(["pens"], "advanced", true);
-    expect(open).toEqual(["pens", "advanced"]);
-    expect(withSection(open, "pens", false)).toEqual(["advanced"]);
-    expect(withSection(open, "advanced", true)).toEqual(["pens", "advanced"]);
-    expect(withSection(["pens"], "toString" as never, true)).toEqual(["pens"]);
+    const open = withSection(["pages"], "advanced", true);
+    expect(open).toEqual(["pages", "advanced"]);
+    expect(withSection(open, "pages", false)).toEqual(["advanced"]);
+    expect(withSection(open, "advanced", true)).toEqual(["pages", "advanced"]);
+    expect(withSection(["pages"], "toString" as never, true)).toEqual(["pages"]);
   });
 
   it("keeps one open at a time on a tablet, the first of several synced from a computer", () => {
-    expect(withSection(["pens", "ai"], "pages", true, true)).toEqual(["pages"]);
+    expect(withSection(["pages", "ai"], "on-device", true, true)).toEqual(["on-device"]);
     expect(withSection(["pages"], "pages", false, true)).toEqual([]);
-    expect(sectionOpen(["pens", "ai"], "pens", true)).toBe(true);
-    expect(sectionOpen(["pens", "ai"], "ai", true)).toBe(false);
-    expect(sectionOpen(["pens", "ai"], "ai")).toBe(true);
+    expect(sectionOpen(["pages", "ai"], "pages", true)).toBe(true);
+    expect(sectionOpen(["pages", "ai"], "ai", true)).toBe(false);
+    expect(sectionOpen(["pages", "ai"], "ai")).toBe(true);
   });
 });
 

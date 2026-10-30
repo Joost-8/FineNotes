@@ -17,6 +17,7 @@ import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
 import { layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
+import { type ShortcutTable, shortcutTable, withShortcut } from "../../src/model/shortcut-bindings";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
@@ -520,6 +521,442 @@ describe("handleKeyDown", () => {
       ...TAKEN,
       calls: ["scrollStep(150)"],
     });
+  });
+});
+
+// --- The user's shortcut table ----------------------------------------------------
+
+/** A key press on a surface that reads `table` instead of `keyOutcome`. */
+function tablePress(key: string, mods: Mods, table: ShortcutTable) {
+  const calls: string[] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]): void => {
+      calls.push(args.length > 0 ? `${name}(${args.map(String).join(",")})` : name);
+    };
+  const surface = surfaceWith({
+    toolState: { tool: "pen" },
+    callbacks: {
+      onChange: () => {},
+      onToolChange: record("onToolChange"),
+      shortcuts: () => table,
+      onShortcutAction: record("onShortcutAction"),
+    },
+    editingTextView: () => null,
+    clipboardKey: () => false,
+    liveImageSelection: () => null,
+    liveSelection: () => null,
+    undo: record("undo"),
+    redo: record("redo"),
+    deleteSelection: record("deleteSelection"),
+    nextPage: record("nextPage"),
+    previousPage: record("previousPage"),
+    zoomIn: record("zoomIn"),
+    zoomOut: record("zoomOut"),
+    resetView: record("resetView"),
+    paste: record("paste"),
+    copySelection: record("copySelection"),
+    hasSelection: () => true,
+    setTool: record("setTool"),
+    setHand: record("setHand"),
+  });
+  let prevented = false;
+  const event = {
+    key,
+    metaKey: mods.meta === true,
+    ctrlKey: mods.ctrl === true,
+    shiftKey: mods.shift === true,
+    altKey: mods.alt === true,
+    target: null,
+    preventDefault: () => {
+      prevented = true;
+    },
+  };
+  const taken = run<boolean>(surface, "handleKeyDown", event);
+  return { taken, prevented, calls, surface };
+}
+
+const noKeys = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+
+const keyOf = (value: string, ...mods: Array<"Mod" | "Alt" | "Shift">) => ({
+  type: "key" as const,
+  key: value,
+  mods,
+});
+
+describe("the user's shortcut table", () => {
+  it("runs a row's action from its recorded key", () => {
+    const table = shortcutTable(withShortcut({}, "edit.undo", keyOf("u"), "press"));
+    expect(tablePress("u", {}, table)).toMatchObject({
+      taken: true,
+      prevented: false,
+      calls: ["undo"],
+    });
+    // The key Undo no longer uses is taken away, not handed to the built-in one.
+    expect(tablePress("z", { meta: true }, table)).toMatchObject({
+      taken: true,
+      prevented: true,
+      calls: [],
+    });
+  });
+
+  it("switches a tool from a recorded key, as its letter did", () => {
+    const table = shortcutTable(withShortcut({}, "tool.eraser", keyOf("k"), "press"));
+    expect(tablePress("k", {}, table)).toMatchObject({
+      taken: true,
+      prevented: false,
+      calls: ["setTool(eraser)", "onToolChange(eraser)"],
+    });
+    expect(tablePress("e", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  /**
+   * A surface whose `setTool` really puts the tool in hand, so a test reads
+   * what a press would then draw with: its gesture and its ink.
+   */
+  function holding(table: ShortcutTable) {
+    const calls: string[] = [];
+    const toolState = { tool: "pen", color: "#112233", shapeColor: "#ff0000" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        shortcuts: () => table,
+      },
+      editingTextView: () => null,
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const key = (type: "keydown" | "keyup", value: string, mods: Mods = {}) => {
+      const event = {
+        key: value,
+        metaKey: mods.meta === true,
+        ctrlKey: mods.ctrl === true,
+        shiftKey: mods.shift === true,
+        altKey: mods.alt === true,
+        target: null,
+        preventDefault: () => {},
+      };
+      if (type === "keydown") run(surface, "handleKeyDown", event);
+      else run(surface, "handleKeyUp", event);
+    };
+    return { surface, toolState, calls, key };
+  }
+
+  it("holds the highlighter: its gesture and its ink while the key is down, the pen after", () => {
+    const { surface, toolState, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(toolState.tool).toBe("highlighter");
+    expect(run(surface, "gestureTool")).toBe("highlighter");
+    // The stroke a press now commits is highlighter ink, not the pen's.
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("highlighter");
+    key("keydown", "r"); // the key repeating changes nothing
+    key("keyup", "r");
+    expect(toolState.tool).toBe("pen");
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("pen");
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("holds Shapes with the Shape tool's own colour", () => {
+    const { surface, key } = holding(
+      shortcutTable(withShortcut({}, "tool.shape", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(run(surface, "gestureTool")).toBe("shape");
+    expect(run(surface, "strokeColor")).toBe("#ff0000");
+  });
+
+  it("holds the eraser: a press erases, and the pen comes back on the key-up", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(surface.heldShortcut).toEqual({
+      key: "r",
+      pointerId: null,
+      bit: 0,
+      mod: false,
+      tool: "eraser",
+      back: "pen",
+    });
+    expect(run(surface, "gestureTool")).toBe("eraser");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("waits for the pen to lift before switching either way", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    surface.pressing = true;
+    key("keydown", "r");
+    // The stroke under way stays the pen's to the end.
+    expect(toolState.tool).toBe("pen");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("highlighter");
+    surface.pressing = true;
+    key("keyup", "r");
+    expect(toolState.tool).toBe("highlighter");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("lets go of a tool held with Cmd when Cmd comes up, as Apple sends no other key-up", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.select", keyOf("j", "Mod"), "hold")),
+    );
+    key("keydown", "j", { meta: true });
+    expect(toolState.tool).toBe("select");
+    key("keyup", "Meta");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("keeps the tool already in hand when its own key is held", () => {
+    const { surface, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.pen", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("lets go of a held tool when the window loses focus", () => {
+    const table = shortcutTable(withShortcut({}, "tool.pan", keyOf("k"), "hold"));
+    const pressed = tablePress("k", {}, table);
+    expect(pressed.calls).toEqual(["setHand(true)"]);
+    run(pressed.surface, "releaseHeldShortcuts");
+    expect(pressed.surface.heldShortcut).toBeNull();
+    expect(pressed.calls).toEqual(["setHand(true)", "setHand(false)"]);
+  });
+
+  it("does nothing at all for two rows that share an input", () => {
+    const table = shortcutTable(withShortcut({}, "edit.undo", keyOf("p"), "press"));
+    // P is the pen's; W is the pen's other key. Both are paused together.
+    expect(tablePress("p", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+    expect(tablePress("w", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  it("takes away the built-in keys of a row the user cleared", () => {
+    const table = shortcutTable(withShortcut({}, "tool.pen", null, "press"));
+    expect(tablePress("p", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+    expect(tablePress("w", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  it("lets a recorded context row act without the screen's Delete, Copy or Paste", () => {
+    const table = shortcutTable(withShortcut({}, "edit.copy", keyOf("k", "Mod"), "press"));
+    expect(tablePress("k", { meta: true }, table)).toMatchObject({
+      taken: true,
+      prevented: true,
+      calls: ["copySelection"],
+    });
+  });
+
+  it("leaves the pen's side button to its own setting, lending only what has a gesture", () => {
+    const barrel = { pointerType: "pen", button: 2, buttons: 2, ...noKeys };
+    const surface = surfaceWith({
+      practice: null,
+      cellEdit: null,
+      editingTextView: () => null,
+      heldShortcut: null,
+      callbacks: { shortcuts: () => shortcutTable(), barrelAction: () => "lasso" },
+    });
+    expect(run(surface, "pressOverrideOf", barrel)).toBe("select");
+    // Set to move the page, the press route pans it; the stroke path borrows nothing.
+    surface.callbacks = { shortcuts: () => shortcutTable(), barrelAction: () => "pan" };
+    expect(run(surface, "pressOverrideOf", barrel)).toBeNull();
+  });
+});
+
+describe("buttons in the user's shortcut table", () => {
+  const right = { type: "button" as const, button: 2, mods: [] };
+  const side = { ...right, pen: true };
+
+  /** A window that keeps its listeners, so a test can send the pointer's later events. */
+  function fakeWindow() {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    return {
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        const set = listeners.get(type) ?? new Set();
+        set.add(handler);
+        listeners.set(type, set);
+      },
+      removeEventListener: (type: string, handler: (event: unknown) => void) => {
+        listeners.get(type)?.delete(handler);
+      },
+      emit: (type: string, event: unknown) => {
+        for (const handler of [...(listeners.get(type) ?? [])]) handler(event);
+      },
+      get listening() {
+        return [...listeners.values()].reduce((sum, set) => sum + set.size, 0);
+      },
+    };
+  }
+
+  function buttons(table: ShortcutTable, barrel = "erase") {
+    const calls: string[] = [];
+    const win = fakeWindow();
+    const toolState = { tool: "pen", color: "#112233" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      cellEdit: null,
+      heldText: null,
+      stylusMenuUntil: 0,
+      buttonShortcutUntil: 0,
+      disposers: [],
+      surfaceEl: { ownerDocument: { defaultView: win } },
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        onStylusClick: () => calls.push("onStylusClick"),
+        stylusClick: () => "pen-menu",
+        shortcuts: () => table,
+        barrelAction: () => barrel,
+      },
+      editingTextView: () => null,
+      undo: () => calls.push("undo"),
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const press = (pointerType: string, button: number, held: number, pointerId = 1) => {
+      const event = {
+        pointerType,
+        button,
+        buttons: held,
+        pointerId,
+        ...noKeys,
+        prevented: false,
+        stopped: false,
+        preventDefault() {
+          this.prevented = true;
+        },
+        stopImmediatePropagation() {
+          this.stopped = true;
+        },
+      };
+      run(surface, "onButtonPress", event);
+      return event;
+    };
+    return { surface, toolState, calls, win, press };
+  }
+
+  it("runs a row from a right click, draws nothing and opens no menu", () => {
+    const { surface, calls, press } = buttons(
+      shortcutTable(withShortcut({}, "edit.undo", right, "press")),
+    );
+    const event = press("mouse", 2, 2);
+    expect(calls).toEqual(["undo"]);
+    expect(event.prevented).toBe(true);
+    expect(event.stopped).toBe(true);
+    // The page's own right click menu stays shut.
+    expect(surface.stylusMenuUntil).toBeGreaterThan(0);
+  });
+
+  it("leaves a press with no button bound, a left click or the pen's tip alone", () => {
+    const { calls, press } = buttons(shortcutTable(withShortcut({}, "edit.undo", right, "press")));
+    for (const event of [press("mouse", 0, 1), press("pen", 0, 1), press("touch", 0, 1)]) {
+      expect(event.prevented).toBe(false);
+      expect(event.stopped).toBe(false);
+    }
+    const middle = press("mouse", 1, 4);
+    expect(middle.stopped).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it("holds the highlighter on the side button: the touching pen writes it, the pen after", () => {
+    const { surface, toolState, calls, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.highlighter", side, "hold")),
+    );
+    // The pen touches down with its side button held (a driver reporting button 0).
+    const event = press("pen", 0, 3, 7);
+    expect(event.stopped).toBe(false);
+    expect(toolState.tool).toBe("highlighter");
+    // The side button's own setting (erase) lends nothing over it.
+    expect(run(surface, "pressOverrideOf", event)).toBeNull();
+    // Still held while the pen moves with the button down; another pointer is no matter.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 3 });
+    win.emit("pointerup", { type: "pointerup", pointerId: 9, buttons: 0 });
+    expect(toolState.tool).toBe("highlighter");
+    // Letting the button go gives the pen back, and nothing is left listening.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 1 });
+    expect(toolState.tool).toBe("pen");
+    expect(surface.heldShortcut).toBeNull();
+    expect(win.listening).toBe(0);
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("lends a held tool on a right button until it comes up", () => {
+    const { toolState, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.eraser", right, "hold")),
+    );
+    const event = press("mouse", 2, 2, 3);
+    expect(event.prevented).toBe(true);
+    expect(toolState.tool).toBe("eraser");
+    win.emit("pointerup", { type: "pointerup", pointerId: 3, buttons: 0 });
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("does nothing for a button two rows share", () => {
+    const table = shortcutTable(
+      withShortcut(withShortcut({}, "edit.undo", right, "press"), "tool.eraser", side, "press"),
+    );
+    const { calls, press } = buttons(table);
+    const event = press("pen", 2, 2);
+    expect(calls).toEqual([]);
+    expect(event.stopped).toBe(true);
+  });
+
+  it("runs a side button's click in the air instead of the pen menu, once", () => {
+    const bound = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo"]);
+    // Its press already ran it: the click that follows is no second run.
+    bound.press("pen", 2, 2);
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo", "undo"]);
+    // Nobody recorded it: the pen menu, as before.
+    const free = buttons(shortcutTable());
+    run(free.surface, "stylusClicked", 10, 20);
+    expect(free.calls).toEqual(["onStylusClick"]);
+  });
+
+  it("listens for the side button's click when it is bound, whatever the click setting says", () => {
+    const { surface } = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    surface.callbacks = { ...(surface.callbacks as object), stylusClick: () => "none" };
+    expect(run(surface, "stylusClickWanted")).toBe(true);
+    surface.callbacks = { ...(surface.callbacks as object), shortcuts: () => shortcutTable() };
+    expect(run(surface, "stylusClickWanted")).toBe(false);
   });
 });
 
@@ -1238,7 +1675,7 @@ describe("Turn into › Text (FineNotes#42)", () => {
       doc: documentOf(blankPage("p0"), p),
       liveSelection: () => selection,
     });
-    expect(run(surface, "selectedInk")).toEqual({ index: 1, strokeIds: ["a"] });
+    expect(run(surface, "selectedInk")).toMatchObject({ index: 1, strokeIds: ["a"] });
     selection = { pageId: "p1", strokes: [], images: [], textBoxes: [] };
     expect(run(surface, "selectedInk")).toBeNull();
     selection = null;
@@ -2298,7 +2735,7 @@ describe("ink pressure", () => {
 describe("size preview scales", () => {
   it("pen widths and the eraser both grow with the zoom: their sizes are the paper's", () => {
     const s = surfaceWith({ baseScale: 0.8, userZoom: 2.5 });
-    expect(run(s, "sizePreviewScales")).toEqual({ pen: 2, eraser: 2 });
+    expect(run(s, "sizePreviewScales")).toMatchObject({ pen: 2, eraser: 2 });
   });
 
   it("erases the same patch of paper at every zoom", () => {

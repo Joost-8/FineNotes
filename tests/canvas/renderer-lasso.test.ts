@@ -128,6 +128,14 @@ describe("renderLasso", () => {
     expect(wet.classes.has("goodobsidian-wet-hidden")).toBe(false);
   });
 
+  it("leaves a freehand lasso open while the pen is down, as Goodnotes does", () => {
+    const { renderer, wetLog } = setup();
+    renderer.renderLasso(0, [10, 10, 100, 10, 60, 80], false);
+    const names = wetLog.map(([name]) => name);
+    expect(names).not.toContain("closePath");
+    expect(names).toContain("stroke");
+  });
+
   it("draws nothing for a loop of one point, or an unknown page", () => {
     const { renderer, wetLog } = setup();
     renderer.renderLasso(0, [10, 10]);
