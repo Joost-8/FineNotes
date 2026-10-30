@@ -12836,7 +12836,8 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 /* The calculator's graph popped out over the notebook (view/graph-window.ts):
    above the page, below pop-ups; moved by its bar, sized by its corner. */
 .goodobsidian-graph-window,
-.goodobsidian-calc-window {
+.goodobsidian-calc-window,
+.goodobsidian-zoombox-window {
   position: absolute;
   z-index: 20;
   display: flex;
@@ -12854,12 +12855,14 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 }
 
 .goodobsidian-graph-window.is-raised,
-.goodobsidian-calc-window.is-raised {
+.goodobsidian-calc-window.is-raised,
+.goodobsidian-zoombox-window.is-raised {
   transform: scale(1.02);
 }
 
 .goodobsidian-graph-window-bar,
-.goodobsidian-calc-window-bar {
+.goodobsidian-calc-window-bar,
+.goodobsidian-zoombox-window-bar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -12871,15 +12874,25 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 }
 
 .goodobsidian-graph-window-title,
-.goodobsidian-calc-window-title {
+.goodobsidian-calc-window-title,
+.goodobsidian-zoombox-window-title {
   flex: 1 1 auto;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold, 600);
 }
 
+.goodobsidian-zoombox-window-title {
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 button.clickable-icon.goodobsidian-graph-window-button,
-button.clickable-icon.goodobsidian-calc-window-button {
+button.clickable-icon.goodobsidian-calc-window-button,
+button.clickable-icon.goodobsidian-zoombox-window-button {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
@@ -12889,12 +12902,28 @@ button.clickable-icon.goodobsidian-calc-window-button {
 }
 
 .goodobsidian-graph-window-body,
-.goodobsidian-calc-window-body {
+.goodobsidian-calc-window-body,
+.goodobsidian-zoombox-window-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   padding: 0 8px 8px;
+}
+
+.goodobsidian-zoombox-window-body {
+  padding: 0;
+  background: var(--gob-desk);
+}
+
+.goodobsidian-zoombox-canvas {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  touch-action: none;
+  cursor: crosshair;
 }
 
 .goodobsidian-graph-window .goodobsidian-calc-graph:not(.is-wide) .goodobsidian-calc-functions {
@@ -12920,7 +12949,8 @@ button.clickable-icon.goodobsidian-calc-window-button {
 
 /* The corner to resize from: a 28 px target over the graph's corner. */
 .goodobsidian-graph-window-grip,
-.goodobsidian-calc-window-grip {
+.goodobsidian-calc-window-grip,
+.goodobsidian-zoombox-window-grip {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -12935,7 +12965,8 @@ button.clickable-icon.goodobsidian-calc-window-button {
 }
 
 .goodobsidian-graph-window-grip svg,
-.goodobsidian-calc-window-grip svg {
+.goodobsidian-calc-window-grip svg,
+.goodobsidian-zoombox-window-grip svg {
   width: 14px;
   height: 14px;
 }
@@ -13030,7 +13061,8 @@ button.clickable-icon.goodobsidian-calc-window-button {
 
 /* The window last touched sits over the other one. */
 .goodobsidian-graph-window.is-front,
-.goodobsidian-calc-window.is-front {
+.goodobsidian-calc-window.is-front,
+.goodobsidian-zoombox-window.is-front {
   z-index: 21;
 }
 
@@ -13608,6 +13640,170 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
+}
+
+/* ------------------------------------------------------- Magnifier zoom box */
+
+/* The Magnifier's two modes: page zoom, or a target box written in through a
+   floating window. Symbols, their names in aria-label; wells, like the
+   eraser's mode picker. */
+.goodobsidian-options button.goodobsidian-zoommode {
+  padding: 0 10px;
+}
+
+.goodobsidian-options button.goodobsidian-zoommode.is-active {
+  color: var(--gob-size-active-fg);
+  background: var(--gob-size-active-bg);
+  box-shadow: var(--gob-size-active-ring);
+}
+
+.goodobsidian-zoommode-icon {
+  display: inline-flex;
+}
+
+/* The first drag: a dashed rectangle over the page, no handles yet. */
+.goodobsidian-zoom-marquee {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 3;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
+  pointer-events: none;
+}
+
+/* The target box is a clean viewfinder frame: a thin solid accent border,
+   a faint tint and the magnifier badge. Unselected it is a picture of where
+   the box is: the page keeps every press, so writing and panning work. A tap
+   selects it, and only then does it take drags. */
+.goodobsidian-zoom-target {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 3;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
+  pointer-events: none;
+  cursor: default;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-zoom-target.is-selected {
+  pointer-events: auto;
+}
+
+.goodobsidian-zoom-target.is-interactive:not(.is-selected) {
+  cursor: pointer;
+}
+
+.goodobsidian-zoom-target.is-selected,
+.goodobsidian-zoom-target.is-selected .goodobsidian-zoom-badge {
+  cursor: move;
+}
+
+/* Selected: the lasso's own corner squares and edge circles, live only now. */
+.goodobsidian-zoom-target .goodobsidian-image-handle {
+  display: none;
+  pointer-events: none;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-image-handle {
+  display: block;
+  pointer-events: auto;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-image-handle::after {
+  display: block;
+}
+
+/* The magnifier badge sits inside the bottom-right corner: the obvious grip. */
+.goodobsidian-zoom-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  cursor: move;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-zoom-badge {
+  pointer-events: auto;
+}
+
+.goodobsidian-zoom-badge .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* The window's magnification, between − and +. */
+.goodobsidian-zoombox-readout {
+  flex: 0 0 auto;
+  min-width: 46px;
+  padding: 0 2px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Six controls, a readout and the grip share a bar that can narrow to a
+   split view: 34 px each still leaves the readout whole at the minimum. */
+button.clickable-icon.goodobsidian-zoombox-window-button {
+  width: 34px;
+  height: 34px;
+}
+
+button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+
+/* The drag grip at the head of the bar; the bar itself drags too. */
+.goodobsidian-zoombox-drag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0 2px 0 -6px;
+  color: var(--text-faint);
+}
+
+.goodobsidian-zoombox-drag svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-zoom-marquee.is-hidden,
+.goodobsidian-zoom-target.is-hidden {
+  display: none;
+}
+
+/* Covers the page only while a first Zoom box target is being drawn, so a
+   finger or Pencil drag chooses it instead of scrolling. */
+.goodobsidian-zoom-catcher {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.goodobsidian-zoom-catcher.is-hidden {
+  display: none;
 }
 
 /* ------------------------------------------- the tool bar at another edge */

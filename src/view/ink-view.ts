@@ -393,6 +393,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
+    zoomBox: s.magnifierZoomBox === true,
   };
 }
 
@@ -941,6 +942,7 @@ export class InkView extends TextFileView {
    */
   setOnlyStylusMode(on: boolean): void {
     this.toolbar?.setOnlyStylusMode(on);
+    this.surface?.onlyStylusChanged();
   }
 
   override async onClose(): Promise<void> {
@@ -2592,6 +2594,17 @@ export class InkView extends TextFileView {
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
         onZoomFit: () => this.surface?.resetView(),
+        onZoomBox: (on) => {
+          this.surface?.setZoomBox(on);
+          if (this.settings.magnifierZoomBox !== on) {
+            this.settings.magnifierZoomBox = on;
+            void this.plugin.saveSettings();
+          }
+        },
+        onZoomBoxOpen: (open) => {
+          if (open) this.surface?.openPlacedZoomBox();
+          else this.surface?.closeZoomBox(true);
+        },
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2723,6 +2736,7 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
+        onZoomBoxChange: (open) => this.toolbar?.setZoomBoxOpen(open),
         onPen: (down) => {
           this.penActivity(down);
           this.returnPenOptions(down);
@@ -2742,6 +2756,13 @@ export class InkView extends TextFileView {
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
+        zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
+        zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
+        onZoomBoxAutoAdvance: (on) => {
+          this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
         onShortcuts: () => this.toggleShortcuts(),
         shortcuts: () => this.plugin.shortcuts.table,
         onShortcutAction: (id) => this.runShortcutAction(id),

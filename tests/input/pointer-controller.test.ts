@@ -752,6 +752,31 @@ describe("pen and fingers together", () => {
     expect(rig.take()).toEqual(["panStart 1,2 t=14"]);
   });
 
+  it("lets a touch on an allowed page target reach the finger handler in Stylus-only mode", () => {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: () => log.push("start"),
+        onMove: () => log.push("move"),
+        onEnd: () => log.push("end"),
+        onCancel: () => log.push("cancel"),
+        onPanStart: (x, y) => log.push(`panStart ${x},${y}`),
+      },
+      {
+        onlyStylus: () => true,
+        touchTarget: () => true,
+      },
+    );
+    controller.attach();
+    const down = eventFor(10, "touch", { x: 1, y: 2, t: 3 });
+    el.listeners.get("pointerdown")?.(down);
+    expect(log).toEqual(["panStart 1,2"]);
+    expect(down.prevented).toBe(false);
+  });
+
   it("a hovering pen and a wide contact do not keep a finger out", () => {
     const rig = new Rig();
     rig.pen("pointermove", 1, { x: 0, y: 0, t: 1000 });

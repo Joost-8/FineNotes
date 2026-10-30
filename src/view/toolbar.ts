@@ -84,6 +84,7 @@ import {
   normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
@@ -527,6 +528,14 @@ export interface ToolbarState {
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
   rulerSnap?: number;
+  /**
+   * The Magnifier's mode: `true` writes in a floating Zoom box, `false` (or
+   * absent) zooms the page itself. The box stays open while another tool is
+   * picked; only the Magnifier's own switch and its × close it.
+   */
+  zoomBox?: boolean;
+  /** A target box and its window are open on the page right now. */
+  zoomBoxOpen?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -669,6 +678,10 @@ export interface ToolbarCallbacks {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomFit?: () => void;
+  /** The Magnifier's mode switched: open or close the Zoom box. */
+  onZoomBox?: (on: boolean) => void;
+  /** Open (a placed box, `placedZoomBox`) or close the Zoom box, the mode and the tool kept. */
+  onZoomBoxOpen?: (open: boolean) => void;
 }
 
 export interface ToolbarOptions {
@@ -1917,6 +1930,23 @@ export class Toolbar {
       this.toggleLassoPopover(button);
       return;
     }
+    // The Magnifier in Zoom box mode opens the box in one tap, the tool in
+    // hand kept; with the box open a tap picks the Magnifier (its pill), and
+    // the next closes the box (`magnifierTap`).
+    if (tool === "zoom") {
+      const action = magnifierTap(
+        current,
+        this.state.zoomBox === true,
+        this.state.zoomBoxOpen === true,
+      );
+      if (action !== "select") {
+        this.callbacks.onZoomBoxOpen?.(action === "open");
+        this.state.zoomBoxOpen = action === "open" && this.state.zoomBoxOpen === true;
+        if (current === "zoom") this.buildOptions();
+        this.syncActive();
+        return;
+      }
+    }
     this.closePopover();
     this.tuckedByStroke = false;
     if (tool === current) {
@@ -2527,9 +2557,45 @@ export class Toolbar {
     this.toolNote("hand", "Drag to move the page");
   }
 
-  /** The magnifier: its drag, and the steps and fit the page needs. */
+  /** The magnifier: page zoom or a Zoom box, then its steps and fit. */
   private buildZoomOptions(): void {
     const cb = this.callbacks;
+    const boxMode = this.state.zoomBox === true;
+    for (const mode of [
+      { box: false, label: "Page zoom", icon: "file", fallback: "＋" },
+      { box: true, label: "Zoom box", icon: "scan", fallback: "▣" },
+    ]) {
+      const active = boxMode === mode.box;
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-zoommode",
+      });
+      button.toggleClass("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.setAttribute("aria-label", mode.label);
+      const glyph = button.createSpan({ cls: "goodobsidian-zoommode-icon" });
+      iconOrText(glyph, mode.icon, mode.fallback);
+      button.addEventListener("click", () => {
+        // A second tap on Zoom box is the switch's own off position.
+        const next = mode.box && active ? false : mode.box;
+        if (next === boxMode) return;
+        this.state.zoomBox = next;
+        // Page zoom closes whatever target box was open; Zoom box opens one
+        // where the page is being read, and hands the pen back to write in it.
+        this.state.zoomBoxOpen = false;
+        this.callbacks.onZoomBox?.(next);
+        // The surface reports the box it opened back through setZoomBoxOpen.
+        const opened = (this.state as { zoomBoxOpen?: boolean }).zoomBoxOpen === true;
+        if (next && opened && this.drawingTool !== "zoom") {
+          const back = this.drawingTool;
+          this.leaveToolFor(back);
+          this.state.tool = back;
+          this.callbacks.onToolChange(back);
+        }
+        this.buildOptions();
+        this.syncActive();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     this.barButton(
       this.optionsEl,
       "zoom-out",
@@ -2548,8 +2614,12 @@ export class Toolbar {
       "Zoom in",
       cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
     );
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    this.toolNote("zoom-in", "Drag up or down to zoom");
+    // Page zoom keeps the note it always had; the Zoom box needs none: the
+    // target it draws, and the window, show what a drag did.
+    if (!boxMode) {
+      this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+      this.toolNote("zoom-in", "Drag up or down to zoom");
+    }
   }
 
   /**
@@ -5103,6 +5173,15 @@ export class Toolbar {
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
     const from = tool === this.indicatorTool ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // An open Zoom box keeps the Magnifier lit while another tool writes.
+    // `is-on` is exactly what Stylus only uses: the whole button takes the
+    // active background and icon colour, not just the glyph.
+    const zoom = this.toolButtons.get("zoom");
+    if (zoom) {
+      const mark = zoomButtonState(this.state.tool, this.state.zoomBoxOpen === true);
+      zoom.toggleClass("is-on", mark.highlighted);
+      zoom.setAttribute("aria-pressed", String(mark.pressed));
+    }
     // The tool in hand stays on the bar, and a chosen tool is wider.
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
@@ -5154,6 +5233,19 @@ export class Toolbar {
     this.leaveToolFor(next.tool);
     this.state = next;
     this.buildOptions();
+    this.syncActive();
+  }
+
+  /**
+   * The surface opened the Zoom box (one tap, or a drawn target) or closed it
+   * with its ×. The bar follows without calling back, so the host is not
+   * asked to open what is already open. Closing keeps the mode: the next tap
+   * on the Magnifier opens a box again.
+   */
+  setZoomBoxOpen(open: boolean): void {
+    this.state.zoomBoxOpen = open;
+    if (open) this.state.zoomBox = true;
+    if (this.state.tool === "zoom") this.buildOptions();
     this.syncActive();
   }
 

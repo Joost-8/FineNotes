@@ -2751,3 +2751,382 @@ describe("size preview scales", () => {
     expect(told).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("the Zoom box auto-advance", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function advanceSurface(on: boolean, box = { x: 100, y: 200, w: 150, h: 80 }) {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const frame = vi.fn();
+    const sync = vi.fn();
+    const surface = surfaceWith({
+      zoomBox: { pageId: "p1", box, originX: 100 },
+      zoomPositionHistory: [],
+      pageLayout: {
+        boxes: [
+          { id: "p1", width: 800, height: 600 },
+          { id: "p2", width: 800, height: 600 },
+        ],
+      },
+      zoomStrokeMaxX: box.x + box.w * 0.67,
+      callbacks: {
+        zoomBoxAutoAdvance: () => on,
+        zoomBoxAutoAdvanceThreshold: () => 33,
+        zoomBoxLineStep: () => 0,
+      },
+      boxForPage: () => ({ width: 800, height: 600 }),
+      syncZoomTarget: sync,
+      ensureZoomTargetVisible: vi.fn(),
+      requestFrame: frame,
+    });
+    return { surface, sync, frame };
+  }
+
+  it("does nothing while the toggle is off", () => {
+    const { surface } = advanceSurface(false);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).toBeNull();
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("steps right after the pause when a stroke reached two thirds", () => {
+    const { surface, frame } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).not.toBeNull();
+    vi.advanceTimersByTime(399);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+    vi.advanceTimersByTime(1);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(198);
+    expect(frame).toHaveBeenCalled();
+  });
+
+  it("wraps to the next line when the box is already at the right margin", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "scheduleZoomAdvance");
+    vi.advanceTimersByTime(400);
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+  });
+
+  it("lets Back restore the exact position before a forward wrap", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+    run(surface, "previousZoomBox");
+    expect(
+      (surface.zoomBox as { box: { x: number; y: number; w: number; h: number } }).box,
+    ).toEqual({
+      x: 650,
+      y: 200,
+      w: 150,
+      h: 80,
+    });
+  });
+
+  it("goes on to the next page from the last line, and Back returns to it", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 520, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    const zoomBox = surface.zoomBox as { pageId: string; box: { x: number; y: number } };
+    expect(zoomBox.pageId).toBe("p2");
+    expect(zoomBox.box).toMatchObject({ x: 100, y: 0 });
+    run(surface, "previousZoomBox");
+    expect(zoomBox.pageId).toBe("p1");
+    expect(zoomBox.box).toMatchObject({ x: 650, y: 520 });
+  });
+
+  it("cancels a pending step when another stroke starts", () => {
+    const { surface } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    run(surface, "cancelZoomAdvance");
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("asks the host to keep the toggle when the button changes it", () => {
+    const changed = vi.fn();
+    const surface = surfaceWith({
+      callbacks: { onZoomBoxAutoAdvance: changed, zoomBoxAutoAdvance: () => false },
+      zoomAutoAdvanceButton: null,
+    });
+    run(surface, "setZoomAutoAdvance", true);
+    expect(changed).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("the Zoom box target's presses", () => {
+  class FakeElement {
+    closest(_selector?: string): unknown {
+      return null;
+    }
+  }
+
+  function pressOn(
+    kind: "body" | "badge" | "handle",
+    pointerType: string,
+    tool: string,
+    selected = true,
+  ) {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "se" },
+      setPointerCapture: capture,
+    });
+    const badge = Object.assign(new FakeElement(), { dataset: { zoomMove: "true" } });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) =>
+        selector === "[data-zoom-handle]"
+          ? kind === "handle"
+            ? handle
+            : null
+          : selector === "[data-zoom-move]" && kind === "badge"
+            ? badge
+            : null,
+    });
+    const frameCapture = vi.fn();
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected },
+      toolState: { tool },
+      callbacks: { onlyStylusMode: () => true },
+      zoomTargetEl: { setPointerCapture: frameCapture },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType,
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    return { surface, event, capture, frameCapture };
+  }
+
+  it("moves a selected frame with a finger even while a writing tool is chosen", () => {
+    const { surface, event, frameCapture } = pressOn("body", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(frameCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from a corner with a finger in Stylus-only mode", () => {
+    const { surface, event, capture } = pressOn("handle", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from an edge with a finger in Stylus-only mode", () => {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "e" },
+      setPointerCapture: capture,
+    });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) => (selector === "[data-zoom-handle]" ? handle : null),
+    });
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected: true },
+      callbacks: { onlyStylusMode: () => true },
+      zoomTargetEl: { setPointerCapture: vi.fn() },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("e");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("moves the frame on the first press, with no tap to select it first", () => {
+    const { surface, event } = pressOn("body", "pen", "pen", false);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it("moves a selected body or badge with the pen, whatever the tool", () => {
+    expect(
+      (pressOn("badge", "pen", "highlighter").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
+    expect(
+      (pressOn("body", "pen", "pen").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
+  });
+
+  it("resizes a selected frame from a corner handle before considering the tool", () => {
+    const { surface, capture } = pressOn("handle", "pen", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes from a handle on the first press", () => {
+    const { surface } = pressOn("handle", "pen", "pen", false);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+  });
+
+  it("moves the selected frame body under the Magnifier with a mouse", () => {
+    const { surface } = pressOn("body", "mouse", "zoom");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+  });
+});
+
+describe("writing in the Zoom box", () => {
+  const box = { x: 100, y: 200, w: 100, h: 50 };
+
+  /** A box shown 4x in a 400 x 200 canvas; the page fits at 0.8 CSS px per page px. */
+  function boxSurface(extra: State = {}): State {
+    return surfaceWith({
+      zoomBox: { pageId: "p1", box: { ...box }, originX: box.x },
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 200 }),
+      },
+      zoomCanvasRect: null,
+      baseScale: 0.8,
+      userZoom: 1,
+      strokeInBox: false,
+      toolState: { tool: "pen" },
+      callbacks: {},
+      boxForPage: () => ({ x: 40, y: 0, width: 800, height: 1000 }),
+      toPage: (b: { x: number; y: number }, at: { x: number; y: number }) => ({
+        x: at.x - b.x,
+        y: at.y - b.y,
+      }),
+      ...extra,
+    });
+  }
+
+  it("measures gesture lengths at the box's magnification while the pen writes there", () => {
+    const s = boxSurface();
+    // On the page, at fit zoom, a tuned length is itself.
+    expect(run(s, "atFitZoom", 8)).toBe(8);
+    s.strokeInBox = true;
+    // 4 CSS px per page px in the box is a page zoom of 4 / 0.8 = 5.
+    expect(run<number>(s, "atFitZoom", 8)).toBeCloseTo(1.6);
+    expect(s.gestureScale).toBeCloseTo(4);
+  });
+
+  it("maps a point in the box's canvas to its point on the page, in layout space", () => {
+    const s = boxSurface();
+    // The canvas's top-left (10, 20) is the box's top-left; the page sits at x 40.
+    expect(run(s, "zoomClientToLayout", 10, 20)).toEqual({ x: 140, y: 200 });
+    expect(run(s, "zoomClientToLayout", 210, 120)).toEqual({ x: 190, y: 225 });
+  });
+
+  it("draws with a pen in the box, and ignores its margins and the magnifier", () => {
+    const s = boxSurface({
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 }),
+      },
+    });
+    const pen = (x: number, y: number) =>
+      ({ pointerType: "pen", button: 0, buttons: 1, clientX: x, clientY: y }) as PointerEvent;
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("draw");
+    // A 2:1 box in a square canvas leaves a margin above and below the content.
+    expect(run(s, "zoomBoxRoute", pen(200, 20))).toBe("ignore");
+    s.toolState = { tool: "zoom" };
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("ignore");
+  });
+
+  it("keeps a tap in the box a dot", () => {
+    const penDown = vi.fn();
+    const s = boxSurface({
+      pressOverrideOf: () => null,
+      markDrawing: vi.fn(),
+      penDown,
+    });
+    // In the box every point lies inside the target: still a dot, a full stop.
+    const inside = { x: 150, y: 220, pressure: 0, tiltX: 0, tiltY: 0, altitude: Number.NaN };
+    run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 });
+    expect(penDown).toHaveBeenCalledWith(inside);
+  });
+
+  it("measures auto-advance against the box in page space, not layout space", () => {
+    const penEnd = vi.fn();
+    const scheduleZoomAdvance = vi.fn();
+    const s = boxSurface({
+      cancelZoomAdvance: vi.fn(),
+      cancelZoomSlide: vi.fn(),
+      penStart: vi.fn(),
+      penMove: vi.fn(),
+      penEnd,
+      scheduleZoomAdvance,
+    });
+    const at = (x: number) => ({ x, y: 220, pressure: 0.4, tiltX: 0, tiltY: 0, altitude: 0 });
+    // Layout x 40 + 120: page x 120, a fifth of the way into the box.
+    run(s, "zoomStrokeStart", at(160), {});
+    expect(s.strokeInBox).toBe(true);
+    run(s, "zoomStrokeMove", [at(170), at(165)]);
+    run(s, "zoomStrokeEnd", at(150));
+    expect(s.zoomStrokeMaxX).toBe(130);
+    expect(penEnd).toHaveBeenCalled();
+    expect(scheduleZoomAdvance).toHaveBeenCalled();
+    // The pen's gesture lengths go back to the page's once it lifts.
+    expect(s.strokeInBox).toBe(false);
+    expect(s.zoomStroke).toBe(false);
+  });
+
+  it("keeps the ink of a held pen that WebKit cancels, as on the page", () => {
+    const penCancel = vi.fn();
+    const s = boxSurface({ penCancel, scheduleZoomAdvance: vi.fn(), strokeInBox: true });
+    run(s, "zoomStrokeCancel");
+    expect(penCancel).toHaveBeenCalled();
+    expect(s.strokeInBox).toBe(false);
+  });
+});
+
+describe("the Zoom box's first-drag catcher", () => {
+  function catcherSurface(onlyStylus: boolean): { s: State; hidden: () => boolean } {
+    let hidden = true;
+    const s = surfaceWith({
+      toolState: { tool: "zoom", zoomBox: true },
+      zoomBox: null,
+      zoomMarqueePointer: null,
+      zoomCatcherEl: { toggleClass: (_c: string, on: boolean) => void (hidden = on) },
+      callbacks: { onlyStylusMode: () => onlyStylus },
+    });
+    return { s, hidden: () => hidden };
+  }
+
+  it("stays away without Stylus-only mode, so a finger still pans and pinches", () => {
+    const { s, hidden } = catcherSurface(false);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(true);
+  });
+
+  it("covers the page in Stylus-only mode, where a finger draws the target", () => {
+    const { s, hidden } = catcherSurface(true);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(false);
+  });
+});
