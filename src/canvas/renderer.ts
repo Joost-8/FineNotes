@@ -121,8 +121,12 @@ import type { ViewportState } from "./viewport";
 const FADED_INK_ALPHA = 0.22;
 /** The veil over the part of a picture a crop leaves out. A real colour: canvas ignores `var(--…)`. */
 const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
-/** The lasso's and the selection box's line. A real colour, as above. */
-const SELECTION_LINE = "rgba(120,170,255,0.95)";
+/**
+ * The lasso's and the selection box's line: Goodnotes' blue (Joost's
+ * recording, 2026-10-30), the same as the kept loop's (`--gob-lasso` in
+ * styles.css). A real colour, as above.
+ */
+const SELECTION_LINE = "#1a6fd6";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
 
@@ -1658,10 +1662,12 @@ export class Renderer {
 
   /**
    * Draw the lasso being drawn (page space, flat `[x, y, …]`) on the wet
-   * layer: a dashed loop closed back to its start, its line only (Joost on
-   * PR #59: no filled area while drawing), in the selection box's colour.
+   * layer: a dashed line, no filled area (Joost on PR #59), in the selection
+   * box's colour. `closed` joins its end back to its start (a box, a span of
+   * lines); a freehand lasso is left open while the pen is down, as
+   * Goodnotes draws it, and closes only on the lift.
    */
-  renderLasso(pageIndex: number, loop: readonly number[]): void {
+  renderLasso(pageIndex: number, loop: readonly number[], closed = true): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
@@ -1671,7 +1677,7 @@ export class Renderer {
     ctx.beginPath();
     ctx.moveTo(loop[0], loop[1]);
     for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
-    ctx.closePath();
+    if (closed) ctx.closePath();
     selectionLine(ctx, this.safeScale);
     ctx.lineJoin = "round";
     ctx.stroke();

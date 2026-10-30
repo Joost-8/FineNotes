@@ -88,7 +88,7 @@ import {
   rectLoop,
   scaleBounds,
   selectionKnobPoint,
-  smoothLoop,
+  smoothPath,
   selectionBounds,
   isLoneShape,
   strokeInLasso,
@@ -735,6 +735,12 @@ export interface InkSurfaceCallbacks {
   /** Screenshot: the selection drawn on its paper as a PNG; the host offers Copy and Share. */
   onScreenshot?: (png: Blob, width: number, height: number) => void;
   /**
+   * Screenshot of a patch of page `pageIndex` (page space): what a lasso
+   * drawn round nothing offers, as Goodnotes does. The host draws the page
+   * as it exports it (its paper, PDF and ink) and offers Copy and Share.
+   */
+  onRegionScreenshot?: (pageIndex: number, bounds: Bounds) => void;
+  /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
    * selection bar offers Explore only.
@@ -1084,6 +1090,11 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
+/** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
+const EMPTY_LASSO_MS = 1500;
+const EMPTY_LASSO_FADE_MS = 300;
+/** Screen px from where the pen lifted to the empty lasso's Screenshot button. */
+const EMPTY_LASSO_PILL_OFFSET_PX = 12;
 /** How far in from a locked picture's top-right corner its lock badge sits, screen px. */
 const LOCK_BADGE_INSET_PX = 18;
 
@@ -1808,6 +1819,8 @@ export class InkSurface {
    * and switched by the bar's corners button.
    */
   private selectionCorners = false;
+  /** A lasso drawn round nothing: its loop and a Screenshot button, for a moment (`showEmptyLasso`). */
+  private emptyLasso: { el: HTMLElement; timers: number[] } | null = null;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
@@ -2269,7 +2282,7 @@ export class InkSurface {
       cls: "goodobsidian-selection-frame is-hidden",
     });
     // A freehand lasso's selection is drawn by the loop the pen drew, rounded
-    // off, not by a box (see `smoothLoop`); the frame keeps taking the drags.
+    // off, not by a box (see `smoothPath`); the frame keeps taking the drags.
     const outline = activeDocument.createElementNS(SVG_NS, "svg");
     outline.setAttribute("class", "goodobsidian-selection-outline");
     outline.setAttribute("aria-hidden", "true");
@@ -2514,6 +2527,7 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.dropEmptyLasso();
     this.endCellEdit(true);
     this.cellEditor?.remove();
     this.cellEditor = null;
@@ -5748,6 +5762,7 @@ export class InkSurface {
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
     onPanStart: (x, y, t) => {
+      this.dropEmptyLasso();
       // A finger beside one dragging the selection by its frame: the two turn it.
       if (this.joinFrameFingers(x, y, t)) return;
       // A resting palm must not scroll the page out from under an image or a
@@ -6053,6 +6068,7 @@ export class InkSurface {
    * finding the page — and then the tool in use takes the gesture over.
    */
   private penDown(sample: PointerSample): void {
+    this.dropEmptyLasso();
     this.penAt = sample;
     this.settlePendingReturn(sample);
     if (this.callbacks.isLocked?.()) return;
@@ -8529,11 +8545,9 @@ export class InkSurface {
       return;
     }
     const loop = this.lassoLoop(lasso);
-    // Drawn rounded off, as GoodNotes draws it; taken on the loop as drawn.
-    this.renderer?.renderLasso(
-      lasso.box.index,
-      lasso.mode === "freehand" ? smoothLoop(loop) : loop,
-    );
+    // Drawn rounded off and open, as Goodnotes draws it; taken on the loop as drawn.
+    const freehand = lasso.mode === "freehand";
+    this.renderer?.renderLasso(lasso.box.index, freehand ? smoothPath(loop) : loop, !freehand);
   }
 
   /** The lasso's pen stayed put long enough: open the tap-and-hold bar where it is. */
@@ -8714,7 +8728,74 @@ export class InkSurface {
       return;
     }
     this.selectInside(lasso.box, loop);
-    if (lasso.mode !== "rect") this.keepOutline(smoothLoop(this.lassoLoop(lasso)));
+    if (!this.liveSelection()) {
+      // Round nothing: the loop stays a moment, with a Screenshot button.
+      this.showEmptyLasso(lasso.box, lasso.mode === "rect" ? loop : smoothPath(loop), lasso.to);
+      return;
+    }
+    if (lasso.mode !== "rect") this.keepOutline(smoothPath(this.lassoLoop(lasso)));
+  }
+
+  /**
+   * A lasso drawn round nothing, as Goodnotes leaves it (Joost's recording,
+   * 2026-10-30): the closed loop stays on the page with a Screenshot button
+   * by where the pen lifted, for a moment, then both fade. The button takes
+   * the patch of page inside the loop's bounds, paper and PDF included.
+   * The next press, a scroll or a zoom takes it away at once.
+   */
+  private showEmptyLasso(box: PageBox, loop: readonly number[], end: Pt): void {
+    this.dropEmptyLasso();
+    const bounds = polygonOf(loop)?.bounds;
+    if (!bounds || loop.length < 6) return;
+    const scale = this.unitScale;
+    const el = this.selectionUiEl.createDiv({ cls: "goodobsidian-empty-lasso" });
+    const svg = activeDocument.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "goodobsidian-selection-outline");
+    svg.setAttribute("aria-hidden", "true");
+    const at = (v: number, origin: number): string => ((origin + v) * scale).toFixed(1);
+    let d = `M${at(loop[0], box.x)} ${at(loop[1], box.y)}`;
+    for (let i = 2; i + 1 < loop.length; i += 2)
+      d += `L${at(loop[i], box.x)} ${at(loop[i + 1], box.y)}`;
+    const path = activeDocument.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", `${d}Z`);
+    svg.append(path);
+    el.append(svg);
+    const shoot = this.callbacks.onRegionScreenshot;
+    if (shoot) {
+      const pill = el.createDiv({ cls: "goodobsidian-empty-lasso-pill theme-dark" });
+      pill.setCssStyles({
+        left: `${((box.x + end.x) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
+        top: `${((box.y + end.y) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
+      });
+      const button = pill.createEl("button", {
+        cls: "goodobsidian-empty-lasso-shot clickable-icon",
+        attr: { "aria-label": "Screenshot" },
+      });
+      iconInto(button, "camera", "");
+      onTap(button, () => {
+        this.dropEmptyLasso();
+        shoot(box.index, bounds);
+      });
+    }
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    this.emptyLasso = {
+      el,
+      timers: [
+        win.setTimeout(() => el.addClass("is-fading"), EMPTY_LASSO_MS),
+        // A timer, not the transition's end: the browser pane can hold that back.
+        win.setTimeout(() => this.dropEmptyLasso(), EMPTY_LASSO_MS + EMPTY_LASSO_FADE_MS),
+      ],
+    };
+  }
+
+  /** Take an empty lasso's loop and button away (`showEmptyLasso`). */
+  private dropEmptyLasso(): void {
+    const shown = this.emptyLasso;
+    if (!shown) return;
+    this.emptyLasso = null;
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    for (const timer of shown.timers) win.clearTimeout(timer);
+    shown.el.remove();
   }
 
   /**
@@ -9238,6 +9319,12 @@ export class InkSurface {
     };
   }
 
+  /** Whether `sel` is drawn by the lasso's loop that made it (`keepOutline`), not a box. */
+  private outlineShown(sel: GroupSelection): boolean {
+    const outline = this.selectionOutline;
+    return outline !== null && outline.count === selectedCount(sel);
+  }
+
   /** Put the selection's dashed frame where it is (or where a drag has it), and its bar. */
   private syncSelectionOverlay(): void {
     const sel = this.liveSelection();
@@ -9263,8 +9350,7 @@ export class InkSurface {
       this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
-      const count = sel ? selectedCount(sel) : 0;
-      const shown = outline !== null && outline.count === count;
+      const shown = outline !== null && sel !== null && this.outlineShown(sel);
       this.selectionFrameEl.toggleClass("has-outline", shown);
       if (shown) {
         // The loop is relative to the bounds' corner, so a resize scales it too.
@@ -9351,6 +9437,8 @@ export class InkSurface {
   private groupChromeBounds(sel: GroupSelection): Bounds | null {
     const bounds = this.groupBounds(sel);
     if (!bounds) return null;
+    // A lasso's loop has no knob until the resize handles are asked for.
+    if (this.outlineShown(sel) && !this.selectionCorners) return bounds;
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
@@ -9729,21 +9817,25 @@ export class InkSurface {
       run: () => this.deleteSelection(),
     });
     // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…".
-    actions.push({
-      id: "corners",
-      icon: "scan",
-      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
-      group: "edit",
-      bar: true,
-      menu: "none",
-      checked: this.selectionCorners,
-      run: () => {
-        this.selectionCorners = !this.selectionCorners;
-        this.syncSelectionOverlay();
-      },
-    });
-    if (this.loneShape(sel)) {
+    // the resize handles, then the "…". A lone shape shows its handles from
+    // the start, so it has only the corner points' switch (Joost, 2026-10-30).
+    const lone = this.loneShape(sel);
+    if (!lone) {
+      actions.push({
+        id: "corners",
+        icon: "scan",
+        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.selectionCorners,
+        run: () => {
+          this.selectionCorners = !this.selectionCorners;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
+    if (lone) {
       actions.push({
         id: "corner-points",
         icon: "vector-square",

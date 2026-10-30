@@ -131,6 +131,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **The freehand lasso works as Goodnotes' does.** Its line is Goodnotes'
+  blue and stays open while you draw; on the lift it closes with a straight
+  line and stays round what it took, with no rotate knob until you ask for
+  the resize handles (two fingers still turn it). Drawn round nothing, the
+  loop stays a moment with a camera button that takes a screenshot of that
+  patch of page, PDF included.
 - **The page uses the whole view.** Obsidian's padding around the notebook
   (a frame round the toolbar and a band at the foot) is gone, so the page is
   larger. The page counter, the zoom readout and a toolbar along the bottom

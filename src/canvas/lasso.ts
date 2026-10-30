@@ -195,29 +195,31 @@ export class LassoPath {
 }
 
 /**
- * The lasso as it is *drawn*: the loop with its corners rounded off, by
- * Chaikin's corner cutting, `passes` times (each doubles the points). A
+ * The lasso as it is *drawn*: the pen's path with its corners rounded off,
+ * by Chaikin's corner cutting, `passes` times (each doubles the points). A
  * rough rectangle comes out a rounded one and a wobbly ellipse stays
- * wobbly — the person's own loop, as GoodNotes draws it, never a hull or
- * a box (research/goodnotes-smoothness §8). Display only: what the lasso
- * takes is still decided on the raw loop. Closed: the last point joins the
- * first. Fewer than three points come back as they are.
+ * wobbly: the person's own loop, as Goodnotes draws it, never a hull or a
+ * box (research/goodnotes-smoothness §8). Display only: what the lasso
+ * takes is still decided on the raw loop. Open: its two ends stay where the
+ * pen came down and lifted, so the edge that closes the loop is the straight
+ * line between them, as Goodnotes closes it (Joost's recording,
+ * 2026-10-30). Fewer than three points come back as they are.
  */
-export function smoothLoop(loop: readonly number[], passes = 2): number[] {
-  let pts = loop.slice(0, loop.length - (loop.length % 2));
+export function smoothPath(path: readonly number[], passes = 2): number[] {
+  let pts = path.slice(0, path.length - (path.length % 2));
   if (pts.length < 6) return pts;
   for (let pass = 0; pass < passes; pass++) {
-    const out: number[] = [];
     const n = pts.length / 2;
-    for (let i = 0; i < n; i++) {
+    const out: number[] = [pts[0], pts[1]];
+    for (let i = 0; i + 1 < n; i++) {
       const ax = pts[2 * i];
       const ay = pts[2 * i + 1];
-      const j = (i + 1) % n;
-      const bx = pts[2 * j];
-      const by = pts[2 * j + 1];
+      const bx = pts[2 * i + 2];
+      const by = pts[2 * i + 3];
       out.push(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by);
       out.push(0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by);
     }
+    out.push(pts[2 * n - 2], pts[2 * n - 1]);
     pts = out;
   }
   return pts;
