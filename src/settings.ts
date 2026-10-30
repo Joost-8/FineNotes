@@ -1000,6 +1000,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.textDragSize,
         ),
+        controlRow(
+          "Zoom box line spacing",
+          "Page px added after each line; negative overlaps.",
+          { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
+          ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
+        ),
+        toggle(
+          "zoomBoxAutoAdvance",
+          "Zoom box auto-advance",
+          "Moves right after a stroke reaches two thirds, then wraps.",
+          ["magnifier", "zoom", "advance", "line", "scroll"],
+        ),
         this.info(
           drawnRow("Custom colors", "", (s) => this.drawCustomColors(s), ["palette"]),
           DESC.customColors,

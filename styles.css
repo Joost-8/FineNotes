@@ -13270,9 +13270,9 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 }
 
 /* The target box is a clean viewfinder frame: a thin solid accent border,
-   a faint tint and the magnifier badge. The frame itself is the grip, so a
-   finger, Pencil or mouse can move it; with a writing tool a pen on the body
-   still reaches the page and writes. */
+   a faint tint and the magnifier badge. Unselected it is a picture of where
+   the box is: the page keeps every press, so writing and panning work. A tap
+   selects it, and only then does it take drags. */
 .goodobsidian-zoom-target {
   position: absolute;
   box-sizing: border-box;
@@ -13280,7 +13280,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   border: 1.5px solid var(--interactive-accent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
-  pointer-events: auto;
+  pointer-events: none;
   cursor: default;
   touch-action: none;
   -webkit-touch-callout: none;
@@ -13288,18 +13288,32 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   -webkit-user-select: none;
 }
 
-.goodobsidian-zoom-target.is-interactive {
-  cursor: move;
-}
-
-.goodobsidian-zoom-target .goodobsidian-image-handle {
+.goodobsidian-zoom-target.is-selected {
   pointer-events: auto;
 }
 
-/* The solid frame is the only mark; the 44 px corner and edge handles stay
-   invisible, so a tap near an edge still resizes without lasso-like nodes. */
-.goodobsidian-zoom-target .goodobsidian-image-handle::after {
+.goodobsidian-zoom-target.is-interactive:not(.is-selected) {
+  cursor: pointer;
+}
+
+.goodobsidian-zoom-target.is-selected,
+.goodobsidian-zoom-target.is-selected .goodobsidian-zoom-badge {
+  cursor: move;
+}
+
+/* Selected: the lasso's own corner squares and edge circles, live only now. */
+.goodobsidian-zoom-target .goodobsidian-image-handle {
   display: none;
+  pointer-events: none;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-image-handle {
+  display: block;
+  pointer-events: auto;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-image-handle::after {
+  display: block;
 }
 
 /* The magnifier badge sits inside the bottom-right corner: the obvious grip. */
@@ -13319,8 +13333,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   color: var(--text-on-accent);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
   cursor: move;
-  pointer-events: auto;
+  pointer-events: none;
   touch-action: none;
+}
+
+.goodobsidian-zoom-target.is-selected .goodobsidian-zoom-badge {
+  pointer-events: auto;
 }
 
 .goodobsidian-zoom-badge .svg-icon {
@@ -13345,6 +13363,11 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 button.clickable-icon.goodobsidian-zoombox-window-button {
   width: 34px;
   height: 34px;
+}
+
+button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
 }
 
 /* The drag grip at the head of the bar; the bar itself drags too. */

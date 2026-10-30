@@ -2684,6 +2684,12 @@ export class InkView extends TextFileView {
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
+        zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
+        onZoomBoxAutoAdvance: (on) => {
+          this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
         onShortcuts: () => this.toggleShortcuts(),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];

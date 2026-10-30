@@ -2153,6 +2153,116 @@ describe("size preview scales", () => {
   });
 });
 
+describe("selecting the Zoom box target", () => {
+  function targetSurface(selected = false) {
+    const sync = vi.fn();
+    const frame = vi.fn();
+    const surface = surfaceWith({
+      zoomBox: {
+        pageId: "p1",
+        box: { x: 10, y: 20, w: 100, h: 80 },
+        originX: 10,
+        selected,
+      },
+      boxForPage: () => ({}),
+      toPage: (_box: unknown, at: { x: number; y: number }) => at,
+      syncZoomTarget: sync,
+      requestFrame: frame,
+    });
+    return { surface, sync, frame };
+  }
+
+  it("selects on a tap inside the frame and deselects outside it", () => {
+    const { surface, sync } = targetSurface();
+    expect(run(surface, "zoomTargetHitAt", { x: 50, y: 50 })).toBe(true);
+    expect(run(surface, "zoomTargetHitAt", { x: 150, y: 50 })).toBe(false);
+    run(surface, "selectZoomTarget");
+    expect((surface.zoomBox as { selected: boolean }).selected).toBe(true);
+    expect(sync).toHaveBeenCalled();
+    run(surface, "deselectZoomTarget");
+    expect((surface.zoomBox as { selected: boolean }).selected).toBe(false);
+  });
+
+  it("leaves an already unselected frame alone", () => {
+    const { surface, sync } = targetSurface();
+    run(surface, "deselectZoomTarget");
+    expect(sync).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Zoom box auto-advance", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function advanceSurface(on: boolean, box = { x: 100, y: 200, w: 150, h: 80 }) {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const frame = vi.fn();
+    const sync = vi.fn();
+    const surface = surfaceWith({
+      zoomBox: { pageId: "p1", box, originX: 100, selected: false },
+      zoomStrokeMaxX: box.x + box.w * (2 / 3),
+      callbacks: { zoomBoxAutoAdvance: () => on, zoomBoxLineStep: () => 0 },
+      boxForPage: () => ({ width: 800, height: 600 }),
+      syncZoomTarget: sync,
+      ensureZoomTargetVisible: vi.fn(),
+      requestFrame: frame,
+    });
+    return { surface, sync, frame };
+  }
+
+  it("does nothing while the toggle is off", () => {
+    const { surface } = advanceSurface(false);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).toBeNull();
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("steps right after the pause when a stroke reached two thirds", () => {
+    const { surface, frame } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).not.toBeNull();
+    vi.advanceTimersByTime(399);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+    vi.advanceTimersByTime(1);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(198);
+    expect(frame).toHaveBeenCalled();
+  });
+
+  it("wraps to the next line when the box is already at the right margin", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "scheduleZoomAdvance");
+    vi.advanceTimersByTime(400);
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+  });
+
+  it("cancels a pending step when another stroke starts", () => {
+    const { surface } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    run(surface, "cancelZoomAdvance");
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("asks the host to keep the toggle when the button changes it", () => {
+    const changed = vi.fn();
+    const surface = surfaceWith({
+      callbacks: { onZoomBoxAutoAdvance: changed, zoomBoxAutoAdvance: () => false },
+      zoomAutoAdvanceButton: null,
+    });
+    run(surface, "setZoomAutoAdvance", true);
+    expect(changed).toHaveBeenCalledWith(true);
+  });
+});
+
 describe("the Zoom box target's presses", () => {
   class FakeElement {
     closest(_selector?: string): unknown {
@@ -2160,7 +2270,12 @@ describe("the Zoom box target's presses", () => {
     }
   }
 
-  function pressOn(kind: "body" | "badge" | "handle", pointerType: string, tool: string) {
+  function pressOn(
+    kind: "body" | "badge" | "handle",
+    pointerType: string,
+    tool: string,
+    selected = true,
+  ) {
     vi.stubGlobal("HTMLElement", FakeElement);
     const capture = vi.fn();
     const handle = Object.assign(new FakeElement(), {
@@ -2181,7 +2296,7 @@ describe("the Zoom box target's presses", () => {
     const frameCapture = vi.fn();
     const surface = surfaceWith({
       zoomTargetDrag: null,
-      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 } },
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected },
       toolState: { tool },
       zoomTargetEl: { setPointerCapture: frameCapture },
       boxForPage: () => ({}),
@@ -2201,7 +2316,7 @@ describe("the Zoom box target's presses", () => {
     return { surface, event, capture, frameCapture };
   }
 
-  it("moves the frame with a finger even while a writing tool is selected", () => {
+  it("moves a selected frame with a finger even while a writing tool is chosen", () => {
     const { surface, event, frameCapture } = pressOn("body", "touch", "pen");
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
     expect(event.preventDefault).toHaveBeenCalled();
@@ -2209,25 +2324,35 @@ describe("the Zoom box target's presses", () => {
     expect(frameCapture).toHaveBeenCalledWith(7);
   });
 
-  it("lets a pen on the frame body through to the page with a writing tool", () => {
-    const { surface, event } = pressOn("body", "pen", "pen");
+  it("leaves an unselected frame to the page, even under the pen", () => {
+    const { surface, event } = pressOn("body", "pen", "pen", false);
     expect(surface.zoomTargetDrag).toBeNull();
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(event.stopPropagation).not.toHaveBeenCalled();
   });
 
-  it("moves from the badge with the pen, whatever the tool", () => {
-    const { surface } = pressOn("badge", "pen", "highlighter");
-    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+  it("moves a selected body or badge with the pen, whatever the tool", () => {
+    expect(
+      (pressOn("badge", "pen", "highlighter").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
+    expect(
+      (pressOn("body", "pen", "pen").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
   });
 
-  it("resizes from an invisible corner handle before considering the tool", () => {
+  it("resizes a selected frame from a corner handle before considering the tool", () => {
     const { surface, capture } = pressOn("handle", "pen", "pen");
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
     expect(capture).toHaveBeenCalledWith(7);
   });
 
-  it("moves the frame body under the Magnifier with a mouse", () => {
+  it("does not resize from an unselected frame's handle", () => {
+    const { surface, event } = pressOn("handle", "pen", "pen", false);
+    expect(surface.zoomTargetDrag).toBeNull();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("moves the selected frame body under the Magnifier with a mouse", () => {
     const { surface } = pressOn("body", "mouse", "zoom");
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
   });

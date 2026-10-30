@@ -64,13 +64,17 @@ import { FloatingWindow } from "./floating-window";
 import { pageTabs } from "../model/page-tabs";
 import type { WindowPlace } from "../model/calculator-store";
 import {
+  ZOOM_AUTO_ADVANCE_DELAY_MS,
+  autoAdvanceZoomBox,
   newLineZoomBox,
   moveZoomBox,
   panToShow,
   resizeZoomBox,
   scaleZoomBox,
   stepZoomBox,
+  zoomAutoAdvanceDue,
   zoomBoxFromPoints,
+  zoomDeskColor,
   zoomTargetPress,
   zoomView,
   zoomViewPoint,
@@ -721,6 +725,12 @@ export interface InkSurfaceCallbacks {
    * toolbar and the settings may switch it while the note is open.
    */
   onlyStylusMode?: () => boolean;
+  /** Page px added after each Zoom box line; negative overlaps the next line. */
+  zoomBoxLineStep?: () => number;
+  /** Whether the Zoom box advances after a stroke reaches two thirds of it. */
+  zoomBoxAutoAdvance?: () => boolean;
+  /** The Zoom box's auto-advance button changed the setting. */
+  onZoomBoxAutoAdvance?: (on: boolean) => void;
   /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
@@ -1269,6 +1279,8 @@ interface ZoomBoxState {
   box: ZoomRect;
   /** Where the ↵ key returns to, in page px: the line's starting X. */
   originX: number;
+  /** Whether the frame is selected and its handles are live. */
+  selected: boolean;
 }
 
 /** A target box being moved or resized from its frame or one of its handles. */
@@ -1500,6 +1512,16 @@ export class InkSurface {
   private zoomPaintFrame = 0;
   /** The readout last written, so a still window is not touched every frame. */
   private zoomReadoutText = "";
+  /** A pen or mouse press that may be a tap selecting the target, not a drag. */
+  private zoomSelectPress: { x: number; y: number } | null = null;
+  /** The debounce after a stroke that reached the auto-advance trigger. */
+  private zoomAdvanceTimer: number | null = null;
+  /** The furthest page x of the stroke being drawn inside the Zoom box. */
+  private zoomStrokeMaxX = Number.NEGATIVE_INFINITY;
+  /** The header's auto-advance switch, kept in step with the setting. */
+  private zoomAutoAdvanceButton: HTMLButtonElement | null = null;
+  /** The short glide after an auto-advance, so the box does not jump. */
+  private zoomSlideFrame = 0;
   /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
   private stylusMenuUntil = 0;
   /** The cursor over the page for the pens, on a computer (FineNotes#25, #27). */
@@ -5533,6 +5555,12 @@ export class InkSurface {
   private penStart(sample: PointerSample, press: PressInput): void {
     this.callbacks.onPen?.(true);
     this.pressTool = this.pressOverrideOf(press);
+    const state = this.zoomBox;
+    if (state?.selected && !this.zoomTargetHitAt(sample)) this.deselectZoomTarget();
+    this.zoomSelectPress =
+      state && !state.selected && this.zoomTargetHitAt(sample)
+        ? { x: sample.x, y: sample.y }
+        : null;
     if (this.pressTool === "zoom" || (this.pressTool === null && this.toolState.tool === "zoom")) {
       if (this.startZoomMarquee(sample)) return;
       this.startZoomDrag(sample, this.pressTool === null);
@@ -5544,6 +5572,13 @@ export class InkSurface {
 
   private penMove(coalesced: PointerSample[]): void {
     this.penAt = coalesced[coalesced.length - 1] ?? this.penAt;
+    if (
+      this.zoomSelectPress &&
+      Math.hypot(this.penAt.x - this.zoomSelectPress.x, this.penAt.y - this.zoomSelectPress.y) >
+        TAP_SLOP_PX
+    ) {
+      this.zoomSelectPress = null;
+    }
     if (this.zoomMarquee) {
       this.moveZoomMarquee(this.penAt);
       return;
@@ -5559,6 +5594,16 @@ export class InkSurface {
   private penEnd(sample: PointerSample): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
+    const selecting = this.zoomSelectPress;
+    this.zoomSelectPress = null;
+    if (selecting) {
+      // A tap inside an unselected target selects it; it is not a dot, an
+      // erase, a page zoom or the start of a text box underneath.
+      this.endZoomDrag(null);
+      this.selectZoomTarget();
+      this.finishToolGesture(this.activePage, null);
+      return;
+    }
     if (this.endZoomMarquee(sample)) return;
     if (this.endZoomDrag(sample)) return;
     if (this.finishCellTap(sample)) return;
@@ -5570,6 +5615,7 @@ export class InkSurface {
   private penCancel(): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
+    this.zoomSelectPress = null;
     if (this.cancelZoomMarquee()) return;
     if (this.endZoomDrag()) return;
     if (this.finishCellTap(null)) return;
@@ -5586,6 +5632,11 @@ export class InkSurface {
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
     onPanStart: (x, y, t) => {
+      // A press outside a selected target lets go of it; an unselected one is
+      // selected by the tap that follows (onFingerTap), not by this drag.
+      if (this.zoomBox?.selected && !this.zoomTargetHitAt(this.toLayout(x, y))) {
+        this.deselectZoomTarget();
+      }
       // A resting palm must not scroll the page out from under an image or a
       // selection being dragged; without a dragStart the moves and the end
       // are no-ops.
@@ -6149,7 +6200,7 @@ export class InkSurface {
     this.syncZoomTarget();
   }
 
-  /** With the Magnifier in hand the frame shows its move cursor; handles are always live. */
+  /** With the Magnifier in hand an unselected frame hints that a tap selects it. */
   private syncZoomTargetInteractive(): void {
     this.zoomTargetEl?.toggleClass("is-interactive", this.toolState.tool === "zoom");
   }
@@ -6258,7 +6309,8 @@ export class InkSurface {
 
   /** A target box was drawn: put it on the page and open the window over the view. */
   private openZoomBox(pageId: string, box: ZoomRect): void {
-    this.zoomBox = { pageId, box, originX: box.x };
+    this.zoomBox = { pageId, box, originX: box.x, selected: false };
+    this.zoomSelectPress = null;
     this.zoomMarquee = null;
     this.zoomMarqueeEl?.addClass("is-hidden");
     this.toolState.zoomBox = true;
@@ -6277,8 +6329,12 @@ export class InkSurface {
     this.zoomBox = null;
     this.zoomMarquee = null;
     this.zoomTargetDrag = null;
+    this.zoomSelectPress = null;
     this.zoomPointer = null;
     this.zoomLastSample = null;
+    this.cancelZoomAdvance();
+    this.cancelZoomSlide();
+    this.zoomAutoAdvanceButton = null;
     this.resetZoomMarqueePointer();
     this.zoomMarqueeEl?.addClass("is-hidden");
     this.zoomTargetEl?.addClass("is-hidden");
@@ -6314,6 +6370,11 @@ export class InkSurface {
         { icon: "arrow-left", label: "Step box left", run: () => this.stepZoomBox(-1) },
         { icon: "arrow-right", label: "Step box right", run: () => this.stepZoomBox(1) },
         { icon: "corner-down-left", label: "New line", run: () => this.newZoomBoxLine() },
+        {
+          icon: "chevrons-right",
+          label: "Auto-advance",
+          run: () => this.setZoomAutoAdvance(!this.zoomAutoAdvanceOn()),
+        },
         { icon: "minus", label: "Zoom out", run: () => this.scaleZoomWindow(1 / ZOOM_STEP) },
         { icon: "plus", label: "Zoom in", run: () => this.scaleZoomWindow(ZOOM_STEP) },
       ],
@@ -6348,6 +6409,10 @@ export class InkSurface {
       this.zoomReadout = bar.createSpan({ cls: "goodobsidian-zoombox-readout" });
       const plus = bar.querySelector<HTMLElement>('[aria-label="Zoom in"]');
       if (plus) bar.insertBefore(this.zoomReadout, plus);
+      this.zoomAutoAdvanceButton = bar.querySelector<HTMLButtonElement>(
+        '[aria-label="Auto-advance"]',
+      );
+      this.syncZoomAutoAdvanceButton();
     }
     const canvas = frame.body.createEl("canvas", {
       cls: "goodobsidian-zoombox-canvas",
@@ -6386,6 +6451,8 @@ export class InkSurface {
       this.closeZoomBox(true);
       return;
     }
+    // The settings tab may have switched auto-advance while the box was open.
+    this.syncZoomAutoAdvanceButton();
     if (!canvas || !renderer) {
       this.syncZoomTarget();
       return;
@@ -6414,7 +6481,7 @@ export class InkSurface {
     // otherwise leave a sliver of the old frame at the far edge.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = this.paper.desk;
+    ctx.fillStyle = zoomDeskColor(renderer.desk, this.workspace);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.save();
@@ -6514,6 +6581,8 @@ export class InkSurface {
       if (!el.hasClass("is-hidden")) el.addClass("is-hidden");
       return;
     }
+    el.toggleClass("is-selected", state.selected);
+    el.setAttribute("aria-selected", String(state.selected));
     const scale = this.unitScale;
     const css = [
       (pageBox.x + state.box.x) * scale,
@@ -6561,6 +6630,7 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
+    this.cancelZoomSlide();
     state.box = stepZoomBox(state.box, direction, pageBox.width, pageBox.height);
     this.syncZoomTarget();
     this.ensureZoomTargetVisible();
@@ -6571,10 +6641,122 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
-    state.box = newLineZoomBox(state.box, state.originX, pageBox.width, pageBox.height);
+    this.cancelZoomSlide();
+    state.box = newLineZoomBox(
+      state.box,
+      state.originX,
+      pageBox.width,
+      pageBox.height,
+      this.zoomLineStep(),
+    );
     this.syncZoomTarget();
     this.ensureZoomTargetVisible();
     this.requestFrame();
+  }
+
+  /** The user's page-px offset between Zoom box lines, clamped as the setting is. */
+  private zoomLineStep(): number {
+    const step = this.callbacks.zoomBoxLineStep?.() ?? 0;
+    return Number.isFinite(step) ? Math.max(-50, Math.min(100, step)) : 0;
+  }
+
+  private zoomAutoAdvanceOn(): boolean {
+    return this.callbacks.zoomBoxAutoAdvance?.() === true;
+  }
+
+  private setZoomAutoAdvance(on: boolean): void {
+    this.callbacks.onZoomBoxAutoAdvance?.(on);
+    this.syncZoomAutoAdvanceButton();
+    if (!on) this.cancelZoomAdvance();
+  }
+
+  private syncZoomAutoAdvanceButton(): void {
+    const button = this.zoomAutoAdvanceButton;
+    if (!button) return;
+    const on = this.zoomAutoAdvanceOn();
+    if (button.hasClass("is-active") === on && button.getAttribute("aria-pressed") === String(on)) {
+      return;
+    }
+    button.toggleClass("is-active", on);
+    button.setAttribute("aria-pressed", String(on));
+    button.setAttribute("aria-label", on ? "Auto-advance: on" : "Auto-advance: off");
+  }
+
+  /** A new stroke in the box supersedes a pending advance. */
+  private cancelZoomAdvance(): void {
+    if (this.zoomAdvanceTimer === null) return;
+    window.clearTimeout(this.zoomAdvanceTimer);
+    this.zoomAdvanceTimer = null;
+  }
+
+  /** A hand on the box or a manual step ends an auto-advance glide. */
+  private cancelZoomSlide(): void {
+    if (!this.zoomSlideFrame) return;
+    window.cancelAnimationFrame(this.zoomSlideFrame);
+    this.zoomSlideFrame = 0;
+  }
+
+  /** After the pause, step right or wrap, as the manual arrows and ↵ do. */
+  private scheduleZoomAdvance(): void {
+    this.cancelZoomAdvance();
+    if (!this.zoomAutoAdvanceOn()) return;
+    const state = this.zoomBox;
+    if (!state) return;
+    if (!zoomAutoAdvanceDue(this.zoomStrokeMaxX, state.box)) return;
+    this.zoomAdvanceTimer = window.setTimeout(() => {
+      this.zoomAdvanceTimer = null;
+      this.advanceZoomBox();
+    }, ZOOM_AUTO_ADVANCE_DELAY_MS);
+  }
+
+  private advanceZoomBox(): void {
+    const state = this.zoomBox;
+    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    if (!state || !pageBox) return;
+    this.glideZoomBox(
+      autoAdvanceZoomBox(
+        state.box,
+        state.originX,
+        pageBox.width,
+        pageBox.height,
+        this.zoomLineStep(),
+      ),
+    );
+  }
+
+  /** Move the target over a few frames, so an auto-advance reads as a slide. */
+  private glideZoomBox(to: ZoomRect): void {
+    const state = this.zoomBox;
+    if (!state) return;
+    this.cancelZoomSlide();
+    const from = { ...state.box };
+    if (typeof window.requestAnimationFrame !== "function") {
+      state.box = to;
+      this.syncZoomTarget();
+      this.ensureZoomTargetVisible();
+      this.requestFrame();
+      return;
+    }
+    const start = now();
+    const tick = (): void => {
+      const t = Math.min(1, (now() - start) / 160);
+      const eased = t * t * (3 - 2 * t);
+      state.box = {
+        x: from.x + (to.x - from.x) * eased,
+        y: from.y + (to.y - from.y) * eased,
+        w: from.w + (to.w - from.w) * eased,
+        h: from.h + (to.h - from.h) * eased,
+      };
+      this.syncZoomTarget();
+      this.requestFrame();
+      if (t < 1) {
+        this.zoomSlideFrame = window.requestAnimationFrame(tick);
+      } else {
+        this.zoomSlideFrame = 0;
+        this.ensureZoomTargetVisible();
+      }
+    };
+    this.zoomSlideFrame = window.requestAnimationFrame(tick);
   }
 
   /** − or +: the target shrinks or grows about its centre, so the window magnifies more or less. */
@@ -6582,6 +6764,7 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
+    this.cancelZoomSlide();
     state.box = scaleZoomBox(state.box, factor, pageBox.width, pageBox.height);
     this.syncZoomTarget();
     this.ensureZoomTargetVisible();
@@ -6625,7 +6808,38 @@ export class InkSurface {
     this.syncZoomCatcher();
   }
 
-  /** A press on the target's frame, badge or a handle; handles work with any tool. */
+  /** Whether a layout-space point lies inside the open target box. */
+  private zoomTargetHitAt(sample: { x: number; y: number }): boolean {
+    const state = this.zoomBox;
+    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    if (!state || !pageBox) return false;
+    const at = this.toPage(pageBox, sample);
+    return (
+      at.x >= state.box.x &&
+      at.y >= state.box.y &&
+      at.x <= state.box.x + state.box.w &&
+      at.y <= state.box.y + state.box.h
+    );
+  }
+
+  private selectZoomTarget(): void {
+    const state = this.zoomBox;
+    if (!state || state.selected) return;
+    state.selected = true;
+    this.syncZoomTarget();
+    this.requestFrame();
+  }
+
+  private deselectZoomTarget(): void {
+    const state = this.zoomBox;
+    if (!state || !state.selected) return;
+    state.selected = false;
+    this.zoomTargetDrag = null;
+    this.syncZoomTarget();
+    this.requestFrame();
+  }
+
+  /** A press on the target's frame, badge or a handle; only a selected target acts. */
   private onZoomTargetPointerDown(event: PointerEvent): void {
     if (this.zoomTargetDrag) return;
     const state = this.zoomBox;
@@ -6634,16 +6848,11 @@ export class InkSurface {
     const target = event.target instanceof HTMLElement ? event.target : null;
     const grip = target?.closest<HTMLElement>("[data-zoom-handle]");
     const handle = (grip?.dataset.zoomHandle ?? null) as ZoomHandle | null;
-    const badge = target?.closest<HTMLElement>("[data-zoom-move]") !== null;
-    // The Magnifier, the badge and a finger move the box; with a writing tool
-    // a pen or mouse on its body still reaches the page and draws.
-    const press = zoomTargetPress(
-      this.toolState.tool === "zoom",
-      event.pointerType === "touch",
-      handle,
-      badge,
-    );
+    // An unselected frame is not a control; the page gets the press. Once
+    // selected, a handle resizes and the body moves with any pointer.
+    const press = zoomTargetPress(state.selected, handle);
     if (press === "draw") return;
+    this.cancelZoomSlide();
     event.preventDefault();
     event.stopPropagation();
     try {
@@ -6740,6 +6949,11 @@ export class InkSurface {
     if (!mapped) return;
     event.preventDefault();
     event.stopPropagation();
+    // Writing in the window means the target on the page is no longer the
+    // thing being handled; its handles go away until it is tapped again.
+    this.deselectZoomTarget();
+    this.cancelZoomAdvance();
+    this.zoomStrokeMaxX = mapped.sample.x;
     this.zoomPointer = event.pointerId;
     this.zoomLastSample = mapped.sample;
     try {
@@ -6762,6 +6976,7 @@ export class InkSurface {
       if (mapped) samples.push(mapped.sample);
     }
     if (samples.length > 0) {
+      for (const sample of samples) this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, sample.x);
       this.zoomLastSample = samples[samples.length - 1] ?? this.zoomLastSample;
       this.penMove(samples);
     }
@@ -6779,8 +6994,14 @@ export class InkSurface {
     }
     const mapped = this.zoomCanvasSample(event)?.sample ?? this.zoomLastSample;
     this.zoomLastSample = null;
-    if (event.type === "pointercancel" || !mapped) this.penCancel();
-    else this.penEnd(mapped);
+    if (mapped) this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, mapped.x);
+    if (event.type === "pointercancel" || !mapped) {
+      this.penCancel();
+      this.cancelZoomAdvance();
+    } else {
+      this.penEnd(mapped);
+      this.scheduleZoomAdvance();
+    }
   }
 
   /** How the tool in use handles the pen (see {@link PenGesture}). */
@@ -11693,6 +11914,14 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
+    if (this.zoomBox) {
+      const tapAt = this.toLayout(clientX, clientY);
+      if (!this.zoomBox.selected && this.zoomTargetHitAt(tapAt)) {
+        this.selectZoomTarget();
+        return;
+      }
+      if (this.zoomBox.selected && !this.zoomTargetHitAt(tapAt)) this.deselectZoomTarget();
+    }
     if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
     // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
     const plain = { x: clientX, y: clientY, t: now() };

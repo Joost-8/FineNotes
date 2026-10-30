@@ -312,6 +312,10 @@ export interface GoodObsidianSettings {
    * writes, as a second tap on its button does (`tool-return.ts`).
    */
   tuckPenOptionsOnWrite: boolean;
+  /** Page px added after a Zoom box line; negative lets taller boxes overlap. */
+  zoomBoxLineStep: number;
+  /** Move the Zoom box right (then wrap) after a stroke reaches two thirds of it. */
+  zoomBoxAutoAdvance: boolean;
   /**
    * "Grey out while erasing", the eraser's mode list: Whole stroke and By
    * line draw what they take grey until the pen lifts, as Notability does,
@@ -419,6 +423,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   straightHighlighter: true,
   onlyStylusMode: false,
   tuckPenOptionsOnWrite: false,
+  zoomBoxLineStep: 0,
+  zoomBoxAutoAdvance: false,
   greyWhileErasing: false,
 
   settingsOpen: [],

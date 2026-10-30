@@ -17,18 +17,13 @@ export type ZoomHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export type ZoomTargetPress = "move" | ZoomHandle | "draw";
 
 /**
- * A press on the target frame's badge, body or handles. The magnifier, the
- * badge and a finger always move the box, even with a writing tool in hand;
- * a pen or mouse on the body keeps drawing. A handle is a resize first.
+ * A press on the target frame. An unselected target is a picture of where the
+ * box is, not a control: the page keeps the press, so drawing and panning
+ * work. Once selected, a handle resizes and the body or badge moves it.
  */
-export function zoomTargetPress(
-  magnifier: boolean,
-  touch: boolean,
-  handle: ZoomHandle | null,
-  badge: boolean,
-): ZoomTargetPress {
-  if (handle) return handle;
-  return badge || magnifier || touch ? "move" : "draw";
+export function zoomTargetPress(selected: boolean, handle: ZoomHandle | null): ZoomTargetPress {
+  if (!selected) return "draw";
+  return handle ?? "move";
 }
 
 /** Whether the window may be dragged or resized by this pointer. */
@@ -53,6 +48,12 @@ export function magnifierTapClosesZoomBox(tool: string, boxOpen: boolean): boole
 export const ZOOM_BOX_MIN = 24;
 /** A step left or right moves the box this much of its own width. */
 export const ZOOM_BOX_STEP = 0.7;
+/** Auto-advance moves this much of the box width after a stroke reaches the trigger. */
+export const ZOOM_AUTO_ADVANCE_STEP = 0.65;
+/** A stroke that reaches this fraction of the box width asks for the next page slice. */
+export const ZOOM_AUTO_ADVANCE_TRIGGER = 2 / 3;
+/** A pause after the stroke, so dots and crosses can be finished first. */
+export const ZOOM_AUTO_ADVANCE_DELAY_MS = 400;
 /** One press of − or + changes the magnification by this factor. */
 export const ZOOM_STEP = 1.25;
 
@@ -119,8 +120,9 @@ export function moveZoomBox(
 }
 
 /**
- * A handle drag: the grabbed edge or corner follows the pointer, with the box
- * at least `min` wide and tall and wholly on the page.
+ * A handle drag. An edge moves only that edge. A corner keeps the box's aspect
+ * ratio, anchored on the opposite corner, as a picture's square handles do;
+ * its magnification therefore changes while the shape of the view stays put.
  */
 export function resizeZoomBox(
   box: ZoomRect,
@@ -131,6 +133,33 @@ export function resizeZoomBox(
   pageHeight: number,
   min = ZOOM_BOX_MIN,
 ): ZoomRect {
+  if (handle.length === 2) {
+    const west = handle.includes("w");
+    const north = handle.includes("n");
+    const anchorX = west ? box.x + box.w : box.x;
+    const anchorY = north ? box.y + box.h : box.y;
+    const wantedW = Math.max(min, west ? box.w - dx : box.w + dx);
+    const wantedH = Math.max(min, north ? box.h - dy : box.h + dy);
+    // The axis that moved most decides the scale; a pure sideways or vertical
+    // drag still resizes both sides together.
+    const scale =
+      Math.abs(wantedW / box.w - 1) >= Math.abs(wantedH / box.h - 1)
+        ? wantedW / box.w
+        : wantedH / box.h;
+    const minScale = Math.max(min / box.w, min / box.h);
+    const roomX = west ? anchorX : pageWidth - anchorX;
+    const roomY = north ? anchorY : pageHeight - anchorY;
+    const maxScale = Math.max(minScale, Math.min(roomX / box.w, roomY / box.h));
+    const kept = clamp(scale, minScale, maxScale);
+    const w = box.w * kept;
+    const h = box.h * kept;
+    return {
+      x: west ? anchorX - w : anchorX,
+      y: north ? anchorY - h : anchorY,
+      w,
+      h,
+    };
+  }
   let left = box.x;
   let top = box.y;
   let right = box.x + box.w;
@@ -152,16 +181,50 @@ export function stepZoomBox(
   return moveZoomBox(box, Math.round(box.w * ZOOM_BOX_STEP) * direction, 0, pageWidth, pageHeight);
 }
 
-/** Return to the line's left edge and move down exactly one box height. */
+/**
+ * Return to the line's left edge and move down one box height plus the user's
+ * offset. A negative offset lets consecutive lines overlap a taller box.
+ */
 export function newLineZoomBox(
   box: ZoomRect,
   originX: number,
   pageWidth: number,
   pageHeight: number,
+  lineStepOffset = 0,
 ): ZoomRect {
   const x = clamp(originX, 0, pageWidth - box.w);
-  const y = clamp(box.y + box.h, 0, pageHeight - box.h);
+  const y = clamp(box.y + box.h + lineStepOffset, 0, pageHeight - box.h);
   return { ...box, x, y };
+}
+
+/** Whether a stroke reached far enough right in the box to ask for more room. */
+export function zoomAutoAdvanceDue(x: number, box: ZoomRect): boolean {
+  return x >= box.x + box.w * ZOOM_AUTO_ADVANCE_TRIGGER;
+}
+
+/**
+ * The auto-advance step: move right by part of a box while the line has room,
+ * then wrap to the next line. The right edge is the last stop, so a partial
+ * step clamps there rather than jumping past it.
+ */
+export function autoAdvanceZoomBox(
+  box: ZoomRect,
+  originX: number,
+  pageWidth: number,
+  pageHeight: number,
+  lineStepOffset = 0,
+): ZoomRect {
+  const right = Math.max(0, pageWidth - box.w);
+  if (box.x < right) {
+    const step = Math.max(1, Math.round(box.w * ZOOM_AUTO_ADVANCE_STEP));
+    return { ...box, x: Math.min(right, box.x + step) };
+  }
+  return newLineZoomBox(box, originX, pageWidth, pageHeight, lineStepOffset);
+}
+
+/** The desk inside the window, matching the page's workspace even off-page. */
+export function zoomDeskColor(rendererDesk: string | null | undefined, workspace: string): string {
+  return rendererDesk ?? workspace;
 }
 
 /**

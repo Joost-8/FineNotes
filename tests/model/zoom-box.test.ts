@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  DARK_WORKSPACE,
+  LIGHT_WORKSPACE,
+  workspaceBackgroundOf,
+} from "../../src/model/appearance-theme";
+import {
+  ZOOM_AUTO_ADVANCE_STEP,
   ZOOM_BOX_MIN,
   ZOOM_BOX_STEP,
+  autoAdvanceZoomBox,
   clampZoomBox,
   magnifierTapClosesZoomBox,
   moveZoomBox,
@@ -10,8 +17,10 @@ import {
   resizeZoomBox,
   scaleZoomBox,
   stepZoomBox,
+  zoomAutoAdvanceDue,
   zoomBoxFromPoints,
   zoomButtonState,
+  zoomDeskColor,
   zoomTargetPress,
   zoomView,
   zoomViewPoint,
@@ -75,7 +84,7 @@ describe("zoom box geometry", () => {
     });
   });
 
-  it("resizes from each handle without turning the box inside out", () => {
+  it("keeps the aspect from a corner and moves only one edge from an edge handle", () => {
     expect(resizeZoomBox(box, "se", 40, 20, 800, 600)).toEqual({
       x: 100,
       y: 200,
@@ -89,14 +98,18 @@ describe("zoom box geometry", () => {
       h: 60,
     });
     expect(resizeZoomBox(box, "nw", 1000, 1000, 800, 600)).toEqual({
-      x: 236,
+      x: 212,
       y: 256,
-      w: ZOOM_BOX_MIN,
-      h: ZOOM_BOX_MIN,
+      w: 48,
+      h: 24,
     });
     expect(resizeZoomBox(box, "s", 0, -1000, 800, 600)).toEqual({
       ...box,
       h: ZOOM_BOX_MIN,
+    });
+    expect(resizeZoomBox(box, "e", 40, 20, 800, 600)).toEqual({
+      ...box,
+      w: 200,
     });
   });
 
@@ -107,14 +120,51 @@ describe("zoom box geometry", () => {
     expect(stepZoomBox({ ...box, x: 630 }, 1, 800, 600).x).toBe(640);
   });
 
-  it("returns to the line's left edge and moves down one box height", () => {
+  it("returns to the line's left edge and moves down one box height plus the offset", () => {
     expect(newLineZoomBox({ ...box, x: 400 }, 100, 800, 600)).toEqual({
       x: 100,
       y: 280,
       w: 160,
       h: 80,
     });
+    expect(newLineZoomBox({ ...box, x: 400 }, 100, 800, 600, 25).y).toBe(305);
+    expect(newLineZoomBox({ ...box, x: 400 }, 100, 800, 600, -25).y).toBe(255);
     expect(newLineZoomBox({ ...box, y: 500 }, 100, 800, 600).y).toBe(520);
+  });
+
+  it("advances right by part of a box, stops at the margin, then wraps", () => {
+    const step = Math.round(box.w * ZOOM_AUTO_ADVANCE_STEP);
+    expect(autoAdvanceZoomBox(box, 100, 800, 600)).toMatchObject({ x: 100 + step, y: 200 });
+    expect(autoAdvanceZoomBox({ ...box, x: 630 }, 100, 800, 600)).toMatchObject({
+      x: 640,
+      y: 200,
+    });
+    expect(autoAdvanceZoomBox({ ...box, x: 640 }, 100, 800, 600)).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+    expect(autoAdvanceZoomBox({ ...box, x: 640 }, 100, 800, 600, -20)).toMatchObject({
+      x: 100,
+      y: 260,
+    });
+  });
+
+  it("triggers auto-advance only once a stroke reaches two thirds of the box", () => {
+    expect(zoomAutoAdvanceDue(box.x + box.w * (2 / 3) - 0.1, box)).toBe(false);
+    expect(zoomAutoAdvanceDue(box.x + box.w * (2 / 3), box)).toBe(true);
+    expect(zoomAutoAdvanceDue(box.x + box.w, box)).toBe(true);
+  });
+
+  it("uses the workspace desk inside the Zoom box", () => {
+    const desk = (workspaceBackground: string, dark: boolean, color?: string): string =>
+      zoomDeskColor(
+        undefined,
+        workspaceBackgroundOf({ workspaceBackground, workspaceBackgroundColor: color }, dark),
+      );
+    expect(desk("light", true)).toBe(LIGHT_WORKSPACE);
+    expect(desk("dark", false)).toBe(DARK_WORKSPACE);
+    expect(desk("custom", true, "#abc")).toBe("#aabbcc");
+    expect(zoomDeskColor("#123456", LIGHT_WORKSPACE)).toBe("#123456");
   });
 
   it("trades box size for magnification around its centre", () => {
@@ -174,20 +224,15 @@ describe("panning the page to keep the box in view", () => {
 });
 
 describe("the viewfinder target's presses", () => {
-  it("resizes from a corner or edge before anything else", () => {
-    expect(zoomTargetPress(true, true, "nw", true)).toBe("nw");
-    expect(zoomTargetPress(false, false, "e", false)).toBe("e");
+  it("leaves an unselected target to the page, drawing and panning as usual", () => {
+    expect(zoomTargetPress(false, "nw")).toBe("draw");
+    expect(zoomTargetPress(false, null)).toBe("draw");
   });
 
-  it("moves from the badge with any pointer, even a writing tool", () => {
-    expect(zoomTargetPress(false, false, null, true)).toBe("move");
-    expect(zoomTargetPress(false, true, null, true)).toBe("move");
-  });
-
-  it("moves the body with a finger or the Magnifier, and draws with a pen otherwise", () => {
-    expect(zoomTargetPress(false, true, null, false)).toBe("move");
-    expect(zoomTargetPress(true, false, null, false)).toBe("move");
-    expect(zoomTargetPress(false, false, null, false)).toBe("draw");
+  it("resizes from a handle and moves the body only once selected", () => {
+    expect(zoomTargetPress(true, "nw")).toBe("nw");
+    expect(zoomTargetPress(true, "e")).toBe("e");
+    expect(zoomTargetPress(true, null)).toBe("move");
   });
 });
 
