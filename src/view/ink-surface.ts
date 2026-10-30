@@ -9817,21 +9817,25 @@ export class InkSurface {
       run: () => this.deleteSelection(),
     });
     // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…".
-    actions.push({
-      id: "corners",
-      icon: "scan",
-      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
-      group: "edit",
-      bar: true,
-      menu: "none",
-      checked: this.selectionCorners,
-      run: () => {
-        this.selectionCorners = !this.selectionCorners;
-        this.syncSelectionOverlay();
-      },
-    });
-    if (this.loneShape(sel)) {
+    // the resize handles, then the "…". A lone shape shows its handles from
+    // the start, so it has only the corner points' switch (Joost, 2026-10-30).
+    const lone = this.loneShape(sel);
+    if (!lone) {
+      actions.push({
+        id: "corners",
+        icon: "scan",
+        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.selectionCorners,
+        run: () => {
+          this.selectionCorners = !this.selectionCorners;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
+    if (lone) {
       actions.push({
         id: "corner-points",
         icon: "vector-square",
