@@ -343,6 +343,30 @@ export function notebookPaths(
   };
 }
 
+/**
+ * The folders to create before an imported notebook is written, parents
+ * first and each once: its own folder (or its parents, when it has none),
+ * and its `Images` folder when it has pictures or other files. The other
+ * attachment folders are left out: each is made when a recording, transcript,
+ * chat or export is first saved into it. Pure.
+ */
+export function importFolders(paths: NotebookPaths, hasAttachments: boolean): string[] {
+  const lazy = new Set(Object.values(paths.attachments ?? {}));
+  const images = paths.attachments?.images;
+  const wanted = paths.folders.filter(
+    (path) => !lazy.has(path) || (path === images && hasAttachments),
+  );
+  const out: string[] = [];
+  for (const folder of wanted) {
+    const parts = normalizeFolder(folder).split("/");
+    for (let i = 1; i <= parts.length; i++) {
+      const path = parts.slice(0, i).join("/");
+      if (path && !out.includes(path)) out.push(path);
+    }
+  }
+  return out;
+}
+
 // --- The new file -----------------------------------------------------------
 
 /**
