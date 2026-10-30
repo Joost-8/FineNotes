@@ -28,6 +28,11 @@ export interface Shortcut {
   ways: readonly ShortcutWay[];
   /** `ways` are the two ends of a run of keys ("1" to "8"), not alternatives. */
   range?: boolean;
+  /**
+   * The row of `./shortcut-bindings.ts` this line describes, so the sheet
+   * can show a key the user changed; "pen.saved" for the eight saved pens.
+   */
+  binding?: string;
 }
 
 export interface ShortcutGroup {
@@ -43,19 +48,28 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
     title: "Tools",
     shortcuts: [
-      { action: "Pen", ways: [key("P"), key("W")] },
-      { action: "Highlighter", ways: [key("H")] },
-      { action: "Eraser", ways: [key("E")] },
-      { action: "Lasso", ways: [key("V")] },
-      { action: "Shapes", ways: [key("S")] },
-      { action: "Text box", ways: [key("T")] },
-      { action: "Laser pointer: a trail that fades, never saved", ways: [key("L")] },
+      { action: "Pen", ways: [key("P"), key("W")], binding: "tool.pen" },
+      { action: "Highlighter", ways: [key("H")], binding: "tool.highlighter" },
+      { action: "Eraser", ways: [key("E")], binding: "tool.eraser" },
+      { action: "Lasso", ways: [key("V")], binding: "tool.select" },
+      { action: "Shapes", ways: [key("S")], binding: "tool.shape" },
+      { action: "Text box", ways: [key("T")], binding: "tool.text" },
+      {
+        action: "Laser pointer: a trail that fades, never saved",
+        ways: [key("L")],
+        binding: "tool.laser",
+      },
     ],
   },
   {
     title: "Pens",
     shortcuts: [
-      { action: "Saved pens 1 to 8", ways: [key("1"), key("8")], range: true },
+      {
+        action: "Saved pens 1 to 8",
+        ways: [key("1"), key("8")],
+        range: true,
+        binding: "pen.saved",
+      },
       { action: "Erase, with the eraser's settings", ways: [held(["Shift"], "write")] },
     ],
   },
@@ -66,18 +80,19 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       {
         action: "Select everything on the page; Delete then clears it",
         ways: [key("Mod", "A")],
+        binding: "edit.select-all",
       },
-      { action: "Undo", ways: [key("Mod", "Z")] },
-      { action: "Redo", ways: [key("Mod", "Shift", "Z")] },
+      { action: "Undo", ways: [key("Mod", "Z")], binding: "edit.undo" },
+      { action: "Redo", ways: [key("Mod", "Shift", "Z")], binding: "edit.redo" },
     ],
   },
   {
     title: "View and zoom",
     shortcuts: [
       { action: "Zoom in or out about the pen", ways: [held(["Alt"], "write up or down")] },
-      { action: "Move the page", ways: [held(["Space"], "drag")] },
+      { action: "Move the page", ways: [held(["Space"], "drag")], binding: "tool.pan" },
       { action: "Previous and next page", ways: [key("Page Up"), key("Page Down")] },
-      { action: "Show or hide this list", ways: [key("?")] },
+      { action: "Show or hide this list", ways: [key("?")], binding: "view.shortcuts" },
     ],
   },
   {

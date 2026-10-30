@@ -76,6 +76,11 @@ export class FakeEl {
   get parentElement(): FakeEl | null {
     return this.parent;
   }
+  /** The element after this one in its parent, as the DOM names it. */
+  get nextElementSibling(): FakeEl | null {
+    const at = this.parent?.children.indexOf(this) ?? -1;
+    return at >= 0 ? (this.parent?.children[at + 1] ?? null) : null;
+  }
   /** The first descendant matching a class selector (".a"), or null. */
   querySelector(selector: string): FakeEl | null {
     return this.find(selector.replace(/^\./, "")) ?? null;
