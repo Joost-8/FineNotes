@@ -5,7 +5,10 @@ import {
   ZOOM_BOX_STEP,
   autoAdvanceZoomBox,
   clampZoomBox,
-  magnifierTapClosesZoomBox,
+  ZOOM_BOX_PLACED_MAGNIFICATION,
+  magnifierTap,
+  placedZoomBox,
+  zoomWindowFirstPlace,
   moveZoomBox,
   newLineZoomBox,
   panToShow,
@@ -311,9 +314,65 @@ describe("the Magnifier's button and toggle", () => {
     expect(zoomButtonState("pen", false)).toEqual({ highlighted: false, pressed: false });
   });
 
-  it("closes the box when the Magnifier is tapped with one open", () => {
-    expect(magnifierTapClosesZoomBox("zoom", true)).toBe(true);
-    expect(magnifierTapClosesZoomBox("zoom", false)).toBe(false);
-    expect(magnifierTapClosesZoomBox("pen", true)).toBe(false);
+  it("opens the box in one tap in Zoom box mode, the tool in hand kept", () => {
+    expect(magnifierTap("pen", true, false)).toBe("open");
+    expect(magnifierTap("eraser", true, false)).toBe("open");
+    // In Page zoom mode it is a tool like any other.
+    expect(magnifierTap("pen", false, false)).toBe("select");
+    // The Magnifier already in hand (the pill open): a tap is the pill's, as for any tool.
+    expect(magnifierTap("zoom", true, false)).toBe("select");
+  });
+
+  it("picks the Magnifier with a box open, and closes it on the next tap", () => {
+    expect(magnifierTap("pen", true, true)).toBe("select");
+    expect(magnifierTap("zoom", true, true)).toBe("close");
+    expect(magnifierTap("zoom", false, true)).toBe("close");
+  });
+});
+
+describe("a Zoom box placed with one tap", () => {
+  const page = { width: 800, height: 1100 };
+  const visible = { minX: 0, minY: 300, maxX: 800, maxY: 900 };
+
+  it("sits at the top left of the page in view, the window's shape, 2.5x the view", () => {
+    // Window 420 x 240 CSS px over a page shown at 1 CSS px per page px.
+    const placed = placedZoomBox(visible, page, 420, 240, 1);
+    expect(placed).not.toBeNull();
+    const b = placed as NonNullable<typeof placed>;
+    expect(b.w).toBeCloseTo(420 / ZOOM_BOX_PLACED_MAGNIFICATION);
+    expect(b.h).toBeCloseTo(240 / ZOOM_BOX_PLACED_MAGNIFICATION);
+    expect(b.w / b.h).toBeCloseTo(420 / 240);
+    // Inside the part in view, near its top left.
+    expect(b.x).toBeGreaterThan(0);
+    expect(b.x).toBeLessThan(100);
+    expect(b.y).toBeGreaterThan(300);
+    expect(b.y).toBeLessThan(400);
+  });
+
+  it("magnifies the view, not the page: zoomed in, it covers less page", () => {
+    const fit = placedZoomBox(visible, page, 420, 240, 1);
+    const zoomed = placedZoomBox(visible, page, 420, 240, 2);
+    expect(zoomed?.w).toBeCloseTo((fit?.w ?? 0) / 2);
+  });
+
+  it("never comes out wider than what is in view, nor off the page", () => {
+    const narrow = { minX: 700, minY: 0, maxX: 800, maxY: 1100 };
+    const b = placedZoomBox(narrow, page, 420, 240, 0.2);
+    expect(b).not.toBeNull();
+    const placed = b as NonNullable<typeof b>;
+    expect(placed.w).toBeLessThanOrEqual(100);
+    expect(placed.x + placed.w).toBeLessThanOrEqual(800);
+    expect(placed.w / placed.h).toBeCloseTo(420 / 240);
+  });
+
+  it("places nothing on nothing", () => {
+    expect(placedZoomBox({ minX: 0, minY: 0, maxX: 0, maxY: 0 }, page, 420, 240, 1)).toBeNull();
+    expect(placedZoomBox(visible, page, 420, 240, 0)).toBeNull();
+    expect(placedZoomBox(visible, page, Number.NaN, 240, 1)).toBeNull();
+  });
+
+  it("opens the window at the bottom, centred, within its size limits", () => {
+    expect(zoomWindowFirstPlace({ w: 1000, h: 800 })).toEqual({ x: 290, y: 428, w: 420, h: 280 });
+    expect(zoomWindowFirstPlace({ w: 400, h: 300 })).toEqual({ x: 48, y: 48, w: 304, h: 160 });
   });
 });

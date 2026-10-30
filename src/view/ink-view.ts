@@ -393,6 +393,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
+    zoomBox: s.magnifierZoomBox === true,
   };
 }
 
@@ -2593,7 +2594,17 @@ export class InkView extends TextFileView {
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
         onZoomFit: () => this.surface?.resetView(),
-        onZoomBox: (on) => this.surface?.setZoomBox(on),
+        onZoomBox: (on) => {
+          this.surface?.setZoomBox(on);
+          if (this.settings.magnifierZoomBox !== on) {
+            this.settings.magnifierZoomBox = on;
+            void this.plugin.saveSettings();
+          }
+        },
+        onZoomBoxOpen: (open) => {
+          if (open) this.surface?.openPlacedZoomBox();
+          else this.surface?.closeZoomBox(true);
+        },
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2725,7 +2736,7 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
-        onZoomBoxChange: (open) => this.toolbar?.setZoomBox(open),
+        onZoomBoxChange: (open) => this.toolbar?.setZoomBoxOpen(open),
         onPen: (down) => {
           this.penActivity(down);
           this.returnPenOptions(down);

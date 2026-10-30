@@ -81,7 +81,9 @@ import {
   zoomView,
   zoomViewPoint,
   zoomViewPointFree,
+  placedZoomBox,
   zoomWindowDragAllowed,
+  zoomWindowFirstPlace,
   type ZoomHandle,
   type ZoomRect,
 } from "../model/zoom-box";
@@ -1558,6 +1560,8 @@ interface ZoomMarquee {
 const ZOOM_HANDLES: readonly ZoomHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 /** How long the page glides to keep a stepped target box in view, ms. */
 const ZOOM_BOX_PAN_MS = 180;
+/** The Zoom box window's bar, CSS px (styles.css): what the window's body is short of its height. */
+const ZOOM_WINDOW_BAR_PX = 40;
 
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
@@ -7051,6 +7055,8 @@ export class InkSurface {
    */
   setZoomBox(on: boolean): void {
     this.toolState.zoomBox = on;
+    // Zoom box mode opens a box where the page is being read: nothing to draw first.
+    if (on && !this.zoomBox && this.openPlacedZoomBox()) return;
     if (!on) {
       if (this.zoomBox) this.closeZoomBox(false);
       else this.cancelZoomMarquee();
@@ -7183,6 +7189,44 @@ export class InkSurface {
     el.removeClass("is-hidden");
   }
 
+  /**
+   * One tap on the Magnifier in Zoom box mode (`magnifierTap`), or the mode
+   * switched on: the box opens on the page being read, placed and sized for
+   * writing (`placedZoomBox`), so the Pencil writes on at once, as in
+   * Goodnotes. The target can still be moved and resized by its frame.
+   * False when there is no page in view to put it on.
+   */
+  openPlacedZoomBox(): boolean {
+    if (this.zoomBox) return true;
+    const index = Math.max(0, Math.min(this.pageIndex, this.pageLayout.boxes.length - 1));
+    const pageBox = this.pageLayout.boxes[index];
+    if (!pageBox) return false;
+    const view = this.visibleBoardRect();
+    const seen = {
+      minX: Math.max(0, view.minX - pageBox.x),
+      minY: Math.max(0, view.minY - pageBox.y),
+      maxX: Math.min(pageBox.width, view.maxX - pageBox.x),
+      maxY: Math.min(pageBox.height, view.maxY - pageBox.y),
+    };
+    // A row turned to another page may not read as in view: the whole page then.
+    const visible =
+      seen.maxX > seen.minX && seen.maxY > seen.minY
+        ? seen
+        : { minX: 0, minY: 0, maxX: pageBox.width, maxY: pageBox.height };
+    const place = this.zoomPlace ?? zoomWindowFirstPlace({ w: this.cssW, h: this.cssH });
+    const box = placedZoomBox(
+      visible,
+      { width: pageBox.width, height: pageBox.height },
+      place.w,
+      Math.max(1, place.h - ZOOM_WINDOW_BAR_PX),
+      this.unitScale,
+    );
+    if (!box) return false;
+    this.cancelZoomMarquee();
+    this.openZoomBox(pageBox.id, box);
+    return true;
+  }
+
   /** A target box was drawn: put it on the page and open the window over the view. */
   private openZoomBox(pageId: string, box: ZoomRect): void {
     this.zoomPositionHistory.length = 0;
@@ -7228,7 +7272,7 @@ export class InkSurface {
     this.zoomCanvas = null;
     this.zoomReadout = null;
     this.zoomReadoutText = "";
-    this.toolState.zoomBox = false;
+    // The mode stays: the next tap on the Magnifier opens a box again.
     this.syncZoomCatcher();
     if (notify) this.callbacks.onZoomBoxChange?.(false);
     this.requestFrame();
@@ -7265,16 +7309,7 @@ export class InkSurface {
         { icon: "plus", label: "Zoom in", run: () => this.scaleZoomWindow(ZOOM_STEP) },
       ],
       // Open at the bottom, above the options pill, and centred.
-      firstPlace: (bounds) => {
-        const w = Math.max(304, Math.min(420, Math.round(bounds.w * 0.6)));
-        const h = Math.max(160, Math.min(280, Math.round(bounds.h * 0.35)));
-        return {
-          x: Math.max(0, Math.round((bounds.w - w) / 2)),
-          y: Math.max(8, bounds.h - h - 92),
-          w,
-          h,
-        };
-      },
+      firstPlace: (bounds) => zoomWindowFirstPlace(bounds),
       place: () => this.zoomPlace,
       savePlace: (place) => {
         this.zoomPlace = place;

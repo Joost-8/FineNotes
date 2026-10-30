@@ -336,6 +336,11 @@ export interface GoodObsidianSettings {
   /** Percentage of the box's right edge that triggers auto-advance. */
   zoomBoxAutoAdvanceThreshold: number;
   /**
+   * The Magnifier's mode, remembered: true makes its button open a Zoom box
+   * in one tap, the tool in hand kept (`magnifierTap`); false zooms the page.
+   */
+  magnifierZoomBox: boolean;
+  /**
    * "Grey out while erasing", the eraser's mode list: Whole stroke and By
    * line draw what they take grey until the pen lifts, as Notability does,
    * instead of hiding it (discussion #51). Off by default; read through
@@ -447,6 +452,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   zoomBoxLineStep: 0,
   zoomBoxAutoAdvance: false,
   zoomBoxAutoAdvanceThreshold: 33,
+  magnifierZoomBox: false,
   greyWhileErasing: false,
 
   settingsOpen: [],

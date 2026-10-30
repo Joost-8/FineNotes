@@ -208,26 +208,55 @@ describe("the Magnifier's Zoom box", () => {
     expect(zoom.attrs["aria-pressed"]).toBe("false");
   });
 
-  it("dismisses the open box from the Magnifier's button, keeping the pen in hand", () => {
-    const onZoomBox = vi.fn();
+  /** A bare toolbar whose Zoom box callbacks are recorded. */
+  function magnifierBar(state: Record<string, unknown>) {
+    const onZoomBoxOpen = vi.fn();
+    const onToolChange = vi.fn();
     const syncActive = vi.fn();
     const buildOptions = vi.fn();
     const toolbar = Object.assign(Object.create(Toolbar.prototype) as object, {
-      state: { tool: "pen", zoomBox: true, zoomBoxOpen: true },
+      state,
       drawingTool: "pen",
-      callbacks: { onZoomBox, returnToPenOnReselect: () => false },
+      optionsTool: "pen",
+      optionsVisible: false,
+      tuckedTools: new Set(),
+      callbacks: { onZoomBoxOpen, onToolChange, returnToPenOnReselect: () => false },
       syncActive,
       buildOptions,
+      closePopover: () => {},
     }) as unknown as {
       state: Record<string, unknown>;
       tapTool(tool: string, button: unknown): void;
     };
-    toolbar.tapTool("zoom", {});
-    expect(onZoomBox).toHaveBeenCalledWith(false);
-    expect(toolbar.state.tool).toBe("pen");
-    expect(toolbar.state.zoomBox).toBe(false);
-    expect(toolbar.state.zoomBoxOpen).toBe(false);
-    expect(syncActive).toHaveBeenCalledOnce();
-    expect(buildOptions).not.toHaveBeenCalled();
+    return { toolbar, onZoomBoxOpen, onToolChange, syncActive, buildOptions };
+  }
+
+  it("opens the Zoom box in one tap in Zoom box mode, keeping the pen in hand", () => {
+    const bar = magnifierBar({ tool: "pen", zoomBox: true, zoomBoxOpen: false });
+    bar.toolbar.tapTool("zoom", {});
+    expect(bar.onZoomBoxOpen).toHaveBeenCalledWith(true);
+    expect(bar.onToolChange).not.toHaveBeenCalled();
+    expect(bar.toolbar.state.tool).toBe("pen");
+    // The mode is remembered.
+    expect(bar.toolbar.state.zoomBox).toBe(true);
+  });
+
+  it("picks the Magnifier with a box open, then closes the box on the next tap", () => {
+    const open = magnifierBar({ tool: "pen", zoomBox: true, zoomBoxOpen: true });
+    open.toolbar.tapTool("zoom", {});
+    expect(open.onZoomBoxOpen).not.toHaveBeenCalled();
+    expect(open.onToolChange).toHaveBeenCalledWith("zoom");
+    const held = magnifierBar({ tool: "zoom", zoomBox: true, zoomBoxOpen: true });
+    held.toolbar.tapTool("zoom", {});
+    expect(held.onZoomBoxOpen).toHaveBeenCalledWith(false);
+    expect(held.toolbar.state.zoomBoxOpen).toBe(false);
+    expect(held.toolbar.state.zoomBox).toBe(true);
+  });
+
+  it("stays a tool like any other in Page zoom mode", () => {
+    const bar = magnifierBar({ tool: "pen", zoomBox: false, zoomBoxOpen: false });
+    bar.toolbar.tapTool("zoom", {});
+    expect(bar.onZoomBoxOpen).not.toHaveBeenCalled();
+    expect(bar.onToolChange).toHaveBeenCalledWith("zoom");
   });
 });

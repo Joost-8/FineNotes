@@ -76,9 +76,84 @@ export function zoomButtonState(
   return { highlighted: boxOpen, pressed: tool === "zoom" || boxOpen };
 }
 
-/** A tap on the Magnifier button with a Zoom box open dismisses it. */
-export function magnifierTapClosesZoomBox(tool: string, boxOpen: boolean): boolean {
-  return tool === "zoom" && boxOpen;
+/**
+ * What a tap on the Magnifier button does, Goodnotes' way (Joost,
+ * 2026-10-30): in Zoom box mode one tap opens the box, the tool in hand
+ * staying in hand, so the Pencil writes on at once. With the box open, a tap
+ * picks the Magnifier (its pill: the mode switch, the zoom steps); a tap with
+ * the Magnifier already in hand closes the box. In Page zoom mode it is a
+ * tool like any other.
+ */
+export function magnifierTap(
+  current: string,
+  zoomBoxMode: boolean,
+  boxOpen: boolean,
+): "open" | "close" | "select" {
+  if (boxOpen) return current === "zoom" ? "close" : "select";
+  return zoomBoxMode && current !== "zoom" ? "open" : "select";
+}
+
+/** How far a Zoom box opened with one tap magnifies the page as it is shown. */
+export const ZOOM_BOX_PLACED_MAGNIFICATION = 2.5;
+/** A placed box's inset from the top left of the page in view, as a share of the smaller side. */
+const ZOOM_BOX_PLACED_INSET = 0.06;
+
+/** The window's first place in a surface `bounds` CSS px: at the bottom, above the options pill, centred. */
+export function zoomWindowFirstPlace(bounds: { w: number; h: number }): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
+  const w = Math.max(304, Math.min(420, Math.round(bounds.w * 0.6)));
+  const h = Math.max(160, Math.min(280, Math.round(bounds.h * 0.35)));
+  return {
+    x: Math.max(0, Math.round((bounds.w - w) / 2)),
+    y: Math.max(8, bounds.h - h - 92),
+    w,
+    h,
+  };
+}
+
+/**
+ * Where a Zoom box opened with one tap looks, so nothing has to be drawn
+ * first: at the top left of the part of the page in view (`visible`, page
+ * px, clipped to the page), as Goodnotes places its zoom window. It is the
+ * window's shape (`windowW` x `windowH` CSS px), magnified
+ * {@link ZOOM_BOX_PLACED_MAGNIFICATION} times over the page at `viewScale`
+ * CSS px per page px, and never wider than what is in view. Null when there
+ * is nothing to place it on.
+ */
+export function placedZoomBox(
+  visible: { minX: number; minY: number; maxX: number; maxY: number },
+  page: { width: number; height: number },
+  windowW: number,
+  windowH: number,
+  viewScale: number,
+  magnification = ZOOM_BOX_PLACED_MAGNIFICATION,
+): ZoomRect | null {
+  const vw = visible.maxX - visible.minX;
+  const vh = visible.maxY - visible.minY;
+  const k = viewScale * magnification;
+  if (
+    ![vw, vh, windowW, windowH, k, page.width, page.height].every(
+      (n) => Number.isFinite(n) && n > 0,
+    )
+  ) {
+    return null;
+  }
+  let w = windowW / k;
+  let h = windowH / k;
+  // Wider than the page in view (a phone, zoomed far out): shrunk, its shape kept.
+  const fit = Math.min(1, (vw * (1 - 2 * ZOOM_BOX_PLACED_INSET)) / w);
+  w *= fit;
+  h *= fit;
+  const inset = Math.min(vw, vh) * ZOOM_BOX_PLACED_INSET;
+  return clampZoomBox(
+    { x: visible.minX + inset, y: visible.minY + inset, w, h },
+    page.width,
+    page.height,
+  );
 }
 
 /** The smallest target box a marquee or a resize may make, in page px. */

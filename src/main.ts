@@ -808,6 +808,7 @@ export default class GoodObsidianPlugin extends Plugin {
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
+    this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
