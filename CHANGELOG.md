@@ -153,6 +153,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **A button you hide leaves nothing on.** Turned off in Customize toolbar,
+  an item's effect ends: Stylus only goes off, the ruler away, a recording
+  stops and is saved, a sticky note waiting to be placed is dropped, and a
+  hidden tool in hand gives way to the pen. While it is off, its shortcut or
+  command does nothing, so nothing can be on with no button to show it. An
+  item in the More tools menu keeps working.
 - **The freehand lasso works as Goodnotes' does.** Its line is Goodnotes'
   blue and stays open while you draw; on the lift it closes with a straight
   line and stays round what it took, with no rotate knob until you ask for

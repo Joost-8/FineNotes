@@ -1301,3 +1301,29 @@ describe("the input debug overlay", () => {
     expect(notices).toHaveLength(1);
   });
 });
+
+// --- An item shown nowhere has nothing left on --------------------------------------------
+
+describe("Stylus only shown nowhere", () => {
+  it("goes off when its button is turned off, in every open notebook", async () => {
+    await load({ lastSeenVersion: VERSION, onlyStylusMode: true });
+    const a = vi.fn();
+    inkLeaf(app.addFile("A.notebook.md"), { setOnlyStylusMode: a, setToolbarItems: vi.fn() });
+    plugin.saveToolbarLayout({ bar: ["pen", "select"], off: ["stylus"] });
+    await flush();
+    expect(plugin.settings.onlyStylusMode).toBe(false);
+    expect(a).toHaveBeenCalledWith(false);
+  });
+
+  it("cannot be turned on by its command while off", async () => {
+    await load({ lastSeenVersion: VERSION, toolbarOff: ["stylus"] });
+    run("toggle-only-stylus-mode");
+    await flush();
+    expect(plugin.settings.onlyStylusMode).toBe(false);
+  });
+
+  it("is never on at load when its button is off", async () => {
+    await load({ lastSeenVersion: VERSION, onlyStylusMode: true, toolbarOff: ["stylus"] });
+    expect(plugin.settings.onlyStylusMode).toBe(false);
+  });
+});

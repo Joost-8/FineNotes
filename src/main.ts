@@ -195,7 +195,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type ToolbarLayout, normalizeLayout } from "./view/toolbar-layout";
+import { type ToolbarLayout, isItemOff, normalizeLayout } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -805,6 +805,8 @@ export default class GoodObsidianPlugin extends Plugin {
     const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
+    if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
     // not a value to honour; a negative step overlaps the next line.
     const lineStep = Number(this.settings.zoomBoxLineStep);
@@ -1361,7 +1363,11 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
+    // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
+    if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
+      void this.setOnlyStylusMode(false);
+    }
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
@@ -1376,6 +1382,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * give every open notebook its toggle in one go.
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
+    // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
+    const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
