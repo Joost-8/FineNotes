@@ -433,6 +433,9 @@ describe("the rows", () => {
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
+      [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
+      [WRITING, "Zoom box auto-advance", "toggle:zoomBoxAutoAdvance"],
+      [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "render"],
@@ -643,6 +646,9 @@ describe("which rows show", () => {
       "Highlighter opacity",
       "Straighten highlighter strokes",
       "Lasso takes what it touches",
+      "Zoom box line spacing",
+      "Zoom box auto-advance",
+      "Zoom box auto-advance threshold",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
       "Page appearance",
@@ -1673,7 +1679,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(19);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(22);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

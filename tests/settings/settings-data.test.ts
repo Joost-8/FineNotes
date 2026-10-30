@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   changesTabLayout,
   appearanceChoiceOf,
@@ -25,6 +26,10 @@ import {
   parseColorList,
   returnToPenOf,
   sectionOpen,
+  snapCurveOf,
+  snapModeOf,
+  storeSnapMode,
+  loadSnapSettings,
   shownPaperTheme,
   shownValue,
   storeAppearanceChoice,
@@ -42,6 +47,8 @@ import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
  */
 const FRESH_INSTALL = {
   drawAndHold: true,
+  snapMode: "hold",
+  snapCurvatureThreshold: 50,
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
@@ -91,6 +98,7 @@ const FRESH_INSTALL = {
   textDragSize: false,
   textHintShown: 0,
   textHintDismissed: false,
+  shapeHintShown: false,
   penAutoShape: false,
   penGestures: { scribbleErase: true, scribbleErasesAll: false, circleLasso: true },
   shapeColor: "#000000",
@@ -139,6 +147,10 @@ const FRESH_INSTALL = {
   straightHighlighter: true,
   onlyStylusMode: false,
   tuckPenOptionsOnWrite: "off",
+  zoomBoxLineStep: 0,
+  zoomBoxAutoAdvance: false,
+  zoomBoxAutoAdvanceThreshold: 33,
+  magnifierZoomBox: false,
   greyWhileErasing: false,
   settingsOpen: [],
   scribbleTipDismissed: false,
@@ -213,9 +225,12 @@ const USED_VAULT = {
   textDragSize: true,
   textHintShown: 3,
   textHintDismissed: true,
+  shapeHintShown: true,
   penAutoShape: true,
   penGestures: { scribbleErase: false, scribbleErasesAll: true, circleLasso: false },
   shapeColor: "#0066ff",
+  snapMode: "auto",
+  snapCurvatureThreshold: 75,
   stickerFolder: "Art/Stickers",
   imagesFolder: "Art/Pictures",
   recordingsFolder: "",
@@ -239,7 +254,11 @@ const USED_VAULT = {
   penCursor: "crosshair",
   straightHighlighter: false,
   onlyStylusMode: true,
-  tuckPenOptionsOnWrite: "until-lift",
+  tuckPenOptionsOnWrite: "until-tap",
+  zoomBoxLineStep: -15,
+  zoomBoxAutoAdvance: true,
+  zoomBoxAutoAdvanceThreshold: 45,
+  magnifierZoomBox: true,
   greyWhileErasing: true,
   settingsOpen: ["writing", "ai"],
   scribbleTipDismissed: true,
@@ -285,6 +304,49 @@ describe("data.json", () => {
     const old = { drawAndHold: false, defaultColor: "#333333", paperWidth: 900 };
     const written = loadAndSave(old) as Record<string, unknown>;
     expect(written).toEqual({ ...FRESH_INSTALL, ...old });
+  });
+
+  it("takes a vault's Make shapes from the two switches it replaced, then keeps them as mirrors", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    storeSnapMode(settings, "auto");
+    expect([settings.snapMode, settings.drawAndHold, settings.penAutoShape]).toEqual([
+      "auto",
+      true,
+      true,
+    ]);
+    storeSnapMode(settings, "disabled");
+    expect([settings.snapMode, settings.drawAndHold, settings.penAutoShape]).toEqual([
+      "disabled",
+      false,
+      false,
+    ]);
+    const loaded = (saved: Partial<GoodObsidianSettings>): GoodObsidianSettings => {
+      const merged = Object.assign(structuredClone(DEFAULT_SETTINGS), saved);
+      loadSnapSettings(merged, saved);
+      return merged;
+    };
+    expect(loaded({ penAutoShape: true })).toMatchObject({ snapMode: "auto", drawAndHold: true });
+    expect(loaded({ drawAndHold: false })).toMatchObject({ snapMode: "disabled" });
+    expect(loaded({ snapMode: "hold", penAutoShape: true })).toMatchObject({
+      snapMode: "hold",
+      penAutoShape: false,
+    });
+    expect(loaded({ snapCurvatureThreshold: 33 }).snapCurvatureThreshold).toBe(35);
+  });
+
+  it("reads the curve bar in steps of 5 from 10 to 100, and anything else as 50", () => {
+    expect([snapCurveOf(10), snapCurveOf(73), snapCurveOf(100)]).toEqual([10, 75, 100]);
+    expect([snapCurveOf(0), snapCurveOf(400)]).toEqual([10, 100]);
+    expect([snapCurveOf("50"), snapCurveOf(NaN), snapCurveOf(undefined)]).toEqual([50, 50, 50]);
+  });
+
+  it("maps the three snapping modes and legacy settings", () => {
+    expect(snapModeOf({ snapMode: "disabled" })).toBe("disabled");
+    expect(snapModeOf({ snapMode: "hold" })).toBe("hold");
+    expect(snapModeOf({ snapMode: "auto" })).toBe("auto");
+    expect(snapModeOf({ drawAndHold: false })).toBe("disabled");
+    expect(snapModeOf({ drawAndHold: true })).toBe("hold");
+    expect(snapModeOf({ penAutoShape: true, drawAndHold: true })).toBe("auto");
   });
 
   it("stores the per-tool records as copies, so no host can edit a shared default", async () => {
@@ -484,23 +546,27 @@ describe("choices that set two switches", () => {
   it("reads and writes the pen menu's settings, leaving out what a change leaves out", () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
     expect(penPreferencesOf(settings)).toEqual({
-      drawAndHold: true,
+      snapMode: "hold",
+      snapCurve: 50,
       tuckOnWrite: "off",
       returnToPen: "never",
     });
     storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
-      drawAndHold: true,
+      snapMode: "hold",
+      snapCurve: 50,
       tuckOnWrite: "until-lift",
       returnToPen: "never",
     });
-    storePenPreferences(settings, { drawAndHold: false, returnToPen: "both" });
-    expect(settings.drawAndHold).toBe(false);
+    storePenPreferences(settings, { snapMode: "disabled", snapCurve: 30, returnToPen: "both" });
+    expect([settings.snapMode, settings.drawAndHold]).toEqual(["disabled", false]);
+    expect(settings.snapCurvatureThreshold).toBe(30);
     expect([settings.returnToPenOnReselect, settings.returnToPenAfterUse]).toEqual([true, true]);
     expect(settings.tuckPenOptionsOnWrite).toBe("until-lift");
     storePenPreferences(settings, {});
     expect(penPreferencesOf(settings)).toEqual({
-      drawAndHold: false,
+      snapMode: "disabled",
+      snapCurve: 30,
       tuckOnWrite: "until-lift",
       returnToPen: "both",
     });
@@ -509,9 +575,10 @@ describe("choices that set two switches", () => {
   });
 
   it("reads a pen setting a file holds in another shape as its default", () => {
-    const odd = { drawAndHold: "no", tuckPenOptionsOnWrite: 1 } as never;
+    const odd = { snapMode: "no", snapCurvatureThreshold: "x", tuckPenOptionsOnWrite: 1 } as never;
     expect(penPreferencesOf({ ...DEFAULT_SETTINGS, ...(odd as object) })).toMatchObject({
-      drawAndHold: true,
+      snapMode: "hold",
+      snapCurve: 50,
       tuckOnWrite: "off",
     });
   });

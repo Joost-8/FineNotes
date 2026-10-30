@@ -1283,6 +1283,8 @@ const TOUR: readonly TourPage[] = [
       s.y += 2 * 160 + 16;
       s.card(
         "Auto shape, the last button in the pen's options, snaps a plain shape as you lift. " +
+          "Tap the pen in hand for its menu: Pen gestures sets when strokes become shapes, " +
+          "and Pen settings holds the rest. " +
           "The Shapes tool places a shape, a line, an arrow or a table up to 8 × 8 with a drag, " +
           "and its style button fills, dashes and rounds them and puts heads on lines.",
         "Also",
@@ -1319,7 +1321,10 @@ const TOUR: readonly TourPage[] = [
     draw: (s) => {
       s.kicker("More · Pen gestures");
       s.title("Pen gestures");
-      s.para("Two gestures save a trip to the toolbar. Both are on at first, in the pen's menu.");
+      s.para(
+        "Two gestures save a trip to the toolbar. Both are on at first: tap the pen in hand, " +
+          "then Pen gestures, where Make shapes also sets when a stroke becomes a shape.",
+      );
       s.card(
         "Scribble back and forth over writing to rub it out. A scribble on empty paper stays " +
           "as ink.",

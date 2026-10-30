@@ -163,6 +163,12 @@ extracted from the matching section of this file by `release.yml`.
   again. Older iPads (iPadOS 15 and earlier) and Android tablets with 2 GB
   or less keep fewer from the start. The debug overlay shows how much PDF
   memory is in use.
+- Highlighter strokes had darker dots along them on the iPad
+  ([#85](https://github.com/Joost-8/FineNotes/issues/85)). The iPad drew
+  a wide translucent line darker in places along it; a highlight is now
+  laid down in one even coat, old highlights included. iPadOS also
+  sometimes hands over the same pen positions twice, and those repeats are
+  now dropped as they arrive.
 - The notebook could scroll by a few pixels in Obsidian when a tool's bar
   along the bottom was tucked away, which narrowed the page by a scrollbar's
   width and changed its zoom a little.
@@ -175,6 +181,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **A button you hide leaves nothing on.** Turned off in Customize toolbar,
+  an item's effect ends: Stylus only goes off, the ruler away, a recording
+  stops and is saved, a sticky note waiting to be placed is dropped, and a
+  hidden tool in hand gives way to the pen. While it is off, its shortcut or
+  command does nothing, so nothing can be on with no button to show it. An
+  item in the More tools menu keeps working.
 - **The freehand lasso works as Goodnotes' does.** Its line is Goodnotes'
   blue and stays open while you draw; on the lift it closes with a straight
   line and stays round what it took, with no rotate knob until you ask for

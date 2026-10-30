@@ -49,6 +49,7 @@ import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } f
 import {
   type PageAppearance,
   type PenPreferences,
+  loadSnapSettings,
   shownPaperTheme,
   storePenPreferences,
 } from "./settings-data";
@@ -194,7 +195,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type ToolbarLayout, normalizeLayout } from "./view/toolbar-layout";
+import { type ToolbarLayout, isItemOff, normalizeLayout } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -222,6 +223,8 @@ const STARTUP_TICK_MS = 250;
 
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
+/** Where Make shapes lives, said once: the first time a pen stroke snaps (FineNotes#84). */
+const SHAPE_HINT = "When strokes become shapes: tap the pen in hand, then Pen gestures.";
 
 /**
  * What `runRecognition` transcribes: the notebook view. An interface so the
@@ -775,6 +778,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const saved = own ?? (await this.settingsFromPreviousId());
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    loadSnapSettings(this.settings, saved ?? {});
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -801,6 +805,16 @@ export default class GoodObsidianPlugin extends Plugin {
     const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
+    if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
+    // A Zoom box line step outside the slider's range is a hand-edited file,
+    // not a value to honour; a negative step overlaps the next line.
+    const lineStep = Number(this.settings.zoomBoxLineStep);
+    this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
+      ? Math.max(-50, Math.min(100, lineStep))
+      : 0;
+    this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
+    this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
@@ -1216,12 +1230,6 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember the pen's auto-shape toggle, for the next session. */
-  savePenAutoShape(enabled: boolean): void {
-    this.settings.penAutoShape = enabled;
-    void this.saveSettings();
-  }
-
   /** Remember which pen gestures are on, for the next session. */
   /** Remember the ruler's kind and its angle snapping, for the next session. */
   saveRuler(kind: RulerKind, snap: number): void {
@@ -1355,7 +1363,11 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
+    // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
+    if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
+      void this.setOnlyStylusMode(false);
+    }
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
@@ -1370,6 +1382,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * give every open notebook its toggle in one go.
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
+    // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
+    const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
@@ -1404,6 +1419,18 @@ export default class GoodObsidianPlugin extends Plugin {
       settings.textHintDismissed = true;
       void this.saveSettings();
     });
+  }
+
+  /**
+   * The first time a pen stroke snaps to a shape, once per vault: where to
+   * change when that happens (Pen gestures › Make shapes), in the Text
+   * tool's hint pill.
+   */
+  offerShapeHint(surface: InkSurface): void {
+    if (this.settings.shapeHintShown) return;
+    this.settings.shapeHintShown = true;
+    void this.saveSettings();
+    surface.showTextHint(SHAPE_HINT, () => undefined);
   }
 
   /**
