@@ -4321,8 +4321,8 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   gap: 8px;
 }
 
-/* "Joined pages" and "New board": a symbol and its name in a pill as tall
-   as the ✕, lit with the accent while on. */
+/* "New board": a symbol and its name in a pill as tall as the ✕, lit with
+   the accent while on. */
 .goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon {
   display: inline-flex;
   align-items: center;
@@ -4350,11 +4350,6 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   width: 36px;
   padding: 0;
   justify-content: center;
-}
-
-/* Its own display outranks the shared .is-hidden (ledger): hidden for a board. */
-.goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-hidden {
-  display: none;
 }
 
 .goodobsidian-newnb-header button.goodobsidian-newnb-choice.clickable-icon.is-active {
