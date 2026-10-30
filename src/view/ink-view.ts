@@ -3513,7 +3513,12 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = this.previewSources();
+    const preview = this.previewSources();
+    // Plain paper or with the template, as the dialog's switch was last left.
+    const exported = (): PdfExportSources => ({
+      ...preview,
+      plainPaper: this.settings.exportPlainPaper === true,
+    });
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
@@ -3523,15 +3528,22 @@ export class InkView extends TextFileView {
       chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
-        if (page)
-          await paintPagePreview(canvas, page, sources, cssWidth, window.devicePixelRatio || 1);
+        if (page) {
+          const dpr = window.devicePixelRatio || 1;
+          await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
+        }
+      },
+      plainPaper: this.settings.exportPlainPaper === true,
+      setPlainPaper: (plain) => {
+        this.settings.exportPlainPaper = plain;
+        void this.plugin.saveSettings();
       },
       fileNameFor: (pages) =>
         uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
       export: async (pages, onProgress, cancelled) => {
         const bytes = await exportPagesToPdf(
           pages.map((i) => doc.pages[i]),
-          sources,
+          exported(),
           { title: stripInkSuffix(note.basename), onProgress, cancelled },
         );
         // Named at save time, not when the dialog opened: another export may

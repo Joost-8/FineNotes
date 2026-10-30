@@ -8,6 +8,27 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Desk colour**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Settings ›
+  Pages and notebooks › More › Desk: the background around the pages is
+  with the pages (as before), light, dark, or a colour of your own.
+- **Export on plain paper**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The grid
+  button in Export as PDF leaves out the paper's lines, grid, dots and
+  texture: ink, text, pictures and PDF pages stay, on the paper's colour.
+  The choice is kept for the next export.
+
+### Fixed
+
+- **PDFs stay as they are when you pick another page appearance**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
+  appearance and the PDF choice were one list, so picking Match Obsidian
+  after "Dark, PDFs as they are" turned PDFs dark again. They are two
+  settings now, Page appearance and Dark PDF pages, and neither changes
+  the other.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

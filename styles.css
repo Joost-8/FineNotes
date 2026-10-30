@@ -9267,6 +9267,21 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
   display: none;
 }
 
+/* The template switch, at the start of the actions: lit while pages export
+   with their lines, grid or dots; plain paper when not. */
+.goodobsidian-ask-actions button.goodobsidian-export-template {
+  width: var(--gob-touch);
+  margin-right: auto;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+}
+
+.goodobsidian-ask-actions button.goodobsidian-export-template.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+}
+
 .goodobsidian-export-choose button {
   min-height: var(--gob-touch-compact);
   padding: 0 12px;
