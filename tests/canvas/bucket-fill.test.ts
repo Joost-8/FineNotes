@@ -90,6 +90,18 @@ describe("bucketFill", () => {
     expect(bucketFill({ ...PAGE, ink: wide, x: 150, y: 150, gap: 10 }).ok).toBe(false);
   });
 
+  it("fills a closed outline into its sharp corners, whatever the gap choice", () => {
+    // A thin wedge: a corner of 11°, narrower than the gap for 50 px.
+    const ink = [line([100, 150, 360, 125, 360, 175, 100, 150])];
+    const result = bucketFill({ ...PAGE, ink, x: 340, y: 150, gap: 16 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const tip = Math.min(...result.outline.filter((_, i) => i % 2 === 0));
+      // Where the two lines of ink meet, not where the gap tolerance would stop (x ≈ 200).
+      expect(tip).toBeLessThan(125);
+    }
+  });
+
   it("refuses a tap on the ink", () => {
     const result = bucketFill({
       ...PAGE,

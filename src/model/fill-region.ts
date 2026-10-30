@@ -28,7 +28,7 @@ export const DEFAULT_FILL_GAP: FillGap = "small";
 
 /** Gaps up to this wide close, page px. */
 export function fillGapPx(gap: FillGap): number {
-  return gap === "exact" ? 0 : gap === "small" ? 6 : 16;
+  return gap === "exact" ? 0 : gap === "small" ? 8 : 20;
 }
 
 /** A stored gap choice; anything else is the default. */

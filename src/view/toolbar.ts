@@ -343,11 +343,11 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   fill: "paint-bucket",
 };
 
-/** The Fill tool's gap choices: a whole ring, a dashed one, a dotted one. */
+/** The Fill tool's gap choices: a whole ring, a dashed one, an open one. */
 const FILL_GAP_ICONS: Record<FillGap, string> = {
   exact: "circle",
   small: "circle-dashed",
-  large: "circle-dotted",
+  large: "loader-circle",
 };
 
 const FILL_GAP_LABELS: Record<FillGap, string> = {
@@ -2591,7 +2591,7 @@ export class Toolbar {
    * The Fill tool: the pen's colours (a fill takes the pen's colour, and
    * picking one here picks the pen's), then how far a fill reaches past
    * gaps in a hand-drawn outline, as a ring with no gap, a dashed one and a
-   * dotted one.
+   * ring open wide.
    */
   private buildFillOptions(): void {
     const colors = this.quickColors();

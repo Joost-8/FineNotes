@@ -421,18 +421,24 @@ export function bucketFill(req: FillRequest): FillResult {
   const limit = Math.round(reach * 3);
   const free = (k: number): boolean => dist[k] > limit;
   if (mask[tj * w + ti]) return { ok: false, reason: "ink" };
-  // A tap just inside the widened ink starts from the nearest free cell beside it.
-  const start = nearestFree(grid, free, ti, tj, Math.ceil(reach) + 1);
-  if (start < 0) return { ok: false, reason: "ink" };
-  const filled = flood(grid, free, start);
-  if (filled.open) return { ok: false, reason: "open" };
-  const region = filled.region;
-  // Back out over the paper the widening took, then one cell under the ink.
-  grow(grid, region, Math.ceil(reach), (k) => mask[k] === 0);
-  grow(grid, region, 2, () => true);
+  // An outline that closes on its own is filled exactly, into its sharpest
+  // corners; only one with a gap needs the widened ink, which keeps a fill
+  // out of corners narrower than the gap.
+  let region = flood(grid, (k) => mask[k] === 0, tj * w + ti);
+  if (region.open && limit > 0) {
+    // A tap just inside the widened ink starts from the nearest free cell beside it.
+    const start = nearestFree(grid, free, ti, tj, Math.ceil(reach) + 1);
+    if (start < 0) return { ok: false, reason: "ink" };
+    region = flood(grid, free, start);
+    // Back out over the paper the widening took.
+    if (!region.open) grow(grid, region.region, Math.ceil(reach), (k) => mask[k] === 0);
+  }
+  if (region.open) return { ok: false, reason: "open" };
+  // Then a cell under the ink, so no paper shows between the two.
+  grow(grid, region.region, 2, () => true);
   let cells = 0;
-  for (let k = 0; k < region.length; k++) cells += region[k];
-  const corners = traceOutline(grid, region);
+  for (let k = 0; k < region.region.length; k++) cells += region.region[k];
+  const corners = traceOutline(grid, region.region);
   const maxPoints = req.maxPoints ?? FILL_MAX_POINTS;
   let tolerance = 0.75;
   let simple = simplifyClosed(corners, tolerance);
