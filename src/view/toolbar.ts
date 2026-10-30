@@ -700,6 +700,8 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
+  /** The laser pointer's colour, read live so the pen menu's icon follows Settings. */
+  laserColor?: () => string;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -2535,12 +2537,21 @@ export class Toolbar {
     return swatch;
   }
 
-  /** A tool pill with nothing to set: an icon and one line; the laser's mark is red. */
+  /** A tool pill with nothing to set: an icon and one line. */
   private toolNote(icon: string, text: string, laser = false): void {
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
     mark.toggleClass("is-laser", laser);
     iconOrText(mark, icon, "");
+    if (laser) {
+      const color = this.options.laserColor?.() ?? "#ff3b30";
+      const svg = mark.querySelector("svg");
+      if (svg) {
+        svg.setAttribute("stroke", color);
+        svg.setAttribute("fill", "none");
+      }
+      mark.setCssStyles({ color });
+    }
     note.createSpan({ text });
   }
 
@@ -4125,7 +4136,15 @@ export class Toolbar {
     const laser = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
     });
-    iconOrText(laser.createSpan({ cls: "goodobsidian-laser-row-icon" }), "pointer", "");
+    const laserIcon = laser.createSpan({ cls: "goodobsidian-laser-row-icon" });
+    iconOrText(laserIcon, "pointer", "");
+    const laserSvg = laserIcon.querySelector("svg");
+    if (laserSvg) {
+      const color = this.options.laserColor?.() ?? "#ff3b30";
+      laserSvg.setAttribute("stroke", color);
+      laserSvg.setAttribute("fill", "none");
+      laserIcon.setCssStyles({ color });
+    }
     laser.createSpan({ text: "Laser pointer" });
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
