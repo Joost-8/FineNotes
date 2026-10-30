@@ -7,6 +7,17 @@ const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer
 const { InkSurface } = await import("../../src/view/ink-surface");
 const geometry = { width: 1200, height: 1600 };
 const backdrop = { kind: "pdf" as const, path: "Lecture.pdf", page: 2 };
+/** The cache's budget, which caps the near pages asked for ahead. */
+const memoryBudget = { soft: 48 * 1024 * 1024 };
+/** What `prepare` asks for a page's image at `level`: the key `paint` peeks. */
+function pageImage(level: number, page = backdrop, g = geometry) {
+  return {
+    path: page.path,
+    page: page.page,
+    dprScale: Math.min(level, wholePageScale(g)),
+    area: { geometry: g },
+  };
+}
 function context() {
   return {
     fillRect: vi.fn(),
@@ -22,6 +33,7 @@ describe("PDF backdrop display", () => {
     const patch = { ok: true, canvas, box: { x: 112, y: 240, w: 96, h: 96 } };
     const cache = {
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => false),
       detailPatches: vi.fn(() => [patch]),
       peek: vi.fn(() => ({ ok: true, canvas: base })),
@@ -36,6 +48,8 @@ describe("PDF backdrop display", () => {
     const margin = { minX: 112, minY: 240, maxX: 208, maxY: 336 };
     expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
       [
+        // The page image first, then the detail over it.
+        pageImage(8),
         {
           path: backdrop.path,
           page: backdrop.page,
@@ -52,6 +66,7 @@ describe("PDF backdrop display", () => {
   it("asks for nothing new when a cached patch already covers the view", () => {
     const cache = {
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => true),
       detailPatches: vi.fn(() => []),
       peek: vi.fn(() => null),
@@ -67,7 +82,7 @@ describe("PDF backdrop display", () => {
       region,
     );
     expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
-      [],
+      [pageImage(8)],
       [{ path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region }],
     );
   });
@@ -80,6 +95,7 @@ describe("PDF backdrop display", () => {
     };
     const cache = {
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => true),
       detailPatches: vi.fn(() => [near, far]),
       peek: vi.fn(() => ({ ok: true, canvas: { width: 600, height: 800 } })),
@@ -119,6 +135,7 @@ describe("PDF backdrop display", () => {
       peekNearest: vi.fn(() => null),
       request: vi.fn(),
       setVisibleRegions: vi.fn(),
+      memoryBudget,
     };
     const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
     const region = { minX: 0, minY: 0, maxX: 64, maxY: 64 };
@@ -129,7 +146,7 @@ describe("PDF backdrop display", () => {
         deviceScale: 1.3712,
         region: { ...region, minX: i },
       });
-    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([], []);
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.3712)], []);
     expect(cache.request).toHaveBeenCalledWith(backdrop.path, backdrop.page, 1.3712, { geometry });
     expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
   });
@@ -139,6 +156,7 @@ describe("PDF backdrop display", () => {
       peekNearest: vi.fn(() => null),
       request: vi.fn(),
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => false),
       detailPatches: vi.fn(() => []),
     };
@@ -149,7 +167,8 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop, geometry, region }], level, true);
       painter.paint(context(), backdrop, geometry, 1, { deviceScale: level, region });
     }
-    expect(cache.setVisibleRegions.mock.calls.every(([areas]) => areas.length === 0)).toBe(true);
+    // The page image asked for once settled; no detail at all.
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1)], []);
     expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
     // Settled past what a whole page can be, the page image is the sharpest one.
     painter.prepare([{ backdrop, geometry, region }], 8, false);
@@ -186,6 +205,7 @@ describe("PDF backdrop display", () => {
     const workerCache = () => ({
       usesWorker: true,
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => false),
       detailPatches: vi.fn(() => []),
       peek: vi.fn(() => null),
@@ -203,7 +223,10 @@ describe("PDF backdrop display", () => {
       expect(cache.request).toHaveBeenCalledExactlyOnceWith(sheet.path, sheet.page, 1.36, {
         geometry: a4,
       });
-      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([], []);
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
+        [pageImage(1.36, sheet, a4)],
+        [],
+      );
       expect(cache.detailPatches).not.toHaveBeenCalled();
     });
 
@@ -215,8 +238,10 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop: sheet, geometry: a4, region }], 3.98, false);
       const [requests, shown] = cache.setVisibleRegions.mock.calls[0];
       expect(shown).toHaveLength(1);
-      expect(requests.length).toBeGreaterThan(0);
-      expect(requests.every((r: { dprScale: number }) => r.dprScale === 3.98)).toBe(true);
+      // The page image, at the sharpest a whole page can be, then tiles at 3.98.
+      expect(requests[0]).toEqual(pageImage(3.98, sheet, a4));
+      expect(requests.length).toBeGreaterThan(1);
+      expect(requests.slice(1).every((r: { dprScale: number }) => r.dprScale === 3.98)).toBe(true);
       painter.paint(context(), sheet, a4, 1, { deviceScale: 3.98, region });
       expect(cache.detailPatches).toHaveBeenCalledWith(sheet.path, sheet.page, 3.98, a4);
       // Under the tiles, the sharpest page image that fits, not one at 3.98.
@@ -240,9 +265,89 @@ describe("PDF backdrop display", () => {
       );
       const [requests, shown] = cache.setVisibleRegions.mock.calls[0];
       expect(shown.map((v: { path: string }) => v.path)).toEqual([sheet.path]);
-      expect(requests.every((r: { path: string }) => r.path === sheet.path)).toBe(true);
+      // Both page images, then tiles for the A4 page alone.
+      expect(requests.slice(0, 2)).toEqual([
+        pageImage(3.2, sheet, a4),
+        pageImage(3.2, deck, slide),
+      ]);
+      expect(requests.slice(2).every((r: { path: string }) => r.path === sheet.path)).toBe(true);
       painter.paint(context(), deck, slide, 1, { deviceScale: 3.2 });
       expect(cache.request).toHaveBeenCalledWith(deck.path, deck.page, 3.2, { geometry: slide });
+    });
+  });
+
+  describe("the pages a scroll shows next (FineNotes#80)", () => {
+    const deck = (page: number) => ({ kind: "pdf" as const, path: "Lecture.pdf", page });
+    const near = Array.from({ length: 10 }, (_, i) => ({ backdrop: deck(10 + i), geometry }));
+
+    it("asks for their images ahead, in order, within its share of the cache", () => {
+      const cache = { usesWorker: true, setVisibleRegions: vi.fn(), memoryBudget };
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      const region = { minX: 0, minY: 0, maxX: 1200, maxY: 900 };
+      // 1.2 device px per page px: 1440 x 1920 px, 11 MB a page; 60% of 48 MB holds two.
+      painter.prepare([{ backdrop, geometry, region }], 1.2, false, true, near);
+      const [requests] = cache.setVisibleRegions.mock.calls[0];
+      expect(requests).toEqual([
+        pageImage(1.2),
+        pageImage(1.2, deck(10)),
+        pageImage(1.2, deck(11)),
+      ]);
+    });
+
+    it("always asks for the next one, however large", () => {
+      const cache = { usesWorker: true, setVisibleRegions: vi.fn(), memoryBudget: { soft: 1 } };
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      painter.prepare([], 1.2, false, true, near);
+      expect(cache.setVisibleRegions.mock.calls[0][0]).toEqual([pageImage(1.2, deck(10))]);
+    });
+
+    it("puts the pages on screen and the next one before any detail, the rest after it", () => {
+      const cache = {
+        usesWorker: true,
+        setVisibleRegions: vi.fn(),
+        memoryBudget,
+        detailCovers: vi.fn(() => false),
+      };
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      const view = { minX: 140, minY: 270, maxX: 250, maxY: 380 };
+      painter.prepare([{ backdrop, geometry, region: view }], 16, false, true, near);
+      const [requests] = cache.setVisibleRegions.mock.calls[0];
+      const kinds = requests.map((r: { page: number; area: { region?: unknown } }) =>
+        r.area.region ? "tile" : r.page === backdrop.page ? "page" : "near",
+      );
+      // 16 MB a page at its sharpest: of the near pages only the next one fits.
+      expect(kinds).toEqual(["page", "near", "tile", "tile", "tile", "tile"]);
+      // Zoomed out, the others follow the tiles.
+      const small = { minX: 0, minY: 0, maxX: 600, maxY: 600 };
+      painter.prepare(
+        [{ backdrop, geometry: { width: 600, height: 600 }, region: small }],
+        4,
+        false,
+        true,
+        // Small pages: 5.8 MB each at 4 device px per page px.
+        near.slice(0, 3).map((n) => ({ ...n, geometry: { width: 300, height: 300 } })),
+      );
+      const [mixed] = cache.setVisibleRegions.mock.calls[1];
+      const order = mixed.map((r: { page: number; area: { region?: unknown } }) =>
+        r.area.region ? "tile" : r.page === backdrop.page ? "page" : "near",
+      );
+      // Tiles on screen between the next page and the rest; tiles off it last.
+      expect(order.join(" ")).toMatch(/^page near (tile )+near near( tile)*$/);
+    });
+
+    it("without the worker, asks for them while the view moves too", () => {
+      const cache = {
+        usesWorker: false,
+        setVisibleRegions: vi.fn(),
+        memoryBudget,
+        detailCovers: vi.fn(() => false),
+      };
+      const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
+      const region = { minX: 0, minY: 0, maxX: 1200, maxY: 900 };
+      // A page coming on screen is drawn on this thread then anyway: sooner
+      // is not more work.
+      painter.prepare([{ backdrop, geometry, region }], 1.2, false, true, near);
+      expect(cache.setVisibleRegions.mock.calls[0][0]).toHaveLength(3);
     });
   });
 
@@ -250,6 +355,7 @@ describe("PDF backdrop display", () => {
     const tileCache = () => ({
       usesWorker: true,
       setVisibleRegions: vi.fn(),
+      memoryBudget,
       detailCovers: vi.fn(() => false),
       detailPatches: vi.fn(() => []),
       peek: vi.fn(() => null),
@@ -265,11 +371,12 @@ describe("PDF backdrop display", () => {
       expect(shown).toEqual([
         { path: backdrop.path, page: backdrop.page, dprScale: 16, geometry, region: view },
       ]);
-      const regions = requests.map((r: { area: { region: unknown } }) => r.area.region);
+      expect(requests[0]).toEqual(pageImage(16));
+      const regions = requests.slice(1).map((r: { area: { region: unknown } }) => r.area.region);
       expect(regions).toHaveLength(4);
       // The middle of the view is x 195, y 325: tile 3,5 (192-256, 320-384) is nearest.
       expect(regions[0]).toEqual({ minX: 192, minY: 320, maxX: 256, maxY: 384 });
-      expect(requests.every((r: { dprScale: number }) => r.dprScale === 16)).toBe(true);
+      expect(requests.slice(1).every((r: { dprScale: number }) => r.dprScale === 16)).toBe(true);
       expect(cache.detailCovers).not.toHaveBeenCalled();
     });
 
@@ -281,7 +388,7 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop, geometry, region: right }], 16, false, true);
       const requests = cache.setVisibleRegions.mock.calls[1][0];
       expect(
-        requests.some((r: { area: { region: { minX: number } } }) => r.area.region.minX === 256),
+        requests.some((r: { area: { region?: { minX: number } } }) => r.area.region?.minX === 256),
       ).toBe(true);
     });
 
@@ -291,17 +398,20 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop, geometry, region: view }], 16, true, true);
       expect(cache.setVisibleRegions).not.toHaveBeenCalled();
       painter.prepare([{ backdrop, geometry, region: view }], 1.4, false, false);
-      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([], []);
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.4)], []);
     });
 
-    it("without the worker, still waits until the view rests", () => {
+    it("without the worker, asks for detail only once the view rests", () => {
       const cache = { ...tileCache(), usesWorker: false };
       const painter = new VaultBackdropRenderer(cache as unknown as PdfBackdropCache);
       painter.prepare([{ backdrop, geometry, region: view }], 8, false, true);
-      expect(cache.setVisibleRegions).not.toHaveBeenCalled();
+      // The page image only, and no detail wanted: a patch still drawing on
+      // this thread is let go of, for the frames of the scroll.
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(8)], []);
+      expect(cache.detailCovers).not.toHaveBeenCalled();
       painter.prepare([{ backdrop, geometry, region: view }], 8, false, false);
-      expect(cache.setVisibleRegions).toHaveBeenCalledOnce();
       expect(cache.detailCovers).toHaveBeenCalledOnce();
+      expect(cache.setVisibleRegions.mock.calls[1][0]).toHaveLength(2);
     });
   });
 });

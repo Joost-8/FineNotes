@@ -128,6 +128,15 @@ extracted from the matching section of this file by `release.yml`.
   screen is drawn sharp on top of it, from whatever zoom that happens at
   rather than from 2.5×. Those sharp parts come in larger pieces, so a
   screenful takes about a third of the time it did.
+- **No blank pages on a fast scroll through a PDF**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Pages came on
+  screen as plain paper, with only the ink on them, until the PDF was drawn
+  half a second or more later. The pages a scroll shows next are now drawn
+  before they arrive, in the order they come, and the pages on screen are
+  drawn before any sharper detail.
+- The debug overlay says what the highlighter did where it came down on a
+  PDF page: which text it snapped to, or why it drew freehand (the page's
+  text not read yet, no text on the page, or the pen beside the text).
 - On an iPad short of memory, a PDF page no longer shows as a missing
   source when the iPad runs out of room for it: FineNotes frees what is
   not on screen, keeps fewer pages around from then on, and draws the page

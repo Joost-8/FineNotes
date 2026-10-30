@@ -80,6 +80,7 @@ import { paintGraph } from "./graph-paint";
 import { type RoutedConnector, paintConnector, paintConnectors } from "./connector-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
+import { pagesAhead } from "./look-ahead";
 import { joinLines, joinedSides } from "./page-join";
 import { relativeLuminance } from "../model/cover";
 import {
@@ -240,6 +241,11 @@ export interface BackdropPainter {
     transient: boolean,
     /** The view is moving (or rested less than `REST_MS` ago). */
     moving?: boolean,
+    /**
+     * Pages near the view but not on it, those a scroll shows next first
+     * (`pagesAhead`), for the painter to have ready before they arrive.
+     */
+    near?: Array<{ backdrop: Backdrop; geometry: PageGeometry }>,
   ) => void;
   /**
    * `weight` thickens synthetic rules for a small thumbnail (default 1).
@@ -526,6 +532,8 @@ export class Renderer {
   private view: ViewportState = { scrollY: 0, scale: 1, width: 0 };
   /** How far right of the canvases' left edge the layout's origin sits, in CSS px. */
   private originX = 0;
+  /** The view's top-left at the last screen paint, layout px: which way it moves. */
+  private lastLook: { x: number; y: number } | null = null;
   private layout: DocumentLayout = EMPTY_LAYOUT;
   /** The document last painted: the wet layer reads its pages' look from it. */
   private doc: InkDocument | null = null;
@@ -832,6 +840,22 @@ export class Renderer {
     return out;
   }
 
+  /** The pages a scroll shows next, for the painter (`pagesAhead`). */
+  private nearPages(doc: InkDocument): Array<{ backdrop: Backdrop; geometry: PageGeometry }> {
+    const { top, bottom } = this.visibleBand();
+    const scale = this.safeScale;
+    const left = -this.originX / scale;
+    const view = { minX: left, minY: top, maxX: left + this.screen.width / scale, maxY: bottom };
+    const last = this.lastLook;
+    this.lastLook = { x: view.minX, y: view.minY };
+    const motion = last ? { x: view.minX - last.x, y: view.minY - last.y } : { x: 0, y: 0 };
+    const boxes = this.layout.boxes.filter((box) => box.index < doc.pages.length);
+    return pagesAhead(boxes, view, motion).map((box) => {
+      const page = doc.pages[box.index];
+      return { backdrop: page.backdrop, geometry: page.geometry };
+    });
+  }
+
   private boxesOnScreen(pageCount: number): PageBox[] {
     const { top, bottom } = this.visibleBand();
     return this.boxesInBand(pageCount, top, bottom);
@@ -1089,6 +1113,7 @@ export class Renderer {
       level,
       transient,
       detailTransient,
+      this.nearPages(doc),
     );
     for (const box of visibleBoxes) {
       const page = doc.pages[box.index];

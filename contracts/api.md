@@ -661,8 +661,14 @@ One class may implement both, and `VaultBackdropRenderer` does.
   about 4 MP: 2.82 device px per point for A4), the page image is drawn at
   the bounds and detail is drawn over it at the level: 1024 px tiles from
   the PDF worker, or without it one clipped patch of the view, on whole
-  device pixels, shared across tiles. Source PDF points are contained in the notebook page geometry;
-  PDF.js handles source rotation and cropping. Region keys include source
+  device pixels, shared across tiles. Each screen paint asks for, in
+  order: the page images of the pages on screen, the next page a scroll
+  shows, detail on screen, the other pages within 1.5 screens (up to 60%
+  of the soft budget), then detail just off screen. Without the worker,
+  detail waits for the view to rest and a patch still drawing is let go of
+  when it moves; page images are asked for either way. Source PDF points
+  are contained in the notebook page geometry; PDF.js handles source
+  rotation and cropping. Region keys include source
   path/page, page geometry, visible region and settled scale (stable to
   1e-4). Pinch frames retain their full-page scale and request no new
   detail. The cache keeps a 48 MB soft / 96 MB hard budget and recent-use

@@ -294,7 +294,13 @@ import {
   strokeCount,
   type PageComment,
 } from "../model/document";
-import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
+import {
+  type TextLayout,
+  type TextSelection,
+  selectText,
+  textMarkNote,
+  textUnder,
+} from "../canvas/pdf-text";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
@@ -2005,6 +2011,8 @@ export class InkSurface {
   private hudLastVerdict = "-";
   /** Why the last text box stopped being edited (`text-end-hud.ts`). */
   private hudTextEnd = "";
+  /** What the highlighter last did on a PDF page (`textMarkNote`). */
+  private hudTextMark = "";
   /** The surface's path blurring a text box right now; "" while the browser does it. */
   private textBlurBy = "";
   private hudLayouts = 0;
@@ -6931,6 +6939,7 @@ export class InkSurface {
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
         `${this.hud.tilt()}\n` +
         (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
+        (this.hudTextMark ? `highlighter ${this.hudTextMark}\n` : "") +
         this.hudGeometry(),
     );
   }
@@ -7763,14 +7772,31 @@ export class InkSurface {
   private startTextMark(box: PageBox, at: Pt): boolean {
     if (this.toolState.tool !== "highlighter" || this.practice) return false;
     const layout = this.pageText(box.index);
-    if (!layout) return false;
-    const selection = selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX));
-    if (!selection) return false;
+    const selection = layout ? selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
+    this.noteTextMark(box.index, layout, selection);
+    if (!layout || !selection) return false;
     // Not the carry-on of a stroke just lifted: this is no handwriting.
     this.lastLift = null;
     this.textMark = { layout, from: at, selection };
     this.showTextMark(box);
     return true;
+  }
+
+  /** Say on the debug overlay what the highlighter did where it came down. */
+  private noteTextMark(
+    index: number,
+    layout: TextLayout | null,
+    selection: TextSelection | null,
+  ): void {
+    if (!this.debug) return;
+    const page = this.pageAt(index);
+    this.hudTextMark =
+      page?.backdrop.kind !== "pdf"
+        ? "not a PDF page"
+        : !this.textSource
+          ? "no text source"
+          : textMarkNote(layout, selection);
+    this.scheduleHud();
   }
 
   private dragTextMark(box: PageBox, to: Pt): void {
