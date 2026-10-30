@@ -580,6 +580,8 @@ describe("the rows", () => {
     ]);
     const slider = named(all, "Highlighter opacity").control;
     expect([slider?.min, slider?.max, slider?.step]).toEqual([10, 100, 5]);
+    const laser = named(all, "Laser pointer dot frequency").control;
+    expect([laser?.min, laser?.max, laser?.step]).toEqual([0, 10, 1]);
   });
 
   it("names the vendor's default model where a model can be typed", () => {
