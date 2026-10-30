@@ -8,6 +8,18 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
+  tools (or put it on the bar) and drag across what to hide: an opaque strip
+  of tape, in one of six colours and three heights, lies over it. Tap a tape
+  with a finger, or with the Pencil or mouse, to see what is under it; tap
+  again to cover it. The eye in the tape's pill shows or covers every tape
+  on the page. Shown tapes are this view's only: a notebook always opens,
+  syncs, exports and goes to AI with its tapes on. The lasso moves, turns,
+  resizes, recolours and copies a tape like ink, and the eraser takes it off
+  whole. A notebook with a tape opens read-only in FineNotes 2.6 and earlier.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

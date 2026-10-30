@@ -186,6 +186,10 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Cover tape's colour, `#rrggbb` (`model/cover-tape`). Absent: masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. Absent: the medium height. */
+  tapeHeight?: number;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**

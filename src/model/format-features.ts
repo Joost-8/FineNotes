@@ -27,8 +27,10 @@ import { SCHEMA_VERSION } from "../constants";
  *   (`model/connectors`); an older reader would drop them on its next save.
  * - `tilt`: brush strokes that keep the Pencil's tilt (`Stroke.tilt`); an
  *   older build would save them back at the nib's width.
+ * - `tape`: cover tapes (`model/cover-tape`), strokes an older build would
+ *   read as pen ink and save back as a plain thick line.
  */
-export const FORMAT_FEATURES = ["sticky", "connectors", "tilt"] as const;
+export const FORMAT_FEATURES = ["sticky", "connectors", "tilt", "tape"] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 

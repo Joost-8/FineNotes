@@ -22,6 +22,7 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
+import { tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -390,6 +391,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
+    tapeColor: tapeColorOf(s.tapeColor),
+    tapeHeight: tapeHeightOf(s.tapeHeight),
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
@@ -2606,6 +2609,9 @@ export class InkView extends TextFileView {
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        onTapeChange: (color, height) => this.plugin.saveTape(color, height),
+        tapesShown: () => this.surface?.tapesShown() ?? null,
+        onShowTapes: (shown) => this.surface?.showTapes(shown),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
@@ -2834,7 +2840,9 @@ export class InkView extends TextFileView {
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
         onSizeScale: () => this.toolbar?.refreshSizeMarks(),
+        onTapesToggled: () => this.toolbar?.refreshTape(),
         onPageChange: (index) => {
+          this.toolbar?.refreshTape();
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
           this.scheduleWordCheck();

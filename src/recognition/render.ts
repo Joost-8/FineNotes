@@ -9,6 +9,8 @@
 
 import { inkRuns, penOptions } from "../ink/freehand";
 import { paintInk } from "../canvas/renderer";
+import { paintTape } from "../canvas/tape-paint";
+import { isTape, tapesLast } from "../model/cover-tape";
 import { type Bounds, type Stroke, strokeBounds } from "../model/document";
 
 export interface RenderOptions {
@@ -32,6 +34,8 @@ const MAX_ENLARGEMENT = 3;
 /** Pens in near-black; highlighters in a faint grey that leaves the pen under them readable. */
 const PEN_INK = { color: "#111111", alpha: 1 };
 const HIGHLIGHTER_INK = { color: "#888888", alpha: 0.25 };
+/** Cover tapes, drawn last and opaque. */
+const TAPE_GREY = "#d0d0d0";
 
 /** The part of the page the picture shows, and how it is scaled into it. */
 interface Frame {
@@ -62,6 +66,12 @@ function frameAround(strokes: readonly Stroke[], maxEdge: number, pad: number): 
 }
 
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
+  // A cover tape hides what is under it from the model too: an opaque grey strip.
+  if (isTape(stroke)) {
+    ctx.globalAlpha = 1;
+    paintTape(ctx, stroke.pts, stroke.size, TAPE_GREY);
+    return;
+  }
   const runs = inkRuns(stroke.pts, penOptions(stroke.size, true), stroke.shape !== undefined);
   if (runs.length === 0) return;
   const style = stroke.tool === "highlighter" ? HIGHLIGHTER_INK : PEN_INK;
@@ -94,7 +104,7 @@ export function renderStrokesForRecognition(
   ctx.fillRect(0, 0, frame.width, frame.height);
   const { scale } = frame;
   ctx.setTransform(scale, 0, 0, scale, -frame.left * scale, -frame.top * scale);
-  for (const stroke of strokes) drawStroke(ctx, stroke);
+  for (const stroke of tapesLast(strokes)) drawStroke(ctx, stroke);
 
   const png = canvas.toDataURL("image/png");
   return { base64: png.slice(png.indexOf(",") + 1), width: frame.width, height: frame.height };
