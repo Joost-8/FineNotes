@@ -97,6 +97,20 @@ describe("page image or detail (FineNotes#80)", () => {
     expect(needsDetail(a4, 2.8)).toBe(false);
   });
 
+  it("draws the issue's own PDF at max zoom out from a page image at exactly the screen's level", () => {
+    // 612 x 576.4 pt pages, imported short side 1024 (pdfPageGeometry): 1087 x 1024.
+    const pcos = { width: 1087, height: 1024 };
+    expect(wholePageScale(pcos)).toBeCloseTo(1.896, 3);
+    // The zoom floor on the reporter's landscape iPad (Capture A) and in portrait.
+    for (const level of [1.3601, 1.2786]) {
+      expect(pageRasterScale(pcos, level)).toBe(level);
+      expect(needsDetail(pcos, level)).toBe(false);
+      const plan = planPdfRaster({ width: 612, height: 576.4 }, level, { geometry: pcos });
+      // Drawn back at `level`, one raster pixel per device pixel.
+      expect((plan.box.w * level) / plan.width).toBeCloseTo(1, 9);
+    }
+  });
+
   it("draws detail over the page from where the page image falls short, not from 2.5x zoom", () => {
     // Captures B-D, zoom 1.99 to 2.32 (level 3.98 to 4.64): soft, with no detail.
     for (const level of [2.9, 3.98, 4.33, 4.64, 5.84]) {

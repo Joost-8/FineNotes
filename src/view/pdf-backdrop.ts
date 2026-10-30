@@ -74,6 +74,8 @@ export const PDF_BUDGET: PdfMemoryBudget = { soft: 48 * MB, hard: 96 * MB, keepD
  */
 export const PDF_BUDGET_LOW: PdfMemoryBudget = { soft: 24 * MB, hard: 64 * MB, keepDetail: 8 * MB };
 const RECENT_USE_MS = 1500;
+/** After a canvas is refused twice in a row, the waits before trying again. */
+const REFUSED_RETRY_MS = [500, 1500, 4000];
 
 /**
  * Whether this device is short of memory by what it says of itself:
@@ -268,8 +270,10 @@ export class PdfBackdropCache {
 
   private budget: PdfMemoryBudget;
   private readonly entries: ByteLru<Cached>;
-  /** Keys refused a canvas once, each tried again at once after {@link lowMemory}. */
-  private readonly refused = new Set<string>();
+  /** How many times in a row each key was refused a canvas ({@link refusedCanvas}). */
+  private readonly refused = new Map<string, number>();
+  /** Retries waiting out {@link REFUSED_RETRY_MS}, by key. */
+  private readonly retries = new Map<string, number>();
   private readonly inflight = new Map<string, Promise<PdfEntry>>();
   private readonly queue: RasterWork[] = [];
   private readonly running = new Set<RasterWork>();
@@ -609,15 +613,30 @@ export class PdfBackdropCache {
   }
 
   /**
-   * Out of canvas memory for `job`: free memory, then try it once more at
-   * once (what was freed is likely enough). Refused again, it is left for
-   * the next paint that asks for it.
+   * Out of canvas memory for `job`: free memory, then try it again at once
+   * (what was freed is likely enough), and refused still, after each of
+   * {@link REFUSED_RETRY_MS}: iOS may give freed canvas memory back only a
+   * moment later. Waiting for the next paint to ask instead left a page at
+   * rest drawn from a stretched stand-in until the view next moved.
    */
   private refusedCanvas(job: RasterWork): void {
     this.lowMemory();
-    if (this.refused.has(job.key)) return;
-    this.refused.add(job.key);
-    this.request(job.path, job.page, job.dprScale, job.area);
+    const count = (this.refused.get(job.key) ?? 0) + 1;
+    this.refused.set(job.key, count);
+    const again = () => this.request(job.path, job.page, job.dprScale, job.area);
+    if (count === 1) {
+      again();
+      return;
+    }
+    const wait = REFUSED_RETRY_MS[count - 2];
+    if (wait === undefined || this.retries.has(job.key)) return;
+    this.retries.set(
+      job.key,
+      window.setTimeout(() => {
+        this.retries.delete(job.key);
+        if (!this.destroyed) again();
+      }, wait),
+    );
   }
 
   /** Drop every cached bitmap and close every open document. */
@@ -629,6 +648,8 @@ export class PdfBackdropCache {
     this.entries.clear();
     this.deferred.clear();
     this.refused.clear();
+    for (const timer of this.retries.values()) window.clearTimeout(timer);
+    this.retries.clear();
     this.closeWorkerDocs();
     for (const promise of this.documents.values()) {
       void promise.then((doc) => doc?.destroy()).catch(() => undefined);

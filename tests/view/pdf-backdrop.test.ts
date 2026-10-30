@@ -89,7 +89,11 @@ beforeEach(() => {
   clock = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
   globals.createEl = (): FakeCanvas => ({ width: 0, height: 0, getContext: () => ({}) });
-  vi.stubGlobal("window", { location: { origin: "app://obsidian.md" } });
+  vi.stubGlobal("window", {
+    location: { origin: "app://obsidian.md" },
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (id: number) => clearTimeout(id),
+  });
 });
 
 afterEach(() => {
@@ -807,20 +811,43 @@ describe("memory on devices short of it", () => {
     c.destroy();
   });
 
-  it("refused twice, leaves it for the next paint that asks", async () => {
-    const c = cache();
-    const landed = vi.fn();
-    c.onReady = landed;
-    refuse(2);
-    c.request("a.pdf", 0, 1);
-    await settle();
-    expect(c.peek("a.pdf", 0, 1)).toBeNull();
-    expect(landed).not.toHaveBeenCalled();
-    // Nothing is cached as a miss, so it is asked for again.
-    c.request("a.pdf", 0, 1);
-    await settle();
-    expect(c.peek("a.pdf", 0, 1)).toMatchObject({ ok: true });
-    c.destroy();
+  it("refused again, tries on its own after a wait: a page at rest asks for nothing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.stubGlobal("window", {
+      location: { origin: "app://obsidian.md" },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const flush = async () => {
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+    };
+    try {
+      const c = cache();
+      const landed = vi.fn();
+      c.onReady = landed;
+      // Refused when asked, when tried again at once, and after the first wait.
+      refuse(3);
+      c.request("a.pdf", 0, 1);
+      await flush();
+      expect(c.peek("a.pdf", 0, 1)).toBeNull();
+      await vi.advanceTimersByTimeAsync(500);
+      await flush();
+      expect(c.peek("a.pdf", 0, 1)).toBeNull();
+      expect(landed).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1500);
+      await flush();
+      expect(c.peek("a.pdf", 0, 1)).toMatchObject({ ok: true });
+      expect(landed).toHaveBeenCalledOnce();
+      // Nothing is cached as a miss on the way, and a destroyed cache tries no more.
+      refuse(9);
+      c.request("a.pdf", 1, 1);
+      await flush();
+      c.destroy();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(c.peek("a.pdf", 1, 1)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("in the worker, a refused canvas is not tried on this thread, whose canvases share the memory", async () => {
