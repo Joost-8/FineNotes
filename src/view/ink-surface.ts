@@ -65,9 +65,6 @@ import { pageTabs } from "../model/page-tabs";
 import type { WindowPlace } from "../model/calculator-store";
 import {
   ZOOM_AUTO_ADVANCE_DELAY_MS,
-  autoAdvanceZoomBox,
-  newLineZoomBox,
-  moveZoomBox,
   panToShow,
   previousZoomBox,
   resizeZoomBox,
@@ -81,6 +78,12 @@ import {
   zoomView,
   zoomViewPoint,
   zoomViewPointFree,
+  type ZoomPage,
+  type ZoomPlace,
+  autoAdvanceAcrossPages,
+  dragZoomBoxAcrossPages,
+  newLineAcrossPages,
+  pinchZoomBox,
   placedZoomBox,
   zoomWindowDragAllowed,
   zoomWindowFirstPlace,
@@ -1537,13 +1540,13 @@ interface ZoomBoxState {
   box: ZoomRect;
   /** Where the ↵ key returns to, in page px: the line's starting X. */
   originX: number;
-  /** Whether the frame is selected and its handles are live. */
-  selected: boolean;
 }
 
 /** A target box being moved or resized from its frame or one of its handles. */
 interface ZoomTargetDrag {
   pointerId: number;
+  /** The page the drag started on: its points are measured there, across pages too. */
+  pageId: string;
   handle: ZoomHandle | "move";
   from: { x: number; y: number };
   start: ZoomRect;
@@ -1562,6 +1565,8 @@ const ZOOM_HANDLES: readonly ZoomHandle[] = ["nw", "n", "ne", "e", "se", "s", "s
 const ZOOM_BOX_PAN_MS = 180;
 /** The Zoom box window's bar, CSS px (styles.css): what the window's body is short of its height. */
 const ZOOM_WINDOW_BAR_PX = 40;
+/** How far a two-finger spread must change before it is a pinch, not a tap. */
+const ZOOM_PINCH_DEAD = 0.04;
 
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
@@ -1778,7 +1783,27 @@ export class InkSurface {
   private zoomMarqueePointer: number | null = null;
   private zoomTargetDrag: ZoomTargetDrag | null = null;
   /** Previous target positions for the Zoom box's Back button. */
-  private readonly zoomPositionHistory: ZoomRect[] = [];
+  private readonly zoomPositionHistory: { pageId: string; box: ZoomRect }[] = [];
+  /** A finger (or the Hand) dragging the view inside the Zoom box window. */
+  private zoomPan: {
+    pointerId: number;
+    x: number;
+    y: number;
+    start: ZoomRect;
+    index: number;
+    scale: number;
+    moved: boolean;
+  } | null = null;
+  /** Fingers down on the Zoom box window, client px, for its pinch. */
+  private readonly zoomTouches = new Map<number, { x: number; y: number }>();
+  /** Two fingers pinching in the Zoom box window: its magnification (`pinchZoomBox`). */
+  private zoomPinch: {
+    a: number;
+    b: number;
+    dist: number;
+    start: ZoomRect;
+    moved: boolean;
+  } | null = null;
   /** The floating window and its canvas, created when a target is first drawn. */
   private zoomFrame: FloatingWindow | null = null;
   private zoomCanvas: HTMLCanvasElement | null = null;
@@ -1808,8 +1833,6 @@ export class InkSurface {
   private zoomPaintFrame = 0;
   /** The readout last written, so a still window is not touched every frame. */
   private zoomReadoutText = "";
-  /** A pen or mouse press that may be a tap selecting the target, not a drag. */
-  private zoomSelectPress: { x: number; y: number } | null = null;
   /** The debounce after a stroke that reached the auto-advance trigger. */
   private zoomAdvanceTimer: number | null = null;
   /** The furthest page x of the stroke being drawn inside the Zoom box. */
@@ -2619,14 +2642,6 @@ export class InkSurface {
         handHeld: () => this.handHeld,
         route: (event) => this.pressRoute(event),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
-        touchTarget: (event) => {
-          const state = this.zoomBox;
-          return (
-            state !== null &&
-            !state.selected &&
-            this.zoomTargetHitAt(this.toLayout(event.clientX, event.clientY))
-          );
-        },
         stylusClicks: () => this.stylusClickWanted(),
       },
     );
@@ -6342,18 +6357,10 @@ export class InkSurface {
    * controller so the Zoom box's own canvas can feed it points mapped from
    * its magnified view: every tool then behaves the same in both views.
    */
-  private penStart(sample: PointerSample, press: PressInput, inBox = false): void {
+  private penStart(sample: PointerSample, press: PressInput): void {
     this.pressing = true;
     this.callbacks.onPen?.(true);
     this.pressTool = this.pressOverrideOf(press);
-    const state = this.zoomBox;
-    if (state?.selected && !this.zoomTargetHitAt(sample)) this.deselectZoomTarget();
-    // A tap inside the target on the page selects it. Inside the box every
-    // point is inside the target, and a tap there is a dot, a full stop.
-    this.zoomSelectPress =
-      !inBox && state && !state.selected && this.zoomTargetHitAt(sample)
-        ? { x: sample.x, y: sample.y }
-        : null;
     if (this.pressTool === "zoom" || (this.pressTool === null && this.toolState.tool === "zoom")) {
       if (this.startZoomMarquee(sample)) return;
       this.startZoomDrag(sample, this.pressTool === null);
@@ -6365,13 +6372,6 @@ export class InkSurface {
 
   private penMove(coalesced: PointerSample[]): void {
     this.penAt = coalesced[coalesced.length - 1] ?? this.penAt;
-    if (
-      this.zoomSelectPress &&
-      Math.hypot(this.penAt.x - this.zoomSelectPress.x, this.penAt.y - this.zoomSelectPress.y) >
-        this.atFitZoom(TAP_SLOP_PX)
-    ) {
-      this.zoomSelectPress = null;
-    }
     if (this.zoomMarquee) {
       this.moveZoomMarquee(this.penAt);
       return;
@@ -6396,16 +6396,6 @@ export class InkSurface {
   private penLifted(sample: PointerSample): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
-    const selecting = this.zoomSelectPress;
-    this.zoomSelectPress = null;
-    if (selecting) {
-      // A tap inside an unselected target selects it; it is not a dot, an
-      // erase, a page zoom or the start of a text box underneath.
-      this.endZoomDrag(null);
-      this.selectZoomTarget();
-      this.finishToolGesture(this.activePage, null);
-      return;
-    }
     if (this.endZoomMarquee(sample)) return;
     if (this.endZoomDrag(sample)) return;
     if (this.finishCellTap(sample)) return;
@@ -6425,7 +6415,6 @@ export class InkSurface {
   private penCancelled(): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
-    this.zoomSelectPress = null;
     if (this.cancelZoomMarquee()) return;
     if (this.endZoomDrag()) return;
     if (this.finishCellTap(null)) return;
@@ -6448,11 +6437,6 @@ export class InkSurface {
       this.dropEmptyLasso();
       // A finger beside one dragging the selection by its frame: the two turn it.
       if (this.joinFrameFingers(x, y, t)) return;
-      // A press outside a selected target lets go of it; an unselected one is
-      // selected by the tap that follows (onFingerTap), not by this drag.
-      if (this.zoomBox?.selected && !this.zoomTargetHitAt(this.toLayout(x, y))) {
-        this.deselectZoomTarget();
-      }
       // A resting palm must not scroll the page out from under an image or a
       // selection being dragged; without a dragStart the moves and the end
       // are no-ops.
@@ -7230,8 +7214,7 @@ export class InkSurface {
   /** A target box was drawn: put it on the page and open the window over the view. */
   private openZoomBox(pageId: string, box: ZoomRect): void {
     this.zoomPositionHistory.length = 0;
-    this.zoomBox = { pageId, box, originX: box.x, selected: false };
-    this.zoomSelectPress = null;
+    this.zoomBox = { pageId, box, originX: box.x };
     this.zoomMarquee = null;
     this.zoomMarqueeEl?.addClass("is-hidden");
     this.toolState.zoomBox = true;
@@ -7253,10 +7236,12 @@ export class InkSurface {
     this.zoomInput?.detach();
     this.zoomInput = null;
     this.zoomBox = null;
+    this.zoomPan = null;
+    this.zoomPinch = null;
+    this.zoomTouches.clear();
     this.zoomPositionHistory.length = 0;
     this.zoomMarquee = null;
     this.zoomTargetDrag = null;
-    this.zoomSelectPress = null;
     this.cancelZoomAdvance();
     this.cancelZoomSlide();
     this.zoomAutoAdvanceButton = null;
@@ -7353,6 +7338,11 @@ export class InkSurface {
     );
     input.attach();
     this.zoomInput = input;
+    canvas.addEventListener("pointerdown", (event) => this.onZoomPanDown(event));
+    canvas.addEventListener("pointermove", (event) => this.onZoomPanMove(event));
+    for (const type of ["pointerup", "pointercancel"] as const) {
+      canvas.addEventListener(type, (event) => this.onZoomPanUp(event));
+    }
     // The Pencil's touchstart and touchmove are cancelled over the whole
     // window, as on the page: otherwise iPadOS's long press ends a held pen
     // in pointercancel and Scribble swallows strokes (`input/stylus-touch`).
@@ -7542,8 +7532,9 @@ export class InkSurface {
       if (!el.hasClass("is-hidden")) el.addClass("is-hidden");
       return;
     }
-    el.toggleClass("is-selected", state.selected);
-    el.setAttribute("aria-selected", String(state.selected));
+    // Always live, as Goodnotes' blue box: a press anywhere on it moves it and
+    // its handles resize it (Joost, 2026-10-30).
+    el.addClass("is-selected");
     const scale = this.unitScale;
     const css = [
       (pageBox.x + state.box.x) * scale,
@@ -7592,16 +7583,10 @@ export class InkSurface {
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
     this.cancelZoomSlide();
-    const next = newLineZoomBox(
-      state.box,
-      state.originX,
-      pageBox.width,
-      pageBox.height,
-      this.zoomLineStep(),
-    );
-    this.pushZoomPosition(next);
-    state.box = next;
-    this.syncZoomTarget();
+    const { pages, index } = this.zoomPages();
+    const next = newLineAcrossPages(state.box, state.originX, pages, index, this.zoomLineStep());
+    this.pushZoomPosition();
+    this.placeZoomBoxOn(next);
     this.ensureZoomTargetVisible();
     this.requestFrame();
   }
@@ -7672,15 +7657,23 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
-    const next = autoAdvanceZoomBox(
+    const { pages, index } = this.zoomPages();
+    const next = autoAdvanceAcrossPages(
       state.box,
       state.originX,
-      pageBox.width,
-      pageBox.height,
+      pages,
+      index,
       this.zoomLineStep(),
     );
-    this.pushZoomPosition(next);
-    this.glideZoomBox(next);
+    this.pushZoomPosition();
+    if (next.index === index) {
+      this.glideZoomBox(next.box);
+      return;
+    }
+    // A new page: no slide across the gap, the box is simply there.
+    this.placeZoomBoxOn(next);
+    this.ensureZoomTargetVisible();
+    this.requestFrame();
   }
 
   private previousZoomBox(): void {
@@ -7688,19 +7681,192 @@ export class InkSurface {
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
     this.cancelZoomSlide();
-    const previous =
-      this.zoomPositionHistory.pop() ??
-      previousZoomBox(state.box, pageBox.width, pageBox.height, this.zoomLineStep());
-    state.box = previous;
+    const previous = this.zoomPositionHistory.pop() ?? {
+      pageId: state.pageId,
+      box: previousZoomBox(state.box, pageBox.width, pageBox.height, this.zoomLineStep()),
+    };
+    if (this.boxForPage(previous.pageId)) state.pageId = previous.pageId;
+    state.box = previous.box;
     this.syncZoomTarget();
     this.ensureZoomTargetVisible();
     this.requestFrame();
   }
 
-  private pushZoomPosition(next: ZoomRect): void {
+  /** Remember where the box is, for ←. */
+  private pushZoomPosition(): void {
     const state = this.zoomBox;
-    if (!state || sameZoomRect(state.box, next)) return;
-    this.zoomPositionHistory.push({ ...state.box });
+    if (!state) return;
+    const last = this.zoomPositionHistory[this.zoomPositionHistory.length - 1];
+    if (last && last.pageId === state.pageId && sameZoomRect(last.box, state.box)) return;
+    this.zoomPositionHistory.push({ pageId: state.pageId, box: { ...state.box } });
+  }
+
+  /** The pages a Zoom box can go to, in order, and the index of the one it is on. */
+  private zoomPages(): { pages: ZoomPage[]; index: number } {
+    const boxes = this.pageLayout.boxes;
+    const id = this.zoomBox?.pageId;
+    return {
+      pages: boxes.map((b) => ({ width: b.width, height: b.height })),
+      index: Math.max(
+        0,
+        boxes.findIndex((b) => b.id === id),
+      ),
+    };
+  }
+
+  /** Where a drag of (dx, dy) page px from `start` on page `pageId` takes the box. */
+  private dragZoomPlace(start: ZoomRect, dx: number, dy: number, pageId: string): ZoomPlace {
+    const boxes = this.pageLayout.boxes;
+    const index = Math.max(
+      0,
+      boxes.findIndex((b) => b.id === pageId),
+    );
+    const pages = boxes.map((b) => ({ width: b.width, height: b.height }));
+    return dragZoomBoxAcrossPages(start, dx, dy, pages, index);
+  }
+
+  /** Put the box at `place`, on whichever page that is. */
+  private placeZoomBoxOn(place: ZoomPlace): void {
+    const state = this.zoomBox;
+    const page = this.pageLayout.boxes[place.index];
+    if (!state || !page) return;
+    state.pageId = page.id;
+    state.box = place.box;
+    this.syncZoomTarget();
+  }
+
+  /**
+   * A finger dragged inside the window moves the view, as on a page: what
+   * is under the finger stays under it, so the box goes the other way, on
+   * to the next page past the end of this one (Goodnotes). Fingers do not
+   * write in the box, and the window is a control like the frame, so this
+   * works in Stylus-only mode too. With the Hand in hand the Pencil and a
+   * mouse drag it as well. A second finger turns the drag into a pinch,
+   * which magnifies as Goodnotes' window does (`pinchZoomBox`).
+   */
+  private onZoomPanDown(event: PointerEvent): void {
+    const state = this.zoomBox;
+    const canvas = this.zoomCanvas;
+    if (event.pointerType === "touch") {
+      this.zoomTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    const panner = event.pointerType === "touch" || this.toolState.tool === "pan";
+    if (!state || !canvas || !panner || this.zoomStroke) return;
+    if (event.pointerType === "touch" && this.zoomTouches.size === 2 && !this.zoomPinch) {
+      // The second finger: what the first one dragged goes back, and the two pinch.
+      this.endZoomPan(false);
+      const [a, b] = [...this.zoomTouches.keys()];
+      const pa = this.zoomTouches.get(a);
+      const pb = this.zoomTouches.get(b);
+      const dist = pa && pb ? Math.hypot(pa.x - pb.x, pa.y - pb.y) : 0;
+      if (dist > 0) {
+        this.cancelZoomSlide();
+        this.cancelZoomAdvance();
+        this.zoomPinch = { a, b, dist, start: { ...state.box }, moved: false };
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // A synthetic pointer has nothing to capture.
+        }
+      }
+      return;
+    }
+    if (this.zoomPan || this.zoomPinch) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = zoomView(state.box, rect.width, rect.height).scale;
+    if (!(scale > 0)) return;
+    this.cancelZoomSlide();
+    this.cancelZoomAdvance();
+    this.zoomPan = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      start: { ...state.box },
+      index: this.zoomPages().index,
+      scale,
+      moved: false,
+    };
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic pointer has nothing to capture.
+    }
+  }
+
+  private onZoomPanMove(event: PointerEvent): void {
+    if (this.zoomTouches.has(event.pointerId)) {
+      this.zoomTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    const pinch = this.zoomPinch;
+    if (pinch && (event.pointerId === pinch.a || event.pointerId === pinch.b)) {
+      this.moveZoomPinch(pinch, event);
+      return;
+    }
+    const pan = this.zoomPan;
+    if (!pan || event.pointerId !== pan.pointerId) return;
+    const dx = event.clientX - pan.x;
+    const dy = event.clientY - pan.y;
+    if (!pan.moved && Math.hypot(dx, dy) < TAP_SLOP_PX) return;
+    if (!pan.moved) {
+      pan.moved = true;
+      this.pushZoomPosition();
+    }
+    event.preventDefault();
+    const page = this.pageLayout.boxes[pan.index];
+    if (!page) return;
+    this.placeZoomBoxOn(this.dragZoomPlace(pan.start, -dx / pan.scale, -dy / pan.scale, page.id));
+    this.requestFrame();
+  }
+
+  private onZoomPanUp(event: PointerEvent): void {
+    this.zoomTouches.delete(event.pointerId);
+    const pinch = this.zoomPinch;
+    if (pinch && (event.pointerId === pinch.a || event.pointerId === pinch.b)) {
+      this.zoomPinch = null;
+      if (pinch.moved) {
+        this.ensureZoomTargetVisible();
+        this.requestFrame();
+      }
+      return;
+    }
+    if (!this.zoomPan || event.pointerId !== this.zoomPan.pointerId) return;
+    this.endZoomPan(true);
+  }
+
+  /** The pinch's fingers moved: the box shrinks or grows about its middle. */
+  private moveZoomPinch(pinch: NonNullable<InkSurface["zoomPinch"]>, event: PointerEvent): void {
+    const state = this.zoomBox;
+    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    const pa = this.zoomTouches.get(pinch.a);
+    const pb = this.zoomTouches.get(pinch.b);
+    if (!state || !pageBox || !pa || !pb) return;
+    const k = Math.hypot(pa.x - pb.x, pa.y - pb.y) / pinch.dist;
+    // A two-finger tap (undo) is no pinch: wait for a real change of spread.
+    if (!pinch.moved && Math.abs(k - 1) < ZOOM_PINCH_DEAD) return;
+    if (!pinch.moved) {
+      pinch.moved = true;
+      this.pushZoomPosition();
+    }
+    event.preventDefault();
+    state.box = pinchZoomBox(pinch.start, k, pageBox.width, pageBox.height);
+    this.syncZoomTarget();
+    this.requestFrame();
+  }
+
+  private endZoomPan(settle: boolean): void {
+    const pan = this.zoomPan;
+    this.zoomPan = null;
+    if (!pan || !this.zoomBox) return;
+    if (!pan.moved) return;
+    if (!settle) {
+      // Let go for a two-finger tap: the view goes back to where it was.
+      const page = this.pageLayout.boxes[pan.index];
+      if (page) this.placeZoomBoxOn({ index: pan.index, box: pan.start });
+    }
+    // A hand-placed line starts its next line where this one's left edge is.
+    this.zoomBox.originX = this.zoomBox.box.x;
+    this.ensureZoomTargetVisible();
+    this.requestFrame();
   }
 
   /** Move the target over a few frames, so an auto-advance reads as a slide. */
@@ -7787,38 +7953,7 @@ export class InkSurface {
     this.syncZoomCatcher();
   }
 
-  /** Whether a layout-space point lies inside the open target box. */
-  private zoomTargetHitAt(sample: { x: number; y: number }): boolean {
-    const state = this.zoomBox;
-    const pageBox = state ? this.boxForPage(state.pageId) : null;
-    if (!state || !pageBox) return false;
-    const at = this.toPage(pageBox, sample);
-    return (
-      at.x >= state.box.x &&
-      at.y >= state.box.y &&
-      at.x <= state.box.x + state.box.w &&
-      at.y <= state.box.y + state.box.h
-    );
-  }
-
-  private selectZoomTarget(): void {
-    const state = this.zoomBox;
-    if (!state || state.selected) return;
-    state.selected = true;
-    this.syncZoomTarget();
-    this.requestFrame();
-  }
-
-  private deselectZoomTarget(): void {
-    const state = this.zoomBox;
-    if (!state || !state.selected) return;
-    state.selected = false;
-    this.zoomTargetDrag = null;
-    this.syncZoomTarget();
-    this.requestFrame();
-  }
-
-  /** A press on the target's frame, badge or a handle; only a selected target acts. */
+  /** A press on the target's frame, badge or a handle: the frame moves, a handle resizes. */
   private onZoomTargetPointerDown(event: PointerEvent): void {
     if (this.zoomTargetDrag) return;
     const state = this.zoomBox;
@@ -7827,10 +7962,7 @@ export class InkSurface {
     const target = event.target instanceof HTMLElement ? event.target : null;
     const grip = target?.closest<HTMLElement>("[data-zoom-handle]");
     const handle = (grip?.dataset.zoomHandle ?? null) as ZoomHandle | null;
-    // An unselected frame is not a control; the page gets the press. Once
-    // selected, a handle resizes and the body moves with any pointer.
-    const press = zoomTargetPress(state.selected, handle);
-    if (press === "draw") return;
+    const press = zoomTargetPress(handle);
     this.cancelZoomSlide();
     event.preventDefault();
     event.stopPropagation();
@@ -7841,6 +7973,7 @@ export class InkSurface {
     }
     this.zoomTargetDrag = {
       pointerId: event.pointerId,
+      pageId: state.pageId,
       handle: press,
       from: this.pagePoint(pageBox, event.clientX, event.clientY),
       start: { ...state.box },
@@ -7850,18 +7983,20 @@ export class InkSurface {
   private onZoomTargetPointerMove(event: PointerEvent): void {
     const drag = this.zoomTargetDrag;
     const state = this.zoomBox;
-    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    const pageBox = state ? this.boxForPage(drag?.pageId ?? state.pageId) : null;
     if (!drag || !state || !pageBox || event.pointerId !== drag.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
     const at = this.pagePoint(pageBox, event.clientX, event.clientY);
     const dx = at.x - drag.from.x;
     const dy = at.y - drag.from.y;
-    state.box =
-      drag.handle === "move"
-        ? moveZoomBox(drag.start, dx, dy, pageBox.width, pageBox.height)
-        : resizeZoomBox(drag.start, drag.handle, dx, dy, pageBox.width, pageBox.height);
-    this.syncZoomTarget();
+    if (drag.handle === "move") {
+      // Dragged past the page's end, the frame goes on to the next page.
+      this.placeZoomBoxOn(this.dragZoomPlace(drag.start, dx, dy, drag.pageId));
+    } else {
+      state.box = resizeZoomBox(drag.start, drag.handle, dx, dy, pageBox.width, pageBox.height);
+      this.syncZoomTarget();
+    }
     this.requestFrame();
   }
 
@@ -7872,8 +8007,8 @@ export class InkSurface {
     event.stopPropagation();
     this.zoomTargetDrag = null;
     if (this.zoomBox) {
-      if (!sameZoomRect(this.zoomBox.box, drag.start)) {
-        this.zoomPositionHistory.push({ ...drag.start });
+      if (this.zoomBox.pageId !== drag.pageId || !sameZoomRect(this.zoomBox.box, drag.start)) {
+        this.zoomPositionHistory.push({ pageId: drag.pageId, box: { ...drag.start } });
       }
       // A hand-placed line starts its next line where this one's left edge is.
       this.zoomBox.originX = this.zoomBox.box.x;
@@ -7950,14 +8085,11 @@ export class InkSurface {
   private zoomStrokeStart(sample: PointerSample, press: PressInput): void {
     this.strokeInBox = true;
     this.zoomStroke = true;
-    // Writing in the window means the target on the page is no longer the
-    // thing being handled; its handles go away until it is tapped again.
-    this.deselectZoomTarget();
     this.cancelZoomAdvance();
     // The box must not glide on under a pen that has landed in it.
     this.cancelZoomSlide();
     this.zoomStrokeMaxX = this.zoomLocalX(sample);
-    this.penStart(sample, press, true);
+    this.penStart(sample, press);
   }
 
   private zoomStrokeMove(coalesced: PointerSample[]): void {
@@ -14693,14 +14825,6 @@ export class InkSurface {
    */
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
-    if (this.zoomBox) {
-      const tapAt = this.toLayout(clientX, clientY);
-      if (!this.zoomBox.selected && this.zoomTargetHitAt(tapAt)) {
-        this.selectZoomTarget();
-        return;
-      }
-      if (this.zoomBox.selected && !this.zoomTargetHitAt(tapAt)) this.deselectZoomTarget();
-    }
     if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
     // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
     const plain = { x: clientX, y: clientY, t: now() };

@@ -6,6 +6,10 @@ import {
   autoAdvanceZoomBox,
   clampZoomBox,
   ZOOM_BOX_PLACED_MAGNIFICATION,
+  autoAdvanceAcrossPages,
+  dragZoomBoxAcrossPages,
+  newLineAcrossPages,
+  pinchZoomBox,
   magnifierTap,
   placedZoomBox,
   zoomWindowFirstPlace,
@@ -270,15 +274,10 @@ describe("panning the page to keep the box in view", () => {
 });
 
 describe("the viewfinder target's presses", () => {
-  it("leaves an unselected target to the page, drawing and panning as usual", () => {
-    expect(zoomTargetPress(false, "nw")).toBe("draw");
-    expect(zoomTargetPress(false, null)).toBe("draw");
-  });
-
-  it("resizes from a handle and moves the body only once selected", () => {
-    expect(zoomTargetPress(true, "nw")).toBe("nw");
-    expect(zoomTargetPress(true, "e")).toBe("e");
-    expect(zoomTargetPress(true, null)).toBe("move");
+  it("is a control at all times, as Goodnotes' blue box: the body moves, a handle resizes", () => {
+    expect(zoomTargetPress("nw")).toBe("nw");
+    expect(zoomTargetPress("e")).toBe("e");
+    expect(zoomTargetPress(null)).toBe("move");
   });
 });
 
@@ -374,5 +373,93 @@ describe("a Zoom box placed with one tap", () => {
   it("opens the window at the bottom, centred, within its size limits", () => {
     expect(zoomWindowFirstPlace({ w: 1000, h: 800 })).toEqual({ x: 290, y: 428, w: 420, h: 280 });
     expect(zoomWindowFirstPlace({ w: 400, h: 300 })).toEqual({ x: 48, y: 48, w: 304, h: 160 });
+  });
+});
+
+describe("a Zoom box going from page to page", () => {
+  const pages = [
+    { width: 800, height: 1000 },
+    { width: 800, height: 1000 },
+    { width: 800, height: 1000 },
+  ];
+  const box = { x: 100, y: 900, w: 200, h: 80 };
+
+  it("stays on its page while its middle does", () => {
+    expect(dragZoomBoxAcrossPages(box, 10, 20, pages, 0)).toEqual({
+      index: 0,
+      box: { x: 110, y: 920, w: 200, h: 80 },
+    });
+  });
+
+  it("carries on to the next page once its middle passes the bottom, and back up", () => {
+    const down = dragZoomBoxAcrossPages(box, 0, 100, pages, 0);
+    expect(down.index).toBe(1);
+    expect(down.box.y).toBeCloseTo(0);
+    // From the same start, dragged further: deeper into the next page.
+    expect(dragZoomBoxAcrossPages(box, 0, 400, pages, 0)).toEqual({
+      index: 1,
+      box: { x: 100, y: 300, w: 200, h: 80 },
+    });
+    const up = dragZoomBoxAcrossPages({ ...box, y: 10 }, 0, -100, pages, 1);
+    expect(up.index).toBe(0);
+    expect(up.box.y).toBeCloseTo(910);
+  });
+
+  it("keeps the box on the first and last pages at their ends", () => {
+    expect(dragZoomBoxAcrossPages({ ...box, y: 0 }, 0, -500, pages, 0)).toEqual({
+      index: 0,
+      box: { x: 100, y: 0, w: 200, h: 80 },
+    });
+    expect(dragZoomBoxAcrossPages(box, 0, 500, pages, 2).index).toBe(2);
+  });
+
+  it("starts the next page with ↵ when no whole line is left below", () => {
+    // 900 + 80 + 80 > 1000: the next line would not fit.
+    expect(newLineAcrossPages(box, 40, pages, 0)).toEqual({
+      index: 1,
+      box: { x: 40, y: 0, w: 200, h: 80 },
+    });
+    // With room left, the next line on this page.
+    expect(newLineAcrossPages({ ...box, y: 500 }, 40, pages, 0)).toEqual({
+      index: 0,
+      box: { x: 40, y: 580, w: 200, h: 80 },
+    });
+    // The last page keeps its last line.
+    expect(newLineAcrossPages(box, 40, pages, 2).index).toBe(2);
+  });
+
+  it("auto-advances along the line, then onto the next page at the page's end", () => {
+    expect(autoAdvanceAcrossPages(box, 40, pages, 0).index).toBe(0);
+    expect(autoAdvanceAcrossPages({ ...box, x: 600 }, 40, pages, 0)).toEqual({
+      index: 1,
+      box: { x: 40, y: 0, w: 200, h: 80 },
+    });
+  });
+});
+
+describe("pinching in the Zoom box window", () => {
+  const start = { x: 300, y: 400, w: 200, h: 100 };
+
+  it("magnifies when the fingers spread, about the box's middle, keeping its shape", () => {
+    const b = pinchZoomBox(start, 2, 800, 1000);
+    expect(b).toEqual({ x: 350, y: 425, w: 100, h: 50 });
+  });
+
+  it("zooms out until the box is as wide as the page, its limit", () => {
+    const b = pinchZoomBox(start, 0.1, 800, 1000);
+    expect(b.w).toBeCloseTo(800);
+    expect(b.h).toBeCloseTo(400);
+    expect(b.x).toBe(0);
+  });
+
+  it("magnifies at most so far: a twelfth of the page's width", () => {
+    const b = pinchZoomBox(start, 100, 800, 1000);
+    expect(b.w).toBeCloseTo(800 / 12);
+    expect(b.w / b.h).toBeCloseTo(2);
+  });
+
+  it("ignores a pinch it cannot read", () => {
+    expect(pinchZoomBox(start, 0, 800, 1000)).toBe(start);
+    expect(pinchZoomBox(start, Number.NaN, 800, 1000)).toBe(start);
   });
 });

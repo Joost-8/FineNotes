@@ -2752,52 +2752,6 @@ describe("size preview scales", () => {
   });
 });
 
-describe("selecting the Zoom box target", () => {
-  function targetSurface(selected = false) {
-    const sync = vi.fn();
-    const frame = vi.fn();
-    const surface = surfaceWith({
-      zoomBox: {
-        pageId: "p1",
-        box: { x: 10, y: 20, w: 100, h: 80 },
-        originX: 10,
-        selected,
-      },
-      boxForPage: () => ({}),
-      toPage: (_box: unknown, at: { x: number; y: number }) => at,
-      syncZoomTarget: sync,
-      requestFrame: frame,
-    });
-    return { surface, sync, frame };
-  }
-
-  it("selects on a tap inside the frame and deselects outside it", () => {
-    const { surface, sync } = targetSurface();
-    expect(run(surface, "zoomTargetHitAt", { x: 50, y: 50 })).toBe(true);
-    expect(run(surface, "zoomTargetHitAt", { x: 150, y: 50 })).toBe(false);
-    run(surface, "selectZoomTarget");
-    expect((surface.zoomBox as { selected: boolean }).selected).toBe(true);
-    expect(sync).toHaveBeenCalled();
-    run(surface, "deselectZoomTarget");
-    expect((surface.zoomBox as { selected: boolean }).selected).toBe(false);
-  });
-
-  it("selects on a finger tap in Stylus-only mode", () => {
-    const { surface, sync } = targetSurface();
-    surface.callbacks = { onlyStylusMode: () => true };
-    surface.toLayout = (x: number, y: number) => ({ x, y });
-    run(surface, "onFingerTap", 50, 50);
-    expect((surface.zoomBox as { selected: boolean }).selected).toBe(true);
-    expect(sync).toHaveBeenCalled();
-  });
-
-  it("leaves an already unselected frame alone", () => {
-    const { surface, sync } = targetSurface();
-    run(surface, "deselectZoomTarget");
-    expect(sync).not.toHaveBeenCalled();
-  });
-});
-
 describe("the Zoom box auto-advance", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -2812,8 +2766,14 @@ describe("the Zoom box auto-advance", () => {
     const frame = vi.fn();
     const sync = vi.fn();
     const surface = surfaceWith({
-      zoomBox: { pageId: "p1", box, originX: 100, selected: false },
+      zoomBox: { pageId: "p1", box, originX: 100 },
       zoomPositionHistory: [],
+      pageLayout: {
+        boxes: [
+          { id: "p1", width: 800, height: 600 },
+          { id: "p2", width: 800, height: 600 },
+        ],
+      },
       zoomStrokeMaxX: box.x + box.w * 0.67,
       callbacks: {
         zoomBoxAutoAdvance: () => on,
@@ -2873,6 +2833,17 @@ describe("the Zoom box auto-advance", () => {
       w: 150,
       h: 80,
     });
+  });
+
+  it("goes on to the next page from the last line, and Back returns to it", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 520, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    const zoomBox = surface.zoomBox as { pageId: string; box: { x: number; y: number } };
+    expect(zoomBox.pageId).toBe("p2");
+    expect(zoomBox.box).toMatchObject({ x: 100, y: 0 });
+    run(surface, "previousZoomBox");
+    expect(zoomBox.pageId).toBe("p1");
+    expect(zoomBox.box).toMatchObject({ x: 650, y: 520 });
   });
 
   it("cancels a pending step when another stroke starts", () => {
@@ -2997,11 +2968,11 @@ describe("the Zoom box target's presses", () => {
     expect(capture).toHaveBeenCalledWith(7);
   });
 
-  it("leaves an unselected frame to the page, even under the pen", () => {
+  it("moves the frame on the first press, with no tap to select it first", () => {
     const { surface, event } = pressOn("body", "pen", "pen", false);
-    expect(surface.zoomTargetDrag).toBeNull();
-    expect(event.preventDefault).not.toHaveBeenCalled();
-    expect(event.stopPropagation).not.toHaveBeenCalled();
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
   });
 
   it("moves a selected body or badge with the pen, whatever the tool", () => {
@@ -3019,10 +2990,9 @@ describe("the Zoom box target's presses", () => {
     expect(capture).toHaveBeenCalledWith(7);
   });
 
-  it("does not resize from an unselected frame's handle", () => {
-    const { surface, event } = pressOn("handle", "pen", "pen", false);
-    expect(surface.zoomTargetDrag).toBeNull();
-    expect(event.preventDefault).not.toHaveBeenCalled();
+  it("resizes from a handle on the first press", () => {
+    const { surface } = pressOn("handle", "pen", "pen", false);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
   });
 
   it("moves the selected frame body under the Magnifier with a mouse", () => {
@@ -3037,7 +3007,7 @@ describe("writing in the Zoom box", () => {
   /** A box shown 4x in a 400 x 200 canvas; the page fits at 0.8 CSS px per page px. */
   function boxSurface(extra: State = {}): State {
     return surfaceWith({
-      zoomBox: { pageId: "p1", box: { ...box }, originX: box.x, selected: false },
+      zoomBox: { pageId: "p1", box: { ...box }, originX: box.x },
       zoomCanvas: {
         getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 200 }),
       },
@@ -3088,29 +3058,23 @@ describe("writing in the Zoom box", () => {
     expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("ignore");
   });
 
-  it("keeps a tap in the box a dot: it never selects the target box", () => {
+  it("keeps a tap in the box a dot", () => {
     const penDown = vi.fn();
     const s = boxSurface({
       pressOverrideOf: () => null,
       markDrawing: vi.fn(),
       penDown,
-      deselectZoomTarget: vi.fn(),
     });
-    // In the box every point lies inside the target.
+    // In the box every point lies inside the target: still a dot, a full stop.
     const inside = { x: 150, y: 220, pressure: 0, tiltX: 0, tiltY: 0, altitude: Number.NaN };
-    run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 }, true);
-    expect(s.zoomSelectPress).toBeNull();
-    expect(penDown).toHaveBeenCalledWith(inside);
-    // On the page, a pen tap inside the target is still the tap that selects it.
     run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 });
-    expect(s.zoomSelectPress).toEqual({ x: 150, y: 220 });
+    expect(penDown).toHaveBeenCalledWith(inside);
   });
 
   it("measures auto-advance against the box in page space, not layout space", () => {
     const penEnd = vi.fn();
     const scheduleZoomAdvance = vi.fn();
     const s = boxSurface({
-      deselectZoomTarget: vi.fn(),
       cancelZoomAdvance: vi.fn(),
       cancelZoomSlide: vi.fn(),
       penStart: vi.fn(),

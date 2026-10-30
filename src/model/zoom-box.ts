@@ -13,16 +13,16 @@ export interface ZoomRect {
 
 export type ZoomHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
-/** What a press on the target frame does: move it, resize from a handle, or draw. */
-export type ZoomTargetPress = "move" | ZoomHandle | "draw";
+/** What a press on the target frame does: move it, or resize it from a handle. */
+export type ZoomTargetPress = "move" | ZoomHandle;
 
 /**
- * A press on the target frame. An unselected target is a picture of where the
- * box is, not a control: the page keeps the press, so drawing and panning
- * work. Once selected, a handle resizes and the body or badge moves it.
+ * A press on the target frame. As Goodnotes' blue box, the frame is a control
+ * at all times, with any pointer (Joost, 2026-10-30): a handle resizes it and
+ * the body or badge moves it, no tap to select it first. Writing goes in the
+ * window, and the page beside the frame.
  */
-export function zoomTargetPress(selected: boolean, handle: ZoomHandle | null): ZoomTargetPress {
-  if (!selected) return "draw";
+export function zoomTargetPress(handle: ZoomHandle | null): ZoomTargetPress {
   return handle ?? "move";
 }
 
@@ -349,6 +349,91 @@ export function autoAdvanceZoomBox(
   return newLineZoomBox(box, originX, pageWidth, pageHeight, lineStepOffset);
 }
 
+/** A page a Zoom box can be on, in page px. */
+export interface ZoomPage {
+  width: number;
+  height: number;
+}
+
+/** A Zoom box and the index of the page it is on. */
+export interface ZoomPlace {
+  index: number;
+  box: ZoomRect;
+}
+
+/**
+ * A box dragged by (dx, dy) page px from where it started (`start`, on page
+ * `index`), carried onto the next or the previous page once its middle passes
+ * the bottom or the top of its page, as Goodnotes' zoom window goes from page
+ * to page (Joost, 2026-10-30). The pages run on as one column, the gap
+ * between them left out; inside a page the box is kept on it.
+ */
+export function dragZoomBoxAcrossPages(
+  start: ZoomRect,
+  dx: number,
+  dy: number,
+  pages: readonly ZoomPage[],
+  index: number,
+): ZoomPlace {
+  let i = clamp(index, 0, Math.max(0, pages.length - 1));
+  let y = start.y + dy;
+  while (i + 1 < pages.length && y + start.h / 2 > pages[i].height) {
+    y -= pages[i].height;
+    i++;
+  }
+  while (i > 0 && y + start.h / 2 < 0) {
+    i--;
+    y += pages[i].height;
+  }
+  const page = pages[i];
+  if (!page) return { index, box: start };
+  return { index: i, box: clampZoomBox({ ...start, x: start.x + dx, y }, page.width, page.height) };
+}
+
+/**
+ * ↵ across pages: the next line on this page, or, when no whole line is left
+ * below, the top of the next page at the line's starting x. The last page
+ * keeps the box on its last line.
+ */
+export function newLineAcrossPages(
+  box: ZoomRect,
+  originX: number,
+  pages: readonly ZoomPage[],
+  index: number,
+  lineStepOffset = 0,
+): ZoomPlace {
+  const page = pages[index];
+  if (!page) return { index, box };
+  const next = pages[index + 1];
+  const fits = box.y + box.h + lineStepOffset + box.h <= page.height + 0.5;
+  if (fits || !next) {
+    return { index, box: newLineZoomBox(box, originX, page.width, page.height, lineStepOffset) };
+  }
+  return {
+    index: index + 1,
+    box: clampZoomBox({ ...box, x: originX, y: 0 }, next.width, next.height),
+  };
+}
+
+/** Auto-advance across pages: right along the line, then ↵ (`newLineAcrossPages`). */
+export function autoAdvanceAcrossPages(
+  box: ZoomRect,
+  originX: number,
+  pages: readonly ZoomPage[],
+  index: number,
+  lineStepOffset = 0,
+): ZoomPlace {
+  const page = pages[index];
+  if (!page) return { index, box };
+  if (box.x < Math.max(0, page.width - box.w)) {
+    return {
+      index,
+      box: autoAdvanceZoomBox(box, originX, page.width, page.height, lineStepOffset),
+    };
+  }
+  return newLineAcrossPages(box, originX, pages, index, lineStepOffset);
+}
+
 /** The desk inside the window, matching the page's workspace even off-page. */
 export function zoomDeskColor(rendererDesk: string | null | undefined, workspace: string): string {
   return rendererDesk ?? workspace;
@@ -370,6 +455,33 @@ export function scaleZoomBox(
   const cx = box.x + box.w / 2;
   const cy = box.y + box.h / 2;
   return clampZoomBox({ x: cx - w / 2, y: cy - h / 2, w, h }, pageWidth, pageHeight, min);
+}
+
+/** The most a pinch magnifies: a box no narrower than this share of its page's width. */
+export const ZOOM_BOX_PINCH_MIN_SHARE = 1 / 12;
+
+/**
+ * Two fingers pinched in the window, `k` times as far apart as they started
+ * (Goodnotes, Joost's screenshot, 2026-10-30): spread, the box shrinks and
+ * the view magnifies; together, it grows until it is as wide as the page,
+ * its limit, or as tall. It keeps its shape and its middle, and stays on the
+ * page. Never narrower than {@link ZOOM_BOX_PINCH_MIN_SHARE} of the page.
+ */
+export function pinchZoomBox(
+  start: ZoomRect,
+  k: number,
+  pageWidth: number,
+  pageHeight: number,
+): ZoomRect {
+  if (!(k > 0) || !Number.isFinite(k) || !(start.w > 0) || !(start.h > 0)) return start;
+  const most = Math.min(pageWidth / start.w, pageHeight / start.h);
+  const least = Math.max(ZOOM_BOX_MIN, pageWidth * ZOOM_BOX_PINCH_MIN_SHARE) / start.w;
+  const s = clamp(1 / k, Math.min(least, most), most);
+  const w = start.w * s;
+  const h = start.h * s;
+  const cx = start.x + start.w / 2;
+  const cy = start.y + start.h / 2;
+  return clampZoomBox({ x: cx - w / 2, y: cy - h / 2, w, h }, pageWidth, pageHeight, 0);
 }
 
 /** The uniform scale and centred box a target box gets in a window. */
