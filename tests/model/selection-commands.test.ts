@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AddElements,
+  MoveElementsToPage,
   RecolorStrokes,
   RemoveElements,
   ReshapeStroke,
@@ -19,9 +20,11 @@ import {
   translatePoints,
 } from "../../src/model/selection-commands";
 import {
+  type GraphElement,
   type ImageElement,
   type InkDocument,
   type Stroke,
+  type TableElement,
   type TextBoxElement,
   blankPage,
   emptyDocument,
@@ -165,6 +168,205 @@ describe("TranslateElements", () => {
     new TranslateElements("p1", { strokes: [twin], images: [], textBoxes: [] }, 1, 0).apply(doc);
     expect(twin.pts[0]).toBe(501);
     expect(s[0].pts[0]).toBe(0.1);
+  });
+});
+
+describe("MoveElementsToPage", () => {
+  it("moves the same objects to the other page, shifted, above what is there", () => {
+    const { doc, s, i, t } = fixture();
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [s[0]], images: [i[1]], textBoxes: [t[0]] },
+      5,
+      -7,
+    );
+    cmd.apply(doc);
+    const [p1, p2] = doc.pages;
+    expect(p1.strokes).toEqual([s[1], s[2]]);
+    expect(p1.images).toEqual([i[0]]);
+    expect(p1.textBoxes).toEqual([t[1]]);
+    expect(p2.strokes.map((each) => each.id)).toEqual(["s9", "s1"]);
+    expect(p2.strokes[1]).toBe(s[0]);
+    expect(s[0].pts).toEqual([5.1, 0.2 - 7, 0.5, 0.1 + 10.3 + 5, 20.7 - 7, 0.6]);
+    expect(p2.images).toEqual([i[1]]);
+    expect(i[1]).toMatchObject({ x: 15.1, y: 13.2, rotation: 0.3 });
+    expect(p2.textBoxes).toEqual([t[0]]);
+    expect(t[0]).toMatchObject({ x: 35.3, y: 40.4 - 7 });
+  });
+
+  it("undoes JSON-identically on both pages, and redoes to the same place", () => {
+    const { doc, s, i, t } = fixture();
+    const before = snap(doc);
+    const history = new History();
+    history.push(
+      doc,
+      new MoveElementsToPage("p1", "p2", { strokes: s, images: i, textBoxes: t }, 0.2, 0.7),
+    );
+    const moved = snap(doc);
+    expect(moved).not.toBe(before);
+    history.undo(doc);
+    expect(snap(doc)).toBe(before);
+    history.redo(doc);
+    expect(snap(doc)).toBe(moved);
+    history.undo(doc);
+    expect(snap(doc)).toBe(before);
+  });
+
+  it("gives the target its first tables and graphs, and takes them away on undo", () => {
+    const { doc } = fixture();
+    const table = {
+      id: "g1",
+      x: 1,
+      y: 2,
+      w: 100,
+      rows: 1,
+      cols: 1,
+      cells: [[""]],
+    } as unknown as TableElement;
+    const graph = { id: "f1", x: 3, y: 4, w: 50, h: 50 } as unknown as GraphElement;
+    doc.pages[0].tables = [table];
+    doc.pages[0].graphs = [graph];
+    const before = snap(doc);
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [], images: [], textBoxes: [], tables: [table], graphs: [graph] },
+      10,
+      10,
+    );
+    cmd.apply(doc);
+    expect(doc.pages[1].tables).toEqual([table]);
+    expect(doc.pages[1].graphs).toEqual([graph]);
+    expect(table).toMatchObject({ x: 11, y: 12 });
+    expect(doc.pages[0].tables).toEqual([]);
+    cmd.invert(doc);
+    expect(snap(doc)).toBe(before);
+    expect("tables" in doc.pages[1]).toBe(false);
+  });
+
+  it("carries links and tasks whose strokes all move; a split one keeps those that stay", () => {
+    const { doc, s } = fixture();
+    const p1 = doc.pages[0];
+    p1.links = [
+      { id: "l1", strokes: ["s1"], target: "Signals" },
+      { id: "l2", strokes: ["s2", "s3"], target: "https://example.org" },
+      { id: "l3", strokes: ["s3"], target: "Other" },
+    ];
+    p1.tasks = [{ id: "ck1", strokes: ["s1", "s2"], text: "Do it" }];
+    doc.pages[1].links = [{ id: "l9", strokes: ["s9"], target: "There" }];
+    const before = snap(doc);
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [s[0], s[1]], images: [], textBoxes: [] },
+      0,
+      0,
+    );
+    cmd.apply(doc);
+    expect(p1.links).toEqual([
+      { id: "l2", strokes: ["s3"], target: "https://example.org" },
+      { id: "l3", strokes: ["s3"], target: "Other" },
+    ]);
+    expect(doc.pages[1].links?.map((link) => link.id)).toEqual(["l9", "l1"]);
+    expect(p1.tasks).toBeUndefined();
+    expect(doc.pages[1].tasks).toEqual([{ id: "ck1", strokes: ["s1", "s2"], text: "Do it" }]);
+    cmd.invert(doc);
+    expect(snap(doc)).toBe(before);
+  });
+
+  it("re-bases a stroke's time on the target's epoch, and drops one that would fall before it", () => {
+    const { doc } = fixture();
+    const early = stroke("e1", 1, { t0: 500 });
+    const late = stroke("e2", 2, { t0: 5000 });
+    doc.pages[0].strokes.push(early, late);
+    doc.pages[0].epoch = 1_000_000;
+    doc.pages[1].epoch = 1_002_000;
+    const before = snap(doc);
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [early, late], images: [], textBoxes: [] },
+      0,
+      0,
+    );
+    cmd.apply(doc);
+    expect(early.t0).toBeUndefined();
+    expect(late.t0).toBe(3000);
+    cmd.invert(doc);
+    // Key order too: t0 comes back where it was, not at the end.
+    expect(snap(doc)).toBe(before);
+  });
+
+  it("gives a target without an epoch the source's, so times keep their meaning", () => {
+    const { doc, s } = fixture();
+    doc.pages[0].epoch = 42;
+    const before = snap(doc);
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [s[1]], images: [], textBoxes: [] },
+      0,
+      0,
+    );
+    cmd.apply(doc);
+    expect(doc.pages[1].epoch).toBe(42);
+    expect(s[1].t0).toBe(12);
+    cmd.invert(doc);
+    expect(snap(doc)).toBe(before);
+    expect("epoch" in doc.pages[1]).toBe(false);
+  });
+
+  it("keeps ink on a note that moves with it; ink whose note stays is plain ink", () => {
+    const { doc, i } = fixture();
+    const onMoved = stroke("n1", 1, { onSticky: "i1" });
+    const onStaying = stroke("n2", 2, { onSticky: "i2" });
+    doc.pages[0].strokes.push(onMoved, onStaying);
+    const before = snap(doc);
+    const cmd = new MoveElementsToPage(
+      "p1",
+      "p2",
+      { strokes: [onMoved, onStaying], images: [i[0]], textBoxes: [] },
+      0,
+      0,
+    );
+    cmd.apply(doc);
+    expect(onMoved.onSticky).toBe("i1");
+    expect(onStaying.onSticky).toBeUndefined();
+    cmd.invert(doc);
+    expect(snap(doc)).toBe(before);
+  });
+
+  it("does nothing for its own page, a missing page, or nothing left to move", () => {
+    const { doc, s } = fixture();
+    const before = snap(doc);
+    for (const cmd of [
+      new MoveElementsToPage("p1", "p1", { strokes: s, images: [], textBoxes: [] }, 1, 1),
+      new MoveElementsToPage("p1", "nope", { strokes: s, images: [], textBoxes: [] }, 1, 1),
+      new MoveElementsToPage("nope", "p2", { strokes: s, images: [], textBoxes: [] }, 1, 1),
+      new MoveElementsToPage(
+        "p1",
+        "p2",
+        { strokes: [stroke("gone")], images: [], textBoxes: [] },
+        1,
+        1,
+      ),
+    ]) {
+      cmd.apply(doc);
+      expect(snap(doc)).toBe(before);
+      cmd.invert(doc);
+      expect(snap(doc)).toBe(before);
+    }
+  });
+
+  it("survives a save and load on its new page", () => {
+    const { doc, s } = fixture();
+    new MoveElementsToPage("p1", "p2", { strokes: [s[0]], images: [], textBoxes: [] }, 3, 4).apply(
+      doc,
+    );
+    const back = decodeDocument(encodeDocument(doc));
+    expect(back.pages[1].strokes.map((each) => each.id)).toEqual(["s9", "s1"]);
+    expect(back.pages[0].strokes.map((each) => each.id)).toEqual(["s2", "s3"]);
   });
 });
 

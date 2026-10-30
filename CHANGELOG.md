@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Drag a lasso selection onto another page.** A selection dragged over
+  another page and let go lands there, as one undo step; held near the top
+  or bottom of the view, the notebook scrolls under it. Ink, pictures, text
+  boxes, tables and graphs go together, with their links, checklist tasks
+  and audio times. With the pages joined it may lie over the join, as ink
+  can, and belongs to the page under the pen.
 - **Lines snap level or upright**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). A line or
   arrow drawn with its ends within a few pixels of level or upright on

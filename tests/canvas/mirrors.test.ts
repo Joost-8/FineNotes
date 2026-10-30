@@ -28,6 +28,7 @@ import {
   blankPage,
 } from "../../src/model/document";
 import { History } from "../../src/model/history";
+import { MoveElementsToPage } from "../../src/model/selection-commands";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 
 function doc(...count: number[]): InkDocument {
@@ -383,5 +384,44 @@ describe("History joins a step that makes way to the next", () => {
     expect(history.canUndo()).toBe(false);
     history.redo(d);
     expect(d.pages[0].strokes[0].color).toBe("#ff0000");
+  });
+});
+
+describe("a lasso selection moved onto the page beside (MoveElementsToPage)", () => {
+  it("leaves no mirror of it on its new page, mirrors it back over the join, and undoes as one", () => {
+    const d = doc(1, 1);
+    // On p1, running 100 px over the join onto p2.
+    const s1 = stroke("s1", [500, 1300, 0.5, 500, 1500, 0.5]);
+    d.pages[0].strokes.push(s1);
+    sync(d);
+    expect(d.pages[1].strokes.map((s) => s.join)).toEqual(["p1/s1"]);
+    const before = JSON.stringify(d);
+    const layout = layoutPages(d.pages, { joined: true });
+    const [p1, p2] = layout.boxes;
+    const history = new History();
+    // Dropped 50 px lower, into p2's space: the drag's delta plus p1 - p2.
+    history.push(
+      d,
+      new MoveElementsToPage(
+        "p1",
+        "p2",
+        { strokes: [s1], images: [], textBoxes: [] },
+        0,
+        50 + p1.y - p2.y,
+      ),
+    );
+    const plan = planMirrors(d, layout);
+    history.attach(d, new MirrorSync(plan));
+    // p2 owns it now, in its own space, and holds no mirror of it.
+    expect(d.pages[1].strokes.map((s) => s.id)).toEqual(["s1"]);
+    expect(d.pages[1].strokes[0].pts).toEqual([500, -50, 0.5, 500, 150, 0.5]);
+    // It still starts 50 px above the join: p1 shows that part as a mirror.
+    expect(d.pages[0].strokes.map((s) => s.join)).toEqual(["p2/s1"]);
+    expect(planMirrors(d, layout)).toEqual([]);
+    history.undo(d);
+    expect(JSON.stringify(d)).toBe(before);
+    history.redo(d);
+    expect(d.pages[1].strokes.map((s) => s.id)).toEqual(["s1"]);
+    expect(d.pages[0].strokes.map((s) => s.join)).toEqual(["p2/s1"]);
   });
 });
