@@ -1,129 +1,132 @@
 /**
- * How a knob's turn settles (src/canvas/turn-snap.ts, FineNotes discussion
- * #51): held where it started, detents at quarter turns, level and every
- * 15°, free between them, and no flicker at a detent's edge.
+ * How a turn settles (src/canvas/turn-snap.ts, FineNotes discussion #51,
+ * Joost's rule on PR #59): onto every 45° of the page, whatever angle the
+ * item started at, free in between, and no flicker at a detent's edge.
  */
 
 import { describe, expect, it } from "vitest";
-import { STEP_DEG, TurnSnap, levelTurnOf } from "../../src/canvas/turn-snap";
+import { STEP_DEG, TurnSnap, shapeAngleOf } from "../../src/canvas/turn-snap";
 
 const DEG = Math.PI / 180;
 const deg = (radians: number): number => Math.round((radians / DEG) * 100) / 100;
 
-/** Feed a sweep of angles (degrees) through one turn; the turns shown, in degrees. */
-function sweep(snap: TurnSnap, degrees: number[]): number[] {
-  return degrees.map((d) => deg(snap.turn(d * DEG)));
+/** A rectangle's outline, `w` by `h`, turned `angle` degrees about its first corner. */
+function rect(w: number, h: number, angle: number): number[] {
+  const c = Math.cos(angle * DEG);
+  const s = Math.sin(angle * DEG);
+  return [
+    [0, 0],
+    [w, 0],
+    [w, h],
+    [0, h],
+    [0, 0],
+  ].flatMap(([x, y]) => [x * c - y * s, x * s + y * c, 0.5]);
 }
 
 describe("TurnSnap", () => {
-  it("turns nothing for a tap or a wobble at the start", () => {
-    // A knob 80 px from the middle: 9 px of arc is 6.4°.
+  it("draws the turn gently toward the page's 45° steps", () => {
+    expect(STEP_DEG).toBe(45);
+    // A circle 80 px across pulls within 9° (16 px of arc, clamped).
     const snap = new TurnSnap(80);
-    expect(sweep(snap, [0, 1.5, -2, 4, -3.5, 6])).toEqual([0, 0, 0, 0, 0, 0]);
-    expect(snap.snapped).toBe(true);
+    // 2° past 45°: shown 0.9° past it, pulled but not held.
+    expect(deg(snap.turn(47 * DEG))).toBeCloseTo(45.91, 1);
+    // At the step itself, exactly there.
+    expect(deg(snap.turn(45 * DEG))).toBe(45);
+    // Outside the pull, as the hand has it.
+    expect(deg(snap.turn(30 * DEG))).toBe(30);
+    expect(deg(snap.turn(54 * DEG))).toBe(54);
   });
 
-  it("lets go of the start once the pen has really moved, then turns freely", () => {
+  it("never stops: sweeping through a step, the turn keeps moving, and has no jump at the pull's edge", () => {
     const snap = new TurnSnap(80);
-    const shown = sweep(snap, [5, 10, 22, 37]);
-    expect(shown[0]).toBe(0);
-    expect(shown[1]).toBe(10);
-    expect(shown[2]).toBe(22);
-    expect(shown[3]).toBe(37);
+    let previous = -Infinity;
+    for (let d = 20; d <= 70; d += 0.25) {
+      const shown = snap.turn(d * DEG);
+      // Always onward, and at least 0.3 of the hand's quarter degree.
+      expect(shown - previous).toBeGreaterThan(0.3 * 0.25 * DEG - 1e-9);
+      // And never more than twice it: no jump.
+      if (previous > -Infinity) expect(shown - previous).toBeLessThan(2 * 0.25 * DEG);
+      previous = shown;
+    }
+  });
+
+  it("lands on the step exactly on the lift when the turn ends close to it", () => {
+    const snap = new TurnSnap(80);
+    snap.turn(48 * DEG);
+    expect(deg(snap.settled())).toBe(45);
+    snap.turn(50 * DEG);
+    // 5° off, past the inner half of the 9° pull: kept as shown.
+    expect(deg(snap.settled())).toBeCloseTo(deg(snap.turn(50 * DEG)), 9);
+    expect(deg(snap.settled())).not.toBe(45);
+  });
+
+  it("is page-absolute: a shape drawn 2° off lands on 90° of the page, never 89°", () => {
+    const snap = new TurnSnap(80, 2 * DEG);
+    snap.turn(89 * DEG);
+    expect(deg(snap.settled())).toBe(88);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(90);
+    snap.turn(-1 * DEG);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(0);
+    snap.turn(178.5 * DEG);
+    expect(deg(snap.pageAngle(snap.settled()))).toBe(180);
+  });
+
+  it("marks the readout only on a step", () => {
+    const snap = new TurnSnap(80);
+    snap.turn(45.4 * DEG);
+    expect(snap.snapped).toBe(true);
+    snap.turn(48 * DEG);
     expect(snap.snapped).toBe(false);
   });
 
-  it("lands on quarter turns from several degrees away", () => {
-    const snap = new TurnSnap(80);
-    expect(sweep(snap, [40, 70, 84, 88, 93, 96])).toEqual([40, 70, 90, 90, 90, 90]);
-  });
-
-  it("holds a 15° step lightly: caught within a degree or two, free just past", () => {
-    const snap = new TurnSnap(200);
-    // At 200 px, a light detent catches within 6 px of arc (1.7°).
-    expect(sweep(snap, [25, 29, 30, 31.5, 34])).toEqual([25, 30, 30, 30, 34]);
-  });
-
-  it("lets a 15° step go soon after sweeping through it, so free angles stay easy", () => {
-    // Measured in the rig at 5x (knob 133 px out): a turn swept through 30°
-    // to 33° stayed at 30° with the first release band. Now it lets go.
-    const snap = new TurnSnap(133);
-    expect(sweep(snap, [20, 26, 29, 30, 31, 33])).toEqual([20, 26, 30, 30, 30, 33]);
-  });
-
-  it("lets go only a little past where it caught: no flicker at the edge", () => {
-    const snap = new TurnSnap(80);
-    sweep(snap, [40, 60]);
-    // The quarter turn catches within 8° here (14 px at 80 px, clamped).
-    expect(deg(snap.turn(82.5 * DEG))).toBe(90);
-    // Back and forth around where it caught: still held.
-    expect(sweep(snap, [81.5, 82.5, 81, 82])).toEqual([90, 90, 90, 90]);
-    // Well past it: free.
-    expect(deg(snap.turn(72 * DEG))).toBe(72);
-  });
-
-  it("measures the detents along the knob's arc on screen: a far knob catches less of an angle", () => {
+  it("measures the pull along the turn's circle on screen: a large circle pulls a smaller angle", () => {
     const near = new TurnSnap(60);
     const far = new TurnSnap(600);
-    for (const s of [near, far]) s.turn(50 * DEG);
-    // 85°: 5° short of a quarter turn.
-    expect(deg(near.turn(85 * DEG))).toBe(90);
+    // 5° short of a quarter turn: inside the near circle's 9° pull, outside the far one's 3°.
+    expect(deg(near.turn(85 * DEG))).not.toBe(85);
     expect(deg(far.turn(85 * DEG))).toBe(85);
-    // But even a far knob keeps a 3° detent at quarter turns.
-    expect(deg(far.turn(87.5 * DEG))).toBe(90);
-  });
-
-  it("lands a tilted shape level: the turn that levels its main edge is a strong detent", () => {
-    // A rectangle drawn 7° off: turning it back by 7° levels it.
-    const snap = new TurnSnap(80, -7 * DEG);
-    expect(sweep(snap, [-20, -11, -9])).toEqual([-20, -7, -7]);
-    // And so are the quarter turns from there.
-    expect(deg(snap.turn(80 * DEG))).toBe(83);
-  });
-
-  it("keeps any angle between the detents", () => {
-    const snap = new TurnSnap(120);
-    for (const d of [-170, -52, -21, 8, 21, 52, 67, 112, 141, 172]) {
-      const shown = deg(snap.turn(d * DEG));
-      const nearStep = Math.abs(d / STEP_DEG - Math.round(d / STEP_DEG)) * STEP_DEG;
-      if (nearStep > 3) expect(shown).toBe(d);
-    }
+    far.turn(89 * DEG);
+    expect(deg(far.settled())).toBe(90);
   });
 
   it("wraps a turn past a half turn, and ignores what is not a number", () => {
     const snap = new TurnSnap(80);
-    snap.turn(60 * DEG);
     expect(deg(snap.turn(200 * DEG))).toBe(-160);
     expect(deg(snap.turn(NaN))).toBe(-160);
-    expect(deg(snap.turn(181 * DEG))).toBe(180);
+    expect(deg(snap.pageAngle(181 * DEG))).toBe(-179);
+    expect(deg(new TurnSnap(80, NaN).pageAngle(10 * DEG))).toBe(10);
   });
 });
 
-describe("levelTurnOf", () => {
-  it("the turn that brings the longest edge level or upright", () => {
-    // A rectangle 7° off level: its long edge first.
-    const c = Math.cos(7 * DEG);
-    const s = Math.sin(7 * DEG);
-    const corners = [
-      [0, 0],
-      [200 * c, 200 * s],
-      [200 * c - 100 * s, 200 * s + 100 * c],
-      [-100 * s, 100 * c],
-      [0, 0],
-    ].flatMap(([x, y]) => [x, y, 0.5]);
-    expect(deg(levelTurnOf(corners)!)).toBe(-7);
-    // A line 80° off level: upright is nearer.
-    expect(
-      deg(levelTurnOf([0, 0, 0.5, Math.cos(80 * DEG) * 100, Math.sin(80 * DEG) * 100, 0.5])!),
-    ).toBe(10);
+describe("shapeAngleOf", () => {
+  it("is the direction of the longest edge, an edge having no direction", () => {
+    expect(deg(shapeAngleOf(rect(200, 100, 7))!)).toBe(7);
+    expect(deg(shapeAngleOf(rect(100, 200, 7))!)).toBe(-83);
+    // Drawn the other way round, the same line.
+    expect(deg(shapeAngleOf([100, 0, 0.5, 0, 0, 0.5])!)).toBe(0);
+    expect(deg(shapeAngleOf([0, 0, 0.5, -100, -100, 0.5])!)).toBe(45);
   });
 
-  it("nothing for a level edge, a dot or a curve", () => {
-    expect(levelTurnOf([0, 0, 0.5, 100, 0, 0.5])).toBeNull();
-    expect(levelTurnOf([5, 5, 0.5, 5, 5, 0.5])).toBeNull();
-    expect(levelTurnOf([5, 5, 0.5])).toBeNull();
-    const curve: number[] = [];
-    for (let i = 0; i <= 64; i++) curve.push(Math.cos(i / 10) * 50, Math.sin(i / 10) * 30, 0.5);
-    expect(levelTurnOf(curve)).toBeNull();
+  it("is the long axis of a curve, and nothing for a round one", () => {
+    const ellipse = (tilt: number, rx: number, ry: number): number[] => {
+      const pts: number[] = [];
+      const c = Math.cos(tilt * DEG);
+      const s = Math.sin(tilt * DEG);
+      for (let i = 0; i < 64; i++) {
+        const t = (i / 64) * 2 * Math.PI;
+        const x = rx * Math.cos(t);
+        const y = ry * Math.sin(t);
+        pts.push(x * c - y * s, x * s + y * c, 0.5);
+      }
+      return pts;
+    };
+    expect(deg(shapeAngleOf(ellipse(30, 100, 40))!)).toBeCloseTo(30, 1);
+    expect(shapeAngleOf(ellipse(30, 50, 48))).toBeNull();
+  });
+
+  it("nothing for a dot or a stroke that never moved", () => {
+    expect(shapeAngleOf([5, 5, 0.5])).toBeNull();
+    expect(shapeAngleOf([5, 5, 0.5, 5, 5, 0.5])).toBeNull();
+    expect(shapeAngleOf([])).toBeNull();
   });
 });

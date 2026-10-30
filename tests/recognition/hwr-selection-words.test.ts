@@ -33,8 +33,15 @@ describe("selectionWords", () => {
     ]);
   });
 
-  it("refuses a selection that cuts a word, or holds read ink in no word", () => {
-    expect(selectionWords(words, read, ["b"])).toBeNull();
+  it("takes a word the selection only touches whole", () => {
+    expect(selectionWords(words, read, ["b"])?.map((w) => w.text)).toEqual(["rationals"]);
+    expect(selectionWords(words, read, ["c", "e"])?.map((w) => w.text)).toEqual([
+      "rationals",
+      "dense.",
+    ]);
+  });
+
+  it("refuses a selection that holds read ink in no word", () => {
     expect(selectionWords(words, read, ["b", "c", "g"])).toBeNull();
     expect(selectionWords(words, read, ["box"])).toBeNull();
     expect(selectionWords(words, read, [])).toBeNull();

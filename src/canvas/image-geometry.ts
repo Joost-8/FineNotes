@@ -304,13 +304,17 @@ export function moveImage(
   start: ImageTransform,
   dx: number,
   dy: number,
-  page?: { width: number; height: number },
+  /**
+   * Where its middle may go: up to `width` and `height`, from `minX` and
+   * `minY` (0 when absent). With joined pages, every page.
+   */
+  page?: { width: number; height: number; minX?: number; minY?: number },
 ): ImageTransform {
   let x = start.x + dx;
   let y = start.y + dy;
   if (page) {
-    x = clamp(x + start.w / 2, 0, page.width) - start.w / 2;
-    y = clamp(y + start.h / 2, 0, page.height) - start.h / 2;
+    x = clamp(x + start.w / 2, page.minX ?? 0, page.width) - start.w / 2;
+    y = clamp(y + start.h / 2, page.minY ?? 0, page.height) - start.h / 2;
   }
   return withRotation({ x, y, w: start.w, h: start.h }, rotationOf(start));
 }

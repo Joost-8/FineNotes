@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
 import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/freehand";
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
+import { layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
 import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
@@ -591,7 +592,7 @@ function hud(debug = true): Hud {
 describe("the HUD's pointer lines", () => {
   it("starts empty", () => {
     expect(hud().text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -599,7 +600,7 @@ describe("the HUD's pointer lines", () => {
     const h = hud();
     for (const r of strokeRecords(100)) h.record(r);
     expect(h.text()).toBe(
-      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -617,7 +618,7 @@ describe("the HUD's pointer lines", () => {
     h.record({ type: "move", pointerType: "touch", pressure: 0.1, coalesced: 4, timeStamp: 505 });
     h.record({ type: "cancel", pointerType: "touch", pressure: 0.1, timeStamp: 510 });
     expect(h.text()).toBe(
-      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\nGEOMETRY",
+      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -647,7 +648,7 @@ describe("the HUD's pointer lines", () => {
     h.setDebug(true);
     expect(h.hidden()).toBe(false);
     expect(h.text()).toBe(
-      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -658,7 +659,7 @@ describe("the HUD's pointer lines", () => {
     for (const r of strokeRecords(0)) h.record(r);
     h.setDebug(true);
     expect(h.text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 });
@@ -703,7 +704,9 @@ function ink(doc: InkDocument): Ink {
     eraseGreyCuts: new Map(),
     eraseDirty: new Set(),
     eraseLast: null,
-    erasePreview: null,
+    erasePreview: new Map(),
+    eraseRuled: new Map(),
+    eraseMirrors: null,
     eraserCursorEl: { addClass: () => {} },
     activePage: null,
     renderer: null,
@@ -853,12 +856,15 @@ describe("ruled erase", () => {
     doc.pages[0].backdrop = { kind };
     const w = ink(doc);
     const flashes: string[] = [];
-    Object.assign(w.surface, { eraseRuled: null, flashReadout: (t: string) => flashes.push(t) });
-    const start = (x: number, y: number): void =>
-      run(w.surface, "startRuledErase", doc.pages[0], { x, y }, "all");
+    Object.assign(w.surface, { flashReadout: (t: string) => flashes.push(t) });
+    let ruled: unknown = null;
+    const start = (x: number, y: number): void => {
+      ruled = run(w.surface, "ruledFor", doc.pages[0], { x, y }, "all", true);
+    };
     const dab = (x: number, y: number): boolean =>
-      run<boolean>(w.surface, "eraseRuledAt", doc.pages[0], w.surface.eraseRuled, { x, y }, 4);
-    return { ...w, flashes, start, dab };
+      run<boolean>(w.surface, "eraseRuledAt", doc.pages[0], ruled, { x, y }, 4);
+    const pass = (): unknown => (w.surface.eraseRuled as Map<string, unknown>).get(doc.pages[0].id);
+    return { ...w, flashes, start, dab, pass };
   }
 
   it("takes the word with its comma, and leaves the next line, in one undo step", () => {
@@ -900,16 +906,16 @@ describe("ruled erase", () => {
   it("on a page without lines, says so and leaves the pass to the standard eraser", () => {
     const w = ruledInk("blank");
     w.start(100, 112);
-    expect(w.surface.eraseRuled).toBeNull();
+    expect(w.pass()).toBeNull();
     expect(w.flashes).toEqual(["No lines on this page: erasing normally"]);
   });
 
   it("forgets the pass when the eraser lifts", () => {
     const w = ruledInk();
     w.start(100, 112);
-    expect(w.surface.eraseRuled).not.toBeNull();
+    expect(w.pass()).not.toBeNull();
     w.lift(0);
-    expect(w.surface.eraseRuled).toBeNull();
+    expect(w.pass()).toBeUndefined();
   });
 
   it("greyed, draws the cut stretch grey beside what survives, and commits only that", () => {
@@ -1667,6 +1673,162 @@ describe("smoothing a pen whose positions arrive rounded (FineNotes#1)", () => {
 });
 
 // --- A Pencil whose contact flickered (2026-10-01) ---------------------------------
+
+// --- Writing over the join of joined pages (discussion #51) ------------------------
+
+describe("commitStroke with the pages joined", () => {
+  function joined() {
+    const doc = documentOf(page("p1", []), page("p2", []));
+    const w = ink(doc);
+    const layout = layoutPages(doc.pages, { joined: true });
+    Object.assign(w.surface, {
+      joined: true,
+      board: false,
+      pageLayout: layout,
+      mirroredStep: null,
+    });
+    // As the surface keeps it: mirrors out of the index while joined.
+    (w.surface.strokeIndex as StrokeIndex).skip = (s) => s.join !== undefined;
+    const commit = (stroke: Stroke): unknown =>
+      run(w.surface, "commitStroke", layout.boxes[0], doc.pages[0], stroke);
+    return { w, doc, layout, commit };
+  }
+
+  it("mirrors a stroke over the join on the next page, in its space, in the same undo step", () => {
+    const { w, doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    // Ids come from the surface's sequence, as a drawn stroke's do.
+    const id = (w.surface.strokeIds as IdSequence).next();
+    const stroke: Stroke = {
+      id,
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [100, height - 50, 0.5, 120, height + 40, 0.5],
+      samples: [1, 2, 3, 4],
+    };
+    commit(stroke);
+    const [own] = doc.pages[0].strokes;
+    const [mirror] = doc.pages[1].strokes;
+    expect(own.join).toBeUndefined();
+    expect(mirror.join).toBe(`p1/${id}`);
+    expect(mirror.id).toBe(`p1/${id}@p2`);
+    expect(mirror.pts).toEqual([100, -50, 0.5, 120, 40, 0.5]);
+    expect(mirror.samples).toBeUndefined();
+    // No tool acts on a mirror: the index leaves it out.
+    expect(w.strokeAt(1, 120, 40)).toBeNull();
+    expect(w.history.canUndo()).toBe(true);
+    w.undo();
+    expect(w.history.canUndo()).toBe(false);
+    expect(doc.pages[0].strokes).toEqual([]);
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("leaves a stroke inside its page alone, and so does a notebook with its pages apart", () => {
+    const { w, doc, commit } = joined();
+    commit(line("s1", 10, 110, 100));
+    expect(doc.pages[0].strokes[0].join).toBeUndefined();
+    expect(doc.pages[1].strokes).toEqual([]);
+    w.surface.joined = false;
+    commit({ ...line("s2", 10, 110, 100), pts: [100, 1400, 0.5, 100, 1500, 0.5] });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("a stroke written on a sticky note stays on the note", () => {
+    const { doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    commit({
+      ...line("s1", 0, 0, 0),
+      pts: [100, height - 5, 0.5, 100, height + 5, 0.5],
+      onSticky: "n1",
+    });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+});
+
+describe("the eraser and the lasso over a join", () => {
+  /** Two joined pages; a line from page 1 over the join, mirrored on page 2. */
+  function overJoin() {
+    const doc = documentOf(page("p1", []), page("p2", []));
+    const w = ink(doc);
+    const layout = layoutPages(doc.pages, { joined: true });
+    Object.assign(w.surface, {
+      joined: true,
+      board: false,
+      pageLayout: layout,
+      mirroredStep: null,
+      showEraserCursor: () => {},
+    });
+    (w.surface.strokeIndex as StrokeIndex).skip = (s) => s.join !== undefined;
+    const [a, b] = layout.boxes;
+    const id = (w.surface.strokeIds as IdSequence).next();
+    const owner: Stroke = {
+      id,
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [100, a.height - 60, 0.5, 100, a.height + 60, 0.5],
+    };
+    run(w.surface, "commitStroke", a, doc.pages[0], owner);
+    return { w, doc, a, b, id };
+  }
+
+  it("the whole-stroke eraser on the next page takes the owner, and the mirror goes with it", () => {
+    const { w, doc, b } = overJoin();
+    expect(doc.pages[1].strokes).toHaveLength(1);
+    w.surface.toolState = { tool: "eraser", eraserMode: "stroke" };
+    w.surface.activePage = b;
+    run(w.surface, "eraseAt", b, { x: 100, y: 30 });
+    run(w.surface, "eraseCommit");
+    expect(doc.pages[0].strokes).toEqual([]);
+    expect(doc.pages[1].strokes).toEqual([]);
+    w.undo();
+    expect(doc.pages[0].strokes).toHaveLength(1);
+    expect(doc.pages[1].strokes).toHaveLength(1);
+  });
+
+  it("the standard eraser on the next page cuts the owner, and the mirror follows", () => {
+    const { w, doc, b } = overJoin();
+    w.surface.toolState = { tool: "eraser", eraserMode: "standard" };
+    w.surface.activePage = b;
+    run(w.surface, "eraseAt", b, { x: 100, y: 30 });
+    run(w.surface, "eraseCommit");
+    // Two pieces on page 1, both still reaching over the join (the cut is
+    // below it), each mirrored on page 2; the erased stretch is on neither.
+    const pieces = doc.pages[0].strokes;
+    expect(pieces).toHaveLength(2);
+    expect(doc.pages[1].strokes.map((s) => s.join)).toEqual(pieces.map((p) => `p1/${p.id}`));
+  });
+
+  it("a lasso on the next page picks up the owner onto its page, taken back when unused", () => {
+    const { w, doc, b, id } = overJoin();
+    w.surface.toolState = { tool: "select" };
+    Object.assign(w.surface, {
+      select: (pageId: string, lists: { strokes: Stroke[] }) => {
+        w.surface.selection = { pageId, ...lists };
+      },
+      selection: null,
+      textBoxFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      tableFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      syncTextBoxes: () => {},
+      renderer: { invalidateAll: () => {}, invalidateRegion: () => {} },
+      clearSelection: () => run(w.surface, "dropPickUp"),
+      renderDry: () => true,
+    });
+    run(w.surface, "selectInside", b, [50, -100, 150, -100, 150, 100, 50, 100]);
+    const sel = w.surface.selection as { pageId: string; strokes: Stroke[] };
+    expect(sel.pageId).toBe("p2");
+    expect(sel.strokes.map((s) => s.id)).toEqual([id]);
+    expect(doc.pages[1].strokes.find((s) => s.id === id)?.pts).toEqual([
+      100, -60, 0.5, 100, 60, 0.5,
+    ]);
+    // Its mirror now lies on page 1, where the line starts.
+    expect(doc.pages[0].strokes.map((s) => s.join)).toEqual([`p2/${id}`]);
+    run(w.surface, "dropPickUp");
+    expect(doc.pages[0].strokes.map((s) => s.id)).toEqual([id]);
+    expect(w.history.latest?.label).toBe("Add stroke");
+  });
+});
 
 describe("resumeLifted", () => {
   /** A page with one stroke just committed, lifted at (40, 10) a moment ago. */

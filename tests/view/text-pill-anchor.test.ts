@@ -13,6 +13,15 @@ const { Toolbar } = await import("../../src/view/toolbar");
 type Fake = Record<string, unknown>;
 const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
+/** The window: 820 tall, the view unpadded. */
+const fakeWindow = {
+  innerHeight: 820,
+  getComputedStyle: () => ({ paddingLeft: "0px", paddingRight: "0px", paddingBottom: "0px" }),
+};
+/** The tool bar along the top, ending at y = 120 (host px 70; the pill keeps 8 below). */
+const TOP_BAR = rect(0, 50, 1180, 70);
+/** The tool bar along the bottom (FineNotes#50), from y = 750. */
+const BOTTOM_BAR = rect(0, 750, 1180, 70);
 
 function pill(
   anchor: {
@@ -26,6 +35,7 @@ function pill(
     moving?: boolean;
   } | null,
   pinned = false,
+  bar: "top" | "bottom" = "top",
 ) {
   const t: Fake = Object.assign(Object.create(Toolbar.prototype), {
     textAnchor: anchor,
@@ -34,8 +44,9 @@ function pill(
     leftInset: 0,
     optionsEl: { hasClass: (c: string) => c === "is-text" },
     // The host fills an 1180 x 820 window from y = 50; the tool bar ends at y = 120.
-    host: { ownerDocument: { defaultView: { innerHeight: 820 } } },
-    barBottom: () => 78,
+    host: { ownerDocument: { defaultView: fakeWindow } },
+    barDock: bar === "top" ? "top" : "bottom",
+    barEl: { getBoundingClientRect: () => (bar === "top" ? TOP_BAR : BOTTOM_BAR) },
   });
   const place = (pillW = 600, pillH = 46) =>
     (t.anchoredPlace as (h: DOMRect, p: DOMRect) => { left: number; top: number } | null).call(
@@ -69,6 +80,15 @@ describe("the floating text pill", () => {
     // No room over it (just under the tool bar): under it after all.
     const high = pill({ left: 500, top: 140, right: 700, bottom: 180, typing: true });
     expect(high()).toEqual({ left: 300, top: 140 });
+  });
+
+  it("keeps clear of a tool bar along the bottom: over the box when the bar leaves no room under it", () => {
+    keyboard.height = 0;
+    const low = { left: 500, top: 660, right: 700, bottom: 700 };
+    // Under the box: 700 - 50 + 10 = 660, its foot at 706, inside the page.
+    expect(pill(low)()).toEqual({ left: 300, top: 660 });
+    // The bar's top is at 700 host px, so under the box would reach into it.
+    expect(pill(low, false, "bottom")()).toEqual({ left: 300, top: 554 });
   });
 
   it("stays inside the page area at the sides", () => {
@@ -134,8 +154,9 @@ describe("the text pill's decision, for the debug HUD", () => {
         state: { textPinned: pinned },
         leftInset: 0,
         optionsEl: { hasClass: (c: string) => c === "is-text" },
-        host: { ownerDocument: { defaultView: { innerHeight: 820 } } },
-        barBottom: () => 78,
+        host: { ownerDocument: { defaultView: fakeWindow } },
+        barDock: "top",
+        barEl: { getBoundingClientRect: () => TOP_BAR },
       });
       (t.anchoredPlace as (h: DOMRect, p: DOMRect) => unknown).call(
         t,

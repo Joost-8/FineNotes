@@ -384,6 +384,30 @@ export function buildTranscriptNote(input: TranscriptNoteInput): string {
   );
 }
 
+/**
+ * What a transcript note says, for pasting onto a page: the note
+ * {@link buildTranscriptNote} wrote, less its properties, heading, "Recorded …"
+ * line and audio embed, with the times that lead its paragraphs (`[1:05] `)
+ * taken off. Whatever the user changed in the text is kept; paragraphs stay
+ * apart by a blank line. Empty when nothing is left.
+ */
+export function transcriptText(markdown: string): string {
+  let body = markdown.replace(/\r\n?/g, "\n");
+  body = body.replace(/^---\n[\s\S]*?\n---(\n|$)/, "");
+  const paragraphs = body
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+  // The lead FineNotes wrote, in its order, each part only where it still is.
+  if (/^# .*— transcript$/.test(paragraphs[0] ?? "")) paragraphs.shift();
+  if (/^Recorded /.test(paragraphs[0] ?? "")) paragraphs.shift();
+  if (/^!(\[\[[^\]]*\]\]|\[[^\]]*\]\([^)]*\))$/.test(paragraphs[0] ?? "")) paragraphs.shift();
+  return paragraphs
+    .map((paragraph) => paragraph.replace(/^\[(\d+:)?\d{1,2}:\d{2}\]\s*/, ""))
+    .filter((paragraph) => paragraph.length > 0)
+    .join("\n\n");
+}
+
 /** One buffer of every chunk, in order: the fallback writes a recording in one go. */
 export function concatChunks(chunks: readonly ArrayBuffer[]): ArrayBuffer {
   let length = 0;

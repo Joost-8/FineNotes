@@ -56,6 +56,7 @@ import {
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
+import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -184,7 +185,7 @@ import {
   writeSymbolPractice,
 } from "./view/handwriting-learning";
 import { buildPracticeFile, isSymbolSet } from "./recognition/practice";
-import { relearnDue } from "./recognition/hwr/learned-model";
+import { newCorrections, relearnDue } from "./recognition/hwr/learned-model";
 import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX, SINGLE_PAGE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
@@ -348,7 +349,7 @@ export default class GoodObsidianPlugin extends Plugin {
       pluginDir: this.pluginDir,
       settings: this.settings,
       saveSettings: () => this.saveSettings(),
-      createPracticeFile: (set) => this.createPracticeFile(set),
+      createPracticeFile: (set, only) => this.createPracticeFile(set, only),
       reloadReader: () => this.handwriting.dispose(),
       baseId: this.grape.id,
       baseModel: async () => {
@@ -489,6 +490,7 @@ export default class GoodObsidianPlugin extends Plugin {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
         this.calculatorFileMoved(oldPath, file.path);
+        this.practiceNotebookMoved(oldPath, file.path);
       }),
     );
     this.register(() => this.fileMoves.destroy());
@@ -818,7 +820,11 @@ export default class GoodObsidianPlugin extends Plugin {
   private remindToRelearn(count: number): void {
     if (this.learner.progress) return;
     const record = learnedRecord(this.settings, this.grape.id);
-    const fresh = relearnDue(count, record?.corrections, this.settings.relearnRemindedAt);
+    const fresh = relearnDue(
+      newCorrections(this.wordCheck.answeredAt, record),
+      count,
+      this.settings.relearnRemindedAt,
+    );
     if (fresh === 0) return;
     this.settings.relearnRemindedAt = count;
     void this.saveSettings();
@@ -927,6 +933,16 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Keep the calculator's switches and history (model/calculator-store.ts). */
   saveCalculator(data: CalculatorData): void {
     this.settings.calculator = data;
+    void this.saveSettings();
+  }
+
+  /**
+   * The practice notebook from before practice files is found by the path
+   * the settings keep: that path follows the notebook when it moves.
+   */
+  private practiceNotebookMoved(from: string, to: string): void {
+    if (this.settings.practiceNotebookPath !== from) return;
+    this.settings.practiceNotebookPath = to;
     void this.saveSettings();
   }
 
@@ -1647,6 +1663,34 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.showPillDock(dock);
   }
 
+  private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";
+
+  /**
+   * Where the tool bar rests (bar-dock-model.ts): along the top until the
+   * "Toolbar" setting says otherwise. Kept per device, as the pill's place is,
+   * not in the synced settings: an iPad and a laptop want different places.
+   */
+  get barDock(): BarDock {
+    this.barDockSeen ??= parseBarDock(this.app.loadLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY));
+    return this.barDockSeen;
+  }
+
+  private barDockSeen: BarDock | null = null;
+
+  /**
+   * The "Toolbar" setting chose `dock`: keep it on this device and move every
+   * open notebook's bar. A pill resting by the bar goes with it
+   * (`pillAfterBarMove`).
+   */
+  setBarDock(dock: BarDock): void {
+    const from = this.barDock;
+    if (dock === from) return;
+    this.barDockSeen = dock;
+    this.app.saveLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY, dock);
+    for (const view of this.openNotebooks()) view.showBarDock(dock);
+    this.setPillDock(pillAfterBarMove(this.pillDock, from, dock));
+  }
+
   /** Every notebook view open in the workspace. */
   private openNotebooks(): InkView[] {
     return this.app.workspace
@@ -2296,8 +2340,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * Practice set `set` as a new `.practice.md` file in FineNotes
    * assets/Handwriting sheets, opened at its cover. Sheets made elsewhere before
    * 2.6 stay where they are: learning finds them anywhere in the vault.
+   * `only`: the symbol sheet's lines to write, when not all of them.
    */
-  async createPracticeFile(set: number): Promise<TFile | null> {
+  async createPracticeFile(set: number, only?: readonly number[]): Promise<TFile | null> {
     const dir = HANDWRITING_FOLDER;
     try {
       if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
@@ -2308,7 +2353,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const geometry = { ...DEFAULT_PAGE_GEOMETRY, width: this.settings.paperWidth };
       const content = buildInkFile(
         newNoteBody(stripInkSuffix(name), new Date().toISOString()),
-        buildPracticeFile(set, geometry),
+        buildPracticeFile(set, geometry, only),
       );
       const file = await this.app.vault.create(normalizePath(joinVaultPath(dir, name)), content);
       const tab = this.app.workspace.getLeaf(false);

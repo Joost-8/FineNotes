@@ -25,6 +25,7 @@
  */
 
 import { POINT_STRIDE } from "../model/document";
+import { tiltFactor } from "./tilt";
 
 /** How a pen draws. */
 export interface PenOptions {
@@ -91,13 +92,21 @@ export interface InkRun {
 
 /**
  * A stored stroke as runs: handwriting traced as it was written, a shape
- * (`shape`) along its exact centreline at the nib's width. Empty for no points.
+ * (`shape`) along its exact centreline at the nib's width. `tilt`, the pen's
+ * altitude at each point (`Stroke.tilt`), widens it where the pen lay flat;
+ * one that does not match the points is ignored. Empty for no points.
  */
-export function inkRuns(pts: readonly number[], pen: PenOptions, shape = false): InkRun[] {
+export function inkRuns(
+  pts: readonly number[],
+  pen: PenOptions,
+  shape = false,
+  tilt?: readonly number[],
+): InkRun[] {
   if (shape) return centrelineRuns(pts, pen.size);
   const tracer = new InkTracer(pen);
-  for (let i = 0; i + POINT_STRIDE <= pts.length; i += POINT_STRIDE) {
-    tracer.push(pts[i], pts[i + 1], pts[i + 2]);
+  const tilted = tilt !== undefined && tilt.length * POINT_STRIDE === pts.length;
+  for (let i = 0, k = 0; i + POINT_STRIDE <= pts.length; i += POINT_STRIDE, k++) {
+    tracer.push(pts[i], pts[i + 1], pts[i + 2], tilted ? tiltFactor(tilt[k]) : 1);
   }
   return tracer.runs();
 }
@@ -129,11 +138,16 @@ export class InkTracer {
     return this.pushed;
   }
 
-  push(x: number, y: number, pressure: number): void {
+  /**
+   * Add a point. `widen` multiplies the line's width there (Pencil tilt,
+   * `ink/tilt` tiltFactor); like pressure it is the point's own, fixed when
+   * the point arrives.
+   */
+  push(x: number, y: number, pressure: number, widen = 1): void {
     this.pushed++;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const { prev, last } = this;
-    let r = radiusAt(pressure, this.pen);
+    let r = radiusAt(pressure, this.pen) * (Number.isFinite(widen) && widen > 0 ? widen : 1);
     // A flat nib: as wide as the direction it arrived from allows. The first
     // point has no direction yet and starts at the nib's middle width.
     if (this.pen.nib !== undefined) {

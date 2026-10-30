@@ -31,6 +31,7 @@ import { type App, FuzzySuggestModal, Notice, Platform, type TFile, setIcon } fr
 import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
 import { pickImageFile } from "./image-import";
+import { menuAnchor, menuPlace } from "./bar-dock-model";
 
 /** Options for placing a picture; every field is optional. */
 export interface InsertImageOptions {
@@ -247,10 +248,21 @@ export class ImageMenuPopover {
     }
   }
 
-  /** Below the anchor, right-aligned to it, kept inside the window. */
+  /**
+   * Below the anchor, right-aligned to it, kept inside the window; toward
+   * the page from a tool bar at another edge (`menuAnchor`).
+   */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
     const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
+    const { side, box } = menuAnchor(this.anchor);
+    if (side !== "down") {
+      const size = { width, height: this.el.offsetHeight };
+      const room = { width: window.innerWidth, height: window.innerHeight };
+      const at = menuPlace(side, box, size, room, "end", 6, 8);
+      this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
+      return;
+    }
     let left = r.right - width;
     if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
     left = Math.max(8, left);

@@ -42,19 +42,43 @@ export const MIN_PRACTICE_LINES = 10;
 export const RELEARN_AFTER = 50;
 
 /**
- * Whether to remind the user to learn again, `corrections` words corrected
- * in all: how many are new since the learned model (0 when it is not time).
- * `remindedAt` is the count at the last reminder or the last run, so a
- * reminder comes once per `RELEARN_AFTER` words, whatever the answer.
+ * The corrected words `model` has not learned from: those saved after it was
+ * learned (`answeredAt`: each correction's time), or every one without a
+ * model. Counted by time, not by a number kept beside the model, so a run
+ * that fails or is stopped leaves them counted as new: nothing is lost.
  */
-export function relearnDue(
-  corrections: number,
-  learnedFrom: number | undefined,
-  remindedAt: number | undefined,
+export function newCorrections(
+  answeredAt: readonly number[],
+  model: Pick<LearnedModel, "learnedAt" | "corrections"> | undefined,
 ): number {
-  const learned = learnedFrom ?? 0;
-  const since = corrections - Math.max(learned, remindedAt ?? 0);
-  return since >= RELEARN_AFTER ? corrections - learned : 0;
+  if (!model) return answeredAt.length;
+  const since = Date.parse(model.learnedAt);
+  if (!Number.isFinite(since)) return Math.max(0, answeredAt.length - (model.corrections ?? 0));
+  return answeredAt.filter((at) => at > since).length;
+}
+
+/**
+ * Whether to remind the user to learn again: `fresh` new corrected words
+ * (`newCorrections`), `total` corrected in all. `remindedAt` is the total at
+ * the last reminder or the last finished run, so a reminder comes once per
+ * `RELEARN_AFTER` words, whatever the answer. Returns the new words to
+ * mention, 0 when it is not time.
+ */
+export function relearnDue(fresh: number, total: number, remindedAt: number | undefined): number {
+  if (fresh < RELEARN_AFTER) return 0;
+  return total - (remindedAt ?? 0) >= RELEARN_AFTER ? fresh : 0;
+}
+
+/** "Corrected words: 17 not learned yet…": the corrections chip's label. */
+export function correctionsText(fresh: number, total: number, model: boolean): string {
+  if (total === 0) {
+    return "Corrected words: none yet. Tap an underlined word in a notebook to correct it.";
+  }
+  const learned = model ? " since your model learned" : "";
+  return (
+    `Corrected words: ${fresh} new${learned}, of ${total} saved. ` +
+    `At ${RELEARN_AFTER} new words, FineNotes offers to learn again.`
+  );
 }
 
 /** The reminder's words, for `fresh` new corrected words: a title and one line under it. */
@@ -246,32 +270,53 @@ export function nextSheetAction(
   return { kind: "write", label: "Write another sheet" };
 }
 
-/** What step 1 says: what to do with a practice sheet, and how far along the user is. */
-export function writeStepText(sheets: readonly PracticeSheet[], sets: number): string {
-  const how =
-    "Each sheet has grey lines to copy: write each one on the empty line under it, in your " +
-    "everyday handwriting, then close the sheet.";
-  const written = writtenSets(sheets, sets);
-  if (sheets.length === 0) return `${how} There are ${sets} sheets; start with the first.`;
-  return `${how} ${written} of ${sets} sheets written; every sheet you add helps it learn.`;
+/** What learning has to go on, for `learnInfoText`. */
+export interface LearnFacts {
+  sheets: readonly PracticeSheet[];
+  /** The text sets there are. */
+  sets: number;
+  /** Corrected words saved, and those the learned model has not learned from. */
+  corrections: number;
+  fresh: number;
+  /** The learned model's record, and whether its file is on this device. */
+  model: LearnedModel | undefined;
+  onDevice: boolean;
 }
 
-/** What step 2 says, from the lines written and the words corrected so far. */
-export function learnStepText(lines: number, corrections: number, model: boolean): string {
-  const total = lines + corrections;
-  if (total < MIN_PRACTICE_LINES) {
-    return (
-      `Copy at least ${MIN_PRACTICE_LINES} lines first (${total} so far). ` +
-      "Then FineNotes learns from them on this device, in a few minutes."
-    );
+/**
+ * "Learn your handwriting"'s ⓘ: what learning needs, what there is, and
+ * what happens next.
+ */
+export function learnInfoText(facts: LearnFacts): string {
+  const { sheets, sets, corrections, fresh, model } = facts;
+  const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
+  const needs =
+    `Needs: at least ${MIN_PRACTICE_LINES} copied lines or corrected words. Copy the grey ` +
+    "lines of a practice sheet in your everyday handwriting, and tap underlined words in " +
+    "your notes to correct them.";
+  const since = facts.onDevice && model ? ` (${fresh} new since your model learned)` : "";
+  const has =
+    `Has: ${plural(lines, "copied line")} on ${writtenSets(sheets, sets)} of ${sets} sheets, ` +
+    `and ${plural(corrections, "corrected word")}${since}. ` +
+    "Corrections are kept, also when a learning run fails or is stopped.";
+  let next: string;
+  if (lines + corrections < MIN_PRACTICE_LINES) {
+    next = `Next: ${MIN_PRACTICE_LINES - lines - corrections} more lines or words, then Learn now.`;
+  } else if (!facts.onDevice || !model) {
+    next =
+      "Next: Learn now. It takes a few minutes on this device, and keeps the result only " +
+      "if it reads your test lines better than Grape alone.";
+  } else if (fresh === 0 && model.sources && !hasUnusedLines(sheets, model)) {
+    next = "Next: your model has all of it. Write another sheet or correct more words first.";
+  } else {
+    const left = Math.max(0, RELEARN_AFTER - fresh);
+    next =
+      (left > 0
+        ? `Next: after ${plural(left, "more corrected word")}, FineNotes offers to learn again; `
+        : "Next: enough new words to learn again; ") +
+      "Learn again starts it now. The model you have stays to go back to.";
   }
-  const words = corrections > 0 ? ` and ${plural(corrections, "corrected word")}` : "";
-  return (
-    `Learns from your ${plural(lines, "copied line")}${words} on this device, in a few minutes; ` +
-    "you can keep writing meanwhile. It keeps the result only if it reads your test lines " +
-    "better than Grape alone" +
-    (model ? ", and the model you have now stays as the one to go back to." : ".")
-  );
+  return [needs, has, next].join(" ");
 }
 
 /** The confirmation before deleting the learned model. */

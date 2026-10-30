@@ -37,6 +37,7 @@ import {
   pentagramPoints,
   starPoints,
 } from "./shape-geometry";
+import { levelLine } from "./level-line";
 
 export type { ShapeKind };
 
@@ -2367,8 +2368,20 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
     tolerance,
     closed,
     candidates: scored.map((c) => ({ kind: c.kind, confidence: round2(c.confidence) })),
-    best: scored[0] ?? null,
+    best: scored[0] ? levelled(scored[0]) : null,
   };
+}
+
+/**
+ * A line or an arrow within a few degrees of level or upright, made exactly
+ * so about its middle, where it moves least off the ink ({@link levelLine}).
+ * After scoring: the confidence is the drawn stroke's, never the levelled
+ * line's (CLAUDE.md "Never score confidence against beautified output").
+ */
+function levelled(result: ShapeResult): ShapeResult {
+  if (result.kind !== "line" && result.kind !== "arrow") return result;
+  const pts = levelLine(result.pts, "middle");
+  return pts === result.pts ? result : { ...result, pts };
 }
 
 /**

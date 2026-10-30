@@ -48,6 +48,9 @@ export interface NoteSettingsHost {
   /** Which way the pages run now. */
   scrollDirection: () => ScrollDirection;
   setScrollDirection: (direction: ScrollDirection) => void;
+  /** Whether the pages are joined (no gap, writing runs on), and setting it. */
+  joinedPages?: () => boolean;
+  setJoinedPages?: (on: boolean) => void;
   /** The notebook's header and page numbers, and setting them. */
   furniture?: () => NotebookFurniture;
   setFurniture?: (furniture: NotebookFurniture | undefined) => void;
@@ -255,8 +258,25 @@ export class NoteSettingsModal extends Modal {
           this.render();
         });
       }
+      this.renderJoined(group);
     }
     this.renderFurniture(group);
+  }
+
+  /** "Join pages": no gap between the pages, so writing runs on over the join. */
+  private renderJoined(group: HTMLElement): void {
+    const get = this.host.joinedPages;
+    const set = this.host.setJoinedPages;
+    if (!get || !set) return;
+    new Setting(group)
+      .setName("Join pages")
+      .setDesc("No gap between pages: write across the join.")
+      .addToggle((toggle) =>
+        toggle.setValue(get()).onChange((on) => {
+          set(on);
+          this.render();
+        }),
+      );
   }
 
   /** Page numbers and a header, printed on every page but the cover. */
