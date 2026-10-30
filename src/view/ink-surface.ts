@@ -11838,9 +11838,11 @@ export class InkSurface {
     extra: Partial<SelectionAction> = {},
   ): SelectionAction | null {
     const correct = this.callbacks.onCorrectWord;
-    if (!correct || index < 0 || strokes.length === 0) return null;
+    // Shapes and highlighter are never read (`inkForReading`).
+    const writing = strokes.filter((stroke) => !stroke.shape && stroke.tool !== "highlighter");
+    if (!correct || index < 0 || writing.length === 0) return null;
     if (this.callbacks.canCorrectWords?.() === false) return null;
-    const ids = strokes.map((stroke) => stroke.id);
+    const ids = writing.map((stroke) => stroke.id);
     return {
       id: "correct-word",
       icon: "spell-check",
