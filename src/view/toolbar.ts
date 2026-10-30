@@ -3820,7 +3820,7 @@ export class Toolbar {
 
   /**
    * One control's width marks (`widthMark`): true size while the thickest
-   * fits the glyph, else shrunk together and dashed (`fitMarks`).
+   * fits the glyph, else shrunk together, still solid (`fitMarks`).
    */
   private widthMarks(widths: readonly number[]): Map<number, SizeMark> {
     return fittedMarks(
@@ -5547,13 +5547,9 @@ function eraserPreview(
 const POPOVER_ERASER_BOX = 48;
 const PILL_ERASER_BOX = 28;
 
-/**
- * A size mark as drawn: `size` screen px, and whether its control's marks
- * were shrunk together to fit (`fitMarks`), so it is not true size.
- */
+/** A size mark as drawn: `size` screen px, after its control's marks were fitted (`fitMarks`). */
 interface SizeMark {
   size: number;
-  scaled: boolean;
 }
 
 /** Each of `keys` with its mark: `sizes` (screen px) fitted together into `limit`. */
@@ -5563,11 +5559,8 @@ function fittedMarks(
   limit: number,
 ): Map<number, SizeMark> {
   const fit = fitMarks(sizes, limit);
-  return new Map(keys.map((key, i) => [key, { size: fit.sizes[i], scaled: fit.scaled }]));
+  return new Map(keys.map((key, i) => [key, { size: fit.sizes[i] }]));
 }
-
-/** The dashes of a mark that is not true size (`SizeMark.scaled`). */
-const SCALED_DASH = "2.5 2";
 
 /**
  * An eraser-size control: the eraser's footprint at the size it erases
@@ -5628,17 +5621,10 @@ function widthGlyph(mark: SizeMark | undefined, pen: string): SVGElement {
   svg.setAttribute("width", String(SWOOSH_WIDTH));
   svg.setAttribute("height", String(SWOOSH_HEIGHT));
   svg.setAttribute("aria-hidden", "true");
-  const shape = swoosh(pen, mark?.size ?? NaN, mark?.scaled);
+  const shape = swoosh(pen, mark?.size ?? NaN);
   const path = activeDocument.createElementNS(SVG_NS, "path");
   path.setAttribute("d", shape.d);
-  if (shape.dashed) {
-    // Shrunk to fit beside larger ones: its outline, dashed, not ink.
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "currentColor");
-    path.setAttribute("stroke-width", "1.25");
-    path.setAttribute("stroke-dasharray", SCALED_DASH);
-    path.setAttribute("stroke-linejoin", "round");
-  } else if (shape.strokeWidth === undefined) {
+  if (shape.strokeWidth === undefined) {
     path.setAttribute("fill", "currentColor");
   } else {
     path.setAttribute("fill", "none");

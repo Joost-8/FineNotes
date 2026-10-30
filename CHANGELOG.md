@@ -8,6 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-30
+
+Linked shapes and Pencil tilt store something older versions cannot draw:
+a notebook that uses either opens read-only in FineNotes 2.5 and earlier.
+Update FineNotes on every device first.
+
 ### Added
 
 - **Drag a lasso selection onto another page.** A selection dragged over
@@ -131,7 +137,33 @@ extracted from the matching section of this file by `release.yml`.
   mouse's middle, back or forward button. A tool can switch on a press or be
   held, back to the tool before when you let go. Each device keeps its own,
   and two actions on one key do nothing until one is changed. A side button
-  recorded here wins over the side button settings.
+  recorded here wins over the side button settings. Thanks to
+  [@volychev](https://github.com/volychev).
+- **The Magnifier's Zoom box**
+  ([#70](https://github.com/Joost-8/FineNotes/pull/70),
+  [#86](https://github.com/Joost-8/FineNotes/pull/86)). Write large in a
+  window while the ink lands small on the page, as in Goodnotes. In Zoom box
+  mode one tap on the Magnifier opens the box on the page you are reading,
+  with the pen still in hand. Drag the frame on the page to move it and its
+  handles to resize it; pinch in the window to magnify. ↵ and auto-advance
+  move the box on, from page to page too. Writing in it is as smooth as on
+  the page, palm rejection included, and in Stylus-only mode a finger in the
+  window moves nothing.
+  Thanks to [@volychev](https://github.com/volychev).
+- **Choose when shapes snap**
+  ([#84](https://github.com/Joost-8/FineNotes/pull/84)). Make shapes, in
+  the pen menu, has three choices: when you hold the pen still (as before),
+  when you lift it too, or off. A slider sets how curved a stroke may be and
+  still become a line or shape, and the pill's Auto shape button switches
+  snapping on lift. Brackets and integral signs written quickly are no
+  longer straightened into lines. Thanks to
+  [@volychev](https://github.com/volychev).
+- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
+  the Pencil flat and the Brush pen paints a wider stroke, up to three times
+  its width, for shading. Held as you write, nothing changes. Only shaded
+  strokes keep the tilt, so other notes stay as they were; an older FineNotes
+  opens a notebook with shaded strokes read-only. The input debug overlay
+  shows what the pen reports.
 
 ### Fixed
 
@@ -190,12 +222,6 @@ extracted from the matching section of this file by `release.yml`.
 - The notebook could scroll by a few pixels in Obsidian when a tool's bar
   along the bottom was tucked away, which narrowed the page by a scrollbar's
   width and changed its zoom a little.
-- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
-  the Pencil flat and the Brush pen paints a wider stroke, up to three times
-  its width, for shading. Held as you write, nothing changes. Only shaded
-  strokes keep the tilt, so other notes stay as they were; an older FineNotes
-  opens a notebook with shaded strokes read-only. The input debug overlay
-  shows what the pen reports.
 
 ### Changed
 
@@ -246,16 +272,19 @@ extracted from the matching section of this file by `release.yml`.
 - **Turning a selection or a picture settles**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
   knob no longer follows every tremor of the pen: a tap or a wobble turns
-  nothing, the turn lands on quarter turns and on level (a tilted shape's
-  longest edge, a picture's own tilt) from several degrees away, and rests
-  lightly on every 15°, free between. A small readout beside the pen shows
-  the angle while you turn.
-  knob, and now two fingers, draw the turn gently toward every 45° of the
-  page (0°, 45°, 90° …), whatever angle the item started at: it slows near
-  a step and goes on through it, never stopping, and let go close to one
-  it lands there exactly, so a shape drawn slightly crooked ends level,
-  never at 89°. A small readout shows the angle on the page while you turn.
-
+  nothing. The knob, and now two fingers, draw the turn gently toward every
+  45° of the page (0°, 45°, 90° …), whatever angle the item started at: it
+  slows near a step and goes on through it, never stopping, and let go
+  close to one it lands there exactly, so a shape drawn slightly crooked
+  ends level, never at 89°. A small readout shows the angle on the page
+  while you turn.
+- **Size marks at true size**
+  ([#76](https://github.com/Joost-8/FineNotes/pull/76)). The pen widths and
+  eraser sizes in the pill and their menus are drawn as large as the ink or
+  the eraser is on the page at the zoom you are at. Zoomed in past what a
+  button can hold, a control's marks shrink together, so the sizes keep
+  their ratios and stay apart. Before, the larger ones were all cut to the
+  same size.
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's
