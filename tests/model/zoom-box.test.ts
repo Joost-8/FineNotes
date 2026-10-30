@@ -32,6 +32,7 @@ import {
   zoomViewPoint,
   zoomViewPointFree,
   zoomWindowDragAllowed,
+  zoomWindowPans,
 } from "../../src/model/zoom-box";
 
 const box = { x: 100, y: 200, w: 160, h: 80 };
@@ -285,6 +286,18 @@ describe("stylus-only window drags", () => {
   it("keeps a palm's touch from moving or resizing the floating window", () => {
     expect(zoomWindowDragAllowed("touch", true, "resize")).toBe(false);
     expect(zoomWindowDragAllowed("touch", false, "resize")).toBe(true);
+  });
+
+  it("pans the window's view by finger, except in Stylus-only mode", () => {
+    expect(zoomWindowPans("touch", "pen", false)).toBe(true);
+    expect(zoomWindowPans("touch", "pen", true)).toBe(false);
+    expect(zoomWindowPans("touch", "pan", true)).toBe(false);
+  });
+
+  it("pans the window's view by pen or mouse only with the Hand", () => {
+    expect(zoomWindowPans("pen", "pen", false)).toBe(false);
+    expect(zoomWindowPans("pen", "pan", true)).toBe(true);
+    expect(zoomWindowPans("mouse", "pan", false)).toBe(true);
   });
 
   it("lets a finger move the window by its bar in Stylus-only mode", () => {

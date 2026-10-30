@@ -86,6 +86,7 @@ import {
   pinchZoomBox,
   placedZoomBox,
   zoomWindowDragAllowed,
+  zoomWindowPans,
   zoomWindowFirstPlace,
   type ZoomHandle,
   type ZoomRect,
@@ -7739,19 +7740,21 @@ export class InkSurface {
    * A finger dragged inside the window moves the view, as on a page: what
    * is under the finger stays under it, so the box goes the other way, on
    * to the next page past the end of this one (Goodnotes). Fingers do not
-   * write in the box, and the window is a control like the frame, so this
-   * works in Stylus-only mode too. With the Hand in hand the Pencil and a
-   * mouse drag it as well. A second finger turns the drag into a pinch,
-   * which magnifies as Goodnotes' window does (`pinchZoomBox`).
+   * write in the box. In Stylus-only mode they do nothing here: the hand
+   * rests in the window to write, and the frame on the page still moves by
+   * finger (`zoomWindowPans`). With the Hand in hand the Pencil and a mouse
+   * drag it as well. A second finger turns the drag into a pinch, which
+   * magnifies as Goodnotes' window does (`pinchZoomBox`).
    */
   private onZoomPanDown(event: PointerEvent): void {
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
+    const onlyStylus = this.callbacks.onlyStylusMode?.() === true;
+    if (!zoomWindowPans(event.pointerType, this.toolState.tool, onlyStylus)) return;
     if (event.pointerType === "touch") {
       this.zoomTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
-    const panner = event.pointerType === "touch" || this.toolState.tool === "pan";
-    if (!state || !canvas || !panner || this.zoomStroke) return;
+    if (!state || !canvas || this.zoomStroke) return;
     if (event.pointerType === "touch" && this.zoomTouches.size === 2 && !this.zoomPinch) {
       // The second finger: what the first one dragged goes back, and the two pinch.
       this.endZoomPan(false);

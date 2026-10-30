@@ -45,6 +45,18 @@ export function zoomWindowDragAllowed(
 }
 
 /**
+ * Whether a press inside the window's view moves it (a pan, or with a second
+ * finger a pinch). A finger does, as on a page, except in Stylus-only mode:
+ * there the hand rests in the window to write, and the view moves by the
+ * frame on the page instead (Kirill, #70). The pen and a mouse do with the
+ * Hand in hand.
+ */
+export function zoomWindowPans(pointerType: string, tool: string, onlyStylus: boolean): boolean {
+  if (pointerType === "touch") return !onlyStylus;
+  return tool === "pan";
+}
+
+/**
  * Whether the first-drag catcher lies over the page while a Zoom box waits
  * for its target. It takes every pointer, fingers included, so it is only
  * put down in Stylus-only mode, where fingers do nothing on the page anyway:
