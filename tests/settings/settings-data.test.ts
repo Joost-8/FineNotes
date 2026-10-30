@@ -19,6 +19,8 @@ import {
   appearanceChoiceOf,
   endpointWarning,
   greyWhileErasingOf,
+  laserDefaultColorOf,
+  laserDotFrequencyOf,
   openSectionsOf,
   pagesAreDark,
   penPreferencesOf,
@@ -52,6 +54,8 @@ const FRESH_INSTALL = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
+  laserDefaultColor: "#ff3b30",
+  laserDotFrequency: 50,
   defaultSize: 3,
   eraserMode: "standard",
   eraserSize: 24,
@@ -165,6 +169,8 @@ const USED_VAULT = {
   defaultTool: "highlighter",
   customColors: ["#ff8800", "#0ca"],
   defaultColor: "#2255aa",
+  laserDefaultColor: "#00aaff",
+  laserDotFrequency: 25,
   defaultSize: 5,
   eraserMode: "stroke",
   eraserSize: 40,
@@ -369,6 +375,25 @@ describe("dark pages", () => {
     expect(pagesAreDark("dark", false)).toBe(true);
     expect(pagesAreDark("system", true)).toBe(true);
     expect(pagesAreDark("system", false)).toBe(false);
+  });
+
+  describe("laser pointer settings", () => {
+    it("normalizes the missing and invalid values to safe defaults", () => {
+      expect(laserDotFrequencyOf(undefined)).toBe(50);
+      expect(laserDotFrequencyOf(-5)).toBe(0);
+      expect(laserDotFrequencyOf(101)).toBe(100);
+      expect(laserDotFrequencyOf("50")).toBe(50);
+      expect(laserDefaultColorOf(undefined)).toBe("#ff3b30");
+      expect(laserDefaultColorOf("#abc")).toBe("#abc");
+      expect(laserDefaultColorOf("red")).toBe("#ff3b30");
+    });
+
+    it("keeps zero dots and a configured colour through defaults merging", () => {
+      expect(loadAndSave({ laserDotFrequency: 0, laserDefaultColor: "#123456" })).toMatchObject({
+        laserDotFrequency: 0,
+        laserDefaultColor: "#123456",
+      });
+    });
   });
 
   it("read anything they do not know as light", () => {

@@ -61,6 +61,10 @@ export interface GoodObsidianSettings {
   /** Extra palette swatches, `#rgb` or `#rrggbb`. */
   customColors: string[];
   defaultColor: string;
+  /** The laser pointer's default colour, `#rgb` or `#rrggbb`. */
+  laserDefaultColor: string;
+  /** Laser dots per 100 page pixels; zero disables dots. */
+  laserDotFrequency: number;
   defaultSize: number;
   /** The eraser's last mode, kept between sessions. */
   eraserMode: EraserMode;
@@ -386,6 +390,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: PALETTE[0],
+  laserDefaultColor: "#ff3b30",
+  laserDotFrequency: 50,
   defaultSize: SIZES[1],
   eraserMode: "standard",
   eraserSize: DEFAULT_ERASER_SIZE,
@@ -473,6 +479,19 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
+
+/** A stored laser dot frequency, clamped to the settings control's range. */
+export function laserDotFrequencyOf(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return DEFAULT_SETTINGS.laserDotFrequency;
+  return Math.min(100, Math.max(0, Math.round(raw)));
+}
+
+/** A stored laser colour, or the built-in red when a vault contains bad data. */
+export function laserDefaultColorOf(raw: unknown): string {
+  return typeof raw === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)
+    ? raw
+    : DEFAULT_SETTINGS.laserDefaultColor;
+}
 
 // --- Settings sections -----------------------------------------------------------
 

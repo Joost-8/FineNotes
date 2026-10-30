@@ -46,6 +46,7 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
+import { laserDefaultColorOf } from "./settings-data";
 import {
   type PageAppearance,
   type PenPreferences,
@@ -779,6 +780,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
+    this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
