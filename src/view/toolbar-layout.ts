@@ -213,3 +213,72 @@ export function sameBar(a: readonly BarItemId[], b: readonly BarItemId[]): boole
 export function sameLayout(a: ToolbarLayout, b: ToolbarLayout): boolean {
   return sameBar(a.bar, b.bar) && sameBar(a.off, b.off);
 }
+
+// --- An item shown nowhere has nothing left on --------------------------------
+
+/** The bar item a tool belongs to: the highlighter and the laser are the pen's. */
+export function barItemOfTool(tool: string): BarItemId | null {
+  switch (tool) {
+    case "select":
+    case "eraser":
+    case "text":
+    case "shape":
+    case "pan":
+    case "zoom":
+      return tool;
+    case "pen":
+    case "highlighter":
+    case "laser":
+      return "pen";
+    default:
+      return null;
+  }
+}
+
+/** What is on in a notebook, of what the bar's items turn on. */
+export interface ItemEffects {
+  /** The tool in hand. */
+  tool: string;
+  onlyStylus: boolean;
+  rulerOut: boolean;
+  recording: boolean;
+  /** A sticky note waits to be placed. */
+  stickyArmed: boolean;
+}
+
+/** Which of `ItemEffects` to end: `pen` puts the pen back in hand. */
+export interface EndedEffects {
+  pen: boolean;
+  onlyStylus: boolean;
+  ruler: boolean;
+  recording: boolean;
+  sticky: boolean;
+}
+
+/**
+ * The effects to end under `layout` (Joost, 2026-10-30): an item shown
+ * nowhere ("off" in Customize toolbar) leaves nothing on, since no button
+ * would show it or turn it off. A tool of its in hand gives way to the pen;
+ * Stylus-only mode goes off, the ruler away, a recording stops (and is
+ * saved), a sticky note waiting to be placed is dropped. An item in the
+ * accessories menu is still reachable, and keeps its effect.
+ */
+export function effectsOfOffItems(layout: ToolbarLayout, live: ItemEffects): EndedEffects {
+  const off = (id: BarItemId): boolean => layout.off.includes(id);
+  const item = barItemOfTool(live.tool);
+  return {
+    pen: item !== null && item !== ALWAYS_SHOWN && off(item),
+    onlyStylus: live.onlyStylus && off("stylus"),
+    ruler: live.rulerOut && off("ruler"),
+    recording: live.recording && off("record"),
+    sticky: live.stickyArmed && off("sticky"),
+  };
+}
+
+/**
+ * Whether an item is shown nowhere, so nothing (a shortcut, a command) may
+ * turn its effect on: it would be on with no button to show it.
+ */
+export function isItemOff(layout: ToolbarLayout, id: BarItemId): boolean {
+  return layout.off.includes(id);
+}

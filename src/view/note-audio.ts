@@ -161,6 +161,11 @@ export class NoteAudio {
 
   // --- Recording ----------------------------------------------------------------
 
+  /** Whether a recording is running. */
+  get isRecording(): boolean {
+    return this.recorder !== null;
+  }
+
   /** The mic: start a recording, or stop the one running. Call inside the tap. */
   toggleRecording(): void {
     if (this.recorder) {

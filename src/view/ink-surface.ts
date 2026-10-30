@@ -770,6 +770,11 @@ export interface InkSurfaceCallbacks {
   onShortcuts?: () => void;
   /** This device's shortcut rows (`model/shortcut-bindings.ts`), read live. */
   shortcuts?: () => ShortcutTable;
+  /**
+   * Whether `tool`'s button is shown nowhere (Customize toolbar's "off"): a
+   * shortcut then leaves it, as it would be in hand with no button showing it.
+   */
+  toolOff?: (tool: ActiveTool) => boolean;
   /** Run a shortcut action that belongs to the host (full screen, ruler, stickers…). */
   onShortcutAction?: (actionId: string) => boolean;
   /** What the stylus barrel button does (the settings); erase when absent. */
@@ -3504,6 +3509,7 @@ export class InkSurface {
       this.drawingTool,
     );
     if (this.practice && !isPracticeTool(next)) return;
+    if (this.callbacks.toolOff?.(next) === true) return;
     this.setTool(next);
     this.callbacks.onToolChange?.(next);
   }
@@ -3519,6 +3525,7 @@ export class InkSurface {
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
+    if (this.callbacks.toolOff?.(tool) === true) return;
     const mod = input.mods.includes("Mod");
     const key = input.type === "key" ? input.key : null;
     const bit = input.type === "button" ? buttonBit(input.button) : 0;

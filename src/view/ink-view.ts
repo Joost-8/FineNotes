@@ -127,7 +127,14 @@ import {
   stickyBoxAt,
 } from "../model/sticky-notes";
 import { CustomizeToolbarModal } from "./customize-toolbar-modal";
-import type { ToolbarLayout } from "./toolbar-layout";
+import {
+  type BarItemId,
+  type ToolbarLayout,
+  barItemOfTool,
+  effectsOfOffItems,
+  isItemOff,
+  normalizeLayout,
+} from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -1046,6 +1053,45 @@ export class InkView extends TextFileView {
   /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
   setToolbarItems(layout: ToolbarLayout): void {
     this.toolbar?.setItems(layout.bar, layout.off);
+    this.endOffItemEffects(normalizeLayout(layout.bar, layout.off));
+  }
+
+  /** The tool bar's layout as the settings hold it. */
+  private toolbarLayout(): ToolbarLayout {
+    return normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+  }
+
+  /** Whether `item` is shown nowhere: its effect may not be turned on (`isItemOff`). */
+  private itemOff(item: BarItemId): boolean {
+    return isItemOff(this.toolbarLayout(), item);
+  }
+
+  /**
+   * An item shown nowhere leaves nothing on (Joost, 2026-10-30): its tool in
+   * hand gives way to the pen, the ruler goes away, a recording stops and is
+   * saved, a sticky note waiting to be placed is dropped (`effectsOfOffItems`).
+   * Stylus-only mode is the plugin's, ended there for every notebook.
+   */
+  private endOffItemEffects(layout = this.toolbarLayout()): void {
+    const surface = this.surface;
+    if (!surface) return;
+    const end = effectsOfOffItems(layout, {
+      tool: this.toolState.tool,
+      onlyStylus: false,
+      rulerOut: surface.rulerOut,
+      recording: this.audio?.isRecording === true,
+      stickyArmed: surface.stickyArmed,
+    });
+    if (end.pen) {
+      surface.setTool("pen");
+      this.toolbar?.setState(this.toolState);
+    }
+    if (end.ruler) {
+      surface.setRulerOut(false);
+      this.toolbar?.setRulerOut(false);
+    }
+    if (end.recording) this.audio?.toggleRecording();
+    if (end.sticky) this.armStickyNote(null);
   }
 
   /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
@@ -2794,6 +2840,10 @@ export class InkView extends TextFileView {
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),
         onPasteImage: (file, at) => void this.pastePictureFile(file, at),
+        toolOff: (tool) => {
+          const item = barItemOfTool(tool);
+          return item !== null && this.itemOff(item);
+        },
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
@@ -2821,6 +2871,8 @@ export class InkView extends TextFileView {
     // The recordings live in the page sidebar's Audio tab, as in GoodNotes.
     audio.attachPanel(this.sidebar.audioEl);
     this.surface.setClock(() => audio.now());
+    // A tool remembered from before its button was turned off is not taken up.
+    this.endOffItemEffects();
     this.registerDomEvent(document, "visibilitychange", () => {
       const hidden = document.visibilityState === "hidden";
       // A page read while the app is away is not blamed if iPadOS ends it.
@@ -3791,6 +3843,10 @@ export class InkView extends TextFileView {
    * stylus only mode. False when the action is not one of these.
    */
   private runShortcutAction(id: string): boolean {
+    // An item shown nowhere cannot be turned on from a key either: it would be
+    // on with no button to show it. Taken, so the key does nothing else.
+    const item = id.startsWith("bar.") ? (id.slice(4) as BarItemId) : null;
+    if (item && this.itemOff(item)) return true;
     switch (id) {
       case "view.fullscreen":
         if (!this.plugin.fullScreenOffered) return false;
