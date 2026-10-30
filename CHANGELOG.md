@@ -154,6 +154,19 @@ extracted from the matching section of this file by `release.yml`.
   parts of the PDF again and again (half of all it drew, in one test), and
   every frame of a scroll or a page turn changed two screen-sized pictures
   where one now does, so page turns stutter less.
+- **The eraser keeps up with the pen.** Each move of the eraser drew the
+  whole screen again, and every tile under any stroke it touched from
+  scratch, the PDF and every highlight on it included; a long stroke or a
+  scribbled highlight made each move slower than the pen. Now only what
+  the eraser changed is painted again, once a frame. Measured with the
+  CPU slowed four times: an eraser pass over a page of 845 strokes took a
+  fifth of the time it did, and over thirty stacked highlights a quarter,
+  with a few stutters where there were dozens.
+- **No freeze when a zoom comes to rest, or a PDF page arrives.** Every
+  tile on screen was drawn again in one frame, half a second with stacked
+  highlights on a slow CPU. They are now drawn a few a frame, the last
+  zoom's tiles standing in meanwhile, and a PDF page or its sharper detail
+  arriving paints the ink over it again the same way.
 - The debug overlay says what the highlighter did where it came down on a
   PDF page: which text it snapped to, or why it drew freehand (the page's
   text not read yet, no text on the page, or the pen beside the text).

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { LIGHT_PAPER } from "../../src/canvas/backdrop";
 import { Renderer, type BackdropPainter } from "../../src/canvas/renderer";
 import { blankPage, type InkDocument } from "../../src/model/document";
 
@@ -7,7 +8,7 @@ describe("renderer visible PDF request boundary", () => {
     const page = blankPage("p1", { width: 1000, height: 1000 });
     page.backdrop = { kind: "pdf", path: "slides.pdf", page: 0 };
     const box = { index: 0, x: 0, y: 0, width: 1000, height: 1000 };
-    const ctx = { drawImage: vi.fn(), setTransform: vi.fn() };
+    const ctx = { drawImage: vi.fn(), setTransform: vi.fn(), save: vi.fn(), restore: vi.fn() };
     const prepare = vi.fn();
     const rasterTile = vi.fn(() => ({ canvas: {} }));
     const renderer = Object.assign(Object.create(Renderer.prototype), {
@@ -16,6 +17,8 @@ describe("renderer visible PDF request boundary", () => {
       view: { scale: 4, scrollY: 25, width: 1000 },
       originX: -100,
       level: 8,
+      fallbackLevel: 0,
+      paper: LIGHT_PAPER,
       painter: { paint: vi.fn(), prepare } as BackdropPainter,
       wipe: vi.fn(),
       paintDesk: vi.fn(),

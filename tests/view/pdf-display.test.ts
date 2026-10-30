@@ -186,7 +186,7 @@ describe("PDF backdrop display", () => {
     const first = { ...blankPage("p1", geometry), backdrop };
     const unrelated = { ...blankPage("p2", geometry), backdrop: { ...backdrop, page: 0 } };
     const resized = { ...blankPage("p3", { width: 500, height: 500 }), backdrop };
-    const renderer = { invalidateRegion: vi.fn(), invalidatePage: vi.fn() };
+    const renderer = { invalidateBackdrop: vi.fn(), refreshPage: vi.fn() };
     const state = Object.assign(Object.create(InkSurface.prototype) as object, {
       doc: { pages: [first, unrelated, resized] },
       renderer,
@@ -196,8 +196,8 @@ describe("PDF backdrop display", () => {
     (
       state as unknown as { pdfPageReady(path: string, page: number, area: PdfRenderArea): void }
     ).pdfPageReady(backdrop.path, backdrop.page, area);
-    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, area.region);
-    expect(renderer.invalidatePage).not.toHaveBeenCalled();
+    expect(renderer.invalidateBackdrop).toHaveBeenCalledExactlyOnceWith(0, area.region);
+    expect(renderer.refreshPage).not.toHaveBeenCalled();
   });
   describe("an A4 study sheet on an iPad (FineNotes#80)", () => {
     const a4 = { width: 595.28, height: 841.89 };

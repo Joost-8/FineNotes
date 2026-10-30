@@ -1,5 +1,5 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
-import type { PdfRenderArea } from "../canvas/pdf-raster";
+import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -54,6 +54,7 @@ import {
   Renderer,
   type StrokeStyle,
   decorOf,
+  inkReach,
   penFor,
   paperColorOf,
   renderPageThumbnail,
@@ -610,6 +611,14 @@ const ZOOM_STEP = 1.25;
  * the budget skips is drawn from the page preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
+/**
+ * Rasterising budget for a frame at rest that has tiles to make with
+ * something to stand in for them meanwhile: the last zoom's tiles, scaled,
+ * or a page's preview. A zoom coming to rest made every tile on screen in
+ * one frame, half a second with stacked highlights (the CPU slowed 4x), and
+ * so did a PDF page arriving.
+ */
+const REST_FRAME_BUDGET_MS = 10;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -731,6 +740,13 @@ const MAX_STROKE_HALF_WIDTH = 24;
  * (`ink/tilt`): the cut reaches as far as its widest edge.
  */
 const MAX_TILTED_HALF_WIDTH = MAX_STROKE_HALF_WIDTH * TILT_MAX_FACTOR;
+
+/**
+ * A cut piece's line starts again a sample past the cut, a little off the
+ * stroke's own curve there: this much more (page px) round a cut is painted
+ * again with it.
+ */
+const ERASE_CUT_MARGIN = 6;
 
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
@@ -2024,13 +2040,18 @@ export class InkSurface {
   /** The previous dab's page-local point, so fast drags leave no gaps. */
   private eraseLast: { x: number; y: number } | null = null;
   /**
-   * Tiles hold committed ink, so the live erase preview has to re-rasterise
-   * what it touches: `eraseDirty` is the strokes changed since the last
-   * repaint, `erasePreview` everything the gesture has touched, which is put
-   * back from the document when it ends.
+   * Tiles hold committed ink, so the live erase preview has to paint again
+   * what it touches: `eraseDirty` is the strokes changed whole since the
+   * last repaint (taken, greyed), `eraseCuts` the places, by page index,
+   * where the eraser cut strokes since (a cut changes the stroke only
+   * there), and `erasePreview` everything the gesture has touched, which is
+   * put back from the document when it ends.
    */
   private eraseDirty = new Set<string>();
-  private erasePreview = new Map<number, Bounds>();
+  private eraseCuts = new Map<number, Bounds[]>();
+  private erasePreview = new Map<number, Bounds[]>();
+  /** The strokes cut this gesture whose whole bounds `erasePreview` has. */
+  private eraseCutSeen = new Set<string>();
   /**
    * The ruled eraser's pass on each page it reached, from its first dab
    * there; null on an unlined page. With the pages joined the eraser goes
@@ -2808,11 +2829,17 @@ export class InkSurface {
     // (see `handlePaste`). Idempotent, so every open surface may report it.
     const onLeave = (): void => clipboard.noteWindowLeft();
     const onVisibility = (): void => {
-      if (this.surfaceEl.ownerDocument.visibilityState === "hidden") clipboard.noteWindowLeft();
-      else if (this.layoutWhenShown) {
+      if (this.surfaceEl.ownerDocument.visibilityState === "hidden") {
+        clipboard.noteWindowLeft();
+        return;
+      }
+      // The system may have let a hidden page's canvases go: the next paint
+      // draws the dry layer whole rather than only what changed.
+      this.renderer?.repaintAll();
+      if (this.layoutWhenShown) {
         this.layoutWhenShown = false;
         this.layout();
-      }
+      } else this.requestFrame();
     };
     // The surface's own document: a popout window hides and shows its own.
     const viewDoc = this.surfaceEl.ownerDocument;
@@ -4752,7 +4779,7 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : Infinity);
+    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
     if (this.debug) this.trackFrame(t, started, moving);
     if (moving || !complete) {
       this.requestFrame();
@@ -4804,7 +4831,8 @@ export class InkSurface {
     if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     if (!this.renderer || this.zoomTransient || !this.renderer.isTransient) return;
     this.renderer.settle();
-    this.paint(Infinity);
+    // A few tiles a frame, the last zoom's scaled meanwhile.
+    if (!this.paint(REST_FRAME_BUDGET_MS)) this.requestFrame();
   }
 
   /** Paint the backdrop and the dry layer. Returns whether every tile was ready. */
@@ -4827,11 +4855,18 @@ export class InkSurface {
     return complete;
   }
 
+  /**
+   * Rasterise ahead, and repair the page previews, in idle frames. Not while
+   * the pen is on the page: the eraser paints in frames now, and between
+   * them this repaired the preview of the page it was on every time,
+   * though nothing shows a preview until a scroll needs one.
+   */
   private schedulePrefetch(): void {
     if (this.prefetchReq || !this.renderer) return;
     this.prefetchReq = window.requestAnimationFrame(() => {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
+      if (this.pressing) return;
       const more = this.renderer.prefetch(this.doc, this.inkPressure, PREFETCH_BUDGET_MS);
       if (more) this.schedulePrefetch();
     });
@@ -6017,9 +6052,23 @@ export class InkSurface {
    * eraser goes on over the join), and under their mirrors.
    */
   private flushEraseDirty(): void {
-    if (this.eraseDirty.size === 0 || !this.activePage) {
+    const cuts = this.eraseCuts;
+    this.eraseCuts = new Map();
+    const idle = this.eraseDirty.size === 0 && cuts.size === 0;
+    if (idle || !this.activePage || !this.renderer) {
       this.eraseDirty.clear();
       return;
+    }
+    for (const [index, areas] of cuts) {
+      // One event's dabs overlap one another: painted again as one area.
+      const merged: Bounds[] = [];
+      for (const area of areas) {
+        const last = merged[merged.length - 1];
+        if (last && boundsMeet(last, area))
+          merged[merged.length - 1] = unionBounds(last, area) ?? last;
+        else merged.push(area);
+      }
+      for (const area of merged) this.renderer?.invalidateArea(index, area);
     }
     const dirty = new Map<number, Bounds>();
     const add = (index: number, bounds: Bounds | null): void => {
@@ -6038,9 +6087,28 @@ export class InkSurface {
     this.eraseDirty.clear();
     for (const [index, bounds] of dirty) {
       this.renderer?.invalidateRegion(index, bounds);
-      const seen = this.erasePreview.get(index);
-      this.erasePreview.set(index, seen ? (unionBounds(seen, bounds) ?? bounds) : bounds);
+      this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
     }
+  }
+
+  /**
+   * The eraser at `at` (page-local, `radius`) cut `stroke` on page `index`.
+   * What changed is the ink there: the cut takes the line's centre within
+   * the radius and half the stroke's width (`inkReach`, its widest), with
+   * the ink either side of it, up to 0.8 of that with pressure, and the cut
+   * ends' round caps reach as far: 1.3 widths past the circle at most, and a
+   * sample beyond, where the piece's line begins again. The whole stroke is
+   * put back from the document when the gesture ends, so `erasePreview`
+   * gets its bounds once.
+   */
+  private noteCut(index: number, stroke: Stroke, at: Pt, radius: number): void {
+    const reach = radius + 1.5 * inkReach(stroke) + ERASE_CUT_MARGIN;
+    const area = { minX: at.x - reach, minY: at.y - reach, maxX: at.x + reach, maxY: at.y + reach };
+    this.eraseCuts.set(index, [...(this.eraseCuts.get(index) ?? []), area]);
+    if (this.eraseCutSeen.has(stroke.id)) return;
+    this.eraseCutSeen.add(stroke.id);
+    const bounds = strokeBounds(stroke);
+    if (bounds) this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
   }
 
   /** The mirrors of stroke `id` of page `pageId`, for the erase preview; none apart. */
@@ -6215,8 +6283,10 @@ export class InkSurface {
           area.geometry.height !== page.geometry.height)
       )
         return;
-      if (area?.region) renderer.invalidateRegion(index, area.region);
-      else renderer.invalidatePage(page.id);
+      // Only the PDF changed: painted again in place, a few tiles a frame,
+      // and no ink reaches further for it.
+      if (area?.region) renderer.invalidateBackdrop(index, area.region);
+      else renderer.refreshPage(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -8252,18 +8322,23 @@ export class InkSurface {
     this.requestLaser();
   }
 
-  /** Every sample erases (a preview); the lift commits the gesture as one step. */
+  /**
+   * Every sample erases (a preview); the lift commits the gesture as one
+   * step. The page is painted at the next frame, once for every pen event
+   * since: painted in each event, a slow paint let events queue behind it
+   * and the eraser fall further and further behind the pen.
+   */
   private readonly eraserGesture: PenGesture = {
     down: (box, at) => {
       this.eraseReset();
-      if (this.eraseAt(box, at)) this.renderDry();
+      if (this.eraseAt(box, at)) this.requestFrame();
     },
     move: (box, samples) => {
       let erased = false;
       for (const sample of samples) {
         if (this.eraseAt(box, this.toPage(box, sample))) erased = true;
       }
-      if (erased) this.renderDry();
+      if (erased) this.requestFrame();
     },
     up: () => this.eraseCommit(),
     // Nothing is committed before the lift, so the page simply goes back.
@@ -9760,6 +9835,9 @@ export class InkSurface {
 
   /** Drop any in-progress erase preview (the document was never touched). */
   private eraseReset(): void {
+    // What the last pen events changed waits for the next frame: counted in
+    // with the rest, so it is painted again too.
+    this.flushEraseDirty();
     this.eraseIds = new Set();
     this.eraseGrey = false;
     this.eraseGreyCuts = new Map();
@@ -9768,10 +9846,14 @@ export class InkSurface {
     this.eraseRuled = new Map();
     this.eraseMirrors = null;
     this.eraseDirty.clear();
+    this.eraseCuts = new Map();
+    this.eraseCutSeen = new Set();
     // Whatever the preview touched is drawn from the document again.
     const preview = this.erasePreview;
     this.erasePreview = new Map();
-    for (const [index, bounds] of preview) this.renderer?.invalidateRegion(index, bounds);
+    for (const [index, areas] of preview) {
+      for (const bounds of areas) this.renderer?.invalidateRegion(index, bounds);
+    }
     this.eraserCursorEl.addClass("is-hidden");
   }
 
@@ -9843,7 +9925,7 @@ export class InkSurface {
           ? this.eraseRuledAt(onPage, ruled, local, radius)
           : whole
             ? this.eraseWholeAt(onPage, local, radius, filter)
-            : this.erasePartialAt(onPage, local, radius, filter);
+            : this.erasePartialAt(onPage, local, radius, filter, target.index);
         if (hit) changed = true;
       }
     }
@@ -9974,6 +10056,7 @@ export class InkSurface {
     sample: { x: number; y: number },
     radius: number,
     filter: EraserFilter,
+    index: number,
   ): boolean {
     // The cut widens by half the stroke width, so the broad phase must too.
     const reach = radius + MAX_TILTED_HALF_WIDTH;
@@ -10007,7 +10090,9 @@ export class InkSurface {
       }
       if (touched) {
         this.erasePieces.set(id, survivors);
-        this.eraseDirty.add(id);
+        // With the pages joined its mirrors change too: painted again whole.
+        if (this.joined) this.eraseDirty.add(id);
+        else this.noteCut(index, original, sample, radius);
         changed = true;
       }
     }

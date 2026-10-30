@@ -13,9 +13,12 @@
  *   bitmaps; nothing is re-outlined. Tiles are rasterised at the settled zoom
  *   (a *level*), scaled while a pinch is in flight, and rasterised afresh
  *   once it settles. A missing tile is rasterised inside the frame when the
- *   frame's budget allows, or drawn from the page's low-resolution preview
- *   until it does; with neither, it is rasterised anyway — the dry layer
- *   never shows a hole where a page is.
+ *   frame's budget allows, or drawn from the last level's tiles or the
+ *   page's low-resolution preview until it does; with neither, it is
+ *   rasterised anyway — the dry layer never shows a hole where a page is.
+ *   What changes on a page is painted again in place on the tiles over it
+ *   (`invalidateRegion`), and while the view stays, the dry layer draws only
+ *   those px again.
  * - **wet**: the in-progress stroke, drawn synchronously per input sample for
  *   the lowest perceptible latency — and an image while it is being dragged.
  *
@@ -44,7 +47,8 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
-import { inkPixelRect } from "./layer-rect";
+import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
+import { type PixelRect, inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
@@ -412,6 +416,17 @@ interface Tile {
   pageId: string;
   level: number;
   rect: TileRect;
+  /**
+   * Page px of the tile drawn from an older state of the page: painted
+   * again in place before the tile is next shown ({@link Renderer.invalidateRegion}).
+   */
+  stale?: Bounds;
+  /**
+   * Page px drawn from an older backdrop (a PDF raster that has since
+   * landed sharper): painted again in place when a frame has the time,
+   * shown as it is until then.
+   */
+  soft?: Bounds;
 }
 
 interface Preview {
@@ -423,7 +438,31 @@ interface Preview {
    * it ({@link Renderer.setPreviewWindow}).
    */
   window?: Bounds;
+  /** As a tile's: page px painted again in place before it is next drawn. */
+  stale?: Bounds;
+  /** As a tile's: an older backdrop, painted again when there is time. */
+  soft?: Bounds;
 }
+
+/**
+ * What the dry layer shows: the view it was painted at (`key`) of which
+ * document, and whether every tile on it was ready. While these stay, a
+ * repaint draws only what changed since ({@link Renderer.renderDocument}).
+ */
+interface DryShown {
+  key: string;
+  doc: InkDocument;
+  layout: DocumentLayout;
+  paper: PaperTheme;
+  complete: boolean;
+  selection: boolean;
+}
+
+/**
+ * Damage over this share of the dry layer is drawn as one full repaint:
+ * clipping saves nothing then, and every tile is visited once either way.
+ */
+const DRY_DAMAGE_SHARE = 0.5;
 
 /**
  * Longest side of a windowed preview, device px (16 MB at most). A board's
@@ -433,7 +472,17 @@ interface Preview {
 const WINDOWED_PREVIEW_MAX_SIDE = 2048;
 
 interface PathEntry {
-  fingerprint: string;
+  /**
+   * What it was traced from besides the points array: the pressure setting,
+   * the nib, the point count and both end points. Compared field by field:
+   * this runs for every stroke of a page on every tile painted, and building
+   * a string key each time showed in the eraser's profile.
+   */
+  pressure: boolean;
+  size: number;
+  nib: number | undefined;
+  count: number;
+  ends: readonly [number, number, number, number];
   /** The points array traced: a command that replaces it is always a change. */
   pts: readonly number[];
   /** The altitudes traced with them (`Stroke.tilt`), which a piece gets anew. */
@@ -588,12 +637,27 @@ export class Renderer {
 
   /** Device px per page px the tiles are rasterised at. 0 until the first frame. */
   private level = 0;
+  /**
+   * The level before the last settle, whose tiles stand in, scaled, for
+   * any at the new level not made yet (0: none). Dropped once every tile on
+   * screen is at the new level.
+   */
+  private fallbackLevel = 0;
   private readonly tiles = new ByteLru<Tile>(MIN_TILE_BUDGET, (tile) => releaseCanvas(tile.canvas));
   private readonly previews = new ByteLru<Preview>(PREVIEW_BUDGET, (p) => releaseCanvas(p.canvas));
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
   private previewWindow: ((box: PageBox) => Bounds | null) | null = null;
   private readonly paths = new WeakMap<Stroke, PathEntry>();
   private shadow: ShadowSprite | null = null;
+  /** What the dry layer shows, or null when it must be painted whole. */
+  private dryShown: DryShown | null = null;
+  /**
+   * Device px of the dry layer drawn from tiles that changed since it was
+   * painted: while the view stays, the next paint draws these alone. A
+   * pen event of the eraser blitted every tile on screen again, and that,
+   * not the tiles' own painting, was most of what it cost.
+   */
+  private dryDamage: PixelRect[] = [];
 
   /**
    * `wetDesynchronized` asks for a low-latency context on the wet layer.
@@ -629,6 +693,8 @@ export class Renderer {
   /** Size the three canvases to the pane: `width` x `height` CSS px at `dpr` device px each. */
   resize(width: number, height: number, dpr: number): void {
     this.screen = { width, height, dpr };
+    // Sizing a canvas empties it.
+    this.dryShown = null;
     // Never 0: a canvas of no size cannot be drawn into, and iOS reports one lost.
     const deviceWidth = Math.max(1, Math.round(width * dpr));
     const deviceHeight = Math.max(1, Math.round(height * dpr));
@@ -782,13 +848,28 @@ export class Renderer {
   settle(): void {
     const level = quantiseLevel(this.deviceScale);
     if (level === this.level) return;
+    // The last level's tiles stay a while, to be drawn scaled in place of
+    // those at the new level not made yet: a frame makes a few of those,
+    // not all of them at once.
+    const last = this.level;
+    this.fallbackLevel = last;
     this.level = level;
-    this.tiles.deleteWhere((tile) => tile.level !== level);
+    this.tiles.deleteWhere((tile) => tile.level !== level && tile.level !== last);
   }
 
   invalidateAll(): void {
     this.tiles.clear();
     this.previews.clear();
+    this.dryShown = null;
+  }
+
+  /**
+   * Paint the whole dry layer at the next frame, though nothing in the
+   * tiles changed: when the platform may have dropped what a canvas showed
+   * (the app back from the background).
+   */
+  repaintAll(): void {
+    this.dryShown = null;
   }
 
   /**
@@ -807,17 +888,109 @@ export class Renderer {
   invalidatePage(pageId: string): void {
     this.tiles.deleteWhere((tile) => tile.pageId === pageId);
     this.previews.delete(pageId);
+    this.dryShown = null;
   }
 
-  /** A page-space rectangle changed (strokes erased, moved). */
+  /**
+   * A page-space rectangle changed (strokes erased, moved), and ink near it
+   * may reach into it. The tiles and the preview over it keep the rest of
+   * what they show: only the rectangle, padded by the widest ink, is painted
+   * again, in place, before they are next drawn. Dropping the tiles instead
+   * re-rasterised every tile under a long stroke the eraser touched, on
+   * every pen event.
+   */
   invalidateRegion(pageIndex: number, bounds: Bounds): void {
     const box = this.layout.boxes[pageIndex];
-    if (!box || this.level === 0) return;
-    const pad = Math.max(INK_PAD, this.widestInk(box.id));
-    for (const tr of tilesForBounds(box.width, box.height, this.level, bounds, pad)) {
-      this.tiles.delete(tileKey(box.id, this.level, tr.col, tr.row));
+    if (!box) return;
+    this.markStale(box, grow(bounds, Math.max(INK_PAD, this.widestInk(box.id))));
+  }
+
+  /**
+   * Exactly this page-space rectangle changed: the caller's `area` already
+   * holds every px that did (the eraser's cut, with the cut ends' caps), so
+   * nothing is added round it. Painted again in place, as for
+   * {@link invalidateRegion}.
+   */
+  invalidateArea(pageIndex: number, area: Bounds): void {
+    const box = this.layout.boxes[pageIndex];
+    if (box) this.markStale(box, area);
+  }
+
+  /**
+   * Only the backdrop changed in this page-space rectangle (a PDF raster
+   * landed): no ink reaches further for it, so it is painted again as it
+   * is, two device px wider for the raster's own rounding.
+   */
+  invalidateBackdrop(pageIndex: number, region: Bounds): void {
+    const box = this.layout.boxes[pageIndex];
+    if (!box) return;
+    this.markStale(box, grow(region, 2 / (this.level || this.deviceScale || 1)), true);
+  }
+
+  /**
+   * The whole backdrop of page `pageIndex` changed (its PDF page image
+   * landed): its tiles and preview are painted again in place, a few a
+   * frame, and shown as they are until then. Dropping them made every tile
+   * of the page on screen again in one frame.
+   */
+  refreshPage(pageIndex: number): void {
+    const box = this.layout.boxes[pageIndex];
+    if (box) this.markStale(box, { minX: 0, minY: 0, maxX: box.width, maxY: box.height }, true);
+  }
+
+  /**
+   * Mark `area` (page px) of page `box` stale on its tiles, its preview and
+   * the dry layer: `soft` when only the backdrop changed, so it may wait
+   * for a frame with the time to paint it.
+   */
+  private markStale(box: PageBox, area: Bounds, soft = false): void {
+    if (this.level !== 0) {
+      for (const tr of tilesForBounds(box.width, box.height, this.level, area)) {
+        const tile = this.tiles.peek(tileKey(box.id, this.level, tr.col, tr.row));
+        if (!tile) continue;
+        if (soft) tile.soft = unite(tile.soft, area);
+        else tile.stale = unite(tile.stale, area);
+      }
     }
-    this.previews.delete(box.id);
+    if (!soft) this.dropFallback(box, area);
+    const preview = this.previews.peek(box.id);
+    if (preview && soft) preview.soft = unite(preview.soft, area);
+    else if (preview) preview.stale = unite(preview.stale, area);
+    this.damageDry(box, area);
+  }
+
+  /** The last zoom's stand-ins over `area` (page px) of page `box` would show what changed: they go. */
+  private dropFallback(box: PageBox, area: Bounds): void {
+    const old = this.fallbackLevel;
+    if (old === 0) return;
+    for (const tr of tilesForBounds(box.width, box.height, old, area)) {
+      this.tiles.delete(tileKey(box.id, old, tr.col, tr.row));
+    }
+  }
+
+  /** The dry layer's px showing `area` (page px) of page `box`, in the view now. */
+  private damageDry(box: PageBox, area: Bounds): void {
+    if (!this.dryShown) return;
+    const r = this.pageDeviceRect(box);
+    const k = this.deviceScale;
+    // Kept to the page and one px round it, its soft edge.
+    const page: Bounds = { minX: 0, minY: 0, maxX: box.width, maxY: box.height };
+    const shown: Bounds = {
+      minX: Math.max(area.minX, page.minX),
+      minY: Math.max(area.minY, page.minY),
+      maxX: Math.min(area.maxX, page.maxX),
+      maxY: Math.min(area.maxY, page.maxY),
+    };
+    if (!(shown.maxX > shown.minX) || !(shown.maxY > shown.minY)) return;
+    const rect = staleRect(
+      grow(shown, 1 / (k || 1)),
+      k,
+      -r.x,
+      -r.y,
+      this.dry.canvas.width,
+      this.dry.canvas.height,
+    );
+    if (rect) this.dryDamage = addDamage(this.dryDamage, rect);
   }
 
   // --- Geometry -------------------------------------------------------------
@@ -980,9 +1153,9 @@ export class Renderer {
    * the desk, not a region filling the pane (design brief), so the field is
    * painted edge to edge first.
    */
-  private paintDesk(ctx: CanvasRenderingContext2D, doc: InkDocument): void {
+  private paintDesk(ctx: CanvasRenderingContext2D, doc: InkDocument, desk: string): void {
     const boxes = this.boxesOnScreen(doc.pages.length);
-    this.desk = this.deskOf(doc);
+    this.desk = desk;
     // The last frame's tiles may have turned smoothing off: the shadow's
     // slices are stretched, and must be filtered.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1161,7 +1334,11 @@ export class Renderer {
    * grey, and `replaced` strokes are drawn as their listed pieces (the
    * eraser's live preview);
    * the caller invalidates the region they cover first, so the affected
-   * tiles rasterise afresh.
+   * tiles are painted again.
+   *
+   * While the view and the document are the ones the dry layer already
+   * shows complete, only what changed since is painted: the px the
+   * invalidations named, clipped, and only the tiles under them.
    */
   renderDocument(
     doc: InkDocument,
@@ -1175,20 +1352,19 @@ export class Renderer {
   ): boolean {
     this.doc = doc;
     const ctx = this.dry.ctx;
-    this.paintDesk(ctx, doc);
     if (this.level === 0) this.level = quantiseLevel(this.deviceScale);
     const level = this.level;
     const k = this.deviceScale;
     const s = k / level;
     // At its own level a tile lands on whole device pixels: no seams, no resampling.
     const exact = Math.abs(s - 1) < 1e-3;
-    ctx.imageSmoothingEnabled = !exact;
     // Mid-zoom the tiles' level is stale: nothing rasterised at it survives
     // the settle, so this frame draws what is cached and the stand-ins, and
     // spends no time making more.
     const transient = this.isTransient;
     const deadline = budgetMs === Infinity ? Infinity : now() + budgetMs;
     let complete = true;
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
 
     const visibleBoxes = this.boxesOnScreen(doc.pages.length);
     this.painter?.prepare?.(
@@ -1211,12 +1387,42 @@ export class Renderer {
       detailTransient,
       this.nearPages(doc),
     );
+    const desk = this.deskOf(doc);
+    const key = this.dryKey(desk);
+    // Null: paint it all. Else only these px changed since the last paint.
+    const damage = this.takeDryDamage(doc, key, selection != null);
+    if (damage?.length === 0) return true;
+    const meets = (rect: PixelRect): boolean =>
+      damage === null || damage.some((d) => rectsMeet(d, rect));
+    ctx.save();
+    if (damage) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      for (const d of damage) ctx.rect(d.x, d.y, d.w, d.h);
+      ctx.clip();
+    }
+    this.paintDesk(ctx, doc, desk);
+    ctx.imageSmoothingEnabled = !exact;
     for (const box of visibleBoxes) {
       const page = doc.pages[box.index];
       const r = this.pageDeviceRect(box);
       const ox = exact ? Math.round(r.x) : r.x;
       const oy = exact ? Math.round(r.y) : r.y;
       const raster = rasterSize(box.width, box.height, level);
+      if (!meets(outwardRect(r.x, r.y, r.w, r.h))) continue;
+      // The tiles' px on the dry layer: at their own level whole px; mid-zoom
+      // neighbours share each rounded edge, so scaling leaves no seams.
+      const placed = (tr: TileRect): PixelRect => {
+        if (exact) return { x: ox + tr.x, y: oy + tr.y, w: tr.w, h: tr.h };
+        const x0 = Math.round(ox + tr.x * s);
+        const y0 = Math.round(oy + tr.y * s);
+        return {
+          x: x0,
+          y: y0,
+          w: Math.round(ox + (tr.x + tr.w) * s) - x0,
+          h: Math.round(oy + (tr.y + tr.h) * s) - y0,
+        };
+      };
       const needed = tilesCovering(
         box.width,
         box.height,
@@ -1225,7 +1431,7 @@ export class Renderer {
         -oy / s,
         (this.dry.canvas.width - ox) / s,
         (this.dry.canvas.height - oy) / s,
-      );
+      ).filter((tr) => meets(placed(tr)));
 
       let missing = 0;
       for (const tr of needed) {
@@ -1238,6 +1444,7 @@ export class Renderer {
         // One whole-page stand-in beats tiles at a level about to be dropped.
         preview = this.buildPreview(page, box, usePressure) ?? undefined;
       }
+      if (preview?.stale) this.repairPreview(preview, page, box, usePressure);
       // Zoomed out far enough that the stand-in is the closer match in
       // resolution, it alone is drawn: minifying dozens of tiles a frame is
       // what made a fast pinch-out drop frames, and looked no sharper.
@@ -1264,30 +1471,27 @@ export class Renderer {
 
       for (const tr of needed) {
         if (previewOnly) break;
-        const key = tileKey(page.id, level, tr.col, tr.row);
-        let tile = this.tiles.get(key);
+        let tile = this.tiles.get(tileKey(page.id, level, tr.col, tr.row));
         if (!tile) {
-          if (preview && (transient || now() > deadline)) {
+          const late = transient || now() > deadline;
+          // The last zoom's tiles, scaled, else the preview under them.
+          if (late && (this.drawFallback(ctx, page, box, tr, ox, oy, exact) || preview)) {
             // A stale-level tile is never worth making; a missed deadline
             // asks for another frame.
             if (!transient) complete = false;
             continue;
           }
-          tile =
-            this.rasterTile(page, box, tr, level, usePressure, hidden, replaced, greyed) ??
-            undefined;
+          tile = this.rasterTile(page, box, tr, level, ink) ?? undefined;
           if (!tile) continue;
+        } else if (tile.stale || (tile.soft && now() <= deadline)) {
+          // A stale tile whatever the budget: drawn as it is, it would show
+          // what changed. A sharper backdrop can wait for the next frame.
+          this.repairTile(tile, page, box, ink);
+        } else if (tile.soft) {
+          complete = false;
         }
-        if (exact) {
-          ctx.drawImage(tile.canvas, ox + tr.x, oy + tr.y, tr.w, tr.h);
-        } else {
-          // Neighbouring tiles share each rounded edge, so scaling leaves no seams.
-          const x0 = Math.round(ox + tr.x * s);
-          const y0 = Math.round(oy + tr.y * s);
-          const x1 = Math.round(ox + (tr.x + tr.w) * s);
-          const y1 = Math.round(oy + (tr.y + tr.h) * s);
-          ctx.drawImage(tile.canvas, x0, y0, x1 - x0, y1 - y0);
-        }
+        const at = placed(tr);
+        ctx.drawImage(tile.canvas, at.x, at.y, at.w, at.h);
       }
 
       if (selection && selection.pageIndex === box.index) {
@@ -1298,7 +1502,100 @@ export class Renderer {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
     }
+    ctx.restore();
+    this.dryShown = {
+      key,
+      doc,
+      layout: this.layout,
+      paper: this.paper,
+      complete,
+      selection: selection != null,
+    };
+    // Every tile on screen is at the new level: the stand-ins can go.
+    const old = this.fallbackLevel;
+    if (old !== 0 && complete && damage === null && !transient) {
+      this.fallbackLevel = 0;
+      this.tiles.deleteWhere((tile) => tile.level === old);
+    }
     return complete;
+  }
+
+  /**
+   * Draw the last level's tiles over the place of tile `tr` (at the level
+   * now), scaled, smoothed: a stand-in until that tile is made. Whether they
+   * covered all of it.
+   */
+  private drawFallback(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    box: PageBox,
+    tr: TileRect,
+    ox: number,
+    oy: number,
+    exact: boolean,
+  ): boolean {
+    const old = this.fallbackLevel;
+    const level = this.level;
+    if (old === 0 || old === level) return false;
+    const k = this.deviceScale;
+    const area = rectArea({ x: 0, y: 0, w: tr.w, h: tr.h }, level, tr.x, tr.y);
+    const need = (area.maxX - area.minX) * (area.maxY - area.minY);
+    let covered = 0;
+    ctx.imageSmoothingEnabled = true;
+    for (const ot of tilesForBounds(box.width, box.height, old, area)) {
+      const tile = this.tiles.peek(tileKey(page.id, old, ot.col, ot.row));
+      if (!tile) continue;
+      const own = rectArea({ x: 0, y: 0, w: ot.w, h: ot.h }, old, ot.x, ot.y);
+      const minX = Math.max(area.minX, own.minX);
+      const minY = Math.max(area.minY, own.minY);
+      const maxX = Math.min(area.maxX, own.maxX);
+      const maxY = Math.min(area.maxY, own.maxY);
+      if (!(maxX > minX) || !(maxY > minY)) continue;
+      // Whole device px, so the pieces meet each other and the tiles round them.
+      const x0 = Math.round(ox + minX * k);
+      const y0 = Math.round(oy + minY * k);
+      const x1 = Math.round(ox + maxX * k);
+      const y1 = Math.round(oy + maxY * k);
+      if (!(x1 > x0) || !(y1 > y0)) continue;
+      ctx.drawImage(
+        tile.canvas,
+        minX * old - ot.x,
+        minY * old - ot.y,
+        (maxX - minX) * old,
+        (maxY - minY) * old,
+        x0,
+        y0,
+        x1 - x0,
+        y1 - y0,
+      );
+      covered += (maxX - minX) * (maxY - minY);
+    }
+    ctx.imageSmoothingEnabled = !exact;
+    return covered >= need * 0.999;
+  }
+
+  /** What, besides the document, the dry layer's picture depends on. */
+  private dryKey(desk: string): string {
+    const { width, height } = this.dry.canvas;
+    const { scrollY, scale } = this.view;
+    return `${width}x${height}@${this.screen.dpr}|${scrollY}|${scale}|${this.originX}|${this.level}|${desk}`;
+  }
+
+  /**
+   * The dry layer's damage since its last paint, taken: null when it must be
+   * painted whole (a new view, document or theme, an incomplete or selected
+   * last paint, or damage over {@link DRY_DAMAGE_SHARE} of it).
+   */
+  private takeDryDamage(doc: InkDocument, key: string, selection: boolean): PixelRect[] | null {
+    const damage = this.dryDamage;
+    this.dryDamage = [];
+    const shown = this.dryShown;
+    if (!shown || !shown.complete || shown.selection || selection) return null;
+    if (shown.key !== key || shown.doc !== doc) return null;
+    if (shown.layout !== this.layout || shown.paper !== this.paper) return null;
+    const { width, height } = this.dry.canvas;
+    if (damageArea(damage) > DRY_DAMAGE_SHARE * width * height) return null;
+    return damage;
   }
 
   /**
@@ -1324,9 +1621,11 @@ export class Renderer {
 
     for (const box of around) {
       const page = doc.pages[box.index];
-      if (!this.previews.has(page.id)) {
+      const preview = this.previews.peek(page.id);
+      if (!preview || preview.stale || preview.soft) {
         if (now() > deadline) return true;
-        this.buildPreview(page, box, usePressure);
+        if (preview) this.repairPreview(preview, page, box, usePressure);
+        else this.buildPreview(page, box, usePressure);
       }
     }
     for (const box of around) {
@@ -1342,10 +1641,12 @@ export class Renderer {
         (this.dry.canvas.height + PREFETCH_MARGIN - r.y) / s,
       );
       for (const tr of ring) {
+        // A stale tile is left for the screen paint, which knows what the
+        // eraser shows meanwhile; this one paints the document as it is.
         if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;
-        this.rasterTile(page, box, tr, level, usePressure);
+        this.rasterTile(page, box, tr, level, { usePressure });
       }
     }
     return false;
@@ -1357,42 +1658,118 @@ export class Renderer {
     box: PageBox,
     tr: TileRect,
     level: number,
-    usePressure: boolean,
-    hidden?: ReadonlySet<string>,
-    replaced?: ReadonlyMap<string, readonly Stroke[]>,
-    greyed?: ReadonlySet<string>,
+    ink: InkPass,
   ): Tile | null {
     const canvas = createEl("canvas");
     canvas.width = tr.w;
     canvas.height = tr.h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    // Saved and restored, so a repair later starts from the same state.
+    ctx.save();
     ctx.setTransform(level, 0, 0, level, -tr.x, -tr.y);
-    const ink: InkPass = { usePressure, hidden, replaced, greyed };
-    this.paintPage(
+    this.paintTileContent(
       ctx,
       page,
       box,
       level,
-      {
-        minX: tr.x / level,
-        minY: tr.y / level,
-        maxX: (tr.x + tr.w) / level,
-        maxY: (tr.y + tr.h) / level,
-      },
+      rectArea({ x: 0, y: 0, w: tr.w, h: tr.h }, level, tr.x, tr.y),
       ink,
     );
-    const region: Bounds = {
-      minX: tr.x / level - INK_PAD,
-      minY: tr.y / level - INK_PAD,
-      maxX: (tr.x + tr.w) / level + INK_PAD,
-      maxY: (tr.y + tr.h) / level + INK_PAD,
-    };
-    this.paintStrokes(ctx, page, region, usePressure, hidden, replaced, greyed);
-    this.paintImages(ctx, page, region, level, ink, true);
+    ctx.restore();
     const tile: Tile = { canvas, pageId: page.id, level, rect: tr };
     this.tiles.set(tileKey(page.id, level, tr.col, tr.row), tile, tr.w * tr.h * 4);
     return tile;
+  }
+
+  /**
+   * What a tile shows of `region` (page px), in page space at `level`: paper,
+   * backdrop, pictures under the ink, tables, graphs and the page's edge, the
+   * ink that reaches into it, and what lies over the ink.
+   */
+  private paintTileContent(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    box: PageBox,
+    level: number,
+    region: Bounds,
+    ink: InkPass,
+  ): void {
+    this.paintPage(ctx, page, box, level, region, ink);
+    this.paintStrokes(
+      ctx,
+      page,
+      grow(region, INK_PAD),
+      ink.usePressure,
+      ink.hidden,
+      ink.replaced,
+      ink.greyed,
+    );
+    this.paintImages(ctx, page, grow(region, INK_PAD), level, ink, true);
+  }
+
+  /**
+   * Paint a tile's stale area again, in place: cleared, clipped to the whole
+   * device px it covers, and painted exactly as the tile was, so those px
+   * come out as a fresh tile's would and the rest stays as it is.
+   */
+  private repairTile(tile: Tile, page: Page, box: PageBox, ink: InkPass): void {
+    const stale = tile.soft ? unite(tile.stale, tile.soft) : tile.stale;
+    tile.stale = undefined;
+    tile.soft = undefined;
+    if (!stale) return;
+    const { rect: tr, level } = tile;
+    const px = staleRect(stale, level, tr.x, tr.y, tr.w, tr.h);
+    const ctx = px ? tile.canvas.getContext("2d") : null;
+    if (!px || !ctx) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px.x, px.y, px.w, px.h);
+    ctx.clip();
+    ctx.clearRect(px.x, px.y, px.w, px.h);
+    ctx.setTransform(level, 0, 0, level, -tr.x, -tr.y);
+    scratchLimit = px;
+    try {
+      this.paintTileContent(ctx, page, box, level, rectArea(px, level, tr.x, tr.y), ink);
+    } finally {
+      scratchLimit = null;
+      ctx.restore();
+    }
+  }
+
+  /**
+   * A preview's stale area painted again in place, as {@link repairTile}
+   * does a tile's, and as {@link buildPreview} drew it: without any erase
+   * in progress, and the backdrop given a region only for a windowed one.
+   */
+  private repairPreview(preview: Preview, page: Page, box: PageBox, usePressure: boolean): void {
+    const stale = preview.soft ? unite(preview.stale, preview.soft) : preview.stale;
+    preview.stale = undefined;
+    preview.soft = undefined;
+    if (!stale) return;
+    const k = preview.scale;
+    const origin = preview.window ?? { minX: 0, minY: 0 };
+    const { width, height } = preview.canvas;
+    const px = staleRect(stale, k, origin.minX * k, origin.minY * k, width, height);
+    const ctx = px ? preview.canvas.getContext("2d") : null;
+    if (!px || !ctx) return;
+    const area = rectArea(px, k, origin.minX * k, origin.minY * k);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px.x, px.y, px.w, px.h);
+    ctx.clip();
+    ctx.clearRect(px.x, px.y, px.w, px.h);
+    ctx.setTransform(k, 0, 0, k, -origin.minX * k, -origin.minY * k);
+    scratchLimit = px;
+    try {
+      const ink: InkPass = { usePressure };
+      this.paintPage(ctx, page, box, k, area, ink, preview.window !== undefined);
+      this.paintStrokes(ctx, page, grow(area, INK_PAD), usePressure);
+      this.paintImages(ctx, page, grow(area, INK_PAD), k, ink, true);
+    } finally {
+      scratchLimit = null;
+      ctx.restore();
+    }
   }
 
   /**
@@ -1568,12 +1945,15 @@ export class Renderer {
     canvas.height = Math.max(1, Math.ceil(box.height * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    // Saved and restored, so a repair later starts from the same state.
+    ctx.save();
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     const all: Bounds = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
     const ink: InkPass = { usePressure };
     this.paintPage(ctx, page, box, scale, all, ink);
     this.paintStrokes(ctx, page, all, usePressure);
     this.paintImages(ctx, page, all, scale, ink, true);
+    ctx.restore();
     const preview: Preview = { canvas, scale };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
@@ -1594,6 +1974,7 @@ export class Renderer {
     canvas.height = Math.max(1, Math.ceil(h * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    ctx.save();
     ctx.setTransform(scale, 0, 0, scale, -window.minX * scale, -window.minY * scale);
     const ink: InkPass = { usePressure };
     this.paintPage(ctx, page, box, scale, window, ink);
@@ -1605,6 +1986,7 @@ export class Renderer {
     };
     this.paintStrokes(ctx, page, inked, usePressure);
     this.paintImages(ctx, page, window, scale, ink, true);
+    ctx.restore();
     const preview: Preview = { canvas, scale, window };
     this.previews.set(page.id, preview, canvas.width * canvas.height * 4);
     return preview;
@@ -1614,7 +1996,9 @@ export class Renderer {
    * Paper, the page's backdrop, its placed images and its hairline edge, in
    * page space. Images sit above the backdrop and below the ink, so a photo
    * can be written over, as in GoodNotes; `region` culls the ones this tile
-   * does not show.
+   * does not show. The backdrop is told the region too (PDF detail is drawn
+   * for it), unless `painterRegion` is false: a whole-page preview is drawn
+   * without detail, and is repaired as it was drawn.
    */
   private paintPage(
     ctx: CanvasRenderingContext2D,
@@ -1623,6 +2007,7 @@ export class Renderer {
     level: number,
     region: Bounds,
     ink: InkPass,
+    painterRegion = true,
   ): void {
     ctx.beginPath();
     ctx.rect(0, 0, box.width, box.height);
@@ -1634,7 +2019,7 @@ export class Renderer {
     this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level), {
       deviceScale: level,
       paper: this.paper,
-      ...(Number.isFinite(region.minX) ? { region } : {}),
+      ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
     });
     if (this.doc) {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);
@@ -1785,6 +2170,22 @@ export class Renderer {
   ): void {
     if (hidden?.has(stroke.id) || this.hiddenStrokes.has(stroke.id)) return;
     const pieces = replaced?.get(stroke.id);
+    if (pieces && stroke.tool === "highlighter" && decorOf(stroke) === null) {
+      // Laid down in one coat, as the highlight they are cut from was: then
+      // they differ from it only where the eraser went, which is all the
+      // eraser has painted again.
+      const isGrey = (piece: Stroke): boolean => greyed?.has(piece.id) === true;
+      this.paintCoat(
+        ctx,
+        pieces.filter((piece) => !isGrey(piece)),
+        region,
+        usePressure,
+        night,
+        false,
+      );
+      this.paintCoat(ctx, pieces.filter(isGrey), region, usePressure, night, true);
+      return;
+    }
     if (pieces) {
       for (const piece of pieces) {
         this.paintEntry(ctx, piece, region, usePressure, night, greyed?.has(piece.id) === true);
@@ -1815,6 +2216,41 @@ export class Renderer {
     if (faded) ctx.restore();
   }
 
+  /** Highlighter pieces of one stroke painted together, in one coat (`paintOnce`). */
+  private paintCoat(
+    ctx: CanvasRenderingContext2D,
+    pieces: readonly Stroke[],
+    region: Bounds,
+    usePressure: boolean,
+    night: boolean,
+    grey: boolean,
+  ): void {
+    const runs: InkRun[] = [];
+    const paths: Path2D[] = [];
+    let first: Stroke | null = null;
+    for (const piece of pieces) {
+      const entry = this.pathEntry(piece, usePressure);
+      if (entry.runs.length === 0 || !entry.bounds || !overlaps(entry.bounds, region)) continue;
+      runs.push(...entry.runs);
+      paths.push(...entry.paths);
+      first ??= piece;
+    }
+    if (!first) return;
+    const faded = this.fadedStrokes.has(first.id);
+    if (faded) {
+      ctx.save();
+      ctx.globalAlpha *= FADED_INK_ALPHA;
+    }
+    paintStroke(
+      ctx,
+      { runs, paths },
+      grey ? erasingLook(first) : first,
+      this.highlighterAlpha,
+      night,
+    );
+    if (faded) ctx.restore();
+  }
+
   /** Whether page `pageIndex` of the document last painted is shown inverted (`pageLook`). */
   private nightAt(pageIndex: number): boolean {
     const page = this.doc?.pages[pageIndex];
@@ -1834,14 +2270,20 @@ export class Renderer {
     const pressure = pressureFor(stroke.tool, usePressure);
     const pts = stroke.pts;
     const n = pts.length;
-    const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${stroke.nib ?? ""}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
     const tilt = stroke.tilt;
     if (
       cached &&
       cached.pts === pts &&
       cached.tilt === tilt &&
-      cached.fingerprint === fingerprint
+      cached.pressure === pressure &&
+      Object.is(cached.size, stroke.size) &&
+      Object.is(cached.nib, stroke.nib) &&
+      cached.count === n &&
+      Object.is(cached.ends[0], pts[0]) &&
+      Object.is(cached.ends[1], pts[1]) &&
+      Object.is(cached.ends[2], pts[n - 3]) &&
+      Object.is(cached.ends[3], pts[n - 2])
     ) {
       return cached;
     }
@@ -1857,7 +2299,18 @@ export class Renderer {
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
-    const entry: PathEntry = { fingerprint, pts, tilt, runs, paths: runs.map(pathOf), bounds };
+    const entry: PathEntry = {
+      pressure,
+      size: stroke.size,
+      nib: stroke.nib,
+      count: n,
+      ends: [pts[0], pts[1], pts[n - 3], pts[n - 2]],
+      pts,
+      tilt,
+      runs,
+      paths: runs.map(pathOf),
+      bounds,
+    };
     this.paths.set(stroke, entry);
     return entry;
   }
@@ -2100,6 +2553,10 @@ export class Renderer {
       paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
       ctx.restore();
     }
+    // The tiles under it changed; the rest of the dry layer did not. A
+    // stand-in from the last zoom has not got it.
+    this.dropFallback(box, bounds);
+    this.damageDry(box, bounds);
   }
 
   /** Draw the in-progress stroke (page space) on the wet layer. */
@@ -2320,6 +2777,14 @@ function paintStroke(
 let onceCanvas: HTMLCanvasElement | null = null;
 
 /**
+ * The device px of the canvas being repaired, while one is (a tile's or a
+ * preview's stale area): nothing is drawn outside them, so {@link paintOnce}
+ * lays out its scratch over them alone. A highlight crossing a tile was
+ * drawn into a scratch the size of the tile on every eraser dab near it.
+ */
+let scratchLimit: PixelRect | null = null;
+
+/**
  * Paint translucent ink so no part of it is laid down twice (FineNotes#85).
  * On the iPad, WebKit darkened a wide highlighter line in dots along its
  * length, though the line was one path stroked once and its points never
@@ -2338,7 +2803,8 @@ function paintOnce(
     return;
   }
   const m = ctx.getTransform();
-  const rect = inkPixelRect(runs, m, ctx.canvas.width, ctx.canvas.height);
+  const ink = inkPixelRect(runs, m, ctx.canvas.width, ctx.canvas.height);
+  const rect = ink && scratchLimit ? overlapOf(ink, scratchLimit) : ink;
   if (!rect) return;
   const canvas = (onceCanvas ??= createEl("canvas"));
   if (canvas.width < rect.w) canvas.width = rect.w;
@@ -2768,6 +3234,22 @@ function finiteOr(value: number | undefined, fallback: number): number {
 }
 
 /** `b` grown by `pad` on every side. */
+/** The px two rectangles share, or null when they share none. */
+function overlapOf(a: PixelRect, b: PixelRect): PixelRect | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  return w > 0 && h > 0 ? { x, y, w, h } : null;
+}
+
+/** Whole px covering a fractional device rectangle, and one more all round (its soft edge). */
+function outwardRect(x: number, y: number, w: number, h: number): PixelRect {
+  const x0 = Math.floor(x) - 1;
+  const y0 = Math.floor(y) - 1;
+  return { x: x0, y: y0, w: Math.ceil(x + w) + 1 - x0, h: Math.ceil(y + h) + 1 - y0 };
+}
+
 function padBounds(b: Bounds, pad: number): Bounds {
   return { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
 }

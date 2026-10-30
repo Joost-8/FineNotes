@@ -679,6 +679,9 @@ One class may implement both, and `VaultBackdropRenderer` does.
   triggers no repaint or cached miss. Writing holds background starts;
   explicit awaited draws remain available. Patch completion invalidates only
   the matching region; full pages can invalidate the matching sidebar thumbnail.
+  Either way the ink tiles over it keep their bitmaps and are painted again in
+  place (`Renderer.invalidateBackdrop`, `refreshPage`), a few a frame, shown
+  as they were until then.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
