@@ -120,7 +120,12 @@ import {
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
-import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
+import {
+  STICKY_SIDE,
+  DEFAULT_STICKY_COLOR,
+  newStickyNote,
+  stickyBoxAt,
+} from "../model/sticky-notes";
 import { CustomizeToolbarModal } from "./customize-toolbar-modal";
 import type { ToolbarLayout } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
@@ -271,6 +276,8 @@ import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-pac
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
+import { SHORTCUT_GROUPS } from "../model/shortcuts";
+import { boundShortcutGroups } from "../model/shortcut-bindings";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
@@ -2736,6 +2743,8 @@ export class InkView extends TextFileView {
         lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
         onShortcuts: () => this.toggleShortcuts(),
+        shortcuts: () => this.plugin.shortcuts.table,
+        onShortcutAction: (id) => this.runShortcutAction(id),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
@@ -2817,6 +2826,9 @@ export class InkView extends TextFileView {
       // A page read while the app is away is not blamed if iPadOS ends it.
       this.plugin.readingGuard.setHidden(hidden);
       if (!hidden) return;
+      // A key held as the app goes away never sends its key-up.
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
       this.audio?.onHidden();
       // iPadOS may end the app from the background: keep the page now, and
       // a save the pen put off or one still in the background, made here
@@ -2921,7 +2933,10 @@ export class InkView extends TextFileView {
     // Space lets go of the hand wherever the key-up lands, and when the
     // window loses focus, which keeps the key-up from arriving at all.
     this.registerDomEvent(document, "keyup", (e) => this.surface?.handleKeyUp(e));
-    this.registerDomEvent(window, "blur", () => this.surface?.setHand(false));
+    this.registerDomEvent(window, "blur", () => {
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
+    });
     this.registerDomEvent(document, "paste", (e) => {
       if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
       this.surface?.handlePaste(e);
@@ -3770,6 +3785,51 @@ export class InkView extends TextFileView {
     if (ink) this.turnIntoText(ink.index, ink.strokeIds);
   }
 
+  /**
+   * A shortcut whose action belongs to the view rather than the page: full
+   * screen, the ruler, the sticker and sticky-note pickers, recording, and
+   * stylus only mode. False when the action is not one of these.
+   */
+  private runShortcutAction(id: string): boolean {
+    switch (id) {
+      case "view.fullscreen":
+        if (!this.plugin.fullScreenOffered) return false;
+        this.plugin.toggleFullScreen();
+        return true;
+      case "edit.turn-into-text":
+        this.turnSelectionIntoText();
+        return true;
+      case "bar.ruler": {
+        const surface = this.surface;
+        if (!surface) return false;
+        surface.setRulerOut(!surface.rulerOut);
+        this.toolbar?.setRulerOut(surface.rulerOut);
+        return true;
+      }
+      case "bar.sticker":
+        if (this.isProtected()) return false;
+        this.plugin.openStickerPicker(this.imageMenuContext());
+        return true;
+      case "bar.sticky":
+        this.armStickyNote(DEFAULT_STICKY_COLOR);
+        return true;
+      case "bar.image":
+        this.openImageMenu(this.containerEl);
+        return true;
+      case "bar.pdf":
+        this.openImageMenu(this.containerEl, true);
+        return true;
+      case "bar.record":
+        this.audio?.toggleRecording();
+        return true;
+      case "bar.stylus":
+        void this.plugin.setOnlyStylusMode(!this.settings.onlyStylusMode);
+        return true;
+      default:
+        return false;
+    }
+  }
+
   /** The vault's notes for the link picker, most recently changed first. */
   private linkableNotes(): LinkableNote[] {
     const from = this.file?.path ?? "";
@@ -4416,7 +4476,11 @@ export class InkView extends TextFileView {
       open.close();
       return;
     }
-    const modal = new ShortcutsModal(this.app, Platform.isMacOS || Platform.isIosApp);
+    const modal = new ShortcutsModal(
+      this.app,
+      Platform.isMacOS || Platform.isIosApp,
+      boundShortcutGroups(this.plugin.shortcuts.table, SHORTCUT_GROUPS),
+    );
     modal.open();
     this.shortcuts = modal;
   }

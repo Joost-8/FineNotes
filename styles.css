@@ -2654,6 +2654,27 @@ body.is-mobile .goodobsidian-scrollthumb {
   border-top: none;
 }
 
+/* A callout row that shows nothing (empty while it is false, or hidden)
+   still sits first in its group, and Obsidian draws a divider over every
+   row but the first: a line under the heading (Kirill on #79, the Shortcuts
+   section). The row after it draws none, and takes the first row's corners. */
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading)::before {
+  display: none;
+}
+
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading) {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+
+.setting-item.goodobsidian-plain-row:is(.is-hidden, [hidden]) {
+  display: none;
+}
+
 /* Models on this device. The introduction, muted, at the top of the section. */
 .goodobsidian-models-intro {
   padding: var(--size-4-3) 0 var(--size-4-1);
@@ -3260,6 +3281,57 @@ kbd.goodobsidian-key.is-glyph {
 .goodobsidian-shortcut-sep,
 .goodobsidian-shortcut-gesture {
   color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Settings → Shortcuts: each action's key caps in a slot that records a new
+   key when tapped. A `clickable-icon`, so Obsidian's button rules (and the
+   iPad's 20 px padding) stay off it; the class pair outranks that class. */
+.goodobsidian-shortcut-row .setting-item-control {
+  flex-shrink: 0;
+  gap: var(--size-2-2);
+}
+
+.goodobsidian-shortcut-row.is-conflicted .setting-item-name {
+  color: var(--text-error);
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2-1) var(--size-2-2);
+  min-width: var(--gob-touch, 32px);
+  min-height: var(--gob-touch, 32px);
+  max-width: min(100%, 240px);
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  opacity: 1;
+  white-space: normal;
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon.is-conflicted {
+  box-shadow: inset 0 0 0 var(--border-width) var(--text-error);
+}
+
+button.goodobsidian-shortcut-slot.clickable-icon.is-recording {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+/* On the settings card the hotkey fill is the card's own: Obsidian's chip instead. */
+.goodobsidian-shortcut-slot kbd.goodobsidian-key {
+  background-color: var(--background-primary);
+  box-shadow: inset 0 0 0 var(--border-width) var(--background-modifier-border);
+}
+
+.goodobsidian-shortcut-unset {
+  color: var(--text-faint);
+}
+
+.goodobsidian-shortcut-recording {
+  color: var(--text-accent);
   font-size: var(--font-ui-smaller);
 }
 

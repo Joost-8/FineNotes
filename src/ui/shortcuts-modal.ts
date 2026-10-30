@@ -1,5 +1,6 @@
 import { type App, Modal } from "obsidian";
 
+import { SHORTCUT_GROUPS, type ShortcutGroup } from "../model/shortcuts";
 import { renderShortcutList } from "../view/shortcut-list";
 
 /**
@@ -16,6 +17,8 @@ export class ShortcutsModal extends Modal {
     app: App,
     /** Name the keys as on a Mac or an iPad (⌘ ⌥ ⇧), else Ctrl, Alt, Shift. */
     private readonly apple: boolean,
+    /** The list, with this device's own keys in it. */
+    private readonly groups: readonly ShortcutGroup[] = SHORTCUT_GROUPS,
   ) {
     super(app);
   }
@@ -24,7 +27,7 @@ export class ShortcutsModal extends Modal {
     this.shown = true;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-shortcuts-modal");
     this.titleEl.setText("Keyboard and stylus shortcuts");
-    renderShortcutList(this.contentEl, this.apple);
+    renderShortcutList(this.contentEl, this.apple, this.groups);
     this.contentEl.createDiv({
       cls: "goodobsidian-shortcuts-hint",
       text: "Press ? to show or hide this list. None of them act while you type in a text box.",
