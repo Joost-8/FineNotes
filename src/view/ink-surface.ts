@@ -7090,15 +7090,18 @@ export class InkSurface {
     this.holdAnchor = null;
   }
 
-  /** Preset shapes stay geometric; freehand shape mode follows the snap setting. */
+  /** When a pen stroke snaps to a shape: Pen gestures › Make shapes. */
+  private snapMode(): SnapMode {
+    return this.toolState.snapMode ?? "hold";
+  }
+
+  /** The Shape tool always snaps on a hold; the pens unless Make shapes is off. */
   private holdToSnapEnabled(): boolean {
     // A practice file is handwriting only.
     if (this.practice) return false;
     const tool = this.toolState.tool;
-    const mode =
-      this.toolState.snapMode ?? (this.toolState.shapeSnapEnabled === false ? "disabled" : "hold");
-    if (tool === "shape" && shapeModeFor(this.toolState) !== "auto") return false;
-    return (tool === "pen" || tool === "highlighter" || tool === "shape") && mode !== "disabled";
+    if (tool === "shape") return true;
+    return (tool === "pen" || tool === "highlighter") && this.snapMode() !== "disabled";
   }
 
   /**
@@ -7215,7 +7218,7 @@ export class InkSurface {
         roundedPen: this.pointerInput?.strokeRounded ?? null,
         scale: Math.round(this.scale * 1000) / 1000,
         tool: this.toolState.tool,
-        drawAndHold: this.toolState.shapeSnapEnabled !== false,
+        snapMode: this.snapMode(),
         holdMs: HOLD_MS,
         holdRadius: HOLD_RADIUS,
         pointers: this.diagSums,
@@ -7592,16 +7595,10 @@ export class InkSurface {
     }
 
     // The Shape tool's auto mode snaps every stroke on lift, no hold needed,
-    // and so does the pen with its auto-shape toggle on.
-    const snapMode =
-      this.toolState.snapMode ??
-      (this.toolState.penAutoShape === true
-        ? "auto"
-        : this.toolState.shapeSnapEnabled === false
-          ? "disabled"
-          : "hold");
+    // and so does the pen with Make shapes on lift (its Auto shape button).
+    const snapMode = this.snapMode();
     const snapOnLift =
-      (this.toolState.tool === "shape" && shapeModeFor(this.toolState) !== "auto") ||
+      this.toolState.tool === "shape" ||
       (snapMode === "auto" &&
         !this.practice &&
         (this.toolState.tool === "pen" || this.toolState.tool === "highlighter"));
