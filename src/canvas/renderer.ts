@@ -44,6 +44,7 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
@@ -2065,7 +2066,53 @@ function paintStroke(
   if (!night) ctx.fillStyle = style.color;
   else ctx.fillStyle = highlighter ? nightHighlighter(style.color) : nightColor(style.color);
   if (decor && pts && ink.runs.length > 0) paintShape(ctx, pts, ink.runs[0].width, decor, night);
+  else if (highlighter) paintOnce(ctx, ink.runs, ink.paths);
   else paintInk(ctx, ink.runs, ink.paths);
+  ctx.restore();
+}
+
+/** The canvas {@link paintOnce} draws into; grown as needed, never shrunk. */
+let onceCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * Paint translucent ink so no part of it is laid down twice (FineNotes#85).
+ * On the iPad, WebKit darkened a wide highlighter line in dots along its
+ * length, though the line was one path stroked once and its points never
+ * doubled back (the same strokes drew evenly on the desktop). So the ink is
+ * drawn opaque into a scratch canvas, where any overlap is the same colour,
+ * and laid down once with `ctx`'s alpha and blend. Where there is no
+ * scratch canvas to be had (the tests' stand-in contexts) it is drawn as is.
+ */
+function paintOnce(
+  ctx: CanvasRenderingContext2D,
+  runs: readonly InkRun[],
+  paths?: readonly Path2D[],
+): void {
+  if (!("getTransform" in ctx) || typeof createEl !== "function") {
+    paintInk(ctx, runs, paths);
+    return;
+  }
+  const m = ctx.getTransform();
+  const rect = inkPixelRect(runs, m, ctx.canvas.width, ctx.canvas.height);
+  if (!rect) return;
+  const canvas = (onceCanvas ??= createEl("canvas"));
+  if (canvas.width < rect.w) canvas.width = rect.w;
+  if (canvas.height < rect.h) canvas.height = rect.h;
+  const once = canvas.getContext("2d");
+  if (!once) {
+    paintInk(ctx, runs, paths);
+    return;
+  }
+  once.setTransform(1, 0, 0, 1, 0, 0);
+  once.globalAlpha = 1;
+  once.globalCompositeOperation = "source-over";
+  once.clearRect(0, 0, rect.w, rect.h);
+  once.setTransform(m.a, m.b, m.c, m.d, m.e - rect.x, m.f - rect.y);
+  once.fillStyle = ctx.fillStyle;
+  paintInk(once, runs, paths);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(canvas, 0, 0, rect.w, rect.h, rect.x, rect.y, rect.w, rect.h);
   ctx.restore();
 }
 

@@ -41,6 +41,7 @@ export default defineConfig({
         "src/canvas/scroll-physics.ts",
         "src/canvas/scroll-thumb.ts",
         "src/canvas/tile-grid.ts",
+        "src/canvas/layer-rect.ts",
         "src/canvas/image-geometry.ts",
         "src/canvas/image-crop.ts",
         "src/canvas/image-raster.ts",
