@@ -36,6 +36,43 @@ export interface LaserSegment {
   alpha: number;
 }
 
+export interface LaserDot {
+  point: LaserPoint;
+  alpha: number;
+}
+
+/**
+ * Points to draw along the beam. The setting is dots per 100 CSS pixels:
+ * zero is deliberately empty, while larger values reduce the spacing.
+ */
+export function laserDots(segments: readonly LaserSegment[], frequency: number): LaserDot[] {
+  if (!Number.isFinite(frequency) || frequency <= 0) return [];
+  const spacing = 100 / frequency;
+  const dots: LaserDot[] = [];
+  let distanceSinceDot = 0;
+  for (const { a, b, alpha } of segments) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= 0) continue;
+    let distance = spacing - distanceSinceDot;
+    while (distance < length) {
+      const ratio = distance / length;
+      dots.push({
+        point: {
+          x: a.x + dx * ratio,
+          y: a.y + dy * ratio,
+          t: a.t + (b.t - a.t) * ratio,
+        },
+        alpha,
+      });
+      distance += spacing;
+    }
+    distanceSinceDot = (distanceSinceDot + length) % spacing;
+  }
+  return dots;
+}
+
 export class LaserTrail {
   private points: LaserPoint[] = [];
   /** The pen is down: its last point does not fade. */

@@ -2663,6 +2663,7 @@ export class InkView extends TextFileView {
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         onlyStylusMode: this.settings.onlyStylusMode === true,
+        laserColor: () => this.settings.laserDefaultColor,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2765,6 +2766,8 @@ export class InkView extends TextFileView {
         debug: this.showHud,
         palette,
         paper: this.shownPaper(),
+        laserColor: () => this.settings.laserDefaultColor,
+        laserDotFrequency: () => this.settings.laserDotFrequency,
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),

@@ -1,7 +1,7 @@
 /** `src/canvas/laser-trail.ts` — the laser pointer's fading trail (FineNotes#25). */
 
 import { describe, expect, it } from "vitest";
-import { LASER_FADE_MS, LaserTrail, fade } from "../../src/canvas/laser-trail";
+import { LASER_FADE_MS, LaserTrail, fade, laserDots } from "../../src/canvas/laser-trail";
 
 describe("fade", () => {
   it("is full when new, nothing once faded, and falls in between", () => {
@@ -27,6 +27,42 @@ describe("LaserTrail", () => {
     expect(segments[0].alpha).toBeLessThan(segments[1].alpha);
     expect(segments[1]).toMatchObject({ a: { x: 10 }, b: { x: 20 }, alpha: 1 });
     expect(trail.tip()).toEqual({ x: 20, y: 0, t: 200 });
+  });
+
+  describe("laserDots", () => {
+    const segments = [
+      {
+        a: { x: 0, y: 0, t: 0 },
+        b: { x: 100, y: 0, t: 100 },
+        alpha: 1,
+      },
+    ];
+
+    it("emits no dots when disabled", () => {
+      expect(laserDots(segments, 0)).toEqual([]);
+    });
+
+    it("emits proportionally more dots at higher frequencies", () => {
+      expect(laserDots(segments, 10)).toHaveLength(9);
+      expect(laserDots(segments, 20)).toHaveLength(19);
+      expect(laserDots(segments, 20)[0].point).toMatchObject({ x: 5, y: 0 });
+    });
+
+    it("keeps spacing continuous across pointer samples", () => {
+      const sampledPath = [
+        { a: { x: 0, y: 0, t: 0 }, b: { x: 4, y: 0, t: 4 }, alpha: 1 },
+        { a: { x: 4, y: 0, t: 4 }, b: { x: 8, y: 0, t: 8 }, alpha: 1 },
+        { a: { x: 8, y: 0, t: 8 }, b: { x: 12, y: 0, t: 12 }, alpha: 1 },
+      ];
+      expect(laserDots(sampledPath, 10).map(({ point }) => point.x)).toEqual([10]);
+    });
+
+    it("supports disabled, medium, and maximum density", () => {
+      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 100, y: 0, t: 100 }, alpha: 1 }];
+      expect(laserDots(path, 0)).toHaveLength(0);
+      expect(laserDots(path, 50)).toHaveLength(49);
+      expect(laserDots(path, 100)).toHaveLength(99);
+    });
   });
 
   it("lets the old part fade while the pen goes on, and keeps a still pen's dot", () => {
