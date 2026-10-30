@@ -167,6 +167,11 @@ extracted from the matching section of this file by `release.yml`.
   highlights on a slow CPU. They are now drawn a few a frame, the last
   zoom's tiles standing in meanwhile, and a PDF page or its sharper detail
   arriving paints the ink over it again the same way.
+- **Panning moves the page instead of painting it again** (iPad and
+  Android). The picture of the pages now reaches a little past the screen
+  on every side, and a scroll or pan it still covers moves it as it is;
+  it is painted again only once the view passes its edge. Every frame of a
+  pan used to paint and hand over a screen-sized picture.
 - The debug overlay says what the highlighter did where it came down on a
   PDF page: which text it snapped to, or why it drew freehand (the page's
   text not read yet, no text on the page, or the pen beside the text).

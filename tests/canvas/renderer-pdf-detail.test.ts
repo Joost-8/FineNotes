@@ -13,7 +13,8 @@ describe("renderer visible PDF request boundary", () => {
     const rasterTile = vi.fn(() => ({ canvas: {} }));
     const renderer = Object.assign(Object.create(Renderer.prototype), {
       dry: { canvas: { width: 600, height: 400 }, ctx },
-      screen: { dpr: 2 },
+      screen: { dpr: 2, width: 300, height: 200 },
+      overscan: { x: 0, y: 0 },
       view: { scale: 4, scrollY: 25, width: 1000 },
       originX: -100,
       level: 8,

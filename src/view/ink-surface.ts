@@ -2653,6 +2653,11 @@ export class InkSurface {
     );
     renderer.highlighterAlpha = options.highlighterAlpha;
     renderer.paper = this.paper;
+    // A pan or scroll moves the dry layer rather than painting it again: on
+    // a phone or tablet, whose compositor is always the GPU. Composited on
+    // the CPU (a desktop with its GPU turned off), the larger canvas cost
+    // more each frame than it saved.
+    renderer.useOverscan(Platform.isMobile);
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -3210,7 +3215,12 @@ export class InkSurface {
     image.height = bottom.height;
     const ctx = image.getContext("2d");
     if (!ctx) return null;
-    for (const layer of this.paneLayers) ctx.drawImage(layer, 0, 0);
+    // The dry layer reaches past the view, and may be shifted by a scroll.
+    const dry = this.renderer?.dryOrigin() ?? { x: 0, y: 0 };
+    for (const layer of this.paneLayers) {
+      if (layer === bottom) ctx.drawImage(layer, 0, 0);
+      else ctx.drawImage(layer, dry.x, dry.y);
+    }
     return {
       image,
       pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },

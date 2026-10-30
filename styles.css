@@ -2103,6 +2103,8 @@ select.goodobsidian-choice-select {
 
 .goodobsidian-canvas-dry {
   z-index: 1;
+  /* It reaches past the view and follows a scroll by a transform (Renderer.useOverscan). */
+  will-change: transform;
 }
 
 .goodobsidian-canvas-wet {

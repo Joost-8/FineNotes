@@ -445,18 +445,39 @@ interface Preview {
 }
 
 /**
- * What the dry layer shows: the view it was painted at (`key`) of which
- * document, and whether every tile on it was ready. While these stay, a
- * repaint draws only what changed since ({@link Renderer.renderDocument}).
+ * The view a dry layer is painted in: where its top-left device px lies in
+ * layout space, as `scrollY` and the layout origin's `originX` (CSS px from
+ * its left edge). With overscan it reaches past the view on every side.
+ */
+interface DryView {
+  scrollY: number;
+  originX: number;
+}
+
+/**
+ * What the dry layer shows: the scale, size and look it was painted at
+ * (`key`), of which document, in which view (`paint`). While these stay, a
+ * repaint draws only what changed since ({@link Renderer.renderDocument}),
+ * and a scroll the overscan still covers only moves the canvas. `clipped`:
+ * only the part in view was painted (mid-zoom), so the next paint is whole.
  */
 interface DryShown {
   key: string;
   doc: InkDocument;
   layout: DocumentLayout;
   paper: PaperTheme;
-  complete: boolean;
   selection: boolean;
+  paint: DryView;
+  clipped: boolean;
 }
+
+/**
+ * How far the dry layer reaches past the view on each side with overscan
+ * on ({@link Renderer.useOverscan}): this share of the view's width and
+ * height, and at most this many CSS px.
+ */
+const OVERSCAN_SHARE = 0.15;
+const OVERSCAN_MAX = 200;
 
 /**
  * Damage over this share of the dry layer is drawn as one full repaint:
@@ -658,6 +679,13 @@ export class Renderer {
    * not the tiles' own painting, was most of what it cost.
    */
   private dryDamage: PixelRect[] = [];
+  /** Whether the dry layer reaches past the view ({@link useOverscan}). */
+  private overscanOn = false;
+  /** How far it does, CSS px a side, whole device px each; 0 with it off. */
+  private overscan = { x: 0, y: 0 };
+  /** The CSS transform the dry layer was last given ({@link placeDry}), and its shift, CSS px. */
+  private dryTransform = "";
+  private dryShift = { x: 0, y: 0 };
 
   /**
    * `wetDesynchronized` asks for a low-latency context on the wet layer.
@@ -698,14 +726,67 @@ export class Renderer {
     // Never 0: a canvas of no size cannot be drawn into, and iOS reports one lost.
     const deviceWidth = Math.max(1, Math.round(width * dpr));
     const deviceHeight = Math.max(1, Math.round(height * dpr));
+    // Whole device px, so the canvas and its tiles stay on the px grid.
+    const margin = (side: number): number =>
+      this.overscanOn ? Math.round(Math.min(side * OVERSCAN_SHARE, OVERSCAN_MAX) * dpr) : 0;
+    const [mx, my] = [margin(width), margin(height)];
+    this.overscan = { x: mx / dpr, y: my / dpr };
     for (const { canvas } of [this.backdrop, this.dry, this.wet]) {
-      canvas.width = deviceWidth;
-      canvas.height = deviceHeight;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      const over = canvas === this.dry.canvas;
+      canvas.width = deviceWidth + (over ? 2 * mx : 0);
+      canvas.height = deviceHeight + (over ? 2 * my : 0);
+      canvas.style.width = `${width + (over ? (2 * mx) / dpr : 0)}px`;
+      canvas.style.height = `${height + (over ? (2 * my) / dpr : 0)}px`;
     }
-    const viewportBytes = this.dry.canvas.width * this.dry.canvas.height * 4;
+    if (this.overscanOn) {
+      this.dry.canvas.style.left = `${-mx / dpr}px`;
+      this.dry.canvas.style.top = `${-my / dpr}px`;
+      this.placeDry({ x: 0, y: 0 });
+    }
+    const viewportBytes = deviceWidth * deviceHeight * 4;
     this.tiles.setBudget(Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * viewportBytes));
+  }
+
+  /**
+   * Let the dry layer reach past the view on every side ({@link OVERSCAN_SHARE}),
+   * and follow a scroll it still covers by moving the canvas (a CSS
+   * transform) rather than painting it again: a frame of such a pan changes
+   * no canvas at all. Handing a changed pane-sized canvas to the compositor
+   * on every frame, not the drawing, was most of a zoomed-in pan's frame (a
+   * CPU slowed 4x: about 30 fps). Takes effect at the next {@link resize}.
+   */
+  useOverscan(on: boolean): void {
+    this.overscanOn = on;
+  }
+
+  /** Shift the dry layer `shift` CSS px from its place: a scroll it still covers. */
+  private placeDry(shift: { x: number; y: number }): void {
+    if (!this.overscanOn) return;
+    this.dryShift = shift;
+    const transform = shift.x === 0 && shift.y === 0 ? "" : `translate(${shift.x}px, ${shift.y}px)`;
+    if (transform === this.dryTransform) return;
+    this.dryTransform = transform;
+    this.dry.canvas.style.transform = transform;
+  }
+
+  /**
+   * Where the dry layer's top-left device px lies on the view, device px:
+   * its overscan above and to the left, and the shift of a scroll it still
+   * covers. (0, 0) without overscan. Whoever copies the layer's pixels to
+   * the view's draws them there.
+   */
+  dryOrigin(): { x: number; y: number } {
+    const dpr = this.screen.dpr;
+    return {
+      x: (this.dryShift.x - this.overscan.x) * dpr,
+      y: (this.dryShift.y - this.overscan.y) * dpr,
+    };
+  }
+
+  /** The view's size in device px (the dry layer is larger by its overscan). */
+  private get screenDevice(): { w: number; h: number } {
+    const { width, height, dpr } = this.screen;
+    return { w: Math.max(1, Math.round(width * dpr)), h: Math.max(1, Math.round(height * dpr)) };
   }
 
   /**
@@ -968,11 +1049,15 @@ export class Renderer {
     }
   }
 
-  /** The dry layer's px showing `area` (page px) of page `box`, in the view now. */
+  /** The dry layer's px showing `area` (page px) of page `box`, in the view it was painted in. */
   private damageDry(box: PageBox, area: Bounds): void {
     if (!this.dryShown) return;
-    const r = this.pageDeviceRect(box);
     const k = this.deviceScale;
+    const { paint } = this.dryShown;
+    const r = {
+      x: (paint.originX + box.x * this.safeScale) * this.screen.dpr,
+      y: (box.y - paint.scrollY) * k,
+    };
     // Kept to the page and one px round it, its soft edge.
     const page: Bounds = { minX: 0, minY: 0, maxX: box.width, maxY: box.height };
     const shown: Bounds = {
@@ -1366,9 +1451,10 @@ export class Renderer {
     let complete = true;
     const ink: InkPass = { usePressure, hidden, replaced, greyed };
 
-    const visibleBoxes = this.boxesOnScreen(doc.pages.length);
+    // The PDF painter is asked about what is in view, not the overscan.
+    const screen = this.screenDevice;
     this.painter?.prepare?.(
-      visibleBoxes.map((box) => {
+      this.boxesOnScreen(doc.pages.length).map((box) => {
         const page = doc.pages[box.index];
         const r = this.pageDeviceRect(box);
         return {
@@ -1377,8 +1463,8 @@ export class Renderer {
           region: {
             minX: -r.x / k,
             minY: -r.y / k,
-            maxX: (this.dry.canvas.width - r.x) / k,
-            maxY: (this.dry.canvas.height - r.y) / k,
+            maxX: (screen.w - r.x) / k,
+            maxY: (screen.h - r.y) / k,
           },
         };
       }),
@@ -1389,131 +1475,162 @@ export class Renderer {
     );
     const desk = this.deskOf(doc);
     const key = this.dryKey(desk);
-    // Null: paint it all. Else only these px changed since the last paint.
-    const damage = this.takeDryDamage(doc, key, selection != null);
+    // `damage` null: paint it all. Else only these px changed since the last paint.
+    const { paint, damage, shift } = this.planDry(doc, desk, selection != null);
+    this.placeDry(shift);
     if (damage?.length === 0) return true;
-    const meets = (rect: PixelRect): boolean =>
-      damage === null || damage.some((d) => rectsMeet(d, rect));
+    // Mid-zoom only the part in view is painted: the overscan is not seen,
+    // and a pinch paints every frame.
+    const { x: mx, y: my } = this.overscan;
+    const dpr = this.screen.dpr;
+    const clipped = damage === null && transient && (mx > 0 || my > 0);
+    const clip =
+      damage ?? (clipped ? [{ x: mx * dpr, y: my * dpr, w: screen.w, h: screen.h }] : null);
+    const meets = (rect: PixelRect): boolean => !clip || clip.some((d) => rectsMeet(d, rect));
+    // Tiles drawn from a stand-in, painted again at the next frame.
+    const pending: PixelRect[] = [];
+    // Painted in the view the dry layer shows: its overscan included, and
+    // kept while a scroll stays inside it.
+    const real = { view: this.view, originX: this.originX, screen: this.screen };
+    this.view = { ...real.view, scrollY: paint.scrollY };
+    this.originX = paint.originX;
+    this.screen = {
+      ...real.screen,
+      width: real.screen.width + 2 * mx,
+      height: real.screen.height + 2 * my,
+    };
     ctx.save();
-    if (damage) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.beginPath();
-      for (const d of damage) ctx.rect(d.x, d.y, d.w, d.h);
-      ctx.clip();
-    }
-    this.paintDesk(ctx, doc, desk);
-    ctx.imageSmoothingEnabled = !exact;
-    for (const box of visibleBoxes) {
-      const page = doc.pages[box.index];
-      const r = this.pageDeviceRect(box);
-      const ox = exact ? Math.round(r.x) : r.x;
-      const oy = exact ? Math.round(r.y) : r.y;
-      const raster = rasterSize(box.width, box.height, level);
-      if (!meets(outwardRect(r.x, r.y, r.w, r.h))) continue;
-      // The tiles' px on the dry layer: at their own level whole px; mid-zoom
-      // neighbours share each rounded edge, so scaling leaves no seams.
-      const placed = (tr: TileRect): PixelRect => {
-        if (exact) return { x: ox + tr.x, y: oy + tr.y, w: tr.w, h: tr.h };
-        const x0 = Math.round(ox + tr.x * s);
-        const y0 = Math.round(oy + tr.y * s);
-        return {
-          x: x0,
-          y: y0,
-          w: Math.round(ox + (tr.x + tr.w) * s) - x0,
-          h: Math.round(oy + (tr.y + tr.h) * s) - y0,
-        };
-      };
-      const needed = tilesCovering(
-        box.width,
-        box.height,
-        level,
-        -ox / s,
-        -oy / s,
-        (this.dry.canvas.width - ox) / s,
-        (this.dry.canvas.height - oy) / s,
-      ).filter((tr) => meets(placed(tr)));
-
-      let missing = 0;
-      for (const tr of needed) {
-        if (!this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) missing++;
-      }
-      // Mid-zoom the tiles are scaled, and may not meet the page's edges.
-      this.paintPaper(ctx, page, box, missing === 0 && exact);
-      let preview = missing > 0 ? this.previews.get(page.id) : undefined;
-      if (missing > 0 && !preview && transient) {
-        // One whole-page stand-in beats tiles at a level about to be dropped.
-        preview = this.buildPreview(page, box, usePressure) ?? undefined;
-      }
-      if (preview?.stale) this.repairPreview(preview, page, box, usePressure);
-      // Zoomed out far enough that the stand-in is the closer match in
-      // resolution, it alone is drawn: minifying dozens of tiles a frame is
-      // what made a fast pinch-out drop frames, and looked no sharper.
-      const previewOnly =
-        preview !== undefined &&
-        transient &&
-        Math.abs(Math.log(k / preview.scale)) < Math.abs(Math.log(s));
-      if (preview?.window) {
-        // Only part of the page: the paper first, so nothing else shows the desk.
-        const w = preview.window;
-        ctx.fillStyle = paperColorOf(page, this.paper);
-        ctx.fillRect(ox, oy, raster.w * s, raster.h * s);
-        ctx.drawImage(
-          preview.canvas,
-          ox + w.minX * k,
-          oy + w.minY * k,
-          (preview.canvas.width / preview.scale) * k,
-          (preview.canvas.height / preview.scale) * k,
-        );
-      } else if (preview) {
-        // Blurry is better than blank while the tiles catch up.
-        ctx.drawImage(preview.canvas, ox, oy, raster.w * s, raster.h * s);
-      }
-
-      for (const tr of needed) {
-        if (previewOnly) break;
-        let tile = this.tiles.get(tileKey(page.id, level, tr.col, tr.row));
-        if (!tile) {
-          const late = transient || now() > deadline;
-          // The last zoom's tiles, scaled, else the preview under them.
-          if (late && (this.drawFallback(ctx, page, box, tr, ox, oy, exact) || preview)) {
-            // A stale-level tile is never worth making; a missed deadline
-            // asks for another frame.
-            if (!transient) complete = false;
-            continue;
-          }
-          tile = this.rasterTile(page, box, tr, level, ink) ?? undefined;
-          if (!tile) continue;
-        } else if (tile.stale || (tile.soft && now() <= deadline)) {
-          // A stale tile whatever the budget: drawn as it is, it would show
-          // what changed. A sharper backdrop can wait for the next frame.
-          this.repairTile(tile, page, box, ink);
-        } else if (tile.soft) {
-          complete = false;
-        }
-        const at = placed(tr);
-        ctx.drawImage(tile.canvas, at.x, at.y, at.w, at.h);
-      }
-
-      if (selection && selection.pageIndex === box.index) {
-        this.toLayoutSpace(ctx);
-        this.enterPage(ctx, box);
-        this.drawSelectionBox(ctx, selection.bounds, 8);
-        ctx.restore();
+    try {
+      if (clip) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.beginPath();
+        for (const d of clip) ctx.rect(d.x, d.y, d.w, d.h);
+        ctx.clip();
       }
+      this.paintDesk(ctx, doc, desk);
+      ctx.imageSmoothingEnabled = !exact;
+      for (const box of this.boxesOnScreen(doc.pages.length)) {
+        const page = doc.pages[box.index];
+        const r = this.pageDeviceRect(box);
+        const ox = exact ? Math.round(r.x) : r.x;
+        const oy = exact ? Math.round(r.y) : r.y;
+        const raster = rasterSize(box.width, box.height, level);
+        if (!meets(outwardRect(r.x, r.y, r.w, r.h))) continue;
+        // The tiles' px on the dry layer: at their own level whole px; mid-zoom
+        // neighbours share each rounded edge, so scaling leaves no seams.
+        const placed = (tr: TileRect): PixelRect => {
+          if (exact) return { x: ox + tr.x, y: oy + tr.y, w: tr.w, h: tr.h };
+          const x0 = Math.round(ox + tr.x * s);
+          const y0 = Math.round(oy + tr.y * s);
+          return {
+            x: x0,
+            y: y0,
+            w: Math.round(ox + (tr.x + tr.w) * s) - x0,
+            h: Math.round(oy + (tr.y + tr.h) * s) - y0,
+          };
+        };
+        const needed = tilesCovering(
+          box.width,
+          box.height,
+          level,
+          -ox / s,
+          -oy / s,
+          (this.dry.canvas.width - ox) / s,
+          (this.dry.canvas.height - oy) / s,
+        ).filter((tr) => meets(placed(tr)));
+
+        let missing = 0;
+        for (const tr of needed) {
+          if (!this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) missing++;
+        }
+        // Mid-zoom the tiles are scaled, and may not meet the page's edges.
+        this.paintPaper(ctx, page, box, missing === 0 && exact);
+        let preview = missing > 0 ? this.previews.get(page.id) : undefined;
+        if (missing > 0 && !preview && transient) {
+          // One whole-page stand-in beats tiles at a level about to be dropped.
+          preview = this.buildPreview(page, box, usePressure) ?? undefined;
+        }
+        if (preview?.stale) this.repairPreview(preview, page, box, usePressure);
+        // Zoomed out far enough that the stand-in is the closer match in
+        // resolution, it alone is drawn: minifying dozens of tiles a frame is
+        // what made a fast pinch-out drop frames, and looked no sharper.
+        const previewOnly =
+          preview !== undefined &&
+          transient &&
+          Math.abs(Math.log(k / preview.scale)) < Math.abs(Math.log(s));
+        if (preview?.window) {
+          // Only part of the page: the paper first, so nothing else shows the desk.
+          const w = preview.window;
+          ctx.fillStyle = paperColorOf(page, this.paper);
+          ctx.fillRect(ox, oy, raster.w * s, raster.h * s);
+          ctx.drawImage(
+            preview.canvas,
+            ox + w.minX * k,
+            oy + w.minY * k,
+            (preview.canvas.width / preview.scale) * k,
+            (preview.canvas.height / preview.scale) * k,
+          );
+        } else if (preview) {
+          // Blurry is better than blank while the tiles catch up.
+          ctx.drawImage(preview.canvas, ox, oy, raster.w * s, raster.h * s);
+        }
+
+        for (const tr of needed) {
+          if (previewOnly) break;
+          let tile = this.tiles.get(tileKey(page.id, level, tr.col, tr.row));
+          if (!tile) {
+            const late = transient || now() > deadline;
+            // The last zoom's tiles, scaled, else the preview under them.
+            if (late && (this.drawFallback(ctx, page, box, tr, ox, oy, exact) || preview)) {
+              // A stale-level tile is never worth making; a missed deadline
+              // asks for another frame, which paints the tile's place again.
+              if (!transient) {
+                complete = false;
+                pending.push(placed(tr));
+              }
+              continue;
+            }
+            tile = this.rasterTile(page, box, tr, level, ink) ?? undefined;
+            if (!tile) continue;
+          } else if (tile.stale || (tile.soft && now() <= deadline)) {
+            // A stale tile whatever the budget: drawn as it is, it would show
+            // what changed. A sharper backdrop can wait for the next frame.
+            this.repairTile(tile, page, box, ink);
+          } else if (tile.soft) {
+            complete = false;
+            pending.push(placed(tr));
+          }
+          const at = placed(tr);
+          ctx.drawImage(tile.canvas, at.x, at.y, at.w, at.h);
+        }
+
+        if (selection && selection.pageIndex === box.index) {
+          this.toLayoutSpace(ctx);
+          this.enterPage(ctx, box);
+          this.drawSelectionBox(ctx, selection.bounds, 8);
+          ctx.restore();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+      }
+    } finally {
+      ctx.restore();
+      this.view = real.view;
+      this.originX = real.originX;
+      this.screen = real.screen;
     }
-    ctx.restore();
+    for (const rect of pending) this.dryDamage = addDamage(this.dryDamage, rect);
     this.dryShown = {
       key,
       doc,
       layout: this.layout,
       paper: this.paper,
-      complete,
       selection: selection != null,
+      paint,
+      clipped,
     };
     // Every tile on screen is at the new level: the stand-ins can go.
     const old = this.fallbackLevel;
-    if (old !== 0 && complete && damage === null && !transient) {
+    if (old !== 0 && complete && !transient) {
       this.fallbackLevel = 0;
       this.tiles.deleteWhere((tile) => tile.level === old);
     }
@@ -1574,28 +1691,44 @@ export class Renderer {
     return covered >= need * 0.999;
   }
 
-  /** What, besides the document, the dry layer's picture depends on. */
+  /** What, besides the document and the view, the dry layer's picture depends on. */
   private dryKey(desk: string): string {
     const { width, height } = this.dry.canvas;
-    const { scrollY, scale } = this.view;
-    return `${width}x${height}@${this.screen.dpr}|${scrollY}|${scale}|${this.originX}|${this.level}|${desk}`;
+    return `${width}x${height}@${this.screen.dpr}|${this.view.scale}|${this.level}|${desk}`;
   }
 
   /**
-   * The dry layer's damage since its last paint, taken: null when it must be
-   * painted whole (a new view, document or theme, an incomplete or selected
-   * last paint, or damage over {@link DRY_DAMAGE_SHARE} of it).
+   * What this paint of the dry layer is: the view to paint it in, the damage
+   * since its last paint (taken) or null to paint it whole, and how far to
+   * shift the canvas. While the key, the document and the theme stay and
+   * the view has moved no further than the overscan covers, the view it was
+   * painted in is kept and the canvas shifted by the move; else it is
+   * painted whole in the view now (and the overscan round it). Damage over
+   * {@link DRY_DAMAGE_SHARE} of it is painted whole too.
    */
-  private takeDryDamage(doc: InkDocument, key: string, selection: boolean): PixelRect[] | null {
+  private planDry(
+    doc: InkDocument,
+    desk: string,
+    selection: boolean,
+  ): { paint: DryView; damage: PixelRect[] | null; shift: { x: number; y: number } } {
+    const { x: mx, y: my } = this.overscan;
+    const scale = this.safeScale;
+    const now: DryView = { scrollY: this.view.scrollY - my / scale, originX: this.originX + mx };
     const damage = this.dryDamage;
     this.dryDamage = [];
+    const whole = { paint: now, damage: null, shift: { x: 0, y: 0 } };
     const shown = this.dryShown;
-    if (!shown || !shown.complete || shown.selection || selection) return null;
-    if (shown.key !== key || shown.doc !== doc) return null;
-    if (shown.layout !== this.layout || shown.paper !== this.paper) return null;
+    if (!shown || shown.clipped || shown.selection || selection) return whole;
+    if (shown.key !== this.dryKey(desk) || shown.doc !== doc) return whole;
+    if (shown.layout !== this.layout || shown.paper !== this.paper) return whole;
     const { width, height } = this.dry.canvas;
-    if (damageArea(damage) > DRY_DAMAGE_SHARE * width * height) return null;
-    return damage;
+    if (damageArea(damage) > DRY_DAMAGE_SHARE * width * height) return whole;
+    // The move since, to whole device px: the tiles stay on the px grid.
+    const dpr = this.screen.dpr;
+    const x = Math.round((now.originX - shown.paint.originX) * dpr) / dpr;
+    const y = Math.round((shown.paint.scrollY - now.scrollY) * scale * dpr) / dpr;
+    if (Math.abs(x) > mx || Math.abs(y) > my) return whole;
+    return { paint: shown.paint, damage, shift: { x, y } };
   }
 
   /**
@@ -1611,7 +1744,12 @@ export class Renderer {
     const s = k / level;
     const deadline = now() + budgetMs;
     const { top, bottom } = this.visibleBand();
-    const marginLayout = PREFETCH_MARGIN / k;
+    // A ring round the view and its overscan, which a paint draws too.
+    const dpr = this.screen.dpr;
+    const ringX = PREFETCH_MARGIN + this.overscan.x * dpr;
+    const ringY = PREFETCH_MARGIN + this.overscan.y * dpr;
+    const screen = this.screenDevice;
+    const marginLayout = Math.max(ringX, ringY) / k;
     const around = this.boxesInBand(
       doc.pages.length,
       top - marginLayout,
@@ -1635,10 +1773,10 @@ export class Renderer {
         box.width,
         box.height,
         level,
-        (-PREFETCH_MARGIN - r.x) / s,
-        (-PREFETCH_MARGIN - r.y) / s,
-        (this.dry.canvas.width + PREFETCH_MARGIN - r.x) / s,
-        (this.dry.canvas.height + PREFETCH_MARGIN - r.y) / s,
+        (-ringX - r.x) / s,
+        (-ringY - r.y) / s,
+        (screen.w + ringX - r.x) / s,
+        (screen.h + ringY - r.y) / s,
       );
       for (const tr of ring) {
         // A stale tile is left for the screen paint, which knows what the
