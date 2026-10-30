@@ -740,6 +740,8 @@ export interface InkSurfaceCallbacks {
   onGestureStart?: (tool: ActiveTool, lent: boolean) => void;
   /** A freehand pen stroke was drawn and committed on page `pageId` (calculation notes). */
   onStrokeDrawn?: (pageId: string, stroke: Stroke) => void;
+  /** A pen or highlighter stroke snapped to a shape (Pen gestures › Make shapes). */
+  onPenShape?: () => void;
   /**
    * Asked before every edit: true refuses it, for a note that must not be
    * written (the host says why).
@@ -7656,6 +7658,9 @@ export class InkSurface {
       this.noteOffPage(home.box, stroke, command);
     }
     if (!shape) this.callbacks.onStrokeDrawn?.(home.page.id, stroke);
+    else if (this.toolState.tool === "pen" || this.toolState.tool === "highlighter") {
+      this.callbacks.onPenShape?.();
+    }
     // A stroke the pen was held on ended on purpose; any other may be a
     // flicker of the Pencil's contact, which the next pen-down carries on.
     if (!snap && !heldLongEnough && home.box === box) {

@@ -2736,6 +2736,9 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onPenShape: () => {
+          if (this.surface) this.plugin.offerShapeHint(this.surface);
+        },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,

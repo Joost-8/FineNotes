@@ -223,6 +223,8 @@ const STARTUP_TICK_MS = 250;
 
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
+/** Where Make shapes lives, said once: the first time a pen stroke snaps (FineNotes#84). */
+const SHAPE_HINT = "When strokes become shapes: tap the pen in hand, then Pen gestures.";
 
 /**
  * What `runRecognition` transcribes: the notebook view. An interface so the
@@ -1400,6 +1402,18 @@ export default class GoodObsidianPlugin extends Plugin {
       settings.textHintDismissed = true;
       void this.saveSettings();
     });
+  }
+
+  /**
+   * The first time a pen stroke snaps to a shape, once per vault: where to
+   * change when that happens (Pen gestures › Make shapes), in the Text
+   * tool's hint pill.
+   */
+  offerShapeHint(surface: InkSurface): void {
+    if (this.settings.shapeHintShown) return;
+    this.settings.shapeHintShown = true;
+    void this.saveSettings();
+    surface.showTextHint(SHAPE_HINT, () => undefined);
   }
 
   /**

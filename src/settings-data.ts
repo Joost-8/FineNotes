@@ -178,6 +178,8 @@ export interface GoodObsidianSettings {
   textHintShown: number;
   /** The hint was closed with its ×, and stays away. */
   textHintDismissed: boolean;
+  /** Where Make shapes lives was said, at the first pen stroke that snapped. */
+  shapeHintShown: boolean;
   /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
@@ -411,6 +413,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textDragSize: false,
   textHintShown: 0,
   textHintDismissed: false,
+  shapeHintShown: false,
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,

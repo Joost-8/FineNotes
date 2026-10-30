@@ -1081,6 +1081,25 @@ describe("the Scribble notice", () => {
   });
 });
 
+// --- Where Make shapes lives (FineNotes#84) ------------------------------------------------
+
+describe("the Make shapes hint", () => {
+  it("says where Make shapes is at the first pen stroke that snaps, once per vault", async () => {
+    await load({ lastSeenVersion: VERSION });
+    const shown: string[] = [];
+    const surface = { showTextHint: (text: string) => shown.push(text) } as never;
+    plugin.offerShapeHint(surface);
+    plugin.offerShapeHint(surface);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatch(/Pen gestures/);
+    expect(registered.saved.at(-1)?.shapeHintShown).toBe(true);
+    registered.unload();
+    await load({ lastSeenVersion: VERSION, shapeHintShown: true });
+    plugin.offerShapeHint(surface);
+    expect(shown).toHaveLength(1);
+  });
+});
+
 // --- Consent before recognition -----------------------------------------------------------
 
 describe("running recognition", () => {
