@@ -35,6 +35,7 @@ import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
+import { freshSamples, type RawSample } from "./repeat-samples";
 import { StylusClicks } from "./stylus-click";
 
 export type { PinchInfo };
@@ -96,6 +97,10 @@ export interface PointerDebugRecord {
  */
 export function isWholePixel(position: { clientX: number; clientY: number }): boolean {
   return Number.isInteger(position.clientX) && Number.isInteger(position.clientY);
+}
+
+function rawOf(e: PointerEvent): RawSample {
+  return { x: e.clientX, y: e.clientY, pressure: e.pressure, t: e.timeStamp };
 }
 
 /**
@@ -177,6 +182,8 @@ export class PointerController {
   private rounded = false;
   /** See {@link lastPenAt}. */
   private penSeenAt: number | null = null;
+  /** The raw samples the open stroke's last move carried. */
+  private lastMove: RawSample[] = [];
   private readonly fingers: FingerGesture;
   /** Watches every finger, the third included, for undo and redo taps. */
   private readonly taps: MultiFingerTap;
@@ -376,6 +383,7 @@ export class PointerController {
       this.listener.onCancel();
     }
     this.stroke = event.pointerId;
+    this.lastMove = [];
     this.element.setPointerCapture(event.pointerId);
     event.preventDefault();
     const pen = event.pointerType === "pen";
@@ -406,11 +414,15 @@ export class PointerController {
     event.preventDefault();
     const taken = event.getCoalescedEvents?.() ?? [];
     // Where the browser has no coalesced list, the event is the one sample.
-    const samples = taken.length > 0 ? taken.map((e) => this.sample(e)) : [this.sample(event)];
-    if (event.pointerType === "pen")
-      for (const e of taken.length > 0 ? taken : [event]) this.notePen(e);
+    const events = taken.length > 0 ? taken : [event];
+    const raw = events.map(rawOf);
+    // Samples the last move already handed over come again (`repeat-samples.ts`).
+    const fresh = new Set(freshSamples(raw, this.lastMove));
+    this.lastMove = raw;
+    const samples = events.filter((_, i) => fresh.has(raw[i])).map((e) => this.sample(e));
+    if (event.pointerType === "pen") for (const e of events) this.notePen(e);
     this.debug("move", event, samples.length, taken);
-    this.listener.onMove(samples);
+    if (samples.length > 0) this.listener.onMove(samples);
   }
 
   /** A move of the held-back press: wait on, become the press it was, or be the click. */
