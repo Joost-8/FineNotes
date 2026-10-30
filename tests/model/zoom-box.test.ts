@@ -9,10 +9,12 @@ import {
   moveZoomBox,
   newLineZoomBox,
   panToShow,
+  previousZoomBox,
   resizeZoomBox,
   scaleZoomBox,
   stepZoomBox,
   zoomAutoAdvanceDue,
+  zoomAutoAdvanceThreshold,
   zoomBoxFromPoints,
   zoomButtonState,
   zoomDeskColor,
@@ -115,6 +117,16 @@ describe("zoom box geometry", () => {
     expect(stepZoomBox({ ...box, x: 630 }, 1, 800, 600).x).toBe(640);
   });
 
+  it("falls back from the left margin to the end of the previous line", () => {
+    expect(previousZoomBox({ ...box, x: 0, y: 280 }, 800, 600)).toEqual({
+      x: 640,
+      y: 200,
+      w: 160,
+      h: 80,
+    });
+    expect(previousZoomBox(box, 800, 600)).toMatchObject({ x: 0, y: 200 });
+  });
+
   it("returns to the line's left edge and moves down one box height plus the offset", () => {
     expect(newLineZoomBox({ ...box, x: 400 }, 100, 800, 600)).toEqual({
       x: 100,
@@ -146,8 +158,17 @@ describe("zoom box geometry", () => {
 
   it("triggers auto-advance only once a stroke reaches two thirds of the box", () => {
     expect(zoomAutoAdvanceDue(box.x + box.w * (2 / 3) - 0.1, box)).toBe(false);
-    expect(zoomAutoAdvanceDue(box.x + box.w * (2 / 3), box)).toBe(true);
+    expect(zoomAutoAdvanceDue(box.x + box.w * 0.67, box)).toBe(true);
     expect(zoomAutoAdvanceDue(box.x + box.w, box)).toBe(true);
+  });
+
+  it("uses the configured percentage of the right edge as the trigger", () => {
+    expect(zoomAutoAdvanceDue(box.x + box.w * 0.6, box, 33)).toBe(false);
+    expect(zoomAutoAdvanceDue(box.x + box.w * 0.67, box, 33)).toBe(true);
+    expect(zoomAutoAdvanceDue(box.x + box.w * 0.5, box, 50)).toBe(true);
+    expect(zoomAutoAdvanceDue(box.x + box.w * 0.49, box, 50)).toBe(false);
+    expect(zoomAutoAdvanceThreshold(0)).toBe(10);
+    expect(zoomAutoAdvanceThreshold(80)).toBe(50);
   });
 
   it("uses the workspace desk inside the Zoom box", () => {

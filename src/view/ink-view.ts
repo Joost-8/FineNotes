@@ -2737,6 +2737,7 @@ export class InkView extends TextFileView {
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
         zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
         zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
+        zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
         onZoomBoxAutoAdvance: (on) => {
           this.settings.zoomBoxAutoAdvance = on;
           void this.plugin.saveSettings();

@@ -331,8 +331,10 @@ export interface GoodObsidianSettings {
   tuckPenOptionsOnWrite: PenOptionsOnWrite;
   /** Page px added after a Zoom box line; negative lets taller boxes overlap. */
   zoomBoxLineStep: number;
-  /** Move the Zoom box right (then wrap) after a stroke reaches two thirds of it. */
+  /** Move the Zoom box right (then wrap) after a stroke reaches its threshold. */
   zoomBoxAutoAdvance: boolean;
+  /** Percentage of the box's right edge that triggers auto-advance. */
+  zoomBoxAutoAdvanceThreshold: number;
   /**
    * "Grey out while erasing", the eraser's mode list: Whole stroke and By
    * line draw what they take grey until the pen lifts, as Notability does,
@@ -444,6 +446,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   tuckPenOptionsOnWrite: "off",
   zoomBoxLineStep: 0,
   zoomBoxAutoAdvance: false,
+  zoomBoxAutoAdvanceThreshold: 33,
   greyWhileErasing: false,
 
   settingsOpen: [],

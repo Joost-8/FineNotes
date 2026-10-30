@@ -2376,8 +2376,13 @@ describe("the Zoom box auto-advance", () => {
     const sync = vi.fn();
     const surface = surfaceWith({
       zoomBox: { pageId: "p1", box, originX: 100, selected: false },
-      zoomStrokeMaxX: box.x + box.w * (2 / 3),
-      callbacks: { zoomBoxAutoAdvance: () => on, zoomBoxLineStep: () => 0 },
+      zoomPositionHistory: [],
+      zoomStrokeMaxX: box.x + box.w * 0.67,
+      callbacks: {
+        zoomBoxAutoAdvance: () => on,
+        zoomBoxAutoAdvanceThreshold: () => 33,
+        zoomBoxLineStep: () => 0,
+      },
       boxForPage: () => ({ width: 800, height: 600 }),
       syncZoomTarget: sync,
       ensureZoomTargetVisible: vi.fn(),
@@ -2412,6 +2417,24 @@ describe("the Zoom box auto-advance", () => {
     expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
       x: 100,
       y: 280,
+    });
+  });
+
+  it("lets Back restore the exact position before a forward wrap", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+    run(surface, "previousZoomBox");
+    expect(
+      (surface.zoomBox as { box: { x: number; y: number; w: number; h: number } }).box,
+    ).toEqual({
+      x: 650,
+      y: 200,
+      w: 150,
+      h: 80,
     });
   });
 

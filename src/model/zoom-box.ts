@@ -50,8 +50,6 @@ export const ZOOM_BOX_MIN = 24;
 export const ZOOM_BOX_STEP = 0.7;
 /** Auto-advance moves this much of the box width after a stroke reaches the trigger. */
 export const ZOOM_AUTO_ADVANCE_STEP = 0.65;
-/** A stroke that reaches this fraction of the box width asks for the next page slice. */
-export const ZOOM_AUTO_ADVANCE_TRIGGER = 2 / 3;
 /** A pause after the stroke, so dots and crosses can be finished first. */
 export const ZOOM_AUTO_ADVANCE_DELAY_MS = 400;
 /** One press of − or + changes the magnification by this factor. */
@@ -181,6 +179,18 @@ export function stepZoomBox(
   return moveZoomBox(box, Math.round(box.w * ZOOM_BOX_STEP) * direction, 0, pageWidth, pageHeight);
 }
 
+/** Step back horizontally, or return to the end of the preceding line. */
+export function previousZoomBox(
+  box: ZoomRect,
+  pageWidth: number,
+  pageHeight: number,
+  lineStepOffset = 0,
+): ZoomRect {
+  if (box.x > 0) return stepZoomBox(box, -1, pageWidth, pageHeight);
+  const y = clamp(box.y - box.h - lineStepOffset, 0, pageHeight - box.h);
+  return { ...box, x: pageWidth - box.w, y };
+}
+
 /**
  * Return to the line's left edge and move down one box height plus the user's
  * offset. A negative offset lets consecutive lines overlap a taller box.
@@ -198,8 +208,13 @@ export function newLineZoomBox(
 }
 
 /** Whether a stroke reached far enough right in the box to ask for more room. */
-export function zoomAutoAdvanceDue(x: number, box: ZoomRect): boolean {
-  return x >= box.x + box.w * ZOOM_AUTO_ADVANCE_TRIGGER;
+export function zoomAutoAdvanceDue(x: number, box: ZoomRect, threshold = 33): boolean {
+  return x >= box.x + box.w * (1 - zoomAutoAdvanceThreshold(threshold) / 100);
+}
+
+/** Clamp the user setting for the portion of the box that triggers advance. */
+export function zoomAutoAdvanceThreshold(value = 33): number {
+  return Number.isFinite(value) ? Math.max(10, Math.min(50, value)) : 33;
 }
 
 /**

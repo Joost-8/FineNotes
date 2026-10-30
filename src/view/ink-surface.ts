@@ -69,9 +69,9 @@ import {
   newLineZoomBox,
   moveZoomBox,
   panToShow,
+  previousZoomBox,
   resizeZoomBox,
   scaleZoomBox,
-  stepZoomBox,
   zoomAutoAdvanceDue,
   zoomBoxFromPoints,
   zoomDeskColor,
@@ -804,8 +804,10 @@ export interface InkSurfaceCallbacks {
   onlyStylusMode?: () => boolean;
   /** Page px added after each Zoom box line; negative overlaps the next line. */
   zoomBoxLineStep?: () => number;
-  /** Whether the Zoom box advances after a stroke reaches two thirds of it. */
+  /** Whether the Zoom box advances after a stroke reaches its threshold. */
   zoomBoxAutoAdvance?: () => boolean;
+  /** Percentage of the Zoom box's right edge that triggers auto-advance. */
+  zoomBoxAutoAdvanceThreshold?: () => number;
   /** The Zoom box's auto-advance button changed the setting. */
   onZoomBoxAutoAdvance?: (on: boolean) => void;
   /**
@@ -1677,6 +1679,8 @@ export class InkSurface {
   /** The pointer drawing the first target rectangle. */
   private zoomMarqueePointer: number | null = null;
   private zoomTargetDrag: ZoomTargetDrag | null = null;
+  /** Previous target positions for the Zoom box's Back button. */
+  private readonly zoomPositionHistory: ZoomRect[] = [];
   /** The floating window and its canvas, created when a target is first drawn. */
   private zoomFrame: FloatingWindow | null = null;
   private zoomCanvas: HTMLCanvasElement | null = null;
@@ -6701,6 +6705,7 @@ export class InkSurface {
 
   /** A target box was drawn: put it on the page and open the window over the view. */
   private openZoomBox(pageId: string, box: ZoomRect): void {
+    this.zoomPositionHistory.length = 0;
     this.zoomBox = { pageId, box, originX: box.x, selected: false };
     this.zoomSelectPress = null;
     this.zoomMarquee = null;
@@ -6719,6 +6724,7 @@ export class InkSurface {
   closeZoomBox(notify: boolean): void {
     if (this.zoomPointer !== null) this.penCancel();
     this.zoomBox = null;
+    this.zoomPositionHistory.length = 0;
     this.zoomMarquee = null;
     this.zoomTargetDrag = null;
     this.zoomSelectPress = null;
@@ -6759,8 +6765,8 @@ export class InkSurface {
       allowDrag: (event) =>
         zoomWindowDragAllowed(event.pointerType, this.callbacks.onlyStylusMode?.() === true),
       buttons: [
-        { icon: "arrow-left", label: "Step box left", run: () => this.stepZoomBox(-1) },
-        { icon: "arrow-right", label: "Step box right", run: () => this.stepZoomBox(1) },
+        { icon: "arrow-left", label: "Previous position", run: () => this.previousZoomBox() },
+        { icon: "arrow-right", label: "Advance", run: () => this.advanceZoomBox() },
         { icon: "corner-down-left", label: "New line", run: () => this.newZoomBoxLine() },
         {
           icon: "chevrons-right",
@@ -7018,29 +7024,20 @@ export class InkSurface {
     this.requestFrame();
   }
 
-  private stepZoomBox(direction: -1 | 1): void {
-    const state = this.zoomBox;
-    const pageBox = state ? this.boxForPage(state.pageId) : null;
-    if (!state || !pageBox) return;
-    this.cancelZoomSlide();
-    state.box = stepZoomBox(state.box, direction, pageBox.width, pageBox.height);
-    this.syncZoomTarget();
-    this.ensureZoomTargetVisible();
-    this.requestFrame();
-  }
-
   private newZoomBoxLine(): void {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
     this.cancelZoomSlide();
-    state.box = newLineZoomBox(
+    const next = newLineZoomBox(
       state.box,
       state.originX,
       pageBox.width,
       pageBox.height,
       this.zoomLineStep(),
     );
+    this.pushZoomPosition(next);
+    state.box = next;
     this.syncZoomTarget();
     this.ensureZoomTargetVisible();
     this.requestFrame();
@@ -7054,6 +7051,11 @@ export class InkSurface {
 
   private zoomAutoAdvanceOn(): boolean {
     return this.callbacks.zoomBoxAutoAdvance?.() === true;
+  }
+
+  private zoomAutoAdvanceThreshold(): number {
+    const value = this.callbacks.zoomBoxAutoAdvanceThreshold?.() ?? 33;
+    return Number.isFinite(value) ? Math.max(10, Math.min(50, value)) : 33;
   }
 
   private setZoomAutoAdvance(on: boolean): void {
@@ -7094,7 +7096,9 @@ export class InkSurface {
     if (!this.zoomAutoAdvanceOn()) return;
     const state = this.zoomBox;
     if (!state) return;
-    if (!zoomAutoAdvanceDue(this.zoomStrokeMaxX, state.box)) return;
+    if (!zoomAutoAdvanceDue(this.zoomStrokeMaxX, state.box, this.zoomAutoAdvanceThreshold())) {
+      return;
+    }
     this.zoomAdvanceTimer = window.setTimeout(() => {
       this.zoomAdvanceTimer = null;
       this.advanceZoomBox();
@@ -7105,15 +7109,35 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox) return;
-    this.glideZoomBox(
-      autoAdvanceZoomBox(
-        state.box,
-        state.originX,
-        pageBox.width,
-        pageBox.height,
-        this.zoomLineStep(),
-      ),
+    const next = autoAdvanceZoomBox(
+      state.box,
+      state.originX,
+      pageBox.width,
+      pageBox.height,
+      this.zoomLineStep(),
     );
+    this.pushZoomPosition(next);
+    this.glideZoomBox(next);
+  }
+
+  private previousZoomBox(): void {
+    const state = this.zoomBox;
+    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    if (!state || !pageBox) return;
+    this.cancelZoomSlide();
+    const previous =
+      this.zoomPositionHistory.pop() ??
+      previousZoomBox(state.box, pageBox.width, pageBox.height, this.zoomLineStep());
+    state.box = previous;
+    this.syncZoomTarget();
+    this.ensureZoomTargetVisible();
+    this.requestFrame();
+  }
+
+  private pushZoomPosition(next: ZoomRect): void {
+    const state = this.zoomBox;
+    if (!state || sameZoomRect(state.box, next)) return;
+    this.zoomPositionHistory.push({ ...state.box });
   }
 
   /** Move the target over a few frames, so an auto-advance reads as a slide. */
@@ -7285,6 +7309,9 @@ export class InkSurface {
     event.stopPropagation();
     this.zoomTargetDrag = null;
     if (this.zoomBox) {
+      if (!sameZoomRect(this.zoomBox.box, drag.start)) {
+        this.zoomPositionHistory.push({ ...drag.start });
+      }
       // A hand-placed line starts its next line where this one's left edge is.
       this.zoomBox.originX = this.zoomBox.box.x;
     }
@@ -16122,6 +16149,10 @@ function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
 
 function shiftBounds(b: Bounds, dx: number, dy: number): Bounds {
   return { minX: b.minX + dx, minY: b.minY + dy, maxX: b.maxX + dx, maxY: b.maxY + dy };
+}
+
+function sameZoomRect(a: ZoomRect, b: ZoomRect): boolean {
+  return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 }
 
 /** Every scroll position a focus might disturb, so it can be put back. */
