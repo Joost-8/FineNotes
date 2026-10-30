@@ -805,6 +805,14 @@ export default class GoodObsidianPlugin extends Plugin {
     const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    // A Zoom box line step outside the slider's range is a hand-edited file,
+    // not a value to honour; a negative step overlaps the next line.
+    const lineStep = Number(this.settings.zoomBoxLineStep);
+    this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
+      ? Math.max(-50, Math.min(100, lineStep))
+      : 0;
+    this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
+    this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at

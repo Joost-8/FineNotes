@@ -107,6 +107,7 @@ export default defineConfig({
         "src/canvas/scan-filters.ts",
         "src/input/palm-rejection.ts",
         "src/input/pen-rejoin.ts",
+        "src/input/stylus-touch.ts",
         "src/input/pen-modifiers.ts",
         "src/input/stylus-click.ts",
         "src/input/finger-gesture.ts",

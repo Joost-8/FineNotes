@@ -159,6 +159,8 @@ export interface PointerControllerOptions {
   route?: (event: PointerEvent) => PressRoute;
   /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
+  /** A touch point on a control layered over the page may still be handled. */
+  touchTarget?: (event: PointerEvent) => boolean;
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
   stylusClicks?: () => boolean;
 }
@@ -250,6 +252,11 @@ export class PointerController {
     return this.options.onlyStylus?.() === true;
   }
 
+  /** A touch point on a page control is allowed through Stylus-only mode. */
+  private touchTarget(event: PointerEvent): boolean {
+    return event.pointerType === "touch" && this.options.touchTarget?.(event) === true;
+  }
+
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
   private stylusClicks(): boolean {
     return this.options.stylusClicks?.() === true;
@@ -322,7 +329,7 @@ export class PointerController {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
     if (event.pointerType === "pen") this.clicks.landed();
-    const onlyStylus = this.onlyStylus();
+    const onlyStylus = this.onlyStylus() && !this.touchTarget(event);
     // The right mouse button opens the page's menu (`contextmenu`); it never draws.
     if (event.pointerType === "mouse" && event.button === 2) {
       if (onlyStylus) event.preventDefault();
