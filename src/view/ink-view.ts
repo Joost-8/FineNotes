@@ -933,6 +933,7 @@ export class InkView extends TextFileView {
    */
   setOnlyStylusMode(on: boolean): void {
     this.toolbar?.setOnlyStylusMode(on);
+    this.surface?.onlyStylusChanged();
   }
 
   override async onClose(): Promise<void> {

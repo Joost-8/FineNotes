@@ -74,10 +74,13 @@ import {
   scaleZoomBox,
   zoomAutoAdvanceDue,
   zoomBoxFromPoints,
+  zoomBoxGestureZoom,
+  zoomCatcherWanted,
   zoomDeskColor,
   zoomTargetPress,
   zoomView,
   zoomViewPoint,
+  zoomViewPointFree,
   zoomWindowDragAllowed,
   type ZoomHandle,
   type ZoomRect,
@@ -470,7 +473,6 @@ import {
   deliversCoalescedSamples,
 } from "../input/pointer-controller";
 import { undoesPalm } from "../input/palm-rejection";
-import { altitudeOf } from "../ink/tilt";
 import { FingerGesture, type PinchInfo } from "../input/finger-gesture";
 import {
   type FingerTurn,
@@ -495,6 +497,7 @@ import {
 } from "../input/pen-modifiers";
 import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
+import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
 import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
 import {
   type ActiveTool,
@@ -1673,7 +1676,7 @@ export class InkSurface {
   private zoomTargetCss = "";
   /** The first drag's dashed rectangle, before the target box exists. */
   private zoomMarqueeEl: HTMLElement | null = null;
-  /** Covers the page while a first target drag waits, for pen, mouse and fingers alike. */
+  /** Covers the page while a first target drag waits in Stylus-only mode, for fingers too. */
   private zoomCatcherEl: HTMLElement | null = null;
   private zoomMarquee: ZoomMarquee | null = null;
   /** The pointer drawing the first target rectangle. */
@@ -1687,10 +1690,23 @@ export class InkSurface {
   private zoomReadout: HTMLElement | null = null;
   /** Where the floating window was last put; the surface keeps it while it is open. */
   private zoomPlace: WindowPlace | null = null;
-  /** The pointer drawing inside the Zoom box, so its moves and lift stay there. */
-  private zoomPointer: number | null = null;
-  /** The last page point it made inside the box, for a lift just past an edge. */
-  private zoomLastSample: PointerSample | null = null;
+  /**
+   * The Zoom box's own pointer input: the page's `PointerController` on the
+   * window's canvas, so a stroke written there gets everything one on the
+   * page does (palm rejection, coalesced samples, the whole-px pen's
+   * smoothing, the missing-pressure rule, the rejoin of a flickering pen).
+   */
+  private zoomInput: PointerController | null = null;
+  /** A stroke is open in the Zoom box (its pen is down there). */
+  private zoomStroke = false;
+  /**
+   * The pen's gesture lengths follow the Zoom box's magnification, not the
+   * page's zoom: set when a stroke starts in the box, cleared when it ends or
+   * one starts on the page ({@link gestureZoom}).
+   */
+  private strokeInBox = false;
+  /** The box canvas's rectangle for the stroke under way, read once per press. */
+  private zoomCanvasRect: DOMRect | null = null;
   /** Repaints the window while its corner is dragged to a new size. */
   private zoomResize: ResizeObserver | null = null;
   /** A window repaint asked for by a wet stroke, outside the page's frame loop. */
@@ -2169,9 +2185,10 @@ export class InkSurface {
         }),
     );
     this.scrollEl = this.surfaceEl.createDiv({ cls: "goodobsidian-scroll" });
-    // A first Zoom box drag is UI, not a stroke: a catcher over the page lets
-    // a finger, Pencil or mouse draw it even in Stylus-only mode. It is shown
-    // only with the Magnifier in hand and no target yet.
+    // A first Zoom box drag is UI, not a stroke: in Stylus-only mode, where
+    // fingers do nothing on the page, a catcher over it lets a finger draw it
+    // too. It is shown only then, with the Magnifier in hand and no target
+    // yet (`syncZoomCatcher`); otherwise a finger must still pan and pinch.
     this.zoomCatcherEl = this.surfaceEl.createDiv({
       cls: "goodobsidian-zoom-catcher is-hidden",
     });
@@ -2184,6 +2201,14 @@ export class InkSurface {
     );
     for (const type of ["pointerup", "pointercancel"] as const) {
       this.zoomCatcherEl.addEventListener(type, (event) => this.onZoomCatcherPointerUp(event));
+    }
+    // It lies beside the scroll element, not in it, so the page's touch
+    // listener never sees a Pencil drawing here (`input/stylus-touch`).
+    const catcherTouch = (event: TouchEvent): void => {
+      if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
+    };
+    for (const type of ["touchstart", "touchmove"] as const) {
+      this.zoomCatcherEl.addEventListener(type, catcherTouch, { passive: false });
     }
     this.paperEl = this.scrollEl.createDiv({ cls: "goodobsidian-paper" });
     this.textBoxesEl = this.paperEl.createDiv({ cls: "goodobsidian-textboxes" });
@@ -2526,13 +2551,10 @@ export class InkSurface {
     const onTouch = (event: TouchEvent): void => {
       if (event.type === "touchstart") this.diagSums.touchStarts++;
       this.touchCount = event.touches.length;
-      for (let i = 0; i < event.changedTouches.length; i++) {
-        const touch = event.changedTouches[i] as Touch & { touchType?: string };
-        if (touch.touchType === "stylus") {
-          if (event.type === "touchstart") this.diagSums.stylusTouches++;
-          if (event.type === "touchstart" || event.type === "touchmove") event.preventDefault();
-          return;
-        }
+      if (hasStylusTouch(event.changedTouches)) {
+        if (event.type === "touchstart") this.diagSums.stylusTouches++;
+        if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
+        return;
       }
       if (onTextBox(event.target)) return;
       // The lasso's menu scrolls by itself when it is taller than the view
@@ -3642,8 +3664,55 @@ export class InkSurface {
    * Pen width and text size stay in page px: they belong to the page.
    */
   private atFitZoom(length: number): number {
-    const zoom = this.userZoom;
+    const zoom = this.gestureZoom;
     return zoom > 0 && Number.isFinite(zoom) ? length / zoom : length;
+  }
+
+  /**
+   * The zoom the pen's gesture lengths are measured at ({@link atFitZoom}):
+   * the page's, or for a stroke written in the Zoom box the box's own
+   * magnification as a page zoom. At 4x in the box, a page px is 4 screen px
+   * there whatever the page behind it shows, so the sample spacing, the hold
+   * radius, the tap slop and the shape recogniser follow the box; left on the
+   * page's zoom, small writing in the box lost most of its samples.
+   */
+  private get gestureZoom(): number {
+    if (this.strokeInBox) {
+      const zoom = this.zoomBoxZoom();
+      if (zoom !== null) return zoom;
+    }
+    return this.userZoom;
+  }
+
+  /** The controller whose pen is drawing: the Zoom box's while a stroke is in it. */
+  private get penController(): PointerController | null {
+    return this.strokeInBox ? this.zoomInput : this.pointerInput;
+  }
+
+  /**
+   * When a pen last did anything, on the page or in the Zoom box (event
+   * time, ms); null before the first. A finger held just after is the
+   * writing hand (`finger-hold.ts`).
+   */
+  private lastPenAt(): number | null {
+    const page = this.pointerInput?.lastPenAt ?? null;
+    const box = this.zoomInput?.lastPenAt ?? null;
+    if (page === null) return box;
+    return box === null ? page : Math.max(page, box);
+  }
+
+  /** {@link unitScale} for pen gestures: CSS px per page px where the pen writes. */
+  private get gestureScale(): number {
+    return this.baseScale * this.gestureZoom || 1;
+  }
+
+  /** The Zoom box's magnification as a page zoom; null without an open box. */
+  private zoomBoxZoom(): number | null {
+    const state = this.zoomBox;
+    const canvas = this.zoomCanvas;
+    if (!state || !canvas) return null;
+    const rect = this.zoomCanvasRect ?? canvas.getBoundingClientRect();
+    return zoomBoxGestureZoom(zoomView(state.box, rect.width, rect.height).scale, this.baseScale);
   }
 
   /**
@@ -5845,7 +5914,7 @@ export class InkSurface {
   private builderOpts(): StrokeBuilderOptions {
     // A pen whose positions arrive as whole screen px (WebKit before iPadOS
     // 26.2) is smoothed; one that reports fractions is kept exact.
-    const rounded = this.pointerInput?.strokeRounded ?? false;
+    const rounded = this.penController?.strokeRounded ?? false;
     const smoothing: Smoothing = rounded ? "centred" : "off";
     // The pen in hand's stroke stabilization, on screen like the spacing.
     // Not for the Shape tool, whose strokes become clean shapes, nor for a
@@ -5918,13 +5987,15 @@ export class InkSurface {
    * controller so the Zoom box's own canvas can feed it points mapped from
    * its magnified view: every tool then behaves the same in both views.
    */
-  private penStart(sample: PointerSample, press: PressInput): void {
+  private penStart(sample: PointerSample, press: PressInput, inBox = false): void {
     this.callbacks.onPen?.(true);
     this.pressTool = this.pressOverrideOf(press);
     const state = this.zoomBox;
     if (state?.selected && !this.zoomTargetHitAt(sample)) this.deselectZoomTarget();
+    // A tap inside the target on the page selects it. Inside the box every
+    // point is inside the target, and a tap there is a dot, a full stop.
     this.zoomSelectPress =
-      state && !state.selected && this.zoomTargetHitAt(sample)
+      !inBox && state && !state.selected && this.zoomTargetHitAt(sample)
         ? { x: sample.x, y: sample.y }
         : null;
     if (this.pressTool === "zoom" || (this.pressTool === null && this.toolState.tool === "zoom")) {
@@ -5941,7 +6012,7 @@ export class InkSurface {
     if (
       this.zoomSelectPress &&
       Math.hypot(this.penAt.x - this.zoomSelectPress.x, this.penAt.y - this.zoomSelectPress.y) >
-        TAP_SLOP_PX
+        this.atFitZoom(TAP_SLOP_PX)
     ) {
       this.zoomSelectPress = null;
     }
@@ -5991,7 +6062,10 @@ export class InkSurface {
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
     onStylusClick: (clientX, clientY) => this.stylusClicked(clientX, clientY),
-    onStart: (sample, press) => this.penStart(sample, press),
+    onStart: (sample, press) => {
+      this.strokeInBox = false;
+      this.penStart(sample, press);
+    },
     onMove: (coalesced) => this.penMove(coalesced),
     onEnd: (sample) => this.penEnd(sample),
     onCancel: () => this.penCancel(),
@@ -6601,11 +6675,23 @@ export class InkSurface {
     this.zoomTargetEl?.toggleClass("is-interactive", this.toolState.tool === "zoom");
   }
 
-  /** The first-drag catcher shows only with the magnifier and no target yet. */
+  /**
+   * The first-drag catcher shows only with the magnifier, no target yet and
+   * Stylus-only mode on (`zoomCatcherWanted`). Without it the pen and a mouse
+   * draw the target through the page's own input (`penStart`), and a finger
+   * still pans and pinches the page while the box waits.
+   */
   private syncZoomCatcher(): void {
-    const wanted =
+    const armed =
       this.toolState.zoomBox === true && this.zoomBox === null && this.toolState.tool === "zoom";
+    const wanted = zoomCatcherWanted(armed, this.callbacks.onlyStylusMode?.() === true);
+    if (!wanted && this.zoomMarqueePointer !== null) this.cancelZoomMarquee();
     this.zoomCatcherEl?.toggleClass("is-hidden", !wanted);
+  }
+
+  /** Stylus-only mode was switched: the Zoom box's catcher follows it. */
+  onlyStylusChanged(): void {
+    this.syncZoomCatcher();
   }
 
   /** The first Magnifier drag draws the target; true when it took the press. */
@@ -6722,14 +6808,17 @@ export class InkSurface {
 
   /** The target and its window go; the toolbar's switch follows unless it asked. */
   closeZoomBox(notify: boolean): void {
-    if (this.zoomPointer !== null) this.penCancel();
+    if (this.zoomStroke) {
+      this.penCancel();
+      this.endZoomStroke();
+    }
+    this.zoomInput?.detach();
+    this.zoomInput = null;
     this.zoomBox = null;
     this.zoomPositionHistory.length = 0;
     this.zoomMarquee = null;
     this.zoomTargetDrag = null;
     this.zoomSelectPress = null;
-    this.zoomPointer = null;
-    this.zoomLastSample = null;
     this.cancelZoomAdvance();
     this.cancelZoomSlide();
     this.zoomAutoAdvanceButton = null;
@@ -6762,8 +6851,13 @@ export class InkSurface {
       min: { w: 304, h: 160 },
       // A palm resting inside the window while the Pencil writes must not
       // drag or resize it; the bar's buttons stay tappable.
-      allowDrag: (event) =>
-        zoomWindowDragAllowed(event.pointerType, this.callbacks.onlyStylusMode?.() === true),
+      allowDrag: (event, part) =>
+        zoomWindowDragAllowed(
+          event.pointerType,
+          this.callbacks.onlyStylusMode?.() === true,
+          part,
+          this.zoomStroke,
+        ),
       buttons: [
         { icon: "arrow-left", label: "Previous position", run: () => this.previousZoomBox() },
         { icon: "arrow-right", label: "Advance", run: () => this.advanceZoomBox() },
@@ -6817,10 +6911,29 @@ export class InkSurface {
     });
     canvas.dataset.ignoreSwipe = "true";
     this.zoomCanvas = canvas;
-    canvas.addEventListener("pointerdown", (event) => this.onZoomCanvasPointerDown(event));
-    canvas.addEventListener("pointermove", (event) => this.onZoomCanvasPointerMove(event));
-    for (const type of ["pointerup", "pointercancel"] as const) {
-      canvas.addEventListener(type, (event) => this.onZoomCanvasPointerUp(event));
+    // The page's own input, on the window's canvas: one Pencil path for both.
+    const input = new PointerController(
+      canvas,
+      (clientX, clientY) => this.zoomClientToLayout(clientX, clientY),
+      this.zoomPointerCallbacks,
+      {
+        route: (event) => this.zoomBoxRoute(event),
+        onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+        stylusClicks: () => this.stylusClickWanted(),
+      },
+    );
+    input.attach();
+    this.zoomInput = input;
+    // The Pencil's touchstart and touchmove are cancelled over the whole
+    // window, as on the page: otherwise iPadOS's long press ends a held pen
+    // in pointercancel and Scribble swallows strokes (`input/stylus-touch`).
+    // The window stops touch events from bubbling, so the page's own
+    // listener never sees these.
+    const onTouch = (event: TouchEvent): void => {
+      if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
+    };
+    for (const type of ["touchstart", "touchmove"] as const) {
+      frame.el.addEventListener(type, onTouch, { passive: false });
     }
     // A corner drag changes the window's size, not its place record, until the
     // pointer is lifted; follow the size so the magnified page never stretches.
@@ -6921,22 +7034,43 @@ export class InkSurface {
       preview.greyed,
     );
     ctx.restore();
-    // The stroke in flight is not in the document yet: copy the wet layer's
-    // part of the target, magnified with the rest, so both views stay live.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const scale = this.unitScale;
-    const screen = {
-      minX: this.offsetX + (pageBox.x + state.box.x) * scale,
-      minY: (pageBox.y + state.box.y - this.viewport.scrollY) * scale,
-      maxX: this.offsetX + (pageBox.x + state.box.x + state.box.w) * scale,
-      maxY: (pageBox.y + state.box.y + state.box.h - this.viewport.scrollY) * scale,
-    };
-    renderer.blitWet(ctx, screen, {
-      minX: view.offsetX,
-      minY: view.offsetY,
-      maxX: view.offsetX + view.width,
-      maxY: view.offsetY + view.height,
-    });
+    // The stroke in flight is not in the document yet: draw it here from the
+    // same paint call the wet layer used, at the box's own resolution. A copy
+    // of the page's wet layer, magnified, was blurred at 4-5x and sharpened
+    // on lift (ink must never change once drawn), and was empty while the
+    // target was off screen. Only what the wet layer cannot draw again (a
+    // dragged picture or selection) is still copied.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(view.offsetX, view.offsetY, view.width, view.height);
+    ctx.clip();
+    ctx.setTransform(
+      view.scale * dpr,
+      0,
+      0,
+      view.scale * dpr,
+      view.offsetX * dpr,
+      view.offsetY * dpr,
+    );
+    ctx.translate(-state.box.x, -state.box.y);
+    const drawn = renderer.paintWetInto(ctx, pageBox, view.scale);
+    ctx.restore();
+    if (!drawn) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const scale = this.unitScale;
+      const screen = {
+        minX: this.offsetX + (pageBox.x + state.box.x) * scale,
+        minY: (pageBox.y + state.box.y - this.viewport.scrollY) * scale,
+        maxX: this.offsetX + (pageBox.x + state.box.x + state.box.w) * scale,
+        maxY: (pageBox.y + state.box.y + state.box.h - this.viewport.scrollY) * scale,
+      };
+      renderer.blitWet(ctx, screen, {
+        minX: view.offsetX,
+        minY: view.offsetY,
+        maxX: view.offsetX + view.width,
+        maxY: view.offsetY + view.height,
+      });
+    }
     // Over the wet stroke, as the page stacks them: task boxes, pictures in
     // front of the ink, then the text boxes that are DOM above the main page.
     ctx.save();
@@ -7319,109 +7453,112 @@ export class InkSurface {
     this.requestFrame();
   }
 
-  /** The window's writing surface: map each pointer point back to its page point. */
-  private zoomCanvasSample(event: PointerEvent): {
-    sample: PointerSample;
-    pageBox: PageBox;
-  } | null {
+  /**
+   * A client point over the box's canvas, in layout space (what the page's
+   * controller hands the surface): through the magnified view to its page
+   * point, past the content's edge too, as a captured pen runs on.
+   */
+  private zoomClientToLayout(clientX: number, clientY: number): { x: number; y: number } {
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
-    if (!state || !canvas || !pageBox) return null;
-    const rect = canvas.getBoundingClientRect();
+    if (!state || !canvas || !pageBox) return { x: Number.NaN, y: Number.NaN };
+    const rect = this.zoomCanvasRect ?? (this.zoomCanvasRect = canvas.getBoundingClientRect());
     const view = zoomView(state.box, rect.width, rect.height);
-    const at = zoomViewPoint(state.box, view, event.clientX - rect.left, event.clientY - rect.top);
-    if (!at) return null;
-    return {
-      pageBox,
-      sample: {
-        x: pageBox.x + at.x,
-        y: pageBox.y + at.y,
-        pressure: event.pressure > 0 ? event.pressure : FALLBACK_PRESSURE,
-        tiltX: event.tiltX,
-        tiltY: event.tiltY,
-        altitude: altitudeOf(event),
-        t: event.timeStamp,
-        pointerType: event.pointerType,
-      },
-    };
+    const at = zoomViewPointFree(state.box, view, clientX - rect.left, clientY - rect.top);
+    return { x: pageBox.x + at.x, y: pageBox.y + at.y };
   }
 
-  private pressOf(event: PointerEvent): PressInput {
-    return {
-      pointerType: event.pointerType,
-      button: event.button,
-      buttons: event.buttons,
-      shiftKey: event.shiftKey,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-      altKey: event.altKey,
-    };
+  /**
+   * Where a pen or mouse press in the box goes. The magnifier and the hand
+   * have no gesture there, a press in the margins round the content is
+   * nothing, and a key or stylus button that would move the page does
+   * nothing either; anything else draws, through the same `penStart` as the
+   * page (a lent eraser or lasso included).
+   */
+  private zoomBoxRoute(event: PointerEvent): PressRoute {
+    const { tool } = this.toolState;
+    if (tool === "zoom" || tool === "pan") return "ignore";
+    const state = this.zoomBox;
+    const canvas = this.zoomCanvas;
+    if (!state || !canvas) return "ignore";
+    // A new press reads the canvas afresh: the window may have moved since.
+    const rect = canvas.getBoundingClientRect();
+    this.zoomCanvasRect = rect;
+    const view = zoomView(state.box, rect.width, rect.height);
+    if (!zoomViewPoint(state.box, view, event.clientX - rect.left, event.clientY - rect.top)) {
+      return "ignore";
+    }
+    if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage: true });
+    return route === "ignore" || route === "pan" ? "ignore" : "draw";
   }
 
-  private onZoomCanvasPointerDown(event: PointerEvent): void {
-    if (this.zoomPointer !== null) return;
-    // The magnifier has no gesture inside its own window; the tools that write do.
-    if (this.toolState.tool === "zoom" || this.toolState.tool === "pan") return;
-    if (this.callbacks.onlyStylusMode?.() === true && event.pointerType !== "pen") return;
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const mapped = this.zoomCanvasSample(event);
-    if (!mapped) return;
-    event.preventDefault();
-    event.stopPropagation();
+  /**
+   * The box's controller: strokes go to the same `penStart`/`penMove`/
+   * `penEnd` as the page's, with the box's bookkeeping round them. Fingers
+   * on the box never draw (they are the writing hand, as on the page) and
+   * move nothing; two- and three-finger double taps still undo and redo.
+   */
+  private readonly zoomPointerCallbacks: PointerControllerCallbacks = {
+    onStylusClick: (clientX, clientY) => this.stylusClicked(clientX, clientY),
+    onStart: (sample, press) => this.zoomStrokeStart(sample, press),
+    onMove: (coalesced) => this.zoomStrokeMove(coalesced),
+    onEnd: (sample) => this.zoomStrokeEnd(sample),
+    onCancel: () => this.zoomStrokeCancel(),
+    onFingerDoubleTap: (fingers) => this.pointerCallbacks.onFingerDoubleTap?.(fingers),
+    onFingerTapReport: (report) => this.pointerCallbacks.onFingerTapReport?.(report),
+    onDebug: (record) => this.pointerCallbacks.onDebug?.(record),
+  };
+
+  /** The page x (page-local) a box stroke's sample reached, for auto-advance. */
+  private zoomLocalX(sample: { x: number }): number {
+    const state = this.zoomBox;
+    const pageBox = state ? this.boxForPage(state.pageId) : null;
+    return pageBox ? sample.x - pageBox.x : sample.x;
+  }
+
+  private zoomStrokeStart(sample: PointerSample, press: PressInput): void {
+    this.strokeInBox = true;
+    this.zoomStroke = true;
     // Writing in the window means the target on the page is no longer the
     // thing being handled; its handles go away until it is tapped again.
     this.deselectZoomTarget();
     this.cancelZoomAdvance();
-    this.zoomStrokeMaxX = mapped.sample.x;
-    this.zoomPointer = event.pointerId;
-    this.zoomLastSample = mapped.sample;
-    try {
-      this.zoomCanvas?.setPointerCapture(event.pointerId);
-    } catch {
-      // A synthetic pointer has nothing to capture.
-    }
-    this.penStart(mapped.sample, this.pressOf(event));
+    // The box must not glide on under a pen that has landed in it.
+    this.cancelZoomSlide();
+    this.zoomStrokeMaxX = this.zoomLocalX(sample);
+    this.penStart(sample, press, true);
   }
 
-  private onZoomCanvasPointerMove(event: PointerEvent): void {
-    if (event.pointerId !== this.zoomPointer) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const events =
-      typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [event];
-    const samples: PointerSample[] = [];
-    for (const one of events.length > 0 ? events : [event]) {
-      const mapped = this.zoomCanvasSample(one);
-      if (mapped) samples.push(mapped.sample);
+  private zoomStrokeMove(coalesced: PointerSample[]): void {
+    for (const sample of coalesced) {
+      this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, this.zoomLocalX(sample));
     }
-    if (samples.length > 0) {
-      for (const sample of samples) this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, sample.x);
-      this.zoomLastSample = samples[samples.length - 1] ?? this.zoomLastSample;
-      this.penMove(samples);
-    }
+    this.penMove(coalesced);
   }
 
-  private onZoomCanvasPointerUp(event: PointerEvent): void {
-    if (event.pointerId !== this.zoomPointer) return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.zoomPointer = null;
-    try {
-      this.zoomCanvas?.releasePointerCapture(event.pointerId);
-    } catch {
-      // It was never captured.
-    }
-    const mapped = this.zoomCanvasSample(event)?.sample ?? this.zoomLastSample;
-    this.zoomLastSample = null;
-    if (mapped) this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, mapped.x);
-    if (event.type === "pointercancel" || !mapped) {
-      this.penCancel();
-      this.cancelZoomAdvance();
-    } else {
-      this.penEnd(mapped);
-      this.scheduleZoomAdvance();
-    }
+  private zoomStrokeEnd(sample: PointerSample): void {
+    this.zoomStrokeMaxX = Math.max(this.zoomStrokeMaxX, this.zoomLocalX(sample));
+    this.penEnd(sample);
+    this.endZoomStroke();
+    this.scheduleZoomAdvance();
+  }
+
+  /**
+   * WebKit ends a pen held still in `pointercancel` (CLAUDE.md); the page
+   * keeps that ink, and so does the box, which may then step on as after a lift.
+   */
+  private zoomStrokeCancel(): void {
+    this.penCancel();
+    this.endZoomStroke();
+    this.scheduleZoomAdvance();
+  }
+
+  private endZoomStroke(): void {
+    this.zoomStroke = false;
+    this.strokeInBox = false;
+    this.zoomCanvasRect = null;
   }
 
   /** How the tool in use handles the pen (see {@link PenGesture}). */
@@ -7699,7 +7836,10 @@ export class InkSurface {
     const press = this.circlePress;
     if (press && last) {
       const local = this.toPage(box, last);
-      if (Math.hypot(local.x - press.at.x, local.y - press.at.y) * this.unitScale > TAP_SLOP_PX) {
+      if (
+        Math.hypot(local.x - press.at.x, local.y - press.at.y) * this.gestureScale >
+        TAP_SLOP_PX
+      ) {
         this.cancelCircleHold();
       }
     }
@@ -7832,7 +7972,7 @@ export class InkSurface {
     const builder = this.builder;
     const anchor = this.holdAnchor;
     if (!builder || !anchor || this.snap) return;
-    const result = recognizeAtZoom(builder.points(), this.userZoom, { held: true });
+    const result = recognizeAtZoom(builder.points(), this.gestureZoom, { held: true });
     this.diagHold = { fired: true, verdict: verdictOf(builder.points(), true) };
     this.hudVerdict("hold", builder.points(), result, true);
     if (!result) return;
@@ -7930,7 +8070,7 @@ export class InkSurface {
         devicePixelRatio: window.devicePixelRatio,
         coalescedEvents: proto !== null && "getCoalescedEvents" in proto,
         predictedEvents: proto !== null && "getPredictedEvents" in proto,
-        roundedPen: this.pointerInput?.strokeRounded ?? null,
+        roundedPen: this.penController?.strokeRounded ?? null,
         scale: Math.round(this.scale * 1000) / 1000,
         tool: this.toolState.tool,
         drawAndHold: this.toolState.shapeSnapEnabled !== false,
@@ -7969,7 +8109,7 @@ export class InkSurface {
     held = false,
   ): void {
     if (!this.debug) return;
-    const best = accepted ?? recognizeAtZoom(pts, this.userZoom, { minConfidence: 0, held });
+    const best = accepted ?? recognizeAtZoom(pts, this.gestureZoom, { minConfidence: 0, held });
     const score = best?.confidence === undefined ? "" : best.confidence.toFixed(2);
     const label = best ? `${best.kind}${accepted ? "" : "✗"}${score}` : "∅";
     this.hudLastVerdict = `${where}→${label} n=${Math.floor(pts.length / 3)}`;
@@ -8322,7 +8462,7 @@ export class InkSurface {
       // Held, the pen rested where the stroke ends; snapped on lift, it may
       // have trailed a tail as it left the glass.
       const held = heldLongEnough;
-      shape = recognizeAtZoom(builder.points(), this.userZoom, { held });
+      shape = recognizeAtZoom(builder.points(), this.gestureZoom, { held });
       this.hudVerdict(cancelledWhileHeld ? "cx-hold" : "lift", builder.points(), shape, held);
     } else if (!shape && this.debug) {
       this.hud.mark(final ? "lift·nohold" : "cx·nohold");
@@ -9447,7 +9587,7 @@ export class InkSurface {
       this.circleLoop = null;
       return;
     }
-    const reach = candidate.stroke.size / 2 + CIRCLE_HOLD_TOLERANCE_PX / this.unitScale;
+    const reach = candidate.stroke.size / 2 + CIRCLE_HOLD_TOLERANCE_PX / this.gestureScale;
     if (!strokeHitByPoint(candidate.stroke, local.x, local.y, reach)) return;
     this.circlePress = { box, at: { x: local.x, y: local.y }, t: now() };
     this.startPress(() => this.circleHeld(true));
@@ -9561,7 +9701,7 @@ export class InkSurface {
     const last = samples[samples.length - 1];
     if (!pick || !last) return;
     const p = this.toPage(box, last);
-    if (Math.hypot(p.x - pick.at.x, p.y - pick.at.y) * this.unitScale > TAP_SLOP_PX) {
+    if (Math.hypot(p.x - pick.at.x, p.y - pick.at.y) * this.gestureScale > TAP_SLOP_PX) {
       this.stopPress();
     }
     if (pick.dragging) this.dragCircleSelection(box, p);
@@ -9591,7 +9731,7 @@ export class InkSurface {
     this.clearSelection();
     this.deselectImage();
     const room = this.joined && !this.board ? this.shapeRoom(box) : undefined;
-    const path = new LassoPath(box, LASSO_SPACING_PX / this.unitScale, undefined, room);
+    const path = new LassoPath(box, LASSO_SPACING_PX / this.gestureScale, undefined, room);
     path.add(local);
     let mode = lassoModeFor(this.toolState);
     let lines: LineBlock[] = [];
@@ -9635,7 +9775,7 @@ export class InkSurface {
     const lasso = this.lasso;
     const last = samples[samples.length - 1];
     if (!lasso || !last || lasso.held) return;
-    const scale = this.unitScale;
+    const scale = this.gestureScale;
     const moved = Math.hypot(last.x - lasso.origin.x, last.y - lasso.origin.y) * scale;
     if (moved > TAP_SLOP_PX) this.stopPress();
     if (lasso.mode === "freehand") for (const sample of samples) lasso.path.add(sample);
@@ -9673,7 +9813,7 @@ export class InkSurface {
     const origin = this.fingerHold.origin;
     const veto = this.fingerHold.verdict({
       t: now(),
-      lastPenAt: this.pointerInput?.lastPenAt ?? null,
+      lastPenAt: this.lastPenAt(),
       touches: this.touchCount,
     });
     if (this.debug) this.hud.mark(`hold:${veto ?? "menu"}`);
@@ -9712,7 +9852,7 @@ export class InkSurface {
     if (!page) return;
     this.clearSelection();
     this.deselectImage();
-    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.unitScale);
+    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
     this.pressMenu = {
       pageId: page.id,
       at: { x: p.x, y: p.y },
@@ -9817,9 +9957,9 @@ export class InkSurface {
     // A by-line span is a line tall from the start: only the pen's travel says it was drawn.
     const extent =
       lasso.mode === "lines"
-        ? Math.hypot(lasso.to.x - lasso.origin.x, lasso.to.y - lasso.origin.y) * this.unitScale
+        ? Math.hypot(lasso.to.x - lasso.origin.x, lasso.to.y - lasso.origin.y) * this.gestureScale
         : b
-          ? Math.max(b.maxX - b.minX, b.maxY - b.minY) * this.unitScale
+          ? Math.max(b.maxX - b.minX, b.maxY - b.minY) * this.gestureScale
           : 0;
     if (!poly || extent < TAP_SLOP_PX) {
       // With audio replay open, a tap on ink plays it instead of selecting it.
@@ -9990,7 +10130,7 @@ export class InkSurface {
     this.deselectImage();
     const page = this.pageAt(box.index);
     if (!page) return;
-    const tolerance = tolerancePx / this.unitScale;
+    const tolerance = tolerancePx / this.gestureScale;
     const filter = lassoFilterFor(this.toolState);
     if (this.tapSelectOn(page, p, tolerance, filter)) return;
     // With the pages joined, what shows here may be the page beside's,
@@ -10193,7 +10333,7 @@ export class InkSurface {
     const handler = this.strokeTapHandler;
     const page = handler ? this.pageAt(box.index) : null;
     if (!handler || !page) return false;
-    const stroke = this.strokeAt(page, p, tolerancePx / this.unitScale);
+    const stroke = this.strokeAt(page, p, tolerancePx / this.gestureScale);
     return stroke !== null && handler(page, stroke);
   }
 

@@ -2593,3 +2593,139 @@ describe("the Zoom box target's presses", () => {
     expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
   });
 });
+
+describe("writing in the Zoom box", () => {
+  const box = { x: 100, y: 200, w: 100, h: 50 };
+
+  /** A box shown 4x in a 400 x 200 canvas; the page fits at 0.8 CSS px per page px. */
+  function boxSurface(extra: State = {}): State {
+    return surfaceWith({
+      zoomBox: { pageId: "p1", box: { ...box }, originX: box.x, selected: false },
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 200 }),
+      },
+      zoomCanvasRect: null,
+      baseScale: 0.8,
+      userZoom: 1,
+      strokeInBox: false,
+      toolState: { tool: "pen" },
+      callbacks: {},
+      boxForPage: () => ({ x: 40, y: 0, width: 800, height: 1000 }),
+      toPage: (b: { x: number; y: number }, at: { x: number; y: number }) => ({
+        x: at.x - b.x,
+        y: at.y - b.y,
+      }),
+      ...extra,
+    });
+  }
+
+  it("measures gesture lengths at the box's magnification while the pen writes there", () => {
+    const s = boxSurface();
+    // On the page, at fit zoom, a tuned length is itself.
+    expect(run(s, "atFitZoom", 8)).toBe(8);
+    s.strokeInBox = true;
+    // 4 CSS px per page px in the box is a page zoom of 4 / 0.8 = 5.
+    expect(run<number>(s, "atFitZoom", 8)).toBeCloseTo(1.6);
+    expect(s.gestureScale).toBeCloseTo(4);
+  });
+
+  it("maps a point in the box's canvas to its point on the page, in layout space", () => {
+    const s = boxSurface();
+    // The canvas's top-left (10, 20) is the box's top-left; the page sits at x 40.
+    expect(run(s, "zoomClientToLayout", 10, 20)).toEqual({ x: 140, y: 200 });
+    expect(run(s, "zoomClientToLayout", 210, 120)).toEqual({ x: 190, y: 225 });
+  });
+
+  it("draws with a pen in the box, and ignores its margins and the magnifier", () => {
+    const s = boxSurface({
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 }),
+      },
+    });
+    const pen = (x: number, y: number) =>
+      ({ pointerType: "pen", button: 0, buttons: 1, clientX: x, clientY: y }) as PointerEvent;
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("draw");
+    // A 2:1 box in a square canvas leaves a margin above and below the content.
+    expect(run(s, "zoomBoxRoute", pen(200, 20))).toBe("ignore");
+    s.toolState = { tool: "zoom" };
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("ignore");
+  });
+
+  it("keeps a tap in the box a dot: it never selects the target box", () => {
+    const penDown = vi.fn();
+    const s = boxSurface({
+      pressOverrideOf: () => null,
+      markDrawing: vi.fn(),
+      penDown,
+      deselectZoomTarget: vi.fn(),
+    });
+    // In the box every point lies inside the target.
+    const inside = { x: 150, y: 220, pressure: 0, tiltX: 0, tiltY: 0, altitude: Number.NaN };
+    run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 }, true);
+    expect(s.zoomSelectPress).toBeNull();
+    expect(penDown).toHaveBeenCalledWith(inside);
+    // On the page, a pen tap inside the target is still the tap that selects it.
+    run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 });
+    expect(s.zoomSelectPress).toEqual({ x: 150, y: 220 });
+  });
+
+  it("measures auto-advance against the box in page space, not layout space", () => {
+    const penEnd = vi.fn();
+    const scheduleZoomAdvance = vi.fn();
+    const s = boxSurface({
+      deselectZoomTarget: vi.fn(),
+      cancelZoomAdvance: vi.fn(),
+      cancelZoomSlide: vi.fn(),
+      penStart: vi.fn(),
+      penMove: vi.fn(),
+      penEnd,
+      scheduleZoomAdvance,
+    });
+    const at = (x: number) => ({ x, y: 220, pressure: 0.4, tiltX: 0, tiltY: 0, altitude: 0 });
+    // Layout x 40 + 120: page x 120, a fifth of the way into the box.
+    run(s, "zoomStrokeStart", at(160), {});
+    expect(s.strokeInBox).toBe(true);
+    run(s, "zoomStrokeMove", [at(170), at(165)]);
+    run(s, "zoomStrokeEnd", at(150));
+    expect(s.zoomStrokeMaxX).toBe(130);
+    expect(penEnd).toHaveBeenCalled();
+    expect(scheduleZoomAdvance).toHaveBeenCalled();
+    // The pen's gesture lengths go back to the page's once it lifts.
+    expect(s.strokeInBox).toBe(false);
+    expect(s.zoomStroke).toBe(false);
+  });
+
+  it("keeps the ink of a held pen that WebKit cancels, as on the page", () => {
+    const penCancel = vi.fn();
+    const s = boxSurface({ penCancel, scheduleZoomAdvance: vi.fn(), strokeInBox: true });
+    run(s, "zoomStrokeCancel");
+    expect(penCancel).toHaveBeenCalled();
+    expect(s.strokeInBox).toBe(false);
+  });
+});
+
+describe("the Zoom box's first-drag catcher", () => {
+  function catcherSurface(onlyStylus: boolean): { s: State; hidden: () => boolean } {
+    let hidden = true;
+    const s = surfaceWith({
+      toolState: { tool: "zoom", zoomBox: true },
+      zoomBox: null,
+      zoomMarqueePointer: null,
+      zoomCatcherEl: { toggleClass: (_c: string, on: boolean) => void (hidden = on) },
+      callbacks: { onlyStylusMode: () => onlyStylus },
+    });
+    return { s, hidden: () => hidden };
+  }
+
+  it("stays away without Stylus-only mode, so a finger still pans and pinches", () => {
+    const { s, hidden } = catcherSurface(false);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(true);
+  });
+
+  it("covers the page in Stylus-only mode, where a finger draws the target", () => {
+    const { s, hidden } = catcherSurface(true);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(false);
+  });
+});
