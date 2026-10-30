@@ -329,6 +329,8 @@ import {
   attachmentDefaults,
   greyWhileErasingOf,
   penPreferencesOf,
+  snapCurveOf,
+  snapModeOf,
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
@@ -374,7 +376,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     size: last?.size ?? s.defaultSize,
     penType: last?.type,
     pressureEnabled: s.pressureWidth && spec.pressure,
-    shapeSnapEnabled: s.drawAndHold,
+    snapMode: snapModeOf(s),
+    snapCurvatureThreshold: snapCurveOf(s.snapCurvatureThreshold),
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
@@ -384,7 +387,6 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     textStyle: sanitizeTextStyle(s.textStyle),
     textPinned: s.textToolPinned === true,
     textDragSize: s.textDragSize === true,
-    penAutoShape: s.penAutoShape === true,
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
@@ -400,6 +402,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
+    zoomBox: s.magnifierZoomBox === true,
   };
 }
 
@@ -920,10 +923,12 @@ export class InkView extends TextFileView {
 
   /**
    * A pen menu changed a setting held for every pen: the surface reads
-   * "Hold to make shapes" from the tool state, the rest it asks for live.
+   * "Make shapes" and its curve bar from the tool state, the rest it asks
+   * for live.
    */
   syncPenPreferences(): void {
-    this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
+    this.toolState.snapMode = snapModeOf(this.settings);
+    this.toolState.snapCurvatureThreshold = snapCurveOf(this.settings.snapCurvatureThreshold);
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -948,6 +953,7 @@ export class InkView extends TextFileView {
    */
   setOnlyStylusMode(on: boolean): void {
     this.toolbar?.setOnlyStylusMode(on);
+    this.surface?.onlyStylusChanged();
   }
 
   override async onClose(): Promise<void> {
@@ -2594,7 +2600,6 @@ export class InkView extends TextFileView {
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
-        onPenAutoShapeChange: (enabled) => this.plugin.savePenAutoShape(enabled),
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
         onShapeColorChange: (color) => {
           this.surface?.refreshPenCursor();
@@ -2638,6 +2643,17 @@ export class InkView extends TextFileView {
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
         onZoomFit: () => this.surface?.resetView(),
+        onZoomBox: (on) => {
+          this.surface?.setZoomBox(on);
+          if (this.settings.magnifierZoomBox !== on) {
+            this.settings.magnifierZoomBox = on;
+            void this.plugin.saveSettings();
+          }
+        },
+        onZoomBoxOpen: (open) => {
+          if (open) this.surface?.openPlacedZoomBox();
+          else this.surface?.closeZoomBox(true);
+        },
       },
       {
         defaultSize: this.settings.defaultSize,
@@ -2769,6 +2785,7 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
+        onZoomBoxChange: (open) => this.toolbar?.setZoomBoxOpen(open),
         onPen: (down) => {
           this.penActivity(down);
           this.returnPenOptions(down);
@@ -2779,6 +2796,9 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onPenShape: () => {
+          if (this.surface) this.plugin.offerShapeHint(this.surface);
+        },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
@@ -2788,6 +2808,13 @@ export class InkView extends TextFileView {
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
+        zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
+        zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
+        onZoomBoxAutoAdvance: (on) => {
+          this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
         onShortcuts: () => this.toggleShortcuts(),
         shortcuts: () => this.plugin.shortcuts.table,
         onShortcutAction: (id) => this.runShortcutAction(id),

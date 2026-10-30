@@ -44,6 +44,7 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
@@ -443,6 +444,15 @@ interface ShadowSprite {
 }
 
 /** One of the three stacked viewport canvases, and the context it is drawn through. */
+/**
+ * The wet layer's content as a paint call: `paint` draws it in page
+ * `pageIndex`'s local space, `scale` being the target's CSS px per page px.
+ */
+interface WetReplay {
+  pageIndex: number;
+  paint: (ctx: CanvasRenderingContext2D, scale: number) => void;
+}
+
 interface Layer {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -522,6 +532,14 @@ export class Renderer {
   private readonly dry: Layer;
   /** Whatever is in flight: a stroke, a lasso, a dragged selection or picture. */
   private readonly wet: Layer;
+  /**
+   * What the wet layer shows, as a function that paints it again in its
+   * page's space at any resolution, for the Zoom box ({@link paintWetInto});
+   * null when it shows nothing, or something only its pixels hold.
+   */
+  private wetReplay: WetReplay | null = null;
+  /** The wet layer holds pixels {@link wetReplay} cannot paint again. */
+  private wetRaster = false;
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
   private screen = { width: 0, height: 0, dpr: 1 };
   /** The view, in layout space; see {@link setViewport}. */
@@ -799,6 +817,10 @@ export class Renderer {
 
   /** Clear a whole viewport canvas, whatever transform it was left in. */
   private wipe(ctx: CanvasRenderingContext2D): void {
+    if (ctx === this.wet.ctx) {
+      this.wetReplay = null;
+      this.wetRaster = false;
+    }
     const { width, height, dpr } = this.screen;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, dpr * width, dpr * height);
@@ -806,6 +828,8 @@ export class Renderer {
 
   /** Show the wet layer, or hide it (see the constructor). */
   private setWetVisible(visible: boolean): void {
+    // Drawn without saying how to draw it again: only the pixels have it.
+    if (visible && this.wetReplay === null) this.wetRaster = true;
     const classes = this.wet.canvas.classList;
     if (visible) classes.remove(WET_HIDDEN);
     else classes.add(WET_HIDDEN);
@@ -1330,6 +1354,117 @@ export class Renderer {
     }
   }
 
+  /**
+   * A page region painted afresh into `ctx`, at `level` CSS px per page px:
+   * paper, backdrop, pictures, tables, graphs and committed ink, exactly as a
+   * tile has them, up to (not including) what sits over the ink. The Zoom
+   * box's window uses this so its magnified view keeps the page's template and
+   * PDF background, not just the ink. `hidden`, `replaced` and `greyed` are a
+   * live erase gesture's preview, as the dry tiles get them. The caller sets
+   * the context's transform (page space, device scale included) and clips to
+   * the window.
+   */
+  paintZoomView(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    box: PageBox,
+    window: Bounds,
+    level: number,
+    usePressure: boolean,
+    hidden?: ReadonlySet<string>,
+    replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
+  ): void {
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
+    this.paintPage(ctx, page, box, level, window, ink);
+    const inked: Bounds = {
+      minX: window.minX - INK_PAD,
+      minY: window.minY - INK_PAD,
+      maxX: window.maxX + INK_PAD,
+      maxY: window.maxY + INK_PAD,
+    };
+    this.paintStrokes(ctx, page, inked, usePressure, hidden, replaced, greyed);
+  }
+
+  /**
+   * What sits over the ink: a checklist's box, pictures in front of the
+   * handwriting, and text boxes. The Zoom box paints these after copying in
+   * the wet layer, so a stroke in flight goes under them as it will once it
+   * is committed, not over them for the rest of the gesture.
+   */
+  paintZoomForeground(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    window: Bounds,
+    level: number,
+    usePressure: boolean,
+    hidden?: ReadonlySet<string>,
+    replaced?: ReadonlyMap<string, readonly Stroke[]>,
+    greyed?: ReadonlySet<string>,
+  ): void {
+    const look = pageLook(page.backdrop, this.paper);
+    // A checklist box sits over its ink but under a picture in front of it.
+    for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);
+    const ink: InkPass = { usePressure, hidden, replaced, greyed };
+    this.paintImages(ctx, page, window, level, ink, true);
+    // Text boxes are DOM on the page, so the tile never has them; a
+    // magnified view has no DOM above it, and paints them here as exports do.
+    for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  }
+
+  /**
+   * Copy the part of the wet layer inside `source` (CSS px of this renderer's
+   * canvases) into `dest` (CSS px of `ctx`, whose transform is dpr). The Zoom
+   * box overlays the in-progress stroke this way, so a stroke drawn in either
+   * view appears in both without tracing it twice. Source is clipped to the
+   * viewport; a partly off-screen target copies the part that is on screen.
+   */
+  blitWet(ctx: CanvasRenderingContext2D, source: Bounds, dest: Bounds): void {
+    const left = Math.max(0, source.minX);
+    const top = Math.max(0, source.minY);
+    const right = Math.min(this.screen.width, source.maxX);
+    const bottom = Math.min(this.screen.height, source.maxY);
+    const sourceW = source.maxX - source.minX;
+    const sourceH = source.maxY - source.minY;
+    const destW = dest.maxX - dest.minX;
+    const destH = dest.maxY - dest.minY;
+    if (right <= left || bottom <= top || sourceW <= 0 || sourceH <= 0) return;
+    if (destW <= 0 || destH <= 0) return;
+    const dpr = this.screen.dpr;
+    ctx.drawImage(
+      this.wet.canvas,
+      left * dpr,
+      top * dpr,
+      (right - left) * dpr,
+      (bottom - top) * dpr,
+      dest.minX + ((left - source.minX) / sourceW) * destW,
+      dest.minY + ((top - source.minY) / sourceH) * destH,
+      ((right - left) / sourceW) * destW,
+      ((bottom - top) / sourceH) * destH,
+    );
+  }
+
+  /**
+   * Paint what the wet layer shows into `ctx`, which is in page `box`'s local
+   * space at `scale` CSS px per page px: the Zoom box draws the stroke in
+   * flight this way, at its own resolution, so it is as sharp while it is
+   * written as once it is committed, and shows while the target is off
+   * screen. A stroke begun on another (joined) page is placed by the two
+   * pages' layout. False when the layer holds something only its pixels have
+   * (a dragged picture or selection): the caller copies it ({@link blitWet}).
+   */
+  paintWetInto(ctx: CanvasRenderingContext2D, box: PageBox, scale: number): boolean {
+    const replay = this.wetReplay;
+    if (!replay) return !this.wetRaster;
+    const from = this.layout.boxes[replay.pageIndex];
+    if (!from) return true;
+    ctx.save();
+    ctx.translate(from.x - box.x, from.y - box.y);
+    replay.paint(ctx, scale);
+    ctx.restore();
+    return true;
+  }
+
   /** The whole page at thumbnail resolution: the fallback while tiles catch up. */
   private buildPreview(page: Page, box: PageBox, usePressure: boolean): Preview | null {
     const window = this.previewWindow ? clampToPage(this.previewWindow(box), box) : null;
@@ -1658,6 +1793,7 @@ export class Renderer {
     const night = pageLook(page.backdrop, this.paper).night;
     for (const item of routed) paintConnector(ctx, item, night);
     ctx.restore();
+    this.wetReplay = null;
     this.setWetVisible(true);
   }
 
@@ -1675,14 +1811,18 @@ export class Renderer {
     if (!box || loop.length < 4) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    ctx.beginPath();
-    ctx.moveTo(loop[0], loop[1]);
-    for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
-    if (closed) ctx.closePath();
-    selectionLine(ctx, this.safeScale);
-    ctx.lineJoin = "round";
-    ctx.stroke();
+    const paint = (c: CanvasRenderingContext2D, scale: number): void => {
+      c.beginPath();
+      c.moveTo(loop[0], loop[1]);
+      for (let i = 2; i + 1 < loop.length; i += 2) c.lineTo(loop[i], loop[i + 1]);
+      if (closed) c.closePath();
+      selectionLine(c, scale);
+      c.lineJoin = "round";
+      c.stroke();
+    };
+    paint(ctx, this.safeScale);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -1964,8 +2104,12 @@ export class Renderer {
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
-    for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha, night);
+    const paint = (c: CanvasRenderingContext2D): void => {
+      for (const pts of strokes) fillStroke(c, pts, style, this.highlighterAlpha, night);
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -1982,10 +2126,14 @@ export class Renderer {
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
-    for (const stroke of strokes) {
-      fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
-    }
+    const paint = (c: CanvasRenderingContext2D): void => {
+      for (const stroke of strokes) {
+        fillStroke(c, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
+      }
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -2000,8 +2148,13 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    paintStroke(ctx, { runs }, style, this.highlighterAlpha, this.nightAt(pageIndex));
+    const night = this.nightAt(pageIndex);
+    const paint = (c: CanvasRenderingContext2D): void => {
+      paintStroke(c, { runs }, style, this.highlighterAlpha, night);
+    };
+    paint(ctx);
     ctx.restore();
+    this.wetReplay = { pageIndex, paint };
     this.setWetVisible(true);
   }
 
@@ -2065,7 +2218,53 @@ function paintStroke(
   if (!night) ctx.fillStyle = style.color;
   else ctx.fillStyle = highlighter ? nightHighlighter(style.color) : nightColor(style.color);
   if (decor && pts && ink.runs.length > 0) paintShape(ctx, pts, ink.runs[0].width, decor, night);
+  else if (highlighter) paintOnce(ctx, ink.runs, ink.paths);
   else paintInk(ctx, ink.runs, ink.paths);
+  ctx.restore();
+}
+
+/** The canvas {@link paintOnce} draws into; grown as needed, never shrunk. */
+let onceCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * Paint translucent ink so no part of it is laid down twice (FineNotes#85).
+ * On the iPad, WebKit darkened a wide highlighter line in dots along its
+ * length, though the line was one path stroked once and its points never
+ * doubled back (the same strokes drew evenly on the desktop). So the ink is
+ * drawn opaque into a scratch canvas, where any overlap is the same colour,
+ * and laid down once with `ctx`'s alpha and blend. Where there is no
+ * scratch canvas to be had (the tests' stand-in contexts) it is drawn as is.
+ */
+function paintOnce(
+  ctx: CanvasRenderingContext2D,
+  runs: readonly InkRun[],
+  paths?: readonly Path2D[],
+): void {
+  if (!("getTransform" in ctx) || typeof createEl !== "function") {
+    paintInk(ctx, runs, paths);
+    return;
+  }
+  const m = ctx.getTransform();
+  const rect = inkPixelRect(runs, m, ctx.canvas.width, ctx.canvas.height);
+  if (!rect) return;
+  const canvas = (onceCanvas ??= createEl("canvas"));
+  if (canvas.width < rect.w) canvas.width = rect.w;
+  if (canvas.height < rect.h) canvas.height = rect.h;
+  const once = canvas.getContext("2d");
+  if (!once) {
+    paintInk(ctx, runs, paths);
+    return;
+  }
+  once.setTransform(1, 0, 0, 1, 0, 0);
+  once.globalAlpha = 1;
+  once.globalCompositeOperation = "source-over";
+  once.clearRect(0, 0, rect.w, rect.h);
+  once.setTransform(m.a, m.b, m.c, m.d, m.e - rect.x, m.f - rect.y);
+  once.fillStyle = ctx.fillStyle;
+  paintInk(once, runs, paths);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(canvas, 0, 0, rect.w, rect.h, rect.x, rect.y, rect.w, rect.h);
   ctx.restore();
 }
 

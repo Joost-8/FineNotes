@@ -403,6 +403,33 @@ describe("a drawing pointer", () => {
     ]);
   });
 
+  it("drops coalesced samples the last move already handed over (FineNotes#85)", () => {
+    const rig = new Rig("required");
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1 });
+    const a = [
+      { x: 1, y: 1, t: 2 },
+      { x: 2, y: 2, t: 3 },
+    ];
+    const b = [
+      { x: 3, y: 3, t: 4 },
+      { x: 4, y: 4, t: 5 },
+    ];
+    for (const batch of [a, a, b, b]) {
+      rig.pen("pointermove", 1, { ...batch[batch.length - 1], coalesced: batch });
+    }
+    expect(rig.take()).toEqual([
+      "start 1000,2000 p=0.5 tilt=0,0",
+      "move [1001,2001 p=0.5 tilt=0,0 | 1002,2002 p=0.5 tilt=0,0]",
+      "move [1003,2003 p=0.5 tilt=0,0 | 1004,2004 p=0.5 tilt=0,0]",
+    ]);
+    // A new stroke starts afresh: the same samples count again.
+    rig.pen("pointerup", 1, { x: 4, y: 4, t: 6 });
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 7 });
+    rig.take();
+    rig.pen("pointermove", 1, { x: 4, y: 4, t: 8, coalesced: [{ x: 4, y: 4, t: 8 }] });
+    expect(rig.take()).toEqual(["move [1004,2004 p=0.5 tilt=0,0]"]);
+  });
+
   it("reports a cancel, not an end, when WebKit cancels it", () => {
     const rig = new Rig();
     rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1 });
@@ -750,6 +777,31 @@ describe("pen and fingers together", () => {
     rig.onlyStylus.on = false;
     rig.finger("pointerdown", 13, 1, 2, 14);
     expect(rig.take()).toEqual(["panStart 1,2 t=14"]);
+  });
+
+  it("lets a touch on an allowed page target reach the finger handler in Stylus-only mode", () => {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: () => log.push("start"),
+        onMove: () => log.push("move"),
+        onEnd: () => log.push("end"),
+        onCancel: () => log.push("cancel"),
+        onPanStart: (x, y) => log.push(`panStart ${x},${y}`),
+      },
+      {
+        onlyStylus: () => true,
+        touchTarget: () => true,
+      },
+    );
+    controller.attach();
+    const down = eventFor(10, "touch", { x: 1, y: 2, t: 3 });
+    el.listeners.get("pointerdown")?.(down);
+    expect(log).toEqual(["panStart 1,2"]);
+    expect(down.prevented).toBe(false);
   });
 
   it("a hovering pen and a wide contact do not keep a finger out", () => {

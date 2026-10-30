@@ -68,6 +68,11 @@ export interface RecognizeOptions {
    * gesture and nothing else ({@link RETRACE_HELD_MIN_PX}).
    */
   held?: boolean;
+  /**
+   * Curvature sensitivity as a percentage-like fraction. Lower values are
+   * stricter and are useful when ordinary handwriting must remain freehand.
+   */
+  curvatureThreshold?: number;
 }
 
 // --- Tuning ---------------------------------------------------------------
@@ -103,6 +108,90 @@ const LINE_MAX_DETOUR = 1.35;
 /** Detour is measured on a lightly simplified copy, so per-sample digitizer
  *  noise does not inflate the path length of a perfectly straight stroke. */
 const DETOUR_SIMPLIFY_FRACTION = 0.01;
+
+function curvatureThresholdOf(value: number | undefined): number {
+  return Math.min(1, Math.max(0.1, value ?? 0.5));
+}
+
+function curvatureToleranceMultiplier(threshold: number): number {
+  return 0.5 + curvatureThresholdOf(threshold);
+}
+
+interface LineGuards {
+  archBound: number;
+  inflectionBound: number;
+}
+
+function lineGuards(threshold: number): LineGuards {
+  return {
+    archBound: 0.035 + 0.05 * threshold,
+    inflectionBound: 0.045 + 0.06 * threshold,
+  };
+}
+
+/**
+ * Brackets and integrals are open strokes with meaningful curvature. Their
+ * points can still have a deceptively good least-squares line fit, so reject
+ * one-sided arches and opposing half-stroke deviations before scoring a line.
+ */
+function hasMeaningfulLineCurvature(
+  points: readonly Pt[],
+  chordA: Pt,
+  chordB: Pt,
+  span: number,
+  threshold: number,
+): boolean {
+  if (points.length < 5 || span < 1e-6) return false;
+  const guardA = points[Math.floor(points.length * 0.15)] ?? chordA;
+  const guardB = points[Math.ceil(points.length * 0.85)] ?? chordB;
+  const guardSpan = Math.max(1e-6, dist(guardA, guardB));
+  const ux = (guardB.x - guardA.x) / guardSpan;
+  const uy = (guardB.y - guardA.y) / guardSpan;
+  const start = Math.floor(points.length * 0.1);
+  const end = Math.max(start + 3, Math.ceil(points.length * 0.9));
+  const body = points.slice(start, end);
+  const signed = body.map((p) => (p.x - guardA.x) * uy - (p.y - guardA.y) * ux);
+  const nonZero = signed.filter((d) => Math.abs(d) > guardSpan * 0.003);
+  if (nonZero.length < 3) return false;
+  const positive = nonZero.filter((d) => d > 0).length;
+  const negative = nonZero.length - positive;
+  const dominant = Math.max(positive, negative) / nonZero.length;
+  const sagitta = Math.max(...nonZero.map((d) => Math.abs(d))) / guardSpan;
+  const guards = lineGuards(threshold);
+  if (dominant > 0.75 && sagitta > guards.archBound) return true;
+
+  const middle = Math.floor(signed.length / 2);
+  const first = signed.slice(0, middle);
+  const second = signed.slice(middle);
+  const firstMax = Math.max(...first);
+  const firstMin = Math.min(...first);
+  const secondMax = Math.max(...second);
+  const secondMin = Math.min(...second);
+  const firstDominant = Math.max(
+    first.filter((d) => d > 0).length,
+    first.filter((d) => d < 0).length,
+  );
+  const secondDominant = Math.max(
+    second.filter((d) => d > 0).length,
+    second.filter((d) => d < 0).length,
+  );
+  const firstSign = firstMax >= Math.abs(firstMin) ? 1 : -1;
+  const secondSign = secondMax >= Math.abs(secondMin) ? 1 : -1;
+  const opposing = firstSign !== secondSign;
+  const peakRatio =
+    (Math.max(Math.abs(firstMax), Math.abs(firstMin)) +
+      Math.max(Math.abs(secondMax), Math.abs(secondMin))) /
+    guardSpan;
+  if (
+    opposing &&
+    firstDominant / first.length > 0.6 &&
+    secondDominant / second.length > 0.6 &&
+    peakRatio > guards.inflectionBound
+  ) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Circle: RMS radial deviation as a fraction of the fitted radius. A loop
@@ -636,13 +725,25 @@ function detourOf(points: readonly Pt[], span: number): number {
   return pathLength(simplify(points, tolerance)) / span;
 }
 
-function lineCandidate(points: readonly Pt[], pressure: number): ShapeResult | null {
+function lineCandidate(
+  points: readonly Pt[],
+  pressure: number,
+  curvatureThreshold = 0.5,
+): ShapeResult | null {
   const fit = fitLine(points);
   if (!fit) return null;
+  const threshold = curvatureThresholdOf(curvatureThreshold);
+  if (
+    hasMeaningfulLineCurvature(points, points[0], points[points.length - 1], fit.span, threshold)
+  ) {
+    return null;
+  }
   const detour = detourOf(points, fit.span);
-  if (detour > LINE_MAX_DETOUR) return null;
-  const detourScore = clamp01(1 - (detour - 1) / (LINE_MAX_DETOUR - 1));
-  const shapeScore = clamp01(1 - fit.err / LINE_MAX_ERR);
+  const maxDetour = 1.15 + 0.4 * threshold;
+  const maxErr = 0.04 + 0.42 * threshold;
+  if (detour > maxDetour) return null;
+  const detourScore = clamp01(1 - (detour - 1) / (maxDetour - 1));
+  const shapeScore = clamp01(1 - fit.err / maxErr);
   const confidence = shapeScore * (0.7 + 0.3 * detourScore);
   return { kind: "line", pts: flatten([fit.a, fit.b], pressure), confidence };
 }
@@ -734,6 +835,7 @@ function circleCandidate(
   pressure: number,
   diag: number,
   axes: PrincipalAxes | null,
+  curvatureThreshold = 0.5,
 ): ShapeResult | null {
   // An oval is the ellipse fitter's; circularising it would move the ink.
   if (axes && axes.ratio < ELLIPSE_MAX_RATIO) return null;
@@ -742,7 +844,9 @@ function circleCandidate(
   const sweep = Math.abs(fit.sweep);
   if (sweep < CIRCLE_MIN_SWEEP || sweep > CIRCLE_MAX_SWEEP) return null;
   if (maxCornerDeg(points, diag) > CIRCLE_MAX_CORNER_DEG) return null;
-  const confidence = clamp01(1 - fit.err / CIRCLE_MAX_ERR);
+  const confidence = clamp01(
+    1 - fit.err / (CIRCLE_MAX_ERR * curvatureToleranceMultiplier(curvatureThreshold)),
+  );
   // Start where the pen started and turn the way it turned, so the snap lands
   // on top of the drawing instead of jumping.
   const start = Math.atan2(points[0].y - fit.cy, points[0].x - fit.cx);
@@ -829,6 +933,7 @@ function ellipseCandidate(
   points: readonly Pt[],
   pressure: number,
   found: PrincipalAxes | null,
+  curvatureThreshold = 0.5,
 ): ShapeResult | null {
   if (!found) return null;
   if (found.ratio >= ELLIPSE_MAX_RATIO || found.ratio < ELLIPSE_MIN_RATIO) return null;
@@ -856,7 +961,11 @@ function ellipseCandidate(
     const d = Math.hypot(p.x, p.y) / UNIT - 1;
     sqSum += d * d;
   }
-  const confidence = clamp01(1 - Math.sqrt(sqSum / points.length) / ELLIPSE_MAX_ERR);
+  const confidence = clamp01(
+    1 -
+      Math.sqrt(sqSum / points.length) /
+        (ELLIPSE_MAX_ERR * curvatureToleranceMultiplier(curvatureThreshold)),
+  );
 
   // Beautify: an oval drawn a few degrees off level is meant to be level.
   const quarter = Math.PI / 2;
@@ -1073,6 +1182,7 @@ function polygonCandidate(
   drawn: readonly Pt[],
   pressure: number,
   diag: number,
+  curvatureThreshold = 0.5,
 ): ShapeResult | null {
   const origin = drawn[0];
   const points = rotateToFarthest(drawn);
@@ -1114,7 +1224,9 @@ function polygonCandidate(
   // unless it stands on a point, which is a diamond.
   const diamond = isDiamond(vertices);
   if (!diamond && isRectLike(vertices)) return null;
-  const confidence = clamp01(1 - chosen.err / POLY_MAX_ERR);
+  const confidence = clamp01(
+    1 - chosen.err / (POLY_MAX_ERR * curvatureToleranceMultiplier(curvatureThreshold)),
+  );
   const kind: ShapeKind = vertices.length === 3 ? "triangle" : diamond ? "diamond" : "polygon";
 
   // Begin at the vertex nearest pen-down, keeping the drawn winding.
@@ -1249,7 +1361,12 @@ function rectFromQuad(quad: readonly Pt[]): { box: Pt[]; theta: number } {
   };
 }
 
-function rectCandidate(drawn: readonly Pt[], pressure: number, diag: number): ShapeResult | null {
+function rectCandidate(
+  drawn: readonly Pt[],
+  pressure: number,
+  diag: number,
+  curvatureThreshold = 0.5,
+): ShapeResult | null {
   const origin = drawn[0];
   const points = rotateToFarthest(drawn);
   // Adaptive RDP: a sloppy rectangle needs a coarser tolerance before its four
@@ -1292,7 +1409,9 @@ function rectCandidate(drawn: readonly Pt[], pressure: number, diag: number): Sh
   // are beautification, and must not punish a stroke for being drawn a
   // little trapezoid or a couple of degrees off true.
   const cornerScore = clamp01(1 - angleErrSum / 4 / RECT_CORNER_TOL_DEG);
-  const confidence = clamp01(1 - fit.err / RECT_MAX_ERR) * (0.75 + 0.25 * cornerScore);
+  const confidence =
+    clamp01(1 - fit.err / (RECT_MAX_ERR * curvatureToleranceMultiplier(curvatureThreshold))) *
+    (0.75 + 0.25 * cornerScore);
 
   const emitted = rectFromQuad(fit.vertices);
   if (
@@ -2069,12 +2188,13 @@ function closedCandidates(
   pressure: number,
   diag: number,
   polygons: boolean,
+  curvatureThreshold: number,
 ): Array<ShapeResult | null> {
   const axes = principalAxes(points);
-  const circle = circleCandidate(points, pressure, diag, axes);
-  const ellipse = ellipseCandidate(points, pressure, axes);
+  const circle = circleCandidate(points, pressure, diag, axes, curvatureThreshold);
+  const ellipse = ellipseCandidate(points, pressure, axes, curvatureThreshold);
   // Triangles always; other polygons only when asked for (see RecognizeOptions).
-  const fitted = polygonCandidate(points, pressure, diag);
+  const fitted = polygonCandidate(points, pressure, diag, curvatureThreshold);
   const polygon = fitted && (polygons || fitted.kind === "triangle") ? fitted : null;
   // A loop the round fitters accept structurally has no run of sharp corners
   // (their gate caps the second-sharpest turn under a square's), so it is
@@ -2085,7 +2205,9 @@ function closedCandidates(
   // well; with polygon fitting on it must stay a diamond (the Shape tool's
   // preset round-trips through here), so the rect fitter stands aside.
   const rect =
-    circle || ellipse || polygon?.kind === "diamond" ? null : rectCandidate(points, pressure, diag);
+    circle || ellipse || polygon?.kind === "diamond"
+      ? null
+      : rectCandidate(points, pressure, diag, curvatureThreshold);
   // Stars are on by default: Joost asked for them (2026-09-22). No other
   // fitter produces a candidate for one, and the star fitter produces none
   // for anything in the adversarial suite or the real Pencil fixtures.
@@ -2169,6 +2291,7 @@ export interface ShapeExplanation {
 export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExplanation {
   const closeTolerance = opts?.closeTolerance ?? SNAP_CLOSE_TOLERANCE;
   const polygons = opts?.polygons === true;
+  const curvatureThreshold = curvatureThresholdOf(opts?.curvatureThreshold);
   const none: ShapeExplanation = {
     diag: 0,
     n: 0,
@@ -2219,11 +2342,19 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
   const candidates: Array<ShapeResult | null> = retrace
     ? [retrace]
     : closed
-      ? closedCandidates(cleaned, pressure, diagonalOf(boundsOf(cleaned)), polygons)
+      ? closedCandidates(
+          cleaned,
+          pressure,
+          diagonalOf(boundsOf(cleaned)),
+          polygons,
+          curvatureThreshold,
+        )
       : [
           arrowCandidate(points, pressure, diag),
-          lineCandidate(points, pressure),
-          cleaned.length >= MIN_POINTS ? lineCandidate(cleaned, pressure) : null,
+          lineCandidate(points, pressure, curvatureThreshold),
+          cleaned.length >= MIN_POINTS
+            ? lineCandidate(cleaned, pressure, curvatureThreshold)
+            : null,
         ];
 
   const scored = candidates

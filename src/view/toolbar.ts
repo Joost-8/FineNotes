@@ -84,6 +84,7 @@ import {
   normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
@@ -214,7 +215,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
-import type { PenPreferences, ReturnToPen } from "../settings-data";
+import type { PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -457,14 +458,14 @@ export interface ToolbarState {
   color: string;
   size: number;
   pressureEnabled: boolean;
-  /** Draw-and-hold with the pens. `undefined` counts as enabled. */
-  shapeSnapEnabled?: boolean;
   /**
-   * The pen's auto-shape toggle: every pen stroke that is plainly a shape
-   * snaps to it on lift, as the Shape tool's auto mode does. `undefined`
-   * counts as off.
+   * When a pen or highlighter stroke snaps to a shape (Pen gestures › Make
+   * shapes): never, after a hold, or on lift too (the pill's Auto shape
+   * button). `undefined` counts as `"hold"`.
    */
-  penAutoShape?: boolean;
+  snapMode?: SnapMode;
+  /** How curved a stroke may be and still snap, 10–100. `undefined` counts as 50. */
+  snapCurvatureThreshold?: number;
   /** The Shape tool's colour. `undefined` counts as {@link DEFAULT_SHAPE_COLOR}. */
   shapeColor?: string;
   /** Custom colours picked lately, newest first, for every colour picker. */
@@ -527,6 +528,14 @@ export interface ToolbarState {
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
   rulerSnap?: number;
+  /**
+   * The Magnifier's mode: `true` writes in a floating Zoom box, `false` (or
+   * absent) zooms the page itself. The box stays open while another tool is
+   * picked; only the Magnifier's own switch and its × close it.
+   */
+  zoomBox?: boolean;
+  /** A target box and its window are open on the page right now. */
+  zoomBoxOpen?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -609,8 +618,6 @@ export interface ToolbarCallbacks {
   onTextList?: (kind: ListKind) => void;
   /** Delete the text box being edited. */
   onTextDelete?: () => void;
-  /** The pen's auto-shape toggle changed. Hosts persist it. */
-  onPenAutoShapeChange?: (enabled: boolean) => void;
   /** A pen gesture was switched on or off. Hosts persist it. */
   onPenGesturesChange?: (gestures: PenGestures) => void;
   /** A pen type's stroke stabilization changed (every step of a drag). Hosts persist it. */
@@ -669,6 +676,10 @@ export interface ToolbarCallbacks {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomFit?: () => void;
+  /** The Magnifier's mode switched: open or close the Zoom box. */
+  onZoomBox?: (on: boolean) => void;
+  /** Open (a placed box, `placedZoomBox`) or close the Zoom box, the mode and the tool kept. */
+  onZoomBoxOpen?: (open: boolean) => void;
 }
 
 export interface ToolbarOptions {
@@ -1917,6 +1928,23 @@ export class Toolbar {
       this.toggleLassoPopover(button);
       return;
     }
+    // The Magnifier in Zoom box mode opens the box in one tap, the tool in
+    // hand kept; with the box open a tap picks the Magnifier (its pill), and
+    // the next closes the box (`magnifierTap`).
+    if (tool === "zoom") {
+      const action = magnifierTap(
+        current,
+        this.state.zoomBox === true,
+        this.state.zoomBoxOpen === true,
+      );
+      if (action !== "select") {
+        this.callbacks.onZoomBoxOpen?.(action === "open");
+        this.state.zoomBoxOpen = action === "open" && this.state.zoomBoxOpen === true;
+        if (current === "zoom") this.buildOptions();
+        this.syncActive();
+        return;
+      }
+    }
     this.closePopover();
     this.tuckedByStroke = false;
     if (tool === current) {
@@ -2094,15 +2122,14 @@ export class Toolbar {
       cls: "goodobsidian-shape goodobsidian-pen-autoshape clickable-icon",
     });
     auto.append(shapeGlyph("auto"));
-    const on = this.state.penAutoShape === true;
+    const on = this.state.snapMode === "auto";
     const label = on ? "Auto shape: on" : "Auto shape: off";
     auto.setAttribute("aria-label", label);
     auto.setAttribute("title", `${label} — a stroke that is a shape becomes one`);
     auto.setAttribute("aria-pressed", String(on));
     auto.toggleClass("is-active", on);
     auto.addEventListener("click", () => {
-      this.state.penAutoShape = !on;
-      this.callbacks.onPenAutoShapeChange?.(!on);
+      this.toggleAutoShape();
       this.buildOptions();
     });
 
@@ -2527,9 +2554,45 @@ export class Toolbar {
     this.toolNote("hand", "Drag to move the page");
   }
 
-  /** The magnifier: its drag, and the steps and fit the page needs. */
+  /** The magnifier: page zoom or a Zoom box, then its steps and fit. */
   private buildZoomOptions(): void {
     const cb = this.callbacks;
+    const boxMode = this.state.zoomBox === true;
+    for (const mode of [
+      { box: false, label: "Page zoom", icon: "file", fallback: "＋" },
+      { box: true, label: "Zoom box", icon: "scan", fallback: "▣" },
+    ]) {
+      const active = boxMode === mode.box;
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-zoommode",
+      });
+      button.toggleClass("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.setAttribute("aria-label", mode.label);
+      const glyph = button.createSpan({ cls: "goodobsidian-zoommode-icon" });
+      iconOrText(glyph, mode.icon, mode.fallback);
+      button.addEventListener("click", () => {
+        // A second tap on Zoom box is the switch's own off position.
+        const next = mode.box && active ? false : mode.box;
+        if (next === boxMode) return;
+        this.state.zoomBox = next;
+        // Page zoom closes whatever target box was open; Zoom box opens one
+        // where the page is being read, and hands the pen back to write in it.
+        this.state.zoomBoxOpen = false;
+        this.callbacks.onZoomBox?.(next);
+        // The surface reports the box it opened back through setZoomBoxOpen.
+        const opened = (this.state as { zoomBoxOpen?: boolean }).zoomBoxOpen === true;
+        if (next && opened && this.drawingTool !== "zoom") {
+          const back = this.drawingTool;
+          this.leaveToolFor(back);
+          this.state.tool = back;
+          this.callbacks.onToolChange(back);
+        }
+        this.buildOptions();
+        this.syncActive();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     this.barButton(
       this.optionsEl,
       "zoom-out",
@@ -2548,8 +2611,12 @@ export class Toolbar {
       "Zoom in",
       cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
     );
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    this.toolNote("zoom-in", "Drag up or down to zoom");
+    // Page zoom keeps the note it always had; the Zoom box needs none: the
+    // target it draws, and the window, show what a drag did.
+    if (!boxMode) {
+      this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+      this.toolNote("zoom-in", "Drag up or down to zoom");
+    }
   }
 
   /**
@@ -4215,7 +4282,89 @@ export class Toolbar {
   }
 
   /**
-   * GoodNotes' Pen Gestures page: Hold to make shapes, Scribble to erase
+   * The pill's Auto shape button: the same setting as Make shapes, flipped
+   * between on lift and after a hold. The host stores it and gives it to
+   * every open notebook, so the pen follows the button at once.
+   */
+  private toggleAutoShape(): void {
+    const mode: SnapMode = this.state.snapMode === "auto" ? "hold" : "auto";
+    this.state.snapMode = mode;
+    this.callbacks.onPenPreferences?.({ snapMode: mode });
+  }
+
+  /**
+   * "Make shapes": when a pen stroke snaps to a clean shape (never, after a
+   * hold, or on lift too, the pill's Auto shape button), and under it the
+   * curve bar, from straight-only to loose (FineNotes#84). The bar is hidden
+   * while shapes are off, where it means nothing.
+   */
+  private renderMakeShapes(
+    body: HTMLElement,
+    prefs: PenPreferences,
+    save: (patch: Partial<PenPreferences>) => void,
+  ): void {
+    // One card, as the switches below it: the choice, and its bar.
+    const card = body.createDiv({ cls: "goodobsidian-switch-list" });
+    const row = card.createDiv({ cls: "goodobsidian-make-shapes" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: "Make shapes" });
+    const modes = row.createDiv({
+      cls: "goodobsidian-segmented is-icons",
+      attr: { role: "radiogroup", "aria-label": "Make shapes" },
+    });
+    const choices: ReadonlyArray<[SnapMode, string]> = [
+      ["disabled", "Off"],
+      ["hold", "When I hold the pen still"],
+      ["auto", "When I lift the pen, too"],
+    ];
+    for (const [mode, label] of choices) {
+      const on = prefs.snapMode === mode;
+      const button = modes.createEl("button", {
+        cls: "clickable-icon",
+        attr: { role: "radio", "aria-label": label, "aria-checked": String(on) },
+      });
+      // On lift is the pill's Auto shape button: the same symbol for the same thing.
+      if (mode === "auto") button.append(shapeGlyph("auto"));
+      else setIcon(button, mode === "hold" ? "timer" : "ban");
+      button.toggleClass("is-active", on);
+      button.addEventListener("click", () => {
+        this.state.snapMode = mode;
+        save({ snapMode: mode });
+        this.popoverRender?.();
+      });
+    }
+
+    if (prefs.snapMode !== "disabled") {
+      const bar = card.createDiv({ cls: "goodobsidian-snap-curve" });
+      setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "minus");
+      const range = bar.createDiv({ cls: "goodobsidian-width-slider" }).createEl("input", {
+        cls: "goodobsidian-width-range",
+        type: "range",
+        attr: {
+          "aria-label": "How curved a stroke may be and still snap",
+          title: "Straight lines only ↔ looser shapes",
+        },
+      });
+      setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "waves");
+      range.min = "10";
+      range.max = "100";
+      range.step = "5";
+      range.value = String(prefs.snapCurve);
+      syncRangeFill(range);
+      range.addEventListener("input", () => {
+        const curve = Number(range.value);
+        this.state.snapCurvatureThreshold = curve;
+        save({ snapCurve: curve });
+        syncRangeFill(range);
+      });
+    }
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
+    });
+  }
+
+  /**
+   * GoodNotes' Pen Gestures page: Make shapes, Scribble to erase
    * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
@@ -4224,16 +4373,7 @@ export class Toolbar {
 
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
-    if (prefs && save) {
-      const hold = body.createDiv({ cls: "goodobsidian-switch-list" });
-      this.switchRow(hold, "Hold to make shapes", prefs.drawAndHold, (on) =>
-        save({ drawAndHold: on }),
-      );
-      body.createDiv({
-        cls: "goodobsidian-popover-hint",
-        text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
-      });
-    }
+    if (prefs && save) this.renderMakeShapes(body, prefs, save);
 
     const gestures = penGesturesOf(this.state.penGestures);
     const set = (patch: Partial<PenGestures>): void => {
@@ -5103,6 +5243,15 @@ export class Toolbar {
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
     const from = tool === this.indicatorTool ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // An open Zoom box keeps the Magnifier lit while another tool writes.
+    // `is-on` is exactly what Stylus only uses: the whole button takes the
+    // active background and icon colour, not just the glyph.
+    const zoom = this.toolButtons.get("zoom");
+    if (zoom) {
+      const mark = zoomButtonState(this.state.tool, this.state.zoomBoxOpen === true);
+      zoom.toggleClass("is-on", mark.highlighted);
+      zoom.setAttribute("aria-pressed", String(mark.pressed));
+    }
     // The tool in hand stays on the bar, and a chosen tool is wider.
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
@@ -5154,6 +5303,19 @@ export class Toolbar {
     this.leaveToolFor(next.tool);
     this.state = next;
     this.buildOptions();
+    this.syncActive();
+  }
+
+  /**
+   * The surface opened the Zoom box (one tap, or a drawn target) or closed it
+   * with its ×. The bar follows without calling back, so the host is not
+   * asked to open what is already open. Closing keeps the mode: the next tap
+   * on the Magnifier opens a box again.
+   */
+  setZoomBoxOpen(open: boolean): void {
+    this.state.zoomBoxOpen = open;
+    if (open) this.state.zoomBox = true;
+    if (this.state.tool === "zoom") this.buildOptions();
     this.syncActive();
   }
 

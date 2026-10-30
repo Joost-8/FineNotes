@@ -42,10 +42,20 @@ export type ToolId = "pen" | "highlighter" | "eraser" | "select";
 
 /** How pages are shown (`pageAppearance`): light paper, dark pages, or as Obsidian's theme is. */
 export type PageAppearance = "light" | "dark" | "system";
+export type SnapMode = "disabled" | "hold" | "auto";
 
 export interface GoodObsidianSettings {
   // What an ink note starts with. Tool state the toolbar remembers is further down.
-  /** Draw a rough shape, hold the pen still at the end, and it snaps clean. */
+  /**
+   * When a pen stroke snaps to a shape (Pen gestures › Make shapes): never,
+   * after a hold, or on lift too. The one field the code reads; `drawAndHold`
+   * and `penAutoShape` only mirror it, for vaults that go back to an older
+   * build ({@link storeSnapMode}).
+   */
+  snapMode: SnapMode;
+  /** How curved a stroke may be and still snap, 10 (strict) to 100 (loose); 50 is the tuned default. */
+  snapCurvatureThreshold: number;
+  /** Mirror of `snapMode !== "disabled"`, read by builds before it. */
   drawAndHold: boolean;
   defaultTool: ToolId;
   /** Extra palette swatches, `#rgb` or `#rrggbb`. */
@@ -168,7 +178,9 @@ export interface GoodObsidianSettings {
   textHintShown: number;
   /** The hint was closed with its ×, and stays away. */
   textHintDismissed: boolean;
-  /** The pen's auto-shape: a stroke that is a shape snaps to it on lift. */
+  /** Where Make shapes lives was said, at the first pen stroke that snapped. */
+  shapeHintShown: boolean;
+  /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
   penGestures: PenGestures;
@@ -329,6 +341,17 @@ export interface GoodObsidianSettings {
    * switch before (true is until tapped); checked where read.
    */
   tuckPenOptionsOnWrite: PenOptionsOnWrite;
+  /** Page px added after a Zoom box line; negative lets taller boxes overlap. */
+  zoomBoxLineStep: number;
+  /** Move the Zoom box right (then wrap) after a stroke reaches its threshold. */
+  zoomBoxAutoAdvance: boolean;
+  /** Percentage of the box's right edge that triggers auto-advance. */
+  zoomBoxAutoAdvanceThreshold: number;
+  /**
+   * The Magnifier's mode, remembered: true makes its button open a Zoom box
+   * in one tap, the tool in hand kept (`magnifierTap`); false zooms the page.
+   */
+  magnifierZoomBox: boolean;
   /**
    * "Grey out while erasing", the eraser's mode list: Whole stroke and By
    * line draw what they take grey until the pen lifts, as Notability does,
@@ -358,6 +381,8 @@ export interface GoodObsidianSettings {
 // change the shared defaults.
 export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   drawAndHold: true,
+  snapMode: "hold",
+  snapCurvatureThreshold: 50,
   defaultTool: "pen",
   customColors: [],
   defaultColor: PALETTE[0],
@@ -399,6 +424,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textDragSize: false,
   textHintShown: 0,
   textHintDismissed: false,
+  shapeHintShown: false,
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
@@ -438,6 +464,10 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   straightHighlighter: true,
   onlyStylusMode: false,
   tuckPenOptionsOnWrite: "off",
+  zoomBoxLineStep: 0,
+  zoomBoxAutoAdvance: false,
+  zoomBoxAutoAdvanceThreshold: 33,
+  magnifierZoomBox: false,
   greyWhileErasing: false,
 
   settingsOpen: [],
@@ -530,24 +560,83 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
 }
 
 /**
- * The settings the pen's menu holds beside the pen in hand's own: "Hold to
- * make shapes" (Pen gestures), and "Hide pen options while writing" and
- * "Back to the pen" (Pen settings). They are the same for every pen.
+ * The settings the pen's menu holds beside the pen in hand's own: "Make
+ * shapes" and its curve bar (Pen gestures, and the Auto shape button), and
+ * "Hide pen options while writing" and "Back to the pen" (Pen settings).
+ * They are the same for every pen.
  */
 export interface PenPreferences {
-  drawAndHold: boolean;
+  snapMode: SnapMode;
+  /** {@link GoodObsidianSettings.snapCurvatureThreshold}. */
+  snapCurve: number;
   tuckOnWrite: PenOptionsOnWrite;
   returnToPen: ReturnToPen;
+}
+
+const SNAP_MODES: readonly SnapMode[] = ["disabled", "hold", "auto"];
+
+export function isSnapMode(value: unknown): value is SnapMode {
+  return typeof value === "string" && SNAP_MODES.includes(value as SnapMode);
+}
+
+/**
+ * Read the snapping mode, from the two switches it replaced when a vault
+ * has none yet: `penAutoShape` (on lift) and `drawAndHold` (on hold).
+ */
+export function snapModeOf(settings: {
+  snapMode?: unknown;
+  drawAndHold?: unknown;
+  penAutoShape?: unknown;
+}): SnapMode {
+  if (isSnapMode(settings.snapMode)) return settings.snapMode;
+  if (settings.penAutoShape === true) return "auto";
+  return settings.drawAndHold === false ? "disabled" : "hold";
+}
+
+/** The curve bar's value, 10–100 in steps of 5; anything else reads as the default 50. */
+export function snapCurveOf(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 50;
+  return Math.min(100, Math.max(10, Math.round(value / 5) * 5));
+}
+
+/** Set the snapping mode, and the two old switches that mirror it. */
+export function storeSnapMode(
+  settings: Pick<GoodObsidianSettings, "snapMode" | "drawAndHold" | "penAutoShape">,
+  mode: SnapMode,
+): void {
+  settings.snapMode = mode;
+  settings.drawAndHold = mode !== "disabled";
+  settings.penAutoShape = mode === "auto";
+}
+
+/**
+ * After loading: a vault from before "Make shapes" takes its mode from the
+ * two switches it replaced (`saved` is the file as read); from then on
+ * those only mirror it.
+ */
+export function loadSnapSettings(
+  settings: GoodObsidianSettings,
+  saved: Partial<Record<keyof GoodObsidianSettings, unknown>>,
+): void {
+  storeSnapMode(settings, snapModeOf(saved));
+  settings.snapCurvatureThreshold = snapCurveOf(saved.snapCurvatureThreshold);
 }
 
 export function penPreferencesOf(
   settings: Pick<
     GoodObsidianSettings,
-    "drawAndHold" | "tuckPenOptionsOnWrite" | "returnToPenOnReselect" | "returnToPenAfterUse"
+    | "snapMode"
+    | "snapCurvatureThreshold"
+    | "drawAndHold"
+    | "penAutoShape"
+    | "tuckPenOptionsOnWrite"
+    | "returnToPenOnReselect"
+    | "returnToPenAfterUse"
   >,
 ): PenPreferences {
   return {
-    drawAndHold: settings.drawAndHold !== false,
+    snapMode: snapModeOf(settings),
+    snapCurve: snapCurveOf(settings.snapCurvatureThreshold),
     tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
     returnToPen: returnToPenOf(settings),
   };
@@ -558,7 +647,8 @@ export function storePenPreferences(
   settings: GoodObsidianSettings,
   patch: Partial<PenPreferences>,
 ): void {
-  if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
+  if ("snapMode" in patch) storeSnapMode(settings, snapModeOf({ snapMode: patch.snapMode }));
+  if ("snapCurve" in patch) settings.snapCurvatureThreshold = snapCurveOf(patch.snapCurve);
   if ("tuckOnWrite" in patch) {
     settings.tuckPenOptionsOnWrite = penOptionsOnWriteOf(patch.tuckOnWrite);
   }
