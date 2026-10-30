@@ -404,6 +404,16 @@ export class PdfBackdropCache {
     const wanted = new Set(
       requests.map(({ path, page, dprScale, area }) => rasterKey(path, page, dprScale, area)),
     );
+    // What is still asked for is in use, drawn this frame or not: the image
+    // of a page ahead is not drawn until it arrives, nor a tile once the ink
+    // tiles over it are cached. Left to age, the soft budget let them go and
+    // the next frame asked for them again: in one pan the same tile was
+    // rendered six times and the next page's image five (FineNotes#80).
+    const t = now();
+    for (const key of wanted) {
+      const cached = this.entries.get(key);
+      if (cached) cached.lastUsed = t;
+    }
     const useful = (
       key: string,
       item: { path: string; page: number; area?: PdfRenderArea },

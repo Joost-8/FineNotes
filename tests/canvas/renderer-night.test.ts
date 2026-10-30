@@ -223,10 +223,26 @@ describe("the renderer switching theme", () => {
   it("paints the desk and the page on it in the dark theme's colours", () => {
     const { renderer, doc } = setUp();
     renderer.paper = DARK_PAPER;
+    // The backdrop layer holds the desk; the page lies on the dry layer.
     renderer.renderBackdrops(doc);
+    expect(styles(log.lines, "fillStyle")).toEqual([DARK_PAPER.desk]);
+    log.lines.length = 0;
+    renderer.renderDocument(doc, false);
     const fills = styles(log.lines, "fillStyle");
     expect(fills).toContain(DARK_PAPER.desk);
     expect(fills).toContain(NIGHT_PAPER);
+  });
+
+  it("paints the backdrop layer again only when the desk changes", () => {
+    const { renderer, doc } = setUp();
+    renderer.renderBackdrops(doc);
+    log.lines.length = 0;
+    // A scroll frame: nothing changed under the pages.
+    renderer.renderBackdrops(doc);
+    expect(log.lines).toEqual([]);
+    renderer.paper = DARK_PAPER;
+    renderer.renderBackdrops(doc);
+    expect(styles(log.lines, "fillStyle")).toEqual([DARK_PAPER.desk]);
   });
 });
 

@@ -134,6 +134,10 @@ extracted from the matching section of this file by `release.yml`.
   half a second or more later. The pages a scroll shows next are now drawn
   before they arrive, in the order they come, and the pages on screen are
   drawn before any sharper detail.
+- **Smoother over a PDF.** Moving about a zoomed-in PDF page drew the same
+  parts of the PDF again and again (half of all it drew, in one test), and
+  every frame of a scroll or a page turn changed two screen-sized pictures
+  where one now does, so page turns stutter less.
 - The debug overlay says what the highlighter did where it came down on a
   PDF page: which text it snapped to, or why it drew freehand (the page's
   text not read yet, no text on the page, or the pen beside the text).

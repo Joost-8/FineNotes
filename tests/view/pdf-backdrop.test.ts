@@ -719,6 +719,29 @@ describe("rendering in the PDF worker", () => {
   });
 });
 
+describe("what is still asked for stays (FineNotes#80)", () => {
+  it("keeps a page image asked for ahead, never drawn, past the soft budget", async () => {
+    const c = cache();
+    const ahead = { geometry: { width: 1200, height: 1600 } };
+    // The next page's image, asked for each frame and not on screen yet.
+    c.setVisibleRegions([{ path: "a.pdf", page: 9, dprScale: 1.4, area: ahead }]);
+    await settle();
+    const rendered = pdf.renders;
+    for (let frame = 0; frame < 6; frame++) {
+      clock += 1000;
+      // Pages landing past the soft budget (7.7 MB each).
+      c.request("a.pdf", frame, 2);
+      c.setVisibleRegions([{ path: "a.pdf", page: 9, dprScale: 1.4, area: ahead }]);
+      await settle();
+    }
+    expect(c.bytes).toBeGreaterThan(48 * 1024 * 1024 - 8 * 1024 * 1024);
+    // Rendered once: before, it aged out and every next frame asked again.
+    expect(c.peek("a.pdf", 9, 1.4, ahead)).not.toBeNull();
+    expect(pdf.renders - rendered).toBe(6);
+    c.destroy();
+  });
+});
+
 // FineNotes#80 and the old iPads it asked about: iOS refuses a web view more
 // canvases once they hold too much memory (`getContext` answers null), and a
 // 2 GB iPad gets there first.

@@ -18,6 +18,8 @@ describe("renderer visible PDF request boundary", () => {
       level: 8,
       painter: { paint: vi.fn(), prepare } as BackdropPainter,
       wipe: vi.fn(),
+      paintDesk: vi.fn(),
+      paintPaper: vi.fn(),
       boxesOnScreen: () => [box],
       layout: { boxes: [box] },
       lastLook: null,

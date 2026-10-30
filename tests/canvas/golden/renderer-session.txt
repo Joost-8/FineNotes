@@ -19,32 +19,31 @@ wet.style.height = 700px
 deviceScale=0.9 transient=false
 # backdrops
 backdrop fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+# document with hidden, selection and eraser preview
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
 el1.height = 120
 el1.width = 120
 el1.getContext 2d null
 el1 fillRect -184,56 -176,56 -176,64 -184,64 {shadowColor=rgba(16, 24, 40, 0.35) shadowBlur=28 shadowOffsetX=240}
-backdrop drawImage el1[0,0,56,56] -> -32,-158 24,-158 24,-102 -32,-102 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,0,8,56] -> 24,-158 744,-158 744,-102 24,-102 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,0,56,56] -> 744,-158 800,-158 800,-102 744,-102 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,56,56,8] -> -32,-102 24,-102 24,798 -32,798 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,1] -> 24,792 744,792 744,798 24,798 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,56,56,8] -> 744,-102 800,-102 800,798 744,798 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,64,56,56] -> -32,798 24,798 24,854 -32,854 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,56] -> 24,798 744,798 744,854 24,854 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,64,56,56] -> 744,798 800,798 800,854 744,854 {fillStyle=#3b3e45}
-backdrop fillRect 24,-108 744,-108 744,792 24,792 {fillStyle=#ffffff}
-backdrop drawImage el1[0,0,56,56] -> -32,778 24,778 24,834 -32,834 {fillStyle=#ffffff}
-backdrop drawImage el1[56,0,8,56] -> 24,778 744,778 744,834 24,834 {fillStyle=#ffffff}
-backdrop drawImage el1[64,0,56,56] -> 744,778 800,778 800,834 744,834 {fillStyle=#ffffff}
-backdrop drawImage el1[0,56,56,8] -> -32,834 24,834 24,1734 -32,1734 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,1] -> 24,1728 744,1728 744,1734 24,1734 {fillStyle=#ffffff}
-backdrop drawImage el1[64,56,56,8] -> 744,834 800,834 800,1734 744,1734 {fillStyle=#ffffff}
-backdrop drawImage el1[0,64,56,56] -> -32,1734 24,1734 24,1790 -32,1790 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,56] -> 24,1734 744,1734 744,1790 24,1790 {fillStyle=#ffffff}
-backdrop drawImage el1[64,64,56,56] -> 744,1734 800,1734 800,1790 744,1790 {fillStyle=#ffffff}
-backdrop fillRect 24,828 744,828 744,1728 24,1728 {fillStyle=#fdf6e3}
-# document with hidden, selection and eraser preview
-dry clearRect 0,0 780,0 780,1400 0,1400
+dry drawImage el1[0,0,56,56] -> -32,-158 24,-158 24,-102 -32,-102 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,-158 744,-158 744,-102 24,-102 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,-158 800,-158 800,-102 744,-102 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,-102 24,-102 24,798 -32,798 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,792 744,792 744,798 24,798 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,-102 800,-102 800,798 744,798 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,798 24,798 24,854 -32,854 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,798 744,798 744,854 24,854 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,798 800,798 800,854 744,854 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,778 24,778 24,834 -32,834 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,778 744,778 744,834 24,834 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,778 800,778 800,834 744,834 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,834 24,834 24,1734 -32,1734 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,1728 744,1728 744,1734 24,1734 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,834 800,834 800,1734 744,1734 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,1734 24,1734 24,1790 -32,1790 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,1734 744,1734 744,1790 24,1790 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,1734 800,1734 800,1790 744,1790 {fillStyle=#3b3e45}
+dry fillRect 24,-108 744,-108 744,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el2.width = 512
 el2.height = 512
 el2.getContext 2d null
@@ -207,7 +206,7 @@ el2 stroke path2d#79dde471fa8f at 0.9,0,0,0.9,0,0 {fillStyle=#1a1a1a strokeStyle
 el2 stroke path2d#104db5fa987b at 0.9,0,0,0.9,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.6289 lineCap=round lineJoin=round}
 el2 stroke path2d#1fa9d0130150 at 0.9,0,0,0.9,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.5376 lineCap=round lineJoin=round}
 el2 stroke path2d#0060b595407f at 0.9,0,0,0.9,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.4463 lineCap=round lineJoin=round}
-dry drawImage el2 -> 24,-108 536,-108 536,404 24,404 {imageSmoothingEnabled=false}
+dry drawImage el2 -> 24,-108 536,-108 536,404 24,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el3.width = 208
 el3.height = 512
 el3.getContext 2d null
@@ -257,7 +256,7 @@ el3 stroke path2d#79dde471fa8f at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeSt
 el3 stroke path2d#104db5fa987b at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.6289 lineCap=round lineJoin=round}
 el3 stroke path2d#1fa9d0130150 at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.5376 lineCap=round lineJoin=round}
 el3 stroke path2d#0060b595407f at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.4463 lineCap=round lineJoin=round}
-dry drawImage el3 -> 536,-108 744,-108 744,404 536,404 {imageSmoothingEnabled=false}
+dry drawImage el3 -> 536,-108 744,-108 744,404 536,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el4.width = 512
 el4.height = 388
 el4.getContext 2d null
@@ -267,7 +266,7 @@ el4 painter ruled-narrow 800x1000 weight=1 at 0.9,0,0,0.9,0,-512
 el4 strokeRect 0.5,-511.5 719.5,-511.5 719.5,387.5 0.5,387.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
 el4 stroke path2d#d70b6aa3446c at 0.9,0,0,0.9,0,-512 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el4 stroke path2d#a7fc28f51d10 at 0.9,0,0,0.9,0,-512 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el4 -> 24,404 536,404 536,792 24,792 {imageSmoothingEnabled=false}
+dry drawImage el4 -> 24,404 536,404 536,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el5.width = 208
 el5.height = 388
 el5.getContext 2d null
@@ -277,9 +276,10 @@ el5 painter ruled-narrow 800x1000 weight=1 at 0.9,0,0,0.9,-512,-512
 el5 strokeRect -511.5,-511.5 207.5,-511.5 207.5,387.5 -511.5,387.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
 el5 stroke path2d#d70b6aa3446c at 0.9,0,0,0.9,-512,-512 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el5 stroke path2d#1336cc68644a at 0.9,0,0,0.9,-512,-512 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.64 lineCap=round lineJoin=round}
-dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
-dry clip nonzero [R(24,-108 744,-108 744,792 24,792)] {imageSmoothingEnabled=false}
-dry strokeRect 268.8,406.8 517.2,406.8 517.2,565.2 268.8,565.2 {strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineDash=[13.3333,8.8889] imageSmoothingEnabled=false}
+dry drawImage el5 -> 536,404 744,404 744,792 536,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry clip nonzero [R(24,-108 744,-108 744,792 24,792)] {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry strokeRect 268.8,406.8 517.2,406.8 517.2,565.2 268.8,565.2 {fillStyle=#ffffff strokeStyle=rgba(120,170,255,0.95) lineWidth=3.3333 lineDash=[13.3333,8.8889] imageSmoothingEnabled=false}
+dry fillRect 24,828 744,828 744,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el6.width = 512
 el6.height = 512
 el6.getContext 2d null
@@ -289,7 +289,7 @@ el6 painter squared 800x1000 weight=1 at 0.9,0,0,0.9,0,0
 el6 strokeRect 0.5,0.5 719.5,0.5 719.5,899.5 0.5,899.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
 el6 stroke path2d#9b533da56a2e at 0.9,0,0,0.9,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.176 lineCap=round lineJoin=round}
 el6 stroke path2d#343c2e1e01e7 at 0.9,0,0,0.9,0,0 {fillStyle=#7dd3fc strokeStyle=#7dd3fc lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
-dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {imageSmoothingEnabled=false}
+dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el7.width = 208
 el7.height = 512
 el7.getContext 2d null
@@ -297,7 +297,7 @@ el7 clip nonzero [R(-512,0 208,0 208,900 -512,900)]
 el7 fillRect -512,0 208,0 208,900 -512,900 {fillStyle=#fdf6e3}
 el7 painter squared 800x1000 weight=1 at 0.9,0,0,0.9,-512,0
 el7 strokeRect -511.5,0.5 207.5,0.5 207.5,899.5 -511.5,899.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
-dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {imageSmoothingEnabled=false}
+dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el8.width = 512
 el8.height = 388
 el8.getContext 2d null
@@ -305,7 +305,7 @@ el8 clip nonzero [R(0,-512 720,-512 720,388 0,388)]
 el8 fillRect 0,-512 720,-512 720,388 0,388 {fillStyle=#fdf6e3}
 el8 painter squared 800x1000 weight=1 at 0.9,0,0,0.9,0,-512
 el8 strokeRect 0.5,-511.5 719.5,-511.5 719.5,387.5 0.5,387.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
-dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {imageSmoothingEnabled=false}
+dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el9.width = 208
 el9.height = 388
 el9.getContext 2d null
@@ -313,7 +313,7 @@ el9 clip nonzero [R(-512,-512 208,-512 208,388 -512,388)]
 el9 fillRect -512,-512 208,-512 208,388 -512,388 {fillStyle=#fdf6e3}
 el9 painter squared 800x1000 weight=1 at 0.9,0,0,0.9,-512,-512
 el9 strokeRect -511.5,-511.5 207.5,-511.5 207.5,387.5 -511.5,387.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
-dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {imageSmoothingEnabled=false}
+dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 complete=true stats={"level":0.9,"tiles":8,"tileBytes":5184000,"previews":0}
 # prefetch
 el10.width = 800
@@ -614,15 +614,41 @@ el10 stroke path2d#e77f75cc2cd7 at 1,0,0,1,0,0 {fillStyle=#16a34a strokeStyle=#1
 el10 stroke path2d#cb409475b3f4 at 1,0,0,1,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.168 lineCap=round lineJoin=round}
 el10 stroke path2d#88d4cdcbb006 at 1,0,0,1,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.1232 lineCap=round lineJoin=round}
 el10 stroke path2d#70d484e662f9 at 1,0,0,1,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.0556 lineCap=round lineJoin=round}
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
-dry drawImage el2 -> 24,-108 536,-108 536,404 24,404 {imageSmoothingEnabled=false}
-dry drawImage el3 -> 536,-108 744,-108 744,404 536,404 {imageSmoothingEnabled=false}
-dry drawImage el4 -> 24,404 536,404 536,792 24,792 {imageSmoothingEnabled=false}
-dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
-dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {imageSmoothingEnabled=false}
-dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {imageSmoothingEnabled=false}
-dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {imageSmoothingEnabled=false}
-dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {imageSmoothingEnabled=false}
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,-158 24,-158 24,-102 -32,-102 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,-158 744,-158 744,-102 24,-102 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,-158 800,-158 800,-102 744,-102 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,-102 24,-102 24,798 -32,798 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,792 744,792 744,798 24,798 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,-102 800,-102 800,798 744,798 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,798 24,798 24,854 -32,854 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,798 744,798 744,854 24,854 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,798 800,798 800,854 744,854 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,778 24,778 24,834 -32,834 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,778 744,778 744,834 24,834 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,778 800,778 800,834 744,834 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,834 24,834 24,1734 -32,1734 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,1728 744,1728 744,1734 24,1734 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,834 800,834 800,1734 744,1734 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,1734 24,1734 24,1790 -32,1790 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,1734 744,1734 744,1790 24,1790 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,1734 800,1734 800,1790 744,1790 {fillStyle=#3b3e45}
+dry fillRect 24,-108 744,-108 744,-106 24,-106 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 24,790 744,790 744,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 24,-106 26,-106 26,790 24,790 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 742,-106 744,-106 744,790 742,790 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el2 -> 24,-108 536,-108 536,404 24,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el3 -> 536,-108 744,-108 744,404 536,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el4 -> 24,404 536,404 536,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el5 -> 536,404 744,404 744,792 536,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 24,828 744,828 744,830 24,830 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,1726 744,1726 744,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,830 26,830 26,1726 24,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 742,830 744,830 744,1726 742,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 # wet strokes
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clip nonzero [R(24,-108 744,-108 744,792 24,792)]
@@ -731,7 +757,26 @@ el3.width = 0
 el3.height = 0
 el10.width = 0
 el10.height = 0
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,-158 24,-158 24,-102 -32,-102 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,-158 744,-158 744,-102 24,-102 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,-158 800,-158 800,-102 744,-102 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,-102 24,-102 24,798 -32,798 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,792 744,792 744,798 24,798 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,-102 800,-102 800,798 744,798 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,798 24,798 24,854 -32,854 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,798 744,798 744,854 24,854 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,798 800,798 800,854 744,854 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,778 24,778 24,834 -32,834 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,778 744,778 744,834 24,834 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,778 800,778 800,834 744,834 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,834 24,834 24,1734 -32,1734 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,1728 744,1728 744,1734 24,1734 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,834 800,834 800,1734 744,1734 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,1734 24,1734 24,1790 -32,1790 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,1734 744,1734 744,1790 24,1790 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,1734 800,1734 800,1790 744,1790 {fillStyle=#3b3e45}
+dry fillRect 24,-108 744,-108 744,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el12.width = 512
 el12.height = 512
 el12.getContext 2d null
@@ -897,7 +942,7 @@ el12 stroke path2d#e77f75cc2cd7 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyl
 el12 stroke path2d#cb409475b3f4 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.168 lineCap=round lineJoin=round}
 el12 stroke path2d#88d4cdcbb006 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.1232 lineCap=round lineJoin=round}
 el12 stroke path2d#70d484e662f9 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.0556 lineCap=round lineJoin=round}
-dry drawImage el12 -> 24,-108 536,-108 536,404 24,404 {imageSmoothingEnabled=false}
+dry drawImage el12 -> 24,-108 536,-108 536,404 24,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el13.width = 208
 el13.height = 512
 el13.getContext 2d null
@@ -954,13 +999,17 @@ el13 stroke path2d#76b48bfe4a69 at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeS
 el13 stroke path2d#a0f90011813e at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.2994 lineCap=round lineJoin=round}
 el13 stroke path2d#4a29d4c3d8de at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.2157 lineCap=round lineJoin=round}
 el13 stroke path2d#bacbead11317 at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.1316 lineCap=round lineJoin=round}
-dry drawImage el13 -> 536,-108 744,-108 744,404 536,404 {imageSmoothingEnabled=false}
-dry drawImage el4 -> 24,404 536,404 536,792 24,792 {imageSmoothingEnabled=false}
-dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
-dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {imageSmoothingEnabled=false}
-dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {imageSmoothingEnabled=false}
-dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {imageSmoothingEnabled=false}
-dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {imageSmoothingEnabled=false}
+dry drawImage el13 -> 536,-108 744,-108 744,404 536,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el4 -> 24,404 536,404 536,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el5 -> 536,404 744,404 744,792 536,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 24,828 744,828 744,830 24,830 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,1726 744,1726 744,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,830 26,830 26,1726 24,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 742,830 744,830 744,1726 742,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clip nonzero [R(24,-108 744,-108 744,792 24,792)]
 wet image i1 200x120 scale=0.9 at 0.8598,0.266,-0.266,0.8598,511.9778,11.815
@@ -976,7 +1025,26 @@ el12.width = 0
 el12.height = 0
 el13.width = 0
 el13.height = 0
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,-158 24,-158 24,-102 -32,-102 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,-158 744,-158 744,-102 24,-102 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,-158 800,-158 800,-102 744,-102 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,-102 24,-102 24,798 -32,798 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,792 744,792 744,798 24,798 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,-102 800,-102 800,798 744,798 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,798 24,798 24,854 -32,854 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,798 744,798 744,854 24,854 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,798 800,798 800,854 744,854 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -32,778 24,778 24,834 -32,834 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> 24,778 744,778 744,834 24,834 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 744,778 800,778 800,834 744,834 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -32,834 24,834 24,1734 -32,1734 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> 24,1728 744,1728 744,1734 24,1734 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 744,834 800,834 800,1734 744,1734 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -32,1734 24,1734 24,1790 -32,1790 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> 24,1734 744,1734 744,1790 24,1790 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 744,1734 800,1734 800,1790 744,1790 {fillStyle=#3b3e45}
+dry fillRect 24,-108 744,-108 744,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el14.width = 512
 el14.height = 512
 el14.getContext 2d null
@@ -1161,7 +1229,7 @@ el14 stroke path2d#e77f75cc2cd7 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyl
 el14 stroke path2d#cb409475b3f4 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.168 lineCap=round lineJoin=round}
 el14 stroke path2d#88d4cdcbb006 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.1232 lineCap=round lineJoin=round}
 el14 stroke path2d#70d484e662f9 at 0.9,0,0,0.9,0,0 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=2.0556 lineCap=round lineJoin=round}
-dry drawImage el14 -> 24,-108 536,-108 536,404 24,404 {imageSmoothingEnabled=false}
+dry drawImage el14 -> 24,-108 536,-108 536,404 24,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el15.width = 208
 el15.height = 512
 el15.getContext 2d null
@@ -1219,40 +1287,43 @@ el15 stroke path2d#76b48bfe4a69 at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeS
 el15 stroke path2d#a0f90011813e at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.2994 lineCap=round lineJoin=round}
 el15 stroke path2d#4a29d4c3d8de at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.2157 lineCap=round lineJoin=round}
 el15 stroke path2d#bacbead11317 at 0.9,0,0,0.9,-512,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.1316 lineCap=round lineJoin=round}
-dry drawImage el15 -> 536,-108 744,-108 744,404 536,404 {imageSmoothingEnabled=false}
-dry drawImage el4 -> 24,404 536,404 536,792 24,792 {imageSmoothingEnabled=false}
-dry drawImage el5 -> 536,404 744,404 744,792 536,792 {imageSmoothingEnabled=false}
-dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {imageSmoothingEnabled=false}
-dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {imageSmoothingEnabled=false}
-dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {imageSmoothingEnabled=false}
-dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {imageSmoothingEnabled=false}
+dry drawImage el15 -> 536,-108 744,-108 744,404 536,404 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el4 -> 24,404 536,404 536,792 24,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el5 -> 536,404 744,404 744,792 536,792 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 24,828 744,828 744,830 24,830 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,1726 744,1726 744,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 24,830 26,830 26,1726 24,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 742,830 744,830 744,1726 742,1726 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el6 -> 24,828 536,828 536,1340 24,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el7 -> 536,828 744,828 744,1340 536,1340 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el8 -> 24,1340 536,1340 536,1728 24,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 # pinch in flight, then settle
 transient=true level=0.9
-backdrop fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,0,56,56] -> -136,-590 -80,-590 -80,-534 -136,-534 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,0,8,56] -> -80,-590 1360,-590 1360,-534 -80,-534 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,0,56,56] -> 1360,-590 1416,-590 1416,-534 1360,-534 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,56,56,8] -> -136,-534 -80,-534 -80,1266 -136,1266 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,1] -> -80,1260 1360,1260 1360,1266 -80,1266 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,56,56,8] -> 1360,-534 1416,-534 1416,1266 1360,1266 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,64,56,56] -> -136,1266 -80,1266 -80,1322 -136,1322 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,56] -> -80,1266 1360,1266 1360,1322 -80,1322 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,64,56,56] -> 1360,1266 1416,1266 1416,1322 1360,1322 {fillStyle=#3b3e45}
-backdrop fillRect -80,-540 1360,-540 1360,1260 -80,1260 {fillStyle=#ffffff}
-backdrop drawImage el1[0,0,56,56] -> -136,1282 -80,1282 -80,1338 -136,1338 {fillStyle=#ffffff}
-backdrop drawImage el1[56,0,8,56] -> -80,1282 1360,1282 1360,1338 -80,1338 {fillStyle=#ffffff}
-backdrop drawImage el1[64,0,56,56] -> 1360,1282 1416,1282 1416,1338 1360,1338 {fillStyle=#ffffff}
-backdrop drawImage el1[0,56,56,8] -> -136,1338 -80,1338 -80,3138 -136,3138 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,1] -> -80,3132 1360,3132 1360,3138 -80,3138 {fillStyle=#ffffff}
-backdrop drawImage el1[64,56,56,8] -> 1360,1338 1416,1338 1416,3138 1360,3138 {fillStyle=#ffffff}
-backdrop drawImage el1[0,64,56,56] -> -136,3138 -80,3138 -80,3194 -136,3194 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,56] -> -80,3138 1360,3138 1360,3194 -80,3194 {fillStyle=#ffffff}
-backdrop drawImage el1[64,64,56,56] -> 1360,3138 1416,3138 1416,3194 1360,3194 {fillStyle=#ffffff}
-backdrop fillRect -80,1332 1360,1332 1360,3132 -80,3132 {fillStyle=#fdf6e3}
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
-dry drawImage el14 -> -80,-540 944,-540 944,484 -80,484
-dry drawImage el4 -> -80,484 944,484 944,1260 -80,1260
-dry drawImage el6 -> -80,1332 944,1332 944,2356 -80,2356
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,-590 -80,-590 -80,-534 -136,-534 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,-590 1360,-590 1360,-534 -80,-534 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,-590 1416,-590 1416,-534 1360,-534 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,-534 -80,-534 -80,1266 -136,1266 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,1260 1360,1260 1360,1266 -80,1266 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,-534 1416,-534 1416,1266 1360,1266 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,1266 -80,1266 -80,1322 -136,1322 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,1266 1360,1266 1360,1322 -80,1322 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,1266 1416,1266 1416,1322 1360,1322 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,1282 -80,1282 -80,1338 -136,1338 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,1282 1360,1282 1360,1338 -80,1338 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,1282 1416,1282 1416,1338 1360,1338 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,1338 -80,1338 -80,3138 -136,3138 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,3132 1360,3132 1360,3138 -80,3138 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,1338 1416,1338 1416,3138 1360,3138 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,3138 -80,3138 -80,3194 -136,3194 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,3138 1360,3138 1360,3194 -80,3194 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,3138 1416,3138 1416,3194 1360,3194 {fillStyle=#3b3e45}
+dry fillRect -80,-540 1360,-540 1360,1260 -80,1260 {fillStyle=#ffffff}
+dry drawImage el14 -> -80,-540 944,-540 944,484 -80,484 {fillStyle=#ffffff}
+dry drawImage el4 -> -80,484 944,484 944,1260 -80,1260 {fillStyle=#ffffff}
+dry fillRect -80,1332 1360,1332 1360,3132 -80,3132 {fillStyle=#fdf6e3}
+dry drawImage el6 -> -80,1332 944,1332 944,2356 -80,2356 {fillStyle=#fdf6e3}
 complete=true
 el15.width = 0
 el15.height = 0
@@ -1271,7 +1342,26 @@ el4.height = 0
 el6.width = 0
 el6.height = 0
 transient=false level=1.8
-dry clearRect 0,0 780,0 780,1400 0,1400
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,-590 -80,-590 -80,-534 -136,-534 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,-590 1360,-590 1360,-534 -80,-534 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,-590 1416,-590 1416,-534 1360,-534 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,-534 -80,-534 -80,1266 -136,1266 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,1260 1360,1260 1360,1266 -80,1266 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,-534 1416,-534 1416,1266 1360,1266 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,1266 -80,1266 -80,1322 -136,1322 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,1266 1360,1266 1360,1322 -80,1322 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,1266 1416,1266 1416,1322 1360,1322 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,1282 -80,1282 -80,1338 -136,1338 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,1282 1360,1282 1360,1338 -80,1338 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,1282 1416,1282 1416,1338 1360,1338 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,1338 -80,1338 -80,3138 -136,3138 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,3132 1360,3132 1360,3138 -80,3138 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,1338 1416,1338 1416,3138 1360,3138 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,3138 -80,3138 -80,3194 -136,3194 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,3138 1360,3138 1360,3194 -80,3194 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,3138 1416,3138 1416,3194 1360,3194 {fillStyle=#3b3e45}
+dry fillRect -80,-540 1360,-540 1360,1260 -80,1260 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el16.width = 512
 el16.height = 512
 el16.getContext 2d null
@@ -1282,7 +1372,7 @@ el16 strokeRect 0.5,-511.5 1439.5,-511.5 1439.5,1287.5 0.5,1287.5 {fillStyle=#ff
 el16 stroke path2d#4753e795d1bc at 1.8,0,0,1.8,0,-512 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=5 lineCap=round lineJoin=round}
 el16 stroke path2d#d70b6aa3446c at 1.8,0,0,1.8,0,-512 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el16 stroke path2d#15bf6353e912 at 1.8,0,0,1.8,0,-512 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el16 -> -80,-28 432,-28 432,484 -80,484 {imageSmoothingEnabled=false}
+dry drawImage el16 -> -80,-28 432,-28 432,484 -80,484 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el17.width = 512
 el17.height = 512
 el17.getContext 2d null
@@ -1295,7 +1385,7 @@ el17 stroke path2d#4753e795d1bc at 1.8,0,0,1.8,-512,-512 {fillStyle=#1a1a1a stro
 el17 stroke path2d#d70b6aa3446c at 1.8,0,0,1.8,-512,-512 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el17 stroke path2d#8feac8c51484 at 1.8,0,0,1.8,-512,-512 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=3 lineCap=round lineJoin=round}
 el17 stroke path2d#15bf6353e912 at 1.8,0,0,1.8,-512,-512 {fillStyle=#16a34a strokeStyle=#16a34a lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el17 -> 432,-28 944,-28 944,484 432,484 {imageSmoothingEnabled=false}
+dry drawImage el17 -> 432,-28 944,-28 944,484 432,484 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el18.width = 512
 el18.height = 512
 el18.getContext 2d null
@@ -1305,7 +1395,7 @@ el18 painter ruled-narrow 800x1000 weight=1 at 1.8,0,0,1.8,0,-1024
 el18 strokeRect 0.5,-1023.5 1439.5,-1023.5 1439.5,775.5 0.5,775.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el18 stroke path2d#d70b6aa3446c at 1.8,0,0,1.8,0,-1024 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el18 stroke path2d#a7fc28f51d10 at 1.8,0,0,1.8,0,-1024 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el18 -> -80,484 432,484 432,996 -80,996 {imageSmoothingEnabled=false}
+dry drawImage el18 -> -80,484 432,484 432,996 -80,996 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el19.width = 512
 el19.height = 512
 el19.getContext 2d null
@@ -1315,7 +1405,7 @@ el19 painter ruled-narrow 800x1000 weight=1 at 1.8,0,0,1.8,-512,-1024
 el19 strokeRect -511.5,-1023.5 927.5,-1023.5 927.5,775.5 -511.5,775.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el19 stroke path2d#d70b6aa3446c at 1.8,0,0,1.8,-512,-1024 {fillStyle=#ffd400 strokeStyle=#ffd400 lineWidth=12 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
 el19 stroke path2d#a7fc28f51d10 at 1.8,0,0,1.8,-512,-1024 {fillStyle=#2563eb strokeStyle=#2563eb lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el19 -> 432,484 944,484 944,996 432,996 {imageSmoothingEnabled=false}
+dry drawImage el19 -> 432,484 944,484 944,996 432,996 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el20.width = 512
 el20.height = 264
 el20.getContext 2d null
@@ -1324,7 +1414,7 @@ el20 fillRect 0,-1536 1440,-1536 1440,264 0,264 {fillStyle=#ffffff}
 el20 painter ruled-narrow 800x1000 weight=1 at 1.8,0,0,1.8,0,-1536
 el20 strokeRect 0.5,-1535.5 1439.5,-1535.5 1439.5,263.5 0.5,263.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el20 stroke path2d#6b6d69c17fc4 at 1.8,0,0,1.8,0,-1536 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=3 lineCap=round lineJoin=round}
-dry drawImage el20 -> -80,996 432,996 432,1260 -80,1260 {imageSmoothingEnabled=false}
+dry drawImage el20 -> -80,996 432,996 432,1260 -80,1260 {fillStyle=#ffffff imageSmoothingEnabled=false}
 el21.width = 512
 el21.height = 264
 el21.getContext 2d null
@@ -1332,8 +1422,9 @@ el21 clip nonzero [R(-512,-1536 928,-1536 928,264 -512,264)]
 el21 fillRect -512,-1536 928,-1536 928,264 -512,264 {fillStyle=#ffffff}
 el21 painter ruled-narrow 800x1000 weight=1 at 1.8,0,0,1.8,-512,-1536
 el21 strokeRect -511.5,-1535.5 927.5,-1535.5 927.5,263.5 -511.5,263.5 {fillStyle=#ffffff strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
-dry drawImage el21 -> 432,996 944,996 944,1260 432,1260 {imageSmoothingEnabled=false}
-dry drawImage el11 -> -80,1332 1360,1332 1360,3132 -80,3132 {imageSmoothingEnabled=false}
+dry drawImage el21 -> 432,996 944,996 944,1260 432,1260 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect -80,1332 1360,1332 1360,3132 -80,3132 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el11 -> -80,1332 1360,1332 1360,3132 -80,3132 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el22.width = 512
 el22.height = 512
 el22.getContext 2d null
@@ -1342,7 +1433,7 @@ el22 fillRect 0,0 1440,0 1440,1800 0,1800 {fillStyle=#fdf6e3}
 el22 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,0
 el22 strokeRect 0.5,0.5 1439.5,0.5 1439.5,1799.5 0.5,1799.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el22 stroke path2d#9b533da56a2e at 1.8,0,0,1.8,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=4 lineCap=round lineJoin=round}
-dry drawImage el22 -> -80,1332 432,1332 432,1844 -80,1844 {imageSmoothingEnabled=false}
+dry drawImage el22 -> -80,1332 432,1332 432,1844 -80,1844 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el23.width = 512
 el23.height = 512
 el23.getContext 2d null
@@ -1350,34 +1441,36 @@ el23 clip nonzero [R(-512,0 928,0 928,1800 -512,1800)]
 el23 fillRect -512,0 928,0 928,1800 -512,1800 {fillStyle=#fdf6e3}
 el23 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,0
 el23 strokeRect -511.5,0.5 927.5,0.5 927.5,1799.5 -511.5,1799.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
-dry drawImage el23 -> 432,1332 944,1332 944,1844 432,1844 {imageSmoothingEnabled=false}
-backdrop fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,0,56,56] -> -136,-1670 -80,-1670 -80,-1614 -136,-1614 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,0,8,56] -> -80,-1670 1360,-1670 1360,-1614 -80,-1614 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,0,56,56] -> 1360,-1670 1416,-1670 1416,-1614 1360,-1614 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,56,56,8] -> -136,-1614 -80,-1614 -80,186 -136,186 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,1] -> -80,180 1360,180 1360,186 -80,186 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,56,56,8] -> 1360,-1614 1416,-1614 1416,186 1360,186 {fillStyle=#3b3e45}
-backdrop drawImage el1[0,64,56,56] -> -136,186 -80,186 -80,242 -136,242 {fillStyle=#3b3e45}
-backdrop drawImage el1[56,64,8,56] -> -80,186 1360,186 1360,242 -80,242 {fillStyle=#3b3e45}
-backdrop drawImage el1[64,64,56,56] -> 1360,186 1416,186 1416,242 1360,242 {fillStyle=#3b3e45}
-backdrop fillRect -80,-1620 1360,-1620 1360,180 -80,180 {fillStyle=#ffffff}
-backdrop drawImage el1[0,0,56,56] -> -136,202 -80,202 -80,258 -136,258 {fillStyle=#ffffff}
-backdrop drawImage el1[56,0,8,56] -> -80,202 1360,202 1360,258 -80,258 {fillStyle=#ffffff}
-backdrop drawImage el1[64,0,56,56] -> 1360,202 1416,202 1416,258 1360,258 {fillStyle=#ffffff}
-backdrop drawImage el1[0,56,56,8] -> -136,258 -80,258 -80,2058 -136,2058 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,1] -> -80,2052 1360,2052 1360,2058 -80,2058 {fillStyle=#ffffff}
-backdrop drawImage el1[64,56,56,8] -> 1360,258 1416,258 1416,2058 1360,2058 {fillStyle=#ffffff}
-backdrop drawImage el1[0,64,56,56] -> -136,2058 -80,2058 -80,2114 -136,2114 {fillStyle=#ffffff}
-backdrop drawImage el1[56,64,8,56] -> -80,2058 1360,2058 1360,2114 -80,2114 {fillStyle=#ffffff}
-backdrop drawImage el1[64,64,56,56] -> 1360,2058 1416,2058 1416,2114 1360,2114 {fillStyle=#ffffff}
-backdrop fillRect -80,252 1360,252 1360,2052 -80,2052 {fillStyle=#fdf6e3}
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
-dry drawImage el20 -> -80,-84 432,-84 432,180 -80,180 {imageSmoothingEnabled=false}
-dry drawImage el21 -> 432,-84 944,-84 944,180 432,180 {imageSmoothingEnabled=false}
-dry drawImage el11 -> -80,252 1360,252 1360,2052 -80,2052 {imageSmoothingEnabled=false}
-dry drawImage el22 -> -80,252 432,252 432,764 -80,764 {imageSmoothingEnabled=false}
-dry drawImage el23 -> 432,252 944,252 944,764 432,764 {imageSmoothingEnabled=false}
+dry drawImage el23 -> 432,1332 944,1332 944,1844 432,1844 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,-1670 -80,-1670 -80,-1614 -136,-1614 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,-1670 1360,-1670 1360,-1614 -80,-1614 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,-1670 1416,-1670 1416,-1614 1360,-1614 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,-1614 -80,-1614 -80,186 -136,186 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,180 1360,180 1360,186 -80,186 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,-1614 1416,-1614 1416,186 1360,186 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,186 -80,186 -80,242 -136,242 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,186 1360,186 1360,242 -80,242 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,186 1416,186 1416,242 1360,242 {fillStyle=#3b3e45}
+dry drawImage el1[0,0,56,56] -> -136,202 -80,202 -80,258 -136,258 {fillStyle=#3b3e45}
+dry drawImage el1[56,0,8,56] -> -80,202 1360,202 1360,258 -80,258 {fillStyle=#3b3e45}
+dry drawImage el1[64,0,56,56] -> 1360,202 1416,202 1416,258 1360,258 {fillStyle=#3b3e45}
+dry drawImage el1[0,56,56,8] -> -136,258 -80,258 -80,2058 -136,2058 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,1] -> -80,2052 1360,2052 1360,2058 -80,2058 {fillStyle=#3b3e45}
+dry drawImage el1[64,56,56,8] -> 1360,258 1416,258 1416,2058 1360,2058 {fillStyle=#3b3e45}
+dry drawImage el1[0,64,56,56] -> -136,2058 -80,2058 -80,2114 -136,2114 {fillStyle=#3b3e45}
+dry drawImage el1[56,64,8,56] -> -80,2058 1360,2058 1360,2114 -80,2114 {fillStyle=#3b3e45}
+dry drawImage el1[64,64,56,56] -> 1360,2058 1416,2058 1416,2114 1360,2114 {fillStyle=#3b3e45}
+dry fillRect -80,-1620 1360,-1620 1360,-1618 -80,-1618 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect -80,178 1360,178 1360,180 -80,180 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect -80,-1618 -78,-1618 -78,178 -80,178 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect 1358,-1618 1360,-1618 1360,178 1358,178 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el20 -> -80,-84 432,-84 432,180 -80,180 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry drawImage el21 -> 432,-84 944,-84 944,180 432,180 {fillStyle=#ffffff imageSmoothingEnabled=false}
+dry fillRect -80,252 1360,252 1360,2052 -80,2052 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el11 -> -80,252 1360,252 1360,2052 -80,2052 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el22 -> -80,252 432,252 432,764 -80,764 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
+dry drawImage el23 -> 432,252 944,252 944,764 432,764 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el24.width = 512
 el24.height = 512
 el24.getContext 2d null
@@ -1386,7 +1479,7 @@ el24 fillRect 0,-512 1440,-512 1440,1288 0,1288 {fillStyle=#fdf6e3}
 el24 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,-512
 el24 strokeRect 0.5,-511.5 1439.5,-511.5 1439.5,1287.5 0.5,1287.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el24 stroke path2d#343c2e1e01e7 at 1.8,0,0,1.8,0,-512 {fillStyle=#7dd3fc strokeStyle=#7dd3fc lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
-dry drawImage el24 -> -80,764 432,764 432,1276 -80,1276 {imageSmoothingEnabled=false}
+dry drawImage el24 -> -80,764 432,764 432,1276 -80,1276 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el25.width = 512
 el25.height = 512
 el25.getContext 2d null
@@ -1395,7 +1488,7 @@ el25 fillRect -512,-512 928,-512 928,1288 -512,1288 {fillStyle=#fdf6e3}
 el25 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,-512
 el25 strokeRect -511.5,-511.5 927.5,-511.5 927.5,1287.5 -511.5,1287.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
 el25 stroke path2d#343c2e1e01e7 at 1.8,0,0,1.8,-512,-512 {fillStyle=#7dd3fc strokeStyle=#7dd3fc lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
-dry drawImage el25 -> 432,764 944,764 944,1276 432,1276 {imageSmoothingEnabled=false}
+dry drawImage el25 -> 432,764 944,764 944,1276 432,1276 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el26.width = 512
 el26.height = 512
 el26.getContext 2d null
@@ -1403,7 +1496,7 @@ el26 clip nonzero [R(0,-1024 1440,-1024 1440,776 0,776)]
 el26 fillRect 0,-1024 1440,-1024 1440,776 0,776 {fillStyle=#fdf6e3}
 el26 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,-1024
 el26 strokeRect 0.5,-1023.5 1439.5,-1023.5 1439.5,775.5 0.5,775.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
-dry drawImage el26 -> -80,1276 432,1276 432,1788 -80,1788 {imageSmoothingEnabled=false}
+dry drawImage el26 -> -80,1276 432,1276 432,1788 -80,1788 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 el27.width = 512
 el27.height = 512
 el27.getContext 2d null
@@ -1411,7 +1504,7 @@ el27 clip nonzero [R(-512,-1024 928,-1024 928,776 -512,776)]
 el27 fillRect -512,-1024 928,-1024 928,776 -512,776 {fillStyle=#fdf6e3}
 el27 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,-1024
 el27 strokeRect -511.5,-1023.5 927.5,-1023.5 927.5,775.5 -511.5,775.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=0.5556}
-dry drawImage el27 -> 432,1276 944,1276 944,1788 432,1788 {imageSmoothingEnabled=false}
+dry drawImage el27 -> 432,1276 944,1276 944,1788 432,1788 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
 # dark paper and a lighter highlighter
 el22.width = 0
 el22.height = 0
@@ -1440,33 +1533,32 @@ el20.height = 0
 el21.width = 0
 el21.height = 0
 backdrop fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#0e0f11}
+dry fillRect 0,0 780,0 780,1400 0,1400 {fillStyle=#0e0f11}
 el1.width = 0
 el1.height = 0
 el28.height = 120
 el28.width = 120
 el28.getContext 2d null
 el28 fillRect -184,56 -176,56 -176,64 -184,64 {shadowColor=rgba(0, 0, 0, 0.6) shadowBlur=28 shadowOffsetX=240}
-backdrop drawImage el28[0,0,56,56] -> -136,-1670 -80,-1670 -80,-1614 -136,-1614 {fillStyle=#0e0f11}
-backdrop drawImage el28[56,0,8,56] -> -80,-1670 1360,-1670 1360,-1614 -80,-1614 {fillStyle=#0e0f11}
-backdrop drawImage el28[64,0,56,56] -> 1360,-1670 1416,-1670 1416,-1614 1360,-1614 {fillStyle=#0e0f11}
-backdrop drawImage el28[0,56,56,8] -> -136,-1614 -80,-1614 -80,186 -136,186 {fillStyle=#0e0f11}
-backdrop drawImage el28[56,64,8,1] -> -80,180 1360,180 1360,186 -80,186 {fillStyle=#0e0f11}
-backdrop drawImage el28[64,56,56,8] -> 1360,-1614 1416,-1614 1416,186 1360,186 {fillStyle=#0e0f11}
-backdrop drawImage el28[0,64,56,56] -> -136,186 -80,186 -80,242 -136,242 {fillStyle=#0e0f11}
-backdrop drawImage el28[56,64,8,56] -> -80,186 1360,186 1360,242 -80,242 {fillStyle=#0e0f11}
-backdrop drawImage el28[64,64,56,56] -> 1360,186 1416,186 1416,242 1360,242 {fillStyle=#0e0f11}
-backdrop fillRect -80,-1620 1360,-1620 1360,180 -80,180 {fillStyle=#1b1b1b}
-backdrop drawImage el28[0,0,56,56] -> -136,202 -80,202 -80,258 -136,258 {fillStyle=#1b1b1b}
-backdrop drawImage el28[56,0,8,56] -> -80,202 1360,202 1360,258 -80,258 {fillStyle=#1b1b1b}
-backdrop drawImage el28[64,0,56,56] -> 1360,202 1416,202 1416,258 1360,258 {fillStyle=#1b1b1b}
-backdrop drawImage el28[0,56,56,8] -> -136,258 -80,258 -80,2058 -136,2058 {fillStyle=#1b1b1b}
-backdrop drawImage el28[56,64,8,1] -> -80,2052 1360,2052 1360,2058 -80,2058 {fillStyle=#1b1b1b}
-backdrop drawImage el28[64,56,56,8] -> 1360,258 1416,258 1416,2058 1360,2058 {fillStyle=#1b1b1b}
-backdrop drawImage el28[0,64,56,56] -> -136,2058 -80,2058 -80,2114 -136,2114 {fillStyle=#1b1b1b}
-backdrop drawImage el28[56,64,8,56] -> -80,2058 1360,2058 1360,2114 -80,2114 {fillStyle=#1b1b1b}
-backdrop drawImage el28[64,64,56,56] -> 1360,2058 1416,2058 1416,2114 1360,2114 {fillStyle=#1b1b1b}
-backdrop fillRect -80,252 1360,252 1360,2052 -80,2052 {fillStyle=#363122}
-dry clearRect 0,0 780,0 780,1400 0,1400 {imageSmoothingEnabled=false}
+dry drawImage el28[0,0,56,56] -> -136,-1670 -80,-1670 -80,-1614 -136,-1614 {fillStyle=#0e0f11}
+dry drawImage el28[56,0,8,56] -> -80,-1670 1360,-1670 1360,-1614 -80,-1614 {fillStyle=#0e0f11}
+dry drawImage el28[64,0,56,56] -> 1360,-1670 1416,-1670 1416,-1614 1360,-1614 {fillStyle=#0e0f11}
+dry drawImage el28[0,56,56,8] -> -136,-1614 -80,-1614 -80,186 -136,186 {fillStyle=#0e0f11}
+dry drawImage el28[56,64,8,1] -> -80,180 1360,180 1360,186 -80,186 {fillStyle=#0e0f11}
+dry drawImage el28[64,56,56,8] -> 1360,-1614 1416,-1614 1416,186 1360,186 {fillStyle=#0e0f11}
+dry drawImage el28[0,64,56,56] -> -136,186 -80,186 -80,242 -136,242 {fillStyle=#0e0f11}
+dry drawImage el28[56,64,8,56] -> -80,186 1360,186 1360,242 -80,242 {fillStyle=#0e0f11}
+dry drawImage el28[64,64,56,56] -> 1360,186 1416,186 1416,242 1360,242 {fillStyle=#0e0f11}
+dry drawImage el28[0,0,56,56] -> -136,202 -80,202 -80,258 -136,258 {fillStyle=#0e0f11}
+dry drawImage el28[56,0,8,56] -> -80,202 1360,202 1360,258 -80,258 {fillStyle=#0e0f11}
+dry drawImage el28[64,0,56,56] -> 1360,202 1416,202 1416,258 1360,258 {fillStyle=#0e0f11}
+dry drawImage el28[0,56,56,8] -> -136,258 -80,258 -80,2058 -136,2058 {fillStyle=#0e0f11}
+dry drawImage el28[56,64,8,1] -> -80,2052 1360,2052 1360,2058 -80,2058 {fillStyle=#0e0f11}
+dry drawImage el28[64,56,56,8] -> 1360,258 1416,258 1416,2058 1360,2058 {fillStyle=#0e0f11}
+dry drawImage el28[0,64,56,56] -> -136,2058 -80,2058 -80,2114 -136,2114 {fillStyle=#0e0f11}
+dry drawImage el28[56,64,8,56] -> -80,2058 1360,2058 1360,2114 -80,2114 {fillStyle=#0e0f11}
+dry drawImage el28[64,64,56,56] -> 1360,2058 1416,2058 1416,2114 1360,2114 {fillStyle=#0e0f11}
+dry fillRect -80,-1620 1360,-1620 1360,180 -80,180 {fillStyle=#1b1b1b imageSmoothingEnabled=false}
 el29.width = 512
 el29.height = 264
 el29.getContext 2d null
@@ -1519,7 +1611,7 @@ el29 stroke path2d#dfd890e1356a at 1.8,0,0,1.8,0,-1536 {fillStyle=#e8e8e8 stroke
 el29 stroke path2d#d1428f919e34 at 1.8,0,0,1.8,0,-1536 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.4227 lineCap=round lineJoin=round}
 el29 stroke path2d#43bebc51d834 at 1.8,0,0,1.8,0,-1536 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.3403 lineCap=round lineJoin=round}
 el29 stroke path2d#d0e6d210caef at 1.8,0,0,1.8,0,-1536 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.2579 lineCap=round lineJoin=round}
-dry drawImage el29 -> -80,-84 432,-84 432,180 -80,180 {imageSmoothingEnabled=false}
+dry drawImage el29 -> -80,-84 432,-84 432,180 -80,180 {fillStyle=#1b1b1b imageSmoothingEnabled=false}
 el30.width = 512
 el30.height = 264
 el30.getContext 2d null
@@ -1527,7 +1619,8 @@ el30 clip nonzero [R(-512,-1536 928,-1536 928,264 -512,264)]
 el30 fillRect -512,-1536 928,-1536 928,264 -512,264 {fillStyle=#1b1b1b}
 el30 painter ruled-narrow 800x1000 weight=1 at 1.8,0,0,1.8,-512,-1536
 el30 strokeRect -511.5,-1535.5 927.5,-1535.5 927.5,263.5 -511.5,263.5 {fillStyle=#1b1b1b strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
-dry drawImage el30 -> 432,-84 944,-84 944,180 432,180 {imageSmoothingEnabled=false}
+dry drawImage el30 -> 432,-84 944,-84 944,180 432,180 {fillStyle=#1b1b1b imageSmoothingEnabled=false}
+dry fillRect -80,252 1360,252 1360,2052 -80,2052 {fillStyle=#363122 imageSmoothingEnabled=false}
 el31.width = 512
 el31.height = 512
 el31.getContext 2d null
@@ -1536,7 +1629,7 @@ el31 fillRect 0,0 1440,0 1440,1800 0,1800 {fillStyle=#363122}
 el31 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,0
 el31 strokeRect 0.5,0.5 1439.5,0.5 1439.5,1799.5 0.5,1799.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
 el31 stroke path2d#9b533da56a2e at 1.8,0,0,1.8,0,0 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.176 lineCap=round lineJoin=round}
-dry drawImage el31 -> -80,252 432,252 432,764 -80,764 {imageSmoothingEnabled=false}
+dry drawImage el31 -> -80,252 432,252 432,764 -80,764 {fillStyle=#363122 imageSmoothingEnabled=false}
 el32.width = 512
 el32.height = 512
 el32.getContext 2d null
@@ -1544,7 +1637,7 @@ el32 clip nonzero [R(-512,0 928,0 928,1800 -512,1800)]
 el32 fillRect -512,0 928,0 928,1800 -512,1800 {fillStyle=#363122}
 el32 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,0
 el32 strokeRect -511.5,0.5 927.5,0.5 927.5,1799.5 -511.5,1799.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
-dry drawImage el32 -> 432,252 944,252 944,764 432,764 {imageSmoothingEnabled=false}
+dry drawImage el32 -> 432,252 944,252 944,764 432,764 {fillStyle=#363122 imageSmoothingEnabled=false}
 el33.width = 512
 el33.height = 512
 el33.getContext 2d null
@@ -1553,7 +1646,7 @@ el33 fillRect 0,-512 1440,-512 1440,1288 0,1288 {fillStyle=#363122}
 el33 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,-512
 el33 strokeRect 0.5,-511.5 1439.5,-511.5 1439.5,1287.5 0.5,1287.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
 el33 stroke path2d#343c2e1e01e7 at 1.8,0,0,1.8,0,-512 {fillStyle=#2985ab strokeStyle=#2985ab lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.25 globalCompositeOperation=screen}
-dry drawImage el33 -> -80,764 432,764 432,1276 -80,1276 {imageSmoothingEnabled=false}
+dry drawImage el33 -> -80,764 432,764 432,1276 -80,1276 {fillStyle=#363122 imageSmoothingEnabled=false}
 el34.width = 512
 el34.height = 512
 el34.getContext 2d null
@@ -1562,7 +1655,7 @@ el34 fillRect -512,-512 928,-512 928,1288 -512,1288 {fillStyle=#363122}
 el34 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,-512
 el34 strokeRect -511.5,-511.5 927.5,-511.5 927.5,1287.5 -511.5,1287.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
 el34 stroke path2d#343c2e1e01e7 at 1.8,0,0,1.8,-512,-512 {fillStyle=#2985ab strokeStyle=#2985ab lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.25 globalCompositeOperation=screen}
-dry drawImage el34 -> 432,764 944,764 944,1276 432,1276 {imageSmoothingEnabled=false}
+dry drawImage el34 -> 432,764 944,764 944,1276 432,1276 {fillStyle=#363122 imageSmoothingEnabled=false}
 el35.width = 512
 el35.height = 512
 el35.getContext 2d null
@@ -1570,7 +1663,7 @@ el35 clip nonzero [R(0,-1024 1440,-1024 1440,776 0,776)]
 el35 fillRect 0,-1024 1440,-1024 1440,776 0,776 {fillStyle=#363122}
 el35 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,0,-1024
 el35 strokeRect 0.5,-1023.5 1439.5,-1023.5 1439.5,775.5 0.5,775.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
-dry drawImage el35 -> -80,1276 432,1276 432,1788 -80,1788 {imageSmoothingEnabled=false}
+dry drawImage el35 -> -80,1276 432,1276 432,1788 -80,1788 {fillStyle=#363122 imageSmoothingEnabled=false}
 el36.width = 512
 el36.height = 512
 el36.getContext 2d null
@@ -1578,7 +1671,7 @@ el36 clip nonzero [R(-512,-1024 928,-1024 928,776 -512,776)]
 el36 fillRect -512,-1024 928,-1024 928,776 -512,776 {fillStyle=#363122}
 el36 painter squared 800x1000 weight=1 at 1.8,0,0,1.8,-512,-1024
 el36 strokeRect -511.5,-1023.5 927.5,-1023.5 927.5,775.5 -511.5,775.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1) lineWidth=0.5556}
-dry drawImage el36 -> 432,1276 944,1276 944,1788 432,1788 {imageSmoothingEnabled=false}
+dry drawImage el36 -> 432,1276 944,1276 944,1788 432,1788 {fillStyle=#363122 imageSmoothingEnabled=false}
 wet clearRect 0,0 780,0 780,1400 0,1400
 wet clip nonzero [R(-80,252 1360,252 1360,2052 -80,2052)]
 wet stroke path2d#619094be5f3c at 1.8,0,0,1.8,-80,252 {fillStyle=#2985ab strokeStyle=#2985ab lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.25 globalCompositeOperation=screen}
@@ -1597,33 +1690,33 @@ wet.height = 300
 wet.style.width = 500px
 wet.style.height = 300px
 backdrop fillRect 0,0 500,0 500,300 0,300 {fillStyle=#0e0f11}
+dry fillRect 0,0 500,0 500,300 0,300 {fillStyle=#0e0f11}
 el28.width = 0
 el28.height = 0
 el37.height = 64
 el37.width = 64
 el37.getContext 2d null
 el37 fillRect -100,28 -92,28 -92,36 -100,36 {shadowColor=rgba(0, 0, 0, 0.6) shadowBlur=14 shadowOffsetX=128}
-backdrop drawImage el37[0,0,28,28] -> -28,-625 0,-625 0,-597 -28,-597 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,0,8,28] -> 0,-625 480,-625 480,-597 0,-597 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,0,28,28] -> 480,-625 508,-625 508,-597 480,-597 {fillStyle=#0e0f11}
-backdrop drawImage el37[0,28,28,8] -> -28,-597 0,-597 0,3 -28,3 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,36,8,1] -> 0,0 480,0 480,3 0,3 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,28,28,8] -> 480,-597 508,-597 508,3 480,3 {fillStyle=#0e0f11}
-backdrop drawImage el37[0,36,28,28] -> -28,3 0,3 0,31 -28,31 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,36,8,28] -> 0,3 480,3 480,31 0,31 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,36,28,28] -> 480,3 508,3 508,31 480,31 {fillStyle=#0e0f11}
-backdrop fillRect 0,-600 480,-600 480,0 0,0 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,0,28,28] -> -28,-1 0,-1 0,27 -28,27 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,0,8,28] -> 0,-1 480,-1 480,27 0,27 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,0,28,28] -> 480,-1 508,-1 508,27 480,27 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,28,28,8] -> -28,27 0,27 0,627 -28,627 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,36,8,1] -> 0,624 480,624 480,627 0,627 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,28,28,8] -> 480,27 508,27 508,627 480,627 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,36,28,28] -> -28,627 0,627 0,655 -28,655 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,36,8,28] -> 0,627 480,627 480,655 0,655 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,36,28,28] -> 480,627 508,627 508,655 480,655 {fillStyle=#1b1b1b}
-backdrop fillRect 0,24 480,24 480,624 0,624 {fillStyle=#363122}
-dry clearRect 0,0 500,0 500,300 0,300 {imageSmoothingEnabled=false}
+dry drawImage el37[0,0,28,28] -> -28,-625 0,-625 0,-597 -28,-597 {fillStyle=#0e0f11}
+dry drawImage el37[28,0,8,28] -> 0,-625 480,-625 480,-597 0,-597 {fillStyle=#0e0f11}
+dry drawImage el37[36,0,28,28] -> 480,-625 508,-625 508,-597 480,-597 {fillStyle=#0e0f11}
+dry drawImage el37[0,28,28,8] -> -28,-597 0,-597 0,3 -28,3 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,1] -> 0,0 480,0 480,3 0,3 {fillStyle=#0e0f11}
+dry drawImage el37[36,28,28,8] -> 480,-597 508,-597 508,3 480,3 {fillStyle=#0e0f11}
+dry drawImage el37[0,36,28,28] -> -28,3 0,3 0,31 -28,31 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,28] -> 0,3 480,3 480,31 0,31 {fillStyle=#0e0f11}
+dry drawImage el37[36,36,28,28] -> 480,3 508,3 508,31 480,31 {fillStyle=#0e0f11}
+dry drawImage el37[0,0,28,28] -> -28,-1 0,-1 0,27 -28,27 {fillStyle=#0e0f11}
+dry drawImage el37[28,0,8,28] -> 0,-1 480,-1 480,27 0,27 {fillStyle=#0e0f11}
+dry drawImage el37[36,0,28,28] -> 480,-1 508,-1 508,27 480,27 {fillStyle=#0e0f11}
+dry drawImage el37[0,28,28,8] -> -28,27 0,27 0,627 -28,627 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,1] -> 0,624 480,624 480,627 0,627 {fillStyle=#0e0f11}
+dry drawImage el37[36,28,28,8] -> 480,27 508,27 508,627 480,627 {fillStyle=#0e0f11}
+dry drawImage el37[0,36,28,28] -> -28,627 0,627 0,655 -28,655 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,28] -> 0,627 480,627 480,655 0,655 {fillStyle=#0e0f11}
+dry drawImage el37[36,36,28,28] -> 480,627 508,627 508,655 480,655 {fillStyle=#0e0f11}
+dry fillRect 0,-600 480,-600 480,0 0,0 {fillStyle=#1b1b1b}
+dry fillRect 0,24 480,24 480,624 0,624 {fillStyle=#363122}
 el38.width = 800
 el38.height = 1000
 el38.getContext 2d null
@@ -1633,7 +1726,7 @@ el38 painter squared 800x1000 weight=1 at 1,0,0,1,0,0
 el38 strokeRect 0.5,0.5 799.5,0.5 799.5,999.5 0.5,999.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1)}
 el38 stroke path2d#9b533da56a2e at 1,0,0,1,0,0 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.176 lineCap=round lineJoin=round}
 el38 stroke path2d#343c2e1e01e7 at 1,0,0,1,0,0 {fillStyle=#2985ab strokeStyle=#2985ab lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.25 globalCompositeOperation=screen}
-dry drawImage el38 -> 0,24 480,24 480,624 0,624
+dry drawImage el38 -> 0,24 480,24 480,624 0,624 {fillStyle=#363122}
 wet clearRect 0,0 500,0 500,300 0,300
 wet.classList + goodobsidian-wet-hidden
 # pages side by side
@@ -1655,28 +1748,26 @@ el36.width = 0
 el36.height = 0
 el38.width = 0
 el38.height = 0
-backdrop fillRect 0,0 500,0 500,300 0,300 {fillStyle=#0e0f11}
-backdrop drawImage el37[0,0,28,28] -> -328,-75 -300,-75 -300,-47 -328,-47 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,0,8,28] -> -300,-75 100,-75 100,-47 -300,-47 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,0,28,28] -> 100,-75 128,-75 128,-47 100,-47 {fillStyle=#0e0f11}
-backdrop drawImage el37[0,28,28,8] -> -328,-47 -300,-47 -300,453 -328,453 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,36,8,1] -> -300,450 100,450 100,453 -300,453 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,28,28,8] -> 100,-47 128,-47 128,453 100,453 {fillStyle=#0e0f11}
-backdrop drawImage el37[0,36,28,28] -> -328,453 -300,453 -300,481 -328,481 {fillStyle=#0e0f11}
-backdrop drawImage el37[28,36,8,28] -> -300,453 100,453 100,481 -300,481 {fillStyle=#0e0f11}
-backdrop drawImage el37[36,36,28,28] -> 100,453 128,453 128,481 100,481 {fillStyle=#0e0f11}
-backdrop fillRect -300,-50 100,-50 100,450 -300,450 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,0,28,28] -> 92,-75 120,-75 120,-47 92,-47 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,0,8,28] -> 120,-75 520,-75 520,-47 120,-47 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,0,28,28] -> 520,-75 548,-75 548,-47 520,-47 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,28,28,8] -> 92,-47 120,-47 120,453 92,453 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,36,8,1] -> 120,450 520,450 520,453 120,453 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,28,28,8] -> 520,-47 548,-47 548,453 520,453 {fillStyle=#1b1b1b}
-backdrop drawImage el37[0,36,28,28] -> 92,453 120,453 120,481 92,481 {fillStyle=#1b1b1b}
-backdrop drawImage el37[28,36,8,28] -> 120,453 520,453 520,481 120,481 {fillStyle=#1b1b1b}
-backdrop drawImage el37[36,36,28,28] -> 520,453 548,453 548,481 520,481 {fillStyle=#1b1b1b}
-backdrop fillRect 120,-50 520,-50 520,450 120,450 {fillStyle=#363122}
-dry clearRect 0,0 500,0 500,300 0,300
+dry fillRect 0,0 500,0 500,300 0,300 {fillStyle=#0e0f11}
+dry drawImage el37[0,0,28,28] -> -328,-75 -300,-75 -300,-47 -328,-47 {fillStyle=#0e0f11}
+dry drawImage el37[28,0,8,28] -> -300,-75 100,-75 100,-47 -300,-47 {fillStyle=#0e0f11}
+dry drawImage el37[36,0,28,28] -> 100,-75 128,-75 128,-47 100,-47 {fillStyle=#0e0f11}
+dry drawImage el37[0,28,28,8] -> -328,-47 -300,-47 -300,453 -328,453 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,1] -> -300,450 100,450 100,453 -300,453 {fillStyle=#0e0f11}
+dry drawImage el37[36,28,28,8] -> 100,-47 128,-47 128,453 100,453 {fillStyle=#0e0f11}
+dry drawImage el37[0,36,28,28] -> -328,453 -300,453 -300,481 -328,481 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,28] -> -300,453 100,453 100,481 -300,481 {fillStyle=#0e0f11}
+dry drawImage el37[36,36,28,28] -> 100,453 128,453 128,481 100,481 {fillStyle=#0e0f11}
+dry drawImage el37[0,0,28,28] -> 92,-75 120,-75 120,-47 92,-47 {fillStyle=#0e0f11}
+dry drawImage el37[28,0,8,28] -> 120,-75 520,-75 520,-47 120,-47 {fillStyle=#0e0f11}
+dry drawImage el37[36,0,28,28] -> 520,-75 548,-75 548,-47 520,-47 {fillStyle=#0e0f11}
+dry drawImage el37[0,28,28,8] -> 92,-47 120,-47 120,453 92,453 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,1] -> 120,450 520,450 520,453 120,453 {fillStyle=#0e0f11}
+dry drawImage el37[36,28,28,8] -> 520,-47 548,-47 548,453 520,453 {fillStyle=#0e0f11}
+dry drawImage el37[0,36,28,28] -> 92,453 120,453 120,481 92,481 {fillStyle=#0e0f11}
+dry drawImage el37[28,36,8,28] -> 120,453 520,453 520,481 120,481 {fillStyle=#0e0f11}
+dry drawImage el37[36,36,28,28] -> 520,453 548,453 548,481 520,481 {fillStyle=#0e0f11}
+dry fillRect -300,-50 100,-50 100,450 -300,450 {fillStyle=#1b1b1b}
 el39.width = 800
 el39.height = 1000
 el39.getContext 2d null
@@ -1908,7 +1999,8 @@ el39 stroke path2d#e77f75cc2cd7 at 1,0,0,1,0,0 {fillStyle=#31b359 strokeStyle=#3
 el39 stroke path2d#cb409475b3f4 at 1,0,0,1,0,0 {fillStyle=#31b359 strokeStyle=#31b359 lineWidth=2.168 lineCap=round lineJoin=round}
 el39 stroke path2d#88d4cdcbb006 at 1,0,0,1,0,0 {fillStyle=#31b359 strokeStyle=#31b359 lineWidth=2.1232 lineCap=round lineJoin=round}
 el39 stroke path2d#70d484e662f9 at 1,0,0,1,0,0 {fillStyle=#31b359 strokeStyle=#31b359 lineWidth=2.0556 lineCap=round lineJoin=round}
-dry drawImage el39 -> -300,-50 100,-50 100,450 -300,450
+dry drawImage el39 -> -300,-50 100,-50 100,450 -300,450 {fillStyle=#1b1b1b}
+dry fillRect 120,-50 520,-50 520,450 120,450 {fillStyle=#363122}
 el40.width = 800
 el40.height = 1000
 el40.getContext 2d null
@@ -1918,7 +2010,7 @@ el40 painter squared 800x1000 weight=1 at 1,0,0,1,0,0
 el40 strokeRect 0.5,0.5 799.5,0.5 799.5,999.5 0.5,999.5 {fillStyle=#363122 strokeStyle=rgba(255, 255, 255, 0.1)}
 el40 stroke path2d#9b533da56a2e at 1,0,0,1,0,0 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=2.176 lineCap=round lineJoin=round}
 el40 stroke path2d#343c2e1e01e7 at 1,0,0,1,0,0 {fillStyle=#2985ab strokeStyle=#2985ab lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.25 globalCompositeOperation=screen}
-dry drawImage el40 -> 120,-50 520,-50 520,450 120,450
+dry drawImage el40 -> 120,-50 520,-50 520,450 120,450 {fillStyle=#363122}
 wet clearRect 0,0 500,0 500,300 0,300
 wet clip nonzero [R(120,-50 520,-50 520,450 120,450)]
 wet stroke path2d#9b533da56a2e at 0.5,0,0,0.5,120,-50 {fillStyle=#e8e8e8 strokeStyle=#e8e8e8 lineWidth=4 lineCap=round lineJoin=round}

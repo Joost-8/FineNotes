@@ -396,6 +396,8 @@ const JOIN_MARK_WIDTH = 2;
 const JOIN_MARK_ON_DARK = "rgba(255, 255, 255, 0.4)";
 const JOIN_MARK_ON_LIGHT = "rgba(0, 0, 0, 0.3)";
 
+/** The band of paper painted along a page's edges under its tiles, device px. */
+const PAPER_EDGE = 2;
 /** The page shadow: blur and downward offset, in CSS px. */
 const SHADOW_BLUR = 14;
 const SHADOW_OFFSET_Y = 3;
@@ -517,11 +519,14 @@ export class Renderer {
    * and whoever changes this must {@link invalidateAll}: tiles hold colour.
    */
   paper: PaperTheme = LIGHT_PAPER;
-  /** The desk the last backdrop was painted on (`deskFor`): the theme's, unless a page matched it. */
+  /** The desk the last frame was painted on (`deskFor`): the theme's, unless a page matched it. */
   desk = LIGHT_PAPER.desk;
 
-  /** The desk and the page shadows. */
+  /** The desk alone, under the dry layer ({@link renderBackdrops}). */
   private readonly backdrop: Layer;
+  /** What the backdrop layer holds, so it is painted only when that changes. */
+  private backdropDesk = "";
+  private backdropSize = { w: 0, h: 0 };
   /** The pages, blitted from tiles. */
   private readonly dry: Layer;
   /** Whatever is in flight: a stroke, a lasso, a dragged selection or picture. */
@@ -900,33 +905,95 @@ export class Renderer {
 
   // --- Backdrop layer -------------------------------------------------------
 
-  /** Repaint the backdrop layer: the desk, and a shadow under each visible page. */
+  /**
+   * The backdrop layer: the desk alone, painted again only when its colour
+   * changes. The desk under the pages, their shadows and their paper are
+   * painted on the dry layer each frame, under the tiles
+   * ({@link paintDesk}): a second pane-sized canvas changed every frame of a
+   * scroll, and handing two of them to the compositor each frame, not the
+   * drawing, was what held a page turn to about 34 fps with the CPU slowed
+   * 4x (43 without it).
+   */
   renderBackdrops(doc: InkDocument): void {
     this.doc = doc;
+    const desk = this.deskOf(doc);
+    const { width, height } = this.backdrop.canvas;
+    if (
+      desk === this.backdropDesk &&
+      width === this.backdropSize.w &&
+      height === this.backdropSize.h
+    )
+      return;
+    this.backdropDesk = desk;
+    this.backdropSize = { w: width, h: height };
     const ctx = this.backdrop.ctx;
-    // The desk. The page is an object lying on it, not a region filling the
-    // pane (design brief), so the field is painted edge to edge first.
-    // Its shade keeps every page on screen apart from it (`deskFor`).
-    const boxes = this.boxesOnScreen(doc.pages.length);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = desk;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  /**
+   * The desk for the pages on screen (`deskFor`): the theme's, unless a
+   * page's paper matches it, so every page stays apart from it.
+   */
+  private deskOf(doc: InkDocument): string {
     const papers: string[] = [];
-    for (const box of boxes) {
+    for (const box of this.boxesOnScreen(doc.pages.length)) {
       const page = doc.pages[box.index];
       if (page) papers.push(paperColorOf(page, this.paper));
     }
-    this.desk = deskFor(this.paper, papers);
+    return deskFor(this.paper, papers);
+  }
+
+  /**
+   * The desk, a shadow under each page on screen and the page's paper, on
+   * `ctx` (the dry layer) under its tiles. The page is an object lying on
+   * the desk, not a region filling the pane (design brief), so the field is
+   * painted edge to edge first.
+   */
+  private paintDesk(ctx: CanvasRenderingContext2D, doc: InkDocument): void {
+    const boxes = this.boxesOnScreen(doc.pages.length);
+    this.desk = this.deskOf(doc);
+    // The last frame's tiles may have turned smoothing off: the shadow's
+    // slices are stretched, and must be filtered.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.imageSmoothingEnabled = true;
     ctx.fillStyle = this.desk;
     ctx.fillRect(0, 0, this.dry.canvas.width, this.dry.canvas.height);
     const sprite = this.shadowSprite();
     for (const box of boxes) {
       const r = this.pageDeviceRect(box);
       this.drawShadow(ctx, sprite, r.x, r.y, r.w, r.h, SHADOW_OFFSET_Y * this.screen.dpr);
-      // Under the page, the page's own colour (see paperColorOf).
-      const page = doc.pages[box.index];
-      ctx.fillStyle = page ? paperColorOf(page, this.paper) : this.paper.paper;
-      ctx.fillRect(r.x, r.y, r.w, r.h);
     }
     this.paintJoinMarks(ctx, boxes);
+  }
+
+  /**
+   * A page's own paper colour under its tiles (see paperColorOf): over the
+   * whole page where a tile is missing, else only a band along its edges.
+   * The tiles start on whole pixels and the page need not, so its edge is
+   * the paper's soft edge, as it always was; under the rest the tiles paint
+   * their own paper, and filling there too doubled what a scroll frame
+   * painted.
+   */
+  private paintPaper(
+    ctx: CanvasRenderingContext2D,
+    page: Page,
+    box: PageBox,
+    edgesOnly: boolean,
+  ): void {
+    const { x, y, w, h } = this.pageDeviceRect(box);
+    ctx.fillStyle = paperColorOf(page, this.paper);
+    if (!edgesOnly || w <= 2 * PAPER_EDGE || h <= 2 * PAPER_EDGE) {
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+    ctx.fillRect(x, y, w, PAPER_EDGE);
+    ctx.fillRect(x, y + h - PAPER_EDGE, w, PAPER_EDGE);
+    ctx.fillRect(x, y + PAPER_EDGE, PAPER_EDGE, h - 2 * PAPER_EDGE);
+    ctx.fillRect(x + w - PAPER_EDGE, y + PAPER_EDGE, PAPER_EDGE, h - 2 * PAPER_EDGE);
   }
 
   /**
@@ -1079,7 +1146,7 @@ export class Renderer {
   ): boolean {
     this.doc = doc;
     const ctx = this.dry.ctx;
-    this.wipe(ctx);
+    this.paintDesk(ctx, doc);
     if (this.level === 0) this.level = quantiseLevel(this.deviceScale);
     const level = this.level;
     const k = this.deviceScale;
@@ -1135,6 +1202,8 @@ export class Renderer {
       for (const tr of needed) {
         if (!this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) missing++;
       }
+      // Mid-zoom the tiles are scaled, and may not meet the page's edges.
+      this.paintPaper(ctx, page, box, missing === 0 && exact);
       let preview = missing > 0 ? this.previews.get(page.id) : undefined;
       if (missing > 0 && !preview && transient) {
         // One whole-page stand-in beats tiles at a level about to be dropped.
