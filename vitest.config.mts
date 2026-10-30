@@ -112,6 +112,7 @@ export default defineConfig({
         "src/input/finger-gesture.ts",
         "src/input/multi-finger-tap.ts",
         "src/input/finger-hold.ts",
+        "src/input/repeat-samples.ts",
         "src/view/paste-choice.ts",
         "src/recognition/text-layer.ts",
         "src/recognition/device-reading.ts",

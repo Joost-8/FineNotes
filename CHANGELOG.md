@@ -135,6 +135,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- Highlighter strokes had darker dots along them on the iPad
+  ([#85](https://github.com/Joost-8/FineNotes/issues/85)). iPadOS sometimes
+  hands over the same pen positions twice, and each repeat was drawn over
+  the line again. Repeats are now dropped as they arrive. Strokes already
+  written keep their dots.
 - The notebook could scroll by a few pixels in Obsidian when a tool's bar
   along the bottom was tucked away, which narrowed the page by a scrollbar's
   width and changed its zoom a little.

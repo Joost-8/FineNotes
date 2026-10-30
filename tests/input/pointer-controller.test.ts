@@ -403,6 +403,33 @@ describe("a drawing pointer", () => {
     ]);
   });
 
+  it("drops coalesced samples the last move already handed over (FineNotes#85)", () => {
+    const rig = new Rig("required");
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1 });
+    const a = [
+      { x: 1, y: 1, t: 2 },
+      { x: 2, y: 2, t: 3 },
+    ];
+    const b = [
+      { x: 3, y: 3, t: 4 },
+      { x: 4, y: 4, t: 5 },
+    ];
+    for (const batch of [a, a, b, b]) {
+      rig.pen("pointermove", 1, { ...batch[batch.length - 1], coalesced: batch });
+    }
+    expect(rig.take()).toEqual([
+      "start 1000,2000 p=0.5 tilt=0,0",
+      "move [1001,2001 p=0.5 tilt=0,0 | 1002,2002 p=0.5 tilt=0,0]",
+      "move [1003,2003 p=0.5 tilt=0,0 | 1004,2004 p=0.5 tilt=0,0]",
+    ]);
+    // A new stroke starts afresh: the same samples count again.
+    rig.pen("pointerup", 1, { x: 4, y: 4, t: 6 });
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 7 });
+    rig.take();
+    rig.pen("pointermove", 1, { x: 4, y: 4, t: 8, coalesced: [{ x: 4, y: 4, t: 8 }] });
+    expect(rig.take()).toEqual(["move [1004,2004 p=0.5 tilt=0,0]"]);
+  });
+
   it("reports a cancel, not an end, when WebKit cancels it", () => {
     const rig = new Rig();
     rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1 });
