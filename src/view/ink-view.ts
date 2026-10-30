@@ -311,6 +311,7 @@ import {
   attachmentDefaults,
   greyWhileErasingOf,
   penPreferencesOf,
+  snapModeOf,
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
@@ -357,6 +358,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penType: last?.type,
     pressureEnabled: s.pressureWidth && spec.pressure,
     shapeSnapEnabled: s.drawAndHold,
+    snapMode: snapModeOf(s),
+    snapCurvatureThreshold: s.snapCurvatureThreshold,
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
@@ -878,6 +881,8 @@ export class InkView extends TextFileView {
    */
   syncPenPreferences(): void {
     this.toolState.shapeSnapEnabled = this.settings.drawAndHold;
+    this.toolState.snapMode = snapModeOf(this.settings);
+    this.toolState.snapCurvatureThreshold = this.settings.snapCurvatureThreshold;
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */

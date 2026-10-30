@@ -261,6 +261,11 @@ export function shortcutList(apple: boolean): Array<[string, string]> {
 
 /** The tools an ink note can open with, as the dropdown names them. */
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
+const SNAP_MODE_CHOICES = {
+  disabled: "Disabled",
+  hold: "Hold only",
+  auto: "Automatic",
+};
 
 /** What each row's ⓘ opens: everything a row's one line leaves out. */
 const DESC = {
@@ -325,6 +330,13 @@ const DESC = {
   straightHighlighter:
     "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
     "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
+  snapMode:
+    "Disabled leaves freehand strokes untouched. Hold only recognizes a line or shape after " +
+    "you keep the pen still at the end. Automatic also recognizes a clear line or shape when " +
+    "you lift the pen.",
+  snapCurvatureThreshold:
+    "Controls how much curvature a line or shape may have before it is straightened. Lower " +
+    "values are stricter; higher values accept looser handwriting.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
@@ -906,6 +918,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
+    if (key === "snapMode" || key === "snapCurvatureThreshold") {
+      this.plugin.syncPenPreferences();
+    }
     // A newly chosen speech model is registered before the tab is rebuilt, so its row shows it.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
@@ -1018,6 +1033,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "line",
           ]),
           DESC.straightHighlighter,
+        ),
+        controlRow(
+          "Snapping mode",
+          "",
+          { type: "dropdown", key: "snapMode", options: SNAP_MODE_CHOICES },
+          ["shape snapping", "line snapping", "hold to snap", "auto shape"],
+        ),
+        this.info(
+          controlRow(
+            "Snapping curvature tolerance",
+            "",
+            { type: "slider", key: "snapCurvatureThreshold", min: 10, max: 100, step: 5 },
+            ["shape snapping", "line snapping", "straightness", "curvature"],
+          ),
+          DESC.snapCurvatureThreshold,
         ),
       ],
       () => [

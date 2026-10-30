@@ -49,6 +49,7 @@ import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } f
 import {
   type PageAppearance,
   type PenPreferences,
+  snapModeOf,
   shownPaperTheme,
   storePenPreferences,
 } from "./settings-data";
@@ -772,6 +773,11 @@ export default class GoodObsidianPlugin extends Plugin {
     const saved = own ?? (await this.settingsFromPreviousId());
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    this.settings.snapMode = snapModeOf({
+      snapMode: saved?.snapMode,
+      drawAndHold: saved?.drawAndHold ?? this.settings.drawAndHold,
+      penAutoShape: saved?.penAutoShape ?? this.settings.penAutoShape,
+    });
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -1202,6 +1208,8 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the pen's auto-shape toggle, for the next session. */
   savePenAutoShape(enabled: boolean): void {
     this.settings.penAutoShape = enabled;
+    if (enabled) this.settings.snapMode = "auto";
+    else if (this.settings.snapMode === "auto") this.settings.snapMode = "hold";
     void this.saveSettings();
   }
 
@@ -1220,8 +1228,13 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Store what a pen menu changed for every pen, and give it to every open notebook. */
   savePenPreferences(patch: Partial<PenPreferences>): void {
     storePenPreferences(this.settings, patch);
-    for (const view of this.openNotebooks()) view.syncPenPreferences();
+    this.syncPenPreferences();
     void this.saveSettings();
+  }
+
+  /** Push snapping settings to every open notebook after settings-tab edits. */
+  syncPenPreferences(): void {
+    for (const view of this.openNotebooks()) view.syncPenPreferences();
   }
 
   /** Remember the Shape tool's colour, for the next session. */

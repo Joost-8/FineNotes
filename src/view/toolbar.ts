@@ -195,7 +195,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
-import type { PenPreferences, ReturnToPen } from "../settings-data";
+import type { PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -440,6 +440,10 @@ export interface ToolbarState {
   pressureEnabled: boolean;
   /** Draw-and-hold with the pens. `undefined` counts as enabled. */
   shapeSnapEnabled?: boolean;
+  /** The unified freehand snapping mode. */
+  snapMode?: SnapMode;
+  /** Freehand snapping sensitivity, stored as 10–100. */
+  snapCurvatureThreshold?: number;
   /**
    * The pen's auto-shape toggle: every pen stroke that is plainly a shape
    * snaps to it on lift, as the Shape tool's auto mode does. `undefined`

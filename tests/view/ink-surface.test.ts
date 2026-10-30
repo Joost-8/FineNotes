@@ -29,12 +29,29 @@ vi.mock("obsidian", () => ({
   setIcon: () => {},
 }));
 
-const { InkSurface } = await import("../../src/view/ink-surface");
+const { InkSurface, shouldSnapStroke } = await import("../../src/view/ink-surface");
 
 /** The number new stroke ids count on from. */
 const maxStrokeId = (doc: InkDocument): number => highestIdNumber(strokeIdsOf(doc), "s");
 
 type State = Record<string, unknown>;
+
+describe("freehand snapping modes", () => {
+  it("never snaps when disabled", () => {
+    expect(shouldSnapStroke("disabled", false)).toBe(false);
+    expect(shouldSnapStroke("disabled", true)).toBe(false);
+  });
+
+  it("snaps only after a hold in hold mode", () => {
+    expect(shouldSnapStroke("hold", false)).toBe(false);
+    expect(shouldSnapStroke("hold", true)).toBe(true);
+  });
+
+  it("snaps on release and after a hold in automatic mode", () => {
+    expect(shouldSnapStroke("auto", false)).toBe(true);
+    expect(shouldSnapStroke("auto", true)).toBe(true);
+  });
+});
 
 /** A surface with the class's methods and only the given state. */
 function surfaceWith(state: State): State {

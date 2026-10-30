@@ -449,6 +449,7 @@ import {
   strokeWidthFor,
   tableSizeFor,
 } from "./toolbar";
+import type { SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
@@ -892,6 +893,11 @@ const TEXT_MIN_W = 80;
 const TEXT_MIN_H = 32;
 /** How long after focusing a text box the surface owns scrolling (keyboard animation). */
 const TEXT_FOCUS_HOLD_MS = 1200;
+
+/** Whether a freehand stroke is eligible for recognition when it ends. */
+export function shouldSnapStroke(mode: SnapMode, held: boolean): boolean {
+  return mode === "auto" || (mode === "hold" && held);
+}
 /**
  * Room kept above a box being typed in, screen px: the text pill floats
  * there (about 46 px tall, 10 px off the box).
@@ -6302,13 +6308,15 @@ export class InkSurface {
     this.holdAnchor = null;
   }
 
-  /** The Shape tool always snaps on a hold; the pens only with the setting on. */
+  /** Preset shapes stay geometric; freehand shape mode follows the snap setting. */
   private holdToSnapEnabled(): boolean {
     // A practice file is handwriting only.
     if (this.practice) return false;
     const tool = this.toolState.tool;
-    if (tool === "shape") return true;
-    return (tool === "pen" || tool === "highlighter") && this.toolState.shapeSnapEnabled !== false;
+    const mode =
+      this.toolState.snapMode ?? (this.toolState.shapeSnapEnabled === false ? "disabled" : "hold");
+    if (tool === "shape" && shapeModeFor(this.toolState) !== "auto") return false;
+    return (tool === "pen" || tool === "highlighter" || tool === "shape") && mode !== "disabled";
   }
 
   /**
@@ -6321,7 +6329,10 @@ export class InkSurface {
     const builder = this.builder;
     const anchor = this.holdAnchor;
     if (!builder || !anchor || this.snap) return;
-    const result = recognizeAtZoom(builder.points(), this.userZoom, { held: true });
+    const result = recognizeAtZoom(builder.points(), this.userZoom, {
+      held: true,
+      curvatureThreshold: (this.toolState.snapCurvatureThreshold ?? 50) / 100,
+    });
     this.diagHold = { fired: true, verdict: verdictOf(builder.points(), true) };
     this.hudVerdict("hold", builder.points(), result, true);
     if (!result) return;
@@ -6792,17 +6803,27 @@ export class InkSurface {
 
     // The Shape tool's auto mode snaps every stroke on lift, no hold needed,
     // and so does the pen with its auto-shape toggle on.
+    const snapMode =
+      this.toolState.snapMode ??
+      (this.toolState.penAutoShape === true
+        ? "auto"
+        : this.toolState.shapeSnapEnabled === false
+          ? "disabled"
+          : "hold");
     const snapOnLift =
-      this.toolState.tool === "shape" ||
-      (this.toolState.penAutoShape === true &&
+      (this.toolState.tool === "shape" && shapeModeFor(this.toolState) !== "auto") ||
+      (snapMode === "auto" &&
         !this.practice &&
         (this.toolState.tool === "pen" || this.toolState.tool === "highlighter"));
     let shape: { kind: ShapeKind; pts: number[] } | null = snap;
-    if (!shape && (heldLongEnough || snapOnLift)) {
+    if (!shape && (snapOnLift || shouldSnapStroke(snapMode, heldLongEnough))) {
       // Held, the pen rested where the stroke ends; snapped on lift, it may
       // have trailed a tail as it left the glass.
       const held = heldLongEnough;
-      shape = recognizeAtZoom(builder.points(), this.userZoom, { held });
+      shape = recognizeAtZoom(builder.points(), this.userZoom, {
+        held,
+        curvatureThreshold: (this.toolState.snapCurvatureThreshold ?? 50) / 100,
+      });
       this.hudVerdict(cancelledWhileHeld ? "cx-hold" : "lift", builder.points(), shape, held);
     } else if (!shape && this.debug) {
       this.hud.mark(final ? "lift·nohold" : "cx·nohold");

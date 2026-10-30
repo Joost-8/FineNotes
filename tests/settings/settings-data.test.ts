@@ -25,6 +25,7 @@ import {
   parseColorList,
   returnToPenOf,
   sectionOpen,
+  snapModeOf,
   shownPaperTheme,
   shownValue,
   storeAppearanceChoice,
@@ -42,6 +43,8 @@ import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
  */
 const FRESH_INSTALL = {
   drawAndHold: true,
+  snapMode: "hold",
+  snapCurvatureThreshold: 50,
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
@@ -213,6 +216,8 @@ const USED_VAULT = {
   penAutoShape: true,
   penGestures: { scribbleErase: false, scribbleErasesAll: true, circleLasso: false },
   shapeColor: "#0066ff",
+  snapMode: "auto",
+  snapCurvatureThreshold: 75,
   stickerFolder: "Art/Stickers",
   imagesFolder: "Art/Pictures",
   recordingsFolder: "",
@@ -281,6 +286,15 @@ describe("data.json", () => {
     const old = { drawAndHold: false, defaultColor: "#333333", paperWidth: 900 };
     const written = loadAndSave(old) as Record<string, unknown>;
     expect(written).toEqual({ ...FRESH_INSTALL, ...old });
+  });
+
+  it("maps the three snapping modes and legacy settings", () => {
+    expect(snapModeOf({ snapMode: "disabled" })).toBe("disabled");
+    expect(snapModeOf({ snapMode: "hold" })).toBe("hold");
+    expect(snapModeOf({ snapMode: "auto" })).toBe("auto");
+    expect(snapModeOf({ drawAndHold: false })).toBe("disabled");
+    expect(snapModeOf({ drawAndHold: true })).toBe("hold");
+    expect(snapModeOf({ penAutoShape: true, drawAndHold: true })).toBe("auto");
   });
 
   it("stores the per-tool records as copies, so no host can edit a shared default", async () => {

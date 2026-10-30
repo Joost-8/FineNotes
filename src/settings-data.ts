@@ -41,11 +41,16 @@ export type ToolId = "pen" | "highlighter" | "eraser" | "select";
 
 /** How pages are shown (`pageAppearance`): light paper, dark pages, or as Obsidian's theme is. */
 export type PageAppearance = "light" | "dark" | "system";
+export type SnapMode = "disabled" | "hold" | "auto";
 
 export interface GoodObsidianSettings {
   // What an ink note starts with. Tool state the toolbar remembers is further down.
   /** Draw a rough shape, hold the pen still at the end, and it snaps clean. */
   drawAndHold: boolean;
+  /** How freehand line and shape snapping is triggered. */
+  snapMode: SnapMode;
+  /** Snapping sensitivity, stored as a percentage from 10 to 100. */
+  snapCurvatureThreshold: number;
   defaultTool: ToolId;
   /** Extra palette swatches, `#rgb` or `#rrggbb`. */
   customColors: string[];
@@ -341,6 +346,8 @@ export interface GoodObsidianSettings {
 // change the shared defaults.
 export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   drawAndHold: true,
+  snapMode: "hold",
+  snapCurvatureThreshold: 50,
   defaultTool: "pen",
   customColors: [],
   defaultColor: PALETTE[0],
@@ -521,6 +528,26 @@ export interface PenPreferences {
   returnToPen: ReturnToPen;
 }
 
+const SNAP_MODES: readonly SnapMode[] = ["disabled", "hold", "auto"];
+
+export function isSnapMode(value: unknown): value is SnapMode {
+  return typeof value === "string" && SNAP_MODES.includes(value as SnapMode);
+}
+
+/**
+ * Read the new snapping mode while preserving vaults written before it
+ * existed. `penAutoShape` was the old automatic-on-lift switch.
+ */
+export function snapModeOf(settings: {
+  snapMode?: SnapMode;
+  drawAndHold?: boolean;
+  penAutoShape?: boolean;
+}): SnapMode {
+  if (isSnapMode(settings.snapMode)) return settings.snapMode;
+  if (settings.penAutoShape === true) return "auto";
+  return settings.drawAndHold === false ? "disabled" : "hold";
+}
+
 export function penPreferencesOf(
   settings: Pick<
     GoodObsidianSettings,
@@ -539,7 +566,11 @@ export function storePenPreferences(
   settings: GoodObsidianSettings,
   patch: Partial<PenPreferences>,
 ): void {
-  if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
+  if ("drawAndHold" in patch) {
+    settings.drawAndHold = patch.drawAndHold !== false;
+    if (patch.drawAndHold === false) settings.snapMode = "disabled";
+    else if (settings.snapMode === "disabled") settings.snapMode = "hold";
+  }
   if ("tuckOnWrite" in patch) settings.tuckPenOptionsOnWrite = patch.tuckOnWrite === true;
   if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
 }
