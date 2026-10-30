@@ -8,9 +8,10 @@
  *
  * Three hard requirements from contracts/api.md §4, all implemented here:
  *
- * 1. **One whole-page raster at ordinary zoom; visible detail above 2.5x.**
- *    Detail requests are shared across ink tiles, limited to two renders in
- *    flight, and cancelled/evicted when their visible area changes.
+ * 1. **One whole-page raster at the ink tiles' level; visible detail where
+ *    that would be too large** (`pageRasterScale`, `needsDetail`). Detail
+ *    requests are shared across ink tiles, limited to two renders in flight,
+ *    and cancelled/evicted when their visible area changes.
  * 2. **The source PDF is opened read-only and never written.** The only vault
  *    call in this file is `vault.readBinary`.
  * 3. **A failed backdrop never costs the user their ink.** Every failure path
@@ -28,7 +29,13 @@ import {
   planPdfRaster,
 } from "../canvas/pdf-raster";
 import type { Bounds, PageGeometry } from "../model/document";
-import { type PdfAssets, type PdfWorker, PdfRenderCancelled, pdfAssets } from "./pdf-worker";
+import {
+  type PdfAssets,
+  type PdfWorker,
+  PdfCanvasUnavailable,
+  PdfRenderCancelled,
+  pdfAssets,
+} from "./pdf-worker";
 import { errorMessage } from "../util/errors";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
@@ -36,24 +43,63 @@ import { errorMessage } from "../util/errors";
 const MAX_RASTER_EDGE = 2400;
 
 /**
- * Rasterised pages kept at once, in bytes. It used to be a count of eight
- * pages, and the page sidebar's dozen thumbnails plus the page in view asked
- * for more than eight: each raster that landed evicted another one still on
- * screen, whose repaint asked for it again, for as long as the sidebar stayed
- * open — 40 renders a second and every tile redrawn each time, on a laptop
- * (2026-10-01, FineNotes#1). A raster drawn within {@link RECENT_USE_MS} is
- * not evicted to meet this; the hard budget holds regardless.
+ * What the cache keeps, in bytes.
+ *
+ * - `soft`: rasterised pages kept at once. It used to be a count of eight
+ *   pages, and the page sidebar's dozen thumbnails plus the page in view
+ *   asked for more than eight: each raster that landed evicted another one
+ *   still on screen, whose repaint asked for it again, for as long as the
+ *   sidebar stayed open — 40 renders a second and every tile redrawn each
+ *   time, on a laptop (2026-10-01, FineNotes#1). A raster drawn within
+ *   {@link RECENT_USE_MS} is not evicted to meet it.
+ * - `hard`: the most ever held, whatever was drawn when.
+ * - `keepDetail`: detail kept after the view moves on, besides what is in
+ *   view, so going back to what was just read is sharp at once: the most
+ *   recently drawn patches or tiles up to this many bytes, and always at
+ *   least one (a patch can be ~36 MB, a tile is 4 MB).
  */
-const SOFT_BUDGET = 48 * 1024 * 1024;
-const HARD_BUDGET = 96 * 1024 * 1024;
-const RECENT_USE_MS = 1500;
+export interface PdfMemoryBudget {
+  soft: number;
+  hard: number;
+  keepDetail: number;
+}
+
+const MB = 1024 * 1024;
+export const PDF_BUDGET: PdfMemoryBudget = { soft: 48 * MB, hard: 96 * MB, keepDetail: 32 * MB };
 /**
- * Detail kept after the view moves on, besides what is in view, so going
- * back to what was just read is sharp at once: the most recently drawn
- * patches or tiles up to this many bytes, and always at least one (a patch
- * can be ~36 MB, a tile is 1 MB).
+ * For a device short of memory. iOS ends a web view whose canvases hold too
+ * much, and stops giving it canvases before that (`getContext` answers
+ * `null`); a 2 GB iPad gets there first. This still holds two A4 pages at
+ * their sharpest (16 MB each) and a screen of detail tiles.
  */
-const KEEP_DETAIL_BYTES = 32 * 1024 * 1024;
+export const PDF_BUDGET_LOW: PdfMemoryBudget = { soft: 24 * MB, hard: 64 * MB, keepDetail: 8 * MB };
+const RECENT_USE_MS = 1500;
+/** After a canvas is refused twice in a row, the waits before trying again. */
+const REFUSED_RETRY_MS = [500, 1500, 4000];
+
+/**
+ * Whether this device is short of memory by what it says of itself:
+ * Chromium (Android, desktop) gives its memory in GB; WebKit gives none,
+ * but one without OffscreenCanvas is iPadOS 16.3 or older, and the iPads
+ * that stop there (iPad Air 2, iPad mini 4) have 2 GB. Others find out when
+ * a canvas is refused ({@link PdfBackdropCache.lowMemory}).
+ */
+export function lowMemoryDevice(env: DeviceSigns = thisDevice()): boolean {
+  const memory = env.navigator?.deviceMemory;
+  if (typeof memory === "number" && memory > 0) return memory <= 2;
+  return typeof env.OffscreenCanvas === "undefined";
+}
+
+/** What {@link lowMemoryDevice} reads: `navigator.deviceMemory` is Chromium's alone. */
+interface DeviceSigns {
+  navigator?: { deviceMemory?: unknown };
+  OffscreenCanvas?: unknown;
+}
+
+function thisDevice(): DeviceSigns {
+  return typeof window === "undefined" ? {} : (window as never);
+}
+
 /** What a miss is counted as: little, but not nothing, so misses cannot pile up. */
 const MISS_BYTES = 1024;
 
@@ -76,7 +122,15 @@ export interface PdfRaster {
 export interface PdfMiss {
   ok: false;
   reason: string;
+  /**
+   * Out of canvas memory, not a fault of the PDF: never cached (it would
+   * paint as a missing source for good), and asked for again by the next
+   * paint once memory is freed.
+   */
+  retry?: true;
 }
+
+const NO_CANVAS: PdfMiss = { ok: false, reason: "No canvas memory for the PDF page", retry: true };
 
 export type PdfEntry = PdfRaster | PdfMiss;
 
@@ -214,7 +268,12 @@ export class PdfBackdropCache {
    */
   onReady: ((path: string, page: number, area?: PdfRenderArea) => void) | null = null;
 
-  private readonly entries = new ByteLru<Cached>(HARD_BUDGET, (cached) => release(cached.entry));
+  private budget: PdfMemoryBudget;
+  private readonly entries: ByteLru<Cached>;
+  /** How many times in a row each key was refused a canvas ({@link refusedCanvas}). */
+  private readonly refused = new Map<string, number>();
+  /** Retries waiting out {@link REFUSED_RETRY_MS}, by key. */
+  private readonly retries = new Map<string, number>();
   private readonly inflight = new Map<string, Promise<PdfEntry>>();
   private readonly queue: RasterWork[] = [];
   private readonly running = new Set<RasterWork>();
@@ -247,7 +306,36 @@ export class PdfBackdropCache {
   private lib: Promise<PdfJsLike> | null = null;
   private destroyed = false;
 
-  constructor(private readonly app: App) {}
+  /** `budget`: by default {@link PDF_BUDGET_LOW} on a {@link lowMemoryDevice}, else {@link PDF_BUDGET}. */
+  constructor(
+    private readonly app: App,
+    budget: PdfMemoryBudget = lowMemoryDevice() ? PDF_BUDGET_LOW : PDF_BUDGET,
+  ) {
+    this.budget = budget;
+    this.entries = new ByteLru<Cached>(budget.hard, (cached) => release(cached.entry));
+  }
+
+  /** What the cache keeps now (for tests and diagnostics). */
+  get memoryBudget(): PdfMemoryBudget {
+    return this.budget;
+  }
+
+  /**
+   * A canvas was refused: keep at most {@link PDF_BUDGET_LOW} from now on,
+   * and free every raster not drawn just now and all detail kept for going
+   * back, so what is on screen can be drawn.
+   */
+  lowMemory(): void {
+    const low = {
+      soft: Math.min(this.budget.soft, PDF_BUDGET_LOW.soft),
+      hard: Math.min(this.budget.hard, PDF_BUDGET_LOW.hard),
+      keepDetail: Math.min(this.budget.keepDetail, PDF_BUDGET_LOW.keepDetail),
+    };
+    this.budget = low;
+    this.entries.setBudget(low.hard);
+    const cutoff = now() - RECENT_USE_MS;
+    this.entries.deleteWhere((cached) => cached.lastUsed <= cutoff);
+  }
 
   /** Synchronous lookup. `null` means "not rasterised yet" — never blocks. */
   peek(path: string, page: number, dprScale: number, area?: PdfRenderArea): PdfEntry | null {
@@ -309,13 +397,23 @@ export class PdfBackdropCache {
    * repaints. `shown` is what is on screen: work and patches that still meet
    * it are kept even if not asked for again (a patch's margin may already
    * cover the view), and so is the most recently drawn rest, up to
-   * `KEEP_DETAIL_BYTES`.
+   * the budget's `keepDetail`.
    */
   setVisibleRegions(requests: PdfRasterRequest[], shown: PdfShownArea[] = []): void {
     if (this.destroyed) return;
     const wanted = new Set(
       requests.map(({ path, page, dprScale, area }) => rasterKey(path, page, dprScale, area)),
     );
+    // What is still asked for is in use, drawn this frame or not: the image
+    // of a page ahead is not drawn until it arrives, nor a tile once the ink
+    // tiles over it are cached. Left to age, the soft budget let them go and
+    // the next frame asked for them again: in one pan the same tile was
+    // rendered six times and the next page's image five (FineNotes#80).
+    const t = now();
+    for (const key of wanted) {
+      const cached = this.entries.get(key);
+      if (cached) cached.lastUsed = t;
+    }
     const useful = (
       key: string,
       item: { path: string; page: number; area?: PdfRenderArea },
@@ -341,7 +439,7 @@ export class PdfBackdropCache {
       .filter((c) => c.detail && !useful(c.key, c, c.level))
       .sort((a, b) => b.lastUsed - a.lastUsed)) {
       const bytes = bytesOf(cached.entry);
-      if (spare.size > 0 && spareBytes + bytes > KEEP_DETAIL_BYTES) break;
+      if (spare.size > 0 && spareBytes + bytes > this.budget.keepDetail) break;
       spare.add(cached.key);
       spareBytes += bytes;
     }
@@ -512,13 +610,43 @@ export class PdfBackdropCache {
         .catch((error: unknown): PdfEntry => ({ ok: false, reason: errorMessage(error) }))
         .then((entry) => {
           this.running.delete(job);
+          const refused = !entry.ok && entry.retry === true;
           if (job.cancelled || this.destroyed) release(entry);
+          else if (refused) this.inflight.delete(job.key);
           else this.store(job.key, entry, job.path, job.page, job.area, job.dprScale);
           if (this.work.get(job.key) === job) this.work.delete(job.key);
           job.finish(entry);
+          if (refused && !job.cancelled && !this.destroyed) this.refusedCanvas(job);
           this.drain();
         });
     }
+  }
+
+  /**
+   * Out of canvas memory for `job`: free memory, then try it again at once
+   * (what was freed is likely enough), and refused still, after each of
+   * {@link REFUSED_RETRY_MS}: iOS may give freed canvas memory back only a
+   * moment later. Waiting for the next paint to ask instead left a page at
+   * rest drawn from a stretched stand-in until the view next moved.
+   */
+  private refusedCanvas(job: RasterWork): void {
+    this.lowMemory();
+    const count = (this.refused.get(job.key) ?? 0) + 1;
+    this.refused.set(job.key, count);
+    const again = () => this.request(job.path, job.page, job.dprScale, job.area);
+    if (count === 1) {
+      again();
+      return;
+    }
+    const wait = REFUSED_RETRY_MS[count - 2];
+    if (wait === undefined || this.retries.has(job.key)) return;
+    this.retries.set(
+      job.key,
+      window.setTimeout(() => {
+        this.retries.delete(job.key);
+        if (!this.destroyed) again();
+      }, wait),
+    );
   }
 
   /** Drop every cached bitmap and close every open document. */
@@ -529,6 +657,9 @@ export class PdfBackdropCache {
     this.paused.length = 0;
     this.entries.clear();
     this.deferred.clear();
+    this.refused.clear();
+    for (const timer of this.retries.values()) window.clearTimeout(timer);
+    this.retries.clear();
     this.closeWorkerDocs();
     for (const promise of this.documents.values()) {
       void promise.then((doc) => doc?.destroy()).catch(() => undefined);
@@ -588,6 +719,22 @@ export class PdfBackdropCache {
     return this.entries.bytes;
   }
 
+  /**
+   * One line for the diagnostic HUD: raster memory held of the most allowed,
+   * detail patches or tiles cached, where pdf.js draws, and `low` while the
+   * cache keeps {@link PDF_BUDGET_LOW}'s budget.
+   */
+  diagnostics(): string {
+    let detail = 0;
+    for (const cached of this.entries.values()) if (cached.detail) detail++;
+    const mb = (bytes: number) => Math.round(bytes / MB);
+    return (
+      `pdf=${mb(this.entries.bytes)}/${mb(this.budget.hard)}MB detail=${detail} ` +
+      `${this.usesWorker ? "worker" : "main"}` +
+      `${this.budget.hard <= PDF_BUDGET_LOW.hard ? " low" : ""}`
+    );
+  }
+
   private store(
     key: string,
     entry: PdfEntry,
@@ -601,6 +748,7 @@ export class PdfBackdropCache {
       release(entry);
       return;
     }
+    if (entry.ok) this.refused.delete(key);
     const cached: Cached = {
       key,
       entry,
@@ -625,7 +773,7 @@ export class PdfBackdropCache {
   private trim(): void {
     const cutoff = now() - RECENT_USE_MS;
     for (const cached of [...this.entries.values()]) {
-      if (this.entries.bytes <= SOFT_BUDGET || cached.lastUsed > cutoff) return;
+      if (this.entries.bytes <= this.budget.soft || cached.lastUsed > cutoff) return;
       this.entries.delete(cached.key);
     }
   }
@@ -744,6 +892,8 @@ export class PdfBackdropCache {
         if (error instanceof PdfRenderCancelled || job?.cancelled) {
           return { ok: false, reason: "PDF render superseded" };
         }
+        // This thread's canvases come out of the same memory.
+        if (error instanceof PdfCanvasUnavailable) return NO_CANVAS;
         // A worker that died is dropped for good; one page it could not draw
         // is tried here, where it may still work.
         if (!worker.alive && this.worker === worker) this.setWorker(null);
@@ -773,7 +923,11 @@ export class PdfBackdropCache {
     canvas.width = plan?.width ?? Math.max(1, Math.round(viewport.width));
     canvas.height = plan?.height ?? Math.max(1, Math.round(viewport.height));
     const ctx = canvas.getContext("2d");
-    if (!ctx) return { ok: false, reason: "Canvas unavailable for PDF rasterisation" };
+    if (!ctx) {
+      canvas.width = canvas.height = 0;
+      pdfPage.cleanup?.();
+      return NO_CANVAS;
+    }
 
     try {
       const render = pdfPage.render({

@@ -44,6 +44,14 @@ export class PdfRenderCancelled extends Error {
   }
 }
 
+/** The worker was refused a canvas: out of canvas memory (iOS), not a fault of the PDF. */
+export class PdfCanvasUnavailable extends Error {
+  constructor() {
+    super("No canvas memory for the PDF page");
+    this.name = "PdfCanvasUnavailable";
+  }
+}
+
 const WORKER_SOURCE = `
 self.activeWindow = self;
 const TAG = ${JSON.stringify(TAG)};
@@ -101,8 +109,14 @@ self.addEventListener("message", async (event) => {
       if (cancelled.delete(id)) return reply(id, { ok: false, cancelled: true });
       const viewport = page.getViewport({ scale: m.sourceScale });
       const canvas = new OffscreenCanvas(m.width, m.height);
+      // iOS answers null once its canvases hold too much memory.
+      const context = canvas.getContext("2d");
+      if (!context) {
+        canvas.width = canvas.height = 0;
+        return reply(id, { ok: false, memory: true, error: "No canvas memory" });
+      }
       const task = page.render({
-        canvasContext: canvas.getContext("2d"),
+        canvasContext: context,
         viewport,
         ...(m.transform ? { transform: m.transform } : {}),
         ...(m.annotations === false ? { annotationMode: 0 } : {}),
@@ -133,6 +147,8 @@ self.addEventListener("message", async (event) => {
 interface Reply {
   ok: boolean;
   cancelled?: boolean;
+  /** Refused a canvas (`PdfCanvasUnavailable`). */
+  memory?: boolean;
   error?: string;
   pages?: number;
   width?: number;
@@ -262,7 +278,10 @@ export class PdfWorker {
     return { width: reply.width, height: reply.height };
   }
 
-  /** Render `page` (0-based) of `path` as planned. Cancelling rejects with `PdfRenderCancelled`. */
+  /**
+   * Render `page` (0-based) of `path` as planned. Cancelling rejects with
+   * `PdfRenderCancelled`; out of canvas memory, with `PdfCanvasUnavailable`.
+   */
   render(path: string, page: number, plan: PdfWorkerPlan): PdfWorkerRender {
     const id = this.next;
     let cancelled = false;
@@ -270,6 +289,7 @@ export class PdfWorker {
       if (reply.ok && reply.bitmap && !cancelled) return reply.bitmap;
       reply.bitmap?.close();
       if (cancelled || reply.cancelled) throw new PdfRenderCancelled();
+      if (reply.memory) throw new PdfCanvasUnavailable();
       throw new Error(reply.error ?? "PDF render failed");
     });
     return {

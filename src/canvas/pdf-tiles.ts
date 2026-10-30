@@ -1,17 +1,26 @@
 /**
- * The grid of sharp PDF tiles for a deeply zoomed page. Pure.
+ * The grid of sharp PDF tiles for a page that needs detail. Pure.
  *
- * Above `PDF_DETAIL_ZOOM` a PDF page is drawn sharp in square tiles of
- * `PDF_TILE_PX` device px at the view's level, rendered by pdf.js in a
- * worker (`view/pdf-worker.ts`) so they can be asked for while the view
- * moves. The grid is fixed per level, so a tile's key never changes as the
- * view moves, and tiles already cached are reused wherever they fall.
+ * Where a page's whole-page image cannot be as sharp as the ink tiles
+ * (`needsDetail`), it is drawn sharp in square tiles of `PDF_TILE_PX` device
+ * px at the view's level, rendered by pdf.js in a worker
+ * (`view/pdf-worker.ts`) so they can be asked for while the view moves. The
+ * grid is fixed per level, so a tile's key never changes as the view moves,
+ * and tiles already cached are reused wherever they fall.
  */
 
 import type { Bounds, PageGeometry } from "../model/document";
+import { TILE_SIZE } from "./tile-grid";
 
-/** A PDF tile's side, in device px (the ink tiles' size too). */
-export const PDF_TILE_PX = 512;
+/**
+ * A PDF tile's side, in device px: two ink tiles (`TILE_SIZE`), so each one
+ * covers exactly 2 x 2 of them. pdf.js runs every drawing operation of the
+ * page for each tile, clipped, so a tile's cost hardly depends on its size:
+ * with pdf.js in Chromium, a 2698 x 1458 px iPad view of an A4 study sheet
+ * at 4 px per point took 18 tiles and 318 ms at 512 px, 6 tiles and 162 ms
+ * at 1024 (642 and 226 ms with the CPU slowed 4x, as on an old iPad).
+ */
+export const PDF_TILE_PX = 2 * TILE_SIZE;
 
 export interface PdfTile {
   col: number;

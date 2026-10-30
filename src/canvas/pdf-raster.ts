@@ -3,7 +3,7 @@ import type { Bounds, PageGeometry } from "../model/document";
 
 export interface PdfRenderArea {
   geometry: PageGeometry;
-  /** Absent for a whole-page thumbnail; supplied for the visible area of a settled, deeply zoomed page. */
+  /** Absent for a whole page; supplied for detail, the visible area of a page that needs it. */
   region?: Bounds;
 }
 
@@ -79,18 +79,53 @@ export function pdfAreaKey(area: PdfRenderArea): string {
   ]);
 }
 
-/** Whole-page rasters are sufficient at ordinary zoom, independent of device pixel ratio. */
-export const PDF_DETAIL_ZOOM = 2.5;
+/**
+ * The scale (device px per page px) a page's one whole-page raster is drawn
+ * at for ink tiles at `level`: `level` itself while a raster that sharp fits
+ * the whole-page bounds, else the sharpest one that does, with detail drawn
+ * over it ({@link needsDetail}).
+ *
+ * Exactly `level`, never a rounded neighbour: the raster is resampled into
+ * tiles at `level`, and resampling 8 pt text by even 10% either way loses a
+ * third of its edge contrast, which reads as blur (FineNotes#80, measured
+ * with pdf.js in Chromium: 1.25 drawn at 1.36 kept 57% of the edge energy).
+ */
+export function pageRasterScale(geometry: PageGeometry, level: number): number {
+  return Math.min(level, wholePageScale(geometry));
+}
 
-/** The clipped, visible area only; gutters and invalid viewports request nothing. */
+/**
+ * The sharpest whole-page raster of a page that stays inside the bounds
+ * every whole-page raster keeps to (2400 px a side, 4 MP): 2.82 for A4.
+ */
+export function wholePageScale(geometry: PageGeometry): number {
+  const { width, height } = geometry;
+  if (!(width > 0 && height > 0 && Number.isFinite(width * height))) return 1;
+  return Math.min(
+    MAX_PATCH_EDGE / Math.max(width, height),
+    Math.sqrt(MAX_PATCH_PIXELS / (width * height)),
+  );
+}
+
+/**
+ * Whether a page at `level` is drawn sharp from detail (worker tiles, or one
+ * patch of the view) over its page image: whenever the page image cannot be
+ * that sharp. A fixed zoom (2.5x, until FineNotes#80) left A4 pages on an
+ * iPad blurry between about 1.4x and 2.5x, where the image fell short; a
+ * slide, larger and with bigger text, rarely showed it.
+ */
+export function needsDetail(geometry: PageGeometry, level: number): boolean {
+  return Number.isFinite(level) && level > wholePageScale(geometry) * (1 + 1e-3);
+}
+
+/** The clipped, visible area only; gutters, invalid viewports and pages that need no detail request nothing. */
 export function visiblePdfArea(
   geometry: PageGeometry,
   visible: Bounds,
-  zoom: number,
+  level: number,
 ): PdfRenderArea | null {
   if (
-    !Number.isFinite(zoom) ||
-    zoom <= PDF_DETAIL_ZOOM ||
+    !needsDetail(geometry, level) ||
     ![
       geometry.width,
       geometry.height,
@@ -116,23 +151,28 @@ export function visiblePdfArea(
  */
 export const DETAIL_MARGIN = 0.25;
 
-/** The visible area of a deeply zoomed page plus `DETAIL_MARGIN`, kept on the page. */
+/** The visible area of a page that needs detail, plus `DETAIL_MARGIN`, kept on the page. */
 export function detailPdfArea(
   geometry: PageGeometry,
   visible: Bounds,
-  zoom: number,
+  level: number,
 ): PdfRenderArea | null {
-  const shown = visiblePdfArea(geometry, visible, zoom)?.region;
+  const shown = visiblePdfArea(geometry, visible, level)?.region;
   if (!shown) return null;
   const mx = (shown.maxX - shown.minX) * DETAIL_MARGIN;
   const my = (shown.maxY - shown.minY) * DETAIL_MARGIN;
+  // Out to whole device pixels at `level`, where the ink tiles' pixels lie:
+  // a patch a fraction of a pixel off them is resampled into them, which
+  // left it at 82% of the edge contrast of the PDF drawn there directly.
+  const down = (v: number) => Math.floor(v * level) / level;
+  const up = (v: number) => Math.ceil(v * level) / level;
   return {
     geometry,
     region: {
-      minX: Math.max(0, shown.minX - mx),
-      minY: Math.max(0, shown.minY - my),
-      maxX: Math.min(geometry.width, shown.maxX + mx),
-      maxY: Math.min(geometry.height, shown.maxY + my),
+      minX: Math.max(0, down(shown.minX - mx)),
+      minY: Math.max(0, down(shown.minY - my)),
+      maxX: Math.min(geometry.width, up(shown.maxX + mx)),
+      maxY: Math.min(geometry.height, up(shown.maxY + my)),
     },
   };
 }

@@ -655,19 +655,33 @@ One class may implement both, and `VaultBackdropRenderer` does.
 
 - **Synthetic backdrops** draw procedurally — cheap, redraw freely.
 - **PDF backdrops** render from the original PDF through Obsidian's PDF.js.
-  Up to 2.5× zoom, ink tiles and their previews share one whole-page raster.
-  Above that zoom, one clipped visible patch per page is shared across tiles,
-  with the page image as fallback. Source PDF points are contained in the
-  notebook page geometry; PDF.js handles source rotation and cropping.
-  Region keys include source path/page, page geometry, visible region and
-  settled scale (stable to 1e-4). Pinch frames retain their full-page scale
-  and request no new detail. Full-page/patch rasters are bounded to 2400 px
-  per edge and approximately 4 MP. The cache retains its 48 MB soft / 96 MB
-  hard budgets and recent-use policy. At most two PDF renders run at once.
+  Ink tiles and their previews share one whole-page raster per page, drawn
+  at exactly the tiles' settled level, so it is never resampled. Where a
+  raster that sharp would pass the whole-page bounds (2400 px per edge,
+  about 4 MP: 2.82 device px per point for A4), the page image is drawn at
+  the bounds and detail is drawn over it at the level: 1024 px tiles from
+  the PDF worker, or without it one clipped patch of the view, on whole
+  device pixels, shared across tiles. Each screen paint asks for, in
+  order: the page images of the pages on screen, the next page a scroll
+  shows, detail on screen, the other pages within 1.5 screens (up to 60%
+  of the soft budget), then detail just off screen. Without the worker,
+  detail waits for the view to rest and a patch still drawing is let go of
+  when it moves; page images are asked for either way. Source PDF points
+  are contained in the notebook page geometry; PDF.js handles source
+  rotation and cropping. Region keys include source
+  path/page, page geometry, visible region and settled scale (stable to
+  1e-4). Pinch frames retain their full-page scale and request no new
+  detail. The cache keeps a 48 MB soft / 96 MB hard budget and recent-use
+  policy, 24 MB / 64 MB on a device short of memory or once a canvas has
+  been refused; a refused canvas is never cached as a miss. At most two PDF
+  renders run at once.
   Offscreen detail work is cancelled and its canvas evicted; stale work
   triggers no repaint or cached miss. Writing holds background starts;
   explicit awaited draws remain available. Patch completion invalidates only
   the matching region; full pages can invalidate the matching sidebar thumbnail.
+  Either way the ink tiles over it keep their bitmaps and are painted again in
+  place (`Renderer.invalidateBackdrop`, `refreshPage`), a few a frame, shown
+  as they were until then.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
@@ -969,7 +983,7 @@ change the note format.
 
 ## PDF viewport detail
 
-At zoom up to 2.5×, notebook ink tiles and their previews share a cached whole-page PDF image. Above that threshold, the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
+Notebook ink tiles and their previews share a cached whole-page PDF image, drawn at exactly the tiles' settled level. Where that image would pass the whole-page bounds (from about 1.4× zoom for A4 on an iPad), the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid, or with the PDF worker 1024 px tiles aligned to it. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
 
 Replacing the viewport cancels obsolete queued/active detail requests, evicts their canvases, and prevents stale completion callbacks or cached failure placeholders. Ordinary page and sidebar rasters retain their existing byte budgets. Mid-pinch frames retain the previous full-page resolution and start no new detail work. Writing holds background starts; explicitly awaited export/thumbnail requests remain available. Clear/unload cancels pending work.
 

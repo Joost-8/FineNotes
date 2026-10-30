@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { PDF_TILE_PX, tileRegion, tileSide, tilesFor } from "../../src/canvas/pdf-tiles";
+import { TILE_SIZE } from "../../src/canvas/tile-grid";
 
 const geometry = { width: 1024, height: 1448 };
 
 describe("PDF tile grid", () => {
-  it("is 512 device px a side at any level", () => {
-    expect(tileSide(8) * 8).toBe(PDF_TILE_PX);
-    expect(tileRegion(geometry, 8, 1, 2)).toEqual({ minX: 64, minY: 128, maxX: 128, maxY: 192 });
+  it("is two ink tiles (1024 device px) a side at any level", () => {
+    expect(PDF_TILE_PX).toBe(2 * TILE_SIZE);
+    expect(PDF_TILE_PX).toBe(1024);
+    expect(tileSide(16) * 16).toBe(PDF_TILE_PX);
+    expect(tileRegion(geometry, 16, 1, 2)).toEqual({ minX: 64, minY: 128, maxX: 128, maxY: 192 });
   });
 
   it("cuts the last tiles at the page's edges", () => {
     // 1024 / 64 = 16 tiles across exactly; 1448 / 64 = 22.6 down.
-    expect(tileRegion(geometry, 8, 15, 22)).toEqual({
+    expect(tileRegion(geometry, 16, 15, 22)).toEqual({
       minX: 960,
       minY: 1408,
       maxX: 1024,
@@ -20,8 +23,8 @@ describe("PDF tile grid", () => {
   });
 
   it("lists the tiles on screen first, nearest the middle, then a ring", () => {
-    const view = { minX: 100, minY: 100, maxX: 228, maxY: 228 }; // 2 x 2 tiles' worth at 8x
-    const tiles = tilesFor(geometry, view, 8);
+    const view = { minX: 100, minY: 100, maxX: 228, maxY: 228 }; // 2 x 2 tiles' worth at 16x
+    const tiles = tilesFor(geometry, view, 16);
     const shown = tiles.filter((t) => t.visible);
     // 100..228 at 64 px a tile: columns 1-3, rows 1-3.
     expect(shown.map((t) => `${t.col},${t.row}`).sort()).toEqual(
@@ -35,28 +38,28 @@ describe("PDF tile grid", () => {
 
   it("reaches one tile further the way the view moves", () => {
     const view = { minX: 256, minY: 256, maxX: 320, maxY: 320 }; // exactly tile 4,4
-    const still = tilesFor(geometry, view, 8);
-    const right = tilesFor(geometry, view, 8, 1, { x: 30, y: 0 });
+    const still = tilesFor(geometry, view, 16);
+    const right = tilesFor(geometry, view, 16, 1, { x: 30, y: 0 });
     expect(still).toHaveLength(9);
     expect(right).toHaveLength(12);
     expect(right.some((t) => t.col === 6)).toBe(true);
     expect(right.some((t) => t.col === 2)).toBe(false);
-    const up = tilesFor(geometry, view, 8, 1, { x: 0, y: -5 });
+    const up = tilesFor(geometry, view, 16, 1, { x: 0, y: -5 });
     expect(up.some((t) => t.row === 2)).toBe(true);
   });
 
   it("stays on the page at its corners", () => {
-    const tiles = tilesFor(geometry, { minX: -50, minY: -50, maxX: 30, maxY: 30 }, 8);
+    const tiles = tilesFor(geometry, { minX: -50, minY: -50, maxX: 30, maxY: 30 }, 16);
     expect(Math.min(...tiles.map((t) => t.col))).toBe(0);
     expect(Math.min(...tiles.map((t) => t.row))).toBe(0);
-    const end = tilesFor(geometry, { minX: 1000, minY: 1430, maxX: 1100, maxY: 1500 }, 8);
+    const end = tilesFor(geometry, { minX: 1000, minY: 1430, maxX: 1100, maxY: 1500 }, 16);
     expect(Math.max(...end.map((t) => t.col))).toBe(15);
     expect(Math.max(...end.map((t) => t.row))).toBe(22);
   });
 
   it("asks for nothing off the page or at a meaningless level", () => {
-    expect(tilesFor(geometry, { minX: 2000, minY: 0, maxX: 2100, maxY: 100 }, 8)).toEqual([]);
+    expect(tilesFor(geometry, { minX: 2000, minY: 0, maxX: 2100, maxY: 100 }, 16)).toEqual([]);
     expect(tilesFor(geometry, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 0)).toEqual([]);
-    expect(tilesFor(geometry, { minX: 0, minY: 0, maxX: Number.NaN, maxY: 100 }, 8)).toEqual([]);
+    expect(tilesFor(geometry, { minX: 0, minY: 0, maxX: Number.NaN, maxY: 100 }, 16)).toEqual([]);
   });
 });

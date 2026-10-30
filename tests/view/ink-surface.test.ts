@@ -18,7 +18,13 @@ import { StrokeBuilder } from "../../src/ink/stroke-builder";
 import { layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
 import { type ShortcutTable, shortcutTable, withShortcut } from "../../src/model/shortcut-bindings";
-import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
+import {
+  type InkDocument,
+  type Page,
+  type Stroke,
+  blankPage,
+  strokeBounds,
+} from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
 import { StrokeIndex } from "../../src/view/stroke-index";
@@ -1140,6 +1146,8 @@ function ink(doc: InkDocument): Ink {
     eraseGrey: false,
     eraseGreyCuts: new Map(),
     eraseDirty: new Set(),
+    eraseCuts: new Map(),
+    eraseCutSeen: new Set(),
     eraseLast: null,
     erasePreview: new Map(),
     eraseRuled: new Map(),
@@ -1169,7 +1177,15 @@ function ink(doc: InkDocument): Ink {
     dab: (pageIndex, x, y, radius = 4, filter = "all") =>
       run<boolean>(surface, "eraseWholeAt", doc.pages[pageIndex], { x, y }, radius, filter),
     cut: (pageIndex, x, y, radius = 4) =>
-      run<boolean>(surface, "erasePartialAt", doc.pages[pageIndex], { x, y }, radius, "all"),
+      run<boolean>(
+        surface,
+        "erasePartialAt",
+        doc.pages[pageIndex],
+        { x, y },
+        radius,
+        "all",
+        pageIndex,
+      ),
     lift: (pageIndex) => {
       surface.activePage = boxOf(doc, pageIndex);
       run(surface, "eraseCommit");
@@ -1839,6 +1855,29 @@ describe("partial erase", () => {
     w.undo();
     expect(ids(w.doc.pages[0])).toEqual(["s1", "s2", "s3"]);
     expect(w.strokeAt(0, 60, 10)?.id).toBe("s1");
+  });
+
+  it("paints again round the cut, not the whole stroke, and the whole stroke once as it ends", () => {
+    const long = line("long", 10, 900, 10);
+    const w = ink(documentOf(page("p1", [long])));
+    const renderer = { invalidateArea: vi.fn(), invalidateRegion: vi.fn() };
+    w.surface.renderer = renderer;
+    w.surface.activePage = boxOf(w.doc, 0);
+    w.cut(0, 400, 10, 4);
+    w.cut(0, 404, 10, 4);
+    run(w.surface, "flushEraseDirty");
+    // The two dabs overlap: one area, the radius and 1.5 widths of a size-2
+    // stroke, and 6 px, round them both.
+    expect(renderer.invalidateArea).toHaveBeenCalledExactlyOnceWith(0, {
+      minX: 387,
+      minY: -3,
+      maxX: 417,
+      maxY: 23,
+    });
+    expect(renderer.invalidateRegion).not.toHaveBeenCalled();
+    // As the gesture ends, the stroke is painted from the document again, whole.
+    run(w.surface, "eraseReset");
+    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, strokeBounds(long));
   });
 });
 

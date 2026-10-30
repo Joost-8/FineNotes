@@ -135,6 +135,52 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Sharp PDF pages at every zoom**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Small text and
+  pictures in a PDF looked soft on an iPad, most between about 1.4× and
+  2.5× zoom on an A4 page, and a little even at the zoom a notebook opens
+  at. A PDF page is now drawn at exactly the resolution of the screen, and
+  zoomed in past what one picture of the whole page can hold, the part on
+  screen is drawn sharp on top of it, from whatever zoom that happens at
+  rather than from 2.5×. Those sharp parts come in larger pieces, so a
+  screenful takes about a third of the time it did.
+- **No blank pages on a fast scroll through a PDF**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Pages came on
+  screen as plain paper, with only the ink on them, until the PDF was drawn
+  half a second or more later. The pages a scroll shows next are now drawn
+  before they arrive, in the order they come, and the pages on screen are
+  drawn before any sharper detail.
+- **Smoother over a PDF.** Moving about a zoomed-in PDF page drew the same
+  parts of the PDF again and again (half of all it drew, in one test), and
+  every frame of a scroll or a page turn changed two screen-sized pictures
+  where one now does, so page turns stutter less.
+- **The eraser keeps up with the pen.** Each move of the eraser drew the
+  whole screen again, and every tile under any stroke it touched from
+  scratch, the PDF and every highlight on it included; a long stroke or a
+  scribbled highlight made each move slower than the pen. Now only what
+  the eraser changed is painted again, once a frame. Measured with the
+  CPU slowed four times: an eraser pass over a page of 845 strokes took a
+  fifth of the time it did, and over thirty stacked highlights a quarter,
+  with a few stutters where there were dozens.
+- **No freeze when a zoom comes to rest, or a PDF page arrives.** Every
+  tile on screen was drawn again in one frame, half a second with stacked
+  highlights on a slow CPU. They are now drawn a few a frame, the last
+  zoom's tiles standing in meanwhile, and a PDF page or its sharper detail
+  arriving paints the ink over it again the same way.
+- **Panning moves the page instead of painting it again** (iPad and
+  Android). The picture of the pages now reaches a little past the screen
+  on every side, and a scroll or pan it still covers moves it as it is;
+  it is painted again only once the view passes its edge. Every frame of a
+  pan used to paint and hand over a screen-sized picture.
+- The debug overlay says what the highlighter did where it came down on a
+  PDF page: which text it snapped to, or why it drew freehand (the page's
+  text not read yet, no text on the page, or the pen beside the text).
+- On an iPad short of memory, a PDF page no longer shows as a missing
+  source when the iPad runs out of room for it: FineNotes frees what is
+  not on screen, keeps fewer pages around from then on, and draws the page
+  again. Older iPads (iPadOS 15 and earlier) and Android tablets with 2 GB
+  or less keep fewer from the start. The debug overlay shows how much PDF
+  memory is in use.
 - Highlighter strokes had darker dots along them on the iPad
   ([#85](https://github.com/Joost-8/FineNotes/issues/85)). The iPad drew
   a wide translucent line darker in places along it; a highlight is now

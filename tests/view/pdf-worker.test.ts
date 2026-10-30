@@ -9,8 +9,15 @@ vi.mock("obsidian", async () => ({
   loadPdfJs: () => Promise.resolve({}),
 }));
 
-const { PdfWorker, PdfRenderCancelled, acquirePdfWorker, releasePdfWorker, pdfAssets, pdfJsBase } =
-  await import("../../src/view/pdf-worker");
+const {
+  PdfCanvasUnavailable,
+  PdfWorker,
+  PdfRenderCancelled,
+  acquirePdfWorker,
+  releasePdfWorker,
+  pdfAssets,
+  pdfJsBase,
+} = await import("../../src/view/pdf-worker");
 
 type Message = { fineNotesPdf: true; id: number; type: string; [key: string]: unknown };
 
@@ -21,6 +28,8 @@ const behaviour = {
   held: [] as Array<() => void>,
   /** Never answer `init`: a worker that hangs while starting. */
   silent: false,
+  /** Answer renders as refused a canvas, as iOS does once canvases hold too much. */
+  noCanvas: false,
   bitmaps: [] as Array<{ close: ReturnType<typeof vi.fn> }>,
 };
 let workers: FakeWorker[] = [];
@@ -61,6 +70,10 @@ class FakeWorker {
         answer({ ok: true, width: 600, height: 800 });
         break;
       case "render": {
+        if (behaviour.noCanvas) {
+          answer({ ok: false, memory: true, error: "No canvas memory" });
+          break;
+        }
         const bitmap = { width: message.width, height: message.height, close: vi.fn() };
         behaviour.bitmaps.push(bitmap);
         const send = () => answer({ ok: true, bitmap });
@@ -85,6 +98,7 @@ beforeEach(() => {
   behaviour.hold = false;
   behaviour.held = [];
   behaviour.silent = false;
+  behaviour.noCanvas = false;
   behaviour.bitmaps = [];
   vi.stubGlobal("window", {
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
@@ -182,6 +196,15 @@ describe("PdfWorker", () => {
     behaviour.held[0]();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(behaviour.bitmaps[0].close).toHaveBeenCalled();
+    worker.destroy();
+  });
+
+  it("tells a refused canvas from a failed render, and stays alive", async () => {
+    const worker = (await PdfWorker.start())!;
+    behaviour.noCanvas = true;
+    const render = worker.render("a.pdf", 0, { sourceScale: 4, width: 1024, height: 1024 });
+    await expect(render.promise).rejects.toBeInstanceOf(PdfCanvasUnavailable);
+    expect(worker.alive).toBe(true);
     worker.destroy();
   });
 
