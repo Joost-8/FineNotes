@@ -7031,7 +7031,8 @@ textarea.goodobsidian-chat-input:focus-visible {
 }
 
 /* Pen gestures › Make shapes: its name, then off | after a hold | on lift. */
-.goodobsidian-make-shapes {
+.goodobsidian-make-shapes,
+.goodobsidian-tip-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7040,7 +7041,8 @@ textarea.goodobsidian-chat-input:focus-visible {
   padding: 4px 12px;
 }
 
-.goodobsidian-make-shapes .goodobsidian-popover-label {
+.goodobsidian-make-shapes .goodobsidian-popover-label,
+.goodobsidian-tip-row .goodobsidian-popover-label {
   color: var(--text-normal);
   font-size: var(--font-ui-medium);
   /* As a switch row's name, which takes Obsidian's button weight. */

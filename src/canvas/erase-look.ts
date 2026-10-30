@@ -9,6 +9,7 @@
  * (the ledger's "A theme stored on a shared painter leaks").
  */
 
+import { CHISEL_ASPECT } from "../ink/chisel";
 import { type EraseRect, insideSpans } from "../ink/stroke-eraser";
 import { POINT_STRIDE, type Stroke } from "../model/document";
 
@@ -98,7 +99,8 @@ export function erasedPieces(stroke: Stroke, rects: readonly EraseRect[]): Strok
   const [x0, y0] = stroke.pts;
   const last = stroke.pts.length - (stroke.pts.length % POINT_STRIDE) - POINT_STRIDE;
   const [x1, y1] = [stroke.pts[last], stroke.pts[last + 1]];
-  const half = stroke.size / 2;
+  // How far past its end a cut stretch's ink reaches: a chisel tip, less.
+  const half = (stroke.size / 2) * (stroke.tip === "chisel" ? CHISEL_ASPECT : 1);
   const stretches: number[][] = [];
   for (const stretch of erasedStretches(stroke.pts, stroke.size, rects)) {
     const end = stretch.length - POINT_STRIDE;
@@ -118,6 +120,7 @@ export function erasedPieces(stroke: Stroke, rects: readonly EraseRect[]): Strok
     };
     // As the surviving pieces: calligraphy keeps its flat nib, a shape does not.
     if (stroke.nib !== undefined && stroke.shape === undefined) piece.nib = stroke.nib;
+    if (stroke.tip !== undefined && stroke.shape === undefined) piece.tip = stroke.tip;
     if (stroke.shape !== undefined) piece.shape = stroke.shape;
     if (stroke.dash !== undefined) piece.dash = stroke.dash;
     if (stroke.radius !== undefined) piece.radius = stroke.radius;

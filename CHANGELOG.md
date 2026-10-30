@@ -8,6 +8,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A chisel tip for the highlighter.** Tap the highlighter in hand for its
+  menu and pick the flat tip: a level highlight is then a band of one even
+  height with square ends, as a real chisel marker draws it. Each highlight
+  keeps the tip it was drawn with, on every device and in exported PDFs.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

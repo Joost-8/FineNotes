@@ -529,7 +529,7 @@ import {
   strokeWidthFor,
   tableSizeFor,
 } from "./toolbar";
-import type { SnapMode } from "../settings-data";
+import type { HighlighterTip, SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcChip } from "./calc-chip";
@@ -845,6 +845,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** The highlighter's tip, read live (`settings.highlighterTip`); absent is round. */
+  highlighterTip?: () => HighlighterTip;
   /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
   pencilTilt?: () => boolean;
   /**
@@ -6345,12 +6347,18 @@ export class InkSurface {
     const { pressureEnabled } = this.toolState;
     // A calligraphy pen's flat nib, for the pen only (never a shape or the highlighter).
     const nib = this.toolState.tool === "pen" ? penTypeFor(this.toolState).nib : undefined;
+    // The highlighter's flat chisel tip, when it is the one chosen.
+    const tip =
+      this.toolState.tool === "highlighter" && this.callbacks.highlighterTip?.() === "chisel"
+        ? "chisel"
+        : undefined;
     return {
       color: this.strokeColor(),
       size: this.strokeSize(),
       tool,
       usePressure: pressureEnabled,
       ...(nib !== undefined ? { nib } : {}),
+      ...(tip !== undefined ? { tip } : {}),
     };
   }
 
@@ -9162,7 +9170,7 @@ export class InkSurface {
     );
 
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
-    const { color, size, tool, nib } = this.currentStyle();
+    const { color, size, tool, nib, tip } = this.currentStyle();
     const samples = builder.recorded();
     const pts = shape
       ? shape.pts
@@ -9180,6 +9188,7 @@ export class InkSurface {
       ...(samples ? { samples } : {}),
       // A snapped shape is clean geometry, drawn at one width: no nib.
       ...(nib !== undefined && !shape ? { nib } : {}),
+      ...(tip !== undefined && !shape ? { tip } : {}),
       ...(tilted ? { tilt } : {}),
     };
     if (shape) this.styleShape(stroke);
