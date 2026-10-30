@@ -195,29 +195,31 @@ export class LassoPath {
 }
 
 /**
- * The lasso as it is *drawn*: the loop with its corners rounded off, by
- * Chaikin's corner cutting, `passes` times (each doubles the points). A
+ * The lasso as it is *drawn*: the pen's path with its corners rounded off,
+ * by Chaikin's corner cutting, `passes` times (each doubles the points). A
  * rough rectangle comes out a rounded one and a wobbly ellipse stays
- * wobbly — the person's own loop, as GoodNotes draws it, never a hull or
- * a box (research/goodnotes-smoothness §8). Display only: what the lasso
- * takes is still decided on the raw loop. Closed: the last point joins the
- * first. Fewer than three points come back as they are.
+ * wobbly: the person's own loop, as Goodnotes draws it, never a hull or a
+ * box (research/goodnotes-smoothness §8). Display only: what the lasso
+ * takes is still decided on the raw loop. Open: its two ends stay where the
+ * pen came down and lifted, so the edge that closes the loop is the straight
+ * line between them, as Goodnotes closes it (Joost's recording,
+ * 2026-10-30). Fewer than three points come back as they are.
  */
-export function smoothLoop(loop: readonly number[], passes = 2): number[] {
-  let pts = loop.slice(0, loop.length - (loop.length % 2));
+export function smoothPath(path: readonly number[], passes = 2): number[] {
+  let pts = path.slice(0, path.length - (path.length % 2));
   if (pts.length < 6) return pts;
   for (let pass = 0; pass < passes; pass++) {
-    const out: number[] = [];
     const n = pts.length / 2;
-    for (let i = 0; i < n; i++) {
+    const out: number[] = [pts[0], pts[1]];
+    for (let i = 0; i + 1 < n; i++) {
       const ax = pts[2 * i];
       const ay = pts[2 * i + 1];
-      const j = (i + 1) % n;
-      const bx = pts[2 * j];
-      const by = pts[2 * j + 1];
+      const bx = pts[2 * i + 2];
+      const by = pts[2 * i + 3];
       out.push(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by);
       out.push(0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by);
     }
+    out.push(pts[2 * n - 2], pts[2 * n - 1]);
     pts = out;
   }
   return pts;
@@ -626,6 +628,105 @@ export function clampGroupDelta(
   const x = clamp(cx + dx, Math.min(0, cx), Math.max(page.width, cx));
   const y = clamp(cy + dy, Math.min(0, cy), Math.max(page.height, cy));
   return { dx: x - cx, dy: y - cy };
+}
+
+/** A page's box in layout space (1:1 with page px), as `PageBox` has it. */
+export interface DropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The page a dragged selection is dropped on: the one under the pen at
+ * layout point `at`, or, between pages or past the last, the nearest one.
+ * Ties go to the earlier page. `-1` for no pages.
+ */
+export function dropPageAt(boxes: readonly DropBox[], at: { x: number; y: number }): number {
+  let best = -1;
+  let bestDistance = Infinity;
+  boxes.forEach((box, index) => {
+    const ox = Math.max(box.x - at.x, 0, at.x - (box.x + box.width));
+    const oy = Math.max(box.y - at.y, 0, at.y - (box.y + box.height));
+    const distance = Math.hypot(ox, oy);
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+/**
+ * A move of a selection by (dx, dy) in the space of its own page `from`,
+ * clamped so it lands on page `to`: on its own page as
+ * {@link clampGroupDelta} has it; on another wholly inside that page, or,
+ * when it is bigger than the page, covering it from its top-left corner.
+ * Half of it hanging past the target's edge would hide in the next page's
+ * gap. The answer is still in `from`'s space, where the drag draws it; the
+ * drop shifts it by `from - to` into the target's.
+ */
+export function crossPageDelta(
+  bounds: Bounds,
+  dx: number,
+  dy: number,
+  from: DropBox,
+  to: DropBox,
+): { dx: number; dy: number } {
+  if (from === to) return clampGroupDelta(bounds, dx, dy, from);
+  // The corner in the target's space, kept on it, and back.
+  const left = bounds.minX + dx + from.x - to.x;
+  const top = bounds.minY + dy + from.y - to.y;
+  const x = within(left, bounds.maxX - bounds.minX, to.width);
+  const y = within(top, bounds.maxY - bounds.minY, to.height);
+  return { dx: dx + x - left, dy: dy + y - top };
+}
+
+/**
+ * A move of a selection by (dx, dy) in the space of its own page `from`,
+ * with the pages joined: the pages are one sheet of paper (`paper`, their
+ * union in layout space), so it is clamped as {@link clampGroupDelta} has
+ * it on one page, with its centre kept on the paper. It may lie over a
+ * join, as ink may; the page under the pen takes it on the drop.
+ */
+export function joinedDelta(
+  bounds: Bounds,
+  dx: number,
+  dy: number,
+  from: DropBox,
+  paper: DropBox,
+): { dx: number; dy: number } {
+  const ox = from.x - paper.x;
+  const oy = from.y - paper.y;
+  const onPaper = {
+    minX: bounds.minX + ox,
+    minY: bounds.minY + oy,
+    maxX: bounds.maxX + ox,
+    maxY: bounds.maxY + oy,
+  };
+  return clampGroupDelta(onPaper, dx, dy, paper);
+}
+
+/** The box round all of `boxes`, layout space: the paper of joined pages. */
+export function paperBox(boxes: readonly DropBox[]): DropBox {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const box of boxes) {
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  }
+  if (minX > maxX) return { x: 0, y: 0, width: 0, height: 0 };
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** A span of `size` starting at `start`, kept inside [0, room]: the start when it is too big. */
+function within(start: number, size: number, room: number): number {
+  return size <= room ? clamp(start, 0, room - size) : 0;
 }
 
 // --- Resizing a selection by its corners -----------------------------------

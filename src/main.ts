@@ -56,6 +56,7 @@ import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -1630,6 +1631,20 @@ export default class GoodObsidianPlugin extends Plugin {
       this.fullScreenGroups.clear();
     });
   }
+
+  // --- Shortcuts on this device -------------------------------------------------
+
+  /**
+   * This device's shortcut rows (`view/shortcut-store.ts`), read once from
+   * `localStorage`: a laptop's keys and an Android tablet's stylus button do
+   * not belong in the synced settings.
+   */
+  get shortcuts(): ShortcutStore {
+    this.shortcutsSeen ??= new ShortcutStore(this.app);
+    return this.shortcutsSeen;
+  }
+
+  private shortcutsSeen: ShortcutStore | null = null;
 
   // --- Where the tool options pill rests ---------------------------------------
 

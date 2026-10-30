@@ -104,15 +104,19 @@ import {
   boxInLasso,
   clampGroupDelta,
   cornerScale,
+  crossPageDelta,
+  dropPageAt,
   hitSelectionCorner,
   hitSelectionKnob,
+  joinedDelta,
   lassoTakesStroke,
   minScaleForSide,
+  paperBox,
   polygonOf,
   rectLoop,
   scaleBounds,
   selectionKnobPoint,
-  smoothLoop,
+  smoothPath,
   selectionBounds,
   isLoneShape,
   strokeInLasso,
@@ -369,6 +373,7 @@ import {
   type ElementLists,
   type IdSource,
   type PageElements,
+  MoveElementsToPage,
   RecolorStrokes,
   RemoveElements,
   ReshapeStroke,
@@ -489,7 +494,6 @@ import {
 import {
   type BarrelAction,
   type PressInput,
-  type PressOverride,
   barrelActionOf,
   dragZoom,
   pressOverride,
@@ -513,6 +517,7 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import { SelectionActionBar, onTap } from "./selection-bar";
+import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
@@ -529,6 +534,17 @@ import type { SelectionAction } from "./selection-bar-model";
 import { selectionKind, selectionMenu } from "./selection-kind";
 import { writePngToClipboard } from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
+import {
+  type PointerReading,
+  type ShortcutInput,
+  type ShortcutMatch,
+  type ShortcutRow,
+  type ShortcutTable,
+  buttonBit,
+  buttonInput,
+  keyInput,
+  matchShortcut,
+} from "../model/shortcut-bindings";
 import {
   type ToolLift,
   type ToolUse,
@@ -762,6 +778,12 @@ export interface InkSurfaceCallbacks {
   /** Screenshot: the selection drawn on its paper as a PNG; the host offers Copy and Share. */
   onScreenshot?: (png: Blob, width: number, height: number) => void;
   /**
+   * Screenshot of a patch of page `pageIndex` (page space): what a lasso
+   * drawn round nothing offers, as Goodnotes does. The host draws the page
+   * as it exports it (its paper, PDF and ink) and offers Copy and Share.
+   */
+  onRegionScreenshot?: (pageIndex: number, bounds: Bounds) => void;
+  /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
    * selection bar offers Explore only.
@@ -773,6 +795,10 @@ export interface InkSurfaceCallbacks {
   onSavedPen?: (index: number) => void;
   /** ? asked for the keyboard shortcuts; the host shows them. */
   onShortcuts?: () => void;
+  /** This device's shortcut rows (`model/shortcut-bindings.ts`), read live. */
+  shortcuts?: () => ShortcutTable;
+  /** Run a shortcut action that belongs to the host (full screen, ruler, stickers…). */
+  onShortcutAction?: (actionId: string) => boolean;
   /** What the stylus barrel button does (the settings); erase when absent. */
   barrelAction?: () => BarrelAction;
   /** What a click of the barrel button in the air does (the settings); the pen menu when absent. */
@@ -1119,6 +1145,11 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
+/** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
+const EMPTY_LASSO_MS = 1500;
+const EMPTY_LASSO_FADE_MS = 300;
+/** Screen px from where the pen lifted to the empty lasso's Screenshot button. */
+const EMPTY_LASSO_PILL_OFFSET_PX = 12;
 /** How far in from a locked picture's top-right corner its lock badge sits, screen px. */
 const LOCK_BADGE_INSET_PX = 18;
 
@@ -1267,6 +1298,13 @@ interface GroupDrag {
   fingers?: GroupFingerTurn;
   /** Whether the selection has left the tiles for the wet layer yet. */
   lifted: boolean;
+  /**
+   * The page a move drops it on: its own until the pen crosses onto
+   * another. (dx, dy) stay in its own page's space, where it is drawn.
+   */
+  target?: PageBox;
+  /** Where the pen is in the pane, px, for scrolling near its edges. */
+  screen?: Pt;
   /** The connectors joined to the selection's shapes, drawn on the wet layer while it moves. */
   connectors?: Set<string>;
 }
@@ -1458,6 +1496,38 @@ function swallowClickAfterTap(target: HTMLElement): void {
 function isPracticeTool(tool: ActiveTool): boolean {
   return tool === "pen" || tool === "eraser";
 }
+
+/** A pen's side button with no keys held, as the table stores it. */
+const SIDE_BUTTON: ShortcutInput = { type: "button", button: 2, mods: [], pen: true };
+
+/**
+ * Whether taking a shortcut should also keep the browser from acting on the
+ * key. A bare letter or digit does not: it never had a browser meaning on the
+ * page, and the built-in keys let those through too.
+ */
+function shortcutPreventsDefault(input: ShortcutInput): boolean {
+  return input.type === "key" && (input.mods.length > 0 || !/^[a-z0-9]$/.test(input.key));
+}
+
+/** The tool an action switches to, or null for a command or a tool bar action. */
+const SHORTCUT_TOOLS: Readonly<Record<string, ActiveTool>> = {
+  "tool.pen": "pen",
+  "tool.highlighter": "highlighter",
+  "tool.eraser": "eraser",
+  "tool.select": "select",
+  "tool.shape": "shape",
+  "tool.text": "text",
+  "tool.laser": "laser",
+  "tool.pan": "pan",
+  "tool.zoom": "zoom",
+};
+
+function shortcutTool(actionId: string): ActiveTool | null {
+  return SHORTCUT_TOOLS[actionId] ?? null;
+}
+
+/** A tool one press borrows from its keys or a stylus button (`pen-modifiers.ts`). */
+type LentTool = "eraser" | "select" | "zoom";
 
 /** The Magnifier's open Zoom box: its target on one page, and the line's left edge. */
 interface ZoomBoxState {
@@ -1655,7 +1725,28 @@ export class InkSurface {
    * key or a stylus button was held as it came down (`pen-modifiers.ts`,
    * FineNotes#25). Null for the tool itself; it lasts for that press only.
    */
-  private pressTool: PressOverride | null = null;
+  private pressTool: LentTool | null = null;
+  /**
+   * The key or button held for a shortcut set to Hold: the tool it put in
+   * hand, and the one to go back to when it is let go (null: nothing to go
+   * back to, for the hand, which is Space's, or a tool already in hand).
+   * `mod`: it was held with Cmd or Ctrl, whose key-up ends it too. A button
+   * has no key: it ends when its pointer lets it go (`pointerId`, `bit`).
+   */
+  private heldShortcut: {
+    key: string | null;
+    pointerId: number | null;
+    bit: number;
+    mod: boolean;
+    tool: ActiveTool;
+    back: ActiveTool | null;
+  } | null = null;
+  /** A button shortcut ran on its press: the side button's click after it is no second run. */
+  private buttonShortcutUntil = 0;
+  /** A pen or mouse press is under way: a held key's tool switch waits for its lift. */
+  private pressing = false;
+  /** The tool a held key switched to (or back to) while a press was under way. */
+  private pendingHeldTool: ActiveTool | null = null;
   /** A pen or mouse is moving the page from beside the pages, or with the barrel. */
   private penPanning = false;
   /** An Alt-drag zooming: the zoom it began at, and the client point it zooms about. */
@@ -1928,6 +2019,8 @@ export class InkSurface {
    * and switched by the bar's corners button.
    */
   private selectionCorners = false;
+  /** A lasso drawn round nothing: its loop and a Screenshot button, for a moment (`showEmptyLasso`). */
+  private emptyLasso: { el: HTMLElement; timers: number[] } | null = null;
   /** A lasso has selected content; return only when its outside click dismisses it. */
   private selectionToolUsed = false;
   private lasso: LassoDraft | null = null;
@@ -2446,7 +2539,7 @@ export class InkSurface {
       cls: "goodobsidian-selection-frame is-hidden",
     });
     // A freehand lasso's selection is drawn by the loop the pen drew, rounded
-    // off, not by a box (see `smoothLoop`); the frame keeps taking the drags.
+    // off, not by a box (see `smoothPath`); the frame keeps taking the drags.
     const outline = activeDocument.createElementNS(SVG_NS, "svg");
     outline.setAttribute("class", "goodobsidian-selection-outline");
     outline.setAttribute("aria-hidden", "true");
@@ -2500,6 +2593,14 @@ export class InkSurface {
       fingersBusy: () => this.pointerInput?.isTouching === true || this.pinch !== null,
       inkWidth: () => strokeWidthFor(this.toolState) * this.scale,
     });
+
+    // A button the user's shortcut table binds is theirs before it is a
+    // stroke or a right click's menu (capture: ahead of the pointer input).
+    const onButtonPress = (event: PointerEvent): void => this.onButtonPress(event);
+    this.scrollEl.addEventListener("pointerdown", onButtonPress, true);
+    this.disposers.push(() =>
+      this.scrollEl.removeEventListener("pointerdown", onButtonPress, true),
+    );
 
     // Pen, mouse and finger input arrive through the transparent overlay,
     // mapped into layout space as they come in.
@@ -2698,6 +2799,7 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.dropEmptyLasso();
     this.endCellEdit(true);
     this.cellEditor?.remove();
     this.cellEditor = null;
@@ -3480,6 +3582,9 @@ export class InkSurface {
     if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
     // Space on a focused toolbar button presses the button.
     if (event.key === " " && isButtonLike(event.target)) return false;
+    // The user's shortcut table first: a row they recorded (or took away)
+    // must win over the built-in key, and a conflicted input must do nothing.
+    if (this.handleShortcutKey(event)) return true;
     const outcome = keyOutcome(event, {
       cropping: this.cropping !== null,
       editingText: () => this.editingTextView() !== null,
@@ -3494,6 +3599,257 @@ export class InkSurface {
     if (outcome.preventDefault) event.preventDefault();
     this.runKeyAction(outcome.action);
     return true;
+  }
+
+  /**
+   * The user's shortcut table for a key press. Returns false when the key is
+   * not in the table, so `keyOutcome` still has Escape, Delete on a picture,
+   * the arrows and every other screen-aware key. A conflicted or cleared
+   * input is taken and does nothing: a row the user changed never falls back
+   * to the built-in key it replaced.
+   */
+  private handleShortcutKey(event: KeyboardEvent): boolean {
+    const table = this.callbacks.shortcuts?.();
+    if (!table) return false;
+    // Typing keeps its keys, whatever a row is bound to.
+    if (this.editingTextView() !== null || this.cellEdit) return false;
+    const input = keyInput(event);
+    if (!input) return false;
+    const match = matchShortcut(table, input);
+    if (!match) return false;
+    if (match.kind === "conflict" || match.kind === "blocked") {
+      event.preventDefault();
+      return true;
+    }
+    // Delete, Copy and Paste's own keys belong to the screen until the user
+    // records a different one for that row.
+    if (match.row.contextual) return false;
+    if (shortcutPreventsDefault(input)) event.preventDefault();
+    if (match.row.mode === "hold" && match.row.action.holdable) {
+      this.beginHeldShortcut(match.row, input);
+    } else {
+      this.runShortcut(match.row);
+    }
+    return true;
+  }
+
+  /** A tool switches; a saved pen is applied; a command runs. */
+  private runShortcut(row: ShortcutRow): void {
+    const id = row.action.id;
+    const tool = shortcutTool(id);
+    if (tool) {
+      this.applyToolShortcut(tool);
+      return;
+    }
+    if (id.startsWith("pen.saved.")) {
+      if (this.practice) return;
+      const index = Number(id.slice("pen.saved.".length)) - 1;
+      if (index >= 0) this.callbacks.onSavedPen?.(index);
+      return;
+    }
+    switch (id) {
+      case "edit.undo":
+        return this.undo();
+      case "edit.redo":
+        return this.redo();
+      case "edit.select-all":
+        return this.selectAllOnPage();
+      case "edit.delete":
+        if (this.cropping) return;
+        if (this.liveImageSelection() !== null) {
+          this.deleteSelectedImage();
+          return;
+        }
+        return this.deleteSelection();
+      case "edit.copy":
+        if (!this.cropping && this.hasSelection()) this.copySelection();
+        return;
+      case "edit.cut":
+        if (!this.cropping && this.hasSelection()) this.cutSelection();
+        return;
+      case "edit.paste":
+        if (!this.cropping) this.paste();
+        return;
+      case "view.zoom-in":
+        return this.zoomIn();
+      case "view.zoom-out":
+        return this.zoomOut();
+      case "view.zoom-fit":
+        return this.resetView();
+      case "view.next-page":
+        return this.nextPage();
+      case "view.previous-page":
+        return this.previousPage();
+      case "view.shortcuts":
+        return this.callbacks.onShortcuts?.();
+      default:
+        // Full screen, the ruler, stickers, recording, stylus only mode and
+        // turning ink into text are the host's; it answers whether it ran.
+        this.callbacks.onShortcutAction?.(id);
+    }
+  }
+
+  /** The tool a key press switches to, as a letter already did. */
+  private applyToolShortcut(tool: ActiveTool): void {
+    const next = selectedTool(
+      this.toolState.tool,
+      tool,
+      this.callbacks.returnToPenOnReselect?.() === true,
+      this.drawingTool,
+    );
+    if (this.practice && !isPracticeTool(next)) return;
+    this.setTool(next);
+    this.callbacks.onToolChange?.(next);
+  }
+
+  /**
+   * Hold a shortcut's tool until its key is let go: the tool itself goes in
+   * hand, its own gesture and ink with it (the highlighter writes highlighter
+   * ink), and the tool before it comes back on the key-up. The hand is
+   * Space's way instead: the page moves while the key is down.
+   */
+  private beginHeldShortcut(row: ShortcutRow, input: ShortcutInput, pointerId?: number): void {
+    if (this.heldShortcut) return;
+    const tool = shortcutTool(row.action.id);
+    if (!tool) return;
+    if (this.practice && !isPracticeTool(tool)) return;
+    const mod = input.mods.includes("Mod");
+    const key = input.type === "key" ? input.key : null;
+    const bit = input.type === "button" ? buttonBit(input.button) : 0;
+    const by = { key, pointerId: pointerId ?? null, bit, mod, tool };
+    if (tool === "pan") {
+      this.heldShortcut = { ...by, back: null };
+      this.setHand(true);
+      return;
+    }
+    const inHand = this.pendingHeldTool ?? this.toolState.tool;
+    this.heldShortcut = { ...by, back: inHand === tool ? null : inHand };
+    if (inHand !== tool) this.switchHeldTool(tool);
+  }
+
+  /** Put `tool` in hand for a held key, after the press under way if there is one. */
+  private switchHeldTool(tool: ActiveTool): void {
+    if (this.pressing) {
+      this.pendingHeldTool = tool;
+      return;
+    }
+    this.pendingHeldTool = null;
+    this.setTool(tool);
+    this.callbacks.onToolChange?.(tool);
+  }
+
+  /** The press is over: a held key's switch that waited for it happens now. */
+  private pressEnded(): void {
+    this.pressing = false;
+    const tool = this.pendingHeldTool;
+    if (tool) this.switchHeldTool(tool);
+  }
+
+  /** The key that held a tool was let go. */
+  private endHeldShortcut(event: KeyboardEvent): void {
+    const held = this.heldShortcut;
+    if (!held || held.key === null) return;
+    // Apple's WebKit sends no key-up for a key let go while ⌘ is down, so
+    // letting go of ⌘ (or Ctrl) ends a tool held with it.
+    const modUp = held.mod && (event.key === "Meta" || event.key === "Control");
+    if (!modUp && keyInput(event)?.key !== held.key) return;
+    this.releaseHeldShortcuts();
+  }
+
+  /** Let go of a held shortcut where the key-up cannot arrive (blur, view close). */
+  releaseHeldShortcuts(): void {
+    const held = this.heldShortcut;
+    if (!held) return;
+    this.heldShortcut = null;
+    if (held.tool === "pan") this.setHand(false);
+    else if (held.back) this.switchHeldTool(held.back);
+  }
+
+  /**
+   * The user's shortcut table for a pen or mouse button (a right click, the
+   * side button, the eraser end), or null when the press is the contact or
+   * its button is not in the table. Never while text is being typed: a
+   * press there is the text box's.
+   */
+  private buttonShortcut(
+    press: PointerReading,
+  ): { match: ShortcutMatch; input: ShortcutInput } | null {
+    const table = this.callbacks.shortcuts?.();
+    if (!table || this.editingTextView() || this.heldText || this.cellEdit) return null;
+    const input = buttonInput(press);
+    if (!input) return null;
+    const match = matchShortcut(table, input);
+    return match ? { match, input } : null;
+  }
+
+  /**
+   * A button press on the page that the table binds, before the press is a
+   * stroke. A press-mode row runs and the press draws nothing; a hold-mode
+   * tool goes in hand until the button is let go, and the press (a pen
+   * touching down with the side button held) draws with it. Either way the
+   * right click's menu and the side button's own settings stay out of it.
+   */
+  private onButtonPress(event: PointerEvent): void {
+    const bound = this.buttonShortcut(event);
+    if (!bound) return;
+    this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    this.buttonShortcutUntil = now() + STYLUS_MENU_MS;
+    const { match, input } = bound;
+    if (match.kind === "action" && match.row.mode === "hold" && match.row.action.holdable) {
+      if (!shortcutTool(match.row.action.id)) return;
+      this.beginHeldShortcut(match.row, input, event.pointerId);
+      if (this.heldShortcut?.pointerId === event.pointerId)
+        this.watchButtonRelease(event.pointerId);
+      // A mouse's right button never draws; the pen touching down does.
+      if (event.pointerType === "mouse") event.preventDefault();
+      return;
+    }
+    // The pointer input listens on this same element: only this stops it.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (match.kind === "action") this.runShortcut(match.row);
+  }
+
+  /** End a button's held tool when its pointer lets the button go, or lifts. */
+  private watchButtonRelease(pointerId: number): void {
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    const off = (): void => {
+      win.removeEventListener("pointerup", onEvent, true);
+      win.removeEventListener("pointercancel", onEvent, true);
+      win.removeEventListener("pointermove", onEvent, true);
+    };
+    const onEvent = (event: PointerEvent): void => {
+      const held = this.heldShortcut;
+      if (!held || held.pointerId !== pointerId) {
+        off();
+        return;
+      }
+      if (event.pointerId !== pointerId) return;
+      if (event.type === "pointermove" && (event.buttons & held.bit) !== 0) return;
+      off();
+      this.releaseHeldShortcuts();
+    };
+    win.addEventListener("pointerup", onEvent, true);
+    win.addEventListener("pointercancel", onEvent, true);
+    win.addEventListener("pointermove", onEvent, true);
+    this.disposers.push(off);
+  }
+
+  /**
+   * A press as the side button's own settings see it: with a button the
+   * table binds taken out, so the barrel's erase or lasso does not lend a
+   * tool over the one the shortcut put in hand.
+   */
+  private withoutBoundButton<T extends PressInput>(press: T): T {
+    if (!this.buttonShortcut(press)) return press;
+    return { ...press, button: 0, buttons: press.buttons & 1 };
+  }
+
+  /** Whether the pen's side button is in the table, so its click in the air is listened for. */
+  private sideButtonBound(): boolean {
+    const table = this.callbacks.shortcuts?.();
+    if (!table) return false;
+    return matchShortcut(table, SIDE_BUTTON) !== null;
   }
 
   /**
@@ -3565,8 +3921,9 @@ export class InkSurface {
     if (this.penCursor === "ink") this.surfaceEl.toggleClass("is-drawing", on);
   }
 
-  /** A key let go anywhere: space ends the hand (FineNotes#7). */
+  /** A key let go anywhere: space ends the hand (FineNotes#7), a held tool returns. */
   handleKeyUp(event: KeyboardEvent): void {
+    this.endHeldShortcut(event);
     if (event.key === " ") this.setHand(false);
   }
 
@@ -3589,15 +3946,7 @@ export class InkSurface {
       return;
     }
     if (typeof action === "object") {
-      const tool = selectedTool(
-        this.toolState.tool,
-        action.tool,
-        this.callbacks.returnToPenOnReselect?.() === true,
-        this.drawingTool,
-      );
-      if (this.practice && !isPracticeTool(tool)) return;
-      this.setTool(tool);
-      this.callbacks.onToolChange?.(tool);
+      this.applyToolShortcut(action.tool);
       return;
     }
     switch (action) {
@@ -4339,7 +4688,9 @@ export class InkSurface {
     const zooming = this.stepZoomAnim(t);
     // After the zoom, which moves the view about the fingers' point.
     const settling = this.stepRowSettle(t);
-    const moving = scrolling || zooming || settling;
+    // A lasso selection held at the pane's edge carries the view along.
+    const carrying = this.stepGroupDragScroll();
+    const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
     this.noteViewMotion(busy);
     this.syncViewport();
@@ -5988,6 +6339,7 @@ export class InkSurface {
    * its magnified view: every tool then behaves the same in both views.
    */
   private penStart(sample: PointerSample, press: PressInput, inBox = false): void {
+    this.pressing = true;
     this.callbacks.onPen?.(true);
     this.pressTool = this.pressOverrideOf(press);
     const state = this.zoomBox;
@@ -6029,6 +6381,15 @@ export class InkSurface {
   }
 
   private penEnd(sample: PointerSample): void {
+    try {
+      this.penLifted(sample);
+    } finally {
+      this.pressEnded();
+    }
+  }
+
+  /** The pen's lift, on the page or in the Zoom box: what the press was for ends. */
+  private penLifted(sample: PointerSample): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
     const selecting = this.zoomSelectPress;
@@ -6050,6 +6411,14 @@ export class InkSurface {
   }
 
   private penCancel(): void {
+    try {
+      this.penCancelled();
+    } finally {
+      this.pressEnded();
+    }
+  }
+
+  private penCancelled(): void {
     this.callbacks.onPen?.(false);
     this.markDrawing(false);
     this.zoomSelectPress = null;
@@ -6072,6 +6441,7 @@ export class InkSurface {
     // Fingers. Native touch-scroll is off (touch-action: none), so the
     // scroller gets the raw gesture and the frame loop moves the page.
     onPanStart: (x, y, t) => {
+      this.dropEmptyLasso();
       // A finger beside one dragging the selection by its frame: the two turn it.
       if (this.joinFrameFingers(x, y, t)) return;
       // A press outside a selected target lets go of it; an unselected one is
@@ -6382,6 +6752,7 @@ export class InkSurface {
    * finding the page — and then the tool in use takes the gesture over.
    */
   private penDown(sample: PointerSample): void {
+    this.dropEmptyLasso();
     this.penAt = sample;
     this.settlePendingReturn(sample);
     if (this.callbacks.isLocked?.()) return;
@@ -6447,11 +6818,13 @@ export class InkSurface {
     this.gestureOf(this.gestureTool()).down(box, local, sample);
   }
 
+  /** The pen or mouse lifted (`sample`), or its press was cancelled (null). */
   /** Complete the tool before switching; cancelled erasing is rolled back. */
   private finishToolGesture(box: PageBox | null, sample: PointerSample | null): void {
     const tool = this.gestureTool();
-    // A tool a key or a stylus button lent is done with; the tool in hand was not used.
-    const lent = Boolean(this.pressTool);
+    // A tool a key or a stylus button lent is done with; the tool in hand was
+    // not used. A held key's tool goes back on its key-up, not after one use.
+    const lent = Boolean(this.pressTool) || Boolean(this.heldShortcut);
     this.pressTool = null;
     const gesture = this.gestureOf(tool);
     if (sample) {
@@ -6471,8 +6844,7 @@ export class InkSurface {
    */
   private gestureTool(): ActiveTool {
     const lent = this.pressTool;
-    if (lent === "eraser" || lent === "select") return lent;
-    return this.toolState.tool;
+    return lent === "eraser" || lent === "select" ? lent : this.toolState.tool;
   }
 
   /**
@@ -6486,9 +6858,15 @@ export class InkSurface {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
     if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
+    // The hand held by a shortcut moves the page wherever the pen lands.
+    if (this.heldShortcut?.tool === "pan") {
+      this.penPanning = true;
+      return "pan";
+    }
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
-    const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage });
+    const press = this.withoutBoundButton(event);
+    const route = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage });
     if (route === "ignore") return "ignore";
     // The hand tool moves the page wherever the pointer lands, as space does,
     // but it stays chosen until another tool is picked. A lent tool (the
@@ -6556,10 +6934,14 @@ export class InkSurface {
   }
 
   /** The tool a stroke's keys and buttons lend it, or null for the tool in hand. */
-  private pressOverrideOf(press: PressInput): PressOverride | null {
+  private pressOverrideOf(press: PressInput): LentTool | null {
     // Typing keeps its keys: Shift is a capital there, not an eraser.
     if (this.editingTextView() || this.cellEdit) return null;
-    const lent = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage: true });
+    const lent = pressOverride(this.withoutBoundButton(press), {
+      mac: macKeys(),
+      barrel: this.barrel(),
+      onPage: true,
+    });
     // A practice file has the pen and the eraser only.
     if (this.practice && lent === "select") return null;
     return lent === "eraser" || lent === "select" || lent === "zoom" ? lent : null;
@@ -6575,8 +6957,9 @@ export class InkSurface {
    * text box's, as it always was).
    */
   private stylusClickWanted(): boolean {
-    if (!this.callbacks.onStylusClick) return false;
-    if (stylusClickActionOf(this.callbacks.stylusClick?.()) === "none") return false;
+    const bound = this.sideButtonBound();
+    if (!this.callbacks.onStylusClick && !bound) return false;
+    if (!bound && stylusClickActionOf(this.callbacks.stylusClick?.()) === "none") return false;
     return !this.editingTextView() && !this.heldText && !this.cellEdit;
   }
 
@@ -6595,6 +6978,17 @@ export class InkSurface {
   private stylusClicked(clientX: number, clientY: number): void {
     // A tablet driver may send the click as a right-click too (FineNotes#25).
     this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    // A side button the table binds: a press-mode row runs once (not again
+    // if its press already ran it); a held tool has nothing to hold in the air.
+    const table = this.callbacks.shortcuts?.();
+    const match = table ? matchShortcut(table, SIDE_BUTTON) : null;
+    if (match) {
+      if (now() < this.buttonShortcutUntil) return;
+      if (match.kind === "action" && !(match.row.mode === "hold" && match.row.action.holdable)) {
+        this.runShortcut(match.row);
+      }
+      return;
+    }
     this.callbacks.onStylusClick?.(clientX, clientY);
   }
 
@@ -9785,11 +10179,9 @@ export class InkSurface {
       return;
     }
     const loop = this.lassoLoop(lasso);
-    // Drawn rounded off, as GoodNotes draws it; taken on the loop as drawn.
-    this.renderer?.renderLasso(
-      lasso.box.index,
-      lasso.mode === "freehand" ? smoothLoop(loop) : loop,
-    );
+    // Drawn rounded off and open, as Goodnotes draws it; taken on the loop as drawn.
+    const freehand = lasso.mode === "freehand";
+    this.renderer?.renderLasso(lasso.box.index, freehand ? smoothPath(loop) : loop, !freehand);
     this.requestZoomPaint();
   }
 
@@ -9974,7 +10366,74 @@ export class InkSurface {
       return;
     }
     this.selectInside(lasso.box, loop);
-    if (lasso.mode !== "rect") this.keepOutline(smoothLoop(this.lassoLoop(lasso)));
+    if (!this.liveSelection()) {
+      // Round nothing: the loop stays a moment, with a Screenshot button.
+      this.showEmptyLasso(lasso.box, lasso.mode === "rect" ? loop : smoothPath(loop), lasso.to);
+      return;
+    }
+    if (lasso.mode !== "rect") this.keepOutline(smoothPath(this.lassoLoop(lasso)));
+  }
+
+  /**
+   * A lasso drawn round nothing, as Goodnotes leaves it (Joost's recording,
+   * 2026-10-30): the closed loop stays on the page with a Screenshot button
+   * by where the pen lifted, for a moment, then both fade. The button takes
+   * the patch of page inside the loop's bounds, paper and PDF included.
+   * The next press, a scroll or a zoom takes it away at once.
+   */
+  private showEmptyLasso(box: PageBox, loop: readonly number[], end: Pt): void {
+    this.dropEmptyLasso();
+    const bounds = polygonOf(loop)?.bounds;
+    if (!bounds || loop.length < 6) return;
+    const scale = this.unitScale;
+    const el = this.selectionUiEl.createDiv({ cls: "goodobsidian-empty-lasso" });
+    const svg = activeDocument.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "goodobsidian-selection-outline");
+    svg.setAttribute("aria-hidden", "true");
+    const at = (v: number, origin: number): string => ((origin + v) * scale).toFixed(1);
+    let d = `M${at(loop[0], box.x)} ${at(loop[1], box.y)}`;
+    for (let i = 2; i + 1 < loop.length; i += 2)
+      d += `L${at(loop[i], box.x)} ${at(loop[i + 1], box.y)}`;
+    const path = activeDocument.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", `${d}Z`);
+    svg.append(path);
+    el.append(svg);
+    const shoot = this.callbacks.onRegionScreenshot;
+    if (shoot) {
+      const pill = el.createDiv({ cls: "goodobsidian-empty-lasso-pill theme-dark" });
+      pill.setCssStyles({
+        left: `${((box.x + end.x) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
+        top: `${((box.y + end.y) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
+      });
+      const button = pill.createEl("button", {
+        cls: "goodobsidian-empty-lasso-shot clickable-icon",
+        attr: { "aria-label": "Screenshot" },
+      });
+      iconInto(button, "camera", "");
+      onTap(button, () => {
+        this.dropEmptyLasso();
+        shoot(box.index, bounds);
+      });
+    }
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    this.emptyLasso = {
+      el,
+      timers: [
+        win.setTimeout(() => el.addClass("is-fading"), EMPTY_LASSO_MS),
+        // A timer, not the transition's end: the browser pane can hold that back.
+        win.setTimeout(() => this.dropEmptyLasso(), EMPTY_LASSO_MS + EMPTY_LASSO_FADE_MS),
+      ],
+    };
+  }
+
+  /** Take an empty lasso's loop and button away (`showEmptyLasso`). */
+  private dropEmptyLasso(): void {
+    const shown = this.emptyLasso;
+    if (!shown) return;
+    this.emptyLasso = null;
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    for (const timer of shown.timers) win.clearTimeout(timer);
+    shown.el.remove();
   }
 
   /**
@@ -10498,6 +10957,12 @@ export class InkSurface {
     };
   }
 
+  /** Whether `sel` is drawn by the lasso's loop that made it (`keepOutline`), not a box. */
+  private outlineShown(sel: GroupSelection): boolean {
+    const outline = this.selectionOutline;
+    return outline !== null && outline.count === selectedCount(sel);
+  }
+
   /** Put the selection's dashed frame where it is (or where a drag has it), and its bar. */
   private syncSelectionOverlay(): void {
     const sel = this.liveSelection();
@@ -10523,8 +10988,7 @@ export class InkSurface {
       this.selectionFrameEl.setCssStyles({ transform: angle !== 0 ? `rotate(${angle}rad)` : "" });
       // The loop that made the selection, while it is still those elements.
       const outline = this.selectionOutline;
-      const count = sel ? selectedCount(sel) : 0;
-      const shown = outline !== null && outline.count === count;
+      const shown = outline !== null && sel !== null && this.outlineShown(sel);
       this.selectionFrameEl.toggleClass("has-outline", shown);
       if (shown) {
         // The loop is relative to the bounds' corner, so a resize scales it too.
@@ -10611,6 +11075,8 @@ export class InkSurface {
   private groupChromeBounds(sel: GroupSelection): Bounds | null {
     const bounds = this.groupBounds(sel);
     if (!bounds) return null;
+    // A lasso's loop has no knob until the resize handles are asked for.
+    if (this.outlineShown(sel) && !this.selectionCorners) return bounds;
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
@@ -10989,21 +11455,25 @@ export class InkSurface {
       run: () => this.deleteSelection(),
     });
     // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…".
-    actions.push({
-      id: "corners",
-      icon: "scan",
-      label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
-      group: "edit",
-      bar: true,
-      menu: "none",
-      checked: this.selectionCorners,
-      run: () => {
-        this.selectionCorners = !this.selectionCorners;
-        this.syncSelectionOverlay();
-      },
-    });
-    if (this.loneShape(sel)) {
+    // the resize handles, then the "…". A lone shape shows its handles from
+    // the start, so it has only the corner points' switch (Joost, 2026-10-30).
+    const lone = this.loneShape(sel);
+    if (!lone) {
+      actions.push({
+        id: "corners",
+        icon: "scan",
+        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        group: "edit",
+        bar: true,
+        menu: "none",
+        checked: this.selectionCorners,
+        run: () => {
+          this.selectionCorners = !this.selectionCorners;
+          this.syncSelectionOverlay();
+        },
+      });
+    }
+    if (lone) {
       actions.push({
         id: "corner-points",
         icon: "vector-square",
@@ -13000,14 +13470,61 @@ export class InkSurface {
       const pointer = { x: p.x + scale.grab.x, y: p.y + scale.grab.y };
       scale.k = cornerScale(drag.bounds, scale.corner, pointer, scale.min, scale.max);
     } else {
-      const d = clampGroupDelta(drag.bounds, p.x - drag.from.x, p.y - drag.from.y, box);
+      // A move may carry it onto another page: the one under the pen.
+      const own = this.boxForPage(drag.selection.pageId) ?? box;
+      const at = { x: box.x + p.x, y: box.y + p.y };
+      const boxes = this.pageLayout.boxes;
+      const target = this.board ? own : (boxes[dropPageAt(boxes, at)] ?? own);
+      const dx = at.x - own.x - drag.from.x;
+      const dy = at.y - own.y - drag.from.y;
+      // Joined, the pages are one sheet: it may lie over the join, as ink may.
+      const d =
+        this.joined && !this.board
+          ? joinedDelta(drag.bounds, dx, dy, own, paperBox(boxes))
+          : crossPageDelta(drag.bounds, dx, dy, own, target);
       drag.dx = d.dx;
       drag.dy = d.dy;
+      drag.target = target;
+      drag.screen = {
+        x: at.x * this.unitScale + this.offsetX,
+        y: (at.y - this.viewport.scrollY) * this.unitScale,
+      };
+      if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
     this.renderGroupDraft();
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
+  }
+
+  /** How fast a selection held at pane point `at` scrolls the view, px a frame, per axis. */
+  private edgeSpeed(at: Pt): [number, number] {
+    return [edgeScrollSpeed(at.x, 0, this.cssW), edgeScrollSpeed(at.y, 0, this.cssH)];
+  }
+
+  /**
+   * A selection carried near the pane's edge scrolls the notebook under
+   * it, as the page sidebar does a dragged thumbnail, so it can reach a
+   * page that is off screen. One frame's worth; true while it moved.
+   */
+  private stepGroupDragScroll(): boolean {
+    const drag = this.groupDrag;
+    const at = drag?.screen;
+    if (!drag?.lifted || !at || drag.scale || drag.turn) return false;
+    const [vx, vy] = this.edgeSpeed(at);
+    if (vx === 0 && vy === 0) return false;
+    const before = this.scroller.position;
+    this.scroller.scrollBy(vx, vy);
+    const after = this.scroller.position;
+    if (after.x === before.x && after.y === before.y) return false;
+    this.syncViewport();
+    // The pen has not moved, but the page under it has.
+    const box = this.boxForPage(drag.selection.pageId);
+    if (!box) return true;
+    const scale = this.unitScale;
+    const layout = { x: (at.x - this.offsetX) / scale, y: at.y / scale + this.viewport.scrollY };
+    this.moveGroupDrag(drag, box, this.toPage(box, layout));
+    return true;
   }
 
   /**
@@ -13136,6 +13653,8 @@ export class InkSurface {
         : undefined,
       drag.selection.tables ?? [],
       drag.selection.graphs ?? [],
+      // A move is carried over the desk and onto other pages, not cut at its own page's edge.
+      scale !== null || drag.turn !== null,
     );
     this.renderDraggedConnectors(drag, box);
     this.requestZoomPaint();
@@ -13218,17 +13737,43 @@ export class InkSurface {
     const turn = drag.turn;
     // On the lift a turn that ended close to a page step lands on it exactly.
     if (commit && turn) turn.angle = turn.snap.settled();
+    // Dropped on another page (that is still there): it moves to that page.
+    const onto =
+      !fingers &&
+      !turn &&
+      !scale &&
+      drag.target &&
+      drag.target.id !== pageId &&
+      this.doc.pages.some((page) => page.id === drag.target?.id)
+        ? drag.target
+        : null;
     const changed = fingers
       ? !isStill(fingers)
       : turn
         ? turn.angle !== 0
         : scale
           ? scale.k !== 1
-          : drag.dx !== 0 || drag.dy !== 0;
+          : onto !== null || drag.dx !== 0 || drag.dy !== 0;
     const moved = commit && changed && this.doc.pages.some((page) => page.id === pageId);
     let after: Bounds | null = null;
     if (moved && fingers) {
       after = this.commitFingerTurn(drag.selection, drag.bounds, fingers);
+    } else if (moved && onto && box) {
+      // (dx, dy) are in the selection's own page's space: shift them into the target's.
+      this.history.push(
+        this.doc,
+        new MoveElementsToPage(
+          pageId,
+          onto.id,
+          drag.selection,
+          drag.dx + box.x - onto.x,
+          drag.dy + box.y - onto.y,
+        ),
+      );
+      this.strokeIndex.refreshPages(this.doc.pages, [pageId, onto.id]);
+      this.selection = { ...drag.selection, pageId: onto.id };
+      const landed = this.groupBounds(this.selection);
+      if (landed) this.renderer?.invalidateRegion(onto.index, landed);
     } else if (moved && turn) {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
@@ -13254,7 +13799,8 @@ export class InkSurface {
     this.renderDry();
     this.syncTextBoxes();
     this.syncSelectionOverlay();
-    if (moved) this.changed([pageId]);
+    // Joined, its mirrors may change on any page the move reached (`syncMirrors`).
+    if (moved) this.changed(onto ? (this.joined ? undefined : [pageId, onto.id]) : [pageId]);
   }
 
   /**

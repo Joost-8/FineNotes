@@ -8,6 +8,7 @@
 
 import {
   SHORTCUT_GROUPS,
+  type ShortcutGroup,
   type ShortcutWay,
   keyLabel,
   keyName,
@@ -16,11 +17,16 @@ import {
 
 /**
  * Fill `parent` with the list, keys named for Apple devices (`apple`: ⌘ ⌥ ⇧)
- * or for the rest (Ctrl, Alt, Shift). Returns the list's element.
+ * or for the rest (Ctrl, Alt, Shift). `groups` is the list with this
+ * device's own keys in it (`boundShortcutGroups`). Returns the list's element.
  */
-export function renderShortcutList(parent: HTMLElement, apple: boolean): HTMLElement {
+export function renderShortcutList(
+  parent: HTMLElement,
+  apple: boolean,
+  groups: readonly ShortcutGroup[] = SHORTCUT_GROUPS,
+): HTMLElement {
   const list = parent.createDiv({ cls: "goodobsidian-shortcuts" });
-  for (const group of SHORTCUT_GROUPS) {
+  for (const group of groups) {
     const block = list.createDiv({ cls: "goodobsidian-shortcut-group" });
     block.createDiv({ cls: "goodobsidian-shortcut-group-title", text: group.title });
     for (const shortcut of group.shortcuts) {
