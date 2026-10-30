@@ -29,8 +29,11 @@ import { SCHEMA_VERSION } from "../constants";
  *   older build would save them back at the nib's width.
  * - `tape`: cover tapes (`model/cover-tape`), strokes an older build would
  *   read as pen ink and save back as a plain thick line.
+ * - `side-space`: a page with a margin keeps its PDF or paper in a frame
+ *   (`Backdrop.frame`); an older build would re-fit the PDF to the wider
+ *   page, away from the ink written over it, and save it so.
  */
-export const FORMAT_FEATURES = ["sticky", "connectors", "tilt", "tape"] as const;
+export const FORMAT_FEATURES = ["sticky", "connectors", "tilt", "tape", "side-space"] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 

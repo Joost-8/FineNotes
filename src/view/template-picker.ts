@@ -34,6 +34,18 @@ import type {
   SyntheticBackdrop,
 } from "../model/document";
 import type { InsertPosition } from "../model/page-commands";
+import type { SpaceSide } from "../model/side-space";
+
+/**
+ * Where Add Page puts what is picked: a page before, after or last, or a
+ * strip of paper beside the page (Add space, a page added sideways).
+ */
+export type AddPosition = InsertPosition | SpaceSide;
+
+/** Whether `position` widens the page rather than adding one. */
+export function isSideSpace(position: AddPosition): position is SpaceSide {
+  return position === "left" || position === "right";
+}
 import type { PaperEntry } from "../model/paper-library";
 import {
   type PaperDesign,
@@ -149,11 +161,13 @@ export interface AddPagePopoverOptions {
   recent: readonly SyntheticBackdrop[];
   /** The templates in My templates now, by name: a page made of one before it was marked is still one. */
   templateNames?: ReadonlySet<string>;
-  position: InsertPosition;
+  position: AddPosition;
   /** A page of My templates as a card preview `cssWidth` wide; called again once it has rendered. */
   paintPaper?: (canvas: HTMLCanvasElement, backdrop: PdfBackdrop, cssWidth: number) => void;
-  onPick: (backdrop: Backdrop, position: InsertPosition) => void;
-  onMore: (position: InsertPosition) => void;
+  onPick: (backdrop: Backdrop, position: AddPosition) => void;
+  onMore: (position: AddPosition) => void;
+  /** Whether Left and Right (Add space) are offered: not beside a cover, which is not paper. */
+  sideSpace?: boolean;
 }
 
 const POPOVER_WIDTH = 340;
@@ -161,8 +175,10 @@ const CARD_WIDTH = 64;
 
 export class AddPagePopover {
   private readonly el: HTMLElement;
-  private position: InsertPosition;
-  private readonly segments = new Map<InsertPosition, HTMLButtonElement>();
+  private position: AddPosition;
+  private readonly segments = new Map<AddPosition, HTMLButtonElement>();
+  /** The My templates card: a PDF cannot be a side paper, so it is off for Left and Right. */
+  private paperButton: HTMLButtonElement | null = null;
   private readonly dispose: Array<() => void> = [];
   private closed = false;
   /** The card showing a page of My templates, repainted when its PDF page renders. */
@@ -210,9 +226,16 @@ export class AddPagePopover {
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Add Page" });
 
     const seg = this.el.createDiv({ cls: "goodobsidian-segmented" });
-    const labels: Array<[InsertPosition, string]> = [
+    // Left and Right add paper beside the page (Add space) as Before and After add a page.
+    const labels: Array<[AddPosition, string]> = [
       ["before", "Before"],
       ["after", "After"],
+      ...(this.options.sideSpace
+        ? ([
+            ["left", "Left"],
+            ["right", "Right"],
+          ] as Array<[AddPosition, string]>)
+        : []),
       ["last", "Last page"],
     ];
     for (const [pos, label] of labels) {
@@ -239,6 +262,7 @@ export class AddPagePopover {
       const canvas = button.createEl("canvas", { cls: "goodobsidian-template-preview" });
       const backdrop = card.backdrop;
       if (backdrop.kind === "pdf") {
+        this.paperButton = button;
         this.paperCard = { canvas, backdrop };
         this.options.paintPaper?.(canvas, backdrop, CARD_WIDTH);
       } else {
@@ -264,6 +288,7 @@ export class AddPagePopover {
       this.close();
       this.options.onMore(this.position);
     });
+    this.syncSegments();
   }
 
   private syncSegments(): void {
@@ -271,6 +296,7 @@ export class AddPagePopover {
       button.toggleClass("is-active", pos === this.position);
       button.setAttribute("aria-pressed", String(pos === this.position));
     }
+    if (this.paperButton) this.paperButton.disabled = isSideSpace(this.position);
   }
 }
 
