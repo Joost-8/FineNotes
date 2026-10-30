@@ -2651,6 +2651,27 @@ body.is-mobile .goodobsidian-scrollthumb {
   border-top: none;
 }
 
+/* A callout row that shows nothing (empty while it is false, or hidden)
+   still sits first in its group, and Obsidian draws a divider over every
+   row but the first: a line under the heading (Kirill on #79, the Shortcuts
+   section). The row after it draws none, and takes the first row's corners. */
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading)::before {
+  display: none;
+}
+
+.setting-group
+  .setting-item.goodobsidian-plain-row:is(:empty, .is-hidden, [hidden], [style*="display: none"])
+  + .setting-item:not(.setting-item-heading) {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+
+.setting-item.goodobsidian-plain-row:is(.is-hidden, [hidden]) {
+  display: none;
+}
+
 /* Models on this device. The introduction, muted, at the top of the section. */
 .goodobsidian-models-intro {
   padding: var(--size-4-3) 0 var(--size-4-1);
