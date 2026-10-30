@@ -9,7 +9,25 @@
  * PURE: no DOM, no Obsidian.
  */
 
-import { type ReadWord, plainWord } from "./corrections";
+import { type ReadWord, plainWord, strokeKey } from "./corrections";
+
+/**
+ * The word "Correct" opens its card for, from ink the user picked (a lasso,
+ * or the stroke under a press): of the read words that ink touches, in
+ * reading order, the first one the word check would underline (`flagged`:
+ * stroke keys), else the first. The card is about one word's ink, so a
+ * selection of several words corrects the one most likely misread. Null
+ * when the ink is in no read word.
+ */
+export function wordToCorrect(
+  words: readonly ReadWord[],
+  touched: readonly string[],
+  flagged: ReadonlySet<string> = new Set(),
+): ReadWord | null {
+  const chosen = new Set(touched);
+  const hit = words.filter((word) => word.strokeIds.some((id) => chosen.has(id)));
+  return hit.find((word) => flagged.has(strokeKey(word.strokeIds))) ?? hit[0] ?? null;
+}
 
 /**
  * The read words a selection touches, in reading order: a word with any of

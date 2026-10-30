@@ -30,6 +30,7 @@ import {
   mergeCorrections,
   parseCorrections,
   parseWordList,
+  plainWord,
   serializeCorrections,
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
@@ -208,12 +209,17 @@ export class WordCheck {
    *
    * `done` runs after an answer is saved, to take the underline away;
    * `closed` whenever the card closes, answered or not.
+   *
+   * `asked`: opened by hand ("Correct" on any word, underlined or not).
+   * Whoever asks thinks it misread, so Type what it says comes first, and
+   * Add to dictionary goes when the word would never be underlined anyway.
    */
   ask(
     word: CheckedWord,
     at: { x: number; y: number },
     done: () => void,
     closed: () => void = () => {},
+    asked = false,
   ): WordPopover {
     const read = word.word.text;
     const found = word.suggestion;
@@ -244,10 +250,20 @@ export class WordCheck {
         read,
         chips: misread ? found.words : [],
         onChip: (w) => reply("misread", replaceCore(read, w)),
-        rows: misread ? [correct, wrote, add] : [wrote, add, correct],
+        rows:
+          misread || asked
+            ? [correct, wrote, ...(asked && this.unflagged(read) ? [] : [add])]
+            : [wrote, add, correct],
       },
       closed,
     );
+  }
+
+  /** Whether a word as read is one `flags` never underlines: listed, answered as right, or no plain word. */
+  private unflagged(read: string): boolean {
+    const word = plainWord(read);
+    if (!word) return true;
+    return this.words?.has(word) === true || ignoredWords(this.corrections).has(word);
   }
 
   /** Record an answer given elsewhere (a lassoed title corrected in its dialog). */

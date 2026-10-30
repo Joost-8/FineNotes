@@ -936,6 +936,14 @@ export interface InkSurfaceCallbacks {
    */
   onFlaggedWord?: (index: number, strokeIds: string[], at: { x: number; y: number }) => void;
   /**
+   * "Correct" on lassoed ink, or on the press menu over ink: the host reads
+   * the word these strokes are in (page `index`) and opens the same card
+   * an underlined word does (`wordInk` places it under the word).
+   */
+  onCorrectWord?: (index: number, strokeIds: string[]) => void;
+  /** Whether handwriting can be read here, so "Correct" is offered. */
+  canCorrectWords?: () => boolean;
+  /**
    * The user asked for a new page after `afterIndex`.
    *
    * The host decides what the new page looks like (it knows the notebook's
@@ -1270,6 +1278,8 @@ interface PressMenu {
   at: Pt;
   /** The locked picture pressed, if one was. */
   locked: ImageElement | null;
+  /** The ink pressed, if any: "Correct" reads the word it is in. */
+  ink: Stroke | null;
   /**
    * Opened by a finger that is still down. Until it lifts the bar takes no
    * presses, so a palm that opened it cannot have the pen land on Paste:
@@ -2162,7 +2172,7 @@ export class InkSurface {
   private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
-  private activeWordFlag: { pageId: string; key: string } | null = null;
+  private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
   /** The client point of the finger tap or right-click being handled, for `onFlaggedWord`. */
   private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
@@ -10571,6 +10581,7 @@ export class InkSurface {
       pageId: page.id,
       at: { x: p.x, y: p.y },
       locked: top?.locked === true ? top : null,
+      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
       provisional,
     };
     this.syncActionBar();
@@ -11716,6 +11727,9 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
+    // The word check's card, for any word, underlined or not.
+    const correct = this.correctWordAction(index, sel.strokes);
+    if (menu.handwriting && correct) actions.push(correct);
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -11811,6 +11825,33 @@ export class InkSurface {
       });
     }
     return actions;
+  }
+
+  /**
+   * "Correct": the card an underlined word opens, for the word this ink is
+   * in (the lasso's "…" menu, and the press menu over ink). Null when there
+   * is no ink or handwriting cannot be read here.
+   */
+  private correctWordAction(
+    index: number,
+    strokes: readonly Stroke[],
+    extra: Partial<SelectionAction> = {},
+  ): SelectionAction | null {
+    const correct = this.callbacks.onCorrectWord;
+    if (!correct || index < 0 || strokes.length === 0) return null;
+    if (this.callbacks.canCorrectWords?.() === false) return null;
+    const ids = strokes.map((stroke) => stroke.id);
+    return {
+      id: "correct-word",
+      icon: "spell-check",
+      label: "Correct",
+      group: "edit",
+      ...extra,
+      run: () => {
+        this.clearSelection();
+        correct(index, ids);
+      },
+    };
   }
 
   /**
@@ -11984,6 +12025,12 @@ export class InkSurface {
     ];
     // A practice file takes the pen alone (`practice.ts`).
     if (this.practice) return actions;
+    // Held on handwriting: its word's card comes first.
+    const index = page ? this.doc.pages.indexOf(page) : -1;
+    const correct = press.ink
+      ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
+      : null;
+    if (correct) actions.unshift(correct);
     actions.push(
       {
         id: "text-here",
@@ -12858,12 +12905,25 @@ export class InkSurface {
   }
 
   /**
-   * Mark the flagged word whose menu is open (its underline turns red), or
-   * none with `null`.
+   * Mark the word whose card is open (its underline turns red, and an
+   * underline is drawn for a word that had none), or none with `null`.
    */
   setActiveWordFlag(pageId: string | null, strokeIds: readonly string[] = []): void {
-    this.activeWordFlag = pageId === null ? null : { pageId, key: strokeKey(strokeIds) };
+    this.activeWordFlag =
+      pageId === null ? null : { pageId, key: strokeKey(strokeIds), strokes: [...strokeIds] };
     this.syncSectionRibbons();
+  }
+
+  /**
+   * Where a word's card goes: the bottom-left of these strokes' ink on page
+   * `index`, in client px; null when none of it is on the page.
+   */
+  wordInk(index: number, strokeIds: readonly string[]): { x: number; y: number } | null {
+    const page = this.pageAt(index);
+    const box = page ? this.boxForPage(page.id) : null;
+    const bounds = page && box ? this.linkBounds(page, strokeIds) : null;
+    if (!box || !bounds) return null;
+    return this.toClient({ x: box.x + bounds.minX, y: box.y + bounds.maxY });
   }
 
   /**
@@ -12875,8 +12935,13 @@ export class InkSurface {
     const scale = this.unitScale;
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
-      const flags = page ? this.wordFlags.get(page.id) : undefined;
-      if (!page || !flags) continue;
+      if (!page) continue;
+      const flags = [...(this.wordFlags.get(page.id) ?? [])];
+      // A word whose card was opened by hand ("Correct") is marked while it is open.
+      const asked = this.activeWordFlag;
+      if (asked?.pageId === page.id && !flags.some((strokes) => strokeKey(strokes) === asked.key)) {
+        flags.push(asked.strokes);
+      }
       for (const strokes of flags) {
         const bounds = this.linkBounds(page, strokes);
         if (!bounds) continue;

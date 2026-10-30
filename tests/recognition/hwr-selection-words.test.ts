@@ -5,6 +5,7 @@ import {
   matchCase,
   replaceToken,
   selectionWords,
+  wordToCorrect,
   wordsByLine,
 } from "../../src/recognition/hwr/selection-words";
 
@@ -107,5 +108,21 @@ describe("editedWords", () => {
     expect(editedWords(ink, "")).toEqual([]);
     // Not a plain word: no label.
     expect(editedWords([{ text: "x2", strokeIds: ["z"] }], "x3")).toEqual([]);
+  });
+});
+
+describe("wordToCorrect", () => {
+  it("takes the word whose ink was picked, a clipped word whole", () => {
+    expect(wordToCorrect(words, ["c"])?.text).toBe("rationals");
+  });
+
+  it("of several words, the first the word check underlines, else the first", () => {
+    expect(wordToCorrect(words, ["a", "b", "e"])?.text).toBe("The");
+    expect(wordToCorrect(words, ["a", "b", "e"], new Set(["e,f"]))?.text).toBe("dense.");
+  });
+
+  it("is null for ink in no read word", () => {
+    expect(wordToCorrect(words, ["g"])).toBeNull();
+    expect(wordToCorrect(words, [])).toBeNull();
   });
 });
