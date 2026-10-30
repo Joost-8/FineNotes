@@ -44,6 +44,7 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { widestTiltFactor } from "../ink/tilt";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
@@ -76,8 +77,11 @@ import { imageBounds, rotationOf } from "./image-geometry";
 import { paintStickyPaper, withinNote } from "./sticky-paper";
 import { type Affine, isNoteInk, noteIdsOf, noteMove } from "../model/sticky-notes";
 import { paintGraph } from "./graph-paint";
+import { type RoutedConnector, paintConnector, paintConnectors } from "./connector-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
+import { joinLines, joinedSides } from "./page-join";
+import { relativeLuminance } from "../model/cover";
 import {
   baselineOffset,
   canvasFont,
@@ -117,9 +121,8 @@ import type { ViewportState } from "./viewport";
 const FADED_INK_ALPHA = 0.22;
 /** The veil over the part of a picture a crop leaves out. A real colour: canvas ignores `var(--…)`. */
 const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
-/** The lasso's and the selection box's line, and the lasso's fill. Real colours, as above. */
+/** The lasso's and the selection box's line. A real colour, as above. */
 const SELECTION_LINE = "rgba(120,170,255,0.95)";
-const SELECTION_FILL = "rgba(120,170,255,0.12)";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
 
@@ -137,6 +140,8 @@ export interface StrokeStyle {
   decor?: ShapeDecor | null;
   /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
   nib?: number;
+  /** A stored stroke's Pencil altitude per point (`Stroke.tilt`); absent: upright. */
+  tilt?: readonly number[];
 }
 
 /** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
@@ -374,6 +379,15 @@ const PREVIEW_BUDGET = 24 * 1024 * 1024;
 const INK_PAD = 24;
 /** Tiles this far (device px) beyond the viewport are rasterised ahead of a scroll. */
 const PREFETCH_MARGIN = TILE_SIZE;
+/** A join's mark on the desk: CSS px from the paper, long and wide. Short enough
+ * for the 12 px of desk above and below a row of pages at the fit. */
+const JOIN_MARK_GAP = 3;
+const JOIN_MARK_LENGTH = 7;
+const JOIN_MARK_WIDTH = 2;
+/** Its colour on a dark desk and on a light one. */
+const JOIN_MARK_ON_DARK = "rgba(255, 255, 255, 0.4)";
+const JOIN_MARK_ON_LIGHT = "rgba(0, 0, 0, 0.3)";
+
 /** The page shadow: blur and downward offset, in CSS px. */
 const SHADOW_BLUR = 14;
 const SHADOW_OFFSET_Y = 3;
@@ -407,6 +421,8 @@ interface PathEntry {
   fingerprint: string;
   /** The points array traced: a command that replaces it is always a change. */
   pts: readonly number[];
+  /** The altitudes traced with them (`Stroke.tilt`), which a piece gets anew. */
+  tilt: readonly number[] | undefined;
   /** The stroke's runs, and a `Path2D` for each. */
   runs: InkRun[];
   paths: Path2D[];
@@ -529,6 +545,8 @@ export class Renderer {
   private hiddenTables: ReadonlySet<TableElement> = new Set();
   /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
   private hiddenGraphs: ReadonlySet<GraphElement> = new Set();
+  /** Connectors (by id) left out of tiles and previews: drawn on the wet layer while dragged. */
+  private hiddenConnectors: ReadonlySet<string> = new Set();
   /** The cell being typed in, whose text its textarea shows instead. */
   private editingCell: { table: TableElement; cell: CellRef } | null = null;
 
@@ -677,6 +695,11 @@ export class Renderer {
     this.hiddenGraphs = graphs;
   }
 
+  /** Leave these connectors (by id) out of tiles and previews; as above, the caller invalidates. */
+  setHiddenConnectors(ids: ReadonlySet<string>): void {
+    this.hiddenConnectors = ids;
+  }
+
   /**
    * Leave the text of this cell out of the tiles (`null`: none): it is
    * being typed in, and its textarea shows it. The caller invalidates the
@@ -733,6 +756,19 @@ export class Renderer {
     this.previews.clear();
   }
 
+  /**
+   * How far past its centreline the widest tilted stroke on page `pageId`
+   * reaches, page px; 0 when none is tilted. A brush laid flat can paint
+   * beyond {@link INK_PAD}, so a change near it must repaint that far.
+   */
+  private widestInk(pageId: string): number {
+    const page = this.doc?.pages.find((candidate) => candidate.id === pageId);
+    let reach = 0;
+    for (const stroke of page?.strokes ?? [])
+      if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
+    return reach;
+  }
+
   invalidatePage(pageId: string): void {
     this.tiles.deleteWhere((tile) => tile.pageId === pageId);
     this.previews.delete(pageId);
@@ -742,7 +778,8 @@ export class Renderer {
   invalidateRegion(pageIndex: number, bounds: Bounds): void {
     const box = this.layout.boxes[pageIndex];
     if (!box || this.level === 0) return;
-    for (const tr of tilesForBounds(box.width, box.height, this.level, bounds, INK_PAD)) {
+    const pad = Math.max(INK_PAD, this.widestInk(box.id));
+    for (const tr of tilesForBounds(box.width, box.height, this.level, bounds, pad)) {
       this.tiles.delete(tileKey(box.id, this.level, tr.col, tr.row));
     }
     this.previews.delete(box.id);
@@ -820,6 +857,23 @@ export class Renderer {
     ctx.clip();
   }
 
+  /**
+   * Enter a page's local coordinate space for ink being drawn: clipped to
+   * the sheet, or with joined pages to all of them, so a stroke shows on
+   * the next page as it crosses the join (and is stored there on lift).
+   */
+  private enterWetPage(ctx: CanvasRenderingContext2D, box: PageBox): void {
+    if (this.layout.joined !== true) {
+      this.enterPage(ctx, box);
+      return;
+    }
+    ctx.save();
+    ctx.beginPath();
+    for (const b of this.layout.boxes) ctx.rect(b.x, b.y, b.width, b.height);
+    ctx.clip();
+    ctx.translate(box.x, box.y);
+  }
+
   // --- Backdrop layer -------------------------------------------------------
 
   /** Repaint the backdrop layer: the desk, and a shadow under each visible page. */
@@ -848,6 +902,49 @@ export class Renderer {
       ctx.fillStyle = page ? paperColorOf(page, this.paper) : this.paper.paper;
       ctx.fillRect(r.x, r.y, r.w, r.h);
     }
+    this.paintJoinMarks(ctx, boxes);
+  }
+
+  /**
+   * A short mark on the desk at each end of a join between pages on screen
+   * (`canvas/page-join.ts`): where one page ends, shown beside the paper
+   * rather than as a line over it. In screen px, so it reads the same at
+   * every zoom.
+   */
+  private paintJoinMarks(ctx: CanvasRenderingContext2D, boxes: readonly PageBox[]): void {
+    if (this.layout.joined !== true || boxes.length === 0) return;
+    const shown = new Set(boxes.map((box) => box.index));
+    const dpr = this.screen.dpr;
+    const k = this.deviceScale;
+    const gap = JOIN_MARK_GAP * dpr;
+    const length = JOIN_MARK_LENGTH * dpr;
+    ctx.save();
+    ctx.strokeStyle = relativeLuminance(this.desk) < 0.3 ? JOIN_MARK_ON_DARK : JOIN_MARK_ON_LIGHT;
+    ctx.lineWidth = JOIN_MARK_WIDTH * dpr;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const line of joinLines(this.layout)) {
+      if (!shown.has(line.index) && !shown.has(line.index - 1)) continue;
+      if (line.across) {
+        const y = (line.at - this.view.scrollY) * k;
+        const left = (this.originX + line.from * this.view.scale) * dpr;
+        const right = (this.originX + line.to * this.view.scale) * dpr;
+        ctx.moveTo(left - gap, y);
+        ctx.lineTo(left - gap - length, y);
+        ctx.moveTo(right + gap, y);
+        ctx.lineTo(right + gap + length, y);
+      } else {
+        const x = (this.originX + line.at * this.view.scale) * dpr;
+        const top = (line.from - this.view.scrollY) * k;
+        const bottom = (line.to - this.view.scrollY) * k;
+        ctx.moveTo(x, top - gap);
+        ctx.lineTo(x, top - gap - length);
+        ctx.moveTo(x, bottom + gap);
+        ctx.lineTo(x, bottom + gap + length);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**
@@ -1403,11 +1500,28 @@ export class Renderer {
     this.paintImages(ctx, page, region, level, ink);
     this.paintTables(ctx, page, region);
     this.paintGraphs(ctx, page, region, level);
+    // Arrows joining shapes lie under the ink, as the tables and graphs do.
+    const night = pageLook(page.backdrop, this.paper).night;
+    paintConnectors(ctx, page, night, region, this.hiddenConnectors);
     // Inset by half a device pixel so the hairline lies inside the clip.
+    // Not along a join: joined pages read as one sheet, and the desk beside
+    // the join carries a mark instead (`renderBackdrops`).
     const hair = 1 / level;
+    const joined = joinedSides(this.layout, box.index);
+    const [x0, y0] = [hair / 2, hair / 2];
+    const [x1, y1] = [box.width - hair / 2, box.height - hair / 2];
     ctx.strokeStyle = this.paper.edge;
     ctx.lineWidth = hair;
-    ctx.strokeRect(hair / 2, hair / 2, box.width - hair, box.height - hair);
+    if (!joined.top && !joined.bottom && !joined.left && !joined.right) {
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      return;
+    }
+    ctx.beginPath();
+    if (!joined.top) ctx.rect(x0, y0, x1 - x0, 0);
+    if (!joined.bottom) ctx.rect(x0, y1, x1 - x0, 0);
+    if (!joined.left) ctx.rect(x0, y0, 0, y1 - y0);
+    if (!joined.right) ctx.rect(x1, y0, 0, y1 - y0);
+    ctx.stroke();
   }
 
   /**
@@ -1579,23 +1693,28 @@ export class Renderer {
     const n = pts.length;
     const fingerprint = `${pressure ? 1 : 0}|${stroke.size}|${stroke.nib ?? ""}|${n}|${pts[0]}|${pts[1]}|${pts[n - 3]}|${pts[n - 2]}`;
     const cached = this.paths.get(stroke);
-    if (cached && cached.pts === pts && cached.fingerprint === fingerprint) return cached;
+    const tilt = stroke.tilt;
+    if (
+      cached &&
+      cached.pts === pts &&
+      cached.tilt === tilt &&
+      cached.fingerprint === fingerprint
+    ) {
+      return cached;
+    }
     let runs: InkRun[] = [];
     let bounds: Bounds | null = null;
     if (n >= 3) {
-      runs = inkRuns(
-        pts,
-        penOptions(stroke.size, pressure, stroke.nib),
-        stroke.shape !== undefined,
-      );
+      const shape = stroke.shape !== undefined;
+      runs = inkRuns(pts, penOptions(stroke.size, pressure, stroke.nib), shape, tilt);
       const b = strokeBounds(stroke);
       if (b) {
-        // Arrowheads reach sideways past the line's ends.
-        const pad = stroke.size + (stroke.heads ? HEAD_MAX / 2 : 0);
+        // Arrowheads reach sideways past the line's ends; a tilted brush, past its nib.
+        const pad = inkReach(stroke) + (stroke.heads ? HEAD_MAX / 2 : 0);
         bounds = { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad };
       }
     }
-    const entry: PathEntry = { fingerprint, pts, runs, paths: runs.map(pathOf), bounds };
+    const entry: PathEntry = { fingerprint, pts, tilt, runs, paths: runs.map(pathOf), bounds };
     this.paths.set(stroke, entry);
     return entry;
   }
@@ -1610,9 +1729,27 @@ export class Renderer {
   }
 
   /**
+   * Draw connectors over what the wet layer already shows (a dragged
+   * selection's draft, drawn just before), routed to where the drag has
+   * their shapes: they follow the drag, out of the tiles meanwhile.
+   */
+  paintWetConnectors(pageIndex: number, routed: readonly RoutedConnector[]): void {
+    const box = this.layout.boxes[pageIndex];
+    const page = this.doc?.pages[pageIndex];
+    if (!box || !page || routed.length === 0) return;
+    const ctx = this.wet.ctx;
+    this.toLayoutSpace(ctx);
+    this.enterPage(ctx, box);
+    const night = pageLook(page.backdrop, this.paper).night;
+    for (const item of routed) paintConnector(ctx, item, night);
+    ctx.restore();
+    this.setWetVisible(true);
+  }
+
+  /**
    * Draw the lasso being drawn (page space, flat `[x, y, …]`) on the wet
-   * layer: a dashed loop closed back to its start, over a faint fill — the
-   * same affordance colour as the selection box.
+   * layer: a dashed loop closed back to its start, its line only (Joost on
+   * PR #59: no filled area while drawing), in the selection box's colour.
    */
   renderLasso(pageIndex: number, loop: readonly number[]): void {
     const box = this.layout.boxes[pageIndex];
@@ -1620,14 +1757,11 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || loop.length < 4) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     ctx.beginPath();
     ctx.moveTo(loop[0], loop[1]);
     for (let i = 2; i + 1 < loop.length; i += 2) ctx.lineTo(loop[i], loop[i + 1]);
     ctx.closePath();
-    ctx.fillStyle = SELECTION_FILL;
-    // Even–odd, as the lasso's own hit rule reads a loop that crosses itself.
-    ctx.fill("evenodd");
     selectionLine(ctx, this.safeScale);
     ctx.lineJoin = "round";
     ctx.stroke();
@@ -1664,7 +1798,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     // A table stays upright under a turn (its middle goes round, as
     // `ReorientElements` commits), so it is drawn before the turn is applied.
     const night = this.nightAt(pageIndex);
@@ -1830,7 +1964,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || (!this.imagePainter && !image.sticky)) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     drawPlacedImage(
       ctx,
       image,
@@ -1880,7 +2014,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box || !this.imagePainter || !(picture.w > 0) || !(picture.h > 0)) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     drawPlacedImage(ctx, picture, this.imagePainter, this.deviceScale);
     const { w, h } = picture;
     ctx.translate(picture.x + w / 2, picture.y + h / 2);
@@ -1906,7 +2040,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
     for (const pts of strokes) fillStroke(ctx, pts, style, this.highlighterAlpha, night);
     ctx.restore();
@@ -1924,7 +2058,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     const night = this.nightAt(pageIndex);
     for (const stroke of strokes) {
       fillStroke(ctx, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
@@ -1943,7 +2077,7 @@ export class Renderer {
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
-    this.enterPage(ctx, box);
+    this.enterWetPage(ctx, box);
     paintStroke(ctx, { runs }, style, this.highlighterAlpha, this.nightAt(pageIndex));
     ctx.restore();
     this.setWetVisible(true);
@@ -1967,7 +2101,17 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
     shape: shape !== undefined,
     decor: decorOf(stroke),
     ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
+    ...(stroke.tilt !== undefined ? { tilt: stroke.tilt } : {}),
   };
+}
+
+/**
+ * How far a stored stroke's ink can reach past its centreline, page px, at
+ * most: its nib (pressure draws it at up to 0.8 of that), times the most the
+ * Pencil's tilt widened it.
+ */
+export function inkReach(stroke: Pick<Stroke, "size" | "tilt" | "shape">): number {
+  return stroke.shape === undefined ? stroke.size * widestTiltFactor(stroke.tilt) : stroke.size;
 }
 
 /**
@@ -2086,7 +2230,7 @@ function fillStroke(
   highlighterAlpha: number,
   night = false,
 ): void {
-  const runs = inkRuns(points, penFor(style), style.shape === true);
+  const runs = inkRuns(points, penFor(style), style.shape === true, style.tilt);
   paintStroke(ctx, { runs }, style, highlighterAlpha, night, style.decor ?? null, points);
 }
 
@@ -2171,6 +2315,8 @@ export function renderPageThumbnail(
   for (const graph of page.graphs ?? []) {
     paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
   }
+  // And the arrows joining shapes.
+  paintConnectors(ctx, page, look.night);
 
   for (const stroke of page.strokes) {
     if (isNoteInk(stroke, notes)) continue;

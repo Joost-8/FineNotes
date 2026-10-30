@@ -414,7 +414,7 @@ export interface RecordingEntry {
   recording: Recording;
   /** Whether the audio file is in the vault. */
   available: boolean;
-  /** Whether its transcript note is (only then is there a Transcript button). */
+  /** Whether its transcript note is (only then are there Transcript and Paste buttons). */
   hasTranscript: boolean;
   /** What an on-device transcription of it is doing now, when one runs. */
   deviceStatus?: string;
@@ -429,6 +429,8 @@ export interface RecordingsActions {
   /** Stop the on-device transcription running now. */
   stopDevice: () => void;
   openTranscript: (recording: Recording) => void;
+  /** Put the transcript's text on the page in view, as a text box. */
+  pasteTranscript: (recording: Recording) => void;
   remove: (recording: Recording) => void;
   /** The Record / Stop button at the foot of the panel. Called inside the tap. */
   record: () => void;
@@ -583,6 +585,9 @@ export class RecordingsPanel {
     if (entry.hasTranscript) {
       act("external-link", "Open transcript", "Transcript", () =>
         this.actions.openTranscript(recording),
+      );
+      act("clipboard-paste", "Paste transcript onto the page", "", () =>
+        this.actions.pasteTranscript(recording),
       );
     }
     act("trash-2", "Remove from note", "", () => this.actions.remove(recording), true, head);

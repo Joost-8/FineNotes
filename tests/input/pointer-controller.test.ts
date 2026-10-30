@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { altitudeOf } from "../../src/ink/tilt";
 import {
   isWholePixel,
   PointerController,
@@ -273,6 +274,7 @@ describe("a drawing pointer", () => {
       pressure: 0.25,
       tiltX: -5,
       tiltY: 6,
+      altitude: altitudeOf({ tiltX: -5, tiltY: 6 }),
       // The event's time and pointer kind: a practice file records both.
       t: 3,
       pointerType: "pen",
@@ -286,6 +288,10 @@ describe("a drawing pointer", () => {
         coalesced: 0,
         timeStamp: 3,
         wholePixel: true,
+        altitude: altitudeOf({ tiltX: -5, tiltY: 6 }),
+        azimuth: Number.NaN,
+        tiltSource: "tilt",
+        ownTilts: 0,
       },
       {
         type: "move",
@@ -295,6 +301,11 @@ describe("a drawing pointer", () => {
         coalesced: 1,
         timeStamp: 4,
         wholePixel: true,
+        altitude: 90,
+        azimuth: Number.NaN,
+        tiltSource: "tilt",
+        // Its one coalesced sample carried one altitude.
+        ownTilts: 1,
       },
     ]);
   });

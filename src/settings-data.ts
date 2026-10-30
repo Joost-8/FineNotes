@@ -35,6 +35,7 @@ import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognitio
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
+import { type PenOptionsOnWrite, penOptionsOnWriteOf } from "./view/tool-return";
 
 /** The tools an ink note can open with (`defaultTool`). */
 export type ToolId = "pen" | "highlighter" | "eraser" | "select";
@@ -61,6 +62,14 @@ export interface GoodObsidianSettings {
   lassoMode: LassoMode;
   /** What the lasso picks up (0.5). May hold anything; checked where it is read. */
   lassoFilter: LassoFilter;
+  /**
+   * The lasso takes a stroke when any part of it is inside the loop, as
+   * Notability does (the default); off, at least half of it (Goodnotes,
+   * `canvas/lasso.ts`). It was `lassoAnyPart`, off by default, in the
+   * unreleased PR #59 build: a new key, so a vault that saved that `false`
+   * still gets the new default.
+   */
+  lassoTouches: boolean;
   /** 0–1. The settings tab shows it as a percentage. */
   highlighterAlpha: number;
   paperWidth: number;
@@ -211,6 +220,12 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
+  /**
+   * Advanced: the Brush pen paints wider where the Pencil is held flat, for
+   * shading (`ink/tilt`). Off, nothing of the tilt is kept. Strokes that
+   * kept it are drawn with it either way.
+   */
+  pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
@@ -308,10 +323,12 @@ export interface GoodObsidianSettings {
    */
   onlyStylusMode: boolean;
   /**
-   * The pen's options pill tucks away as soon as the pen or highlighter
-   * writes, as a second tap on its button does (`tool-return.ts`).
+   * "Hide pen options while writing": the pen's options pill tucks away as
+   * soon as the pen or highlighter writes, as a second tap on its button
+   * does, until the pen is tapped or until it lifts (`tool-return.ts`). A
+   * switch before (true is until tapped); checked where read.
    */
-  tuckPenOptionsOnWrite: boolean;
+  tuckPenOptionsOnWrite: PenOptionsOnWrite;
   /** Page px added after a Zoom box line; negative lets taller boxes overlap. */
   zoomBoxLineStep: number;
   /** Move the Zoom box right (then wrap) after a stroke reaches two thirds of it. */
@@ -354,6 +371,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   eraserFilter: "all",
   lassoMode: "freehand",
   lassoFilter: { ...DEFAULT_LASSO_FILTER },
+  lassoTouches: true,
   highlighterAlpha: DEFAULT_HIGHLIGHTER_ALPHA,
   paperWidth: DEFAULT_PAPER_WIDTH,
   newNotebookFolder: "",
@@ -398,6 +416,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
+  pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,
@@ -422,7 +441,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
-  tuckPenOptionsOnWrite: false,
+  tuckPenOptionsOnWrite: "off",
   zoomBoxLineStep: 0,
   zoomBoxAutoAdvance: false,
   greyWhileErasing: false,
@@ -523,7 +542,7 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
  */
 export interface PenPreferences {
   drawAndHold: boolean;
-  tuckOnWrite: boolean;
+  tuckOnWrite: PenOptionsOnWrite;
   returnToPen: ReturnToPen;
 }
 
@@ -535,7 +554,7 @@ export function penPreferencesOf(
 ): PenPreferences {
   return {
     drawAndHold: settings.drawAndHold !== false,
-    tuckOnWrite: settings.tuckPenOptionsOnWrite === true,
+    tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
     returnToPen: returnToPenOf(settings),
   };
 }
@@ -546,7 +565,9 @@ export function storePenPreferences(
   patch: Partial<PenPreferences>,
 ): void {
   if ("drawAndHold" in patch) settings.drawAndHold = patch.drawAndHold !== false;
-  if ("tuckOnWrite" in patch) settings.tuckPenOptionsOnWrite = patch.tuckOnWrite === true;
+  if ("tuckOnWrite" in patch) {
+    settings.tuckPenOptionsOnWrite = penOptionsOnWriteOf(patch.tuckOnWrite);
+  }
   if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
 }
 
@@ -695,6 +716,7 @@ const CONVERSIONS: Record<
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
+  tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },
 };
 
 function conversion(key: string) {

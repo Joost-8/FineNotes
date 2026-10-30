@@ -26,6 +26,7 @@ import {
   seekTargetMs,
   strokeTime,
   transcriptPathFor,
+  transcriptText,
   uploadSizeProblem,
 } from "../../src/audio/recording";
 import type { Recording } from "../../src/model/document";
@@ -305,5 +306,40 @@ describe("concatChunks", () => {
     const c = new Uint8Array([3]).buffer;
     expect([...new Uint8Array(concatChunks([a, b, c]))]).toEqual([1, 2, 3]);
     expect(concatChunks([]).byteLength).toBe(0);
+  });
+});
+
+describe("transcriptText", () => {
+  const note = (text: string): string =>
+    buildTranscriptNote({
+      title: "Recording 2026-09-22 14-05",
+      start: new Date(2026, 8, 22, 14, 5).getTime(),
+      duration: 192_000,
+      notebookLink: "[[Analysis.ink|Analysis]]",
+      audioEmbed: "![[Recording 2026-09-22 14-05.m4a]]",
+      text,
+      via: "Transcribed on this device with Whisper base.",
+    });
+
+  it("keeps only the spoken text of the note FineNotes wrote, without the times", () => {
+    expect(
+      transcriptText(note("[0:00] Good morning.\n\n[1:05] Today: limits.\n\n[1:02:09] The end.")),
+    ).toBe("Good morning.\n\nToday: limits.\n\nThe end.");
+  });
+
+  it("keeps what the user changed, and a note with properties or a Markdown embed", () => {
+    const edited =
+      "---\ntags: [lecture]\n---\n# R — transcript\r\n\r\nRecorded 22 Sep.\r\n\r\n" +
+      "![](R.m4a)\r\n\r\n[0:00] Good  morning, class.\r\nSecond line.\r\n\r\n\r\nMy own note.\r\n";
+    expect(transcriptText(edited)).toBe("Good  morning, class.\nSecond line.\n\nMy own note.");
+  });
+
+  it("reads a note whose lead was removed, and a text in brackets that is no time", () => {
+    expect(transcriptText("[laughs] Fine.\n\n[0:30] Next.")).toBe("[laughs] Fine.\n\nNext.");
+  });
+
+  it("is empty when nothing was said", () => {
+    expect(transcriptText(note(""))).toBe("");
+    expect(transcriptText("")).toBe("");
   });
 });

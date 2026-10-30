@@ -30,6 +30,7 @@
  * touches down or travels, and only then starts, from where it was pressed.
  */
 
+import { altitudeOf } from "../ink/tilt";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
@@ -44,6 +45,8 @@ export interface PointerSample {
   pressure: number;
   tiltX: number;
   tiltY: number;
+  /** Degrees above the screen, from `altitudeAngle` or the tilts (`ink/tilt`); NaN for none. */
+  altitude: number;
   /** The event's time stamp, ms (the page's clock). */
   t?: number;
   /** "pen", "mouse" or "touch". */
@@ -69,6 +72,18 @@ export interface PointerDebugRecord {
   timeStamp: number;
   /** Its position is whole CSS px on both axes ({@link isWholePixel}). */
   wholePixel: boolean;
+  /** The pen's altitude, degrees above the screen; NaN for none (`ink/tilt`). */
+  altitude: number;
+  /** Its azimuth, degrees round the screen from +x; NaN for none. */
+  azimuth: number;
+  /** Where the altitude came from: `altitudeAngle`, `tiltX`/`tiltY`, or nowhere. */
+  tiltSource: "angle" | "tilt" | "none";
+  /**
+   * A move: how many different altitudes its coalesced samples carried. As
+   * many as `coalesced` means each sample has its own; 1, that they repeat
+   * the event's.
+   */
+  ownTilts: number;
 }
 
 /**
@@ -111,8 +126,8 @@ export interface PointerControllerCallbacks {
   onPanEnd?(t: number): void;
   /** Every finger gesture is void (a pen landed). */
   onPanCancel?(): void;
-  /** A second finger landed: a pinch begins about the midpoint. */
-  onPinchStart?(centerX: number, centerY: number): void;
+  /** A second finger landed: a pinch begins about the midpoint, the fingers `spread` px apart. */
+  onPinchStart?(centerX: number, centerY: number, spread: number): void;
   onPinch?(info: PinchInfo): void;
   /** Fewer than two fingers remain. */
   onPinchEnd?(): void;
@@ -394,7 +409,7 @@ export class PointerController {
     const samples = taken.length > 0 ? taken.map((e) => this.sample(e)) : [this.sample(event)];
     if (event.pointerType === "pen")
       for (const e of taken.length > 0 ? taken : [event]) this.notePen(e);
-    this.debug("move", event, samples.length);
+    this.debug("move", event, samples.length, taken);
     this.listener.onMove(samples);
   }
 
@@ -463,6 +478,7 @@ export class PointerController {
       pressure,
       tiltX,
       tiltY,
+      altitude: altitudeOf(event),
       t: event.timeStamp,
       pointerType: event.pointerType,
     };
@@ -477,10 +493,18 @@ export class PointerController {
     if (!this.penIsPrecise && !isWholePixel(position)) this.penIsPrecise = true;
   }
 
-  private debug(type: PointerDebugType, event: PointerEvent, coalesced: number): void {
-    const { pointerType, pointerId, pressure, timeStamp } = event;
+  private debug(
+    type: PointerDebugType,
+    event: PointerEvent,
+    coalesced: number,
+    taken: readonly PointerEvent[] = [],
+  ): void {
+    if (!this.listener.onDebug) return;
+    const { pointerType, pointerId, pressure, timeStamp, altitudeAngle, azimuthAngle } = event;
     const wholePixel = isWholePixel(event);
-    this.listener.onDebug?.({
+    const angle = typeof altitudeAngle === "number" && Number.isFinite(altitudeAngle);
+    const tilt = Number.isFinite(event.tiltX) && Number.isFinite(event.tiltY);
+    this.listener.onDebug({
       type,
       pointerType,
       pointerId,
@@ -488,6 +512,13 @@ export class PointerController {
       coalesced,
       timeStamp,
       wholePixel,
+      altitude: altitudeOf(event),
+      azimuth:
+        typeof azimuthAngle === "number" && Number.isFinite(azimuthAngle)
+          ? (azimuthAngle * 180) / Math.PI
+          : Number.NaN,
+      tiltSource: angle ? "angle" : tilt ? "tilt" : "none",
+      ownTilts: new Set(taken.map((e) => altitudeOf(e))).size,
     });
   }
 

@@ -18,6 +18,7 @@
 
 import { setIcon } from "obsidian";
 import type { AiMenuItem } from "../recognition/ai-menu-model";
+import { menuAnchor, menuPlace } from "./bar-dock-model";
 
 const POPOVER_WIDTH = 320;
 
@@ -156,12 +157,22 @@ export class AiMenuPopover {
     });
   }
 
-  /** Below the anchor, left-aligned to it, kept inside the window. */
+  /**
+   * Below the anchor, left-aligned to it, kept inside the window; toward the
+   * page from a tool bar at another edge (`menuAnchor`).
+   */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
     const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     const height = this.el.offsetHeight;
+    const { side, box } = menuAnchor(this.anchor);
+    if (side !== "down") {
+      const room = { width: window.innerWidth, height: window.innerHeight };
+      const at = menuPlace(side, box, { width, height }, room, "start", 6, 8);
+      this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
+      return;
+    }
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     let top = r.bottom + 6;
     if (top + height > window.innerHeight - 8) top = Math.max(8, r.top - height - 6);
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
