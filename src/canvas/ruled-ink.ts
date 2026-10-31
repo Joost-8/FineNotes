@@ -38,7 +38,7 @@ export const DRAWING_PITCHES = 2;
  * tall, so it lies at most half in each of two bands and is taken whole.
  */
 export function ruledCuts(block: LineBlock, stroke: Stroke, bounds: Bounds): boolean {
-  if (stroke.tool === "highlighter" || stroke.shape !== undefined) return true;
+  if (stroke.tool !== "pen" || stroke.shape !== undefined) return true;
   const overlaps = block.baselines.map((_, line) => {
     const band = lineBand(block, line);
     return Math.max(0, Math.min(bounds.maxY, band.bottom) - Math.max(bounds.minY, band.top));

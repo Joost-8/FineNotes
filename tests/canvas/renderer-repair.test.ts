@@ -99,6 +99,27 @@ describe("a changed area is painted again in place", () => {
     expect(drawn).toContain("clearRect 76,66 164,66 164,134 76,134");
   });
 
+  it("a tall cover tape, even once erased, widens the area by half its height", () => {
+    const { renderer, doc } = setUp();
+    const tape = {
+      id: "t",
+      color: "#e6d3a3",
+      size: 72,
+      tool: "tape" as const,
+      pts: [100, 100, 0.5, 300, 100, 0.5],
+    };
+    doc.pages[0].strokes.push(tape);
+    renderer.invalidateRegion(0, { minX: 100, minY: 100, maxX: 300, maxY: 100 });
+    renderer.renderDocument(doc, false);
+    // Erased: no longer on the page when its tiles are repaired.
+    doc.pages[0].strokes.pop();
+    log.lines.length = 0;
+    renderer.invalidateRegion(0, { minX: 100, minY: 100, maxX: 300, maxY: 100 });
+    renderer.renderDocument(doc, false);
+    // 36 px either side of the tape's line, and 2 for its edge: not INK_PAD's 24.
+    expect(log.lines.join("\n")).toContain("clearRect 62,62 338,62 338,138 62,138");
+  });
+
   it("an exact area is painted as given, with nothing round it", () => {
     const { renderer, doc } = setUp();
     renderer.invalidateArea(0, { minX: 100, minY: 90, maxX: 140, maxY: 110 });

@@ -32,6 +32,8 @@ const SECONDARY_TOOLS: ReadonlySet<ActiveTool> = new Set([
   "text",
   "shape",
   "laser",
+  "tape",
+  "fill",
 ]);
 
 /**
@@ -70,7 +72,7 @@ export function toolAfterUse(
 ): ActiveTool {
   if (!enabled) return tool;
   const done =
-    (use === "gesture" && (tool === "eraser" || tool === "shape")) ||
+    (use === "gesture" && (tool === "eraser" || tool === "shape" || tool === "fill")) ||
     (use === "text" && tool === "text") ||
     (use === "selection" && tool === "select");
   return done ? drawingToolOf(back, back) : tool;

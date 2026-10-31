@@ -14,6 +14,7 @@ import {
   DEFAULT_SPACING,
   DESK_MIN_CONTRAST,
   deskFor,
+  LIGHT_DESK,
   LIGHT_PAPER,
   PAPER_PRESETS,
   RULINGS,
@@ -25,6 +26,7 @@ import {
   pageLook,
   paperTheme,
   resolveSpacing,
+  withDesk,
 } from "../../src/canvas/backdrop";
 import { contrastRatio } from "../../src/model/cover";
 import type { PageGeometry, Ruling, SyntheticBackdrop } from "../../src/model/document";
@@ -792,6 +794,19 @@ describe("deskFor", () => {
     expect(deskFor(LIGHT_PAPER, ["#ffffff", "#fbf8ed"])).toBe(LIGHT_PAPER.desk);
     expect(deskFor(LIGHT_PAPER, [])).toBe(LIGHT_PAPER.desk);
     expect(deskFor(DARK_PAPER, [DARK_PAPER.paper])).toBe(DARK_PAPER.desk);
+  });
+
+  it("keeps the Light desk under white pages, and under PDFs dark pages keep as they are", () => {
+    const light = withDesk(LIGHT_PAPER, LIGHT_DESK);
+    expect(deskFor(light, ["#ffffff"])).toBe(LIGHT_DESK);
+    const keep = withDesk(paperTheme(true, true), LIGHT_DESK);
+    expect(deskFor(keep, ["#ffffff", DARK_PAPER.paper])).toBe(LIGHT_DESK);
+    // A page the desk's own colour still moves it, so its edge shows.
+    expect(deskFor(light, [LIGHT_DESK])).not.toBe(LIGHT_DESK);
+    // The same pair is the same theme; its own desk is the theme itself.
+    expect(withDesk(LIGHT_PAPER, LIGHT_DESK)).toBe(light);
+    expect(withDesk(LIGHT_PAPER, LIGHT_PAPER.desk)).toBe(LIGHT_PAPER);
+    expect(withDesk(LIGHT_PAPER, null)).toBe(LIGHT_PAPER);
   });
 
   it.each(["#3b3e45", "#26272b", "#45484f", "#0e0f11", "#6b6f79", "#a3a7b0", "#808080"])(

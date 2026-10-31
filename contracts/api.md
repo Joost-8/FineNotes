@@ -434,6 +434,13 @@ heads?: { start?: "open" | "filled"; end?: "open" | "filled" };  // `line` only
   ink padding tiles are redrawn with.
 - The loader keeps a field only when it can read it; nothing is clamped
   except `radius`, to 500.
+- A **bucket fill** (the Fill tool, Scribble to fill) is stored as such a
+  shape and needs no field of its own: a `polygon` round the filled region
+  (up to 2000 points, closed), `size` 0.5, `fill` equal to its `color`
+  (`#rrggbb`), `tool: "pen"` (`src/model/fill-region.ts`). Fills come first
+  in a page's `strokes`, a larger fill before a smaller one, so the ink that
+  bounds them is drawn over them. A recolour changes `color` and `fill`
+  together.
 
 A shape's `pts` are sparse on purpose. The renderer draws a shape as its
 exact centreline, stroked at the stroke's `size` with round joins and caps —
@@ -904,7 +911,7 @@ icon, label, order?, isAvailable?, run })` from `onload`; built-ins are
 
 GoodNotes 6's pen gestures, from the pen type menu (Joost, 2026-09-24).
 Pen tool only: a highlighter going over text is highlighting it.
-Settings: `PenGestures { scribbleErase, scribbleErasesAll, circleLasso }`,
+Settings: `PenGestures { scribbleErase, scribbleErasesAll, scribbleFill, circleLasso }`,
 read through `penGesturesOf` (`src/ink/pen-gestures.ts`); defaults on,
 off, on — GoodNotes' defaults, with the scribble's wider reach off.
 
@@ -1284,3 +1291,62 @@ tilt?: number[];
   `sticky`, `v2+sticky+tilt:`) with `"requires": ["tilt"]`, so an older
   FineNotes holds it read-only instead of saving the shading back at the
   nib's width (§ "Payload label: refusing instead of dropping").
+
+## Highlighter chisel tip (2026-10-30)
+
+`Stroke` gains one optional field:
+
+```ts
+/** Written with a highlighter's flat chisel tip; absent is round. */
+tip?: "chisel";
+```
+
+- **Stored** as `"tip": "chisel"` after `nib`. Any other value reads as
+  absent (round); nothing else about the stroke changes, so a reader that
+  does not know the field draws the highlight round and loses nothing else.
+- **Drawn:** the centreline (traced as any highlight) is swept by an
+  upright rectangle `size` tall and `CHISEL_ASPECT` (0.5) of that wide, kept
+  to the page's axes (`ink/chisel.ts` `chiselPolygons`: one convex hull per
+  piece, filled). A level highlight is a band of one height with square
+  ends. The tip is part of the renderer's path-cache key.
+- **Kept** by eraser pieces (`pieceOf`, the erase preview), copy, move,
+  turn, resize and sticky notes. Not on a shape: a snapped shape is clean
+  geometry and drawn round. Set only on highlighter strokes, from the
+  `highlighterTip` setting (the pen menu's Tip row) at the time of writing.
+- **No label:** a notebook with chisel highlights keeps the plain `v2:`
+  label. An older FineNotes opens it and draws those highlights round; a
+  save there drops the field. That is a change of look, not of content, so
+  it is not worth holding the notebook read-only for.
+
+## Cover tape (2026-10-30)
+
+`Stroke.tool` gains a third value, `"tape"` (`src/model/cover-tape.ts`): an
+opaque strip laid over the page, as Goodnotes' tape, to hide answers while
+studying or keep something out of sight.
+
+- **Geometry:** the stroke's first and last points are the middles of the
+  strip's two ends (the Cover tape tool stores exactly two, made level or
+  upright when nearly so); `size` is its height, page px; `color` its colour.
+  Pressure is ignored, and points in between (if a transform leaves any) do
+  not change its shape.
+- **Painted over everything** on its page, whatever its place in `strokes`:
+  ink, pictures (in front of the ink too), tables, graphs, checklist boxes
+  and typed text. In the view, where typed text boxes are DOM above the
+  page, a box under a covered tape is clipped where the tape lies (not while
+  it is being typed in); two tapes overlapping on one box show it through
+  where they overlap.
+- **Shown through is not stored.** A tap (a finger with any tool but the
+  lasso; a Pencil or mouse tap with a writing tool or the tape tool; a mouse
+  right-click) shows a tape through, or covers it again, in this view only,
+  for this session. It is never an undo step and never saved: the file, every
+  sync, the page thumbnails, PDF export and every image sent to an AI model
+  have every tape covered. Export as PDF can leave every tape out
+  (`exportWithoutTapes`, the dialog's tape button).
+- **Otherwise ink:** the lasso selects, moves, turns, resizes, recolours,
+  copies and deletes it; it mirrors over a join; every eraser mode takes it
+  whole, never in part. The handwriting reader and sums leave it out (they
+  read `tool === "pen"` only).
+- **Label:** a notebook with any tape is written `v2+tape:` (after `tilt`)
+  with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
+  ink and save it back as a thick line, so it holds the notebook read-only
+  instead (§ "Payload label: refusing instead of dropping").
