@@ -550,7 +550,7 @@ export interface ToolbarCallbacks {
   returnToPenOnReselect?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
-  /** The laser pointer's colour changed in its pen tab. Hosts persist it. */
+  /** The laser pointer's colour changed in its pill. Hosts persist it. */
   onLaserColorChange?: (color: string) => void;
   onPressureToggle: (enabled: boolean) => void;
   /** Whether pressure pens may widen with pressure (the advanced setting); off when absent. */
@@ -704,7 +704,7 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
-  /** The laser pointer's colour, read live so the pen menu's icon follows Settings. */
+  /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
   laserColor?: () => string;
 }
 
@@ -837,10 +837,6 @@ export class Toolbar {
   /** The eraser mode the eraser button shows now (`drawEraserIcon`). */
   private eraserIconMode: EraserMode | null = null;
   private readonly colorSwatches = new Map<string, HTMLElement>();
-  /** The laser tab's colour swatches, marked against the laser's own colour. */
-  private readonly laserSwatches = new Map<string, HTMLElement>();
-  /** The laser tab in the pen type row. */
-  private laserTabButton: HTMLButtonElement | null = null;
   /** Where the pill rests when it is not by a text box (pill-dock-model.ts). */
   private pillDock: PillDock = DEFAULT_PILL_DOCK;
   /** Where the bar rests (bar-dock-model.ts). */
@@ -2004,8 +2000,6 @@ export class Toolbar {
     if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
     this.optionsEl.empty();
     this.colorSwatches.clear();
-    this.laserSwatches.clear();
-    this.laserTabButton = null;
     this.widthButtons.clear();
     this.penTypeButtons.clear();
     this.eraserSizeButtons.clear();
@@ -2024,12 +2018,8 @@ export class Toolbar {
       if (this.popoverKind?.startsWith("eraser-") && this.state.tool !== "eraser") {
         this.closePopover();
       }
-      if (
-        (this.popoverKind === "laser-color" || this.popoverKind === "laser-colors") &&
-        this.state.tool !== "laser"
-      ) {
-        this.closePopover();
-      }
+      // The laser's picker lives in its pill; a picker opened from its palette closes with it.
+      if (this.popoverKind === "laser-color" && this.state.tool !== "laser") this.closePopover();
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -2212,29 +2202,6 @@ export class Toolbar {
       });
       this.penTypeButtons.set(spec.id, pen);
     }
-    if (!this.practice) {
-      const laser = row.createEl("button", {
-        cls: "goodobsidian-pentype goodobsidian-lasertype",
-        attr: { "aria-label": "Laser pointer", title: "Laser pointer" },
-      });
-      iconOrText(laser, "pointer", "L");
-      this.paintLaserIcon(laser);
-      laser.addEventListener("click", () => {
-        if (this.state.tool === "laser") {
-          this.toggleColorPopover("laser-color", laser, this.laserColor(), (color) =>
-            this.setLaserColor(color),
-          );
-          return;
-        }
-        this.closePopover();
-        this.leaveToolFor("laser");
-        this.state.tool = "laser";
-        this.callbacks.onToolChange("laser");
-        this.buildOptions();
-        this.syncActive();
-      });
-      this.laserTabButton = laser;
-    }
     this.fitPenRow(row, upright);
   }
 
@@ -2250,10 +2217,7 @@ export class Toolbar {
       row.toggleClass("has-more-start", ends.start);
       row.toggleClass("has-more-end", ends.end);
     };
-    const chosen =
-      this.state.tool === "laser"
-        ? this.laserTabButton
-        : this.penTypeButtons.get(this.activePenType().id);
+    const chosen = this.penTypeButtons.get(this.activePenType().id);
     if (upright) {
       row.scrollTop = this.penRowScroll;
       if (chosen) {
@@ -2420,11 +2384,7 @@ export class Toolbar {
    * colour was just added, keeping the chosen colour in view; and fade the
    * ends that hide more. A wheel scrolls it sideways, for a mouse.
    */
-  private fitColorRow(
-    row: HTMLElement,
-    chosenColor = this.state.color,
-    swatches: ReadonlyMap<string, HTMLElement> = this.colorSwatches,
-  ): void {
+  private fitColorRow(row: HTMLElement): void {
     const fade = (): void => {
       const ends = hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
       row.toggleClass("has-more-start", ends.start);
@@ -2432,7 +2392,9 @@ export class Toolbar {
     };
     row.scrollLeft = this.revealNewColor ? row.scrollWidth : this.colorRowScroll;
     this.revealNewColor = false;
-    const chosen = swatches.get([...swatches.keys()].find((c) => sameColor(c, chosenColor)) ?? "");
+    const chosen = this.colorSwatches.get(
+      [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
+    );
     /** Keep the chosen colour in view. Offsets are the pill's (the row is not positioned). */
     const showChosen = (): void => {
       if (chosen) {
@@ -2589,121 +2551,46 @@ export class Toolbar {
     note.createSpan({ text });
   }
 
-  /** The laser's pen tab: its colour row, and nothing about strokes or widths. */
+  /**
+   * The laser's pill: what it is and that nothing it draws stays, then the
+   * colour it points with — the picker's own circles and custom colour, in
+   * the pill. A laser has no stroke and no width, so its colour is all it sets.
+   */
   private buildLaserOptions(): void {
-    const upright = isUpright(this.pillDock);
-    this.buildPenRow(upright);
+    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved");
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    const colors = this.laserColors();
-    const chosen = this.laserColor();
-    if (upright) {
-      const first = colorWindow(
-        colors.length,
-        colors.findIndex((color) => sameColor(color, chosen)),
-        UPRIGHT_COLORS,
-      );
-      for (const color of colors.slice(first, first + UPRIGHT_COLORS)) {
-        this.laserSwatch(this.optionsEl, color);
-      }
-      this.chevron("All colours", (button) => this.toggleLaserColorList(button));
-      return;
-    }
-    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
-    row.dataset.ignoreSwipe = "true";
-    for (const color of colors) this.laserSwatch(row, color);
-    if (colors.length < PEN_ROW_MAX) this.addLaserColorButton(row);
-    this.fitColorRow(row, chosen, this.laserSwatches);
+    const body = this.optionsEl.createDiv({ cls: "goodobsidian-laser-colors" });
+    renderColorPicker(body, {
+      current: this.laserColor(),
+      extra: this.pickerExtras(this.laserColor()),
+      recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
+      onPick: (color) => {
+        if (color) this.setLaserColor(color);
+      },
+      onCustom: (color) => {
+        this.rememberColor(color);
+        this.setLaserColor(color);
+      },
+      onEyedropper: this.eyedropper((color) => {
+        this.rememberColor(color);
+        this.setLaserColor(color);
+      }),
+    });
+    if (isUpright(this.pillDock)) body.addClass("is-upright");
   }
 
+  /** The laser's colour, as the settings have it now (never the icon's: the laser's icon stays grey). */
   private laserColor(): string {
     return parseHexColor(this.options?.laserColor?.() ?? "") ?? LASER_COLOR;
   }
 
-  private paintLaserIcon(icon: HTMLElement): void {
-    const color = this.laserColor();
-    const svg = icon.querySelector("svg");
-    if (svg) {
-      svg.setAttribute("stroke", color);
-      svg.setAttribute("fill", "none");
-    }
-    icon.setCssStyles({ color });
-  }
-
-  private laserColors(): string[] {
-    const reserved = this.reservedColors();
-    const fill = this.palette.filter((color) => color.toLowerCase() !== "#ffffff");
-    const row = penColorRow(reserved, undefined, fill);
-    return [...reserved, ...pickPenColor(row, reserved.length, this.laserColor())];
-  }
-
-  private laserSwatch(parent: HTMLElement, color: string): void {
-    const chosen = this.laserColor();
-    const swatch = this.swatchButton(parent, color, () => {
-      if (sameColor(color, chosen)) {
-        this.toggleColorPopover("laser-color", swatch, chosen, (picked) =>
-          this.setLaserColor(picked),
-        );
-      } else this.setLaserColor(color);
-    });
-    swatch.toggleClass("is-active", sameColor(color, chosen));
-    this.laserSwatches.set(color, swatch);
-  }
-
-  private addLaserColorButton(parent: HTMLElement): void {
-    const more = parent.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
-    iconOrText(more, "plus", "+");
-    more.setAttribute("aria-label", "Add colour");
-    more.setAttribute("title", "Add colour");
-    more.addEventListener("click", () =>
-      this.toggleColorPopover("laser-color", more, this.laserColor(), (color) =>
-        this.setLaserColor(color),
-      ),
-    );
-  }
-
   private setLaserColor(color: string): void {
     const hex = parseHexColor(color);
-    if (!hex) return;
+    if (!hex || sameColor(hex, this.laserColor())) return;
     this.callbacks.onLaserColorChange?.(hex);
     this.buildOptions();
     this.syncActive();
-    if (this.popoverKind === "pens") this.popoverRender?.();
-  }
-
-  private toggleLaserColorList(anchor: HTMLElement): void {
-    if (this.popoverKind === "laser-colors") {
-      this.closePopover();
-      return;
-    }
-    const body = this.openPopover("laser-colors", anchor);
-    this.popover?.addClass("has-arrow", "is-pen-colors");
-    const grid = body.createDiv({ cls: "goodobsidian-pen-color-grid" });
-    const colors = this.laserColors();
-    const chosen = this.laserColor();
-    for (const color of colors) {
-      const swatch = this.swatchButton(grid, color, () => {
-        if (sameColor(color, chosen)) {
-          this.toggleColorPopover("laser-color", anchor, chosen, (picked) =>
-            this.setLaserColor(picked),
-          );
-        } else {
-          this.closePopover();
-          this.setLaserColor(color);
-        }
-      });
-      swatch.toggleClass("is-active", sameColor(color, chosen));
-    }
-    if (colors.length < PEN_ROW_MAX) {
-      const more = grid.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
-      iconOrText(more, "plus", "+");
-      more.setAttribute("aria-label", "Add colour");
-      more.addEventListener("click", () =>
-        this.toggleColorPopover("laser-color", anchor, chosen, (color) =>
-          this.setLaserColor(color),
-        ),
-      );
-    }
-    this.keepPopoverInside(anchor);
   }
 
   /** The hand has nothing to set: its pill says what dragging does with it. */
@@ -4285,7 +4172,6 @@ export class Toolbar {
     laser.toggleClass("is-active", this.state.tool === "laser");
     const laserIcon = laser.createSpan({ cls: "goodobsidian-laser-row-icon" });
     iconOrText(laserIcon, "pointer", "");
-    this.paintLaserIcon(laserIcon);
     laser.createSpan({ text: "Laser pointer" });
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
@@ -5416,18 +5302,9 @@ export class Toolbar {
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
     markChosen(this.colorSwatches, state.color);
-    if (this.laserSwatches) markChosen(this.laserSwatches, this.laserColor());
     markChosen(this.widthButtons, state.size);
     markChosen(this.eraserSizeButtons, eraserSizeFor(state));
-    if (state.tool === "laser") {
-      for (const button of this.penTypeButtons.values()) button.removeClass("is-active");
-    } else {
-      markChosen(this.penTypeButtons, this.activePenType().id);
-    }
-    if (this.laserTabButton) {
-      this.laserTabButton.toggleClass("is-active", state.tool === "laser");
-      this.paintLaserIcon(this.laserTabButton);
-    }
+    markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
     this.drawPenPreview();
     this.drawLassoIcon();

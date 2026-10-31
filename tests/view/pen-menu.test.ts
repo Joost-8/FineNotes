@@ -5,10 +5,12 @@
  * the three pens, and the highlighter could not be picked on an iPad.
  */
 import { describe, expect, it, vi } from "vitest";
+import type { FakeEl } from "../fakes/obsidian";
 
-vi.mock("obsidian", () => import("./fake-obsidian"));
+vi.mock("obsidian", () => import("../fakes/obsidian"));
 
-const { penRowTypes, penTypeFor } = await import("../../src/view/toolbar");
+const { Toolbar, penRowTypes, penTypeFor } = await import("../../src/view/toolbar");
+const { FakeEl: Element } = await import("../fakes/obsidian");
 
 describe("the pen type row", () => {
   it("offers the highlighter as well as the four pens", () => {
@@ -223,5 +225,82 @@ describe("the pen menu from the pen's side button (stylus-click.ts)", () => {
     const { toolbar, opened } = await bar({ popover: {}, typeShown: true });
     toolbar.togglePenMenu();
     expect(opened).toEqual(["close"]);
+  });
+});
+
+describe("the laser pointer's pill", () => {
+  const globals = globalThis as unknown as Record<string, unknown>;
+
+  /** The pill's elements, built with a document standing in for Obsidian's. */
+  function laserPill(laserColor = "#ff3b30") {
+    const optionsEl = new Element("div");
+    const changes: string[] = [];
+    const bar = Object.assign(Object.create(Toolbar.prototype) as object, {
+      optionsEl,
+      state: { tool: "laser", color: "#1a1a1a", size: 3, recentColors: [] },
+      callbacks: { onLaserColorChange: (color: string) => changes.push(color) },
+      options: { laserColor: () => laserColor },
+      palette: ["#1a1a1a", "#2a8ce0", "#2fb344", "#e8443a"],
+      pillDock: { dock: "bottom" },
+      widthButtons: new Map(),
+      colorSwatches: new Map(),
+      buildOptions: () => undefined,
+      syncActive: () => undefined,
+    }) as unknown as { buildLaserOptions(): void };
+    globals.activeDocument = {
+      createElementNS: () => new Element("svg"),
+      body: { hasClass: () => false },
+    };
+    try {
+      bar.buildLaserOptions();
+    } finally {
+      delete globals.activeDocument;
+    }
+    return { optionsEl, changes };
+  }
+
+  function all(el: FakeEl): FakeEl[] {
+    return [el, ...el.children.flatMap(all)];
+  }
+
+  it("keeps the popup's icon and line, then the colours, and no width at all", () => {
+    const { optionsEl } = laserPill();
+    const nodes = all(optionsEl);
+    // The popup as it was: its icon, and its line of words.
+    expect(nodes.some((node) => node.text.includes("Laser pointer (L)"))).toBe(true);
+    const icon = nodes.find((node) => node.classes.has("goodobsidian-tool-note-icon"));
+    expect(icon).toBeDefined();
+    // Light grey, as the other tools' marks: the colour is in the circles, not the icon.
+    expect(icon?.style.color).toBeUndefined();
+    // The picker's circles, and "Custom colour…" for one of one's own.
+    expect(nodes.some((node) => node.classes.has("goodobsidian-laser-colors"))).toBe(true);
+    const circles = nodes.filter((node) => node.classes.has("goodobsidian-color-swatch"));
+    expect(circles.length).toBeGreaterThanOrEqual(10);
+    expect(circles.some((node) => node.attrs["aria-label"] === "#ff3b30")).toBe(true);
+    expect(nodes.some((node) => node.classes.has("goodobsidian-color-custom-toggle"))).toBe(true);
+    // Nothing about strokes or widths: a laser has neither.
+    expect(nodes.some((node) => node.classes.has("goodobsidian-width"))).toBe(false);
+    expect(nodes.some((node) => node.classes.has("goodobsidian-sizes"))).toBe(false);
+  });
+
+  it("takes a preset colour, and never paints its own icon", () => {
+    const { optionsEl, changes } = laserPill();
+    const circles = all(optionsEl).filter((node) => node.classes.has("goodobsidian-color-swatch"));
+    const blue = circles.find((node) => node.attrs["aria-label"] === "#228be6");
+    expect(blue).toBeDefined();
+    blue?.dispatch("click");
+    expect(changes).toEqual(["#228be6"]);
+    // The icon keeps the UI's grey: it is drawn by the theme, not by the colour.
+    for (const icon of all(optionsEl).filter((node) =>
+      node.classes.has("goodobsidian-tool-note-icon"),
+    )) {
+      expect(icon.style.color).toBeUndefined();
+    }
+  });
+
+  it("is not one of the pen types in the pen's row", () => {
+    const ids = penRowTypes({} as never).map((spec) => spec.id);
+    expect(ids).not.toContain("laser");
+    expect(ids).toEqual(["fountain", "ball", "brush", "calligraphy", "highlighter"]);
   });
 });

@@ -1112,7 +1112,7 @@ select.goodobsidian-choice-select {
   display: inline-flex;
   width: 24px;
   justify-content: center;
-  color: var(--color-red);
+  color: var(--gob-icon);
 }
 
 .goodobsidian-swatch {
@@ -9496,6 +9496,60 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 .goodobsidian-popover.is-color-popover {
   width: 340px;
   max-width: calc(100vw - 24px);
+}
+
+/* The laser's own pill holds the picker itself (toolbar.ts,
+   buildLaserOptions): the preset circles, and the custom colour behind the
+   round "+" beside them, in the few pixels a pill has. */
+.goodobsidian-laser-colors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The circles in a row or two, as wide as the pill has room for. */
+.goodobsidian-laser-colors .goodobsidian-color-grid {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(var(--gob-touch-compact) * 4);
+}
+
+.goodobsidian-laser-colors .goodobsidian-color-swatch {
+  flex: none;
+}
+
+.goodobsidian-laser-colors .goodobsidian-color-picker-foot {
+  gap: 4px;
+}
+
+.goodobsidian-laser-colors .goodobsidian-color-custom-toggle {
+  justify-content: center;
+  width: var(--gob-touch-compact);
+  min-width: var(--gob-touch-compact);
+  height: var(--gob-touch-compact);
+  padding: 0;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 50%;
+  font-size: 0;
+  color: var(--text-muted);
+}
+
+.goodobsidian-laser-colors .goodobsidian-color-custom-toggle::before {
+  content: "+";
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* The custom colour opened: it needs the room it takes. */
+.goodobsidian-laser-colors:has(.goodobsidian-color-mixer:not(.is-hidden)) {
+  width: 288px;
+}
+
+.goodobsidian-laser-colors .goodobsidian-color-mixer {
+  width: 268px;
 }
 
 .goodobsidian-color-picker .is-hidden,
