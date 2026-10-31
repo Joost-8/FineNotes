@@ -30,6 +30,7 @@ import {
   isTruncatedLlmResponse,
   jsonEndpoint,
   openAiEndpointUrl,
+  openRouterProvider,
 } from "../../src/recognition/llm-request";
 import { buildChatRequest } from "../../src/recognition/ai-chat";
 import { IMAGE_VENDORS, buildImageRequest } from "../../src/recognition/ai-image";
@@ -133,6 +134,27 @@ describe("the vendor table", () => {
 
   it("allows 8192 output tokens per reply", () => {
     expect(MAX_OUTPUT_TOKENS).toBe(8192);
+  });
+});
+
+describe("openRouterProvider", () => {
+  it("sends nothing for OpenRouter's default routing", () => {
+    expect(openRouterProvider("default")).toBeUndefined();
+  });
+
+  it("sorts by price for the cheapest provider", () => {
+    expect(openRouterProvider("cheapest")).toEqual({ sort: "price" });
+  });
+
+  it("sorts by price among fp8 or better for the cheapest at full quality", () => {
+    expect(openRouterProvider("cheapest-full")).toEqual({
+      sort: "price",
+      quantizations: ["fp8", "fp16", "bf16", "fp32"],
+    });
+  });
+
+  it("never offers fp4, which reads handwriting less well", () => {
+    expect(JSON.stringify(openRouterProvider("cheapest-full"))).not.toMatch(/fp4|int4|int8/);
   });
 });
 

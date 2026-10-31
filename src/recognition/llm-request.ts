@@ -22,6 +22,34 @@ export type LlmVendor = "anthropic" | "openai" | "google" | "openrouter" | "cust
  */
 export type LlmDialect = "anthropic" | "openai" | "google";
 
+/**
+ * Which provider OpenRouter serves a model through: its own default, the
+ * cheapest, or the cheapest among those that keep full quality. Compressed
+ * (fp4) versions are cheaper and read handwriting less accurately.
+ */
+export type OpenRouterRouting = "default" | "cheapest" | "cheapest-full";
+
+/** The quantizations `cheapest-full` accepts: fp8 or better. */
+const FULL_QUALITY_QUANTIZATIONS = ["fp8", "fp16", "bf16", "fp32"];
+
+/**
+ * The `provider` object an OpenRouter chat request carries for `routing`, or
+ * undefined to send none (OpenRouter's own default). See
+ * https://openrouter.ai/docs/features/provider-routing.
+ */
+export function openRouterProvider(
+  routing: OpenRouterRouting,
+): Record<string, unknown> | undefined {
+  switch (routing) {
+    case "cheapest":
+      return { sort: "price" };
+    case "cheapest-full":
+      return { sort: "price", quantizations: [...FULL_QUALITY_QUANTIZATIONS] };
+    default:
+      return undefined;
+  }
+}
+
 /** What a vendor's URL may depend on. */
 export interface VendorUrlInput {
   model: string;
@@ -151,6 +179,8 @@ export interface VendorTarget {
   apiKey: string;
   /** The user's base URL, read for a user-supplied endpoint only. */
   baseUrl?: string;
+  /** OpenRouter's provider choice, read for OpenRouter only; absent is its default. */
+  routing?: OpenRouterRouting;
 }
 
 /** A request ready for `postJson`. */

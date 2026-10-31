@@ -117,6 +117,33 @@ describe("buildChatRequest", () => {
     expect((custom.body as OpenAiBody).messages).toHaveLength(4);
   });
 
+  it("adds OpenRouter's provider routing to its body, for either routing choice", () => {
+    const cheapest = buildChatRequest({ ...base, vendor: "openrouter", routing: "cheapest" });
+    expect((cheapest.body as Record<string, unknown>).provider).toEqual({ sort: "price" });
+    const full = buildChatRequest({ ...base, vendor: "openrouter", routing: "cheapest-full" });
+    const { provider, ...rest } = full.body as OpenAiBody & { provider: unknown };
+    expect(provider).toEqual({ sort: "price", quantizations: ["fp8", "fp16", "bf16", "fp32"] });
+    // The rest of the body is the same as without routing.
+    expect(rest).toEqual(buildChatRequest({ ...base, vendor: "openrouter" }).body);
+  });
+
+  it("sends no provider on OpenRouter's default routing", () => {
+    const req = buildChatRequest({ ...base, vendor: "openrouter", routing: "default" });
+    expect(req.body).not.toHaveProperty("provider");
+    expect(buildChatRequest({ ...base, vendor: "openrouter" }).body).not.toHaveProperty("provider");
+  });
+
+  it("sends the routing to no vendor but OpenRouter, even when it is set", () => {
+    const others = ["anthropic", "openai", "google", "custom"] as const;
+    for (const vendor of others) {
+      for (const routing of ["cheapest", "cheapest-full"] as const) {
+        const extra = vendor === "custom" ? { baseUrl: "http://localhost:11434/v1" } : {};
+        const body = buildChatRequest({ ...base, ...extra, vendor, routing }).body;
+        expect(JSON.stringify(body), `${vendor} ${routing}`).not.toContain("provider");
+      }
+    }
+  });
+
   it("builds Gemini generateContent with model turns and a systemInstruction", () => {
     const req = buildChatRequest({ ...base, vendor: "google" });
     expect(req.url).toBe(

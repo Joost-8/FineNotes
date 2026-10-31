@@ -8,6 +8,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **OpenRouter provider choice.** With OpenRouter, pick OpenRouter's default routing, the cheapest provider, or the cheapest at full quality (fp8 or better), since compressed versions read handwriting less well.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

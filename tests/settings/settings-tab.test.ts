@@ -457,6 +457,7 @@ describe("the rows", () => {
       [AI, "(block)", "render"],
       [AI, "Connect OpenRouter", "render"],
       [AI, "AI model", "text:llmModel"],
+      [AI, "Provider choice", "dropdown:openRouterRouting"],
       [AI, `${label} API key`, "render"],
       [AI, "(block)", "render"],
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
@@ -813,6 +814,21 @@ describe("which rows show", () => {
     expect(shown(named(all, "Endpoint URL"))).toBe(false);
     expect(shown(blockAfter(all, "Endpoint URL"))).toBe(false);
     expect(shown(blockAfter(all, "Endpoint URL", 1))).toBe(false);
+  });
+
+  it("offers the provider choice only for OpenRouter, with its three choices", () => {
+    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain("Provider choice");
+    for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
+      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(
+        "Provider choice",
+      );
+    }
+    const { tab } = makeTab(makePlugin({ llmVendor: "openrouter" }));
+    expect(named(rows(tab), "Provider choice").control?.options).toEqual({
+      default: "OpenRouter's default",
+      cheapest: "Cheapest",
+      "cheapest-full": "Cheapest at full quality (fp8 or better)",
+    });
   });
 
   it("offers the OpenRouter connect only for OpenRouter", () => {
