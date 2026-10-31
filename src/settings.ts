@@ -332,6 +332,10 @@ const DESC = {
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
+  openRouterRouting:
+    "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
+    "that are cheaper but read handwriting less accurately. Cheapest at full quality skips " +
+    "those that say they are compressed.",
   imageVendor:
     "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
@@ -1792,6 +1796,23 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         }),
         modelDesc(vendor),
       ),
+      {
+        ...this.info(
+          dropdown(
+            "openRouterRouting",
+            "Provider choice",
+            "",
+            {
+              default: "OpenRouter's default",
+              cheapest: "Cheapest",
+              "cheapest-full": "Cheapest at full quality (fp8 or better)",
+            },
+            ["provider", "quantization", "fp4", "fp8", "routing", "cheapest"],
+          ),
+          DESC.openRouterRouting,
+        ),
+        visible: () => settings.llmVendor === "openrouter",
+      },
       this.info(
         drawnRow(keyName, "", (s) => this.renderKeyRow(s, vendor), ["token", "secret", "API key"]),
         this.keyDesc(vendor, "text"),

@@ -21,6 +21,7 @@ import {
   type VendorTarget,
   isRecord,
   jsonEndpoint,
+  openRouterProvider,
 } from "./llm-request";
 
 /** A rendered page, base64 without a data-URL prefix. */
@@ -205,12 +206,18 @@ function textFileBlock(file: ChatFile): string {
   return `<file name="${file.name.replace(/"/g, "'")}">\n${file.text ?? ""}\n</file>`;
 }
 
-/** Build the vendor's HTTP request for a conversation. Throws on a missing key or a malformed history. */
+/**
+ * Build the vendor's HTTP request for a conversation. Throws on a missing key or a malformed history.
+ * OpenRouter's `provider` routing is added to the body only for OpenRouter, and only when it is not the default.
+ */
 export function buildChatRequest(input: ChatRequestInput): LlmHttpRequest {
   const endpoint = jsonEndpoint(input);
   assertAlternating(input.turns);
   const toBody = DIALECT_CHAT_BODIES[VENDORS[input.vendor].dialect];
-  return { ...endpoint, body: toBody(input, input.maxTokens ?? MAX_OUTPUT_TOKENS) };
+  const body = toBody(input, input.maxTokens ?? MAX_OUTPUT_TOKENS);
+  const provider =
+    input.vendor === "openrouter" && input.routing ? openRouterProvider(input.routing) : undefined;
+  return { ...endpoint, body: provider ? { ...(body as object), provider } : body };
 }
 
 /** First element of an array read from JSON, as `unknown` (never `any`). */

@@ -50,6 +50,7 @@ import {
   type PageAppearance,
   type PenPreferences,
   loadSnapSettings,
+  openRouterRoutingOf,
   shownPaperTheme,
   storePenPreferences,
 } from "./settings-data";
@@ -813,6 +814,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
+    this.settings.openRouterRouting = openRouterRoutingOf(this.settings.openRouterRouting);
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1069,6 +1071,7 @@ export default class GoodObsidianPlugin extends Plugin {
       model: this.settings.llmModel,
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
+      routing: this.settings.openRouterRouting,
     };
   }
 

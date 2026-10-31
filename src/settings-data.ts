@@ -31,7 +31,12 @@ import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
-import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
+import {
+  type LlmVendor,
+  type OpenRouterRouting,
+  chatCompletionsUrl,
+  isPlainHttpUrl,
+} from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
@@ -134,6 +139,8 @@ export interface GoodObsidianSettings {
   llmVendor: LlmVendor;
   /** Empty for the vendor's default model. */
   llmModel: string;
+  /** With OpenRouter, which provider serves the model; see {@link openRouterRoutingOf}. */
+  openRouterRouting: OpenRouterRouting;
   /**
    * Before 0.5, the selected cloud vendor's key in plain text. Loading moves
    * it into the key store (`key-store.ts`) and empties it; a key whose vendor
@@ -407,6 +414,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterRouting: "default",
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -746,6 +754,19 @@ export function paperWidthFrom(text: string): number | null {
   const width = Number.parseInt(text, 10);
   if (!Number.isFinite(width)) return null;
   return width >= PAPER_WIDTH_RANGE.min && width <= PAPER_WIDTH_RANGE.max ? width : null;
+}
+
+// --- OpenRouter's provider choice ------------------------------------------------
+
+const OPENROUTER_ROUTINGS: readonly OpenRouterRouting[] = ["default", "cheapest", "cheapest-full"];
+
+/**
+ * The provider choice a loaded file holds. Only the three known choices are
+ * kept; anything else (a hand-edited or newer value) is OpenRouter's default,
+ * which sends nothing extra.
+ */
+export function openRouterRoutingOf(raw: unknown): OpenRouterRouting {
+  return OPENROUTER_ROUTINGS.find((choice) => choice === raw) ?? "default";
 }
 
 // --- Custom endpoint ---------------------------------------------------------

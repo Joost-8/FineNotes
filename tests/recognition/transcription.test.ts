@@ -23,6 +23,7 @@ interface Config {
   model: string;
   apiKey: string;
   baseUrl: string;
+  routing?: "default" | "cheapest" | "cheapest-full";
 }
 
 const requestUrl = vi.mocked(obsidian.requestUrl);
@@ -198,6 +199,21 @@ describe("the request a transcription sends", () => {
     });
     expect(request.json.model).toBe("google/gemini-3.5-flash");
     expect(request.json.max_completion_tokens).toBe(8192);
+  });
+
+  it("OpenRouter: the provider choice reaches the request, and only OpenRouter's", async () => {
+    answer = () => Promise.resolve(response(200, textReply("openrouter", "ok")));
+    await transcribe({ ...configs.openrouter, routing: "cheapest-full" });
+    expect(onlyRequest().json.provider).toEqual({
+      sort: "price",
+      quantizations: ["fp8", "fp16", "bf16", "fp32", "unknown"],
+    });
+    sent.length = 0;
+    await transcribe({ ...configs.openrouter, routing: "default" });
+    expect(onlyRequest().json).not.toHaveProperty("provider");
+    sent.length = 0;
+    await transcribe({ ...configs.openai, routing: "cheapest" });
+    expect(onlyRequest().json).not.toHaveProperty("provider");
   });
 
   it("a custom endpoint: its own URL, no key header without a key", async () => {

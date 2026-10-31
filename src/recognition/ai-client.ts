@@ -15,6 +15,7 @@ import { errorMessage } from "../util/errors";
 import {
   type LlmVendor,
   MAX_OUTPUT_TOKENS,
+  type OpenRouterRouting,
   VENDORS,
   buildRecognitionPrompt,
   cleanTranscription,
@@ -55,6 +56,8 @@ export interface AiVendorConfig {
   apiKey: string;
   /** OpenAI-compatible base URL; only read for `custom`. */
   baseUrl: string;
+  /** OpenRouter's provider choice; only read for `openrouter`. */
+  routing?: OpenRouterRouting;
 }
 
 /** A vendor's label, or "your configured endpoint (host)". */
@@ -160,6 +163,7 @@ async function sendChat(
     model: config.model.trim() || defaultModelFor(config.vendor),
     apiKey: config.apiKey.trim(),
     baseUrl: config.baseUrl,
+    routing: config.routing,
     system,
     turns,
     cache,
@@ -282,6 +286,7 @@ export async function askAiWithTools(
     model: config.model.trim() || defaultModelFor(config.vendor),
     apiKey: config.apiKey.trim(),
     baseUrl: config.baseUrl,
+    routing: config.routing,
     system,
     turns,
     cache: true,
