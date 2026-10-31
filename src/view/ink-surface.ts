@@ -512,7 +512,14 @@ import {
   pressOverride,
   stylusButtonDown,
 } from "../input/pen-modifiers";
-import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
+import {
+  LASER_COLOR,
+  LASER_GLOW_PX,
+  LASER_WIDTH_PX,
+  type LaserPoint,
+  LaserTrail,
+  laserPaths,
+} from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
 import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
@@ -767,6 +774,8 @@ export interface InkSurfaceOptions {
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
   palette?: readonly string[];
+  /** The global laser settings, read live so an open note follows Settings changes. */
+  laserColor?: () => string;
 }
 
 /** What the surface tells its host, and asks it. Only `onChange` is required. */
@@ -2332,10 +2341,10 @@ export class InkSurface {
     host: HTMLElement,
     private doc: InkDocument,
     private readonly toolState: ToolbarState,
-    options: InkSurfaceOptions,
+    private readonly options: InkSurfaceOptions,
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
-    this.paper = options.paper ?? LIGHT_PAPER;
+    this.paper = this.options.paper ?? LIGHT_PAPER;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -2506,7 +2515,7 @@ export class InkSurface {
       cls: "goodobsidian-canvas goodobsidian-canvas-laser",
     });
     this.surfaceEl.insertBefore(this.laserCanvas, this.scrollEl);
-    this.setDebug(options.debug);
+    this.setDebug(this.options.debug);
 
     // A lock badge on each locked picture, under the selection chrome. The
     // badges take no presses: a tap-and-hold on the picture reaches the page.
@@ -2603,7 +2612,7 @@ export class InkSurface {
 
     // The lasso selection's frame (a press inside it drags the selection),
     // then the action bar and its menu, above everything else on the page.
-    this.palette = options.palette ?? PALETTE;
+    this.palette = this.options.palette ?? PALETTE;
     this.selectionUiEl = this.paperEl.createDiv({ cls: "goodobsidian-selection-ui" });
     this.selectionFrameEl = this.selectionUiEl.createDiv({
       cls: "goodobsidian-selection-frame is-hidden",
@@ -2649,9 +2658,9 @@ export class InkSurface {
       backdropCanvas,
       dryCanvas,
       wetCanvas,
-      options.desynchronizedCanvas,
+      this.options.desynchronizedCanvas,
     );
-    renderer.highlighterAlpha = options.highlighterAlpha;
+    renderer.highlighterAlpha = this.options.highlighterAlpha;
     renderer.paper = this.paper;
     // A pan or scroll moves the dry layer rather than painting it again: on
     // a phone or tablet, whose compositor is always the GPU. Composited on
@@ -8296,11 +8305,11 @@ export class InkSurface {
     const scrollY = this.viewport.scrollY;
     const sx = (x: number): number => (x * scale + this.offsetX) * ratio;
     const sy = (y: number): number => (y - scrollY) * scale * ratio;
-    ctx.lineCap = "round";
+    ctx.lineCap = "butt";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = LASER_COLOR;
-    ctx.fillStyle = LASER_COLOR;
-    const segments = this.laserTrail.segments(t);
+    const color = this.options.laserColor?.() ?? LASER_COLOR;
+    ctx.strokeStyle = color;
+    const paths = laserPaths(this.laserTrail.segments(t));
     // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
     // which is slow on the iPad.
     for (const [lineWidth, strength] of [
@@ -8308,28 +8317,33 @@ export class InkSurface {
       [LASER_WIDTH_PX, 1],
     ] as const) {
       ctx.lineWidth = lineWidth * ratio;
-      for (const { a, b, alpha } of segments) {
+      for (const { alpha, runs } of paths) {
         ctx.globalAlpha = alpha * strength;
-        ctx.beginPath();
-        ctx.moveTo(sx(a.x), sy(a.y));
-        ctx.lineTo(sx(b.x), sy(b.y));
-        ctx.stroke();
-      }
-    }
-    const tip = this.laserTrail.tip();
-    if (tip) {
-      for (const [radius, strength] of [
-        [LASER_GLOW_PX / 2, 0.3],
-        [LASER_WIDTH_PX * 0.75, 1],
-      ] as const) {
-        ctx.globalAlpha = strength;
-        ctx.beginPath();
-        ctx.arc(sx(tip.x), sy(tip.y), radius * ratio, 0, Math.PI * 2);
-        ctx.fill();
+        this.strokeLaserRuns(ctx, runs, sx, sy);
       }
     }
     ctx.globalAlpha = 1;
     this.requestLaser();
+  }
+
+  /** One path for every run of a fade level, stroked once: lines meet without overlapping. */
+  private strokeLaserRuns(
+    ctx: CanvasRenderingContext2D,
+    runs: readonly LaserPoint[][],
+    sx: (x: number) => number,
+    sy: (y: number) => number,
+  ): void {
+    ctx.beginPath();
+    for (const run of runs) {
+      const first = run[0];
+      if (!first) continue;
+      ctx.moveTo(sx(first.x), sy(first.y));
+      for (let index = 1; index < run.length; index++) {
+        const point = run[index];
+        ctx.lineTo(sx(point.x), sy(point.y));
+      }
+    }
+    ctx.stroke();
   }
 
   /**
