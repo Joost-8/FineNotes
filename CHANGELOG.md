@@ -17,7 +17,8 @@ extracted from the matching section of this file by `release.yml`.
   again to cover it. The eye in the tape's pill shows or covers every tape
   on the page, and a covered tape hides typed text under it too. Shown
   tapes are this view's only: a notebook always opens, syncs and goes to AI
-  with its tapes on. The lasso moves, turns,
+  with its tapes on. Export as PDF has a tape button to leave every tape
+  out, for an answer sheet. The lasso moves, turns,
   resizes, recolours and copies a tape like ink, and the eraser takes it off
   whole. A notebook with a tape opens read-only in FineNotes 2.6 and earlier.
 

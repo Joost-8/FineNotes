@@ -1261,7 +1261,8 @@ studying or keep something out of sight.
   right-click) shows a tape through, or covers it again, in this view only,
   for this session. It is never an undo step and never saved: the file, every
   sync, the page thumbnails, PDF export and every image sent to an AI model
-  have every tape covered.
+  have every tape covered. Export as PDF can leave every tape out
+  (`exportWithoutTapes`, the dialog's tape button).
 - **Otherwise ink:** the lasso selects, moves, turns, resizes, recolours,
   copies and deletes it; it mirrors over a join; every eraser mode takes it
   whole, never in part. The handwriting reader and sums leave it out (they

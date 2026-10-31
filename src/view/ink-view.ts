@@ -22,7 +22,7 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
-import { tapeColorOf, tapeHeightOf } from "../model/cover-tape";
+import { isTape, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -3521,7 +3521,13 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = this.previewSources();
+    const preview = this.previewSources();
+    // With the tapes or without, as the dialog's switch was last left.
+    const exported = (): PdfExportSources => ({
+      ...preview,
+      withoutTapes: this.settings.exportWithoutTapes === true,
+    });
+    const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
@@ -3531,15 +3537,26 @@ export class InkView extends TextFileView {
       chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
-        if (page)
-          await paintPagePreview(canvas, page, sources, cssWidth, window.devicePixelRatio || 1);
+        if (page) {
+          const dpr = window.devicePixelRatio || 1;
+          await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
+        }
       },
+      withoutTapes: this.settings.exportWithoutTapes === true,
+      ...(taped
+        ? {
+            setWithoutTapes: (without: boolean) => {
+              this.settings.exportWithoutTapes = without;
+              void this.plugin.saveSettings();
+            },
+          }
+        : {}),
       fileNameFor: (pages) =>
         uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
       export: async (pages, onProgress, cancelled) => {
         const bytes = await exportPagesToPdf(
           pages.map((i) => doc.pages[i]),
-          sources,
+          exported(),
           { title: stripInkSuffix(note.basename), onProgress, cancelled },
         );
         // Named at save time, not when the dialog opened: another export may

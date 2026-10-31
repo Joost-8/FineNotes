@@ -64,6 +64,13 @@ export interface ExportPdfHost {
   ) => Promise<ExportedPdf>;
   /** Open the saved PDF in Obsidian. */
   open: (path: string) => void;
+  /** Whether the cover tapes are left out of the export; remembered by the host. */
+  withoutTapes?: boolean;
+  /**
+   * The tapes switch was flipped: remember it. Given only when the notebook
+   * has a tape; previews are painted again after.
+   */
+  setWithoutTapes?: (without: boolean) => void;
 }
 
 /** Width of a page tile in the grid, CSS px; the grid fits as many per row as it can. */
@@ -169,6 +176,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const tapes = this.tapesSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
     const go = actions.createEl("button", { cls: "mod-cta", text: "Export" });
@@ -270,6 +278,7 @@ export class ExportPdfModal extends Modal {
       go.disabled = true;
       contentEl.addClass("is-busy");
       for (const button of this.scopeButtons.values()) button.disabled = true;
+      if (tapes) tapes.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -289,11 +298,50 @@ export class ExportPdfModal extends Modal {
         status.addClass("is-error");
         status.setText(errorMessage(error));
         for (const button of this.scopeButtons.values()) button.disabled = false;
+        if (tapes) tapes.disabled = false;
         sync(false);
       }
     };
     go.addEventListener("click", () => void run());
     sync(true);
+  }
+
+  /**
+   * The cover tapes switch, beside the actions: the tape icon, lit while the
+   * tapes export as they are and off to leave them out. The previews follow
+   * at once. `null` when the notebook has no tape.
+   */
+  private tapesSwitch(parent: HTMLElement): HTMLButtonElement | null {
+    const set = this.host.setWithoutTapes;
+    if (!set) return null;
+    let without = this.host.withoutTapes === true;
+    const button = parent.createEl("button", {
+      cls: "clickable-icon goodobsidian-export-tapes",
+      attr: { "aria-label": "Cover tapes" },
+    });
+    setIcon(button, "bandage");
+    const show = (): void => {
+      button.toggleClass("is-active", !without);
+      button.setAttribute("aria-pressed", String(!without));
+    };
+    show();
+    button.addEventListener("click", () => {
+      if (this.busy) return;
+      without = !without;
+      show();
+      set(without);
+      this.repaintPreviews();
+    });
+    return button;
+  }
+
+  /** Paint every preview again, as the pages now export. */
+  private repaintPreviews(): void {
+    this.grid?.repaint();
+    if (this.single) {
+      const index = this.host.currentPage;
+      void this.host.paintPreview(this.single, index, SINGLE_WIDTH).catch(() => undefined);
+    }
   }
 
   /** The page being read, large. Painted once. */
@@ -461,6 +509,13 @@ class PageGrid {
     if (at.top < box.top || at.bottom > box.bottom) {
       this.el.scrollTop += at.top - box.top - (box.height - at.height) / 2;
     }
+  }
+
+  /** Paint the tiles near the view again (the export's look changed); the rest when they near it. */
+  repaint(): void {
+    // A tile being painted now is found unpainted again when its paint ends.
+    for (const tile of this.tiles) tile.painted = false;
+    void this.paintNear();
   }
 
   destroy(): void {
