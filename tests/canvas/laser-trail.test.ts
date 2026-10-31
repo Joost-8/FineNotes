@@ -1,7 +1,13 @@
 /** `src/canvas/laser-trail.ts` — the laser pointer's fading trail (FineNotes#25). */
 
 import { describe, expect, it } from "vitest";
-import { LASER_FADE_MS, LaserTrail, fade, laserDots } from "../../src/canvas/laser-trail";
+import {
+  LASER_FADE_MS,
+  LASER_FADE_STEPS,
+  LaserTrail,
+  fade,
+  laserPaths,
+} from "../../src/canvas/laser-trail";
 
 describe("fade", () => {
   it("is full when new, nothing once faded, and falls in between", () => {
@@ -26,57 +32,69 @@ describe("LaserTrail", () => {
     expect(segments).toHaveLength(2);
     expect(segments[0].alpha).toBeLessThan(segments[1].alpha);
     expect(segments[1]).toMatchObject({ a: { x: 10 }, b: { x: 20 }, alpha: 1 });
-    expect(trail.tip()).toEqual({ x: 20, y: 0, t: 200 });
   });
 
-  describe("laserDots", () => {
-    const segments = [
-      {
-        a: { x: 0, y: 0, t: 0 },
-        b: { x: 100, y: 0, t: 100 },
-        alpha: 1,
-      },
-    ];
+  describe("laserPaths", () => {
+    const point = (x: number, t: number) => ({ x, y: 0, t });
 
-    it("emits no dots when disabled", () => {
-      expect(laserDots(segments, 0)).toEqual([]);
+    it("joins contiguous pieces of one opacity step into a single run", () => {
+      const paths = laserPaths([
+        { a: point(0, 0), b: point(10, 10), alpha: 1 },
+        { a: point(10, 10), b: point(20, 20), alpha: 1 },
+      ]);
+      expect(paths).toHaveLength(1);
+      expect(paths[0].alpha).toBe(1);
+      expect(paths[0].runs).toHaveLength(1);
+      expect(paths[0].runs[0].map((each) => each.x)).toEqual([0, 10, 20]);
     });
 
-    it("emits proportionally more dots at higher frequencies", () => {
-      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 1000, y: 0, t: 1000 }, alpha: 1 }];
-      expect(laserDots(path, 1)).toHaveLength(3);
-      expect(laserDots(path, 3)).toHaveLength(9);
-      expect(laserDots(path, 10)).toHaveLength(33);
-      expect(laserDots(path, 3)[0].point).toMatchObject({ x: 100, y: 0 });
+    it("keeps a break in the trail as separate runs of the same step", () => {
+      const paths = laserPaths([
+        { a: point(0, 0), b: point(10, 10), alpha: 1 },
+        { a: point(100, 20), b: point(110, 30), alpha: 1 },
+      ]);
+      expect(paths).toHaveLength(1);
+      expect(paths[0].runs).toHaveLength(2);
     });
 
-    it("keeps spacing continuous across pointer samples", () => {
-      const sampledPath = [
-        { a: { x: 0, y: 0, t: 0 }, b: { x: 150, y: 0, t: 150 }, alpha: 1 },
-        { a: { x: 150, y: 0, t: 150 }, b: { x: 350, y: 0, t: 350 }, alpha: 1 },
-        { a: { x: 350, y: 0, t: 350 }, b: { x: 500, y: 0, t: 500 }, alpha: 1 },
+    it("groups by opacity step, so each step is stroked once", () => {
+      const segments = [
+        { a: point(0, 0), b: point(10, 10), alpha: 0.1 },
+        { a: point(10, 10), b: point(20, 20), alpha: 0.5 },
+        { a: point(20, 20), b: point(30, 30), alpha: 1 },
       ];
-      expect(laserDots(sampledPath, 3).map(({ point }) => point.x)).toEqual([100, 200, 300, 400]);
+      const paths = laserPaths(segments);
+      expect(paths).toHaveLength(3);
+      expect(paths.map((path) => path.alpha)).toEqual([
+        Math.round(0.1 * LASER_FADE_STEPS) / LASER_FADE_STEPS,
+        Math.round(0.5 * LASER_FADE_STEPS) / LASER_FADE_STEPS,
+        1,
+      ]);
+      for (const path of paths) expect(path.runs).toHaveLength(1);
     });
 
-    it("supports disabled, medium, and maximum density", () => {
-      const path = [{ a: { x: 0, y: 0, t: 0 }, b: { x: 1000, y: 0, t: 1000 }, alpha: 1 }];
-      expect(laserDots(path, 0)).toHaveLength(0);
-      expect(laserDots(path, 3)).toHaveLength(9);
-      expect(laserDots(path, 10)).toHaveLength(33);
+    it("uses at most the fade's steps and never drops a very faint piece", () => {
+      const segments = Array.from({ length: 60 }, (_, index) => ({
+        a: point(index, index),
+        b: point(index + 1, index + 1),
+        alpha: (index + 1) / 60,
+      }));
+      const paths = laserPaths(segments);
+      expect(paths.length).toBeLessThanOrEqual(LASER_FADE_STEPS);
+      expect(paths[0].alpha).toBeGreaterThan(0);
+      expect(paths[paths.length - 1].alpha).toBe(1);
     });
   });
 
-  it("lets the old part fade while the pen goes on, and keeps a still pen's dot", () => {
+  it("lets the old part fade while the pen goes on, with no dot left behind", () => {
     const trail = new LaserTrail();
     trail.start({ x: 0, y: 0, t: 0 });
     trail.add({ x: 10, y: 0, t: 10 });
     trail.add({ x: 20, y: 0, t: 1000 });
     expect(trail.segments(1000)).toHaveLength(1);
-    // Held still long after: no segment is left, but the dot is.
+    // Held still long after: no segment is left, and nothing is drawn.
     expect(trail.segments(5000)).toHaveLength(0);
-    expect(trail.visible(5000)).toBe(true);
-    expect(trail.tip()).toMatchObject({ x: 20 });
+    expect(laserPaths(trail.segments(5000))).toEqual([]);
   });
 
   it("fades out after the lift, from the lift", () => {
@@ -84,7 +102,6 @@ describe("LaserTrail", () => {
     trail.start({ x: 0, y: 0, t: 0 });
     trail.add({ x: 10, y: 0, t: 10 });
     trail.end(2000);
-    expect(trail.tip()).toBeNull();
     expect(trail.visible(2000)).toBe(true);
     expect(trail.visible(2000 + LASER_FADE_MS)).toBe(false);
     expect(trail.segments(2000 + LASER_FADE_MS)).toEqual([]);
@@ -110,6 +127,5 @@ describe("LaserTrail", () => {
     trail.start({ x: 0, y: 0, t: 0 });
     trail.clear();
     expect(trail.visible(0)).toBe(false);
-    expect(trail.tip()).toBeNull();
   });
 });

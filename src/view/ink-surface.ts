@@ -516,8 +516,9 @@ import {
   LASER_COLOR,
   LASER_GLOW_PX,
   LASER_WIDTH_PX,
-  laserDots,
+  type LaserPoint,
   LaserTrail,
+  laserPaths,
 } from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
@@ -775,7 +776,6 @@ export interface InkSurfaceOptions {
   palette?: readonly string[];
   /** The global laser settings, read live so an open note follows Settings changes. */
   laserColor?: () => string;
-  laserDotFrequency?: () => number;
 }
 
 /** What the surface tells its host, and asks it. Only `onChange` is required. */
@@ -8308,10 +8308,8 @@ export class InkSurface {
     ctx.lineCap = "butt";
     ctx.lineJoin = "round";
     const color = this.options.laserColor?.() ?? LASER_COLOR;
-    const dotFrequency = this.options.laserDotFrequency?.() ?? 0;
     ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    const segments = this.laserTrail.segments(t);
+    const paths = laserPaths(this.laserTrail.segments(t));
     // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
     // which is slow on the iPad.
     for (const [lineWidth, strength] of [
@@ -8319,41 +8317,33 @@ export class InkSurface {
       [LASER_WIDTH_PX, 1],
     ] as const) {
       ctx.lineWidth = lineWidth * ratio;
-      for (const { a, b, alpha } of segments) {
+      for (const { alpha, runs } of paths) {
         ctx.globalAlpha = alpha * strength;
-        ctx.beginPath();
-        ctx.moveTo(sx(a.x), sy(a.y));
-        ctx.lineTo(sx(b.x), sy(b.y));
-        ctx.stroke();
-      }
-    }
-    if (dotFrequency > 0) {
-      for (const { point, alpha } of laserDots(segments, dotFrequency)) {
-        for (const [radius, strength] of [
-          [LASER_GLOW_PX / 2, 0.25],
-          [LASER_WIDTH_PX / 2, 1],
-        ] as const) {
-          ctx.globalAlpha = alpha * strength;
-          ctx.beginPath();
-          ctx.arc(sx(point.x), sy(point.y), radius * ratio, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    const tip = dotFrequency > 0 ? this.laserTrail.tip() : null;
-    if (tip) {
-      for (const [radius, strength] of [
-        [LASER_GLOW_PX / 2, 0.3],
-        [LASER_WIDTH_PX * 0.75, 1],
-      ] as const) {
-        ctx.globalAlpha = strength;
-        ctx.beginPath();
-        ctx.arc(sx(tip.x), sy(tip.y), radius * ratio, 0, Math.PI * 2);
-        ctx.fill();
+        this.strokeLaserRuns(ctx, runs, sx, sy);
       }
     }
     ctx.globalAlpha = 1;
     this.requestLaser();
+  }
+
+  /** One path for every run of a fade level, stroked once: lines meet without overlapping. */
+  private strokeLaserRuns(
+    ctx: CanvasRenderingContext2D,
+    runs: readonly LaserPoint[][],
+    sx: (x: number) => number,
+    sy: (y: number) => number,
+  ): void {
+    ctx.beginPath();
+    for (const run of runs) {
+      const first = run[0];
+      if (!first) continue;
+      ctx.moveTo(sx(first.x), sy(first.y));
+      for (let index = 1; index < run.length; index++) {
+        const point = run[index];
+        ctx.lineTo(sx(point.x), sy(point.y));
+      }
+    }
+    ctx.stroke();
   }
 
   /**

@@ -864,11 +864,6 @@ body:not(.is-mobile) .goodobsidian-view {
   display: inline-flex;
 }
 
-/* The laser pointer's mark keeps its warning red; the hand and magnifier share the muted text. */
-.goodobsidian-tool-note-icon.is-laser {
-  color: var(--color-red);
-}
-
 .goodobsidian-options .goodobsidian-tool.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);

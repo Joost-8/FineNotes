@@ -2555,6 +2555,10 @@ export class InkView extends TextFileView {
           this.surface?.refreshPenCursor();
           this.rememberPen();
         },
+        onLaserColorChange: (color) => {
+          this.settings.laserDefaultColor = color;
+          void this.plugin.saveSettings();
+        },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
@@ -2767,7 +2771,6 @@ export class InkView extends TextFileView {
         palette,
         paper: this.shownPaper(),
         laserColor: () => this.settings.laserDefaultColor,
-        laserDotFrequency: () => this.settings.laserDotFrequency,
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),

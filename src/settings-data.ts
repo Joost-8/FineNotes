@@ -63,8 +63,6 @@ export interface GoodObsidianSettings {
   defaultColor: string;
   /** The laser pointer's default colour, `#rgb` or `#rrggbb`. */
   laserDefaultColor: string;
-  /** Laser dots per 100 page pixels; zero disables dots. */
-  laserDotFrequency: number;
   defaultSize: number;
   /** The eraser's last mode, kept between sessions. */
   eraserMode: EraserMode;
@@ -391,7 +389,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   customColors: [],
   defaultColor: PALETTE[0],
   laserDefaultColor: "#ff3b30",
-  laserDotFrequency: 3,
   defaultSize: SIZES[1],
   eraserMode: "standard",
   eraserSize: DEFAULT_ERASER_SIZE,
@@ -479,18 +476,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
-
-/**
- * A stored laser dot frequency in the current 0–10 range.
- *
- * Values above 10 came from the previous 0–100 setting. Convert those legacy
- * values so the former default of 50 remains the standard density, now 3.
- */
-export function laserDotFrequencyOf(raw: unknown): number {
-  if (typeof raw !== "number" || !Number.isFinite(raw)) return DEFAULT_SETTINGS.laserDotFrequency;
-  if (raw > 10 && raw <= 100) return Math.min(10, Math.max(0, Math.round((raw * 3) / 50)));
-  return Math.min(10, Math.max(0, Math.round(raw)));
-}
 
 /** A stored laser colour, or the built-in red when a vault contains bad data. */
 export function laserDefaultColorOf(raw: unknown): string {

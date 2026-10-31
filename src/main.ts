@@ -794,6 +794,8 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const loaded = this.settings as unknown as Record<string, unknown>;
     delete loaded.experimentalTrocr;
+    // The laser's dot frequency is gone: the trail is one smooth line now.
+    delete loaded.laserDotFrequency;
     // "Pressure sensitivity", on by default until 2026-09-30: pressure is
     // now the advanced `pressureWidth`, off by default, and the old choice is
     // not carried over.

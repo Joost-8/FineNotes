@@ -6,8 +6,8 @@
  *
  * Points are kept in layout space, so the trail stays on the ink it points
  * at while the page scrolls under it, and each one fades out
- * {@link LASER_FADE_MS} after it was drawn. A pen held still keeps its dot
- * at full strength until it lifts.
+ * {@link LASER_FADE_MS} after it was drawn. The line itself is continuous:
+ * there is no dot at the tip or anywhere else along it.
  *
  * Pure: no DOM, no Obsidian.
  */
@@ -21,6 +21,9 @@ export const LASER_COLOR = "#ff3b30";
 /** The trail's core width, and its glow's blur radius, in screen px. */
 export const LASER_WIDTH_PX = 4;
 export const LASER_GLOW_PX = 10;
+
+/** How many opacity steps the trail is drawn in: smooth enough to read as a fade. */
+export const LASER_FADE_STEPS = 24;
 
 export interface LaserPoint {
   x: number;
@@ -36,44 +39,36 @@ export interface LaserSegment {
   alpha: number;
 }
 
-export interface LaserDot {
-  point: LaserPoint;
+/** One opacity step: each run is a contiguous line, drawn without lifting the pen. */
+export interface LaserPath {
   alpha: number;
+  runs: LaserPoint[][];
 }
 
-/** Base distance at the maximum frequency, in page CSS pixels. */
-const LASER_DOT_BASE_SPACING_PX = 300;
-
 /**
- * Points to draw along the beam. Frequency 3 spaces dots by 100 CSS pixels;
- * zero is deliberately empty, while larger values reduce the spacing.
+ * The trail's segments gathered into opacity steps. A step holds every run
+ * that shares its alpha, so a whole step is one path and one stroke: at a
+ * turn, the lines meet inside a path instead of overlapping as separate
+ * strokes, which would show as darker notches.
  */
-export function laserDots(segments: readonly LaserSegment[], frequency: number): LaserDot[] {
-  if (!Number.isFinite(frequency) || frequency <= 0) return [];
-  const spacing = LASER_DOT_BASE_SPACING_PX / frequency;
-  const dots: LaserDot[] = [];
-  let distanceSinceDot = 0;
+export function laserPaths(segments: readonly LaserSegment[]): LaserPath[] {
+  const steps = new Map<number, LaserPoint[][]>();
   for (const { a, b, alpha } of segments) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.hypot(dx, dy);
-    if (length <= 0) continue;
-    let distance = spacing - distanceSinceDot;
-    while (distance < length) {
-      const ratio = distance / length;
-      dots.push({
-        point: {
-          x: a.x + dx * ratio,
-          y: a.y + dy * ratio,
-          t: a.t + (b.t - a.t) * ratio,
-        },
-        alpha,
-      });
-      distance += spacing;
+    if (!(alpha > 0)) continue;
+    const step = Math.min(LASER_FADE_STEPS, Math.max(1, Math.round(alpha * LASER_FADE_STEPS)));
+    let runs = steps.get(step);
+    if (!runs) {
+      runs = [];
+      steps.set(step, runs);
     }
-    distanceSinceDot = (distanceSinceDot + length) % spacing;
+    const run = runs[runs.length - 1];
+    const last = run?.[run.length - 1];
+    if (last && last.x === a.x && last.y === a.y) run.push(b);
+    else runs.push([a, b]);
   }
-  return dots;
+  return [...steps.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([step, runs]) => ({ alpha: step / LASER_FADE_STEPS, runs }));
 }
 
 export class LaserTrail {
@@ -105,12 +100,6 @@ export class LaserTrail {
   visible(t: number): boolean {
     this.prune(t);
     return this.down || this.points.some((p) => Number.isFinite(p.x));
-  }
-
-  /** The tip, while the pen is down: drawn as a dot so a pen held still still shows. */
-  tip(): LaserPoint | null {
-    const last = this.points[this.points.length - 1];
-    return this.down && last && Number.isFinite(last.x) ? last : null;
   }
 
   /** The pieces to draw at time `t`, oldest first, each as strong as its newer end is young. */
