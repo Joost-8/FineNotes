@@ -81,19 +81,16 @@ import {
 } from "./recognition/llm-request";
 import { providerLabel } from "./recognition/registry";
 import {
-  type AppearanceChoice,
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
   type SettingsSection,
-  appearanceChoiceOf,
   changesTabLayout,
   endpointWarning,
   paperWidthFrom,
   parseColorList,
   sectionOpen,
   shownValue,
-  storeAppearanceChoice,
   storeShownValue,
   withSection,
 } from "./settings-data";
@@ -212,14 +209,8 @@ const PAGE_APPEARANCES: Record<PageAppearance, string> = {
   system: "Match Obsidian",
 };
 
-/** "Page appearance" with the PDF choice folded in, as its dropdown names them. */
-const APPEARANCE_CHOICES: Record<AppearanceChoice, string> = {
-  light: "Light",
-  dark: "Dark",
-  "dark-pdf-light": "Dark, PDFs as they are",
-  system: "Match Obsidian",
-  "system-pdf-light": "Match Obsidian, PDFs as they are",
-};
+/** The keys whose change redraws every open notebook's pages (`applyPageAppearance`). */
+const PAGE_LOOK_KEYS = new Set(["pageAppearance", "invertPdfPages"]);
 
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
 const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
@@ -303,8 +294,8 @@ const DESC = {
   pageAppearance:
     "Show pages dark for writing at night: the paper turns dark and ink light, keeping its " +
     "color. Only the view changes: ink is saved, exported and printed in its true color, " +
-    "and pictures are left as they are. PDF pages turn dark too, unless you pick “PDFs as " +
-    "they are”, for slides that are dark already.",
+    "and pictures are left as they are. Whether PDF pages turn dark too, and the desk " +
+    "around the pages, are in the notebook's ⋯ menu.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
     "folder of the note that is open.",
@@ -958,6 +949,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (PAGE_LOOK_KEYS.has(key)) {
+      // Saved by the plugin, which redraws every open notebook with it.
+      storeShownValue(this.plugin.settings, key, value);
+      await this.plugin.applyPageAppearance();
+      return;
+    }
     if (key === "llmVendor") {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
@@ -1520,13 +1517,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       "file-text",
       [
         this.info(
-          drawnRow("Page appearance", "", (s) => this.drawAppearance(s), [
+          dropdown("pageAppearance", "Page appearance", "", PAGE_APPEARANCES, [
             "dark mode",
             "night mode",
             "invert",
             "theme",
-            "dark PDF pages",
-            "slides",
           ]),
           DESC.pageAppearance,
         ),
@@ -1615,21 +1610,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         },
       ],
     );
-  }
-
-  /** "Page appearance": the appearance and whether PDF pages turn dark with it, as one choice. */
-  private drawAppearance(setting: Setting): void {
-    const settings = this.plugin.settings;
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(APPEARANCE_CHOICES)) d.addOption(id, name);
-      d.setValue(appearanceChoiceOf(settings));
-      d.onChange(async (value) => {
-        storeAppearanceChoice(settings, value);
-        // Saved by the plugin, which redraws every open notebook.
-        await this.plugin.applyPageAppearance();
-        this.syncStatuses();
-      });
-    });
   }
 
   /** Rendering, input and files: the switches most people never need. */

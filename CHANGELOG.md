@@ -17,6 +17,38 @@ extracted from the matching section of this file by `release.yml`.
   sum or its answer on the page, sums go into the notebook's history, and a
   keyboard types into it (Escape clears, then closes). It opens in the mode
   you left it in; Scientific until you switch.
+### Changed
+
+- **Joined pages live in the notebook's settings only.** The New notebook
+  dialog no longer asks: join the pages of any notebook, new or old, from
+  its gear under Pages, and set them apart there again. Set apart, each
+  page keeps its own part of what ran over the join.
+### Added
+
+- **Desk colour**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The ⋯ menu
+  of a notebook has a Desk row: the background around the pages is with
+  the pages, light, dark, or a colour of your own. With the pages, dark
+  pages lie on the same grey desk as light ones, so their edges show, and a
+  page too close to it still gets a desk that sets it apart. Dark PDF pages
+  is in the ⋯ menu too, while pages are dark; both left Settings.
+- **Colours on dark pages look as they do on the page.** The pen's
+  swatches, the pen button and the width preview show each colour as dark
+  pages show the ink.
+- **Export on plain paper**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The grid
+  button in Export as PDF leaves out the paper's lines, grid, dots and
+  texture: ink, text, pictures and PDF pages stay, on the paper's colour.
+  The choice is kept for the next export.
+
+### Fixed
+
+- **PDFs stay as they are when you pick another page appearance**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
+  appearance and the PDF choice were one list, so picking Match Obsidian
+  after "Dark, PDFs as they are" turned PDFs dark again. They are two
+  choices now, Page appearance in Settings and Dark PDF pages in the ⋯
+  menu, and neither changes the other.
 
 ## [2.6.0] - 2026-10-30
 

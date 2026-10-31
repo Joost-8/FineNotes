@@ -64,6 +64,13 @@ export interface ExportPdfHost {
   ) => Promise<ExportedPdf>;
   /** Open the saved PDF in Obsidian. */
   open: (path: string) => void;
+  /**
+   * Whether pages export on plain paper, their template (lines, grid, dots)
+   * left out; remembered by the host, which `paintPreview` and `export` read.
+   */
+  plainPaper?: boolean;
+  /** The template switch was flipped: remember it. Previews are painted again after. */
+  setPlainPaper?: (plain: boolean) => void;
 }
 
 /** Width of a page tile in the grid, CSS px; the grid fits as many per row as it can. */
@@ -169,6 +176,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const template = this.templateSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
     const go = actions.createEl("button", { cls: "mod-cta", text: "Export" });
@@ -270,6 +278,7 @@ export class ExportPdfModal extends Modal {
       go.disabled = true;
       contentEl.addClass("is-busy");
       for (const button of this.scopeButtons.values()) button.disabled = true;
+      if (template) template.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -289,11 +298,50 @@ export class ExportPdfModal extends Modal {
         status.addClass("is-error");
         status.setText(errorMessage(error));
         for (const button of this.scopeButtons.values()) button.disabled = false;
+        if (template) template.disabled = false;
         sync(false);
       }
     };
     go.addEventListener("click", () => void run());
     sync(true);
+  }
+
+  /**
+   * The template switch, beside the actions: a grid icon, lit while pages
+   * export with their template (lines, grid, dots) and plain without. The
+   * previews follow at once. `null` when the host remembers no such choice.
+   */
+  private templateSwitch(parent: HTMLElement): HTMLButtonElement | null {
+    const set = this.host.setPlainPaper;
+    if (!set) return null;
+    let plain = this.host.plainPaper === true;
+    const button = parent.createEl("button", {
+      cls: "clickable-icon goodobsidian-export-template",
+      attr: { "aria-label": "Template background" },
+    });
+    setIcon(button, "grid");
+    const show = (): void => {
+      button.toggleClass("is-active", !plain);
+      button.setAttribute("aria-pressed", String(!plain));
+    };
+    show();
+    button.addEventListener("click", () => {
+      if (this.busy) return;
+      plain = !plain;
+      show();
+      set(plain);
+      this.repaintPreviews();
+    });
+    return button;
+  }
+
+  /** Paint every preview again, as the pages now export. */
+  private repaintPreviews(): void {
+    this.grid?.repaint();
+    if (this.single) {
+      const index = this.host.currentPage;
+      void this.host.paintPreview(this.single, index, SINGLE_WIDTH).catch(() => undefined);
+    }
   }
 
   /** The page being read, large. Painted once. */
@@ -461,6 +509,13 @@ class PageGrid {
     if (at.top < box.top || at.bottom > box.bottom) {
       this.el.scrollTop += at.top - box.top - (box.height - at.height) / 2;
     }
+  }
+
+  /** Paint the tiles near the view again (the export's look changed); the rest when they near it. */
+  repaint(): void {
+    // A tile being painted now is found unpainted again when its paint ends.
+    for (const tile of this.tiles) tile.painted = false;
+    void this.paintNear();
   }
 
   destroy(): void {
