@@ -315,6 +315,30 @@ describe("renderSelectionDraft while turning", () => {
     renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
     expect(traced()).not.toBe(first);
   });
+
+  it("traces a highlight again when its tip changes, the points left alone", () => {
+    const { renderer } = setup();
+    const s: Stroke = {
+      id: "h1",
+      color: "#fab005",
+      size: 20,
+      tool: "highlighter",
+      pts: [10, 50, 0.5, 90, 50, 0.5],
+    };
+    const entry = (): { runs: Array<{ chisel?: boolean }> } | undefined => {
+      const draft = renderer as unknown as {
+        paths: WeakMap<Stroke, { runs: Array<{ chisel?: boolean }> }>;
+      };
+      return draft.paths.get(s);
+    };
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    const round = entry();
+    expect(round?.runs.some((run) => run.chisel)).toBe(false);
+    s.tip = "chisel";
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    expect(entry()).not.toBe(round);
+    expect(entry()?.runs.every((run) => run.chisel === true)).toBe(true);
+  });
 });
 
 describe("drawPlacedImage with a flipped picture", () => {

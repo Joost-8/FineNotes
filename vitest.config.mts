@@ -14,6 +14,7 @@ export default defineConfig({
         "src/model/**/*.ts",
         "src/import/**/*.ts",
         "src/ink/freehand.ts",
+        "src/ink/chisel.ts",
         "src/ink/stroke-builder.ts",
         "src/ink/shape-recognizer.ts",
         "src/ink/shape-geometry.ts",

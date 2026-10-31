@@ -19,6 +19,9 @@ import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH, SCHEMA_VERSION } from "../con
 
 export type Tool = "pen" | "highlighter";
 
+/** A highlighter tip other than the round one: `chisel`, flat and upright. */
+export type InkTip = "chisel";
+
 /**
  * Geometry a stroke was snapped to or placed as. Absent on freehand strokes.
  * `polygon` is any other closed straight-edged shape (a quad or a pentagon,
@@ -112,6 +115,12 @@ export interface Stroke {
    * (`ink/freehand` nibFactor). Absent: a round nib.
    */
   nib?: number;
+  /**
+   * Written with a highlighter's flat chisel tip: the line is swept by an
+   * upright rectangle (`ink/chisel.ts`), so a level highlight is a band of
+   * one height with square ends. Absent: a round tip.
+   */
+  tip?: InkTip;
   /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds

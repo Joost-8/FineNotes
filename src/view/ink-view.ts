@@ -330,6 +330,7 @@ import {
   greyWhileErasingOf,
   penPreferencesOf,
   snapCurveOf,
+  highlighterTipOf,
   snapModeOf,
   shownPaperTheme,
 } from "../settings-data";
@@ -2803,6 +2804,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        highlighterTip: () => highlighterTipOf(this.settings.highlighterTip),
         pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,

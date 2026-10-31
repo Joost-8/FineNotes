@@ -330,6 +330,12 @@ export interface GoodObsidianSettings {
    */
   straightHighlighter: boolean;
   /**
+   * The highlighter's tip: round, or a flat chisel that draws a level
+   * highlight as a band with square ends (`ink/chisel.ts`). Each stroke
+   * keeps the tip it was written with (`Stroke.tip`). Absent: round.
+   */
+  highlighterTip?: HighlighterTip;
+  /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a hand resting on the glass moves neither the ink nor the page.
    */
@@ -567,10 +573,20 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
  */
 export interface PenPreferences {
   snapMode: SnapMode;
+  /** {@link GoodObsidianSettings.highlighterTip}. */
+  highlighterTip: HighlighterTip;
   /** {@link GoodObsidianSettings.snapCurvatureThreshold}. */
   snapCurve: number;
   tuckOnWrite: PenOptionsOnWrite;
   returnToPen: ReturnToPen;
+}
+
+/** The highlighter's tips, as the pen menu offers them. */
+export type HighlighterTip = "round" | "chisel";
+
+/** A stored tip; anything but the chisel is round. */
+export function highlighterTipOf(value: unknown): HighlighterTip {
+  return value === "chisel" ? "chisel" : "round";
 }
 
 const SNAP_MODES: readonly SnapMode[] = ["disabled", "hold", "auto"];
@@ -632,10 +648,12 @@ export function penPreferencesOf(
     | "tuckPenOptionsOnWrite"
     | "returnToPenOnReselect"
     | "returnToPenAfterUse"
+    | "highlighterTip"
   >,
 ): PenPreferences {
   return {
     snapMode: snapModeOf(settings),
+    highlighterTip: highlighterTipOf(settings.highlighterTip),
     snapCurve: snapCurveOf(settings.snapCurvatureThreshold),
     tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
     returnToPen: returnToPenOf(settings),
@@ -653,6 +671,7 @@ export function storePenPreferences(
     settings.tuckPenOptionsOnWrite = penOptionsOnWriteOf(patch.tuckOnWrite);
   }
   if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
+  if ("highlighterTip" in patch) settings.highlighterTip = highlighterTipOf(patch.highlighterTip);
 }
 
 /**

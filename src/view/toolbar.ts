@@ -215,7 +215,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
-import type { PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
+import type { HighlighterTip, PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -4121,6 +4121,10 @@ export class Toolbar {
     openSettings: () => void,
     openGestures: () => void,
   ): void {
+    // The highlighter's tip, first: its one choice no other pen has.
+    if (this.activePenType().tool === "highlighter" && this.renderHighlighterTip(body)) {
+      body.createDiv({ cls: "goodobsidian-popover-divider" });
+    }
     // The laser pointer has no bar button (FineNotes#25): here, and L.
     const laser = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
@@ -4139,6 +4143,41 @@ export class Toolbar {
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.popoverLink(body, "Pen settings", "sliders-horizontal", openSettings);
     this.popoverLink(body, "Pen gestures", "signature", openGestures);
+  }
+
+  /**
+   * The highlighter's tip, round or a flat chisel (`ink/chisel.ts`), as two
+   * symbols in one row. It shapes only the highlights drawn next: each stroke
+   * keeps its own (`Stroke.tip`). False when the host keeps no setting.
+   */
+  private renderHighlighterTip(body: HTMLElement): boolean {
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (!prefs || !save) return false;
+    const row = body.createDiv({ cls: "goodobsidian-tip-row" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: "Tip" });
+    const tips = row.createDiv({
+      cls: "goodobsidian-segmented is-icons",
+      attr: { role: "radiogroup", "aria-label": "Highlighter tip" },
+    });
+    const choices: ReadonlyArray<[HighlighterTip, string, string]> = [
+      ["round", "Round tip", "circle"],
+      ["chisel", "Chisel tip", "rectangle-vertical"],
+    ];
+    for (const [tip, label, icon] of choices) {
+      const on = prefs.highlighterTip === tip;
+      const button = tips.createEl("button", {
+        cls: "clickable-icon",
+        attr: { role: "radio", "aria-label": label, "aria-checked": String(on) },
+      });
+      iconOrText(button, icon, label);
+      button.toggleClass("is-active", on);
+      button.addEventListener("click", () => {
+        save({ highlighterTip: tip });
+        this.popoverRender?.();
+      });
+    }
+    return true;
   }
 
   /** A row that opens another page of the popover: an icon, its name, and a chevron. */
