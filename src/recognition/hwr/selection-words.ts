@@ -106,10 +106,13 @@ export function replaceToken(text: string, from: string, to: string): string {
  * other than in case, and stayed close to the reading (at most half the
  * longer word's letters edited). A rename to another word altogether is the
  * writer's choice of title, not a correction of what the ink says.
+ * `correcting` ("Correct" was asked for): every word changed in any way,
+ * since what is typed there is what the ink says.
  */
 export function editedWords(
   words: readonly ReadWord[],
   final: string,
+  correcting = false,
 ): { word: ReadWord; text: string }[] {
   const tokens = final.trim().split(/\s+/).filter(Boolean);
   if (tokens.length !== words.length) return [];
@@ -117,6 +120,11 @@ export function editedWords(
   words.forEach((word, i) => {
     const was = letters(word.text);
     const now = letters(tokens[i]);
+    if (correcting) {
+      // Asked to correct: any change is what the ink says, however far.
+      if (tokens[i] !== word.text) out.push({ word, text: tokens[i] });
+      return;
+    }
     if (!now || was === now) return;
     if (levenshtein(was, now) > Math.floor(Math.max(was.length, now.length) / 2)) return;
     // Only plain words are labels worth learning (as `flagWords`).
@@ -124,6 +132,24 @@ export function editedWords(
     out.push({ word, text: tokens[i] });
   });
   return out;
+}
+
+/**
+ * "Correct" on a lassoed sentence whose words `editedWords` cannot pair
+ * (the reader split or joined a word: "Soft ware" for "Software"): the
+ * whole selection, as one labelled line. Null when the counts pair (then
+ * `editedWords` labels each word) or nothing changed.
+ */
+export function editedPhrase(
+  words: readonly ReadWord[],
+  final: string,
+): { strokeIds: string[]; read: string; text: string } | null {
+  const tokens = final.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length === words.length) return null;
+  const read = words.map((w) => w.text).join(" ");
+  const text = tokens.join(" ");
+  if (text === read) return null;
+  return { strokeIds: words.flatMap((w) => w.strokeIds), read, text };
 }
 
 /** A token's letters, lower case, without the punctuation around them. */

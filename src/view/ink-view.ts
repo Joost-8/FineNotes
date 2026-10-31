@@ -238,6 +238,7 @@ import {
   wordCore,
 } from "../recognition/hwr/lexicon";
 import {
+  editedPhrase,
   editedWords,
   matchCase,
   selectionWords,
@@ -2537,7 +2538,7 @@ export class InkView extends TextFileView {
       this.app,
       (text) => {
         if (this.file && this.surface?.document.pages.includes(page)) {
-          this.recordEdits(page, words, text);
+          this.recordEdits(page, words, text, true);
         }
       },
       true,
@@ -4268,10 +4269,20 @@ export class InkView extends TextFileView {
    * The field a lassoed selection filled was confirmed: each read word it
    * corrects (`editedWords`) is recorded as a misread of that word's ink.
    */
-  private recordEdits(page: Page, words: readonly ReadWord[], final: string): void {
+  private recordEdits(
+    page: Page,
+    words: readonly ReadWord[],
+    final: string,
+    correcting = false,
+  ): void {
     const file = this.file;
     if (!file || words.length === 0) return;
-    for (const { word, text } of editedWords(words, final)) {
+    const phrase = correcting ? editedPhrase(words, final) : null;
+    // Words joined or split: the whole selection is one labelled line.
+    const edits = phrase
+      ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]
+      : editedWords(words, final, correcting);
+    for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
       void this.plugin.wordCheck.record(
