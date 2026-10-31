@@ -171,6 +171,8 @@ export interface AddPagePopoverOptions {
 }
 
 const POPOVER_WIDTH = 340;
+/** With Left and Right too: five positions need the room to show every label whole. */
+const POPOVER_WIDTH_WITH_SIDES = 384;
 const CARD_WIDTH = 64;
 
 export class AddPagePopover {
@@ -193,13 +195,14 @@ export class AddPagePopover {
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", "Add page");
     this.build();
-    placePopover(this.el, anchor, POPOVER_WIDTH);
+    const width = options.sideSpace ? POPOVER_WIDTH_WITH_SIDES : POPOVER_WIDTH;
+    placePopover(this.el, anchor, width);
     this.dispose.push(
       installPopoverDismiss(
         this.el,
         anchor,
         () => this.close(),
-        () => placePopover(this.el, anchor, POPOVER_WIDTH),
+        () => placePopover(this.el, anchor, width),
       ),
     );
   }
@@ -225,20 +228,29 @@ export class AddPagePopover {
   private build(): void {
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Add Page" });
 
-    const seg = this.el.createDiv({ cls: "goodobsidian-segmented" });
-    // Left and Right add paper beside the page (Add space) as Before and After add a page.
+    const seg = this.el.createDiv({
+      cls: "goodobsidian-segmented goodobsidian-addpage-positions",
+    });
+    // The pages first, then, past a thin rule, Left and Right: paper beside the
+    // page (Add space), picked with a template as a new page is.
     const labels: Array<[AddPosition, string]> = [
       ["before", "Before"],
       ["after", "After"],
+      ["last", "Last page"],
       ...(this.options.sideSpace
         ? ([
             ["left", "Left"],
             ["right", "Right"],
           ] as Array<[AddPosition, string]>)
         : []),
-      ["last", "Last page"],
     ];
     for (const [pos, label] of labels) {
+      if (pos === "left") {
+        seg.createSpan({
+          cls: "goodobsidian-addpage-positions-rule",
+          attr: { "aria-hidden": "true" },
+        });
+      }
       // `clickable-icon` on every button in this file: see page-sidebar.ts.
       const button = seg.createEl("button", { cls: "clickable-icon", text: label });
       button.addEventListener("click", () => {
