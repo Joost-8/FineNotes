@@ -386,7 +386,11 @@ describe("dark pages", () => {
   it("give the paper theme, keeping PDFs only when PDF inversion is off", () => {
     expect(shownPaperTheme(DEFAULT_SETTINGS, true)).toBe(LIGHT_PAPER);
     const dark = { pageAppearance: "dark", invertPdfPages: true } as const;
-    expect(shownPaperTheme(dark, false)).toBe(DARK_PAPER);
+    // With the pages, dark pages lie on the light pages' grey desk, which sets them apart.
+    const night = shownPaperTheme(dark, false);
+    expect(night).toEqual({ ...DARK_PAPER, desk: LIGHT_PAPER.desk });
+    expect(shownPaperTheme(dark, false)).toBe(night);
+    expect(shownPaperTheme({ ...dark, desk: "dark" }, false)).toBe(DARK_PAPER);
     const keep = shownPaperTheme({ ...dark, invertPdfPages: false }, false);
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.

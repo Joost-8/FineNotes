@@ -734,7 +734,10 @@ export function shownPaperTheme(
   obsidianDark: boolean,
 ): PaperTheme {
   const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
-  return withDesk(paperTheme(dark, settings.invertPdfPages === false), deskColorOf(settings));
+  // "With the pages" sets them apart: dark pages lie on the grey desk light
+  // ones do, not on their own nearly black one (Joost, 2026-10-31).
+  const desk = deskColorOf(settings) ?? (dark ? LIGHT_PAPER.desk : null);
+  return withDesk(paperTheme(dark, settings.invertPdfPages === false), desk);
 }
 
 // --- Paper width -------------------------------------------------------------

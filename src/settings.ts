@@ -306,13 +306,13 @@ const DESC = {
     "Show pages dark for writing at night: the paper turns dark and ink light, keeping its " +
     "color. Only the view changes: ink is saved, exported and printed in its true color, " +
     "and pictures are left as they are. Whether PDF pages turn dark too is Dark PDF pages, " +
-    "below.",
+    "under More.",
   darkPdfPages:
     "With dark pages, PDF pages turn dark too. Off: they are shown as they are, for slides " +
     "that are dark already. Light pages always show PDFs as they are.",
   desk:
-    "The background around the pages. With the pages: dark grey, and nearly black with dark " +
-    "pages. A page too close to the desk's colour still gets a desk that shows its edge.",
+    "The background around the pages. With the pages: a dark grey that sets light and dark " +
+    "pages apart. A page too close to the desk's colour still gets a desk that shows its edge.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
     "folder of the note that is open.",
@@ -1542,6 +1542,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.pageAppearance,
         ),
+        drawnRow(
+          "Paper width",
+          "In pixels, before it is fitted to the screen.",
+          (s) => this.drawPaperWidth(s),
+          ["canvas size", "page width"],
+        ),
+        this.more("pages", "Dark PDF pages, desk, folders, templates, file explorer"),
         this.info(
           toggle("invertPdfPages", "Dark PDF pages", "", [
             "dark mode",
@@ -1551,13 +1558,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.darkPdfPages,
         ),
-        drawnRow(
-          "Paper width",
-          "In pixels, before it is fitted to the screen.",
-          (s) => this.drawPaperWidth(s),
-          ["canvas size", "page width"],
-        ),
-        this.more("pages", "Desk, folders, templates, file explorer"),
         this.info(
           drawnRow("Desk", "", (s) => this.drawDesk(s), [
             "workspace background",
