@@ -8,6 +8,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Correct any handwritten word.** Lasso a word and choose Correct in the
+  "…" menu, or hold a finger on it (right-click with a mouse) and tap
+  Correct: the card an underlined word opens comes up for it, underlined or
+  not, and the answer teaches Grape the same way. A page not read yet is
+  read on this device first. Lasso a whole sentence and Correct opens it in
+  one field: every word you change is learnt as a misread of its ink, and
+  a word the reading split or joined is learnt as the whole line. Every
+  correction counts when you teach Grape your handwriting again.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:
