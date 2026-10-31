@@ -123,16 +123,17 @@ export function multiply(a: Matrix, b: Matrix): Matrix {
  * PDF user space to page space for a page drawn as the backdrop draws it:
  * scaled to fit inside the page and centred (`pdf-raster.ts`). `viewport` is
  * pdf.js `getViewport({ scale: 1 }).transform` (y flipped, rotation
- * applied), `source` that viewport's size.
+ * applied), `source` that viewport's size. `area` is the page, or the frame
+ * on it the PDF is fitted into (a page widened with Add space: `x`, `y` set).
  */
 export function pdfToPage(
   viewport: Matrix,
   source: { width: number; height: number },
-  geometry: { width: number; height: number },
+  area: { width: number; height: number; x?: number; y?: number },
 ): Matrix {
-  const fit = Math.min(geometry.width / source.width, geometry.height / source.height);
-  const dx = (geometry.width - source.width * fit) / 2;
-  const dy = (geometry.height - source.height * fit) / 2;
+  const fit = Math.min(area.width / source.width, area.height / source.height);
+  const dx = (area.x ?? 0) + (area.width - source.width * fit) / 2;
+  const dy = (area.y ?? 0) + (area.height - source.height * fit) / 2;
   return multiply([fit, 0, 0, fit, dx, dy], viewport);
 }
 

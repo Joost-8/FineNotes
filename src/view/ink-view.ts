@@ -164,6 +164,13 @@ import type { GraphElement } from "../model/document";
 import type { GraphSpec } from "../model/graph";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
+import {
+  AddPageSpace,
+  type SpaceSide,
+  sidePaperWidth,
+  unwidenedGeometry,
+  withoutFrame,
+} from "../model/side-space";
 import { AddTable } from "../model/table-commands";
 import { setCellText } from "../model/table";
 import { nextTableId } from "../model/table";
@@ -290,7 +297,12 @@ import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
-import { AddPagePopover, TemplatePickerModal } from "./template-picker";
+import {
+  type AddPosition,
+  AddPagePopover,
+  TemplatePickerModal,
+  isSideSpace,
+} from "./template-picker";
 import { CoverPopover } from "./cover-picker";
 import { type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
@@ -4587,25 +4599,32 @@ export class InkView extends TextFileView {
     if (!page) return;
     // A cover is not paper: next to one, offer the notebook's paper.
     const paper = paperPageFor(this.doc.pages, at);
-    // A page of My templates is repeated in its own shape.
+    // A page of My templates is repeated in its own shape. A new page beside a
+    // widened one takes its first size, not the space added to it.
     const shapeOf = (backdrop: Backdrop): PageGeometry =>
-      backdrop.kind === "pdf" && paper ? paper.geometry : page.geometry;
+      backdrop.kind === "pdf" && paper ? unwidenedGeometry(paper) : unwidenedGeometry(page);
     const popover = new AddPagePopover(anchor, {
-      current: paper?.backdrop ?? { kind: "blank" },
-      geometry: page.geometry,
+      current: withoutFrame(paper?.backdrop ?? { kind: "blank" }),
+      geometry: unwidenedGeometry(page),
       recent: this.loadRecentTemplates(),
       templateNames: this.templateNames(),
       position,
       paintPaper: (canvas, backdrop, cssWidth) =>
         this.paintPaperThumbnail(canvas, backdrop, shapeOf(backdrop), cssWidth),
-      onPick: (backdrop, at) => this.addTemplatePage(backdrop, shapeOf(backdrop), at, ref),
-      onMore: (at) => this.openTemplatePicker("add", ref, at),
+      onPick: (backdrop, where) => {
+        // Left and Right widen this page with the template, at its own size.
+        if (isSideSpace(where)) this.addSideSpace(page, where, backdrop);
+        else this.addTemplatePage(backdrop, shapeOf(backdrop), where, ref);
+      },
+      onMore: (where) => this.openTemplatePicker("add", ref, where),
+      // A cover is not paper: no space beside one.
+      sideSpace: !(page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind)),
     });
     this.addPagePopover = { popover, anchor };
   }
 
   /** The full template picker, to add a page or to change page `ref`'s template. */
-  private openTemplatePicker(mode: "add" | "change", ref: number, position: InsertPosition): void {
+  private openTemplatePicker(mode: "add" | "change", ref: number, position: AddPosition): void {
     if (this.isProtected() || this.refusePractice()) return;
     if (mode === "add" && this.refuseSinglePage()) return;
     const page = this.doc.pages[ref];
@@ -4614,13 +4633,29 @@ export class InkView extends TextFileView {
     const reference = mode === "add" ? paperTemplateFor(this.doc.pages, ref) : page.backdrop;
     const picker = new TemplatePickerModal(this.app, {
       mode,
-      initial: reference.kind === "pdf" ? { kind: "blank" } : reference,
-      geometry: page.geometry,
+      initial: reference.kind === "pdf" ? { kind: "blank" } : withoutFrame(reference),
+      geometry: unwidenedGeometry(page),
       papers: this.paperLibrary(),
-      onApplyPaper: (entry) => void this.applyPaper(entry, mode, position, ref),
+      onApplyPaper: (entry) => {
+        if (isSideSpace(position)) {
+          new Notice("FineNotes: space beside a page takes a paper template, not a PDF.");
+          return;
+        }
+        void this.applyPaper(entry, mode, position, ref);
+      },
       onApply: ({ backdrop, geometry }) => {
-        if (mode === "add") {
-          this.addTemplatePage(backdrop, geometry ?? page.geometry, position, ref);
+        if (mode === "add" && isSideSpace(position)) {
+          // The chosen size sets the strip's width, at the page's height.
+          this.addSideSpace(
+            page,
+            position,
+            backdrop,
+            geometry ? sidePaperWidth(page, geometry) : undefined,
+          );
+          return;
+        }
+        if (mode === "add" && !isSideSpace(position)) {
+          this.addTemplatePage(backdrop, geometry ?? unwidenedGeometry(page), position, ref);
           return;
         }
         if (!this.surface || this.isProtected()) return;
@@ -4814,6 +4849,23 @@ export class InkView extends TextFileView {
     this.coverPopover = { popover, anchor };
   }
 
+  /**
+   * Add space beside `page` (a page added sideways): a strip of `backdrop`'s
+   * paper on `side`, `width` wide (default: the page's own size). One undo step.
+   */
+  private addSideSpace(page: Page, side: SpaceSide, backdrop: Backdrop, width?: number): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    if (backdrop.kind === "pdf") {
+      new Notice("FineNotes: space beside a page takes a paper template, not a PDF.");
+      return;
+    }
+    if (!surface.document.pages.includes(page)) return;
+    surface.applyCommand(new AddPageSpace(page, side, withoutFrame(backdrop), width));
+    this.rememberTemplate(backdrop);
+    this.requestSave();
+  }
+
   private addTemplatePage(
     backdrop: Backdrop,
     geometry: PageGeometry,
@@ -4823,7 +4875,8 @@ export class InkView extends TextFileView {
     if (!this.surface || this.isProtected() || this.refuseSinglePage()) return;
     const doc = this.surface.document;
     const index = insertIndexFor(position, ref, doc.pages.length);
-    const insert = pageFromTemplate(doc, index, backdrop, geometry);
+    // A page made from a widened page's paper is a page of its own, not framed.
+    const insert = pageFromTemplate(doc, index, withoutFrame(backdrop), geometry);
     this.surface.applyCommand(new AddPage(insert.index, insert.page));
     // Glide onto the new page, as GoodNotes does after "Add page".
     this.surface.goToPage(insert.index, true);

@@ -1,10 +1,17 @@
 /** Geometry for rendering a PDF directly into a bounded page-space patch. Pure. */
-import type { Bounds, PageGeometry } from "../model/document";
+import type { Bounds, PageGeometry, PdfFrame } from "../model/document";
 
 export interface PdfRenderArea {
   geometry: PageGeometry;
   /** Absent for a whole page; supplied for detail, the visible area of a page that needs it. */
   region?: Bounds;
+  /** Where on the page the PDF is fitted (a page widened with Add space); absent: the whole page. */
+  frame?: PdfFrame;
+}
+
+/** The rectangle a PDF page is fitted into on a page drawn as `area`. */
+function frameOf(area: PdfRenderArea): PdfFrame {
+  return area.frame ?? { x: 0, y: 0, width: area.geometry.width, height: area.geometry.height };
 }
 
 export interface PdfRasterPlan {
@@ -38,7 +45,8 @@ export function planPdfRaster(
   ) {
     throw new Error("PDF page has no usable size");
   }
-  const fit = Math.min(geometry.width / source.width, geometry.height / source.height);
+  const frame = frameOf(area);
+  const fit = Math.min(frame.width / source.width, frame.height / source.height);
   const region = area.region ?? { minX: 0, minY: 0, maxX: geometry.width, maxY: geometry.height };
   const x = Math.max(0, region.minX);
   const y = Math.max(0, region.minY);
@@ -62,8 +70,8 @@ export function planPdfRaster(
       0,
       0,
       1,
-      ((geometry.width - source.width * fit) / 2 - x) * scale,
-      ((geometry.height - source.height * fit) / 2 - y) * scale,
+      (frame.x + (frame.width - source.width * fit) / 2 - x) * scale,
+      (frame.y + (frame.height - source.height * fit) / 2 - y) * scale,
     ],
     box: { x, y, w: width / scale, h: height / scale },
   };
@@ -71,11 +79,13 @@ export function planPdfRaster(
 
 /** Tile scales are already settled and use the renderer's stable precision. */
 export function pdfAreaKey(area: PdfRenderArea): string {
-  const { geometry, region } = area;
+  const { geometry, region, frame } = area;
   return JSON.stringify([
     geometry.width,
     geometry.height,
     ...(region ? [region.minX, region.minY, region.maxX, region.maxY] : []),
+    // Only a page with a frame has one in its key, so every other page keeps its cache key.
+    ...(frame ? ["f", frame.x, frame.y, frame.width, frame.height] : []),
   ]);
 }
 
@@ -156,6 +166,7 @@ export function detailPdfArea(
   geometry: PageGeometry,
   visible: Bounds,
   level: number,
+  frame?: PdfFrame,
 ): PdfRenderArea | null {
   const shown = visiblePdfArea(geometry, visible, level)?.region;
   if (!shown) return null;
@@ -168,6 +179,7 @@ export function detailPdfArea(
   const up = (v: number) => Math.ceil(v * level) / level;
   return {
     geometry,
+    ...(frame ? { frame } : {}),
     region: {
       minX: Math.max(0, down(shown.minX - mx)),
       minY: Math.max(0, down(shown.minY - my)),

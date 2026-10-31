@@ -33,7 +33,7 @@ import {
   linksOnPage,
   readLinks,
 } from "../canvas/pdf-links";
-import type { PageGeometry, PdfBackdrop } from "../model/document";
+import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/document";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
 interface TextContentLike {
@@ -137,10 +137,12 @@ export class PdfTextCache {
     const key = pageKey(backdrop.path, backdrop.page);
     const text = this.pages.get(key);
     if (!text) return null;
-    const layoutKey = `${key}:${geometry.width}x${geometry.height}`;
+    // Where the PDF sits on the page: the whole page, or its frame on a widened one.
+    const frame = pdfFrameOf(backdrop, geometry);
+    const layoutKey = `${key}:${geometry.width}x${geometry.height}:${frame.x},${frame.y},${frame.width}x${frame.height}`;
     let layout = this.layouts.get(layoutKey);
     if (!layout) {
-      layout = layoutText(text.items, pdfToPage(text.viewport, text.source, geometry));
+      layout = layoutText(text.items, pdfToPage(text.viewport, text.source, frame));
       this.layouts.set(layoutKey, layout);
     }
     return layout;
@@ -155,7 +157,7 @@ export class PdfTextCache {
     if (!text) return null;
     return text.links.length === 0
       ? []
-      : linksOnPage(text.links, text.viewport, text.source, geometry);
+      : linksOnPage(text.links, text.viewport, text.source, pdfFrameOf(backdrop, geometry));
   }
 
   /** Read the page's text in the background, unless it is read or being read. */

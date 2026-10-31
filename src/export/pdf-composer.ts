@@ -1,6 +1,6 @@
 /** PDF composition only: source pages remain PDF content; annotations are PNG overlays. */
 import { BlendMode, PDFDocument, degrees, rgb, type PDFEmbeddedPage } from "pdf-lib";
-import type { Page } from "../model/document";
+import { type Page, pdfFrameOf } from "../model/document";
 import { POINTS_PER_PAGE_PX, type PdfImagePage } from "./pdf-writer";
 
 export interface PdfAnnotationRaster {
@@ -70,9 +70,16 @@ export class PdfComposer {
         embedded = await this.output.embedPage(original, { left, bottom, right, top });
         this.embedded.set(key, embedded);
       }
-      const scale = Math.min(w / (rotated ? height : width), h / (rotated ? width : height));
-      const x = (w - (rotated ? height : width) * scale) / 2;
-      const y = (h - (rotated ? width : height) * scale) / 2;
+      // Fitted into the page, or into its frame on a page widened with Add space.
+      // PDF points have y up: the frame's top in page px is its bottom here.
+      const frame = pdfFrameOf(backdrop, page.geometry);
+      const fw = frame.width * POINTS_PER_PAGE_PX;
+      const fh = frame.height * POINTS_PER_PAGE_PX;
+      const fx = frame.x * POINTS_PER_PAGE_PX;
+      const fy = h - (frame.y + frame.height) * POINTS_PER_PAGE_PX;
+      const scale = Math.min(fw / (rotated ? height : width), fh / (rotated ? width : height));
+      const x = fx + (fw - (rotated ? height : width) * scale) / 2;
+      const y = fy + (fh - (rotated ? width : height) * scale) / 2;
       // /Rotate is clockwise in PDF viewers; drawing operators rotate counterclockwise.
       target.drawPage(embedded, {
         x: x + (rotation === 180 || rotation === 270 ? (rotated ? height : width) * scale : 0),

@@ -56,6 +56,7 @@ import {
   decorOf,
   inkReach,
   penFor,
+  paintPagePaper,
   paperColorOf,
   renderPageThumbnail,
   tableLayoutOf,
@@ -6226,11 +6227,13 @@ export class InkSurface {
     ctx.clip();
     ctx.fillStyle = paperColorOf(page, this.paper);
     ctx.fillRect(0, 0, page.geometry.width, page.geometry.height);
-    this.backdropPainter?.paint(ctx, page.backdrop, page.geometry, 1, {
-      deviceScale: s,
-      region,
-      paper: this.paper,
-    });
+    if (this.backdropPainter) {
+      paintPagePaper(this.backdropPainter, ctx, page, 1, {
+        deviceScale: s,
+        region,
+        paper: this.paper,
+      });
+    }
     ctx.restore();
     return true;
   }
@@ -16017,7 +16020,13 @@ export class InkSurface {
       (this.board &&
         box !== undefined &&
         page !== undefined &&
-        (box.width !== page.geometry.width || box.height !== page.geometry.height))
+        (box.width !== page.geometry.width || box.height !== page.geometry.height)) ||
+      // A page changed size (Add space, a template with another size) or an
+      // undo took that back: its box must follow, or it keeps the old size on screen.
+      this.pageLayout.boxes.some((b, i) => {
+        const g = this.doc.pages[i]?.geometry;
+        return g !== undefined && (b.width !== g.width || b.height !== g.height);
+      })
     );
   }
 

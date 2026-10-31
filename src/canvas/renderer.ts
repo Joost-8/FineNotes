@@ -337,6 +337,71 @@ export function paperColorOf(page: Page, theme: PaperTheme): string {
 }
 
 /**
+ * A page's paper through `painter`: its own backdrop, then the side papers of
+ * a page widened with Add space, each in its strip. A paper page keeps its
+ * paper in its frame there (a PDF is fitted into its frame by the painter).
+ * `sidesOnly`: just the side papers, for an overlay drawn over the PDF.
+ */
+export function paintPagePaper(
+  painter: BackdropPainter,
+  ctx: CanvasRenderingContext2D,
+  page: Page,
+  weight: number,
+  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  sidesOnly = false,
+): void {
+  const { backdrop, geometry } = page;
+  if (!sidesOnly) {
+    if (backdrop.kind !== "pdf" && backdrop.frame) {
+      paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
+    } else {
+      painter.paint(ctx, backdrop, geometry, weight, target);
+    }
+  }
+  for (const side of page.sidePapers ?? []) {
+    const strip = { x: side.x, y: 0, width: side.width, height: geometry.height };
+    paintInStrip(painter, ctx, side.backdrop, strip, weight, target, true);
+  }
+}
+
+/** One paper drawn as a page of its own, moved into `strip` and clipped to it. */
+function paintInStrip(
+  painter: BackdropPainter,
+  ctx: CanvasRenderingContext2D,
+  backdrop: Backdrop,
+  strip: { x: number; y: number; width: number; height: number },
+  weight: number,
+  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  fill = false,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(strip.x, strip.y, strip.width, strip.height);
+  ctx.clip();
+  // A side paper of another colour than the page's own paints its own colour first.
+  if (fill && target.paper) {
+    ctx.fillStyle = pageLook(backdrop, target.paper).paper;
+    ctx.fillRect(strip.x, strip.y, strip.width, strip.height);
+  }
+  ctx.translate(strip.x, strip.y);
+  const region = target.region;
+  painter.paint(ctx, backdrop, { width: strip.width, height: strip.height }, weight, {
+    ...target,
+    ...(region
+      ? {
+          region: {
+            minX: region.minX - strip.x,
+            minY: region.minY - strip.y,
+            maxX: region.maxX - strip.x,
+            maxY: region.maxY - strip.y,
+          },
+        }
+      : {}),
+  });
+  ctx.restore();
+}
+
+/**
  * Paint a stroke's runs (`inkRuns`) in the context's current `fillStyle`:
  * each one a line of its own width, round at the caps and the joins, drawn
  * by the canvas's stroke so a line that crosses itself is still one shape.
@@ -2154,11 +2219,13 @@ export class Renderer {
     ctx.fillRect(0, 0, box.width, box.height);
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
-    this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level), {
-      deviceScale: level,
-      paper: this.paper,
-      ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
-    });
+    if (this.painter) {
+      paintPagePaper(this.painter, ctx, page, Math.max(1, 0.5 / level), {
+        deviceScale: level,
+        paper: this.paper,
+        ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
+      });
+    }
     if (this.doc) {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);
       paintFurniture(ctx, page.geometry, texts, pageLook(page.backdrop, this.paper).night);
@@ -3103,11 +3170,21 @@ export function renderPageThumbnail(
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
   if (!options.transparent) {
-    painter.paint(ctx, page.backdrop, page.geometry, Math.max(1, (0.5 * width) / cssWidth), {
+    paintPagePaper(painter, ctx, page, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
+  } else if ((page.sidePapers?.length ?? 0) > 0) {
+    // Over a PDF drawn elsewhere (export): the side papers are not the PDF's, so they come along.
+    paintPagePaper(
+      painter,
+      ctx,
+      page,
+      Math.max(1, (0.5 * width) / cssWidth),
+      { deviceScale: k, paper: options.paper ?? LIGHT_PAPER },
+      true,
+    );
   }
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   // A sticky note keeps its colour on dark pages, so its ink keeps its own too.

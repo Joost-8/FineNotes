@@ -3843,6 +3843,22 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   cursor: pointer;
 }
 
+/* Add Page's positions: each takes its label's width, so "Last page" never
+   runs into the next one, and a thin rule sets Left and Right (Add space)
+   apart from the pages. */
+.goodobsidian-addpage-positions button {
+  flex: 1 1 auto;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.goodobsidian-addpage-positions-rule {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 9px 3px;
+  background: var(--background-modifier-border);
+}
+
 .goodobsidian-segmented button.is-active {
   background: var(--gob-seg-active-bg);
   color: var(--text-normal);
