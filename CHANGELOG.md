@@ -10,6 +10,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Copy style.** Copy style in a lasso selection's menu takes its ink's
+  look: colour, width, pen or highlighter, and a shape's line, fill and
+  corners. Tap or sweep the Pencil or mouse over other ink to give it the
+  same look, one undo step a sweep, until you pick another tool or close
+  the bar at the bottom. Fingers still scroll.
 - **A Basic calculator.** The calculator's title bar switches between its
   scientific keys and a pocket calculator laid out as the iPhone's: one big
   number that shrinks to fit, big round keys, the operator you pressed lit,
