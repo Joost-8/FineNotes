@@ -27,6 +27,7 @@ import {
   paperColorOf,
   paperLabel,
   parseRecent,
+  plainBackdrop,
   popoverTemplates,
   repeatedPaper,
   pushRecent,
@@ -302,5 +303,28 @@ describe("SetPageTemplate", () => {
     command.apply(doc);
     command.invert(doc);
     expect(stray.backdrop).toEqual({ kind: "blank" });
+  });
+});
+
+describe("plain paper for Export as PDF", () => {
+  it("leaves out the template and keeps the paper's colour", () => {
+    expect(plainBackdrop({ kind: "dotted" })).toEqual({ kind: "blank" });
+    expect(
+      plainBackdrop({
+        kind: "cornell",
+        paperColor: "#fdf6e3",
+        color: "#c0b090",
+        texture: "fine",
+        marginLines: { left: 80 },
+        printed: [{ x: 10, y: 10, text: "Practise", size: 14 }],
+      }),
+    ).toEqual({ kind: "blank", paperColor: "#fdf6e3" });
+  });
+
+  it("keeps a PDF page and a cover as they are: they are content, not template", () => {
+    const pdf = { kind: "pdf", path: "Lecture.pdf", page: 2, template: true } as const;
+    expect(plainBackdrop(pdf)).toBe(pdf);
+    const cover = coverBackdrop("cover-band", COVER_COLORS[0].id);
+    expect(plainBackdrop(cover)).toBe(cover);
   });
 });
