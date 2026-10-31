@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A Basic calculator.** The calculator's title bar switches between its
+  scientific keys and a pocket calculator laid out as the iPhone's: one big
+  number that shrinks to fit, big round keys, the operator you pressed lit,
+  2 + 3 × 4 = 14, = again repeats the last step, C then AC. Insert puts the
+  sum or its answer on the page, sums go into the notebook's history, and a
+  keyboard types into it (Escape clears, then closes). It opens in the mode
+  you left it in; Scientific until you switch.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

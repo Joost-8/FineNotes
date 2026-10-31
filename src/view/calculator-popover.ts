@@ -78,6 +78,7 @@ import {
 import {
   CALC_WINDOW_MIN,
   type CalcEntry,
+  type CalcMode,
   type CalculatorData,
   defaultCalcPlace,
   historyOf,
@@ -89,6 +90,8 @@ import {
 import { type Worked, readable, work } from "../model/algebra/work";
 import type { GraphSpec } from "../model/graph";
 import { MAX_LINES, newLineId, normalizeGraphSpec } from "../model/graph-lines";
+import { basicKeyFor } from "../model/basic-calc";
+import { BasicPad } from "./calculator-basic";
 import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
 import { FloatingWindow } from "./floating-window";
 
@@ -215,6 +218,9 @@ export class CalculatorPopover {
   private editAngle: AngleMode | null = null;
   private tip: HTMLElement | null = null;
   private tipTimer = 0;
+  /** Scientific (the keys and menus) or Basic (a pocket calculator). */
+  private mode: CalcMode;
+  private readonly basic: BasicPad;
 
   private readonly angleChip: HTMLButtonElement;
   private readonly fractionChip: HTMLButtonElement;
@@ -246,11 +252,23 @@ export class CalculatorPopover {
     } else {
       this.graphState = graphStateFor(host.path);
     }
+    // A graph or a graph line is edited on the scientific keys, whatever the mode.
+    const modal = options.editGraph !== undefined || options.editLine !== undefined;
+    this.mode = modal ? "scientific" : (this.data.prefs.mode ?? "scientific");
     this.frame = new FloatingWindow({
       container,
       cls: "goodobsidian-calc-window",
       title: options.editGraph ? "Edit graph" : "Calculator",
       label: "Calculator",
+      buttons: modal
+        ? []
+        : [
+            {
+              icon: "calculator",
+              label: "Basic calculator",
+              run: () => this.setMode(this.otherMode()),
+            },
+          ],
       closeLabel: "Close the calculator",
       min: CALC_WINDOW_MIN,
       firstPlace: defaultCalcPlace,
@@ -336,6 +354,8 @@ export class CalculatorPopover {
     this.resultEl.setAttribute("aria-live", "polite");
     this.hintEl = display.createDiv({ cls: "goodobsidian-calc-hint" });
     this.installDisplayInput(display);
+    // Basic's number sits where the display is, its keys where the keypad is.
+    const basicDisplay = this.el.createDiv({ cls: "goodobsidian-calc-basic-slot" });
 
     const actions = this.el.createDiv({ cls: "goodobsidian-calc-actions" });
     this.insertButtons.push(
@@ -376,6 +396,13 @@ export class CalculatorPopover {
     }
 
     this.bodyEl = this.el.createDiv({ cls: "goodobsidian-calc-body" });
+    const basicKeys = this.el.createDiv({ cls: "goodobsidian-calc-basic-slot is-keys" });
+    this.basic = new BasicPad(basicDisplay, basicKeys, {
+      button: (parent, label, run, cls) => this.button(parent, label, run, cls),
+      worked: (line) => this.save(withEntry(this.data, this.host.path, line, Date.now())),
+      changed: () => this.refreshInsert(),
+    });
+    this.applyMode();
     this.render();
     this.installKeys();
     this.installTouchGuard();
@@ -413,6 +440,8 @@ export class CalculatorPopover {
    * expression from elsewhere (a recognised handwritten one).
    */
   type(text: string): void {
+    // An expression is typed on the scientific keys (not remembered as the mode).
+    if (this.mode === "basic") this.setMode("scientific", false);
     const wasFresh = this.entry.fresh;
     this.entry = typeInto(this.entry, text, false);
     if (wasFresh || this.entry.expr === text) this.exprAns = session.ans;
@@ -515,6 +544,42 @@ export class CalculatorPopover {
     setIcon(button, icon);
     button.setAttribute("aria-label", label);
     this.paneButtons.set(pane, button);
+  }
+
+  // --- Modes --------------------------------------------------------------------
+
+  private otherMode(): CalcMode {
+    return this.mode === "basic" ? "scientific" : "basic";
+  }
+
+  /** Show the calculator in `mode`, remembered for next time unless `remember` is false. */
+  private setMode(mode: CalcMode, remember = true): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    if (remember) this.save(withPrefs(this.data, { mode }));
+    this.hideTip();
+    if (mode === "basic" && this.pane !== "keys") {
+      // The graph's panel stops painting; Basic has no panes.
+      this.pane = "keys";
+      this.render();
+    }
+    this.applyMode();
+  }
+
+  /** The window's face for the mode, and its switch naming the other one. */
+  private applyMode(): void {
+    const basic = this.mode === "basic";
+    this.el.toggleClass("is-basic", basic);
+    const toggle = this.frame.barButtons[0];
+    if (toggle) {
+      const label = basic ? "Scientific calculator" : "Basic calculator";
+      setIcon(toggle, basic ? "sigma" : "calculator");
+      toggle.setAttribute("aria-label", label);
+      toggle.setAttribute("title", label);
+    }
+    if (basic) this.basic.refresh();
+    else this.refresh();
+    this.refreshInsert();
   }
 
   private render(): void {
@@ -1008,6 +1073,14 @@ export class CalculatorPopover {
   }
 
   private insert(withSum: boolean): void {
+    if (this.mode === "basic") {
+      const line = this.basic.lineForInsert();
+      if (!line) return;
+      const text =
+        withSum && line.expr !== line.result ? `${line.expr} = ${line.result}` : line.result;
+      if (this.host.insert(text)) this.close();
+      return;
+    }
     if (!this.entry.fresh && !this.equals()) return;
     const line = this.shownLine;
     if (!line) return;
@@ -1129,7 +1202,17 @@ export class CalculatorPopover {
     this.fitResult();
     this.hintEl.setText(this.hint());
 
-    const canInsert = this.entry.fresh || (expr.trim() !== "" && !editing);
+    this.refreshInsert();
+  }
+
+  /** Insert and Insert answer (or, on the graph, Insert graph) for what is on show. */
+  private refreshInsert(): void {
+    const basic = this.mode === "basic";
+    const editing = this.editingLine !== null;
+    const graphing = this.pane === "graph" && !basic;
+    const canInsert = basic
+      ? this.basic.canInsert()
+      : this.entry.fresh || (this.entry.expr.trim() !== "" && !editing);
     const graphActions = graphing && this.graphAction !== null;
     for (const button of this.insertButtons) {
       button.disabled = !canInsert;
@@ -1251,7 +1334,7 @@ export class CalculatorPopover {
       const target = event.target as Element | null;
       if (
         target?.closest(
-          ".goodobsidian-calc-key, .goodobsidian-calc-tab, .goodobsidian-calc-chip, .goodobsidian-calc-display",
+          ".goodobsidian-calc-key, .goodobsidian-calc-tab, .goodobsidian-calc-chip, .goodobsidian-calc-display, .goodobsidian-calc-bkey, .goodobsidian-calc-basic-display",
         )
       ) {
         event.preventDefault();
@@ -1274,6 +1357,10 @@ export class CalculatorPopover {
     };
     const onKey = (event: KeyboardEvent): void => {
       if (!this.active || this.frame.isMinimised) return;
+      if (this.mode === "basic") {
+        this.basicKey(event);
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -1315,6 +1402,22 @@ export class CalculatorPopover {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey, true);
     });
+  }
+
+  /**
+   * A hardware key in Basic: digits, + - * x /, %, Enter or = and Backspace
+   * as on its keys; Escape clears (C, then AC), and closes once all is clear.
+   */
+  private basicKey(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, [contenteditable='true']")) return;
+    const key = basicKeyFor(event.key);
+    if (!key) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if ("clear" in key && event.key === "Escape" && this.basic.isClear) this.close();
+    else this.basic.press(key);
   }
 }
 
