@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Copy style.** Copy style in a lasso selection's menu takes its ink's
+  look: colour, width, pen or highlighter, and a shape's line, fill and
+  corners. Tap or sweep the Pencil or mouse over other ink to give it the
+  same look, one undo step a sweep, until you pick another tool or close
+  the bar at the bottom. Fingers still scroll.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

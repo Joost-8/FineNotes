@@ -10076,6 +10076,27 @@ button.goodobsidian-color-delete.clickable-icon {
   color: var(--text-muted);
 }
 
+/* The format painter (src/view/format-painter.ts) has the eyedropper's
+   bar: its brush, the copied style as a stroke of its colour, width and
+   line, and ✕. */
+.goodobsidian-surface.is-format-painting .goodobsidian-scroll {
+  cursor: crosshair;
+}
+
+.goodobsidian-paint-mark {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 0;
+  margin: 0 4px;
+  border-radius: 999px;
+}
+
+.goodobsidian-paint-mark.is-highlighter {
+  opacity: 0.45;
+  border-radius: 0;
+}
+
 /* The loupe: a ring at the sampled point, and above it (below it near the
    top) a disc of the colour a press there picks, with its value. Never a
    target: presses go to the page under it. */
