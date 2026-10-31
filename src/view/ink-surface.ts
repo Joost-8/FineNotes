@@ -2340,6 +2340,7 @@ export class InkSurface {
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
+    this.syncDeskVar();
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
     const [backdropCanvas, dryCanvas, wetCanvas] = (["backdrop", "dry", "wet"] as const).map(
       (layer) =>
@@ -3307,6 +3308,7 @@ export class InkSurface {
   setPaperTheme(theme: PaperTheme): void {
     if (theme === this.paper) return;
     this.paper = theme;
+    this.syncDeskVar();
     if (!this.renderer) return;
     this.renderer.paper = theme;
     this.renderer.invalidateAll();
@@ -3317,6 +3319,14 @@ export class InkSurface {
 
   get paperTheme(): PaperTheme {
     return this.paper;
+  }
+
+  /**
+   * The desk's CSS colour (`--gob-desk`), which shows before the backdrop
+   * canvas paints, follows the theme's desk: the Desk setting or dark pages.
+   */
+  private syncDeskVar(): void {
+    this.surfaceEl.setCssProps({ "--gob-desk": this.paper.desk });
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
