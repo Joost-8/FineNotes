@@ -865,7 +865,7 @@ icon, label, order?, isAvailable?, run })` from `onload`; built-ins are
 
 GoodNotes 6's pen gestures, from the pen type menu (Joost, 2026-09-24).
 Pen tool only: a highlighter going over text is highlighting it.
-Settings: `PenGestures { scribbleErase, scribbleErasesAll, circleLasso }`,
+Settings: `PenGestures { scribbleErase, scribbleErasesAll, scribbleFill, circleLasso }`,
 read through `penGesturesOf` (`src/ink/pen-gestures.ts`); defaults on,
 off, on — GoodNotes' defaults, with the scribble's wider reach off.
 
