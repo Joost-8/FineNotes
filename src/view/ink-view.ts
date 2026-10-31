@@ -1158,6 +1158,7 @@ export class InkView extends TextFileView {
     const theme = this.shownPaper();
     if (surface.paperTheme === theme) return;
     surface.setPaperTheme(theme);
+    this.toolbar?.setNight(theme.night === true);
     this.updateSidebarRendering();
   }
 
@@ -2874,6 +2875,7 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.toolbar?.setNight(this.surface.paperTheme.night === true);
     this.surface.toastChrome = () => this.toolbar?.chromeSpans() ?? [];
     this.surface.setNotebookTitle(this.notebookTitle());
     this.setPenCursor(this.settings.penCursor);
