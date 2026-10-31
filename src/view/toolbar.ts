@@ -2100,6 +2100,7 @@ export class Toolbar {
           break;
         case "fill":
           this.buildFillOptions();
+          break;
         case "tape":
           this.buildTapeOptions();
           break;
