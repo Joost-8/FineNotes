@@ -8,6 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Joined pages live in the notebook's settings only.** The New notebook
+  dialog no longer asks: join the pages of any notebook, new or old, from
+  its gear under Pages, and set them apart there again. Set apart, each
+  page keeps its own part of what ran over the join.
 ### Added
 
 - **Desk colour**
