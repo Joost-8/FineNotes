@@ -29,8 +29,14 @@ export type LlmDialect = "anthropic" | "openai" | "google";
  */
 export type OpenRouterRouting = "default" | "cheapest" | "cheapest-full";
 
-/** The quantizations `cheapest-full` accepts: fp8 or better. */
-const FULL_QUALITY_QUANTIZATIONS = ["fp8", "fp16", "bf16", "fp32"];
+/**
+ * The quantizations `cheapest-full` accepts: fp8 or better, and `unknown`.
+ * OpenRouter lists every provider of Gemini, GPT and Claude (and many of
+ * other models) as `unknown`; leaving it out would leave those models no
+ * provider at all, and the request would fail. A provider that serves a
+ * compressed version says so (fp4, nvfp4, fp6, int4, int8), so those stay out.
+ */
+const FULL_QUALITY_QUANTIZATIONS = ["fp8", "fp16", "bf16", "fp32", "unknown"];
 
 /**
  * The `provider` object an OpenRouter chat request carries for `routing`, or

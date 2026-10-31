@@ -122,7 +122,10 @@ describe("buildChatRequest", () => {
     expect((cheapest.body as Record<string, unknown>).provider).toEqual({ sort: "price" });
     const full = buildChatRequest({ ...base, vendor: "openrouter", routing: "cheapest-full" });
     const { provider, ...rest } = full.body as OpenAiBody & { provider: unknown };
-    expect(provider).toEqual({ sort: "price", quantizations: ["fp8", "fp16", "bf16", "fp32"] });
+    expect(provider).toEqual({
+      sort: "price",
+      quantizations: ["fp8", "fp16", "bf16", "fp32", "unknown"],
+    });
     // The rest of the body is the same as without routing.
     expect(rest).toEqual(buildChatRequest({ ...base, vendor: "openrouter" }).body);
   });

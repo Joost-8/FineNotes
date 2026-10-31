@@ -334,7 +334,8 @@ const DESC = {
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
   openRouterRouting:
     "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
-    "that are cheaper but read handwriting less accurately.",
+    "that are cheaper but read handwriting less accurately. Cheapest at full quality skips " +
+    "those that say they are compressed.",
   imageVendor:
     "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",

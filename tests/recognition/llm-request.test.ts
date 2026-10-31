@@ -149,12 +149,16 @@ describe("openRouterProvider", () => {
   it("sorts by price among fp8 or better for the cheapest at full quality", () => {
     expect(openRouterProvider("cheapest-full")).toEqual({
       sort: "price",
-      quantizations: ["fp8", "fp16", "bf16", "fp32"],
+      quantizations: ["fp8", "fp16", "bf16", "fp32", "unknown"],
     });
   });
 
   it("never offers fp4, which reads handwriting less well", () => {
-    expect(JSON.stringify(openRouterProvider("cheapest-full"))).not.toMatch(/fp4|int4|int8/);
+    expect(JSON.stringify(openRouterProvider("cheapest-full"))).not.toMatch(/fp4|fp6|int4|int8/);
+  });
+
+  it("keeps providers listed as unknown, the only ones Gemini, GPT and Claude have", () => {
+    expect(openRouterProvider("cheapest-full")?.quantizations).toContain("unknown");
   });
 });
 

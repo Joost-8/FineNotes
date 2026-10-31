@@ -206,7 +206,7 @@ describe("the request a transcription sends", () => {
     await transcribe({ ...configs.openrouter, routing: "cheapest-full" });
     expect(onlyRequest().json.provider).toEqual({
       sort: "price",
-      quantizations: ["fp8", "fp16", "bf16", "fp32"],
+      quantizations: ["fp8", "fp16", "bf16", "fp32", "unknown"],
     });
     sent.length = 0;
     await transcribe({ ...configs.openrouter, routing: "default" });
