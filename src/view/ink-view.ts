@@ -2511,6 +2511,13 @@ export class InkView extends TextFileView {
       if (!gone()) surface.setActiveWordFlag(null);
       return;
     }
+    // Several words lassoed: the whole sentence, in one field.
+    const words = found ? selectionWords(found.entry.words, found.entry.read, strokeIds) : null;
+    if (found && words && words.length > 1) {
+      surface.setActiveWordFlag(null);
+      this.correctWords(page, found.entry, words);
+      return;
+    }
     const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
     if (!found || !at) {
       surface.setActiveWordFlag(null);
@@ -2518,6 +2525,29 @@ export class InkView extends TextFileView {
       return;
     }
     this.openWordCard(page, found.word, found.suggestion, at, true);
+  }
+
+  /**
+   * "Correct" on a lassoed sentence: what the page's reading says of
+   * `words`, a line for each line, to correct in one field; each word
+   * changed is recorded as a misread of its ink (`recordEdits`).
+   */
+  private correctWords(page: Page, entry: PageWords, words: ReadWord[]): void {
+    const modal = new InkTextModal(
+      this.app,
+      (text) => {
+        if (this.file && this.surface?.document.pages.includes(page)) {
+          this.recordEdits(page, words, text);
+        }
+      },
+      true,
+    );
+    modal.open();
+    const text = wordsByLine(words);
+    modal.suggest(text);
+    void this.spellingFixes(page, entry, words).then((fixes) => {
+      if (fixes.length > 0) modal.suggest(text, fixes);
+    });
   }
 
   /**
