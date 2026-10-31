@@ -209,6 +209,8 @@ export interface GoodObsidianSettings {
   shapeStyle?: ShapeToolStyle;
   /** How far the Fill tool reaches past gaps (`model/fill-region`). Checked where it is read. */
   fillGap?: string;
+  /** The Fill tool's own colour, `#rrggbb`; not the pen's. Checked where it is read. */
+  fillColor?: string;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */

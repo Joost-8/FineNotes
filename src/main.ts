@@ -14,7 +14,7 @@ import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
-import { type FillGap, readFillGap } from "./model/fill-region";
+import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
@@ -1259,6 +1259,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember whether new tables get a header row, for the next session. */
   saveTableHeader(on: boolean): void {
     this.settings.tableHeader = on;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillColor(color: string): void {
+    this.settings.fillColor = parseHexColor(color) ?? DEFAULT_FILL_COLOR;
     void this.saveSettings();
   }
 

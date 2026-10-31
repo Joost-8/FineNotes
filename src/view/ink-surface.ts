@@ -237,6 +237,7 @@ import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
 import {
   AddFill,
   RecolorFill,
+  DEFAULT_FILL_COLOR,
   enclosedArea,
   fillGapPx,
   fillInsertIndex,
@@ -8290,7 +8291,8 @@ export class InkSurface {
       if (!press || press.boxIndex !== box.index) return;
       const moved = Math.hypot(sample.x - press.sx, sample.y - press.sy) * this.unitScale;
       if (moved > TAP_SLOP_PX) return;
-      this.fillAt(box, press.x, press.y, this.toolState.color, false);
+      // The Fill tool's own colour, never the pen's.
+      this.fillAt(box, press.x, press.y, this.toolState.fillColor ?? DEFAULT_FILL_COLOR, false);
     },
     cancel: () => {
       this.fillPress = null;

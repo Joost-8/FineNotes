@@ -230,7 +230,7 @@ import {
   withStabilization,
 } from "../model/pen-stabilization";
 import { DialogKeyboard } from "./dialog-keyboard";
-import { FILL_GAPS, type FillGap, readFillGap } from "../model/fill-region";
+import { DEFAULT_FILL_COLOR, FILL_GAPS, type FillGap, readFillGap } from "../model/fill-region";
 import { onEnterKey } from "./enter-key";
 import {
   DEFAULT_ARROW_HEADS,
@@ -550,6 +550,8 @@ export interface ToolbarState {
   textDragSize?: boolean;
   /** How far the Fill tool reaches past gaps in an outline. `undefined` counts as "small". */
   fillGap?: FillGap;
+  /** The Fill tool's own colour. `undefined` counts as {@link DEFAULT_FILL_COLOR}. */
+  fillColor?: string;
   /** The ruler's kind. `undefined` counts as the straight ruler. */
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
@@ -662,6 +664,8 @@ export interface ToolbarCallbacks {
   onShapeStyleChange?: (style: ShapeToolStyle) => void;
   /** The Fill tool's gap choice changed. Hosts persist it. */
   onFillGapChange?: (gap: FillGap) => void;
+  /** The Fill tool's colour changed. Hosts persist it; the pen's stays. */
+  onFillColorChange?: (color: string) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
   /**
@@ -2588,27 +2592,27 @@ export class Toolbar {
   }
 
   /**
-   * The Fill tool: the pen's colours (a fill takes the pen's colour, and
-   * picking one here picks the pen's), then how far a fill reaches past
-   * gaps in a hand-drawn outline, as a ring with no gap, a dashed one and a
-   * ring open wide.
+   * The Fill tool: its own colour, as the Shape tool has (a disc and a
+   * caret opening the colour picker; picking leaves the pen's colour
+   * alone), then how far a fill reaches past gaps in a hand-drawn outline,
+   * as a ring with no gap, a dashed one and a ring open wide.
    */
   private buildFillOptions(): void {
-    const colors = this.quickColors();
-    if (isUpright(this.pillDock)) {
-      const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
-      const first = colorWindow(colors.length, chosen, UPRIGHT_COLORS);
-      for (const color of colors.slice(first, first + UPRIGHT_COLORS)) {
-        this.penSwatch(this.optionsEl, color, colors);
-      }
-      this.chevron("All colours", (button) => this.togglePenColorList(button));
-    } else {
-      const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
-      row.dataset.ignoreSwipe = "true";
-      for (const color of colors) this.penSwatch(row, color, colors);
-      if (colors.length < PEN_ROW_MAX) this.addColorButton(row);
-      this.fitColorRow(row);
-    }
+    const color = this.state.fillColor ?? DEFAULT_FILL_COLOR;
+    const colorButton = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-color clickable-icon",
+    });
+    colorButton.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    caretIn(colorButton);
+    colorButton.setAttribute("aria-label", `Fill colour ${color}`);
+    colorButton.setAttribute("title", "Fill colour");
+    colorButton.addEventListener("click", () =>
+      this.toggleColorPopover("fill-color", colorButton, color, (picked) => {
+        this.state.fillColor = picked;
+        this.callbacks.onFillColorChange?.(picked);
+        this.buildOptions();
+      }),
+    );
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const gap = readFillGap(this.state.fillGap);
     for (const choice of FILL_GAPS) {

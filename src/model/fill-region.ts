@@ -26,6 +26,9 @@ export const FILL_GAPS: readonly FillGap[] = ["exact", "small", "large"];
 /** The gap a new install closes: a hand-drawn outline rarely meets itself exactly. */
 export const DEFAULT_FILL_GAP: FillGap = "small";
 
+/** The Fill tool's colour until another is picked: a light blue the ink over it reads on. */
+export const DEFAULT_FILL_COLOR = "#74c0fc";
+
 /** Gaps up to this wide close, page px. */
 export function fillGapPx(gap: FillGap): number {
   return gap === "exact" ? 0 : gap === "small" ? 8 : 20;
