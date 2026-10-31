@@ -292,6 +292,7 @@ import {
 import { gestureLoopOf, penGesturesOf } from "../ink/pen-gestures";
 import {
   type Pt,
+  HEART_ASPECT,
   STAR_ASPECT,
   type ShapePreset,
   type BoxPreset,
@@ -9530,7 +9531,8 @@ export class InkSurface {
     if (!drag.moved) {
       const halfW = this.atFitZoom(SHAPE_DEFAULT_SIZE) / 2;
       const connector = isConnectorPreset(preset);
-      const halfH = connector ? 0 : preset === "star" ? halfW * STAR_ASPECT : halfW;
+      const aspect = preset === "star" ? STAR_ASPECT : preset === "heart" ? HEART_ASPECT : 1;
+      const halfH = connector ? 0 : halfW * aspect;
       const cx = clamp(origin.x, halfW, Math.max(halfW, box.width - halfW));
       const cy = clamp(origin.y, halfH, Math.max(halfH, box.height - halfH));
       origin = { x: cx - halfW, y: cy - halfH };

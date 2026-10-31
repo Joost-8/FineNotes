@@ -90,8 +90,10 @@ import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } f
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
+  HEART_ASPECT,
   STAR_INNER_RATIO,
   type ShapeMode,
+  heartPoints,
   isShapeMode,
   starPoints,
 } from "../ink/shape-geometry";
@@ -430,6 +432,7 @@ const SHAPE_LABELS: Record<ShapeMode, string> = {
   diamond: "Diamond",
   roundrect: "Rounded square",
   star: "Star",
+  heart: "Heart",
   line: "Line: drag from start to end",
   arrow: "Arrow: drag from tail to tip",
   table: "Table",
@@ -5394,6 +5397,12 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
     star: () => {
       const tips = starPoints(12, 12.9, 9.6, 9.6 * STAR_INNER_RATIO, -Math.PI / 2);
       const d = tips.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+      add("path", { d: `${d.join(" ")}Z` });
+    },
+    // Likewise the heart.
+    heart: () => {
+      const outline = heartPoints(12, 12.4, 18, 18 * HEART_ASPECT);
+      const d = outline.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
       add("path", { d: `${d.join(" ")}Z` });
     },
     line: () => add("path", { d: "M5 19 19 5" }),

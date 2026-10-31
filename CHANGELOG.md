@@ -8,6 +8,18 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Hearts.** Draw a heart and hold, or with Auto shape on, and it snaps
+  to a clean heart; the Shape tool has one too, after the star.
+- **Arcs, semicircles and pie slices.** Hold at the end of a curve and it
+  snaps to a clean arc of a circle; a near half, quarter or three quarters
+  comes out exact, its ends level when nearly so. A curve closed by two
+  lines to its centre snaps to a slice, and a curve closed by a straight
+  line across (a D) to a semicircle. Only on a hold, so a C or a D written
+  with Auto shape on stays handwriting.
+  FineNotes 2.6 and earlier show these three as ordinary ink.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:

@@ -7,7 +7,8 @@
  * layout (contracts/api.md §2: an erased piece keeps its kind but not its
  * layout). A handle is a distinct vertex; copies of one point (a closed
  * shape's repeated first point, an arrow's tip) are one handle and move
- * together. Curved kinds — circles, ellipses, rounded rectangles, clouds —
+ * together. Curved kinds — circles, ellipses, rounded rectangles, clouds,
+ * hearts, arcs and sectors —
  * get none, pieces included: their points are samples along a curve, and
  * the selection's resize and rotate handles already stretch and turn them.
  * A whole arrow is the one layout recognised, and only after checking it:
@@ -41,6 +42,9 @@ const CURVED: ReadonlySet<ShapeKind> = new Set<ShapeKind>([
   "ellipse",
   "roundrect",
   "cloud",
+  "heart",
+  "arc",
+  "sector",
 ]);
 
 /** The handles of one shape. */

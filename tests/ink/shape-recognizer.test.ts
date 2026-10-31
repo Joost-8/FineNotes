@@ -74,18 +74,6 @@ function star(cx: number, cy: number, outer: number, inner: number, points = 5):
   return out;
 }
 
-function heart(cx: number, cy: number, s: number): Pt[] {
-  const out: Pt[] = [];
-  for (let i = 0; i <= 160; i++) {
-    const t = (i / 160) * 2 * Math.PI;
-    out.push({
-      x: cx + s * 16 * Math.sin(t) ** 3,
-      y: cy - s * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)),
-    });
-  }
-  return out;
-}
-
 function cursive(x0: number, y0: number, loops: number): Pt[] {
   const out: Pt[] = [];
   for (let l = 0; l < loops; l++) {
@@ -155,7 +143,8 @@ function dense(points: Pt[]): Pt[] {
  * for stars. It sat here as the case that proved the fitters did not mistake
  * a star for anything else; it now snaps to `star` (see `positives`), and
  * the shapes that must still never read as one — a decagon, a flower, other
- * star polygons — are in shape-recognizer-star-arrow.test.ts.
+ * star polygons — are in shape-recognizer-star-arrow.test.ts. The heart left
+ * the same way on 2026-10-30 (shape-recognizer-heart-arc.test.ts).
  */
 const adversarial: Array<[string, number[]]> = [
   ["a V", inkFrom(polyline(100, 100, 200, 300, 300, 100), 1)],
@@ -174,7 +163,6 @@ const adversarial: Array<[string, number[]]> = [
     "a double loop",
     inkFrom([...arc(300, 300, 140, 140, 0, 360, 96), ...arc(300, 300, 140, 140, 0, 360, 96)], 16),
   ],
-  ["a heart", inkFrom(heart(300, 300, 12), 17)],
   ["a sine wave", inkFrom(sine(100, 300, 420, 35, 3), 18)],
   [
     "a lightning bolt",
@@ -192,12 +180,24 @@ const adversarial: Array<[string, number[]]> = [
 
 describe("recognizeShape refuses shapes that are not a snappable kind", () => {
   it("covers the full adversarial set", () => {
-    // 18 since the star became a positive (2026-09-22, see above).
-    expect(adversarial).toHaveLength(18);
+    // 18 since the star became a positive (2026-09-22, see above), 17 since the heart did.
+    expect(adversarial).toHaveLength(17);
   });
 
   it.each(adversarial)("returns null for %s", (_name, pts) => {
     expect(recognizeShape(pts)).toBeNull();
+  });
+
+  it("held, refuses them all too, but for the C (an arc) and the D (a semicircle)", () => {
+    // A hold also fits arcs and sectors (RecognizeOptions.arcs): a C held is
+    // the arc it is, and a D held is a semicircle closed by its diameter.
+    const expected: Record<string, string> = {
+      "a C (240 degrees of arc)": "arc",
+      "a D": "sector",
+    };
+    for (const [name, pts] of adversarial) {
+      expect(recognizeShape(pts, { held: true })?.kind ?? null, name).toBe(expected[name] ?? null);
+    }
   });
 
   it("refuses them structurally: no fitter produces a candidate at any confidence", () => {
