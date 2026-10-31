@@ -17,7 +17,14 @@ import {
   PALETTE,
   SIZES,
 } from "./constants";
-import { type PaperTheme, paperTheme } from "./canvas/backdrop";
+import {
+  DARK_PAPER,
+  LIGHT_DESK,
+  LIGHT_PAPER,
+  type PaperTheme,
+  paperTheme,
+  withDesk,
+} from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
@@ -25,7 +32,7 @@ import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
-import { DEFAULT_SHAPE_COLOR } from "./model/colors";
+import { DEFAULT_SHAPE_COLOR, parseHexColor } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
 import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
@@ -42,6 +49,8 @@ export type ToolId = "pen" | "highlighter" | "eraser" | "select";
 
 /** How pages are shown (`pageAppearance`): light paper, dark pages, or as Obsidian's theme is. */
 export type PageAppearance = "light" | "dark" | "system";
+/** The desk around the pages: `auto` is the page appearance's own (`PaperTheme.desk`). */
+export type DeskChoice = "auto" | "light" | "dark" | "custom";
 export type SnapMode = "disabled" | "hold" | "auto";
 
 export interface GoodObsidianSettings {
@@ -186,6 +195,10 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Cover tape's colour, `#rrggbb` (`model/cover-tape`). Absent: masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. Absent: the medium height. */
+  tapeHeight?: number;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
@@ -207,6 +220,10 @@ export interface GoodObsidianSettings {
   templateGalleryUrl: string;
   /** The Shape tool's fill, line, corners and arrowheads (`model/shape-style`). */
   shapeStyle?: ShapeToolStyle;
+  /** How far the Fill tool reaches past gaps (`model/fill-region`). Checked where it is read. */
+  fillGap?: string;
+  /** The Fill tool's own colour, `#rrggbb`; not the pen's. Checked where it is read. */
+  fillColor?: string;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
@@ -298,6 +315,14 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+  /** Export as PDF leaves the cover tapes out, so what is under them shows. */
+  exportWithoutTapes: boolean;
+  /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
+  desk: DeskChoice;
+  /** The desk's colour when `desk` is `"custom"`, `#rrggbb`. Checked where it is read. */
+  deskColor: string;
+  /** Export as PDF leaves out the paper's lines, grid, dots and texture. */
+  exportPlainPaper: boolean;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -460,6 +485,10 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
+  desk: "auto",
+  deskColor: LIGHT_PAPER.desk,
+  exportPlainPaper: false,
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
@@ -674,44 +703,6 @@ export function storePenPreferences(
   if ("highlighterTip" in patch) settings.highlighterTip = highlighterTipOf(patch.highlighterTip);
 }
 
-/**
- * "Page appearance" with "Dark PDF pages" folded in: each dark choice comes
- * once with PDFs turned dark and once with them as they are.
- */
-export type AppearanceChoice = PageAppearance | "dark-pdf-light" | "system-pdf-light";
-
-export function appearanceChoiceOf(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
-): AppearanceChoice {
-  const appearance: PageAppearance =
-    settings.pageAppearance === "dark" || settings.pageAppearance === "system"
-      ? settings.pageAppearance
-      : "light";
-  if (appearance === "light" || settings.invertPdfPages !== false) return appearance;
-  return appearance === "dark" ? "dark-pdf-light" : "system-pdf-light";
-}
-
-export function storeAppearanceChoice(settings: GoodObsidianSettings, choice: unknown): void {
-  switch (choice) {
-    case "dark":
-    case "system":
-      settings.pageAppearance = choice;
-      settings.invertPdfPages = true;
-      return;
-    case "dark-pdf-light":
-      settings.pageAppearance = "dark";
-      settings.invertPdfPages = false;
-      return;
-    case "system-pdf-light":
-      settings.pageAppearance = "system";
-      settings.invertPdfPages = false;
-      return;
-    default:
-      // Light pages leave the PDF switch as it was, for the next dark choice.
-      settings.pageAppearance = "light";
-  }
-}
-
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
 export function attachmentDefaults(
   settings: Pick<
@@ -739,17 +730,49 @@ export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolea
   return appearance === "system" && obsidianDark;
 }
 
+/** The desk choice `desk` holds, or "auto" for anything it does not know. */
+export function deskChoiceOf(desk: unknown): DeskChoice {
+  return desk === "light" || desk === "dark" || desk === "custom" ? desk : "auto";
+}
+
+/**
+ * The desk colour `desk` and `deskColor` ask for, or `null` for the page
+ * appearance's own desk. A custom colour that is not a colour is `null` too.
+ */
+export function deskColorOf(
+  settings: Partial<Pick<GoodObsidianSettings, "desk" | "deskColor">>,
+): string | null {
+  switch (settings.desk) {
+    case "light":
+      return LIGHT_DESK;
+    case "dark":
+      return DARK_PAPER.desk;
+    case "custom":
+      return typeof settings.deskColor === "string" ? parseHexColor(settings.deskColor) : null;
+    default:
+      return null;
+  }
+}
+
 /**
  * The paper theme notebooks and page embeds are shown in, by the dark pages
- * settings and Obsidian's theme. A view setting only: export, printing and
- * AI reading always paint `paperTheme(false)`.
+ * settings, the desk setting and Obsidian's theme. A view setting only:
+ * export, printing and AI reading always paint `paperTheme(false)`.
+ *
+ * Page appearance and Dark PDF pages are two settings, and neither changes
+ * the other (FineNotes#67): while they were one dropdown, picking Match
+ * Obsidian after "Dark, PDFs as they are" turned PDFs dark again.
  */
 export function shownPaperTheme(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
+  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages"> &
+    Partial<Pick<GoodObsidianSettings, "desk" | "deskColor">>,
   obsidianDark: boolean,
 ): PaperTheme {
   const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
-  return paperTheme(dark, settings.invertPdfPages === false);
+  // "With the pages" sets them apart: dark pages lie on the grey desk light
+  // ones do, not on their own nearly black one (Joost, 2026-10-31).
+  const desk = deskColorOf(settings) ?? (dark ? LIGHT_PAPER.desk : null);
+  return withDesk(paperTheme(dark, settings.invertPdfPages === false), desk);
 }
 
 // --- Paper width -------------------------------------------------------------
@@ -820,7 +843,15 @@ const CONVERSIONS: Record<
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
   tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },
+  // Anything it does not know is light, as `pagesAreDark` reads it.
+  pageAppearance: { show: pageAppearanceOf, store: pageAppearanceOf },
+  invertPdfPages: { show: (on) => on !== false, store: (on) => on !== false },
 };
+
+/** A stored page appearance, with anything unknown read as light. */
+export function pageAppearanceOf(value: unknown): PageAppearance {
+  return value === "dark" || value === "system" ? value : "light";
+}
 
 function conversion(key: string) {
   return Object.prototype.hasOwnProperty.call(CONVERSIONS, key) ? CONVERSIONS[key] : undefined;

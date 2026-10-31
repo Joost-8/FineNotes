@@ -26,9 +26,9 @@ export interface AnswerPlace {
   height: number;
 }
 
-/** Ink a sum is written in: pen strokes, not highlighter or snapped shapes. */
+/** Ink a sum is written in: pen strokes, not highlighter, cover tape or snapped shapes. */
 export function isSumInk(stroke: Stroke): boolean {
-  return stroke.tool !== "highlighter" && !stroke.shape;
+  return stroke.tool === "pen" && !stroke.shape;
 }
 
 function pathLength(stroke: Stroke): number {

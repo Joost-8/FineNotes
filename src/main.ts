@@ -14,11 +14,13 @@ import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
+import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
 import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
+import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
@@ -1255,9 +1257,28 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember cover tape's colour and height, for the next session. */
+  saveTape(color: string, height: number): void {
+    this.settings.tapeColor = tapeColorOf(color);
+    this.settings.tapeHeight = tapeHeightOf(height);
+    void this.saveSettings();
+  }
+
   /** Remember whether new tables get a header row, for the next session. */
   saveTableHeader(on: boolean): void {
     this.settings.tableHeader = on;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillColor(color: string): void {
+    this.settings.fillColor = parseHexColor(color) ?? DEFAULT_FILL_COLOR;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillGap(gap: FillGap): void {
+    this.settings.fillGap = readFillGap(gap);
     void this.saveSettings();
   }
 

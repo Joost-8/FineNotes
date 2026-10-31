@@ -130,12 +130,16 @@ export const DESK_SHADES: readonly string[] = ["#0e0f11", "#3b3e45", "#6b6f79", 
  * apart. The smallest change that shows the edges, so a dark page gets a
  * mid-grey desk rather than a pale one.
  *
- * Apart means {@link DESK_MIN_CONTRAST}, or the theme's own paper's contrast
+ * Apart means {@link DESK_MIN_CONTRAST}, or the theme's own papers' contrast
  * with its desk where that is lower: dark pages lie 1.11 from their desk by
- * design, and show their edge with a faint light line instead.
+ * design, and show their edge with a faint light line instead; on the Light
+ * desk ({@link withDesk}) white paper lies 1.24 from it, and so does a PDF
+ * page a dark theme keeps as it is.
  */
 export function deskFor(theme: PaperTheme, papers: readonly string[]): string {
-  const floor = Math.min(DESK_MIN_CONTRAST, contrastRatio(theme.paper, theme.desk));
+  const own = contrastRatio(theme.paper, theme.desk);
+  const kept = theme.keepPdf ? contrastRatio(LIGHT_PAPER.paper, theme.desk) : Infinity;
+  const floor = Math.min(DESK_MIN_CONTRAST, own, kept);
   const worst = (desk: string): number =>
     papers.reduce((least, paper) => Math.min(least, contrastRatio(desk, paper)), Infinity);
   if (worst(theme.desk) >= floor) return theme.desk;
@@ -153,6 +157,33 @@ const DARK_PAPER_KEEP_PDF: PaperTheme = { ...DARK_PAPER, keepPdf: true };
 export function paperTheme(dark: boolean, keepPdf = false): PaperTheme {
   if (!dark) return LIGHT_PAPER;
   return keepPdf ? DARK_PAPER_KEEP_PDF : DARK_PAPER;
+}
+
+/** The "Light" desk: a pale grey a white page still stands out on, by its edge and shadow. */
+export const LIGHT_DESK = "#e6e7ea";
+
+/** The themes {@link withDesk} made, so the same choice is the same object. */
+const DESKED = new WeakMap<PaperTheme, Map<string, PaperTheme>>();
+
+/**
+ * `theme` on another desk (the Desk setting), or `theme` itself for `null`
+ * or its own desk. The same object for the same pair, so a view can tell
+ * nothing changed. The desk still gives way where a page is too close to it
+ * ({@link deskFor}), measured against the chosen desk.
+ */
+export function withDesk(theme: PaperTheme, desk: string | null): PaperTheme {
+  if (desk === null || desk === theme.desk) return theme;
+  let made = DESKED.get(theme);
+  if (!made) {
+    made = new Map();
+    DESKED.set(theme, made);
+  }
+  let out = made.get(desk);
+  if (!out) {
+    out = { ...theme, desk };
+    made.set(desk, out);
+  }
+  return out;
 }
 
 /** How one page is shown under a paper theme. */

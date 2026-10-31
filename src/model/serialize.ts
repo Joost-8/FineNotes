@@ -34,6 +34,7 @@ import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
 import { liveConnectors, readConnectors } from "./connectors";
+import { isTape } from "./cover-tape";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
@@ -392,6 +393,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
   if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
   if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
+  if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
   return features;
 }
 
@@ -760,7 +762,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
     id: str(raw.id, `s${position + 1}`),
     color: str(raw.color, DEFAULT_INK),
     size: typeof raw.size === "number" && raw.size > 0 ? raw.size : DEFAULT_PEN_SIZE,
-    tool: raw.tool === "highlighter" ? "highlighter" : "pen",
+    tool: raw.tool === "highlighter" || raw.tool === "tape" ? raw.tool : "pen",
     // A bad number becomes 0 rather than being dropped: dropping it would
     // slide every later value into the wrong slot of its point (ledger:
     // substitute, never filter). JSON writes NaN and Infinity as null, which

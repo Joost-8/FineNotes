@@ -17,7 +17,11 @@
 
 import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH, SCHEMA_VERSION } from "../constants";
 
-export type Tool = "pen" | "highlighter";
+/**
+ * What made a stroke: a pen, a highlighter, or a cover tape (`model/cover-tape`),
+ * an opaque strip painted over the page that a tap shows through.
+ */
+export type Tool = "pen" | "highlighter" | "tape";
 
 /** A highlighter tip other than the round one: `chisel`, flat and upright. */
 export type InkTip = "chisel";

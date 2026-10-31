@@ -14,6 +14,78 @@ extracted from the matching section of this file by `release.yml`.
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight
   keeps the tip it was drawn with, on every device and in exported PDFs.
+- **Fill.** A Fill tool (paint bucket) fills the area inside an outline you
+  drew, behind the ink: tap inside a circle, a box or any closed shape. It
+  has its own colour, as the Shape tool does, so picking one leaves the
+  pen's alone. Its pill picks the colour and how far a fill reaches
+  past small gaps in a hand-drawn outline. An area that is not closed is
+  left alone. Tap a filled area again to give it another colour. It waits
+  in More tools until Customize toolbar puts it on the bar.
+- **Scribble to fill.** A scribble inside a closed outline, over nothing to
+  erase, fills that area. It has its own switch in the pen's Pen gestures,
+  beside Scribble to erase.
+- **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
+  tools (or put it on the bar) and drag across what to hide: an opaque strip
+  of tape, in one of six colours and three heights, lies over it. Tap a tape
+  with a finger, or with the Pencil or mouse, to see what is under it; tap
+  again to cover it. The eye in the tape's pill shows or covers every tape
+  on the page, and a covered tape hides typed text under it too. Shown
+  tapes are this view's only: a notebook always opens, syncs and goes to AI
+  with its tapes on. Export as PDF has a tape button to leave every tape
+  out, for an answer sheet. The lasso moves, turns,
+  resizes, recolours and copies a tape like ink, and the eraser takes it off
+  whole. A notebook with a tape opens read-only in FineNotes 2.6 and earlier.
+- **Correct any handwritten word.** Lasso a word and choose Correct in the
+  "…" menu, or hold a finger on it (right-click with a mouse) and tap
+  Correct: the card an underlined word opens comes up for it, underlined or
+  not, and the answer teaches Grape the same way. A page not read yet is
+  read on this device first. Lasso a whole sentence and Correct opens it in
+  one field: every word you change is learnt as a misread of its ink, and
+  a word the reading split or joined is learnt as the whole line. Every
+  correction counts when you teach Grape your handwriting again.
+- **Copy style.** Copy style in a lasso selection's menu takes its ink's
+  look: colour, width, pen or highlighter, and a shape's line, fill and
+  corners. Tap or sweep the Pencil or mouse over other ink to give it the
+  same look, one undo step a sweep, until you pick another tool or close
+  the bar at the bottom. Fingers still scroll.
+- **A Basic calculator.** The calculator's title bar switches between its
+  scientific keys and a pocket calculator laid out as the iPhone's: one big
+  number that shrinks to fit, big round keys, the operator you pressed lit,
+  2 + 3 × 4 = 14, = again repeats the last step, C then AC. Insert puts the
+  sum or its answer on the page, sums go into the notebook's history, and a
+  keyboard types into it (Escape clears, then closes). It opens in the mode
+  you left it in; Scientific until you switch.
+- **Desk colour**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The ⋯ menu
+  of a notebook has a Desk row: the background around the pages is with
+  the pages, light, dark, or a colour of your own. With the pages, dark
+  pages lie on the same grey desk as light ones, so their edges show, and a
+  page too close to it still gets a desk that sets it apart. Dark PDF pages
+  is in the ⋯ menu too, while pages are dark; both left Settings.
+- **Colours on dark pages look as they do on the page.** The pen's
+  swatches, the pen button and the width preview show each colour as dark
+  pages show the ink.
+- **Export on plain paper**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The grid
+  button in Export as PDF leaves out the paper's lines, grid, dots and
+  texture: ink, text, pictures and PDF pages stay, on the paper's colour.
+  The choice is kept for the next export.
+
+### Changed
+
+- **Joined pages live in the notebook's settings only.** The New notebook
+  dialog no longer asks: join the pages of any notebook, new or old, from
+  its gear under Pages, and set them apart there again. Set apart, each
+  page keeps its own part of what ran over the join.
+
+### Fixed
+
+- **PDFs stay as they are when you pick another page appearance**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
+  appearance and the PDF choice were one list, so picking Match Obsidian
+  after "Dark, PDFs as they are" turned PDFs dark again. They are two
+  choices now, Page appearance in Settings and Dark PDF pages in the ⋯
+  menu, and neither changes the other.
 
 ## [2.6.0] - 2026-10-30
 

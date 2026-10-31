@@ -229,10 +229,34 @@ import {
   mirrorRegions,
   mirrorsBefore,
   ownerKey,
+  ownerOf,
   planMirrors,
   strokeReach,
 } from "../canvas/mirrors";
+import {
+  MIN_TAPE_LENGTH,
+  isTape,
+  tapeClipPath,
+  tapeColorOf,
+  tapeHeightOf,
+  tapePoints,
+  toggleRevealed,
+  topTapeAt,
+} from "../model/cover-tape";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
+import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
+import {
+  AddFill,
+  RecolorFill,
+  DEFAULT_FILL_COLOR,
+  enclosedArea,
+  fillGapPx,
+  fillInsertIndex,
+  fillStroke,
+  isBucketFill,
+  readFillGap,
+  sameFill,
+} from "../model/fill-region";
 import {
   EYEDROP_REACH_PX,
   type EyedropResult,
@@ -244,6 +268,8 @@ import {
   textBoxCandidates,
 } from "../canvas/eyedropper";
 import { Eyedropper } from "./eyedropper";
+import { FormatPainter } from "./format-painter";
+import { PaintStyle, dominantInkStyle } from "../model/format-painter";
 import {
   type EraserFilter,
   eraseCircleFromStroke,
@@ -318,6 +344,7 @@ import {
   type PdfBackdrop,
   type ShapeKind,
   CONNECTOR_SIDES,
+  POINT_STRIDE,
   type ConnectorSide,
   type ShapeConnector,
   type Stroke,
@@ -735,6 +762,9 @@ interface StrokeDiagnostic {
  */
 const MAX_STROKE_HALF_WIDTH = 24;
 
+/** How near ink a format painter's sweep must pass to paint it, screen px: the Pencil's tap reach. */
+const PAINT_REACH_PX = 6;
+
 /**
  * The standard eraser's margin for a brush stroke the Pencil's tilt widened
  * (`ink/tilt`): the cut reaches as far as its widest edge.
@@ -887,6 +917,8 @@ export interface InkSurfaceCallbacks {
    * Hosts use it to keep the toolbar's page navigation in step.
    */
   onPageChange?: (index: number, total: number) => void;
+  /** A cover tape was shown through or covered again (`model/cover-tape`). */
+  onTapesToggled?: () => void;
   /**
    * {@link InkSurface.sizePreviewScales} changed (a zoom came to rest, or
    * the pane changed width), so the toolbar can redraw its width and
@@ -937,6 +969,14 @@ export interface InkSurfaceCallbacks {
    * in client px.
    */
   onFlaggedWord?: (index: number, strokeIds: string[], at: { x: number; y: number }) => void;
+  /**
+   * "Correct" on lassoed ink, or on the press menu over ink: the host reads
+   * the word these strokes are in (page `index`) and opens the same card
+   * an underlined word does (`wordInk` places it under the word).
+   */
+  onCorrectWord?: (index: number, strokeIds: string[]) => void;
+  /** Whether handwriting can be read here, so "Correct" is offered. */
+  canCorrectWords?: () => boolean;
   /**
    * The user asked for a new page after `afterIndex`.
    *
@@ -1172,6 +1212,16 @@ const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }
 const PRESS_HOLD_MS = 500;
 /** The smallest scribble that erases: its longer side on screen, px. */
 const SCRIBBLE_MIN_PX = 10;
+/**
+ * Scribble to fill: at least this share of the scribble's points inside
+ * the region it fills, and its bounds at least {@link SCRIBBLE_FILL_SHARE}
+ * of the region's area, so a mark made near an outline, or a small one in a
+ * big frame, stays ink.
+ */
+const SCRIBBLE_FILL_INSIDE = 0.9;
+const SCRIBBLE_FILL_SHARE = 0.15;
+/** A stroke's ink radius as the fill sees it, over its width: a light hand writes thinner. */
+const FILL_INK_RADIUS = 0.35;
 /** Slack round the band a scribble swept, screen px, past half of either nib. */
 const SCRIBBLE_MARGIN_PX = 2;
 /** How far off the loop a held pen may land and still turn it into a lasso, screen px. */
@@ -1272,6 +1322,8 @@ interface PressMenu {
   at: Pt;
   /** The locked picture pressed, if one was. */
   locked: ImageElement | null;
+  /** The ink pressed, if any: "Correct" reads the word it is in. */
+  ink: Stroke | null;
   /**
    * Opened by a finger that is still down. Until it lifts the bar takes no
    * presses, so a palm that opened it cannot have the pen land on Paste:
@@ -2004,6 +2056,10 @@ export class InkSurface {
   private penDownAt: number | null = null;
   /** The colour pickers' "pick from the page", made on first use. */
   private eyedropper: Eyedropper | null = null;
+  /** The format painter, made on first use; armed by "Copy style". */
+  private formatPainter: FormatPainter | null = null;
+  /** The format painter's sweep under way: painted live, one undo step at the lift. */
+  private paintSweep: PaintStyle | null = null;
   /** A calculation note's suggestion beside its line, made on first use. */
   private calcChip: CalcChip | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
@@ -2164,7 +2220,7 @@ export class InkSurface {
   private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
-  private activeWordFlag: { pageId: string; key: string } | null = null;
+  private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
   /** The client point of the finger tap or right-click being handled, for `onFlaggedWord`. */
   private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
@@ -2342,6 +2398,7 @@ export class InkSurface {
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
+    this.syncDeskVar();
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
     const [backdropCanvas, dryCanvas, wetCanvas] = (["backdrop", "dry", "wet"] as const).map(
       (layer) =>
@@ -2879,6 +2936,7 @@ export class InkSurface {
     this.cellEditor?.remove();
     this.cellEditor = null;
     this.eyedropper?.cancel();
+    this.formatPainter?.cancel();
     this.watchTypingKeyboard(false);
     window.clearTimeout(this.textPillSettleTimer);
     window.clearTimeout(this.wheelSnapTimer);
@@ -3309,6 +3367,7 @@ export class InkSurface {
   setPaperTheme(theme: PaperTheme): void {
     if (theme === this.paper) return;
     this.paper = theme;
+    this.syncDeskVar();
     if (!this.renderer) return;
     this.renderer.paper = theme;
     this.renderer.invalidateAll();
@@ -3319,6 +3378,14 @@ export class InkSurface {
 
   get paperTheme(): PaperTheme {
     return this.paper;
+  }
+
+  /**
+   * The desk's CSS colour (`--gob-desk`), which shows before the backdrop
+   * canvas paints, follows the theme's desk: the Desk setting or dark pages.
+   */
+  private syncDeskVar(): void {
+    this.surfaceEl.setCssProps({ "--gob-desk": this.paper.desk });
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
@@ -3503,6 +3570,8 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // Another tool puts the format painter away.
+    this.formatPainter?.cancel();
     // Another tool ends exploring a graph, keeping where it was left.
     this.endExplore(true);
     // Another tool: a box scrolled out of sight is forgotten.
@@ -3549,6 +3618,7 @@ export class InkSurface {
   private syncNavigationCursor(tool: ActiveTool): void {
     this.scrollEl?.toggleClass("is-hand-tool", tool === "pan");
     this.scrollEl?.toggleClass("is-zoom-tool", tool === "zoom");
+    this.scrollEl?.toggleClass("is-fill-tool", tool === "fill");
   }
 
   /** Called only after a complete tool operation, never during pointer movement. */
@@ -5356,6 +5426,22 @@ export class InkSurface {
               : textBox.fill !== undefined || border
                 ? "0"
                 : "",
+          // A covered tape over the box hides it there, as it hides ink;
+          // never the box being typed in.
+          clipPath:
+            document.activeElement === input
+              ? ""
+              : tapeClipPath(
+                  page.strokes,
+                  {
+                    x: frame.x + shift.x,
+                    y: frame.y + shift.y,
+                    w: width,
+                    h: frame.h ?? box.height,
+                  },
+                  scale,
+                  (tape) => this.revealedTapes.has(this.tapeKey(tape)),
+                ),
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -8247,9 +8333,251 @@ export class InkSurface {
         return this.textGesture;
       case "laser":
         return this.laserGesture;
+      case "fill":
+        return this.fillGesture;
+      case "tape":
+        return this.tapeGesture;
       default:
         return this.inkGesture;
     }
+  }
+
+  /** Where the Fill tool's press went down: page point and layout sample. */
+  private fillPress: { boxIndex: number; x: number; y: number; sx: number; sy: number } | null =
+    null;
+
+  /**
+   * The Fill tool: a tap inside an outline fills it with the pen's colour,
+   * on lift. A drag is not a tap, and fills nothing.
+   */
+  private readonly fillGesture: PenGesture = {
+    down: (box, at, sample) => {
+      this.fillPress = { boxIndex: box.index, x: at.x, y: at.y, sx: sample.x, sy: sample.y };
+    },
+    move: () => undefined,
+    up: (box, sample) => {
+      const press = this.fillPress;
+      this.fillPress = null;
+      this.activePage = null;
+      if (!press || press.boxIndex !== box.index) return;
+      const moved = Math.hypot(sample.x - press.sx, sample.y - press.sy) * this.unitScale;
+      if (moved > TAP_SLOP_PX) return;
+      // The Fill tool's own colour, never the pen's.
+      this.fillAt(box, press.x, press.y, this.toolState.fillColor ?? DEFAULT_FILL_COLOR, false);
+    },
+    cancel: () => {
+      this.fillPress = null;
+      this.activePage = null;
+    },
+  };
+
+  /**
+   * Fill the region of `box`'s page round page point (`x`, `y`) that the
+   * ink encloses, with `color`, as one undo step: a fill already on that
+   * region takes the colour instead. A region that is not closed, or a tap
+   * on the ink, says so with a notice unless `quiet`. `accept` may refuse
+   * the region found. True when the page changed (or already was so).
+   */
+  private fillAt(
+    box: PageBox,
+    x: number,
+    y: number,
+    color: string,
+    quiet: boolean,
+    accept?: (outline: number[], area: number) => boolean,
+  ): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    // Pen ink and shapes bound a fill; highlighter, a note's ink and other
+    // fills do not.
+    const ink: FillInk[] = [];
+    for (const stroke of page.strokes) {
+      if (stroke.tool === "highlighter" || stroke.onSticky !== undefined) continue;
+      if (isBucketFill(stroke)) continue;
+      ink.push({ pts: stroke.pts, radius: stroke.size * FILL_INK_RADIUS });
+    }
+    const result = bucketFill({
+      width: box.width,
+      height: box.height,
+      ink,
+      x,
+      y,
+      gap: fillGapPx(readFillGap(this.toolState.fillGap)),
+    });
+    if (!result.ok) {
+      if (!quiet) {
+        new Notice(
+          result.reason === "open"
+            ? "This area is not closed: nothing filled."
+            : "Tap inside an outline to fill it.",
+        );
+      }
+      return false;
+    }
+    if (accept && !accept(result.outline, result.area)) return false;
+    const stroke = fillStroke(this.strokeIds.next(), color, result.outline);
+    const existing = sameFill(page.strokes, stroke.pts);
+    if (existing && existing.color === stroke.color) return true;
+    const command = existing
+      ? new RecolorFill(page.id, existing, color)
+      : new AddFill(page.id, stroke, fillInsertIndex(page.strokes, enclosedArea(stroke.pts)));
+    this.history.push(this.doc, command);
+    if (!existing) this.strokeIndex.add(page.id, stroke);
+    const bounds = selectionBounds([existing ?? stroke], [], []);
+    if (bounds) this.renderer?.invalidateRegion(box.index, bounds);
+    if (this.debug) this.hud.mark("fill");
+    this.inkChanged([page.id]);
+    return true;
+  }
+
+  // --- Cover tape (`model/cover-tape`) -------------------------------------------
+
+  /**
+   * The cover tapes shown through in this view, by their owner's id (a
+   * mirror over a join goes with its owner). This session's only: never
+   * saved, so a notebook always opens, syncs and exports with its tapes on.
+   */
+  private revealedTapes: ReadonlySet<string> = new Set();
+
+  /** A tape being dragged out: where it started and where the pen is, page px. */
+  private tapeDrag: { from: Pt; to: Pt } | null = null;
+
+  /**
+   * The Cover tape tool: a drag lays a strip from where it started to where
+   * it lifts, its height the pill's, made level or upright when nearly so; a
+   * tap shows a tape there through, or covers it again.
+   */
+  private readonly tapeGesture: PenGesture = {
+    down: (_box, at) => {
+      this.tapeDrag = { from: at, to: at };
+    },
+    move: (box, samples) => {
+      const drag = this.tapeDrag;
+      const last = samples[samples.length - 1];
+      if (!drag || !last) return;
+      drag.to = this.toPage(box, last);
+      const draft = this.tapeStroke(drag.from, drag.to);
+      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      else this.renderer?.clearWet();
+    },
+    up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
+    // iOS cancels some ordinary lifts: a tape dragged out is still laid.
+    cancel: (box) => {
+      if (box) this.finishTape(box, null);
+      else {
+        this.tapeDrag = null;
+        this.renderer?.clearWet();
+      }
+    },
+  };
+
+  /** The tape a drag from `from` to `to` lays, or null for a tap. */
+  private tapeStroke(from: Pt, to: Pt): Stroke | null {
+    const pts = tapePoints(
+      from,
+      to,
+      this.atFitZoom(LINE_LEVEL_RISE),
+      this.atFitZoom(MIN_TAPE_LENGTH),
+    );
+    if (!pts) return null;
+    return {
+      id: "tape-draft",
+      color: tapeColorOf(this.toolState.tapeColor),
+      size: tapeHeightOf(this.toolState.tapeHeight),
+      tool: "tape",
+      pts,
+    };
+  }
+
+  /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
+  private finishTape(box: PageBox, end: Pt | null): void {
+    const drag = this.tapeDrag;
+    this.tapeDrag = null;
+    this.activePage = null;
+    this.renderer?.clearWet();
+    const page = this.pageAt(box.index);
+    if (!drag || !page) return;
+    const draft = this.tapeStroke(drag.from, end ?? drag.to);
+    if (!draft) {
+      this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+      return;
+    }
+    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
+    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    this.history.push(this.doc, command);
+    this.strokeIndex.add(page.id, stroke);
+    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    this.inkChanged([page.id]);
+  }
+
+  /** The id a tape is shown through by: its owner's, for a mirror over a join. */
+  private tapeKey(tape: Stroke): string {
+    const owner = tape.join ? ownerOf(tape.join) : null;
+    return owner?.id ?? tape.id;
+  }
+
+  /**
+   * Show the tape on top at page point `p` of `page` through, or cover it
+   * again, with its mirrors. False when no tape is there. Never an undo
+   * step, and never saved.
+   */
+  private toggleTapeAt(page: Page, p: Pt, tolerance: number): boolean {
+    const tape = topTapeAt(page.strokes, p.x, p.y, tolerance);
+    if (!tape) return false;
+    this.setTapesShown(toggleRevealed(this.revealedTapes, this.tapeKey(tape)));
+    return true;
+  }
+
+  /** Make `next` the tapes shown through, and repaint every tape whose state changed. */
+  private setTapesShown(next: ReadonlySet<string>): void {
+    const before = this.revealedTapes;
+    this.revealedTapes = next;
+    this.renderer?.setRevealedTapes(next);
+    this.doc.pages.forEach((page, index) => {
+      for (const stroke of page.strokes) {
+        if (!isTape(stroke)) continue;
+        const key = this.tapeKey(stroke);
+        if (before.has(key) === next.has(key)) continue;
+        const line = strokeBounds(stroke);
+        if (!line) continue;
+        const pad = stroke.size;
+        this.renderer?.invalidateRegion(index, {
+          minX: line.minX - pad,
+          minY: line.minY - pad,
+          maxX: line.maxX + pad,
+          maxY: line.maxY + pad,
+        });
+      }
+    });
+    this.syncTextBoxes();
+    this.renderDry();
+    this.requestZoomPaint();
+    this.callbacks.onTapesToggled?.();
+  }
+
+  /**
+   * Whether every cover tape on the page in view is shown through, or null
+   * when the page has none: the tape pill's eye.
+   */
+  tapesShown(): boolean | null {
+    const page = this.doc.pages[this.currentPage];
+    const tapes = page ? page.strokes.filter(isTape) : [];
+    if (tapes.length === 0) return null;
+    return tapes.every((tape) => this.revealedTapes.has(this.tapeKey(tape)));
+  }
+
+  /** Show every cover tape on the page in view through (`shown`), or cover them all. */
+  showTapes(shown: boolean): void {
+    const page = this.doc.pages[this.currentPage];
+    if (!page) return;
+    const next = new Set(this.revealedTapes);
+    for (const tape of page.strokes) {
+      if (!isTape(tape)) continue;
+      if (shown) next.add(this.tapeKey(tape));
+      else next.delete(this.tapeKey(tape));
+    }
+    this.setTapesShown(next);
   }
 
   /** The laser pointer: a fading trail behind the pen, never part of the notebook. */
@@ -9129,11 +9457,25 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
 
+    // A Pencil or mouse tap on a cover tape shows it through, or covers it
+    // again, instead of leaving a dot on it.
+    if (!snap && final && this.penTapsTape(page, builder.points())) return;
+
     // Scribble to erase: a scribble over writing erases it and is not kept.
     if (!snap && this.scribbleErase(box, page, builder.points())) {
       this.recordDiagnostic(
         builder.points(),
         "scribble-erase",
+        final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
+        heldLongEnough,
+      );
+      return;
+    }
+    // A scribble over nothing, inside an outline, fills it instead.
+    if (!snap && this.scribbleFill(box, builder.points())) {
+      this.recordDiagnostic(
+        builder.points(),
+        "scribble-fill",
         final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
         heldLongEnough,
       );
@@ -9223,6 +9565,20 @@ export class InkSurface {
         penDownAt: this.penDownAt,
       };
     }
+  }
+
+  /**
+   * Whether a stroke of `pts` (page px) was a tap on a cover tape, which it
+   * then toggled: every point within a tap's slop of the first, on a tape.
+   */
+  private penTapsTape(page: Page, pts: readonly number[]): boolean {
+    if (pts.length < 3 || !page.strokes.some(isTape)) return false;
+    const slop = TAP_SLOP_PX / this.gestureScale;
+    for (let i = 3; i + 1 < pts.length; i += 3) {
+      if (Math.hypot(pts[i] - pts[0], pts[i + 1] - pts[1]) > slop) return false;
+    }
+    const at = { x: pts[0], y: pts[1] };
+    return this.toggleTapeAt(page, at, PEN_TAP_TOLERANCE_PX / this.gestureScale);
   }
 
   /**
@@ -10015,8 +10371,9 @@ export class InkSurface {
       // pile up cut upon cut.
       const pieces = eraseRectsFromStroke(original, regions, nextId);
       if (pieces === null) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         changed = this.markWhole(page, id) || changed;
         continue;
       }
@@ -10088,8 +10445,9 @@ export class InkSurface {
       if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
       // Ink a sticky note hides, or a note's ink off its note, is not touched.
       if (!shownAt(page, original, sample.x, sample.y, notes)) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
           strokeHitByPoint(piece, sample.x, sample.y, radius + piece.size / 2),
         );
@@ -10238,6 +10596,38 @@ export class InkSurface {
     if (this.debug) this.hud.mark("scribble");
     this.inkChanged([page.id]);
     return true;
+  }
+
+  /**
+   * Scribble to fill, with a switch of its own beside Scribble to erase: a
+   * scribble that erased nothing, drawn inside a closed outline, fills that
+   * region with the pen's colour and is not kept. Only when the region holds
+   * the scribble (nearly all of its points) and the scribble covers a fair
+   * share of it; anything else stays ink, as before.
+   */
+  private scribbleFill(box: PageBox, pts: number[]): boolean {
+    const gestures = penGesturesOf(this.toolState.penGestures);
+    if (!gestures.scribbleFill || this.toolState.tool !== "pen" || this.practice) return false;
+    const scribble = detectScribble(pts, { minSize: this.atFitZoom(SCRIBBLE_MIN_PX) });
+    if (!scribble) return false;
+    const b = scribble.bounds;
+    const accept = (outline: number[], area: number): boolean => {
+      let inside = 0;
+      let count = 0;
+      for (let i = 0; i + 1 < pts.length; i += POINT_STRIDE) {
+        count++;
+        if (insidePolygon(outline, pts[i], pts[i + 1])) inside++;
+      }
+      const covered = (b.maxX - b.minX) * (b.maxY - b.minY);
+      return inside >= SCRIBBLE_FILL_INSIDE * count && covered >= SCRIBBLE_FILL_SHARE * area;
+    };
+    // From its middle, or, if writing lies there, from where the pen started.
+    const starts = [
+      { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 },
+      { x: pts[0], y: pts[1] },
+    ];
+    const { color } = this.currentStyle();
+    return starts.some(({ x, y }) => this.fillAt(box, x, y, color, true, accept));
   }
 
   /**
@@ -10580,6 +10970,7 @@ export class InkSurface {
       pageId: page.id,
       at: { x: p.x, y: p.y },
       locked: top?.locked === true ? top : null,
+      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
       provisional,
     };
     this.syncActionBar();
@@ -11005,6 +11396,85 @@ export class InkSurface {
       );
     });
     return { strokes: inked, images: [], textBoxes: [], tables: [table] };
+  }
+
+  // --- The format painter --------------------------------------------------------
+
+  /**
+   * Copy the look of `strokes` (the one most of them share,
+   * `dominantInkStyle`) and arm the format painter: the selection goes, and
+   * each Pencil or mouse sweep over ink from now on lays that look on what
+   * it touches, one undo step a sweep, until another tool is picked.
+   */
+  private copyStyle(strokes: readonly Stroke[]): void {
+    const style = dominantInkStyle(strokes);
+    if (!style) return;
+    this.clearSelection();
+    this.formatPainter ??= new FormatPainter({
+      input: this.scrollEl,
+      layer: this.surfaceEl,
+      paintAlong: (x0, y0, x1, y1) => this.paintAlong(x0, y0, x1, y1),
+      finish: () => this.finishPaint(),
+    });
+    this.formatPainter.arm(style);
+  }
+
+  /**
+   * Lay the copied look on every stroke the sweep from one client point to
+   * the next passes over, on the page under its end: painted at once, its
+   * tiles repaired on the next frame. Only owners are painted (the stroke
+   * index leaves mirrors out), and only ink that shows there: a sticky
+   * note hides what is under it.
+   */
+  private paintAlong(x0: number, y0: number, x1: number, y1: number): void {
+    const style = this.formatPainter?.style;
+    if (!style || this.callbacks.isLocked?.()) return;
+    const end = this.toLayout(x1, y1);
+    const box = boxAtPoint(this.pageLayout, end.x, end.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) return;
+    const from = this.toPage(box, this.toLayout(x0, y0));
+    const to = this.toPage(box, end);
+    const reach = PAINT_REACH_PX / this.unitScale;
+    const sweep = (this.paintSweep ??= new PaintStyle(style));
+    const notes = noteIdsOf(page.images);
+    const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / reach));
+    let painted = false;
+    for (let i = 0; i <= steps; i++) {
+      const x = from.x + ((to.x - from.x) * i) / steps;
+      const y = from.y + ((to.y - from.y) * i) / steps;
+      for (const id of this.strokeIndex.near(page.id, x, y, reach + MAX_STROKE_HALF_WIDTH)) {
+        const stroke = this.strokeIndex.get(id);
+        if (!stroke || !shownAt(page, stroke, x, y, notes)) continue;
+        const hit =
+          strokeHitByPoint(stroke, x, y, stroke.size / 2 + reach) || strokeFillHit(stroke, x, y);
+        if (!hit) continue;
+        const before = elementBounds("strokes", stroke);
+        if (!sweep.paint(this.doc, page.id, stroke)) continue;
+        const after = elementBounds("strokes", stroke);
+        const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+        // A colour or width is not part of a stroke's cached outline: re-rasterise.
+        if (dirty) this.renderer?.invalidateRegion(box.index, dirty);
+        painted = true;
+      }
+    }
+    if (painted) this.requestFrame();
+  }
+
+  /**
+   * The sweep has lifted: what it painted becomes one undo step. The live
+   * paint is taken back and pushed as the command, which paints it again.
+   */
+  private finishPaint(): void {
+    const sweep = this.paintSweep;
+    this.paintSweep = null;
+    if (!sweep?.changed) return;
+    sweep.invert(this.doc);
+    this.history.push(this.doc, sweep);
+    const pages = sweep.pageIds;
+    // A width changes where a stroke reaches: the index learns it.
+    this.strokeIndex.refreshPages(this.doc.pages, pages);
+    this.inkChanged(pages);
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -11692,6 +12162,16 @@ export class InkSurface {
         },
       });
     }
+    // Its ink's look, to lay on other ink with the pen (`copyStyle`).
+    if (menu.colour && sel.strokes.length > 0) {
+      actions.push({
+        id: "copy-style",
+        icon: "paintbrush",
+        label: "Copy style",
+        group: "style",
+        run: () => this.copyStyle(sel.strokes),
+      });
+    }
     if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
@@ -11725,6 +12205,9 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
+    // The word check's card, for any word, underlined or not.
+    const correct = this.correctWordAction(index, sel.strokes);
+    if (menu.handwriting && correct) actions.push(correct);
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -11820,6 +12303,35 @@ export class InkSurface {
       });
     }
     return actions;
+  }
+
+  /**
+   * "Correct": the card an underlined word opens, for the word this ink is
+   * in (the lasso's "…" menu, and the press menu over ink). Null when there
+   * is no ink or handwriting cannot be read here.
+   */
+  private correctWordAction(
+    index: number,
+    strokes: readonly Stroke[],
+    extra: Partial<SelectionAction> = {},
+  ): SelectionAction | null {
+    const correct = this.callbacks.onCorrectWord;
+    // Shapes and highlighter are never read (`inkForReading`).
+    const writing = strokes.filter((stroke) => !stroke.shape && stroke.tool !== "highlighter");
+    if (!correct || index < 0 || writing.length === 0) return null;
+    if (this.callbacks.canCorrectWords?.() === false) return null;
+    const ids = writing.map((stroke) => stroke.id);
+    return {
+      id: "correct-word",
+      icon: "spell-check",
+      label: "Correct",
+      group: "edit",
+      ...extra,
+      run: () => {
+        this.clearSelection();
+        correct(index, ids);
+      },
+    };
   }
 
   /**
@@ -11993,6 +12505,12 @@ export class InkSurface {
     ];
     // A practice file takes the pen alone (`practice.ts`).
     if (this.practice) return actions;
+    // Held on handwriting: its word's card comes first.
+    const index = page ? this.doc.pages.indexOf(page) : -1;
+    const correct = press.ink
+      ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
+      : null;
+    if (correct) actions.unshift(correct);
     actions.push(
       {
         id: "text-here",
@@ -12867,12 +13385,25 @@ export class InkSurface {
   }
 
   /**
-   * Mark the flagged word whose menu is open (its underline turns red), or
-   * none with `null`.
+   * Mark the word whose card is open (its underline turns red, and an
+   * underline is drawn for a word that had none), or none with `null`.
    */
   setActiveWordFlag(pageId: string | null, strokeIds: readonly string[] = []): void {
-    this.activeWordFlag = pageId === null ? null : { pageId, key: strokeKey(strokeIds) };
+    this.activeWordFlag =
+      pageId === null ? null : { pageId, key: strokeKey(strokeIds), strokes: [...strokeIds] };
     this.syncSectionRibbons();
+  }
+
+  /**
+   * Where a word's card goes: the bottom-left of these strokes' ink on page
+   * `index`, in client px; null when none of it is on the page.
+   */
+  wordInk(index: number, strokeIds: readonly string[]): { x: number; y: number } | null {
+    const page = this.pageAt(index);
+    const box = page ? this.boxForPage(page.id) : null;
+    const bounds = page && box ? this.linkBounds(page, strokeIds) : null;
+    if (!box || !bounds) return null;
+    return this.toClient({ x: box.x + bounds.minX, y: box.y + bounds.maxY });
   }
 
   /**
@@ -12884,8 +13415,13 @@ export class InkSurface {
     const scale = this.unitScale;
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
-      const flags = page ? this.wordFlags.get(page.id) : undefined;
-      if (!page || !flags) continue;
+      if (!page) continue;
+      const flags = [...(this.wordFlags.get(page.id) ?? [])];
+      // A word whose card was opened by hand ("Correct") is marked while it is open.
+      const asked = this.activeWordFlag;
+      if (asked?.pageId === page.id && !flags.some((strokes) => strokeKey(strokes) === asked.key)) {
+        flags.push(asked.strokes);
+      }
       for (const strokes of flags) {
         const bounds = this.linkBounds(page, strokes);
         if (!bounds) continue;
@@ -14974,6 +15510,7 @@ export class InkSurface {
     // A press menu open elsewhere closes first; opening it again clears it anyway.
     if (this.pressMenu) this.clearSelection();
     return (
+      this.toggleTapeAt(page, p, tolerance) ||
       this.openLinkAt(page, p, tolerance) ||
       this.followPdfLink(box.index, p, tolerance, false) ||
       this.offerStrokeTap(box, p, MOUSE_TAP_TOLERANCE_PX)
@@ -15023,6 +15560,14 @@ export class InkSurface {
     const tapped = box ? this.pageAt(box.index) : null;
     if (box && tapped) {
       const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+      // A cover tape lies over everything: a tap shows it through, or covers
+      // it again. With the lasso a tap selects it instead, as it does ink.
+      if (
+        this.toolState.tool !== "select" &&
+        this.toggleTapeAt(tapped, this.toPage(box, at), tolerance)
+      ) {
+        return;
+      }
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
       if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
     }
