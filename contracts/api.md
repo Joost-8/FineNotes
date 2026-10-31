@@ -1246,6 +1246,32 @@ tilt?: number[];
   FineNotes holds it read-only instead of saving the shading back at the
   nib's width (§ "Payload label: refusing instead of dropping").
 
+## Highlighter chisel tip (2026-10-30)
+
+`Stroke` gains one optional field:
+
+```ts
+/** Written with a highlighter's flat chisel tip; absent is round. */
+tip?: "chisel";
+```
+
+- **Stored** as `"tip": "chisel"` after `nib`. Any other value reads as
+  absent (round); nothing else about the stroke changes, so a reader that
+  does not know the field draws the highlight round and loses nothing else.
+- **Drawn:** the centreline (traced as any highlight) is swept by an
+  upright rectangle `size` tall and `CHISEL_ASPECT` (0.5) of that wide, kept
+  to the page's axes (`ink/chisel.ts` `chiselPolygons`: one convex hull per
+  piece, filled). A level highlight is a band of one height with square
+  ends. The tip is part of the renderer's path-cache key.
+- **Kept** by eraser pieces (`pieceOf`, the erase preview), copy, move,
+  turn, resize and sticky notes. Not on a shape: a snapped shape is clean
+  geometry and drawn round. Set only on highlighter strokes, from the
+  `highlighterTip` setting (the pen menu's Tip row) at the time of writing.
+- **No label:** a notebook with chisel highlights keeps the plain `v2:`
+  label. An older FineNotes opens it and draws those highlights round; a
+  save there drops the field. That is a change of look, not of content, so
+  it is not worth holding the notebook read-only for.
+
 ## Cover tape (2026-10-30)
 
 `Stroke.tool` gains a third value, `"tape"` (`src/model/cover-tape.ts`): an

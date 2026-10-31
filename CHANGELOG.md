@@ -10,6 +10,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **A chisel tip for the highlighter.** Tap the highlighter in hand for its
+  menu and pick the flat tip: a level highlight is then a band of one even
+  height with square ends, as a real chisel marker draws it. Each highlight
+  keeps the tip it was drawn with, on every device and in exported PDFs.
 - **Fill.** A Fill tool (paint bucket) fills the area inside an outline you
   drew, behind the ink: tap inside a circle, a box or any closed shape. It
   has its own colour, as the Shape tool does, so picking one leaves the

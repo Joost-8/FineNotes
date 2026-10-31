@@ -22,6 +22,7 @@ import {
   greyWhileErasingOf,
   openSectionsOf,
   pagesAreDark,
+  highlighterTipOf,
   penPreferencesOf,
   paperWidthFrom,
   parseColorList,
@@ -605,6 +606,7 @@ describe("choices that set two switches", () => {
       snapCurve: 50,
       tuckOnWrite: "off",
       returnToPen: "never",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
@@ -612,6 +614,7 @@ describe("choices that set two switches", () => {
       snapCurve: 50,
       tuckOnWrite: "until-lift",
       returnToPen: "never",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { snapMode: "disabled", snapCurve: 30, returnToPen: "both" });
     expect([settings.snapMode, settings.drawAndHold]).toEqual(["disabled", false]);
@@ -624,9 +627,23 @@ describe("choices that set two switches", () => {
       snapCurve: 30,
       tuckOnWrite: "until-lift",
       returnToPen: "both",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { tuckOnWrite: "until-tap" });
     expect(settings.tuckPenOptionsOnWrite).toBe("until-tap");
+  });
+
+  it("keeps the highlighter's tip, reading anything but the chisel as round", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(settings.highlighterTip).toBeUndefined();
+    expect(penPreferencesOf(settings).highlighterTip).toBe("round");
+    storePenPreferences(settings, { highlighterTip: "chisel" });
+    expect(settings.highlighterTip).toBe("chisel");
+    expect(penPreferencesOf(settings).highlighterTip).toBe("chisel");
+    storePenPreferences(settings, { highlighterTip: "felt" as never });
+    expect(penPreferencesOf(settings).highlighterTip).toBe("round");
+    expect(highlighterTipOf(undefined)).toBe("round");
+    expect(highlighterTipOf(7)).toBe("round");
   });
 
   it("reads a pen setting a file holds in another shape as its default", () => {

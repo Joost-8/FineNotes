@@ -61,6 +61,7 @@ import {
   type ImageElement,
   type InkDocument,
   type InkTask,
+  type InkTip,
   type Page,
   type PageGeometry,
   type ArrowHeads,
@@ -153,6 +154,8 @@ export interface StrokeStyle {
   decor?: ShapeDecor | null;
   /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
   nib?: number;
+  /** A highlighter's flat chisel tip (`Stroke.tip`); absent for a round one. */
+  tip?: InkTip;
   /** A stored stroke's Pencil altitude per point (`Stroke.tilt`); absent: upright. */
   tilt?: readonly number[];
 }
@@ -343,6 +346,7 @@ export function paperColorOf(page: Page, theme: PaperTheme): string {
  * Paint a stroke's runs (`inkRuns`) in the context's current `fillStyle`:
  * each one a line of its own width, round at the caps and the joins, drawn
  * by the canvas's stroke so a line that crosses itself is still one shape.
+ * A highlighter's chisel run is filled instead (`ink/chisel.ts`).
  * `paths` are the runs' cached `Path2D`s, when there are any.
  */
 export function paintInk(
@@ -354,8 +358,14 @@ export function paintInk(
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   runs.forEach((run, i) => {
+    const path = paths?.[i] ?? pathOf(run);
+    // A chisel tip's run is the outline it sweeps.
+    if (run.chisel) {
+      ctx.fill(path);
+      return;
+    }
     ctx.lineWidth = run.width;
-    ctx.stroke(paths?.[i] ?? pathOf(run));
+    ctx.stroke(path);
   });
 }
 
@@ -498,13 +508,14 @@ const WINDOWED_PREVIEW_MAX_SIDE = 2048;
 interface PathEntry {
   /**
    * What it was traced from besides the points array: the pressure setting,
-   * the nib, the point count and both end points. Compared field by field:
+   * the nib, the tip, the point count and both end points. Compared field by field:
    * this runs for every stroke of a page on every tile painted, and building
    * a string key each time showed in the eraser's profile.
    */
   pressure: boolean;
   size: number;
   nib: number | undefined;
+  tip: InkTip | undefined;
   count: number;
   ends: readonly [number, number, number, number];
   /** The points array traced: a command that replaces it is always a change. */
@@ -569,8 +580,9 @@ export function penFor(style: {
   tool: Tool;
   usePressure: boolean;
   nib?: number;
+  tip?: InkTip;
 }): PenOptions {
-  return penOptions(style.size, pressureFor(style.tool, style.usePressure), style.nib);
+  return penOptions(style.size, pressureFor(style.tool, style.usePressure), style.nib, style.tip);
 }
 
 /** Give the backing store back now; iOS holds canvas memory until then. */
@@ -2454,6 +2466,7 @@ export class Renderer {
       cached.pressure === pressure &&
       Object.is(cached.size, stroke.size) &&
       Object.is(cached.nib, stroke.nib) &&
+      cached.tip === stroke.tip &&
       cached.count === n &&
       Object.is(cached.ends[0], pts[0]) &&
       Object.is(cached.ends[1], pts[1]) &&
@@ -2466,7 +2479,7 @@ export class Renderer {
     let bounds: Bounds | null = null;
     if (n >= 3) {
       const shape = stroke.shape !== undefined;
-      runs = inkRuns(pts, penOptions(stroke.size, pressure, stroke.nib), shape, tilt);
+      runs = inkRuns(pts, penOptions(stroke.size, pressure, stroke.nib, stroke.tip), shape, tilt);
       const b = strokeBounds(stroke);
       if (b) {
         // Arrowheads reach sideways past the line's ends; a tilted brush, past its nib.
@@ -2478,6 +2491,7 @@ export class Renderer {
       pressure,
       size: stroke.size,
       nib: stroke.nib,
+      tip: stroke.tip,
       count: n,
       ends: [pts[0], pts[1], pts[n - 3], pts[n - 2]],
       pts,
@@ -2928,6 +2942,7 @@ export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
     shape: shape !== undefined,
     decor: decorOf(stroke),
     ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
+    ...(stroke.tip !== undefined ? { tip: stroke.tip } : {}),
     ...(stroke.tilt !== undefined ? { tilt: stroke.tilt } : {}),
   };
 }
