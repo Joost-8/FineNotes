@@ -235,15 +235,21 @@ describe("the laser pointer's pill", () => {
   function laserPill(laserColor = "#ff3b30") {
     const optionsEl = new Element("div");
     const changes: string[] = [];
+    const opened: Array<{ kind: string; current: string }> = [];
     const bar = Object.assign(Object.create(Toolbar.prototype) as object, {
       optionsEl,
       state: { tool: "laser", color: "#1a1a1a", size: 3, recentColors: [] },
       callbacks: { onLaserColorChange: (color: string) => changes.push(color) },
       options: { laserColor: () => laserColor },
-      palette: ["#1a1a1a", "#2a8ce0", "#2fb344", "#e8443a"],
       pillDock: { dock: "bottom" },
       widthButtons: new Map(),
       colorSwatches: new Map(),
+      toggleColorPopover: (
+        kind: string,
+        _anchor: unknown,
+        current: string,
+        _pick: (color: string) => void,
+      ) => opened.push({ kind, current }),
       buildOptions: () => undefined,
       syncActive: () => undefined,
     }) as unknown as { buildLaserOptions(): void };
@@ -256,41 +262,43 @@ describe("the laser pointer's pill", () => {
     } finally {
       delete globals.activeDocument;
     }
-    return { optionsEl, changes };
+    return { optionsEl, changes, opened };
   }
 
   function all(el: FakeEl): FakeEl[] {
     return [el, ...el.children.flatMap(all)];
   }
 
-  it("keeps the popup's icon and line, then the colours, and no width at all", () => {
+  it("keeps the popup's icon and line, then one colour button with a caret", () => {
     const { optionsEl } = laserPill();
     const nodes = all(optionsEl);
     // The popup as it was: its icon, and its line of words.
     expect(nodes.some((node) => node.text.includes("Laser pointer (L)"))).toBe(true);
-    const icon = nodes.find((node) => node.classes.has("goodobsidian-tool-note-icon"));
-    expect(icon).toBeDefined();
-    // Light grey, as the other tools' marks: the colour is in the circles, not the icon.
-    expect(icon?.style.color).toBeUndefined();
-    // The picker's circles, and "Custom colour…" for one of one's own.
-    expect(nodes.some((node) => node.classes.has("goodobsidian-laser-colors"))).toBe(true);
-    const circles = nodes.filter((node) => node.classes.has("goodobsidian-color-swatch"));
-    expect(circles.length).toBeGreaterThanOrEqual(10);
-    expect(circles.some((node) => node.attrs["aria-label"] === "#ff3b30")).toBe(true);
-    expect(nodes.some((node) => node.classes.has("goodobsidian-color-custom-toggle"))).toBe(true);
-    // Nothing about strokes or widths: a laser has neither.
+    expect(nodes.some((node) => node.classes.has("goodobsidian-tool-note-icon"))).toBe(true);
+    // The Shape tool's colour well: one disc of the live colour, and its caret.
+    const button = nodes.find((node) => node.classes.has("goodobsidian-shape-color"));
+    expect(button?.tag).toBe("button");
+    expect(button?.attrs["aria-label"]).toBe("Laser colour #ff3b30");
+    const disc = nodes.find((node) => node.classes.has("goodobsidian-text-disc"));
+    expect(disc?.style.background).toBe("#ff3b30");
+    expect(nodes.some((node) => node.classes.has("goodobsidian-text-caret"))).toBe(true);
+    // No palette in the pill itself, and nothing about strokes or widths.
+    expect(nodes.some((node) => node.classes.has("goodobsidian-color-swatch"))).toBe(false);
+    expect(nodes.some((node) => node.classes.has("goodobsidian-color-grid"))).toBe(false);
     expect(nodes.some((node) => node.classes.has("goodobsidian-width"))).toBe(false);
     expect(nodes.some((node) => node.classes.has("goodobsidian-sizes"))).toBe(false);
   });
 
-  it("takes a preset colour, and never paints its own icon", () => {
-    const { optionsEl, changes } = laserPill();
-    const circles = all(optionsEl).filter((node) => node.classes.has("goodobsidian-color-swatch"));
-    const blue = circles.find((node) => node.attrs["aria-label"] === "#228be6");
-    expect(blue).toBeDefined();
-    blue?.dispatch("click");
-    expect(changes).toEqual(["#228be6"]);
-    // The icon keeps the UI's grey: it is drawn by the theme, not by the colour.
+  it("opens the Shape tool's own colour picker on a tap", () => {
+    const { optionsEl, opened } = laserPill("#2a8ce0");
+    const button = all(optionsEl).find((node) => node.classes.has("goodobsidian-shape-color"));
+    expect(button).toBeDefined();
+    button?.dispatch("click");
+    expect(opened).toEqual([{ kind: "laser-color", current: "#2a8ce0" }]);
+  });
+
+  it("never paints its own icon", () => {
+    const { optionsEl } = laserPill();
     for (const icon of all(optionsEl).filter((node) =>
       node.classes.has("goodobsidian-tool-note-icon"),
     )) {

@@ -9498,58 +9498,27 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   max-width: calc(100vw - 24px);
 }
 
-/* The laser's own pill holds the picker itself (toolbar.ts,
-   buildLaserOptions): the preset circles, and the custom colour behind the
-   round "+" beside them, in the few pixels a pill has. */
-.goodobsidian-laser-colors {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* The circles in a row or two, as wide as the pill has room for. */
-.goodobsidian-laser-colors .goodobsidian-color-grid {
-  display: flex;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
+/* The laser's colour: the Shape tool's own well and disc with a caret
+   (toolbar.ts, buildLaserOptions), opening the same colour picker. */
+.goodobsidian-options .goodobsidian-laser-color.clickable-icon {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: calc(var(--gob-touch-compact) * 4);
-}
-
-.goodobsidian-laser-colors .goodobsidian-color-swatch {
-  flex: none;
-}
-
-.goodobsidian-laser-colors .goodobsidian-color-picker-foot {
-  gap: 4px;
-}
-
-.goodobsidian-laser-colors .goodobsidian-color-custom-toggle {
-  justify-content: center;
-  width: var(--gob-touch-compact);
-  min-width: var(--gob-touch-compact);
+  gap: 3px;
   height: var(--gob-touch-compact);
-  padding: 0;
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: 50%;
-  font-size: 0;
-  color: var(--text-muted);
+  padding: 0 6px;
+  border-radius: var(--gob-well-radius);
+  background: var(--gob-well);
+  color: var(--text-normal);
 }
 
-.goodobsidian-laser-colors .goodobsidian-color-custom-toggle::before {
-  content: "+";
-  font-size: 18px;
-  line-height: 1;
+.goodobsidian-options .goodobsidian-laser-color .goodobsidian-text-caret {
+  display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
 }
 
-/* The custom colour opened: it needs the room it takes. */
-.goodobsidian-laser-colors:has(.goodobsidian-color-mixer:not(.is-hidden)) {
-  width: 288px;
-}
-
-.goodobsidian-laser-colors .goodobsidian-color-mixer {
-  width: 268px;
+.goodobsidian-options .goodobsidian-laser-color .goodobsidian-text-caret svg {
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 .goodobsidian-color-picker .is-hidden,

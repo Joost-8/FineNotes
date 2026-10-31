@@ -2553,31 +2553,24 @@ export class Toolbar {
 
   /**
    * The laser's pill: what it is and that nothing it draws stays, then the
-   * colour it points with — the picker's own circles and custom colour, in
-   * the pill. A laser has no stroke and no width, so its colour is all it sets.
+   * colour it points with. The colour is one button — a disc of it and a
+   * caret — opening the same picker the Shape tool's colour opens; a laser
+   * has no stroke and no width, so its colour is all it sets.
    */
   private buildLaserOptions(): void {
     this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved");
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    const body = this.optionsEl.createDiv({ cls: "goodobsidian-laser-colors" });
-    renderColorPicker(body, {
-      current: this.laserColor(),
-      extra: this.pickerExtras(this.laserColor()),
-      recent: this.state.recentColors ?? [],
-      notebook: this.callbacks.notebookColors?.() ?? [],
-      onPick: (color) => {
-        if (color) this.setLaserColor(color);
-      },
-      onCustom: (color) => {
-        this.rememberColor(color);
-        this.setLaserColor(color);
-      },
-      onEyedropper: this.eyedropper((color) => {
-        this.rememberColor(color);
-        this.setLaserColor(color);
-      }),
+    const color = this.laserColor();
+    const button = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-color clickable-icon goodobsidian-laser-color",
     });
-    if (isUpright(this.pillDock)) body.addClass("is-upright");
+    button.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    caretIn(button);
+    button.setAttribute("aria-label", `Laser colour ${color}`);
+    button.setAttribute("title", "Laser colour");
+    button.addEventListener("click", () =>
+      this.toggleColorPopover("laser-color", button, color, (picked) => this.setLaserColor(picked)),
+    );
   }
 
   /** The laser's colour, as the settings have it now (never the icon's: the laser's icon stays grey). */
