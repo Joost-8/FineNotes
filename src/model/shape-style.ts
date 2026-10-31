@@ -102,7 +102,9 @@ const FILL = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /** Kinds that close on themselves, so they have an inside to fill. */
 export function canFill(kind: ShapeKind | undefined): boolean {
-  return kind !== undefined && kind !== "line" && kind !== "arrow" && kind !== "arc";
+  return (
+    kind !== undefined && kind !== "line" && kind !== "arrow" && kind !== "arc" && kind !== "angle"
+  );
 }
 
 /** Kinds made of straight edges whose corners can be rounded. */

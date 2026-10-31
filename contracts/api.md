@@ -311,7 +311,10 @@ export type ShapeKind =
   // added 2026-10-30
   | "heart"
   | "arc" // open: part of a circle
-  | "sector"; // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
+  | "sector" // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
+  // added 2026-10-31
+  | "segment" // closed: an arc and the straight chord that closes it (a dome)
+  | "angle"; // open: two straight legs meeting square at a corner
 
 export interface ShapeResult {
   kind: ShapeKind;
@@ -381,6 +384,8 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `heart`                          | 73 points, closed: the classic heart curve in 72 steps           |
 | `arc`                            | open: ≥ 3 points, one at least every 5.625° of turn, ends exact  |
 | `sector`                         | closed: the centre, the arc as `arc` lays it out, the centre     |
+| `segment`                        | closed: the arc as `arc` lays it out, then its first point again |
+| `angle`                          | 3 points: `[end, corner, end]`, the legs exactly square          |
 
 A recognised `heart` and `sector` begin at the vertex nearest pen-down (a
 sector's outline then need not start at its centre); the Shape tool's
@@ -389,6 +394,22 @@ turn is within 15° of a quarter-turn multiple is made exactly that, its
 ends put on an axis when within 8° of one (a slice's angle also snaps to a
 multiple of 15° within 4°). An `arc` takes no fill. Older versions read
 these three kinds as freehand ink.
+
+A `segment` (2026-10-31) is a dome: an arc closed by a straight chord that
+need not pass through its centre. On a lift it is taken only when it turns
+at most 160° and its box is at least 100 page px across, so a written D (a
+half turn on its stem) stays ink; held, any turn from 40° to 320°, and a
+semicircle is a `sector`. A convincing segment is never also a triangle.
+Its chord is made level or upright when within 8°, its turn snaps as an
+arc's does, and it begins at the chord's end nearest pen-down.
+
+An `angle` (2026-10-31) is a right angle: two straight legs meeting within
+12° of square, made exactly square by turning the shorter leg about the
+corner. On a lift one leg must lie within 12° of level or upright and the
+box be at least 70 page px across, so a checkmark, a V and a written L stay
+ink; held, any orientation, from 50 page px. A leg within 8° of level or
+upright is put on it. An `angle` takes no fill. Older versions read both
+kinds as freehand ink.
 
 ### A shape's style (v9)
 

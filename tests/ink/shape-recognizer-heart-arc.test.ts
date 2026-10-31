@@ -663,3 +663,106 @@ describe("emitted sector geometry", () => {
     expect(pts[pts.length - 2].y).toBeCloseTo(100, 9);
   });
 });
+
+// --- Joost's hearts, domes and right angle (2026-10-31) ----------------------
+
+describe("real hearts, domes and a right angle from the iPad", () => {
+  const strokes = (
+    JSON.parse(readFileSync("tests/ink/fixtures/real-pencil-shapes-2026-10-31.json", "utf8")) as {
+      strokes: Array<{ id: number; expect: string; desc: string; pts: number[] }>;
+    }
+  ).strokes;
+
+  /** A closed stroke's samples begun a share `start` of the way round. */
+  const begun = (pts: number[], start: number): number[] => {
+    const k = 3 * Math.floor((pts.length / 3) * start);
+    return [...pts.slice(k), ...pts.slice(0, k)];
+  };
+
+  it.each(strokes.map((s) => [`${String(s.id)}, ${s.desc}`, s] as const))(
+    "snaps %s on a lift",
+    (_name, s) => {
+      // A dome from any start too. A heart's raw ink cannot be begun elsewhere:
+      // the pen's overlap at its cusp would land mid-loop, which no hand draws.
+      const starts = s.expect === "segment" ? [0, 0.25, 0.5, 0.75] : [0];
+      for (const start of starts) {
+        expect(recognizeShape(begun(s.pts, start))?.kind, `start ${start}`).toBe(s.expect);
+      }
+    },
+  );
+
+  it("squares the right angle and lays its legs level and upright", () => {
+    const s = strokes.find((x) => x.expect === "angle");
+    const out = xy(recognizeShape(s?.pts ?? [])?.pts ?? []);
+    expect(out).toHaveLength(3);
+    const [a, corner, b] = out;
+    const dot = (a.x - corner.x) * (b.x - corner.x) + (a.y - corner.y) * (b.y - corner.y);
+    expect(Math.abs(dot)).toBeLessThan(1e-6);
+    expect(Math.min(Math.abs(a.x - corner.x), Math.abs(a.y - corner.y))).toBeLessThan(1e-6);
+  });
+
+  it("reads its own segments and right angles back as the same", () => {
+    for (const s of strokes.filter((x) => x.expect !== "heart")) {
+      const once = recognizeShape(s.pts);
+      const twice = recognizeShape(once?.pts ?? []);
+      expect(twice?.kind, s.desc).toBe(s.expect);
+      const p = xy(once?.pts ?? []);
+      const q = xy(twice?.pts ?? []);
+      const extent = Math.max(...p.map((v) => Math.hypot(v.x - p[0].x, v.y - p[0].y)));
+      // Same outline within 1 % of its size (the dome's samples may start elsewhere).
+      for (const v of q) {
+        const nearest = Math.min(...p.map((w) => Math.hypot(v.x - w.x, v.y - w.y)));
+        expect(nearest, s.desc).toBeLessThan(0.05 * extent);
+      }
+    }
+  });
+});
+
+describe("right angles", () => {
+  it("takes a big L, squared", () => {
+    const out = recognizeShape(ink(polyline(100, 100, 104, 300, 300, 296)));
+    expect(out?.kind).toBe("angle");
+  });
+
+  it("takes a tilted right angle only on a hold", () => {
+    const t = (30 * Math.PI) / 180;
+    const turned = (x: number, y: number): [number, number] => [
+      300 + x * Math.cos(t) - y * Math.sin(t),
+      300 + x * Math.sin(t) + y * Math.cos(t),
+    ];
+    const pts = ink(polyline(...turned(0, -150), ...turned(0, 0), ...turned(150, 0)));
+    expect(recognizeShape(pts)).toBeNull();
+    expect(recognizeShape(pts, { held: true })?.kind).toBe("angle");
+  });
+
+  it("leaves a checkmark, a V and a written L as ink, held or not", () => {
+    for (const pts of [
+      ink(polyline(100, 220, 160, 300, 320, 100)),
+      ink(polyline(100, 100, 200, 300, 300, 100)),
+      ink(polyline(100, 100, 100, 135, 122, 135)),
+    ]) {
+      expect(kinds(pts)).not.toContain("angle");
+      expect(kinds(pts, true)).not.toContain("angle");
+    }
+  });
+});
+
+describe("domes", () => {
+  it("leave a half circle to the hold: a D's stem and bowl stay ink on a lift", () => {
+    const d = ink([...segment(200, 120, 200, 420), ...arc(200, 270, 150, 150, 90, -180, 60)]);
+    expect(recognizeShape(d)).toBeNull();
+    expect(recognizeShape(d, { held: true })?.kind).toBe("sector");
+  });
+
+  it("are never read from handwriting", () => {
+    const strokes = (
+      JSON.parse(readFileSync("tests/ink/fixtures/real-handwriting-squiggles.json", "utf8")) as {
+        strokes: Array<{ pts: number[] }>;
+      }
+    ).strokes;
+    for (const s of strokes) {
+      expect(kinds(s.pts)).not.toContain("segment");
+      expect(kinds(s.pts)).not.toContain("angle");
+    }
+  });
+});

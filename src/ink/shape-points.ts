@@ -45,6 +45,7 @@ const CURVED: ReadonlySet<ShapeKind> = new Set<ShapeKind>([
   "heart",
   "arc",
   "sector",
+  "segment",
 ]);
 
 /** The handles of one shape. */

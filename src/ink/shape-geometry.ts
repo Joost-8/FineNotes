@@ -587,7 +587,7 @@ function roundRectPoints(x0: number, y0: number, x1: number, y1: number): Pt[] {
 
 /** Kinds whose geometry is a closed loop; the rest are open (line, arrow, arc). */
 export function isClosedKind(kind: ShapeKind): boolean {
-  return kind !== "line" && kind !== "arrow" && kind !== "arc";
+  return kind !== "line" && kind !== "arrow" && kind !== "arc" && kind !== "angle";
 }
 
 /**

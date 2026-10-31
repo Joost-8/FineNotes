@@ -97,7 +97,8 @@ function targetsOf(kind: ShapeKind, pts: readonly number[]): Float64Array {
     kind === "cloud" ||
     kind === "heart" ||
     kind === "arc" ||
-    kind === "sector";
+    kind === "sector" ||
+    kind === "segment";
   if (!curved && distinct <= MAX_CORNERS) {
     // Every vertex, then the middle of every side (a closed outline's last
     // side runs back to its first vertex).

@@ -2129,19 +2129,36 @@ const HEART_OTHER_DENT_MAX = 0.06;
 const HEART_TURN_WINDOW = 0.04;
 /** Heart: the tip turns at least this much there... */
 const HEART_MIN_TIP_DEG = 55;
-/** ...and the cusp at least this much (lobes that overlap far meet at ~55°). */
+/** ...and the cusp at least this much (lobes that overlap far meet at ~55°)... */
 const HEART_MIN_CUSP_DEG = 40;
+/**
+ * ...or this much when the dent is at least {@link HEART_DEEP_DENT} of the
+ * diagonal: a deep dent is a cusp however round its bottom. A real heart
+ * whose pen came down in the cusp and curled measured 27° there, with a
+ * dent of 0.19 (2026-10-31).
+ */
+const HEART_MIN_DEEP_CUSP_DEG = 20;
+const HEART_DEEP_DENT = 0.12;
 /**
  * Heart: anywhere else round the outline (more than two windows from the
  * cusp and the tip) the ink turns at most this much: the lobes are round,
- * where a dart's wings or a fish's fins are corners.
+ * where a dart's wings or a fish's fins are corners...
  */
 const HEART_MAX_LOBE_TURN_DEG = 75;
+/**
+ * ...or this much on a tall heart (height over width at least
+ * {@link HEART_TALL_ASPECT}): narrow lobes are tight curves. Joost's real
+ * hearts (2026-10-31, aspect 1.7-2.2) turned 75-90° there; a small rounded
+ * square with a curl inside, the nearest real stroke that is no heart, 94°
+ * at aspect 1.24.
+ */
+const HEART_MAX_TALL_LOBE_TURN_DEG = 92;
+const HEART_TALL_ASPECT = 1.5;
 /** Heart: the cusp lies within this share of the width of the middle. */
 const HEART_MAX_CUSP_OFFSET = 0.2;
 /** Heart: height over width, in the heart's own frame. */
 const HEART_MIN_ASPECT = 0.55;
-const HEART_MAX_ASPECT = 1.6;
+const HEART_MAX_ASPECT = 2.4;
 /**
  * Heart: RMS distance (ink to outline and back, the worse) over the
  * diagonal at zero confidence. Loose: hands draw many hearts (fat round
@@ -2214,6 +2231,8 @@ interface HeartFrame {
   cuspDeg: number;
   tipDeg: number;
   lobeDeg: number;
+  /** How deep the cusp's dent is, of the diagonal. */
+  dentDepth: number;
   /** Turn from upright (cusp up, tip down), radians. */
   phi: number;
 }
@@ -2269,6 +2288,7 @@ function heartFrame(
     cuspDeg: sharpnessAt(points, dent.at, window),
     tipDeg: sharpnessAt(points, tip, window),
     lobeDeg,
+    dentDepth: dent.depth,
     phi: Math.atan2(-ux, uy),
   };
 }
@@ -2281,8 +2301,9 @@ function isHeartShaped(
 ): HeartFrame | null {
   const frame = heartFrame(points, diag, runs);
   if (!frame) return null;
-  if (frame.tipDeg < HEART_MIN_TIP_DEG || frame.cuspDeg < HEART_MIN_CUSP_DEG) return null;
-  if (frame.lobeDeg > HEART_MAX_LOBE_TURN_DEG) return null;
+  const minCusp = frame.dentDepth >= HEART_DEEP_DENT ? HEART_MIN_DEEP_CUSP_DEG : HEART_MIN_CUSP_DEG;
+  if (frame.tipDeg < HEART_MIN_TIP_DEG || frame.cuspDeg < minCusp) return null;
+  if (frame.lobeDeg > HEART_MAX_TALL_LOBE_TURN_DEG) return null;
   return frame;
 }
 
@@ -2298,6 +2319,7 @@ function heartCandidate(
   if (!(box.w > 0 && box.h > 0)) return null;
   const aspect = box.h / box.w;
   if (aspect < HEART_MIN_ASPECT || aspect > HEART_MAX_ASPECT) return null;
+  if (aspect < HEART_TALL_ASPECT && frame.lobeDeg > HEART_MAX_LOBE_TURN_DEG) return null;
   // The cusp in the middle of the width: a heart is symmetric about its axis.
   const cusp = points[frame.cusp];
   const across = (cusp.x - box.cx) * Math.cos(frame.phi) + (cusp.y - box.cy) * Math.sin(frame.phi);
@@ -2788,6 +2810,302 @@ function sectorFromCorners(
   return { kind: "sector", pts: flatten(ordered, pressure), confidence };
 }
 
+// --- Segments and angles ----------------------------------------------------
+//
+// A segment is part of a disc cut off by a straight chord: a dome, or a
+// semicircle when the cut runs through the middle. Joost's real domes
+// (2026-10-31) stood a third as tall as wide, flatter than a semicircle, so
+// the sector fitter (whose straight side is the diameter) refused them, and
+// two of them were taken for triangles. An angle is two straight legs from
+// one corner, as a right angle is drawn in geometry.
+
+/** Segment: on a lift the stroke's box is at least this big, page px (a written "D" is smaller). */
+const SEGMENT_LIFT_MIN_DIAG = 100;
+/** Segment: the chord's ends lie within this share of the radius off the arc's circle. */
+const SEGMENT_END_TOL = 0.3;
+/** Segment: the arc turns at least this far about its centre, and at most this far... */
+const SEGMENT_MIN_SWEEP_DEG = 40;
+const SEGMENT_MAX_SWEEP_DEG = 320;
+/**
+ * ...and on a lift at most this far: a dome, flatter than a half. A "D" is
+ * a half turn closed by its stem, so a semicircle waits for a hold (where
+ * the sector fitter takes it). Joost's real domes turned 128-146°.
+ */
+const SEGMENT_LIFT_MAX_SWEEP_DEG = 160;
+/** Segment: of three corners, the weakest may be a kink in the arc if it turns less than this. */
+const SEGMENT_KINK_MAX_DEG = 90;
+/** Segment: a chord within this of level or upright is made exactly so. */
+const SEGMENT_AXIS_SNAP_DEG = 8;
+
+/**
+ * A segment: a closed loop of an arc and the straight chord that closes it
+ * (two corners). The chord need not pass through the centre; when it nearly
+ * does, the turn snaps to a half and the outline is a semicircle.
+ */
+function segmentCandidate(
+  points: readonly Pt[],
+  pressure: number,
+  diag: number,
+  curvatureThreshold: number,
+  arcs: boolean,
+): ShapeResult | null {
+  if (diag < (arcs ? ARC_MIN_DIAG : SEGMENT_LIFT_MIN_DIAG)) return null;
+  const loop = rotateToFarthest(densifyLoop(points, pathLength(points) / SECTOR_LOOP_SAMPLES));
+  const window = SECTOR_CORNER_WINDOW * pathLength(loop);
+  const found = loopCorners(loop, window, SECTOR_CORNER_MIN_DEG);
+  // Two corners, or three where the pen kinked once along the arc: a soft
+  // turn, where a real triangle with a bowed side has three sharp ones.
+  let corners = found;
+  if (found.length === 3) {
+    const sharpness = found.map((i) => sharpnessAt(loop, i, window));
+    const weakest = sharpness.indexOf(Math.min(...sharpness));
+    if (sharpness[weakest] >= SEGMENT_KINK_MAX_DEG) return null;
+    corners = found.filter((_, k) => k !== weakest);
+  }
+  if (corners.length !== 2) return null;
+  const maxSweep = arcs ? SEGMENT_MAX_SWEEP_DEG : SEGMENT_LIFT_MAX_SWEEP_DEG;
+  return segmentFromCorners(points, loop, corners, pressure, curvatureThreshold, maxSweep);
+}
+
+/** {@link segmentCandidate} for one pair of corners (indices into `loop`, in order). */
+function segmentFromCorners(
+  points: readonly Pt[],
+  loop: readonly Pt[],
+  corners: readonly number[],
+  pressure: number,
+  curvatureThreshold: number,
+  maxSweepDeg: number,
+): ShapeResult | null {
+  const sides = [loopSlice(loop, corners[0], corners[1]), loopSlice(loop, corners[1], corners[0])];
+  const reads = sides.map(sideOf);
+  const straightAt = reads.findIndex((s) => s.dev <= SECTOR_STRAIGHT_MAX_DEV);
+  if (straightAt < 0) return null;
+  const k = 1 - straightAt;
+  const bow = reads[k];
+  if (bow.dev <= SECTOR_STRAIGHT_MAX_DEV || Math.abs(bow.mean) < SECTOR_ARC_ONE_SIDED * bow.dev) {
+    return null;
+  }
+  const arc = sides[k];
+  // The arc turns evenly: no corner inside it.
+  const arcWindow = SECTOR_CORNER_WINDOW * pathLength(loop);
+  for (let i = 0; i < arc.length; i++) {
+    if (openSharpnessAt(arc, i, arcWindow) > SECTOR_ARC_MAX_TURN_DEG) return null;
+  }
+  const own = fitArcCircle(arc);
+  if (!own || own.err > SECTOR_ARC_MAX_ERR) return null;
+  // The chord, on the straight side's own line, between where it meets the arc.
+  const line = fitAxis(trimEdge(sides[straightAt]));
+  if (!line) return null;
+  const project = (p: Pt): Pt => {
+    const t = (p.x - line.cx) * line.ux + (p.y - line.cy) * line.uy;
+    return { x: line.cx + t * line.ux, y: line.cy + t * line.uy };
+  };
+  const a = project(arc[0]);
+  const b = project(arc[arc.length - 1]);
+  for (const end of [a, b]) {
+    if (Math.abs(dist(end, { x: own.cx, y: own.cy }) - own.r) > SEGMENT_END_TOL * own.r) {
+      return null;
+    }
+  }
+  const { sweep, back } = openSweep(arc, own.cx, own.cy);
+  const deg = Math.abs(sweep) / DEG;
+  if (deg < SEGMENT_MIN_SWEEP_DEG || deg > maxSweepDeg || back > ARC_MAX_BACKTRACK) {
+    return null;
+  }
+  // The arc stands off its chord as an arc of that turn does (a flat bow is
+  // a straight side that wobbled).
+  const expected = (0.73 * Math.tan(Math.abs(sweep) / 4)) / 2;
+  if (bow.dev < SECTOR_MIN_BOW_SHARE * expected) return null;
+
+  // Score against the segment as drawn (chord and turn), never the snapped one.
+  const drawn = segmentOutline(a, b, sweep, arc[Math.floor(arc.length / 2)]);
+  if (!drawn) return null;
+  const err = polylineResidual(points, drawn.ring) / drawn.r;
+  const confidence = clamp01(
+    1 - err / (SECTOR_MAX_ERR * curvatureToleranceMultiplier(curvatureThreshold)),
+  );
+
+  // Beautify: a chord near level or upright is made so about its middle, and
+  // the turn snaps as an arc's does (a half within 15° is a semicircle).
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const heading = Math.atan2(b.y - a.y, b.x - a.x);
+  const quarter = Math.PI / 2;
+  const off = heading - Math.round(heading / quarter) * quarter;
+  const turn = Math.abs(off) <= SEGMENT_AXIS_SNAP_DEG * DEG ? -off : 0;
+  const spin = (p: Pt): Pt => {
+    const dx = p.x - mid.x;
+    const dy = p.y - mid.y;
+    const c = Math.cos(turn);
+    const s = Math.sin(turn);
+    return { x: mid.x + dx * c - dy * s, y: mid.y + dx * s + dy * c };
+  };
+  const shown = segmentOutline(
+    spin(a),
+    spin(b),
+    snapSweep(sweep, true),
+    spin(drawn.ring[Math.floor((drawn.ring.length - 2) / 2)]),
+  );
+  if (!shown) return null;
+  // Begin at the chord's end nearest pen-down.
+  const ring = shown.ring.slice(0, -1);
+  const first = dist(ring[0], points[0]) <= dist(ring[ring.length - 1], points[0]) ? 0 : -1;
+  const ordered = first === 0 ? ring : [ring[ring.length - 1], ...ring.slice(0, -1)];
+  ordered.push({ ...ordered[0] });
+  return { kind: "segment", pts: flatten(ordered, pressure), confidence };
+}
+
+/**
+ * The closed outline of the segment on chord `a`-`b` whose arc turns
+ * `sweep` (signed; the sign is ignored, `bulge` says which side the arc is
+ * on): `a`, round the arc to `b`, back to `a`. Null for a degenerate chord.
+ */
+function segmentOutline(a: Pt, b: Pt, sweep: number, bulge: Pt): { ring: Pt[]; r: number } | null {
+  const half = dist(a, b) / 2;
+  const turn = Math.abs(sweep);
+  if (!(half > 0) || !(turn > 0) || turn >= 2 * Math.PI) return null;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  // The unit normal of the chord toward the arc.
+  let nx = -(b.y - a.y) / (2 * half);
+  let ny = (b.x - a.x) / (2 * half);
+  if ((bulge.x - mid.x) * nx + (bulge.y - mid.y) * ny < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const r = half / Math.sin(turn / 2);
+  // The centre lies away from the arc while the turn is under a half, past the chord after.
+  const back = r * Math.cos(turn / 2);
+  const centre = { x: mid.x - nx * back, y: mid.y - ny * back };
+  const start = Math.atan2(a.y - centre.y, a.x - centre.x);
+  // Whichever way round passes the bulge's side.
+  for (const sign of [1, -1]) {
+    const t = start + (sign * turn) / 2;
+    const top = { x: centre.x + r * Math.cos(t), y: centre.y + r * Math.sin(t) };
+    if ((top.x - mid.x) * nx + (top.y - mid.y) * ny > 0) {
+      const ring = arcPoints(centre.x, centre.y, r, start, sign * turn);
+      ring[ring.length - 1] = { ...b };
+      ring.push({ ...a });
+      return { ring, r };
+    }
+  }
+  return null;
+}
+
+/** Angle: on a lift, the stroke's box is at least this big, page px (a tick is smaller)... */
+const ANGLE_LIFT_MIN_DIAG = 70;
+/** ...and on a hold at least this big. */
+const ANGLE_HELD_MIN_DIAG = 50;
+/** Angle: each leg is at least this long, page px. */
+const ANGLE_MIN_LEG_PX = 25;
+/** Angle: the shorter leg is at least this share of the longer (a hooked line is no angle). */
+const ANGLE_MIN_LEG_RATIO = 0.2;
+/** Angle: RMS distance of each leg's ink from its line, over the leg, at zero confidence. */
+const ANGLE_MAX_ERR = 0.12;
+/**
+ * Angle: within this of a right angle it is taken, and made one. Other
+ * openings are a V, a written "v", or a checkmark (75° in the suite).
+ */
+const ANGLE_RIGHT_SNAP_DEG = 12;
+/**
+ * Angle: on a lift, one leg lies within this of level or upright, as a
+ * right angle is drawn in geometry (Joost's: 88° and -2°); a checkmark's
+ * legs slant. On a hold any turn is taken.
+ */
+const ANGLE_LIFT_AXIS_DEG = 12;
+/** Angle: the corner's crossing lies within this share of the diagonal of where the pen turned. */
+const ANGLE_CORNER_TOL = 0.15;
+/** Angle: a leg within this of level or upright is made so, turning the whole angle about its corner. */
+const ANGLE_AXIS_SNAP_DEG = 8;
+
+/**
+ * A right angle: an open stroke of two straight legs meeting square (within
+ * {@link ANGLE_RIGHT_SNAP_DEG}) at one corner, made exactly square. On a
+ * lift one leg must also lie near level or upright.
+ */
+function angleCandidate(
+  points: readonly Pt[],
+  pressure: number,
+  diag: number,
+  held: boolean,
+): ShapeResult | null {
+  // Three points is enough: its own output, read again, is just that.
+  if (points.length < 3 || diag < (held ? ANGLE_HELD_MIN_DIAG : ANGLE_LIFT_MIN_DIAG)) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  // The corner: the sample farthest from the line between the ends.
+  let turnAt = -1;
+  let far = 0;
+  points.forEach((p, i) => {
+    const d = distToSegment(p, first, last);
+    if (d > far) {
+      far = d;
+      turnAt = i;
+    }
+  });
+  if (turnAt < 1 || turnAt > points.length - 2) return null;
+  const legs = [points.slice(0, turnAt + 1), points.slice(turnAt)];
+  const lines = legs.map((leg) => fitAxis(trimEdge(leg)));
+  const [l1, l2] = lines;
+  if (!l1 || !l2) return null;
+  const corner = intersect(l1, l2);
+  if (!corner || dist(corner, points[turnAt]) > ANGLE_CORNER_TOL * diag) return null;
+  const project = (p: Pt, l: Axis): Pt => {
+    const t = (p.x - l.cx) * l.ux + (p.y - l.cy) * l.uy;
+    return { x: l.cx + t * l.ux, y: l.cy + t * l.uy };
+  };
+  const a = project(first, l1);
+  const b = project(last, l2);
+  const lenA = dist(a, corner);
+  const lenB = dist(b, corner);
+  if (Math.min(lenA, lenB) < ANGLE_MIN_LEG_PX) return null;
+  if (Math.min(lenA, lenB) < ANGLE_MIN_LEG_RATIO * Math.max(lenA, lenB)) return null;
+  const opening = turnDeg(a, corner, b);
+  if (Math.abs(opening - 90) > ANGLE_RIGHT_SNAP_DEG) return null;
+  const quarter = Math.PI / 2;
+  const offOf = (t: number): number => t - Math.round(t / quarter) * quarter;
+  const toward = (p: Pt): number => Math.atan2(p.y - corner.y, p.x - corner.x);
+  if (
+    !held &&
+    Math.min(Math.abs(offOf(toward(a))), Math.abs(offOf(toward(b)))) > ANGLE_LIFT_AXIS_DEG * DEG
+  ) {
+    return null;
+  }
+  // Each leg's ink lies along a straight line from the corner.
+  const legErr = (leg: readonly Pt[], end: Pt, len: number): number =>
+    polylineResidual(leg, [corner, end]) / len;
+  const err = Math.max(legErr(legs[0], a, lenA), legErr(legs[1], b, lenB));
+  const confidence = clamp01(1 - err / ANGLE_MAX_ERR);
+
+  // Beautify: made square by turning the shorter leg about the corner, then
+  // the whole turned so a leg near level or upright lies so.
+  let angA = toward(a);
+  let angB = toward(b);
+  let between = angB - angA;
+  while (between > Math.PI) between -= 2 * Math.PI;
+  while (between < -Math.PI) between += 2 * Math.PI;
+  const right = (Math.sign(between) || 1) * quarter;
+  if (lenA <= lenB) angA = angB - right;
+  else angB = angA + right;
+  const longer = lenA >= lenB ? angA : angB;
+  const shorter = lenA >= lenB ? angB : angA;
+  const off =
+    Math.abs(offOf(longer)) <= ANGLE_AXIS_SNAP_DEG * DEG
+      ? offOf(longer)
+      : Math.abs(offOf(shorter)) <= ANGLE_AXIS_SNAP_DEG * DEG
+        ? offOf(shorter)
+        : 0;
+  angA -= off;
+  angB -= off;
+  const end = (t: number, len: number): Pt => ({
+    x: corner.x + len * Math.cos(t),
+    y: corner.y + len * Math.sin(t),
+  });
+  return {
+    kind: "angle",
+    pts: flatten([end(angA, lenA), { ...corner }, end(angB, lenB)], pressure),
+    confidence,
+  };
+}
+
 // --- Real-ink cleanup -------------------------------------------------------
 //
 // Pencil ink is not the ideal outline plus tremor that the synthetic tests
@@ -2922,8 +3240,18 @@ function closedCandidates(
     ? null
     : circleCandidate(points, pressure, diag, axes, curvatureThreshold);
   const ellipse = heartShaped ? null : ellipseCandidate(points, pressure, axes, curvatureThreshold);
+  const sector = arcs ? sectorCandidate(points, pressure, diag, curvatureThreshold) : null;
+  // A dome: an arc closed by a straight chord. Its two corners and the
+  // arc's chord also straighten into a triangle, which took two real domes
+  // (2026-10-31); a loop that is a convincing dome is not a polygon.
+  // A dome that fits too loosely to snap stands aside instead: a real
+  // triangle with one bowed side (a sail) passes its structure on a hold.
+  const dome = heartShaped
+    ? null
+    : segmentCandidate(points, pressure, diag, curvatureThreshold, arcs);
+  const segment = dome && dome.confidence >= SNAP_MIN_CONFIDENCE ? dome : null;
   // Triangles always; other polygons only when asked for (see RecognizeOptions).
-  const fitted = polygonCandidate(points, pressure, diag, curvatureThreshold);
+  const fitted = segment ? null : polygonCandidate(points, pressure, diag, curvatureThreshold);
   const polygon = fitted && (polygons || fitted.kind === "triangle") ? fitted : null;
   // A loop the round fitters accept structurally has no run of sharp corners
   // (their gate caps the second-sharpest turn under a square's), so it is
@@ -2952,9 +3280,11 @@ function closedCandidates(
     // One dent and a sharp tip: no other fitter takes a heart (a dent keeps
     // the round fitters and the rect out, and it is one dent, not a star's five).
     heartCandidate(points, pressure, diag, heart),
+    // A semicircle is a sector and a segment both: the sector names it.
+    sector ? null : segment,
     // A slice of pie also straightens into a triangle; the sector's arc fits
     // it better (a 60° slice: sector 0.96, triangle 0.84).
-    arcs ? sectorCandidate(points, pressure, diag, curvatureThreshold) : null,
+    sector,
   ];
 }
 
@@ -3094,6 +3424,9 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
             : null,
           arcs && cleaned.length >= MIN_POINTS
             ? arcCandidate(cleaned, pressure, diagonalOf(boundsOf(cleaned)), curvatureThreshold)
+            : null,
+          cleaned.length >= MIN_POINTS
+            ? angleCandidate(cleaned, pressure, diagonalOf(boundsOf(cleaned)), opts?.held === true)
             : null,
         ];
 

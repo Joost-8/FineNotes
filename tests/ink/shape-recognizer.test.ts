@@ -148,7 +148,8 @@ function dense(points: Pt[]): Pt[] {
  */
 const adversarial: Array<[string, number[]]> = [
   ["a V", inkFrom(polyline(100, 100, 200, 300, 300, 100), 1)],
-  ["an L", inkFrom(polyline(100, 100, 100, 300, 300, 300), 2)],
+  // A written L; a big one is a right angle (2026-10-31).
+  ["an L", inkFrom(polyline(100, 100, 100, 135, 122, 135), 2)],
   ["a Z", inkFrom(polyline(100, 100, 320, 100, 100, 260, 320, 260), 3)],
   ["an N", inkFrom(polyline(100, 320, 100, 100, 260, 320, 260, 100), 4)],
   ["a U", inkFrom(polyline(100, 100, 100, 300, 300, 300, 300, 100), 5)],

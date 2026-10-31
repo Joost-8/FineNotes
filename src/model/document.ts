@@ -40,7 +40,9 @@ export type ShapeKind =
   | "cloud"
   | "heart"
   | "arc"
-  | "sector";
+  | "sector"
+  | "segment"
+  | "angle";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -57,6 +59,8 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "heart",
   "arc",
   "sector",
+  "segment",
+  "angle",
 ];
 
 /** How a shape's outline is drawn when it is not solid. */
