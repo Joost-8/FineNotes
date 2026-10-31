@@ -13,7 +13,13 @@ extracted from the matching section of this file by `release.yml`.
 - **Desk colour**
   ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Settings ›
   Pages and notebooks › More › Desk: the background around the pages is
-  with the pages (as before), light, dark, or a colour of your own.
+  with the pages, light, dark, or a colour of your own. With the pages,
+  dark pages now lie on the same grey desk as light ones, so their edges
+  show; Dark keeps the nearly black one. Dark PDF pages moved under More
+  too.
+- **Colours on dark pages look as they do on the page.** The pen's
+  swatches, the pen button and the width preview show each colour as dark
+  pages show the ink.
 - **Export on plain paper**
   ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The grid
   button in Export as PDF leaves out the paper's lines, grid, dots and
