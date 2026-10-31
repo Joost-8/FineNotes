@@ -68,7 +68,12 @@ function setup(strokes: Stroke[], tool = "fill") {
       color: "#cc0000",
       size: 2,
       pressureEnabled: false,
-      penGestures: { scribbleErase: true, scribbleErasesAll: false, circleLasso: true },
+      penGestures: {
+        scribbleErase: true,
+        scribbleErasesAll: false,
+        scribbleFill: true,
+        circleLasso: true,
+      },
     },
     practice: null,
     debug: false,
@@ -139,9 +144,16 @@ describe("Scribble to fill", () => {
     const big = setup([pen("a", box(10, 10, 380))], "pen");
     expect(run(big.surface, "scribbleFill", big.pageBox, zigzag(150, 170, 150, 165))).toBe(false);
     const off = setup([pen("a", box(100, 100, 100))], "pen");
-    (off.surface.toolState as Record<string, unknown>).penGestures = { scribbleErase: false };
+    (off.surface.toolState as Record<string, unknown>).penGestures = { scribbleFill: false };
     expect(run(off.surface, "scribbleFill", off.pageBox, zigzag(120, 180, 120, 170))).toBe(false);
     expect(off.page.strokes).toHaveLength(1);
+  });
+
+  it("has a switch of its own: Scribble to erase off still fills", () => {
+    const { surface, page, pageBox } = setup([pen("a", box(100, 100, 100))], "pen");
+    (surface.toolState as Record<string, unknown>).penGestures = { scribbleErase: false };
+    expect(run(surface, "scribbleFill", pageBox, zigzag(120, 180, 120, 170))).toBe(true);
+    expect(page.strokes).toHaveLength(2);
   });
 
   it("stays ink when it runs well out over the outline", () => {

@@ -17,8 +17,9 @@ extracted from the matching section of this file by `release.yml`.
   past small gaps in a hand-drawn outline. An area that is not closed is
   left alone. Tap a filled area again to give it another colour. It waits
   in More tools until Customize toolbar puts it on the bar.
-- **Scribble to fill.** With Scribble to erase on, a scribble inside a
-  closed outline, over nothing to erase, fills that area instead.
+- **Scribble to fill.** A scribble inside a closed outline, over nothing to
+  erase, fills that area. It has its own switch in the pen's Pen gestures,
+  beside Scribble to erase.
 
 ## [2.6.0] - 2026-10-30
 

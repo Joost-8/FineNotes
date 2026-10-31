@@ -4444,7 +4444,8 @@ export class Toolbar {
 
   /**
    * GoodNotes' Pen Gestures page: Make shapes, Scribble to erase
-   * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
+   * (and whether it takes shapes and highlighter too), Scribble to fill and
+   * Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
@@ -4475,6 +4476,15 @@ export class Toolbar {
     body.createDiv({
       cls: "goodobsidian-popover-hint",
       text: "Erase handwriting and drawings by scribbling over them.",
+    });
+
+    const fill = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(fill, "Scribble to fill", gestures.scribbleFill, (on) =>
+      set({ scribbleFill: on }),
+    );
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "Scribble inside a closed outline to fill it.",
     });
 
     const lasso = body.createDiv({ cls: "goodobsidian-switch-list" });

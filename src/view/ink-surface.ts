@@ -10357,7 +10357,7 @@ export class InkSurface {
   }
 
   /**
-   * Scribble to fill, Scribble to erase's other half (the same switch): a
+   * Scribble to fill, with a switch of its own beside Scribble to erase: a
    * scribble that erased nothing, drawn inside a closed outline, fills that
    * region with the pen's colour and is not kept. Only when the region holds
    * the scribble (nearly all of its points) and the scribble covers a fair
@@ -10365,7 +10365,7 @@ export class InkSurface {
    */
   private scribbleFill(box: PageBox, pts: number[]): boolean {
     const gestures = penGesturesOf(this.toolState.penGestures);
-    if (!gestures.scribbleErase || this.toolState.tool !== "pen" || this.practice) return false;
+    if (!gestures.scribbleFill || this.toolState.tool !== "pen" || this.practice) return false;
     const scribble = detectScribble(pts, { minSize: this.atFitZoom(SCRIBBLE_MIN_PX) });
     if (!scribble) return false;
     const b = scribble.bounds;
