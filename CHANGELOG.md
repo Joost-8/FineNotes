@@ -19,9 +19,7 @@ extracted from the matching section of this file by `release.yml`.
   text stays on the paper, turns with it, and moves, copies and deletes
   with it. FineNotes 2.6 and earlier show a folded note open, and its text
   as a text box over it.
-
 - **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
-
 - **A chisel tip for the highlighter.** Tap the highlighter in hand for its
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight
