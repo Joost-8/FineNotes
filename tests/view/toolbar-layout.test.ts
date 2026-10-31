@@ -63,6 +63,7 @@ describe("the default bar", () => {
       "ruler",
       "tape",
       "record",
+      "fill",
     ]);
   });
 
@@ -118,6 +119,7 @@ describe("three places", () => {
       "ruler",
       "tape",
       "record",
+      "fill",
     ]);
   });
 

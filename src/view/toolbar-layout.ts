@@ -33,7 +33,8 @@ export type BarItemId =
   | "sticky"
   | "ruler"
   | "tape"
-  | "record";
+  | "record"
+  | "fill";
 
 /** Every item, in the order the hidden list and the accessories menu give them. */
 export const BAR_ITEMS: readonly BarItemId[] = [
@@ -52,12 +53,13 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "ruler",
   "tape",
   "record",
+  "fill",
 ];
 
 /**
  * The bar a new install starts with; the hand, the magnifier, Stylus-only mode,
- * stickers, sticky notes, the ruler, cover tape and the mic wait in the menu,
- * and nothing is off.
+ * stickers, sticky notes, the ruler, cover tape, the mic and the fill bucket
+ * wait in the menu, and nothing is off.
  */
 export const DEFAULT_BAR: readonly BarItemId[] = [
   "select",
@@ -89,6 +91,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   ruler: "Ruler",
   tape: "Cover tape",
   record: "Record audio",
+  fill: "Fill",
 };
 
 /** Each item's icon: its bar button's, in the menu and the list too. */
@@ -108,6 +111,7 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   ruler: "ruler",
   tape: "bandage",
   record: "mic",
+  fill: "paint-bucket",
 };
 
 function isBarItem(value: unknown): value is BarItemId {
@@ -230,6 +234,7 @@ export function barItemOfTool(tool: string): BarItemId | null {
     case "pan":
     case "zoom":
     case "tape":
+    case "fill":
       return tool;
     case "pen":
     case "highlighter":

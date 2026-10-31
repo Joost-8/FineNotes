@@ -49,6 +49,7 @@ describe("Customize toolbar", () => {
         "Sticky notes",
         "Ruler",
         "Cover tape",
+        "Fill",
       ],
       Hidden: ["Record audio"],
     });

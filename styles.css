@@ -2528,6 +2528,12 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
+/* The Fill tool: a tap fills where it lands. */
+.goodobsidian-scroll.is-fill-tool,
+.goodobsidian-scroll.is-fill-tool * {
+  cursor: crosshair;
+}
+
 /* The magnifier: a drag up or down zooms about where it began. */
 .goodobsidian-scroll.is-zoom-tool,
 .goodobsidian-scroll.is-zoom-tool * {

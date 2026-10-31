@@ -244,6 +244,19 @@ import {
   topTapeAt,
 } from "../model/cover-tape";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
+import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
+import {
+  AddFill,
+  RecolorFill,
+  DEFAULT_FILL_COLOR,
+  enclosedArea,
+  fillGapPx,
+  fillInsertIndex,
+  fillStroke,
+  isBucketFill,
+  readFillGap,
+  sameFill,
+} from "../model/fill-region";
 import {
   EYEDROP_REACH_PX,
   type EyedropResult,
@@ -331,6 +344,7 @@ import {
   type PdfBackdrop,
   type ShapeKind,
   CONNECTOR_SIDES,
+  POINT_STRIDE,
   type ConnectorSide,
   type ShapeConnector,
   type Stroke,
@@ -1196,6 +1210,16 @@ const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }
 const PRESS_HOLD_MS = 500;
 /** The smallest scribble that erases: its longer side on screen, px. */
 const SCRIBBLE_MIN_PX = 10;
+/**
+ * Scribble to fill: at least this share of the scribble's points inside
+ * the region it fills, and its bounds at least {@link SCRIBBLE_FILL_SHARE}
+ * of the region's area, so a mark made near an outline, or a small one in a
+ * big frame, stays ink.
+ */
+const SCRIBBLE_FILL_INSIDE = 0.9;
+const SCRIBBLE_FILL_SHARE = 0.15;
+/** A stroke's ink radius as the fill sees it, over its width: a light hand writes thinner. */
+const FILL_INK_RADIUS = 0.35;
 /** Slack round the band a scribble swept, screen px, past half of either nib. */
 const SCRIBBLE_MARGIN_PX = 2;
 /** How far off the loop a held pen may land and still turn it into a lasso, screen px. */
@@ -3592,6 +3616,7 @@ export class InkSurface {
   private syncNavigationCursor(tool: ActiveTool): void {
     this.scrollEl?.toggleClass("is-hand-tool", tool === "pan");
     this.scrollEl?.toggleClass("is-zoom-tool", tool === "zoom");
+    this.scrollEl?.toggleClass("is-fill-tool", tool === "fill");
   }
 
   /** Called only after a complete tool operation, never during pointer movement. */
@@ -8300,11 +8325,101 @@ export class InkSurface {
         return this.textGesture;
       case "laser":
         return this.laserGesture;
+      case "fill":
+        return this.fillGesture;
       case "tape":
         return this.tapeGesture;
       default:
         return this.inkGesture;
     }
+  }
+
+  /** Where the Fill tool's press went down: page point and layout sample. */
+  private fillPress: { boxIndex: number; x: number; y: number; sx: number; sy: number } | null =
+    null;
+
+  /**
+   * The Fill tool: a tap inside an outline fills it with the pen's colour,
+   * on lift. A drag is not a tap, and fills nothing.
+   */
+  private readonly fillGesture: PenGesture = {
+    down: (box, at, sample) => {
+      this.fillPress = { boxIndex: box.index, x: at.x, y: at.y, sx: sample.x, sy: sample.y };
+    },
+    move: () => undefined,
+    up: (box, sample) => {
+      const press = this.fillPress;
+      this.fillPress = null;
+      this.activePage = null;
+      if (!press || press.boxIndex !== box.index) return;
+      const moved = Math.hypot(sample.x - press.sx, sample.y - press.sy) * this.unitScale;
+      if (moved > TAP_SLOP_PX) return;
+      // The Fill tool's own colour, never the pen's.
+      this.fillAt(box, press.x, press.y, this.toolState.fillColor ?? DEFAULT_FILL_COLOR, false);
+    },
+    cancel: () => {
+      this.fillPress = null;
+      this.activePage = null;
+    },
+  };
+
+  /**
+   * Fill the region of `box`'s page round page point (`x`, `y`) that the
+   * ink encloses, with `color`, as one undo step: a fill already on that
+   * region takes the colour instead. A region that is not closed, or a tap
+   * on the ink, says so with a notice unless `quiet`. `accept` may refuse
+   * the region found. True when the page changed (or already was so).
+   */
+  private fillAt(
+    box: PageBox,
+    x: number,
+    y: number,
+    color: string,
+    quiet: boolean,
+    accept?: (outline: number[], area: number) => boolean,
+  ): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    // Pen ink and shapes bound a fill; highlighter, a note's ink and other
+    // fills do not.
+    const ink: FillInk[] = [];
+    for (const stroke of page.strokes) {
+      if (stroke.tool === "highlighter" || stroke.onSticky !== undefined) continue;
+      if (isBucketFill(stroke)) continue;
+      ink.push({ pts: stroke.pts, radius: stroke.size * FILL_INK_RADIUS });
+    }
+    const result = bucketFill({
+      width: box.width,
+      height: box.height,
+      ink,
+      x,
+      y,
+      gap: fillGapPx(readFillGap(this.toolState.fillGap)),
+    });
+    if (!result.ok) {
+      if (!quiet) {
+        new Notice(
+          result.reason === "open"
+            ? "This area is not closed: nothing filled."
+            : "Tap inside an outline to fill it.",
+        );
+      }
+      return false;
+    }
+    if (accept && !accept(result.outline, result.area)) return false;
+    const stroke = fillStroke(this.strokeIds.next(), color, result.outline);
+    const existing = sameFill(page.strokes, stroke.pts);
+    if (existing && existing.color === stroke.color) return true;
+    const command = existing
+      ? new RecolorFill(page.id, existing, color)
+      : new AddFill(page.id, stroke, fillInsertIndex(page.strokes, enclosedArea(stroke.pts)));
+    this.history.push(this.doc, command);
+    if (!existing) this.strokeIndex.add(page.id, stroke);
+    const bounds = selectionBounds([existing ?? stroke], [], []);
+    if (bounds) this.renderer?.invalidateRegion(box.index, bounds);
+    if (this.debug) this.hud.mark("fill");
+    this.inkChanged([page.id]);
+    return true;
   }
 
   // --- Cover tape (`model/cover-tape`) -------------------------------------------
@@ -9343,6 +9458,16 @@ export class InkSurface {
       this.recordDiagnostic(
         builder.points(),
         "scribble-erase",
+        final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
+        heldLongEnough,
+      );
+      return;
+    }
+    // A scribble over nothing, inside an outline, fills it instead.
+    if (!snap && this.scribbleFill(box, builder.points())) {
+      this.recordDiagnostic(
+        builder.points(),
+        "scribble-fill",
         final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
         heldLongEnough,
       );
@@ -10462,6 +10587,38 @@ export class InkSurface {
     if (this.debug) this.hud.mark("scribble");
     this.inkChanged([page.id]);
     return true;
+  }
+
+  /**
+   * Scribble to fill, with a switch of its own beside Scribble to erase: a
+   * scribble that erased nothing, drawn inside a closed outline, fills that
+   * region with the pen's colour and is not kept. Only when the region holds
+   * the scribble (nearly all of its points) and the scribble covers a fair
+   * share of it; anything else stays ink, as before.
+   */
+  private scribbleFill(box: PageBox, pts: number[]): boolean {
+    const gestures = penGesturesOf(this.toolState.penGestures);
+    if (!gestures.scribbleFill || this.toolState.tool !== "pen" || this.practice) return false;
+    const scribble = detectScribble(pts, { minSize: this.atFitZoom(SCRIBBLE_MIN_PX) });
+    if (!scribble) return false;
+    const b = scribble.bounds;
+    const accept = (outline: number[], area: number): boolean => {
+      let inside = 0;
+      let count = 0;
+      for (let i = 0; i + 1 < pts.length; i += POINT_STRIDE) {
+        count++;
+        if (insidePolygon(outline, pts[i], pts[i + 1])) inside++;
+      }
+      const covered = (b.maxX - b.minX) * (b.maxY - b.minY);
+      return inside >= SCRIBBLE_FILL_INSIDE * count && covered >= SCRIBBLE_FILL_SHARE * area;
+    };
+    // From its middle, or, if writing lies there, from where the pen started.
+    const starts = [
+      { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 },
+      { x: pts[0], y: pts[1] },
+    ];
+    const { color } = this.currentStyle();
+    return starts.some(({ x, y }) => this.fillAt(box, x, y, color, true, accept));
   }
 
   /**

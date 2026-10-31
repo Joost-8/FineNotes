@@ -67,6 +67,7 @@ export default defineConfig({
         "src/canvas/eyedropper.ts",
         "src/canvas/ruler-geometry.ts",
         "src/canvas/sticky-paper.ts",
+        "src/canvas/bucket-fill.ts",
         "src/view/selection-bar-model.ts",
         "src/view/selection-kind.ts",
         "src/view/enter-key.ts",

@@ -10,6 +10,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Fill.** A Fill tool (paint bucket) fills the area inside an outline you
+  drew, behind the ink: tap inside a circle, a box or any closed shape. It
+  has its own colour, as the Shape tool does, so picking one leaves the
+  pen's alone. Its pill picks the colour and how far a fill reaches
+  past small gaps in a hand-drawn outline. An area that is not closed is
+  left alone. Tap a filled area again to give it another colour. It waits
+  in More tools until Customize toolbar puts it on the bar.
+- **Scribble to fill.** A scribble inside a closed outline, over nothing to
+  erase, fills that area. It has its own switch in the pen's Pen gestures,
+  beside Scribble to erase.
 - **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
   tools (or put it on the bar) and drag across what to hide: an opaque strip
   of tape, in one of six colours and three heights, lies over it. Tap a tape

@@ -25,6 +25,7 @@ import {
   pageById,
 } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { isBucketFill } from "./fill-region";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
 import { restoreGraph, scaleGraph } from "./graph-element";
@@ -826,7 +827,7 @@ export class AddElements implements Command {
 /** Give selected strokes one colour; undo restores each stroke's own. */
 export class RecolorStrokes implements Command {
   readonly label = "Change colour";
-  private previous: Array<{ stroke: Stroke; color: string }> = [];
+  private previous: Array<{ stroke: Stroke; color: string; fill?: string }> = [];
 
   constructor(
     readonly pageId: string,
@@ -839,14 +840,20 @@ export class RecolorStrokes implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     for (const stroke of present(page.strokes, this.strokes)) {
-      this.previous.push({ stroke, color: stroke.color });
+      // A bucket fill is its colour inside and out: both change.
+      const fill = isBucketFill(stroke) && /^#[0-9a-f]{6}$/i.test(this.color);
+      this.previous.push({ stroke, color: stroke.color, ...(fill ? { fill: stroke.fill } : {}) });
       stroke.color = this.color;
+      if (fill) stroke.fill = this.color.toLowerCase();
     }
   }
 
   invert(doc: InkDocument): void {
     if (!pageById(doc, this.pageId)) return;
-    for (const { stroke, color } of this.previous) stroke.color = color;
+    for (const { stroke, color, fill } of this.previous) {
+      stroke.color = color;
+      if (fill !== undefined) stroke.fill = fill;
+    }
     this.previous = [];
   }
 }
