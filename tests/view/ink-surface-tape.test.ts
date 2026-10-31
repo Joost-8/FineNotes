@@ -1,7 +1,7 @@
 /**
  * Cover tape on the surface: the tape tool lays a strip as one undo step; a
- * tap opens a tape or covers it again, saved on the tape but never an undo
- * step; the pill's eye opens or covers the page's tapes.
+ * tap shows a tape through or covers it again, in the view only (the
+ * document never changes); the pill's eye shows or covers the page's tapes.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 const { InkSurface } = await import("../../src/view/ink-surface");
 
 type Fake = Record<string, unknown> & {
+  revealedTapes: ReadonlySet<string>;
   renderer: Record<string, ReturnType<typeof vi.fn>>;
   callbacks: { onTapesToggled: ReturnType<typeof vi.fn> };
 };
@@ -48,9 +49,11 @@ function surface(pages: Page[]): Fake & { doc: InkDocument; pushed: Command[] } 
     doc,
     pushed,
     pageIndex: 0,
+    revealedTapes: new Set<string>(),
     tapeDrag: null,
     toolState: { tool: "tape", tapeColor: "#8fc9e8", tapeHeight: 72 },
     renderer: {
+      setRevealedTapes: vi.fn(),
       invalidateRegion: vi.fn(),
       clearWet: vi.fn(),
       renderWetStrokes: vi.fn(),
@@ -81,32 +84,31 @@ function surface(pages: Page[]): Fake & { doc: InkDocument; pushed: Command[] } 
 const BOX = { index: 0, id: "p1", x: 0, y: 0, width: 1024, height: 1448 };
 
 describe("a tap on a cover tape", () => {
-  it("opens it, saved on the tape, then covers it again, never as an undo step", () => {
+  it("shows it through, then covers it again, and never changes the document", () => {
     const p = page(tape("a", 100), tape("b", 400));
     const s = surface([p]);
     const before = JSON.stringify(p);
     expect(run(s, "toggleTapeAt", p, { x: 200, y: 110 }, 0)).toBe(true);
-    expect(p.strokes.map((t) => t.open)).toEqual([true, undefined]);
+    expect([...s.revealedTapes]).toEqual(["a"]);
+    expect(s.renderer.setRevealedTapes).toHaveBeenCalledWith(s.revealedTapes);
     expect(s.renderer.invalidateRegion).toHaveBeenCalledOnce();
-    expect(s.inkChanged).toHaveBeenCalledWith(["p1"]);
     expect(s.callbacks.onTapesToggled).toHaveBeenCalledOnce();
     run(s, "toggleTapeAt", p, { x: 200, y: 110 }, 0);
+    expect([...s.revealedTapes]).toEqual([]);
     expect(JSON.stringify(p)).toBe(before);
-    expect(s.pushed).toHaveLength(0);
   });
 
   it("does nothing where there is no tape", () => {
     const s = surface([page(tape("a", 100))]);
     expect(run(s, "toggleTapeAt", s.doc.pages[0], { x: 200, y: 300 }, 0)).toBe(false);
-    expect(s.inkChanged).not.toHaveBeenCalled();
+    expect(s.renderer.setRevealedTapes).not.toHaveBeenCalled();
   });
 
-  it("opens a mirror over a join with its owner", () => {
-    const owner = tape("a", 100);
-    const mirror = tape("p0/a@p1", 1500, { join: "p0/a" });
-    const s = surface([page(owner, mirror)]);
+  it("shows a mirror over a join with its owner", () => {
+    const mirror = tape("p0/a@p1", 100, { join: "p0/a" });
+    const s = surface([page(mirror)]);
     run(s, "toggleTapeAt", s.doc.pages[0], { x: 200, y: 100 }, 0);
-    expect([owner.open, mirror.open]).toEqual([true, true]);
+    expect([...s.revealedTapes]).toEqual(["a"]);
   });
 
   it("from the pen, is a tap only while the pen stayed put", () => {
@@ -114,17 +116,17 @@ describe("a tap on a cover tape", () => {
     const s = surface([p]);
     expect(run(s, "penTapsTape", p, [200, 100, 0.5, 260, 100, 0.5])).toBe(false);
     expect(run(s, "penTapsTape", p, [200, 100, 0.5, 201, 101, 0.5])).toBe(true);
-    expect(p.strokes[0].open).toBe(true);
+    expect([...s.revealedTapes]).toEqual(["a"]);
     expect(run(s, "penTapsTape", page(), [200, 100, 0.5])).toBe(false);
   });
 });
 
 describe("the eye in the tape's pill", () => {
-  it("opens every tape on the page in view, and covers them again", () => {
+  it("shows every tape on the page in view, and covers them again", () => {
     const s = surface([page(tape("a", 100), tape("b", 400))]);
     expect(run(s, "tapesShown")).toBe(false);
     run(s, "showTapes", true);
-    expect(s.doc.pages[0].strokes.map((t) => t.open)).toEqual([true, true]);
+    expect([...s.revealedTapes].sort()).toEqual(["a", "b"]);
     expect(run(s, "tapesShown")).toBe(true);
     run(s, "showTapes", false);
     expect(run(s, "tapesShown")).toBe(false);
@@ -156,6 +158,6 @@ describe("the Cover tape tool", () => {
     s.tapeDrag = { from: { x: 200, y: 100 }, to: { x: 200, y: 100 } };
     run(s, "finishTape", BOX, { x: 201, y: 100 });
     expect(s.pushed).toHaveLength(0);
-    expect(p.strokes[0].open).toBe(true);
+    expect([...s.revealedTapes]).toEqual(["a"]);
   });
 });

@@ -43,23 +43,6 @@ describe("a cover tape, saved", () => {
     expect(back.pts.filter((_, i) => i % 3 !== 2)).toEqual([100, 200, 400, 200]);
   });
 
-  it("keeps a tape left open, and stores no `open` on a covered tape or on ink", () => {
-    const payload = encodeDocument(
-      docWith(
-        stroke({ open: true }),
-        stroke({ id: "t2" }),
-        stroke({ id: "p", tool: "pen", open: true }),
-      ),
-    );
-    expect(stored(payload).pages[0].strokes.map((s) => (s as { open?: boolean }).open)).toEqual([
-      true,
-      undefined,
-      undefined,
-    ]);
-    const back = decodeDocument(payload).pages[0].strokes;
-    expect(back.map((s) => s.open)).toEqual([true, undefined, undefined]);
-  });
-
   it("leaves a notebook without tape on the plain label", () => {
     const payload = encodeDocument(docWith(stroke({ tool: "pen" })));
     expect(payload.startsWith("v2:")).toBe(true);

@@ -10,9 +10,10 @@
  * copied, erased and undone as ink is, and mirrored over a join. It is
  * painted over everything else on the page, as a strip of paper over it.
  *
- * A tape left open (`open`) is saved so: it opens open on every device, and
- * a PDF export or a thumbnail shows what is under it. Opening and closing is
- * never an undo step. A covered tape hides typed text boxes under it too.
+ * Whether a tape is revealed is never stored: it lives in the view, for this
+ * session on this device. The file always holds tapes covered, so a shared,
+ * synced or exported notebook stays covered, and so does every render made
+ * from the document alone (thumbnails, PDF export, the AI's page image).
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -173,18 +174,24 @@ export function tapesLast<T extends { tool: string }>(strokes: readonly T[]): re
   return [...strokes.filter((s) => !isTape(s)), ...strokes.filter(isTape)];
 }
 
-/** Whether `stroke` is a cover tape left open: shown through, saved so. */
-export function isOpenTape(stroke: Pick<Stroke, "tool" | "open">): boolean {
-  return isTape(stroke) && stroke.open === true;
+/** `revealed` with tape `id` shown if it was covered, covered if it was shown. */
+export function toggleRevealed(revealed: ReadonlySet<string>, id: string): Set<string> {
+  const next = new Set(revealed);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
 }
 
-/** Whether every tape among `strokes` is open (false when there is none). */
-export function allOpen(strokes: readonly Pick<Stroke, "tool" | "open">[]): boolean {
+/** Whether every tape among `strokes` is revealed in `revealed` (false when there is none). */
+export function allRevealed(
+  strokes: readonly Pick<Stroke, "id" | "tool">[],
+  revealed: ReadonlySet<string>,
+): boolean {
   let any = false;
   for (const stroke of strokes) {
     if (!isTape(stroke)) continue;
     any = true;
-    if (stroke.open !== true) return false;
+    if (!revealed.has(stroke.id)) return false;
   }
   return any;
 }
@@ -204,14 +211,16 @@ const CLIP_REACH = 100000;
  * A CSS `clip-path` that cuts the covered tapes among `strokes` out of a
  * text box at `box` (page px), drawn at `scale` CSS px a page px from its
  * top-left corner: a typed box under a tape is hidden where the tape lies,
- * as ink is. "" when no covered tape reaches the box. One polygon, even-odd:
- * the outer square, then each tape, joined by edges walked both ways (they
- * cancel). Where two tapes overlap on a box the overlap shows through.
+ * as ink is. `shown` says which tapes the view shows through. "" when no
+ * covered tape reaches the box. One polygon, even-odd: the outer square,
+ * then each tape, joined by edges walked both ways (they cancel). Where two
+ * tapes overlap on a box the overlap shows through.
  */
-export function tapeClipPath(
-  strokes: readonly Pick<Stroke, "tool" | "open" | "pts" | "size">[],
+export function tapeClipPath<T extends Pick<Stroke, "tool" | "pts" | "size">>(
+  strokes: readonly T[],
   box: TapeRect,
   scale: number,
+  shown: (tape: T) => boolean = () => false,
 ): string {
   const R = CLIP_REACH;
   const px = (p: TapePt): string =>
@@ -220,7 +229,7 @@ export function tapeClipPath(
   const points = [outer, `${R}px ${-R}px`, `${R}px ${R}px`, `${-R}px ${R}px`, outer];
   let cut = false;
   for (const stroke of strokes) {
-    if (!isTape(stroke) || stroke.open === true) continue;
+    if (!isTape(stroke) || shown(stroke)) continue;
     const corners = tapeCorners(stroke.pts, stroke.size);
     if (!corners) continue;
     const xs = corners.map((c) => c.x);

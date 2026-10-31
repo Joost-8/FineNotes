@@ -50,8 +50,9 @@ import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../
 import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
 import { type PixelRect, inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
-import { isOpenTape, isTape, tapesLast } from "../model/cover-tape";
+import { isTape, tapesLast } from "../model/cover-tape";
 import { paintTape } from "./tape-paint";
+import { ownerOf } from "./mirrors";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
@@ -647,6 +648,11 @@ export class Renderer {
   private hiddenImages: ReadonlySet<ImageElement> = new Set();
   /** Strokes (by id) left out of tiles and previews: a lasso selection being dragged. */
   private hiddenStrokes: ReadonlySet<string> = new Set();
+  /**
+   * Cover tapes (by their owner's id) shown through in this view, a mirror
+   * over a join with its owner: never in a file, an export or a thumbnail.
+   */
+  private revealedTapes: ReadonlySet<string> = new Set();
   /** Strokes drawn pale: ink a recording's playback has not reached yet (2.5). */
   private fadedStrokes: ReadonlySet<string> = new Set();
   /** Tables left out of tiles and previews: a lasso selection being dragged. */
@@ -867,6 +873,16 @@ export class Renderer {
    */
   setFadedStrokes(ids: ReadonlySet<string>): void {
     this.fadedStrokes = ids;
+  }
+
+  /**
+   * Show these cover tapes through (`model/cover-tape`) in every tile and
+   * preview rasterised from now on; as above, the caller invalidates the
+   * regions of the tapes that changed. Only the view has them: the page
+   * thumbnails, exports and the AI's page image draw every tape covered.
+   */
+  setRevealedTapes(ids: ReadonlySet<string>): void {
+    this.revealedTapes = ids;
   }
 
   /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
@@ -2723,9 +2739,12 @@ export class Renderer {
     this.damageDry(box, bounds);
   }
 
-  /** Whether `stroke` is a tape left open (`model/cover-tape`). */
+  /** Whether `stroke` is a tape shown through: it, or the tape it mirrors. */
   private tapeRevealed(stroke: Stroke): boolean {
-    return isOpenTape(stroke);
+    if (!isTape(stroke) || this.revealedTapes.size === 0) return false;
+    if (this.revealedTapes.has(stroke.id)) return true;
+    const owner = stroke.join ? ownerOf(stroke.join) : null;
+    return owner !== null && this.revealedTapes.has(owner.id);
   }
 
   /** Whether cover tape `tape` reaches into `bounds` (page px). */
@@ -3192,11 +3211,10 @@ export function renderPageThumbnail(
   // canvas: a filled shape is a ground the text sits on, and a filled box
   // covers the ink under it in an export just as it does on screen.
   for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
-  // Cover tapes over everything, typed text too. One left open is left
-  // out: an export shows what is under it, without the view's outline.
+  // Cover tapes over everything, typed text too, and always covered: what
+  // was shown through in the view is never shown in an export or to the AI.
   for (const stroke of page.strokes) {
-    if (isTape(stroke) && !isOpenTape(stroke))
-      paintTape(ctx, stroke.pts, stroke.size, stroke.color, look);
+    if (isTape(stroke)) paintTape(ctx, stroke.pts, stroke.size, stroke.color, look);
   }
   ctx.restore();
 }

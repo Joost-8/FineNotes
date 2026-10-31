@@ -84,30 +84,27 @@ describe("a cover tape in the tiles", () => {
     expect(tape).toBeGreaterThan(ink);
   });
 
-  it("is a dashed wash while open, and covered again after", () => {
+  it("is a dashed wash while the view shows it through, and covered again after", () => {
     const { renderer, doc } = setUp();
-    doc.pages[0].strokes[0].open = true;
+    renderer.setRevealedTapes(new Set(["tape"]));
     const shown = repaint(renderer, doc).join("\n");
     expect(shown).toContain("lineDash=");
-    delete doc.pages[0].strokes[0].open;
+    renderer.setRevealedTapes(new Set());
     const covered = repaint(renderer, doc).join("\n");
     expect(covered).not.toContain("lineDash=");
     expect(covered).toContain(`fillStyle=${TAPE}`);
   });
+
+  it("goes with its owner when it is a mirror over a join", () => {
+    const { renderer, doc } = setUp();
+    doc.pages[0].strokes[0] = { ...doc.pages[0].strokes[0], id: "x@a", join: "b/tape" };
+    renderer.setRevealedTapes(new Set(["tape"]));
+    expect(repaint(renderer, doc).join("\n")).toContain("lineDash=");
+  });
 });
 
 describe("a cover tape in a thumbnail", () => {
-  it("leaves out a tape left open, so an export shows what is under it", () => {
-    const canvas = log.canvas("thumb");
-    const p = page();
-    p.strokes[0].open = true;
-    log.lines.length = 0;
-    renderPageThumbnail(canvas, p, { paint: () => undefined }, 200, 1, { usePressure: false });
-    expect(firstIn(log.lines, TAPE)).toBe(-1);
-    expect(firstIn(log.lines, INK)).toBeGreaterThanOrEqual(0);
-  });
-
-  it("is covered, over the ink, when closed", () => {
+  it("is covered, over the ink, whatever the view shows", () => {
     const canvas = log.canvas("thumb");
     log.lines.length = 0;
     renderPageThumbnail(canvas, page(), { paint: () => undefined }, 200, 1, {

@@ -1256,13 +1256,12 @@ studying or keep something out of sight.
   page, a box under a covered tape is clipped where the tape lies (not while
   it is being typed in); two tapes overlapping on one box show it through
   where they overlap.
-- **`open?: true`, saved.** A tap (a finger with any tool but the lasso; a
-  Pencil or mouse tap with a writing tool or the tape tool; a mouse
-  right-click) opens a tape, or covers it again, owner and mirrors together.
-  It is saved but never an undo step. An open tape is drawn in the view as a
-  dashed outline over a faint wash, and left out of thumbnails, PDF export
-  and the images sent to an AI model. Written only on tapes; absent means
-  covered.
+- **Shown through is not stored.** A tap (a finger with any tool but the
+  lasso; a Pencil or mouse tap with a writing tool or the tape tool; a mouse
+  right-click) shows a tape through, or covers it again, in this view only,
+  for this session. It is never an undo step and never saved: the file, every
+  sync, the page thumbnails, PDF export and every image sent to an AI model
+  have every tape covered.
 - **Otherwise ink:** the lasso selects, moves, turns, resizes, recolours,
   copies and deletes it; it mirrors over a join; every eraser mode takes it
   whole, never in part. The handwriting reader and sums leave it out (they
