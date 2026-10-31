@@ -434,7 +434,6 @@ describe("the rows", () => {
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
       [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
-      [WRITING, "Zoom box auto-advance", "toggle:zoomBoxAutoAdvance"],
       [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
@@ -509,6 +508,8 @@ describe("the rows", () => {
     expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
+    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
+    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {
@@ -647,7 +648,6 @@ describe("which rows show", () => {
       "Straighten highlighter strokes",
       "Lasso takes what it touches",
       "Zoom box line spacing",
-      "Zoom box auto-advance",
       "Zoom box auto-advance threshold",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
@@ -1678,7 +1678,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(22);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(21);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

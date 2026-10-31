@@ -77,6 +77,10 @@ extracted from the matching section of this file by `release.yml`.
   dialog no longer asks: join the pages of any notebook, new or old, from
   its gear under Pages, and set them apart there again. Set apart, each
   page keeps its own part of what ran over the join.
+- **Zoom box auto-advance is switched in the Zoom box only.** Its row in
+  Settings → Writing is gone; the double-arrow button on the Zoom box's bar
+  turns it on and off as before, and keeps the setting you had. The
+  threshold row's ⓘ says where the button is.
 
 ### Fixed
 

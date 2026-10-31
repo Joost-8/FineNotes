@@ -348,6 +348,10 @@ const DESC = {
     "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
     "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
     "Goodnotes. Pictures and text boxes are taken by their middle either way.",
+  zoomBoxAutoAdvance:
+    "Auto-advance is the double-arrow button on the Zoom box's bar. When it is on and a " +
+    "stroke reaches the right part of the box, the box moves right; at the end of the line " +
+    "it wraps to the next. This sets how wide that right part is.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
@@ -1108,17 +1112,23 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
           ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
         ),
-        toggle(
-          "zoomBoxAutoAdvance",
-          "Zoom box auto-advance",
-          "Moves right after a stroke reaches two thirds, then wraps.",
-          ["magnifier", "zoom", "advance", "line", "scroll"],
-        ),
-        controlRow(
-          "Zoom box auto-advance threshold",
-          "Triggers in the right percentage; 33% means the right third.",
-          { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
-          ["magnifier", "zoom", "advance", "threshold", "trigger", "percentage"],
+        this.info(
+          controlRow(
+            "Zoom box auto-advance threshold",
+            "Triggers in the right percentage; 33% means the right third.",
+            { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
+            [
+              "magnifier",
+              "zoom",
+              "advance",
+              "threshold",
+              "trigger",
+              "percentage",
+              "line",
+              "scroll",
+            ],
+          ),
+          DESC.zoomBoxAutoAdvance,
         ),
         {
           ...this.info(
