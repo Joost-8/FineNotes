@@ -43,10 +43,10 @@ export class ModelNotDownloadedError extends Error {
   }
 }
 
-/** The strokes the recogniser reads: pen ink, not highlighter, snapped shapes or tables. */
+/** The strokes the recogniser reads: pen ink, not highlighter, cover tape, snapped shapes or tables. */
 export function inkForReading(strokes: readonly Stroke[]): PageInk[] {
   return strokes
-    .filter((s) => s.tool !== "highlighter" && !s.shape)
+    .filter((s) => s.tool === "pen" && !s.shape)
     .map((s) => ({ id: s.id, tool: s.tool, shape: s.shape ?? null, t0: s.t0 ?? null, pts: s.pts }));
 }
 

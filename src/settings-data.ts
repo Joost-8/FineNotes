@@ -195,6 +195,10 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Cover tape's colour, `#rrggbb` (`model/cover-tape`). Absent: masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. Absent: the medium height. */
+  tapeHeight?: number;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
@@ -307,6 +311,8 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+  /** Export as PDF leaves the cover tapes out, so what is under them shows. */
+  exportWithoutTapes: boolean;
   /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
   desk: DeskChoice;
   /** The desk's colour when `desk` is `"custom"`, `#rrggbb`. Checked where it is read. */
@@ -469,6 +475,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
   exportPlainPaper: false,

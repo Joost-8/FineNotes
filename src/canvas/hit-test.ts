@@ -5,6 +5,7 @@
  */
 
 import { type Stroke, POINT_STRIDE, strokeBounds } from "../model/document";
+import { isTape, tapeContains } from "../model/cover-tape";
 
 /**
  * The squared distance from (x, y) to the segment from (x0, y0) to
@@ -36,9 +37,10 @@ export function distToSegmentSq(
  * Whether (x, y) lies within `reach` of the stroke's line: the polyline
  * through its whole points, boundary included, or the point itself for a
  * stroke of exactly one point. A partial point left at the end of a ragged
- * array adds nothing.
+ * array adds nothing. A cover tape is its whole band, not its centre line.
  */
 export function strokeHitByPoint(stroke: Stroke, x: number, y: number, reach: number): boolean {
+  if (isTape(stroke)) return tapeContains(stroke, x, y, reach);
   const box = strokeBounds(stroke);
   if (!box) return false;
   // Farther than `reach` from the box is farther than that from the ink.

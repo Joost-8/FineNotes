@@ -84,6 +84,7 @@ import {
   normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
@@ -245,7 +246,16 @@ import {
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
 export type ActiveTool =
-  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "select"
+  | "text"
+  | "shape"
+  | "laser"
+  | "pan"
+  | "zoom"
+  | "tape";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -537,6 +547,10 @@ export interface ToolbarState {
   zoomBox?: boolean;
   /** A target box and its window are open on the page right now. */
   zoomBoxOpen?: boolean;
+  /** Cover tape's colour (`model/cover-tape`). `undefined` counts as masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. `undefined` counts as the medium height. */
+  tapeHeight?: number;
 }
 
 export interface ToolbarCallbacks {
@@ -629,6 +643,15 @@ export interface ToolbarCallbacks {
   onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
+  /** Cover tape's colour or height changed. Hosts persist it. */
+  onTapeChange?: (color: string, height: number) => void;
+  /**
+   * Whether the cover tapes on the page in view are all shown through, or
+   * `null` when it has none. Without it the tape's pill has no eye.
+   */
+  tapesShown?: () => boolean | null;
+  /** Show every cover tape on the page in view through (`true`), or cover them all. */
+  onShowTapes?: (shown: boolean) => void;
   /** "Header row" for new tables changed. Hosts persist it. */
   onTableHeaderChange?: (on: boolean) => void;
   /** The notebook's palette, offered first in every colour picker. */
@@ -769,6 +792,7 @@ const FOLD_RANK = {
   share: 7,
   zoom: 8.2,
   pan: 8.3,
+  tape: 8.4,
   settings: 8,
   ruler: 8.5,
   shape: 9,
@@ -1138,6 +1162,9 @@ export class Toolbar {
     // accessories menu until "Customize toolbar" puts them on the bar.
     tool("pan", "hand", "Hand — move the page");
     tool("zoom", "zoom-in", "Magnifier — zoom");
+    // Cover tape: strips over the page that a tap shows through. In the
+    // accessories menu until put on the bar.
+    tool("tape", "bandage", "Cover tape");
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
       const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
@@ -1534,7 +1561,9 @@ export class Toolbar {
               ? FOLD_RANK.pan
               : tool === "zoom"
                 ? FOLD_RANK.zoom
-                : undefined;
+                : tool === "tape"
+                  ? FOLD_RANK.tape
+                  : undefined;
     if (rank !== undefined) {
       this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
     }
@@ -1555,6 +1584,11 @@ export class Toolbar {
   /** The Stylus only button was tapped, on the bar or in a menu. */
   private toggleOnlyStylusMode(): void {
     this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
+  }
+
+  /** The page in view's cover tapes changed or the page did: the tape's pill shows them again. */
+  refreshTape(): void {
+    if (this.state.tool === "tape") this.buildOptions();
   }
 
   /** Show whether Stylus-only mode is on, on the bar and in the folded row that reads it. */
@@ -2037,6 +2071,9 @@ export class Toolbar {
           break;
         case "zoom":
           this.buildZoomOptions();
+          break;
+        case "tape":
+          this.buildTapeOptions();
           break;
       }
     }
@@ -2552,6 +2589,58 @@ export class Toolbar {
   /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
   private buildLaserOptions(): void {
     this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved", true);
+  }
+
+  /**
+   * Cover tape: its colours, its three heights, and an eye that shows the
+   * tapes on the page in view through, or covers them again (lit while they
+   * are shown). A tap on a tape shows or covers that one.
+   */
+  private buildTapeOptions(): void {
+    const color = tapeColorOf(this.state.tapeColor);
+    const height = tapeHeightOf(this.state.tapeHeight);
+    const set = (nextColor: string, nextHeight: number): void => {
+      this.state.tapeColor = nextColor;
+      this.state.tapeHeight = nextHeight;
+      this.callbacks.onTapeChange?.(nextColor, nextHeight);
+      this.buildOptions();
+    };
+    for (const each of TAPE_COLORS) {
+      const swatch = this.swatchButton(this.optionsEl, each, () => set(each, height));
+      swatch.toggleClass("is-active", each === color);
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    TAPE_HEIGHTS.forEach((each, i) => {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
+      });
+      button.append(tapeHeightGlyph(i));
+      const label = TAPE_HEIGHT_LABELS[i] ?? `${each}`;
+      button.setAttribute("aria-label", `Tape height: ${label}`);
+      button.setAttribute("title", label);
+      button.toggleClass("is-active", each === height);
+      button.addEventListener("click", () => set(color, each));
+    });
+    const shownOf = this.callbacks.tapesShown;
+    const show = this.callbacks.onShowTapes;
+    if (!shownOf || !show) return;
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const shown = shownOf();
+    const eye = this.barButton(
+      this.optionsEl,
+      shown ? "eye" : "eye-off",
+      shown ? "Cover the tapes on this page" : "Show the tapes on this page",
+      shown === null
+        ? undefined
+        : () => {
+            show(!shown);
+            this.buildOptions();
+          },
+    );
+    eye.addClass("goodobsidian-tape-eye");
+    eye.toggleClass("is-on", shown === true);
+    eye.setAttribute("aria-pressed", String(shown === true));
+    if (shown === null) eye.setAttribute("title", "No tapes on this page");
   }
 
   /** The hand has nothing to set: its pill says what dragging does with it. */
@@ -5607,6 +5696,28 @@ function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
   svg.append(circle);
+  return svg;
+}
+
+/** What the tape's three heights are called, to screen readers and on hover. */
+const TAPE_HEIGHT_LABELS = ["Narrow", "Medium", "Wide"];
+
+/** A tape height button's mark: a band, taller for each height. */
+function tapeHeightGlyph(index: number): SVGElement {
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 28 24");
+  svg.setAttribute("width", "28");
+  svg.setAttribute("height", "24");
+  svg.setAttribute("aria-hidden", "true");
+  const tall = [5, 9, 15][index] ?? 9;
+  const rect = activeDocument.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("x", "3");
+  rect.setAttribute("y", String(12 - tall / 2));
+  rect.setAttribute("width", "22");
+  rect.setAttribute("height", String(tall));
+  rect.setAttribute("rx", "1");
+  rect.setAttribute("fill", "currentColor");
+  svg.append(rect);
   return svg;
 }
 

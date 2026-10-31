@@ -71,6 +71,13 @@ export interface ExportPdfHost {
   plainPaper?: boolean;
   /** The template switch was flipped: remember it. Previews are painted again after. */
   setPlainPaper?: (plain: boolean) => void;
+  /** Whether the cover tapes are left out of the export; remembered by the host. */
+  withoutTapes?: boolean;
+  /**
+   * The tapes switch was flipped: remember it. Given only when the notebook
+   * has a tape; previews are painted again after.
+   */
+  setWithoutTapes?: (without: boolean) => void;
 }
 
 /** Width of a page tile in the grid, CSS px; the grid fits as many per row as it can. */
@@ -177,6 +184,7 @@ export class ExportPdfModal extends Modal {
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
     const template = this.templateSwitch(actions);
+    const tapes = this.tapesSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
     const go = actions.createEl("button", { cls: "mod-cta", text: "Export" });
@@ -279,6 +287,7 @@ export class ExportPdfModal extends Modal {
       contentEl.addClass("is-busy");
       for (const button of this.scopeButtons.values()) button.disabled = true;
       if (template) template.disabled = true;
+      if (tapes) tapes.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -299,6 +308,7 @@ export class ExportPdfModal extends Modal {
         status.setText(errorMessage(error));
         for (const button of this.scopeButtons.values()) button.disabled = false;
         if (template) template.disabled = false;
+        if (tapes) tapes.disabled = false;
         sync(false);
       }
     };
@@ -330,6 +340,35 @@ export class ExportPdfModal extends Modal {
       plain = !plain;
       show();
       set(plain);
+      this.repaintPreviews();
+    });
+    return button;
+  }
+
+  /**
+   * The cover tapes switch, beside the actions: the tape icon, lit while the
+   * tapes export as they are and off to leave them out. The previews follow
+   * at once. `null` when the notebook has no tape.
+   */
+  private tapesSwitch(parent: HTMLElement): HTMLButtonElement | null {
+    const set = this.host.setWithoutTapes;
+    if (!set) return null;
+    let without = this.host.withoutTapes === true;
+    const button = parent.createEl("button", {
+      cls: "clickable-icon goodobsidian-export-tapes",
+      attr: { "aria-label": "Cover tapes" },
+    });
+    setIcon(button, "bandage");
+    const show = (): void => {
+      button.toggleClass("is-active", !without);
+      button.setAttribute("aria-pressed", String(!without));
+    };
+    show();
+    button.addEventListener("click", () => {
+      if (this.busy) return;
+      without = !without;
+      show();
+      set(without);
       this.repaintPreviews();
     });
     return button;

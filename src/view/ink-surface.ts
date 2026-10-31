@@ -229,9 +229,20 @@ import {
   mirrorRegions,
   mirrorsBefore,
   ownerKey,
+  ownerOf,
   planMirrors,
   strokeReach,
 } from "../canvas/mirrors";
+import {
+  MIN_TAPE_LENGTH,
+  isTape,
+  tapeClipPath,
+  tapeColorOf,
+  tapeHeightOf,
+  tapePoints,
+  toggleRevealed,
+  topTapeAt,
+} from "../model/cover-tape";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import {
   EYEDROP_REACH_PX,
@@ -890,6 +901,8 @@ export interface InkSurfaceCallbacks {
    * Hosts use it to keep the toolbar's page navigation in step.
    */
   onPageChange?: (index: number, total: number) => void;
+  /** A cover tape was shown through or covered again (`model/cover-tape`). */
+  onTapesToggled?: () => void;
   /**
    * {@link InkSurface.sizePreviewScales} changed (a zoom came to rest, or
    * the pane changed width), so the toolbar can redraw its width and
@@ -5386,6 +5399,22 @@ export class InkSurface {
               : textBox.fill !== undefined || border
                 ? "0"
                 : "",
+          // A covered tape over the box hides it there, as it hides ink;
+          // never the box being typed in.
+          clipPath:
+            document.activeElement === input
+              ? ""
+              : tapeClipPath(
+                  page.strokes,
+                  {
+                    x: frame.x + shift.x,
+                    y: frame.y + shift.y,
+                    w: width,
+                    h: frame.h ?? box.height,
+                  },
+                  scale,
+                  (tape) => this.revealedTapes.has(this.tapeKey(tape)),
+                ),
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -8271,9 +8300,161 @@ export class InkSurface {
         return this.textGesture;
       case "laser":
         return this.laserGesture;
+      case "tape":
+        return this.tapeGesture;
       default:
         return this.inkGesture;
     }
+  }
+
+  // --- Cover tape (`model/cover-tape`) -------------------------------------------
+
+  /**
+   * The cover tapes shown through in this view, by their owner's id (a
+   * mirror over a join goes with its owner). This session's only: never
+   * saved, so a notebook always opens, syncs and exports with its tapes on.
+   */
+  private revealedTapes: ReadonlySet<string> = new Set();
+
+  /** A tape being dragged out: where it started and where the pen is, page px. */
+  private tapeDrag: { from: Pt; to: Pt } | null = null;
+
+  /**
+   * The Cover tape tool: a drag lays a strip from where it started to where
+   * it lifts, its height the pill's, made level or upright when nearly so; a
+   * tap shows a tape there through, or covers it again.
+   */
+  private readonly tapeGesture: PenGesture = {
+    down: (_box, at) => {
+      this.tapeDrag = { from: at, to: at };
+    },
+    move: (box, samples) => {
+      const drag = this.tapeDrag;
+      const last = samples[samples.length - 1];
+      if (!drag || !last) return;
+      drag.to = this.toPage(box, last);
+      const draft = this.tapeStroke(drag.from, drag.to);
+      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      else this.renderer?.clearWet();
+    },
+    up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
+    // iOS cancels some ordinary lifts: a tape dragged out is still laid.
+    cancel: (box) => {
+      if (box) this.finishTape(box, null);
+      else {
+        this.tapeDrag = null;
+        this.renderer?.clearWet();
+      }
+    },
+  };
+
+  /** The tape a drag from `from` to `to` lays, or null for a tap. */
+  private tapeStroke(from: Pt, to: Pt): Stroke | null {
+    const pts = tapePoints(
+      from,
+      to,
+      this.atFitZoom(LINE_LEVEL_RISE),
+      this.atFitZoom(MIN_TAPE_LENGTH),
+    );
+    if (!pts) return null;
+    return {
+      id: "tape-draft",
+      color: tapeColorOf(this.toolState.tapeColor),
+      size: tapeHeightOf(this.toolState.tapeHeight),
+      tool: "tape",
+      pts,
+    };
+  }
+
+  /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
+  private finishTape(box: PageBox, end: Pt | null): void {
+    const drag = this.tapeDrag;
+    this.tapeDrag = null;
+    this.activePage = null;
+    this.renderer?.clearWet();
+    const page = this.pageAt(box.index);
+    if (!drag || !page) return;
+    const draft = this.tapeStroke(drag.from, end ?? drag.to);
+    if (!draft) {
+      this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+      return;
+    }
+    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
+    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    this.history.push(this.doc, command);
+    this.strokeIndex.add(page.id, stroke);
+    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    this.inkChanged([page.id]);
+  }
+
+  /** The id a tape is shown through by: its owner's, for a mirror over a join. */
+  private tapeKey(tape: Stroke): string {
+    const owner = tape.join ? ownerOf(tape.join) : null;
+    return owner?.id ?? tape.id;
+  }
+
+  /**
+   * Show the tape on top at page point `p` of `page` through, or cover it
+   * again, with its mirrors. False when no tape is there. Never an undo
+   * step, and never saved.
+   */
+  private toggleTapeAt(page: Page, p: Pt, tolerance: number): boolean {
+    const tape = topTapeAt(page.strokes, p.x, p.y, tolerance);
+    if (!tape) return false;
+    this.setTapesShown(toggleRevealed(this.revealedTapes, this.tapeKey(tape)));
+    return true;
+  }
+
+  /** Make `next` the tapes shown through, and repaint every tape whose state changed. */
+  private setTapesShown(next: ReadonlySet<string>): void {
+    const before = this.revealedTapes;
+    this.revealedTapes = next;
+    this.renderer?.setRevealedTapes(next);
+    this.doc.pages.forEach((page, index) => {
+      for (const stroke of page.strokes) {
+        if (!isTape(stroke)) continue;
+        const key = this.tapeKey(stroke);
+        if (before.has(key) === next.has(key)) continue;
+        const line = strokeBounds(stroke);
+        if (!line) continue;
+        const pad = stroke.size;
+        this.renderer?.invalidateRegion(index, {
+          minX: line.minX - pad,
+          minY: line.minY - pad,
+          maxX: line.maxX + pad,
+          maxY: line.maxY + pad,
+        });
+      }
+    });
+    this.syncTextBoxes();
+    this.renderDry();
+    this.requestZoomPaint();
+    this.callbacks.onTapesToggled?.();
+  }
+
+  /**
+   * Whether every cover tape on the page in view is shown through, or null
+   * when the page has none: the tape pill's eye.
+   */
+  tapesShown(): boolean | null {
+    const page = this.doc.pages[this.currentPage];
+    const tapes = page ? page.strokes.filter(isTape) : [];
+    if (tapes.length === 0) return null;
+    return tapes.every((tape) => this.revealedTapes.has(this.tapeKey(tape)));
+  }
+
+  /** Show every cover tape on the page in view through (`shown`), or cover them all. */
+  showTapes(shown: boolean): void {
+    const page = this.doc.pages[this.currentPage];
+    if (!page) return;
+    const next = new Set(this.revealedTapes);
+    for (const tape of page.strokes) {
+      if (!isTape(tape)) continue;
+      if (shown) next.add(this.tapeKey(tape));
+      else next.delete(this.tapeKey(tape));
+    }
+    this.setTapesShown(next);
   }
 
   /** The laser pointer: a fading trail behind the pen, never part of the notebook. */
@@ -9153,6 +9334,10 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
 
+    // A Pencil or mouse tap on a cover tape shows it through, or covers it
+    // again, instead of leaving a dot on it.
+    if (!snap && final && this.penTapsTape(page, builder.points())) return;
+
     // Scribble to erase: a scribble over writing erases it and is not kept.
     if (!snap && this.scribbleErase(box, page, builder.points())) {
       this.recordDiagnostic(
@@ -9246,6 +9431,20 @@ export class InkSurface {
         penDownAt: this.penDownAt,
       };
     }
+  }
+
+  /**
+   * Whether a stroke of `pts` (page px) was a tap on a cover tape, which it
+   * then toggled: every point within a tap's slop of the first, on a tape.
+   */
+  private penTapsTape(page: Page, pts: readonly number[]): boolean {
+    if (pts.length < 3 || !page.strokes.some(isTape)) return false;
+    const slop = TAP_SLOP_PX / this.gestureScale;
+    for (let i = 3; i + 1 < pts.length; i += 3) {
+      if (Math.hypot(pts[i] - pts[0], pts[i + 1] - pts[1]) > slop) return false;
+    }
+    const at = { x: pts[0], y: pts[1] };
+    return this.toggleTapeAt(page, at, PEN_TAP_TOLERANCE_PX / this.gestureScale);
   }
 
   /**
@@ -10038,8 +10237,9 @@ export class InkSurface {
       // pile up cut upon cut.
       const pieces = eraseRectsFromStroke(original, regions, nextId);
       if (pieces === null) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         changed = this.markWhole(page, id) || changed;
         continue;
       }
@@ -10111,8 +10311,9 @@ export class InkSurface {
       if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
       // Ink a sticky note hides, or a note's ink off its note, is not touched.
       if (!shownAt(page, original, sample.x, sample.y, notes)) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
           strokeHitByPoint(piece, sample.x, sample.y, radius + piece.size / 2),
         );
@@ -15143,6 +15344,7 @@ export class InkSurface {
     // A press menu open elsewhere closes first; opening it again clears it anyway.
     if (this.pressMenu) this.clearSelection();
     return (
+      this.toggleTapeAt(page, p, tolerance) ||
       this.openLinkAt(page, p, tolerance) ||
       this.followPdfLink(box.index, p, tolerance, false) ||
       this.offerStrokeTap(box, p, MOUSE_TAP_TOLERANCE_PX)
@@ -15192,6 +15394,14 @@ export class InkSurface {
     const tapped = box ? this.pageAt(box.index) : null;
     if (box && tapped) {
       const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+      // A cover tape lies over everything: a tap shows it through, or covers
+      // it again. With the lasso a tap selects it instead, as it does ink.
+      if (
+        this.toolState.tool !== "select" &&
+        this.toggleTapeAt(tapped, this.toPage(box, at), tolerance)
+      ) {
+        return;
+      }
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
       if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
     }

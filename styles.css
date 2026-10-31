@@ -14242,3 +14242,23 @@ button.clickable-icon.goodobsidian-calc-bkey.is-wide {
   justify-content: flex-start;
   padding-left: calc(var(--gob-bkey) * 0.5 - 0.3em);
 }
+
+/* The cover tapes switch, at the start of the export dialog's actions: lit
+   while the tapes export as they are, off to leave them out. */
+.goodobsidian-ask-actions button.goodobsidian-export-tapes {
+  width: var(--gob-touch);
+  margin-right: auto;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+}
+
+.goodobsidian-ask-actions button.goodobsidian-export-tapes.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+}
+
+/* Beside another switch, the tapes switch is the last one pushed left. */
+.goodobsidian-ask-actions button:has(+ button.goodobsidian-export-tapes) {
+  margin-right: 0;
+}
