@@ -294,7 +294,7 @@ import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
-import { type PaperTheme, paperTheme } from "../canvas/backdrop";
+import { LIGHT_PAPER, type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { rulerSettingsOf } from "../canvas/ruler-geometry";
 import { eraserFilterOf } from "../ink/stroke-eraser";
@@ -333,6 +333,8 @@ import {
   penPreferencesOf,
   snapCurveOf,
   snapModeOf,
+  deskChoiceOf,
+  deskColorOf,
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
@@ -1160,6 +1162,7 @@ export class InkView extends TextFileView {
     const theme = this.shownPaper();
     if (surface.paperTheme === theme) return;
     surface.setPaperTheme(theme);
+    this.toolbar?.setNight(theme.night === true);
     this.updateSidebarRendering();
   }
 
@@ -3047,6 +3050,7 @@ export class InkView extends TextFileView {
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.toolbar?.setNight(this.surface.paperTheme.night === true);
     this.surface.toastChrome = () => this.toolbar?.chromeSpans() ?? [];
     this.surface.setNotebookTitle(this.notebookTitle());
     this.setPenCursor(this.settings.penCursor);
@@ -3686,7 +3690,12 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = this.previewSources();
+    const preview = this.previewSources();
+    // Plain paper or with the template, as the dialog's switch was last left.
+    const exported = (): PdfExportSources => ({
+      ...preview,
+      plainPaper: this.settings.exportPlainPaper === true,
+    });
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
@@ -3696,15 +3705,22 @@ export class InkView extends TextFileView {
       chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
-        if (page)
-          await paintPagePreview(canvas, page, sources, cssWidth, window.devicePixelRatio || 1);
+        if (page) {
+          const dpr = window.devicePixelRatio || 1;
+          await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
+        }
+      },
+      plainPaper: this.settings.exportPlainPaper === true,
+      setPlainPaper: (plain) => {
+        this.settings.exportPlainPaper = plain;
+        void this.plugin.saveSettings();
       },
       fileNameFor: (pages) =>
         uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
       export: async (pages, onProgress, cancelled) => {
         const bytes = await exportPagesToPdf(
           pages.map((i) => doc.pages[i]),
-          sources,
+          exported(),
           { title: stripInkSuffix(note.basename), onProgress, cancelled },
         );
         // Named at save time, not when the dialog opened: another export may
@@ -4683,6 +4699,12 @@ export class InkView extends TextFileView {
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
+        darkPdf: this.settings.invertPdfPages !== false,
+        desk: {
+          choice: deskChoiceOf(this.settings.desk),
+          color:
+            deskColorOf({ desk: "custom", deskColor: this.settings.deskColor }) ?? LIGHT_PAPER.desk,
+        },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
       },
@@ -4705,6 +4727,15 @@ export class InkView extends TextFileView {
         remove: (at) => act("delete", at),
         toggleDarkPages: () =>
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
+        setDarkPdf: (dark) => {
+          this.plugin.settings.invertPdfPages = dark;
+          void this.plugin.applyPageAppearance();
+        },
+        setDesk: (choice, color) => {
+          this.plugin.settings.desk = choice;
+          if (color !== undefined) this.plugin.settings.deskColor = color;
+          void this.plugin.applyPageAppearance();
+        },
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),

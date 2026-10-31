@@ -134,4 +134,23 @@ describe("existing PDF export integration", () => {
       exportPagesToPdf([blankPage("p1")], sources, { title: "Stop", cancelled: () => cancelled }),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
+  it("leaves the template out on plain paper, keeping the ink and the page's own furniture", async () => {
+    const ruled = {
+      ...blankPage("p1"),
+      backdrop: { kind: "dotted" as const, paperColor: "#fdf6e3", texture: "fine" as const },
+    };
+    ruled.strokes = [{ id: "s1", tool: "pen", color: "#000", size: 3, pts: [0, 0, 0.5] }];
+    const furniture = vi.fn(() => ({ header: null, number: "1" }) as never);
+    await exportPagesToPdf([ruled], { ...sources, plainPaper: true, furniture }, { title: "P" });
+    const painted = vi.mocked(renderPageThumbnail).mock.calls[0][1];
+    expect(painted.backdrop).toEqual({ kind: "blank", paperColor: "#fdf6e3" });
+    expect(painted.strokes.map((s) => s.id)).toEqual(["s1"]);
+    // The notebook's page is not changed, and its furniture is asked for by that page.
+    expect(ruled.backdrop.kind).toBe("dotted");
+    expect(furniture).toHaveBeenCalledWith(ruled);
+    // Without it, the template stays.
+    vi.mocked(renderPageThumbnail).mockClear();
+    await exportPagesToPdf([ruled], sources, { title: "P" });
+    expect(vi.mocked(renderPageThumbnail).mock.calls[0][1]).toBe(ruled);
+  });
 });

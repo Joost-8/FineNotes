@@ -244,6 +244,8 @@ import {
   textBoxCandidates,
 } from "../canvas/eyedropper";
 import { Eyedropper } from "./eyedropper";
+import { FormatPainter } from "./format-painter";
+import { PaintStyle, dominantInkStyle } from "../model/format-painter";
 import {
   type EraserFilter,
   eraseCircleFromStroke,
@@ -734,6 +736,9 @@ interface StrokeDiagnostic {
  * reaches that far past a stroke's centreline.
  */
 const MAX_STROKE_HALF_WIDTH = 24;
+
+/** How near ink a format painter's sweep must pass to paint it, screen px: the Pencil's tap reach. */
+const PAINT_REACH_PX = 6;
 
 /**
  * The standard eraser's margin for a brush stroke the Pencil's tilt widened
@@ -2012,6 +2017,10 @@ export class InkSurface {
   private penDownAt: number | null = null;
   /** The colour pickers' "pick from the page", made on first use. */
   private eyedropper: Eyedropper | null = null;
+  /** The format painter, made on first use; armed by "Copy style". */
+  private formatPainter: FormatPainter | null = null;
+  /** The format painter's sweep under way: painted live, one undo step at the lift. */
+  private paintSweep: PaintStyle | null = null;
   /** A calculation note's suggestion beside its line, made on first use. */
   private calcChip: CalcChip | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
@@ -2350,6 +2359,7 @@ export class InkSurface {
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
+    this.syncDeskVar();
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
     const [backdropCanvas, dryCanvas, wetCanvas] = (["backdrop", "dry", "wet"] as const).map(
       (layer) =>
@@ -2887,6 +2897,7 @@ export class InkSurface {
     this.cellEditor?.remove();
     this.cellEditor = null;
     this.eyedropper?.cancel();
+    this.formatPainter?.cancel();
     this.watchTypingKeyboard(false);
     window.clearTimeout(this.textPillSettleTimer);
     window.clearTimeout(this.wheelSnapTimer);
@@ -3317,6 +3328,7 @@ export class InkSurface {
   setPaperTheme(theme: PaperTheme): void {
     if (theme === this.paper) return;
     this.paper = theme;
+    this.syncDeskVar();
     if (!this.renderer) return;
     this.renderer.paper = theme;
     this.renderer.invalidateAll();
@@ -3327,6 +3339,14 @@ export class InkSurface {
 
   get paperTheme(): PaperTheme {
     return this.paper;
+  }
+
+  /**
+   * The desk's CSS colour (`--gob-desk`), which shows before the backdrop
+   * canvas paints, follows the theme's desk: the Desk setting or dark pages.
+   */
+  private syncDeskVar(): void {
+    this.surfaceEl.setCssProps({ "--gob-desk": this.paper.desk });
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
@@ -3511,6 +3531,8 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // Another tool puts the format painter away.
+    this.formatPainter?.cancel();
     // Another tool ends exploring a graph, keeping where it was left.
     this.endExplore(true);
     // Another tool: a box scrolled out of sight is forgotten.
@@ -11009,6 +11031,85 @@ export class InkSurface {
     return { strokes: inked, images: [], textBoxes: [], tables: [table] };
   }
 
+  // --- The format painter --------------------------------------------------------
+
+  /**
+   * Copy the look of `strokes` (the one most of them share,
+   * `dominantInkStyle`) and arm the format painter: the selection goes, and
+   * each Pencil or mouse sweep over ink from now on lays that look on what
+   * it touches, one undo step a sweep, until another tool is picked.
+   */
+  private copyStyle(strokes: readonly Stroke[]): void {
+    const style = dominantInkStyle(strokes);
+    if (!style) return;
+    this.clearSelection();
+    this.formatPainter ??= new FormatPainter({
+      input: this.scrollEl,
+      layer: this.surfaceEl,
+      paintAlong: (x0, y0, x1, y1) => this.paintAlong(x0, y0, x1, y1),
+      finish: () => this.finishPaint(),
+    });
+    this.formatPainter.arm(style);
+  }
+
+  /**
+   * Lay the copied look on every stroke the sweep from one client point to
+   * the next passes over, on the page under its end: painted at once, its
+   * tiles repaired on the next frame. Only owners are painted (the stroke
+   * index leaves mirrors out), and only ink that shows there: a sticky
+   * note hides what is under it.
+   */
+  private paintAlong(x0: number, y0: number, x1: number, y1: number): void {
+    const style = this.formatPainter?.style;
+    if (!style || this.callbacks.isLocked?.()) return;
+    const end = this.toLayout(x1, y1);
+    const box = boxAtPoint(this.pageLayout, end.x, end.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) return;
+    const from = this.toPage(box, this.toLayout(x0, y0));
+    const to = this.toPage(box, end);
+    const reach = PAINT_REACH_PX / this.unitScale;
+    const sweep = (this.paintSweep ??= new PaintStyle(style));
+    const notes = noteIdsOf(page.images);
+    const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / reach));
+    let painted = false;
+    for (let i = 0; i <= steps; i++) {
+      const x = from.x + ((to.x - from.x) * i) / steps;
+      const y = from.y + ((to.y - from.y) * i) / steps;
+      for (const id of this.strokeIndex.near(page.id, x, y, reach + MAX_STROKE_HALF_WIDTH)) {
+        const stroke = this.strokeIndex.get(id);
+        if (!stroke || !shownAt(page, stroke, x, y, notes)) continue;
+        const hit =
+          strokeHitByPoint(stroke, x, y, stroke.size / 2 + reach) || strokeFillHit(stroke, x, y);
+        if (!hit) continue;
+        const before = elementBounds("strokes", stroke);
+        if (!sweep.paint(this.doc, page.id, stroke)) continue;
+        const after = elementBounds("strokes", stroke);
+        const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+        // A colour or width is not part of a stroke's cached outline: re-rasterise.
+        if (dirty) this.renderer?.invalidateRegion(box.index, dirty);
+        painted = true;
+      }
+    }
+    if (painted) this.requestFrame();
+  }
+
+  /**
+   * The sweep has lifted: what it painted becomes one undo step. The live
+   * paint is taken back and pushed as the command, which paints it again.
+   */
+  private finishPaint(): void {
+    const sweep = this.paintSweep;
+    this.paintSweep = null;
+    if (!sweep?.changed) return;
+    sweep.invert(this.doc);
+    this.history.push(this.doc, sweep);
+    const pages = sweep.pageIds;
+    // A width changes where a stroke reaches: the index learns it.
+    this.strokeIndex.refreshPages(this.doc.pages, pages);
+    this.inkChanged(pages);
+  }
+
   // --- Picking a colour from the page --------------------------------------------
 
   /**
@@ -11692,6 +11793,16 @@ export class InkSurface {
               if (color) this.recolorCustom(color);
             }),
         },
+      });
+    }
+    // Its ink's look, to lay on other ink with the pen (`copyStyle`).
+    if (menu.colour && sel.strokes.length > 0) {
+      actions.push({
+        id: "copy-style",
+        icon: "paintbrush",
+        label: "Copy style",
+        group: "style",
+        run: () => this.copyStyle(sel.strokes),
       });
     }
     if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));

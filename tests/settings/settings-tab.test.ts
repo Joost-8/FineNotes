@@ -438,7 +438,7 @@ describe("the rows", () => {
       [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
-      [PAGES, "Page appearance", "render"],
+      [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
@@ -506,7 +506,7 @@ describe("the rows", () => {
     const all = rows(tab);
     expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
     expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
-    expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
+    expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
   });
@@ -517,9 +517,7 @@ describe("the rows", () => {
     expect(words("Start with")).toEqual(
       expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    expect(words("Page appearance")).toEqual(
-      expect.arrayContaining(["dark mode", "dark PDF pages"]),
-    );
+    expect(words("Page appearance")).toEqual(expect.arrayContaining(["dark mode", "night mode"]));
     expect(words("New notebooks go in")).toContain("default folder for new notebooks");
     expect(words("Saved pens")).toEqual(expect.arrayContaining(["number key", "restore defaults"]));
     expect(words("Size and language")).toEqual(
@@ -560,13 +558,15 @@ describe("the rows", () => {
       "until-tap": "Until you tap the pen",
       "until-lift": "Until the pen lifts",
     });
-    expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
+    expect(Object.keys(named(all, "Page appearance").control?.options ?? {})).toEqual([
       "light",
       "dark",
-      "dark-pdf-light",
       "system",
-      "system-pdf-light",
     ]);
+    // Dark PDF pages and Desk live in the notebook's ⋯ menu, not here.
+    expect(all.some((row) => row.def.name === "Dark PDF pages" || row.def.name === "Desk")).toBe(
+      false,
+    );
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
       [LLM_PROVIDER_ID]: providerLabel(LLM_PROVIDER_ID),
@@ -872,16 +872,15 @@ describe("control values", () => {
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
-  it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
+  it("sets Page appearance without touching Dark PDF pages, and redraws notebooks (FineNotes#67)", async () => {
     const plugin = Object.assign(makePlugin({ pageAppearance: "dark", invertPdfPages: false }), {
       applyPageAppearance: vi.fn(() => Promise.resolve()),
     });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Page appearance"));
-    expect(row.dropdowns[0].value).toBe("dark-pdf-light");
-    await row.dropdowns[0].pick("system");
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("pageAppearance", "system");
     expect([plugin.settings.pageAppearance, plugin.settings.invertPdfPages]).toEqual([
       "system",
-      true,
+      false,
     ]);
     expect(plugin.applyPageAppearance).toHaveBeenCalledOnce();
   });
