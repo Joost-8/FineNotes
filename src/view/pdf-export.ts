@@ -25,6 +25,7 @@ import {
 } from "../export/pdf-writer";
 import { isTape } from "../model/cover-tape";
 import type { Page } from "../model/document";
+import { plainBackdrop } from "../model/templates";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import type { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
@@ -45,8 +46,17 @@ export interface PdfExportSources {
   highlighterAlpha: number;
   /** A page's header and page number, when the notebook has them. */
   furniture?: (page: Page) => PageTexts;
+  /** Leave each page's template out (`plainBackdrop`): plain paper under the ink. */
+  plainPaper?: boolean;
   /** Leave the cover tapes out (`model/cover-tape`), so what is under them shows. */
   withoutTapes?: boolean;
+}
+
+/** `page` as `sources` paint it: on plain paper when they ask for it. */
+function pageOf(page: Page, sources: PdfExportSources): Page {
+  if (!sources.plainPaper) return page;
+  const backdrop = plainBackdrop(page.backdrop);
+  return backdrop === page.backdrop ? page : { ...page, backdrop };
 }
 
 /** `page` as `sources` export it: without its cover tapes when they ask. */
@@ -98,7 +108,7 @@ export async function renderPageJpeg(
   original: Page,
   sources: PdfExportSources,
 ): Promise<PdfImagePage> {
-  const page = withTapesOf(original, sources);
+  const page = withTapesOf(pageOf(original, sources), sources);
   const { width, height } = page.geometry;
   const scale = exportPixelScale(width, height);
   if (scale === 0) throw new Error("A page has no size");
@@ -114,7 +124,7 @@ export async function renderPageJpeg(
       highlighterAlpha: sources.highlighterAlpha,
       paper: sources.paper,
       ...(sources.images ? { images: sources.images } : {}),
-      ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
+      ...(sources.furniture ? { furniture: sources.furniture(original) } : {}),
     });
     const jpeg = await canvasToJpeg(canvas);
     return {
@@ -140,7 +150,7 @@ export async function paintPagePreview(
   cssWidth: number,
   dpr: number,
 ): Promise<void> {
-  const page = withTapesOf(original, sources);
+  const page = withTapesOf(pageOf(original, sources), sources);
   const { width } = page.geometry;
   if (!(width > 0) || !(cssWidth > 0)) return;
   const painter = await preparePage(page, sources, (cssWidth / width) * dpr);
@@ -149,7 +159,7 @@ export async function paintPagePreview(
     highlighterAlpha: sources.highlighterAlpha,
     paper: sources.paper,
     ...(sources.images ? { images: sources.images } : {}),
-    ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
+    ...(sources.furniture ? { furniture: sources.furniture(original) } : {}),
   });
 }
 

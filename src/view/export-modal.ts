@@ -64,6 +64,13 @@ export interface ExportPdfHost {
   ) => Promise<ExportedPdf>;
   /** Open the saved PDF in Obsidian. */
   open: (path: string) => void;
+  /**
+   * Whether pages export on plain paper, their template (lines, grid, dots)
+   * left out; remembered by the host, which `paintPreview` and `export` read.
+   */
+  plainPaper?: boolean;
+  /** The template switch was flipped: remember it. Previews are painted again after. */
+  setPlainPaper?: (plain: boolean) => void;
   /** Whether the cover tapes are left out of the export; remembered by the host. */
   withoutTapes?: boolean;
   /**
@@ -176,6 +183,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
@@ -278,6 +286,7 @@ export class ExportPdfModal extends Modal {
       go.disabled = true;
       contentEl.addClass("is-busy");
       for (const button of this.scopeButtons.values()) button.disabled = true;
+      if (template) template.disabled = true;
       if (tapes) tapes.disabled = true;
       status.removeClass("is-error");
       try {
@@ -298,12 +307,42 @@ export class ExportPdfModal extends Modal {
         status.addClass("is-error");
         status.setText(errorMessage(error));
         for (const button of this.scopeButtons.values()) button.disabled = false;
+        if (template) template.disabled = false;
         if (tapes) tapes.disabled = false;
         sync(false);
       }
     };
     go.addEventListener("click", () => void run());
     sync(true);
+  }
+
+  /**
+   * The template switch, beside the actions: a grid icon, lit while pages
+   * export with their template (lines, grid, dots) and plain without. The
+   * previews follow at once. `null` when the host remembers no such choice.
+   */
+  private templateSwitch(parent: HTMLElement): HTMLButtonElement | null {
+    const set = this.host.setPlainPaper;
+    if (!set) return null;
+    let plain = this.host.plainPaper === true;
+    const button = parent.createEl("button", {
+      cls: "clickable-icon goodobsidian-export-template",
+      attr: { "aria-label": "Template background" },
+    });
+    setIcon(button, "grid");
+    const show = (): void => {
+      button.toggleClass("is-active", !plain);
+      button.setAttribute("aria-pressed", String(!plain));
+    };
+    show();
+    button.addEventListener("click", () => {
+      if (this.busy) return;
+      plain = !plain;
+      show();
+      set(plain);
+      this.repaintPreviews();
+    });
+    return button;
   }
 
   /**

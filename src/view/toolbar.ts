@@ -155,6 +155,7 @@ import {
   sameColor,
 } from "../model/colors";
 import { bindSwatchDrag } from "./swatch-drag";
+import { shownColor } from "../canvas/backdrop";
 import { bindPenTypeDrag } from "./pen-type-drag";
 import { movePenType, penTypeOrderOf, shownPenTypes } from "../model/pen-type-order";
 import { bindPillDrag } from "./pill-drag";
@@ -880,6 +881,8 @@ export class Toolbar {
   private penToolButton: HTMLElement | null = null;
   /** What the pen button last drew, so an unchanged pen is not redrawn. */
   private penPreviewKey = "";
+  /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
+  private night = false;
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
   /** The tier-1 buttons that may fold into ⋯ (`fitBar`), ranked by `FOLD_RANK`. */
@@ -1873,7 +1876,7 @@ export class Toolbar {
     const button = this.penToolButton;
     if (!button) return;
     const spec = this.activePenType();
-    const color = this.state.color;
+    const color = this.shown(this.state.color);
     const width = strokeWidthFor({ ...this.state, tool: spec.tool });
     const dark = activeDocument.body.hasClass("theme-dark");
     const key = `${spec.id}|${color}|${width}|${dark}`;
@@ -2204,7 +2207,7 @@ export class Toolbar {
       const spec = PEN_TYPES.find((type) => type.id === id);
       if (!spec) continue;
       const pen = row.createEl("button", { cls: "goodobsidian-pentype clickable-icon" });
-      pen.append(penGlyph(spec.id, this.inkColorOf(spec)));
+      pen.append(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
       pen.setAttribute("aria-label", spec.label);
       pen.setAttribute("title", spec.label);
       pen.addEventListener("click", () => {
@@ -2563,9 +2566,11 @@ export class Toolbar {
     // itself rather than chrome; everything else comes from Obsidian's vars.
     // The colour only: the `background` shorthand would reset the stylesheet's
     // `background-clip`, which keeps the disc smaller than its target.
-    swatch.setCssStyles({ backgroundColor: color });
+    // On dark pages it is the colour the ink is shown in, as on the page.
+    const shown = this.shown(color);
+    swatch.setCssStyles({ backgroundColor: shown });
     // The chosen swatch wears a ▾ in whichever of dark or white reads on it.
-    swatch.setCssProps({ "--gob-swatch-mark": contrastMark(color) });
+    swatch.setCssProps({ "--gob-swatch-mark": contrastMark(shown) });
     iconOrText(swatch.createSpan({ cls: "goodobsidian-swatch-mark" }), "chevron-down", "▾");
     swatch.setAttr("aria-label", color);
     swatch.addEventListener("click", onPick);
@@ -3824,7 +3829,7 @@ export class Toolbar {
           : this.state.color;
       // A shape's outline is one even line, whatever pen is chosen.
       const pen = this.state.tool === "shape" ? "ball" : this.activePenType().id;
-      preview(strokeWidthFor(this.state) * this.previewScales().pen, color, pen);
+      preview(strokeWidthFor(this.state) * this.previewScales().pen, this.shown(color), pen);
     };
     const pick = (width: number): void => {
       this.setWidth(width);
@@ -5357,7 +5362,7 @@ export class Toolbar {
       if (!button.isConnected) continue;
       const spec = PEN_TYPES.find((type) => type.id === id);
       const glyph = button.querySelector("svg");
-      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.inkColorOf(spec)));
+      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
     }
   }
 
@@ -5384,6 +5389,22 @@ export class Toolbar {
     if (this.optionsVisible) return;
     this.optionsVisible = true;
     this.showOptions(true);
+  }
+
+  /**
+   * Pages are shown dark, or no longer: swatches and pen marks show each
+   * colour as the page shows its ink, while what is picked stays the true one.
+   */
+  setNight(night: boolean): void {
+    if (night === this.night) return;
+    this.night = night;
+    this.buildOptions();
+    this.syncActive();
+  }
+
+  /** `color` as the page shows ink of it. */
+  private shown(color: string): string {
+    return shownColor(color, this.night);
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */

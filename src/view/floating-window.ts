@@ -71,6 +71,8 @@ export interface FloatingWindowOptions {
 export class FloatingWindow {
   readonly el: HTMLElement;
   readonly body: HTMLElement;
+  /** The bar buttons made from {@link FloatingWindowOptions.buttons}, in order (an owner may restyle one). */
+  readonly barButtons: HTMLButtonElement[] = [];
   private place: WindowPlace;
   private readonly min: { w: number; h: number };
   private readonly dispose: Array<() => void> = [];
@@ -88,7 +90,7 @@ export class FloatingWindow {
     const title = bar.createSpan({ cls: `${cls}-title`, text: options.title });
     title.setAttribute("aria-hidden", "true");
     for (const button of options.buttons ?? []) {
-      this.barButton(bar, button.icon, button.label, button.run);
+      this.barButtons.push(this.barButton(bar, button.icon, button.label, button.run));
     }
     if (options.minimise) {
       this.barButton(bar, "minus", "Minimise", () => this.setMinimised(!this.place.minimised));
