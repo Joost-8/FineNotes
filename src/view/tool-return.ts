@@ -32,6 +32,7 @@ const SECONDARY_TOOLS: ReadonlySet<ActiveTool> = new Set([
   "text",
   "shape",
   "laser",
+  "tape",
   "fill",
 ]);
 

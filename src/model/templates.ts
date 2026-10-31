@@ -249,6 +249,19 @@ export function paperColorOf(backdrop: Backdrop): PaperColorId {
   return match?.id ?? "white";
 }
 
+/**
+ * A page's backdrop with its template left out, for Export as PDF's plain
+ * paper: lines, grid, dots, texture, margin lines and printed prompts go and
+ * the paper keeps its colour. A PDF page and a cover are content, not
+ * template, and stay as they are.
+ */
+export function plainBackdrop(backdrop: Backdrop): Backdrop {
+  if (backdrop.kind === "pdf" || isCoverRuling(backdrop.kind)) return backdrop;
+  return backdrop.paperColor
+    ? { kind: "blank", paperColor: backdrop.paperColor }
+    : { kind: "blank" };
+}
+
 /** The backdrop a template produces on a given paper colour. */
 export function templateBackdrop(ruling: Ruling, color: PaperColorId): SyntheticBackdrop {
   const spec = PAPER_COLORS.find((c) => c.id === color);

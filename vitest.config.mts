@@ -31,6 +31,7 @@ export default defineConfig({
         "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",
         "src/canvas/erase-look.ts",
+        "src/canvas/tape-paint.ts",
         "src/canvas/cover-patterns.ts",
         "src/canvas/page-layout.ts",
         "src/canvas/page-join.ts",

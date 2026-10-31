@@ -20,6 +20,7 @@ import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
 import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
+import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
@@ -1253,6 +1254,13 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the Shape tool's colour, for the next session. */
   saveShapeColor(color: string): void {
     this.settings.shapeColor = parseHexColor(color) ?? DEFAULT_SHAPE_COLOR;
+    void this.saveSettings();
+  }
+
+  /** Remember cover tape's colour and height, for the next session. */
+  saveTape(color: string, height: number): void {
+    this.settings.tapeColor = tapeColorOf(color);
+    this.settings.tapeHeight = tapeHeightOf(height);
     void this.saveSettings();
   }
 
