@@ -23,6 +23,7 @@ import {
   buildImagePdf,
   exportPixelScale,
 } from "../export/pdf-writer";
+import { isTape } from "../model/cover-tape";
 import type { Page } from "../model/document";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import type { VaultImageCache } from "./image-cache";
@@ -44,6 +45,14 @@ export interface PdfExportSources {
   highlighterAlpha: number;
   /** A page's header and page number, when the notebook has them. */
   furniture?: (page: Page) => PageTexts;
+  /** Leave the cover tapes out (`model/cover-tape`), so what is under them shows. */
+  withoutTapes?: boolean;
+}
+
+/** `page` as `sources` export it: without its cover tapes when they ask. */
+function withTapesOf(page: Page, sources: PdfExportSources): Page {
+  if (!sources.withoutTapes || !page.strokes.some(isTape)) return page;
+  return { ...page, strokes: page.strokes.filter((stroke) => !isTape(stroke)) };
 }
 
 export interface PdfExportOptions {
@@ -64,7 +73,8 @@ export async function exportPagesToPdf(
   const hasPdf = pages.some((page) => page.backdrop.kind === "pdf");
   if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
   const composer = hasPdf ? await PdfComposer.create(options.title, sources.readPdf!) : null;
-  for (const [i, page] of pages.entries()) {
+  for (const [i, original] of pages.entries()) {
+    const page = withTapesOf(original, sources);
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);
     // Let the dialog paint its progress before the next page blocks the thread.
@@ -84,7 +94,11 @@ export async function exportPagesToPdf(
 }
 
 /** One page as a JPEG, sized for print, with its size in points. */
-export async function renderPageJpeg(page: Page, sources: PdfExportSources): Promise<PdfImagePage> {
+export async function renderPageJpeg(
+  original: Page,
+  sources: PdfExportSources,
+): Promise<PdfImagePage> {
+  const page = withTapesOf(original, sources);
   const { width, height } = page.geometry;
   const scale = exportPixelScale(width, height);
   if (scale === 0) throw new Error("A page has no size");
@@ -121,11 +135,12 @@ export async function renderPageJpeg(page: Page, sources: PdfExportSources): Pro
  */
 export async function paintPagePreview(
   canvas: HTMLCanvasElement,
-  page: Page,
+  original: Page,
   sources: PdfExportSources,
   cssWidth: number,
   dpr: number,
 ): Promise<void> {
+  const page = withTapesOf(original, sources);
   const { width } = page.geometry;
   if (!(width > 0) || !(cssWidth > 0)) return;
   const painter = await preparePage(page, sources, (cssWidth / width) * dpr);

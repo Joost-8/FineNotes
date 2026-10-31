@@ -128,6 +128,7 @@ const FRESH_INSTALL = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
 
   savedPens: [
     { type: "ball", color: "#1971c2", size: 2 },
@@ -244,6 +245,7 @@ const USED_VAULT = {
   pencilTilt: true,
   pageAppearance: "system",
   invertPdfPages: false,
+  exportWithoutTapes: true,
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],

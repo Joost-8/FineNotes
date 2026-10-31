@@ -186,6 +186,10 @@ export interface GoodObsidianSettings {
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Cover tape's colour, `#rrggbb` (`model/cover-tape`). Absent: masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. Absent: the medium height. */
+  tapeHeight?: number;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
@@ -298,6 +302,8 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+  /** Export as PDF leaves the cover tapes out, so what is under them shows. */
+  exportWithoutTapes: boolean;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -454,6 +460,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],

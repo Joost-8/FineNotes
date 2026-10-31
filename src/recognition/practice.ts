@@ -565,7 +565,7 @@ export function missingSymbols(docs: readonly InkDocument[]): number[] {
 
 /** Whether a stroke is handwriting the reader can learn from. */
 function isWriting(stroke: Stroke): boolean {
-  return stroke.tool !== "highlighter" && !stroke.shape;
+  return stroke.tool === "pen" && !stroke.shape;
 }
 
 /**

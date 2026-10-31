@@ -1238,3 +1238,36 @@ tilt?: number[];
   `sticky`, `v2+sticky+tilt:`) with `"requires": ["tilt"]`, so an older
   FineNotes holds it read-only instead of saving the shading back at the
   nib's width (§ "Payload label: refusing instead of dropping").
+
+## Cover tape (2026-10-30)
+
+`Stroke.tool` gains a third value, `"tape"` (`src/model/cover-tape.ts`): an
+opaque strip laid over the page, as Goodnotes' tape, to hide answers while
+studying or keep something out of sight.
+
+- **Geometry:** the stroke's first and last points are the middles of the
+  strip's two ends (the Cover tape tool stores exactly two, made level or
+  upright when nearly so); `size` is its height, page px; `color` its colour.
+  Pressure is ignored, and points in between (if a transform leaves any) do
+  not change its shape.
+- **Painted over everything** on its page, whatever its place in `strokes`:
+  ink, pictures (in front of the ink too), tables, graphs, checklist boxes
+  and typed text. In the view, where typed text boxes are DOM above the
+  page, a box under a covered tape is clipped where the tape lies (not while
+  it is being typed in); two tapes overlapping on one box show it through
+  where they overlap.
+- **Shown through is not stored.** A tap (a finger with any tool but the
+  lasso; a Pencil or mouse tap with a writing tool or the tape tool; a mouse
+  right-click) shows a tape through, or covers it again, in this view only,
+  for this session. It is never an undo step and never saved: the file, every
+  sync, the page thumbnails, PDF export and every image sent to an AI model
+  have every tape covered. Export as PDF can leave every tape out
+  (`exportWithoutTapes`, the dialog's tape button).
+- **Otherwise ink:** the lasso selects, moves, turns, resizes, recolours,
+  copies and deletes it; it mirrors over a join; every eraser mode takes it
+  whole, never in part. The handwriting reader and sums leave it out (they
+  read `tool === "pen"` only).
+- **Label:** a notebook with any tape is written `v2+tape:` (after `tilt`)
+  with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
+  ink and save it back as a thick line, so it holds the notebook read-only
+  instead (§ "Payload label: refusing instead of dropping").

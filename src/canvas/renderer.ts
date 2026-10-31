@@ -50,6 +50,9 @@ import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../
 import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
 import { type PixelRect, inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
+import { isTape, tapesLast } from "../model/cover-tape";
+import { paintTape } from "./tape-paint";
+import { ownerOf } from "./mirrors";
 import { inkBounds, taskBoxRect } from "../model/tasks";
 import {
   type Backdrop,
@@ -645,6 +648,11 @@ export class Renderer {
   private hiddenImages: ReadonlySet<ImageElement> = new Set();
   /** Strokes (by id) left out of tiles and previews: a lasso selection being dragged. */
   private hiddenStrokes: ReadonlySet<string> = new Set();
+  /**
+   * Cover tapes (by their owner's id) shown through in this view, a mirror
+   * over a join with its owner: never in a file, an export or a thumbnail.
+   */
+  private revealedTapes: ReadonlySet<string> = new Set();
   /** Strokes drawn pale: ink a recording's playback has not reached yet (2.5). */
   private fadedStrokes: ReadonlySet<string> = new Set();
   /** Tables left out of tiles and previews: a lasso selection being dragged. */
@@ -664,6 +672,8 @@ export class Renderer {
    * screen is at the new level.
    */
   private fallbackLevel = 0;
+  /** Per page, the widest ink reach {@link widestInk} has seen there. */
+  private readonly widestSeen = new Map<string, number>();
   private readonly tiles = new ByteLru<Tile>(MIN_TILE_BUDGET, (tile) => releaseCanvas(tile.canvas));
   private readonly previews = new ByteLru<Preview>(PREVIEW_BUDGET, (p) => releaseCanvas(p.canvas));
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
@@ -867,6 +877,16 @@ export class Renderer {
     this.fadedStrokes = ids;
   }
 
+  /**
+   * Show these cover tapes through (`model/cover-tape`) in every tile and
+   * preview rasterised from now on; as above, the caller invalidates the
+   * regions of the tapes that changed. Only the view has them: the page
+   * thumbnails, exports and the AI's page image draw every tape covered.
+   */
+  setRevealedTapes(ids: ReadonlySet<string>): void {
+    this.revealedTapes = ids;
+  }
+
   /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
   setHiddenTables(tables: ReadonlySet<TableElement>): void {
     this.hiddenTables = tables;
@@ -954,15 +974,21 @@ export class Renderer {
   }
 
   /**
-   * How far past its centreline the widest tilted stroke on page `pageId`
-   * reaches, page px; 0 when none is tilted. A brush laid flat can paint
-   * beyond {@link INK_PAD}, so a change near it must repaint that far.
+   * How far past its centreline the widest tilted stroke or cover tape on
+   * page `pageId` reaches, page px; 0 when there is none. A brush laid flat
+   * or a tall tape paints beyond {@link INK_PAD}, so a change near it must
+   * repaint that far. It never shrinks: a tape just erased is no longer on
+   * the page when its tiles are repaired, and its edges were left behind.
    */
   private widestInk(pageId: string): number {
     const page = this.doc?.pages.find((candidate) => candidate.id === pageId);
-    let reach = 0;
-    for (const stroke of page?.strokes ?? [])
+    let reach = this.widestSeen.get(pageId) ?? 0;
+    for (const stroke of page?.strokes ?? []) {
       if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
+      // A tape is as tall as its size either side of its two points.
+      else if (isTape(stroke)) reach = Math.max(reach, stroke.size / 2 + 2);
+    }
+    this.widestSeen.set(pageId, reach);
     return reach;
   }
 
@@ -2285,7 +2311,8 @@ export class Renderer {
     const night = pageLook(page.backdrop, this.paper).night;
     // A sticky note's ink is drawn with its note (`paintImages`).
     const notes = noteIdsOf(page.images);
-    for (const stroke of page.strokes) {
+    // A cover tape lies over all the ink, whenever it was laid.
+    for (const stroke of tapesLast(page.strokes)) {
       if (isNoteInk(stroke, notes)) continue;
       this.paintStroke(ctx, stroke, region, usePressure, night, hidden, replaced, greyed);
     }
@@ -2350,7 +2377,17 @@ export class Renderer {
     }
     // Grey is only a colour: the outline traced for the stroke is the same.
     const look = grey ? erasingLook(stroke) : stroke;
-    paintStroke(ctx, entry, look, this.highlighterAlpha, night, decorOf(look), stroke.pts);
+    const revealed = this.tapeRevealed(stroke);
+    paintStroke(
+      ctx,
+      entry,
+      look,
+      this.highlighterAlpha,
+      night,
+      decorOf(look),
+      stroke.pts,
+      revealed,
+    );
     if (faded) ctx.restore();
   }
 
@@ -2613,7 +2650,17 @@ export class Renderer {
     }
     const draw = (stroke: Stroke, dark: boolean): void => {
       const entry = this.pathEntry(stroke, usePressure);
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, dark, decorOf(stroke), stroke.pts);
+      const revealed = this.tapeRevealed(stroke);
+      paintStroke(
+        ctx,
+        entry,
+        stroke,
+        this.highlighterAlpha,
+        dark,
+        decorOf(stroke),
+        stroke.pts,
+        revealed,
+      );
     };
     const notes = noteIdsOf(images);
     const pictures = (front: boolean): void => {
@@ -2628,7 +2675,7 @@ export class Renderer {
       }
     };
     pictures(false);
-    for (const stroke of strokes) if (!isNoteInk(stroke, notes)) draw(stroke, night);
+    for (const stroke of tapesLast(strokes)) if (!isNoteInk(stroke, notes)) draw(stroke, night);
     pictures(true);
     ctx.restore();
     this.setWetVisible(true);
@@ -2652,7 +2699,10 @@ export class Renderer {
     const page = this.doc?.pages[pageIndex];
     if (
       (stroke.onSticky !== undefined && page && isNoteInk(stroke, noteIdsOf(page.images))) ||
-      page?.images.some((image) => image.front === true && overlaps(imageBounds(image), bounds))
+      page?.images.some((image) => image.front === true && overlaps(imageBounds(image), bounds)) ||
+      // Ink under a cover tape goes under it, and a new tape is drawn as tapes are.
+      isTape(stroke) ||
+      page?.strokes.some((other) => isTape(other) && this.tapeOver(other, bounds))
     ) {
       this.invalidateRegion(pageIndex, bounds);
       return;
@@ -2695,6 +2745,20 @@ export class Renderer {
     // stand-in from the last zoom has not got it.
     this.dropFallback(box, bounds);
     this.damageDry(box, bounds);
+  }
+
+  /** Whether `stroke` is a tape shown through: it, or the tape it mirrors. */
+  private tapeRevealed(stroke: Stroke): boolean {
+    if (!isTape(stroke) || this.revealedTapes.size === 0) return false;
+    if (this.revealedTapes.has(stroke.id)) return true;
+    const owner = stroke.join ? ownerOf(stroke.join) : null;
+    return owner !== null && this.revealedTapes.has(owner.id);
+  }
+
+  /** Whether cover tape `tape` reaches into `bounds` (page px). */
+  private tapeOver(tape: Stroke, bounds: Bounds): boolean {
+    const entry = this.pathEntry(tape, false);
+    return entry.bounds !== null && overlaps(entry.bounds, bounds);
   }
 
   /** Draw the in-progress stroke (page space) on the wet layer. */
@@ -2886,12 +2950,18 @@ export function inkReach(stroke: Pick<Stroke, "size" | "tilt" | "shape">): numbe
 function paintStroke(
   ctx: CanvasRenderingContext2D,
   ink: { runs: readonly InkRun[]; paths?: readonly Path2D[] },
-  style: { color: string; tool: Tool },
+  style: { color: string; tool: Tool; size?: number },
   highlighterAlpha: number,
   night = false,
   decor: ShapeDecor | null = null,
   pts?: readonly number[],
+  revealed = false,
 ): void {
+  // A cover tape is a strip laid over the page, not a line of ink.
+  if (style.tool === "tape") {
+    if (pts) paintTape(ctx, pts, style.size ?? 0, style.color, { revealed, night });
+    return;
+  }
   const highlighter = style.tool === "highlighter";
   ctx.save();
   if (highlighter) {
@@ -3137,7 +3207,7 @@ export function renderPageThumbnail(
   paintConnectors(ctx, page, look.night);
 
   for (const stroke of page.strokes) {
-    if (isNoteInk(stroke, notes)) continue;
+    if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
     fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
   }
   // Handwriting made a checklist item has its box beside it, in its ink colour.
@@ -3149,6 +3219,11 @@ export function renderPageThumbnail(
   // canvas: a filled shape is a ground the text sits on, and a filled box
   // covers the ink under it in an export just as it does on screen.
   for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  // Cover tapes over everything, typed text too, and always covered: what
+  // was shown through in the view is never shown in an export or to the AI.
+  for (const stroke of page.strokes) {
+    if (isTape(stroke)) paintTape(ctx, stroke.pts, stroke.size, stroke.color, look);
+  }
   ctx.restore();
 }
 

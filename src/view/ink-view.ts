@@ -22,6 +22,7 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
+import { isTape, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -390,6 +391,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
+    tapeColor: tapeColorOf(s.tapeColor),
+    tapeHeight: tapeHeightOf(s.tapeHeight),
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
@@ -2606,6 +2609,9 @@ export class InkView extends TextFileView {
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        onTapeChange: (color, height) => this.plugin.saveTape(color, height),
+        tapesShown: () => this.surface?.tapesShown() ?? null,
+        onShowTapes: (shown) => this.surface?.showTapes(shown),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
@@ -2834,7 +2840,9 @@ export class InkView extends TextFileView {
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
         onSizeScale: () => this.toolbar?.refreshSizeMarks(),
+        onTapesToggled: () => this.toolbar?.refreshTape(),
         onPageChange: (index) => {
+          this.toolbar?.refreshTape();
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
           this.scheduleWordCheck();
@@ -3513,7 +3521,13 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = this.previewSources();
+    const preview = this.previewSources();
+    // With the tapes or without, as the dialog's switch was last left.
+    const exported = (): PdfExportSources => ({
+      ...preview,
+      withoutTapes: this.settings.exportWithoutTapes === true,
+    });
+    const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
@@ -3523,15 +3537,26 @@ export class InkView extends TextFileView {
       chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
-        if (page)
-          await paintPagePreview(canvas, page, sources, cssWidth, window.devicePixelRatio || 1);
+        if (page) {
+          const dpr = window.devicePixelRatio || 1;
+          await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
+        }
       },
+      withoutTapes: this.settings.exportWithoutTapes === true,
+      ...(taped
+        ? {
+            setWithoutTapes: (without: boolean) => {
+              this.settings.exportWithoutTapes = without;
+              void this.plugin.saveSettings();
+            },
+          }
+        : {}),
       fileNameFor: (pages) =>
         uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
       export: async (pages, onProgress, cancelled) => {
         const bytes = await exportPagesToPdf(
           pages.map((i) => doc.pages[i]),
-          sources,
+          exported(),
           { title: stripInkSuffix(note.basename), onProgress, cancelled },
         );
         // Named at save time, not when the dialog opened: another export may
