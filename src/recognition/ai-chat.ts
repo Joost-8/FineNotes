@@ -76,7 +76,28 @@ export interface ChatRequestInput extends VendorTarget {
    * the cache costs a quarter more and nothing would read it.
    */
   cache?: boolean;
+  /** OpenRouter only: serve the model only from providers that do not say they compress it. */
+  skipCompressed?: boolean;
 }
+
+/**
+ * The quantizations OpenRouter may serve a model at when `skipCompressed`
+ * is on: fp8 or better, and `unknown`. OpenRouter lists every provider of
+ * Gemini, GPT and Claude (and many of other models) as `unknown`; leaving
+ * it out would leave those models no provider at all, and the request would
+ * fail. A provider that serves a compressed version says so (fp4, nvfp4,
+ * fp6, int4, int8), so those stay out. Only filtering, never `sort`, keeps
+ * OpenRouter's own ranking (price, speed, reliability) among the rest. See
+ * https://openrouter.ai/docs/features/provider-routing.
+ */
+export const FULL_QUALITY_QUANTIZATIONS: readonly string[] = [
+  "fp8",
+  "mxfp8",
+  "fp16",
+  "bf16",
+  "fp32",
+  "unknown",
+];
 
 /**
  * Most pages the Ask AI page picker takes at once. Every page is roughly
@@ -205,12 +226,18 @@ function textFileBlock(file: ChatFile): string {
   return `<file name="${file.name.replace(/"/g, "'")}">\n${file.text ?? ""}\n</file>`;
 }
 
-/** Build the vendor's HTTP request for a conversation. Throws on a missing key or a malformed history. */
+/**
+ * Build the vendor's HTTP request for a conversation. Throws on a missing key or a malformed history.
+ * `skipCompressed` adds OpenRouter's `provider` filter, for OpenRouter only.
+ */
 export function buildChatRequest(input: ChatRequestInput): LlmHttpRequest {
   const endpoint = jsonEndpoint(input);
   assertAlternating(input.turns);
   const toBody = DIALECT_CHAT_BODIES[VENDORS[input.vendor].dialect];
-  return { ...endpoint, body: toBody(input, input.maxTokens ?? MAX_OUTPUT_TOKENS) };
+  const body = toBody(input, input.maxTokens ?? MAX_OUTPUT_TOKENS);
+  if (input.vendor !== "openrouter" || !input.skipCompressed) return { ...endpoint, body };
+  const provider = { quantizations: [...FULL_QUALITY_QUANTIZATIONS] };
+  return { ...endpoint, body: { ...(body as object), provider } };
 }
 
 /** First element of an array read from JSON, as `unknown` (never `any`). */

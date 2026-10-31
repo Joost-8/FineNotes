@@ -10,6 +10,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
+
 - **A chisel tip for the highlighter.** Tap the highlighter in hand for its
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight

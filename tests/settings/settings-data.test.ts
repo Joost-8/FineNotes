@@ -83,6 +83,7 @@ const FRESH_INSTALL = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -219,6 +220,7 @@ const USED_VAULT = {
   updateReminders: false,
   llmVendor: "custom",
   llmModel: "llava:13b",
+  openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
   llmCustomApiKey: "local-secret",
@@ -456,6 +458,13 @@ describe("grey out while erasing", () => {
     for (const value of [false, undefined, null, "true", 1, "yes", {}]) {
       expect(greyWhileErasingOf(value)).toBe(false);
     }
+  });
+});
+
+describe("skipping OpenRouter's compressed providers", () => {
+  it("is off for a fresh install and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.openRouterSkipCompressed).toBe(false);
+    expect(loadAndSave({ llmVendor: "openrouter" }).openRouterSkipCompressed).toBe(false);
   });
 });
 
