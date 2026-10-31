@@ -61,9 +61,17 @@ describe("calculator store", () => {
 
   it("ignores bad switches", () => {
     const data = parseCalculatorData({
-      prefs: { angle: "grad", fractions: 1, base: 3, tab: "graph" },
+      prefs: { angle: "grad", fractions: 1, base: 3, tab: "graph", mode: "programmer" },
     });
     expect(data.prefs).toEqual(DEFAULT_CALC_PREFS);
+    expect(data.prefs.mode).toBeUndefined();
+  });
+
+  it("remembers the mode, Scientific when none was kept", () => {
+    expect(parseCalculatorData({ prefs: { mode: "basic" } }).prefs.mode).toBe("basic");
+    expect(parseCalculatorData({ prefs: { mode: "scientific" } }).prefs.mode).toBe("scientific");
+    const saved = withPrefs(parseCalculatorData(undefined), { mode: "basic" });
+    expect(parseCalculatorData(JSON.parse(JSON.stringify(saved))).prefs.mode).toBe("basic");
   });
 
   it("adds newest first, without repeating the top line, up to the cap", () => {

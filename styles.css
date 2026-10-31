@@ -14098,3 +14098,126 @@ body:has(.workspace-leaf.mod-active .goodobsidian-bar-at-bottom) .goodobsidian-d
   opacity: 0;
   pointer-events: none;
 }
+
+/* ------------------------------------------- the calculator's Basic mode */
+
+/* Basic: a pocket calculator, as the iPhone's in portrait (calculator-basic.ts).
+   The scientific display and keypad step aside; a big right-aligned number
+   and a 4 x 5 grid of round keys take their places. The keys are square:
+   their side is the grid's width or height share, whichever is smaller
+   (container units), and never under 56 px, so a finger or the Pencil finds
+   them; the window then scrolls rather than squeeze them. At the end of the
+   file: these outrank the calculator window's rules above. */
+.goodobsidian-calc.is-basic > .goodobsidian-calc-display,
+.goodobsidian-calc.is-basic > .goodobsidian-calc-body,
+.goodobsidian-calc:not(.is-basic) > .goodobsidian-calc-basic-slot {
+  display: none;
+}
+
+.goodobsidian-calc > .goodobsidian-calc-basic-slot {
+  flex: 0 0 auto;
+}
+
+.goodobsidian-calc.is-basic > .goodobsidian-calc-basic-slot.is-keys {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.goodobsidian-calc-basic-display {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 12px 0;
+  font-variant-numeric: tabular-nums;
+  touch-action: none;
+}
+
+.goodobsidian-calc-basic-tape {
+  height: 22px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 22px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goodobsidian-calc-basic-number {
+  height: 76px;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: 64px;
+  font-weight: var(--font-light, 300);
+  letter-spacing: -0.02em;
+  line-height: 76px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.goodobsidian-calc-basic-number.is-error {
+  color: var(--text-error);
+}
+
+.goodobsidian-calc-basic-pad {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: calc(5 * 56px + 4 * 12px);
+  container-type: size;
+}
+
+.goodobsidian-calc-basic-grid {
+  --gob-bkey: max(56px, min(calc((100cqw - 3 * 12px) / 4), calc((100cqh - 4 * 12px) / 5), 96px));
+  display: grid;
+  grid-template-columns: repeat(4, var(--gob-bkey));
+  grid-auto-rows: var(--gob-bkey);
+  gap: 12px;
+}
+
+button.clickable-icon.goodobsidian-calc-bkey {
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well-strong);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: calc(var(--gob-bkey) * 0.4);
+  font-weight: var(--font-normal, 400);
+  font-variant-numeric: tabular-nums;
+  /* A lit operator changes at once, as on the iPhone; only a press eases. */
+  transition: transform 120ms ease-out;
+}
+
+/* AC, ± and %: a stronger fill, set apart from the digits as on the iPhone. */
+button.clickable-icon.goodobsidian-calc-bkey.is-fn {
+  background: rgba(var(--mono-rgb-100), 0.22);
+  font-size: calc(var(--gob-bkey) * 0.34);
+  font-weight: var(--font-medium, 500);
+}
+
+button.clickable-icon.goodobsidian-calc-bkey.is-op,
+button.clickable-icon.goodobsidian-calc-bkey.is-equals {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: calc(var(--gob-bkey) * 0.46);
+}
+
+/* The operator just pressed: lit, the accent turned inside out. */
+button.clickable-icon.goodobsidian-calc-bkey.is-op.is-active {
+  background: var(--text-on-accent);
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+/* The 0 spans two keys, its digit over the first, as on the iPhone. */
+button.clickable-icon.goodobsidian-calc-bkey.is-wide {
+  grid-column: span 2;
+  justify-content: flex-start;
+  padding-left: calc(var(--gob-bkey) * 0.5 - 0.3em);
+}
