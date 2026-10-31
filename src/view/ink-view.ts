@@ -292,7 +292,7 @@ import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
-import { type PaperTheme, paperTheme } from "../canvas/backdrop";
+import { LIGHT_PAPER, type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { rulerSettingsOf } from "../canvas/ruler-geometry";
 import { eraserFilterOf } from "../ink/stroke-eraser";
@@ -331,6 +331,8 @@ import {
   penPreferencesOf,
   snapCurveOf,
   snapModeOf,
+  deskChoiceOf,
+  deskColorOf,
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
@@ -4514,6 +4516,12 @@ export class InkView extends TextFileView {
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
+        darkPdf: this.settings.invertPdfPages !== false,
+        desk: {
+          choice: deskChoiceOf(this.settings.desk),
+          color:
+            deskColorOf({ desk: "custom", deskColor: this.settings.deskColor }) ?? LIGHT_PAPER.desk,
+        },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
       },
@@ -4536,6 +4544,15 @@ export class InkView extends TextFileView {
         remove: (at) => act("delete", at),
         toggleDarkPages: () =>
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
+        setDarkPdf: (dark) => {
+          this.plugin.settings.invertPdfPages = dark;
+          void this.plugin.applyPageAppearance();
+        },
+        setDesk: (choice, color) => {
+          this.plugin.settings.desk = choice;
+          if (color !== undefined) this.plugin.settings.deskColor = color;
+          void this.plugin.applyPageAppearance();
+        },
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),

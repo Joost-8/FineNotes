@@ -700,6 +700,11 @@ export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolea
   return appearance === "system" && obsidianDark;
 }
 
+/** The desk choice `desk` holds, or "auto" for anything it does not know. */
+export function deskChoiceOf(desk: unknown): DeskChoice {
+  return desk === "light" || desk === "dark" || desk === "custom" ? desk : "auto";
+}
+
 /**
  * The desk colour `desk` and `deskColor` ask for, or `null` for the page
  * appearance's own desk. A custom colour that is not a colour is `null` too.

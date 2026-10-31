@@ -16,6 +16,7 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   changesTabLayout,
+  deskChoiceOf,
   deskColorOf,
   endpointWarning,
   greyWhileErasingOf,
@@ -395,6 +396,11 @@ describe("dark pages", () => {
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.
     expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
+  });
+
+  it("read a desk choice they do not know as With the pages", () => {
+    for (const desk of ["light", "dark", "custom", "auto"]) expect(deskChoiceOf(desk)).toBe(desk);
+    for (const desk of [undefined, null, "blur", 1]) expect(deskChoiceOf(desk)).toBe("auto");
   });
 
   it("put the pages on the desk the Desk setting names, and theirs on With the pages", () => {

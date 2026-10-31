@@ -81,14 +81,11 @@ import {
 } from "./recognition/llm-request";
 import { providerLabel } from "./recognition/registry";
 import {
-  DEFAULT_SETTINGS,
-  type DeskChoice,
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
   type SettingsSection,
   changesTabLayout,
-  deskColorOf,
   endpointWarning,
   paperWidthFrom,
   parseColorList,
@@ -212,14 +209,6 @@ const PAGE_APPEARANCES: Record<PageAppearance, string> = {
   system: "Match Obsidian",
 };
 
-/** The desks around the pages, as "Desk" names them. */
-const DESK_NAMES: Record<DeskChoice, string> = {
-  auto: "With the pages",
-  light: "Light",
-  dark: "Dark",
-  custom: "Custom",
-};
-
 /** The keys whose change redraws every open notebook's pages (`applyPageAppearance`). */
 const PAGE_LOOK_KEYS = new Set(["pageAppearance", "invertPdfPages"]);
 
@@ -305,14 +294,8 @@ const DESC = {
   pageAppearance:
     "Show pages dark for writing at night: the paper turns dark and ink light, keeping its " +
     "color. Only the view changes: ink is saved, exported and printed in its true color, " +
-    "and pictures are left as they are. Whether PDF pages turn dark too is Dark PDF pages, " +
-    "under More.",
-  darkPdfPages:
-    "With dark pages, PDF pages turn dark too. Off: they are shown as they are, for slides " +
-    "that are dark already. Light pages always show PDFs as they are.",
-  desk:
-    "The background around the pages. With the pages: a dark grey that sets light and dark " +
-    "pages apart. A page too close to the desk's colour still gets a desk that shows its edge.",
+    "and pictures are left as they are. Whether PDF pages turn dark too, and the desk " +
+    "around the pages, are in the notebook's ⋯ menu.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
     "folder of the note that is open.",
@@ -1548,25 +1531,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
         ),
-        this.more("pages", "Dark PDF pages, desk, folders, templates, file explorer"),
-        this.info(
-          toggle("invertPdfPages", "Dark PDF pages", "", [
-            "dark mode",
-            "PDFs as they are",
-            "invert",
-            "slides",
-          ]),
-          DESC.darkPdfPages,
-        ),
-        this.info(
-          drawnRow("Desk", "", (s) => this.drawDesk(s), [
-            "workspace background",
-            "background color",
-            "canvas",
-            "theme",
-          ]),
-          DESC.desk,
-        ),
+        this.more("pages", "Folders, templates, file explorer"),
         this.info(
           drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [
             "default folder for new notebooks",
@@ -1645,33 +1610,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         },
       ],
     );
-  }
-
-  /** "Desk": with the pages, light, dark, or a colour of one's own, picked beside it. */
-  private drawDesk(setting: Setting): void {
-    const settings = this.plugin.settings;
-    const choice: DeskChoice = Object.prototype.hasOwnProperty.call(DESK_NAMES, settings.desk)
-      ? settings.desk
-      : "auto";
-    setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(DESK_NAMES)) d.addOption(id, name);
-      d.setValue(choice);
-      d.onChange(async (value) => {
-        settings.desk = value as DeskChoice;
-        // Saved by the plugin, which redraws every open notebook.
-        await this.plugin.applyPageAppearance();
-        // Custom brings its colour picker, and the others take it away.
-        this.update();
-      });
-    });
-    if (choice !== "custom") return;
-    setting.addColorPicker((c) => {
-      c.setValue(deskColorOf(settings) ?? DEFAULT_SETTINGS.deskColor);
-      c.onChange(async (value) => {
-        settings.deskColor = value;
-        await this.plugin.applyPageAppearance();
-      });
-    });
   }
 
   /** Rendering, input and files: the switches most people never need. */

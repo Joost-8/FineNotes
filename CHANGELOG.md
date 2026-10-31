@@ -11,12 +11,12 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Desk colour**
-  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Settings ›
-  Pages and notebooks › More › Desk: the background around the pages is
-  with the pages, light, dark, or a colour of your own. With the pages,
-  dark pages now lie on the same grey desk as light ones, so their edges
-  show; Dark keeps the nearly black one. Dark PDF pages moved under More
-  too.
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The ⋯ menu
+  of a notebook has a Desk row: the background around the pages is with
+  the pages, light, dark, or a colour of your own. With the pages, dark
+  pages lie on the same grey desk as light ones, so their edges show, and a
+  page too close to it still gets a desk that sets it apart. Dark PDF pages
+  is in the ⋯ menu too, while pages are dark; both left Settings.
 - **Colours on dark pages look as they do on the page.** The pen's
   swatches, the pen button and the width preview show each colour as dark
   pages show the ink.
@@ -32,8 +32,8 @@ extracted from the matching section of this file by `release.yml`.
   ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
   appearance and the PDF choice were one list, so picking Match Obsidian
   after "Dark, PDFs as they are" turned PDFs dark again. They are two
-  settings now, Page appearance and Dark PDF pages, and neither changes
-  the other.
+  choices now, Page appearance in Settings and Dark PDF pages in the ⋯
+  menu, and neither changes the other.
 
 ## [2.6.0] - 2026-10-30
 
