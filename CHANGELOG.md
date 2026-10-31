@@ -17,14 +17,6 @@ extracted from the matching section of this file by `release.yml`.
   sum or its answer on the page, sums go into the notebook's history, and a
   keyboard types into it (Escape clears, then closes). It opens in the mode
   you left it in; Scientific until you switch.
-### Changed
-
-- **Joined pages live in the notebook's settings only.** The New notebook
-  dialog no longer asks: join the pages of any notebook, new or old, from
-  its gear under Pages, and set them apart there again. Set apart, each
-  page keeps its own part of what ran over the join.
-### Added
-
 - **Desk colour**
   ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The ⋯ menu
   of a notebook has a Desk row: the background around the pages is with
@@ -40,6 +32,13 @@ extracted from the matching section of this file by `release.yml`.
   button in Export as PDF leaves out the paper's lines, grid, dots and
   texture: ink, text, pictures and PDF pages stay, on the paper's colour.
   The choice is kept for the next export.
+
+### Changed
+
+- **Joined pages live in the notebook's settings only.** The New notebook
+  dialog no longer asks: join the pages of any notebook, new or old, from
+  its gear under Pages, and set them apart there again. Set apart, each
+  page keeps its own part of what ran over the join.
 
 ### Fixed
 
