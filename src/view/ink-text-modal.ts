@@ -9,6 +9,10 @@
  *   [ and eggs                      ]
  *                  [Cancel] [Replace]
  *
+ * The same dialog corrects a lassoed sentence ("Correct" on several
+ * words): titled Correct, it saves what was typed, and the host records
+ * each word changed as a misread of that word's ink.
+ *
  * Built like the task dialog (`task-modal.ts`), with a field of several
  * lines: Enter replaces, Shift+Enter starts a new line. It only hands back
  * the text; the host applies it as an undoable command.
@@ -39,6 +43,7 @@ export class InkTextModal extends Modal {
   constructor(
     app: App,
     private readonly submit: (text: string) => void,
+    private readonly correcting = false,
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -46,7 +51,7 @@ export class InkTextModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
-    this.titleEl.setText("Turn into text");
+    this.titleEl.setText(this.correcting ? "Correct" : "Turn into text");
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     const field = body.createEl("textarea", {
@@ -65,7 +70,10 @@ export class InkTextModal extends Modal {
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
-    const done = actions.createEl("button", { cls: "mod-cta", text: "Replace" });
+    const done = actions.createEl("button", {
+      cls: "mod-cta",
+      text: this.correcting ? "Save" : "Replace",
+    });
     const sync = (): void => {
       done.disabled = inkTextLines(field.value).length === 0;
     };

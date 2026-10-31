@@ -238,9 +238,11 @@ import {
   wordCore,
 } from "../recognition/hwr/lexicon";
 import {
+  editedPhrase,
   editedWords,
   matchCase,
   selectionWords,
+  wordToCorrect,
   wordsByLine,
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
@@ -2431,18 +2433,35 @@ export class InkView extends TextFileView {
     const key = strokeKey(strokeIds);
     const word = this.checkedWords.get(page.id)?.words.find((w) => strokeKey(w.strokeIds) === key);
     if (!word) return;
-    const ids = new Set(strokeIds);
-    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     const suggestion = this.checkedWords.get(page.id)?.suggestions?.get(key) ?? null;
-    const asked = { note: file.path, pageId: page.id, word, strokes, suggestion };
-    // Its underline turns red while the card is open.
-    surface.setActiveWordFlag(page.id, strokeIds);
+    this.openWordCard(page, word, suggestion, at, false);
+  }
+
+  /**
+   * The word card (word-check.ts) for `word` on `page`, at `at` (client
+   * px); `asked` when opened by hand ("Correct"). Its underline turns red
+   * while it is open, and an answer is saved and acted on the same way
+   * however the card was opened.
+   */
+  private openWordCard(
+    page: Page,
+    word: ReadWord,
+    suggestion: LexiconSuggestion | null,
+    at: { x: number; y: number },
+    asked: boolean,
+  ): void {
+    const file = this.file;
+    const surface = this.surface;
+    if (!file || !surface) return;
+    const ids = new Set(word.strokeIds);
+    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
+    surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
-      asked,
+      { note: file.path, pageId: page.id, word, strokes, suggestion },
       at,
       () => {
         // Answered: underline the page's words again, without this one.
@@ -2456,7 +2475,159 @@ export class InkView extends TextFileView {
         );
       },
       closed,
+      asked,
     );
+  }
+
+  /**
+   * "Correct" on lassoed or held ink: the card an underlined word opens,
+   * for the word that ink is in, underlined or not (`wordToCorrect` picks
+   * one when it is in several). The page is read on this device first when
+   * its reading is not of its content now; meanwhile the picked ink is
+   * underlined, so the wait shows.
+   */
+  private async correctWord(index: number, strokeIds: string[]): Promise<void> {
+    const file = this.file;
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!file || !surface || !page) return;
+    this.wordPopover?.close();
+    surface.setActiveWordFlag(page.id, strokeIds);
+    const gone = () => this.surface !== surface || !surface.document.pages.includes(page);
+    const hash = pageContentHash(page);
+    let found: { entry: PageWords; word: ReadWord; suggestion: LexiconSuggestion | null } | null =
+      null;
+    try {
+      found = await this.readWordAt(page, hash, strokeIds);
+    } catch (error) {
+      if (!gone()) surface.setActiveWordFlag(null);
+      const missing = error instanceof Error && error.name === "ModelNotDownloadedError";
+      new Notice(
+        missing
+          ? `FineNotes: ${errorMessage(error)}`
+          : "FineNotes: could not read this handwriting.",
+        8000,
+      );
+      return;
+    }
+    // Written on, scrolled away or closed while it was read: the card would be about other ink.
+    if (gone() || pageContentHash(page) !== hash) {
+      if (!gone()) surface.setActiveWordFlag(null);
+      return;
+    }
+    // Several words lassoed: the whole sentence, in one field.
+    const words = found ? selectionWords(found.entry.words, found.entry.read, strokeIds) : null;
+    if (found && words && words.length > 1) {
+      surface.setActiveWordFlag(null);
+      this.correctWords(page, found.entry, words);
+      return;
+    }
+    const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
+    if (!found || !at) {
+      surface.setActiveWordFlag(null);
+      new Notice("FineNotes: no handwritten word read there.");
+      return;
+    }
+    this.openWordCard(page, found.word, found.suggestion, at, true);
+  }
+
+  /**
+   * "Correct" on a lassoed sentence: what the page's reading says of
+   * `words`, a line for each line, to correct in one field; each word
+   * changed is recorded as a misread of its ink (`recordEdits`).
+   */
+  private correctWords(page: Page, entry: PageWords, words: ReadWord[]): void {
+    const modal = new InkTextModal(
+      this.app,
+      (text) => {
+        if (this.file && this.surface?.document.pages.includes(page)) {
+          this.recordEdits(page, words, text, true);
+        }
+      },
+      true,
+    );
+    modal.open();
+    const text = wordsByLine(words);
+    modal.suggest(text);
+    void this.spellingFixes(page, entry, words).then((fixes) => {
+      if (fixes.length > 0) modal.suggest(text, fixes);
+    });
+  }
+
+  /**
+   * The read word for "Correct" and its list words: from the page's kept
+   * reading when it is of `hash`, else from reading it now (kept, so the
+   * worker can suggest). Null when the ink is in no read word.
+   */
+  private async readWordAt(
+    page: Page,
+    hash: string,
+    strokeIds: readonly string[],
+  ): Promise<{ entry: PageWords; word: ReadWord; suggestion: LexiconSuggestion | null } | null> {
+    const file = this.file;
+    if (!file) return null;
+    let entry = this.pageReadings.get(page.id);
+    let fresh = false;
+    for (;;) {
+      if (!entry || entry.hash !== hash) {
+        entry = this.keepReading(
+          page,
+          hash,
+          await this.plugin.handwriting.readPage(page.strokes, true),
+        );
+        fresh = true;
+      }
+      await this.plugin.wordCheck.load();
+      // Of several words, the one the word check underlines comes first.
+      const flagged = this.wordsChecked
+        ? await this.plugin.wordCheck.flags(file.path, page.id, entry.words)
+        : [];
+      const word = wordToCorrect(
+        entry.words,
+        strokeIds,
+        new Set(flagged.map((w) => strokeKey(w.strokeIds))),
+      );
+      if (!word) return null;
+      const suggestion = await this.listWordsFor(page, entry, word);
+      // The worker no longer keeps this reading: read the page again, once.
+      if (suggestion === undefined && !fresh) {
+        entry = undefined;
+        continue;
+      }
+      return { entry, word, suggestion: suggestion ?? null };
+    }
+  }
+
+  /**
+   * The list words `word`'s ink fits best (lexicon.ts): the underline's
+   * own when its page was checked at this reading, else asked of the
+   * worker. Null without a word list or a place in the reading; undefined
+   * when the worker no longer keeps the reading.
+   */
+  private async listWordsFor(
+    page: Page,
+    entry: PageWords,
+    word: ReadWord,
+  ): Promise<LexiconSuggestion | null | undefined> {
+    const key = strokeKey(word.strokeIds);
+    const checked = this.checkedWords.get(page.id);
+    const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
+    if (cached !== undefined) return cached;
+    const lexicon = this.plugin.wordCheck.lexicon();
+    if (!lexicon || !word.at) return null;
+    if (entry.id === undefined) return undefined;
+    const { line, start, end } = word.at;
+    try {
+      const results = await this.plugin.handwriting.suggest(
+        entry.id,
+        [{ line, text: entry.lines[line], start, end }],
+        lexicon,
+      );
+      return results === null ? undefined : (results[0] ?? null);
+    } catch {
+      // No list words: the card offers the other answers.
+      return null;
+    }
   }
 
   private async offerHandwrittenLinks(page: Page, reading: PageReading): Promise<void> {
@@ -2843,6 +3014,8 @@ export class InkView extends TextFileView {
           this.scheduleWordCheck();
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
+        onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
+        canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
@@ -4112,10 +4285,20 @@ export class InkView extends TextFileView {
    * The field a lassoed selection filled was confirmed: each read word it
    * corrects (`editedWords`) is recorded as a misread of that word's ink.
    */
-  private recordEdits(page: Page, words: readonly ReadWord[], final: string): void {
+  private recordEdits(
+    page: Page,
+    words: readonly ReadWord[],
+    final: string,
+    correcting = false,
+  ): void {
     const file = this.file;
     if (!file || words.length === 0) return;
-    for (const { word, text } of editedWords(words, final)) {
+    const phrase = correcting ? editedPhrase(words, final) : null;
+    // Words joined or split: the whole selection is one labelled line.
+    const edits = phrase
+      ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]
+      : editedWords(words, final, correcting);
+    for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
       void this.plugin.wordCheck.record(
