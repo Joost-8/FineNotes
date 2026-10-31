@@ -1,6 +1,6 @@
 /**
  * Cover tape (`model/cover-tape`): a strip over the page, stored as a stroke
- * with `tool: "tape"`, shown through only in the view.
+ * with `tool: "tape"`, left open when `open` (saved), hiding typed text too.
  */
 
 import { describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import {
   DEFAULT_TAPE_COLOR,
   DEFAULT_TAPE_HEIGHT,
   TAPE_HEIGHTS,
-  allRevealed,
+  allOpen,
   isTape,
   tapeColorOf,
   tapeContains,
@@ -17,7 +17,7 @@ import {
   tapeHeightOf,
   tapePoints,
   tapesLast,
-  toggleRevealed,
+  tapeClipPath,
   topTapeAt,
 } from "../../src/model/cover-tape";
 import type { Stroke } from "../../src/model/document";
@@ -124,20 +124,34 @@ describe("painting order", () => {
   });
 });
 
-describe("showing tapes through", () => {
-  it("toggles one id, leaving the set it was given alone", () => {
-    const before = new Set(["x"]);
-    const after = toggleRevealed(before, "a");
-    expect([...after].sort()).toEqual(["a", "x"]);
-    expect([...toggleRevealed(after, "x")]).toEqual(["a"]);
-    expect([...before]).toEqual(["x"]);
+describe("open tapes", () => {
+  it("knows when every tape is open, and that a page without one is not", () => {
+    const a = tape("a", [0, 0, 0.5]);
+    const b = tape("b", [0, 0, 0.5]);
+    a.open = true;
+    expect(allOpen([a, b, ink("i")])).toBe(false);
+    b.open = true;
+    expect(allOpen([a, b, ink("i")])).toBe(true);
+    expect(allOpen([ink("i")])).toBe(false);
+  });
+});
+
+describe("a text box under a tape", () => {
+  const box = { x: 100, y: 100, w: 200, h: 50 };
+
+  it("has the covered tape cut out of it, in its own CSS px", () => {
+    const clip = tapeClipPath([tape("a", [0, 120, 0.5, 400, 120, 0.5], 20)], box, 2);
+    expect(clip.startsWith("polygon(evenodd, ")).toBe(true);
+    // The tape's top-left corner, (0, 110) page px, from the box at 2x.
+    expect(clip).toContain("-200.0px 20.0px");
+    expect(clip).toContain("600.0px 60.0px");
   });
 
-  it("knows when every tape is shown, and that a page without one is not", () => {
-    const strokes = [tape("a", [0, 0, 0.5]), tape("b", [0, 0, 0.5]), ink("i")];
-    expect(allRevealed(strokes, new Set(["a"]))).toBe(false);
-    expect(allRevealed(strokes, new Set(["a", "b"]))).toBe(true);
-    expect(allRevealed([ink("i")], new Set(["i"]))).toBe(false);
+  it("is left whole by an open tape, a tape elsewhere, or ink", () => {
+    const open = tape("a", [0, 120, 0.5, 400, 120, 0.5], 20);
+    open.open = true;
+    const far = tape("b", [0, 400, 0.5, 400, 400, 0.5], 20);
+    expect(tapeClipPath([open, far, ink("i")], box, 1)).toBe("");
   });
 });
 

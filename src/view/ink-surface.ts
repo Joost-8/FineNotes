@@ -236,10 +236,10 @@ import {
 import {
   MIN_TAPE_LENGTH,
   isTape,
+  tapeClipPath,
   tapeColorOf,
   tapeHeightOf,
   tapePoints,
-  toggleRevealed,
   topTapeAt,
 } from "../model/cover-tape";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
@@ -5366,6 +5366,21 @@ export class InkSurface {
               : textBox.fill !== undefined || border
                 ? "0"
                 : "",
+          // A covered tape over the box hides it there, as it hides ink;
+          // never the box being typed in.
+          clipPath:
+            document.activeElement === input
+              ? ""
+              : tapeClipPath(
+                  page.strokes,
+                  {
+                    x: frame.x + shift.x,
+                    y: frame.y + shift.y,
+                    w: width,
+                    h: frame.h ?? box.height,
+                  },
+                  scale,
+                ),
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -8260,13 +8275,6 @@ export class InkSurface {
 
   // --- Cover tape (`model/cover-tape`) -------------------------------------------
 
-  /**
-   * The cover tapes shown through in this view, by their owner's id (a
-   * mirror over a join goes with its owner). This session's only: never
-   * saved, so a notebook always opens, syncs and exports with its tapes on.
-   */
-  private revealedTapes: ReadonlySet<string> = new Set();
-
   /** A tape being dragged out: where it started and where the pen is, page px. */
   private tapeDrag: { from: Pt; to: Pt } | null = null;
 
@@ -8339,34 +8347,37 @@ export class InkSurface {
     this.inkChanged([page.id]);
   }
 
-  /** The id a tape is shown through by: its owner's, for a mirror over a join. */
+  /** The id a tape opens by: its owner's, for a mirror over a join. */
   private tapeKey(tape: Stroke): string {
     const owner = tape.join ? ownerOf(tape.join) : null;
     return owner?.id ?? tape.id;
   }
 
   /**
-   * Show the tape on top at page point `p` of `page` through, or cover it
-   * again, with its mirrors. False when no tape is there. Never an undo
-   * step, and never saved.
+   * Open the tape on top at page point `p` of `page`, or cover it again,
+   * with its mirrors. False when no tape is there. Saved, never an undo step.
    */
   private toggleTapeAt(page: Page, p: Pt, tolerance: number): boolean {
     const tape = topTapeAt(page.strokes, p.x, p.y, tolerance);
     if (!tape) return false;
-    this.setTapesShown(toggleRevealed(this.revealedTapes, this.tapeKey(tape)));
+    this.setTapesOpen(new Set([this.tapeKey(tape)]), tape.open !== true);
     return true;
   }
 
-  /** Make `next` the tapes shown through, and repaint every tape whose state changed. */
-  private setTapesShown(next: ReadonlySet<string>): void {
-    const before = this.revealedTapes;
-    this.revealedTapes = next;
-    this.renderer?.setRevealedTapes(next);
+  /**
+   * Open (`open`) or cover the tapes keyed in `keys`, mirrors with their
+   * owners, repaint the ones that changed and save. Not an undo step: a
+   * tape opened and closed while studying is not an edit.
+   */
+  private setTapesOpen(keys: ReadonlySet<string>, open: boolean): void {
+    const changed: string[] = [];
     this.doc.pages.forEach((page, index) => {
       for (const stroke of page.strokes) {
-        if (!isTape(stroke)) continue;
-        const key = this.tapeKey(stroke);
-        if (before.has(key) === next.has(key)) continue;
+        if (!isTape(stroke) || !keys.has(this.tapeKey(stroke))) continue;
+        if ((stroke.open === true) === open) continue;
+        if (open) stroke.open = true;
+        else delete stroke.open;
+        if (!changed.includes(page.id)) changed.push(page.id);
         const line = strokeBounds(stroke);
         if (!line) continue;
         const pad = stroke.size;
@@ -8378,7 +8389,9 @@ export class InkSurface {
         });
       }
     });
-    this.renderDry();
+    if (changed.length === 0) return;
+    this.syncTextBoxes();
+    this.inkChanged(changed);
     this.requestZoomPaint();
     this.callbacks.onTapesToggled?.();
   }
@@ -8391,20 +8404,16 @@ export class InkSurface {
     const page = this.doc.pages[this.currentPage];
     const tapes = page ? page.strokes.filter(isTape) : [];
     if (tapes.length === 0) return null;
-    return tapes.every((tape) => this.revealedTapes.has(this.tapeKey(tape)));
+    return tapes.every((tape) => tape.open === true);
   }
 
   /** Show every cover tape on the page in view through (`shown`), or cover them all. */
   showTapes(shown: boolean): void {
     const page = this.doc.pages[this.currentPage];
     if (!page) return;
-    const next = new Set(this.revealedTapes);
-    for (const tape of page.strokes) {
-      if (!isTape(tape)) continue;
-      if (shown) next.add(this.tapeKey(tape));
-      else next.delete(this.tapeKey(tape));
-    }
-    this.setTapesShown(next);
+    const keys = new Set<string>();
+    for (const tape of page.strokes) if (isTape(tape)) keys.add(this.tapeKey(tape));
+    this.setTapesOpen(keys, shown);
   }
 
   /** The laser pointer: a fading trail behind the pen, never part of the notebook. */

@@ -117,6 +117,11 @@ export interface Stroke {
    */
   nib?: number;
   /**
+   * A cover tape (`tool: "tape"`) left open: drawn as a dashed outline, so
+   * what is under it shows, on screen and in exports. Absent: covered.
+   */
+  open?: boolean;
+  /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds
    * since the stroke's first sample, and so on. Kept only in practice files,
