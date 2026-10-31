@@ -1157,6 +1157,33 @@ field). This reader refuses a label naming a feature it does not know in the
 same way; a later feature adds its own `+name`. A notebook without notes keeps
 the plain `v2:` label and opens in older builds as before.
 
+### Folded notes and typed text (2026-10-31, FineNotes#94)
+
+Two optional fields, as Goodnotes collapses a note and types in it:
+
+```ts
+sticky?: { color: string; folded?: true }; // ImageElement: folded to its icon
+onSticky?: string; // TextBoxElement: the note this box is the typed text of
+```
+
+- **`folded`** (stored only as `true`): the note shows as a small icon at
+  its top-left corner (`foldedFrame`: a square of `min(40, w, h)` page px,
+  turned with the note, never mirrored); its ink and text are hidden, and a
+  tap on the icon opens it. `x`, `y`, `w`, `h` keep the open note's frame.
+  It sits in the paper object on disk, before `ink`.
+- **A note's text** is an ordinary text box with `onSticky: "<image id>"`,
+  stored in `textBoxes` **in page space**, unlike the note's ink. Its `x`,
+  `y` and `w` are where it stands on the note _unturned_; it is drawn with
+  the note, clipped to it and turned about the note's centre (never
+  mirrored), and moves, resizes (rewrapping, its font size kept), copies
+  and deletes with the note. A box naming a note that is not on its page
+  is read as a box of its own.
+
+Neither changes the payload label: a notebook keeps `v2+sticky`. A reader
+that knows neither field (2.5, 2.6) keeps a note's colour and a text box's
+own fields, so it shows a folded note open and its text as a box over it at
+the same place; nothing written is lost, only the fold and the link.
+
 ## Linked shapes (2026-10-28)
 
 Goodnotes' linked copies (discussion #51). One closed shape selected on its

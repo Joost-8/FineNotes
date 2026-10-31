@@ -261,3 +261,69 @@ describe("the paper", () => {
     expect(log.lines.at(-1)).toContain(" clip nonzero [M250,100");
   });
 });
+
+describe("a note's typed text, and a folded note (FineNotes#94)", () => {
+  function withText(folded = false, rotation?: number): Page {
+    const p = page(true);
+    p.images = [
+      {
+        ...note(true),
+        ...(rotation !== undefined ? { rotation } : {}),
+        sticky: folded ? { color: PAPER, folded: true } : { color: PAPER },
+      },
+    ];
+    p.textBoxes = [
+      {
+        id: "nt",
+        x: 112,
+        y: 124,
+        w: 126,
+        text: "On the note",
+        color: "#1f2430",
+        fontSize: 16,
+        onSticky: "n1",
+      },
+      { id: "pt", x: 20, y: 300, w: 200, text: "On the page", color: "#1f2430", fontSize: 16 },
+    ];
+    return p;
+  }
+  const thumb = (p: Page): string[] => {
+    renderPageThumbnail(log.canvas("t"), p, { paint: () => undefined }, 400, 1, {
+      usePressure: false,
+    });
+    return log.lines;
+  };
+  const at = (lines: readonly string[], s: string) => lines.findIndex((l) => l.includes(s));
+
+  it("draws the note's text with the note, clipped and over its ink, once", () => {
+    const lines = thumb(withText());
+    const text = at(lines, 'fillText "On the note"');
+    expect(text).toBeGreaterThan(at(lines, " clip nonzero [M"));
+    expect(text).toBeGreaterThan(at(lines, `strokeStyle=${ON_NOTE}`));
+    expect(lines.filter((l) => l.includes('fillText "On the note"'))).toHaveLength(1);
+    expect(at(lines, 'fillText "On the page"')).toBeGreaterThan(text);
+  });
+
+  it("turns the note's text with the note", () => {
+    const upright = thumb(withText()).find((l) => l.includes('fillText "On the note"'));
+    log = new DrawLog();
+    globals.createEl = () => log.canvas();
+    const turned = thumb(withText(false, Math.PI / 2)).find((l) =>
+      l.includes('fillText "On the note"'),
+    );
+    expect(turned).toBeDefined();
+    expect(turned).not.toEqual(upright);
+  });
+
+  it("paints a folded note as its icon alone: no paper, no ink, no text", () => {
+    const lines = thumb(withText(true));
+    expect(at(lines, 'fillText "On the note"')).toBe(-1);
+    expect(at(lines, `strokeStyle=${ON_NOTE}`)).toBe(-1);
+    expect(lines.some((l) => l.includes("fillRect") && l.includes(`fillStyle=${PAPER}`))).toBe(
+      false,
+    );
+    // The icon: a path filled in the paper's colour.
+    expect(lines.some((l) => l.includes(" fill ") && l.includes(`fillStyle=${PAPER}`))).toBe(true);
+    expect(at(lines, 'fillText "On the page"')).toBeGreaterThanOrEqual(0);
+  });
+});

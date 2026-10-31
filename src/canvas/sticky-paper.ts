@@ -9,7 +9,7 @@
  */
 
 import type { ImageElement } from "../model/document";
-import { type NoteFrame, applyAffine, noteToPage } from "../model/sticky-notes";
+import { type NoteFrame, applyAffine, foldedFrame, noteToPage } from "../model/sticky-notes";
 
 /** How much darker the glued band at the top is. */
 const GLUE_SHADE = 0.05;
@@ -41,6 +41,69 @@ export function paintStickyPaper(
   ctx.strokeStyle = EDGE;
   ctx.lineWidth = line;
   ctx.strokeRect(line / 2, line / 2, w - line, h - line);
+  ctx.restore();
+}
+
+/** How much of a folded note's icon its turned-down corner takes. */
+const DOG_EAR = 0.3;
+
+/**
+ * Paint a folded note (page space): a small square of its paper at its
+ * top-left corner, turned with it (`foldedFrame`), its corner turned down
+ * and three short lines across it, as Goodnotes shows a collapsed note.
+ * Flat colours, as the open paper.
+ */
+export function paintFoldedNote(
+  ctx: CanvasRenderingContext2D,
+  note: NoteFrame,
+  color: string,
+): void {
+  const frame = foldedFrame(note);
+  const s = frame.w;
+  if (!(s > 0)) return;
+  ctx.save();
+  ctx.translate(frame.x + s / 2, frame.y + s / 2);
+  const r = frame.rotation ?? 0;
+  if (r !== 0) ctx.rotate(r);
+  ctx.translate(-s / 2, -s / 2);
+  const ear = s * DOG_EAR;
+  // The paper, its bottom-right corner cut where it is turned down.
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(s, 0);
+  ctx.lineTo(s, s - ear);
+  ctx.lineTo(s - ear, s);
+  ctx.lineTo(0, s);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  const line = Math.min(1, s / 20);
+  ctx.lineWidth = line;
+  ctx.strokeStyle = EDGE;
+  ctx.stroke();
+  // The turned-down corner, a shade darker.
+  ctx.beginPath();
+  ctx.moveTo(s, s - ear);
+  ctx.lineTo(s - ear, s - ear);
+  ctx.lineTo(s - ear, s);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.14)";
+  ctx.fill();
+  ctx.stroke();
+  // Three lines of "writing".
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.32)";
+  ctx.lineWidth = Math.max(line, s / 18);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  for (const [y, end] of [
+    [0.3, 0.74],
+    [0.48, 0.74],
+    [0.66, 0.5],
+  ] as const) {
+    ctx.moveTo(s * 0.22, s * y);
+    ctx.lineTo(s * end, s * y);
+  }
+  ctx.stroke();
   ctx.restore();
 }
 

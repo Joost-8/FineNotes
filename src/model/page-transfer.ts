@@ -83,8 +83,9 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
       imageIds.set(image.id, id);
       image.id = id;
     }
-    // The ink on a note follows the note's new id.
+    // The ink and text on a note follow the note's new id.
     relinkNoteInk(copy.strokes, imageIds);
+    relinkNoteInk(copy.textBoxes, imageIds);
     for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
     for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
     for (const comment of copy.comments ?? []) comment.id = `cm${++commentSeq}`;

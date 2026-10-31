@@ -8,6 +8,18 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Fold a sticky note away, and type on it**
+  ([#94](https://github.com/Joost-8/FineNotes/issues/94)). A selected
+  note's bar has Fold note: the note shrinks to a small note icon at its
+  corner, as Goodnotes collapses one, and the page under it shows again. A
+  tap on the icon, with the Pencil, a finger or the mouse, opens it where it
+  was. With the Text tool, a tap on a note types on the note itself: the
+  text stays on the paper, turns with it, and moves, copies and deletes
+  with it. FineNotes 2.6 and earlier show a folded note open, and its text
+  as a text box over it.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:
