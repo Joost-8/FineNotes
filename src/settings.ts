@@ -332,10 +332,11 @@ const DESC = {
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
-  openRouterRouting:
+  openRouterSkipCompressed:
     "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
-    "that are cheaper but read handwriting less accurately. Cheapest at full quality skips " +
-    "those that say they are compressed.",
+    "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
+    "are compressed, and OpenRouter picks among the rest as usual. A model that only " +
+    "compressed providers serve then gives no answer.",
   imageVendor:
     "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
@@ -1796,23 +1797,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         }),
         modelDesc(vendor),
       ),
-      {
-        ...this.info(
-          dropdown(
-            "openRouterRouting",
-            "Provider choice",
-            "",
-            {
-              default: "OpenRouter's default",
-              cheapest: "Cheapest",
-              "cheapest-full": "Cheapest at full quality (fp8 or better)",
-            },
-            ["provider", "quantization", "fp4", "fp8", "routing", "cheapest"],
-          ),
-          DESC.openRouterRouting,
-        ),
-        visible: () => settings.llmVendor === "openrouter",
-      },
       this.info(
         drawnRow(keyName, "", (s) => this.renderKeyRow(s, vendor), ["token", "secret", "API key"]),
         this.keyDesc(vendor, "text"),
@@ -1832,8 +1816,26 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
       },
-      // Pictures are the AI rows fewest people change.
-      this.more("ai", "Pictures: service, model and key"),
+      // OpenRouter's providers and pictures are the AI rows fewest people change.
+      this.more(
+        "ai",
+        vendor === "openrouter"
+          ? "OpenRouter providers; pictures: service, model and key"
+          : "Pictures: service, model and key",
+      ),
+      {
+        ...this.info(
+          toggle("openRouterSkipCompressed", "Skip compressed providers", "", [
+            "provider",
+            "quantization",
+            "fp4",
+            "fp8",
+            "OpenRouter",
+          ]),
+          DESC.openRouterSkipCompressed,
+        ),
+        visible: () => settings.llmVendor === "openrouter",
+      },
       this.info(
         dropdown("imageVendor", "Image generation", "", IMAGE_VENDOR_LABELS, [
           "generate image",

@@ -10,7 +10,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **OpenRouter provider choice.** With OpenRouter, pick OpenRouter's default routing, the cheapest provider, or the cheapest at full quality (fp8 or better), since compressed versions read handwriting less well.
+- **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
 
 ## [2.6.0] - 2026-10-30
 

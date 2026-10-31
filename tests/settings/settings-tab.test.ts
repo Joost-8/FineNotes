@@ -457,12 +457,12 @@ describe("the rows", () => {
       [AI, "(block)", "render"],
       [AI, "Connect OpenRouter", "render"],
       [AI, "AI model", "text:llmModel"],
-      [AI, "Provider choice", "dropdown:openRouterRouting"],
       [AI, `${label} API key`, "render"],
       [AI, "(block)", "render"],
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "More", "action"],
+      [AI, "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
@@ -816,19 +816,18 @@ describe("which rows show", () => {
     expect(shown(blockAfter(all, "Endpoint URL", 1))).toBe(false);
   });
 
-  it("offers the provider choice only for OpenRouter, with its three choices", () => {
-    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain("Provider choice");
+  it("offers skipping compressed providers only for OpenRouter, under the AI section's More", () => {
+    const toggle = "Skip compressed providers";
+    const aiMore = (vendor: Settings["llmVendor"]) => {
+      const all = rows(makeTab(makePlugin({ llmVendor: vendor })).tab);
+      return all.find((r) => r.heading === AI && r.def.name === "More")?.def.desc;
+    };
+    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain(toggle);
+    expect(aiMore("openrouter")).toBe("OpenRouter providers; pictures: service, model and key");
     for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
-      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(
-        "Provider choice",
-      );
+      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
+      expect(aiMore(vendor), vendor).toBe("Pictures: service, model and key");
     }
-    const { tab } = makeTab(makePlugin({ llmVendor: "openrouter" }));
-    expect(named(rows(tab), "Provider choice").control?.options).toEqual({
-      default: "OpenRouter's default",
-      cheapest: "Cheapest",
-      "cheapest-full": "Cheapest at full quality (fp8 or better)",
-    });
   });
 
   it("offers the OpenRouter connect only for OpenRouter", () => {

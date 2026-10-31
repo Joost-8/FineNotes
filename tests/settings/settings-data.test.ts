@@ -19,7 +19,6 @@ import {
   appearanceChoiceOf,
   endpointWarning,
   greyWhileErasingOf,
-  openRouterRoutingOf,
   openSectionsOf,
   pagesAreDark,
   penPreferencesOf,
@@ -82,7 +81,7 @@ const FRESH_INSTALL = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
-  openRouterRouting: "default",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -210,7 +209,7 @@ const USED_VAULT = {
   updateReminders: false,
   llmVendor: "custom",
   llmModel: "llava:13b",
-  openRouterRouting: "cheapest-full",
+  openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
   llmCustomApiKey: "local-secret",
@@ -406,23 +405,10 @@ describe("grey out while erasing", () => {
   });
 });
 
-describe("OpenRouter provider choice", () => {
-  it("is OpenRouter's default for a fresh install and for a vault from before the setting", () => {
-    expect(DEFAULT_SETTINGS.openRouterRouting).toBe("default");
-    const { openRouterRouting } = loadAndSave({ llmVendor: "openrouter" });
-    expect(openRouterRoutingOf(openRouterRouting)).toBe("default");
-  });
-
-  it("keeps the three known choices", () => {
-    for (const choice of ["default", "cheapest", "cheapest-full"]) {
-      expect(openRouterRoutingOf(choice)).toBe(choice);
-    }
-  });
-
-  it("reads anything else, from a hand-edited or newer file, as the default", () => {
-    for (const value of ["", "Cheapest", "fp4", "price", null, undefined, 1, {}]) {
-      expect(openRouterRoutingOf(value)).toBe("default");
-    }
+describe("skipping OpenRouter's compressed providers", () => {
+  it("is off for a fresh install and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.openRouterSkipCompressed).toBe(false);
+    expect(loadAndSave({ llmVendor: "openrouter" }).openRouterSkipCompressed).toBe(false);
   });
 });
 
