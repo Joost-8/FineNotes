@@ -1111,15 +1111,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
           ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
         ),
-        toggle(
-          "zoomBoxAutoAdvance",
-          "Zoom box auto-advance",
-          "Moves right after a stroke reaches two thirds, then wraps.",
-          ["magnifier", "zoom", "advance", "line", "scroll"],
-        ),
         controlRow(
           "Zoom box auto-advance threshold",
-          "Triggers in the right percentage; 33% means the right third.",
+          "Triggers in the right percentage.",
           { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
           ["magnifier", "zoom", "advance", "threshold", "trigger", "percentage"],
         ),
