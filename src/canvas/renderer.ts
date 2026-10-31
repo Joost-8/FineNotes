@@ -672,6 +672,8 @@ export class Renderer {
    * screen is at the new level.
    */
   private fallbackLevel = 0;
+  /** Per page, the widest ink reach {@link widestInk} has seen there. */
+  private readonly widestSeen = new Map<string, number>();
   private readonly tiles = new ByteLru<Tile>(MIN_TILE_BUDGET, (tile) => releaseCanvas(tile.canvas));
   private readonly previews = new ByteLru<Preview>(PREVIEW_BUDGET, (p) => releaseCanvas(p.canvas));
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
@@ -972,15 +974,21 @@ export class Renderer {
   }
 
   /**
-   * How far past its centreline the widest tilted stroke on page `pageId`
-   * reaches, page px; 0 when none is tilted. A brush laid flat can paint
-   * beyond {@link INK_PAD}, so a change near it must repaint that far.
+   * How far past its centreline the widest tilted stroke or cover tape on
+   * page `pageId` reaches, page px; 0 when there is none. A brush laid flat
+   * or a tall tape paints beyond {@link INK_PAD}, so a change near it must
+   * repaint that far. It never shrinks: a tape just erased is no longer on
+   * the page when its tiles are repaired, and its edges were left behind.
    */
   private widestInk(pageId: string): number {
     const page = this.doc?.pages.find((candidate) => candidate.id === pageId);
-    let reach = 0;
-    for (const stroke of page?.strokes ?? [])
+    let reach = this.widestSeen.get(pageId) ?? 0;
+    for (const stroke of page?.strokes ?? []) {
       if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
+      // A tape is as tall as its size either side of its two points.
+      else if (isTape(stroke)) reach = Math.max(reach, stroke.size / 2 + 2);
+    }
+    this.widestSeen.set(pageId, reach);
     return reach;
   }
 
