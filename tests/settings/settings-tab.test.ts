@@ -508,6 +508,8 @@ describe("the rows", () => {
     expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
+    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
+    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {

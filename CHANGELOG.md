@@ -8,6 +8,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Zoom box auto-advance is switched in the Zoom box only.** Its row in
+  Settings → Writing is gone; the double-arrow button on the Zoom box's bar
+  turns it on and off as before, and keeps the setting you had. The
+  threshold row's ⓘ says where the button is.
+
 ## [2.6.0] - 2026-10-30
 
 Linked shapes and Pencil tilt store something older versions cannot draw:
