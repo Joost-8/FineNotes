@@ -17,10 +17,14 @@ export function isAppleLz4(bytes: Uint8Array): boolean {
   return magic === MAGIC_COMPRESSED || magic === MAGIC_RAW || magic === MAGIC_END;
 }
 
-/** Decompress a whole frame sequence. Throws {@link Lz4Error} on anything malformed. */
+/**
+ * Decompress a whole frame sequence. Throws {@link Lz4Error} on anything
+ * malformed. A block's matches may reach back into the blocks before it (a
+ * stroke longer than one 64 KiB block does), so all expand into one buffer.
+ */
 export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const parts: Uint8Array[] = [];
+  const blocks: Array<{ magic: number; rawSize: number; data: Uint8Array }> = [];
   let total = 0;
   let at = 0;
   for (;;) {
@@ -33,11 +37,11 @@ export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
       if (at + 12 > bytes.length) throw new Lz4Error("truncated block header");
       const size = view.getUint32(at + 8, true);
       if (at + 12 + size > bytes.length) throw new Lz4Error("block past end");
-      parts.push(decodeBlock(bytes.subarray(at + 12, at + 12 + size), rawSize));
+      blocks.push({ magic, rawSize, data: bytes.subarray(at + 12, at + 12 + size) });
       at += 12 + size;
     } else if (magic === MAGIC_RAW) {
       if (at + 8 + rawSize > bytes.length) throw new Lz4Error("block past end");
-      parts.push(bytes.subarray(at + 8, at + 8 + rawSize));
+      blocks.push({ magic, rawSize, data: bytes.subarray(at + 8, at + 8 + rawSize) });
       at += 8 + rawSize;
     } else {
       throw new Lz4Error("bad block magic");
@@ -46,9 +50,10 @@ export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
   }
   const out = new Uint8Array(total);
   let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
+  for (const { magic, rawSize, data } of blocks) {
+    if (magic === MAGIC_RAW) out.set(data, o);
+    else expandBlock(data, out, o, o + rawSize);
+    o += rawSize;
   }
   return out;
 }
@@ -56,8 +61,18 @@ export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
 /** One raw LZ4 block, which must expand to exactly `rawSize` bytes. */
 export function decodeBlock(src: Uint8Array, rawSize: number): Uint8Array {
   const out = new Uint8Array(rawSize);
+  expandBlock(src, out, 0, rawSize);
+  return out;
+}
+
+/**
+ * Expand `src` into `out` from `start`, to exactly `end`. Matches may copy
+ * from anywhere in `out` before the write position.
+ */
+function expandBlock(src: Uint8Array, out: Uint8Array, start: number, end: number): void {
+  const rawSize = end;
   let ip = 0;
-  let op = 0;
+  let op = start;
   const length = (n: number): number => {
     if (n !== 15) return n;
     for (;;) {
@@ -84,6 +99,7 @@ export function decodeBlock(src: Uint8Array, rawSize: number): Uint8Array {
     if (op + match > rawSize) throw new Lz4Error("match overrun");
     for (let i = 0; i < match; i++, op++) out[op] = out[op - offset];
   }
-  if (op !== rawSize) throw new Lz4Error(`expanded to ${op} bytes, expected ${rawSize}`);
-  return out;
+  if (op !== rawSize) {
+    throw new Lz4Error(`expanded to ${op - start} bytes, expected ${rawSize - start}`);
+  }
 }

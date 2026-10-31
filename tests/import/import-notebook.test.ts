@@ -378,3 +378,68 @@ describe("importNotebooks: PDFs placed as pictures", () => {
     }
   });
 });
+
+describe("importNotebooks: handwriting saved in the paper", () => {
+  const sheet = (): Uint8Array =>
+    zip(
+      goodnotesFiles({
+        templates: [{ id: "T", size: [834.24, 1078.825], attachment: "A" }],
+        pages: [{ id: PAGE, template: "T", order: "a" }],
+        attachments: { A: PDF },
+      }),
+    );
+  const reading = (others?: number) => ({
+    width: 612,
+    height: 792,
+    inks: [{ kind: "ink" as const, color: [255, 0, 0], width: 2, paths: [[0, 0, 306, 792]] }],
+    ...(others ? { others } : {}),
+  });
+
+  it("brings ink annotations over as strokes, and draws the paper without them", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.resolve([reading()]),
+      })
+    ).results;
+    const page = result.doc.pages[0];
+    const { width, height } = page.geometry;
+    expect(page.backdrop).toMatchObject({ kind: "pdf", annotations: false });
+    expect(page.strokes).toEqual([
+      {
+        id: "s1",
+        color: "#ff0000",
+        size: Math.round(((2 * width) / 612) * 100) / 100,
+        tool: "pen",
+        pts: [0, 0, 0.5, Math.round((width / 2) * 100) / 100, height, 0.5],
+      },
+    ]);
+    expect(result.warnings).toEqual([
+      "Handwriting saved in the paper PDF as annotations came over as strokes (page 1).",
+    ]);
+  });
+
+  it("keeps it part of the paper beside annotations a stroke cannot be", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.resolve([reading(2)]),
+      })
+    ).results;
+    const page = result.doc.pages[0];
+    expect(page.strokes).toEqual([]);
+    expect(page.backdrop).not.toMatchObject({ annotations: false });
+    expect(result.warnings).toEqual([
+      "Handwriting saved in the paper PDF as annotations stays part of the paper, " +
+        "as the PDF also holds typed text, shapes or form fields (page 1).",
+    ]);
+  });
+
+  it("leaves the paper as it is when the PDF cannot be read", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.reject(new Error("no pdf.js")),
+      })
+    ).results;
+    expect(result.doc.pages[0].strokes).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+});

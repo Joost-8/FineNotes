@@ -32,6 +32,7 @@ import { plural, type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
 import { isNoteful, readNoteful } from "./noteful";
+import { annotationStrokes, type PdfPageReading } from "./pdf";
 import {
   isRemarkableDocument,
   isRemarkableLines,
@@ -139,6 +140,12 @@ export interface ImportOptions {
    * the page says where the PDF went, and the PDF is saved all the same.
    */
   rasterizePdf?: (bytes: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * Every page of a PDF with its ink and highlight annotations (pdf.js, in
+   * the plugin), for handwriting saved in a notebook's paper. Without it, or
+   * when it fails, that handwriting stays part of the paper.
+   */
+  readPdfInk?: (bytes: Uint8Array) => Promise<readonly PdfPageReading[]>;
   /**
    * Called with each notebook as soon as it is converted; the next notebook
    * is read only after it settles. A rejection is reported as a failure of
@@ -341,12 +348,16 @@ async function convert(
   await deliver(result, batch, options);
 }
 
-/** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
+/**
+ * Hand one converted notebook over: the paper's handwriting made strokes, PDF
+ * pictures made images, then `onResult`.
+ */
 async function deliver(
   result: ImportResult,
   batch: ImportBatch,
   options: ImportOptions,
 ): Promise<void> {
+  await inkFromPaper(result, options.readPdfInk);
   await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {
@@ -383,6 +394,84 @@ function baseName(fileName: string): string {
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** "page 3" or "pages 1, 4". */
+function pagesText(pages: ReadonlySet<number>): string {
+  return pages.size === 1
+    ? `page ${[...pages][0]}`
+    : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
+}
+
+/**
+ * Handwriting saved in a page's paper PDF as ink or highlight annotations (a
+ * sheet written on in another app, or a notebook exported to PDF and brought
+ * back in) as strokes, as a PDF import brings it over. That paper is then
+ * drawn without its annotations, so the handwriting is not there twice.
+ *
+ * pdf.js draws a PDF's annotations all or none, so a PDF that also holds
+ * annotations a stroke cannot be (typed text, shapes, form fields) keeps all
+ * of them as part of its paper.
+ */
+async function inkFromPaper(
+  result: ImportResult,
+  read: ImportOptions["readPdfInk"],
+): Promise<void> {
+  if (!read) return;
+  const pdfs = new Map(
+    result.attachments.filter((a) => a.mime === "application/pdf").map((a) => [a.name, a]),
+  );
+  const papers = new Set(
+    result.doc.pages.flatMap((page) =>
+      page.backdrop.kind === "pdf" && pdfs.has(page.backdrop.path) ? [page.backdrop.path] : [],
+    ),
+  );
+  let strokeN = Math.max(
+    0,
+    ...result.doc.pages.flatMap((page) =>
+      page.strokes.map((stroke) => Number(/^s(\d+)$/.exec(stroke.id)?.[1] ?? 0)),
+    ),
+  );
+  const moved = new Set<number>();
+  const kept = new Set<number>();
+  for (const path of papers) {
+    let readings: readonly PdfPageReading[];
+    try {
+      readings = await read(pdfs.get(path)?.bytes ?? new Uint8Array());
+    } catch {
+      continue;
+    }
+    const keep = readings.some((reading) => (reading.others ?? 0) > 0);
+    result.doc.pages.forEach((page, index) => {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf" || backdrop.path !== path) return;
+      const reading = readings[backdrop.page];
+      if (keep) {
+        if (reading && reading.inks.length > 0) kept.add(index + 1);
+        return;
+      }
+      if (!readings.some((r) => r.inks.length > 0)) return;
+      backdrop.annotations = false;
+      if (!reading) return;
+      const strokes = annotationStrokes(reading, page.geometry.width, page.geometry.height);
+      if (strokes.length === 0) return;
+      // Under what was written in the notebook itself, as the paper was.
+      page.strokes.unshift(...strokes.map((stroke) => ({ id: `s${++strokeN}`, ...stroke })));
+      moved.add(index + 1);
+    });
+  }
+  if (moved.size > 0) {
+    result.warnings.push(
+      "Handwriting saved in the paper PDF as annotations came over as strokes " +
+        `(${pagesText(moved)}).`,
+    );
+  }
+  if (kept.size > 0) {
+    result.warnings.push(
+      "Handwriting saved in the paper PDF as annotations stays part of the paper, " +
+        `as the PDF also holds typed text, shapes or form fields (${pagesText(kept)}).`,
+    );
+  }
 }
 
 /**
@@ -456,10 +545,6 @@ async function picturesFromPdfs(
     result.doc.pages.map((page) => (page.backdrop.kind === "pdf" ? page.backdrop.path : "")),
   );
   result.attachments = result.attachments.filter((a) => !(pngs.get(a.name) && !papers.has(a.name)));
-  const pagesText = (pages: Set<number>): string =>
-    pages.size === 1
-      ? `page ${[...pages][0]}`
-      : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
   if (shown.size > 0) {
     result.warnings.push(
       `${plural(shownCount, "PDF placed as a picture", "PDFs placed as pictures")} came over ` +

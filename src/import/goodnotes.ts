@@ -11,31 +11,44 @@
  *   attachment (`2` its file in `attachments/`, which for an imported PDF is
  *   not the record's own id); kind 2 defines a paper template (`4` an
  *   attachment record, `5` the PDF page, 1-based, `8` its size); kind 54 adds
- *   a page (its template, and an order key that sorts as plain bytes); kinds
+ *   a page (its template, and an order key that sorts as plain bytes), each
+ *   value with a clock (`{1: value, 2: {1: counter}}`); kind 3 gives a page
+ *   another paper and kind 55 moves it, the higher counter winning; kinds
  *   56 and 57 set a flag on a page, `{3: {1: 1}}` for on and `{3: {}}` for
  *   off: 56 removes the page, 57 bookmarks it; kind 62 is an outline entry
  *   (`1` its page, `5` the title, `6` its order, `3.1` a point on the page
  *   with y up from the bottom).
  * - `notes/<id>`: one page's content, as header/body record pairs. The id is
- *   the page's id plus one. A body `{7: …}` is a stroke, `{1: …}` a picture,
- *   `{21: …}` a text box (or a shape, when it holds no text), `{20: …}` a
- *   comment. A header with `{3: 1}` marks its element deleted.
+ *   the page's id plus one. A body `{7: …}` is a stroke, `{1: …}` a picture
+ *   (`3` its centre, own size and turn when turned), `{21: …}` a text box (or
+ *   a shape, when it holds no text), `{8: …}` an older text box holding RTF,
+ *   `{20: …}` a comment. A header with `{3: 1}` marks its element deleted.
  * - `attachments/<id>`: paper PDFs and pictures, as they are.
  *
  * A stroke's points are Apple-LZ4 compressed, in a small typed layout
- * (`tpl\0`, length, a signature like `vA(v)A(u)…`, then the values). Two
- * layouts exist (the stroke's field 21 names its schema):
+ * (`tpl\0`, length, a signature like `vA(v)A(u)…`, then the values). Every
+ * layout starts with the stroke's centreline: an array of verbs (move to, or
+ * a quadratic curve to) and the points and curves they read (`centreline`).
+ * A `u` among the leading values is the stroke's full width, -1 when every
+ * point has its own. The layouts seen:
  *
- * - 24: ten flat arrays. The second-last holds the pen samples, the last one
+ * - `vuA(v)A(S(uu))A(S(uuuu))…`, the commonest: the centreline as structs,
+ *   at the stroke's width.
+ * - 24, `vA(v)A(u)A(u)…`: ten flat arrays, the centreline's points with their
+ *   half-widths. The second-last array holds the pen samples, the last one
  *   entry per sample, so the stride is their ratio: 5 floats for a pen (x, y,
  *   half-width, two not used here), 7 for the marker (x, y, a value not used
- *   here, half-width, three more).
+ *   here, half-width, three more). Some strokes leave the samples empty; theirs
+ *   is the centreline.
+ * - `vuA(v)A(u)A(u)…`: the same ten arrays behind a width, the samples always
+ *   empty: the centreline, its verbs 2 and 3 carrying full widths.
  * - 25: arrays of structs, `A(S(…))`. A start point (x, y, azimuth,
  *   altitude, force), then segments of 11 floats: one not used here and two
  *   more points. The width is the layout's first float, for the whole stroke.
  *
- * A stroke moved with the lasso keeps its points and gains an offset
- * (field 6, `{1: dx, 2: dy}`).
+ * Stroke field 9 is what shape recognition made of the stroke (a polyline,
+ * or a frame and a turn); it is not read here. A stroke moved with the lasso
+ * keeps its points and gains an offset (field 6, `{1: dx, 2: dy}`).
  */
 
 import { canFill, isClosedLoop, readFill } from "../model/shape-style";
@@ -50,6 +63,7 @@ import type {
 } from "../model/document";
 import { SCHEMA_VERSION } from "../constants";
 import { MIN_TEXT_BOX_WIDTH, isBorderWidth, isCornerRadius } from "../model/text-style";
+import { TEXT_PAD_X, TEXT_PAD_Y } from "../canvas/text-layout";
 import { normalizePageTitle } from "../model/contents";
 import { textSegments } from "../model/text-links";
 import { decodeAppleLz4 } from "./apple-lz4";
@@ -111,7 +125,10 @@ interface Template {
 interface PageEntry {
   id: string;
   template?: string;
+  /** The version of `template`: a later change of paper has a higher one. */
+  paperClock: number;
   order: string;
+  orderClock: number;
   deleted: boolean;
   bookmarked: boolean;
   created: number;
@@ -145,6 +162,7 @@ export function readGoodnotes(
   const templates = new Map<string, Template>();
   const pages = new Map<string, PageEntry>();
   const outline = new Map<string, OutlineEntry>();
+  const changes: Array<{ page: string; kind: number; value: string; clock: number }> = [];
   let created = 0;
   for (const record of splitDelimited(file("index.events.pb") ?? new Uint8Array())) {
     let event: Message;
@@ -189,16 +207,31 @@ export function readGoodnotes(
         }
         break;
       }
-      case 54:
+      case 54: {
+        const paper = stamped(body.message(3));
+        const order = stamped(body.message(4));
         pages.set(id, {
           id,
-          template: body.message(3)?.string(1),
-          order: body.message(4)?.string(1) ?? "",
+          template: paper.value,
+          paperClock: paper.clock,
+          order: order.value ?? "",
+          orderClock: order.clock,
           deleted: false,
           bookmarked: false,
           created: created++,
         });
         break;
+      }
+      case 3:
+      case 55: {
+        // A page's paper changed (3) or the page moved (55), applied once
+        // every page is known: the newer clock wins.
+        const change = stamped(body.message(3));
+        if (change.value !== undefined) {
+          changes.push({ page: id, kind: kind.field, value: change.value, clock: change.clock });
+        }
+        break;
+      }
       case 56: {
         const page = pages.get(id);
         if (page) page.deleted = flagOn(body);
@@ -227,6 +260,18 @@ export function readGoodnotes(
     }
   }
 
+  for (const change of changes) {
+    const page = pages.get(change.page);
+    if (!page) continue;
+    if (change.kind === 3 && change.clock >= page.paperClock) {
+      page.template = change.value;
+      page.paperClock = change.clock;
+    } else if (change.kind === 55 && change.clock >= page.orderClock) {
+      page.order = change.value;
+      page.orderClock = change.clock;
+    }
+  }
+
   const live = [...pages.values()]
     .filter((p) => !p.deleted)
     .sort((a, b) => compareKeys(a.order, b.order) || a.created - b.created);
@@ -242,7 +287,8 @@ export function readGoodnotes(
   }
   const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
-  const name = fileTitle || title || "Imported notebook";
+  // Composed: a file name from macOS spells "ü" as "u" and a mark (`attachmentBaseName`).
+  const name = (fileTitle || title || "Imported notebook").normalize("NFC");
   const attachments: ImportAttachment[] = [];
   const attached = new Map<string, string>();
   /** A file in `attachments/`, by record or file id; its name in the result, or null. */
@@ -351,16 +397,21 @@ export function readGoodnotes(
       const body = outer.message(kind);
       if (!body) continue;
       if (kind === 7) {
-        const stroke = readStroke(body, k, `s${strokeN + 1}`);
-        if (stroke) {
-          page.strokes.push(stroke);
-          strokeN++;
-        } else tally.add("unreadable", pageNumber);
+        const strokes = readStroke(body, k, () => `s${++strokeN}`);
+        if (strokes) page.strokes.push(...strokes);
+        else tally.add("unreadable", pageNumber);
+      } else if (kind === 8) {
+        const box = readRtfBox(body, k, `t${textN + 1}`);
+        if (box) {
+          page.textBoxes.push(box);
+          textN++;
+        } else tally.add("empty", pageNumber);
       } else if (kind === 1) {
         const image = readImage(body, k, `i${imageN + 1}`, (id) => attach(id, "picture"));
         if (image) {
           page.images.push(image);
           imageN++;
+          if (/\.jp2$/i.test(image.path)) tally.add("jpeg2000", pageNumber);
         } else tally.add("other", pageNumber);
       } else if (kind === 21) {
         const typed = readTyped(body, 32, pageLink);
@@ -448,6 +499,12 @@ export function readGoodnotes(
         `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
         "a text box here has one, so the first was kept.",
     ),
+    tally.line(
+      "jpeg2000",
+      (n) =>
+        `${plural(n, "picture is", "pictures are")} JPEG 2000, ` +
+        "which Obsidian cannot show until converted to PNG or JPEG.",
+    ),
     tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
   ];
   for (const line of lines) if (line) warnings.push(line);
@@ -489,9 +546,19 @@ export interface PenPoint {
 export interface PenPath {
   points: PenPoint[];
   half?: number;
+  /**
+   * Where each further piece of the stroke begins in `points`: a centreline
+   * can move to a new start part-way, and the pieces are not joined.
+   */
+  starts?: number[];
 }
 
-function readStroke(body: Message, k: number, id: string): Stroke | null {
+/**
+ * A stroke as one FineNotes stroke a piece (`PenPath.starts`), each named by
+ * `nextId`. Empty for a stroke without points (Goodnotes keeps some), null
+ * when it cannot be read.
+ */
+function readStroke(body: Message, k: number, nextId: () => string): Stroke[] | null {
   const data = body.bytes(2);
   if (!data) return null;
   let path: PenPath;
@@ -500,30 +567,44 @@ function readStroke(body: Message, k: number, id: string): Stroke | null {
   } catch {
     return null;
   }
+  if (path.points.length === 0) return [];
   const offset = body.message(6);
   const dx = finite(offset?.float(1));
   const dy = finite(offset?.float(2));
-  const points = path.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
-  if (points.length === 0) return null;
+  const usable = (p: PenPoint): boolean => Number.isFinite(p.x) && Number.isFinite(p.y);
+  const all = path.points.filter(usable);
+  if (all.length === 0) return null;
 
-  const halves = points.map((p) => p.half).filter((h): h is number => h !== undefined);
+  const halves = all
+    .map((p) => p.half)
+    .filter((h): h is number => h !== undefined && Number.isFinite(h) && h > 0);
   const half = halves.length > 0 ? median(halves) : (path.half ?? 1);
   const size = round2(Math.max(0.1, 2 * half * k));
-  const pts: number[] = [];
-  for (const p of points) {
-    const pressure = p.half === undefined ? 0.5 : pressureForWidth(2 * p.half * k, size);
-    pts.push((p.x + dx) * k, (p.y + dy) * k, pressure);
-  }
-
   const colour = body.message(4);
   const [r, g, b, a] = [1, 2, 3, 4].map((f) => colour?.float(f) ?? (f === 4 ? 1 : 0));
-  return {
-    id,
-    color: hexColor(r, g, b),
-    size,
-    tool: a < HIGHLIGHTER_ALPHA ? "highlighter" : "pen",
-    pts,
-  };
+
+  const bounds = [0, ...(path.starts ?? []), path.points.length];
+  const strokes: Stroke[] = [];
+  for (let i = 0; i + 1 < bounds.length; i++) {
+    const piece = path.points.slice(bounds[i], bounds[i + 1]).filter(usable);
+    if (piece.length === 0) continue;
+    const pts: number[] = [];
+    for (const p of piece) {
+      const pressure =
+        p.half === undefined || !Number.isFinite(p.half)
+          ? 0.5
+          : pressureForWidth(2 * p.half * k, size);
+      pts.push((p.x + dx) * k, (p.y + dy) * k, pressure);
+    }
+    strokes.push({
+      id: nextId(),
+      color: hexColor(r, g, b),
+      size,
+      tool: a < HIGHLIGHTER_ALPHA ? "highlighter" : "pen",
+      pts,
+    });
+  }
+  return strokes;
 }
 
 /** The pen samples of a decompressed stroke, in either layout. Throws on anything else. */
@@ -533,7 +614,14 @@ export function penPath(raw: Uint8Array): PenPath {
   const f32 = (at: number): number => view.getFloat32(at, true);
   const { arrays } = layout;
 
+  const width = layout.scalars.find((s) => s.kind === "u");
+  /** The stroke's own width, when it has one (it is -1 when every point has its own). */
+  const strokeWidth = width && f32(width.at) > 0 ? f32(width.at) : undefined;
+
   if (arrays.some((a) => a.kind === "S")) {
+    if (arrays[1]?.fields === "uu" && arrays[2]?.fields === "uuuu") {
+      return centreline(view, arrays, "pairs", strokeWidth);
+    }
     // Schema 25: a start point, then segments of two points each.
     const start = arrays.find((a) => a.kind === "S" && a.fields === "uuuuu");
     const segments = arrays.find((a) => a.kind === "S" && a.fields === "u".repeat(11));
@@ -545,19 +633,27 @@ export function penPath(raw: Uint8Array): PenPath {
       const at = segments.at + i * segments.size;
       points.push({ x: f32(at + 4), y: f32(at + 8) }, { x: f32(at + 24), y: f32(at + 28) });
     }
-    const width = layout.scalars.find((s) => s.kind === "u");
-    const w = width ? f32(width.at) : NaN;
-    return { points, half: Number.isFinite(w) && w > 0 ? w / 2 : undefined };
+    return { points, half: strokeWidth !== undefined ? strokeWidth / 2 : undefined };
   }
 
-  // Schema 24: the second-last array holds the samples, the last one entry per sample.
+  // Schema 24: the second-last array holds the samples, the last one entry
+  // per sample. Strokes with a width of their own leave both empty, as does
+  // the odd stroke without one; theirs is the centreline.
   const samples = arrays[arrays.length - 2];
   const perSample = arrays[arrays.length - 1];
-  if (!samples || !perSample || samples.kind !== "u" || perSample.count < 1) {
-    throw new GoodnotesError("unexpected stroke layout");
+  const stride = samples && perSample ? samples.count / perSample.count : NaN;
+  if (
+    width ||
+    arrays.length < 10 ||
+    samples.kind !== "u" ||
+    !Number.isInteger(stride) ||
+    stride < 3
+  ) {
+    if (arrays[1]?.kind !== "u" || arrays[2]?.kind !== "u") {
+      throw new GoodnotesError("unexpected stroke layout");
+    }
+    return centreline(view, arrays, width ? "widths" : "halves", strokeWidth);
   }
-  const stride = samples.count / perSample.count;
-  if (!Number.isInteger(stride) || stride < 3) throw new GoodnotesError("unexpected stroke layout");
   const halfAt = stride === 5 ? 2 : stride === 7 ? 3 : -1;
   const points: PenPoint[] = [];
   for (let i = 0; i < perSample.count; i++) {
@@ -570,6 +666,92 @@ export function penPath(raw: Uint8Array): PenPath {
   const startPoint = arrays[1];
   const half = startPoint?.kind === "u" && startPoint.count >= 3 ? f32(startPoint.at + 8) : NaN;
   return { points, half: halfAt < 0 && Number.isFinite(half) && half > 0 ? half : undefined };
+}
+
+/**
+ * How a centreline's points are written: `pairs` as structs of x, y (the
+ * stroke's width for them all); `widths` as flat floats, x, y, with a full
+ * width after a point's last pair under verbs 2 and 3; `halves` as flat
+ * floats x, y, half-width.
+ */
+type CentrelineKind = "pairs" | "widths" | "halves";
+
+/**
+ * A stroke's centreline: the first array is its verbs (u16), the next two
+ * the points they move to and the curves they draw, each verb reading the
+ * next item of its own array:
+ *
+ * - `0` moves to a point, `1` draws a quadratic curve (a control point,
+ *   then its end) from where the last verb ended;
+ * - `2` and `3` are the same with widths, in `widths` layouts only.
+ *
+ * Each curve comes back as two points, its middle and its end. A move after
+ * the first starts a new piece (`starts`). Throws when the verbs and the
+ * arrays they read disagree.
+ */
+function centreline(
+  view: DataView,
+  arrays: TplArray[],
+  kind: CentrelineKind,
+  strokeWidth: number | undefined,
+): PenPath {
+  const [verbs, moves, curves] = arrays;
+  if (verbs?.kind !== "v" || !moves || !curves) {
+    throw new GoodnotesError("unexpected stroke layout");
+  }
+  const f32 = (at: number): number => view.getFloat32(at, true);
+  const half = strokeWidth !== undefined ? strokeWidth / 2 : undefined;
+  // Read positions in the move and curve arrays, in floats (flat) or items (structs).
+  let m = 0;
+  let c = 0;
+  const flat = kind !== "pairs";
+  const take = (array: TplArray, from: number, n: number): number[] => {
+    const end = flat ? from + n : from + 1;
+    if (end > array.count) throw new GoodnotesError("stroke verbs past their points");
+    const at = array.at + (flat ? from * 4 : from * array.size);
+    return Array.from({ length: n }, (_, i) => f32(at + i * 4));
+  };
+  const points: PenPoint[] = [];
+  const starts: number[] = [];
+  const at = (x: number, y: number, h: number | undefined): PenPoint =>
+    h === undefined ? { x, y } : { x, y, half: h };
+  for (let i = 0; i < verbs.count; i++) {
+    const verb = view.getUint16(verbs.at + i * 2, true);
+    if (verb > 3 || (verb > 1 && kind !== "widths")) {
+      throw new GoodnotesError(`unknown stroke verb ${verb}`);
+    }
+    if (verb === 0 || verb === 2) {
+      const n = kind === "pairs" ? 2 : kind === "halves" || verb === 2 ? 3 : 2;
+      const [x, y, w] = take(moves, m, n);
+      m += flat ? n : 1;
+      if (points.length > 0) starts.push(points.length);
+      const h = kind === "halves" ? w : verb === 2 ? w / 2 : half;
+      points.push(at(x, y, h));
+      continue;
+    }
+    const n = kind === "pairs" ? 4 : kind === "halves" || verb === 3 ? 6 : 4;
+    const v = take(curves, c, n);
+    c += flat ? n : 1;
+    // Halves interleave: cx, cy, ch, x, y, h. Widths trail: cx, cy, x, y, wc, w.
+    const [cx, cy, x, y] = kind === "halves" ? [v[0], v[1], v[3], v[4]] : v;
+    const [hc, h] =
+      kind === "halves" ? [v[2], v[5]] : verb === 3 ? [v[4] / 2, v[5] / 2] : [half, half];
+    const from = points[points.length - 1];
+    if (!from) {
+      points.push(at(x, y, h));
+      continue;
+    }
+    // The curve's middle: a quarter each of its ends, half its control point.
+    const mid = (a: number, b: number, ctrl: number): number => 0.25 * a + 0.5 * ctrl + 0.25 * b;
+    const hm =
+      from.half !== undefined && hc !== undefined && h !== undefined
+        ? mid(from.half, h, hc)
+        : hc;
+    points.push(at(mid(from.x, x, cx), mid(from.y, y, cy), hm), at(x, y, h));
+  }
+  const path: PenPath = { points, half };
+  if (starts.length > 0) path.starts = starts;
+  return path;
 }
 
 /** The pen samples of a schema-24 stroke as flat floats, five or seven a sample. */
@@ -600,7 +782,12 @@ interface TplArray {
   fields: string;
 }
 
-/** A `tpl` layout: its loose values and its arrays. */
+/**
+ * A `tpl` layout: its loose values and its arrays. A type it does not know
+ * (newer strokes end in an `A(f)`) ends the layout there once the centreline's
+ * three arrays are read, since what follows them is never needed; before
+ * that it is an error.
+ */
 export function readTplLayout(raw: Uint8Array): { scalars: TplScalar[]; arrays: TplArray[] } {
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   if (raw.length < 9 || String.fromCharCode(...raw.subarray(0, 4)) !== "tpl\0") {
@@ -624,9 +811,16 @@ export function readTplLayout(raw: Uint8Array): { scalars: TplScalar[]; arrays: 
 
   const scalars: TplScalar[] = [];
   const arrays: TplArray[] = [];
+  /** The value types of the entry at `s`: itself, an array's item, or a struct's fields. */
+  const types = (s: number): string => {
+    if (signature[s] !== "A") return signature[s];
+    if (signature[s + 2] !== "S") return signature[s + 2] ?? "";
+    return signature.slice(s + 4, signature.indexOf(")", s));
+  };
   let at = sigEnd + 1;
   for (let s = 0; s < signature.length;) {
     const c = signature[s];
+    if (arrays.length >= 3 && /[^uv]/.test(types(s))) break;
     if (c === "A") {
       let item: string;
       let next: number;
@@ -686,6 +880,27 @@ function readImage(
   if (!attachment || !w || !h || w <= 0 || h <= 0) return null;
   const path = attach(attachment);
   if (!path) return null;
+  // A turned picture: `2` is only its bounds; `3` its centre, its own size
+  // and the turn, in radians clockwise.
+  const turned = body.message(3);
+  const centre = turned?.message(1);
+  const own = turned?.message(2);
+  const rotation = finite(num(turned, 3));
+  const ow = finite(num(own, 1));
+  const oh = finite(num(own, 2));
+  if (centre && Math.abs(rotation) > 1e-3 && ow > 0 && oh > 0) {
+    const cx = finite(num(centre, 1));
+    const cy = finite(num(centre, 2));
+    return {
+      id,
+      path,
+      x: round2((cx - ow / 2) * k),
+      y: round2((cy - oh / 2) * k),
+      w: round2(ow * k),
+      h: round2(oh * k),
+      rotation: Math.round(rotation * 1e4) / 1e4,
+    };
+  }
   return { id, path, x: round2(x * k), y: round2(y * k), w: round2(w * k), h: round2(h * k) };
 }
 
@@ -1057,6 +1272,237 @@ function readComment(
 }
 
 /**
+ * An older text box (kind 8) as a text box: its frame (`2`, already turned
+ * by the transform in `4`), the text inside it by the inset `10`, and the
+ * text itself as RTF (`6`). Its background (`7`) is clear unless it has an
+ * alpha. Null when it holds no words.
+ */
+function readRtfBox(body: Message, k: number, id: string): TextBoxElement | null {
+  const rtf = readRtf(body.string(6) ?? "");
+  if (!rtf || rtf.text.trim() === "") return null;
+  const frame = body.message(2);
+  const origin = frame?.message(1);
+  const size = frame?.message(2);
+  const inset = finite(num(body, 10), 10);
+  const fontSize = rtf.size ?? 24;
+  // The text sits where Goodnotes put it: a box here keeps its own padding
+  // around its text, so it starts that much further out.
+  const box: TextBoxElement = {
+    id,
+    x: round2((finite(num(origin, 1)) + inset) * k - TEXT_PAD_X),
+    y: round2((finite(num(origin, 2)) + inset) * k - TEXT_PAD_Y),
+    w: round2(
+      Math.max(8, (finite(num(size, 1), 200 + 2 * inset) - 2 * inset) * k + 2 * TEXT_PAD_X),
+    ),
+    text: rtf.text,
+    color: rtf.color ?? "#000000",
+    fontSize: round2(Math.max(12, fontSize * k)),
+  };
+  // Goodnotes sizes a box to its text, in fonts often not here (Snell
+  // Roundhand, Noteworthy) and narrower than the one used instead: a box
+  // that held one line grows with its text rather than wrap it.
+  const height = num(size, 2);
+  if (!rtf.text.includes("\n") && height !== undefined && height - 2 * inset < 1.8 * fontSize) {
+    box.fit = true;
+  }
+  const typeface = fontFor(rtf.font);
+  if (typeface !== "sans") box.font = typeface;
+  const fill = rgba(body.message(7), true);
+  if (fill) box.fill = fill;
+  return box;
+}
+
+/** What a text box keeps of an RTF document. */
+export interface RtfText {
+  text: string;
+  /** The first words' font, size in points and colour. */
+  font?: string;
+  size?: number;
+  color?: string;
+}
+
+/** RTF groups whose contents are not text. */
+const RTF_DESTINATIONS = new Set([
+  "fonttbl",
+  "colortbl",
+  "expandedcolortbl",
+  "stylesheet",
+  "info",
+  "listtable",
+  "listoverridetable",
+  "pict",
+  "header",
+  "footer",
+]);
+
+/**
+ * The plain text of an RTF document as Apple writes one, with the font, size
+ * and colour its first words are in. Paragraphs and line breaks become new
+ * lines; `\'hh` is a byte in the document's code page. Null when it is not RTF.
+ */
+export function readRtf(rtf: string): RtfText | null {
+  if (!rtf.startsWith("{\\rtf")) return null;
+  let decoder: TextDecoder;
+  const page = /\\ansicpg(\d+)/.exec(rtf)?.[1] ?? "1252";
+  try {
+    decoder = new TextDecoder(`windows-${page}`);
+  } catch {
+    decoder = new TextDecoder("windows-1252");
+  }
+  const fonts = new Map<number, string>();
+  const colours: Array<string | undefined> = [];
+  let colour: [number, number, number] | null = null;
+  let fontNumber = 0;
+  let fontName = "";
+
+  interface State {
+    destination: string | null;
+    skip: boolean;
+    font: number;
+    size?: number;
+    colour: number;
+    /** Characters to drop after a `\u`. */
+    uc: number;
+  }
+  let state: State = { destination: null, skip: false, font: 0, colour: 0, uc: 1 };
+  const stack: State[] = [];
+  let text = "";
+  let first: RtfText | null = null;
+  let pendingSkip = 0;
+  let bytes: number[] = [];
+
+  const put = (s: string): void => {
+    if (state.skip) return;
+    if (state.destination === "fonttbl") {
+      fontName += s;
+      return;
+    }
+    if (state.destination !== null) return;
+    if (!first && s.trim() !== "") {
+      first = {
+        text: "",
+        font: fonts.get(state.font),
+        size: state.size,
+        color: colours[state.colour],
+      };
+    }
+    text += s;
+  };
+  /** `\'hh` bytes in a row, decoded together (a code page may use two a character). */
+  const flushBytes = (): void => {
+    if (bytes.length === 0) return;
+    put(decoder.decode(new Uint8Array(bytes)));
+    bytes = [];
+  };
+
+  for (let i = 0; i < rtf.length; ) {
+    const ch = rtf[i];
+    if (ch !== "\\" || rtf[i + 1] !== "'") flushBytes();
+    if (ch === "{") {
+      stack.push(state);
+      state = { ...state };
+      i++;
+      continue;
+    }
+    if (ch === "}") {
+      if (state.destination === "fonttbl" && fontName.trim()) {
+        fonts.set(fontNumber, fontName.replace(/;\s*$/, "").trim());
+      }
+      fontName = "";
+      state = stack.pop() ?? state;
+      i++;
+      continue;
+    }
+    if (ch === "\r" || ch === "\n") {
+      i++;
+      continue;
+    }
+    if (ch !== "\\") {
+      if (pendingSkip > 0) pendingSkip--;
+      else if (state.destination === "colortbl" && ch === ";") {
+        const rgb = colour?.map((v) => v / 255);
+        colours.push(rgb ? hexColor(rgb[0], rgb[1], rgb[2]) : undefined);
+        colour = null;
+      } else if (state.destination === "fonttbl" && ch === ";") {
+        if (fontName.trim()) fonts.set(fontNumber, fontName.trim());
+        fontName = "";
+      } else put(ch);
+      i++;
+      continue;
+    }
+    // A control symbol, or a control word with an optional number.
+    const next = rtf[i + 1] ?? "";
+    if (next === "'") {
+      const byte = parseInt(rtf.slice(i + 2, i + 4), 16);
+      i += 4;
+      if (pendingSkip > 0) pendingSkip--;
+      else if (Number.isFinite(byte)) bytes.push(byte);
+      continue;
+    }
+    if (!/[a-zA-Z]/.test(next)) {
+      i += 2;
+      if (next === "\n" || next === "\r") put("\n");
+      else if (next === "~") put(" ");
+      else if (next === "*") state.skip = true;
+      else if (next === "\\" || next === "{" || next === "}") put(next);
+      continue;
+    }
+    const word = /^\\([a-zA-Z]+)(-?\d+)? ?/.exec(rtf.slice(i, i + 64));
+    if (!word) {
+      i++;
+      continue;
+    }
+    i += word[0].length;
+    const name = word[1];
+    const n = word[2] === undefined ? undefined : Number(word[2]);
+    if (RTF_DESTINATIONS.has(name)) {
+      state.destination = name;
+      continue;
+    }
+    if (state.destination === "colortbl") {
+      colour ??= [0, 0, 0];
+      if (name === "red") colour[0] = n ?? 0;
+      else if (name === "green") colour[1] = n ?? 0;
+      else if (name === "blue") colour[2] = n ?? 0;
+      continue;
+    }
+    if (state.destination === "fonttbl") {
+      if (name === "f") fontNumber = n ?? 0;
+      continue;
+    }
+    switch (name) {
+      case "par":
+      case "line":
+        put("\n");
+        break;
+      case "tab":
+        put("\t");
+        break;
+      case "f":
+        state.font = n ?? 0;
+        break;
+      case "fs":
+        if (n !== undefined && n > 0) state.size = n / 2;
+        break;
+      case "cf":
+        state.colour = n ?? 0;
+        break;
+      case "uc":
+        state.uc = n ?? 1;
+        break;
+      case "u":
+        if (n !== undefined) put(String.fromCharCode(n < 0 ? n + 65536 : n));
+        pendingSkip = state.uc;
+        break;
+    }
+  }
+  flushBytes();
+  const found: RtfText = first ?? { text: "" };
+  found.text = text.replace(/\s+$/, "");
+  return found;
+}
+
+/**
  * The page a Goodnotes link points at, by page id, or null when the URL is
  * not one: `https://app.goodnotes.com/documents/?anchor=<base64 of "page-<id>">`.
  */
@@ -1134,6 +1580,14 @@ function rgba(colour: Message | undefined, alpha = false): string | undefined {
   return `${hex}${Math.round(Math.min(1, a) * 255)
     .toString(16)
     .padStart(2, "0")}`;
+}
+
+/**
+ * A versioned value, `{1: value, 2: {1: counter, 2: device}}`: the value and
+ * its counter (0 when it has none). Goodnotes keeps the one with the higher.
+ */
+function stamped(message: Message | undefined): { value?: string; clock: number } {
+  return { value: message?.string(1), clock: message?.message(2)?.int(1) ?? 0 };
 }
 
 /** A page flag event's value: `{3: {1: 1}}` is on, anything else off. */

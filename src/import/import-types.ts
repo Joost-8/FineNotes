@@ -174,6 +174,10 @@ export function sniffFile(bytes: Uint8Array): { mime: string; ext: string } {
     return { mime: "audio/mp4", ext: "m4a" };
   }
   if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return { mime: "image/webp", ext: "webp" };
+  // JPEG 2000, as iPad scans and Goodnotes pictures often are: a box `jP  `.
+  if (ascii(4, 8) === "jP  " && b[8] === 0x0d && b[9] === 0x0a) {
+    return { mime: "image/jp2", ext: "jp2" };
+  }
   return { mime: "application/octet-stream", ext: "bin" };
 }
 

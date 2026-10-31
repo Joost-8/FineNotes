@@ -86,6 +86,19 @@ extracted from the matching section of this file by `release.yml`.
   after "Dark, PDFs as they are" turned PDFs dark again. They are two
   choices now, Page appearance in Settings and Dark PDF pages in the ⋯
   menu, and neither changes the other.
+- **Goodnotes notebooks import whole.** Most handwriting in Goodnotes 6
+  notebooks was written in a layout the import could not read, so pages came
+  over nearly empty; every stroke now comes over, at its width, with
+  highlighters as highlighters. Typed text from older Goodnotes text boxes,
+  turned pictures, a page given another paper or moved in Goodnotes, and
+  handwriting saved in a sheet's PDF as annotations come over too, the last
+  as strokes you can edit. A JPEG 2000 picture, which Obsidian cannot show,
+  is named as one in the import's report.
+- **A notebook copied into the vault finds its files.** A notebook brought
+  in from outside Obsidian, with its PDFs and pictures beside it, finds them
+  relative to itself when it opens, wherever its folder now is, and saves
+  the corrected paths. Names with accents (ü, é) are saved in one spelling,
+  so they are found on every system.
 
 ## [2.6.0] - 2026-10-30
 

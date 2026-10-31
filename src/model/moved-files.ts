@@ -10,7 +10,8 @@
  * followed through leads to a file that exists. A guess by file name (a PDF
  * moved outside Obsidian, or before this log existed) is never made here: two
  * courses can both have a "Lecture 1.pdf", and the right one may simply not
- * have synced yet.
+ * have synced yet. A note that came in from outside with its files beside it
+ * finds them relative to itself instead (`nearbyTarget`).
  *
  * Pure: no DOM, no Obsidian.
  */
@@ -84,6 +85,45 @@ export function movedTarget(
   if (!path || exists(path)) return undefined;
   const to = followMoves(log, path);
   return to !== path && exists(to) ? to : undefined;
+}
+
+/**
+ * Where a path a note holds is now when nothing is at it and no logged move
+ * explains it: the note came in from outside the vault with its files beside
+ * it (another vault, a converter, a folder copied in by hand), so its paths
+ * still begin where it was made, and the vault Obsidian saw no move in.
+ *
+ * Its paths are then read as relative to the note: the longest tail of the
+ * path found below the note's own folder, or below a folder above it
+ * (`Physik/Heft/Images/a.pdf` → `School/Physik/Heft/Images/a.pdf`). A tail of
+ * the file name alone is only looked for in the note's own folder, so this
+ * stays the note's own files and never a guess by name across the vault.
+ * Either Unicode spelling is found (macOS writes "ü" as "u" and a mark).
+ */
+export function nearbyTarget(
+  notePath: string,
+  exists: (path: string) => boolean,
+  path: string,
+): string | undefined {
+  if (!path || exists(path)) return undefined;
+  const segments = path.split("/").filter((s) => s !== "");
+  const noteFolder = notePath.includes("/") ? notePath.slice(0, notePath.lastIndexOf("/")) : "";
+  const folders: string[] = [];
+  for (let f = noteFolder; ; f = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "") {
+    folders.push(f);
+    if (f === "") break;
+  }
+  for (let n = segments.length; n >= 1; n--) {
+    const tail = segments.slice(-n).join("/");
+    const spellings = [...new Set([tail, tail.normalize("NFC"), tail.normalize("NFD")])];
+    for (const folder of n === 1 ? [noteFolder] : folders) {
+      for (const spelling of spellings) {
+        const candidate = folder ? `${folder}/${spelling}` : spelling;
+        if (candidate !== path && exists(candidate)) return candidate;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
