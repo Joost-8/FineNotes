@@ -14,6 +14,8 @@
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
  *   ┌ Dark pages / Light pages            ┐
+ *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
+ *   │ Desk             [◐] [○] [●] [◍]    │
  *   │ Toolbar          [▔] [▁] [▏] [▕]    │
  *   │ Keyboard shortcuts                  │
  *   │ Copy home screen link               │
@@ -33,6 +35,8 @@ import { setIcon } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
+import type { DeskChoice } from "../settings-data";
+import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER } from "../canvas/backdrop";
 import { type BarDock, menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
 
 export interface MorePanelPage {
@@ -57,6 +61,10 @@ export interface MorePanelPage {
   clearable: boolean;
   /** The pages are shown dark (the view setting). */
   darkPages?: boolean;
+  /** With dark pages, PDF pages turn dark too (`invertPdfPages`). */
+  darkPdf?: boolean;
+  /** The desk around the pages, and its colour when it is custom. */
+  desk?: { choice: DeskChoice; color: string };
   /** Tool bar buttons folded in here because the bar had no room for them. */
   folded?: FoldedBarItem[];
   /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
@@ -79,6 +87,10 @@ export interface MorePanelActions {
   remove: (index: number) => void;
   /** Show every notebook's pages dark, or light again. */
   toggleDarkPages: () => void;
+  /** Turn PDF pages dark with dark pages, or leave them as they are. Without it the row is not offered. */
+  setDarkPdf?: (dark: boolean) => void;
+  /** Put the pages on another desk; `color` with custom. Without it the row is not offered. */
+  setDesk?: (choice: DeskChoice, color?: string) => void;
   /** Show the keyboard and stylus shortcuts. */
   showShortcuts: () => void;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
@@ -94,6 +106,18 @@ const BAR_DOCKS: ReadonlyArray<{ dock: BarDock; label: string }> = [
   { dock: "left", label: "Toolbar on the left" },
   { dock: "right", label: "Toolbar on the right" },
 ];
+
+/** The desks in the Desk row, in order. */
+const DESKS: ReadonlyArray<{ choice: DeskChoice; label: string }> = [
+  { choice: "auto", label: "Desk with the pages" },
+  { choice: "light", label: "Light desk" },
+  { choice: "dark", label: "Dark desk" },
+  { choice: "custom", label: "Desk in a colour of your own" },
+];
+/** The Light and Dark desks' colours, and the usual grey a custom desk starts from. */
+const LIGHT_DESK_DISC = LIGHT_DESK;
+const DARK_DESK_DISC = DARK_PAPER.desk;
+const CUSTOM_DESK = LIGHT_PAPER.desk;
 
 const PANEL_WIDTH = 330;
 const THUMB_WIDTH = 34;
@@ -256,6 +280,8 @@ export class MorePanel {
       text: page.darkPages ? "Light pages" : "Dark pages",
       run: () => actions.toggleDarkPages(),
     });
+    if (page.darkPages) this.darkPdfRow(view);
+    this.deskRow(view);
     this.barDockRow(view);
     this.row(view, {
       icon: "keyboard",
@@ -267,6 +293,112 @@ export class MorePanel {
       text: "Copy home screen link",
       run: () => actions.copyHomeLink(),
     });
+  }
+
+  /**
+   * "Dark PDF pages", while pages are dark: a check at its end while PDF
+   * pages turn dark with them. A tap switches it and the panel stays, so
+   * the pages behind show the change.
+   */
+  private darkPdfRow(parent: HTMLElement): void {
+    const set = this.actions.setDarkPdf;
+    if (!set) return;
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-more-row is-switch clickable-icon",
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "file-text");
+    button.createSpan({ cls: "goodobsidian-more-label", text: "Dark PDF pages" });
+    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
+    setIcon(mark, "check");
+    const show = (on: boolean): void => {
+      mark.toggleClass("is-hidden", !on);
+      button.setAttribute("role", "switch");
+      button.setAttribute("aria-checked", String(on));
+    };
+    let on = this.page.darkPdf !== false;
+    show(on);
+    button.addEventListener("click", () => {
+      on = !on;
+      show(on);
+      set(on);
+    });
+  }
+
+  /**
+   * "Desk": the background around the pages, as four marks at the row's
+   * end: with the pages (a half-filled circle: light or dark as they need),
+   * light, dark, and a colour of one's own, picked with the system's colour
+   * picker. The panel stays, so the desk behind shows each choice.
+   */
+  private deskRow(parent: HTMLElement): void {
+    const set = this.actions.setDesk;
+    if (!set) return;
+    const desk = this.page.desk ?? { choice: "auto", color: CUSTOM_DESK };
+    const row = parent.createDiv({ cls: "goodobsidian-more-row is-bar-dock is-desk" });
+    setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "square-dashed");
+    row.createSpan({ cls: "goodobsidian-more-label", text: "Desk" });
+    const places = row.createDiv({ cls: "goodobsidian-more-docks" });
+    places.setAttribute("role", "radiogroup");
+    places.setAttribute("aria-label", "Desk");
+    const buttons = new Map<DeskChoice, HTMLButtonElement>();
+    let chosen: DeskChoice = desk.choice;
+    const mark = (): void => {
+      for (const [choice, button] of buttons) {
+        button.toggleClass("is-active", choice === chosen);
+        button.setAttribute("aria-checked", String(choice === chosen));
+      }
+    };
+    for (const { choice, label } of DESKS) {
+      const button = places.createEl("button", {
+        cls: "goodobsidian-more-dock clickable-icon",
+      });
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-label", label);
+      buttons.set(choice, button);
+      if (choice === "auto") {
+        setIcon(button, "contrast");
+      } else {
+        // Custom wears a rainbow ring: a colour to pick, not one more grey.
+        const disc = button.createSpan({
+          cls: `goodobsidian-more-desk-disc${choice === "custom" ? " is-custom" : ""}`,
+        });
+        disc.setCssProps({
+          "--gob-desk-disc":
+            choice === "light" ? LIGHT_DESK_DISC : choice === "dark" ? DARK_DESK_DISC : desk.color,
+        });
+      }
+      if (choice === "custom") {
+        const input = button.createEl("input", {
+          cls: "goodobsidian-more-desk-input",
+          type: "color",
+          attr: { tabindex: "-1", "aria-hidden": "true" },
+        });
+        input.value = desk.color;
+        input.addEventListener("input", () => {
+          chosen = "custom";
+          mark();
+          button
+            .querySelector<HTMLElement>(".goodobsidian-more-desk-disc")
+            ?.setCssProps({ "--gob-desk-disc": input.value });
+          set("custom", input.value);
+        });
+        button.addEventListener("click", (event) => {
+          // The picker's own click bubbles here: it is not a second choice.
+          if (event.target === input) return;
+          chosen = "custom";
+          mark();
+          set("custom", input.value);
+          input.click();
+        });
+      } else {
+        button.addEventListener("click", () => {
+          chosen = choice;
+          mark();
+          set(choice);
+        });
+      }
+    }
+    mark();
   }
 
   /**

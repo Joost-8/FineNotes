@@ -350,6 +350,8 @@ function pieceOf(stroke: Stroke, pts: number[], nextId: () => string): Stroke {
   if (stroke.onSticky !== undefined) piece.onSticky = stroke.onSticky;
   // A piece of calligraphy keeps its flat nib. A shape is drawn at one width.
   if (stroke.nib !== undefined && stroke.shape === undefined) piece.nib = stroke.nib;
+  // A piece of a chisel highlight keeps its flat tip.
+  if (stroke.tip !== undefined && stroke.shape === undefined) piece.tip = stroke.tip;
   return piece;
 }
 

@@ -97,6 +97,33 @@ describe("existing PDF export integration", () => {
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1);
     expect(renderPageThumbnail).not.toHaveBeenCalled();
   });
+  it("leaves the cover tapes out when asked, and keeps them otherwise", async () => {
+    const tape: Stroke = {
+      id: "t",
+      color: "#e6d3a3",
+      size: 40,
+      tool: "tape",
+      pts: [0, 0, 0.5, 9, 0, 0.5],
+    };
+    const ink: Stroke = {
+      id: "i",
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [0, 0, 0.5, 9, 9, 0.5],
+    };
+    const page = { ...blankPage("p1"), strokes: [tape, ink] };
+    const drawn = (): string[] =>
+      (vi.mocked(renderPageThumbnail).mock.calls.at(-1)?.[1] as { strokes: Stroke[] }).strokes.map(
+        (s) => s.id,
+      );
+    await exportPagesToPdf([page], sources, { title: "T" });
+    expect(drawn()).toEqual(["t", "i"]);
+    await exportPagesToPdf([page], { ...sources, withoutTapes: true }, { title: "T" });
+    expect(drawn()).toEqual(["i"]);
+    expect(page.strokes).toHaveLength(2);
+  });
+
   it("retains the existing ordinary-page export without needing source PDF access", async () => {
     const bytes = await exportPagesToPdf([blankPage("p1")], sources, { title: "Plain" });
     expect(Buffer.from(bytes.subarray(0, 8)).toString()).toBe("%PDF-1.4");
@@ -133,5 +160,24 @@ describe("existing PDF export integration", () => {
     await expect(
       exportPagesToPdf([blankPage("p1")], sources, { title: "Stop", cancelled: () => cancelled }),
     ).rejects.toMatchObject({ name: "AbortError" });
+  });
+  it("leaves the template out on plain paper, keeping the ink and the page's own furniture", async () => {
+    const ruled = {
+      ...blankPage("p1"),
+      backdrop: { kind: "dotted" as const, paperColor: "#fdf6e3", texture: "fine" as const },
+    };
+    ruled.strokes = [{ id: "s1", tool: "pen", color: "#000", size: 3, pts: [0, 0, 0.5] }];
+    const furniture = vi.fn(() => ({ header: null, number: "1" }) as never);
+    await exportPagesToPdf([ruled], { ...sources, plainPaper: true, furniture }, { title: "P" });
+    const painted = vi.mocked(renderPageThumbnail).mock.calls[0][1];
+    expect(painted.backdrop).toEqual({ kind: "blank", paperColor: "#fdf6e3" });
+    expect(painted.strokes.map((s) => s.id)).toEqual(["s1"]);
+    // The notebook's page is not changed, and its furniture is asked for by that page.
+    expect(ruled.backdrop.kind).toBe("dotted");
+    expect(furniture).toHaveBeenCalledWith(ruled);
+    // Without it, the template stays.
+    vi.mocked(renderPageThumbnail).mockClear();
+    await exportPagesToPdf([ruled], sources, { title: "P" });
+    expect(vi.mocked(renderPageThumbnail).mock.calls[0][1]).toBe(ruled);
   });
 });

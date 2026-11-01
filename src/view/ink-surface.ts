@@ -1,5 +1,5 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
-import type { PdfRenderArea } from "../canvas/pdf-raster";
+import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -54,6 +54,7 @@ import {
   Renderer,
   type StrokeStyle,
   decorOf,
+  inkReach,
   penFor,
   paperColorOf,
   renderPageThumbnail,
@@ -228,10 +229,34 @@ import {
   mirrorRegions,
   mirrorsBefore,
   ownerKey,
+  ownerOf,
   planMirrors,
   strokeReach,
 } from "../canvas/mirrors";
+import {
+  MIN_TAPE_LENGTH,
+  isTape,
+  tapeClipPath,
+  tapeColorOf,
+  tapeHeightOf,
+  tapePoints,
+  toggleRevealed,
+  topTapeAt,
+} from "../model/cover-tape";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
+import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
+import {
+  AddFill,
+  RecolorFill,
+  DEFAULT_FILL_COLOR,
+  enclosedArea,
+  fillGapPx,
+  fillInsertIndex,
+  fillStroke,
+  isBucketFill,
+  readFillGap,
+  sameFill,
+} from "../model/fill-region";
 import {
   EYEDROP_REACH_PX,
   type EyedropResult,
@@ -243,6 +268,8 @@ import {
   textBoxCandidates,
 } from "../canvas/eyedropper";
 import { Eyedropper } from "./eyedropper";
+import { FormatPainter } from "./format-painter";
+import { PaintStyle, dominantInkStyle } from "../model/format-painter";
 import {
   type EraserFilter,
   eraseCircleFromStroke,
@@ -291,6 +318,7 @@ import {
 import { gestureLoopOf, penGesturesOf } from "../ink/pen-gestures";
 import {
   type Pt,
+  HEART_ASPECT,
   STAR_ASPECT,
   type ShapePreset,
   type BoxPreset,
@@ -317,6 +345,7 @@ import {
   type PdfBackdrop,
   type ShapeKind,
   CONNECTOR_SIDES,
+  POINT_STRIDE,
   type ConnectorSide,
   type ShapeConnector,
   type Stroke,
@@ -328,7 +357,13 @@ import {
   strokeCount,
   type PageComment,
 } from "../model/document";
-import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
+import {
+  type TextLayout,
+  type TextSelection,
+  selectText,
+  textMarkNote,
+  textUnder,
+} from "../canvas/pdf-text";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
@@ -413,15 +448,24 @@ import { InkClipboard, pasteCopies, pastePlacement, sameSpotTaken } from "../mod
 import {
   type NoteFrame,
   MoveNoteInk,
+  SetNoteFolded,
   SetStickyColor,
   STICKY_COLORS,
   copyNoteInk,
+  copyNoteText,
+  foldedAway,
+  foldedNoteAt,
   inkOfNote,
+  isFolded,
   loneNote,
   noteAt,
   noteIdsOf,
+  noteOfText,
+  noteTextFrame,
   shownAt,
+  textOfNote,
   withNoteInk,
+  withNoteText,
 } from "../model/sticky-notes";
 import {
   AddTextBoxToPage,
@@ -505,7 +549,14 @@ import {
   pressOverride,
   stylusButtonDown,
 } from "../input/pen-modifiers";
-import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
+import {
+  LASER_COLOR,
+  LASER_GLOW_PX,
+  LASER_WIDTH_PX,
+  type LaserPoint,
+  LaserTrail,
+  laserPaths,
+} from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
 import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
@@ -522,8 +573,9 @@ import {
   strokeWidthFor,
   tableSizeFor,
 } from "./toolbar";
-import type { SnapMode } from "../settings-data";
+import type { HighlighterTip, SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
+import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
@@ -604,6 +656,14 @@ const ZOOM_STEP = 1.25;
  * the budget skips is drawn from the page preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
+/**
+ * Rasterising budget for a frame at rest that has tiles to make with
+ * something to stand in for them meanwhile: the last zoom's tiles, scaled,
+ * or a page's preview. A zoom coming to rest made every tile on screen in
+ * one frame, half a second with stacked highlights (the CPU slowed 4x), and
+ * so did a PDF page arriving.
+ */
+const REST_FRAME_BUDGET_MS = 10;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -720,11 +780,21 @@ interface StrokeDiagnostic {
  */
 const MAX_STROKE_HALF_WIDTH = 24;
 
+/** How near ink a format painter's sweep must pass to paint it, screen px: the Pencil's tap reach. */
+const PAINT_REACH_PX = 6;
+
 /**
  * The standard eraser's margin for a brush stroke the Pencil's tilt widened
  * (`ink/tilt`): the cut reaches as far as its widest edge.
  */
 const MAX_TILTED_HALF_WIDTH = MAX_STROKE_HALF_WIDTH * TILT_MAX_FACTOR;
+
+/**
+ * A cut piece's line starts again a sample past the cut, a little off the
+ * stroke's own curve there: this much more (page px) round a cut is painted
+ * again with it.
+ */
+const ERASE_CUT_MARGIN = 6;
 
 /** How a surface is set up. The plugin's settings supply most of it. */
 export interface InkSurfaceOptions {
@@ -745,6 +815,8 @@ export interface InkSurfaceOptions {
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
   palette?: readonly string[];
+  /** The global laser settings, read live so an open note follows Settings changes. */
+  laserColor?: () => string;
 }
 
 /** What the surface tells its host, and asks it. Only `onChange` is required. */
@@ -823,6 +895,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** The highlighter's tip, read live (`settings.highlighterTip`); absent is round. */
+  highlighterTip?: () => HighlighterTip;
   /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
   pencilTilt?: () => boolean;
   /**
@@ -863,6 +937,8 @@ export interface InkSurfaceCallbacks {
    * Hosts use it to keep the toolbar's page navigation in step.
    */
   onPageChange?: (index: number, total: number) => void;
+  /** A cover tape was shown through or covered again (`model/cover-tape`). */
+  onTapesToggled?: () => void;
   /**
    * {@link InkSurface.sizePreviewScales} changed (a zoom came to rest, or
    * the pane changed width), so the toolbar can redraw its width and
@@ -913,6 +989,14 @@ export interface InkSurfaceCallbacks {
    * in client px.
    */
   onFlaggedWord?: (index: number, strokeIds: string[], at: { x: number; y: number }) => void;
+  /**
+   * "Correct" on lassoed ink, or on the press menu over ink: the host reads
+   * the word these strokes are in (page `index`) and opens the same card
+   * an underlined word does (`wordInk` places it under the word).
+   */
+  onCorrectWord?: (index: number, strokeIds: string[]) => void;
+  /** Whether handwriting can be read here, so "Correct" is offered. */
+  canCorrectWords?: () => boolean;
   /**
    * The user asked for a new page after `afterIndex`.
    *
@@ -1083,6 +1167,8 @@ const IOS_MIN_INPUT_FONT_PX = 16;
 
 /** A lasso press that moves less than this, in screen px, is a tap, not a lasso. */
 const TAP_SLOP_PX = 8;
+/** A press on a folded note that moves less than this, screen px, opens it on lift. */
+const FOLDED_TAP_SLOP_PX = 12;
 /** Lasso points closer than this to the previous one are dropped, screen px. */
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
@@ -1148,6 +1234,16 @@ const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }
 const PRESS_HOLD_MS = 500;
 /** The smallest scribble that erases: its longer side on screen, px. */
 const SCRIBBLE_MIN_PX = 10;
+/**
+ * Scribble to fill: at least this share of the scribble's points inside
+ * the region it fills, and its bounds at least {@link SCRIBBLE_FILL_SHARE}
+ * of the region's area, so a mark made near an outline, or a small one in a
+ * big frame, stays ink.
+ */
+const SCRIBBLE_FILL_INSIDE = 0.9;
+const SCRIBBLE_FILL_SHARE = 0.15;
+/** A stroke's ink radius as the fill sees it, over its width: a light hand writes thinner. */
+const FILL_INK_RADIUS = 0.35;
 /** Slack round the band a scribble swept, screen px, past half of either nib. */
 const SCRIBBLE_MARGIN_PX = 2;
 /** How far off the loop a held pen may land and still turn it into a lasso, screen px. */
@@ -1248,6 +1344,8 @@ interface PressMenu {
   at: Pt;
   /** The locked picture pressed, if one was. */
   locked: ImageElement | null;
+  /** The ink pressed, if any: "Correct" reads the word it is in. */
+  ink: Stroke | null;
   /**
    * Opened by a finger that is still down. Until it lifts the bar takes no
    * presses, so a palm that opened it cannot have the pen land on Paste:
@@ -1980,6 +2078,10 @@ export class InkSurface {
   private penDownAt: number | null = null;
   /** The colour pickers' "pick from the page", made on first use. */
   private eyedropper: Eyedropper | null = null;
+  /** The format painter, made on first use; armed by "Copy style". */
+  private formatPainter: FormatPainter | null = null;
+  /** The format painter's sweep under way: painted live, one undo step at the lift. */
+  private paintSweep: PaintStyle | null = null;
   /** A calculation note's suggestion beside its line, made on first use. */
   private calcChip: CalcChip | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
@@ -2018,13 +2120,18 @@ export class InkSurface {
   /** The previous dab's page-local point, so fast drags leave no gaps. */
   private eraseLast: { x: number; y: number } | null = null;
   /**
-   * Tiles hold committed ink, so the live erase preview has to re-rasterise
-   * what it touches: `eraseDirty` is the strokes changed since the last
-   * repaint, `erasePreview` everything the gesture has touched, which is put
-   * back from the document when it ends.
+   * Tiles hold committed ink, so the live erase preview has to paint again
+   * what it touches: `eraseDirty` is the strokes changed whole since the
+   * last repaint (taken, greyed), `eraseCuts` the places, by page index,
+   * where the eraser cut strokes since (a cut changes the stroke only
+   * there), and `erasePreview` everything the gesture has touched, which is
+   * put back from the document when it ends.
    */
   private eraseDirty = new Set<string>();
-  private erasePreview = new Map<number, Bounds>();
+  private eraseCuts = new Map<number, Bounds[]>();
+  private erasePreview = new Map<number, Bounds[]>();
+  /** The strokes cut this gesture whose whole bounds `erasePreview` has. */
+  private eraseCutSeen = new Set<string>();
   /**
    * The ruled eraser's pass on each page it reached, from its first dab
    * there; null on an unlined page. With the pages joined the eraser goes
@@ -2135,7 +2242,7 @@ export class InkSurface {
   private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
-  private activeWordFlag: { pageId: string; key: string } | null = null;
+  private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
   /** The client point of the finger tap or right-click being handled, for `onFlaggedWord`. */
   private tapClient = { x: 0, y: 0 };
   /** The lasso's tap-and-hold bar, and the timer that opens it. */
@@ -2151,6 +2258,13 @@ export class InkSurface {
   private backdropPainter: BackdropPainter | null = null;
   /** Where a waiting sticky note goes on the next tap (`armStickyNote`). */
   private stickyPlace: ((index: number, at: Pt) => void) | null = null;
+  /**
+   * The note text box (`pageId:id`) a Text-tool tap on its note is about
+   * to focus: shown by its textarea from before the focus lands.
+   */
+  private noteTextOpen: string | null = null;
+  /** The note text boxes (by id) their textareas show, and the tiles leave out. */
+  private noteTextOnDom: ReadonlySet<string> = new Set();
   /** The last finger tap that nothing took, waiting for a second (`zoomOnDoubleTap`). */
   private plainTap: PlainTap | null = null;
   /** The same finger, watched for a hold that opens the press menu (`finger-hold.ts`). */
@@ -2259,6 +2373,8 @@ export class InkSurface {
   private hudLastVerdict = "-";
   /** Why the last text box stopped being edited (`text-end-hud.ts`). */
   private hudTextEnd = "";
+  /** What the highlighter last did on a PDF page (`textMarkNote`). */
+  private hudTextMark = "";
   /** The surface's path blurring a text box right now; "" while the browser does it. */
   private textBlurBy = "";
   private hudLayouts = 0;
@@ -2303,14 +2419,15 @@ export class InkSurface {
     host: HTMLElement,
     private doc: InkDocument,
     private readonly toolState: ToolbarState,
-    options: InkSurfaceOptions,
+    private readonly options: InkSurfaceOptions,
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
-    this.paper = options.paper ?? LIGHT_PAPER;
+    this.paper = this.options.paper ?? LIGHT_PAPER;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
     this.surfaceEl = host.createDiv({ cls: "goodobsidian-surface" });
+    this.syncDeskVar();
     // The three layers, bottom to top: paper, committed ink, the stroke being drawn.
     const [backdropCanvas, dryCanvas, wetCanvas] = (["backdrop", "dry", "wet"] as const).map(
       (layer) =>
@@ -2477,7 +2594,7 @@ export class InkSurface {
       cls: "goodobsidian-canvas goodobsidian-canvas-laser",
     });
     this.surfaceEl.insertBefore(this.laserCanvas, this.scrollEl);
-    this.setDebug(options.debug);
+    this.setDebug(this.options.debug);
 
     // A lock badge on each locked picture, under the selection chrome. The
     // badges take no presses: a tap-and-hold on the picture reaches the page.
@@ -2574,7 +2691,7 @@ export class InkSurface {
 
     // The lasso selection's frame (a press inside it drags the selection),
     // then the action bar and its menu, above everything else on the page.
-    this.palette = options.palette ?? PALETTE;
+    this.palette = this.options.palette ?? PALETTE;
     this.selectionUiEl = this.paperEl.createDiv({ cls: "goodobsidian-selection-ui" });
     this.selectionFrameEl = this.selectionUiEl.createDiv({
       cls: "goodobsidian-selection-frame is-hidden",
@@ -2620,10 +2737,15 @@ export class InkSurface {
       backdropCanvas,
       dryCanvas,
       wetCanvas,
-      options.desynchronizedCanvas,
+      this.options.desynchronizedCanvas,
     );
-    renderer.highlighterAlpha = options.highlighterAlpha;
+    renderer.highlighterAlpha = this.options.highlighterAlpha;
     renderer.paper = this.paper;
+    // A pan or scroll moves the dry layer rather than painting it again: on
+    // a phone or tablet, whose compositor is always the GPU. Composited on
+    // the CPU (a desktop with its GPU turned off), the larger canvas cost
+    // more each frame than it saved.
+    renderer.useOverscan(Platform.isMobile);
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -2800,11 +2922,17 @@ export class InkSurface {
     // (see `handlePaste`). Idempotent, so every open surface may report it.
     const onLeave = (): void => clipboard.noteWindowLeft();
     const onVisibility = (): void => {
-      if (this.surfaceEl.ownerDocument.visibilityState === "hidden") clipboard.noteWindowLeft();
-      else if (this.layoutWhenShown) {
+      if (this.surfaceEl.ownerDocument.visibilityState === "hidden") {
+        clipboard.noteWindowLeft();
+        return;
+      }
+      // The system may have let a hidden page's canvases go: the next paint
+      // draws the dry layer whole rather than only what changed.
+      this.renderer?.repaintAll();
+      if (this.layoutWhenShown) {
         this.layoutWhenShown = false;
         this.layout();
-      }
+      } else this.requestFrame();
     };
     // The surface's own document: a popout window hides and shows its own.
     const viewDoc = this.surfaceEl.ownerDocument;
@@ -2837,6 +2965,7 @@ export class InkSurface {
     this.cellEditor?.remove();
     this.cellEditor = null;
     this.eyedropper?.cancel();
+    this.formatPainter?.cancel();
     this.watchTypingKeyboard(false);
     window.clearTimeout(this.textPillSettleTimer);
     window.clearTimeout(this.wheelSnapTimer);
@@ -3175,7 +3304,12 @@ export class InkSurface {
     image.height = bottom.height;
     const ctx = image.getContext("2d");
     if (!ctx) return null;
-    for (const layer of this.paneLayers) ctx.drawImage(layer, 0, 0);
+    // The dry layer reaches past the view, and may be shifted by a scroll.
+    const dry = this.renderer?.dryOrigin() ?? { x: 0, y: 0 };
+    for (const layer of this.paneLayers) {
+      if (layer === bottom) ctx.drawImage(layer, 0, 0);
+      else ctx.drawImage(layer, dry.x, dry.y);
+    }
     return {
       image,
       pane: { left: pane.left, top: pane.top, width: pane.width, height: pane.height },
@@ -3262,6 +3396,7 @@ export class InkSurface {
   setPaperTheme(theme: PaperTheme): void {
     if (theme === this.paper) return;
     this.paper = theme;
+    this.syncDeskVar();
     if (!this.renderer) return;
     this.renderer.paper = theme;
     this.renderer.invalidateAll();
@@ -3272,6 +3407,14 @@ export class InkSurface {
 
   get paperTheme(): PaperTheme {
     return this.paper;
+  }
+
+  /**
+   * The desk's CSS colour (`--gob-desk`), which shows before the backdrop
+   * canvas paints, follows the theme's desk: the Desk setting or dark pages.
+   */
+  private syncDeskVar(): void {
+    this.surfaceEl.setCssProps({ "--gob-desk": this.paper.desk });
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
@@ -3456,6 +3599,8 @@ export class InkSurface {
   setTool(tool: ActiveTool): void {
     // A colour waiting to be picked was for the tool being left.
     this.eyedropper?.cancel();
+    // Another tool puts the format painter away.
+    this.formatPainter?.cancel();
     // Another tool ends exploring a graph, keeping where it was left.
     this.endExplore(true);
     // Another tool: a box scrolled out of sight is forgotten.
@@ -3502,6 +3647,7 @@ export class InkSurface {
   private syncNavigationCursor(tool: ActiveTool): void {
     this.scrollEl?.toggleClass("is-hand-tool", tool === "pan");
     this.scrollEl?.toggleClass("is-zoom-tool", tool === "zoom");
+    this.scrollEl?.toggleClass("is-fill-tool", tool === "fill");
   }
 
   /** Called only after a complete tool operation, never during pointer movement. */
@@ -4568,7 +4714,7 @@ export class InkSurface {
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
     this.viewport = { scrollY: y / scale, scale, width: this.pageLayout.width };
-    this.renderer.setViewport(this.viewport, this.offsetX, this.userZoom);
+    this.renderer.setViewport(this.viewport, this.offsetX);
     this.updatePageIndicator();
   }
 
@@ -4744,7 +4890,7 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : Infinity);
+    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
     if (this.debug) this.trackFrame(t, started, moving);
     if (moving || !complete) {
       this.requestFrame();
@@ -4796,7 +4942,8 @@ export class InkSurface {
     if (this.textBoxesProvisional && !this.zoomTransient) this.syncTextBoxes();
     if (!this.renderer || this.zoomTransient || !this.renderer.isTransient) return;
     this.renderer.settle();
-    this.paint(Infinity);
+    // A few tiles a frame, the last zoom's scaled meanwhile.
+    if (!this.paint(REST_FRAME_BUDGET_MS)) this.requestFrame();
   }
 
   /** Paint the backdrop and the dry layer. Returns whether every tile was ready. */
@@ -4819,11 +4966,18 @@ export class InkSurface {
     return complete;
   }
 
+  /**
+   * Rasterise ahead, and repair the page previews, in idle frames. Not while
+   * the pen is on the page: the eraser paints in frames now, and between
+   * them this repaired the preview of the page it was on every time,
+   * though nothing shows a preview until a scroll needs one.
+   */
   private schedulePrefetch(): void {
     if (this.prefetchReq || !this.renderer) return;
     this.prefetchReq = window.requestAnimationFrame(() => {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
+      if (this.pressing) return;
       const more = this.renderer.prefetch(this.doc, this.inkPressure, PREFETCH_BUDGET_MS);
       if (more) this.schedulePrefetch();
     });
@@ -5190,6 +5344,8 @@ export class InkSurface {
     const marginX = this.cssW;
     const marginY = this.cssH;
     const measure: TextBoxView[] = [];
+    const onDom = this.noteTextShownByDom();
+    this.syncNoteTextTiles(onDom);
 
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
@@ -5210,11 +5366,19 @@ export class InkSurface {
         let view = this.textBoxInputs.get(key);
         if (!view) view = this.createTextBoxView(page.id, textBox, key);
         const { input, root } = view;
+        // A note's text is drawn with its note, but while its textarea shows it.
+        const drawnOnNote =
+          textBox.onSticky !== undefined &&
+          noteOfText(page, textBox) !== null &&
+          !onDom.has(textBox.id);
         // Never the box being typed in or held: hiding it would blur it.
-        const park = parked && !root.contains(document.activeElement) && this.heldText !== view;
+        const park =
+          (parked || drawnOnNote) &&
+          !root.contains(document.activeElement) &&
+          this.heldText !== view;
         root.toggleClass("is-parked", park);
         if (park) {
-          this.textBoxesProvisional = true;
+          if (parked) this.textBoxesProvisional = true;
           continue;
         }
         if (document.activeElement !== input && input.value !== textBox.text)
@@ -5301,6 +5465,22 @@ export class InkSurface {
               : textBox.fill !== undefined || border
                 ? "0"
                 : "",
+          // A covered tape over the box hides it there, as it hides ink;
+          // never the box being typed in.
+          clipPath:
+            document.activeElement === input
+              ? ""
+              : tapeClipPath(
+                  page.strokes,
+                  {
+                    x: frame.x + shift.x,
+                    y: frame.y + shift.y,
+                    w: width,
+                    h: frame.h ?? box.height,
+                  },
+                  scale,
+                  (tape) => this.revealedTapes.has(this.tapeKey(tape)),
+                ),
         });
         // Every style key, re-read on every sync, so an undo or redo of a
         // style change shows at once — even in the box being typed in. The
@@ -6009,9 +6189,23 @@ export class InkSurface {
    * eraser goes on over the join), and under their mirrors.
    */
   private flushEraseDirty(): void {
-    if (this.eraseDirty.size === 0 || !this.activePage) {
+    const cuts = this.eraseCuts;
+    this.eraseCuts = new Map();
+    const idle = this.eraseDirty.size === 0 && cuts.size === 0;
+    if (idle || !this.activePage || !this.renderer) {
       this.eraseDirty.clear();
       return;
+    }
+    for (const [index, areas] of cuts) {
+      // One event's dabs overlap one another: painted again as one area.
+      const merged: Bounds[] = [];
+      for (const area of areas) {
+        const last = merged[merged.length - 1];
+        if (last && boundsMeet(last, area))
+          merged[merged.length - 1] = unionBounds(last, area) ?? last;
+        else merged.push(area);
+      }
+      for (const area of merged) this.renderer?.invalidateArea(index, area);
     }
     const dirty = new Map<number, Bounds>();
     const add = (index: number, bounds: Bounds | null): void => {
@@ -6030,9 +6224,28 @@ export class InkSurface {
     this.eraseDirty.clear();
     for (const [index, bounds] of dirty) {
       this.renderer?.invalidateRegion(index, bounds);
-      const seen = this.erasePreview.get(index);
-      this.erasePreview.set(index, seen ? (unionBounds(seen, bounds) ?? bounds) : bounds);
+      this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
     }
+  }
+
+  /**
+   * The eraser at `at` (page-local, `radius`) cut `stroke` on page `index`.
+   * What changed is the ink there: the cut takes the line's centre within
+   * the radius and half the stroke's width (`inkReach`, its widest), with
+   * the ink either side of it, up to 0.8 of that with pressure, and the cut
+   * ends' round caps reach as far: 1.3 widths past the circle at most, and a
+   * sample beyond, where the piece's line begins again. The whole stroke is
+   * put back from the document when the gesture ends, so `erasePreview`
+   * gets its bounds once.
+   */
+  private noteCut(index: number, stroke: Stroke, at: Pt, radius: number): void {
+    const reach = radius + 1.5 * inkReach(stroke) + ERASE_CUT_MARGIN;
+    const area = { minX: at.x - reach, minY: at.y - reach, maxX: at.x + reach, maxY: at.y + reach };
+    this.eraseCuts.set(index, [...(this.eraseCuts.get(index) ?? []), area]);
+    if (this.eraseCutSeen.has(stroke.id)) return;
+    this.eraseCutSeen.add(stroke.id);
+    const bounds = strokeBounds(stroke);
+    if (bounds) this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
   }
 
   /** The mirrors of stroke `id` of page `pageId`, for the erase preview; none apart. */
@@ -6207,8 +6420,10 @@ export class InkSurface {
           area.geometry.height !== page.geometry.height)
       )
         return;
-      if (area?.region) renderer.invalidateRegion(index, area.region);
-      else renderer.invalidatePage(page.id);
+      // Only the PDF changed: painted again in place, a few tiles a frame,
+      // and no ink reaches further for it.
+      if (area?.region) renderer.invalidateBackdrop(index, area.region);
+      else renderer.refreshPage(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -6257,12 +6472,18 @@ export class InkSurface {
     const { pressureEnabled } = this.toolState;
     // A calligraphy pen's flat nib, for the pen only (never a shape or the highlighter).
     const nib = this.toolState.tool === "pen" ? penTypeFor(this.toolState).nib : undefined;
+    // The highlighter's flat chisel tip, when it is the one chosen.
+    const tip =
+      this.toolState.tool === "highlighter" && this.callbacks.highlighterTip?.() === "chisel"
+        ? "chisel"
+        : undefined;
     return {
       color: this.strokeColor(),
       size: this.strokeSize(),
       tool,
       usePressure: pressureEnabled,
       ...(nib !== undefined ? { nib } : {}),
+      ...(tip !== undefined ? { tip } : {}),
     };
   }
 
@@ -6862,6 +7083,7 @@ export class InkSurface {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
     if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
+    if (this.pressOpensFoldedNote(event)) return "ignore";
     // The hand held by a shortcut moves the page wherever the pen lands.
     if (this.heldShortcut?.tool === "pan") {
       this.penPanning = true;
@@ -8151,9 +8373,251 @@ export class InkSurface {
         return this.textGesture;
       case "laser":
         return this.laserGesture;
+      case "fill":
+        return this.fillGesture;
+      case "tape":
+        return this.tapeGesture;
       default:
         return this.inkGesture;
     }
+  }
+
+  /** Where the Fill tool's press went down: page point and layout sample. */
+  private fillPress: { boxIndex: number; x: number; y: number; sx: number; sy: number } | null =
+    null;
+
+  /**
+   * The Fill tool: a tap inside an outline fills it with the pen's colour,
+   * on lift. A drag is not a tap, and fills nothing.
+   */
+  private readonly fillGesture: PenGesture = {
+    down: (box, at, sample) => {
+      this.fillPress = { boxIndex: box.index, x: at.x, y: at.y, sx: sample.x, sy: sample.y };
+    },
+    move: () => undefined,
+    up: (box, sample) => {
+      const press = this.fillPress;
+      this.fillPress = null;
+      this.activePage = null;
+      if (!press || press.boxIndex !== box.index) return;
+      const moved = Math.hypot(sample.x - press.sx, sample.y - press.sy) * this.unitScale;
+      if (moved > TAP_SLOP_PX) return;
+      // The Fill tool's own colour, never the pen's.
+      this.fillAt(box, press.x, press.y, this.toolState.fillColor ?? DEFAULT_FILL_COLOR, false);
+    },
+    cancel: () => {
+      this.fillPress = null;
+      this.activePage = null;
+    },
+  };
+
+  /**
+   * Fill the region of `box`'s page round page point (`x`, `y`) that the
+   * ink encloses, with `color`, as one undo step: a fill already on that
+   * region takes the colour instead. A region that is not closed, or a tap
+   * on the ink, says so with a notice unless `quiet`. `accept` may refuse
+   * the region found. True when the page changed (or already was so).
+   */
+  private fillAt(
+    box: PageBox,
+    x: number,
+    y: number,
+    color: string,
+    quiet: boolean,
+    accept?: (outline: number[], area: number) => boolean,
+  ): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    // Pen ink and shapes bound a fill; highlighter, a note's ink and other
+    // fills do not.
+    const ink: FillInk[] = [];
+    for (const stroke of page.strokes) {
+      if (stroke.tool === "highlighter" || stroke.onSticky !== undefined) continue;
+      if (isBucketFill(stroke)) continue;
+      ink.push({ pts: stroke.pts, radius: stroke.size * FILL_INK_RADIUS });
+    }
+    const result = bucketFill({
+      width: box.width,
+      height: box.height,
+      ink,
+      x,
+      y,
+      gap: fillGapPx(readFillGap(this.toolState.fillGap)),
+    });
+    if (!result.ok) {
+      if (!quiet) {
+        new Notice(
+          result.reason === "open"
+            ? "This area is not closed: nothing filled."
+            : "Tap inside an outline to fill it.",
+        );
+      }
+      return false;
+    }
+    if (accept && !accept(result.outline, result.area)) return false;
+    const stroke = fillStroke(this.strokeIds.next(), color, result.outline);
+    const existing = sameFill(page.strokes, stroke.pts);
+    if (existing && existing.color === stroke.color) return true;
+    const command = existing
+      ? new RecolorFill(page.id, existing, color)
+      : new AddFill(page.id, stroke, fillInsertIndex(page.strokes, enclosedArea(stroke.pts)));
+    this.history.push(this.doc, command);
+    if (!existing) this.strokeIndex.add(page.id, stroke);
+    const bounds = selectionBounds([existing ?? stroke], [], []);
+    if (bounds) this.renderer?.invalidateRegion(box.index, bounds);
+    if (this.debug) this.hud.mark("fill");
+    this.inkChanged([page.id]);
+    return true;
+  }
+
+  // --- Cover tape (`model/cover-tape`) -------------------------------------------
+
+  /**
+   * The cover tapes shown through in this view, by their owner's id (a
+   * mirror over a join goes with its owner). This session's only: never
+   * saved, so a notebook always opens, syncs and exports with its tapes on.
+   */
+  private revealedTapes: ReadonlySet<string> = new Set();
+
+  /** A tape being dragged out: where it started and where the pen is, page px. */
+  private tapeDrag: { from: Pt; to: Pt } | null = null;
+
+  /**
+   * The Cover tape tool: a drag lays a strip from where it started to where
+   * it lifts, its height the pill's, made level or upright when nearly so; a
+   * tap shows a tape there through, or covers it again.
+   */
+  private readonly tapeGesture: PenGesture = {
+    down: (_box, at) => {
+      this.tapeDrag = { from: at, to: at };
+    },
+    move: (box, samples) => {
+      const drag = this.tapeDrag;
+      const last = samples[samples.length - 1];
+      if (!drag || !last) return;
+      drag.to = this.toPage(box, last);
+      const draft = this.tapeStroke(drag.from, drag.to);
+      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      else this.renderer?.clearWet();
+    },
+    up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
+    // iOS cancels some ordinary lifts: a tape dragged out is still laid.
+    cancel: (box) => {
+      if (box) this.finishTape(box, null);
+      else {
+        this.tapeDrag = null;
+        this.renderer?.clearWet();
+      }
+    },
+  };
+
+  /** The tape a drag from `from` to `to` lays, or null for a tap. */
+  private tapeStroke(from: Pt, to: Pt): Stroke | null {
+    const pts = tapePoints(
+      from,
+      to,
+      this.atFitZoom(LINE_LEVEL_RISE),
+      this.atFitZoom(MIN_TAPE_LENGTH),
+    );
+    if (!pts) return null;
+    return {
+      id: "tape-draft",
+      color: tapeColorOf(this.toolState.tapeColor),
+      size: tapeHeightOf(this.toolState.tapeHeight),
+      tool: "tape",
+      pts,
+    };
+  }
+
+  /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
+  private finishTape(box: PageBox, end: Pt | null): void {
+    const drag = this.tapeDrag;
+    this.tapeDrag = null;
+    this.activePage = null;
+    this.renderer?.clearWet();
+    const page = this.pageAt(box.index);
+    if (!drag || !page) return;
+    const draft = this.tapeStroke(drag.from, end ?? drag.to);
+    if (!draft) {
+      this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+      return;
+    }
+    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
+    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    this.history.push(this.doc, command);
+    this.strokeIndex.add(page.id, stroke);
+    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    this.inkChanged([page.id]);
+  }
+
+  /** The id a tape is shown through by: its owner's, for a mirror over a join. */
+  private tapeKey(tape: Stroke): string {
+    const owner = tape.join ? ownerOf(tape.join) : null;
+    return owner?.id ?? tape.id;
+  }
+
+  /**
+   * Show the tape on top at page point `p` of `page` through, or cover it
+   * again, with its mirrors. False when no tape is there. Never an undo
+   * step, and never saved.
+   */
+  private toggleTapeAt(page: Page, p: Pt, tolerance: number): boolean {
+    const tape = topTapeAt(page.strokes, p.x, p.y, tolerance);
+    if (!tape) return false;
+    this.setTapesShown(toggleRevealed(this.revealedTapes, this.tapeKey(tape)));
+    return true;
+  }
+
+  /** Make `next` the tapes shown through, and repaint every tape whose state changed. */
+  private setTapesShown(next: ReadonlySet<string>): void {
+    const before = this.revealedTapes;
+    this.revealedTapes = next;
+    this.renderer?.setRevealedTapes(next);
+    this.doc.pages.forEach((page, index) => {
+      for (const stroke of page.strokes) {
+        if (!isTape(stroke)) continue;
+        const key = this.tapeKey(stroke);
+        if (before.has(key) === next.has(key)) continue;
+        const line = strokeBounds(stroke);
+        if (!line) continue;
+        const pad = stroke.size;
+        this.renderer?.invalidateRegion(index, {
+          minX: line.minX - pad,
+          minY: line.minY - pad,
+          maxX: line.maxX + pad,
+          maxY: line.maxY + pad,
+        });
+      }
+    });
+    this.syncTextBoxes();
+    this.renderDry();
+    this.requestZoomPaint();
+    this.callbacks.onTapesToggled?.();
+  }
+
+  /**
+   * Whether every cover tape on the page in view is shown through, or null
+   * when the page has none: the tape pill's eye.
+   */
+  tapesShown(): boolean | null {
+    const page = this.doc.pages[this.currentPage];
+    const tapes = page ? page.strokes.filter(isTape) : [];
+    if (tapes.length === 0) return null;
+    return tapes.every((tape) => this.revealedTapes.has(this.tapeKey(tape)));
+  }
+
+  /** Show every cover tape on the page in view through (`shown`), or cover them all. */
+  showTapes(shown: boolean): void {
+    const page = this.doc.pages[this.currentPage];
+    if (!page) return;
+    const next = new Set(this.revealedTapes);
+    for (const tape of page.strokes) {
+      if (!isTape(tape)) continue;
+      if (shown) next.add(this.tapeKey(tape));
+      else next.delete(this.tapeKey(tape));
+    }
+    this.setTapesShown(next);
   }
 
   /** The laser pointer: a fading trail behind the pen, never part of the notebook. */
@@ -8208,11 +8672,11 @@ export class InkSurface {
     const scrollY = this.viewport.scrollY;
     const sx = (x: number): number => (x * scale + this.offsetX) * ratio;
     const sy = (y: number): number => (y - scrollY) * scale * ratio;
-    ctx.lineCap = "round";
+    ctx.lineCap = "butt";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = LASER_COLOR;
-    ctx.fillStyle = LASER_COLOR;
-    const segments = this.laserTrail.segments(t);
+    const color = this.options.laserColor?.() ?? LASER_COLOR;
+    ctx.strokeStyle = color;
+    const paths = laserPaths(this.laserTrail.segments(t));
     // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
     // which is slow on the iPad.
     for (const [lineWidth, strength] of [
@@ -8220,42 +8684,52 @@ export class InkSurface {
       [LASER_WIDTH_PX, 1],
     ] as const) {
       ctx.lineWidth = lineWidth * ratio;
-      for (const { a, b, alpha } of segments) {
+      for (const { alpha, runs } of paths) {
         ctx.globalAlpha = alpha * strength;
-        ctx.beginPath();
-        ctx.moveTo(sx(a.x), sy(a.y));
-        ctx.lineTo(sx(b.x), sy(b.y));
-        ctx.stroke();
-      }
-    }
-    const tip = this.laserTrail.tip();
-    if (tip) {
-      for (const [radius, strength] of [
-        [LASER_GLOW_PX / 2, 0.3],
-        [LASER_WIDTH_PX * 0.75, 1],
-      ] as const) {
-        ctx.globalAlpha = strength;
-        ctx.beginPath();
-        ctx.arc(sx(tip.x), sy(tip.y), radius * ratio, 0, Math.PI * 2);
-        ctx.fill();
+        this.strokeLaserRuns(ctx, runs, sx, sy);
       }
     }
     ctx.globalAlpha = 1;
     this.requestLaser();
   }
 
-  /** Every sample erases (a preview); the lift commits the gesture as one step. */
+  /** One path for every run of a fade level, stroked once: lines meet without overlapping. */
+  private strokeLaserRuns(
+    ctx: CanvasRenderingContext2D,
+    runs: readonly LaserPoint[][],
+    sx: (x: number) => number,
+    sy: (y: number) => number,
+  ): void {
+    ctx.beginPath();
+    for (const run of runs) {
+      const first = run[0];
+      if (!first) continue;
+      ctx.moveTo(sx(first.x), sy(first.y));
+      for (let index = 1; index < run.length; index++) {
+        const point = run[index];
+        ctx.lineTo(sx(point.x), sy(point.y));
+      }
+    }
+    ctx.stroke();
+  }
+
+  /**
+   * Every sample erases (a preview); the lift commits the gesture as one
+   * step. The page is painted at the next frame, once for every pen event
+   * since: painted in each event, a slow paint let events queue behind it
+   * and the eraser fall further and further behind the pen.
+   */
   private readonly eraserGesture: PenGesture = {
     down: (box, at) => {
       this.eraseReset();
-      if (this.eraseAt(box, at)) this.renderDry();
+      if (this.eraseAt(box, at)) this.requestFrame();
     },
     move: (box, samples) => {
       let erased = false;
       for (const sample of samples) {
         if (this.eraseAt(box, this.toPage(box, sample))) erased = true;
       }
-      if (erased) this.renderDry();
+      if (erased) this.requestFrame();
     },
     up: () => this.eraseCommit(),
     // Nothing is committed before the lift, so the page simply goes back.
@@ -8764,6 +9238,7 @@ export class InkSurface {
         `${this.hud.pointer()} page=${this.pageIndex + 1}\n` +
         `${this.hud.tilt()}\n` +
         (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
+        (this.hudTextMark ? `highlighter ${this.hudTextMark}\n` : "") +
         this.hudGeometry(),
     );
   }
@@ -8805,6 +9280,7 @@ export class InkSurface {
     return (
       `fps=${this.hudFps.toFixed(0)} paint=${this.hudPaintMs.toFixed(1)}ms ` +
       `tiles=${tiles} prev=${stats?.previews ?? 0} lvl=${stats?.level.toFixed(2) ?? "-"} ` +
+      `${this.backdropPainter?.diagnostics?.() ?? "pdf=-"} ` +
       `v=${(v.x * 1000).toFixed(0)},${(v.y * 1000).toFixed(0)}px/s ` +
       `${this.scroller.isDragging ? "drag" : this.scroller.isAnimating ? "fling" : "rest"}` +
       `${this.pinch ? " pinch" : ""}${this.zoomAnim ? " zoom-spring" : ""}`
@@ -8948,6 +9424,8 @@ export class InkSurface {
     if (!this.dragSizesText() || Math.max(rect.w, rect.h) < this.atFitZoom(TEXT_TAP_SLOP)) {
       // A tap in a table types in the cell, rather than placing a box on it.
       if (this.editCellAt(box, drag.origin)) return;
+      // A tap on a sticky note types on the note.
+      if (this.editNoteTextAt(box, drag.origin)) return;
       // GoodNotes' default: the box starts where the pen went down, as small
       // as it can be, and grows with the text (the sync sets its width).
       const x = clamp(drag.origin.x, 0, Math.max(0, box.width - TEXT_MIN_W));
@@ -8965,8 +9443,11 @@ export class InkSurface {
     });
   }
 
-  /** Create and focus a persistent text box with the given page-local frame. */
-  private addTextBox(box: PageBox, frame: TextBoxFrame): void {
+  /**
+   * Create and focus a persistent text box with the given page-local frame:
+   * a box of its own, or the text of the sticky note `onSticky`.
+   */
+  private addTextBox(box: PageBox, frame: TextBoxFrame, onSticky?: string): void {
     const page = this.pageAt(box.index);
     if (!page) return;
     const textBox: TextBoxElement = {
@@ -8979,7 +9460,10 @@ export class InkSurface {
       text: "",
       // The Text tool's own style (colour, size, font…), not the pen's colour.
       ...textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE),
+      ...(onSticky !== undefined ? { onSticky } : {}),
     };
+    // Shown by its textarea from the start, or the focus below finds it hidden.
+    if (onSticky !== undefined) this.noteTextOpen = `${page.id}:${textBox.id}`;
     const add = new AddTextBoxToPage(page.id, textBox);
     this.history.push(this.doc, add);
     this.lastTextBoxAdd = { key: `${page.id}:${textBox.id}`, command: add, followers: [] };
@@ -8994,6 +9478,8 @@ export class InkSurface {
     // the pointerup, because iPadOS only raises the keyboard for a focus made
     // during a user gesture.
     if (view) this.focusTextBox(view.input);
+    // Focused now, the note's text shows while it is typed in, as any box.
+    this.noteTextOpen = null;
   }
 
   /**
@@ -9026,11 +9512,25 @@ export class InkSurface {
     const page = this.pageAt(box.index);
     if (!page) return;
 
+    // A Pencil or mouse tap on a cover tape shows it through, or covers it
+    // again, instead of leaving a dot on it.
+    if (!snap && final && this.penTapsTape(page, builder.points())) return;
+
     // Scribble to erase: a scribble over writing erases it and is not kept.
     if (!snap && this.scribbleErase(box, page, builder.points())) {
       this.recordDiagnostic(
         builder.points(),
         "scribble-erase",
+        final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
+        heldLongEnough,
+      );
+      return;
+    }
+    // A scribble over nothing, inside an outline, fills it instead.
+    if (!snap && this.scribbleFill(box, builder.points())) {
+      this.recordDiagnostic(
+        builder.points(),
+        "scribble-fill",
         final ? "up" : cancelledWhileHeld ? "cancel-as-hold" : "cancel",
         heldLongEnough,
       );
@@ -9067,7 +9567,7 @@ export class InkSurface {
     );
 
     // Stored as it was drawn on the wet layer: the same colour, width and ink.
-    const { color, size, tool, nib } = this.currentStyle();
+    const { color, size, tool, nib, tip } = this.currentStyle();
     const samples = builder.recorded();
     const pts = shape
       ? shape.pts
@@ -9085,6 +9585,7 @@ export class InkSurface {
       ...(samples ? { samples } : {}),
       // A snapped shape is clean geometry, drawn at one width: no nib.
       ...(nib !== undefined && !shape ? { nib } : {}),
+      ...(tip !== undefined && !shape ? { tip } : {}),
       ...(tilted ? { tilt } : {}),
     };
     if (shape) this.styleShape(stroke);
@@ -9119,6 +9620,20 @@ export class InkSurface {
         penDownAt: this.penDownAt,
       };
     }
+  }
+
+  /**
+   * Whether a stroke of `pts` (page px) was a tap on a cover tape, which it
+   * then toggled: every point within a tap's slop of the first, on a tape.
+   */
+  private penTapsTape(page: Page, pts: readonly number[]): boolean {
+    if (pts.length < 3 || !page.strokes.some(isTape)) return false;
+    const slop = TAP_SLOP_PX / this.gestureScale;
+    for (let i = 3; i + 1 < pts.length; i += 3) {
+      if (Math.hypot(pts[i] - pts[0], pts[i + 1] - pts[1]) > slop) return false;
+    }
+    const at = { x: pts[0], y: pts[1] };
+    return this.toggleTapeAt(page, at, PEN_TAP_TOLERANCE_PX / this.gestureScale);
   }
 
   /**
@@ -9435,7 +9950,8 @@ export class InkSurface {
     if (!drag.moved) {
       const halfW = this.atFitZoom(SHAPE_DEFAULT_SIZE) / 2;
       const connector = isConnectorPreset(preset);
-      const halfH = connector ? 0 : preset === "star" ? halfW * STAR_ASPECT : halfW;
+      const aspect = preset === "star" ? STAR_ASPECT : preset === "heart" ? HEART_ASPECT : 1;
+      const halfH = connector ? 0 : halfW * aspect;
       const cx = clamp(origin.x, halfW, Math.max(halfW, box.width - halfW));
       const cy = clamp(origin.y, halfH, Math.max(halfH, box.height - halfH));
       origin = { x: cx - halfW, y: cy - halfH };
@@ -9609,14 +10125,31 @@ export class InkSurface {
   private startTextMark(box: PageBox, at: Pt): boolean {
     if (this.toolState.tool !== "highlighter" || this.practice) return false;
     const layout = this.pageText(box.index);
-    if (!layout) return false;
-    const selection = selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX));
-    if (!selection) return false;
+    const selection = layout ? selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
+    this.noteTextMark(box.index, layout, selection);
+    if (!layout || !selection) return false;
     // Not the carry-on of a stroke just lifted: this is no handwriting.
     this.lastLift = null;
     this.textMark = { layout, from: at, selection };
     this.showTextMark(box);
     return true;
+  }
+
+  /** Say on the debug overlay what the highlighter did where it came down. */
+  private noteTextMark(
+    index: number,
+    layout: TextLayout | null,
+    selection: TextSelection | null,
+  ): void {
+    if (!this.debug) return;
+    const page = this.pageAt(index);
+    this.hudTextMark =
+      page?.backdrop.kind !== "pdf"
+        ? "not a PDF page"
+        : !this.textSource
+          ? "no text source"
+          : textMarkNote(layout, selection);
+    this.scheduleHud();
   }
 
   private dragTextMark(box: PageBox, to: Pt): void {
@@ -9733,6 +10266,9 @@ export class InkSurface {
 
   /** Drop any in-progress erase preview (the document was never touched). */
   private eraseReset(): void {
+    // What the last pen events changed waits for the next frame: counted in
+    // with the rest, so it is painted again too.
+    this.flushEraseDirty();
     this.eraseIds = new Set();
     this.eraseGrey = false;
     this.eraseGreyCuts = new Map();
@@ -9741,10 +10277,14 @@ export class InkSurface {
     this.eraseRuled = new Map();
     this.eraseMirrors = null;
     this.eraseDirty.clear();
+    this.eraseCuts = new Map();
+    this.eraseCutSeen = new Set();
     // Whatever the preview touched is drawn from the document again.
     const preview = this.erasePreview;
     this.erasePreview = new Map();
-    for (const [index, bounds] of preview) this.renderer?.invalidateRegion(index, bounds);
+    for (const [index, areas] of preview) {
+      for (const bounds of areas) this.renderer?.invalidateRegion(index, bounds);
+    }
     this.eraserCursorEl.addClass("is-hidden");
   }
 
@@ -9816,7 +10356,7 @@ export class InkSurface {
           ? this.eraseRuledAt(onPage, ruled, local, radius)
           : whole
             ? this.eraseWholeAt(onPage, local, radius, filter)
-            : this.erasePartialAt(onPage, local, radius, filter);
+            : this.erasePartialAt(onPage, local, radius, filter, target.index);
         if (hit) changed = true;
       }
     }
@@ -9887,8 +10427,9 @@ export class InkSurface {
       // pile up cut upon cut.
       const pieces = eraseRectsFromStroke(original, regions, nextId);
       if (pieces === null) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         changed = this.markWhole(page, id) || changed;
         continue;
       }
@@ -9947,6 +10488,7 @@ export class InkSurface {
     sample: { x: number; y: number },
     radius: number,
     filter: EraserFilter,
+    index: number,
   ): boolean {
     // The cut widens by half the stroke width, so the broad phase must too.
     const reach = radius + MAX_TILTED_HALF_WIDTH;
@@ -9959,8 +10501,9 @@ export class InkSurface {
       if (!original || this.eraseIds.has(id) || !eraserTakes(original, filter)) continue;
       // Ink a sticky note hides, or a note's ink off its note, is not touched.
       if (!shownAt(page, original, sample.x, sample.y, notes)) continue;
-      // A linked word is never cut: touching it takes all of it.
-      if (isLinked(page, id)) {
+      // A linked word is never cut: touching it takes all of it. Nor is a
+      // cover tape: a strip of paper comes off whole.
+      if (isLinked(page, id) || isTape(original)) {
         const touches = (this.erasePieces.get(id) ?? [original]).some((piece) =>
           strokeHitByPoint(piece, sample.x, sample.y, radius + piece.size / 2),
         );
@@ -9980,7 +10523,9 @@ export class InkSurface {
       }
       if (touched) {
         this.erasePieces.set(id, survivors);
-        this.eraseDirty.add(id);
+        // With the pages joined its mirrors change too: painted again whole.
+        if (this.joined) this.eraseDirty.add(id);
+        else this.noteCut(index, original, sample, radius);
         changed = true;
       }
     }
@@ -10110,6 +10655,38 @@ export class InkSurface {
   }
 
   /**
+   * Scribble to fill, with a switch of its own beside Scribble to erase: a
+   * scribble that erased nothing, drawn inside a closed outline, fills that
+   * region with the pen's colour and is not kept. Only when the region holds
+   * the scribble (nearly all of its points) and the scribble covers a fair
+   * share of it; anything else stays ink, as before.
+   */
+  private scribbleFill(box: PageBox, pts: number[]): boolean {
+    const gestures = penGesturesOf(this.toolState.penGestures);
+    if (!gestures.scribbleFill || this.toolState.tool !== "pen" || this.practice) return false;
+    const scribble = detectScribble(pts, { minSize: this.atFitZoom(SCRIBBLE_MIN_PX) });
+    if (!scribble) return false;
+    const b = scribble.bounds;
+    const accept = (outline: number[], area: number): boolean => {
+      let inside = 0;
+      let count = 0;
+      for (let i = 0; i + 1 < pts.length; i += POINT_STRIDE) {
+        count++;
+        if (insidePolygon(outline, pts[i], pts[i + 1])) inside++;
+      }
+      const covered = (b.maxX - b.minX) * (b.maxY - b.minY);
+      return inside >= SCRIBBLE_FILL_INSIDE * count && covered >= SCRIBBLE_FILL_SHARE * area;
+    };
+    // From its middle, or, if writing lies there, from where the pen started.
+    const starts = [
+      { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 },
+      { x: pts[0], y: pts[1] },
+    ];
+    const { color } = this.currentStyle();
+    return starts.some(({ x, y }) => this.fillAt(box, x, y, color, true, accept));
+  }
+
+  /**
    * Circle to lasso, first half: remember a pen stroke that loops round
    * something on its page, so that holding the pen on it can select that.
    * Anything else forgets the last loop.
@@ -10149,15 +10726,22 @@ export class InkSurface {
           stroke !== except &&
           near.has(stroke.id) &&
           lassoTakesStroke(stroke, filter) &&
-          strokeInLasso(stroke, poly, anyPart),
+          strokeInLasso(stroke, poly, anyPart) &&
+          !foldedAway(page, stroke),
       ),
-      // A locked picture is never picked up (until it is unlocked).
+      // A locked picture is never picked up (until it is unlocked), nor a
+      // folded note (until it is opened).
       images: filter.images
-        ? own(page.images).filter((image) => image.locked !== true && boxInLasso(image, poly))
+        ? own(page.images).filter(
+            (image) => image.locked !== true && !isFolded(image) && boxInLasso(image, poly),
+          )
         : [],
+      // A note's text comes with its note (`select`), never on its own.
       textBoxes: filter.textBoxes
-        ? own(page.textBoxes).filter((textBox) =>
-            boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
+        ? own(page.textBoxes).filter(
+            (textBox) =>
+              noteOfText(page, textBox) === null &&
+              boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
       tables: filter.tables
@@ -10449,6 +11033,7 @@ export class InkSurface {
       pageId: page.id,
       at: { x: p.x, y: p.y },
       locked: top?.locked === true ? top : null,
+      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
       provisional,
     };
     this.syncActionBar();
@@ -10804,7 +11389,10 @@ export class InkSurface {
   /** Select what a tap at page point `p` lands on, on `page`; whether anything was. */
   private tapSelectOn(page: Page, p: Pt, tolerance: number, filter: LassoFilter): boolean {
     if (filter.textBoxes) {
-      const shown = this.joined ? page.textBoxes.filter((t) => !isMirror(t)) : page.textBoxes;
+      // A note's text is picked up with its note, below.
+      const shown = page.textBoxes.filter(
+        (t) => !(this.joined && isMirror(t)) && noteOfText(page, t) === null,
+      );
       const frames = shown.map((textBox) => ({
         textBox,
         ...this.textBoxFrameOf(page.id, textBox),
@@ -10844,7 +11432,8 @@ export class InkSurface {
     // A locked picture is passed over, as if it were part of the paper; a
     // mirror is picked up as its owner, from its own page.
     const unlocked = page.images.filter(
-      (candidate) => candidate.locked !== true && !(this.joined && isMirror(candidate)),
+      (candidate) =>
+        candidate.locked !== true && !isFolded(candidate) && !(this.joined && isMirror(candidate)),
     );
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
     if (image) this.setImageSelection(page.id, image);
@@ -10874,6 +11463,85 @@ export class InkSurface {
       );
     });
     return { strokes: inked, images: [], textBoxes: [], tables: [table] };
+  }
+
+  // --- The format painter --------------------------------------------------------
+
+  /**
+   * Copy the look of `strokes` (the one most of them share,
+   * `dominantInkStyle`) and arm the format painter: the selection goes, and
+   * each Pencil or mouse sweep over ink from now on lays that look on what
+   * it touches, one undo step a sweep, until another tool is picked.
+   */
+  private copyStyle(strokes: readonly Stroke[]): void {
+    const style = dominantInkStyle(strokes);
+    if (!style) return;
+    this.clearSelection();
+    this.formatPainter ??= new FormatPainter({
+      input: this.scrollEl,
+      layer: this.surfaceEl,
+      paintAlong: (x0, y0, x1, y1) => this.paintAlong(x0, y0, x1, y1),
+      finish: () => this.finishPaint(),
+    });
+    this.formatPainter.arm(style);
+  }
+
+  /**
+   * Lay the copied look on every stroke the sweep from one client point to
+   * the next passes over, on the page under its end: painted at once, its
+   * tiles repaired on the next frame. Only owners are painted (the stroke
+   * index leaves mirrors out), and only ink that shows there: a sticky
+   * note hides what is under it.
+   */
+  private paintAlong(x0: number, y0: number, x1: number, y1: number): void {
+    const style = this.formatPainter?.style;
+    if (!style || this.callbacks.isLocked?.()) return;
+    const end = this.toLayout(x1, y1);
+    const box = boxAtPoint(this.pageLayout, end.x, end.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) return;
+    const from = this.toPage(box, this.toLayout(x0, y0));
+    const to = this.toPage(box, end);
+    const reach = PAINT_REACH_PX / this.unitScale;
+    const sweep = (this.paintSweep ??= new PaintStyle(style));
+    const notes = noteIdsOf(page.images);
+    const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / reach));
+    let painted = false;
+    for (let i = 0; i <= steps; i++) {
+      const x = from.x + ((to.x - from.x) * i) / steps;
+      const y = from.y + ((to.y - from.y) * i) / steps;
+      for (const id of this.strokeIndex.near(page.id, x, y, reach + MAX_STROKE_HALF_WIDTH)) {
+        const stroke = this.strokeIndex.get(id);
+        if (!stroke || !shownAt(page, stroke, x, y, notes)) continue;
+        const hit =
+          strokeHitByPoint(stroke, x, y, stroke.size / 2 + reach) || strokeFillHit(stroke, x, y);
+        if (!hit) continue;
+        const before = elementBounds("strokes", stroke);
+        if (!sweep.paint(this.doc, page.id, stroke)) continue;
+        const after = elementBounds("strokes", stroke);
+        const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+        // A colour or width is not part of a stroke's cached outline: re-rasterise.
+        if (dirty) this.renderer?.invalidateRegion(box.index, dirty);
+        painted = true;
+      }
+    }
+    if (painted) this.requestFrame();
+  }
+
+  /**
+   * The sweep has lifted: what it painted becomes one undo step. The live
+   * paint is taken back and pushed as the command, which paints it again.
+   */
+  private finishPaint(): void {
+    const sweep = this.paintSweep;
+    this.paintSweep = null;
+    if (!sweep?.changed) return;
+    sweep.invert(this.doc);
+    this.history.push(this.doc, sweep);
+    const pages = sweep.pageIds;
+    // A width changes where a stroke reaches: the index learns it.
+    this.strokeIndex.refreshPages(this.doc.pages, pages);
+    this.inkChanged(pages);
   }
 
   // --- Picking a colour from the page --------------------------------------------
@@ -10970,6 +11638,7 @@ export class InkSurface {
     for (const id of candidates) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || (filter && !lassoTakesStroke(stroke, filter))) continue;
+      if (stroke.onSticky !== undefined && foldedAway(page, stroke)) continue;
       const hit =
         strokeHitByPoint(stroke, p.x, p.y, stroke.size / 2 + tolerance) ||
         strokeFillHit(stroke, p.x, p.y);
@@ -11026,17 +11695,19 @@ export class InkSurface {
       this.setImageSelection(pageId, images[0]);
       return;
     }
+    // So does its typed text.
+    const withText = page ? withNoteText(page, { textBoxes, images }) : textBoxes;
     // A box being typed in stops being edited before it can be moved.
     const editing = this.editingTextView();
     const live = editing ? this.liveTextBox(editing.pageId, editing.id) : undefined;
-    if (live && textBoxes.includes(live)) this.blurTextBox();
+    if (live && withText.includes(live)) this.blurTextBox();
     // So does a table being typed in.
     if (this.cellEdit && tables.includes(this.cellEdit.table)) this.endCellEdit(true);
     this.selection = {
       pageId,
       strokes: [...strokes],
       images: [...images],
-      textBoxes: [...textBoxes],
+      textBoxes: [...withText],
       tables: [...tables],
       graphs: [...graphs],
     };
@@ -11330,8 +12001,19 @@ export class InkSurface {
         pick: (color) => this.recolorSelectedNote(color),
       },
     };
+    // Goodnotes' Collapse: the note folds away to its icon; a tap opens it.
+    const fold: SelectionAction = {
+      id: "note-fold",
+      icon: "minimize-2",
+      label: "Fold note",
+      group: "style",
+      bar: true,
+      menu: "none",
+      run: () => this.foldSelectedNote(),
+    };
     return [
       colour,
+      fold,
       ...actions
         .filter((action) => !pictureOnly(action.id))
         .map((action) => (action.id === "lock" ? { ...action, label: "Lock note" } : action)),
@@ -11561,6 +12243,16 @@ export class InkSurface {
         },
       });
     }
+    // Its ink's look, to lay on other ink with the pen (`copyStyle`).
+    if (menu.colour && sel.strokes.length > 0) {
+      actions.push({
+        id: "copy-style",
+        icon: "paintbrush",
+        label: "Copy style",
+        group: "style",
+        run: () => this.copyStyle(sel.strokes),
+      });
+    }
     if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
@@ -11594,6 +12286,9 @@ export class InkSurface {
         run: () => this.copyText(highlighted),
       });
     }
+    // The word check's card, for any word, underlined or not.
+    const correct = this.correctWordAction(index, sel.strokes);
+    if (menu.handwriting && correct) actions.push(correct);
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -11689,6 +12384,35 @@ export class InkSurface {
       });
     }
     return actions;
+  }
+
+  /**
+   * "Correct": the card an underlined word opens, for the word this ink is
+   * in (the lasso's "…" menu, and the press menu over ink). Null when there
+   * is no ink or handwriting cannot be read here.
+   */
+  private correctWordAction(
+    index: number,
+    strokes: readonly Stroke[],
+    extra: Partial<SelectionAction> = {},
+  ): SelectionAction | null {
+    const correct = this.callbacks.onCorrectWord;
+    // Shapes and highlighter are never read (`inkForReading`).
+    const writing = strokes.filter((stroke) => !stroke.shape && stroke.tool !== "highlighter");
+    if (!correct || index < 0 || writing.length === 0) return null;
+    if (this.callbacks.canCorrectWords?.() === false) return null;
+    const ids = writing.map((stroke) => stroke.id);
+    return {
+      id: "correct-word",
+      icon: "spell-check",
+      label: "Correct",
+      group: "edit",
+      ...extra,
+      run: () => {
+        this.clearSelection();
+        correct(index, ids);
+      },
+    };
   }
 
   /**
@@ -11862,6 +12586,12 @@ export class InkSurface {
     ];
     // A practice file takes the pen alone (`practice.ts`).
     if (this.practice) return actions;
+    // Held on handwriting: its word's card comes first.
+    const index = page ? this.doc.pages.indexOf(page) : -1;
+    const correct = press.ink
+      ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
+      : null;
+    if (correct) actions.unshift(correct);
     actions.push(
       {
         id: "text-here",
@@ -12736,12 +13466,25 @@ export class InkSurface {
   }
 
   /**
-   * Mark the flagged word whose menu is open (its underline turns red), or
-   * none with `null`.
+   * Mark the word whose card is open (its underline turns red, and an
+   * underline is drawn for a word that had none), or none with `null`.
    */
   setActiveWordFlag(pageId: string | null, strokeIds: readonly string[] = []): void {
-    this.activeWordFlag = pageId === null ? null : { pageId, key: strokeKey(strokeIds) };
+    this.activeWordFlag =
+      pageId === null ? null : { pageId, key: strokeKey(strokeIds), strokes: [...strokeIds] };
     this.syncSectionRibbons();
+  }
+
+  /**
+   * Where a word's card goes: the bottom-left of these strokes' ink on page
+   * `index`, in client px; null when none of it is on the page.
+   */
+  wordInk(index: number, strokeIds: readonly string[]): { x: number; y: number } | null {
+    const page = this.pageAt(index);
+    const box = page ? this.boxForPage(page.id) : null;
+    const bounds = page && box ? this.linkBounds(page, strokeIds) : null;
+    if (!box || !bounds) return null;
+    return this.toClient({ x: box.x + bounds.minX, y: box.y + bounds.maxY });
   }
 
   /**
@@ -12753,8 +13496,13 @@ export class InkSurface {
     const scale = this.unitScale;
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
-      const flags = page ? this.wordFlags.get(page.id) : undefined;
-      if (!page || !flags) continue;
+      if (!page) continue;
+      const flags = [...(this.wordFlags.get(page.id) ?? [])];
+      // A word whose card was opened by hand ("Correct") is marked while it is open.
+      const asked = this.activeWordFlag;
+      if (asked?.pageId === page.id && !flags.some((strokes) => strokeKey(strokes) === asked.key)) {
+        flags.push(asked.strokes);
+      }
       for (const strokes of flags) {
         const bounds = this.linkBounds(page, strokes);
         if (!bounds) continue;
@@ -14843,6 +15591,7 @@ export class InkSurface {
     // A press menu open elsewhere closes first; opening it again clears it anyway.
     if (this.pressMenu) this.clearSelection();
     return (
+      this.toggleTapeAt(page, p, tolerance) ||
       this.openLinkAt(page, p, tolerance) ||
       this.followPdfLink(box.index, p, tolerance, false) ||
       this.offerStrokeTap(box, p, MOUSE_TAP_TOLERANCE_PX)
@@ -14859,6 +15608,7 @@ export class InkSurface {
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
     if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
+    if (this.fingerOpensFoldedNote(clientX, clientY)) return;
     // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
     const plain = { x: clientX, y: clientY, t: now() };
     const paired = pairsAsDoubleTap(this.plainTap, plain);
@@ -14892,6 +15642,14 @@ export class InkSurface {
     const tapped = box ? this.pageAt(box.index) : null;
     if (box && tapped) {
       const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+      // A cover tape lies over everything: a tap shows it through, or covers
+      // it again. With the lasso a tap selects it instead, as it does ink.
+      if (
+        this.toolState.tool !== "select" &&
+        this.toggleTapeAt(tapped, this.toPage(box, at), tolerance)
+      ) {
+        return;
+      }
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
       if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
     }
@@ -15407,7 +16165,7 @@ export class InkSurface {
   private fingerPicksPicture(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const image = topImageAt(
-      page.images.filter((candidate) => candidate.locked !== true),
+      page.images.filter((candidate) => candidate.locked !== true && !isFolded(candidate)),
       p,
       0,
     );
@@ -15452,11 +16210,12 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return false;
     const ink = this.noteInk(sel);
+    const text = this.noteText(sel);
     this.applyCommand(
-      ink.length > 0
+      ink.length > 0 || text.length > 0
         ? new RemoveElements(
             sel.pageId,
-            { strokes: ink, images: [sel.image], textBoxes: [] },
+            { strokes: ink, images: [sel.image], textBoxes: text },
             "Delete",
           )
         : new RemoveImage(sel.pageId, sel.image.id),
@@ -15472,6 +16231,13 @@ export class InkSurface {
     return page ? inkOfNote(page, sel.image) : [];
   }
 
+  /** The typed text on the selected image when it is a sticky note; none for a picture. */
+  private noteText(sel: { pageId: string; image: ImageElement }): TextBoxElement[] {
+    if (!sel.image.sticky) return [];
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    return page ? textOfNote(page, sel.image) : [];
+  }
+
   /**
    * The selected image's frame changes from `before` to `after` by
    * `command`: one undo step that takes a sticky note's ink along, or the
@@ -15483,11 +16249,157 @@ export class InkSurface {
     before: NoteFrame,
     after: NoteFrame,
   ): Command {
-    if (this.noteInk(sel).length === 0) return command;
+    if (this.noteInk(sel).length === 0 && this.noteText(sel).length === 0) return command;
     return new CompositeCommand(command.label, [
       command,
       new MoveNoteInk(sel.pageId, sel.image, before, after),
     ]);
+  }
+
+  /** Fold the selected sticky note away to its icon, and let go of it. */
+  private foldSelectedNote(): void {
+    const sel = this.liveImageSelection();
+    if (!sel || !sel.image.sticky || this.callbacks.isLocked?.()) return;
+    this.deselectImage();
+    this.setNoteFolded(sel.pageId, sel.image, true);
+  }
+
+  /** Fold `note` away, or open it again: one undo step, and its tiles painted again. */
+  private setNoteFolded(pageId: string, note: ImageElement, folded: boolean): void {
+    this.history.push(this.doc, new SetNoteFolded(pageId, note, folded));
+    const box = this.boxForPage(pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(note)));
+    this.syncTextBoxes();
+    this.renderDry();
+    this.changed();
+  }
+
+  /** The folded note whose icon is under a client point, with its page, or `null`. */
+  private foldedNoteAtClient(
+    clientX: number,
+    clientY: number,
+  ): { pageId: string; note: ImageElement } | null {
+    // Every press asks; a notebook without a folded note answers at once.
+    if (this.doc?.pages.some((page) => page.images.some(isFolded)) !== true) return null;
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page || this.callbacks.isLocked?.()) return null;
+    const p = this.toPage(box, at);
+    const note = foldedNoteAt(page, p.x, p.y);
+    return note ? { pageId: page.id, note } : null;
+  }
+
+  /**
+   * A pen or mouse pressed on a folded note: it draws nothing, and the note
+   * opens on the lift, if the lift is near (a control over the page acts on
+   * pointerup). Android's click after that lift is swallowed, or it would
+   * land on whatever the open note shows under the pen.
+   */
+  private pressOpensFoldedNote(event: PointerEvent): boolean {
+    if (event.button !== 0) return false;
+    const hit = this.foldedNoteAtClient(event.clientX, event.clientY);
+    if (!hit) return false;
+    const doc = this.surfaceEl.ownerDocument;
+    const { pointerId, clientX, clientY } = event;
+    const end = (up: PointerEvent): void => {
+      if (up.pointerId !== pointerId) return;
+      doc.removeEventListener("pointerup", end, true);
+      doc.removeEventListener("pointercancel", end, true);
+      if (up.type !== "pointerup") return;
+      if (Math.hypot(up.clientX - clientX, up.clientY - clientY) > FOLDED_TAP_SLOP_PX) return;
+      swallowGhostClick(doc, up);
+      this.setNoteFolded(hit.pageId, hit.note, false);
+    };
+    doc.addEventListener("pointerup", end, true);
+    doc.addEventListener("pointercancel", end, true);
+    return true;
+  }
+
+  /** A finger tapped (client px, at its lift): open the folded note there, if any. */
+  private fingerOpensFoldedNote(clientX: number, clientY: number): boolean {
+    const hit = this.foldedNoteAtClient(clientX, clientY);
+    if (!hit) return false;
+    const lift = { clientX, clientY, timeStamp: performance.now() } as PointerEvent;
+    swallowGhostClick(this.surfaceEl.ownerDocument, lift);
+    this.setNoteFolded(hit.pageId, hit.note, false);
+    return true;
+  }
+
+  /**
+   * A Text-tool tap on an open sticky note types on the note: in its text,
+   * or in a new box made for it, inset on the paper and as wide as it.
+   * Whether there was a note there.
+   */
+  private editNoteTextAt(box: PageBox, p: Pt): boolean {
+    const page = this.pageAt(box.index);
+    const note = page ? noteAt(page, p.x, p.y) : null;
+    if (!page || !note || note.locked === true || this.callbacks.isLocked?.()) return false;
+    const existing = textOfNote(page, note)[0];
+    if (!existing) {
+      this.addTextBox(box, noteTextFrame(note), note.id);
+      return true;
+    }
+    const key = `${page.id}:${existing.id}`;
+    this.noteTextOpen = key;
+    this.syncTextBoxes();
+    const view = this.textBoxInputs.get(key);
+    if (view) this.focusTextBox(view.input);
+    this.noteTextOpen = null;
+    return true;
+  }
+
+  /**
+   * The note text boxes (by id) their textareas show: being typed in, held
+   * by the lasso, or about to be focused. The rest are drawn with their
+   * notes, in the tiles and in a selection's drag alike.
+   */
+  private noteTextShownByDom(): Set<string> {
+    const shown = new Set<string>();
+    for (const page of this.doc?.pages ?? []) {
+      for (const textBox of page.textBoxes) {
+        if (textBox.onSticky === undefined) continue;
+        const note = noteOfText(page, textBox);
+        if (!note || isFolded(note)) continue;
+        const key = `${page.id}:${textBox.id}`;
+        const view = this.textBoxInputs.get(key);
+        const typing =
+          view !== undefined &&
+          (view.root.contains(document.activeElement) || this.heldText === view);
+        if (typing || this.noteTextOpen === key) shown.add(textBox.id);
+      }
+    }
+    return shown;
+  }
+
+  /**
+   * A box stopped being typed in or held: a note's text it was goes back to
+   * being drawn with its note (its textarea parked, its tiles painted again).
+   */
+  private settleNoteText(): void {
+    const shown = this.noteTextShownByDom();
+    const was: ReadonlySet<string> = this.noteTextOnDom ?? new Set();
+    if (shown.size === was.size && [...shown].every((id) => was.has(id))) return;
+    this.syncTextBoxes();
+  }
+
+  /** Paint again the notes whose text moved between their textarea and their tiles. */
+  private syncNoteTextTiles(shown: ReadonlySet<string>): void {
+    const was: ReadonlySet<string> = this.noteTextOnDom ?? new Set();
+    const changed = [...shown].filter((id) => !was.has(id));
+    for (const id of was) if (!shown.has(id)) changed.push(id);
+    if (changed.length === 0) return;
+    this.noteTextOnDom = shown;
+    this.renderer?.setHiddenText(shown);
+    const ids = new Set(changed);
+    this.doc.pages.forEach((page, index) => {
+      for (const textBox of page.textBoxes) {
+        if (!ids.has(textBox.id)) continue;
+        const note = noteOfText(page, textBox);
+        if (note) this.renderer?.invalidateRegion(index, imageBounds(transformOf(note)));
+      }
+    });
+    this.requestFrame();
   }
 
   /** Repaint the selected sticky note in `color`. */
@@ -15513,9 +16425,10 @@ export class InkSurface {
     if (!sel || !page || this.callbacks.isLocked?.()) return false;
     const copy = duplicateImage(this.doc, page.geometry, sel.image);
     const ink = copyNoteInk(page, sel.image, copy, () => this.strokeIds.next());
+    const text = copyNoteText(page, sel.image, copy, () => this.textBoxIds.next());
     this.applyCommand(
-      ink.length > 0
-        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: [] }, "Duplicate")
+      ink.length > 0 || text.length > 0
+        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: text }, "Duplicate")
         : new InsertImage(page.id, copy),
     );
     this.setImageSelection(page.id, copy);
@@ -16640,6 +17553,7 @@ export class InkSurface {
     // The pill goes back to the tool's own style, unless typing goes on elsewhere.
     if (!this.editingTextView()) this.callbacks.onTextEditing?.(null);
     this.reportTextAnchor();
+    this.settleNoteText();
     if (handBack) this.handBackFromText();
   }
 
@@ -16783,6 +17697,7 @@ export class InkSurface {
    * when focus went straight into another box.
    */
   private endTextEditing(view: TextBoxView): void {
+    this.settleNoteText();
     // A size slider let go of elsewhere: the box keeps its stored size.
     if (this.textSizePreview) this.previewTextSize(null);
     this.watchTypingKeyboard(false);

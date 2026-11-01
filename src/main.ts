@@ -14,11 +14,13 @@ import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
+import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
 import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
+import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
@@ -46,6 +48,7 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
+import { laserDefaultColorOf } from "./settings-data";
 import {
   type PageAppearance,
   type PenPreferences,
@@ -779,6 +782,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
+    this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -792,6 +796,8 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const loaded = this.settings as unknown as Record<string, unknown>;
     delete loaded.experimentalTrocr;
+    // The laser's dot frequency is gone: the trail is one smooth line now.
+    delete loaded.laserDotFrequency;
     // "Pressure sensitivity", on by default until 2026-09-30: pressure is
     // now the advanced `pressureWidth`, off by default, and the old choice is
     // not carried over.
@@ -813,6 +819,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
+    this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1069,6 +1076,7 @@ export default class GoodObsidianPlugin extends Plugin {
       model: this.settings.llmModel,
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
+      skipCompressed: this.settings.openRouterSkipCompressed,
     };
   }
 
@@ -1255,9 +1263,28 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember cover tape's colour and height, for the next session. */
+  saveTape(color: string, height: number): void {
+    this.settings.tapeColor = tapeColorOf(color);
+    this.settings.tapeHeight = tapeHeightOf(height);
+    void this.saveSettings();
+  }
+
   /** Remember whether new tables get a header row, for the next session. */
   saveTableHeader(on: boolean): void {
     this.settings.tableHeader = on;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillColor(color: string): void {
+    this.settings.fillColor = parseHexColor(color) ?? DEFAULT_FILL_COLOR;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillGap(gap: FillGap): void {
+    this.settings.fillGap = readFillGap(gap);
     void this.saveSettings();
   }
 

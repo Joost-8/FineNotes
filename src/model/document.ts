@@ -17,12 +17,21 @@
 
 import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH, SCHEMA_VERSION } from "../constants";
 
-export type Tool = "pen" | "highlighter";
+/**
+ * What made a stroke: a pen, a highlighter, or a cover tape (`model/cover-tape`),
+ * an opaque strip painted over the page that a tap shows through.
+ */
+export type Tool = "pen" | "highlighter" | "tape";
+
+/** A highlighter tip other than the round one: `chisel`, flat and upright. */
+export type InkTip = "chisel";
 
 /**
  * Geometry a stroke was snapped to or placed as. Absent on freehand strokes.
  * `polygon` is any other closed straight-edged shape (a quad or a pentagon,
- * say) that hold-to-snap straightened.
+ * say) that hold-to-snap straightened. `arc` is an open piece of a circle;
+ * `sector` a pie slice (centre, arc, back to the centre), which at a half
+ * turn is a semicircle closed by its diameter.
  */
 export type ShapeKind =
   | "line"
@@ -35,7 +44,12 @@ export type ShapeKind =
   | "roundrect"
   | "polygon"
   | "star"
-  | "cloud";
+  | "cloud"
+  | "heart"
+  | "arc"
+  | "sector"
+  | "segment"
+  | "angle";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -49,6 +63,11 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "polygon",
   "star",
   "cloud",
+  "heart",
+  "arc",
+  "sector",
+  "segment",
+  "angle",
 ];
 
 /** How a shape's outline is drawn when it is not solid. */
@@ -112,6 +131,12 @@ export interface Stroke {
    * (`ink/freehand` nibFactor). Absent: a round nib.
    */
   nib?: number;
+  /**
+   * Written with a highlighter's flat chisel tip: the line is swept by an
+   * upright rectangle (`ink/chisel.ts`), so a level highlight is a band of
+   * one height with square ends. Absent: a round tip.
+   */
+  tip?: InkTip;
   /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds
@@ -416,6 +441,12 @@ export interface ImageElement {
 export interface StickyPaper {
   /** `#rrggbb`. */
   color: string;
+  /**
+   * Folded away to a small note icon at its top-left corner, as Goodnotes
+   * collapses a note: its ink and text are hidden, and a tap opens it. The
+   * element keeps the open note's frame. Stored only as `true`.
+   */
+  folded?: true;
 }
 
 /** The faintest a picture may be drawn: fainter would be a picture nobody can find. */
@@ -524,6 +555,16 @@ export interface TextBoxElement {
   padding?: number;
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
+  /**
+   * The id of the sticky note this box is the typed text of, as
+   * `Stroke.onSticky` is for its ink (`model/sticky-notes.ts`): drawn with
+   * the note, clipped to it, turned with it and hidden while it is folded,
+   * and moved, copied and deleted with it. Its `x`, `y` and `w` are page px
+   * on the note as it would stand unturned. Stored as it is, in page space,
+   * so a reader that does not know the field keeps the text as a box of its
+   * own. A box whose note is gone is a plain text box.
+   */
+  onSticky?: string;
 }
 
 /** A text box's border: its width in page px and its colour (hex, as `fill`). */

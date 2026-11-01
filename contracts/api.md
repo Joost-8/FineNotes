@@ -305,7 +305,16 @@ export type ShapeKind =
   | "triangle"
   | "diamond"
   | "roundrect"
-  | "polygon";
+  | "polygon"
+  | "star"
+  | "cloud"
+  // added 2026-10-30
+  | "heart"
+  | "arc" // open: part of a circle
+  | "sector" // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
+  // added 2026-10-31
+  | "segment" // closed: an arc and the straight chord that closes it (a dome)
+  | "angle"; // open: two straight legs meeting square at a corner
 
 export interface ShapeResult {
   kind: ShapeKind;
@@ -332,6 +341,14 @@ export interface RecognizeOptions {
    *   closed = gap <= max(closeTolerance, 0.1 * bboxDiagonal)
    */
   closeTolerance?: number;
+  /** The pen rests where the stroke ends (a hold, not a lift). Turns `arcs` on. */
+  held?: boolean;
+  /**
+   * Also fit open arcs and sectors on a lifted stroke. Default false: a C, a
+   * U or a bracket is handwriting, and a D is a semicircle closed by its
+   * diameter, so the pen's Auto shape (snap on lift) must leave them as ink.
+   */
+  arcs?: boolean;
 }
 
 /** Returns null when the stroke is not confidently any known shape. */
@@ -364,6 +381,35 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `ellipse`                        | 65 points: a closed polygon sampled every 5.625°                 |
 | `triangle`, `diamond`, `polygon` | n+1 points, closed: the vertices, first repeated last            |
 | `roundrect`                      | 37 points, closed: four 8-segment quarter-arcs (Shape tool only) |
+| `heart`                          | 73 points, closed: the classic heart curve in 72 steps           |
+| `arc`                            | open: ≥ 3 points, one at least every 5.625° of turn, ends exact  |
+| `sector`                         | closed: the centre, the arc as `arc` lays it out, the centre     |
+| `segment`                        | closed: the arc as `arc` lays it out, then its first point again |
+| `angle`                          | 3 points: `[end, corner, end]`, the legs exactly square          |
+
+A recognised `heart` and `sector` begin at the vertex nearest pen-down (a
+sector's outline then need not start at its centre); the Shape tool's
+heart begins at its cusp and goes clockwise. An `arc` or a `sector` whose
+turn is within 15° of a quarter-turn multiple is made exactly that, its
+ends put on an axis when within 8° of one (a slice's angle also snaps to a
+multiple of 15° within 4°). An `arc` takes no fill. Older versions read
+these three kinds as freehand ink.
+
+A `segment` (2026-10-31) is a dome: an arc closed by a straight chord that
+need not pass through its centre. On a lift it is taken only when it turns
+at most 160° and its box is at least 100 page px across, so a written D (a
+half turn on its stem) stays ink; held, any turn from 40° to 320°, and a
+semicircle is a `sector`. A convincing segment is never also a triangle.
+Its chord is made level or upright when within 8°, its turn snaps as an
+arc's does, and it begins at the chord's end nearest pen-down.
+
+An `angle` (2026-10-31) is a right angle: two straight legs meeting within
+12° of square, made exactly square by turning the shorter leg about the
+corner. On a lift one leg must lie within 12° of level or upright and the
+box be at least 70 page px across, so a checkmark, a V and a written L stay
+ink; held, any orientation, from 50 page px. A leg within 8° of level or
+upright is put on it. An `angle` takes no fill. Older versions read both
+kinds as freehand ink.
 
 ### A shape's style (v9)
 
@@ -388,6 +434,13 @@ heads?: { start?: "open" | "filled"; end?: "open" | "filled" };  // `line` only
   ink padding tiles are redrawn with.
 - The loader keeps a field only when it can read it; nothing is clamped
   except `radius`, to 500.
+- A **bucket fill** (the Fill tool, Scribble to fill) is stored as such a
+  shape and needs no field of its own: a `polygon` round the filled region
+  (up to 2000 points, closed), `size` 0.5, `fill` equal to its `color`
+  (`#rrggbb`), `tool: "pen"` (`src/model/fill-region.ts`). Fills come first
+  in a page's `strokes`, a larger fill before a smaller one, so the ink that
+  bounds them is drawn over them. A recolour changes `color` and `fill`
+  together.
 
 A shape's `pts` are sparse on purpose. The renderer draws a shape as its
 exact centreline, stroked at the stroke's `size` with round joins and caps —
@@ -655,19 +708,33 @@ One class may implement both, and `VaultBackdropRenderer` does.
 
 - **Synthetic backdrops** draw procedurally — cheap, redraw freely.
 - **PDF backdrops** render from the original PDF through Obsidian's PDF.js.
-  Up to 2.5× zoom, ink tiles and their previews share one whole-page raster.
-  Above that zoom, one clipped visible patch per page is shared across tiles,
-  with the page image as fallback. Source PDF points are contained in the
-  notebook page geometry; PDF.js handles source rotation and cropping.
-  Region keys include source path/page, page geometry, visible region and
-  settled scale (stable to 1e-4). Pinch frames retain their full-page scale
-  and request no new detail. Full-page/patch rasters are bounded to 2400 px
-  per edge and approximately 4 MP. The cache retains its 48 MB soft / 96 MB
-  hard budgets and recent-use policy. At most two PDF renders run at once.
+  Ink tiles and their previews share one whole-page raster per page, drawn
+  at exactly the tiles' settled level, so it is never resampled. Where a
+  raster that sharp would pass the whole-page bounds (2400 px per edge,
+  about 4 MP: 2.82 device px per point for A4), the page image is drawn at
+  the bounds and detail is drawn over it at the level: 1024 px tiles from
+  the PDF worker, or without it one clipped patch of the view, on whole
+  device pixels, shared across tiles. Each screen paint asks for, in
+  order: the page images of the pages on screen, the next page a scroll
+  shows, detail on screen, the other pages within 1.5 screens (up to 60%
+  of the soft budget), then detail just off screen. Without the worker,
+  detail waits for the view to rest and a patch still drawing is let go of
+  when it moves; page images are asked for either way. Source PDF points
+  are contained in the notebook page geometry; PDF.js handles source
+  rotation and cropping. Region keys include source
+  path/page, page geometry, visible region and settled scale (stable to
+  1e-4). Pinch frames retain their full-page scale and request no new
+  detail. The cache keeps a 48 MB soft / 96 MB hard budget and recent-use
+  policy, 24 MB / 64 MB on a device short of memory or once a canvas has
+  been refused; a refused canvas is never cached as a miss. At most two PDF
+  renders run at once.
   Offscreen detail work is cancelled and its canvas evicted; stale work
   triggers no repaint or cached miss. Writing holds background starts;
   explicit awaited draws remain available. Patch completion invalidates only
   the matching region; full pages can invalidate the matching sidebar thumbnail.
+  Either way the ink tiles over it keep their bitmaps and are painted again in
+  place (`Renderer.invalidateBackdrop`, `refreshPage`), a few a frame, shown
+  as they were until then.
 - **The source PDF is opened read-only and never written.** If the PDF is
   missing or the page index is out of range, draw a blank page with a small
   "missing source" marker and keep the ink — never drop annotations because a
@@ -844,7 +911,7 @@ icon, label, order?, isAvailable?, run })` from `onload`; built-ins are
 
 GoodNotes 6's pen gestures, from the pen type menu (Joost, 2026-09-24).
 Pen tool only: a highlighter going over text is highlighting it.
-Settings: `PenGestures { scribbleErase, scribbleErasesAll, circleLasso }`,
+Settings: `PenGestures { scribbleErase, scribbleErasesAll, scribbleFill, circleLasso }`,
 read through `penGesturesOf` (`src/ink/pen-gestures.ts`); defaults on,
 off, on — GoodNotes' defaults, with the scribble's wider reach off.
 
@@ -969,7 +1036,7 @@ change the note format.
 
 ## PDF viewport detail
 
-At zoom up to 2.5×, notebook ink tiles and their previews share a cached whole-page PDF image. Above that threshold, the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
+Notebook ink tiles and their previews share a cached whole-page PDF image, drawn at exactly the tiles' settled level. Where that image would pass the whole-page bounds (from about 1.4× zoom for A4 on an iPad), the renderer supplies one clipped visible region per page, independently of the 512 px ink-tile grid, or with the PDF worker 1024 px tiles aligned to it. These patches overlay the page fallback before images and ink, never cover annotations, and use at most two PDF render tasks concurrently (including thumbnail/page work).
 
 Replacing the viewport cancels obsolete queued/active detail requests, evicts their canvases, and prevents stale completion callbacks or cached failure placeholders. Ordinary page and sidebar rasters retain their existing byte budgets. Mid-pinch frames retain the previous full-page resolution and start no new detail work. Writing holds background starts; explicitly awaited export/thumbnail requests remain available. Clear/unload cancels pending work.
 
@@ -1143,6 +1210,33 @@ field). This reader refuses a label naming a feature it does not know in the
 same way; a later feature adds its own `+name`. A notebook without notes keeps
 the plain `v2:` label and opens in older builds as before.
 
+### Folded notes and typed text (2026-10-31, FineNotes#94)
+
+Two optional fields, as Goodnotes collapses a note and types in it:
+
+```ts
+sticky?: { color: string; folded?: true }; // ImageElement: folded to its icon
+onSticky?: string; // TextBoxElement: the note this box is the typed text of
+```
+
+- **`folded`** (stored only as `true`): the note shows as a small icon at
+  its top-left corner (`foldedFrame`: a square of `min(40, w, h)` page px,
+  turned with the note, never mirrored); its ink and text are hidden, and a
+  tap on the icon opens it. `x`, `y`, `w`, `h` keep the open note's frame.
+  It sits in the paper object on disk, before `ink`.
+- **A note's text** is an ordinary text box with `onSticky: "<image id>"`,
+  stored in `textBoxes` **in page space**, unlike the note's ink. Its `x`,
+  `y` and `w` are where it stands on the note _unturned_; it is drawn with
+  the note, clipped to it and turned about the note's centre (never
+  mirrored), and moves, resizes (rewrapping, its font size kept), copies
+  and deletes with the note. A box naming a note that is not on its page
+  is read as a box of its own.
+
+Neither changes the payload label: a notebook keeps `v2+sticky`. A reader
+that knows neither field (2.5, 2.6) keeps a note's colour and a text box's
+own fields, so it shows a folded note open and its text as a box over it at
+the same place; nothing written is lost, only the fold and the link.
+
 ## Linked shapes (2026-10-28)
 
 Goodnotes' linked copies (discussion #51). One closed shape selected on its
@@ -1224,3 +1318,62 @@ tilt?: number[];
   `sticky`, `v2+sticky+tilt:`) with `"requires": ["tilt"]`, so an older
   FineNotes holds it read-only instead of saving the shading back at the
   nib's width (§ "Payload label: refusing instead of dropping").
+
+## Highlighter chisel tip (2026-10-30)
+
+`Stroke` gains one optional field:
+
+```ts
+/** Written with a highlighter's flat chisel tip; absent is round. */
+tip?: "chisel";
+```
+
+- **Stored** as `"tip": "chisel"` after `nib`. Any other value reads as
+  absent (round); nothing else about the stroke changes, so a reader that
+  does not know the field draws the highlight round and loses nothing else.
+- **Drawn:** the centreline (traced as any highlight) is swept by an
+  upright rectangle `size` tall and `CHISEL_ASPECT` (0.5) of that wide, kept
+  to the page's axes (`ink/chisel.ts` `chiselPolygons`: one convex hull per
+  piece, filled). A level highlight is a band of one height with square
+  ends. The tip is part of the renderer's path-cache key.
+- **Kept** by eraser pieces (`pieceOf`, the erase preview), copy, move,
+  turn, resize and sticky notes. Not on a shape: a snapped shape is clean
+  geometry and drawn round. Set only on highlighter strokes, from the
+  `highlighterTip` setting (the pen menu's Tip row) at the time of writing.
+- **No label:** a notebook with chisel highlights keeps the plain `v2:`
+  label. An older FineNotes opens it and draws those highlights round; a
+  save there drops the field. That is a change of look, not of content, so
+  it is not worth holding the notebook read-only for.
+
+## Cover tape (2026-10-30)
+
+`Stroke.tool` gains a third value, `"tape"` (`src/model/cover-tape.ts`): an
+opaque strip laid over the page, as Goodnotes' tape, to hide answers while
+studying or keep something out of sight.
+
+- **Geometry:** the stroke's first and last points are the middles of the
+  strip's two ends (the Cover tape tool stores exactly two, made level or
+  upright when nearly so); `size` is its height, page px; `color` its colour.
+  Pressure is ignored, and points in between (if a transform leaves any) do
+  not change its shape.
+- **Painted over everything** on its page, whatever its place in `strokes`:
+  ink, pictures (in front of the ink too), tables, graphs, checklist boxes
+  and typed text. In the view, where typed text boxes are DOM above the
+  page, a box under a covered tape is clipped where the tape lies (not while
+  it is being typed in); two tapes overlapping on one box show it through
+  where they overlap.
+- **Shown through is not stored.** A tap (a finger with any tool but the
+  lasso; a Pencil or mouse tap with a writing tool or the tape tool; a mouse
+  right-click) shows a tape through, or covers it again, in this view only,
+  for this session. It is never an undo step and never saved: the file, every
+  sync, the page thumbnails, PDF export and every image sent to an AI model
+  have every tape covered. Export as PDF can leave every tape out
+  (`exportWithoutTapes`, the dialog's tape button).
+- **Otherwise ink:** the lasso selects, moves, turns, resizes, recolours,
+  copies and deletes it; it mirrors over a join; every eraser mode takes it
+  whole, never in part. The handwriting reader and sums leave it out (they
+  read `tool === "pen"` only).
+- **Label:** a notebook with any tape is written `v2+tape:` (after `tilt`)
+  with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
+  ink and save it back as a thick line, so it holds the notebook read-only
+  instead (§ "Payload label: refusing instead of dropping").

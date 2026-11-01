@@ -458,3 +458,16 @@ export function textUnder(layout: TextLayout, bands: readonly InkBand[]): string
   }
   return parts.join("\n");
 }
+
+/**
+ * What the highlighter did where it came down on a PDF page, for the debug
+ * overlay: snapped to text (and which), or why not — the page's text not
+ * read yet, a page with no text (a scan), or the pen beside the text.
+ */
+export function textMarkNote(layout: TextLayout | null, selection: TextSelection | null): string {
+  if (!layout) return "text not read yet";
+  if (layout.chars.length === 0) return "page has no text";
+  if (!selection) return `off the text (${layout.lines.length} lines)`;
+  const text = selection.text.replace(/\s+/g, " ").trim();
+  return `snapped "${text.length > 24 ? `${text.slice(0, 24)}…` : text}"`;
+}

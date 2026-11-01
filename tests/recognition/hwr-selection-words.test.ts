@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ReadWord } from "../../src/recognition/hwr/corrections";
 import {
+  editedPhrase,
   editedWords,
   matchCase,
   replaceToken,
   selectionWords,
+  wordToCorrect,
   wordsByLine,
 } from "../../src/recognition/hwr/selection-words";
 
@@ -107,5 +109,49 @@ describe("editedWords", () => {
     expect(editedWords(ink, "")).toEqual([]);
     // Not a plain word: no label.
     expect(editedWords([{ text: "x2", strokeIds: ["z"] }], "x3")).toEqual([]);
+  });
+});
+
+describe("correcting (Correct on a lassoed sentence)", () => {
+  const ink: ReadWord[] = [
+    { text: "Soft", strokeIds: ["a"] },
+    { text: "ware", strokeIds: ["b"] },
+    { text: "katatsuon", strokeIds: ["c"] },
+  ];
+
+  it("labels every word changed, however far from the reading", () => {
+    expect(editedWords(ink, "Soft ware Karatsuba", true)).toEqual([
+      { word: ink[2], text: "Karatsuba" },
+    ]);
+    expect(editedWords(ink, "soft ware x2", true)).toEqual([
+      { word: ink[0], text: "soft" },
+      { word: ink[2], text: "x2" },
+    ]);
+  });
+
+  it("labels a split or joined word as one line of the whole selection", () => {
+    expect(editedPhrase(ink, "Software Karatsuba")).toEqual({
+      strokeIds: ["a", "b", "c"],
+      read: "Soft ware katatsuon",
+      text: "Software Karatsuba",
+    });
+    expect(editedPhrase(ink, "Soft ware Karatsuba")).toBeNull();
+    expect(editedPhrase(ink, "")).toBeNull();
+  });
+});
+
+describe("wordToCorrect", () => {
+  it("takes the word whose ink was picked, a clipped word whole", () => {
+    expect(wordToCorrect(words, ["c"])?.text).toBe("rationals");
+  });
+
+  it("of several words, the first the word check underlines, else the first", () => {
+    expect(wordToCorrect(words, ["a", "b", "e"])?.text).toBe("The");
+    expect(wordToCorrect(words, ["a", "b", "e"], new Set(["e,f"]))?.text).toBe("dense.");
+  });
+
+  it("is null for ink in no read word", () => {
+    expect(wordToCorrect(words, ["g"])).toBeNull();
+    expect(wordToCorrect(words, [])).toBeNull();
   });
 });

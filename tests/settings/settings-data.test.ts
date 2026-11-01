@@ -16,11 +16,14 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   changesTabLayout,
-  appearanceChoiceOf,
+  deskChoiceOf,
+  deskColorOf,
   endpointWarning,
   greyWhileErasingOf,
+  laserDefaultColorOf,
   openSectionsOf,
   pagesAreDark,
+  highlighterTipOf,
   penPreferencesOf,
   paperWidthFrom,
   parseColorList,
@@ -32,13 +35,13 @@ import {
   loadSnapSettings,
   shownPaperTheme,
   shownValue,
-  storeAppearanceChoice,
+  pageAppearanceOf,
   storePenPreferences,
   storeReturnToPen,
   storeShownValue,
   withSection,
 } from "../../src/settings-data";
-import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
+import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER, pageLook } from "../../src/canvas/backdrop";
 
 /**
  * What a fresh install writes, key for key and in this order. `twoFileStorage`
@@ -52,6 +55,7 @@ const FRESH_INSTALL = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
+  laserDefaultColor: "#ff3b30",
   defaultSize: 3,
   eraserMode: "standard",
   eraserSize: 24,
@@ -81,6 +85,7 @@ const FRESH_INSTALL = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -100,7 +105,12 @@ const FRESH_INSTALL = {
   textHintDismissed: false,
   shapeHintShown: false,
   penAutoShape: false,
-  penGestures: { scribbleErase: true, scribbleErasesAll: false, circleLasso: true },
+  penGestures: {
+    scribbleErase: true,
+    scribbleErasesAll: false,
+    scribbleFill: true,
+    circleLasso: true,
+  },
   shapeColor: "#000000",
   stickerFolder: "FineNotes assets/Stickers",
   imagesFolder: "",
@@ -128,6 +138,10 @@ const FRESH_INSTALL = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
+  desk: "auto",
+  deskColor: "#3b3e45",
+  exportPlainPaper: false,
 
   savedPens: [
     { type: "ball", color: "#1971c2", size: 2 },
@@ -165,6 +179,7 @@ const USED_VAULT = {
   defaultTool: "highlighter",
   customColors: ["#ff8800", "#0ca"],
   defaultColor: "#2255aa",
+  laserDefaultColor: "#00aaff",
   defaultSize: 5,
   eraserMode: "stroke",
   eraserSize: 40,
@@ -208,6 +223,7 @@ const USED_VAULT = {
   updateReminders: false,
   llmVendor: "custom",
   llmModel: "llava:13b",
+  openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
   llmCustomApiKey: "local-secret",
@@ -227,7 +243,12 @@ const USED_VAULT = {
   textHintDismissed: true,
   shapeHintShown: true,
   penAutoShape: true,
-  penGestures: { scribbleErase: false, scribbleErasesAll: true, circleLasso: false },
+  penGestures: {
+    scribbleErase: false,
+    scribbleErasesAll: true,
+    scribbleFill: false,
+    circleLasso: false,
+  },
   shapeColor: "#0066ff",
   snapMode: "auto",
   snapCurvatureThreshold: 75,
@@ -244,6 +265,10 @@ const USED_VAULT = {
   pencilTilt: true,
   pageAppearance: "system",
   invertPdfPages: false,
+  exportWithoutTapes: true,
+  desk: "custom",
+  deskColor: "#204060",
+  exportPlainPaper: true,
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],
@@ -371,6 +396,20 @@ describe("dark pages", () => {
     expect(pagesAreDark("system", false)).toBe(false);
   });
 
+  describe("laser pointer settings", () => {
+    it("normalizes the missing and invalid colours to the built-in red", () => {
+      expect(laserDefaultColorOf(undefined)).toBe("#ff3b30");
+      expect(laserDefaultColorOf("#abc")).toBe("#abc");
+      expect(laserDefaultColorOf("red")).toBe("#ff3b30");
+    });
+
+    it("keeps a configured colour through defaults merging", () => {
+      expect(loadAndSave({ laserDefaultColor: "#123456" })).toMatchObject({
+        laserDefaultColor: "#123456",
+      });
+    });
+  });
+
   it("read anything they do not know as light", () => {
     for (const value of [undefined, null, "Dark", "auto", 1, true]) {
       expect(pagesAreDark(value, true)).toBe(false);
@@ -380,11 +419,47 @@ describe("dark pages", () => {
   it("give the paper theme, keeping PDFs only when PDF inversion is off", () => {
     expect(shownPaperTheme(DEFAULT_SETTINGS, true)).toBe(LIGHT_PAPER);
     const dark = { pageAppearance: "dark", invertPdfPages: true } as const;
-    expect(shownPaperTheme(dark, false)).toBe(DARK_PAPER);
+    // With the pages, dark pages lie on the light pages' grey desk, which sets them apart.
+    const night = shownPaperTheme(dark, false);
+    expect(night).toEqual({ ...DARK_PAPER, desk: LIGHT_PAPER.desk });
+    expect(shownPaperTheme(dark, false)).toBe(night);
+    expect(shownPaperTheme({ ...dark, desk: "dark" }, false)).toBe(DARK_PAPER);
     const keep = shownPaperTheme({ ...dark, invertPdfPages: false }, false);
     expect(keep.night && keep.keepPdf).toBe(true);
     // The same theme object each time, so a view can tell nothing changed.
     expect(shownPaperTheme({ ...dark, invertPdfPages: false }, false)).toBe(keep);
+  });
+
+  it("read a desk choice they do not know as With the pages", () => {
+    for (const desk of ["light", "dark", "custom", "auto"]) expect(deskChoiceOf(desk)).toBe(desk);
+    for (const desk of [undefined, null, "blur", 1]) expect(deskChoiceOf(desk)).toBe("auto");
+  });
+
+  it("put the pages on the desk the Desk setting names, and theirs on With the pages", () => {
+    expect(DEFAULT_SETTINGS.desk).toBe("auto");
+    expect(deskColorOf(DEFAULT_SETTINGS)).toBeNull();
+    expect(deskColorOf({ desk: "light" })).toBe(LIGHT_DESK);
+    expect(deskColorOf({ desk: "dark" })).toBe(DARK_PAPER.desk);
+    expect(deskColorOf({ desk: "custom", deskColor: "#ABCDEF" })).toBe("#abcdef");
+    // A custom colour that is not one, or a choice this build does not know: the theme's own.
+    expect(deskColorOf({ desk: "custom", deskColor: "teal-ish" })).toBeNull();
+    expect(deskColorOf({ desk: "blur" as never })).toBeNull();
+
+    const light = { pageAppearance: "light", invertPdfPages: true, desk: "dark" } as const;
+    const theme = shownPaperTheme(light, false);
+    expect([theme.desk, theme.paper, theme.night]).toEqual([
+      DARK_PAPER.desk,
+      LIGHT_PAPER.paper,
+      undefined,
+    ]);
+    // The same object for the same choice, and the theme itself for its own desk.
+    expect(shownPaperTheme(light, false)).toBe(theme);
+    expect(shownPaperTheme({ ...light, desk: "auto" }, false)).toBe(LIGHT_PAPER);
+    const dark = shownPaperTheme(
+      { pageAppearance: "dark", invertPdfPages: false, desk: "custom", deskColor: "#204060" },
+      false,
+    );
+    expect([dark.desk, dark.night, dark.keepPdf]).toEqual(["#204060", true, true]);
   });
 });
 
@@ -400,6 +475,13 @@ describe("grey out while erasing", () => {
     for (const value of [false, undefined, null, "true", 1, "yes", {}]) {
       expect(greyWhileErasingOf(value)).toBe(false);
     }
+  });
+});
+
+describe("skipping OpenRouter's compressed providers", () => {
+  it("is off for a fresh install and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.openRouterSkipCompressed).toBe(false);
+    expect(loadAndSave({ llmVendor: "openrouter" }).openRouterSkipCompressed).toBe(false);
   });
 });
 
@@ -550,6 +632,7 @@ describe("choices that set two switches", () => {
       snapCurve: 50,
       tuckOnWrite: "off",
       returnToPen: "never",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
@@ -557,6 +640,7 @@ describe("choices that set two switches", () => {
       snapCurve: 50,
       tuckOnWrite: "until-lift",
       returnToPen: "never",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { snapMode: "disabled", snapCurve: 30, returnToPen: "both" });
     expect([settings.snapMode, settings.drawAndHold]).toEqual(["disabled", false]);
@@ -569,9 +653,23 @@ describe("choices that set two switches", () => {
       snapCurve: 30,
       tuckOnWrite: "until-lift",
       returnToPen: "both",
+      highlighterTip: "round",
     });
     storePenPreferences(settings, { tuckOnWrite: "until-tap" });
     expect(settings.tuckPenOptionsOnWrite).toBe("until-tap");
+  });
+
+  it("keeps the highlighter's tip, reading anything but the chisel as round", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(settings.highlighterTip).toBeUndefined();
+    expect(penPreferencesOf(settings).highlighterTip).toBe("round");
+    storePenPreferences(settings, { highlighterTip: "chisel" });
+    expect(settings.highlighterTip).toBe("chisel");
+    expect(penPreferencesOf(settings).highlighterTip).toBe("chisel");
+    storePenPreferences(settings, { highlighterTip: "felt" as never });
+    expect(penPreferencesOf(settings).highlighterTip).toBe("round");
+    expect(highlighterTipOf(undefined)).toBe("round");
+    expect(highlighterTipOf(7)).toBe("round");
   });
 
   it("reads a pen setting a file holds in another shape as its default", () => {
@@ -594,25 +692,30 @@ describe("choices that set two switches", () => {
     expect(settings.tuckPenOptionsOnWrite).toBe("until-lift");
   });
 
-  it("reads and writes Page appearance with the PDF choice folded in", () => {
+  it("keeps PDFs as they are whichever page appearance is picked after (FineNotes#67)", () => {
+    // The reported case: PDFs as they are, then Match Obsidian with Obsidian
+    // dark. When the two were one dropdown, Match Obsidian turned PDFs dark.
     const settings = structuredClone(DEFAULT_SETTINGS);
-    expect(appearanceChoiceOf(settings)).toBe("light");
-    for (const [choice, appearance, invert] of [
-      ["dark", "dark", true],
-      ["dark-pdf-light", "dark", false],
-      ["system", "system", true],
-      ["system-pdf-light", "system", false],
-    ] as const) {
-      storeAppearanceChoice(settings, choice);
-      expect([settings.pageAppearance, settings.invertPdfPages]).toEqual([appearance, invert]);
-      expect(appearanceChoiceOf(settings)).toBe(choice);
+    storeShownValue(settings, "invertPdfPages", false);
+    for (const appearance of ["dark", "system", "light", "system"] as const) {
+      storeShownValue(settings, "pageAppearance", appearance);
+      expect(settings.invertPdfPages).toBe(false);
     }
-    // Light leaves the PDF switch for the next dark choice; light shows as light either way.
-    storeAppearanceChoice(settings, "light");
-    expect([settings.pageAppearance, settings.invertPdfPages]).toEqual(["light", false]);
-    expect(appearanceChoiceOf(settings)).toBe("light");
-    expect(appearanceChoiceOf({ pageAppearance: "sepia" as never, invertPdfPages: false })).toBe(
+    const pdf = { kind: "pdf", path: "Lecture.pdf", page: 0 } as const;
+    const theme = shownPaperTheme(settings, true);
+    expect(theme.night).toBe(true);
+    expect(pageLook(pdf, theme).night).toBe(false);
+  });
+
+  it("shows Page appearance and Dark PDF pages as stored, anything unknown as the default", () => {
+    for (const value of ["light", "dark", "system"] as const) {
+      expect(pageAppearanceOf(value)).toBe(value);
+    }
+    expect(pageAppearanceOf("sepia")).toBe("light");
+    const odd = { ...DEFAULT_SETTINGS, pageAppearance: 3 as never, invertPdfPages: "no" as never };
+    expect([shownValue(odd, "pageAppearance"), shownValue(odd, "invertPdfPages")]).toEqual([
       "light",
-    );
+      true,
+    ]);
   });
 });

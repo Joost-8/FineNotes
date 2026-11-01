@@ -25,19 +25,26 @@ import { type PdfDraw, invertPdfArea } from "../canvas/night";
 import type { BackdropPainter } from "../canvas/renderer";
 import { tilesFor } from "../canvas/pdf-tiles";
 import {
-  PDF_DETAIL_ZOOM,
   boundsMeet,
   detailPdfArea,
+  needsDetail,
+  pageRasterScale,
   visiblePdfArea,
-  type PdfRenderArea,
 } from "../canvas/pdf-raster";
-import type { Bounds, Backdrop, PageGeometry } from "../model/document";
+import type { Bounds, Backdrop, PageGeometry, PdfBackdrop } from "../model/document";
 import {
   type PdfBackdropCache,
   type PdfEntry,
+  type PdfRasterRequest,
   type PdfShownArea,
   quantiseScale,
 } from "./pdf-backdrop";
+
+/**
+ * The share of the cache's soft budget the pages near the view may take
+ * ahead of time: two or three A4 pages at their sharpest, a dozen zoomed out.
+ */
+const NEAR_SHARE = 0.6;
 
 export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter {
   /**
@@ -48,12 +55,13 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
 
   /** `devicePixelRatio * viewScale`, quantised. Part of the PDF cache key. */
   private scale = 1;
-  private pageScale: number | null = null;
   /**
-   * The device scale detail is drawn at while zoomed in past
-   * `PDF_DETAIL_ZOOM`, as of the last settled frame; `null` below it.
+   * The ink tiles' level as of the last settled frame (`null` before the
+   * first): page images are drawn at it exactly where they can be
+   * (`pageRasterScale`), and detail at it where they cannot. A pinch keeps
+   * it until the zoom settles, so no frame of one mints a raster.
    */
-  private detailScale: number | null = null;
+  private level: number | null = null;
   /** Each PDF page's view centre at the last prepare, for the way the view moves. */
   private centres = new Map<string, { x: number; y: number }>();
 
@@ -70,41 +78,55 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   }
 
   /**
-   * What PDF detail to ask for, once per screen paint (never per ink tile).
+   * What PDF work to ask for, once per screen paint (never per ink tile), in
+   * the order it is wanted:
    *
-   * - With the PDF worker running (`usesWorker`): the grid tiles on screen,
-   *   then one row or column ahead the way the view moves, nearest the middle
-   *   first — also while it moves, since rendering them costs this thread
-   *   nothing. Tiles already cached or in flight are not asked for twice.
-   * - Without it (pdf.js on this thread): nothing while the view moves; once
-   *   it rests, one patch of the view plus a margin, unless a cached one
-   *   already covers it.
+   * 1. the page images of the pages on screen;
+   * 2. the page image of the next page a scroll shows (`near`, first);
+   * 3. detail on screen, for the pages that need it (`needsDetail`: their
+   *    page image cannot be as sharp as the tiles);
+   * 4. the other near pages' images, up to {@link NEAR_SHARE} of the cache;
+   * 5. detail just off screen.
+   *
+   * Detail with the PDF worker running (`usesWorker`) is the grid tiles on
+   * screen, then one row or column ahead the way the view moves, nearest the
+   * middle first — also while it moves, since rendering them costs this
+   * thread nothing. Tiles already cached or in flight are not asked for
+   * twice. Without the worker (pdf.js on this thread) no detail is asked
+   * for while the view moves; once it rests, one patch of the view plus a
+   * margin, unless a cached one already covers it. Page images are asked
+   * for either way: a page coming on screen is drawn then anyway, and asked
+   * for sooner it is drawn before it arrives.
+   *
+   * A page that came on screen before its image was asked for showed as
+   * blank paper until pdf.js drew it, on every fast scroll (FineNotes#80);
+   * tiles asked for before the page images made it worse.
    *
    * Mid-zoom (`transient`) nothing is asked for: the level is not settled.
    */
   prepare(
     visible: Array<{ backdrop: Backdrop; geometry: PageGeometry; region: Bounds }>,
     deviceScale: number,
-    zoom: number,
     transient: boolean,
     moving = false,
+    near: Array<{ backdrop: Backdrop; geometry: PageGeometry }> = [],
   ): void {
-    if (!transient || this.pageScale === null)
-      this.pageScale = quantiseScale(
-        deviceScale * Math.min(1, PDF_DETAIL_ZOOM / Math.max(1, zoom)),
-      );
+    if (!transient || this.level === null) this.level = deviceScale;
     if (transient || !this.pdf) return;
     const tiles = this.pdf.usesWorker;
-    if (moving && !tiles) return;
-    this.detailScale = zoom > PDF_DETAIL_ZOOM ? deviceScale : null;
-    const requests: Array<{ path: string; page: number; dprScale: number; area: PdfRenderArea }> =
-      [];
+    const pages: PdfRasterRequest[] = [];
+    const detail: PdfRasterRequest[] = [];
+    const offScreen: PdfRasterRequest[] = [];
     const shown: PdfShownArea[] = [];
     const centres = new Map<string, { x: number; y: number }>();
     for (const { backdrop, geometry, region } of visible) {
       if (backdrop.kind !== "pdf") continue;
-      const view = visiblePdfArea(geometry, region, zoom)?.region;
+      pages.push(this.pageImage(backdrop, geometry, deviceScale));
+      const view = visiblePdfArea(geometry, region, deviceScale)?.region;
       if (!view) continue;
+      // Without the worker a moving view wants no detail: a patch still
+      // drawing (on this thread, in slices between frames) is let go of.
+      if (moving && !tiles) continue;
       const { path, page } = backdrop;
       shown.push({ path, page, dprScale: deviceScale, geometry, region: view });
       if (tiles) {
@@ -115,7 +137,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         centres.set(key, centre);
         const ahead = last ? { x: centre.x - last.x, y: centre.y - last.y } : { x: 0, y: 0 };
         for (const tile of tilesFor(geometry, view, deviceScale, 0, ahead)) {
-          requests.push({
+          (tile.visible ? detail : offScreen).push({
             path,
             page,
             dprScale: deviceScale,
@@ -125,11 +147,51 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         continue;
       }
       if (this.pdf.detailCovers(path, page, deviceScale, geometry, view)) continue;
-      const area = detailPdfArea(geometry, region, zoom);
-      if (area) requests.push({ path, page, dprScale: deviceScale, area });
+      const area = detailPdfArea(geometry, region, deviceScale);
+      if (area) detail.push({ path, page, dprScale: deviceScale, area });
     }
     this.centres = centres;
-    this.pdf.setVisibleRegions(requests, shown);
+    const coming = this.nearImages(near, deviceScale);
+    this.pdf.setVisibleRegions(
+      [...pages, ...coming.slice(0, 1), ...detail, ...coming.slice(1), ...offScreen],
+      shown,
+    );
+  }
+
+  /** The request for a page's image at `level`: the key {@link paint} looks for. */
+  private pageImage(
+    backdrop: PdfBackdrop,
+    geometry: PageGeometry,
+    level: number,
+  ): PdfRasterRequest {
+    // Before it is drawn, so it is drawn as it will be painted.
+    if (backdrop.annotations === false) this.pdf?.skipAnnotations(backdrop.path);
+    return {
+      path: backdrop.path,
+      page: backdrop.page,
+      dprScale: pageRasterScale(geometry, level),
+      area: { geometry },
+    };
+  }
+
+  /** The images of the `near` PDF pages, in order, up to {@link NEAR_SHARE} of the cache. */
+  private nearImages(
+    near: Array<{ backdrop: Backdrop; geometry: PageGeometry }>,
+    level: number,
+  ): PdfRasterRequest[] {
+    const room = (this.pdf?.memoryBudget.soft ?? 0) * NEAR_SHARE;
+    const out: PdfRasterRequest[] = [];
+    let bytes = 0;
+    for (const { backdrop, geometry } of near) {
+      if (backdrop.kind !== "pdf") continue;
+      const scale = pageRasterScale(geometry, level);
+      const cost = geometry.width * scale * geometry.height * scale * 4;
+      // Always the next one, however large.
+      if (out.length > 0 && bytes + cost > room) break;
+      bytes += cost;
+      out.push(this.pageImage(backdrop, geometry, level));
+    }
+    return out;
   }
 
   /**
@@ -164,7 +226,10 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     }
     const draws: PdfDraw[] = [];
     if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
-    const scale = this.pageScale ?? quantiseScale(target?.deviceScale ?? this.scale);
+    const scale =
+      this.level !== null
+        ? pageRasterScale(geometry, this.level)
+        : quantiseScale(target?.deviceScale ?? this.scale);
     const area = { geometry };
     const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
     if (entry) this.paintEntry(ctx, entry, geometry, paper, draws);
@@ -177,15 +242,16 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       else fillPaper(ctx, geometry, paper);
       this.pdf.request(backdrop.path, backdrop.page, scale, area);
     }
-    // Previews/exports never pick up viewport detail. Zoomed in, a tile draws
-    // every cached detail patch that meets it, newest on top, even while the
-    // view moves; around them the page image remains.
+    // Previews/exports never pick up viewport detail. Where the page image
+    // falls short, a tile draws every cached detail patch that meets it,
+    // newest on top, even while the view moves; around them the page image
+    // remains.
     const region = target?.region;
-    if (region && this.detailScale !== null) {
+    if (region && this.level !== null && needsDetail(geometry, this.level)) {
       for (const patch of this.pdf.detailPatches(
         backdrop.path,
         backdrop.page,
-        this.detailScale,
+        this.level,
         geometry,
       )) {
         const { box, canvas } = patch;
@@ -196,6 +262,11 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       }
     }
     if (invert) invertPdfArea(ctx, geometry.width, geometry.height, draws);
+  }
+
+  /** For the diagnostic HUD: see {@link PdfBackdropCache.diagnostics}. */
+  diagnostics(): string {
+    return this.pdf?.diagnostics() ?? "pdf=-";
   }
 
   /** The contract's asynchronous form: waits for the raster. */

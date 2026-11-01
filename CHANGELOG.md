@@ -10,6 +10,120 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
+  on, and it snaps to a clean heart; the Shape tool has one too, after the
+  star.
+- **Arcs, semicircles and pie slices.** Hold at the end of a curve and it
+  snaps to a clean arc of a circle; a near half, quarter or three quarters
+  comes out exact, its ends level when nearly so. A curve closed by two
+  lines to its centre snaps to a slice, and a curve closed by a straight
+  line across (a D) to a semicircle. Only on a hold, so a C or a D written
+  with Auto shape on stays handwriting.
+  FineNotes 2.6 and earlier show these three as ordinary ink.
+- **Domes and right angles.** A curve closed by a straight line across,
+  flatter than a half circle, snaps to a clean dome, its base level when
+  nearly so. Two straight lines meeting at a right angle snap to an exact
+  one, its legs level and upright when nearly so; a checkmark or a written
+  L stays handwriting. FineNotes 2.6 and earlier show both as ordinary ink.
+- **Fold a sticky note away, and type on it**
+  ([#94](https://github.com/Joost-8/FineNotes/issues/94)). A selected
+  note's bar has Fold note: the note shrinks to a small note icon at its
+  corner, as Goodnotes collapses one, and the page under it shows again. A
+  tap on the icon, with the Pencil, a finger or the mouse, opens it where it
+  was. With the Text tool, a tap on a note types on the note itself: the
+  text stays on the paper, turns with it, and moves, copies and deletes
+  with it. FineNotes 2.6 and earlier show a folded note open, and its text
+  as a text box over it.
+- **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
+- **A chisel tip for the highlighter.** Tap the highlighter in hand for its
+  menu and pick the flat tip: a level highlight is then a band of one even
+  height with square ends, as a real chisel marker draws it. Each highlight
+  keeps the tip it was drawn with, on every device and in exported PDFs.
+- **Fill.** A Fill tool (paint bucket) fills the area inside an outline you
+  drew, behind the ink: tap inside a circle, a box or any closed shape. It
+  has its own colour, as the Shape tool does, so picking one leaves the
+  pen's alone. Its pill picks the colour and how far a fill reaches
+  past small gaps in a hand-drawn outline. An area that is not closed is
+  left alone. Tap a filled area again to give it another colour. It waits
+  in More tools until Customize toolbar puts it on the bar.
+- **Scribble to fill.** A scribble inside a closed outline, over nothing to
+  erase, fills that area. It has its own switch in the pen's Pen gestures,
+  beside Scribble to erase.
+- **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
+  tools (or put it on the bar) and drag across what to hide: an opaque strip
+  of tape, in one of six colours and three heights, lies over it. Tap a tape
+  with a finger, or with the Pencil or mouse, to see what is under it; tap
+  again to cover it. The eye in the tape's pill shows or covers every tape
+  on the page, and a covered tape hides typed text under it too. Shown
+  tapes are this view's only: a notebook always opens, syncs and goes to AI
+  with its tapes on. Export as PDF has a tape button to leave every tape
+  out, for an answer sheet. The lasso moves, turns,
+  resizes, recolours and copies a tape like ink, and the eraser takes it off
+  whole. A notebook with a tape opens read-only in FineNotes 2.6 and earlier.
+- **Correct any handwritten word.** Lasso a word and choose Correct in the
+  "…" menu, or hold a finger on it (right-click with a mouse) and tap
+  Correct: the card an underlined word opens comes up for it, underlined or
+  not, and the answer teaches Grape the same way. A page not read yet is
+  read on this device first. Lasso a whole sentence and Correct opens it in
+  one field: every word you change is learnt as a misread of its ink, and
+  a word the reading split or joined is learnt as the whole line. Every
+  correction counts when you teach Grape your handwriting again.
+- **Copy style.** Copy style in a lasso selection's menu takes its ink's
+  look: colour, width, pen or highlighter, and a shape's line, fill and
+  corners. Tap or sweep the Pencil or mouse over other ink to give it the
+  same look, one undo step a sweep, until you pick another tool or close
+  the bar at the bottom. Fingers still scroll.
+- **A Basic calculator.** The calculator's title bar switches between its
+  scientific keys and a pocket calculator laid out as the iPhone's: one big
+  number that shrinks to fit, big round keys, the operator you pressed lit,
+  2 + 3 × 4 = 14, = again repeats the last step, C then AC. Insert puts the
+  sum or its answer on the page, sums go into the notebook's history, and a
+  keyboard types into it (Escape clears, then closes). It opens in the mode
+  you left it in; Scientific until you switch.
+- **Desk colour**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The ⋯ menu
+  of a notebook has a Desk row: the background around the pages is with
+  the pages, light, dark, or a colour of your own. With the pages, dark
+  pages lie on the same grey desk as light ones, so their edges show, and a
+  page too close to it still gets a desk that sets it apart. Dark PDF pages
+  is in the ⋯ menu too, while pages are dark; both left Settings.
+- **Colours on dark pages look as they do on the page.** The pen's
+  swatches, the pen button and the width preview show each colour as dark
+  pages show the ink.
+- **Export on plain paper**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). The grid
+  button in Export as PDF leaves out the paper's lines, grid, dots and
+  texture: ink, text, pictures and PDF pages stay, on the paper's colour.
+  The choice is kept for the next export.
+
+### Changed
+
+- **Joined pages live in the notebook's settings only.** The New notebook
+  dialog no longer asks: join the pages of any notebook, new or old, from
+  its gear under Pages, and set them apart there again. Set apart, each
+  page keeps its own part of what ran over the join.
+- **Zoom box auto-advance is switched in the Zoom box only.** Its row in
+  Settings → Writing is gone; the double-arrow button on the Zoom box's bar
+  turns it on and off as before, and keeps the setting you had. The
+  threshold row's ⓘ says where the button is.
+
+### Fixed
+
+- **PDFs stay as they are when you pick another page appearance**
+  ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
+  appearance and the PDF choice were one list, so picking Match Obsidian
+  after "Dark, PDFs as they are" turned PDFs dark again. They are two
+  choices now, Page appearance in Settings and Dark PDF pages in the ⋯
+  menu, and neither changes the other.
+
+## [2.6.0] - 2026-10-30
+
+Linked shapes and Pencil tilt store something older versions cannot draw:
+a notebook that uses either opens read-only in FineNotes 2.5 and earlier.
+Update FineNotes on every device first.
+
+### Added
+
 - **Drag a lasso selection onto another page.** A selection dragged over
   another page and let go lands there, as one undo step; held near the top
   or bottom of the view, the notebook scrolls under it. Ink, pictures, text
@@ -131,10 +245,82 @@ extracted from the matching section of this file by `release.yml`.
   mouse's middle, back or forward button. A tool can switch on a press or be
   held, back to the tool before when you let go. Each device keeps its own,
   and two actions on one key do nothing until one is changed. A side button
-  recorded here wins over the side button settings.
+  recorded here wins over the side button settings. Thanks to
+  [@volychev](https://github.com/volychev).
+- **The Magnifier's Zoom box**
+  ([#70](https://github.com/Joost-8/FineNotes/pull/70),
+  [#86](https://github.com/Joost-8/FineNotes/pull/86)). Write large in a
+  window while the ink lands small on the page, as in Goodnotes. In Zoom box
+  mode one tap on the Magnifier opens the box on the page you are reading,
+  with the pen still in hand. Drag the frame on the page to move it and its
+  handles to resize it; pinch in the window to magnify. ↵ and auto-advance
+  move the box on, from page to page too. Writing in it is as smooth as on
+  the page, palm rejection included, and in Stylus-only mode a finger in the
+  window moves nothing.
+  Thanks to [@volychev](https://github.com/volychev).
+- **Choose when shapes snap**
+  ([#84](https://github.com/Joost-8/FineNotes/pull/84)). Make shapes, in
+  the pen menu, has three choices: when you hold the pen still (as before),
+  when you lift it too, or off. A slider sets how curved a stroke may be and
+  still become a line or shape, and the pill's Auto shape button switches
+  snapping on lift. Brackets and integral signs written quickly are no
+  longer straightened into lines. Thanks to
+  [@volychev](https://github.com/volychev).
+- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
+  the Pencil flat and the Brush pen paints a wider stroke, up to three times
+  its width, for shading. Held as you write, nothing changes. Only shaded
+  strokes keep the tilt, so other notes stay as they were; an older FineNotes
+  opens a notebook with shaded strokes read-only. The input debug overlay
+  shows what the pen reports.
 
 ### Fixed
 
+- **Sharp PDF pages at every zoom**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Small text and
+  pictures in a PDF looked soft on an iPad, most between about 1.4× and
+  2.5× zoom on an A4 page, and a little even at the zoom a notebook opens
+  at. A PDF page is now drawn at exactly the resolution of the screen, and
+  zoomed in past what one picture of the whole page can hold, the part on
+  screen is drawn sharp on top of it, from whatever zoom that happens at
+  rather than from 2.5×. Those sharp parts come in larger pieces, so a
+  screenful takes about a third of the time it did.
+- **No blank pages on a fast scroll through a PDF**
+  ([#80](https://github.com/Joost-8/FineNotes/issues/80)). Pages came on
+  screen as plain paper, with only the ink on them, until the PDF was drawn
+  half a second or more later. The pages a scroll shows next are now drawn
+  before they arrive, in the order they come, and the pages on screen are
+  drawn before any sharper detail.
+- **Smoother over a PDF.** Moving about a zoomed-in PDF page drew the same
+  parts of the PDF again and again (half of all it drew, in one test), and
+  every frame of a scroll or a page turn changed two screen-sized pictures
+  where one now does, so page turns stutter less.
+- **The eraser keeps up with the pen.** Each move of the eraser drew the
+  whole screen again, and every tile under any stroke it touched from
+  scratch, the PDF and every highlight on it included; a long stroke or a
+  scribbled highlight made each move slower than the pen. Now only what
+  the eraser changed is painted again, once a frame. Measured with the
+  CPU slowed four times: an eraser pass over a page of 845 strokes took a
+  fifth of the time it did, and over thirty stacked highlights a quarter,
+  with a few stutters where there were dozens.
+- **No freeze when a zoom comes to rest, or a PDF page arrives.** Every
+  tile on screen was drawn again in one frame, half a second with stacked
+  highlights on a slow CPU. They are now drawn a few a frame, the last
+  zoom's tiles standing in meanwhile, and a PDF page or its sharper detail
+  arriving paints the ink over it again the same way.
+- **Panning moves the page instead of painting it again** (iPad and
+  Android). The picture of the pages now reaches a little past the screen
+  on every side, and a scroll or pan it still covers moves it as it is;
+  it is painted again only once the view passes its edge. Every frame of a
+  pan used to paint and hand over a screen-sized picture.
+- The debug overlay says what the highlighter did where it came down on a
+  PDF page: which text it snapped to, or why it drew freehand (the page's
+  text not read yet, no text on the page, or the pen beside the text).
+- On an iPad short of memory, a PDF page no longer shows as a missing
+  source when the iPad runs out of room for it: FineNotes frees what is
+  not on screen, keeps fewer pages around from then on, and draws the page
+  again. Older iPads (iPadOS 15 and earlier) and Android tablets with 2 GB
+  or less keep fewer from the start. The debug overlay shows how much PDF
+  memory is in use.
 - Highlighter strokes had darker dots along them on the iPad
   ([#85](https://github.com/Joost-8/FineNotes/issues/85)). The iPad drew
   a wide translucent line darker in places along it; a highlight is now
@@ -144,12 +330,6 @@ extracted from the matching section of this file by `release.yml`.
 - The notebook could scroll by a few pixels in Obsidian when a tool's bar
   along the bottom was tucked away, which narrowed the page by a scrollbar's
   width and changed its zoom a little.
-- **Pencil tilt** (discussion #51). Settings › Advanced › Pencil tilt: hold
-  the Pencil flat and the Brush pen paints a wider stroke, up to three times
-  its width, for shading. Held as you write, nothing changes. Only shaded
-  strokes keep the tilt, so other notes stay as they were; an older FineNotes
-  opens a notebook with shaded strokes read-only. The input debug overlay
-  shows what the pen reports.
 
 ### Changed
 
@@ -200,16 +380,19 @@ extracted from the matching section of this file by `release.yml`.
 - **Turning a selection or a picture settles**
   ([#51](https://github.com/Joost-8/FineNotes/discussions/51)). The rotate
   knob no longer follows every tremor of the pen: a tap or a wobble turns
-  nothing, the turn lands on quarter turns and on level (a tilted shape's
-  longest edge, a picture's own tilt) from several degrees away, and rests
-  lightly on every 15°, free between. A small readout beside the pen shows
-  the angle while you turn.
-  knob, and now two fingers, draw the turn gently toward every 45° of the
-  page (0°, 45°, 90° …), whatever angle the item started at: it slows near
-  a step and goes on through it, never stopping, and let go close to one
-  it lands there exactly, so a shape drawn slightly crooked ends level,
-  never at 89°. A small readout shows the angle on the page while you turn.
-
+  nothing. The knob, and now two fingers, draw the turn gently toward every
+  45° of the page (0°, 45°, 90° …), whatever angle the item started at: it
+  slows near a step and goes on through it, never stopping, and let go
+  close to one it lands there exactly, so a shape drawn slightly crooked
+  ends level, never at 89°. A small readout shows the angle on the page
+  while you turn.
+- **Size marks at true size**
+  ([#76](https://github.com/Joost-8/FineNotes/pull/76)). The pen widths and
+  eraser sizes in the pill and their menus are drawn as large as the ink or
+  the eraser is on the page at the zoom you are at. Zoomed in past what a
+  button can hold, a control's marks shrink together, so the sizes keep
+  their ratios and stay apart. Before, the larger ones were all cut to the
+  same size.
 - **Update reminders.** While a newer FineNotes is out, "Update available"
   comes back under the toolbar's gear every other day until you update, and
   tapping it opens FineNotes' page in Community plugins, where Obsidian's

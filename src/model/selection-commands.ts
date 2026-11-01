@@ -25,6 +25,7 @@ import {
   pageById,
 } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { isBucketFill } from "./fill-region";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
 import { restoreGraph, scaleGraph } from "./graph-element";
@@ -484,6 +485,13 @@ export class ReorientElements implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     const on = elementsOnPage(page, this.elements);
+    // A note's text keeps its place on the note, which stays upright as
+    // the note itself turns: where it stands from the note's corner.
+    const onNote = new Map<TextBoxElement, { note: ImageElement; dx: number; dy: number }>();
+    for (const textBox of on.textBoxes) {
+      const note = on.images.find((image) => image.sticky && image.id === textBox.onSticky);
+      if (note) onNote.set(textBox, { note, dx: textBox.x - note.x, dy: textBox.y - note.y });
+    }
     this.saved = {
       strokes: on.strokes.map((stroke) => {
         const pts = stroke.pts;
@@ -516,6 +524,13 @@ export class ReorientElements implements Command {
       }),
       textBoxes: on.textBoxes.map((textBox) => {
         const { x, y, w } = textBox;
+        const pinned = onNote.get(textBox);
+        if (pinned) {
+          // The images were turned above, so the note is where it now stands.
+          textBox.x = pinned.note.x + pinned.dx;
+          textBox.y = pinned.note.y + pinned.dy;
+          return { textBox, x, y };
+        }
         const h = this.heights?.get(textBox) ?? textBox.h ?? 0;
         const c = reorientPoint(motion, cx, cy, x + w / 2, y + h / 2);
         textBox.x = c.x - w / 2;
@@ -826,7 +841,7 @@ export class AddElements implements Command {
 /** Give selected strokes one colour; undo restores each stroke's own. */
 export class RecolorStrokes implements Command {
   readonly label = "Change colour";
-  private previous: Array<{ stroke: Stroke; color: string }> = [];
+  private previous: Array<{ stroke: Stroke; color: string; fill?: string }> = [];
 
   constructor(
     readonly pageId: string,
@@ -839,14 +854,20 @@ export class RecolorStrokes implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     for (const stroke of present(page.strokes, this.strokes)) {
-      this.previous.push({ stroke, color: stroke.color });
+      // A bucket fill is its colour inside and out: both change.
+      const fill = isBucketFill(stroke) && /^#[0-9a-f]{6}$/i.test(this.color);
+      this.previous.push({ stroke, color: stroke.color, ...(fill ? { fill: stroke.fill } : {}) });
       stroke.color = this.color;
+      if (fill) stroke.fill = this.color.toLowerCase();
     }
   }
 
   invert(doc: InkDocument): void {
     if (!pageById(doc, this.pageId)) return;
-    for (const { stroke, color } of this.previous) stroke.color = color;
+    for (const { stroke, color, fill } of this.previous) {
+      stroke.color = color;
+      if (fill !== undefined) stroke.fill = fill;
+    }
     this.previous = [];
   }
 }
@@ -927,16 +948,18 @@ export function copyElements(
     return copy;
   });
   relinkNoteInk(strokes, owners);
+  const textBoxes = elements.textBoxes.map((textBox) => {
+    const copy = structuredClone(textBox);
+    copy.id = ids.textBox();
+    copy.x += dx;
+    copy.y += dy;
+    return copy;
+  });
+  relinkNoteInk(textBoxes, owners);
   return {
     strokes,
     images,
-    textBoxes: elements.textBoxes.map((textBox) => {
-      const copy = structuredClone(textBox);
-      copy.id = ids.textBox();
-      copy.x += dx;
-      copy.y += dy;
-      return copy;
-    }),
+    textBoxes,
     tables: (elements.tables ?? []).map((table) => {
       const copy = structuredClone(table);
       copy.id = ids.table();

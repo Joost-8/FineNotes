@@ -360,7 +360,7 @@ picture, such as a worksheet you write on; hold the lasso on it and tap
 - **A single page** cannot take more pages until you choose **Convert to
   notebook** in its ⌄ menu in the sidebar.
 
-PDF display uses one cached image per page at ordinary zoom. Above 2.5× zoom, it sharpens only the visible portion, with at most two PDF renders in flight. Old visible-area renders are cancelled and their canvases released when you scroll away; ink and the sidebar keep their existing rendering paths.
+PDF display uses one cached image per page, drawn at the exact resolution of the screen. Zoomed in further than that image can go (about 1.4× for an A4 page on an iPad), it sharpens only the visible portion, with at most two PDF renders in flight. On a device short of memory it keeps fewer pages around. Old visible-area renders are cancelled and their canvases released when you scroll away; ink and the sidebar keep their existing rendering paths.
 
 ### Search, links and export
 

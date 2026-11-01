@@ -95,18 +95,11 @@ describe("width glyphs", () => {
     expect(fitMarks([], 24)).toEqual({ sizes: [], scaled: false });
   });
 
-  it("draw a scaled mark as its hollow outline, the highlighter's as a band's", () => {
-    const ball = swoosh("ball", 10, true);
-    expect(ball).toMatchObject({ dashed: true });
-    expect(ball.strokeWidth).toBeUndefined();
-    expect(widthAt(ball.d, 10)).toBeCloseTo(10, 1);
-    const fountain = swoosh("fountain", 10, true);
-    expect(widthAt(fountain.d, 10)).toBeCloseTo(10, 1);
-    expect(widthAt(fountain.d, 0)).toBeLessThan(3);
-    const band = points(swoosh("highlighter", 8, true).d);
-    const ys = band.map(([, y]) => y);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(8);
-    expect(swoosh("ball", 10).dashed).toBeUndefined();
+  it("draw a shrunk mark as solid ink, at its fitted size", () => {
+    const [, , largest] = fitMarks([30, 60, 120], 24).sizes;
+    expect(swoosh("ball", largest)).toMatchObject({ strokeWidth: 24, cap: "round" });
+    expect(swoosh("highlighter", largest)).toMatchObject({ strokeWidth: 24, cap: "butt" });
+    expect(swoosh("fountain", largest).strokeWidth).toBeUndefined();
   });
 
   it("draw the ballpoint even and the highlighter as a flat, see-through band", () => {

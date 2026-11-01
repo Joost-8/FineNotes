@@ -24,7 +24,8 @@
  * A clean shape is not smoothed: it is its exact centreline at the nib's width.
  */
 
-import { POINT_STRIDE } from "../model/document";
+import { type InkTip, POINT_STRIDE } from "../model/document";
+import { chiselPolygons } from "./chisel";
 import { tiltFactor } from "./tilt";
 
 /** How a pen draws. */
@@ -39,6 +40,11 @@ export interface PenOptions {
    * calligraphy pen writes. Absent: a round nib, the same in every direction.
    */
   nib?: number;
+  /**
+   * A highlighter's flat chisel tip: each run is swept by an upright
+   * rectangle as tall as the line is wide (`ink/chisel.ts`), not a disc.
+   */
+  chisel?: boolean;
 }
 
 /** The narrowest a flat nib writes, as a share of its full width (moving along its edge). */
@@ -63,11 +69,17 @@ export function nibFactor(nib: number, dx: number, dy: number): number {
  * nib at 0.5, 1.6 of it at full. Without, one width. (These are the widths
  * notes have been drawn at since the first release.)
  */
-export function penOptions(size: number, pressure: boolean, nibDegrees?: number): PenOptions {
+export function penOptions(
+  size: number,
+  pressure: boolean,
+  nibDegrees?: number,
+  tip?: InkTip,
+): PenOptions {
   const pen: PenOptions = { size, thinning: pressure ? 0.6 : 0 };
   if (typeof nibDegrees === "number" && Number.isFinite(nibDegrees)) {
     pen.nib = (nibDegrees * Math.PI) / 180;
   }
+  if (tip === "chisel") pen.chisel = true;
   return pen;
 }
 
@@ -88,6 +100,11 @@ export interface InkRun {
   pts: number[];
   /** Join the end back to the start (a closed shape's first corner). */
   closed?: boolean;
+  /**
+   * Swept by a flat chisel tip instead of a round one: filled as the
+   * polygons `chiselPolygons` makes of the polyline, `width` tall.
+   */
+  chisel?: boolean;
 }
 
 /**
@@ -129,9 +146,11 @@ export class InkTracer {
   private pushed = 0;
   private prev: Dab | null = null;
   private last: Dab | null = null;
-  private readonly chain = new RunChain();
+  private readonly chain: RunChain;
 
-  constructor(private readonly pen: PenOptions) {}
+  constructor(private readonly pen: PenOptions) {
+    this.chain = new RunChain(pen.chisel === true);
+  }
 
   /** How many points have been pushed. */
   get length(): number {
@@ -189,7 +208,7 @@ export class InkTracer {
 
   /** The settled runs alone, copied: what no later point can change. */
   settled(): InkRun[] {
-    return this.chain.runs.map((run) => ({ width: run.width, pts: [...run.pts] }));
+    return this.chain.runs.map((run) => ({ ...run, pts: [...run.pts] }));
   }
 
   /**
@@ -246,6 +265,9 @@ interface Dab {
 /** The centreline so far, cut into runs of one width. The last run is open. */
 class RunChain {
   runs: InkRun[] = [];
+
+  /** `chisel`: every run is drawn by a flat chisel tip (`InkRun.chisel`). */
+  constructor(private readonly chisel = false) {}
   /** The open run's half width. */
   private r = 0;
   /** The last point added, and the half width the line had there. */
@@ -255,9 +277,9 @@ class RunChain {
 
   /** A chain that shares the settled runs and has its own copy of the open one. */
   copy(): RunChain {
-    const copy = new RunChain();
+    const copy = new RunChain(this.chisel);
     const open = this.runs[this.runs.length - 1];
-    copy.runs = open ? [...this.runs.slice(0, -1), { width: open.width, pts: [...open.pts] }] : [];
+    copy.runs = open ? [...this.runs.slice(0, -1), { ...open, pts: [...open.pts] }] : [];
     copy.r = this.r;
     copy.lastX = this.lastX;
     copy.lastY = this.lastY;
@@ -268,12 +290,12 @@ class RunChain {
   add({ x, y, r }: Dab): void {
     const open = this.runs[this.runs.length - 1];
     if (!open) {
-      this.runs.push({ width: 2 * r, pts: [x, y] });
+      this.runs.push(this.run(2 * r, [x, y]));
       this.r = r;
     } else if (Math.hypot(x - this.lastX, y - this.lastY) < SAME_POINT) {
       // Wider where it stands: a dot of the new width; narrower: nothing to add.
       if (r > this.r + this.step()) {
-        this.runs.push({ width: 2 * r, pts: [x, y] });
+        this.runs.push(this.run(2 * r, [x, y]));
         this.r = r;
         this.lastR = r;
       }
@@ -293,7 +315,7 @@ class RunChain {
           this.runs[this.runs.length - 1].pts.push(px, py);
         } else {
           // A new width starts where the last run ends, so the two join (round caps).
-          this.runs.push({ width: 2 * pr, pts: [fromX, fromY, px, py] });
+          this.runs.push(this.run(2 * pr, [fromX, fromY, px, py]));
           this.r = pr;
         }
         fromX = px;
@@ -303,6 +325,11 @@ class RunChain {
     this.lastX = x;
     this.lastY = y;
     this.lastR = r;
+  }
+
+  /** A new run of this chain's tip. */
+  private run(width: number, pts: number[]): InkRun {
+    return this.chisel ? { width, pts, chisel: true } : { width, pts };
   }
 
   /** How far the width may drift from the open run's before a new run starts (half widths). */
@@ -341,10 +368,19 @@ export interface PathSink {
 
 /**
  * Trace a run's polyline into `sink`. A single point traces a zero-length
- * line, which a round cap draws as a dot.
+ * line, which a round cap draws as a dot. A chisel run traces the polygons
+ * its tip sweeps (`chiselPolygons`), to be filled rather than stroked.
  */
 export function traceRun(sink: PathSink, run: InkRun): void {
   const { pts } = run;
+  if (run.chisel) {
+    for (const polygon of chiselPolygons(pts, run.width)) {
+      sink.moveTo(polygon[0], polygon[1]);
+      for (let i = 2; i + 1 < polygon.length; i += 2) sink.lineTo(polygon[i], polygon[i + 1]);
+      sink.closePath();
+    }
+    return;
+  }
   if (pts.length < 2) return;
   sink.moveTo(pts[0], pts[1]);
   for (let i = 2; i + 1 < pts.length; i += 2) sink.lineTo(pts[i], pts[i + 1]);

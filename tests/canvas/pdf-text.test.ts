@@ -17,6 +17,7 @@ import {
   rangeRects,
   rangeText,
   selectText,
+  textMarkNote,
   textUnder,
 } from "../../src/canvas/pdf-text";
 
@@ -315,5 +316,28 @@ describe("textUnder", () => {
     const layout = slide();
     expect(textUnder(layout, [{ pts: [400, 400, 0.5, 500, 400, 0.5], size: 20 }])).toBe("");
     expect(textUnder(layout, [{ pts: [], size: 20 }])).toBe("");
+  });
+});
+
+describe("what the highlighter did, for the debug overlay", () => {
+  const layout = layoutText(
+    [item("Insulin resistance and hyperandrogenism", 50, 100)],
+    IDENTITY_PAGE,
+  );
+
+  it("says what it snapped to", () => {
+    const word = selectText(layout, { x: 60, y: 95 }, { x: 200, y: 95 });
+    expect(textMarkNote(layout, word)).toBe('snapped "Insulin resistance"');
+    // A long one is cut at 24 characters.
+    const line = selectText(layout, { x: 60, y: 95 }, { x: 900, y: 95 });
+    expect(textMarkNote(layout, line)).toBe('snapped "Insulin resistance and h…"');
+  });
+
+  it("tells the reasons it drew freehand apart", () => {
+    expect(textMarkNote(null, null)).toBe("text not read yet");
+    expect(textMarkNote(layoutText([], IDENTITY_PAGE), null)).toBe("page has no text");
+    expect(textMarkNote(layout, selectText(layout, { x: 60, y: 600 }, { x: 60, y: 600 }))).toBe(
+      "off the text (1 lines)",
+    );
   });
 });

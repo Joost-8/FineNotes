@@ -434,11 +434,10 @@ describe("the rows", () => {
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
       [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
-      [WRITING, "Zoom box auto-advance", "toggle:zoomBoxAutoAdvance"],
       [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
-      [PAGES, "Page appearance", "render"],
+      [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
@@ -462,6 +461,7 @@ describe("the rows", () => {
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "More", "action"],
+      [AI, "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
@@ -506,9 +506,11 @@ describe("the rows", () => {
     const all = rows(tab);
     expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
     expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
-    expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
+    expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
+    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
+    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {
@@ -517,9 +519,7 @@ describe("the rows", () => {
     expect(words("Start with")).toEqual(
       expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    expect(words("Page appearance")).toEqual(
-      expect.arrayContaining(["dark mode", "dark PDF pages"]),
-    );
+    expect(words("Page appearance")).toEqual(expect.arrayContaining(["dark mode", "night mode"]));
     expect(words("New notebooks go in")).toContain("default folder for new notebooks");
     expect(words("Saved pens")).toEqual(expect.arrayContaining(["number key", "restore defaults"]));
     expect(words("Size and language")).toEqual(
@@ -560,13 +560,15 @@ describe("the rows", () => {
       "until-tap": "Until you tap the pen",
       "until-lift": "Until the pen lifts",
     });
-    expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
+    expect(Object.keys(named(all, "Page appearance").control?.options ?? {})).toEqual([
       "light",
       "dark",
-      "dark-pdf-light",
       "system",
-      "system-pdf-light",
     ]);
+    // Dark PDF pages and Desk live in the notebook's ⋯ menu, not here.
+    expect(all.some((row) => row.def.name === "Dark PDF pages" || row.def.name === "Desk")).toBe(
+      false,
+    );
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
       [LLM_PROVIDER_ID]: providerLabel(LLM_PROVIDER_ID),
@@ -647,7 +649,6 @@ describe("which rows show", () => {
       "Straighten highlighter strokes",
       "Lasso takes what it touches",
       "Zoom box line spacing",
-      "Zoom box auto-advance",
       "Zoom box auto-advance threshold",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
@@ -815,6 +816,20 @@ describe("which rows show", () => {
     expect(shown(blockAfter(all, "Endpoint URL", 1))).toBe(false);
   });
 
+  it("offers skipping compressed providers only for OpenRouter, under the AI section's More", () => {
+    const toggle = "Skip compressed providers";
+    const aiMore = (vendor: Settings["llmVendor"]) => {
+      const all = rows(makeTab(makePlugin({ llmVendor: vendor })).tab);
+      return all.find((r) => r.heading === AI && r.def.name === "More")?.def.desc;
+    };
+    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain(toggle);
+    expect(aiMore("openrouter")).toBe("OpenRouter providers; pictures: service, model and key");
+    for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
+      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
+      expect(aiMore(vendor), vendor).toBe("Pictures: service, model and key");
+    }
+  });
+
   it("offers the OpenRouter connect only for OpenRouter", () => {
     expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain("Connect OpenRouter");
     expect(visibleNames(makePlugin({ llmVendor: "openai" }))).not.toContain("Connect OpenRouter");
@@ -872,16 +887,15 @@ describe("control values", () => {
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
-  it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
+  it("sets Page appearance without touching Dark PDF pages, and redraws notebooks (FineNotes#67)", async () => {
     const plugin = Object.assign(makePlugin({ pageAppearance: "dark", invertPdfPages: false }), {
       applyPageAppearance: vi.fn(() => Promise.resolve()),
     });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Page appearance"));
-    expect(row.dropdowns[0].value).toBe("dark-pdf-light");
-    await row.dropdowns[0].pick("system");
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("pageAppearance", "system");
     expect([plugin.settings.pageAppearance, plugin.settings.invertPdfPages]).toEqual([
       "system",
-      true,
+      false,
     ]);
     expect(plugin.applyPageAppearance).toHaveBeenCalledOnce();
   });
@@ -1679,7 +1693,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(22);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(21);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

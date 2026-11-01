@@ -19,6 +19,8 @@ export interface PenGestures {
   scribbleErase: boolean;
   /** "Erase shapes and highlighter": only while {@link scribbleErase} is on. */
   scribbleErasesAll: boolean;
+  /** Scribble to fill: a scribble inside a closed outline fills it. Its own switch. */
+  scribbleFill: boolean;
   circleLasso: boolean;
 }
 
@@ -26,6 +28,7 @@ export interface PenGestures {
 export const DEFAULT_PEN_GESTURES: Readonly<PenGestures> = {
   scribbleErase: true,
   scribbleErasesAll: false,
+  scribbleFill: true,
   circleLasso: true,
 };
 
@@ -39,6 +42,7 @@ export function penGesturesOf(raw: unknown): PenGestures {
   return {
     scribbleErase: flag("scribbleErase"),
     scribbleErasesAll: flag("scribbleErasesAll"),
+    scribbleFill: flag("scribbleFill"),
     circleLasso: flag("circleLasso"),
   };
 }

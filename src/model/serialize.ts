@@ -34,6 +34,7 @@ import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
 import { liveConnectors, readConnectors } from "./connectors";
+import { isTape } from "./cover-tape";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
@@ -166,6 +167,7 @@ interface StoredStroke {
   radius?: number;
   heads?: { start?: string; end?: string };
   nib?: number;
+  tip?: string;
   t0?: number;
   samples?: number[];
   join?: string;
@@ -209,7 +211,7 @@ interface StoredMeta {
 
 /** A sticky note as stored: its paper carries its ink, in the note's own space. */
 type StoredNote = Omit<ImageElement, "sticky"> & {
-  sticky: { color: string; ink?: StoredStroke[] };
+  sticky: { color: string; folded?: true; ink?: StoredStroke[] };
 };
 
 interface StoredDocument {
@@ -244,6 +246,7 @@ function storeStroke(stroke: Stroke): StoredStroke {
     radius: stroke.radius,
     heads: stroke.heads ? { start: stroke.heads.start, end: stroke.heads.end } : undefined,
     nib: typeof stroke.nib === "number" && Number.isFinite(stroke.nib) ? stroke.nib : undefined,
+    tip: stroke.tip === "chisel" ? "chisel" : undefined,
     // Absent means "unknown", which is not the same as 0 (ledger: clamping
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
@@ -371,7 +374,7 @@ function storeImage(
   const ink = noteInk.get(image.id);
   return {
     ...image,
-    sticky: { color: image.sticky.color, ink: ink?.length ? ink.map(storeStroke) : undefined },
+    sticky: { ...image.sticky, ink: ink?.length ? ink.map(storeStroke) : undefined },
   };
 }
 
@@ -390,6 +393,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
   if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
   if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
+  if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
   return features;
 }
 
@@ -758,7 +762,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
     id: str(raw.id, `s${position + 1}`),
     color: str(raw.color, DEFAULT_INK),
     size: typeof raw.size === "number" && raw.size > 0 ? raw.size : DEFAULT_PEN_SIZE,
-    tool: raw.tool === "highlighter" ? "highlighter" : "pen",
+    tool: raw.tool === "highlighter" || raw.tool === "tape" ? raw.tool : "pen",
     // A bad number becomes 0 rather than being dropped: dropping it would
     // slide every later value into the wrong slot of its point (ledger:
     // substitute, never filter). JSON writes NaN and Infinity as null, which
@@ -777,6 +781,8 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   const heads = readHeads(raw.heads);
   if (heads) stroke.heads = heads;
   if (typeof raw.nib === "number" && Number.isFinite(raw.nib)) stroke.nib = raw.nib;
+  // A tip this build does not know is drawn round.
+  if (raw.tip === "chisel") stroke.tip = "chisel";
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;
@@ -944,6 +950,7 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     color: str(raw.color, DEFAULT_INK),
     fontSize: Math.max(12, num(raw.fontSize, 22)),
     ...normalizeTextStyle(raw),
+    ...(typeof raw.onSticky === "string" ? { onSticky: raw.onSticky } : {}),
   };
 }
 
@@ -1048,7 +1055,12 @@ function normalizePage(
   let lastTextBoxId = maxNumericId(textBoxesRaw, "t");
   textBoxesRaw.forEach((textBox) => {
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
-    if (normalized) textBoxes.push(readJoin(textBox, normalized));
+    if (!normalized) return;
+    // The text of a note that is not on the page is a box of its own.
+    if (normalized.onSticky !== undefined && !noteIds.has(normalized.onSticky)) {
+      delete normalized.onSticky;
+    }
+    textBoxes.push(readJoin(textBox, normalized));
   });
   const tables: TableElement[] = [];
   const tablesRaw = Array.isArray(page.tables) ? page.tables : [];

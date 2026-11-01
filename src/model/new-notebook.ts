@@ -67,8 +67,6 @@ export interface NotebookChoices {
   /** A {@link PAGE_SIZES} id. */
   size: string;
   landscape: boolean;
-  /** "Join pages" (`model/joined-pages.ts`): no gap between them. Ignored for a board. */
-  joined: boolean;
 }
 
 export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
@@ -81,7 +79,6 @@ export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
   paper: "white",
   size: PAGE_SIZES[0].id,
   landscape: false,
-  joined: false,
 };
 
 /**
@@ -115,7 +112,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
   if (typeof r.landscape === "boolean") out.landscape = r.landscape;
-  if (typeof r.joined === "boolean") out.joined = r.joined;
+  // `joined`, remembered by 2.6, is ignored: pages are joined in a
+  // notebook's own settings now (the gear), not when it is made.
   return out;
 }
 
@@ -343,30 +341,6 @@ export function notebookPaths(
   };
 }
 
-/**
- * The folders to create before an imported notebook is written, parents
- * first and each once: its own folder (or its parents, when it has none),
- * and its `Images` folder when it has pictures or other files. The other
- * attachment folders are left out: each is made when a recording, transcript,
- * chat or export is first saved into it. Pure.
- */
-export function importFolders(paths: NotebookPaths, hasAttachments: boolean): string[] {
-  const lazy = new Set(Object.values(paths.attachments ?? {}));
-  const images = paths.attachments?.images;
-  const wanted = paths.folders.filter(
-    (path) => !lazy.has(path) || (path === images && hasAttachments),
-  );
-  const out: string[] = [];
-  for (const folder of wanted) {
-    const parts = normalizeFolder(folder).split("/");
-    for (let i = 1; i <= parts.length; i++) {
-      const path = parts.slice(0, i).join("/");
-      if (path && !out.includes(path)) out.push(path);
-    }
-  }
-  return out;
-}
-
 // --- The new file -----------------------------------------------------------
 
 /**
@@ -435,7 +409,6 @@ export function buildNewDocument(
     doc.endless = true;
     return doc;
   }
-  if (choices.joined === true) doc.joined = true;
   if (choices.cover !== "none") {
     const backdrop = coverBackdrop(choices.cover, choices.coverColor);
     const cover = page("p1", geometry, backdrop);

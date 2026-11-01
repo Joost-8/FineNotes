@@ -67,6 +67,7 @@ import {
   RULER_SNAP_STEPS,
   type RulerKind,
 } from "../canvas/ruler-geometry";
+import { LASER_COLOR } from "../canvas/laser-trail";
 import {
   drawingToolOf,
   optionsAfterSwitch,
@@ -84,14 +85,17 @@ import {
   normalizeLayout,
 } from "./toolbar-layout";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
+import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
+  HEART_ASPECT,
   STAR_INNER_RATIO,
   type ShapeMode,
+  heartPoints,
   isShapeMode,
   starPoints,
 } from "../ink/shape-geometry";
@@ -148,12 +152,14 @@ import {
   penColorRow,
   pickPenColor,
   pushRecentColor,
+  parseHexColor,
   removablePenColor,
   removePenColor,
   reservedPenColors,
   sameColor,
 } from "../model/colors";
 import { bindSwatchDrag } from "./swatch-drag";
+import { shownColor } from "../canvas/backdrop";
 import { bindPenTypeDrag } from "./pen-type-drag";
 import { movePenType, penTypeOrderOf, shownPenTypes } from "../model/pen-type-order";
 import { bindPillDrag } from "./pill-drag";
@@ -215,7 +221,7 @@ import {
 } from "../canvas/lasso";
 import { type EraserFilter, eraserFilterOf } from "../ink/stroke-eraser";
 import { type PenGestures, penGesturesOf } from "../ink/pen-gestures";
-import type { PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
+import type { HighlighterTip, PenPreferences, ReturnToPen, SnapMode } from "../settings-data";
 import {
   MAX_SAVED_PENS,
   type SavedPen,
@@ -230,6 +236,7 @@ import {
   withStabilization,
 } from "../model/pen-stabilization";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { DEFAULT_FILL_COLOR, FILL_GAPS, type FillGap, readFillGap } from "../model/fill-region";
 import { onEnterKey } from "./enter-key";
 import {
   DEFAULT_ARROW_HEADS,
@@ -244,7 +251,17 @@ import {
  * no bar button (FineNotes#25): L, or the pen type menu.
  */
 export type ActiveTool =
-  "pen" | "highlighter" | "eraser" | "select" | "text" | "shape" | "laser" | "pan" | "zoom";
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "select"
+  | "text"
+  | "shape"
+  | "laser"
+  | "pan"
+  | "zoom"
+  | "fill"
+  | "tape";
 
 /**
  * Pen types, as GoodNotes presents them. The highlighter is a pen type there,
@@ -330,6 +347,20 @@ const PILL_ICONS: Partial<Record<ActiveTool, string>> = {
   shape: "shapes",
   pan: "hand",
   zoom: "zoom-in",
+  fill: "paint-bucket",
+};
+
+/** The Fill tool's gap choices: a whole ring, a dashed one, an open one. */
+const FILL_GAP_ICONS: Record<FillGap, string> = {
+  exact: "circle",
+  small: "circle-dashed",
+  large: "loader-circle",
+};
+
+const FILL_GAP_LABELS: Record<FillGap, string> = {
+  exact: "Fill closed outlines only",
+  small: "Fill past small gaps",
+  large: "Fill past wide gaps",
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -430,6 +461,7 @@ const SHAPE_LABELS: Record<ShapeMode, string> = {
   diamond: "Diamond",
   roundrect: "Rounded square",
   star: "Star",
+  heart: "Heart",
   line: "Line: drag from start to end",
   arrow: "Arrow: drag from tail to tip",
   table: "Table",
@@ -524,6 +556,10 @@ export interface ToolbarState {
    * `undefined` counts as off, where every new box fits its text.
    */
   textDragSize?: boolean;
+  /** How far the Fill tool reaches past gaps in an outline. `undefined` counts as "small". */
+  fillGap?: FillGap;
+  /** The Fill tool's own colour. `undefined` counts as {@link DEFAULT_FILL_COLOR}. */
+  fillColor?: string;
   /** The ruler's kind. `undefined` counts as the straight ruler. */
   rulerKind?: RulerKind;
   /** The ruler's angle snapping, degrees, 0 for off. `undefined` counts as 15. */
@@ -536,6 +572,10 @@ export interface ToolbarState {
   zoomBox?: boolean;
   /** A target box and its window are open on the page right now. */
   zoomBoxOpen?: boolean;
+  /** Cover tape's colour (`model/cover-tape`). `undefined` counts as masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. `undefined` counts as the medium height. */
+  tapeHeight?: number;
 }
 
 export interface ToolbarCallbacks {
@@ -548,6 +588,8 @@ export interface ToolbarCallbacks {
   returnToPenOnReselect?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
+  /** The laser pointer's colour changed in its pill. Hosts persist it. */
+  onLaserColorChange?: (color: string) => void;
   onPressureToggle: (enabled: boolean) => void;
   /** Whether pressure pens may widen with pressure (the advanced setting); off when absent. */
   pressureAllowed?: () => boolean;
@@ -628,12 +670,25 @@ export interface ToolbarCallbacks {
   onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
+  /** Cover tape's colour or height changed. Hosts persist it. */
+  onTapeChange?: (color: string, height: number) => void;
+  /**
+   * Whether the cover tapes on the page in view are all shown through, or
+   * `null` when it has none. Without it the tape's pill has no eye.
+   */
+  tapesShown?: () => boolean | null;
+  /** Show every cover tape on the page in view through (`true`), or cover them all. */
+  onShowTapes?: (shown: boolean) => void;
   /** "Header row" for new tables changed. Hosts persist it. */
   onTableHeaderChange?: (on: boolean) => void;
   /** The notebook's palette, offered first in every colour picker. */
   notebookColors?: () => readonly string[];
   /** The Shape tool's style changed. Hosts persist it. */
   onShapeStyleChange?: (style: ShapeToolStyle) => void;
+  /** The Fill tool's gap choice changed. Hosts persist it. */
+  onFillGapChange?: (gap: FillGap) => void;
+  /** The Fill tool's colour changed. Hosts persist it; the pen's stays. */
+  onFillColorChange?: (color: string) => void;
   /** A custom colour was picked: the new recent list. Hosts persist it. */
   onRecentColors?: (colors: string[]) => void;
   /**
@@ -700,6 +755,8 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
+  /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
+  laserColor?: () => string;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -768,6 +825,7 @@ const FOLD_RANK = {
   share: 7,
   zoom: 8.2,
   pan: 8.3,
+  tape: 8.4,
   settings: 8,
   ruler: 8.5,
   shape: 9,
@@ -856,6 +914,8 @@ export class Toolbar {
   private penToolButton: HTMLElement | null = null;
   /** What the pen button last drew, so an unchanged pen is not redrawn. */
   private penPreviewKey = "";
+  /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
+  private night = false;
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
   /** The tier-1 buttons that may fold into ⋯ (`fitBar`), ranked by `FOLD_RANK`. */
@@ -1135,6 +1195,11 @@ export class Toolbar {
     // accessories menu until "Customize toolbar" puts them on the bar.
     tool("pan", "hand", "Hand — move the page");
     tool("zoom", "zoom-in", "Magnifier — zoom");
+    // Off the bar by default too: Customize toolbar puts it there.
+    tool("fill", "paint-bucket", "Fill");
+    // Cover tape: strips over the page that a tap shows through. In the
+    // accessories menu until put on the bar.
+    tool("tape", "bandage", "Cover tape");
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
       const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
@@ -1531,7 +1596,9 @@ export class Toolbar {
               ? FOLD_RANK.pan
               : tool === "zoom"
                 ? FOLD_RANK.zoom
-                : undefined;
+                : tool === "tape"
+                  ? FOLD_RANK.tape
+                  : undefined;
     if (rank !== undefined) {
       this.fold(rank, button, icon, label, (anchor) => this.tapTool(tool, anchor), tool);
     }
@@ -1552,6 +1619,11 @@ export class Toolbar {
   /** The Stylus only button was tapped, on the bar or in a menu. */
   private toggleOnlyStylusMode(): void {
     this.callbacks.onOnlyStylusMode?.(!this.onlyStylusOn);
+  }
+
+  /** The page in view's cover tapes changed or the page did: the tape's pill shows them again. */
+  refreshTape(): void {
+    if (this.state.tool === "tape") this.buildOptions();
   }
 
   /** Show whether Stylus-only mode is on, on the bar and in the folded row that reads it. */
@@ -1839,7 +1911,7 @@ export class Toolbar {
     const button = this.penToolButton;
     if (!button) return;
     const spec = this.activePenType();
-    const color = this.state.color;
+    const color = this.shown(this.state.color);
     const width = strokeWidthFor({ ...this.state, tool: spec.tool });
     const dark = activeDocument.body.hasClass("theme-dark");
     const key = `${spec.id}|${color}|${width}|${dark}`;
@@ -2012,6 +2084,8 @@ export class Toolbar {
       if (this.popoverKind?.startsWith("eraser-") && this.state.tool !== "eraser") {
         this.closePopover();
       }
+      // The laser's picker lives in its pill; a picker opened from its palette closes with it.
+      if (this.popoverKind === "laser-color" && this.state.tool !== "laser") this.closePopover();
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -2034,6 +2108,12 @@ export class Toolbar {
           break;
         case "zoom":
           this.buildZoomOptions();
+          break;
+        case "fill":
+          this.buildFillOptions();
+          break;
+        case "tape":
+          this.buildTapeOptions();
           break;
       }
     }
@@ -2167,7 +2247,7 @@ export class Toolbar {
       const spec = PEN_TYPES.find((type) => type.id === id);
       if (!spec) continue;
       const pen = row.createEl("button", { cls: "goodobsidian-pentype clickable-icon" });
-      pen.append(penGlyph(spec.id, this.inkColorOf(spec)));
+      pen.append(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
       pen.setAttribute("aria-label", spec.label);
       pen.setAttribute("title", spec.label);
       pen.addEventListener("click", () => {
@@ -2526,32 +2606,157 @@ export class Toolbar {
     // itself rather than chrome; everything else comes from Obsidian's vars.
     // The colour only: the `background` shorthand would reset the stylesheet's
     // `background-clip`, which keeps the disc smaller than its target.
-    swatch.setCssStyles({ backgroundColor: color });
+    // On dark pages it is the colour the ink is shown in, as on the page.
+    const shown = this.shown(color);
+    swatch.setCssStyles({ backgroundColor: shown });
     // The chosen swatch wears a ▾ in whichever of dark or white reads on it.
-    swatch.setCssProps({ "--gob-swatch-mark": contrastMark(color) });
+    swatch.setCssProps({ "--gob-swatch-mark": contrastMark(shown) });
     iconOrText(swatch.createSpan({ cls: "goodobsidian-swatch-mark" }), "chevron-down", "▾");
     swatch.setAttr("aria-label", color);
     swatch.addEventListener("click", onPick);
     return swatch;
   }
 
-  /** A tool pill with nothing to set: an icon and one line; the laser's mark is red. */
-  private toolNote(icon: string, text: string, laser = false): void {
+  /** A tool pill with nothing to set: an icon and one line. */
+  private toolNote(icon: string, text: string): void {
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
-    mark.toggleClass("is-laser", laser);
     iconOrText(mark, icon, "");
     note.createSpan({ text });
   }
 
-  /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
+  /**
+   * The laser's pill: what it is and that nothing it draws stays, then the
+   * colour it points with. The colour is one button — a disc of it and a
+   * caret — opening the same picker the Shape tool's colour opens; a laser
+   * has no stroke and no width, so its colour is all it sets.
+   */
   private buildLaserOptions(): void {
-    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved", true);
+    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved");
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const color = this.laserColor();
+    const button = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-color clickable-icon goodobsidian-laser-color",
+    });
+    button.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    caretIn(button);
+    button.setAttribute("aria-label", `Laser colour ${color}`);
+    button.setAttribute("title", "Laser colour");
+    button.addEventListener("click", () =>
+      this.toggleColorPopover("laser-color", button, color, (picked) => this.setLaserColor(picked)),
+    );
+  }
+
+  /** The laser's colour, as the settings have it now (never the icon's: the laser's icon stays grey). */
+  private laserColor(): string {
+    return parseHexColor(this.options?.laserColor?.() ?? "") ?? LASER_COLOR;
+  }
+
+  private setLaserColor(color: string): void {
+    const hex = parseHexColor(color);
+    if (!hex || sameColor(hex, this.laserColor())) return;
+    this.callbacks.onLaserColorChange?.(hex);
+    this.buildOptions();
+    this.syncActive();
+  }
+
+  /**
+   * Cover tape: its colours, its three heights, and an eye that shows the
+   * tapes on the page in view through, or covers them again (lit while they
+   * are shown). A tap on a tape shows or covers that one.
+   */
+  private buildTapeOptions(): void {
+    const color = tapeColorOf(this.state.tapeColor);
+    const height = tapeHeightOf(this.state.tapeHeight);
+    const set = (nextColor: string, nextHeight: number): void => {
+      this.state.tapeColor = nextColor;
+      this.state.tapeHeight = nextHeight;
+      this.callbacks.onTapeChange?.(nextColor, nextHeight);
+      this.buildOptions();
+    };
+    for (const each of TAPE_COLORS) {
+      const swatch = this.swatchButton(this.optionsEl, each, () => set(each, height));
+      swatch.toggleClass("is-active", each === color);
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    TAPE_HEIGHTS.forEach((each, i) => {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
+      });
+      button.append(tapeHeightGlyph(i));
+      const label = TAPE_HEIGHT_LABELS[i] ?? `${each}`;
+      button.setAttribute("aria-label", `Tape height: ${label}`);
+      button.setAttribute("title", label);
+      button.toggleClass("is-active", each === height);
+      button.addEventListener("click", () => set(color, each));
+    });
+    const shownOf = this.callbacks.tapesShown;
+    const show = this.callbacks.onShowTapes;
+    if (!shownOf || !show) return;
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const shown = shownOf();
+    const eye = this.barButton(
+      this.optionsEl,
+      shown ? "eye" : "eye-off",
+      shown ? "Cover the tapes on this page" : "Show the tapes on this page",
+      shown === null
+        ? undefined
+        : () => {
+            show(!shown);
+            this.buildOptions();
+          },
+    );
+    eye.addClass("goodobsidian-tape-eye");
+    eye.toggleClass("is-on", shown === true);
+    eye.setAttribute("aria-pressed", String(shown === true));
+    if (shown === null) eye.setAttribute("title", "No tapes on this page");
   }
 
   /** The hand has nothing to set: its pill says what dragging does with it. */
   private buildPanOptions(): void {
     this.toolNote("hand", "Drag to move the page");
+  }
+
+  /**
+   * The Fill tool: its own colour, as the Shape tool has (a disc and a
+   * caret opening the colour picker; picking leaves the pen's colour
+   * alone), then how far a fill reaches past gaps in a hand-drawn outline,
+   * as a ring with no gap, a dashed one and a ring open wide.
+   */
+  private buildFillOptions(): void {
+    const color = this.state.fillColor ?? DEFAULT_FILL_COLOR;
+    const colorButton = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-color clickable-icon",
+    });
+    colorButton.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    caretIn(colorButton);
+    colorButton.setAttribute("aria-label", `Fill colour ${color}`);
+    colorButton.setAttribute("title", "Fill colour");
+    colorButton.addEventListener("click", () =>
+      this.toggleColorPopover("fill-color", colorButton, color, (picked) => {
+        this.state.fillColor = picked;
+        this.callbacks.onFillColorChange?.(picked);
+        this.buildOptions();
+      }),
+    );
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const gap = readFillGap(this.state.fillGap);
+    for (const choice of FILL_GAPS) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-fill-gap clickable-icon",
+      });
+      iconOrText(button, FILL_GAP_ICONS[choice], FILL_GAP_LABELS[choice]);
+      button.setAttribute("aria-label", FILL_GAP_LABELS[choice]);
+      button.setAttribute("aria-pressed", String(choice === gap));
+      button.toggleClass("is-active", choice === gap);
+      button.addEventListener("click", () => {
+        if (choice === readFillGap(this.state.fillGap)) return;
+        this.state.fillGap = choice;
+        this.callbacks.onFillGapChange?.(choice);
+        this.buildOptions();
+        this.syncActive();
+      });
+    }
   }
 
   /** The magnifier: page zoom or a Zoom box, then its steps and fit. */
@@ -3735,7 +3940,7 @@ export class Toolbar {
           : this.state.color;
       // A shape's outline is one even line, whatever pen is chosen.
       const pen = this.state.tool === "shape" ? "ball" : this.activePenType().id;
-      preview(strokeWidthFor(this.state) * this.previewScales().pen, color, pen);
+      preview(strokeWidthFor(this.state) * this.previewScales().pen, this.shown(color), pen);
     };
     const pick = (width: number): void => {
       this.setWidth(width);
@@ -3820,7 +4025,7 @@ export class Toolbar {
 
   /**
    * One control's width marks (`widthMark`): true size while the thickest
-   * fits the glyph, else shrunk together and dashed (`fitMarks`).
+   * fits the glyph, else shrunk together, still solid (`fitMarks`).
    */
   private widthMarks(widths: readonly number[]): Map<number, SizeMark> {
     return fittedMarks(
@@ -4121,11 +4326,17 @@ export class Toolbar {
     openSettings: () => void,
     openGestures: () => void,
   ): void {
+    // The highlighter's tip, first: its one choice no other pen has.
+    if (this.activePenType().tool === "highlighter" && this.renderHighlighterTip(body)) {
+      body.createDiv({ cls: "goodobsidian-popover-divider" });
+    }
     // The laser pointer has no bar button (FineNotes#25): here, and L.
     const laser = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
     });
-    iconOrText(laser.createSpan({ cls: "goodobsidian-laser-row-icon" }), "pointer", "");
+    laser.toggleClass("is-active", this.state.tool === "laser");
+    const laserIcon = laser.createSpan({ cls: "goodobsidian-laser-row-icon" });
+    iconOrText(laserIcon, "pointer", "");
     laser.createSpan({ text: "Laser pointer" });
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
@@ -4139,6 +4350,41 @@ export class Toolbar {
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.popoverLink(body, "Pen settings", "sliders-horizontal", openSettings);
     this.popoverLink(body, "Pen gestures", "signature", openGestures);
+  }
+
+  /**
+   * The highlighter's tip, round or a flat chisel (`ink/chisel.ts`), as two
+   * symbols in one row. It shapes only the highlights drawn next: each stroke
+   * keeps its own (`Stroke.tip`). False when the host keeps no setting.
+   */
+  private renderHighlighterTip(body: HTMLElement): boolean {
+    const prefs = this.callbacks.penPreferences?.();
+    const save = this.callbacks.onPenPreferences;
+    if (!prefs || !save) return false;
+    const row = body.createDiv({ cls: "goodobsidian-tip-row" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: "Tip" });
+    const tips = row.createDiv({
+      cls: "goodobsidian-segmented is-icons",
+      attr: { role: "radiogroup", "aria-label": "Highlighter tip" },
+    });
+    const choices: ReadonlyArray<[HighlighterTip, string, string]> = [
+      ["round", "Round tip", "circle"],
+      ["chisel", "Chisel tip", "rectangle-vertical"],
+    ];
+    for (const [tip, label, icon] of choices) {
+      const on = prefs.highlighterTip === tip;
+      const button = tips.createEl("button", {
+        cls: "clickable-icon",
+        attr: { role: "radio", "aria-label": label, "aria-checked": String(on) },
+      });
+      iconOrText(button, icon, label);
+      button.toggleClass("is-active", on);
+      button.addEventListener("click", () => {
+        save({ highlighterTip: tip });
+        this.popoverRender?.();
+      });
+    }
+    return true;
   }
 
   /** A row that opens another page of the popover: an icon, its name, and a chevron. */
@@ -4365,7 +4611,8 @@ export class Toolbar {
 
   /**
    * GoodNotes' Pen Gestures page: Make shapes, Scribble to erase
-   * (and whether it takes shapes and highlighter too), and Circle to lasso. The second switch is
+   * (and whether it takes shapes and highlighter too), Scribble to fill and
+   * Circle to lasso. The second switch is
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
@@ -4396,6 +4643,15 @@ export class Toolbar {
     body.createDiv({
       cls: "goodobsidian-popover-hint",
       text: "Erase handwriting and drawings by scribbling over them.",
+    });
+
+    const fill = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(fill, "Scribble to fill", gestures.scribbleFill, (on) =>
+      set({ scribbleFill: on }),
+    );
+    body.createDiv({
+      cls: "goodobsidian-popover-hint",
+      text: "Scribble inside a closed outline to fill it.",
     });
 
     const lasso = body.createDiv({ cls: "goodobsidian-switch-list" });
@@ -5268,7 +5524,7 @@ export class Toolbar {
       if (!button.isConnected) continue;
       const spec = PEN_TYPES.find((type) => type.id === id);
       const glyph = button.querySelector("svg");
-      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.inkColorOf(spec)));
+      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
     }
   }
 
@@ -5295,6 +5551,22 @@ export class Toolbar {
     if (this.optionsVisible) return;
     this.optionsVisible = true;
     this.showOptions(true);
+  }
+
+  /**
+   * Pages are shown dark, or no longer: swatches and pen marks show each
+   * colour as the page shows its ink, while what is picked stays the true one.
+   */
+  setNight(night: boolean): void {
+    if (night === this.night) return;
+    this.night = night;
+    this.buildOptions();
+    this.syncActive();
+  }
+
+  /** `color` as the page shows ink of it. */
+  private shown(color: string): string {
+    return shownColor(color, this.night);
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */
@@ -5394,6 +5666,12 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
     star: () => {
       const tips = starPoints(12, 12.9, 9.6, 9.6 * STAR_INNER_RATIO, -Math.PI / 2);
       const d = tips.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+      add("path", { d: `${d.join(" ")}Z` });
+    },
+    // Likewise the heart.
+    heart: () => {
+      const outline = heartPoints(12, 12.4, 18, 18 * HEART_ASPECT);
+      const d = outline.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
       add("path", { d: `${d.join(" ")}Z` });
     },
     line: () => add("path", { d: "M5 19 19 5" }),
@@ -5547,13 +5825,9 @@ function eraserPreview(
 const POPOVER_ERASER_BOX = 48;
 const PILL_ERASER_BOX = 28;
 
-/**
- * A size mark as drawn: `size` screen px, and whether its control's marks
- * were shrunk together to fit (`fitMarks`), so it is not true size.
- */
+/** A size mark as drawn: `size` screen px, after its control's marks were fitted (`fitMarks`). */
 interface SizeMark {
   size: number;
-  scaled: boolean;
 }
 
 /** Each of `keys` with its mark: `sizes` (screen px) fitted together into `limit`. */
@@ -5563,11 +5837,8 @@ function fittedMarks(
   limit: number,
 ): Map<number, SizeMark> {
   const fit = fitMarks(sizes, limit);
-  return new Map(keys.map((key, i) => [key, { size: fit.sizes[i], scaled: fit.scaled }]));
+  return new Map(keys.map((key, i) => [key, { size: fit.sizes[i] }]));
 }
-
-/** The dashes of a mark that is not true size (`SizeMark.scaled`). */
-const SCALED_DASH = "2.5 2";
 
 /**
  * An eraser-size control: the eraser's footprint at the size it erases
@@ -5593,6 +5864,28 @@ function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
   circle.setAttribute("stroke", "currentColor");
   circle.setAttribute("stroke-width", "1.5");
   svg.append(circle);
+  return svg;
+}
+
+/** What the tape's three heights are called, to screen readers and on hover. */
+const TAPE_HEIGHT_LABELS = ["Narrow", "Medium", "Wide"];
+
+/** A tape height button's mark: a band, taller for each height. */
+function tapeHeightGlyph(index: number): SVGElement {
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 28 24");
+  svg.setAttribute("width", "28");
+  svg.setAttribute("height", "24");
+  svg.setAttribute("aria-hidden", "true");
+  const tall = [5, 9, 15][index] ?? 9;
+  const rect = activeDocument.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("x", "3");
+  rect.setAttribute("y", String(12 - tall / 2));
+  rect.setAttribute("width", "22");
+  rect.setAttribute("height", String(tall));
+  rect.setAttribute("rx", "1");
+  rect.setAttribute("fill", "currentColor");
+  svg.append(rect);
   return svg;
 }
 
@@ -5628,17 +5921,10 @@ function widthGlyph(mark: SizeMark | undefined, pen: string): SVGElement {
   svg.setAttribute("width", String(SWOOSH_WIDTH));
   svg.setAttribute("height", String(SWOOSH_HEIGHT));
   svg.setAttribute("aria-hidden", "true");
-  const shape = swoosh(pen, mark?.size ?? NaN, mark?.scaled);
+  const shape = swoosh(pen, mark?.size ?? NaN);
   const path = activeDocument.createElementNS(SVG_NS, "path");
   path.setAttribute("d", shape.d);
-  if (shape.dashed) {
-    // Shrunk to fit beside larger ones: its outline, dashed, not ink.
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "currentColor");
-    path.setAttribute("stroke-width", "1.25");
-    path.setAttribute("stroke-dasharray", SCALED_DASH);
-    path.setAttribute("stroke-linejoin", "round");
-  } else if (shape.strokeWidth === undefined) {
+  if (shape.strokeWidth === undefined) {
     path.setAttribute("fill", "currentColor");
   } else {
     path.setAttribute("fill", "none");

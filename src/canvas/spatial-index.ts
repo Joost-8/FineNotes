@@ -13,6 +13,7 @@
  */
 
 import { type Bounds, type Stroke, strokeBounds } from "../model/document";
+import { isTape } from "../model/cover-tape";
 
 /** Cell side, in page px: a few words of handwriting. */
 const CELL_SIZE = 256;
@@ -33,10 +34,23 @@ export class SpatialIndex {
 
   constructor(private readonly cell = CELL_SIZE) {}
 
-  /** List a stroke under its bounding box. A stroke without a whole point is not listed. */
+  /**
+   * List a stroke under its bounding box (a cover tape's, its whole band). A
+   * stroke without a whole point is not listed.
+   */
   insert(stroke: Stroke): void {
-    const box = strokeBounds(stroke);
-    if (!box) return;
+    const line = strokeBounds(stroke);
+    if (!line) return;
+    const half = isTape(stroke) && stroke.size > 0 ? stroke.size / 2 : 0;
+    const box =
+      half > 0
+        ? {
+            minX: line.minX - half,
+            minY: line.minY - half,
+            maxX: line.maxX + half,
+            maxY: line.maxY + half,
+          }
+        : line;
     const block = this.blockOf(box);
     this.listed.set(stroke.id, block);
     for (let row = block.top; row <= block.bottom; row++) {
