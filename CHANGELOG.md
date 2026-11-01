@@ -106,6 +106,11 @@ extracted from the matching section of this file by `release.yml`.
   Settings → Writing is gone; the double-arrow button on the Zoom box's bar
   turns it on and off as before, and keeps the setting you had. The
   threshold row's ⓘ says where the button is.
+- **Flicking again while the page coasts speeds it up**
+  ([#110](https://github.com/Joost-8/FineNotes/issues/110)). A quick flick
+  the same way, with a finger, the pen and the Hand tool, or Space held,
+  adds the coasting speed to its own, as on an iPhone, so a long notebook
+  goes by in a few flicks. Before, every flick started again from rest.
 
 ### Fixed
 
