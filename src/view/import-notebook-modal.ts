@@ -331,6 +331,7 @@ export class ImportNotebookModal extends Modal {
             one = await importNotebooks(bytes, picked.name, {
               measurePdf: (pdf) => measurePdfPages(ownBuffer(pdf)),
               rasterizePdf: (pdf) => rasterizePdfFirstPage(pdf),
+              readPdfInk: async (pdf) => (await readPdfPages(pdf)).pages,
               onResult: async (result) => {
                 written.push({ result, file: await this.save(result) });
               },
