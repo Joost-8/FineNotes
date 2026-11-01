@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type ChatTurn,
+  FULL_QUALITY_QUANTIZATIONS,
   assertAlternating,
   buildAskFirstTurn,
   buildAskSystemPrompt,
@@ -115,6 +116,38 @@ describe("buildChatRequest", () => {
     expect(custom.url).toBe("http://localhost:11434/v1/chat/completions");
     expect(custom.headers.authorization).toBeUndefined();
     expect((custom.body as OpenAiBody).messages).toHaveLength(4);
+  });
+
+  it("skips OpenRouter's compressed providers by filtering, never by sorting", () => {
+    const req = buildChatRequest({ ...base, vendor: "openrouter", skipCompressed: true });
+    const { provider, ...rest } = req.body as OpenAiBody & { provider: unknown };
+    // A sort would bypass OpenRouter's own ranking of the providers left.
+    expect(provider).toEqual({ quantizations: [...FULL_QUALITY_QUANTIZATIONS] });
+    // The rest of the body is the same as without it.
+    expect(rest).toEqual(buildChatRequest({ ...base, vendor: "openrouter" }).body);
+  });
+
+  it("accepts fp8 or better and unknown, never a compressed quantization", () => {
+    // Every quantization OpenRouter documents below fp8 (2026-10-31).
+    for (const compressed of ["int4", "int8", "fp4", "mxfp4", "nvfp4", "fp6"]) {
+      expect(FULL_QUALITY_QUANTIZATIONS).not.toContain(compressed);
+    }
+    // Gemini, GPT and Claude have no providers but unknown ones.
+    expect(FULL_QUALITY_QUANTIZATIONS).toContain("unknown");
+  });
+
+  it("sends no provider filter while it is off", () => {
+    const off = buildChatRequest({ ...base, vendor: "openrouter", skipCompressed: false });
+    expect(off.body).not.toHaveProperty("provider");
+    expect(buildChatRequest({ ...base, vendor: "openrouter" }).body).not.toHaveProperty("provider");
+  });
+
+  it("sends the filter to no vendor but OpenRouter, even when it is on", () => {
+    for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
+      const extra = vendor === "custom" ? { baseUrl: "http://localhost:11434/v1" } : {};
+      const body = buildChatRequest({ ...base, ...extra, vendor, skipCompressed: true }).body;
+      expect(JSON.stringify(body), vendor).not.toContain("provider");
+    }
   });
 
   it("builds Gemini generateContent with model turns and a systemInstruction", () => {

@@ -441,6 +441,12 @@ export interface ImageElement {
 export interface StickyPaper {
   /** `#rrggbb`. */
   color: string;
+  /**
+   * Folded away to a small note icon at its top-left corner, as Goodnotes
+   * collapses a note: its ink and text are hidden, and a tap opens it. The
+   * element keeps the open note's frame. Stored only as `true`.
+   */
+  folded?: true;
 }
 
 /** The faintest a picture may be drawn: fainter would be a picture nobody can find. */
@@ -549,6 +555,16 @@ export interface TextBoxElement {
   padding?: number;
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
+  /**
+   * The id of the sticky note this box is the typed text of, as
+   * `Stroke.onSticky` is for its ink (`model/sticky-notes.ts`): drawn with
+   * the note, clipped to it, turned with it and hidden while it is folded,
+   * and moved, copied and deleted with it. Its `x`, `y` and `w` are page px
+   * on the note as it would stand unturned. Stored as it is, in page space,
+   * so a reader that does not know the field keeps the text as a box of its
+   * own. A box whose note is gone is a plain text box.
+   */
+  onSticky?: string;
 }
 
 /** A text box's border: its width in page px and its colour (hex, as `fill`). */

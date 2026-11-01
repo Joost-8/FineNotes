@@ -211,7 +211,7 @@ interface StoredMeta {
 
 /** A sticky note as stored: its paper carries its ink, in the note's own space. */
 type StoredNote = Omit<ImageElement, "sticky"> & {
-  sticky: { color: string; ink?: StoredStroke[] };
+  sticky: { color: string; folded?: true; ink?: StoredStroke[] };
 };
 
 interface StoredDocument {
@@ -374,7 +374,7 @@ function storeImage(
   const ink = noteInk.get(image.id);
   return {
     ...image,
-    sticky: { color: image.sticky.color, ink: ink?.length ? ink.map(storeStroke) : undefined },
+    sticky: { ...image.sticky, ink: ink?.length ? ink.map(storeStroke) : undefined },
   };
 }
 
@@ -950,6 +950,7 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     color: str(raw.color, DEFAULT_INK),
     fontSize: Math.max(12, num(raw.fontSize, 22)),
     ...normalizeTextStyle(raw),
+    ...(typeof raw.onSticky === "string" ? { onSticky: raw.onSticky } : {}),
   };
 }
 
@@ -1054,7 +1055,12 @@ function normalizePage(
   let lastTextBoxId = maxNumericId(textBoxesRaw, "t");
   textBoxesRaw.forEach((textBox) => {
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
-    if (normalized) textBoxes.push(readJoin(textBox, normalized));
+    if (!normalized) return;
+    // The text of a note that is not on the page is a box of its own.
+    if (normalized.onSticky !== undefined && !noteIds.has(normalized.onSticky)) {
+      delete normalized.onSticky;
+    }
+    textBoxes.push(readJoin(textBox, normalized));
   });
   const tables: TableElement[] = [];
   const tablesRaw = Array.isArray(page.tables) ? page.tables : [];
