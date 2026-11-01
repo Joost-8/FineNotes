@@ -153,6 +153,7 @@ export default defineConfig({
         "src/export/page-range.ts",
         "src/search/notebook-search.ts",
         "src/search/hit-strokes.ts",
+        "src/search/pdf-hits.ts",
         "src/search/link-choices.ts",
         "src/util/errors.ts",
       ],

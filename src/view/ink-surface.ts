@@ -270,7 +270,13 @@ import {
   strokeCount,
   type PageComment,
 } from "../model/document";
-import { type TextLayout, type TextSelection, selectText, textUnder } from "../canvas/pdf-text";
+import {
+  type TextLayout,
+  type TextRect,
+  type TextSelection,
+  selectText,
+  textUnder,
+} from "../canvas/pdf-text";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
@@ -1633,7 +1639,13 @@ export class InkSurface {
   /** A box beside each handwritten task, which a tap ticks (2.5). */
   private readonly taskMarks: HTMLElement[] = [];
   /** What the search result last opened found on its page, lit until the page is touched (2.5). */
-  private searchHits: { pageId: string; words: string[][]; boxes: string[] } | null = null;
+  private searchHits: {
+    pageId: string;
+    words: string[][];
+    boxes: string[];
+    /** Printed words of the page's PDF, in page space (#112). */
+    printed: TextRect[];
+  } | null = null;
   private readonly searchMarks: HTMLElement[] = [];
   /** Ink a playing recording has not reached yet, drawn pale (2.5). */
   private fadedStrokes: ReadonlySet<string> = new Set();
@@ -9663,14 +9675,22 @@ export class InkSurface {
 
   /**
    * Light up what a search found on a page (2.5): each word's ink under a
-   * soft highlight, and each text box holding the words, and glide to the
+   * soft highlight, each text box holding the words, and the words printed
+   * on its PDF (`printed`, under the same highlight), and glide to the
    * first of them. They stay until the page is next touched or edited, or
    * another search is opened; `null` puts them out.
    */
-  setSearchHits(pageId: string | null, words: string[][] = [], boxes: string[] = []): void {
+  setSearchHits(
+    pageId: string | null,
+    words: string[][] = [],
+    boxes: string[] = [],
+    printed: TextRect[] = [],
+  ): void {
     const had = this.searchHits !== null;
     this.searchHits =
-      pageId !== null && (words.length > 0 || boxes.length > 0) ? { pageId, words, boxes } : null;
+      pageId !== null && (words.length > 0 || boxes.length > 0 || printed.length > 0)
+        ? { pageId, words, boxes, printed }
+        : null;
     if (!had && !this.searchHits) return;
     for (const view of this.textBoxInputs.values()) {
       view.root.toggleClass(
@@ -9684,10 +9704,11 @@ export class InkSurface {
     const index = this.doc.pages.findIndex((page) => page.id === hits.pageId);
     const page = this.doc.pages[index];
     if (!page) return;
-    // Glide to the first hit: the highest word, or the highest box.
+    // Glide to the first hit: the highest word, box or printed word.
     const tops = [
       ...hits.words.flatMap((ids) => inkBounds(page, ids)?.minY ?? []),
       ...page.textBoxes.filter((box) => hits.boxes.includes(box.id)).map((box) => box.y),
+      ...hits.printed.map((rect) => rect.y),
     ];
     if (tops.length > 0) this.goToPagePoint(index, Math.min(...tops), true);
     // The next press on the page puts them out.
@@ -9697,7 +9718,10 @@ export class InkSurface {
     });
   }
 
-  /** A soft highlight over each word the last search found. Returns how many are shown. */
+  /**
+   * A soft highlight over each word the last search found, handwritten or
+   * printed. Returns how many are shown.
+   */
   private syncSearchMarks(): number {
     let used = 0;
     const hits = this.searchHits;
@@ -9705,9 +9729,11 @@ export class InkSurface {
     const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
     if (hits && box && page) {
       const scale = this.unitScale;
-      for (const ids of hits.words) {
-        const bounds = inkBounds(page, ids);
-        if (!bounds) continue;
+      const marked = [
+        ...hits.words.flatMap((ids) => inkBounds(page, ids) ?? []),
+        ...hits.printed.map((r) => ({ minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h })),
+      ];
+      for (const bounds of marked) {
         let mark = this.searchMarks[used];
         if (!mark) {
           mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-search-mark" });

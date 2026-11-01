@@ -250,6 +250,7 @@ import { coverColorOfDocument, notebookName, renamePlan } from "../model/noteboo
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
+import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
   type PageText,
   collectPageText,
@@ -320,6 +321,8 @@ const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink lo
 const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
 const READ_ONLY_NOTICE_MS = 4000;
+/** PDF pages read for search between refreshes of an open search list (#112). */
+const PDF_SEARCH_BATCH = 8;
 /** How long after a notebook opens "Update available" appears, ms: once the bar is laid out. */
 const UPDATE_TIP_DELAY_MS = 1500;
 
@@ -448,6 +451,8 @@ export class InkView extends TextFileView {
   private pdfCache: PdfBackdropCache | null = null;
   /** The PDF pages' text, for the highlighter that snaps to it and for Copy text. */
   private pdfText: PdfTextCache | null = null;
+  /** PDF pages' printed text for search, by `path:page` (#112). */
+  private readonly pdfSearchText = new Map<string, string>();
   /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
   private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
@@ -1922,10 +1927,12 @@ export class InkView extends TextFileView {
 
   /**
    * The notebook's text, page by page, for searching: its text boxes, the
-   * note's text layer, and the transcript sidecar, beside the note first
-   * (where the server keeps one) and then in the notebook's Transcripts.
+   * note's text layer, the transcript sidecar, beside the note first
+   * (where the server keeps one) and then in the notebook's Transcripts, and
+   * its PDF pages' printed text (#112). With `readPdf` false, only the PDF
+   * text already read is in it ({@link readPdfSearchText} reads the rest).
    */
-  private async notebookTextIndex(): Promise<PageText[]> {
+  private async notebookTextIndex(readPdf = true): Promise<PageText[]> {
     const note = this.file;
     let sidecar: string | null = null;
     const sidecarFile = note
@@ -1941,7 +1948,34 @@ export class InkView extends TextFileView {
       }
     }
     const doc = this.surface?.document ?? this.doc;
-    return collectPageText(doc.pages, readTextSection(this.noteBody), sidecar);
+    if (readPdf) await this.readPdfSearchText(doc.pages);
+    return collectPageText(doc.pages, readTextSection(this.noteBody), sidecar, (page) =>
+      page.backdrop.kind === "pdf"
+        ? this.pdfSearchText.get(`${page.backdrop.path}:${page.backdrop.page}`)
+        : undefined,
+    );
+  }
+
+  /**
+   * Read the printed text of every PDF page not read for search yet, in
+   * page order; `onProgress` hears every few pages, so an open search list
+   * can fill in as they come.
+   */
+  private async readPdfSearchText(pages: readonly Page[], onProgress?: () => void): Promise<void> {
+    const cache = this.pdfText;
+    if (!cache) return;
+    let fresh = 0;
+    for (const page of pages) {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf") continue;
+      const key = `${backdrop.path}:${backdrop.page}`;
+      if (this.pdfSearchText.has(key)) continue;
+      const layout = await cache.layout(backdrop, page.geometry);
+      if (this.pdfText !== cache) return;
+      this.pdfSearchText.set(key, layoutPlainText(layout));
+      if (++fresh % PDF_SEARCH_BATCH === 0) onProgress?.();
+    }
+    if (fresh % PDF_SEARCH_BATCH !== 0) onProgress?.();
   }
 
   /**
@@ -2775,7 +2809,11 @@ export class InkView extends TextFileView {
     // Likewise a PDF: one moved back, or synced in, is read again instead
     // of staying "missing".
     const pdfFileChanged = (path: string): void => {
-      if (/\.pdf$/i.test(path)) this.pdfText?.forget(path);
+      if (/\.pdf$/i.test(path)) {
+        this.pdfText?.forget(path);
+        for (const key of [...this.pdfSearchText.keys()])
+          if (key.startsWith(`${path}:`)) this.pdfSearchText.delete(key);
+      }
       if (!/\.pdf$/i.test(path) || !this.pdfCache?.forget(path)) return;
       this.surface?.repaint();
       this.sidebar?.invalidate();
@@ -3084,13 +3122,19 @@ export class InkView extends TextFileView {
    */
   async openSearch(): Promise<void> {
     if (!this.file || !this.surface) return;
-    const pages = await this.notebookTextIndex();
-    new NotebookSearchModal(this.app, {
+    const pages = await this.notebookTextIndex(false);
+    const modal = new NotebookSearchModal(this.app, {
       index: pages,
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index, query) => void this.showSearchHits(index, query),
-    }).open();
+    });
+    modal.open();
+    // The PDF pages not read yet join the list as they are read (#112).
+    const doc = this.surface.document;
+    void this.readPdfSearchText(doc.pages, () => {
+      void this.notebookTextIndex(false).then((index) => modal.setIndex(index));
+    });
   }
 
   /**
@@ -3122,14 +3166,21 @@ export class InkView extends TextFileView {
       }
     }
     // The page's transcript finds the words this device misread (2.5.2).
-    const transcript = (await this.notebookTextIndex())[index]?.sources
+    const transcript = (await this.notebookTextIndex(false))[index]?.sources
       .filter((source) => source.kind === "handwriting")
       .map((source) => source.text)
       .join("\n");
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
     const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript);
     const { boxes } = pageHits(query, [], page.textBoxes);
-    surface.setSearchHits(page.id, words, boxes);
+    // The PDF's printed words, lit as handwriting is (#112).
+    const backdrop = page.backdrop;
+    const printed =
+      backdrop.kind === "pdf" && this.pdfText
+        ? pdfHitRects(query, await this.pdfText.layout(backdrop, page.geometry))
+        : [];
+    if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+    surface.setSearchHits(page.id, words, boxes, printed);
   }
 
   /**

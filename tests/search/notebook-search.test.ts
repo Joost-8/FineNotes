@@ -131,6 +131,20 @@ describe("searchPages", () => {
     }
   });
 
+  it("searches a PDF page's printed text, after the page's own (#112)", () => {
+    const pages = [page("p1", ["typed note"]), page("p2")];
+    const printed = new Map([[pages[1], ["Fourier transform", "of a Gaussian"].join("\n")]]);
+    const withPdf = collectPageText(pages, null, null, (p) => printed.get(p));
+    const [hit] = searchPages(withPdf, "gaussian");
+    expect(hit.pageIndex).toBe(1);
+    expect(hit.snippets[0]).toMatchObject({ kind: "pdf", match: "Gaussian" });
+    // Words on the page may come from the PDF and a text box together.
+    printed.set(pages[0], "Lecture 4");
+    const both = collectPageText(pages, null, null, (p) => printed.get(p));
+    expect(searchPages(both, "lecture typed").map((h) => h.pageIndex)).toEqual([0]);
+    expect(both[0].sources.map((s) => s.kind)).toEqual(["text", "pdf"]);
+  });
+
   it("searches a source's new text if it changes", () => {
     const changing = collectPageText([page("x", ["first draft"])], null, null);
     expect(searchPages(changing, "draft")).toHaveLength(1);

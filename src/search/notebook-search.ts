@@ -11,7 +11,8 @@
  *   note (or `_transcript.md` in a notebook folder), which uses the same
  *   `<!--goodobsidian-page key hash-->` markers under its own headings.
  *
- * Typed text boxes are searched as they are. Matching ignores case and
+ * Typed text boxes are searched as they are, and so is the printed text of
+ * a PDF page (#112, read with pdf.js by the view). Matching ignores case and
  * accents; every word of the query must be on the page, in any order.
  *
  * PURE: no DOM, no Obsidian.
@@ -22,7 +23,7 @@ import { isFolderNotebook } from "../model/folder-notebook";
 import { OWN_FOLDER_TRANSCRIPTS, inkFileSuffix } from "../model/new-notebook";
 import { pageKeys, parsePageTranscripts } from "../recognition/page-transcripts";
 
-export type SourceKind = "handwriting" | "text";
+export type SourceKind = "handwriting" | "text" | "pdf";
 
 export interface PageSource {
   kind: SourceKind;
@@ -143,12 +144,13 @@ export function transcriptsByKey(markdown: string | null): Map<string, string> {
 /**
  * Collect every page's searchable text: its transcription from the text
  * layer and from the sidecar (both, when both exist and differ), then its
- * text boxes in order.
+ * text boxes in order, then its PDF's printed text (`pdfText`, when read).
  */
 export function collectPageText(
   pages: readonly Page[],
   textLayer: string | null,
   sidecar: string | null,
+  pdfText: (page: Page) => string | undefined = () => undefined,
 ): PageText[] {
   const keys = pageKeys(pages);
   const layer = transcriptsByKey(textLayer);
@@ -162,6 +164,8 @@ export function collectPageText(
     for (const box of page.textBoxes ?? []) {
       if (box.text?.trim()) sources.push({ kind: "text", text: box.text });
     }
+    const printed = pdfText(page);
+    if (printed?.trim()) sources.push({ kind: "pdf", text: printed });
     return { pageIndex, sources };
   });
 }
