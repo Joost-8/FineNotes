@@ -1043,6 +1043,10 @@ export class Toolbar {
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
     this.optionsEl.setAttribute("aria-label", "Tool options");
+    // A finger drag on a bar, the pill or a popover's slider is ours, not
+    // one of Obsidian's swipes, which would open a sidebar (CLAUDE.md).
+    this.barEl.dataset.ignoreSwipe = "true";
+    this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
@@ -4669,6 +4673,7 @@ export class Toolbar {
     // Appended to the host, not to a bar: either bar would clip it.
     const popover = this.host.createDiv({ cls: "goodobsidian-popover" });
     popover.setAttribute("role", "dialog");
+    popover.dataset.ignoreSwipe = "true";
     // Removed with the popover, so its listeners need no disposer.
     this.keepFocus(popover, false);
     const body = popover.createDiv({ cls: "goodobsidian-popover-body" });

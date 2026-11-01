@@ -197,6 +197,8 @@ export class AudioPlayerBar {
       cls: "goodobsidian-player",
       attr: { role: "region", "aria-label": "Recording player" },
     });
+    // Dragging the scrubber must not open one of Obsidian's sidebars.
+    this.el.dataset.ignoreSwipe = "true";
     this.hintEl = this.el.createDiv({
       cls: "goodobsidian-player-hint",
       attr: { "aria-live": "polite" },
