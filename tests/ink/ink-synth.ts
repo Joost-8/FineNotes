@@ -427,3 +427,130 @@ export function retracedLine(
   const drawn = tremor(resample(poly, 1.4), rand, { amplitude: 1.1 });
   return flat(drawn, rand);
 }
+
+// --- Hearts, arcs and sectors (2026-10-30) --------------------------------
+//
+// No real Pencil heart, arc or sector has been traced yet, so these model
+// what the recordings showed of real ink in general (`pencilInk`: Pencil
+// density, tremor, a pen-down hook) plus the ways a hand varies these
+// shapes: lopsided lobes, a shallow or deep cusp, a tilt, a start anywhere
+// round the outline, either direction, and a closing overshoot.
+
+export interface HeartStyle {
+  /** Cusp depth term of the curve (5 is the classic heart; 3 shallow, 7 deep). */
+  cusp?: number;
+  /** Width relative to the classic curve. */
+  wide?: number;
+  /** The right lobe this much wider than the left (fraction). */
+  lopsided?: number;
+  /** Turned from upright, degrees. */
+  tiltDeg?: number;
+  /** Where the pen starts, as a fraction of the way round from the cusp. */
+  start?: number;
+  /** -1 draws the other way round. */
+  direction?: 1 | -1;
+  /** Run on past the start by this fraction of the outline. */
+  overshoot?: number;
+}
+
+/** A heart outline as a hand draws it: the classic curve, varied (about `size` px tall). */
+export function handHeart(cx: number, cy: number, size: number, style: HeartStyle = {}): Pt[] {
+  const k1 = style.cusp ?? 5;
+  const wide = style.wide ?? 1;
+  const lop = style.lopsided ?? 0;
+  const tilt = ((style.tiltDeg ?? 0) * Math.PI) / 180;
+  const s = size / 30;
+  const ring: Pt[] = [];
+  const steps = 240;
+  for (let i = 0; i < steps; i++) {
+    const t = (2 * Math.PI * i) / steps;
+    const sin = Math.sin(t);
+    let x = 16 * sin * sin * sin * wide;
+    if (x > 0) x *= 1 + lop;
+    const y = -(13 * Math.cos(t) - k1 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    ring.push({
+      x: cx + s * (x * Math.cos(tilt) - y * Math.sin(tilt)),
+      y: cy + s * (x * Math.sin(tilt) + y * Math.cos(tilt)),
+    });
+  }
+  let order = style.direction === -1 ? [ring[0], ...ring.slice(1).reverse()] : ring;
+  const k = Math.floor((style.start ?? 0) * steps) % steps;
+  order = order.slice(k).concat(order.slice(0, k));
+  const over = order.slice(0, Math.floor((style.overshoot ?? 0) * steps));
+  return [...order, order[0], ...over];
+}
+
+/**
+ * The other heart people draw: two round lobes (circles of radius `r` whose
+ * centres sit `gap` × r either side of the axis) and two straight sides
+ * running from the lobes to a point `tip` × r below the lobes' centres. From
+ * the cusp, clockwise, closed.
+ */
+export function lobeHeart(
+  cx: number,
+  cy: number,
+  r: number,
+  gap = 0.75,
+  tip = 2.6,
+  tiltDeg = 0,
+): Pt[] {
+  const c = gap * r;
+  const cuspY = -Math.sqrt(Math.max(0, r * r - c * c));
+  const tipPt = { x: 0, y: tip * r };
+  const right = { x: c, y: 0 };
+  const d = Math.hypot(tipPt.x - right.x, tipPt.y - right.y);
+  const toTip = Math.atan2(tipPt.y - right.y, tipPt.x - right.x);
+  // The side leaves the lobe where it is tangent to it, on the outside.
+  const leave = toTip - Math.acos(r / d) + 2 * Math.PI;
+  const from = Math.atan2(cuspY - right.y, 0 - right.x);
+  let end = leave;
+  while (end < from) end += 2 * Math.PI;
+  while (end - from > 2 * Math.PI) end -= 2 * Math.PI;
+  const lobe: Pt[] = [];
+  for (let i = 0; i <= 40; i++) {
+    const a = from + ((end - from) * i) / 40;
+    lobe.push({ x: right.x + r * Math.cos(a), y: right.y + r * Math.sin(a) });
+  }
+  const mirror = lobe.map((p) => ({ x: -p.x, y: p.y })).reverse();
+  const out = [...lobe, tipPt, ...mirror];
+  const a = (tiltDeg * Math.PI) / 180;
+  return out.map((p) => ({
+    x: cx + p.x * Math.cos(a) - p.y * Math.sin(a),
+    y: cy + p.x * Math.sin(a) + p.y * Math.cos(a),
+  }));
+}
+
+/**
+ * A sector as one stroke: from the centre out along a radius, round the arc
+ * (`sweepDeg` from `startDeg`), and back to the centre, with a little
+ * overshoot. `begin` picks where the pen starts: the centre, the arc's
+ * start, or the middle of the arc. A sweep of 180 is a semicircle closed by
+ * its diameter, drawn from one end of the diameter.
+ */
+export function handSector(
+  cx: number,
+  cy: number,
+  r: number,
+  startDeg: number,
+  sweepDeg: number,
+  begin: "centre" | "arc" | "middle" = "centre",
+  overshoot = 0.06,
+): Pt[] {
+  const steps = Math.max(8, Math.round(Math.abs(sweepDeg) / 3));
+  const curve = arc(cx, cy, r, r, startDeg, sweepDeg, steps);
+  const half = Math.abs(sweepDeg) === 180;
+  let loop: Pt[] = half ? [...curve] : [{ x: cx, y: cy }, ...curve];
+  if (begin === "middle") {
+    const k = Math.floor(loop.length / 2);
+    loop = loop.slice(k).concat(loop.slice(0, k));
+  } else if (begin === "arc" && !half) {
+    loop = loop.slice(1).concat(loop.slice(0, 1));
+  }
+  const closed = [...loop, loop[0]];
+  if (!(overshoot > 0)) return closed;
+  const a = closed[0];
+  const b = closed[1];
+  const seg = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const run = Math.min(seg, overshoot * r * 2);
+  return [...closed, { x: a.x + ((b.x - a.x) * run) / seg, y: a.y + ((b.y - a.y) * run) / seg }];
+}
