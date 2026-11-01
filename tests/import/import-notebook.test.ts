@@ -81,6 +81,13 @@ describe("importNotebooks", () => {
     });
     const batch = await importNotebooks(backup, "Backup.zip");
     expect(batch.results.map((r) => r.title)).toEqual(["A", "B", "Maths", "Inner", "Unpacked"]);
+    expect(batch.results.map((r) => r.folder)).toEqual([
+      "Goodnotes",
+      "Goodnotes",
+      "Notability",
+      "nested",
+      undefined,
+    ]);
     expect(batch.failures).toEqual([
       { name: "broken.goodnotes", reason: "It is not a notebook FineNotes can import." },
     ]);
@@ -133,6 +140,75 @@ describe("importNotebooks", () => {
     let nested = goodnotes("Deep");
     for (let i = 0; i < 3; i++) nested = zipSync({ [`level${i}.zip`]: nested }, { level: 0 });
     expect((await importNotebooks(nested, "deep.zip")).results).toEqual([]);
+  });
+
+  it("keeps a backup's folders, packed files and unzipped packages alike", async () => {
+    const packages: Record<string, Uint8Array> = {};
+    for (const [name, data] of Object.entries(unzipSync(goodnotes("Geometry")))) {
+      packages[`Math/Geometry.goodnotes/${name}`] = data;
+    }
+    const backup = zip({
+      "Math/Algebra.goodnotes": goodnotes("Algebra"),
+      "Math/Exams/2025.goodnotes": goodnotes("2025"),
+      "Diary.goodnotes": goodnotes("Diary"),
+      ...packages,
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["Diary", undefined],
+      ["Algebra", "Math"],
+      ["2025", "Math/Exams"],
+      ["Geometry", "Math"],
+    ]);
+  });
+
+  it("leaves out a wrapper folder that holds everything", async () => {
+    const backup = zip({
+      "Goodnotes/University/Math/A.goodnotes": goodnotes("A"),
+      "Goodnotes/University/Physics/B.goodnotes": goodnotes("B"),
+    });
+    const batch = await importNotebooks(backup, "Goodnotes.zip");
+    expect(batch.results.map((r) => r.folder)).toEqual(["Math", "Physics"]);
+    // One notebook in one folder: the folder is the wrapper.
+    const one = await importNotebooks(zip({ "Math/A.goodnotes": goodnotes("A") }), "Math.zip");
+    expect(one.results.map((r) => [r.title, r.folder])).toEqual([["A", undefined]]);
+  });
+
+  it("makes a backup inside a backup a folder of its own, and a zipped notebook not", async () => {
+    const week = zipSync(
+      { "Week 1/A.goodnotes": goodnotes("A"), "Week 1/B.goodnotes": goodnotes("B") },
+      { level: 0 },
+    );
+    const backup = zip({
+      "Math/Week 1.zip": week,
+      "Math/Zipped.zip": goodnotes("Zipped"),
+      "Physics/C.goodnotes": goodnotes("C"),
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["A", "Math/Week 1"],
+      ["B", "Math/Week 1"],
+      ["Zipped", "Math"],
+      ["C", "Physics"],
+    ]);
+  });
+
+  it("skips the resource forks a Mac adds to a zip", async () => {
+    const fork = new Uint8Array([0, 5, 22, 7, 0, 2, 0, 0]);
+    const backup = zip({
+      "Library/Math/A.goodnotes": goodnotes("A"),
+      "Library/Physics/B.goodnotes": goodnotes("B"),
+      "__MACOSX/Library/Math/._A.goodnotes": fork,
+      "Library/Math/._A.goodnotes": fork,
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["A", "Math"],
+      ["B", "Physics"],
+    ]);
   });
 
   it("lists the extensions to pick", async () => {

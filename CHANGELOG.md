@@ -10,6 +10,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Importing a ZIP keeps its folders.** Notebooks from a ZIP of a whole
+  library (a Goodnotes export of several folders, a zipped backup folder)
+  go into the same folders under the folder you import to, instead of all
+  into one. A folder that only wraps everything else is left out, and a ZIP
+  inside the ZIP becomes a folder of its own.
 - **A chisel tip for the highlighter.** Tap the highlighter in hand for its
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight

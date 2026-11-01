@@ -35,6 +35,11 @@ export interface ImportResult {
   app?: string;
   /** The notebook's title in the other app (or the file's name). */
   title: string;
+  /**
+   * Where the notebook sat inside a backup zip, `/` between folders
+   * (`Math/Algebra`), the zip's own wrapper folder left out; absent at its top.
+   */
+  folder?: string;
   /** Ready for `buildInkFile` once its attachment paths are relinked. */
   doc: InkDocument;
   attachments: ImportAttachment[];

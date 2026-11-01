@@ -19,6 +19,10 @@
  *
  * (PDFs need pdf.js, so the dialog reads them with `import/pdf.ts` itself.)
  *
+ * A backup's folders come back on each notebook (`ImportResult.folder`), so
+ * the dialog can rebuild them. A wrapper folder that holds everything is
+ * left out, and a backup zip inside a backup is a folder of its own.
+ *
  * A backup can be gigabytes, so nothing is unpacked up front: the zip's
  * names are listed first, and each notebook's entries are inflated only when
  * that notebook is converted. With `onResult` a notebook is handed over (and
@@ -167,7 +171,7 @@ export async function importNotebooks(
   options: ImportOptions = {},
 ): Promise<ImportBatch> {
   const batch: ImportBatch = { results: [], failures: [] };
-  await fromBytes(bytes, fileName, batch, 0, options);
+  await fromBytes(bytes, fileName, batch, 0, options, []);
   if (batch.results.length === 0 && batch.failures.length === 0 && !options.cancelled?.()) {
     batch.failures.push({
       name: fileName,
@@ -177,13 +181,17 @@ export async function importNotebooks(
   return batch;
 }
 
-/** One file's bytes: a single-file notebook, or a zip to look into. */
+/**
+ * One file's bytes: a single-file notebook, or a zip to look into. `folder`
+ * is where the file sits inside the picked zip, one name per folder.
+ */
 async function fromBytes(
   bytes: Uint8Array,
   fileName: string,
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   const single = SINGLE_FILES.find((format) => safely(() => format.is(bytes)));
   if (single) {
@@ -194,7 +202,7 @@ async function fromBytes(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await deliver(result, batch, options);
+    await deliver(result, folder, batch, options);
     return;
   }
   const names = entryNames(bytes);
@@ -202,7 +210,7 @@ async function fromBytes(
     batch.failures.push({ name: fileName, reason: NOT_A_NOTEBOOK });
     return;
   }
-  await collect(bytes, names, fileName, batch, depth, options);
+  await collect(bytes, names, fileName, batch, depth, options, folder);
 }
 
 /** A zip's entry names, without inflating anything; null when it is not a zip. */
@@ -233,6 +241,7 @@ async function collect(
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   // Whether this zip is itself one notebook: the readers decide from names alone.
   const index: Files = new Map(names.map((name) => [name, EMPTY]));
@@ -256,7 +265,7 @@ async function collect(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await convert(files, fileName, batch, options);
+    await convert(files, fileName, batch, options, folder);
     return;
   }
   if (depth >= MAX_NESTING) return;
@@ -264,8 +273,15 @@ async function collect(
   // A backup: notebooks packed inside as files, or as unzipped package folders.
   // PDFs inside a backup need pdf.js; they are left for the dialog's own PDF path.
   const packed = names
-    .filter((name) => isImportFileName(name) && extensionOf(name) !== "pdf")
+    .filter(
+      (name) => isImportFileName(name) && extensionOf(name) !== "pdf" && !isMacResource(name),
+    )
     .sort();
+  const packages = packageFolders(names.filter((name) => !isMacResource(name)));
+  // A backup inside the picked one is a folder named after it.
+  const here = depth > 0 && baseName(fileName) ? [...folder, baseName(fileName)] : [...folder];
+  const wrapper = wrapperDepth([...packed, ...packages]);
+  const folderOf = (path: string): string[] => [...here, ...path.split("/").slice(wrapper, -1)];
   for (const name of packed) {
     if (options.cancelled?.()) return;
     let inner: Uint8Array | undefined;
@@ -276,17 +292,17 @@ async function collect(
       continue;
     }
     if (!inner || inner.length === 0) continue;
-    await fromBytes(inner, name, batch, depth + 1, options);
+    await fromBytes(inner, name, batch, depth + 1, options, folderOf(name));
   }
-  for (const folder of packageFolders(names)) {
+  for (const pkg of packages) {
     if (options.cancelled?.()) return;
-    const prefix = `${folder}/`;
+    const prefix = `${pkg}/`;
     let files: Files;
     try {
       const entries = readEntries(bytes, (n) => n.startsWith(prefix) && !n.endsWith("/"));
       files = new Map([...entries].map(([n, data]) => [n.slice(prefix.length), data]));
     } catch (e) {
-      batch.failures.push({ name: folder, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({ name: pkg, reason: `It could not be read (${errorText(e)}).` });
       continue;
     }
     if (
@@ -296,9 +312,31 @@ async function collect(
       isFreenotes(files) ||
       safely(() => isRemarkableDocument(files))
     ) {
-      await convert(files, folder, batch, options);
+      await convert(files, pkg, batch, options, folderOf(pkg));
     }
   }
+}
+
+/**
+ * How many leading folders every notebook in a backup shares, as a wrapper
+ * to leave out: `Library/Math/A.goodnotes` and `Library/B.goodnotes` share
+ * one. A notebook at the top of the zip means none.
+ */
+function wrapperDepth(paths: readonly string[]): number {
+  const dirs = paths.map((path) => path.split("/").slice(0, -1));
+  let depth = 0;
+  while (
+    dirs.length > 0 &&
+    dirs.every((dir) => dir.length > depth && dir[depth] === dirs[0][depth])
+  ) {
+    depth++;
+  }
+  return depth;
+}
+
+/** The resource forks a Mac adds to the zips it makes (`__MACOSX/…`, `._X.goodnotes`). */
+function isMacResource(name: string): boolean {
+  return name.startsWith("__MACOSX/") || (name.split("/").pop() ?? "").startsWith("._");
 }
 
 /** Convert one notebook's entries and hand the result over. */
@@ -307,6 +345,7 @@ async function convert(
   fileName: string,
   batch: ImportBatch,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   const title = baseName(fileName);
   let result: ImportResult;
@@ -338,15 +377,17 @@ async function convert(
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
-  await deliver(result, batch, options);
+  await deliver(result, folder, batch, options);
 }
 
-/** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
+/** Hand one converted notebook over: its folder set, PDF pictures made images, then `onResult`. */
 async function deliver(
   result: ImportResult,
+  folder: readonly string[],
   batch: ImportBatch,
   options: ImportOptions,
 ): Promise<void> {
+  if (folder.length > 0) result.folder = folder.join("/");
   await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {
