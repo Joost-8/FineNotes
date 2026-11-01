@@ -254,6 +254,8 @@ import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
   type PageText,
   collectPageText,
+  holdsPhrase,
+  matchText,
   searchPages,
   pageFromSubpath,
   pageInThisNotebook,
@@ -3166,21 +3168,26 @@ export class InkView extends TextFileView {
       }
     }
     // The page's transcript finds the words this device misread (2.5.2).
-    const transcript = (await this.notebookTextIndex(false))[index]?.sources
+    const pageText = (await this.notebookTextIndex(false))[index];
+    const transcript = pageText?.sources
       .filter((source) => source.kind === "handwriting")
       .map((source) => source.text)
       .join("\n");
+    // A page holding the words as typed ("recipe for defining") lights
+    // that phrase, wherever it is, and not each word on its own.
+    const phrase = holdsPhrase(pageText, query);
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript);
-    const { boxes } = pageHits(query, [], page.textBoxes);
+    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript, phrase);
+    const { boxes } = pageHits(query, [], page.textBoxes, phrase);
     // The PDF's printed words, lit as handwriting is (#112).
     const backdrop = page.backdrop;
     const printed =
       backdrop.kind === "pdf" && this.pdfText
-        ? pdfHitRects(query, await this.pdfText.layout(backdrop, page.geometry))
+        ? pdfHitRects(query, await this.pdfText.layout(backdrop, page.geometry), phrase)
         : [];
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-    surface.setSearchHits(page.id, words, boxes, printed);
+    // In a text box, the words themselves light, as in the list.
+    surface.setSearchHits(page.id, words, boxes, printed, (text) => matchText(text, query, phrase));
   }
 
   /**

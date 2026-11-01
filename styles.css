@@ -13077,3 +13077,26 @@ button.goodobsidian-ns-update-mute.clickable-icon {
 .goodobsidian-customize-body button.goodobsidian-customize-reset:disabled {
   color: var(--text-faint);
 }
+
+/* A text box whose words a search found (#112): the box's shown copy, laid
+   exactly over its textarea, stays unseen but for the words, which carry the
+   search mark. A box with links shows its copy anyway, in its own colours. */
+.goodobsidian-page-textbox.has-search-words:not(:focus-within):not(.has-links)
+  .goodobsidian-page-textbox-view {
+  display: block;
+  visibility: hidden;
+}
+
+.goodobsidian-search-word {
+  visibility: visible;
+  border-radius: 3px;
+  color: transparent;
+  background: hsla(var(--interactive-accent-hsl), 0.22);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.goodobsidian-page-textbox.has-links .goodobsidian-search-word {
+  color: inherit;
+}

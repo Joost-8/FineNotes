@@ -10,7 +10,7 @@
  */
 
 import { type TextLayout, type TextRect, rangeRects } from "../canvas/pdf-text";
-import { fold, queryTerms } from "./notebook-search";
+import { fold, matchFolded, queryTerms } from "./notebook-search";
 
 /**
  * The layout's text, one line of the PDF to a line, and for each character
@@ -44,39 +44,31 @@ export function layoutPlainText(layout: TextLayout): string {
 }
 
 /**
- * Where every word of `query` appears in the page's printed text, widened
- * to whole words: one rectangle per line each match covers, in page space,
- * in reading order. Matching folds case and accents, as the search does.
+ * Where `query` appears in the page's printed text, widened to whole words:
+ * the phrase when `phrase` is set ("recipe for definin" lights "Recipe for
+ * defining", across a line break too), else every word of the query. One
+ * rectangle per line each match covers, in page space, in reading order.
+ * Matching folds case and accents, as the search does.
  */
-export function pdfHitRects(query: string, layout: TextLayout): TextRect[] {
-  const terms = queryTerms(query);
-  if (terms.length === 0 || layout.lines.length === 0) return [];
+export function pdfHitRects(query: string, layout: TextLayout, phrase = false): TextRect[] {
+  if (queryTerms(query).length === 0 || layout.lines.length === 0) return [];
   const plain = plainText(layout);
   const folded = fold(plain.text);
-  const byLength = [...terms].sort((a, b) => b.length - a.length);
   const rects: TextRect[] = [];
-  let from = 0;
-  while (from < folded.text.length) {
-    let best: { start: number; end: number } | null = null;
-    for (const term of byLength) {
-      const i = folded.text.indexOf(term, from);
-      if (i >= 0 && (best === null || i < best.start)) best = { start: i, end: i + term.length };
-    }
-    if (!best) break;
-    from = best.end;
-    // Folded → plain text → layout characters; line breaks are skipped.
+  for (const span of matchFolded(folded.text, query, phrase)) {
+    // Folded -> plain text -> layout characters; line breaks are skipped.
     const chars: number[] = [];
-    for (let i = best.start; i < best.end; i++) {
+    for (let i = span.start; i < span.end; i++) {
       const c = plain.at[folded.map[i]];
       if (c !== undefined && c >= 0) chars.push(c);
     }
     if (chars.length === 0) continue;
-    // The whole word lights, as the list already names it: "andro" lights
-    // "androgen". The word ends at a space, a line or punctuation.
-    const line = layout.lines.find((l) => l.start <= chars[0] && chars[0] < l.end);
+    // Whole words light, as the list already names them: "andro" lights
+    // "androgen". A word ends at a space, a line or punctuation.
     let start = Math.min(...chars);
     let end = Math.max(...chars) + 1;
-    while (line && start > line.start && isWordChar(layout.chars[start - 1].ch)) start--;
+    const first = layout.lines.find((l) => l.start <= start && start < l.end);
+    while (first && start > first.start && isWordChar(layout.chars[start - 1].ch)) start--;
     const last = layout.lines.find((l) => l.start < end && end <= l.end);
     while (last && end < last.end && isWordChar(layout.chars[end].ch)) end++;
     rects.push(...rangeRects(layout, { start, end }));

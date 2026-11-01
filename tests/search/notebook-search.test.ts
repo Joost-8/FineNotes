@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Page } from "../../src/model/document";
 import {
   collectPageText,
+  holdsPhrase,
+  matchText,
   fold,
   hasTranscripts,
   pageFromSubpath,
@@ -94,8 +96,12 @@ describe("searchPages", () => {
   it("finds typed text boxes, ignoring case, accents and ligatures", () => {
     const hits = searchPages(index, "eclair FIGURES");
     expect(hits.map((h) => h.pageIndex)).toEqual([2]);
-    // Snippets show the original spelling.
-    expect(hits[0].snippets.map((s) => s.match)).toEqual(["Éclair", "ﬁgures"]);
+    // Snippets show the original spelling; typed in order, the words are one phrase.
+    expect(hits[0].snippets.map((s) => s.match)).toEqual(["Éclair ﬁgures"]);
+    expect(searchPages(index, "figures eclair")[0].snippets.map((s) => s.match)).toEqual([
+      "Éclair",
+      "ﬁgures",
+    ]);
     expect(hits[0].snippets[0].kind).toBe("text");
   });
 
@@ -124,8 +130,8 @@ describe("searchPages", () => {
     try {
       expect(searchPages(fresh, "decy")).toEqual(searchPages(index, "decy"));
       expect(searchPages(fresh, "dec")).toEqual(first);
-      // Only the queries' own characters are folded: "decy" twice, then "dec".
-      expect(normalize.mock.calls.length).toBe(11);
+      // Only the queries' own characters are folded, once a query: "decy", then "dec".
+      expect(normalize.mock.calls.length).toBe(7);
     } finally {
       normalize.mockRestore();
     }
@@ -143,6 +149,33 @@ describe("searchPages", () => {
     const both = collectPageText(pages, null, null, (p) => printed.get(p));
     expect(searchPages(both, "lecture typed").map((h) => h.pageIndex)).toEqual([0]);
     expect(both[0].sources.map((s) => s.kind)).toEqual(["text", "pdf"]);
+  });
+
+  it("puts pages holding the words as typed first, and matches the phrase there", () => {
+    const pages = [
+      page("p1", ["defining a recipe for cake"]),
+      page("p2", ["Recipe for\ndefining subnets: detach each interface"]),
+    ];
+    const phrased = collectPageText(pages, null, null);
+    const hits = searchPages(phrased, "recipe for definin");
+    expect(hits.map((h) => [h.pageIndex, h.phrase, h.count])).toEqual([
+      [1, true, 1],
+      [0, false, 3],
+    ]);
+    // One snippet for the phrase, the line break read as a space.
+    expect(hits[0].snippets.map((s) => s.match)).toEqual(["Recipe for definin"]);
+  });
+
+  it("finds a phrase across punctuation, and names where it is in the original", () => {
+    expect(matchText("Skin-signs, and SKIN signs", "skin signs", true)).toEqual([
+      { start: 0, end: 10 },
+      { start: 16, end: 26 },
+    ]);
+    expect(
+      holdsPhrase(collectPageText([page("x", ["signs skin"])], null, null)[0], "skin signs"),
+    ).toBe(false);
+    // One word is never a phrase.
+    expect(holdsPhrase(collectPageText([page("x", ["skin"])], null, null)[0], "skin")).toBe(false);
   });
 
   it("searches a source's new text if it changes", () => {

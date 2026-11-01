@@ -80,6 +80,18 @@ describe("pdfHitRects", () => {
     expect(pdfHitRects("fourier", { chars: [], lines: [] })).toEqual([]);
   });
 
+  it("lights a phrase as one, across a line break, and only the phrase", () => {
+    const rects = pdfHitRects("transform of a gauss", slide, true);
+    expect(rects.map((r) => Math.round(r.y))).toEqual(
+      [slide.lines[0].top, slide.lines[1].top].map(Math.round),
+    );
+    // The whole of the last word, though only "gauss" was typed.
+    expect(rects[1].x + rects[1].w).toBeCloseTo(slide.lines[1].x1);
+    // "of" alone on the page would light; as part of the phrase it does not light twice.
+    expect(pdfHitRects("transform of", slide, true)).toHaveLength(2);
+    expect(pdfHitRects("gaussian transform", slide, true)).toEqual([]);
+  });
+
   it("does not match across a line break", () => {
     expect(pdfHitRects("transformof", slide)).toEqual([]);
   });

@@ -13,7 +13,9 @@
  *
  * Typed text boxes are searched as they are, and so is the printed text of
  * a PDF page (#112, read with pdf.js by the view). Matching ignores case and
- * accents; every word of the query must be on the page, in any order.
+ * accents; every word of the query must be on the page, in any order. A
+ * page holding the words as typed, one after another (a phrase: "recipe for
+ * defining"), comes first, and there only the phrase is a match.
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -45,8 +47,10 @@ export interface Snippet {
 
 export interface SearchHit {
   pageIndex: number;
-  /** Occurrences of any query word on the page. */
+  /** Occurrences of any query word on the page, or of the phrase on a phrase page. */
   count: number;
+  /** The page holds the query's words as typed, one after another. */
+  phrase: boolean;
   /** The first few, in reading order, with some context. */
   snippets: Snippet[];
 }
@@ -180,9 +184,82 @@ export function queryTerms(query: string): string[] {
   return [...new Set(fold(query).text.split(/\s+/).filter(Boolean))];
 }
 
-/** Pages holding every word of `query`, in page order. */
+/** A run of text, `[start, end)`. */
+export interface TextSpan {
+  start: number;
+  end: number;
+}
+
+/** What may stand between two words of a phrase: spaces, line breaks, punctuation. */
+const BETWEEN_WORDS = String.raw`[^\p{L}\p{N}]+`;
+
+/**
+ * The query as a phrase: its words in the order typed, folded, repeats
+ * kept, any punctuation or line break allowed between them; `null` for a
+ * single word. The first word may end a longer word and the last may start
+ * one, as a single word may be any part of one: "recipe for definin" finds
+ * "Recipe for defining".
+ */
+function phraseOf(query: string): RegExp | null {
+  return parsed(query).phrase;
+}
+
+/**
+ * The query's words and phrase, kept for the last query asked: a search
+ * matches every page and source against the same query, and folding it
+ * again for each counted against a 1,000-page notebook (research/SCALE.md).
+ */
+let lastParsed: { query: string; terms: string[]; phrase: RegExp | null } | null = null;
+
+function parsed(query: string): { terms: string[]; phrase: RegExp | null } {
+  if (lastParsed?.query === query) return lastParsed;
+  const words = fold(query).text.split(/\s+/).filter(Boolean);
+  lastParsed = { query, terms: [...new Set(words)], phrase: buildPhrase(words) };
+  return lastParsed;
+}
+
+function buildPhrase(words: readonly string[]): RegExp | null {
+  if (words.length < 2) return null;
+  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`));
+  return new RegExp(escaped.join(BETWEEN_WORDS), "gu");
+}
+
+/**
+ * Where `query` matches in already-folded text: the phrase, when `phrase`
+ * is set, else every query word (non-overlapping, left to right).
+ */
+export function matchFolded(folded: string, query: string, phrase: boolean): TextSpan[] {
+  const re = phrase ? phraseOf(query) : null;
+  if (!re) return occurrences(folded, parsed(query).terms);
+  re.lastIndex = 0;
+  return [...folded.matchAll(re)].map((m) => ({
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
+}
+
+/** Where `query` matches in `text` (see {@link matchFolded}), as spans of `text` itself. */
+export function matchText(text: string, query: string, phrase: boolean): TextSpan[] {
+  const folded = fold(text);
+  return matchFolded(folded.text, query, phrase).map((span) => ({
+    start: folded.map[span.start],
+    end: span.end < folded.map.length ? folded.map[span.end] : text.length,
+  }));
+}
+
+/** Whether a page holds the query as a phrase, in any one of its texts. */
+export function holdsPhrase(page: PageText | undefined, query: string): boolean {
+  const re = phraseOf(query);
+  if (!re || !page) return false;
+  return page.sources.some((source) => {
+    re.lastIndex = 0;
+    return re.test(foldedOf(source).text);
+  });
+}
+
+/** Pages holding every word of `query`: those holding it as a phrase first, each in page order. */
 export function searchPages(index: readonly PageText[], query: string): SearchHit[] {
-  const terms = queryTerms(query);
+  const { terms } = parsed(query);
   if (terms.length === 0) return [];
   const hits: SearchHit[] = [];
   for (const page of index) {
@@ -190,19 +267,20 @@ export function searchPages(index: readonly PageText[], query: string): SearchHi
     const all = folded.map((f) => f.text).join("\n");
     if (!terms.every((term) => all.includes(term))) continue;
 
+    const phrase = holdsPhrase(page, query);
     let count = 0;
     const snippets: Snippet[] = [];
     for (const f of folded) {
-      for (const range of occurrences(f.text, terms)) {
+      for (const range of matchFolded(f.text, query, phrase)) {
         count++;
         if (snippets.length < MAX_SNIPPETS) {
           snippets.push(snippetAt(f.source, f.map, range.start, range.end));
         }
       }
     }
-    hits.push({ pageIndex: page.pageIndex, count, snippets });
+    hits.push({ pageIndex: page.pageIndex, count, phrase, snippets });
   }
-  return hits;
+  return [...hits.filter((hit) => hit.phrase), ...hits.filter((hit) => !hit.phrase)];
 }
 
 /**
