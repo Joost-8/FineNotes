@@ -48,7 +48,6 @@ import { isSaber, isSaberArchive, readSaber, readSaberArchive } from "./saber";
 import { isSupernote, readSupernote } from "./supernote";
 import { isXournal, readXournal } from "./xournal";
 import { TEMPLATE_EXTENSION, isTemplatePackage, readTemplatePackage } from "./template-package";
-import { cleanTitle } from "../model/new-notebook";
 
 export type { ImportAttachment, ImportResult, ImportSource } from "./import-types";
 export { relinkAttachments } from "./import-types";
@@ -175,7 +174,7 @@ export async function importNotebooks(
   options: ImportOptions = {},
 ): Promise<ImportBatch> {
   const batch: ImportBatch = { results: [], failures: [] };
-  await fromBytes(bytes, fileName, batch, 0, options, "");
+  await fromBytes(bytes, fileName, batch, 0, options);
   if (batch.results.length === 0 && batch.failures.length === 0 && !options.cancelled?.()) {
     batch.failures.push({
       name: fileName,
@@ -185,17 +184,13 @@ export async function importNotebooks(
   return batch;
 }
 
-/**
- * One file's bytes: a single-file notebook, or a zip to look into. `folder`
- * is the folder the file sits in, relative to the picked backup ("" at the top).
- */
+/** One file's bytes: a single-file notebook, or a zip to look into. */
 async function fromBytes(
   bytes: Uint8Array,
   fileName: string,
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
-  folder: string,
 ): Promise<void> {
   const single = SINGLE_FILES.find((format) => safely(() => format.is(bytes)));
   if (single) {
@@ -206,7 +201,7 @@ async function fromBytes(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await deliver(result, batch, options, folder);
+    await deliver(result, batch, options);
     return;
   }
   const names = entryNames(bytes);
@@ -214,49 +209,7 @@ async function fromBytes(
     batch.failures.push({ name: fileName, reason: NOT_A_NOTEBOOK });
     return;
   }
-  await collect(bytes, names, fileName, batch, depth, options, folder);
-}
-
-/**
- * The folder prefix a zip wraps all its entries in when it is named after the
- * zip itself (`Backup.zip` holding `Backup/...`), which is not a folder of the
- * backup; "" when there is no such wrapper.
- */
-function wrapperOf(names: string[], fileName: string): string {
-  const base = baseName(fileName);
-  const prefix = `${base}/`;
-  return base !== "" && names.length > 0 && names.every((name) => name.startsWith(prefix))
-    ? prefix
-    : "";
-}
-
-/**
- * The folder a file at `path` (relative to its zip) is in, joined onto the
- * folder the zip sits in. Every segment is made safe to write as a folder name.
- */
-function childFolder(parent: string, path: string): string {
-  const parts = path.split(/[\\/]/);
-  parts.pop();
-  return folderOf([...parent.split("/"), ...parts]);
-}
-
-/** Characters no file system or Obsidian link accepts in a name. */
-const UNSAFE_FOLDER_CHARS = /[\\:*?"<>|]/g;
-
-/**
- * Folder segments made safe to write: a clean title for each (control
- * characters and runs of spaces out), the unsafe characters turned to "-",
- * and no leading or trailing dots or spaces, so "." and ".." vanish.
- */
-function folderOf(parts: readonly string[]): string {
-  return parts
-    .map((part) =>
-      cleanTitle(part)
-        .replace(UNSAFE_FOLDER_CHARS, "-")
-        .replace(/^[.\s]+|[.\s]+$/g, ""),
-    )
-    .filter((part) => part !== "")
-    .join("/");
+  await collect(bytes, names, fileName, batch, depth, options);
 }
 
 /** A zip's entry names, without inflating anything; null when it is not a zip. */
@@ -287,11 +240,7 @@ async function collect(
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
-  folder: string,
 ): Promise<void> {
-  // The entries' paths without the wrapper folder, which is not a folder of the backup.
-  const wrap = wrapperOf(names, fileName);
-  const inBackup = (name: string): string => name.slice(wrap.length);
   // Whether this zip is itself one notebook: the readers decide from names alone.
   const index: Files = new Map(names.map((name) => [name, EMPTY]));
   // A reMarkable document is told by its `.content` file's JSON, so that one is read.
@@ -315,7 +264,7 @@ async function collect(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await convert(files, fileName, batch, options, folder);
+    await convert(files, fileName, batch, options);
     return;
   }
   if (depth >= MAX_NESTING) return;
@@ -335,17 +284,17 @@ async function collect(
       continue;
     }
     if (!inner || inner.length === 0) continue;
-    await fromBytes(inner, name, batch, depth + 1, options, childFolder(folder, inBackup(name)));
+    await fromBytes(inner, name, batch, depth + 1, options);
   }
-  for (const pkg of packageFolders(names)) {
+  for (const folder of packageFolders(names)) {
     if (options.cancelled?.()) return;
-    const prefix = `${pkg}/`;
+    const prefix = `${folder}/`;
     let files: Files;
     try {
       const entries = readEntries(bytes, (n) => n.startsWith(prefix) && !n.endsWith("/"));
       files = new Map([...entries].map(([n, data]) => [n.slice(prefix.length), data]));
     } catch (e) {
-      batch.failures.push({ name: pkg, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({ name: folder, reason: `It could not be read (${errorText(e)}).` });
       continue;
     }
     if (
@@ -356,7 +305,7 @@ async function collect(
       isFreenotes(files) ||
       safely(() => isRemarkableDocument(files))
     ) {
-      await convert(files, pkg, batch, options, childFolder(folder, inBackup(pkg)));
+      await convert(files, folder, batch, options);
     }
   }
 }
@@ -367,7 +316,6 @@ async function convert(
   fileName: string,
   batch: ImportBatch,
   options: ImportOptions,
-  folder: string,
 ): Promise<void> {
   const title = baseName(fileName);
   let result: ImportResult;
@@ -395,7 +343,7 @@ async function convert(
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
-  await deliver(result, batch, options, folder);
+  await deliver(result, batch, options);
 }
 
 /**
@@ -418,14 +366,12 @@ async function measurePdfs(
   return sizes;
 }
 
-/** Hand one converted notebook over: its folder, PDF pictures made images, then `onResult`. */
+/** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
 async function deliver(
   result: ImportResult,
   batch: ImportBatch,
   options: ImportOptions,
-  folder: string,
 ): Promise<void> {
-  if (folder) result.folder = folder;
   await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {

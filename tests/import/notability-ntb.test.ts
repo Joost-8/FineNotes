@@ -1,7 +1,7 @@
 import fs, { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { unzipSync, zipSync } from "fflate";
+import { zipSync } from "fflate";
 import { PDFDocument } from "pdf-lib";
 import {
   IMPORT_EXTENSIONS,
@@ -24,6 +24,8 @@ import {
   createPageEvent,
   deleteEvent,
   documentEvent,
+  event,
+  f32s,
   insertCharEvent,
   insertStringEvent,
   lineEvent,
@@ -33,7 +35,9 @@ import {
   removeCharsEvent,
   resizeBlockEvent,
   stickyEvent,
+  table,
   textBoxEvent,
+  u8,
 } from "./ntb-builders";
 
 /** A FlatBuffers note with no events: a root table whose field 6 is an empty vector. */
@@ -430,6 +434,128 @@ describe("a note's PDF pages", () => {
   });
 });
 
+describe("a damaged or crafted note", () => {
+  /** A document event with any paper, paper kind, line spacing and font size. */
+  const documentWith = (o: {
+    paper?: [number, number];
+    kind?: number;
+    spacing?: number;
+    font?: number;
+  }) => {
+    const style: Record<number, Uint8Array> = {};
+    if (o.kind !== undefined) style[0] = u8(o.kind);
+    if (o.spacing !== undefined) style[1] = f32s(o.spacing);
+    return event(
+      1,
+      1,
+      table({
+        1: table({ 0: table({ 0: table(style), 3: f32s(...(o.paper ?? [612, 792])) }) }),
+        5: f32s(o.font ?? 12),
+      }),
+    );
+  };
+
+  it("leaves out a thing placed far past the note's pages", () => {
+    const { doc, warnings } = readNotabilityNtb(
+      noteWith(
+        [
+          documentEvent(612, 792),
+          createPageEvent(2, 612, 792),
+          lineEvent(12, 0, [40, 211], [98, 211], 2, 4),
+          lineEvent(13, 1_000_000, [40, 211], [98, 211], 2, 4),
+        ],
+        false,
+      ),
+      "Crafted",
+    );
+    expect(doc.pages).toHaveLength(1);
+    expect(doc.pages[0].strokes).toHaveLength(1);
+    expect(warnings).toContain("1 item placed past the note's last page was left out.");
+  });
+
+  it("still takes a page just past the ones the note makes", () => {
+    const { doc, warnings } = readNotabilityNtb(
+      noteWith(
+        [
+          documentEvent(612, 792),
+          createPageEvent(2, 612, 792),
+          lineEvent(12, 2, [40, 211], [98, 211], 2, 4),
+        ],
+        false,
+      ),
+      "Margin",
+    );
+    expect(doc.pages).toHaveLength(3);
+    expect(doc.pages[2].strokes).toHaveLength(1);
+    expect(warnings.join(" ")).not.toContain("left out");
+  });
+
+  it("keeps the paper, its line spacing and the font size within bounds", () => {
+    const { doc } = readNotabilityNtb(
+      noteWith(
+        [
+          documentWith({ paper: [612, 1e9], spacing: 1e9, font: 1e9 }),
+          insertStringEvent(5, "Huge", null, null),
+        ],
+        false,
+      ),
+      "Huge",
+    );
+    expect(doc.pages).toHaveLength(1);
+    const { width, height } = doc.pages[0].geometry;
+    expect(height / width).toBeLessThanOrEqual(10_000 / 612 + 0.01);
+    const backdrop = doc.pages[0].backdrop;
+    expect(backdrop.kind).toBe("ruled-wide");
+    if (backdrop.kind !== "pdf")
+      expect(backdrop.spacing).toBeLessThanOrEqual(400 * (1053 / 612) + 0.01);
+    for (const box of doc.pages[0].textBoxes) {
+      expect(box.fontSize).toBeLessThanOrEqual(400 * (1053 / 612) + 0.01);
+    }
+  });
+
+  it("reads graph paper as squared, and other paper kinds as lines", () => {
+    const backdropOf = (kind?: number) =>
+      readNotabilityNtb(noteWith([documentWith({ kind, spacing: 36 })], false), "Paper").doc
+        .pages[0].backdrop;
+    expect(backdropOf(2).kind).toBe("squared");
+    expect(backdropOf(undefined).kind).toBe("ruled-wide");
+    expect(backdropOf(7).kind).toBe("ruled-wide");
+  });
+});
+
+describe("a real .ntb note (Notability 16, shared by the PR's author)", () => {
+  // Handwritten "Hello / this is a test" over the typed line "Hello this is a test",
+  // on blank Letter paper. Checked against the note's own thumbnail.png.
+  const bytes = new Uint8Array(readFileSync(join(__dirname, "fixtures", "notability-hello.ntb")));
+
+  it("brings over the handwriting and the typed line on one blank page", async () => {
+    const batch = await importNotebooks(bytes, "Note 1 Nov 2026.ntb");
+    expect(batch.failures).toEqual([]);
+    const [result] = batch.results;
+    expect(result.title).toBe("Note 1 Nov 2026");
+    expect(result.warnings).toEqual([]);
+    const [page] = result.doc.pages;
+    expect(result.doc.pages).toHaveLength(1);
+    expect(page.backdrop.kind).toBe("blank");
+    expect(page.strokes).toHaveLength(24);
+    expect(page.textBoxes.map((box) => box.text)).toEqual(["Hello this is a test"]);
+  });
+
+  it("puts the typed line under the handwriting, as the thumbnail shows", async () => {
+    const [result] = (await importNotebooks(bytes, "Note.ntb")).results;
+    const [page] = result.doc.pages;
+    const inkBottom = Math.max(...page.strokes.flatMap((s) => s.pts.filter((_, i) => i % 3 === 1)));
+    const inkLeft = Math.min(...page.strokes.flatMap((s) => s.pts.filter((_, i) => i % 3 === 0)));
+    const [box] = page.textBoxes;
+    // Thumbnail (850 px wide): ink from x 250, its bottom at y 160, the line at y 172.
+    const k = page.geometry.width / 850;
+    expect(inkLeft / k).toBeGreaterThan(235);
+    expect(inkLeft / k).toBeLessThan(265);
+    expect(box.y).toBeGreaterThan(inkBottom - 10 * k);
+    expect(Math.abs(box.x - inkLeft)).toBeLessThan(15 * k);
+  });
+});
+
 describe("importing .ntb files", () => {
   it("registers the extension for the picker and drag-and-drop", () => {
     expect(IMPORT_EXTENSIONS).toContain("ntb");
@@ -522,27 +648,6 @@ describe.skipIf(!process.env.NTB_ZIP)("a whole .ntb export (NTB_ZIP)", () => {
     const bytes = new Uint8Array(readFileSync(process.env.NTB_ZIP ?? ""));
     const batch = await importNotebooks(bytes, "export.zip", { measurePdf: measure });
     const lines: string[] = [];
-    // Every notebook keeps the folder it had in the export: the folders holding its .ntb file.
-    const sources = new Set<string>();
-    unzipSync(bytes, {
-      filter: (file) => {
-        const match = /^(.*?)\/?[^/]*\.ntb(?:\/|$)/i.exec(file.name);
-        if (match) sources.add(match[1]);
-        return false;
-      },
-    });
-    const folders = new Map<string, number>();
-    for (const r of batch.results) {
-      folders.set(r.folder ?? "", (folders.get(r.folder ?? "") ?? 0) + 1);
-    }
-    expect(batch.results.every((r) => !!r.folder && sources.has(r.folder))).toBe(true);
-    lines.push(`folders: ${folders.size} distinct`);
-    for (const [folder, n] of [...folders].sort(([a], [b]) => a.localeCompare(b))) {
-      lines.push(`FOLDER ${n} ${folder}`);
-    }
-    console.log(
-      lines.filter((line) => line.startsWith("folders") || line.startsWith("FOLDER")).join("\n"),
-    );
     for (const r of batch.results) {
       const pages = r.doc.pages;
       const strokes = pages.reduce((n, p) => n + p.strokes.length, 0);
@@ -570,7 +675,7 @@ describe.skipIf(!process.env.NTB_ZIP)("a whole .ntb export (NTB_ZIP)", () => {
     const counts = new Map<string, number>();
     for (const r of batch.results)
       for (const w of r.warnings) {
-        const key = w.replace(/d+/g, "N");
+        const key = w.replace(/\d+/g, "N");
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
     lines.push(`imported ${batch.results.length}, failed ${batch.failures.length}`);

@@ -138,6 +138,31 @@ const DEFAULT_TEXT_TOP = 3;
 /** Line spacing when the paper has none (document units). */
 const DEFAULT_LINE_SPACING = 20;
 
+/**
+ * Bounds on what a note's file may say, so a corrupt or crafted one cannot
+ * build a page or a text run large enough to run out of memory: the paper's
+ * sides and its line spacing (document units), a font size, and a paragraph's
+ * line spacing multiplier.
+ */
+const PAPER_MIN = 100;
+const PAPER_MAX = 10_000;
+const LINE_SPACING_MIN = 4;
+const LINE_SPACING_MAX = 400;
+const FONT_SIZE_MIN = 1;
+const FONT_SIZE_MAX = 400;
+const LINE_SPACING_MULTIPLIER_MAX = 10;
+
+/**
+ * Pages past the last one the note itself makes (CreatePage events, the PDF's
+ * pages, the typed text's run) that a thing may still sit on; one further out
+ * is corrupt and left out. And no note has more pages than `MAX_PAGES`.
+ */
+const PAGE_MARGIN = 2;
+const MAX_PAGES = 5_000;
+
+/** The paper kind (`paperStyle.0`) of graph paper. */
+const PAPER_GRID = 2;
+
 /** The colour of a ruled paper's lines. */
 const RULE_COLOUR = "#a3b7d3";
 
@@ -577,6 +602,8 @@ interface Note {
   paperWidth: number;
   paperHeight: number;
   lineSpacing: number | undefined;
+  /** Whether the paper's lines run both ways (graph paper), when it has lines. */
+  grid: boolean;
   defaultStyle: Style;
   curves: Curve[];
   pictures: Picture[];
@@ -788,6 +815,7 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
   let paperWidth = DEFAULT_PAPER_WIDTH;
   let paperHeight = DEFAULT_PAPER_HEIGHT;
   let lineSpacing: number | undefined;
+  let grid = false;
   const style = defaultStyle();
   const curves: Curve[] = [];
   const pictures: Picture[] = [];
@@ -817,19 +845,26 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
         if (fontName) style.fontName = fontName;
         const sizeField = flat.field(payload, 5);
         const size = sizeField === null ? null : flat.f32(sizeField);
-        if (size !== null && Number.isFinite(size) && size > 0) style.fontSize = size;
+        if (size !== null && Number.isFinite(size) && size > 0)
+          style.fontSize = clampFontSize(size);
         const paperRef = flat.offsetField(payload, 1);
         const paper = paperRef === null ? null : flat.offsetField(paperRef, 0);
         if (paper !== null) {
           const dims = flat.pairField(paper, 3);
           if (dims && [...dims].every((v) => Number.isFinite(v) && v > 0)) {
-            paperWidth = dims[0];
-            paperHeight = dims[1];
+            paperWidth = clamp(dims[0], PAPER_MIN, PAPER_MAX);
+            paperHeight = clamp(dims[1], PAPER_MIN, PAPER_MAX);
           }
           const paperStyle = flat.offsetField(paper, 0);
           const spacingField = paperStyle === null ? null : flat.field(paperStyle, 1);
           const spacing = spacingField === null ? null : flat.f32(spacingField);
-          if (spacing !== null && Number.isFinite(spacing) && spacing > 0) lineSpacing = spacing;
+          if (spacing !== null && Number.isFinite(spacing) && spacing > 0) {
+            lineSpacing = clamp(spacing, LINE_SPACING_MIN, LINE_SPACING_MAX);
+          }
+          // The paper's kind at `style.0`: 2 on graph paper; absent (0) on lined paper.
+          // Read from one graph-paper note; other values are taken for lines.
+          const kindField = paperStyle === null ? null : flat.field(paperStyle, 0);
+          grid = kindField !== null && flat.u8(kindField) === PAPER_GRID;
         }
         break;
       }
@@ -866,6 +901,7 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
     paperWidth,
     paperHeight,
     lineSpacing,
+    grid,
     defaultStyle: style,
     curves,
     pictures,
@@ -1638,7 +1674,7 @@ function readText(
 function textStylePatch(flat: FlatBuffer, payload: number): TextStylePatch {
   const sizeOff = flat.offsetField(payload, 8);
   const sizeField = sizeOff === null ? null : flat.field(sizeOff, 0);
-  const fontSize = sizeField === null ? undefined : (flat.f32(sizeField) ?? undefined);
+  const fontSize = sizeField === null ? undefined : clampFontSize(flat.f32(sizeField) ?? undefined);
   const nameOff = flat.offsetField(payload, 7);
   const fontName = nameOff === null ? undefined : (flat.stringField(nameOff, 0) ?? undefined);
   const colourOff = flat.offsetField(payload, 9);
@@ -1675,7 +1711,10 @@ function paragraphPatch(flat: FlatBuffer, payload: number): ParagraphPatch {
   const spacing = spacingField === null ? null : flat.f32(spacingField);
   return {
     indentLevel: nested(2) ?? undefined,
-    lineSpacingMultiplier: spacing ?? undefined,
+    lineSpacingMultiplier:
+      spacing !== null && Number.isFinite(spacing)
+        ? clamp(spacing, 0, LINE_SPACING_MULTIPLIER_MAX)
+        : undefined,
     decorationStyle: nested(5) ?? undefined,
   };
 }
@@ -2041,9 +2080,16 @@ export function readNotabilityNtb(
   }
 
   // --- Pages --------------------------------------------------------------------------
+  // The pages the note makes: its CreatePage events, its one PDF's pages and the
+  // run of its typed text. A thing placed further past them than PAGE_MARGIN is
+  // corrupt (a page index from a damaged or crafted file) and is left out.
+  let made = Math.max(1, note.pageAssets.length);
+  for (const block of blocks) made = Math.max(made, block.page + 1);
+  if (singlePdf !== null) made = Math.max(made, pdfSizes.get(singlePdf)?.length ?? 0);
+  const pageLimit = Math.min(MAX_PAGES, made + PAGE_MARGIN);
   let pageCount = 1;
   const need = (page: number): void => {
-    pageCount = Math.max(pageCount, page + 1);
+    if (page < pageLimit) pageCount = Math.max(pageCount, page + 1);
   };
   for (const curve of note.curves) need(curve.page);
   for (const picture of note.pictures) need(picture.page);
@@ -2058,6 +2104,13 @@ export function readNotabilityNtb(
     else
       pageCount = Math.max(pageCount, note.pageAssets.filter((path) => path === singlePdf).length);
   }
+  pageCount = Math.min(pageCount, MAX_PAGES);
+  // Whether a thing's page is one of the note's; one past them is counted and left out.
+  const onPage = (page: number): boolean => {
+    if (page < pageCount) return true;
+    tally.add("offPage");
+    return false;
+  };
 
   // Every page is the paper's width; a page of a PDF is as tall as that PDF page
   // is at that width, so FineNotes draws the PDF to fill the page and the ink
@@ -2066,7 +2119,11 @@ export function readNotabilityNtb(
   for (let i = 0; i < pageCount; i++) {
     let backdrop: Backdrop =
       note.lineSpacing !== undefined
-        ? { kind: "ruled-wide", spacing: round2(note.lineSpacing * k), color: RULE_COLOUR }
+        ? {
+            kind: note.grid ? "squared" : "ruled-wide",
+            spacing: round2(note.lineSpacing * k),
+            color: RULE_COLOUR,
+          }
         : { kind: "blank" };
     let source: PdfPageSize | null = null;
     if (singlePdf !== null) {
@@ -2103,6 +2160,7 @@ export function readNotabilityNtb(
   // Ink, in the order the note drew it.
   let strokeN = 0;
   for (const curve of note.curves) {
+    if (!onPage(curve.page)) continue;
     const stroke = strokeOf(curve, k, inset);
     if (!stroke) continue;
     if (curve.dashed) tally.add("dashed", curve.page + 1);
@@ -2112,6 +2170,7 @@ export function readNotabilityNtb(
   // Pictures and stickies.
   let imageN = 0;
   for (const picture of note.pictures) {
+    if (!onPage(picture.page)) continue;
     const bytes = picture.asset ? files.get(root + picture.asset) : undefined;
     if (!picture.asset || !bytes || picture.w <= 0 || picture.h <= 0) {
       tally.add("missing", picture.page + 1);
@@ -2131,6 +2190,7 @@ export function readNotabilityNtb(
     pages[picture.page].images.push({ ...element, id: `i${++imageN}` });
   }
   for (const sticky of note.stickies) {
+    if (!onPage(sticky.page)) continue;
     const colour = hexColor(sticky.colour[0] / 255, sticky.colour[1] / 255, sticky.colour[2] / 255);
     const element = newStickyNote(
       `i${++imageN}`,
@@ -2149,6 +2209,7 @@ export function readNotabilityNtb(
   // Text boxes: the typed text first, then the note's own boxes, in their order.
   let textN = 0;
   for (const block of blocks) {
+    if (!onPage(block.page)) continue;
     const first = block.style;
     const element: Omit<TextBoxElement, "id"> = {
       x: round2(inset * k),
@@ -2172,6 +2233,7 @@ export function readNotabilityNtb(
     pages[block.page].textBoxes.push({ ...element, id: `t${++textN}` });
   }
   for (const { page, box } of boxTexts) {
+    if (!onPage(page)) continue;
     pages[page].textBoxes.push({ ...box, id: `t${++textN}` });
   }
 
@@ -2195,6 +2257,11 @@ export function readNotabilityNtb(
       (n) => `${plural(n, "rotated text box", "rotated text boxes")} came over upright.`,
     ),
     tally.line("dashed", (n) => `${plural(n, "dashed line")} came over solid.`),
+    tally.line(
+      "offPage",
+      (n) =>
+        `${plural(n, "item")} placed past the note's last page ${n === 1 ? "was" : "were"} left out.`,
+    ),
     tally.line(
       "stickyRuled",
       (n) =>
@@ -2299,6 +2366,14 @@ function valueAt(values: readonly number[], index: number): number {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/** A font size the file states, within bounds; undefined when it states none that is usable. */
+function clampFontSize(size: number): number;
+function clampFontSize(size: number | undefined): number | undefined;
+function clampFontSize(size: number | undefined): number | undefined {
+  if (size === undefined || !Number.isFinite(size) || size <= 0) return undefined;
+  return clamp(size, FONT_SIZE_MIN, FONT_SIZE_MAX);
 }
 
 /** A picture's crop as fractions of the picture, or undefined for the whole picture. */

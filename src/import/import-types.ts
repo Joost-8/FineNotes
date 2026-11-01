@@ -35,12 +35,6 @@ export interface ImportResult {
   app?: string;
   /** The notebook's title in the other app (or the file's name). */
   title: string;
-  /**
-   * The notebook's folder inside the picked backup, relative and sanitised
-   * (`"Year 2/Biology"`). Absent for a notebook at the top of the backup,
-   * or when the file was a single notebook.
-   */
-  folder?: string;
   /** Ready for `buildInkFile` once its attachment paths are relinked. */
   doc: InkDocument;
   attachments: ImportAttachment[];

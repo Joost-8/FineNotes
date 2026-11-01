@@ -34,7 +34,6 @@ import {
 } from "../import/import-summary";
 import {
   cleanTitle,
-  importFolders,
   joinVaultPath,
   newNoteBody,
   normalizeFolder,
@@ -76,10 +75,6 @@ export class ImportNotebookModal extends Modal {
   private busy = false;
   /** Where the notebooks go: the caller's folder, until changed here. */
   private folder: string;
-  /** Whether each notebook gets a folder of its own: the setting, until changed here. */
-  private ownFolder: boolean;
-  /** Whether a backup's folders are kept under {@link folder}. On by default. */
-  private keepFolders = true;
   /** Closed while importing: stop after the notebook being saved. */
   private closed = false;
 
@@ -89,7 +84,6 @@ export class ImportNotebookModal extends Modal {
   ) {
     super(app);
     this.folder = options.folder;
-    this.ownFolder = options.ownFolder;
   }
 
   override onOpen(): void {
@@ -266,27 +260,6 @@ export class ImportNotebookModal extends Modal {
       ).open();
     });
 
-    // How the notebooks are laid out: kept from the backup, and each in a folder of its own.
-    new Setting(el)
-      .setName("Keep the backup's folders")
-      .setDesc(
-        "Notebooks in folders in a backup go into matching folders under the folder above. " +
-          "Off: all of them go straight into it.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(this.keepFolders).onChange((on) => {
-          this.keepFolders = on;
-        }),
-      );
-    new Setting(el)
-      .setName("Give each notebook its own folder")
-      .setDesc("Off: just the notebook file, its pictures go to your attachment folder.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.ownFolder).onChange((on) => {
-          this.ownFolder = on;
-        }),
-      );
-
     const helpToggle = footer.createEl("button", {
       cls: "goodobsidian-import-help-toggle clickable-icon",
       text: "How do I export?",
@@ -389,14 +362,11 @@ export class ImportNotebookModal extends Modal {
   /** Write one converted notebook and its attachments; returns the notebook file. */
   private async save(result: ImportResult): Promise<TFile> {
     const vault = this.app.vault;
-    // The notebook's folder in the backup, under the chosen folder, when kept.
-    const inBackup = this.keepFolders && result.folder ? result.folder : "";
-    const dir = normalizeFolder(inBackup ? joinVaultPath(this.folder, inBackup) : this.folder);
+    const dir = normalizeFolder(this.folder);
     const parent = dir ? vault.getFolderByPath(dir) : vault.getRoot();
     const taken = new Set(parent?.children.map((child) => child.name) ?? []);
-    const paths = notebookPaths(dir, result.title, "notebook", this.ownFolder, taken);
-    // Parents first; a folder that is missing is made, the others are made when first written to.
-    for (const path of importFolders(paths, result.attachments.length > 0)) {
+    const paths = notebookPaths(dir, result.title, "notebook", this.options.ownFolder, taken);
+    for (const path of paths.folders) {
       if (!vault.getFolderByPath(path)) await vault.createFolder(path);
     }
     const notePath = normalizePath(joinVaultPath(paths.folder, paths.fileName));
