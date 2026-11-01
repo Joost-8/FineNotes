@@ -70,6 +70,8 @@ export interface GoodObsidianSettings {
   /** Extra palette swatches, `#rgb` or `#rrggbb`. */
   customColors: string[];
   defaultColor: string;
+  /** The laser pointer's default colour, `#rgb` or `#rrggbb`. */
+  laserDefaultColor: string;
   defaultSize: number;
   /** The eraser's last mode, kept between sessions. */
   eraserMode: EraserMode;
@@ -143,6 +145,8 @@ export interface GoodObsidianSettings {
   llmVendor: LlmVendor;
   /** Empty for the vendor's default model. */
   llmModel: string;
+  /** With OpenRouter, serve the model only from providers that do not say they compress it. */
+  openRouterSkipCompressed: boolean;
   /**
    * Before 0.5, the selected cloud vendor's key in plain text. Loading moves
    * it into the key store (`key-store.ts`) and empties it; a key whose vendor
@@ -417,6 +421,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: PALETTE[0],
+  laserDefaultColor: "#ff3b30",
   defaultSize: SIZES[1],
   eraserMode: "standard",
   eraserSize: DEFAULT_ERASER_SIZE,
@@ -438,6 +443,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -508,6 +514,13 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
+
+/** A stored laser colour, or the built-in red when a vault contains bad data. */
+export function laserDefaultColorOf(raw: unknown): string {
+  return typeof raw === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)
+    ? raw
+    : DEFAULT_SETTINGS.laserDefaultColor;
+}
 
 // --- Settings sections -----------------------------------------------------------
 

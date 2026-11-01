@@ -15,6 +15,31 @@ extracted from the matching section of this file by `release.yml`.
   go into the same folders under the folder you import to, instead of all
   into one. A folder that only wraps everything else is left out, and a ZIP
   inside the ZIP becomes a folder of its own.
+- **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
+  on, and it snaps to a clean heart; the Shape tool has one too, after the
+  star.
+- **Arcs, semicircles and pie slices.** Hold at the end of a curve and it
+  snaps to a clean arc of a circle; a near half, quarter or three quarters
+  comes out exact, its ends level when nearly so. A curve closed by two
+  lines to its centre snaps to a slice, and a curve closed by a straight
+  line across (a D) to a semicircle. Only on a hold, so a C or a D written
+  with Auto shape on stays handwriting.
+  FineNotes 2.6 and earlier show these three as ordinary ink.
+- **Domes and right angles.** A curve closed by a straight line across,
+  flatter than a half circle, snaps to a clean dome, its base level when
+  nearly so. Two straight lines meeting at a right angle snap to an exact
+  one, its legs level and upright when nearly so; a checkmark or a written
+  L stays handwriting. FineNotes 2.6 and earlier show both as ordinary ink.
+- **Fold a sticky note away, and type on it**
+  ([#94](https://github.com/Joost-8/FineNotes/issues/94)). A selected
+  note's bar has Fold note: the note shrinks to a small note icon at its
+  corner, as Goodnotes collapses one, and the page under it shows again. A
+  tap on the icon, with the Pencil, a finger or the mouse, opens it where it
+  was. With the Text tool, a tap on a note types on the note itself: the
+  text stays on the paper, turns with it, and moves, copies and deletes
+  with it. FineNotes 2.6 and earlier show a folded note open, and its text
+  as a text box over it.
+- **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
 - **A chisel tip for the highlighter.** Tap the highlighter in hand for its
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight
@@ -82,6 +107,10 @@ extracted from the matching section of this file by `release.yml`.
   dialog no longer asks: join the pages of any notebook, new or old, from
   its gear under Pages, and set them apart there again. Set apart, each
   page keeps its own part of what ran over the join.
+- **Zoom box auto-advance is switched in the Zoom box only.** Its row in
+  Settings → Writing is gone; the double-arrow button on the Zoom box's bar
+  turns it on and off as before, and keeps the setting you had. The
+  threshold row's ⓘ says where the button is.
 
 ### Fixed
 

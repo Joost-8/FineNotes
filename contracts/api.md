@@ -305,7 +305,16 @@ export type ShapeKind =
   | "triangle"
   | "diamond"
   | "roundrect"
-  | "polygon";
+  | "polygon"
+  | "star"
+  | "cloud"
+  // added 2026-10-30
+  | "heart"
+  | "arc" // open: part of a circle
+  | "sector" // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
+  // added 2026-10-31
+  | "segment" // closed: an arc and the straight chord that closes it (a dome)
+  | "angle"; // open: two straight legs meeting square at a corner
 
 export interface ShapeResult {
   kind: ShapeKind;
@@ -332,6 +341,14 @@ export interface RecognizeOptions {
    *   closed = gap <= max(closeTolerance, 0.1 * bboxDiagonal)
    */
   closeTolerance?: number;
+  /** The pen rests where the stroke ends (a hold, not a lift). Turns `arcs` on. */
+  held?: boolean;
+  /**
+   * Also fit open arcs and sectors on a lifted stroke. Default false: a C, a
+   * U or a bracket is handwriting, and a D is a semicircle closed by its
+   * diameter, so the pen's Auto shape (snap on lift) must leave them as ink.
+   */
+  arcs?: boolean;
 }
 
 /** Returns null when the stroke is not confidently any known shape. */
@@ -364,6 +381,35 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `ellipse`                        | 65 points: a closed polygon sampled every 5.625°                 |
 | `triangle`, `diamond`, `polygon` | n+1 points, closed: the vertices, first repeated last            |
 | `roundrect`                      | 37 points, closed: four 8-segment quarter-arcs (Shape tool only) |
+| `heart`                          | 73 points, closed: the classic heart curve in 72 steps           |
+| `arc`                            | open: ≥ 3 points, one at least every 5.625° of turn, ends exact  |
+| `sector`                         | closed: the centre, the arc as `arc` lays it out, the centre     |
+| `segment`                        | closed: the arc as `arc` lays it out, then its first point again |
+| `angle`                          | 3 points: `[end, corner, end]`, the legs exactly square          |
+
+A recognised `heart` and `sector` begin at the vertex nearest pen-down (a
+sector's outline then need not start at its centre); the Shape tool's
+heart begins at its cusp and goes clockwise. An `arc` or a `sector` whose
+turn is within 15° of a quarter-turn multiple is made exactly that, its
+ends put on an axis when within 8° of one (a slice's angle also snaps to a
+multiple of 15° within 4°). An `arc` takes no fill. Older versions read
+these three kinds as freehand ink.
+
+A `segment` (2026-10-31) is a dome: an arc closed by a straight chord that
+need not pass through its centre. On a lift it is taken only when it turns
+at most 160° and its box is at least 100 page px across, so a written D (a
+half turn on its stem) stays ink; held, any turn from 40° to 320°, and a
+semicircle is a `sector`. A convincing segment is never also a triangle.
+Its chord is made level or upright when within 8°, its turn snaps as an
+arc's does, and it begins at the chord's end nearest pen-down.
+
+An `angle` (2026-10-31) is a right angle: two straight legs meeting within
+12° of square, made exactly square by turning the shorter leg about the
+corner. On a lift one leg must lie within 12° of level or upright and the
+box be at least 70 page px across, so a checkmark, a V and a written L stay
+ink; held, any orientation, from 50 page px. A leg within 8° of level or
+upright is put on it. An `angle` takes no fill. Older versions read both
+kinds as freehand ink.
 
 ### A shape's style (v9)
 
@@ -1163,6 +1209,33 @@ without the ink (an older reader drops a pathless image and every unknown
 field). This reader refuses a label naming a feature it does not know in the
 same way; a later feature adds its own `+name`. A notebook without notes keeps
 the plain `v2:` label and opens in older builds as before.
+
+### Folded notes and typed text (2026-10-31, FineNotes#94)
+
+Two optional fields, as Goodnotes collapses a note and types in it:
+
+```ts
+sticky?: { color: string; folded?: true }; // ImageElement: folded to its icon
+onSticky?: string; // TextBoxElement: the note this box is the typed text of
+```
+
+- **`folded`** (stored only as `true`): the note shows as a small icon at
+  its top-left corner (`foldedFrame`: a square of `min(40, w, h)` page px,
+  turned with the note, never mirrored); its ink and text are hidden, and a
+  tap on the icon opens it. `x`, `y`, `w`, `h` keep the open note's frame.
+  It sits in the paper object on disk, before `ink`.
+- **A note's text** is an ordinary text box with `onSticky: "<image id>"`,
+  stored in `textBoxes` **in page space**, unlike the note's ink. Its `x`,
+  `y` and `w` are where it stands on the note _unturned_; it is drawn with
+  the note, clipped to it and turned about the note's centre (never
+  mirrored), and moves, resizes (rewrapping, its font size kept), copies
+  and deletes with the note. A box naming a note that is not on its page
+  is read as a box of its own.
+
+Neither changes the payload label: a notebook keeps `v2+sticky`. A reader
+that knows neither field (2.5, 2.6) keeps a note's colour and a text box's
+own fields, so it shows a folded note open and its text as a box over it at
+the same place; nothing written is lost, only the fold and the link.
 
 ## Linked shapes (2026-10-28)
 

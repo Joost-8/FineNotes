@@ -48,6 +48,7 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
+import { laserDefaultColorOf } from "./settings-data";
 import {
   type PageAppearance,
   type PenPreferences,
@@ -781,6 +782,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
+    this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -794,6 +796,8 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const loaded = this.settings as unknown as Record<string, unknown>;
     delete loaded.experimentalTrocr;
+    // The laser's dot frequency is gone: the trail is one smooth line now.
+    delete loaded.laserDotFrequency;
     // "Pressure sensitivity", on by default until 2026-09-30: pressure is
     // now the advanced `pressureWidth`, off by default, and the old choice is
     // not carried over.
@@ -815,6 +819,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
+    this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1071,6 +1076,7 @@ export default class GoodObsidianPlugin extends Plugin {
       model: this.settings.llmModel,
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
+      skipCompressed: this.settings.openRouterSkipCompressed,
     };
   }
 

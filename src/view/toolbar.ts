@@ -67,6 +67,7 @@ import {
   RULER_SNAP_STEPS,
   type RulerKind,
 } from "../canvas/ruler-geometry";
+import { LASER_COLOR } from "../canvas/laser-trail";
 import {
   drawingToolOf,
   optionsAfterSwitch,
@@ -91,8 +92,10 @@ import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } f
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
+  HEART_ASPECT,
   STAR_INNER_RATIO,
   type ShapeMode,
+  heartPoints,
   isShapeMode,
   starPoints,
 } from "../ink/shape-geometry";
@@ -149,6 +152,7 @@ import {
   penColorRow,
   pickPenColor,
   pushRecentColor,
+  parseHexColor,
   removablePenColor,
   removePenColor,
   reservedPenColors,
@@ -457,6 +461,7 @@ const SHAPE_LABELS: Record<ShapeMode, string> = {
   diamond: "Diamond",
   roundrect: "Rounded square",
   star: "Star",
+  heart: "Heart",
   line: "Line: drag from start to end",
   arrow: "Arrow: drag from tail to tip",
   table: "Table",
@@ -583,6 +588,8 @@ export interface ToolbarCallbacks {
   returnToPenOnReselect?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
+  /** The laser pointer's colour changed in its pill. Hosts persist it. */
+  onLaserColorChange?: (color: string) => void;
   onPressureToggle: (enabled: boolean) => void;
   /** Whether pressure pens may widen with pressure (the advanced setting); off when absent. */
   pressureAllowed?: () => boolean;
@@ -748,6 +755,8 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
+  /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
+  laserColor?: () => string;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -2075,6 +2084,8 @@ export class Toolbar {
       if (this.popoverKind?.startsWith("eraser-") && this.state.tool !== "eraser") {
         this.closePopover();
       }
+      // The laser's picker lives in its pill; a picker opened from its palette closes with it.
+      if (this.popoverKind === "laser-color" && this.state.tool !== "laser") this.closePopover();
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -2606,18 +2617,47 @@ export class Toolbar {
     return swatch;
   }
 
-  /** A tool pill with nothing to set: an icon and one line; the laser's mark is red. */
-  private toolNote(icon: string, text: string, laser = false): void {
+  /** A tool pill with nothing to set: an icon and one line. */
+  private toolNote(icon: string, text: string): void {
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
-    mark.toggleClass("is-laser", laser);
     iconOrText(mark, icon, "");
     note.createSpan({ text });
   }
 
-  /** The laser has nothing to set: the pill says what it is and that nothing it draws stays. */
+  /**
+   * The laser's pill: what it is and that nothing it draws stays, then the
+   * colour it points with. The colour is one button — a disc of it and a
+   * caret — opening the same picker the Shape tool's colour opens; a laser
+   * has no stroke and no width, so its colour is all it sets.
+   */
   private buildLaserOptions(): void {
-    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved", true);
+    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved");
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const color = this.laserColor();
+    const button = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-shape-color clickable-icon goodobsidian-laser-color",
+    });
+    button.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    caretIn(button);
+    button.setAttribute("aria-label", `Laser colour ${color}`);
+    button.setAttribute("title", "Laser colour");
+    button.addEventListener("click", () =>
+      this.toggleColorPopover("laser-color", button, color, (picked) => this.setLaserColor(picked)),
+    );
+  }
+
+  /** The laser's colour, as the settings have it now (never the icon's: the laser's icon stays grey). */
+  private laserColor(): string {
+    return parseHexColor(this.options?.laserColor?.() ?? "") ?? LASER_COLOR;
+  }
+
+  private setLaserColor(color: string): void {
+    const hex = parseHexColor(color);
+    if (!hex || sameColor(hex, this.laserColor())) return;
+    this.callbacks.onLaserColorChange?.(hex);
+    this.buildOptions();
+    this.syncActive();
   }
 
   /**
@@ -4294,7 +4334,9 @@ export class Toolbar {
     const laser = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-laser-row",
     });
-    iconOrText(laser.createSpan({ cls: "goodobsidian-laser-row-icon" }), "pointer", "");
+    laser.toggleClass("is-active", this.state.tool === "laser");
+    const laserIcon = laser.createSpan({ cls: "goodobsidian-laser-row-icon" });
+    iconOrText(laserIcon, "pointer", "");
     laser.createSpan({ text: "Laser pointer" });
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
@@ -5624,6 +5666,12 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
     star: () => {
       const tips = starPoints(12, 12.9, 9.6, 9.6 * STAR_INNER_RATIO, -Math.PI / 2);
       const d = tips.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+      add("path", { d: `${d.join(" ")}Z` });
+    },
+    // Likewise the heart.
+    heart: () => {
+      const outline = heartPoints(12, 12.4, 18, 18 * HEART_ASPECT);
+      const d = outline.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
       add("path", { d: `${d.join(" ")}Z` });
     },
     line: () => add("path", { d: "M5 19 19 5" }),

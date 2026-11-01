@@ -864,11 +864,6 @@ body:not(.is-mobile) .goodobsidian-view {
   display: inline-flex;
 }
 
-/* The laser pointer's mark keeps its warning red; the hand and magnifier share the muted text. */
-.goodobsidian-tool-note-icon.is-laser {
-  color: var(--color-red);
-}
-
 .goodobsidian-options .goodobsidian-tool.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
@@ -1117,7 +1112,7 @@ select.goodobsidian-choice-select {
   display: inline-flex;
   width: 24px;
   justify-content: center;
-  color: var(--color-red);
+  color: var(--gob-icon);
 }
 
 .goodobsidian-swatch {
@@ -9519,6 +9514,29 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 .goodobsidian-popover.is-color-popover {
   width: 340px;
   max-width: calc(100vw - 24px);
+}
+
+/* The laser's colour: the Shape tool's own well and disc with a caret
+   (toolbar.ts, buildLaserOptions), opening the same colour picker. */
+.goodobsidian-options .goodobsidian-laser-color.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--gob-touch-compact);
+  padding: 0 6px;
+  border-radius: var(--gob-well-radius);
+  background: var(--gob-well);
+  color: var(--text-normal);
+}
+
+.goodobsidian-options .goodobsidian-laser-color .goodobsidian-text-caret {
+  display: inline-flex;
+  margin-inline-start: var(--gob-caret-gap);
+}
+
+.goodobsidian-options .goodobsidian-laser-color .goodobsidian-text-caret svg {
+  width: var(--gob-caret-size);
+  height: var(--gob-caret-size);
 }
 
 .goodobsidian-color-picker .is-hidden,

@@ -323,6 +323,11 @@ const DESC = {
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
+  openRouterSkipCompressed:
+    "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
+    "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
+    "are compressed, and OpenRouter picks among the rest as usual. A model that only " +
+    "compressed providers serve then gives no answer.",
   imageVendor:
     "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
     "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
@@ -348,6 +353,10 @@ const DESC = {
     "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
     "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
     "Goodnotes. Pictures and text boxes are taken by their middle either way.",
+  zoomBoxAutoAdvance:
+    "Auto-advance is the double-arrow button on the Zoom box's bar. When it is on and a " +
+    "stroke reaches the right part of the box, the box moves right; at the end of the line " +
+    "it wraps to the next. This sets how wide that right part is.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
     "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
@@ -1108,17 +1117,23 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
           ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
         ),
-        toggle(
-          "zoomBoxAutoAdvance",
-          "Zoom box auto-advance",
-          "Moves right after a stroke reaches two thirds, then wraps.",
-          ["magnifier", "zoom", "advance", "line", "scroll"],
-        ),
-        controlRow(
-          "Zoom box auto-advance threshold",
-          "Triggers in the right percentage; 33% means the right third.",
-          { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
-          ["magnifier", "zoom", "advance", "threshold", "trigger", "percentage"],
+        this.info(
+          controlRow(
+            "Zoom box auto-advance threshold",
+            "Triggers in the right percentage; 33% means the right third.",
+            { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
+            [
+              "magnifier",
+              "zoom",
+              "advance",
+              "threshold",
+              "trigger",
+              "percentage",
+              "line",
+              "scroll",
+            ],
+          ),
+          DESC.zoomBoxAutoAdvance,
         ),
         {
           ...this.info(
@@ -1791,8 +1806,26 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
       },
-      // Pictures are the AI rows fewest people change.
-      this.more("ai", "Pictures: service, model and key"),
+      // OpenRouter's providers and pictures are the AI rows fewest people change.
+      this.more(
+        "ai",
+        vendor === "openrouter"
+          ? "OpenRouter providers; pictures: service, model and key"
+          : "Pictures: service, model and key",
+      ),
+      {
+        ...this.info(
+          toggle("openRouterSkipCompressed", "Skip compressed providers", "", [
+            "provider",
+            "quantization",
+            "fp4",
+            "fp8",
+            "OpenRouter",
+          ]),
+          DESC.openRouterSkipCompressed,
+        ),
+        visible: () => settings.llmVendor === "openrouter",
+      },
       this.info(
         dropdown("imageVendor", "Image generation", "", IMAGE_VENDOR_LABELS, [
           "generate image",

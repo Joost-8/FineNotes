@@ -2747,6 +2747,10 @@ export class InkView extends TextFileView {
           this.surface?.refreshPenCursor();
           this.rememberPen();
         },
+        onLaserColorChange: (color) => {
+          this.settings.laserDefaultColor = color;
+          void this.plugin.saveSettings();
+        },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
@@ -2860,6 +2864,7 @@ export class InkView extends TextFileView {
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         onlyStylusMode: this.settings.onlyStylusMode === true,
+        laserColor: () => this.settings.laserDefaultColor,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2962,6 +2967,7 @@ export class InkView extends TextFileView {
         debug: this.showHud,
         palette,
         paper: this.shownPaper(),
+        laserColor: () => this.settings.laserDefaultColor,
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
