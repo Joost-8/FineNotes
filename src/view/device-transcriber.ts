@@ -107,8 +107,12 @@ export class DeviceTranscriber {
     const verdict = lengthVerdict(job.durationMs, id, Platform.isMobile);
     if (verdict.kind === "too-long") {
       new Notice(
-        `FineNotes: this recording is longer than ${verdict.limitMinutes} minutes, too long to ` +
-          "transcribe on this device. Use an AI key or your own server (Settings → FineNotes → AI).",
+        verdict.byModel
+          ? `FineNotes: this recording is longer than ${verdict.limitMinutes} minutes, too long ` +
+              `for ${info.label}, which would take hours. Choose a smaller voice model ` +
+              "(Settings → FineNotes → Models on this device), or use an AI key."
+          : `FineNotes: this recording is longer than ${verdict.limitMinutes} minutes, too long to ` +
+              "transcribe on this device. Use an AI key or your own server (Settings → FineNotes → AI).",
         12000,
       );
       return;

@@ -8,6 +8,7 @@ import {
   estimateMinutes,
   lengthVerdict,
   speechAsset,
+  speechChoiceLabel,
   speechLanguage,
   speechModelsFor,
 } from "../../src/audio/speech-models";
@@ -26,9 +27,16 @@ describe("speech models", () => {
     expect(SPEECH_RUNTIME.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("never offers small on a phone or tablet", () => {
+  it("never offers small or large-v3-turbo on a phone or tablet", () => {
     expect(speechModelsFor(true).map((m) => m.id)).toEqual(["whisper-tiny", "whisper-base"]);
-    expect(speechModelsFor(false).map((m) => m.id)).toContain("whisper-small");
+    expect(speechModelsFor(false).map((m) => m.id)).toEqual([
+      "whisper-tiny",
+      "whisper-base",
+      "whisper-small",
+      "whisper-turbo",
+    ]);
+    expect(effectiveSpeechModel("whisper-turbo", true)).toBe(DEFAULT_SPEECH_MODEL);
+    expect(effectiveSpeechModel("whisper-turbo", false)).toBe("whisper-turbo");
     expect(effectiveSpeechModel("whisper-small", true)).toBe(DEFAULT_SPEECH_MODEL);
     expect(effectiveSpeechModel("whisper-small", false)).toBe("whisper-small");
     expect(effectiveSpeechModel("nonsense", false)).toBe(DEFAULT_SPEECH_MODEL);
@@ -42,6 +50,22 @@ describe("speech models", () => {
     expect(asset.folder).toBe("speech-base");
     expect(speechAsset("whisper-tiny").folder).toBe("speech-tiny");
     expect(totalBytes(asset)).toBe(asset.files[0].bytes + SPEECH_RUNTIME.bytes);
+  });
+
+  it("downloads large-v3-turbo at q5_0 into a folder of its own, with the same runtime", () => {
+    const asset = speechAsset("whisper-turbo");
+    expect(asset.files[0].name).toBe("ggml-large-v3-turbo-q5_0.bin");
+    expect(asset.files[0].url).toMatch(/\/speech-1\/ggml-large-v3-turbo-q5_0\.bin$/);
+    expect(asset.files[1]).toBe(SPEECH_RUNTIME);
+    expect(asset.folder).toBe("speech-turbo");
+  });
+
+  it("calls only a model far slower than the recording very slow in the size menu", () => {
+    expect(speechChoiceLabel("whisper-base", "84 MB")).toBe("Whisper base (84 MB)");
+    expect(speechChoiceLabel("whisper-small", "266 MB")).toBe("Whisper small (266 MB)");
+    expect(speechChoiceLabel("whisper-turbo", "576 MB")).toBe(
+      "Whisper large-v3-turbo (576 MB, very slow)",
+    );
   });
 });
 
@@ -63,6 +87,20 @@ describe("length rules", () => {
     expect(lengthVerdict(16 * MIN, "whisper-tiny", false)).toEqual({ kind: "ok" });
     expect(lengthVerdict(90 * MIN, "whisper-base", false).kind).toBe("warn");
     expect(lengthVerdict(4 * 60 * MIN, "whisper-base", false).kind).toBe("too-long");
+  });
+
+  it("holds large-v3-turbo to its own limit, and says the model set it", () => {
+    expect(lengthVerdict(2 * MIN, "whisper-turbo", false)).toEqual({ kind: "ok" });
+    expect(lengthVerdict(10 * MIN, "whisper-turbo", false).kind).toBe("warn");
+    expect(lengthVerdict(21 * MIN, "whisper-turbo", false)).toEqual({
+      kind: "too-long",
+      limitMinutes: 20,
+      byModel: true,
+    });
+    expect(lengthVerdict(4 * 60 * MIN, "whisper-base", false)).toEqual({
+      kind: "too-long",
+      limitMinutes: 180,
+    });
   });
 });
 

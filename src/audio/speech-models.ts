@@ -4,7 +4,8 @@
  *
  * Each model is OpenAI's Whisper (MIT) in whisper.cpp's ggml format,
  * quantised to 8 bits (q8_0: 20-30 % faster than q5_1 in WebAssembly, no
- * less accurate), plus FineNotes' own build of the whisper.cpp runtime
+ * less accurate; large-v3-turbo to 5 bits, see its entry), plus FineNotes'
+ * own build of the whisper.cpp runtime
  * (scripts/whisper-runtime): one single-threaded WebAssembly module, since
  * neither Obsidian on the iPad nor a worker started from a Blob can have
  * SharedArrayBuffer there. Speeds are measured on a laptop in
@@ -15,7 +16,7 @@
 
 import type { ModelAsset, ModelFile } from "../downloads/model-manifest";
 
-export type SpeechModelId = "whisper-tiny" | "whisper-base" | "whisper-small";
+export type SpeechModelId = "whisper-tiny" | "whisper-base" | "whisper-small" | "whisper-turbo";
 
 /**
  * Where the files are published: the `speech-1` release of the templates
@@ -41,6 +42,8 @@ interface SpeechModelInfo {
   laptopSpeed: number;
   /** Offered on a phone or tablet. */
   mobile: boolean;
+  /** The longest recording it takes, ms, when that is less than the device's limit: past it a job runs for hours. */
+  maxMs?: number;
 }
 
 export const SPEECH_MODELS: readonly SpeechModelInfo[] = [
@@ -80,12 +83,40 @@ export const SPEECH_MODELS: readonly SpeechModelInfo[] = [
     laptopSpeed: 0.68,
     mobile: false,
   },
+  {
+    // Discussion #107. q5_0, not q8_0: q8_0's 874 MB, held twice while it
+    // loads, runs out of the runtime's 2 GB heap (ggml's mem_buffer assert).
+    // q5_0 on the test clip: 1.69 GB of heap, 3.6 % word error (base 9.5 %),
+    // 0.14x real time with the laptop busy (base 1.72x then, 2.1x quiet).
+    // Not offered on an iPad: that heap, and hours of work, are too much.
+    id: "whisper-turbo",
+    label: "Whisper large-v3-turbo",
+    file: {
+      name: "ggml-large-v3-turbo-q5_0.bin",
+      url: `${RELEASE}/ggml-large-v3-turbo-q5_0.bin`,
+      bytes: 574_041_195,
+      sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+    },
+    laptopSpeed: 0.15,
+    mobile: false,
+    // About 2¼ hours of work.
+    maxMs: 20 * 60_000,
+  },
 ];
 
 export const DEFAULT_SPEECH_MODEL: SpeechModelId = "whisper-base";
 
 export function speechModelInfo(id: SpeechModelId): SpeechModelInfo {
   return SPEECH_MODELS.find((m) => m.id === id) ?? SPEECH_MODELS[1];
+}
+
+/** Under this many seconds of audio per second of work, the size menu calls a model very slow. */
+export const VERY_SLOW_SPEED = 0.5;
+
+/** A model as the size menu lists it: its name, its download size, and "very slow" when it is. */
+export function speechChoiceLabel(id: SpeechModelId, size: string): string {
+  const info = speechModelInfo(id);
+  return `${info.label} (${size}${info.laptopSpeed < VERY_SLOW_SPEED ? ", very slow" : ""})`;
 }
 
 /** The models offered on this kind of device. */
@@ -138,7 +169,10 @@ export const MOBILE_MAX_MS = 30 * 60_000;
 export const DESKTOP_MAX_MS = 3 * 60 * 60_000;
 
 export type LengthVerdict =
-  { kind: "ok" } | { kind: "warn"; minutes: number } | { kind: "too-long"; limitMinutes: number };
+  | { kind: "ok" }
+  | { kind: "warn"; minutes: number }
+  /** `byModel`: the model's own limit, which a smaller model does not have. */
+  | { kind: "too-long"; limitMinutes: number; byModel?: true };
 
 /** Whether a recording of `durationMs` can be transcribed here, and whether to warn first. */
 export function lengthVerdict(
@@ -146,8 +180,15 @@ export function lengthVerdict(
   id: SpeechModelId,
   mobile: boolean,
 ): LengthVerdict {
-  const limit = mobile ? MOBILE_MAX_MS : DESKTOP_MAX_MS;
-  if (durationMs > limit) return { kind: "too-long", limitMinutes: Math.round(limit / 60000) };
+  const device = mobile ? MOBILE_MAX_MS : DESKTOP_MAX_MS;
+  const model = speechModelInfo(id).maxMs ?? Infinity;
+  const limit = Math.min(device, model);
+  if (durationMs > limit) {
+    const limitMinutes = Math.round(limit / 60000);
+    return model < device
+      ? { kind: "too-long", limitMinutes, byModel: true }
+      : { kind: "too-long", limitMinutes };
+  }
   const minutes = estimateMinutes(durationMs, id, mobile);
   if ((mobile && durationMs > MOBILE_WARN_MS) || minutes >= WARN_MINUTES)
     return { kind: "warn", minutes };
