@@ -140,17 +140,9 @@ describe("stabilizationReach", () => {
     expect(stabilizationReach(3)).toBe(STABILIZE_MAX_PX);
   });
 
-  it("spends most of its first half on the low settings people use", () => {
+  it("spends most of its range on the low settings people use", () => {
     // Goodnotes users report 5-10% for a ball pen, ~20% for cursive.
-    expect(stabilizationReach(0.2)).toBeGreaterThan(stabilizationReach(0.5) / 2);
-  });
-
-  it("reaches no further than it always did up to half, and twice as far at 100%", () => {
-    // The settings people had chosen write as they did before #107.
-    for (const s of [0.01, 0.05, 0.1, 0.2, 0.35, 0.5]) {
-      expect(stabilizationReach(s)).toBeCloseTo(1.5 + 8.5 * Math.sqrt(s), 12);
-    }
-    expect(stabilizationReach(0.5)).toBeLessThan(STABILIZE_MAX_PX / 2);
+    expect(stabilizationReach(0.3)).toBeGreaterThan(STABILIZE_MAX_PX / 2);
   });
 });
 
@@ -237,21 +229,21 @@ describe("StrokeBuilder stabilization", () => {
     expect(dense.tail.length).toBe(MAX_CENTRED_HALF);
   });
 
-  it("near the top, steadies the longer wobble of a Pencil, which 10 px could not (#107)", () => {
-    // A straight line with a 25 px wobble along it, sampled as a Pencil
-    // sends it (240 Hz at 150 px/s): how much of the wobble is left.
-    const left = (strength: number): number => {
+  it("is felt across the slider on a Pencil's longer wobble, which 10 px could not reach (#107)", () => {
+    // A straight line with a wobble `wave` px long along it, sampled as a
+    // Pencil sends it (240 Hz at 150 px/s): how much of the wobble is left.
+    const left = (strength: number, wave: number): number => {
       const samples: Sample[] = [];
       for (let x = 0; x <= 300; x += 150 / 240) {
-        samples.push({ x, y: 100 + 1.5 * Math.sin((2 * Math.PI * x) / 25), pressure: 0.4 });
+        samples.push({ x, y: 100 + 1.5 * Math.sin((2 * Math.PI * x) / wave), pressure: 0.4 });
       }
       const middle = triples(build(samples, strength)).filter(([x]) => x > 40 && x < 260);
       const rms = Math.sqrt(middle.reduce((sum, [, y]) => sum + (y - 100) ** 2, 0) / middle.length);
       return rms / (1.5 / Math.SQRT2);
     };
-    expect(left(0.5)).toBeGreaterThan(0.8);
-    expect(left(0.9)).toBeLessThan(0.5);
-    expect(left(1)).toBeLessThan(0.1);
+    expect(left(0.1, 12)).toBeLessThan(0.5);
+    expect(left(0.5, 25)).toBeLessThan(0.6);
+    expect(left(1, 25)).toBeLessThan(0.1);
   });
 
   it("steadies a shaky hand already at 5%, and more as it rises", () => {
@@ -270,12 +262,11 @@ describe("StrokeBuilder stabilization", () => {
   });
 
   it("keeps a small loop's size at the low settings", () => {
-    // A 4 px loop is a small "e" at fit zoom. Above half, loops under ~6 px
+    // A 4 px loop is a small "e" at fit zoom. Higher up, loops under ~6 px
     // round off: the price of steadying a Pencil's longer wobble (#107).
     for (const [r, strength, most] of [
-      [4, 0.25, 0.03],
-      [6, 0.25, 0.01],
-      [6, 0.5, 0.03],
+      [4, 0.05, 0.03],
+      [8, 0.25, 0.03],
       [10, 1, 0.07],
       [20, 1, 0.01],
     ] as const) {
@@ -316,9 +307,11 @@ describe("StrokeBuilder stabilization", () => {
           const kind = recognizeShape(build(stream(stroke), strength))?.kind ?? "none";
           // A shape with corners stays that shape. A round or unrecognised
           // one may come out rounder (the lumpy circle, 20, becomes a
-          // circle), never with corners it did not have.
-          if (round.has(plain)) expect(round.has(kind), `${kind} at ${strength}`).toBe(true);
-          else expect(kind, `at ${strength}`).toBe(plain);
+          // circle), never with corners it did not have, unless steadied
+          // into the shape it was drawn as (the rough rect, 21).
+          if (round.has(plain)) {
+            expect(round.has(kind) || kind === stroke.expect, `${kind} at ${strength}`).toBe(true);
+          } else expect(kind, `at ${strength}`).toBe(plain);
         }
       },
     );
@@ -334,10 +327,10 @@ describe("StrokeBuilder stabilization", () => {
           detectScribble(build(samplesOf(pts), strength), { minSize: 9 }) ? [] : [i],
         );
       expect(missed(0.05)).toEqual([]);
-      // Stroke 3 makes 4 hairpins in 5 reversals as drawn, exactly the
-      // HAIRPIN_SHARE gate; at 10% one of its turns rounds under 135°.
-      expect(missed(0.1)).toEqual([3]);
-      expect(missed(0.2)).toEqual([]);
+      // Each strength misses at most the one scribble sitting on a gate:
+      // stroke 7 at 20%.
+      expect(missed(0.1)).toEqual([]);
+      expect(missed(0.2)).toEqual([7]);
     });
   });
 });

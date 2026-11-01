@@ -114,35 +114,26 @@ const MIN_STABILIZE_HALF = 2;
  * the last ~2 mm of a stroke (about 10 px on an iPad), measured from Joost's
  * recording, 2026-10-18. But a quadratic window reaching 10 px only steadies
  * a wobble shorter than ~12 px, and a Pencil's wobble is longer: on the iPad
- * 100% looked like 0% (#107). Above half strength the reach grows to 20 px,
- * which steadies a 25 px wobble almost away, at the cost of rounding loops
- * under ~6 px.
+ * even 100% looked like nothing (#107). Reaching 20 px, the whole slider is
+ * felt: 10% already halves a 12 px wobble, and 100% takes a 25 px one away,
+ * at the cost of rounding small loops (a 4 px loop by ~14% at 20%).
  */
 export const STABILIZE_MAX_PX = 20;
-
-/** The reach at 100% of the curve the settings up to half follow, screen px. */
-const STABILIZE_SQRT_PX = 10;
 
 /** The reach of the setting's lowest step, screen px. */
 const STABILIZE_MIN_PX = 1.5;
 
 /**
  * The reach each side, screen px, of stroke stabilization at `strength`
- * (0..1): 0 is none; then from {@link STABILIZE_MIN_PX}, rising fastest at
- * the low end, where the settings people use are (Goodnotes users report
- * 5-10% for a ball pen, ~20% for fountain-pen cursive). Up to half it is the
- * curve it always was; above, it climbs to {@link STABILIZE_MAX_PX}, for a
- * hand that wants its strokes clearly steadied.
+ * (0..1): 0 is none; then from {@link STABILIZE_MIN_PX} up to
+ * {@link STABILIZE_MAX_PX}, rising fastest at the low end, where the
+ * settings people use are (Goodnotes users report 5-10% for a ball pen,
+ * ~20% for fountain-pen cursive).
  */
 export function stabilizationReach(strength: number): number {
   if (!(strength > 0)) return 0;
   const s = Math.min(1, strength);
-  const top = Math.max(0, 2 * s - 1);
-  return (
-    STABILIZE_MIN_PX +
-    (STABILIZE_SQRT_PX - STABILIZE_MIN_PX) * Math.sqrt(s) +
-    (STABILIZE_MAX_PX - STABILIZE_SQRT_PX) * top * top
-  );
+  return STABILIZE_MIN_PX + (STABILIZE_MAX_PX - STABILIZE_MIN_PX) * Math.sqrt(s);
 }
 
 /**
