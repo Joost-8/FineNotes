@@ -60,6 +60,17 @@ export interface RunningJob {
   percent: number;
 }
 
+/**
+ * A file of the model, checked by size and SHA-256 as it is read. One that
+ * changed since the model was found (a sync replaced or removed it) is
+ * downloaded once more; null when that fails too.
+ */
+async function verifiedBytes(store: AssetStore, name?: string): Promise<ArrayBuffer | null> {
+  const bytes = await store.bytes(name);
+  if (bytes) return bytes;
+  return (await store.download()) ? store.bytes(name) : null;
+}
+
 export class DeviceTranscriber {
   private client: SpeechClient | null = null;
   private current: RunningJob | null = null;
@@ -134,8 +145,11 @@ export class DeviceTranscriber {
         title: `Download ${info.label}?`,
         message:
           `Transcribing on this device needs the ${info.label} speech model ` +
-          `(${formatSize(totalBytes(store.asset))}), downloaded once from GitHub. It stays in ` +
-          "FineNotes' folder in this vault, so it syncs with it. Nothing you record is sent anywhere.",
+          `(${formatSize(totalBytes(store.asset))}), downloaded once from GitHub. ` +
+          (store.asset.deviceOnly
+            ? "It stays on this computer, outside the vault, so it does not sync. "
+            : "It stays in FineNotes' folder in this vault, so it syncs with it. ") +
+          "Nothing you record is sent anywhere.",
         cta: "Download",
       });
       if (!ok) return;
@@ -156,14 +170,14 @@ export class DeviceTranscriber {
       if (this.cancelled) throw new SpeechCancelled();
       const { SpeechClient } = await import("./speech-client");
       this.client ??= new SpeechClient(async () => {
-        const bytes = await this.store().bytes(store.asset.files[1].name);
+        const bytes = await verifiedBytes(this.store(), store.asset.files[1].name);
         if (!bytes) throw new Error("the speech recognizer's files are missing");
         return new TextDecoder().decode(bytes);
       });
       this.update("Loading the speech model…");
       const client = this.client;
       await client.ensureModel(id, async () => {
-        const bytes = await store.bytes();
+        const bytes = await verifiedBytes(store);
         if (!bytes) throw new Error("the speech model is missing");
         return bytes;
       });

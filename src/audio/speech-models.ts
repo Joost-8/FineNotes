@@ -44,6 +44,12 @@ interface SpeechModelInfo {
   mobile: boolean;
   /** The longest recording it takes, ms, when that is less than the device's limit: past it a job runs for hours. */
   maxMs?: number;
+  /**
+   * Kept on this computer, outside the vault, so no sync carries it to an
+   * iPad that cannot run it (or replaces it mid-download). Small stays in
+   * the vault, where earlier versions put it.
+   */
+  deviceOnly?: true;
 }
 
 export const SPEECH_MODELS: readonly SpeechModelInfo[] = [
@@ -101,6 +107,8 @@ export const SPEECH_MODELS: readonly SpeechModelInfo[] = [
     mobile: false,
     // About 2¼ hours of work.
     maxMs: 20 * 60_000,
+    // 574 MB would otherwise sync to every device with the vault.
+    deviceOnly: true,
   },
 ];
 
@@ -113,10 +121,16 @@ export function speechModelInfo(id: SpeechModelId): SpeechModelInfo {
 /** Under this many seconds of audio per second of work, the size menu calls a model very slow. */
 export const VERY_SLOW_SPEED = 0.5;
 
-/** A model as the size menu lists it: its name, its download size, and "very slow" when it is. */
+/**
+ * A model as the size menu lists it: its name, its download size, "desktop
+ * only" when an iPad is not offered it, and "very slow" when it is.
+ */
 export function speechChoiceLabel(id: SpeechModelId, size: string): string {
   const info = speechModelInfo(id);
-  return `${info.label} (${size}${info.laptopSpeed < VERY_SLOW_SPEED ? ", very slow" : ""})`;
+  const notes = [size];
+  if (!info.mobile) notes.push("desktop only");
+  if (info.laptopSpeed < VERY_SLOW_SPEED) notes.push("very slow");
+  return `${info.label} (${notes.join(", ")})`;
 }
 
 /** The models offered on this kind of device. */
@@ -143,6 +157,7 @@ export function speechAsset(id: SpeechModelId): ModelAsset {
     files: [info.file, SPEECH_RUNTIME],
     // Tens of MB: fewer, larger requests than the default 512 KB.
     chunkBytes: 4 * 1024 * 1024,
+    ...(info.deviceOnly ? { deviceOnly: true } : {}),
   };
 }
 

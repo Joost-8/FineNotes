@@ -60,12 +60,25 @@ describe("speech models", () => {
     expect(asset.folder).toBe("speech-turbo");
   });
 
-  it("calls only a model far slower than the recording very slow in the size menu", () => {
+  it("keeps large-v3-turbo off the vault, so no sync carries it; the others stay where they were", () => {
+    expect(speechAsset("whisper-turbo").deviceOnly).toBe(true);
+    for (const id of ["whisper-tiny", "whisper-base", "whisper-small"] as const)
+      expect(speechAsset(id).deviceOnly, id).toBeUndefined();
+  });
+
+  it("marks desktop-only and very slow models in the size menu", () => {
     expect(speechChoiceLabel("whisper-base", "84 MB")).toBe("Whisper base (84 MB)");
-    expect(speechChoiceLabel("whisper-small", "266 MB")).toBe("Whisper small (266 MB)");
-    expect(speechChoiceLabel("whisper-turbo", "576 MB")).toBe(
-      "Whisper large-v3-turbo (576 MB, very slow)",
+    expect(speechChoiceLabel("whisper-small", "266 MB")).toBe(
+      "Whisper small (266 MB, desktop only)",
     );
+    expect(speechChoiceLabel("whisper-turbo", "576 MB")).toBe(
+      "Whisper large-v3-turbo (576 MB, desktop only, very slow)",
+    );
+  });
+
+  it("falls back on an iPad to the default when a synced setting names a desktop-only model", () => {
+    for (const id of ["whisper-small", "whisper-turbo"])
+      expect(effectiveSpeechModel(id, true)).toBe(DEFAULT_SPEECH_MODEL);
   });
 });
 

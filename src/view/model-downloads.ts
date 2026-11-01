@@ -1,7 +1,8 @@
 /**
  * The models FineNotes downloads on first use, through Obsidian: one
  * `AssetStore` per registered model (downloads/model-store.ts), in
- * `<plugin>/<model folder>/`, and the card that offers a download the first
+ * `<plugin>/<model folder>/` (or, for a desktop-only model, on this device
+ * outside the vault: downloads/device-folder.ts), and the card that offers a download the first
  * time a feature needs it.
  *
  * A feature registers its model once (`register`) and asks for it when it
@@ -26,33 +27,18 @@ import {
   totalBytes,
 } from "../downloads/model-manifest";
 import { AssetStore, type AssetStoreDeps } from "../downloads/model-store";
+import { deviceFolder } from "../downloads/device-folder";
 
 /** A model's folder in the vault. */
 export function modelFolder(pluginDir: string, asset: ModelAsset): string {
   return normalizePath(`${pluginDir}/${asset.folder}`);
 }
 
-/** The folder, the network and the hash, through Obsidian. */
-export function vaultDeps(
-  app: App,
-  folder: () => string,
+/** The network, the hash and the clock, through Obsidian: the same wherever the files are kept. */
+function networkDeps(
   formatOf: (data: ArrayBuffer) => number | null,
-): AssetStoreDeps {
-  const adapter = app.vault.adapter;
-  const path = (name: string) => normalizePath(`${folder()}/${name}`);
+): Pick<AssetStoreDeps, "get" | "sha256" | "formatOf" | "sleep"> {
   return {
-    list: async () => {
-      if (!(await adapter.exists(folder()))) return [];
-      const listed = await adapter.list(folder());
-      return listed.files.map((file) => file.slice(file.lastIndexOf("/") + 1));
-    },
-    read: (name) => adapter.readBinary(path(name)),
-    write: async (name, data) => {
-      if (!(await adapter.exists(folder()))) await adapter.mkdir(folder());
-      await adapter.writeBinary(path(name), data);
-    },
-    rename: (from, to) => adapter.rename(path(from), path(to)),
-    remove: (name) => adapter.remove(path(name)),
     get: async (url, range) => {
       const answer = await requestUrl({
         url,
@@ -65,6 +51,31 @@ export function vaultDeps(
     sha256: async (data) => toHex(await crypto.subtle.digest("SHA-256", data)),
     formatOf,
     sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+  };
+}
+
+/** The folder, the network and the hash, through Obsidian. */
+export function vaultDeps(
+  app: App,
+  folder: () => string,
+  formatOf: (data: ArrayBuffer) => number | null,
+): AssetStoreDeps {
+  const adapter = app.vault.adapter;
+  const path = (name: string) => normalizePath(`${folder()}/${name}`);
+  return {
+    ...networkDeps(formatOf),
+    list: async () => {
+      if (!(await adapter.exists(folder()))) return [];
+      const listed = await adapter.list(folder());
+      return listed.files.map((file) => file.slice(file.lastIndexOf("/") + 1));
+    },
+    read: (name) => adapter.readBinary(path(name)),
+    write: async (name, data) => {
+      if (!(await adapter.exists(folder()))) await adapter.mkdir(folder());
+      await adapter.writeBinary(path(name), data);
+    },
+    rename: (from, to) => adapter.rename(path(from), path(to)),
+    remove: (name) => adapter.remove(path(name)),
   };
 }
 
@@ -94,7 +105,9 @@ export class ModelRegistry {
     const formatOf = options.formatOf ?? (() => asset.format);
     const store = new AssetStore(
       asset,
-      vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf),
+      asset.deviceOnly
+        ? { ...deviceFolder(asset.folder), ...networkDeps(formatOf) }
+        : vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf),
     );
     this.stores.set(asset.id, store);
     return store;
