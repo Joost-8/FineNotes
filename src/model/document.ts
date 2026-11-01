@@ -31,7 +31,10 @@ export type InkTip = "chisel";
  * `polygon` is any other closed straight-edged shape (a quad or a pentagon,
  * say) that hold-to-snap straightened. `arc` is an open piece of a circle;
  * `sector` a pie slice (centre, arc, back to the centre), which at a half
- * turn is a semicircle closed by its diameter.
+ * turn is a semicircle closed by its diameter. `path` is an open arrow drawn
+ * along a path (discussion #107): straight runs joined at corners, or a
+ * smooth curve sampled densely, with its head and rounded corners in
+ * `heads` and `radius`.
  */
 export type ShapeKind =
   | "line"
@@ -49,7 +52,8 @@ export type ShapeKind =
   | "arc"
   | "sector"
   | "segment"
-  | "angle";
+  | "angle"
+  | "path";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -68,6 +72,7 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "sector",
   "segment",
   "angle",
+  "path",
 ];
 
 /** How a shape's outline is drawn when it is not solid. */

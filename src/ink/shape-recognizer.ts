@@ -27,7 +27,8 @@
  */
 
 import { FALLBACK_PRESSURE, SNAP_CLOSE_TOLERANCE, SNAP_MIN_CONFIDENCE } from "../constants";
-import { POINT_STRIDE, type ShapeKind } from "../model/document";
+import { POINT_STRIDE, type ArrowHeads, type ShapeKind } from "../model/document";
+import { ROUND_RADIUS } from "../model/shape-style";
 import {
   ELLIPSE_SEGMENTS,
   STAR_INNER_RATIO,
@@ -50,6 +51,13 @@ export interface ShapeResult {
   pts: number[];
   /** 0..1. Below `minConfidence` the caller must keep the raw stroke. */
   confidence: number;
+  /**
+   * The style the shape is drawn with, for the stroke to carry: a `path`
+   * arrow's head, and its rounded corners when its runs are straight.
+   * Absent on every other kind.
+   */
+  heads?: ArrowHeads;
+  radius?: number;
 }
 
 export interface RecognizeOptions {
@@ -3106,6 +3114,623 @@ function angleCandidate(
   };
 }
 
+// --- Path arrow -------------------------------------------------------------
+//
+// Discussion #107 (2026-11-01): an arrow drawn along a path. Goodnotes turns a
+// held stroke of straight runs at turns (an elbow, an S) into straight runs
+// joined by small rounded corners, with the head at the end, and a curved
+// one into a smooth curve. The shaft of `arrowCandidate` must be straight;
+// this is the arrow whose shaft is not. Held only: a lifted stroke is what
+// handwriting is made of, and the head is all that tells the two apart.
+
+/** The head is looked for on an RDP of the stroke at this fraction of its box diagonal... */
+const PATH_HEAD_TOL_FRACTION = 0.01;
+/** ...clamped to this many page px, fine enough to keep a short barb. */
+const PATH_HEAD_TOL_MIN = 1.5;
+const PATH_HEAD_TOL_MAX = 4;
+/** How many of the RDP's last corners are tried as the tip. */
+const PATH_TIP_CANDIDATES = 6;
+/** The body's direction at the tip is a line fit over this much ink before it, px. */
+const PATH_TANGENT_PX = 40;
+/** A barb is at least this long, page px: the pen settling as it stops is shorter. */
+const PATH_MIN_BARB_PX = 8;
+/** ...and at most this long, and this fraction of the body. */
+const PATH_MAX_BARB_PX = 90;
+const PATH_MAX_BARB_FRACTION = 0.4;
+/** The shorter barb is at least this fraction of the longer: a one-barb arrow is refused. */
+const PATH_MIN_BARB_RATIO = 0.3;
+/** A head's ink, a V retraced at most once, is at most this many of its longer barb. */
+const PATH_MAX_HEAD_INK = 4;
+/**
+ * A head is straight strokes between three places: out along a barb, back
+ * to the tip, out along the other (or across from one barb to the other).
+ * Simplified at this share of its reach, every corner of its ink lies
+ * within {@link PATH_HEAD_CORNER_NEAR} of its reach of the tip or of a barb's
+ * end. A written 6 ends in a loop that passed every other head gate (UJI
+ * pen characters, 2026-11-01): a loop turns where no V does.
+ */
+const PATH_HEAD_TOL = 0.15;
+const PATH_HEAD_CORNER_NEAR = 0.3;
+/**
+ * Each leg of a head is a straight stroke: its ink's RMS distance from the
+ * line between its ends, over that line's length, is at most this.
+ * Measured: synthetic Pencil heads up to 0.17 (16 px barbs, tremor);
+ * the loop a written 6 ends in, 0.16-0.26.
+ */
+const PATH_BARB_MAX_BEND = 0.2;
+/**
+ * The tip is the head's front: no head sample lies further along than this
+ * many px, or this share of the head's reach. The pen's return to the tip
+ * between the barbs lands a px or three either side of it.
+ */
+const PATH_TIP_SLACK_PX = 5;
+const PATH_TIP_SLACK_FRACTION = 0.25;
+/**
+ * A path's retrace comes back at least this share of its last run (with the
+ * held floor, {@link RETRACE_HELD_MIN_PX}). Lower than the straight one's:
+ * that guards a lift's flick, and a path arrow is only read on a hold; a
+ * 40 px retrace on the reporter's 335 px last run is 12 %.
+ */
+const PATH_RETRACE_MIN_FRACTION = 0.05;
+
+/** An elbow has two runs at least, and at most this many. */
+const PATH_MAX_RUNS = 6;
+/** A run is at least this long, page px. */
+const PATH_MIN_RUN_PX = 16;
+/** A run's samples lie within this RMS of its own straight line, over its length. */
+const PATH_RUN_MAX_ERR = 0.08;
+/** A corner turns at least this far (less is one run with a wobble)... */
+const PATH_MIN_TURN_DEG = 30;
+/** ...and at most this far: a scribble's passes reverse on the spot. */
+const PATH_MAX_TURN_DEG = 140;
+/** The ink turns at least this share of a corner's turn close to it: an arc spreads its turn out. */
+const PATH_CORNER_SHARPNESS = 0.6;
+/** The window that sharpness is read over: this share of the shorter run, clamped (px). */
+const PATH_CORNER_WINDOW = 0.2;
+const PATH_CORNER_WINDOW_MIN = 6;
+const PATH_CORNER_WINDOW_MAX = 30;
+/** A straightened corner lies within this share of its shorter run of the ink. */
+const PATH_CORNER_MAX_GAP = 0.25;
+/** RDP tolerances tried for the runs, as fractions of the body's box diagonal. */
+const PATH_SIMPLIFY_STEPS = [0.02, 0.03, 0.045, 0.065, 0.09];
+/**
+ * Residual of the ink from its straightened path that zeroes the
+ * confidence, over the body's diagonal: the polygon fitter's. No real path
+ * arrow has been traced yet; synthetic Pencil elbows score 0.9-0.98.
+ */
+const PATH_MAX_ERR = 0.1;
+/** A run within this of level or upright is put on it. */
+const PATH_AXIS_SNAP_DEG = 8;
+
+/** A curve turns at least this far in all (less is a straight arrow's business)... */
+const PATH_CURVE_MIN_TURN_DEG = 30;
+/** ...and at most this far: past it, a loop or a scribble. */
+const PATH_CURVE_MAX_TURN_DEG = 300;
+/** Nowhere does a curve's ink turn more than this over its sharpness window. */
+const PATH_CURVE_MAX_SHARP_DEG = 50;
+/** That window, as a fraction of the curve's length, at least this many px. */
+const PATH_CURVE_WINDOW = 0.05;
+const PATH_CURVE_WINDOW_MIN = 8;
+/** The smoothing's reach, a fraction of the curve's length (at least the px). */
+const PATH_CURVE_SMOOTH = 0.03;
+const PATH_CURVE_SMOOTH_MIN = 4;
+/** The emitted curve has a sample at least every this many px, and at least the count. */
+const PATH_CURVE_STEP_MAX = 8;
+const PATH_CURVE_MIN_SAMPLES = 24;
+/** Residual of the ink from the smoothed curve that zeroes the confidence, over its diagonal. */
+const PATH_CURVE_MAX_ERR = 0.06;
+
+/**
+ * Crossings closer than this along the ink are one place, not a crossing:
+ * a corner the pen ran past and turned back from touches itself there.
+ */
+const PATH_LOCAL_CROSSING_PX = 40;
+/**
+ * A head keeps this far from the body, beyond the body's last stretch: a
+ * share of its reach, at least the px. A written loop closes back onto
+ * itself; an arrow's barbs lean away from its shaft. With the body's own
+ * crossing test ({@link crossesItself}), this refused 2 of the 19 UJI
+ * strokes the other gates let through at 80 px (2026-11-01).
+ */
+const PATH_HEAD_CLEARANCE = 0.2;
+const PATH_HEAD_CLEARANCE_MIN = 3;
+
+/** Where the head of a path arrow is, and how good a head it is. */
+interface PathHead {
+  /** Index of the tip: the body is the stroke from its start to here. */
+  tip: number;
+  /** 0..1: a V's barb symmetry, or 1 for a straight retrace. */
+  score: number;
+  /** How far the head's ink reaches from the tip, px. */
+  reach: number;
+}
+
+/** RMS distance of the ink from index `i` to `j` from the straight line between them, over its length. */
+function legBend(points: readonly Pt[], i: number, j: number): number {
+  const len = dist(points[i], points[j]);
+  if (j - i < 2 || len < 1e-6) return 0;
+  return polylineResidual(points.slice(i, j + 1), [points[i], points[j]]) / len;
+}
+
+/** Whether segments `ab` and `cd` cross (touching ends do not count). */
+function segmentsCross(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
+  const side = (p: Pt, q: Pt, r: Pt): number =>
+    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = side(c, d, a);
+  const d2 = side(c, d, b);
+  const d3 = side(a, b, c);
+  const d4 = side(a, b, d);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+/**
+ * Whether the ink crosses itself between places more than
+ * {@link PATH_LOCAL_CROSSING_PX} apart along it. A written loop does (a 6,
+ * an o, a b); an arrow's path does not.
+ */
+function crossesItself(points: readonly Pt[]): boolean {
+  const even = resampleEvery(points, 4);
+  const gap = Math.ceil(PATH_LOCAL_CROSSING_PX / 4);
+  for (let i = 1; i < even.length; i++) {
+    for (let j = i + gap; j < even.length; j++) {
+      if (segmentsCross(even[i - 1], even[i], even[j - 1], even[j])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the head (the ink after index `tip`) keeps clear of the body
+ * before its last stretch, {@link PATH_HEAD_CLEARANCE}.
+ */
+function headClear(points: readonly Pt[], tip: number, reach: number): boolean {
+  const end = indexAtLength(points, tip, Math.max(2 * reach, PATH_LOCAL_CROSSING_PX), -1);
+  const clearance = Math.max(PATH_HEAD_CLEARANCE_MIN, PATH_HEAD_CLEARANCE * reach);
+  for (let i = tip + 1; i < points.length; i++) {
+    for (let j = 0; j < end; j++) {
+      if (dist(points[i], points[j]) < clearance) return false;
+    }
+  }
+  return true;
+}
+
+/** {@link simplify}, as the indices it keeps. */
+function simplifyIndices(points: readonly Pt[], tolerance: number): number[] {
+  const kept = new Set(simplify(points, tolerance));
+  const out: number[] = [];
+  points.forEach((p, i) => {
+    if (kept.has(p)) out.push(i);
+  });
+  return out;
+}
+
+/** Unit direction the ink runs in, over {@link PATH_TANGENT_PX} up to index `at`. */
+function directionInto(points: readonly Pt[], at: number): Pt | null {
+  const from = indexAtLength(points, at, PATH_TANGENT_PX, -1);
+  const fit = fitLine(points.slice(from, at + 1));
+  if (!fit || fit.span < PATH_MIN_BARB_PX) return null;
+  return { x: (fit.b.x - fit.a.x) / fit.span, y: (fit.b.y - fit.a.y) / fit.span };
+}
+
+/**
+ * {@link directionInto} a few px short of index `near`, so that a corner RDP
+ * put a sample or two past the turn is still read from the run before it.
+ */
+function directionBefore(points: readonly Pt[], near: number): Pt | null {
+  return directionInto(points, indexAtLength(points, near, 2 * PATH_HEAD_TOL_MAX, -1));
+}
+
+/**
+ * The tip near index `near`: of the samples within a few px of ink either
+ * side of it, the first to come within 1.5 px of the one furthest along `u`
+ * (RDP puts a corner wherever the tremor was, not at the front). Only near
+ * it: the pen comes back to the tip between the barbs, a px or two further
+ * on, and that second visit as the tip leaves one barb ("The furthest point
+ * is ambiguous on a self-retracing polyline").
+ */
+function tipNear(points: readonly Pt[], near: number, u: Pt): number {
+  const from = indexAtLength(points, near, 2 * PATH_HEAD_TOL_MAX, -1);
+  const to = indexAtLength(points, near, 2 * PATH_HEAD_TOL_MAX, 1);
+  let best = -Infinity;
+  for (let i = from; i <= to; i++) best = Math.max(best, points[i].x * u.x + points[i].y * u.y);
+  for (let i = from; i <= to; i++) {
+    if (points[i].x * u.x + points[i].y * u.y >= best - 1.5) return i;
+  }
+  return near;
+}
+
+/**
+ * A V at the end of the stroke, its tip near index `near`: both barbs leave
+ * the tip backwards, one on each side of the way the body arrived, as the
+ * straight arrow's do. Its ink is short and stays behind the tip.
+ */
+function pathHeadV(points: readonly Pt[], near: number, bodyLength: number): PathHead | null {
+  const n = points.length;
+  const u0 = directionBefore(points, near);
+  if (!u0) return null;
+  const t = tipNear(points, near, u0);
+  if (t < 2 || t > n - 3) return null;
+  const u = directionInto(points, t) ?? u0;
+  const tip = points[t];
+  const maxBarb = Math.min(PATH_MAX_BARB_PX, PATH_MAX_BARB_FRACTION * bodyLength);
+  let sideMax = 0;
+  let sideMin = 0;
+  let plus: Pt | null = null;
+  let minus: Pt | null = null;
+  let plusAt = -1;
+  let minusAt = -1;
+  let ahead = 0;
+  let reach = 0;
+  for (let i = t; i < n; i++) {
+    const dx = points[i].x - tip.x;
+    const dy = points[i].y - tip.y;
+    reach = Math.max(reach, Math.hypot(dx, dy));
+    if (reach > maxBarb) return null;
+    ahead = Math.max(ahead, dx * u.x + dy * u.y);
+    const side = dx * u.y - dy * u.x;
+    if (side > sideMax) {
+      sideMax = side;
+      plus = points[i];
+      plusAt = i;
+    } else if (side < sideMin) {
+      sideMin = side;
+      minus = points[i];
+      minusAt = i;
+    }
+  }
+  if (ahead > Math.max(PATH_TIP_SLACK_PX, PATH_TIP_SLACK_FRACTION * reach)) return null;
+  if (!plus || !minus) return null;
+  const measure = (barb: Pt): { len: number; deg: number } => {
+    const dx = barb.x - tip.x;
+    const dy = barb.y - tip.y;
+    const along = -(dx * u.x + dy * u.y);
+    return { len: Math.hypot(dx, dy), deg: Math.atan2(Math.abs(dx * u.y - dy * u.x), along) / DEG };
+  };
+  const a = measure(plus);
+  const b = measure(minus);
+  const longer = Math.max(a.len, b.len);
+  if (Math.min(a.len, b.len) < Math.max(PATH_MIN_BARB_PX, PATH_MIN_BARB_RATIO * longer)) {
+    return null;
+  }
+  for (const barb of [a, b]) {
+    if (barb.deg < ARROW_MIN_HEAD_DEG || barb.deg > ARROW_MAX_HEAD_DEG) return null;
+  }
+  if (pathLength(points.slice(t)) > PATH_MAX_HEAD_INK * longer) return null;
+  // Each leg of the head is a straight stroke: out to the first barb's end,
+  // then back through the tip and out again, or straight across.
+  const first = Math.min(plusAt, minusAt);
+  const second = Math.max(plusAt, minusAt);
+  let back = first;
+  for (let i = first; i <= second; i++) {
+    if (dist(points[i], tip) < dist(points[back], tip)) back = i;
+  }
+  const viaTip = dist(points[back], tip) <= PATH_HEAD_CORNER_NEAR * reach;
+  const legs = viaTip
+    ? [
+        [t, first],
+        [first, back],
+        [back, second],
+      ]
+    : [
+        [t, first],
+        [first, second],
+      ];
+  const bend = Math.max(...legs.map(([i, j]) => legBend(points, i, j)));
+  if (bend > PATH_BARB_MAX_BEND) return null;
+  const close = PATH_HEAD_CORNER_NEAR * reach;
+  for (const c of simplify(points.slice(t), Math.max(PATH_HEAD_TOL_MIN, PATH_HEAD_TOL * reach))) {
+    if (Math.min(dist(c, tip), dist(c, plus), dist(c, minus)) > close) return null;
+  }
+  const lengthSym = clamp01(1 - Math.abs(a.len - b.len) / longer);
+  const angleSym = clamp01(1 - Math.abs(a.deg - b.deg) / 40);
+  return { tip: t, score: 0.6 + 0.25 * lengthSym + 0.15 * angleSym, reach };
+}
+
+/**
+ * How far back from index `at` the ink runs straight along `u`: the walk
+ * stops where it strays from the line through the tip by more than
+ * max(4 px, 6 % of the way back).
+ */
+function straightReach(points: readonly Pt[], at: number, u: Pt): number {
+  const tip = points[at];
+  let reach = 0;
+  for (let i = at - 1; i >= 0; i--) {
+    const dx = points[i].x - tip.x;
+    const dy = points[i].y - tip.y;
+    const back = -(dx * u.x + dy * u.y);
+    if (Math.abs(dx * u.y - dy * u.x) > Math.max(4, 0.06 * Math.max(0, back))) break;
+    reach = Math.max(reach, back);
+  }
+  return reach;
+}
+
+/**
+ * Apple Notes' gesture at the end of a path: back a little way along the
+ * last run, then hold. The same gates as {@link retraceArrowCandidate},
+ * against the last run's length instead of the whole shaft's.
+ */
+function pathHeadRetrace(points: readonly Pt[], near: number): PathHead | null {
+  const n = points.length;
+  const u0 = directionBefore(points, near);
+  if (!u0) return null;
+  const turn = tipNear(points, near, u0);
+  if (turn < 2 || turn >= n - 1) return null;
+  const u = directionInto(points, turn) ?? u0;
+  const run = straightReach(points, turn, u);
+  const back = trimHook(points.slice(turn), false);
+  const end = back[back.length - 1];
+  const along = -((end.x - points[turn].x) * u.x + (end.y - points[turn].y) * u.y);
+  if (along < Math.max(RETRACE_HELD_MIN_PX, PATH_RETRACE_MIN_FRACTION * run)) return null;
+  if (along > RETRACE_MAX_FRACTION * run) return null;
+  const backFit = fitLine(back);
+  if (!backFit) return null;
+  const bx = backFit.b.x - backFit.a.x;
+  const by = backFit.b.y - backFit.a.y;
+  if (angleBetweenDeg(bx, by, -u.x, -u.y) > RETRACE_MAX_ANGLE_DEG) return null;
+  if (detourOf(back, dist(back[0], end)) > RETRACE_MAX_DETOUR) return null;
+  return { tip: turn, score: 1, reach: along };
+}
+
+/** A path's clean points and how well the ink fits them (0..1). */
+interface PathFit {
+  points: Pt[];
+  score: number;
+  /** Straight runs at corners, drawn with rounded corners; else a smooth curve. */
+  elbow: boolean;
+}
+
+/** `line` turned onto level or upright when within {@link PATH_AXIS_SNAP_DEG}. */
+function axisSnapped(line: Axis): Axis {
+  const angle = Math.atan2(line.uy, line.ux);
+  const quarter = Math.PI / 2;
+  const off = angle - Math.round(angle / quarter) * quarter;
+  if (Math.abs(off) > PATH_AXIS_SNAP_DEG * DEG) return line;
+  return { ...line, ux: Math.cos(angle - off), uy: Math.sin(angle - off) };
+}
+
+function projectOnto(p: Pt, l: Axis): Pt {
+  const t = (p.x - l.cx) * l.ux + (p.y - l.cy) * l.uy;
+  return { x: l.cx + t * l.ux, y: l.cy + t * l.uy };
+}
+
+/**
+ * The vertices of a path of runs along `lines`: its ends projected onto the
+ * first and last, its corners where neighbours cross. `null` when a crossing
+ * strays from the corner the hand drew (`drawn`) by more than half the
+ * shorter run.
+ */
+function runPath(lines: readonly Axis[], drawn: readonly Pt[], ends: [Pt, Pt]): Pt[] | null {
+  const out: Pt[] = [projectOnto(ends[0], lines[0])];
+  for (let i = 1; i < lines.length; i++) {
+    const crossing = intersect(lines[i - 1], lines[i]);
+    const shorter = Math.min(dist(drawn[i - 1], drawn[i]), dist(drawn[i], drawn[i + 1]));
+    if (!crossing || dist(crossing, drawn[i]) > 0.5 * shorter) return null;
+    out.push(crossing);
+  }
+  out.push(projectOnto(ends[1], lines[lines.length - 1]));
+  return out;
+}
+
+/**
+ * The body as straight runs meeting at corners. RDP finds the corners, at
+ * the first of {@link PATH_SIMPLIFY_STEPS} where every gate holds; each run
+ * is then a line fitted through the middle of its samples, as a polygon's
+ * edges are, and each corner where two run lines cross. A curve passes the
+ * runs' straightness once RDP chops it into chords ("An arc passes every
+ * per-edge straightness test"), so a corner must also be sharp in the ink
+ * and lie on it.
+ */
+function elbowFit(body: readonly Pt[], diag: number): PathFit | null {
+  for (const step of PATH_SIMPLIFY_STEPS) {
+    const idx = simplifyIndices(body, Math.max(PATH_HEAD_TOL_MIN, step * diag));
+    const fit = elbowAt(body, idx, diag);
+    if (fit) return fit;
+  }
+  return null;
+}
+
+/** {@link elbowFit} with its corners at the samples `idx` (the ends included). */
+function elbowAt(body: readonly Pt[], idx: readonly number[], diag: number): PathFit | null {
+  const runs = idx.length - 1;
+  if (runs < 2 || runs > PATH_MAX_RUNS) return null;
+  const drawn = idx.map((i) => body[i]);
+  const lines: Axis[] = [];
+  for (let r = 0; r < runs; r++) {
+    const samples = body.slice(idx[r], idx[r + 1] + 1);
+    const len = dist(drawn[r], drawn[r + 1]);
+    if (len < PATH_MIN_RUN_PX) return null;
+    if (polylineResidual(samples, [drawn[r], drawn[r + 1]]) / len > PATH_RUN_MAX_ERR) return null;
+    const line = fitAxis(trimEdge(samples));
+    if (!line) return null;
+    // Oriented the way the pen went.
+    const forward =
+      (drawn[r + 1].x - drawn[r].x) * line.ux + (drawn[r + 1].y - drawn[r].y) * line.uy >= 0;
+    lines.push(forward ? line : { ...line, ux: -line.ux, uy: -line.uy });
+  }
+  for (let c = 1; c < runs; c++) {
+    const turn = angleBetweenDeg(lines[c - 1].ux, lines[c - 1].uy, lines[c].ux, lines[c].uy);
+    if (turn < PATH_MIN_TURN_DEG || turn > PATH_MAX_TURN_DEG) return null;
+    const shorter = Math.min(dist(drawn[c - 1], drawn[c]), dist(drawn[c], drawn[c + 1]));
+    const window = Math.min(
+      PATH_CORNER_WINDOW_MAX,
+      Math.max(PATH_CORNER_WINDOW_MIN, PATH_CORNER_WINDOW * shorter),
+    );
+    const sharp = openSharpnessAt(body, idx[c], window);
+    if (Number.isFinite(sharp) && sharp < PATH_CORNER_SHARPNESS * turn) return null;
+  }
+  const ends: [Pt, Pt] = [body[0], body[body.length - 1]];
+  const straight = runPath(lines, drawn, ends);
+  if (!straight) return null;
+  // The hand must have reached every corner (a crossing outside an arc is not one).
+  for (let c = 1; c < runs; c++) {
+    const shorter = Math.min(
+      dist(straight[c - 1], straight[c]),
+      dist(straight[c], straight[c + 1]),
+    );
+    let nearest = Infinity;
+    for (const p of body) nearest = Math.min(nearest, dist(p, straight[c]));
+    if (nearest > PATH_CORNER_MAX_GAP * shorter) return null;
+  }
+  const err = polylineResidual(body, straight) / diag;
+  // Beautified after scoring: runs near level or upright are put on it,
+  // unless that moves a corner off the one the hand drew.
+  const snapped = runPath(lines.map(axisSnapped), drawn, ends);
+  return { points: snapped ?? straight, score: clamp01(1 - err / PATH_MAX_ERR), elbow: true };
+}
+
+/** `points` resampled every `step` px of path, the last point exact. */
+function resampleEvery(points: readonly Pt[], step: number): Pt[] {
+  const out: Pt[] = [{ ...points[0] }];
+  let carry = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const seg = dist(a, b);
+    if (seg === 0) continue;
+    let t = step - carry;
+    while (t <= seg) {
+      out.push({ x: a.x + ((b.x - a.x) * t) / seg, y: a.y + ((b.y - a.y) * t) / seg });
+      t += step;
+    }
+    carry = (carry + seg) % step;
+  }
+  const last = points[points.length - 1];
+  if (dist(out[out.length - 1], last) > 1e-6) out.push({ ...last });
+  return out;
+}
+
+/** Binomial smoothing, `passes` times, both ends held where they are. */
+function smoothOpen(points: readonly Pt[], passes: number): Pt[] {
+  let cur = points.map((p) => ({ ...p }));
+  for (let k = 0; k < passes; k++) {
+    const next = cur.map((p) => ({ ...p }));
+    for (let i = 1; i < cur.length - 1; i++) {
+      next[i] = {
+        x: (cur[i - 1].x + 2 * cur[i].x + cur[i + 1].x) / 4,
+        y: (cur[i - 1].y + 2 * cur[i].y + cur[i + 1].y) / 4,
+      };
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+/**
+ * The body smoothed: resampled every 2 px and passed through a binomial
+ * filter that reaches {@link PATH_CURVE_SMOOTH} of its length, its ends
+ * held. Tremor goes; the hand's bends stay.
+ */
+function smoothBody(body: readonly Pt[]): Pt[] {
+  const length = pathLength(body);
+  const fine = resampleEvery(body, 2);
+  const reach = Math.max(PATH_CURVE_SMOOTH_MIN, PATH_CURVE_SMOOTH * length);
+  // A binomial pass spreads a sample by half a step's variance: 2·(reach/step)² passes.
+  return smoothOpen(fine, Math.min(400, Math.round(2 * (reach / 2) ** 2)));
+}
+
+/**
+ * A curve's discriminators, in degrees: how far it turns in all (absolute
+ * turn, read off the smoothed curve, or tremor adds up to a turn of its own:
+ * a semicircle read 348° on the raw ink) and the sharpest turn of the raw
+ * ink across one window, where a corner shows.
+ */
+function curveTurns(
+  body: readonly Pt[],
+  smooth: readonly Pt[],
+): { total: number; sharpest: number } {
+  const length = pathLength(body);
+  const window = Math.max(PATH_CURVE_WINDOW_MIN, PATH_CURVE_WINDOW * length);
+  const coarse = resampleEvery(body, window / 2);
+  let sharpest = 0;
+  for (let i = 2; i < coarse.length - 2; i++) {
+    sharpest = Math.max(sharpest, turnDeg(coarse[i - 2], coarse[i], coarse[i + 2]));
+  }
+  const even = resampleEvery(smooth, window / 2);
+  let total = 0;
+  for (let i = 1; i < even.length - 1; i++) total += turnDeg(even[i - 1], even[i], even[i + 1]);
+  return { total, sharpest };
+}
+
+/**
+ * The body as a smooth curve: no corner anywhere, and a turn in all that a
+ * straight arrow would not have and a loop or a scribble would exceed. The
+ * clean curve is the smoothed ink ({@link smoothBody}), with its ends where
+ * the pen started and where the tip is.
+ */
+function curveFit(body: readonly Pt[], diag: number): PathFit | null {
+  const length = pathLength(body);
+  const smooth = smoothBody(body);
+  const { total, sharpest } = curveTurns(body, smooth);
+  if (total < PATH_CURVE_MIN_TURN_DEG || total > PATH_CURVE_MAX_TURN_DEG) return null;
+  if (sharpest > PATH_CURVE_MAX_SHARP_DEG) return null;
+  const step = Math.min(PATH_CURVE_STEP_MAX, length / PATH_CURVE_MIN_SAMPLES);
+  const curve = resampleEvery(smooth, Math.max(1, step));
+  const err = polylineResidual(body, curve) / diag;
+  return { points: curve, score: clamp01(1 - err / PATH_CURVE_MAX_ERR), elbow: false };
+}
+
+/**
+ * An arrow along a path (discussion #107): a body that is not one straight
+ * run, ending in a head — a V, or the retrace gesture. The body becomes
+ * straight runs with rounded corners or a smooth curve; the head is drawn
+ * from its style, along the body's last stretch (`canvas/shape-decor`).
+ */
+function pathArrowCandidate(points: readonly Pt[], pressure: number): ShapeResult | null {
+  const n = points.length;
+  if (n < 6) return null;
+  const diag = diagonalOf(boundsOf(points));
+  const tol = Math.min(
+    PATH_HEAD_TOL_MAX,
+    Math.max(PATH_HEAD_TOL_MIN, PATH_HEAD_TOL_FRACTION * diag),
+  );
+  const corners = simplifyIndices(points, tol);
+  let best: ShapeResult | null = null;
+  const tried = new Set<number>();
+  for (let k = 2; k <= PATH_TIP_CANDIDATES + 1 && corners.length - k > 0; k++) {
+    const near = corners[corners.length - k];
+    const length = pathLength(points.slice(0, near + 1));
+    for (const head of [pathHeadV(points, near, length), pathHeadRetrace(points, near)]) {
+      if (!head || tried.has(head.tip)) continue;
+      tried.add(head.tip);
+      const result = pathArrowFrom(points, head, pressure);
+      if (result && (!best || result.confidence > best.confidence)) best = result;
+    }
+  }
+  return best;
+}
+
+/** The path arrow whose head is `head`, or `null` when its body is no path. */
+function pathArrowFrom(
+  points: readonly Pt[],
+  head: PathHead,
+  pressure: number,
+): ShapeResult | null {
+  if (!headClear(points, head.tip, head.reach)) return null;
+  if (crossesItself(points.slice(0, head.tip + 1))) return null;
+  const body = trimHook(points.slice(0, head.tip + 1), true);
+  if (body.length < 3) return null;
+  const diag = diagonalOf(boundsOf(body));
+  if (diag < MIN_SPAN) return null;
+  // One straight run is the straight arrow's (`arrowCandidate`), never this.
+  const line = fitLine(body);
+  if (
+    line &&
+    line.err <= ARROW_SHAFT_MAX_ERR &&
+    detourOf(body, line.span) <= ARROW_SHAFT_MAX_DETOUR
+  ) {
+    return null;
+  }
+  const fit = elbowFit(body, diag) ?? curveFit(body, diag);
+  if (!fit) return null;
+  return {
+    kind: "path",
+    pts: flatten(fit.points, pressure),
+    confidence: fit.score * head.score,
+    heads: { end: "open" },
+    ...(fit.elbow ? { radius: ROUND_RADIUS } : {}),
+  };
+}
+
 // --- Real-ink cleanup -------------------------------------------------------
 //
 // Pencil ink is not the ideal outline plus tremor that the synthetic tests
@@ -3303,6 +3928,17 @@ export function recognizeShape(pts: number[], opts?: RecognizeOptions): ShapeRes
   return { ...best, confidence: round2(best.confidence) };
 }
 
+/** The style a recognised shape gives the stroke it becomes: only a `path` has any. */
+export function styleOfShape(result: { heads?: ArrowHeads; radius?: number }): {
+  heads?: ArrowHeads;
+  radius?: number;
+} {
+  return {
+    ...(result.heads ? { heads: { ...result.heads } } : {}),
+    ...(result.radius !== undefined ? { radius: result.radius } : {}),
+  };
+}
+
 /**
  * {@link recognizeShape} for ink drawn with the view zoomed `zoom` times past
  * fit-to-width. Every absolute length in here — the minimum span, the hook
@@ -3319,7 +3955,11 @@ export function recognizeAtZoom(
 ): ShapeResult | null {
   if (!(zoom > 0) || !Number.isFinite(zoom) || zoom === 1) return recognizeShape(pts, opts);
   const result = recognizeShape(scaleXY(pts, zoom), opts);
-  return result ? { ...result, pts: scaleXY(result.pts, 1 / zoom) } : null;
+  if (!result) return null;
+  const scaled = { ...result, pts: scaleXY(result.pts, 1 / zoom) };
+  // A path's corners as round on the page as they were drawn.
+  if (result.radius !== undefined) scaled.radius = round2(result.radius / zoom);
+  return scaled;
 }
 
 /** `[x, y, p, …]` with x and y multiplied by `k` about the origin; pressure kept. */
@@ -3405,30 +4045,51 @@ export function explainShape(pts: number[], opts?: RecognizeOptions): ShapeExpla
   // stroke is that arrow and nothing else — the line it was drawn along would
   // otherwise outscore it from the cleaned points.
   const retrace = retraceArrowCandidate(points, pressure, opts?.held === true);
-  const candidates: Array<ShapeResult | null> = retrace
-    ? [retrace]
-    : closed
-      ? closedCandidates(
-          cleaned,
-          pressure,
-          diagonalOf(boundsOf(cleaned)),
-          polygons,
-          curvatureThreshold,
-          arcs,
-        )
-      : [
-          arrowCandidate(points, pressure, diag),
-          lineCandidate(points, pressure, curvatureThreshold),
-          cleaned.length >= MIN_POINTS
-            ? lineCandidate(cleaned, pressure, curvatureThreshold)
-            : null,
-          arcs && cleaned.length >= MIN_POINTS
-            ? arcCandidate(cleaned, pressure, diagonalOf(boundsOf(cleaned)), curvatureThreshold)
-            : null,
-          cleaned.length >= MIN_POINTS
-            ? angleCandidate(cleaned, pressure, diagonalOf(boundsOf(cleaned)), opts?.held === true)
-            : null,
-        ];
+  // An arrow along a path is read on a hold only, and only where neither
+  // the retrace above nor the straight arrow is one: those keep every
+  // stroke they took before. Its head is the evidence, so a confident one
+  // is the stroke, as the retrace is; a weak one competes like the rest.
+  const straightArrow = closed || retrace ? null : arrowCandidate(points, pressure, diag);
+  const path =
+    opts?.held === true &&
+    !closed &&
+    !(retrace && retrace.confidence >= SNAP_MIN_CONFIDENCE) &&
+    !(straightArrow && straightArrow.confidence >= SNAP_MIN_CONFIDENCE)
+      ? pathArrowCandidate(points, pressure)
+      : null;
+  const candidates: Array<ShapeResult | null> =
+    path && path.confidence >= SNAP_MIN_CONFIDENCE
+      ? [path]
+      : retrace
+        ? [retrace]
+        : closed
+          ? closedCandidates(
+              cleaned,
+              pressure,
+              diagonalOf(boundsOf(cleaned)),
+              polygons,
+              curvatureThreshold,
+              arcs,
+            )
+          : [
+              straightArrow,
+              path,
+              lineCandidate(points, pressure, curvatureThreshold),
+              cleaned.length >= MIN_POINTS
+                ? lineCandidate(cleaned, pressure, curvatureThreshold)
+                : null,
+              arcs && cleaned.length >= MIN_POINTS
+                ? arcCandidate(cleaned, pressure, diagonalOf(boundsOf(cleaned)), curvatureThreshold)
+                : null,
+              cleaned.length >= MIN_POINTS
+                ? angleCandidate(
+                    cleaned,
+                    pressure,
+                    diagonalOf(boundsOf(cleaned)),
+                    opts?.held === true,
+                  )
+                : null,
+            ];
 
   const scored = candidates
     .filter((c): c is ShapeResult => c !== null)
@@ -3496,4 +4157,11 @@ export const recognizerInternals = {
   openSweep,
   edgeDeviation,
   fivefoldPhase,
+  pathArrowCandidate,
+  elbowFit,
+  curveFit,
+  curveTurns,
+  pathHeadV,
+  pathHeadRetrace,
+  simplifyIndices,
 };

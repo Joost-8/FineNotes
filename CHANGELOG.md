@@ -10,6 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Arrows along a path**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Draw a
+  path with turns or a curve, finish it with an arrowhead (or go back a
+  little way along the last stretch, as for a straight arrow) and hold: it
+  snaps to clean straight runs with small rounded corners, the runs level
+  and upright when nearly so, or to a smooth curve, with the head along its
+  last stretch. Its heads and corners change like a line's. Only on a hold,
+  so handwriting stays handwriting. FineNotes 2.6 and earlier show it as
+  ordinary ink without its head.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.

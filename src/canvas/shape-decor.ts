@@ -165,6 +165,69 @@ export function arrowHead(
 }
 
 /**
+ * The point `distance` back along the polyline from its last point, and the
+ * polyline cut there (the cut point last). The whole of it when it is shorter.
+ */
+function backAlong(points: readonly Pt[], distance: number): { at: Pt; kept: Pt[] } {
+  let left = distance;
+  for (let i = points.length - 1; i > 0; i--) {
+    const a = points[i - 1];
+    const b = points[i];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (seg >= left && seg > 0) {
+      const t = left / seg;
+      const at = { x: b.x + (a.x - b.x) * t, y: b.y + (a.y - b.y) * t };
+      return { at, kept: [...points.slice(0, i), at] };
+    }
+    left -= seg;
+  }
+  return { at: { ...points[0] }, kept: [{ ...points[0] }] };
+}
+
+/**
+ * A `path`'s outline and heads (discussion #107): a head points along the
+ * path's own last stretch, not along the line between its ends, and is
+ * sized by the whole path's length. Its direction is read half a head back,
+ * or over the last segment when that is shorter: a straight run's
+ * direction, or a smooth curve's tangent at its end. A filled head cuts the
+ * path back to the middle of its base, as a line's does.
+ */
+export function pathHeads(
+  pts: readonly number[],
+  width: number,
+  heads: { start?: ArrowHead; end?: ArrowHead },
+): { pts: number[]; heads: HeadGeometry[] } {
+  let points = distinct(pointsOf(pts));
+  const p = pts[2] ?? 0.5;
+  const out: HeadGeometry[] = [];
+  if (points.length < 2) return { pts: pts.slice(), heads: out };
+  let span = 0;
+  for (let i = 1; i < points.length; i++) {
+    span += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  const atEnd = (line: Pt[], head: ArrowHead): Pt[] => {
+    const tip = line[line.length - 1];
+    const before = line[line.length - 2];
+    const last = Math.hypot(tip.x - before.x, tip.y - before.y);
+    const probe = arrowHead(before, tip, width, head, span);
+    if (!probe) return line;
+    const side = Math.hypot(probe.points[0].x - tip.x, probe.points[0].y - tip.y);
+    const from = backAlong(line, Math.min(side / 2, last)).at;
+    const geometry = arrowHead(from, tip, width, head, span) ?? probe;
+    out.push(geometry);
+    if (!geometry.filled) return line;
+    const base = Math.hypot(geometry.stop.x - tip.x, geometry.stop.y - tip.y);
+    return backAlong(line, base).kept;
+  };
+  if (heads.end) points = atEnd(points, heads.end);
+  if (heads.start && points.length >= 2)
+    points = atEnd(points.slice().reverse(), heads.start).reverse();
+  const flat: number[] = [];
+  for (const q of points) flat.push(q.x, q.y, p);
+  return { pts: flat, heads: out };
+}
+
+/**
  * The canvas dash pattern for a line `width` wide drawn with round caps: a
  * cap adds half the width at each end of a dash, so the stored lengths are
  * what is left after the caps. Dots are zero-length dashes, which round caps

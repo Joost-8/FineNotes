@@ -81,7 +81,7 @@ export function styleNewShape(stroke: Stroke, tool: ShapeToolStyle): void {
   if (tool.fill && canFill(kind)) stroke.fill = fillOf(stroke.color, tool.fill);
   if (tool.dash) stroke.dash = tool.dash;
   if (tool.round && canRound(kind)) stroke.radius = ROUND_RADIUS;
-  if (kind === "arrow") {
+  if (kind === "arrow" || kind === "path") {
     const heads = tool.heads ?? DEFAULT_ARROW_HEADS;
     if (heads.start !== undefined || heads.end !== "open") {
       applyShapeStyle(stroke, { heads: heads.start || heads.end ? heads : null });
@@ -103,7 +103,12 @@ const FILL = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** Kinds that close on themselves, so they have an inside to fill. */
 export function canFill(kind: ShapeKind | undefined): boolean {
   return (
-    kind !== undefined && kind !== "line" && kind !== "arrow" && kind !== "arc" && kind !== "angle"
+    kind !== undefined &&
+    kind !== "line" &&
+    kind !== "arrow" &&
+    kind !== "arc" &&
+    kind !== "angle" &&
+    kind !== "path"
   );
 }
 
@@ -114,13 +119,17 @@ export function canRound(kind: ShapeKind | undefined): boolean {
     kind === "triangle" ||
     kind === "diamond" ||
     kind === "polygon" ||
-    kind === "star"
+    kind === "star" ||
+    kind === "path"
   );
 }
 
-/** Kinds that take arrowheads: a line, and an arrow (which becomes a line with heads). */
+/**
+ * Kinds that take arrowheads: a line, an arrow (which becomes a line with
+ * heads) and a path, whose heads follow its first and last runs.
+ */
 export function canHaveHeads(kind: ShapeKind | undefined): boolean {
-  return kind === "line" || kind === "arrow";
+  return kind === "line" || kind === "arrow" || kind === "path";
 }
 
 /** A fill as stored: `#rrggbb` or `#rrggbbaa`, lower case; anything else is none. */

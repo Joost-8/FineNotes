@@ -306,7 +306,7 @@ import { InkTracer } from "../ink/freehand";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
-import { explainShape, recognizeAtZoom } from "../ink/shape-recognizer";
+import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
 import {
   SCRIBBLE_COVERAGE,
@@ -2299,8 +2299,16 @@ export class InkSurface {
    * it: `base` is the snapped geometry, and moving the pen from `from` scales
    * and rotates it about `pivot` (GoodNotes' "adjust while holding").
    */
-  private snap: { kind: ShapeKind; base: number[]; pivot: Pt; from: Pt; pts: number[] } | null =
-    null;
+  private snap: {
+    kind: ShapeKind;
+    base: number[];
+    pivot: Pt;
+    from: Pt;
+    pts: number[];
+    /** A path arrow's head and corners (`styleOfShape`). */
+    heads?: Stroke["heads"];
+    radius?: number;
+  } | null = null;
   /**
    * The Shape tool's preset being dragged out — corner to corner, a
    * connector start to end — or a table, which is several strokes.
@@ -6499,7 +6507,12 @@ export class InkSurface {
   }
 
   /** Draw a shape being placed or held on the wet layer, styled as it will be committed. */
-  private renderWetShape(pageIndex: number, kind: ShapeKind, pts: number[]): void {
+  private renderWetShape(
+    pageIndex: number,
+    kind: ShapeKind,
+    pts: number[],
+    decor: Pick<Stroke, "heads" | "radius"> = {},
+  ): void {
     const style = this.currentStyle();
     const shape = this.styleShape({
       id: "",
@@ -6508,6 +6521,7 @@ export class InkSurface {
       tool: style.tool,
       pts,
       shape: kind,
+      ...decor,
     });
     this.renderer?.renderWet(pageIndex, shape.pts, {
       ...style,
@@ -9047,6 +9061,7 @@ export class InkSurface {
       pivot,
       from: { x: anchor.x, y: anchor.y },
       pts: base,
+      ...styleOfShape(result),
     };
     this.scheduleWet();
   }
@@ -9320,7 +9335,7 @@ export class InkSurface {
     if (!builder || !box) return;
     // A snapped shape is drawn as the clean shape, following the held pen.
     if (this.snap) {
-      this.renderWetShape(box.index, this.snap.kind, this.snap.pts);
+      this.renderWetShape(box.index, this.snap.kind, this.snap.pts, styleOfShape(this.snap));
       return;
     }
     const style = this.currentStyle();
@@ -9545,7 +9560,8 @@ export class InkSurface {
       (snapMode === "auto" &&
         !this.practice &&
         (this.toolState.tool === "pen" || this.toolState.tool === "highlighter"));
-    let shape: { kind: ShapeKind; pts: number[] } | null = snap;
+    let shape: { kind: ShapeKind; pts: number[]; heads?: Stroke["heads"]; radius?: number } | null =
+      snap;
     if (!shape && (snapOnLift || shouldSnapStroke(snapMode, heldLongEnough))) {
       // Held, the pen rested where the stroke ends; snapped on lift, it may
       // have trailed a tail as it left the glass.
@@ -9581,7 +9597,7 @@ export class InkSurface {
       size,
       tool,
       pts,
-      ...(shape ? { shape: shape.kind } : {}),
+      ...(shape ? { shape: shape.kind, ...styleOfShape(shape) } : {}),
       ...(samples ? { samples } : {}),
       // A snapped shape is clean geometry, drawn at one width: no nib.
       ...(nib !== undefined && !shape ? { nib } : {}),
@@ -9842,7 +9858,7 @@ export class InkSurface {
    * the held shape turns about, so it is placed now or not at all).
    */
   private snapShapeStart(box: PageBox, kind: ShapeKind, pts: number[]): number[] {
-    if (kind !== "line" && kind !== "arrow") return pts;
+    if (kind !== "line" && kind !== "arrow" && kind !== "path") return pts;
     if (!this.snapNear(box, pts[0], pts[1])) return pts;
     const hit = this.shapeSnapper.hit;
     this.showSnapMarker(box, hit);
@@ -9864,7 +9880,8 @@ export class InkSurface {
     const pts = transformShape(snap.base, snap.pivot, snap.from, pen);
     const open = snap.kind === "line" || snap.kind === "arrow";
     const corners = open ? 2 : snap.base.length / 3 - 1;
-    if (snap.kind === "circle" || snap.kind === "ellipse" || corners > 12) {
+    // A path's far end is its head: it turns with the pen, unsnapped.
+    if (snap.kind === "circle" || snap.kind === "ellipse" || snap.kind === "path" || corners > 12) {
       this.showSnapMarker(null, null);
       return pts;
     }
