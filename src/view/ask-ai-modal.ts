@@ -87,9 +87,11 @@ export interface AskAiHost {
 /**
  * What the empty thread offers to ask, for one page, several, or only an
  * attached file (the lasso's Ask AI sends its selection as one); a tap
- * sends it.
+ * sends it. With nothing picked or attached (a new chat, unless the setting
+ * picks the open page) there is nothing to ask about yet: no suggestions.
  */
 const SUGGESTIONS = {
+  none: [],
   one: [
     "Summarise this page",
     "Explain this step by step",
@@ -737,7 +739,8 @@ export class AskChat {
 
     if (session.empty) {
       const count = session.selected.length;
-      const kind = count > 1 ? "many" : count === 0 && session.attachments.length ? "file" : "one";
+      const kind =
+        count > 1 ? "many" : count === 1 ? "one" : session.attachments.length ? "file" : "none";
       if (this.emptyFor !== kind) {
         thread.querySelector(".goodobsidian-chat-empty")?.remove();
         this.renderEmpty(thread, kind);
@@ -769,11 +772,13 @@ export class AskChat {
     const empty = thread.createDiv({ cls: "goodobsidian-chat-empty" });
     setIcon(empty.createDiv({ cls: "goodobsidian-chat-empty-icon" }), "sparkles");
     const title = {
+      none: "Ask about your notes",
       one: "Ask about this page",
       many: "Ask about these pages",
       file: "Ask about this",
     };
     empty.createDiv({ cls: "goodobsidian-chat-empty-title", text: title[kind] });
+    if (SUGGESTIONS[kind].length === 0) return;
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
     for (const text of SUGGESTIONS[kind]) {
       const chip = chips.createEl("button", { cls: "goodobsidian-chat-suggestion clickable-icon" });

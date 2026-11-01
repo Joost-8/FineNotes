@@ -324,9 +324,9 @@ const DESC = {
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
   askAttachPage:
-    "On, a new chat in Ask AI starts with the page you are on picked, so the first question " +
-    "is about it. Off, it starts with no page: pick pages in the chat, attach a file, or " +
-    "select something with the lasso and choose Ask AI.",
+    "A new chat in Ask AI starts with the page you are on picked, so the first question is " +
+    "about it. Off (the default), it starts with no page: pick pages in the chat, attach a " +
+    "file, or select something with the lasso and choose Ask AI.",
   openRouterSkipCompressed:
     "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
     "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
