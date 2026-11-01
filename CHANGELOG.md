@@ -10,6 +10,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Import Notability's new .ntb notes**
+  ([#90](https://github.com/Joost-8/FineNotes/pull/90), thanks
+  [@fariszyzy](https://github.com/fariszyzy)). A `.ntb` file, a zip of
+  them, or an Auto-backup in the new format now imports like a `.note`:
+  handwriting, highlights and shapes, typed text and text boxes, pictures,
+  sticky notes, lined and graph paper, and PDF pages with the ink on the
+  words it marked.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.

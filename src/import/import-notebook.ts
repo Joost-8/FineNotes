@@ -7,7 +7,7 @@
  * name: `.note` is both Notability (a zip) and Supernote (not one), and a
  * backup zip can hold any mix. Accepted:
  *
- * - Goodnotes (`.goodnotes`) and Notability (`.note`): zips.
+ * - Goodnotes (`.goodnotes`) and Notability (`.note`, `.ntb`): zips.
  * - Noteful (`.noteful`): its own binary format; a backup is a folder of them.
  * - FreeNotes (`.freenotes`): a zip around one `.frnote` folder.
  * - Xournal++ and Xournal (`.xopp`, `.xoj`): gzipped XML, or plain XML.
@@ -31,6 +31,12 @@ import { isGoodnotes, readGoodnotes } from "./goodnotes";
 import { plural, type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
+import {
+  isNotabilityNtb,
+  notabilityNtbPdfFiles,
+  readNotabilityNtb,
+  type NtbPdfSizes,
+} from "./notability-ntb";
 import { isNoteful, readNoteful } from "./noteful";
 import {
   isRemarkableDocument,
@@ -54,6 +60,7 @@ export type { PdfPageSize } from "./notability";
 export const IMPORT_EXTENSIONS: readonly string[] = [
   "goodnotes",
   "note",
+  "ntb",
   "noteful",
   "zip",
   "pdf",
@@ -244,6 +251,7 @@ async function collect(
     isTemplatePackage(index) ||
     isGoodnotes(index) ||
     isNotability(index) ||
+    isNotabilityNtb(index) ||
     isSaberArchive(index) ||
     isFreenotes(index) ||
     remarkable
@@ -292,6 +300,7 @@ async function collect(
     if (
       isGoodnotes(files) ||
       isNotability(files) ||
+      isNotabilityNtb(files) ||
       isSaberArchive(files) ||
       isFreenotes(files) ||
       safely(() => isRemarkableDocument(files))
@@ -321,24 +330,40 @@ async function convert(
       result = readSaberArchive(files, title || "Imported notebook");
     } else if (safely(() => isRemarkableDocument(files))) {
       result = readRemarkableDocument(files, title || "Imported notebook");
+    } else if (isNotabilityNtb(files)) {
+      result = readNotabilityNtb(
+        files,
+        title,
+        await measurePdfs(notabilityNtbPdfFiles(files), options),
+      );
     } else {
-      const sizes = new Map<string, readonly PdfPageSize[]>();
-      if (options.measurePdf) {
-        for (const pdf of notabilityPdfFiles(files)) {
-          try {
-            sizes.set(pdf.name, await options.measurePdf(pdf.bytes));
-          } catch {
-            // Unmeasured: the reader takes its pages for Letter and says so.
-          }
-        }
-      }
-      result = readNotability(files, title, sizes);
+      result = readNotability(files, title, await measurePdfs(notabilityPdfFiles(files), options));
     }
   } catch (e) {
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
   await deliver(result, batch, options);
+}
+
+/**
+ * The page sizes of a notebook's PDFs, by name. A PDF that fails to measure
+ * is left out; its reader takes its pages for the paper size and says so.
+ */
+async function measurePdfs(
+  pdfs: Array<{ name: string; bytes: Uint8Array }>,
+  options: ImportOptions,
+): Promise<NtbPdfSizes> {
+  const sizes = new Map<string, readonly PdfPageSize[]>();
+  if (!options.measurePdf) return sizes;
+  for (const pdf of pdfs) {
+    try {
+      sizes.set(pdf.name, await options.measurePdf(pdf.bytes));
+    } catch {
+      // Unmeasured: the reader says so.
+    }
+  }
+  return sizes;
 }
 
 /** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
@@ -364,11 +389,11 @@ async function deliver(
   batch.results.push(result);
 }
 
-/** `X.goodnotes/…`, `X.note/…`, `X.rmdoc/…`, `X.sba/…` or `X.frnote/…` folders, in name order. */
+/** `X.goodnotes/…`, `X.note/…`, `X.ntb/…`, `X.rmdoc/…`, `X.sba/…` or `X.frnote/…` folders, in name order. */
 function packageFolders(names: string[]): string[] {
   const folders = new Set<string>();
   for (const name of names) {
-    const match = /^(.*?\.(?:goodnotes|note|rmdoc|sba|frnote))\/(.+)$/i.exec(name);
+    const match = /^(.*?\.(?:goodnotes|note|ntb|rmdoc|sba|frnote))\/(.+)$/i.exec(name);
     if (match && !match[2].endsWith("/")) folders.add(match[1]);
   }
   return [...folders].sort();

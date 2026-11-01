@@ -139,6 +139,7 @@ describe("importNotebooks", () => {
     expect(IMPORT_EXTENSIONS).toEqual([
       "goodnotes",
       "note",
+      "ntb",
       "noteful",
       "zip",
       "pdf",

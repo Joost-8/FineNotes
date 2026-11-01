@@ -152,7 +152,7 @@ export function packageRoot(
   for (const name of files.keys()) {
     const parts = name.split("/");
     if (parts[parts.length - 1] !== keyFile || parts.length > 2) continue;
-    if (parts.length === 2 && /\.(goodnotes|note)$/i.test(parts[0])) continue;
+    if (parts.length === 2 && /\.(goodnotes|note|ntb)$/i.test(parts[0])) continue;
     return parts.length === 1 ? "" : `${parts[0]}/`;
   }
   return null;

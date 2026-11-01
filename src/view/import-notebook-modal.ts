@@ -280,8 +280,8 @@ export class ImportNotebookModal extends Modal {
     });
     steps.createEl("li", {
       text:
-        "Notability: share or export a note in the Note format. For everything at once, turn " +
-        "on Auto-backup with the Note format.",
+        "Notability: share or export a note in the Note (.note) or the new (.ntb) format. For " +
+        "everything at once, turn on Auto-backup with either format.",
     });
     steps.createEl("li", {
       text:
@@ -476,7 +476,7 @@ class VaultImportSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly pick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a .goodnotes, .note or .zip file in the vault…");
+    this.setPlaceholder("Find a .goodnotes, .note, .ntb or .zip file in the vault…");
   }
   getItems(): TFile[] {
     return this.app.vault.getFiles().filter((file) => isImportFileName(file.name));
