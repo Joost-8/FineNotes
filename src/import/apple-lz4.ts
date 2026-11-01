@@ -10,6 +10,15 @@ const MAGIC_COMPRESSED = 0x31347662; // "bv41", little-endian
 const MAGIC_RAW = 0x2d347662; // "bv4-"
 const MAGIC_END = 0x24347662; // "bv4$"
 
+/**
+ * The most an LZ4 block of `size` bytes can expand to: one length byte adds
+ * at most 255 bytes. A block that claims more is refused before anything is
+ * allocated, so a crafted file cannot ask for gigabytes.
+ */
+function maxExpansion(size: number): number {
+  return size * 255 + 16;
+}
+
 /** Whether `bytes` start with Apple's LZ4 frame magic. */
 export function isAppleLz4(bytes: Uint8Array): boolean {
   if (bytes.length < 4) return false;
@@ -37,6 +46,7 @@ export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
       if (at + 12 > bytes.length) throw new Lz4Error("truncated block header");
       const size = view.getUint32(at + 8, true);
       if (at + 12 + size > bytes.length) throw new Lz4Error("block past end");
+      if (rawSize > maxExpansion(size)) throw new Lz4Error("raw size too large for block");
       blocks.push({ magic, rawSize, data: bytes.subarray(at + 12, at + 12 + size) });
       at += 12 + size;
     } else if (magic === MAGIC_RAW) {
@@ -60,6 +70,7 @@ export function decodeAppleLz4(bytes: Uint8Array): Uint8Array {
 
 /** One raw LZ4 block, which must expand to exactly `rawSize` bytes. */
 export function decodeBlock(src: Uint8Array, rawSize: number): Uint8Array {
+  if (rawSize > maxExpansion(src.length)) throw new Lz4Error("raw size too large for block");
   const out = new Uint8Array(rawSize);
   expandBlock(src, out, 0, rawSize);
   return out;

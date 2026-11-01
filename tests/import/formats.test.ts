@@ -73,6 +73,13 @@ describe("Apple LZ4 frames", () => {
     expect(() => decodeBlock(new Uint8Array([0x20, 0x61]), 3)).toThrow(Lz4Error);
     expect(() => decodeBlock(new Uint8Array([0xf0]), 20)).toThrow(Lz4Error);
     expect(() => decodeBlock(new Uint8Array([0x10, 0x61, 1]), 5)).toThrow(Lz4Error);
+    // A block that claims more than it could expand to is refused unallocated.
+    expect(() => decodeBlock(new Uint8Array([0x10, 0x61]), 0xffffffff)).toThrow(
+      "raw size too large",
+    );
+    expect(() => decodeAppleLz4(bv4Block([0x10, 0x61], 0x7fffffff))).toThrow(
+      "raw size too large",
+    );
   });
 });
 
