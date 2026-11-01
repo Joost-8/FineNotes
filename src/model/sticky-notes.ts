@@ -15,6 +15,12 @@
  *   ({@link foldNoteInk}, {@link unfoldNoteInk}), and the notebook is
  *   labelled so an older FineNotes refuses it (`format-features.ts`).
  *
+ * A note can also carry typed text, a text box whose `onSticky` names it
+ * ({@link textOfNote}), kept in page space and moved with the note
+ * ({@link noteTextMoved}); and it can be folded away to an icon at its
+ * corner, hiding its ink and text until a tap opens it ({@link SetNoteFolded},
+ * {@link foldedFrame}, {@link foldedNoteAt}), as Goodnotes collapses a note.
+ *
  * A note's own space: note px, origin at its top-left, before it is turned
  * or mirrored, at its current size (contracts/api.md, "Sticky notes").
  *
@@ -28,6 +34,7 @@ import {
   type Page,
   type StickyPaper,
   type Stroke,
+  type TextBoxElement,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -71,7 +78,9 @@ const HEX6 = /^#[0-9a-f]{6}$/i;
 export function readStickyPaper(raw: unknown): StickyPaper | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const color = (raw as { color?: unknown }).color;
-  return typeof color === "string" && HEX6.test(color) ? { color: color.toLowerCase() } : undefined;
+  if (typeof color !== "string" || !HEX6.test(color)) return undefined;
+  const folded = (raw as { folded?: unknown }).folded === true;
+  return folded ? { color: color.toLowerCase(), folded: true } : { color: color.toLowerCase() };
 }
 
 /** Whether `image` is a sticky note. */
@@ -99,6 +108,114 @@ export function isNoteInk(stroke: Stroke, ids: ReadonlySet<string> | null): bool
 export function inkOfNote(page: Page, note: ImageElement): Stroke[] {
   if (!isStickyNote(note)) return [];
   return page.strokes.filter((stroke) => stroke.onSticky === note.id);
+}
+
+/** Whether `image` is a sticky note folded away to its icon. */
+export function isFolded(image: ImageElement): boolean {
+  return image.sticky?.folded === true;
+}
+
+/**
+ * Whether `element` (a stroke or a text box) is on a note of `page` that is
+ * folded away, so nothing but the note's own opening may reach it.
+ */
+export function foldedAway(page: Page, element: { onSticky?: string }): boolean {
+  const owner = element.onSticky;
+  if (owner === undefined) return false;
+  return page.images.some((image) => image.id === owner && isFolded(image));
+}
+
+/** The typed text on `note`: the text boxes that name it, in page order. */
+export function textOfNote(page: Page, note: ImageElement): TextBoxElement[] {
+  if (!isStickyNote(note)) return [];
+  return page.textBoxes.filter((box) => box.onSticky === note.id);
+}
+
+/** The sticky note `box` is the text of, or `null` for a box of its own (or one whose note is gone). */
+export function noteOfText(page: Page, box: TextBoxElement): ImageElement | null {
+  if (box.onSticky === undefined) return null;
+  const note = page.images.find((image) => image.id === box.onSticky);
+  return note && isStickyNote(note) ? note : null;
+}
+
+// --- Typed text ---------------------------------------------------------------
+
+/** How far a note's text keeps from the paper's sides, page px. */
+export const NOTE_TEXT_INSET = 12;
+
+/**
+ * Where a note's text box starts: inset from the sides, just below the
+ * glued band at the top (its share of the height, as `canvas/sticky-paper`
+ * paints it), as wide as the paper allows, growing with the text.
+ */
+export function noteTextFrame(note: NoteFrame): { x: number; y: number; w: number } {
+  const inset = Math.min(NOTE_TEXT_INSET, note.w / 4);
+  return {
+    x: note.x + inset,
+    y: note.y + note.h * 0.16 + inset / 2,
+    w: Math.max(1, note.w - 2 * inset),
+  };
+}
+
+/**
+ * Where a note's text is drawn: from where it stands on the note unturned
+ * to the page, turned about the note's centre with it. A mirror never
+ * mirrors the letters, so `flipX`/`flipY` play no part.
+ */
+export function noteTextToPage(note: NoteFrame): Affine {
+  const r = rotationOf(note);
+  if (r === 0) return IDENTITY;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  const cx = note.x + note.w / 2;
+  const cy = note.y + note.h / 2;
+  return [cos, sin, -sin, cos, cx - cos * cx + sin * cy, cy - sin * cx - cos * cy];
+}
+
+// --- Folding ------------------------------------------------------------------
+
+/** The side of a folded note's icon, page px: about 8 mm on an A4 page. */
+export const FOLDED_SIDE = 40;
+
+/**
+ * Where a folded note shows: a square icon at the note's top-left corner as
+ * it stands, turned with it (and never mirrored, so the icon reads the same
+ * way round). Within the note's own frame, so the tiles the note covers
+ * cover its icon too.
+ */
+export function foldedFrame(note: NoteFrame): NoteFrame {
+  const side = Math.max(1, Math.min(FOLDED_SIDE, note.w, note.h));
+  const centre = applyAffine(noteTextToPage(note), note.x + side / 2, note.y + side / 2);
+  const r = rotationOf(note);
+  return {
+    x: centre.x - side / 2,
+    y: centre.y - side / 2,
+    w: side,
+    h: side,
+    ...(r !== 0 ? { rotation: r } : {}),
+  };
+}
+
+/**
+ * The folded note whose icon is at page point (x, y), or `null`: the topmost
+ * picture or open note there hides an icon under it, as it hides ink.
+ */
+export function foldedNoteAt(page: Page, x: number, y: number): ImageElement | null {
+  for (const image of stackedFromTop(page)) {
+    if (isFolded(image)) {
+      if (onNote(foldedFrame(image), x, y)) return image;
+      continue;
+    }
+    if (onNote(image, x, y)) return null;
+  }
+  return null;
+}
+
+/** A page's pictures and notes from the topmost down: those in front of the ink first. */
+function stackedFromTop(page: Page): ImageElement[] {
+  const front = page.images.filter((image) => image.front === true).reverse();
+  const back = page.images.filter((image) => image.front !== true).reverse();
+  return [...front, ...back];
 }
 
 // --- Frames ---------------------------------------------------------------------
@@ -217,13 +334,12 @@ export function onNote(frame: NoteFrame, x: number, y: number): boolean {
  * The sticky note a stroke starting at page point (x, y) is written on, or
  * `null`: the topmost picture or note there decides, so a picture laid over a
  * note takes the stroke off it. Pictures in front of the ink stack above
- * those under it; later ones above earlier ones.
+ * those under it; later ones above earlier ones. A folded note is no paper
+ * to write on: it is passed over, and what lies under it decides.
  */
 export function noteAt(page: Page, x: number, y: number): ImageElement | null {
-  const front = page.images.filter((image) => image.front === true).reverse();
-  const back = page.images.filter((image) => image.front !== true).reverse();
-  for (const image of [...front, ...back]) {
-    if (!onNote(image, x, y)) continue;
+  for (const image of stackedFromTop(page)) {
+    if (isFolded(image) || !onNote(image, x, y)) continue;
     return isStickyNote(image) ? image : null;
   }
   return null;
@@ -269,6 +385,22 @@ export function withNoteInk(page: Page, selection: StrokesAndImages): Stroke[] {
 }
 
 /**
+ * `textBoxes` with the text of every note in `images` added (once, in page
+ * order), so a note never moves, copies or goes without its text.
+ */
+export function withNoteText(
+  page: Page,
+  selection: { textBoxes: readonly TextBoxElement[]; images: readonly ImageElement[] },
+): TextBoxElement[] {
+  const ids = noteIdsOf(selection.images);
+  if (!ids) return [...selection.textBoxes];
+  const chosen = new Set(selection.textBoxes);
+  return page.textBoxes.filter(
+    (box) => chosen.has(box) || (box.onSticky !== undefined && ids.has(box.onSticky)),
+  );
+}
+
+/**
  * The note a selection holds alone, ink aside: one note, and no stroke that
  * is not its ink. Such a selection is shown as the note's own, with a
  * picture's handles.
@@ -281,12 +413,13 @@ export function loneNote(selection: StrokesAndImages): ImageElement | null {
 }
 
 /**
- * Point copied strokes at their notes' copies: `owners` maps an original
- * note's id to its copy's. A stroke whose note was not copied with it is
- * plain ink from then on, never the original note's.
+ * Point copied strokes (or text boxes) at their notes' copies: `owners`
+ * maps an original note's id to its copy's. One whose note was not copied
+ * with it is plain ink (or a box of its own) from then on, never the
+ * original note's.
  */
 export function relinkNoteInk(
-  strokes: readonly Stroke[],
+  strokes: ReadonlyArray<{ onSticky?: string }>,
   owners: ReadonlyMap<string, string>,
 ): void {
   for (const stroke of strokes) {
@@ -319,6 +452,47 @@ export function copyNoteInk(
   });
 }
 
+/**
+ * Copies of `note`'s text for its copy `copy`: fresh ids, owned by the
+ * copy, at the same place on its paper (`copy` may sit anywhere, and be
+ * another size).
+ */
+export function copyNoteText(
+  page: Page,
+  note: ImageElement,
+  copy: ImageElement,
+  nextId: () => string,
+): TextBoxElement[] {
+  return textOfNote(page, note).map((box) => {
+    const out = structuredClone(box);
+    out.id = nextId();
+    out.onSticky = copy.id;
+    Object.assign(out, noteTextMoved(box, note, copy));
+    return out;
+  });
+}
+
+/**
+ * Where a note's text box stands once its note goes from `before` to
+ * `after`: the same place on the paper, as fractions of its width and
+ * height, and as wide a share of it. The letters keep their size, and wrap
+ * to the new width.
+ */
+export function noteTextMoved(
+  box: Pick<TextBoxElement, "x" | "y" | "w" | "h">,
+  before: NoteFrame,
+  after: NoteFrame,
+): { x: number; y: number; w: number; h?: number } {
+  const kx = before.w > 0 ? after.w / before.w : 1;
+  const ky = before.h > 0 ? after.h / before.h : 1;
+  return {
+    x: after.x + (box.x - before.x) * kx,
+    y: after.y + (box.y - before.y) * ky,
+    w: Math.max(1, box.w * kx),
+    ...(box.h !== undefined ? { h: box.h * ky } : {}),
+  };
+}
+
 /** Move a stroke by `m` in place: new points, and its width scaled as the map scales lengths. */
 function moveStroke(stroke: Stroke, m: Affine): void {
   stroke.pts = mapPoints(stroke.pts, m);
@@ -342,6 +516,9 @@ export class MoveNoteInk implements Command {
   readonly label = "Move sticky note";
   private saved: Array<{ stroke: Stroke; pts: number[]; size: number; radius?: number }> | null =
     null;
+  /** The note's text boxes and where each stood, for the undo. */
+  private savedText: Array<{ box: TextBoxElement; x: number; y: number; w: number; h?: number }> =
+    [];
 
   constructor(
     readonly pageId: string,
@@ -352,6 +529,7 @@ export class MoveNoteInk implements Command {
 
   apply(doc: InkDocument): void {
     this.saved = null;
+    this.savedText = [];
     const page = pageById(doc, this.pageId);
     if (!page || !page.images.includes(this.note)) return;
     const m = noteMove(this.before, this.after);
@@ -359,6 +537,12 @@ export class MoveNoteInk implements Command {
     this.saved = inkOfNote(page, this.note).map((stroke) => {
       const saved = { stroke, pts: stroke.pts, size: stroke.size, radius: stroke.radius };
       moveStroke(stroke, m);
+      return saved;
+    });
+    // A turn or a mirror leaves the text where it stands on the paper.
+    this.savedText = textOfNote(page, this.note).map((box) => {
+      const saved = { box, x: box.x, y: box.y, w: box.w, h: box.h };
+      Object.assign(box, noteTextMoved(box, this.before, this.after));
       return saved;
     });
   }
@@ -371,7 +555,46 @@ export class MoveNoteInk implements Command {
       if (radius === undefined) delete stroke.radius;
       else stroke.radius = radius;
     }
+    for (const { box, x, y, w, h } of this.savedText) {
+      Object.assign(box, { x, y, w });
+      if (h === undefined) delete box.h;
+      else box.h = h;
+    }
     this.saved = null;
+    this.savedText = [];
+  }
+}
+
+/**
+ * Fold a note away to its icon, or open it again. Its own inverse; the
+ * frame, the ink and the text stay as they are, only hidden.
+ */
+export class SetNoteFolded implements Command {
+  readonly label: string;
+  private previous: StickyPaper | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly note: ImageElement,
+    private readonly folded: boolean,
+  ) {
+    this.label = folded ? "Fold note" : "Open note";
+  }
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    const paper = this.note.sticky;
+    if (!page || !page.images.includes(this.note) || !paper) return;
+    if ((paper.folded === true) === this.folded) return;
+    this.previous = paper;
+    this.note.sticky = this.folded ? { ...paper, folded: true } : { color: paper.color };
+  }
+
+  invert(doc: InkDocument): void {
+    if (!this.previous || !pageById(doc, this.pageId)) return;
+    this.note.sticky = this.previous;
+    this.previous = null;
   }
 }
 
@@ -391,7 +614,7 @@ export class SetStickyColor implements Command {
     const page = pageById(doc, this.pageId);
     if (!page || !page.images.includes(this.note) || !this.note.sticky) return;
     this.previous = this.note.sticky;
-    this.note.sticky = { color: this.color };
+    this.note.sticky = { ...this.note.sticky, color: this.color };
   }
 
   invert(doc: InkDocument): void {

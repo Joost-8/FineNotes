@@ -83,8 +83,16 @@ import {
   tableLayoutKey,
 } from "./table-layout";
 import { imageBounds, rotationOf } from "./image-geometry";
-import { paintStickyPaper, withinNote } from "./sticky-paper";
-import { type Affine, isNoteInk, noteIdsOf, noteMove } from "../model/sticky-notes";
+import { paintFoldedNote, paintStickyPaper, withinNote } from "./sticky-paper";
+import {
+  type Affine,
+  isNoteInk,
+  noteIdsOf,
+  noteMove,
+  noteOfText,
+  noteTextMoved,
+  noteTextToPage,
+} from "../model/sticky-notes";
 import { paintGraph } from "./graph-paint";
 import { type RoutedConnector, paintConnector, paintConnectors } from "./connector-paint";
 import { graphBounds } from "../model/graph-element";
@@ -301,7 +309,9 @@ export interface ImagePainter {
  * the tiles, the page preview, the wet-layer drag preview and the sidebar
  * thumbnails. The painter draws the crop into that box as usual; the mirror
  * applies to what it drew, which is why a stored crop stays in fractions of
- * the source file.
+ * the source file. A sticky note's `noteText` is drawn over its ink, turned
+ * with the note but never mirrored, in the note's own colours on any page;
+ * a folded note is only its icon, with neither.
  */
 export function drawPlacedImage(
   ctx: CanvasRenderingContext2D,
@@ -309,11 +319,19 @@ export function drawPlacedImage(
   painter: ImagePainter | null,
   deviceScale: number,
   inkOnNote?: () => void,
+  noteText: readonly TextBoxElement[] = [],
 ): void {
   if (!(image.w > 0) || !(image.h > 0)) return;
   // A sticky note is paper painted here, so it needs no painter.
   const sticky = image.sticky;
   if (!sticky && !painter) return;
+  if (sticky?.folded) {
+    ctx.save();
+    if (image.opacity !== undefined) ctx.globalAlpha *= image.opacity;
+    paintFoldedNote(ctx, image, sticky.color);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   if (image.opacity !== undefined) ctx.globalAlpha *= image.opacity;
   ctx.translate(image.x + image.w / 2, image.y + image.h / 2);
@@ -326,9 +344,34 @@ export function drawPlacedImage(
   if (sticky) paintStickyPaper(ctx, image.w, image.h, sticky.color);
   else painter?.paintImage(ctx, image, deviceScale);
   ctx.restore();
-  // The note's ink, over its paper and never past its edge.
-  if (sticky && inkOnNote) withinNote(ctx, image, inkOnNote);
+  // The note's ink and text, over its paper and never past its edge.
+  if (sticky && (inkOnNote || noteText.length > 0)) {
+    withinNote(ctx, image, () => {
+      inkOnNote?.();
+      if (noteText.length === 0) return;
+      const m = noteTextToPage(image);
+      ctx.save();
+      ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      for (const box of noteText) paintTextBox(ctx, box, false);
+      ctx.restore();
+    });
+  }
 }
+
+/**
+ * The text boxes that are `note`'s typed text on `page`, drawn with it,
+ * leaving out those whose ids are in `skip` (shown by their textarea).
+ */
+function noteTextOn(
+  page: Page,
+  note: ImageElement,
+  skip: ReadonlySet<string> = EMPTY_IDS,
+): TextBoxElement[] {
+  if (!note.sticky || note.sticky.folded) return [];
+  return page.textBoxes.filter((box) => box.onSticky === note.id && !skip.has(box.id));
+}
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 /**
  * The colour a page's paper is: its backdrop's `paperColor` (a cover's
@@ -671,6 +714,11 @@ export class Renderer {
   private hiddenTables: ReadonlySet<TableElement> = new Set();
   /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
   private hiddenGraphs: ReadonlySet<GraphElement> = new Set();
+  /**
+   * A note's text boxes (by id) left out of the tiles: those whose textarea
+   * shows them, being typed in or held (`setHiddenText`).
+   */
+  private hiddenText: ReadonlySet<string> = new Set();
   /** Connectors (by id) left out of tiles and previews: drawn on the wet layer while dragged. */
   private hiddenConnectors: ReadonlySet<string> = new Set();
   /** The cell being typed in, whose text its textarea shows instead. */
@@ -897,6 +945,14 @@ export class Renderer {
    */
   setRevealedTapes(ids: ReadonlySet<string>): void {
     this.revealedTapes = ids;
+  }
+
+  /**
+   * Leave these note text boxes (by id) out of the tiles: their textarea
+   * shows them. As above, the caller invalidates their notes.
+   */
+  setHiddenText(ids: ReadonlySet<string>): void {
+    this.hiddenText = ids;
   }
 
   /** Leave these tables out of tiles and previews; as above, the caller invalidates. */
@@ -2055,7 +2111,9 @@ export class Renderer {
     this.paintImages(ctx, page, window, level, ink, true);
     // Text boxes are DOM on the page, so the tile never has them; a
     // magnified view has no DOM above it, and paints them here as exports do.
-    for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+    for (const box of page.textBoxes) {
+      if (!noteOfText(page, box)) paintTextBox(ctx, box, look.night);
+    }
   }
 
   /**
@@ -2266,7 +2324,14 @@ export class Renderer {
             }
           }
         : undefined;
-      drawPlacedImage(ctx, image, painter, level, inkOnNote);
+      drawPlacedImage(
+        ctx,
+        image,
+        painter,
+        level,
+        inkOnNote,
+        noteTextOn(page, image, this.hiddenText),
+      );
     }
   }
 
@@ -2677,6 +2742,7 @@ export class Renderer {
       );
     };
     const notes = noteIdsOf(images);
+    const onPage = this.doc?.pages[pageIndex];
     const pictures = (front: boolean): void => {
       for (const image of images) {
         if ((image.front === true) !== front) continue;
@@ -2685,7 +2751,9 @@ export class Renderer {
               for (const stroke of strokes) if (stroke.onSticky === image.id) draw(stroke, false);
             }
           : undefined;
-        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale, inkOnNote);
+        // A note's text goes with it, drawn as the tiles draw it.
+        const text = onPage ? noteTextOn(onPage, image, this.hiddenText) : [];
+        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale, inkOnNote, text);
       }
     };
     pictures(false);
@@ -2799,6 +2867,7 @@ export class Renderer {
       this.imagePainter,
       this.deviceScale,
       this.draftInk(pageIndex, image, usePressure),
+      this.draftText(pageIndex, image),
     );
     ctx.restore();
     this.setWetVisible(true);
@@ -2827,6 +2896,17 @@ export class Renderer {
         paintStroke(ctx, entry, stroke, this.highlighterAlpha, false, decorOf(stroke), stroke.pts);
       }
     };
+  }
+
+  /** The text of the note `draft` is a moved copy of, where the draft has the note. */
+  private draftText(pageIndex: number, draft: ImageElement): TextBoxElement[] {
+    const page = this.doc?.pages[pageIndex];
+    const note = draft.sticky ? page?.images.find((image) => image.id === draft.id) : undefined;
+    if (!page || !note) return [];
+    return noteTextOn(page, note, this.hiddenText).map((box) => ({
+      ...box,
+      ...noteTextMoved(box, note, draft),
+    }));
   }
 
   /**
@@ -3208,7 +3288,7 @@ export function renderPageThumbnail(
             }
           }
         : undefined;
-      drawPlacedImage(ctx, image, options.images ?? null, k, inkOnNote);
+      drawPlacedImage(ctx, image, options.images ?? null, k, inkOnNote, noteTextOn(page, image));
     }
   };
   pictures(false);
@@ -3233,7 +3313,10 @@ export function renderPageThumbnail(
   // Over the ink, as on the page, where the text boxes are DOM above the ink
   // canvas: a filled shape is a ground the text sits on, and a filled box
   // covers the ink under it in an export just as it does on screen.
-  for (const box of page.textBoxes) paintTextBox(ctx, box, look.night);
+  // A note's text was drawn with its note.
+  for (const box of page.textBoxes) {
+    if (!noteOfText(page, box)) paintTextBox(ctx, box, look.night);
+  }
   // Cover tapes over everything, typed text too, and always covered: what
   // was shown through in the view is never shown in an export or to the AI.
   for (const stroke of page.strokes) {

@@ -145,6 +145,8 @@ export interface GoodObsidianSettings {
   llmVendor: LlmVendor;
   /** Empty for the vendor's default model. */
   llmModel: string;
+  /** With OpenRouter, serve the model only from providers that do not say they compress it. */
+  openRouterSkipCompressed: boolean;
   /**
    * Before 0.5, the selected cloud vendor's key in plain text. Loading moves
    * it into the key store (`key-store.ts`) and empties it; a key whose vendor
@@ -441,6 +443,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
