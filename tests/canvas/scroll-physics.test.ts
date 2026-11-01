@@ -541,3 +541,58 @@ describe("glideTo from a start outside the range", () => {
     expect(s.position.x).toBe(3000);
   });
 });
+
+describe("stretchTo: a wheel's pull past the end (FineNotes#111)", () => {
+  /** Run frames until it rests; returns the frame count. */
+  const settle = (s: KineticScroller, t0: number): number => {
+    let frames = 0;
+    for (let t = t0 + 16; s.step(t) && frames < 500; t += 16) frames++;
+    return frames;
+  };
+
+  it("holds the content past its end at rest, through a re-layout", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    expect(s.isStretched).toBe(true);
+    expect(s.isAnimating).toBe(false);
+    expect(s.overscrollEnd.y).toBe(80);
+    s.setExtent({
+      contentWidth: 900,
+      contentHeight: 3000,
+      viewportWidth: 1180,
+      viewportHeight: 820,
+    });
+    expect(s.overscrollEnd.y).toBe(80);
+  });
+
+  it("springs back into the range once released", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    s.release(0);
+    expect(s.isStretched).toBe(false);
+    expect(s.isAnimating).toBe(true);
+    expect(settle(s, 0)).toBeLessThan(500);
+    expect(s.position.y).toBeCloseTo(maxY, 0);
+  });
+
+  it("ends with any other move, and a release after it does nothing", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    s.scrollBy(0, -100);
+    expect(s.isStretched).toBe(false);
+    expect(s.position.y).toBe(maxY - 20);
+    s.release(0);
+    expect(s.isAnimating).toBe(false);
+  });
+
+  it("never takes the content from a finger", () => {
+    const s = tallNarrow();
+    s.dragStart(500, 500, 0);
+    s.stretchTo(0, s.bounds.maxY + 80);
+    expect(s.isStretched).toBe(false);
+    expect(s.overscrollEnd.y).toBe(0);
+  });
+});

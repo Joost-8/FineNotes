@@ -224,6 +224,8 @@ export class KineticScroller {
   /** A fixed-length glide ({@link glideTo}); takes precedence over everything but a drag. */
   private glide: Glide | null = null;
   private animating = false;
+  /** Held past its range at rest by {@link stretchTo}, until {@link release}. */
+  private stretched = false;
   private lastStepT = -1;
   private readonly tracker = new VelocityTracker();
 
@@ -297,7 +299,7 @@ export class KineticScroller {
       this.glide.toY = clamp(this.glide.toY, this.minY, this.maxY);
     }
     // Nobody is holding it and nothing is moving it: it must sit in bounds.
-    if (!this.drag && !this.animating) {
+    if (!this.drag && !this.animating && !this.stretched) {
       this.x = clamp(this.x, this.minX, this.maxX);
       this.y = clamp(this.y, this.minY, this.maxY);
     }
@@ -342,8 +344,35 @@ export class KineticScroller {
     }
   }
 
+  /**
+   * Hold the content at a position past its range, at rest, as a wheel's
+   * pull past the last page stretches it (no finger to drag it there).
+   * {@link release} lets it spring back; any other move ends it too.
+   */
+  stretchTo(x: number, y: number): void {
+    if (this.drag) return;
+    this.stop();
+    this.x = x;
+    this.y = y;
+    this.stretched = true;
+  }
+
+  /** Whether a {@link stretchTo} holds the content. */
+  get isStretched(): boolean {
+    return this.stretched;
+  }
+
+  /** Let a {@link stretchTo} go: it springs back into the range from rest. */
+  release(t: number): void {
+    if (!this.stretched) return;
+    this.stretched = false;
+    this.animating = this.isOverscrolled;
+    this.lastStepT = t;
+  }
+
   /** Cancel any fling. The position stays where it is. */
   stop(): void {
+    this.stretched = false;
     this.animating = false;
     this.vx = 0;
     this.vy = 0;
