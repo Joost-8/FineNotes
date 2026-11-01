@@ -762,6 +762,8 @@ export interface ToolbarOptions {
   laserColor?: () => string;
 }
 
+/** Room left above "On this device" when More fonts scrolls the list into view, CSS px. */
+const FONT_LIST_INSET_PX = 8;
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
 const EDGE_INSET = 8;
 /** How often a floating text pill looks for the keyboard (see `watchKeyboard`). */
@@ -3656,6 +3658,13 @@ export class Toolbar {
         void deviceFamilies().then((families) => {
           this.deviceFonts = families;
           this.popoverRender?.();
+          // The list opens in view: its heading at the top of the popover.
+          const popover = this.popover;
+          const heading = popover?.querySelector(".goodobsidian-font-list")?.previousElementSibling;
+          if (popover && heading) {
+            const top = heading.getBoundingClientRect().top - popover.getBoundingClientRect().top;
+            popover.scrollTop += top - FONT_LIST_INSET_PX;
+          }
         });
         this.popoverRender?.();
       });

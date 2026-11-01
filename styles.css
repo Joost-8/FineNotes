@@ -5063,16 +5063,23 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   text-align: left;
 }
 
-/* "More fonts": the device's own, each in its face, scrolling in place so
-   the popover keeps its size (discussion #107). */
+/* "More fonts": the device's own, each in its face, in the popover's own
+   scroll (discussion #107). A long name is cut, so the popover keeps near
+   its width. */
 .goodobsidian-text-popover .goodobsidian-text-option.is-more {
   color: var(--text-accent);
 }
 
 .goodobsidian-text-popover .goodobsidian-font-list {
-  max-height: min(320px, 40vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-width: 240px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 40px;
 }
 
 .goodobsidian-text-popover .goodobsidian-font-list.is-busy {
