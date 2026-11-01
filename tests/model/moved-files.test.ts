@@ -51,6 +51,21 @@ describe("nearbyTarget", () => {
     expect(nearbyTarget(note, exists, "")).toBeUndefined();
   });
 
+  it("never takes a file from a folder beside the note's, as another notebook's", () => {
+    const shelf = new Set([
+      "School/Math/Algebra/Algebra.notebook.md",
+      "School/Math/Images/page 1.png",
+      "School/Math/Geometry/Images/page 2.png",
+      "School/Math/syllabus.pdf",
+    ]);
+    const at = (path: string): boolean => shelf.has(path);
+    const algebra = "School/Math/Algebra/Algebra.notebook.md";
+    expect(nearbyTarget(algebra, at, "Old/Images/page 1.png")).toBeUndefined();
+    expect(nearbyTarget(algebra, at, "Geometry/Images/page 2.png")).toBeUndefined();
+    // Directly in a folder above it is the note's course, and found.
+    expect(nearbyTarget(algebra, at, "Old/Math/syllabus.pdf")).toBe("School/Math/syllabus.pdf");
+  });
+
   it("finds a file named alone beside the note", () => {
     const flat = (path: string): boolean => path === "Notes/a.png";
     expect(nearbyTarget("Notes/X.notebook.md", flat, "Attachments/a.png")).toBe("Notes/a.png");

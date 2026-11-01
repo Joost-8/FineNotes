@@ -96,8 +96,11 @@ export function movedTarget(
  * Its paths are then read as relative to the note: the longest tail of the
  * path found below the note's own folder, or below a folder above it
  * (`Physik/Heft/Images/a.pdf` → `School/Physik/Heft/Images/a.pdf`). A tail of
- * the file name alone is only looked for in the note's own folder, so this
- * stays the note's own files and never a guess by name across the vault.
+ * the file name alone is only looked for in the note's own folder. What is
+ * found must lie in the note's own folder or below it, or directly in a
+ * folder above it (a course's shared PDF): never in a folder beside it,
+ * where another notebook's `Images/page 1.png` may sit, so this stays the
+ * note's own files and never a guess by name across the vault.
  * Either Unicode spelling is found (macOS writes "ü" as "u" and a mark).
  */
 export function nearbyTarget(
@@ -113,13 +116,19 @@ export function nearbyTarget(
     folders.push(f);
     if (f === "") break;
   }
+  const ours = (candidate: string): boolean => {
+    const dir = candidate.includes("/") ? candidate.slice(0, candidate.lastIndexOf("/")) : "";
+    return (
+      folders.includes(dir) || noteFolder === "" || candidate.startsWith(`${noteFolder}/`)
+    );
+  };
   for (let n = segments.length; n >= 1; n--) {
     const tail = segments.slice(-n).join("/");
     const spellings = [...new Set([tail, tail.normalize("NFC"), tail.normalize("NFD")])];
     for (const folder of n === 1 ? [noteFolder] : folders) {
       for (const spelling of spellings) {
         const candidate = folder ? `${folder}/${spelling}` : spelling;
-        if (candidate !== path && exists(candidate)) return candidate;
+        if (candidate !== path && ours(candidate) && exists(candidate)) return candidate;
       }
     }
   }
