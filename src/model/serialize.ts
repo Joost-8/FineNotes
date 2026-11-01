@@ -45,6 +45,7 @@ import { readPaperExtras } from "./paper-extras";
 import { normalizeTable } from "./table";
 import { normalizeGraph } from "./graph-element";
 import { normalizeComment } from "./comments";
+import { cleanFamily } from "./text-family";
 import {
   type FormatFeature,
   isLabelProblem,
@@ -964,6 +965,8 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 function normalizeTextStyle(raw: Record<string, unknown>): Partial<TextBoxElement> {
   const style: Partial<TextBoxElement> = {};
   if (TEXT_FONTS.includes(raw.font as TextFont)) style.font = raw.font as TextFont;
+  const family = cleanFamily(raw.family);
+  if (family !== undefined) style.family = family;
   if (raw.bold === true) style.bold = true;
   if (raw.italic === true) style.italic = true;
   if (raw.underline === true) style.underline = true;

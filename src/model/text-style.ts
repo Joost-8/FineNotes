@@ -22,6 +22,7 @@ import {
   type TextBorder,
   type TextFont,
 } from "./document";
+import { cleanFamily, familyStack } from "./text-family";
 
 /** Line height of a box with no `lineHeight`, as a multiple of its font size (§6). */
 export const DEFAULT_LINE_HEIGHT = 1.25;
@@ -104,6 +105,8 @@ export interface TextStyle {
   color: string;
   fontSize: number;
   font?: TextFont;
+  /** A family by name, over `font` where the device has it (`text-family.ts`). */
+  family?: string;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -126,6 +129,8 @@ export interface TextStylePatch {
   color?: string;
   fontSize?: number;
   font?: TextFont;
+  /** A family by name (`cleanFamily`); `null` goes back to `font` alone. */
+  family?: string | null;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -253,6 +258,11 @@ export function applyTextStyle(target: TextStyle, patch: TextStylePatch): void {
     if (patch.font === "sans") delete target.font;
     else target.font = patch.font;
   }
+  if (patch.family === null) delete target.family;
+  else {
+    const family = cleanFamily(patch.family);
+    if (family !== undefined) target.family = family;
+  }
   setFlag(target, "bold", patch.bold);
   setFlag(target, "italic", patch.italic);
   setFlag(target, "underline", patch.underline);
@@ -293,6 +303,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
     name: "Title",
     patch: {
       font: "serif",
+      family: null,
       fontSize: 44,
       bold: true,
       italic: false,
@@ -303,18 +314,35 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   {
     id: "heading",
     name: "Heading",
-    patch: { font: "sans", fontSize: 30, bold: true, italic: false, caps: false, lineHeight: 1.15 },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 30,
+      bold: true,
+      italic: false,
+      caps: false,
+      lineHeight: 1.15,
+    },
   },
   {
     id: "subheading",
     name: "Subheading",
-    patch: { font: "sans", fontSize: 22, bold: true, italic: false, caps: false, lineHeight: 1.25 },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 22,
+      bold: true,
+      italic: false,
+      caps: false,
+      lineHeight: 1.25,
+    },
   },
   {
     id: "body",
     name: "Body",
     patch: {
       font: "sans",
+      family: null,
       fontSize: 18,
       bold: false,
       italic: false,
@@ -325,12 +353,28 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   {
     id: "caption",
     name: "Caption",
-    patch: { font: "sans", fontSize: 14, bold: false, italic: true, caps: false, lineHeight: 1.25 },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 14,
+      bold: false,
+      italic: true,
+      caps: false,
+      lineHeight: 1.25,
+    },
   },
   {
     id: "label",
     name: "Label",
-    patch: { font: "sans", fontSize: 12, bold: true, italic: false, caps: true, lineHeight: 1.25 },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 12,
+      bold: true,
+      italic: false,
+      caps: true,
+      lineHeight: 1.25,
+    },
   },
 ];
 
@@ -392,6 +436,7 @@ function applyBorder(target: TextStyle, patch: TextStylePatch): void {
 export function textStyleOf(source: TextStyle): TextStyle {
   const style: TextStyle = { color: source.color, fontSize: source.fontSize };
   if (source.font !== undefined) style.font = source.font;
+  if (source.family !== undefined) style.family = source.family;
   if (source.bold === true) style.bold = true;
   if (source.italic === true) style.italic = true;
   if (source.underline === true) style.underline = true;
@@ -420,6 +465,7 @@ export function textStyleKey(style: TextStyle): string {
     s.color,
     s.fontSize,
     s.font ?? "sans",
+    s.family ?? "",
     s.bold ? "b" : "",
     s.italic ? "i" : "",
     s.underline ? "u" : "",
@@ -445,6 +491,7 @@ export function resetTextStylePatch(): TextStylePatch {
     color: DEFAULT_TEXT_STYLE.color,
     fontSize: DEFAULT_TEXT_STYLE.fontSize,
     font: "sans",
+    family: null,
     bold: false,
     italic: false,
     underline: false,
@@ -471,6 +518,7 @@ export function sanitizeTextStyle(raw: unknown): TextStyle {
     color: typeof r.color === "string" ? r.color : undefined,
     fontSize: typeof r.fontSize === "number" ? r.fontSize : undefined,
     font: typeof r.font === "string" ? (r.font as TextFont) : undefined,
+    family: typeof r.family === "string" ? r.family : undefined,
     bold: r.bold === true ? true : undefined,
     italic: r.italic === true ? true : undefined,
     underline: r.underline === true ? true : undefined,
@@ -499,9 +547,10 @@ export function fontOf(style: Pick<TextStyle, "font">): TextFont {
 }
 
 /**
- * CSS / canvas font-family list for a style. A real family list, never
- * `var(--…)`: canvas string properties do not resolve CSS variables.
+ * CSS / canvas font-family list for a style: its `family`, if it names one,
+ * then its typeface's. A real family list, never `var(--…)`: canvas string
+ * properties do not resolve CSS variables.
  */
-export function fontFamilyOf(style: Pick<TextStyle, "font">): string {
-  return TEXT_FONT_STACKS[fontOf(style)];
+export function fontFamilyOf(style: Pick<TextStyle, "font" | "family">): string {
+  return familyStack(style.family, TEXT_FONT_STACKS[fontOf(style)]);
 }

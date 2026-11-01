@@ -88,6 +88,8 @@ import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
+import { deviceFamilies, hasFamily } from "./device-fonts";
+import { familyStack } from "../model/text-family";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
@@ -125,6 +127,7 @@ import {
   sliderAtSize,
   type TextStyle,
   type TextStylePatch,
+  fontFamilyOf,
   fontOf,
   lineHeightOf,
   textStyleKey,
@@ -986,6 +989,9 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** The font popover shows the device's fonts (`deviceFamilies`), once asked for. */
+  private deviceFontsShown = false;
+  private deviceFonts: string[] | null = null;
   /** Redraws the open width or eraser-size popover's marks for a new zoom. */
   private sizeMarksRender: (() => void) | null = null;
   /**
@@ -3356,13 +3362,14 @@ export class Toolbar {
     caretIn(size);
 
     // The font's name, set in that font, as GoodNotes shows it.
-    const font = fontOf(style);
-    const fontButton = this.textControl("is-drop is-font", `Font: ${TEXT_FONT_LABELS[font]}`, (b) =>
-      this.toggleTextPopover("font", b, (body) => this.renderTextFonts(body)),
-    );
+    const fontName = style.family ?? TEXT_FONT_LABELS[fontOf(style)];
+    const fontButton = this.textControl("is-drop is-font", `Font: ${fontName}`, (b) => {
+      this.deviceFontsShown = false;
+      this.toggleTextPopover("font", b, (body) => this.renderTextFonts(body));
+    });
     fontButton
-      .createSpan({ cls: "goodobsidian-text-drop-label", text: TEXT_FONT_LABELS[font] })
-      .setCssStyles({ fontFamily: TEXT_FONT_STACKS[font] });
+      .createSpan({ cls: "goodobsidian-text-drop-label", text: fontName })
+      .setCssStyles({ fontFamily: fontFamilyOf(style) });
     caretIn(fontButton);
 
     const format = this.textControl("is-format", "Bold, italic, underline, strikethrough", (b) =>
@@ -3607,15 +3614,65 @@ export class Toolbar {
     }
   }
 
+  /**
+   * The six fonts every device has; above them the named family in use, if
+   * there is one (marked when this device lacks it); below them "More
+   * fonts", which lists the device's own in place (discussion #107): all
+   * buttons, so the box being styled keeps its focus, as a dialog's field
+   * would not let it. A family is shown over the typeface it was picked on,
+   * which is what a device without it shows.
+   */
   private renderTextFonts(body: HTMLElement): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Font" });
-    const current = fontOf(this.shownTextStyle());
+    const style = this.shownTextStyle();
+    const current = fontOf(style);
+    const family = style.family;
+    if (family) {
+      const button = this.textOption(body, "is-wide is-family is-active", family, () =>
+        this.closePopover(),
+      );
+      button.setCssStyles({ fontFamily: fontFamilyOf(style) });
+      if (!hasFamily(family)) {
+        const missing = `Not on this device: shown in ${TEXT_FONT_LABELS[current]}`;
+        button.setAttr("aria-label", `${family}. ${missing}`);
+        const mark = button.createSpan({
+          cls: "goodobsidian-font-missing",
+          attr: { title: missing },
+        });
+        setIcon(mark, "alert-triangle");
+      }
+    }
     for (const font of TEXT_FONTS) {
       const button = this.textOption(body, "is-wide", TEXT_FONT_LABELS[font], () =>
-        this.pickText({ font }),
+        this.pickText({ font, family: null }),
       );
       button.setCssStyles({ fontFamily: TEXT_FONT_STACKS[font] });
-      button.toggleClass("is-active", font === current);
+      button.toggleClass("is-active", !family && font === current);
+    }
+    if (!this.deviceFontsShown) {
+      this.textOption(body, "is-wide is-more", "More fonts", () => {
+        this.deviceFontsShown = true;
+        // Asked from the tap: the desktop app's font list needs one.
+        void deviceFamilies().then((families) => {
+          this.deviceFonts = families;
+          this.popoverRender?.();
+        });
+        this.popoverRender?.();
+      });
+      return;
+    }
+    // Fonts of this device alone: another device may show the box in its fallback.
+    body.createDiv({ cls: "goodobsidian-popover-label", text: "On this device" });
+    const list = body.createDiv({ cls: "goodobsidian-font-list" });
+    const families = this.deviceFonts;
+    if (!families) {
+      list.addClass("is-busy");
+      return;
+    }
+    for (const name of families) {
+      const button = this.textOption(list, "is-wide", name, () => this.pickText({ family: name }));
+      button.setCssStyles({ fontFamily: familyStack(name, TEXT_FONT_STACKS[current]) });
+      button.toggleClass("is-active", family?.toLowerCase() === name.toLowerCase());
     }
   }
 
