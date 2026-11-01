@@ -38,6 +38,25 @@ export function copyPictureToSystemClipboard(app: App, image: ImageElement): voi
   }
 }
 
+/**
+ * Put a PNG on the system clipboard (the lasso's Screenshot): resolves to
+ * whether it got there. As above, call it inside the user's gesture with
+ * the promise of the pixels, not after awaiting them.
+ */
+export async function writePngToClipboard(png: Promise<Blob>): Promise<boolean> {
+  const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+  png.catch(() => undefined);
+  if (!clip || typeof clip.write !== "function" || typeof ClipboardItem === "undefined") {
+    return false;
+  }
+  try {
+    await clip.write([new ClipboardItem({ "image/png": png })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The picture's pixels (at most 2048 px long), its crop and flips applied, as PNG. */
 async function pictureAsPng(app: App, image: ImageElement): Promise<Blob> {
   const file = app.vault.getFileByPath(image.path);

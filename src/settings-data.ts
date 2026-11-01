@@ -17,14 +17,22 @@ import {
   PALETTE,
   SIZES,
 } from "./constants";
-import { type PaperTheme, paperTheme } from "./canvas/backdrop";
+import {
+  DARK_PAPER,
+  LIGHT_DESK,
+  LIGHT_PAPER,
+  type PaperTheme,
+  paperTheme,
+  withDesk,
+} from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
-import { DEFAULT_SHAPE_COLOR } from "./model/colors";
+import { DEFAULT_SHAPE_COLOR, parseHexColor } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
 import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
@@ -34,21 +42,36 @@ import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognitio
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
+import { type PenOptionsOnWrite, penOptionsOnWriteOf } from "./view/tool-return";
 
 /** The tools an ink note can open with (`defaultTool`). */
 export type ToolId = "pen" | "highlighter" | "eraser" | "select";
 
 /** How pages are shown (`pageAppearance`): light paper, dark pages, or as Obsidian's theme is. */
 export type PageAppearance = "light" | "dark" | "system";
+/** The desk around the pages: `auto` is the page appearance's own (`PaperTheme.desk`). */
+export type DeskChoice = "auto" | "light" | "dark" | "custom";
+export type SnapMode = "disabled" | "hold" | "auto";
 
 export interface GoodObsidianSettings {
   // What an ink note starts with. Tool state the toolbar remembers is further down.
-  /** Draw a rough shape, hold the pen still at the end, and it snaps clean. */
+  /**
+   * When a pen stroke snaps to a shape (Pen gestures › Make shapes): never,
+   * after a hold, or on lift too. The one field the code reads; `drawAndHold`
+   * and `penAutoShape` only mirror it, for vaults that go back to an older
+   * build ({@link storeSnapMode}).
+   */
+  snapMode: SnapMode;
+  /** How curved a stroke may be and still snap, 10 (strict) to 100 (loose); 50 is the tuned default. */
+  snapCurvatureThreshold: number;
+  /** Mirror of `snapMode !== "disabled"`, read by builds before it. */
   drawAndHold: boolean;
   defaultTool: ToolId;
   /** Extra palette swatches, `#rgb` or `#rrggbb`. */
   customColors: string[];
   defaultColor: string;
+  /** The laser pointer's default colour, `#rgb` or `#rrggbb`. */
+  laserDefaultColor: string;
   defaultSize: number;
   /** The eraser's last mode, kept between sessions. */
   eraserMode: EraserMode;
@@ -60,6 +83,14 @@ export interface GoodObsidianSettings {
   lassoMode: LassoMode;
   /** What the lasso picks up (0.5). May hold anything; checked where it is read. */
   lassoFilter: LassoFilter;
+  /**
+   * The lasso takes a stroke when any part of it is inside the loop, as
+   * Notability does (the default); off, at least half of it (Goodnotes,
+   * `canvas/lasso.ts`). It was `lassoAnyPart`, off by default, in the
+   * unreleased PR #59 build: a new key, so a vault that saved that `false`
+   * still gets the new default.
+   */
+  lassoTouches: boolean;
   /** 0–1. The settings tab shows it as a percentage. */
   highlighterAlpha: number;
   paperWidth: number;
@@ -114,6 +145,8 @@ export interface GoodObsidianSettings {
   llmVendor: LlmVendor;
   /** Empty for the vendor's default model. */
   llmModel: string;
+  /** With OpenRouter, serve the model only from providers that do not say they compress it. */
+  openRouterSkipCompressed: boolean;
   /**
    * Before 0.5, the selected cloud vendor's key in plain text. Loading moves
    * it into the key store (`key-store.ts`) and empties it; a key whose vendor
@@ -158,12 +191,18 @@ export interface GoodObsidianSettings {
   textHintShown: number;
   /** The hint was closed with its ×, and stays away. */
   textHintDismissed: boolean;
-  /** The pen's auto-shape: a stroke that is a shape snaps to it on lift. */
+  /** Where Make shapes lives was said, at the first pen stroke that snapped. */
+  shapeHintShown: boolean;
+  /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
   penGestures: PenGestures;
   /** The Shape tool's colour, `#rrggbb`. */
   shapeColor: string;
+  /** Cover tape's colour, `#rrggbb` (`model/cover-tape`). Absent: masking tape. */
+  tapeColor?: string;
+  /** Cover tape's height, page px. Absent: the medium height. */
+  tapeHeight?: number;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
@@ -185,10 +224,16 @@ export interface GoodObsidianSettings {
   templateGalleryUrl: string;
   /** The Shape tool's fill, line, corners and arrowheads (`model/shape-style`). */
   shapeStyle?: ShapeToolStyle;
+  /** How far the Fill tool reaches past gaps (`model/fill-region`). Checked where it is read. */
+  fillGap?: string;
+  /** The Fill tool's own colour, `#rrggbb`; not the pen's. Checked where it is read. */
+  fillColor?: string;
   /** Colours picked lately, newest first. Checked where it is read. */
   recentColors: string[];
   /** The pen row's picked colours, after the reserved ones. Checked where it is read. */
   penColors?: string[];
+  /** The pen types' order in the pen's row (`model/pen-type-order.ts`). Checked where it is read. */
+  penTypeOrder?: string[];
   /**
    * Each pen type's own colour and row (`model/pen-inks.ts`), so switching
    * pens brings each one's colours back. Checked where it is read.
@@ -208,6 +253,12 @@ export interface GoodObsidianSettings {
    * (2026-09-30), which was on by default and is dropped on load.
    */
   pressureWidth: boolean;
+  /**
+   * Advanced: the Brush pen paints wider where the Pencil is held flat, for
+   * shading (`ink/tilt`). Off, nothing of the tilt is kept. Strokes that
+   * kept it are drawn with it either way.
+   */
+  pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
@@ -268,6 +319,14 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+  /** Export as PDF leaves the cover tapes out, so what is under them shows. */
+  exportWithoutTapes: boolean;
+  /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
+  desk: DeskChoice;
+  /** The desk's colour when `desk` is `"custom"`, `#rrggbb`. Checked where it is read. */
+  deskColor: string;
+  /** Export as PDF leaves out the paper's lines, grid, dots and texture. */
+  exportPlainPaper: boolean;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -284,6 +343,11 @@ export interface GoodObsidianSettings {
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
   barrelButton: BarrelAction;
   /**
+   * What a click of that button does with the pen in the air, not writing:
+   * open the pen menu (and close it again), or nothing. Checked where read.
+   */
+  stylusButtonClick: StylusClickAction;
+  /**
    * The cursor over the page for the pens, on a computer: the ink dot, a
    * small crosshair or the arrow. A boolean before FineNotes#27 (on is the
    * ink dot now); checked where read.
@@ -295,10 +359,41 @@ export interface GoodObsidianSettings {
    */
   straightHighlighter: boolean;
   /**
+   * The highlighter's tip: round, or a flat chisel that draws a level
+   * highlight as a band with square ends (`ink/chisel.ts`). Each stroke
+   * keeps the tip it was written with (`Stroke.tip`). Absent: round.
+   */
+  highlighterTip?: HighlighterTip;
+  /**
    * Stylus-only mode: every pointer but the pen is ignored on the page, so
    * a hand resting on the glass moves neither the ink nor the page.
    */
   onlyStylusMode: boolean;
+  /**
+   * "Hide pen options while writing": the pen's options pill tucks away as
+   * soon as the pen or highlighter writes, as a second tap on its button
+   * does, until the pen is tapped or until it lifts (`tool-return.ts`). A
+   * switch before (true is until tapped); checked where read.
+   */
+  tuckPenOptionsOnWrite: PenOptionsOnWrite;
+  /** Page px added after a Zoom box line; negative lets taller boxes overlap. */
+  zoomBoxLineStep: number;
+  /** Move the Zoom box right (then wrap) after a stroke reaches its threshold. */
+  zoomBoxAutoAdvance: boolean;
+  /** Percentage of the box's right edge that triggers auto-advance. */
+  zoomBoxAutoAdvanceThreshold: number;
+  /**
+   * The Magnifier's mode, remembered: true makes its button open a Zoom box
+   * in one tap, the tool in hand kept (`magnifierTap`); false zooms the page.
+   */
+  magnifierZoomBox: boolean;
+  /**
+   * "Grey out while erasing", the eraser's mode list: Whole stroke and By
+   * line draw what they take grey until the pen lifts, as Notability does,
+   * instead of hiding it (discussion #51). Off by default; read through
+   * {@link greyWhileErasingOf}.
+   */
+  greyWhileErasing: boolean;
 
   /**
    * The settings tab's sections shown open, by id; every other one is
@@ -321,15 +416,19 @@ export interface GoodObsidianSettings {
 // change the shared defaults.
 export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   drawAndHold: true,
+  snapMode: "hold",
+  snapCurvatureThreshold: 50,
   defaultTool: "pen",
   customColors: [],
   defaultColor: PALETTE[0],
+  laserDefaultColor: "#ff3b30",
   defaultSize: SIZES[1],
   eraserMode: "standard",
   eraserSize: DEFAULT_ERASER_SIZE,
   eraserFilter: "all",
   lassoMode: "freehand",
   lassoFilter: { ...DEFAULT_LASSO_FILTER },
+  lassoTouches: true,
   highlighterAlpha: DEFAULT_HIGHLIGHTER_ALPHA,
   paperWidth: DEFAULT_PAPER_WIDTH,
   newNotebookFolder: "",
@@ -344,6 +443,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -361,6 +461,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textDragSize: false,
   textHintShown: 0,
   textHintDismissed: false,
+  shapeHintShown: false,
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
@@ -374,6 +475,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
+  pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
   fingerTapUndo: true,
@@ -389,18 +491,36 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  exportWithoutTapes: false,
+  desk: "auto",
+  deskColor: LIGHT_PAPER.desk,
+  exportPlainPaper: false,
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
   toolbarOff: [],
   barrelButton: "erase",
+  stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
   onlyStylusMode: false,
+  tuckPenOptionsOnWrite: "off",
+  zoomBoxLineStep: 0,
+  zoomBoxAutoAdvance: false,
+  zoomBoxAutoAdvanceThreshold: 33,
+  magnifierZoomBox: false,
+  greyWhileErasing: false,
 
   settingsOpen: [],
   scribbleTipDismissed: false,
 };
+
+/** A stored laser colour, or the built-in red when a vault contains bad data. */
+export function laserDefaultColorOf(raw: unknown): string {
+  return typeof raw === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)
+    ? raw
+    : DEFAULT_SETTINGS.laserDefaultColor;
+}
 
 // --- Settings sections -----------------------------------------------------------
 
@@ -410,7 +530,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
  */
 export const SETTINGS_SECTIONS = [
   "writing",
-  "pens",
+  "shortcuts",
   "pages",
   "on-device",
   "ai",
@@ -456,6 +576,17 @@ export function withSection(
   return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
 }
 
+// --- The eraser ------------------------------------------------------------------
+
+/**
+ * Whether the Whole stroke and By line erasers grey what they take. Only a stored
+ * `true` turns it on: a missing key (every vault before it) or a hand-edited
+ * value of any other kind leaves the eraser hiding strokes, as it always did.
+ */
+export function greyWhileErasingOf(raw: unknown): boolean {
+  return raw === true;
+}
+
 // --- Choices that set two switches -------------------------------------------------
 
 /** "Back to the pen": the two return-to-pen switches as one choice. */
@@ -477,41 +608,112 @@ export function storeReturnToPen(settings: GoodObsidianSettings, choice: unknown
 }
 
 /**
- * "Page appearance" with "Dark PDF pages" folded in: each dark choice comes
- * once with PDFs turned dark and once with them as they are.
+ * The settings the pen's menu holds beside the pen in hand's own: "Make
+ * shapes" and its curve bar (Pen gestures, and the Auto shape button), and
+ * "Hide pen options while writing" and "Back to the pen" (Pen settings).
+ * They are the same for every pen.
  */
-export type AppearanceChoice = PageAppearance | "dark-pdf-light" | "system-pdf-light";
-
-export function appearanceChoiceOf(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
-): AppearanceChoice {
-  const appearance: PageAppearance =
-    settings.pageAppearance === "dark" || settings.pageAppearance === "system"
-      ? settings.pageAppearance
-      : "light";
-  if (appearance === "light" || settings.invertPdfPages !== false) return appearance;
-  return appearance === "dark" ? "dark-pdf-light" : "system-pdf-light";
+export interface PenPreferences {
+  snapMode: SnapMode;
+  /** {@link GoodObsidianSettings.highlighterTip}. */
+  highlighterTip: HighlighterTip;
+  /** {@link GoodObsidianSettings.snapCurvatureThreshold}. */
+  snapCurve: number;
+  tuckOnWrite: PenOptionsOnWrite;
+  returnToPen: ReturnToPen;
 }
 
-export function storeAppearanceChoice(settings: GoodObsidianSettings, choice: unknown): void {
-  switch (choice) {
-    case "dark":
-    case "system":
-      settings.pageAppearance = choice;
-      settings.invertPdfPages = true;
-      return;
-    case "dark-pdf-light":
-      settings.pageAppearance = "dark";
-      settings.invertPdfPages = false;
-      return;
-    case "system-pdf-light":
-      settings.pageAppearance = "system";
-      settings.invertPdfPages = false;
-      return;
-    default:
-      // Light pages leave the PDF switch as it was, for the next dark choice.
-      settings.pageAppearance = "light";
+/** The highlighter's tips, as the pen menu offers them. */
+export type HighlighterTip = "round" | "chisel";
+
+/** A stored tip; anything but the chisel is round. */
+export function highlighterTipOf(value: unknown): HighlighterTip {
+  return value === "chisel" ? "chisel" : "round";
+}
+
+const SNAP_MODES: readonly SnapMode[] = ["disabled", "hold", "auto"];
+
+export function isSnapMode(value: unknown): value is SnapMode {
+  return typeof value === "string" && SNAP_MODES.includes(value as SnapMode);
+}
+
+/**
+ * Read the snapping mode, from the two switches it replaced when a vault
+ * has none yet: `penAutoShape` (on lift) and `drawAndHold` (on hold).
+ */
+export function snapModeOf(settings: {
+  snapMode?: unknown;
+  drawAndHold?: unknown;
+  penAutoShape?: unknown;
+}): SnapMode {
+  if (isSnapMode(settings.snapMode)) return settings.snapMode;
+  if (settings.penAutoShape === true) return "auto";
+  return settings.drawAndHold === false ? "disabled" : "hold";
+}
+
+/** The curve bar's value, 10–100 in steps of 5; anything else reads as the default 50. */
+export function snapCurveOf(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 50;
+  return Math.min(100, Math.max(10, Math.round(value / 5) * 5));
+}
+
+/** Set the snapping mode, and the two old switches that mirror it. */
+export function storeSnapMode(
+  settings: Pick<GoodObsidianSettings, "snapMode" | "drawAndHold" | "penAutoShape">,
+  mode: SnapMode,
+): void {
+  settings.snapMode = mode;
+  settings.drawAndHold = mode !== "disabled";
+  settings.penAutoShape = mode === "auto";
+}
+
+/**
+ * After loading: a vault from before "Make shapes" takes its mode from the
+ * two switches it replaced (`saved` is the file as read); from then on
+ * those only mirror it.
+ */
+export function loadSnapSettings(
+  settings: GoodObsidianSettings,
+  saved: Partial<Record<keyof GoodObsidianSettings, unknown>>,
+): void {
+  storeSnapMode(settings, snapModeOf(saved));
+  settings.snapCurvatureThreshold = snapCurveOf(saved.snapCurvatureThreshold);
+}
+
+export function penPreferencesOf(
+  settings: Pick<
+    GoodObsidianSettings,
+    | "snapMode"
+    | "snapCurvatureThreshold"
+    | "drawAndHold"
+    | "penAutoShape"
+    | "tuckPenOptionsOnWrite"
+    | "returnToPenOnReselect"
+    | "returnToPenAfterUse"
+    | "highlighterTip"
+  >,
+): PenPreferences {
+  return {
+    snapMode: snapModeOf(settings),
+    highlighterTip: highlighterTipOf(settings.highlighterTip),
+    snapCurve: snapCurveOf(settings.snapCurvatureThreshold),
+    tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
+    returnToPen: returnToPenOf(settings),
+  };
+}
+
+/** Store what the pen's menu changed; what `patch` leaves out stays as it is. */
+export function storePenPreferences(
+  settings: GoodObsidianSettings,
+  patch: Partial<PenPreferences>,
+): void {
+  if ("snapMode" in patch) storeSnapMode(settings, snapModeOf({ snapMode: patch.snapMode }));
+  if ("snapCurve" in patch) settings.snapCurvatureThreshold = snapCurveOf(patch.snapCurve);
+  if ("tuckOnWrite" in patch) {
+    settings.tuckPenOptionsOnWrite = penOptionsOnWriteOf(patch.tuckOnWrite);
   }
+  if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
+  if ("highlighterTip" in patch) settings.highlighterTip = highlighterTipOf(patch.highlighterTip);
 }
 
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
@@ -541,17 +743,49 @@ export function pagesAreDark(appearance: unknown, obsidianDark: boolean): boolea
   return appearance === "system" && obsidianDark;
 }
 
+/** The desk choice `desk` holds, or "auto" for anything it does not know. */
+export function deskChoiceOf(desk: unknown): DeskChoice {
+  return desk === "light" || desk === "dark" || desk === "custom" ? desk : "auto";
+}
+
+/**
+ * The desk colour `desk` and `deskColor` ask for, or `null` for the page
+ * appearance's own desk. A custom colour that is not a colour is `null` too.
+ */
+export function deskColorOf(
+  settings: Partial<Pick<GoodObsidianSettings, "desk" | "deskColor">>,
+): string | null {
+  switch (settings.desk) {
+    case "light":
+      return LIGHT_DESK;
+    case "dark":
+      return DARK_PAPER.desk;
+    case "custom":
+      return typeof settings.deskColor === "string" ? parseHexColor(settings.deskColor) : null;
+    default:
+      return null;
+  }
+}
+
 /**
  * The paper theme notebooks and page embeds are shown in, by the dark pages
- * settings and Obsidian's theme. A view setting only: export, printing and
- * AI reading always paint `paperTheme(false)`.
+ * settings, the desk setting and Obsidian's theme. A view setting only:
+ * export, printing and AI reading always paint `paperTheme(false)`.
+ *
+ * Page appearance and Dark PDF pages are two settings, and neither changes
+ * the other (FineNotes#67): while they were one dropdown, picking Match
+ * Obsidian after "Dark, PDFs as they are" turned PDFs dark again.
  */
 export function shownPaperTheme(
-  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages">,
+  settings: Pick<GoodObsidianSettings, "pageAppearance" | "invertPdfPages"> &
+    Partial<Pick<GoodObsidianSettings, "desk" | "deskColor">>,
   obsidianDark: boolean,
 ): PaperTheme {
   const dark = pagesAreDark(settings.pageAppearance, obsidianDark);
-  return paperTheme(dark, settings.invertPdfPages === false);
+  // "With the pages" sets them apart: dark pages lie on the grey desk light
+  // ones do, not on their own nearly black one (Joost, 2026-10-31).
+  const desk = deskColorOf(settings) ?? (dark ? LIGHT_PAPER.desk : null);
+  return withDesk(paperTheme(dark, settings.invertPdfPages === false), desk);
 }
 
 // --- Paper width -------------------------------------------------------------
@@ -621,7 +855,16 @@ const CONVERSIONS: Record<
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
+  tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },
+  // Anything it does not know is light, as `pagesAreDark` reads it.
+  pageAppearance: { show: pageAppearanceOf, store: pageAppearanceOf },
+  invertPdfPages: { show: (on) => on !== false, store: (on) => on !== false },
 };
+
+/** A stored page appearance, with anything unknown read as light. */
+export function pageAppearanceOf(value: unknown): PageAppearance {
+  return value === "dark" || value === "system" ? value : "light";
+}
 
 function conversion(key: string) {
   return Object.prototype.hasOwnProperty.call(CONVERSIONS, key) ? CONVERSIONS[key] : undefined;

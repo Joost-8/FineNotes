@@ -9,12 +9,14 @@
  */
 
 import { POINT_STRIDE, type ShapeKind } from "../model/document";
+import { LINE_LEVEL_RISE, levelTurn } from "./level-line";
 
 /**
  * The Shape tool's closed presets, in the order its options pill shows them.
  * Each is dragged out as its bounding box.
  */
-export type BoxPreset = "rect" | "ellipse" | "triangle" | "diamond" | "roundrect" | "star";
+export type BoxPreset =
+  "rect" | "ellipse" | "triangle" | "diamond" | "roundrect" | "star" | "heart";
 
 export const SHAPE_PRESETS: readonly BoxPreset[] = [
   "rect",
@@ -23,6 +25,7 @@ export const SHAPE_PRESETS: readonly BoxPreset[] = [
   "diamond",
   "roundrect",
   "star",
+  "heart",
 ];
 
 /**
@@ -286,6 +289,137 @@ export function cloudPoints(
   return ring;
 }
 
+/** Straight pieces round a heart; enough to stay smooth on its lobes at any zoom. */
+export const HEART_SEGMENTS = 72;
+
+/**
+ * The classic heart curve (x = 16 sin³t, y = 13 cos t − 5 cos 2t − 2 cos 3t
+ * − cos 4t, y flipped for the screen), `HEART_SEGMENTS` + 1 samples from
+ * the cusp at the top (t = 0) clockwise on screen: the right lobe, the tip
+ * at t = π, the left lobe, and the cusp again. Its cusp and tip are where
+ * the curve's speed falls to zero, so even samples in t crowd there and
+ * both points stay sharp.
+ */
+function heartCurve(): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i <= HEART_SEGMENTS; i++) {
+    const t = (2 * Math.PI * i) / HEART_SEGMENTS;
+    const s = Math.sin(t);
+    out.push({
+      x: 16 * s * s * s,
+      y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)),
+    });
+  }
+  return out;
+}
+
+/**
+ * The heart curve scaled into the unit box centred on the origin (−½ … ½
+ * both ways), cusp up. Computed once.
+ */
+const HEART_UNIT: readonly Pt[] = (() => {
+  const raw = heartCurve();
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of raw) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return raw.map((p) => ({
+    x: (p.x - minX) / (maxX - minX) - 0.5,
+    y: (p.y - minY) / (maxY - minY) - 0.5,
+  }));
+})();
+
+/** Height over width of the heart curve's bounding box (≈ 0.90). */
+export const HEART_ASPECT = (() => {
+  const raw = heartCurve();
+  const xs = raw.map((p) => p.x);
+  const ys = raw.map((p) => p.y);
+  return (Math.max(...ys) - Math.min(...ys)) / (Math.max(...xs) - Math.min(...xs));
+})();
+
+/**
+ * A heart filling a `w` × `h` box centred on (`cx`, `cy`), turned `phi`
+ * radians from upright (cusp up, tip down). It begins at the sample nearest
+ * `from` (the pen-down point; the cusp when absent) and goes round in
+ * `direction` (+1 clockwise on screen when upright, −1 the other way). The
+ * closing point is repeated.
+ */
+export function heartPoints(
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  phi = 0,
+  from: Pt | null = null,
+  direction = 1,
+): Pt[] {
+  const cos = Math.cos(phi);
+  const sin = Math.sin(phi);
+  let ring = HEART_UNIT.slice(0, -1).map((p) => {
+    const u = p.x * w;
+    const v = p.y * h;
+    return { x: cx + u * cos - v * sin, y: cy + u * sin + v * cos };
+  });
+  if (direction < 0) ring = [ring[0], ...ring.slice(1).reverse()];
+  if (from) {
+    let start = 0;
+    let nearest = Infinity;
+    ring.forEach((p, k) => {
+      const d = Math.hypot(p.x - from.x, p.y - from.y);
+      if (d < nearest) {
+        nearest = d;
+        start = k;
+      }
+    });
+    ring = ring.slice(start).concat(ring.slice(0, start));
+  }
+  ring.push({ ...ring[0] });
+  return ring;
+}
+
+/** Straight pieces a full turn of an arc would get; a part of a turn gets its share. */
+export const ARC_SEGMENTS_PER_TURN = 64;
+
+/**
+ * Points along a circular arc about (`cx`, `cy`) of radius `r`, from angle
+ * `start` turning `sweep` radians (negative turns the other way): the two
+ * ends exactly, and a sample at least every 5.625°.
+ */
+export function arcPoints(cx: number, cy: number, r: number, start: number, sweep: number): Pt[] {
+  const segments = Math.max(
+    2,
+    Math.ceil((Math.abs(sweep) / (2 * Math.PI)) * ARC_SEGMENTS_PER_TURN - 1e-9),
+  );
+  const out: Pt[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = start + (sweep * i) / segments;
+    out.push({ x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
+  }
+  return out;
+}
+
+/**
+ * A sector (a pie slice) as one closed outline: the centre, out along the
+ * first radius, round the arc, back along the second radius to the centre.
+ * A half turn is a semicircle closed by its diameter, the centre then the
+ * middle of that straight side.
+ */
+export function sectorPoints(
+  cx: number,
+  cy: number,
+  r: number,
+  start: number,
+  sweep: number,
+): Pt[] {
+  return [{ x: cx, y: cy }, ...arcPoints(cx, cy, r, start, sweep), { x: cx, y: cy }];
+}
+
 /**
  * A clean arrow from `tail` to `tip` in contracts/api.md §2's layout — shaft,
  * then the V retraced through the tip: `[tail, tip, tip, barb, tip, barb]`.
@@ -310,12 +444,27 @@ export function arrowPoints(tail: Pt, tip: Pt, headDeg = ARROW_HEAD_DEG): Pt[] {
 
 /**
  * A connector preset dragged from `from` to `to`: a line, or an arrow whose
- * head is at `to`. Returns `[]` when the two points coincide.
+ * head is at `to`. Returns `[]` when the two points coincide. Dragged with
+ * its end within `levelRise` page px of level or upright it is made exactly
+ * so, turned about `from`, where the pen went down (`level-line.ts`).
  */
-function connectorGeometry(preset: ConnectorPreset, from: Pt, to: Pt, pressure: number): number[] {
+function connectorGeometry(
+  preset: ConnectorPreset,
+  from: Pt,
+  to: Pt,
+  pressure: number,
+  levelRise: number,
+): number[] {
   const span = Math.hypot(to.x - from.x, to.y - from.y);
   if (!(span > 0) || !Number.isFinite(span)) return [];
-  const points = preset === "line" ? [from, to] : arrowPoints(from, to);
+  const turn = levelTurn(to.x - from.x, to.y - from.y, levelRise);
+  const end =
+    turn === 0
+      ? to
+      : Math.abs(to.x - from.x) >= Math.abs(to.y - from.y)
+        ? { x: from.x + Math.sign(to.x - from.x) * span, y: from.y }
+        : { x: from.x, y: from.y + Math.sign(to.y - from.y) * span };
+  const points = preset === "line" ? [from, end] : arrowPoints(from, end);
   return flatten(points, pressure);
 }
 
@@ -325,8 +474,16 @@ function connectorGeometry(preset: ConnectorPreset, from: Pt, to: Pt, pressure: 
  * degenerate box — callers treat that as "nothing to draw". Connectors (line,
  * arrow) run from `from` to `to` instead.
  */
-export function presetGeometry(preset: ShapePreset, from: Pt, to: Pt, pressure: number): number[] {
-  if (preset === "line" || preset === "arrow") return connectorGeometry(preset, from, to, pressure);
+export function presetGeometry(
+  preset: ShapePreset,
+  from: Pt,
+  to: Pt,
+  pressure: number,
+  levelRise = LINE_LEVEL_RISE,
+): number[] {
+  if (preset === "line" || preset === "arrow") {
+    return connectorGeometry(preset, from, to, pressure, levelRise);
+  }
   const x0 = Math.min(from.x, to.x);
   const y0 = Math.min(from.y, to.y);
   const x1 = Math.max(from.x, to.x);
@@ -376,6 +533,10 @@ export function presetGeometry(preset: ShapePreset, from: Pt, to: Pt, pressure: 
     case "star":
       points = boxedStar(x0, y0, w, h);
       break;
+    case "heart":
+      // From the cusp, clockwise, like the other presets.
+      points = heartPoints(cx, cy, w, h);
+      break;
   }
   return flatten(points, pressure);
 }
@@ -424,9 +585,9 @@ function roundRectPoints(x0: number, y0: number, x1: number, y1: number): Pt[] {
   return out;
 }
 
-/** Kinds whose geometry is a closed loop; the rest are open (line, arrow). */
+/** Kinds whose geometry is a closed loop; the rest are open (line, arrow, arc). */
 export function isClosedKind(kind: ShapeKind): boolean {
-  return kind !== "line" && kind !== "arrow";
+  return kind !== "line" && kind !== "arrow" && kind !== "arc" && kind !== "angle";
 }
 
 /**

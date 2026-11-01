@@ -11,13 +11,16 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { altitudeOf } from "../../src/ink/tilt";
 import {
   isWholePixel,
   PointerController,
   type PointerControllerCallbacks,
   type PointerDebugRecord,
   type PointerSample,
+  type PressRoute,
 } from "../../src/input/pointer-controller";
+import { MENU_AFTER_LIFT_MS } from "../../src/input/stylus-click";
 
 type Listener = (event: unknown) => void;
 
@@ -58,6 +61,8 @@ interface Contact {
   height?: number;
   /** The mouse button pressed (2 is the right one); left out, the main one. */
   button?: number;
+  /** Every button held, as a bit set (1 contact, 2 a pen's barrel); left out, none. */
+  buttons?: number;
   /** Samples `getCoalescedEvents()` returns; `undefined` leaves the method out. */
   coalesced?: Contact[];
   /** Samples `getPredictedEvents()` returns; `undefined` leaves the method out. */
@@ -76,6 +81,7 @@ interface StandInEvent {
   width: number;
   height: number;
   button: number;
+  buttons: number;
   prevented: boolean;
   preventDefault(): void;
   getCoalescedEvents?: () => StandInEvent[];
@@ -95,6 +101,7 @@ function eventFor(id: number, pointerType: string, c: Contact): StandInEvent {
     width: c.width ?? 1,
     height: c.height ?? 1,
     button: c.button ?? 0,
+    buttons: c.buttons ?? 0,
     prevented: false,
     preventDefault() {
       event.prevented = true;
@@ -267,6 +274,7 @@ describe("a drawing pointer", () => {
       pressure: 0.25,
       tiltX: -5,
       tiltY: 6,
+      altitude: altitudeOf({ tiltX: -5, tiltY: 6 }),
       // The event's time and pointer kind: a practice file records both.
       t: 3,
       pointerType: "pen",
@@ -280,6 +288,10 @@ describe("a drawing pointer", () => {
         coalesced: 0,
         timeStamp: 3,
         wholePixel: true,
+        altitude: altitudeOf({ tiltX: -5, tiltY: 6 }),
+        azimuth: Number.NaN,
+        tiltSource: "tilt",
+        ownTilts: 0,
       },
       {
         type: "move",
@@ -289,6 +301,11 @@ describe("a drawing pointer", () => {
         coalesced: 1,
         timeStamp: 4,
         wholePixel: true,
+        altitude: 90,
+        azimuth: Number.NaN,
+        tiltSource: "tilt",
+        // Its one coalesced sample carried one altitude.
+        ownTilts: 1,
       },
     ]);
   });
@@ -384,6 +401,33 @@ describe("a drawing pointer", () => {
       "debug move pen#1 p=0.5 c=1 t=0",
       "move [1001,2001 p=0.5 tilt=0,0]",
     ]);
+  });
+
+  it("drops coalesced samples the last move already handed over (FineNotes#85)", () => {
+    const rig = new Rig("required");
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1 });
+    const a = [
+      { x: 1, y: 1, t: 2 },
+      { x: 2, y: 2, t: 3 },
+    ];
+    const b = [
+      { x: 3, y: 3, t: 4 },
+      { x: 4, y: 4, t: 5 },
+    ];
+    for (const batch of [a, a, b, b]) {
+      rig.pen("pointermove", 1, { ...batch[batch.length - 1], coalesced: batch });
+    }
+    expect(rig.take()).toEqual([
+      "start 1000,2000 p=0.5 tilt=0,0",
+      "move [1001,2001 p=0.5 tilt=0,0 | 1002,2002 p=0.5 tilt=0,0]",
+      "move [1003,2003 p=0.5 tilt=0,0 | 1004,2004 p=0.5 tilt=0,0]",
+    ]);
+    // A new stroke starts afresh: the same samples count again.
+    rig.pen("pointerup", 1, { x: 4, y: 4, t: 6 });
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 7 });
+    rig.take();
+    rig.pen("pointermove", 1, { x: 4, y: 4, t: 8, coalesced: [{ x: 4, y: 4, t: 8 }] });
+    expect(rig.take()).toEqual(["move [1004,2004 p=0.5 tilt=0,0]"]);
   });
 
   it("reports a cancel, not an end, when WebKit cancels it", () => {
@@ -735,6 +779,31 @@ describe("pen and fingers together", () => {
     expect(rig.take()).toEqual(["panStart 1,2 t=14"]);
   });
 
+  it("lets a touch on an allowed page target reach the finger handler in Stylus-only mode", () => {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: () => log.push("start"),
+        onMove: () => log.push("move"),
+        onEnd: () => log.push("end"),
+        onCancel: () => log.push("cancel"),
+        onPanStart: (x, y) => log.push(`panStart ${x},${y}`),
+      },
+      {
+        onlyStylus: () => true,
+        touchTarget: () => true,
+      },
+    );
+    controller.attach();
+    const down = eventFor(10, "touch", { x: 1, y: 2, t: 3 });
+    el.listeners.get("pointerdown")?.(down);
+    expect(log).toEqual(["panStart 1,2"]);
+    expect(down.prevented).toBe(false);
+  });
+
   it("a hovering pen and a wide contact do not keep a finger out", () => {
     const rig = new Rig();
     rig.pen("pointermove", 1, { x: 0, y: 0, t: 1000 });
@@ -936,5 +1005,188 @@ describe("what the press menu's hold reads (finger-hold.ts)", () => {
     const { el, log } = holdRig();
     fire(el, "pointerdown", 1, "pen", { x: 5, y: 5, button: 2 });
     expect(log).toEqual(["start 1005,2005 p=0.5 tilt=0,0"]);
+  });
+});
+
+describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
+  /** A controller whose presses route as `route` says, with clicks wanted while `wanted.on`. */
+  function clickRig(route: PressRoute = "draw") {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const wanted = { on: true };
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: (s) => log.push(`start ${show(s)}`),
+        onMove: (c) => log.push(`move ${c.length}`),
+        onEnd: () => log.push("end"),
+        onCancel: () => log.push("cancel"),
+        onPanStart: (x, y) => log.push(`panStart ${x},${y}`),
+        onPanMove: (x, y) => log.push(`panMove ${x},${y}`),
+        onPanEnd: () => log.push("panEnd"),
+        onStylusClick: (x, y) => log.push(`click ${x},${y}`),
+      },
+      { route: () => route, stylusClicks: () => wanted.on },
+    );
+    controller.attach();
+    const fire = (phase: Phase, c: Contact, type = "pen"): StandInEvent => {
+      const event = eventFor(1, type, c);
+      el.listeners.get(phase)?.(event);
+      return event;
+    };
+    return { el, controller, log, wanted, fire };
+  }
+
+  it("holds the press back, and a quick let-go near where it began is the click", () => {
+    const { el, log, fire } = clickRig();
+    const down = fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    expect(down.prevented).toBe(true);
+    expect([...el.captured]).toEqual([1]);
+    fire("pointermove", { x: 12, y: 11, t: 40, buttons: 2, pressure: 0 });
+    fire("pointerup", { x: 12, y: 11, t: 200, button: 2, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 12,11"]);
+    expect(el.captured.size).toBe(0);
+  });
+
+  it("writes as the barrel says once the held press touches down: the press, then the move", () => {
+    const { log, fire } = clickRig();
+    fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 900, buttons: 3, pressure: 0.4 });
+    fire("pointermove", { x: 30, y: 10, t: 920, buttons: 3, pressure: 0.5 });
+    fire("pointerup", { x: 30, y: 10, t: 950, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["start 1010,2010 p=0 tilt=0,0", "move 1", "move 1", "end"]);
+  });
+
+  it("is a hovering stroke once it travels, and a pan when the barrel moves the page", () => {
+    const drawn = clickRig();
+    drawn.fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    drawn.fire("pointermove", { x: 40, y: 10, t: 50, buttons: 2, pressure: 0 });
+    drawn.fire("pointerup", { x: 40, y: 10, t: 80, button: 2, buttons: 0, pressure: 0 });
+    expect(drawn.log).toEqual(["start 1010,2010 p=0 tilt=0,0", "move 1", "end"]);
+
+    const panned = clickRig("pan");
+    panned.fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    panned.fire("pointermove", { x: 40, y: 10, t: 50, buttons: 2, pressure: 0 });
+    panned.fire("pointerup", { x: 40, y: 10, t: 80, button: 2, buttons: 0, pressure: 0 });
+    expect(panned.log).toEqual(["panStart 10,10", "panMove 40,10", "panEnd"]);
+  });
+
+  it("lets a second press of the held pointer, touching down, write in its place", () => {
+    const { el, log, fire } = clickRig();
+    fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    fire("pointerdown", { x: 11, y: 10, t: 300, button: 0, buttons: 3, pressure: 0.4 });
+    fire("pointermove", { x: 20, y: 10, t: 320, buttons: 3, pressure: 0.5 });
+    fire("pointerup", { x: 20, y: 10, t: 350, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["start 1011,2010 p=0.4 tilt=0,0", "move 1", "end"]);
+    expect(el.captured.size).toBe(0);
+  });
+
+  it("is nothing held too long without moving", () => {
+    const { log, fire } = clickRig();
+    fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    fire("pointerup", { x: 10, y: 10, t: 4000, button: 2, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+  });
+
+  it("draws as before when no click is wanted, or the pen comes down to write", () => {
+    const { log, wanted, fire } = clickRig();
+    wanted.on = false;
+    fire("pointerdown", { x: 10, y: 10, t: 0, button: 2, buttons: 2, pressure: 0 });
+    expect(log).toEqual(["start 1010,2010 p=0 tilt=0,0"]);
+    fire("pointerup", { x: 10, y: 10, t: 50, button: 2, buttons: 0 });
+    log.length = 0;
+    wanted.on = true;
+    fire("pointerdown", { x: 10, y: 10, t: 100, button: 0, buttons: 3 });
+    expect(log).toEqual(["start 1010,2010 p=0.5 tilt=0,0"]);
+  });
+
+  it("hears the click in hovering moves when no press comes, once", () => {
+    const { log, fire } = clickRig();
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 0, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 2, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 120, buttons: 0, pressure: 0 });
+    fire("pointermove", { x: 12, y: 10, t: 140, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 11,10"]);
+  });
+
+  it("hears the click as Android's WebView reports it: the contact bit, no pressure, no press", () => {
+    const { log, fire } = clickRig();
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 0, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 120, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 11, y: 10, t: 160, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 11,10"]);
+  });
+
+  /** A pen event over the rest of the view, off the controller's element. */
+  function elsewhere(controller: PointerController, type: Phase, c: Contact): void {
+    controller.penElsewhere({ ...eventFor(1, "pen", c), type } as unknown as PointerEvent);
+  }
+
+  it("hears the click over the rest of the view, off its element (the popover the click opened)", () => {
+    const { controller, log, wanted } = clickRig();
+    const over = (c: Contact) => elsewhere(controller, "pointermove", c);
+    over({ x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    over({ x: 10, y: 10, t: 150, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 10,10"]);
+    // Not when no click is wanted.
+    wanted.on = false;
+    over({ x: 10, y: 10, t: 900, buttons: 1, pressure: 0 });
+    over({ x: 10, y: 10, t: 1000, buttons: 0, pressure: 0 });
+    expect(log).toEqual(["click 10,10"]);
+  });
+
+  it("hears no click from a pen down on the tool bar, though its moves have no pressure", () => {
+    const { controller, log } = clickRig();
+    elsewhere(controller, "pointerdown", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointerup", { x: 10, y: 10, t: 80, buttons: 0, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 120, buttons: 0, pressure: 0 });
+    // Its pointerup never came: the first move with no button is the pen in the air.
+    elsewhere(controller, "pointerdown", { x: 10, y: 10, t: 500, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 520, buttons: 1, pressure: 0 });
+    elsewhere(controller, "pointermove", { x: 10, y: 10, t: 600, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+  });
+
+  it("hears no click from a pen down on the page that writes nothing (the margin)", () => {
+    const { log, fire } = clickRig("ignore");
+    fire("pointerdown", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0.3 });
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 60, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+  });
+
+  it("hears no click after a press it never had: its pointerup ends the watch", () => {
+    const { log, fire } = clickRig();
+    // A popover took the pointerdown (popover-dismiss.ts); its moves still come.
+    fire("pointermove", { x: 10, y: 10, t: 20, buttons: 2, pressure: 0 });
+    fire("pointerup", { x: 10, y: 10, t: 100, button: 2, buttons: 0, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 120, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+  });
+
+  it("takes a pen's contextmenu for the click only when the pointer events had none", () => {
+    const { controller, log, wanted, fire } = clickRig();
+    expect(controller.stylusMenu(10)).toBe(true);
+    // The same click again through the press: one click.
+    fire("pointerdown", { x: 10, y: 10, t: 30, button: 2, buttons: 2, pressure: 0 });
+    fire("pointerup", { x: 10, y: 10, t: 90, button: 2, buttons: 0, pressure: 0 });
+    expect(log).toEqual([]);
+    // Never while the pen writes (Chromium's long press), nor when no click is wanted.
+    fire("pointerdown", { x: 10, y: 10, t: 5000, buttons: 1 });
+    expect(controller.stylusMenu(5600)).toBe(false);
+    fire("pointerup", { x: 10, y: 10, t: 5700 });
+    wanted.on = false;
+    expect(controller.stylusMenu(9000)).toBe(false);
+  });
+
+  it("takes no contextmenu for the click just after a stroke (Windows' press-and-hold)", () => {
+    const { controller, fire } = clickRig();
+    fire("pointerdown", { x: 10, y: 10, t: 0, buttons: 1 });
+    fire("pointerup", { x: 40, y: 10, t: 2000 });
+    expect(controller.stylusMenu(2050)).toBe(false);
+    expect(controller.stylusMenu(2000 + MENU_AFTER_LIFT_MS + 1)).toBe(true);
   });
 });

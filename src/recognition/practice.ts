@@ -143,13 +143,26 @@ export const PRACTICE_SETS: readonly (readonly string[])[] = [
  */
 export const SYMBOL_SET = 100;
 
+/** A line of the symbol sheet. */
+export interface SymbolLine {
+  symbol: string;
+  name: string;
+  /**
+   * Not in Grape's alphabet (it has 95 characters, no ∑ or ∫): learning
+   * leaves the line out, as it does any label it cannot spell, and the ink
+   * stays on the sheet for a reader that can (RESEARCH-LOG, 2026-10-29).
+   */
+  beyond?: true;
+}
+
 /**
  * The symbol sheet: each digit twice, then every operator, bracket and sign
  * in Grape's alphabet, one to a line, with a name printed beside it (a
- * caption, not part of the label: the line's label is the symbol alone). The
- * letter x is there because a calculation writes it for "times".
+ * caption, not part of the label: the line's label is the symbol alone), then
+ * a link's brackets and maths signs Grape cannot spell yet. The letter x is
+ * there because a calculation writes it for "times".
  */
-export const SYMBOL_LINES: readonly { symbol: string; name: string }[] = [
+export const SYMBOL_LINES: readonly SymbolLine[] = [
   { symbol: "0", name: "zero" },
   { symbol: "1", name: "one" },
   { symbol: "2", name: "two" },
@@ -203,6 +216,21 @@ export const SYMBOL_LINES: readonly { symbol: string; name: string }[] = [
   { symbol: "8", name: "eight, again" },
   { symbol: "3", name: "three, again" },
   { symbol: "6", name: "six, again" },
+  // Added 2026-10-29: a link's brackets, written as a pair the way a note
+  // writes them, then maths signs beyond Grape's alphabet. Appended, so the
+  // prompt ids of sheets written before stay what they were.
+  { symbol: "[[", name: "link, opening" },
+  { symbol: "]]", name: "link, closing" },
+  { symbol: "∑", name: "sum", beyond: true },
+  { symbol: "∫", name: "integral", beyond: true },
+  { symbol: "√", name: "square root", beyond: true },
+  { symbol: "π", name: "pi", beyond: true },
+  { symbol: "∞", name: "infinity", beyond: true },
+  { symbol: "≤", name: "less than or equal to", beyond: true },
+  { symbol: "≥", name: "greater than or equal to", beyond: true },
+  { symbol: "≠", name: "not equal to", beyond: true },
+  { symbol: "±", name: "plus or minus", beyond: true },
+  { symbol: "→", name: "arrow, tends to", beyond: true },
 ];
 
 /** Whether `set` is the symbol sheet. */
@@ -369,8 +397,13 @@ function coverPage(set: number, geometry: PageGeometry): Page {
  * with ten prompts each, one every three lines (the prompt, the line to
  * write on, a spare line), under a short reminder at the top.
  */
-export function buildPracticeFile(set: number, geometry: PageGeometry): InkDocument {
-  if (isSymbolSet(set)) return buildSymbolFile(geometry);
+export function buildPracticeFile(
+  set: number,
+  geometry: PageGeometry,
+  /** For the symbol sheet: only these lines (indices into {@link SYMBOL_LINES}). */
+  only?: readonly number[],
+): InkDocument {
+  if (isSymbolSet(set)) return buildSymbolFile(geometry, only);
   const which = Math.min(PRACTICE_SETS.length, Math.max(1, Math.round(set)));
   const lines = PRACTICE_SETS[which - 1];
   const pages: Page[] = [coverPage(which, geometry)];
@@ -421,11 +454,14 @@ export function buildPracticeFile(set: number, geometry: PageGeometry): InkDocum
  * The symbol sheet: the cover, then pages of ruled-wide paper with a symbol
  * every two lines (printed large, its name small beside it), written on the
  * line below. The name is printed text without a prompt id, so it is never
- * a label.
+ * a label. `only` makes a sheet of some lines, each keeping its id.
  */
-function buildSymbolFile(geometry: PageGeometry): InkDocument {
+function buildSymbolFile(geometry: PageGeometry, only?: readonly number[]): InkDocument {
   const pages: Page[] = [coverPage(SYMBOL_SET, geometry)];
-  const count = Math.ceil(SYMBOL_LINES.length / SYMBOLS_PER_PAGE);
+  const lines = (only ?? SYMBOL_LINES.map((_, i) => i))
+    .filter((n) => n >= 0 && n < SYMBOL_LINES.length)
+    .map((n) => ({ ...SYMBOL_LINES[n], n }));
+  const count = Math.ceil(lines.length / SYMBOLS_PER_PAGE);
   for (let p = 0; p < count; p++) {
     const printed: PrintedText[] = [
       {
@@ -436,8 +472,8 @@ function buildSymbolFile(geometry: PageGeometry): InkDocument {
         color: PROMPT_COLOR,
       },
     ];
-    SYMBOL_LINES.slice(p * SYMBOLS_PER_PAGE, (p + 1) * SYMBOLS_PER_PAGE).forEach((line, i) => {
-      const n = p * SYMBOLS_PER_PAGE + i;
+    lines.slice(p * SYMBOLS_PER_PAGE, (p + 1) * SYMBOLS_PER_PAGE).forEach((line, i) => {
+      const n = line.n;
       // The symbol sits on rule k and is copied on the line below it; the
       // next symbol is on the rule after that.
       const y = PITCH * (3 + i * 2) - ABOVE_RULE;
@@ -483,9 +519,53 @@ export function isPracticeNotebook(doc: InkDocument): boolean {
   );
 }
 
+/**
+ * The set a practice document is: its `practice.set`, or, for a notebook
+ * from before practice files, the set whose lines its prompts are (the first
+ * notebooks had set 1's first 20). Null when it is neither.
+ */
+export function practiceSetOfDoc(doc: InkDocument): number | null {
+  if (doc.practice) return doc.practice.set;
+  const texts = doc.pages.flatMap((page) =>
+    page.textBoxes.filter((box) => box.id.startsWith(PRACTICE_PREFIX)).map((box) => box.text),
+  );
+  if (texts.length === 0) return null;
+  const set = PRACTICE_SETS.findIndex((lines) => texts.every((text) => lines.includes(text)));
+  return set >= 0 ? set + 1 : null;
+}
+
+/** How many lines a practice document asks to copy: its prompts, printed or in text boxes. */
+export function promptCount(doc: InkDocument): number {
+  let count = 0;
+  for (const page of doc.pages) {
+    if (page.backdrop.kind !== "pdf") {
+      count += (page.backdrop.printed ?? []).filter((line) => line.prompt).length;
+    }
+    count += page.textBoxes.filter((box) => box.id.startsWith(PRACTICE_PREFIX)).length;
+  }
+  return count;
+}
+
+/**
+ * The symbol sheet's lines none of `docs` (symbol sheets written before)
+ * asks for, as indices into {@link SYMBOL_LINES}: the lines added since.
+ */
+export function missingSymbols(docs: readonly InkDocument[]): number[] {
+  const asked = new Set<string>();
+  for (const doc of docs) {
+    for (const page of doc.pages) {
+      if (page.backdrop.kind === "pdf") continue;
+      for (const line of page.backdrop.printed ?? []) if (line.prompt) asked.add(line.prompt);
+    }
+  }
+  return SYMBOL_LINES.map((_, i) => i).filter(
+    (i) => !asked.has(`${PRACTICE_PREFIX}${SYMBOL_SET}-${i + 1}`),
+  );
+}
+
 /** Whether a stroke is handwriting the reader can learn from. */
 function isWriting(stroke: Stroke): boolean {
-  return stroke.tool !== "highlighter" && !stroke.shape;
+  return stroke.tool === "pen" && !stroke.shape;
 }
 
 /**

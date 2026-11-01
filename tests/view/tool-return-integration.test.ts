@@ -386,6 +386,113 @@ describe("secondary tool integration", () => {
     run(bar, "tapTool", "eraser", {});
     expect(bar.optionsVisible).toBe(false);
   });
+  it("tucks the pen's options as a second tap would, when a stroke starts", () => {
+    const state: { tool: ActiveTool } = { tool: "pen" };
+    const showOptions = vi.fn();
+    const bar: Fake = Object.assign(Object.create(Toolbar.prototype), {
+      state,
+      drawingTool: "pen",
+      optionsVisible: true,
+      tuckedTools: new Set(),
+      optionsTool: "pen",
+      callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
+      closePopover: vi.fn(),
+      showOptions,
+      buildOptions: vi.fn(),
+      syncActive: vi.fn(),
+    });
+    run(bar, "tuckOptions");
+    expect(bar.optionsVisible).toBe(false);
+    expect(showOptions).toHaveBeenCalledWith(false);
+    // Tucked already: the next stroke does nothing.
+    run(bar, "tuckOptions");
+    expect(showOptions).toHaveBeenCalledOnce();
+    // A tap on the pen brings them back.
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(true);
+    // Left tucked by a stroke, the pen comes back tucked after the eraser.
+    run(bar, "tuckOptions");
+    run(bar, "tapTool", "eraser", {});
+    state.tool = "pen";
+    run(bar, "setState", state);
+    expect(bar.optionsVisible).toBe(false);
+  });
+  it("brings back only the options a stroke tucked away, until a tap or a tool has a say", () => {
+    const state: { tool: ActiveTool } = { tool: "pen" };
+    const showOptions = vi.fn();
+    const bar: Fake = Object.assign(Object.create(Toolbar.prototype), {
+      state,
+      drawingTool: "pen",
+      optionsVisible: true,
+      tuckedTools: new Set(),
+      tuckedByStroke: false,
+      optionsTool: "pen",
+      callbacks: { returnToPenOnReselect: () => false, onToolChange: vi.fn() },
+      closePopover: vi.fn(),
+      showOptions,
+      buildOptions: vi.fn(),
+      syncActive: vi.fn(),
+    });
+    // A stroke tucks them, the pen rests: they come back, once.
+    run(bar, "tuckOptions");
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(true);
+    expect(showOptions).toHaveBeenLastCalledWith(true);
+    showOptions.mockClear();
+    run(bar, "showTuckedOptions");
+    expect(showOptions).not.toHaveBeenCalled();
+    // Tucked with a tap on the pen, they stay tucked after a stroke's lift.
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(false);
+    run(bar, "tuckOptions");
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(false);
+    // A stroke tucks them, then a tap on the pen in the pause: the tap wins.
+    run(bar, "tapTool", "pen", {});
+    run(bar, "tuckOptions");
+    run(bar, "tapTool", "pen", {});
+    expect(bar.optionsVisible).toBe(true);
+    run(bar, "tapTool", "pen", {});
+    run(bar, "showTuckedOptions");
+    expect(bar.optionsVisible).toBe(false);
+    // A stroke tucks them, then another tool is picked: nothing comes back.
+    run(bar, "tapTool", "pen", {});
+    run(bar, "tuckOptions");
+    run(bar, "tapTool", "eraser", {});
+    showOptions.mockClear();
+    run(bar, "showTuckedOptions");
+    expect(showOptions).not.toHaveBeenCalled();
+  });
+  it("tells the host which tool a gesture starts with, and whether it was lent", () => {
+    const onGestureStart = vi.fn();
+    const down = vi.fn();
+    const box = { index: 0, id: "p", x: 0, y: 0, width: 100, height: 100 };
+    const press = (tool: ActiveTool, pressTool: string | null) => {
+      const s = surface(tool);
+      Object.assign(s, {
+        pressTool,
+        callbacks: { ...s.callbacks, isLocked: () => false, onGestureStart },
+        settlePendingReturn: vi.fn(),
+        dismissUsedSelection: () => false,
+        clock: () => 0,
+        cropping: null,
+        deselectImage: vi.fn(),
+        clearSelection: vi.fn(),
+        heldText: null,
+        cellEdit: null,
+        pageLayout: { boxes: [box] },
+        gestureOf: () => ({ down }),
+      });
+      run(s, "penDown", { x: 10, y: 10 });
+    };
+    press("pen", null);
+    expect(onGestureStart).toHaveBeenLastCalledWith("pen", false);
+    press("pen", "eraser");
+    expect(onGestureStart).toHaveBeenLastCalledWith("eraser", true);
+    press("highlighter", "select");
+    expect(onGestureStart).toHaveBeenLastCalledWith("select", true);
+    expect(down).toHaveBeenCalledTimes(3);
+  });
   it("reads settings live, including both switches independently", () => {
     const s = surface("eraser", false);
     run(s, "completeToolUse", "gesture");

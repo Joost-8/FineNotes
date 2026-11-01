@@ -15,6 +15,7 @@
 import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { remapConnectors } from "./connectors";
 
 /** Why a notebook takes no pages, or `null` when it does. */
 export function transferRefusal(doc: InkDocument): string | null {
@@ -64,6 +65,7 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
   let commentSeq = maxId(all, (p) => p.comments ?? [], "cm");
   let linkSeq = maxId(all, (p) => p.links ?? [], "l");
   let taskSeq = maxId(all, (p) => p.tasks ?? [], "ck");
+  let connectorSeq = maxId(all, (p) => p.connectors ?? [], "cn");
 
   return pages.map((source) => {
     const copy = structuredClone(source);
@@ -81,8 +83,9 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
       imageIds.set(image.id, id);
       image.id = id;
     }
-    // The ink on a note follows the note's new id.
+    // The ink and text on a note follow the note's new id.
     relinkNoteInk(copy.strokes, imageIds);
+    relinkNoteInk(copy.textBoxes, imageIds);
     for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
     for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
     for (const comment of copy.comments ?? []) comment.id = `cm${++commentSeq}`;
@@ -93,6 +96,11 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
       });
       if (links.length > 0) copy.links = links;
       else delete copy.links;
+    }
+    if (copy.connectors) {
+      const connectors = remapConnectors(copy.connectors, strokeIds, () => `cn${++connectorSeq}`);
+      if (connectors.length > 0) copy.connectors = connectors;
+      else delete copy.connectors;
     }
     if (copy.tasks) {
       const tasks = copy.tasks.flatMap((task) => {

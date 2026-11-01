@@ -55,6 +55,8 @@ export interface AiVendorConfig {
   apiKey: string;
   /** OpenAI-compatible base URL; only read for `custom`. */
   baseUrl: string;
+  /** Skip providers that say they compress the model; only read for `openrouter`. */
+  skipCompressed?: boolean;
 }
 
 /** A vendor's label, or "your configured endpoint (host)". */
@@ -160,6 +162,7 @@ async function sendChat(
     model: config.model.trim() || defaultModelFor(config.vendor),
     apiKey: config.apiKey.trim(),
     baseUrl: config.baseUrl,
+    skipCompressed: config.skipCompressed,
     system,
     turns,
     cache,
@@ -282,6 +285,7 @@ export async function askAiWithTools(
     model: config.model.trim() || defaultModelFor(config.vendor),
     apiKey: config.apiKey.trim(),
     baseUrl: config.baseUrl,
+    skipCompressed: config.skipCompressed,
     system,
     turns,
     cache: true,

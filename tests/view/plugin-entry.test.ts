@@ -1081,6 +1081,25 @@ describe("the Scribble notice", () => {
   });
 });
 
+// --- Where Make shapes lives (FineNotes#84) ------------------------------------------------
+
+describe("the Make shapes hint", () => {
+  it("says where Make shapes is at the first pen stroke that snaps, once per vault", async () => {
+    await load({ lastSeenVersion: VERSION });
+    const shown: string[] = [];
+    const surface = { showTextHint: (text: string) => shown.push(text) } as never;
+    plugin.offerShapeHint(surface);
+    plugin.offerShapeHint(surface);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatch(/Pen gestures/);
+    expect(registered.saved.at(-1)?.shapeHintShown).toBe(true);
+    registered.unload();
+    await load({ lastSeenVersion: VERSION, shapeHintShown: true });
+    plugin.offerShapeHint(surface);
+    expect(shown).toHaveLength(1);
+  });
+});
+
 // --- Consent before recognition -----------------------------------------------------------
 
 describe("running recognition", () => {
@@ -1280,5 +1299,31 @@ describe("the input debug overlay", () => {
     expect(a).toHaveBeenLastCalledWith(false);
     expect(plugin.settings.debugHud).toBe(false);
     expect(notices).toHaveLength(1);
+  });
+});
+
+// --- An item shown nowhere has nothing left on --------------------------------------------
+
+describe("Stylus only shown nowhere", () => {
+  it("goes off when its button is turned off, in every open notebook", async () => {
+    await load({ lastSeenVersion: VERSION, onlyStylusMode: true });
+    const a = vi.fn();
+    inkLeaf(app.addFile("A.notebook.md"), { setOnlyStylusMode: a, setToolbarItems: vi.fn() });
+    plugin.saveToolbarLayout({ bar: ["pen", "select"], off: ["stylus"] });
+    await flush();
+    expect(plugin.settings.onlyStylusMode).toBe(false);
+    expect(a).toHaveBeenCalledWith(false);
+  });
+
+  it("cannot be turned on by its command while off", async () => {
+    await load({ lastSeenVersion: VERSION, toolbarOff: ["stylus"] });
+    run("toggle-only-stylus-mode");
+    await flush();
+    expect(plugin.settings.onlyStylusMode).toBe(false);
+  });
+
+  it("is never on at load when its button is off", async () => {
+    await load({ lastSeenVersion: VERSION, onlyStylusMode: true, toolbarOff: ["stylus"] });
+    expect(plugin.settings.onlyStylusMode).toBe(false);
   });
 });

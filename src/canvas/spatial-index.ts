@@ -13,6 +13,7 @@
  */
 
 import { type Bounds, type Stroke, strokeBounds } from "../model/document";
+import { isTape } from "../model/cover-tape";
 
 /** Cell side, in page px: a few words of handwriting. */
 const CELL_SIZE = 256;
@@ -33,10 +34,23 @@ export class SpatialIndex {
 
   constructor(private readonly cell = CELL_SIZE) {}
 
-  /** List a stroke under its bounding box. A stroke without a whole point is not listed. */
+  /**
+   * List a stroke under its bounding box (a cover tape's, its whole band). A
+   * stroke without a whole point is not listed.
+   */
   insert(stroke: Stroke): void {
-    const box = strokeBounds(stroke);
-    if (!box) return;
+    const line = strokeBounds(stroke);
+    if (!line) return;
+    const half = isTape(stroke) && stroke.size > 0 ? stroke.size / 2 : 0;
+    const box =
+      half > 0
+        ? {
+            minX: line.minX - half,
+            minY: line.minY - half,
+            maxX: line.maxX + half,
+            maxY: line.maxY + half,
+          }
+        : line;
     const block = this.blockOf(box);
     this.listed.set(stroke.id, block);
     for (let row = block.top; row <= block.bottom; row++) {
@@ -67,6 +81,21 @@ export class SpatialIndex {
     }
   }
 
+  /**
+   * The cells stroke `id` is listed in, as a box in page px: its bounding
+   * box, rounded out to whole cells. Null for a stroke never listed.
+   */
+  cellBoundsOf(id: string): Bounds | null {
+    const block = this.listed.get(id);
+    if (!block) return null;
+    return {
+      minX: block.left * this.cell,
+      minY: block.top * this.cell,
+      maxX: (block.right + 1) * this.cell,
+      maxY: (block.bottom + 1) * this.cell,
+    };
+  }
+
   /** The strokes listed in the cells `box` reaches, each once, in the order above. */
   queryBounds(box: Bounds): Set<string> {
     return this.gather(this.blockOf(box));
@@ -76,6 +105,25 @@ export class SpatialIndex {
   queryPoint(x: number, y: number, reach = 0): Set<string> {
     const [x0, x1, y0, y1] = [x - reach, x + reach, y - reach, y + reach];
     return this.gather(this.blockOf({ minX: x0, minY: y0, maxX: x1, maxY: y1 }));
+  }
+
+  /**
+   * Call `visit` with each id listed in the cells within `reach` of (x, y),
+   * once per cell it is listed in (so possibly more than once). Unlike
+   * {@link queryPoint} it builds no set and allocates nothing: for queries on
+   * every pointer move, whose callers do not mind a repeat (snapping).
+   */
+  forEachNear(x: number, y: number, reach: number, visit: (id: string) => void): void {
+    const cell = this.cell;
+    const top = Math.floor((y - reach) / cell);
+    const bottom = Math.floor((y + reach) / cell);
+    const left = Math.floor((x - reach) / cell);
+    const right = Math.floor((x + reach) / cell);
+    for (let row = top; row <= bottom; row++) {
+      const columns = this.rows.get(row);
+      if (!columns) continue;
+      for (let col = left; col <= right; col++) columns.get(col)?.forEach(visit);
+    }
   }
 
   /** Forget everything, then list a page's strokes in order. */

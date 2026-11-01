@@ -111,7 +111,7 @@ function setup(): { renderer: Renderer; wet: FakeCanvas; wetLog: Call[] } {
 }
 
 describe("renderLasso", () => {
-  it("draws the loop closed, filled even–odd, dashed, and shows the wet layer", () => {
+  it("draws the loop closed and dashed, its line only, and shows the wet layer", () => {
     const { renderer, wet, wetLog } = setup();
     expect(wet.classes.has("goodobsidian-wet-hidden")).toBe(true);
     renderer.renderLasso(0, [10, 10, 100, 10, 60, 80]);
@@ -121,10 +121,19 @@ describe("renderLasso", () => {
       ["lineTo", 100, 10],
       ["lineTo", 60, 80],
     ]);
-    expect(wetLog.find(([name]) => name === "fill")).toEqual(["fill", "evenodd"]);
+    // No filled area inside the loop while it is drawn (Joost on PR #59).
+    expect(names).not.toContain("fill");
     expect(names).toContain("setLineDash");
-    expect(names.indexOf("stroke")).toBeGreaterThan(names.indexOf("fill"));
+    expect(names).toContain("stroke");
     expect(wet.classes.has("goodobsidian-wet-hidden")).toBe(false);
+  });
+
+  it("leaves a freehand lasso open while the pen is down, as Goodnotes does", () => {
+    const { renderer, wetLog } = setup();
+    renderer.renderLasso(0, [10, 10, 100, 10, 60, 80], false);
+    const names = wetLog.map(([name]) => name);
+    expect(names).not.toContain("closePath");
+    expect(names).toContain("stroke");
   });
 
   it("draws nothing for a loop of one point, or an unknown page", () => {
@@ -305,6 +314,30 @@ describe("renderSelectionDraft while turning", () => {
     s.pts = [50, 50, 0.5, 30, 60, 0.5, 50, 50, 0.5, 70, 40, 0.5, 50, 50, 0.5];
     renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
     expect(traced()).not.toBe(first);
+  });
+
+  it("traces a highlight again when its tip changes, the points left alone", () => {
+    const { renderer } = setup();
+    const s: Stroke = {
+      id: "h1",
+      color: "#fab005",
+      size: 20,
+      tool: "highlighter",
+      pts: [10, 50, 0.5, 90, 50, 0.5],
+    };
+    const entry = (): { runs: Array<{ chisel?: boolean }> } | undefined => {
+      const draft = renderer as unknown as {
+        paths: WeakMap<Stroke, { runs: Array<{ chisel?: boolean }> }>;
+      };
+      return draft.paths.get(s);
+    };
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    const round = entry();
+    expect(round?.runs.some((run) => run.chisel)).toBe(false);
+    s.tip = "chisel";
+    renderer.renderSelectionDraft(0, [s], [], 0, 0, false);
+    expect(entry()).not.toBe(round);
+    expect(entry()?.runs.every((run) => run.chisel === true)).toBe(true);
   });
 });
 

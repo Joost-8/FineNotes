@@ -174,6 +174,12 @@ export class SelectionActionBar {
       } else {
         iconInto(button, iconsFor(action.icon), action.label.slice(0, 2));
       }
+      if (action.checked !== undefined) {
+        // A switch in the bar (the resize handles, a shape's corner points):
+        // pressed while on.
+        button.setAttribute("aria-pressed", String(action.checked));
+        button.toggleClass("is-on", action.checked);
+      }
       this.decorate(button, action);
       onTap(button, () => this.run(action.id, true));
     }
@@ -189,6 +195,11 @@ export class SelectionActionBar {
 
   private decorate(button: HTMLButtonElement, action: SelectionAction): void {
     button.toggleClass("mod-warning", action.destructive === true);
+    // A choice in the bar itself (a linked shape's type) marks the one it is.
+    if (action.checked !== undefined && action.bar === true) {
+      button.toggleClass("is-on", action.checked);
+      button.setAttribute("aria-pressed", String(action.checked));
+    }
     button.disabled = !isEnabled(action);
     button.setAttribute("aria-disabled", String(!isEnabled(action)));
   }

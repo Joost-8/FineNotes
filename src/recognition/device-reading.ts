@@ -35,7 +35,7 @@ export interface DeviceReadingState {
 
 /** Whether a page has ink the recogniser reads: pen ink, not highlighter or snapped shapes. */
 export function hasReadableInk(page: Page): boolean {
-  return page.strokes.some((stroke) => stroke.tool !== "highlighter" && !stroke.shape);
+  return page.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape);
 }
 
 /** The next thing to do, or null when every page is up to date. */

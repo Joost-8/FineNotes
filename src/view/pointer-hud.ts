@@ -24,7 +24,15 @@ export type HudEvent = Pick<
   PointerDebugRecord,
   "type" | "pointerType" | "pressure" | "coalesced" | "timeStamp"
 > &
-  Partial<Pick<PointerDebugRecord, "wholePixel">>;
+  Partial<
+    Pick<PointerDebugRecord, "wholePixel" | "altitude" | "azimuth" | "tiltSource" | "ownTilts">
+  >;
+
+/** An upright reading this far (degrees) below the one before counts as a dropout. */
+const TILT_DROPOUT = 10;
+
+/** Which reading of a stroke the HUD sets against its first: estimated or not. */
+const SETTLED_READING = 5;
 
 export class PointerHud {
   private log: LogEntry[] = [];
@@ -47,10 +55,28 @@ export class PointerHud {
   /** Whether its position was whole px (rounded input); undefined if unknown. */
   private wholePixel: boolean | undefined;
 
+  // The Pencil's tilt over the stroke under way (Pencil tilt, discussion #51).
+  private altitude = Number.NaN;
+  private azimuth = Number.NaN;
+  private tiltSource = "none";
+  private lowAltitude = Number.NaN;
+  private highAltitude = Number.NaN;
+  /** The first few altitudes, to see whether the pen-down's was an estimate. */
+  private firstAltitudes: number[] = [];
+  /** The last move's coalesced samples, and how many altitudes they carried. */
+  private ownTilts = 0;
+  private coalescedTilts = 0;
+  /** The pen-up's altitude against the last before it. */
+  private upDelta = Number.NaN;
+  /** Upright readings straight after a lean: the device dropping its tilt. */
+  private dropouts = 0;
+
   record(event: HudEvent): void {
     this.pointerType = event.pointerType;
     this.pressure = event.pressure;
     this.wholePixel = event.wholePixel;
+    if (event.type === "down") this.resetTilt();
+    this.recordTilt(event);
     switch (event.type) {
       case "down":
         this.downs += 1;
@@ -73,6 +99,56 @@ export class PointerHud {
         this.mark("cx");
         break;
     }
+  }
+
+  /**
+   * The tilt line: the latest altitude and azimuth and where they came from,
+   * the stroke's range, how many altitudes the last move's coalesced samples
+   * carried, the pen-up's step from the reading before it, upright dropouts,
+   * and the first reading against the fifth (an estimated pen-down shows as
+   * a jump).
+   */
+  tilt(): string {
+    if (this.tiltSource === "none") return "tilt - src=none";
+    const deg = (n: number): string => (Number.isFinite(n) ? n.toFixed(1) : "-");
+    const first = this.firstAltitudes[0];
+    const settled = this.firstAltitudes[SETTLED_READING - 1];
+    return (
+      `tilt ${deg(this.altitude)}° az ${Number.isFinite(this.azimuth) ? Math.round(this.azimuth) : "-"}° ` +
+      `src=${this.tiltSource} stroke ${deg(this.lowAltitude)}–${deg(this.highAltitude)}° ` +
+      `own/co ${this.ownTilts}/${this.coalescedTilts} up Δ${deg(this.upDelta)}° ` +
+      `zero ${this.dropouts} est? ${deg(first)}→${deg(settled)}`
+    );
+  }
+
+  private resetTilt(): void {
+    this.lowAltitude = Number.NaN;
+    this.highAltitude = Number.NaN;
+    this.firstAltitudes = [];
+    this.ownTilts = 0;
+    this.coalescedTilts = 0;
+    this.upDelta = Number.NaN;
+    this.dropouts = 0;
+  }
+
+  private recordTilt(event: HudEvent): void {
+    if (event.tiltSource === undefined) return;
+    this.tiltSource = event.tiltSource;
+    const altitude = event.altitude ?? Number.NaN;
+    const before = this.altitude;
+    if (event.type === "up") this.upDelta = altitude - before;
+    if (event.type === "move") {
+      this.ownTilts = event.ownTilts ?? 0;
+      this.coalescedTilts = event.coalesced;
+    }
+    if (!Number.isFinite(altitude)) return;
+    if (event.type !== "up" && altitude >= 90 && before < 90 - TILT_DROPOUT) this.dropouts += 1;
+    this.altitude = altitude;
+    this.azimuth = event.azimuth ?? Number.NaN;
+    if (event.type === "up") return;
+    if (!(this.lowAltitude <= altitude)) this.lowAltitude = altitude;
+    if (!(this.highAltitude >= altitude)) this.highAltitude = altitude;
+    if (this.firstAltitudes.length < SETTLED_READING) this.firstAltitudes.push(altitude);
   }
 
   /** Put a label in the log: a hold firing, a verdict, an erase. */

@@ -103,3 +103,39 @@ describe("PointerHud", () => {
     expect(hud.pointer()).toBe("pen p=0.25 xy=frac");
   });
 });
+
+describe("PointerHud's tilt line", () => {
+  const tilted = (partial: Partial<HudEvent>): HudEvent =>
+    event({ tiltSource: "angle", azimuth: 131, ownTilts: 0, ...partial });
+
+  it("says when the pen gives no tilt", () => {
+    const hud = new PointerHud();
+    expect(hud.tilt()).toBe("tilt - src=none");
+    hud.record(event({ type: "down", tiltSource: "none", altitude: Number.NaN }));
+    expect(hud.tilt()).toBe("tilt - src=none");
+  });
+
+  it("shows the stroke's range, the coalesced samples' own tilts, the pen-up's step and dropouts", () => {
+    const hud = new PointerHud();
+    hud.record(tilted({ type: "down", altitude: 61 }));
+    hud.record(tilted({ altitude: 40, coalesced: 8, ownTilts: 7 }));
+    hud.record(tilted({ altitude: 30, coalesced: 8, ownTilts: 7 }));
+    hud.record(tilted({ altitude: 90, coalesced: 8, ownTilts: 7 }));
+    hud.record(tilted({ altitude: 24, coalesced: 8, ownTilts: 7 }));
+    hud.record(tilted({ altitude: 23.4, coalesced: 8, ownTilts: 7 }));
+    hud.record(tilted({ type: "up", altitude: 23.7 }));
+    expect(hud.tilt()).toBe(
+      "tilt 23.7° az 131° src=angle stroke 23.4–90.0° own/co 7/8 up Δ0.3° zero 1 est? 61.0→24.0",
+    );
+  });
+
+  it("starts each stroke's tilt afresh", () => {
+    const hud = new PointerHud();
+    hud.record(tilted({ type: "down", altitude: 20 }));
+    hud.record(tilted({ type: "up", altitude: 25 }));
+    hud.record(tilted({ type: "down", altitude: 50, tiltSource: "tilt", azimuth: Number.NaN }));
+    expect(hud.tilt()).toBe(
+      "tilt 50.0° az -° src=tilt stroke 50.0–50.0° own/co 0/0 up Δ-° zero 0 est? 50.0→-",
+    );
+  });
+});

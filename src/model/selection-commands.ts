@@ -16,6 +16,7 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type ShapeKind,
   type Stroke,
   type GraphElement,
   type TableElement,
@@ -24,6 +25,7 @@ import {
   pageById,
 } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { isBucketFill } from "./fill-region";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
 import { restoreGraph, scaleGraph } from "./graph-element";
@@ -93,6 +95,43 @@ export function translatePoints(pts: readonly number[], dx: number, dy: number):
     out[i + 1] += dy;
   }
   return out;
+}
+
+/**
+ * Give one shape new points, and the kind they make it (discussion #51: a
+ * corner or an end dragged by its handle, `ink/shape-points.ts`). The
+ * stroke is held by identity, as a selection holds it; `pts` is a fresh
+ * array, so the renderer's path cache traces it again. Undo puts back the
+ * very array and kind it had.
+ */
+export class ReshapeStroke implements Command {
+  readonly label = "Edit shape";
+  private previous: { pts: number[]; shape?: ShapeKind } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly stroke: Stroke,
+    private readonly pts: number[],
+    private readonly shape: ShapeKind,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    if (!page?.strokes.includes(this.stroke)) return;
+    this.previous = { pts: this.stroke.pts, shape: this.stroke.shape };
+    this.stroke.pts = this.pts;
+    this.stroke.shape = this.shape;
+  }
+
+  invert(): void {
+    const previous = this.previous;
+    if (!previous) return;
+    this.stroke.pts = previous.pts;
+    if (previous.shape === undefined) delete this.stroke.shape;
+    else this.stroke.shape = previous.shape;
+    this.previous = null;
+  }
 }
 
 /**
@@ -446,6 +485,13 @@ export class ReorientElements implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     const on = elementsOnPage(page, this.elements);
+    // A note's text keeps its place on the note, which stays upright as
+    // the note itself turns: where it stands from the note's corner.
+    const onNote = new Map<TextBoxElement, { note: ImageElement; dx: number; dy: number }>();
+    for (const textBox of on.textBoxes) {
+      const note = on.images.find((image) => image.sticky && image.id === textBox.onSticky);
+      if (note) onNote.set(textBox, { note, dx: textBox.x - note.x, dy: textBox.y - note.y });
+    }
     this.saved = {
       strokes: on.strokes.map((stroke) => {
         const pts = stroke.pts;
@@ -478,6 +524,13 @@ export class ReorientElements implements Command {
       }),
       textBoxes: on.textBoxes.map((textBox) => {
         const { x, y, w } = textBox;
+        const pinned = onNote.get(textBox);
+        if (pinned) {
+          // The images were turned above, so the note is where it now stands.
+          textBox.x = pinned.note.x + pinned.dx;
+          textBox.y = pinned.note.y + pinned.dy;
+          return { textBox, x, y };
+        }
         const h = this.heights?.get(textBox) ?? textBox.h ?? 0;
         const c = reorientPoint(motion, cx, cy, x + w / 2, y + h / 2);
         textBox.x = c.x - w / 2;
@@ -576,6 +629,163 @@ export class RemoveElements implements Command {
 }
 
 /**
+ * Move everything selected from one page to another, shifted by (dx, dy)
+ * into the target page's space: a lasso selection dropped on another page.
+ * The same objects move (ids are unique in the notebook, so they stay
+ * valid) and land above everything on the target, as a duplicate does.
+ * What the page said about them comes along: a link or a task whose strokes
+ * all move goes with them; one only partly moved keeps the strokes that
+ * stay. Ink keeps its time — `t0` counts from its page's `epoch`, so it is
+ * re-based on the target's, and dropped where it would fall before it —
+ * and ink whose sticky note stays behind is plain ink from then on. Undo
+ * puts every list, field and key order back as it was.
+ */
+export class MoveElementsToPage implements Command {
+  readonly label = "Move to page";
+  private moved: {
+    removed: {
+      strokes: Array<Removed<Stroke>>;
+      images: Array<Removed<ImageElement>>;
+      textBoxes: Array<Removed<TextBoxElement>>;
+      tables: Array<Removed<TableElement>>;
+      graphs: Array<Removed<GraphElement>>;
+    };
+    /** Each moved element as it was, field for field. */
+    saved: Array<[object, object]>;
+    /** Both pages' own fields as they were (`links`, `tasks`, `epoch`, `tables`, …). */
+    pages: Array<[Page, Page]>;
+  } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    readonly targetId: string,
+    private readonly elements: PageElements,
+    private readonly dx: number,
+    private readonly dy: number,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.moved = null;
+    const from = pageById(doc, this.pageId);
+    const to = pageById(doc, this.targetId);
+    if (!from || !to || from === to) return;
+    const on = elementsOnPage(from, this.elements);
+    if (isEmptySelection(on)) return;
+    const pages: Array<[Page, Page]> = [
+      [from, { ...from }],
+      [to, { ...to }],
+    ];
+    const tables = on.tables ?? [];
+    const graphs = on.graphs ?? [];
+    const removed = {
+      strokes: removeFrom(from.strokes, on.strokes),
+      images: removeFrom(from.images, on.images),
+      textBoxes: removeFrom(from.textBoxes, on.textBoxes),
+      tables: from.tables ? removeFrom(from.tables, tables) : [],
+      graphs: from.graphs ? removeFrom(from.graphs, graphs) : [],
+    };
+    const saved: Array<[object, object]> = [];
+    const { dx, dy } = this;
+    const notes = new Set(on.images.map((image) => image.id));
+    for (const stroke of on.strokes) {
+      saved.push([stroke, { ...stroke }]);
+      stroke.pts = translatePoints(stroke.pts, dx, dy);
+      if (stroke.onSticky !== undefined && !notes.has(stroke.onSticky)) delete stroke.onSticky;
+      if (stroke.t0 === undefined) continue;
+      if (from.epoch === undefined) {
+        delete stroke.t0;
+      } else if (to.epoch === undefined) {
+        to.epoch = from.epoch;
+      } else {
+        const t0 = stroke.t0 + from.epoch - to.epoch;
+        if (Number.isFinite(t0) && t0 >= 0) stroke.t0 = t0;
+        else delete stroke.t0;
+      }
+    }
+    for (const item of [...on.images, ...on.textBoxes, ...tables, ...graphs]) {
+      saved.push([item, { ...item }]);
+      item.x += dx;
+      item.y += dy;
+    }
+    to.strokes.push(...on.strokes);
+    to.images.push(...on.images);
+    to.textBoxes.push(...on.textBoxes);
+    if (tables.length > 0) (to.tables ??= []).push(...tables);
+    if (graphs.length > 0) (to.graphs ??= []).push(...graphs);
+    const ids = new Set(on.strokes.map((stroke) => stroke.id));
+    const links = carryGroups(from.links, ids);
+    if (links) {
+      if (links.stay.length > 0) from.links = links.stay;
+      else delete from.links;
+      if (links.go.length > 0) to.links = [...(to.links ?? []), ...links.go];
+    }
+    const tasks = carryGroups(from.tasks, ids);
+    if (tasks) {
+      if (tasks.stay.length > 0) from.tasks = tasks.stay;
+      else delete from.tasks;
+      if (tasks.go.length > 0) to.tasks = [...(to.tasks ?? []), ...tasks.go];
+    }
+    this.moved = { removed, saved, pages };
+  }
+
+  invert(doc: InkDocument): void {
+    const moved = this.moved;
+    const from = pageById(doc, this.pageId);
+    const to = pageById(doc, this.targetId);
+    if (!moved || !from || !to) return;
+    const { removed } = moved;
+    const items = <T>(list: ReadonlyArray<Removed<T>>): T[] => list.map((each) => each.item);
+    removeFrom(to.strokes, items(removed.strokes));
+    removeFrom(to.images, items(removed.images));
+    removeFrom(to.textBoxes, items(removed.textBoxes));
+    if (to.tables) removeFrom(to.tables, items(removed.tables));
+    if (to.graphs) removeFrom(to.graphs, items(removed.graphs));
+    restoreTo(from.strokes, removed.strokes);
+    restoreTo(from.images, removed.images);
+    restoreTo(from.textBoxes, removed.textBoxes);
+    if (from.tables) restoreTo(from.tables, removed.tables);
+    if (from.graphs) restoreTo(from.graphs, removed.graphs);
+    for (const [item, was] of moved.saved) restoreFields(item, was);
+    for (const [page, was] of moved.pages) restoreFields(page, was);
+    this.moved = null;
+  }
+}
+
+/**
+ * A page's links (or tasks) split by which strokes move: those whose
+ * strokes all move `go`, the rest `stay`, a partly moved one without the
+ * strokes that left (a copy: the lists are replaced, never edited, so an
+ * undo can put the old ones back). `null` when nothing changes.
+ */
+function carryGroups<T extends { strokes: string[] }>(
+  list: readonly T[] | undefined,
+  moving: ReadonlySet<string>,
+): { stay: T[]; go: T[] } | null {
+  if (!list) return null;
+  const stay: T[] = [];
+  const go: T[] = [];
+  let changed = false;
+  for (const group of list) {
+    const kept = group.strokes.filter((id) => !moving.has(id));
+    if (kept.length === group.strokes.length) {
+      stay.push(group);
+      continue;
+    }
+    changed = true;
+    if (kept.length === 0) go.push(group);
+    else stay.push({ ...group, strokes: kept });
+  }
+  return changed ? { stay, go } : null;
+}
+
+/** Put an object's own fields back as `was` had them, in `was`'s key order. */
+function restoreFields(target: object, was: object): void {
+  const record = target as Record<string, unknown>;
+  for (const key of Object.keys(record)) delete record[key];
+  Object.assign(record, was);
+}
+
+/**
  * Put new elements on one page, above everything already there — a
  * duplicated selection. Undo takes exactly those objects away again.
  */
@@ -631,7 +841,7 @@ export class AddElements implements Command {
 /** Give selected strokes one colour; undo restores each stroke's own. */
 export class RecolorStrokes implements Command {
   readonly label = "Change colour";
-  private previous: Array<{ stroke: Stroke; color: string }> = [];
+  private previous: Array<{ stroke: Stroke; color: string; fill?: string }> = [];
 
   constructor(
     readonly pageId: string,
@@ -644,14 +854,20 @@ export class RecolorStrokes implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     for (const stroke of present(page.strokes, this.strokes)) {
-      this.previous.push({ stroke, color: stroke.color });
+      // A bucket fill is its colour inside and out: both change.
+      const fill = isBucketFill(stroke) && /^#[0-9a-f]{6}$/i.test(this.color);
+      this.previous.push({ stroke, color: stroke.color, ...(fill ? { fill: stroke.fill } : {}) });
       stroke.color = this.color;
+      if (fill) stroke.fill = this.color.toLowerCase();
     }
   }
 
   invert(doc: InkDocument): void {
     if (!pageById(doc, this.pageId)) return;
-    for (const { stroke, color } of this.previous) stroke.color = color;
+    for (const { stroke, color, fill } of this.previous) {
+      stroke.color = color;
+      if (fill !== undefined) stroke.fill = fill;
+    }
     this.previous = [];
   }
 }
@@ -732,16 +948,18 @@ export function copyElements(
     return copy;
   });
   relinkNoteInk(strokes, owners);
+  const textBoxes = elements.textBoxes.map((textBox) => {
+    const copy = structuredClone(textBox);
+    copy.id = ids.textBox();
+    copy.x += dx;
+    copy.y += dy;
+    return copy;
+  });
+  relinkNoteInk(textBoxes, owners);
   return {
     strokes,
     images,
-    textBoxes: elements.textBoxes.map((textBox) => {
-      const copy = structuredClone(textBox);
-      copy.id = ids.textBox();
-      copy.x += dx;
-      copy.y += dy;
-      return copy;
-    }),
+    textBoxes,
     tables: (elements.tables ?? []).map((table) => {
       const copy = structuredClone(table);
       copy.id = ids.table();

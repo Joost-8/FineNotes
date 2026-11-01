@@ -22,6 +22,7 @@ import {
   pageById,
 } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
+import { nextConnectorId, remapConnectors } from "./connectors";
 import { paperPageFor, repeatedPaper } from "./templates";
 
 /** Append a freshly-drawn stroke to a specific page. */
@@ -386,7 +387,19 @@ export function duplicatePageAfter(
   // Its strokes get new ids, so links and tasks on the old ones would hold nothing.
   delete copy.links;
   delete copy.tasks;
-  for (const stroke of copy.strokes) stroke.id = `s${++strokeSeq}`;
+  const strokeIds = new Map<string, string>();
+  for (const stroke of copy.strokes) {
+    const id = `s${++strokeSeq}`;
+    strokeIds.set(stroke.id, id);
+    stroke.id = id;
+  }
+  // Its arrows join the copies of their shapes.
+  if (copy.connectors) {
+    let connectorSeq = Number(nextConnectorId(doc).slice(2)) - 1;
+    const connectors = remapConnectors(copy.connectors, strokeIds, () => `cn${++connectorSeq}`);
+    if (connectors.length > 0) copy.connectors = connectors;
+    else delete copy.connectors;
+  }
   for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
   const imageIds = new Map<string, string>();
   for (const image of copy.images) {
@@ -394,8 +407,9 @@ export function duplicatePageAfter(
     imageIds.set(image.id, id);
     image.id = id;
   }
-  // The ink on a note follows the note's new id.
+  // The ink and text on a note follow the note's new id.
   relinkNoteInk(copy.strokes, imageIds);
+  relinkNoteInk(copy.textBoxes, imageIds);
   for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
   for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
   return { index: index + 1, page: copy };

@@ -24,7 +24,16 @@ export interface CalcPrefs {
   base: NumberBase;
   /** The function keys' tab last used (Graph is never remembered: it belongs to editing a line). */
   tab: Exclude<KeyTab, "graph">;
+  /**
+   * Basic (a pocket calculator, as the iPhone's in portrait) or Scientific;
+   * absent is Scientific, so the calculator stays as it was for those who
+   * had it.
+   */
+  mode?: CalcMode;
 }
+
+/** The calculator's two faces: its scientific keys and menus, or a pocket calculator. */
+export type CalcMode = "scientific" | "basic";
 
 /** Where a notebook's graph window sat: px from the view's top-left, its size, minimised. */
 export interface WindowPlace {
@@ -77,8 +86,9 @@ export function parseCalculatorData(raw: unknown): CalculatorData {
   };
   if (!isRecord(raw)) return data;
   if (isRecord(raw.prefs)) {
-    const { angle, fractions, base, tab } = raw.prefs;
+    const { angle, fractions, base, tab, mode } = raw.prefs;
     if (isKeyTab(tab) && tab !== "graph") data.prefs.tab = tab;
+    if (mode === "basic" || mode === "scientific") data.prefs.mode = mode;
     if (angle === "deg" || angle === "rad") data.prefs.angle = angle;
     if (typeof fractions === "boolean") data.prefs.fractions = fractions;
     if (NUMBER_BASES.includes(base as NumberBase)) data.prefs.base = base as NumberBase;

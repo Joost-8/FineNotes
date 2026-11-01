@@ -41,7 +41,16 @@ describe("Customize toolbar", () => {
     expect((modal.titleEl as unknown as FakeEl).text).toBe("Customize toolbar");
     expect(lists()).toEqual({
       "On the toolbar": ["Lasso", "Pen", "Eraser", "Text", "Shapes", "Image", "PDF"],
-      "In More tools": ["Hand", "Magnifier", "Stylus only", "Stickers", "Sticky notes", "Ruler"],
+      "In More tools": [
+        "Hand",
+        "Magnifier",
+        "Stylus only",
+        "Stickers",
+        "Sticky notes",
+        "Ruler",
+        "Cover tape",
+        "Fill",
+      ],
       Hidden: ["Record audio"],
     });
   });

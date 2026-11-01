@@ -705,7 +705,7 @@ describe("a short arrow drawn and held becomes an arrow", () => {
     const refused = [
       inkFrom(arrowOutline({ x: 120, y: 300 }, { x: 460, y: 300 }, 0.22, 28, 1), 21),
       inkFrom(polyline(100, 100, 200, 300, 300, 100), 1),
-      inkFrom(polyline(100, 100, 100, 300, 300, 300), 2),
+      inkFrom(polyline(100, 100, 100, 135, 122, 135), 2),
       inkFrom(polyline(100, 220, 160, 300, 320, 100), 27),
     ];
     for (const pts of refused) {
@@ -802,7 +802,7 @@ describe("a plain line stays a line", () => {
     const refused = [
       inkFrom(arrowOutline({ x: 120, y: 300 }, { x: 460, y: 300 }, 0.22, 28, 1), 21),
       inkFrom(polyline(100, 100, 200, 300, 300, 100), 1),
-      inkFrom(polyline(100, 100, 100, 300, 300, 300), 2),
+      inkFrom(polyline(100, 100, 100, 135, 122, 135), 2),
       inkFrom(polyline(100, 220, 160, 300, 320, 100), 27),
     ];
     for (const pts of refused) expect(recognizeShape(pts, { minConfidence: 0 })).toBeNull();

@@ -14,11 +14,13 @@ import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
+import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
 import { followPairRename } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
+import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
@@ -46,10 +48,19 @@ import {
   VIEW_TYPE_INK,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
-import { type PageAppearance, shownPaperTheme } from "./settings-data";
+import { laserDefaultColorOf } from "./settings-data";
+import {
+  type PageAppearance,
+  type PenPreferences,
+  loadSnapSettings,
+  shownPaperTheme,
+  storePenPreferences,
+} from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
+import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
   ReceivePages,
@@ -178,7 +189,7 @@ import {
   writeSymbolPractice,
 } from "./view/handwriting-learning";
 import { buildPracticeFile, isSymbolSet } from "./recognition/practice";
-import { relearnDue } from "./recognition/hwr/learned-model";
+import { newCorrections, relearnDue } from "./recognition/hwr/learned-model";
 import { NOTEBOOK_FILE_SUFFIX, PRACTICE_FILE_SUFFIX, SINGLE_PAGE_FILE_SUFFIX } from "./constants";
 import { DEFAULT_PAGE_GEOMETRY } from "./model/document";
 import type { TextStyle } from "./model/text-style";
@@ -187,7 +198,7 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type ToolbarLayout, normalizeLayout } from "./view/toolbar-layout";
+import { type ToolbarLayout, isItemOff, normalizeLayout } from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -215,6 +226,8 @@ const STARTUP_TICK_MS = 250;
 
 /** What the Text tool's hint says: what a tap and a drag do with it. */
 const TEXT_HINT = "Tap to add a text box. It grows as you type.";
+/** Where Make shapes lives, said once: the first time a pen stroke snaps (FineNotes#84). */
+const SHAPE_HINT = "When strokes become shapes: tap the pen in hand, then Pen gestures.";
 
 /**
  * What `runRecognition` transcribes: the notebook view. An interface so the
@@ -342,7 +355,7 @@ export default class GoodObsidianPlugin extends Plugin {
       pluginDir: this.pluginDir,
       settings: this.settings,
       saveSettings: () => this.saveSettings(),
-      createPracticeFile: (set) => this.createPracticeFile(set),
+      createPracticeFile: (set, only) => this.createPracticeFile(set, only),
       reloadReader: () => this.handwriting.dispose(),
       baseId: this.grape.id,
       baseModel: async () => {
@@ -483,6 +496,7 @@ export default class GoodObsidianPlugin extends Plugin {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
         this.calculatorFileMoved(oldPath, file.path);
+        this.practiceNotebookMoved(oldPath, file.path);
       }),
     );
     this.register(() => this.fileMoves.destroy());
@@ -767,6 +781,8 @@ export default class GoodObsidianPlugin extends Plugin {
     const saved = own ?? (await this.settingsFromPreviousId());
     this.firstInstall = saved === null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    loadSnapSettings(this.settings, saved ?? {});
+    this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -780,6 +796,8 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const loaded = this.settings as unknown as Record<string, unknown>;
     delete loaded.experimentalTrocr;
+    // The laser's dot frequency is gone: the trail is one smooth line now.
+    delete loaded.laserDotFrequency;
     // "Pressure sensitivity", on by default until 2026-09-30: pressure is
     // now the advanced `pressureWidth`, off by default, and the old choice is
     // not carried over.
@@ -793,6 +811,17 @@ export default class GoodObsidianPlugin extends Plugin {
     const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
+    if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
+    // A Zoom box line step outside the slider's range is a hand-edited file,
+    // not a value to honour; a negative step overlaps the next line.
+    const lineStep = Number(this.settings.zoomBoxLineStep);
+    this.settings.zoomBoxLineStep = Number.isFinite(lineStep)
+      ? Math.max(-50, Math.min(100, lineStep))
+      : 0;
+    this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
+    this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
+    this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
     this.settings.penCursor = penCursorStyleOf(this.settings.penCursor);
     // Settings found under the old id are written to this id's folder at
@@ -807,7 +836,11 @@ export default class GoodObsidianPlugin extends Plugin {
   private remindToRelearn(count: number): void {
     if (this.learner.progress) return;
     const record = learnedRecord(this.settings, this.grape.id);
-    const fresh = relearnDue(count, record?.corrections, this.settings.relearnRemindedAt);
+    const fresh = relearnDue(
+      newCorrections(this.wordCheck.answeredAt, record),
+      count,
+      this.settings.relearnRemindedAt,
+    );
     if (fresh === 0) return;
     this.settings.relearnRemindedAt = count;
     void this.saveSettings();
@@ -916,6 +949,16 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Keep the calculator's switches and history (model/calculator-store.ts). */
   saveCalculator(data: CalculatorData): void {
     this.settings.calculator = data;
+    void this.saveSettings();
+  }
+
+  /**
+   * The practice notebook from before practice files is found by the path
+   * the settings keep: that path follows the notebook when it moves.
+   */
+  private practiceNotebookMoved(from: string, to: string): void {
+    if (this.settings.practiceNotebookPath !== from) return;
+    this.settings.practiceNotebookPath = to;
     void this.saveSettings();
   }
 
@@ -1033,6 +1076,7 @@ export default class GoodObsidianPlugin extends Plugin {
       model: this.settings.llmModel,
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
+      skipCompressed: this.settings.openRouterSkipCompressed,
     };
   }
 
@@ -1188,9 +1232,9 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember the pen's auto-shape toggle, for the next session. */
-  savePenAutoShape(enabled: boolean): void {
-    this.settings.penAutoShape = enabled;
+  /** Remember "Grey out while erasing" (the eraser's mode list), for the next session. */
+  saveEraserGrey(on: boolean): void {
+    this.settings.greyWhileErasing = on;
     void this.saveSettings();
   }
 
@@ -1206,15 +1250,41 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Store what a pen menu changed for every pen, and give it to every open notebook. */
+  savePenPreferences(patch: Partial<PenPreferences>): void {
+    storePenPreferences(this.settings, patch);
+    for (const view of this.openNotebooks()) view.syncPenPreferences();
+    void this.saveSettings();
+  }
+
   /** Remember the Shape tool's colour, for the next session. */
   saveShapeColor(color: string): void {
     this.settings.shapeColor = parseHexColor(color) ?? DEFAULT_SHAPE_COLOR;
     void this.saveSettings();
   }
 
+  /** Remember cover tape's colour and height, for the next session. */
+  saveTape(color: string, height: number): void {
+    this.settings.tapeColor = tapeColorOf(color);
+    this.settings.tapeHeight = tapeHeightOf(height);
+    void this.saveSettings();
+  }
+
   /** Remember whether new tables get a header row, for the next session. */
   saveTableHeader(on: boolean): void {
     this.settings.tableHeader = on;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillColor(color: string): void {
+    this.settings.fillColor = parseHexColor(color) ?? DEFAULT_FILL_COLOR;
+    void this.saveSettings();
+  }
+
+  /** Remember how far the Fill tool reaches past gaps, for the next session. */
+  saveFillGap(gap: FillGap): void {
+    this.settings.fillGap = readFillGap(gap);
     void this.saveSettings();
   }
 
@@ -1233,6 +1303,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Remember the pen row's picked colours, for every notebook. */
   savePenColors(colors: readonly string[]): void {
     this.settings.penColors = [...colors];
+    void this.saveSettings();
+  }
+
+  /** Remember the pen types' order in the pen's row, for every notebook. */
+  savePenTypeOrder(order: readonly string[]): void {
+    this.settings.penTypeOrder = [...order];
     void this.saveSettings();
   }
 
@@ -1314,7 +1390,11 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
     void this.saveSettings();
+    // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
+    if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
+      void this.setOnlyStylusMode(false);
+    }
   }
 
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
@@ -1329,6 +1409,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * give every open notebook its toggle in one go.
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
+    // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
+    const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
@@ -1363,6 +1446,18 @@ export default class GoodObsidianPlugin extends Plugin {
       settings.textHintDismissed = true;
       void this.saveSettings();
     });
+  }
+
+  /**
+   * The first time a pen stroke snaps to a shape, once per vault: where to
+   * change when that happens (Pen gestures › Make shapes), in the Text
+   * tool's hint pill.
+   */
+  offerShapeHint(surface: InkSurface): void {
+    if (this.settings.shapeHintShown) return;
+    this.settings.shapeHintShown = true;
+    void this.saveSettings();
+    surface.showTextHint(SHAPE_HINT, () => undefined);
   }
 
   /**
@@ -1584,6 +1679,20 @@ export default class GoodObsidianPlugin extends Plugin {
     });
   }
 
+  // --- Shortcuts on this device -------------------------------------------------
+
+  /**
+   * This device's shortcut rows (`view/shortcut-store.ts`), read once from
+   * `localStorage`: a laptop's keys and an Android tablet's stylus button do
+   * not belong in the synced settings.
+   */
+  get shortcuts(): ShortcutStore {
+    this.shortcutsSeen ??= new ShortcutStore(this.app);
+    return this.shortcutsSeen;
+  }
+
+  private shortcutsSeen: ShortcutStore | null = null;
+
   // --- Where the tool options pill rests ---------------------------------------
 
   private static readonly PILL_DOCK_KEY = "goodobsidian:pill-dock";
@@ -1608,6 +1717,34 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillDockSeen = dock;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY, dock);
     for (const view of this.openNotebooks()) view.showPillDock(dock);
+  }
+
+  private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";
+
+  /**
+   * Where the tool bar rests (bar-dock-model.ts): along the top until the
+   * "Toolbar" setting says otherwise. Kept per device, as the pill's place is,
+   * not in the synced settings: an iPad and a laptop want different places.
+   */
+  get barDock(): BarDock {
+    this.barDockSeen ??= parseBarDock(this.app.loadLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY));
+    return this.barDockSeen;
+  }
+
+  private barDockSeen: BarDock | null = null;
+
+  /**
+   * The "Toolbar" setting chose `dock`: keep it on this device and move every
+   * open notebook's bar. A pill resting by the bar goes with it
+   * (`pillAfterBarMove`).
+   */
+  setBarDock(dock: BarDock): void {
+    const from = this.barDock;
+    if (dock === from) return;
+    this.barDockSeen = dock;
+    this.app.saveLocalStorage(GoodObsidianPlugin.BAR_DOCK_KEY, dock);
+    for (const view of this.openNotebooks()) view.showBarDock(dock);
+    this.setPillDock(pillAfterBarMove(this.pillDock, from, dock));
   }
 
   /** Every notebook view open in the workspace. */
@@ -2259,8 +2396,9 @@ export default class GoodObsidianPlugin extends Plugin {
    * Practice set `set` as a new `.practice.md` file in FineNotes
    * assets/Handwriting sheets, opened at its cover. Sheets made elsewhere before
    * 2.6 stay where they are: learning finds them anywhere in the vault.
+   * `only`: the symbol sheet's lines to write, when not all of them.
    */
-  async createPracticeFile(set: number): Promise<TFile | null> {
+  async createPracticeFile(set: number, only?: readonly number[]): Promise<TFile | null> {
     const dir = HANDWRITING_FOLDER;
     try {
       if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
@@ -2271,7 +2409,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const geometry = { ...DEFAULT_PAGE_GEOMETRY, width: this.settings.paperWidth };
       const content = buildInkFile(
         newNoteBody(stripInkSuffix(name), new Date().toISOString()),
-        buildPracticeFile(set, geometry),
+        buildPracticeFile(set, geometry, only),
       );
       const file = await this.app.vault.create(normalizePath(joinVaultPath(dir, name)), content);
       const tab = this.app.workspace.getLeaf(false);

@@ -65,10 +65,12 @@ vi.mock("../../src/view/folder-suggest", () => ({
   },
 }));
 
-const { ExtraButtonComponent, FakeEl, Menu, Modal, Platform, Setting } =
-  await import("../fakes/obsidian");
+const { ExtraButtonComponent, FakeEl, Menu, Platform, Setting } = await import("../fakes/obsidian");
 const { DEFAULT_SETTINGS, GoodObsidianSettingTab, addInfo, shortcutList } =
   await import("../../src/settings");
+const { ShortcutStore } = await import("../../src/view/shortcut-store");
+const { SHORTCUT_ACTIONS } = await import("../../src/model/shortcut-bindings");
+const { ShortcutsModal } = await import("../../src/ui/shortcuts-modal");
 const { SIZES } = await import("../../src/constants");
 const { DEFAULT_MODELS, LLM_PROVIDER_ID, VENDOR_LABELS, VENDORS } =
   await import("../../src/recognition/llm-request");
@@ -120,6 +122,7 @@ function fakeStore(asset: ModelAsset, calls: string[]) {
 function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, string> = {}) {
   const calls: string[] = [];
   const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+  const deviceStorage = new Map<string, string>();
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const speechStore = fakeStore(speechAsset("whisper-base"), calls);
   /** The vault the learning rows look in: practice files and model files by path. */
@@ -129,6 +132,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     settings,
     calls,
     keys: { secure: true },
+    shortcuts: new ShortcutStore({
+      loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
+      saveLocalStorage: (key: string, value: string) => {
+        deviceStorage.set(key, value);
+      },
+    }),
     // No newer FineNotes known (update-notice.ts), unless a test says one is out.
     updates: {
       available: null as string | null,
@@ -185,6 +194,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
           getFileByPath: () => null,
           adapter: {
             exists: (path: string) => Promise.resolve(files.has(path)),
+            read: (path: string) => Promise.resolve(files.get(path) ?? ""),
             stat: (path: string) =>
               Promise.resolve(
                 files.has(path) ? { type: "file", size: files.get(path)?.length ?? 0 } : null,
@@ -344,14 +354,39 @@ const MODELS = "Models on this device";
 const WRITING = "Writing";
 const PAGES = "Pages and notebooks";
 const ADVANCED = "Advanced";
-const PENS = "Pens and shortcuts";
+const SHORTCUTS = "Shortcuts";
 const FOOTER = "Feedback and community";
+
+/** The tools, in view in Shortcuts; every other action is under its More. */
+const SHORTCUT_TOOLS = SHORTCUT_ACTIONS.filter((action) => action.id.startsWith("tool."));
+const SHORTCUT_MORE = ["Selection and editing", "View and zoom", "Tools", "Saved pens"].flatMap(
+  (group) =>
+    SHORTCUT_ACTIONS.filter((action) => action.group === group && !SHORTCUT_TOOLS.includes(action)),
+);
+
+/**
+ * The Shortcuts section, top to bottom: the (hidden) conflict callout, the
+ * tools, the stylus side button, then More and the rest, and Reset all.
+ */
+const SHORTCUT_ROWS = [
+  [SHORTCUTS, "(block)", "render"],
+  ...SHORTCUT_TOOLS.map((action) => [SHORTCUTS, action.label, "render"]),
+  [SHORTCUTS, "Stylus side button", "dropdown:barrelButton"],
+  [SHORTCUTS, "Side button click", "dropdown:stylusButtonClick"],
+  [SHORTCUTS, "More", "action"],
+  ...SHORTCUT_MORE.map((action) => [SHORTCUTS, action.label, "render"]),
+  [SHORTCUTS, "Reset all shortcuts", "render"],
+] as const;
 
 beforeEach(() => {
   // The pen icons are SVG made in the row's document: a stand-in document.
   vi.stubGlobal("activeDocument", {
     body: { hasClass: () => false },
     createElementNS: (_ns: string, tag: string) => new FakeEl(tag),
+    defaultView: {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    },
   });
   dialogs.keyModals.length = 0;
   dialogs.confirms.length = 0;
@@ -388,20 +423,21 @@ describe("the rows", () => {
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
       [WRITING, "Start with", "render"],
-      [WRITING, "Hold to make shapes", "toggle:drawAndHold"],
-      [WRITING, "Back to the pen", "render"],
+      [WRITING, "Saved pens", "render"],
+      ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
+      [WRITING, "Hide pen options while writing", "dropdown:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
       [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
-      [PENS, "Saved pens", "render"],
-      ...DEFAULT_PEN_NAMES.map((name) => [PENS, name, "render"]),
-      [PENS, "Stylus side button", "dropdown:barrelButton"],
-      [PENS, "Cursor over the page", "dropdown:penCursor"],
-      [PENS, "Keyboard shortcuts", "render"],
-      [PAGES, "Page appearance", "render"],
+      [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
+      [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
+      [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
+      [WRITING, "Cursor over the page", "dropdown:penCursor"],
+      ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
+      [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Paper width", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
@@ -425,12 +461,14 @@ describe("the rows", () => {
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "More", "action"],
+      [AI, "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
       [AI, `${label} API key for images`, "render"],
       [ADVANCED, "Pressure-sensitive pens", "toggle:pressureWidth"],
       [ADVANCED, "(block)", "render"],
+      [ADVANCED, "Pencil tilt", "toggle:pencilTilt"],
       [ADVANCED, "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       [ADVANCED, "Updates", "dropdown:checkForUpdates"],
       [ADVANCED, "Input debug overlay", "toggle:debugHud"],
@@ -466,11 +504,13 @@ describe("the rows", () => {
     // Rows whose name says it all have no line at all, and an ⓘ for the rest.
     const { tab } = makeTab(makePlugin());
     const all = rows(tab);
-    expect(named(all, "Hold to make shapes").desc).toBeUndefined();
-    expect(tab.infoOf("Hold to make shapes")).toMatch(/keep the pen still/);
-    expect(tab.infoOf("Page appearance")).toMatch(/PDFs as they are/);
+    expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
+    expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
+    expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
+    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
+    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {
@@ -479,11 +519,7 @@ describe("the rows", () => {
     expect(words("Start with")).toEqual(
       expect.arrayContaining(["default tool", "default stroke size", "default ink color"]),
     );
-    expect(words("Back to the pen")).toContain("return to pen");
-    expect(words("Hold to make shapes")).toContain("draw and hold");
-    expect(words("Page appearance")).toEqual(
-      expect.arrayContaining(["dark mode", "dark PDF pages"]),
-    );
+    expect(words("Page appearance")).toEqual(expect.arrayContaining(["dark mode", "night mode"]));
     expect(words("New notebooks go in")).toContain("default folder for new notebooks");
     expect(words("Saved pens")).toEqual(expect.arrayContaining(["number key", "restore defaults"]));
     expect(words("Size and language")).toEqual(
@@ -519,19 +555,20 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
-    expect(Object.keys(renderRow(named(all, "Back to the pen")).dropdowns[0].options)).toEqual([
-      "never",
-      "reselect",
-      "after-use",
-      "both",
-    ]);
-    expect(Object.keys(renderRow(named(all, "Page appearance")).dropdowns[0].options)).toEqual([
+    expect(named(all, "Hide pen options while writing").control?.options).toEqual({
+      off: "Never",
+      "until-tap": "Until you tap the pen",
+      "until-lift": "Until the pen lifts",
+    });
+    expect(Object.keys(named(all, "Page appearance").control?.options ?? {})).toEqual([
       "light",
       "dark",
-      "dark-pdf-light",
       "system",
-      "system-pdf-light",
     ]);
+    // Dark PDF pages and Desk live in the notebook's ⋯ menu, not here.
+    expect(all.some((row) => row.def.name === "Dark PDF pages" || row.def.name === "Desk")).toBe(
+      false,
+    );
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
       [LLM_PROVIDER_ID]: providerLabel(LLM_PROVIDER_ID),
@@ -565,14 +602,11 @@ describe("the rows", () => {
 
 // --- Visibility --------------------------------------------------------------
 
-/** The "Pens and shortcuts" rows a fresh install shows, on a computer. */
-const PEN_ROWS = [
-  "Saved pens",
-  ...DEFAULT_PEN_NAMES,
-  "Stylus side button",
-  "Cursor over the page",
-  "Keyboard shortcuts",
-];
+/** The "Saved pens" rows a fresh install shows, on a computer. */
+const SAVED_PEN_ROWS = ["Saved pens", ...DEFAULT_PEN_NAMES];
+
+/** The Shortcuts rows shown by default: every row but the conflict callout. */
+const SHORTCUT_VISIBLE = SHORTCUT_ROWS.slice(1).map(([, name]) => name);
 
 /** The rows of "Models on this device" shown by default: nothing learned yet. */
 const DEFAULT_MODEL_ROWS = [
@@ -598,22 +632,26 @@ describe("which rows show", () => {
     const off = visibleNames(makePlugin());
     const on = visibleNames(makePlugin({ pressureWidth: true }));
     const toggle = "Pressure-sensitive pens";
-    expect(off[off.indexOf(toggle) + 1]).toBe("Desynchronized canvas");
+    expect(off[off.indexOf(toggle) + 1]).toBe("Pencil tilt");
     expect(on[on.indexOf(toggle) + 1]).toMatch(/^\(block \d+\)$/);
   });
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
       "Start with",
-      "Hold to make shapes",
-      "Back to the pen",
+      ...SAVED_PEN_ROWS,
       "Two-finger double-tap to undo",
       "More",
+      "Hide pen options while writing",
       "Drag to size text boxes",
       "Custom colors",
       "Highlighter opacity",
       "Straighten highlighter strokes",
-      ...PEN_ROWS,
+      "Lasso takes what it touches",
+      "Zoom box line spacing",
+      "Zoom box auto-advance threshold",
+      "Cursor over the page",
+      ...SHORTCUT_VISIBLE,
       "Page appearance",
       "Paper width",
       "More",
@@ -626,10 +664,11 @@ describe("which rows show", () => {
       "New notebook button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
-      "(block 33)",
+      expect.stringMatching(/^\(block \d+\)$/),
       ...DEFAULT_MODEL_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
+      "Pencil tilt",
       "Desynchronized canvas",
       "Updates",
       "Input debug overlay",
@@ -777,6 +816,20 @@ describe("which rows show", () => {
     expect(shown(blockAfter(all, "Endpoint URL", 1))).toBe(false);
   });
 
+  it("offers skipping compressed providers only for OpenRouter, under the AI section's More", () => {
+    const toggle = "Skip compressed providers";
+    const aiMore = (vendor: Settings["llmVendor"]) => {
+      const all = rows(makeTab(makePlugin({ llmVendor: vendor })).tab);
+      return all.find((r) => r.heading === AI && r.def.name === "More")?.def.desc;
+    };
+    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain(toggle);
+    expect(aiMore("openrouter")).toBe("OpenRouter providers; pictures: service, model and key");
+    for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
+      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
+      expect(aiMore(vendor), vendor).toBe("Pictures: service, model and key");
+    }
+  });
+
   it("offers the OpenRouter connect only for OpenRouter", () => {
     expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain("Connect OpenRouter");
     expect(visibleNames(makePlugin({ llmVendor: "openai" }))).not.toContain("Connect OpenRouter");
@@ -834,43 +887,15 @@ describe("control values", () => {
     expect(tab.getControlValue("pressureWidth")).toBe(false);
   });
 
-  it.each(["returnToPenOnReselect", "returnToPenAfterUse"] as const)(
-    "persists %s independently, disabled by default",
-    async (key) => {
-      const plugin = makePlugin();
-      const { tab } = makeTab(plugin);
-      expect(plugin.settings[key]).toBe(false);
-      await tab.setControlValue(key, true);
-      expect(plugin.settings[key]).toBe(true);
-      const other =
-        key === "returnToPenOnReselect" ? "returnToPenAfterUse" : "returnToPenOnReselect";
-      expect(plugin.settings[other]).toBe(false);
-      expect(plugin.saveSettings).toHaveBeenCalledOnce();
-    },
-  );
-
-  it("sets both return-to-pen switches from Back to the pen", async () => {
-    const plugin = makePlugin({ returnToPenAfterUse: true });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Back to the pen"));
-    expect(row.dropdowns[0].value).toBe("after-use");
-    await row.dropdowns[0].pick("both");
-    expect([plugin.settings.returnToPenOnReselect, plugin.settings.returnToPenAfterUse]).toEqual([
-      true,
-      true,
-    ]);
-    expect(plugin.saveSettings).toHaveBeenCalledOnce();
-  });
-
-  it("sets the appearance and the PDF switch from Page appearance, and redraws notebooks", async () => {
+  it("sets Page appearance without touching Dark PDF pages, and redraws notebooks (FineNotes#67)", async () => {
     const plugin = Object.assign(makePlugin({ pageAppearance: "dark", invertPdfPages: false }), {
       applyPageAppearance: vi.fn(() => Promise.resolve()),
     });
-    const row = renderRow(named(rows(makeTab(plugin).tab), "Page appearance"));
-    expect(row.dropdowns[0].value).toBe("dark-pdf-light");
-    await row.dropdowns[0].pick("system");
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("pageAppearance", "system");
     expect([plugin.settings.pageAppearance, plugin.settings.invertPdfPages]).toEqual([
       "system",
-      true,
+      false,
     ]);
     expect(plugin.applyPageAppearance).toHaveBeenCalledOnce();
   });
@@ -902,6 +927,15 @@ describe("control values", () => {
     },
   );
 
+  it("shows Hide pen options while writing from when it was a switch, and stores a choice", async () => {
+    const plugin = makePlugin({ tuckPenOptionsOnWrite: true as never });
+    const { tab } = makeTab(plugin);
+    expect(tab.getControlValue("tuckPenOptionsOnWrite")).toBe("until-tap");
+    await tab.setControlValue("tuckPenOptionsOnWrite", "until-lift");
+    expect(plugin.settings.tuckPenOptionsOnWrite).toBe("until-lift");
+    expect(plugin.saveSettings).toHaveBeenCalledOnce();
+  });
+
   it("stores what a control sets in data.json's units", async () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin);
@@ -910,16 +944,14 @@ describe("control values", () => {
     await tab.setControlValue("customColors", " #ff8800,#00CCAA , #abc,red, #12345, #1234567,,");
     await tab.setControlValue("llmModel", "  claude-haiku-4-5 ");
     await tab.setControlValue("imageModel", " gpt-image-1\n");
-    await tab.setControlValue("drawAndHold", false);
     await tab.setControlValue("defaultColor", "#123456");
     expect(plugin.settings.defaultSize).toBe(4);
     expect(plugin.settings.highlighterAlpha).toBe(0.4);
     expect(plugin.settings.customColors).toEqual(["#ff8800", "#00CCAA", "#abc"]);
     expect(plugin.settings.llmModel).toBe("claude-haiku-4-5");
     expect(plugin.settings.imageModel).toBe("gpt-image-1");
-    expect(plugin.settings.drawAndHold).toBe(false);
     expect(plugin.settings.defaultColor).toBe("#123456");
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(7);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(6);
     expect(plugin.calls).not.toContain("update");
   });
 
@@ -1271,7 +1303,7 @@ describe("refresh", () => {
 describe("pens and shortcuts (FineNotes#24, #25)", () => {
   /** The rows of the saved pens, drawn: one per pen, after "Saved pens". */
   function penRows(plugin: Plugin) {
-    const all = rows(makeTab(plugin).tab).filter((r) => r.heading === PENS);
+    const all = rows(makeTab(plugin).tab).filter((r) => r.heading === WRITING);
     const from = all.findIndex((r) => r.def.name === "Saved pens");
     const count = plugin.settings.savedPens.length;
     return all.slice(from + 1, from + 1 + count).map((r) => renderRow(r.def));
@@ -1395,14 +1427,13 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("offers the barrel's four choices, and the cursor's three only on a computer", () => {
+  it("keeps the stylus button rows, and offers the cursor's three only on a computer", () => {
     const all = rows(makeTab(makePlugin()).tab);
-    expect(Object.keys(named(all, "Stylus side button").control?.options ?? {})).toEqual([
-      "erase",
-      "lasso",
-      "pan",
-      "none",
-    ]);
+    // The side button is not in the key table yet: its own two rows still set it.
+    expect(named(all, "Stylus side button").control?.key).toBe("barrelButton");
+    expect(named(all, "Side button click").control?.key).toBe("stylusButtonClick");
+    expect(all.find((row) => row.def.name === "Stylus side button")?.heading).toBe(SHORTCUTS);
+    expect(all.some((row) => row.heading === "Pens")).toBe(false);
     const cursor = named(all, "Cursor over the page");
     expect(cursor.control?.options).toEqual({
       ink: "Ink dot",
@@ -1412,10 +1443,15 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(cursor.aliases).toEqual(expect.arrayContaining(["cursor", "pointer", "crosshair"]));
     expect(shown(cursor)).toBe(true);
     Platform.isMobile = true;
+    Platform.isIosApp = true;
     try {
-      expect(shown(named(rows(makeTab(makePlugin()).tab), "Cursor over the page"))).toBe(false);
+      const mobile = rows(makeTab(makePlugin()).tab);
+      expect(shown(named(mobile, "Cursor over the page"))).toBe(false);
+      // The Apple Pencil has no side button to click.
+      expect(shown(named(mobile, "Side button click"))).toBe(false);
     } finally {
       Platform.isMobile = false;
+      Platform.isIosApp = false;
     }
   });
 
@@ -1426,13 +1462,13 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.calls).toEqual(["penCursor:crosshair", "penCursor:arrow"]);
   });
 
-  /** Open the shortcut sheet from its row; the sheet's list. */
-  function shortcutSheet() {
-    const row = renderRow(named(rows(makeTab(makePlugin()).tab), "Keyboard shortcuts"));
-    void row.button("Show all").click();
-    const modal = Modal.made.at(-1);
-    expect(modal?.isOpen).toBe(true);
-    return modal?.contentEl.find("goodobsidian-shortcuts");
+  /** The ? sheet, as a notebook opens it. */
+  function shortcutSheet(apple = false) {
+    const modal = new ShortcutsModal({} as never, apple);
+    modal.open();
+    return (modal.contentEl as unknown as InstanceType<typeof FakeEl>).find(
+      "goodobsidian-shortcuts",
+    );
   }
 
   it("lists the shortcuts on their own sheet, each key a key cap, Ctrl or ⌘ by platform", () => {
@@ -1463,8 +1499,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(line("Move the page").find("goodobsidian-shortcut-gesture")?.text).toBe("+ drag");
     expect(caps("Erase")).toEqual([]);
 
-    Platform.isIosApp = true;
-    const redo = shortcutSheet()
+    const redo = shortcutSheet(true)
       ?.findAll("goodobsidian-shortcut")
       .find((el) => el.find("goodobsidian-shortcut-action")?.text === "Redo");
     expect(redo?.findAll("goodobsidian-key").map((el) => [el.text, el.attrs.title])).toEqual([
@@ -1489,6 +1524,117 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(pc.Erase).toBe("Write with the eraser end");
     expect(pc["Show or hide this list"]).toBe("?");
     expect(shortcutList(false)).toHaveLength(19);
+  });
+
+  it("draws each action as its name and a key slot, no line under it", () => {
+    const { tab } = makeTab(makePlugin());
+    const all = rows(tab);
+    for (const action of SHORTCUT_ACTIONS) expect(named(all, action.label).desc).toBeUndefined();
+    const pen = renderRow(named(all, "Pen"));
+    const slot = pen.find("goodobsidian-shortcut-slot");
+    // A clickable-icon, so the iPad's 20 px button padding stays off it.
+    expect(slot?.hasClass("clickable-icon")).toBe(true);
+    expect(slot?.findAll("goodobsidian-key").map((key) => key.text)).toEqual(["P", "W"]);
+    expect(slot?.find("goodobsidian-shortcut-sep")?.text).toBe("or");
+    expect(slot?.attrs["aria-label"]).toBe("Pen: P or W");
+    // Hold is one icon, off; nothing to reset yet; no dropdown.
+    expect(pen.extras.map((extra) => extra.icon)).toEqual(["hand-grab"]);
+    expect(pen.dropdowns).toEqual([]);
+    // A row with no key shows a dash, and its name says the rest.
+    const fit = renderRow(named(all, "Fit the page"));
+    expect(fit.find("goodobsidian-shortcut-unset")?.text).toBe("—");
+    // The laser's and the hand's words are behind their ⓘ.
+    expect(tab.infoOf("Laser pointer")).toMatch(/fades/);
+  });
+
+  it("offers Hold as one icon, only on a tool that has a key, and marks it while on", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    // The hand's built-in way is held, as Space has always been.
+    const hand = renderRow(named(all, "Hand"));
+    expect(hand.extras.map((extra) => extra.icon)).toEqual(["hand-grab"]);
+    expect(hand.extras[0]?.extraSettingsEl.hasClass("is-active")).toBe(true);
+    expect(hand.extras[0]?.extraSettingsEl.attrs["aria-pressed"]).toBe("true");
+    const eraser = renderRow(named(all, "Eraser"));
+    expect(eraser.extras[0]?.extraSettingsEl.hasClass("is-active")).toBe(false);
+    await eraser.extras[0]?.click();
+    expect(plugin.shortcuts.table.rows.find((row) => row.action.id === "tool.eraser")?.mode).toBe(
+      "hold",
+    );
+    // The magnifier has no key yet: nothing to hold.
+    expect(renderRow(named(all, "Magnifier")).extras).toEqual([]);
+    // Undo is one shot.
+    expect(renderRow(named(all, "Undo")).extras).toEqual([]);
+  });
+
+  it("shows Reset only on a row that was changed", async () => {
+    const plugin = makePlugin();
+    plugin.shortcuts.set("edit.undo", { type: "key", key: "u", mods: [] }, "press");
+    const undo = renderRow(named(rows(makeTab(plugin).tab), "Undo"));
+    expect(undo.extras.map((extra) => extra.icon)).toEqual(["rotate-ccw"]);
+    await undo.extras[0]?.click();
+    expect(plugin.shortcuts.customized).toBe(0);
+  });
+
+  it("opens recording in the slot, and a second tap puts the row back", () => {
+    const all = rows(makeTab(makePlugin()).tab);
+    const pen = renderRow(named(all, "Pen"));
+    const slot = pen.find("goodobsidian-shortcut-slot");
+    slot?.dispatch("click");
+    expect(slot?.find("goodobsidian-shortcut-recording")?.text).toBe("Press a key or button");
+    slot?.dispatch("click");
+    // Cancelling redraws the tab; the slot built here is the one that was
+    // in recording mode.
+    expect(slot?.hasClass("is-recording")).toBe(true);
+  });
+
+  it("says in one line, only while it is true, that two shortcuts share a key", () => {
+    const plugin = makePlugin();
+    const quiet = blockAfter(rows(makeTab(plugin).tab), "Cursor over the page");
+    expect(shown(quiet)).toBe(false);
+    plugin.shortcuts.set("edit.undo", { type: "key", key: "p", mods: [] }, "press");
+    const all = rows(makeTab(plugin).tab);
+    const conflict = blockAfter(all, "Cursor over the page");
+    expect(shown(conflict)).toBe(true);
+    const drawn = renderRow(conflict);
+    expect(drawn.find("goodobsidian-callout-title")?.text).toBe(
+      "Two shortcuts share a key; neither works",
+    );
+    expect(drawn.find("goodobsidian-info-text")?.text).toBe(
+      "P: Pen and Undo. Change or reset one of them.",
+    );
+    expect(renderRow(named(all, "Pen")).settingEl.hasClass("is-conflicted")).toBe(true);
+  });
+
+  it("resets every row on this device after asking, from under More", async () => {
+    const plugin = makePlugin();
+    const untouched = renderRow(named(rows(makeTab(plugin).tab), "Reset all shortcuts"));
+    expect(untouched.button("Reset").disabled).toBe(true);
+    plugin.shortcuts.set("tool.pen", { type: "key", key: "k", mods: [] }, "press");
+    const { tab } = makeTab(plugin);
+    const all = rows(tab);
+    const more = all.findIndex((row) => row.heading === SHORTCUTS && row.def.name === "More");
+    const reset = all.findIndex((row) => row.def.name === "Reset all shortcuts");
+    expect(more).toBeGreaterThan(0);
+    expect(reset).toBeGreaterThan(more);
+    const row = renderRow(all[reset].def);
+    expect(row.button("Reset").destructive).toBe(true);
+    await row.button("Reset").click();
+    expect(plugin.shortcuts.customized).toBe(0);
+    expect(dialogs.confirms[0]?.title).toBe("Reset every shortcut on this device?");
+    expect(tab.infoOf("Reset all shortcuts")).toMatch(/this device only/);
+  });
+
+  it("keeps the tools in view and the other actions under the section's one More", () => {
+    const all = rows(makeTab(makePlugin()).tab).filter((row) => row.heading === SHORTCUTS);
+    const names = all.map((row) => row.def.name);
+    const more = names.indexOf("More");
+    for (const action of SHORTCUT_ACTIONS) {
+      const at = names.indexOf(action.label);
+      if (action.id.startsWith("tool.")) expect(at, action.label).toBeLessThan(more);
+      else expect(at, action.label).toBeGreaterThan(more);
+    }
+    expect(names.filter((name) => name === "More")).toHaveLength(1);
   });
 });
 
@@ -1532,7 +1678,7 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
   return out.filter((row) => shown(row.def));
 }
 
-const HEADINGS = [WRITING, PENS, PAGES, MODELS, AI, ADVANCED];
+const HEADINGS = [WRITING, SHORTCUTS, PAGES, MODELS, AI, ADVANCED];
 
 describe("folding sections", () => {
   it("folds every section at first, leaving only their headers and the footer", () => {
@@ -1544,10 +1690,10 @@ describe("folding sections", () => {
   });
 
   it("shows the rows of the sections that are open", () => {
-    const plugin = makePlugin({ settingsOpen: ["pens", "advanced"] });
+    const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
-    expect([...new Set(headings)]).toEqual([PENS, ADVANCED, ""]);
-    expect(headings.filter((h) => h === PENS)).toHaveLength(12);
+    expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(21);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
@@ -1565,7 +1711,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ defaultTool: "highlighter", defaultSize: 5, paperWidth: 900 });
     const { tab } = makeTab(plugin, false);
     const drawn = groups(tab).map(drawGroup);
-    const [writing, pens, pages, models, ai, advanced] = drawn;
+    const [writing, shortcuts, pages, models, ai, advanced] = drawn;
     expect(writing.header.find("goodobsidian-section-icon")?.attrs["data-icon"]).toBe("pencil");
     expect(
       writing.header.find("setting-item-name")?.children[0].hasClass("goodobsidian-section-icon"),
@@ -1576,7 +1722,10 @@ describe("folding sections", () => {
     expect(writing.header.find("goodobsidian-status-swatch")?.style.backgroundColor).toBe(
       plugin.settings.defaultColor,
     );
-    expect(status(pens)).toBe("8 saved");
+    // Nothing changed: no state to show.
+    expect(status(shortcuts)).toBe("");
+    plugin.shortcuts.set("edit.undo", { type: "key", key: "u", mods: [] }, "press");
+    expect(status(groups(makeTab(plugin, false).tab).map(drawGroup)[1])).toBe("1 changed");
     expect(status(pages)).toBe("Light · 900 px");
     expect(status(models)).toBe("VoiceHandwriting");
     expect(models.header.findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
@@ -1593,59 +1742,59 @@ describe("folding sections", () => {
   it("folds and unfolds from the header, and remembers it", () => {
     const plugin = makePlugin();
     const { tab } = makeTab(plugin, false);
-    const pens = drawGroup(groups(tab)[1]);
-    expect(pens.groupEl.hasClass("is-folded")).toBe(true);
-    expect(pens.header.hasClass("goodobsidian-fold-header")).toBe(true);
-    expect(pens.chevron?.attrs).toMatchObject({
+    const writing = drawGroup(groups(tab)[0]);
+    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(writing.header.hasClass("goodobsidian-fold-header")).toBe(true);
+    expect(writing.chevron?.attrs).toMatchObject({
       role: "button",
       "aria-expanded": "false",
-      "aria-label": `Unfold ${PENS}`,
+      "aria-label": `Unfold ${WRITING}`,
     });
 
     // A tap anywhere on the header, the chevron included, is one toggle.
-    pens.chevron?.dispatch("click");
-    expect(pens.groupEl.hasClass("is-folded")).toBe(false);
-    expect(pens.chevron?.attrs["aria-expanded"]).toBe("true");
-    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
+    writing.chevron?.dispatch("click");
+    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
+    expect(writing.chevron?.attrs["aria-expanded"]).toBe("true");
+    expect(plugin.settings.settingsOpen).toEqual(["writing"]);
     expect(plugin.calls).toEqual(["save"]);
 
     // Reopening the settings (or Obsidian) draws it open.
     const reopened = makeTab(plugin, false).tab;
-    expect(groups(reopened)[1].cls).toBe("goodobsidian-section");
-    expect(unfoldedRows(reopened).some((r) => r.def.name === "Stylus side button")).toBe(true);
+    expect(groups(reopened)[0].cls).toBe("goodobsidian-section");
+    expect(unfoldedRows(reopened).some((r) => r.def.name === "Saved pens")).toBe(true);
 
     // On a computer several stay open.
-    const writing = drawGroup(groups(reopened)[0]);
-    writing.header.find("setting-item-name")?.dispatch("click");
-    expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-    expect(plugin.settings.settingsOpen).toEqual(["writing", "pens"]);
+    const shortcuts = drawGroup(groups(reopened)[1]);
+    shortcuts.header.find("setting-item-name")?.dispatch("click");
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(false);
+    expect(plugin.settings.settingsOpen).toEqual(["writing", "shortcuts"]);
     // Space on the chevron, as on any button.
-    const space = writing.chevron?.dispatch("keydown", { key: " " });
+    const space = shortcuts.chevron?.dispatch("keydown", { key: " " });
     expect(space?.defaultPrevented).toBe(true);
-    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
-    expect(plugin.settings.settingsOpen).toEqual(["pens"]);
-    writing.chevron?.dispatch("keydown", { key: "a" });
-    expect(writing.groupEl.hasClass("is-folded")).toBe(true);
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(true);
+    expect(plugin.settings.settingsOpen).toEqual(["writing"]);
+    shortcuts.chevron?.dispatch("keydown", { key: "a" });
+    expect(shortcuts.groupEl.hasClass("is-folded")).toBe(true);
   });
 
   it("keeps one section open at a time on an iPad", () => {
     Platform.isMobile = true;
     try {
-      const plugin = makePlugin({ settingsOpen: ["pens", "pages"] });
+      const plugin = makePlugin({ settingsOpen: ["pages", "advanced"] });
       const { tab } = makeTab(plugin, false);
       // Of two open on a computer and synced, the iPad shows the first.
       expect(groups(tab).map((g) => g.cls?.includes("is-folded"))).toEqual([
+        true,
         true,
         false,
         true,
         true,
         true,
-        true,
       ]);
-      const [writing, pens] = groups(tab).map(drawGroup);
+      const [writing, , pages] = groups(tab).map(drawGroup);
       writing.chevron?.dispatch("click");
       expect(writing.groupEl.hasClass("is-folded")).toBe(false);
-      expect(pens.groupEl.hasClass("is-folded")).toBe(true);
+      expect(pages.groupEl.hasClass("is-folded")).toBe(true);
       expect(writing.header.scrolledIntoView).toBe(1);
       expect(plugin.settings.settingsOpen).toEqual(["writing"]);
     } finally {
@@ -1841,7 +1990,8 @@ describe("the learned handwriting model", () => {
       ["Learn now", false],
     ]);
     expect(learn.buttons[1].disabled).toBe(true);
-    expect(tab.infoOf(LEARN)).toMatch(/Copy at least 10 lines first \(0 so far\)/);
+    expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
+    expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
   });
 
   it("offers the symbol sheet beside the text sheets, before either is written", async () => {
@@ -1849,11 +1999,45 @@ describe("the learned handwriting model", () => {
     const { tab } = await loaded(plugin);
     const learn = renderRow(named(rows(tab), LEARN));
     const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
-    expect(chips.map((c) => c.textContent)).toEqual(["Symbols"]);
+    // The symbol sheet, then the tracker of corrected words toward the next round.
+    expect(chips.map((c) => c.textContent)).toEqual(["Symbols", "Words0/50"]);
+    expect(chips[1].attrs["aria-label"]).toMatch(/^Corrected words: none yet\./);
     chips[0].dispatch("click");
     await flush();
     expect(plugin.calls).toContain("closeSettings");
     expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
+  });
+
+  it("tracks the corrected words the model has not learned from, toward the next round", async () => {
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const learned = Date.parse(record.learnedAt);
+    const word = (at: number, i: number) => ({
+      kind: "misread",
+      read: "wrd",
+      text: "word",
+      note: "n.notebook.md",
+      page: "p1",
+      strokes: [{ id: `s${i}`, pts: [0, 0, 0.5], t0: null }],
+      at,
+    });
+    plugin.files.set(
+      "FineNotes assets/Handwriting sheets/corrections.json",
+      JSON.stringify({
+        version: 1,
+        corrections: [learned - 5, learned + 5, learned + 9].map(word),
+      }),
+    );
+    const { tab } = await loaded(plugin);
+    const learn = renderRow(named(rows(tab), LEARN));
+    const words = learn.settingEl.findAll("goodobsidian-words-chip");
+    expect(words.map((c) => c.textContent)).toEqual(["Words2/50"]);
+    expect(words[0].attrs["aria-label"]).toBe(
+      "Corrected words: 2 new since your model learned, of 3 saved. " +
+        "At 50 new words, FineNotes offers to learn again.",
+    );
+    expect(tab.infoOf(LEARN)).toContain("and 3 corrected words (2 new since your model learned)");
+    expect(tab.infoOf(LEARN)).toContain("Next: 7 more lines or words, then Learn now.");
   });
 
   it("describes a learned model in one line: in use, and how much better it reads", async () => {

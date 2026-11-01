@@ -17,12 +17,21 @@
 
 import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH, SCHEMA_VERSION } from "../constants";
 
-export type Tool = "pen" | "highlighter";
+/**
+ * What made a stroke: a pen, a highlighter, or a cover tape (`model/cover-tape`),
+ * an opaque strip painted over the page that a tap shows through.
+ */
+export type Tool = "pen" | "highlighter" | "tape";
+
+/** A highlighter tip other than the round one: `chisel`, flat and upright. */
+export type InkTip = "chisel";
 
 /**
  * Geometry a stroke was snapped to or placed as. Absent on freehand strokes.
  * `polygon` is any other closed straight-edged shape (a quad or a pentagon,
- * say) that hold-to-snap straightened.
+ * say) that hold-to-snap straightened. `arc` is an open piece of a circle;
+ * `sector` a pie slice (centre, arc, back to the centre), which at a half
+ * turn is a semicircle closed by its diameter.
  */
 export type ShapeKind =
   | "line"
@@ -35,7 +44,12 @@ export type ShapeKind =
   | "roundrect"
   | "polygon"
   | "star"
-  | "cloud";
+  | "cloud"
+  | "heart"
+  | "arc"
+  | "sector"
+  | "segment"
+  | "angle";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -49,6 +63,11 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "polygon",
   "star",
   "cloud",
+  "heart",
+  "arc",
+  "sector",
+  "segment",
+  "angle",
 ];
 
 /** How a shape's outline is drawn when it is not solid. */
@@ -113,12 +132,26 @@ export interface Stroke {
    */
   nib?: number;
   /**
+   * Written with a highlighter's flat chisel tip: the line is swept by an
+   * upright rectangle (`ink/chisel.ts`), so a level highlight is a band of
+   * one height with square ends. Absent: a round tip.
+   */
+  tip?: InkTip;
+  /**
    * The pen's samples as it reported them, before any smoothing or filling
    * in: x, y, pressure (0 when the device gave no reading), milliseconds
    * since the stroke's first sample, and so on. Kept only in practice files,
    * where the ink is training data for the handwriting reader.
    */
   samples?: number[];
+  /**
+   * The pen's altitude above the page at each point, degrees (90 upright):
+   * one per point of `pts`. Kept for a brush stroke written with "Pencil
+   * tilt" on that leaned flat enough to widen (`ink/tilt`); the width is
+   * worked out from it when drawn, so the curve can change. Absent, or not
+   * one per point: upright, drawn at the nib's width.
+   */
+  tilt?: number[];
   /**
    * The id of the sticky note (an {@link ImageElement} with `sticky`) this
    * ink was written on: it is drawn on the note, clipped to it, and moves,
@@ -128,6 +161,14 @@ export interface Stroke {
    * plain page ink.
    */
   onSticky?: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the stroke owned by `<pageId>/<id>` on another page, kept here because
+   * its ink reaches over the join. Derived: rebuilt from its owner after
+   * every edit, never edited itself. Absent on the owner. An older build
+   * drops it, and the copy then stands alone, which loses nothing.
+   */
+  join?: string;
 }
 
 /** Values per entry of {@link Stroke.samples}: x, y, pressure, time. */
@@ -346,6 +387,13 @@ export type Backdrop = SyntheticBackdrop | PdfBackdrop;
 
 export interface ImageElement {
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** Vault-relative path to the image attachment. */
   path: string;
   /** Top-left and size, in page space. */
@@ -393,6 +441,12 @@ export interface ImageElement {
 export interface StickyPaper {
   /** `#rrggbb`. */
   color: string;
+  /**
+   * Folded away to a small note icon at its top-left corner, as Goodnotes
+   * collapses a note: its ink and text are hidden, and a tap opens it. The
+   * element keeps the open note's frame. Stored only as `true`.
+   */
+  folded?: true;
 }
 
 /** The faintest a picture may be drawn: fainter would be a picture nobody can find. */
@@ -447,6 +501,13 @@ export const TEXT_ALIGNS: readonly TextAlign[] = ["left", "center", "right", "ju
 /** A typed note placed directly on a page, in the page's intrinsic space. */
 export interface TextBoxElement {
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   x: number;
   y: number;
   /** Width in page pixels. */
@@ -494,6 +555,16 @@ export interface TextBoxElement {
   padding?: number;
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
+  /**
+   * The id of the sticky note this box is the typed text of, as
+   * `Stroke.onSticky` is for its ink (`model/sticky-notes.ts`): drawn with
+   * the note, clipped to it, turned with it and hidden while it is folded,
+   * and moved, copied and deleted with it. Its `x`, `y` and `w` are page px
+   * on the note as it would stand unturned. Stored as it is, in page space,
+   * so a reader that does not know the field keeps the text as a box of its
+   * own. A box whose note is gone is a plain text box.
+   */
+  onSticky?: string;
 }
 
 /** A text box's border: its width in page px and its colour (hex, as `fill`). */
@@ -511,6 +582,13 @@ export interface TextBorder {
 export interface TableElement {
   /** `g<N>`, unique on the page. */
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** Top-left, page px. */
   x: number;
   y: number;
@@ -583,6 +661,13 @@ export interface GraphSpecData {
 export interface GraphElement {
   /** `f<N>`, unique on the page. */
   id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
   /** The frame's top-left and size, page px. */
   x: number;
   y: number;
@@ -643,6 +728,44 @@ export interface Page {
   links?: InkLink[];
   /** Handwritten lines made checklist items (2.5). Absent when there are none. */
   tasks?: InkTask[];
+  /**
+   * Arrows joining two shapes on this page (`model/connectors`), drawn under
+   * the ink. Absent when there are none.
+   */
+  connectors?: ShapeConnector[];
+}
+
+/** A side of a shape's bounds: where a connector meets the shape. */
+export type ConnectorSide = "top" | "right" | "bottom" | "left";
+
+export const CONNECTOR_SIDES: readonly ConnectorSide[] = ["top", "right", "bottom", "left"];
+
+/** One end of a connector: a shape on the page, by stroke id, and the side it meets. */
+export interface ConnectorEnd {
+  stroke: string;
+  side: ConnectorSide;
+}
+
+/**
+ * An arrow joining two shapes, as Goodnotes draws one when a shape's side
+ * dot is dragged out into a linked copy (discussion #51). It holds no
+ * points: its right-angled path is routed afresh from the two shapes as
+ * they are now (`ink/connector-route`), so it stays joined whichever of them
+ * moves. Drawn while both shapes are on the page; one whose shape is gone
+ * is neither drawn nor saved, so an undo that brings the shape back brings
+ * the arrow back with it.
+ */
+export interface ShapeConnector {
+  /** `cn<N>`, unique in the notebook. */
+  id: string;
+  /** Where it starts. */
+  from: ConnectorEnd;
+  /** Where it ends, with the arrowhead. */
+  to: ConnectorEnd;
+  /** Ink colour, `#rrggbb`; the colour of the shape it was drawn from. */
+  color: string;
+  /** Line width, page px. */
+  size: number;
 }
 
 /**
@@ -785,6 +908,12 @@ export interface InkDocument {
    * "Scroll direction" setting). Only ever stored as `"horizontal"`.
    */
   scroll?: "horizontal";
+  /**
+   * No gap between the pages, so writing runs on from one into the next
+   * (the notebook's "Join pages" setting, `model/joined-pages.ts`). Only
+   * ever stored as `true`.
+   */
+  joined?: true;
   /**
    * The pen and every other edit leave the notebook alone (its "Read-only"
    * setting, `model/read-only.ts`). Only ever stored as `true`.

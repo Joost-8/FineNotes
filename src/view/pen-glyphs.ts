@@ -143,6 +143,24 @@ export function glyphThickness(screenPx: number): number {
   return Math.max(MIN_THICKNESS, Math.min(SWOOSH_HEIGHT, screenPx));
 }
 
+/**
+ * The marks of one control (the pill's widths, the popover's eraser sizes),
+ * `sizes` screen px each as the ink or the eraser is on the page now: true
+ * size while the largest fits `limit`, the box it is drawn in. Past it they
+ * shrink together, so the sizes keep their ratios and stay apart; `scaled`
+ * says they did. Shrunk, they are still drawn as solid ink (Joost,
+ * 2026-10-30): the ratios already say which is which.
+ */
+export function fitMarks(
+  sizes: readonly number[],
+  limit: number,
+): { sizes: number[]; scaled: boolean } {
+  const largest = Math.max(0, ...sizes.filter((size) => Number.isFinite(size) && size > 0));
+  if (!(limit > 0) || largest <= limit) return { sizes: [...sizes], scaled: false };
+  const factor = limit / largest;
+  return { sizes: sizes.map((size) => size * factor), scaled: true };
+}
+
 /** A cubic Bézier: start, two control points, end. */
 type Curve = readonly [readonly number[], readonly number[], readonly number[], readonly number[]];
 

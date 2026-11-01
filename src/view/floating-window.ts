@@ -28,7 +28,8 @@ import {
 } from "../model/calculator-store";
 
 /** Every floating window's class, for bringing one over the others. */
-const FLOATING_WINDOWS = ".goodobsidian-graph-window, .goodobsidian-calc-window";
+const FLOATING_WINDOWS =
+  ".goodobsidian-graph-window, .goodobsidian-calc-window, .goodobsidian-zoombox-window";
 
 export interface FloatingWindowButton {
   icon: string;
@@ -52,6 +53,11 @@ export interface FloatingWindowOptions {
   closeLabel?: string;
   /** The smallest it may be sized to. */
   min?: { w: number; h: number };
+  /**
+   * Whether this press may move (the bar) or resize (the corner) the window.
+   * The Zoom box uses it to ignore the writing hand's touch.
+   */
+  allowDrag?: (event: PointerEvent, part: "move" | "resize") => boolean;
   /** Where it opens the first time, for a view of `bounds`. */
   firstPlace?: (bounds: { w: number; h: number }) => WindowPlace;
   place(): WindowPlace | null;
@@ -65,6 +71,8 @@ export interface FloatingWindowOptions {
 export class FloatingWindow {
   readonly el: HTMLElement;
   readonly body: HTMLElement;
+  /** The bar buttons made from {@link FloatingWindowOptions.buttons}, in order (an owner may restyle one). */
+  readonly barButtons: HTMLButtonElement[] = [];
   private place: WindowPlace;
   private readonly min: { w: number; h: number };
   private readonly dispose: Array<() => void> = [];
@@ -82,7 +90,7 @@ export class FloatingWindow {
     const title = bar.createSpan({ cls: `${cls}-title`, text: options.title });
     title.setAttribute("aria-hidden", "true");
     for (const button of options.buttons ?? []) {
-      this.barButton(bar, button.icon, button.label, button.run);
+      this.barButtons.push(this.barButton(bar, button.icon, button.label, button.run));
     }
     if (options.minimise) {
       this.barButton(bar, "minus", "Minimise", () => this.setMinimised(!this.place.minimised));
@@ -200,6 +208,7 @@ export class FloatingWindow {
     let moved = false;
     const down = (event: PointerEvent): void => {
       if ((event.target as Element | null)?.closest("button")) return;
+      if (this.options.allowDrag && !this.options.allowDrag(event, mode)) return;
       event.preventDefault();
       try {
         handle.setPointerCapture(event.pointerId);

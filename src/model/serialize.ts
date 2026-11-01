@@ -33,6 +33,8 @@ import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
+import { liveConnectors, readConnectors } from "./connectors";
+import { isTape } from "./cover-tape";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
 import { readDash, readFill, readHeads, readRadius } from "./shape-style";
@@ -59,6 +61,7 @@ import {
   type PageSection,
   type InkLink,
   type InkTask,
+  type ShapeConnector,
   type PageGeometry,
   type Recording,
   type PracticeInfo,
@@ -164,8 +167,11 @@ interface StoredStroke {
   radius?: number;
   heads?: { start?: string; end?: string };
   nib?: number;
+  tip?: string;
   t0?: number;
   samples?: number[];
+  join?: string;
+  tilt?: number[];
 }
 
 interface StoredPage {
@@ -180,6 +186,7 @@ interface StoredPage {
   sections?: PageSection[];
   links?: InkLink[];
   tasks?: InkTask[];
+  connectors?: ShapeConnector[];
   images: Array<ImageElement | StoredNote>;
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
@@ -195,6 +202,7 @@ interface StoredMeta {
   endless?: true;
   folders?: AttachmentFolders;
   scroll?: "horizontal";
+  joined?: true;
   readOnly?: true;
   practice?: PracticeInfo;
   palette?: { id: string; name: string; colors: string[] };
@@ -203,7 +211,7 @@ interface StoredMeta {
 
 /** A sticky note as stored: its paper carries its ink, in the note's own space. */
 type StoredNote = Omit<ImageElement, "sticky"> & {
-  sticky: { color: string; ink?: StoredStroke[] };
+  sticky: { color: string; folded?: true; ink?: StoredStroke[] };
 };
 
 interface StoredDocument {
@@ -238,11 +246,53 @@ function storeStroke(stroke: Stroke): StoredStroke {
     radius: stroke.radius,
     heads: stroke.heads ? { start: stroke.heads.start, end: stroke.heads.end } : undefined,
     nib: typeof stroke.nib === "number" && Number.isFinite(stroke.nib) ? stroke.nib : undefined,
+    tip: stroke.tip === "chisel" ? "chisel" : undefined,
     // Absent means "unknown", which is not the same as 0 (ledger: clamping
     // an out-of-range value invents a meaning it does not have).
     t0: isTime(stroke.t0) ? Math.round(stroke.t0) : undefined,
     samples: stroke.samples?.length ? quantizeSamples(stroke.samples) : undefined,
+    join: typeof stroke.join === "string" && stroke.join ? stroke.join : undefined,
+    tilt: hasTilt(stroke) ? quantizeTilt(stroke.tilt) : undefined,
   };
+}
+
+/** Stored tilt counts tenths of a degree, 0..900: the width steps 2%, a tenth moves it ~1%. */
+const TILT_STEPS = 10;
+const TILT_MAX = 90 * TILT_STEPS;
+
+/** A handwritten stroke whose `tilt` holds one altitude per point (a shape draws none). */
+function hasTilt(stroke: Stroke): stroke is Stroke & { tilt: number[] } {
+  const tilt = stroke.tilt;
+  return (
+    stroke.shape === undefined &&
+    Array.isArray(tilt) &&
+    tilt.length > 0 &&
+    tilt.length * POINT_STRIDE === stroke.pts.length
+  );
+}
+
+function quantizeTilt(tilt: readonly number[]): number[] {
+  return tilt.map((altitude) =>
+    Math.min(TILT_MAX, Math.max(0, Math.round(finiteOr(altitude, 90) * TILT_STEPS))),
+  );
+}
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Stored tilt back to degrees, when it holds one number per point; anything
+ * else is dropped (the stroke is drawn upright). A bad entry is upright,
+ * keeping the rest in place.
+ */
+function readTilt(raw: unknown, points: number): number[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length !== points) return undefined;
+  return raw.map((value: unknown) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(TILT_MAX, Math.max(0, value)) / TILT_STEPS
+      : 90,
+  );
 }
 
 /** Steps per unit a sample's pressure is stored in. */
@@ -300,6 +350,7 @@ function storePage(page: Page): StoredPage {
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
+    connectors: storedConnectors(page),
     images: page.images.some(isStickyNote)
       ? page.images.map((image) => storeImage(image, noteInk))
       : page.images,
@@ -323,13 +374,27 @@ function storeImage(
   const ink = noteInk.get(image.id);
   return {
     ...image,
-    sticky: { color: image.sticky.color, ink: ink?.length ? ink.map(storeStroke) : undefined },
+    sticky: { ...image.sticky, ink: ink?.length ? ink.map(storeStroke) : undefined },
   };
+}
+
+/**
+ * A page's connectors as stored: only those whose two shapes are on it (one
+ * whose shape was erased is not saved), or `undefined` for none.
+ */
+function storedConnectors(page: Page): ShapeConnector[] | undefined {
+  const live = liveConnectors(page);
+  return live.length > 0 ? live : undefined;
 }
 
 /** The features a document uses that an older reader would lose. */
 function featuresOf(doc: InkDocument): FormatFeature[] {
-  return doc.pages.some((page) => page.images.some(isStickyNote)) ? ["sticky"] : [];
+  const features: FormatFeature[] = [];
+  if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
+  if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
+  if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
+  if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
+  return features;
 }
 
 /** The meta block, or `undefined` when none of its fields has anything to say. */
@@ -340,6 +405,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     endless: doc.endless === true && doc.pages.length === 1 ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
+    joined: doc.joined === true ? true : undefined,
     readOnly: doc.readOnly === true ? true : undefined,
     practice: normalizePractice(doc.practice),
     palette: readPalette(doc.palette),
@@ -696,7 +762,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
     id: str(raw.id, `s${position + 1}`),
     color: str(raw.color, DEFAULT_INK),
     size: typeof raw.size === "number" && raw.size > 0 ? raw.size : DEFAULT_PEN_SIZE,
-    tool: raw.tool === "highlighter" ? "highlighter" : "pen",
+    tool: raw.tool === "highlighter" || raw.tool === "tape" ? raw.tool : "pen",
     // A bad number becomes 0 rather than being dropped: dropping it would
     // slide every later value into the wrong slot of its point (ledger:
     // substitute, never filter). JSON writes NaN and Infinity as null, which
@@ -715,9 +781,14 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   const heads = readHeads(raw.heads);
   if (heads) stroke.heads = heads;
   if (typeof raw.nib === "number" && Number.isFinite(raw.nib)) stroke.nib = raw.nib;
+  // A tip this build does not know is drawn round.
+  if (raw.tip === "chisel") stroke.tip = "chisel";
   if (isTime(raw.t0)) stroke.t0 = Math.round(raw.t0);
   const samples = readSamples(raw.samples);
   if (samples) stroke.samples = samples;
+  if (typeof raw.join === "string" && raw.join) stroke.join = raw.join;
+  const tilt = readTilt(raw.tilt, stroke.pts.length / POINT_STRIDE);
+  if (tilt) stroke.tilt = tilt;
   return stroke;
 }
 
@@ -879,6 +950,7 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     color: str(raw.color, DEFAULT_INK),
     fontSize: Math.max(12, num(raw.fontSize, 22)),
     ...normalizeTextStyle(raw),
+    ...(typeof raw.onSticky === "string" ? { onSticky: raw.onSticky } : {}),
   };
 }
 
@@ -945,6 +1017,12 @@ function maxNumericId(raw: readonly unknown[], prefix: string): number {
   return max;
 }
 
+/** A mirror's owner (`canvas/mirrors.ts`), kept when it is a non-empty string. */
+function readJoin<T extends { join?: string }>(raw: unknown, element: T): T {
+  if (isRecord(raw) && typeof raw.join === "string" && raw.join) element.join = raw.join;
+  return element;
+}
+
 function normalizePage(
   raw: unknown,
   index: number,
@@ -952,6 +1030,7 @@ function normalizePage(
   seenSections: Set<string> = new Set(),
   seenLinks: Set<string> = new Set(),
   seenTasks: Set<string> = new Set(),
+  seenConnectors: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -963,6 +1042,7 @@ function normalizePage(
   imagesRaw.forEach((im) => {
     const image = normalizeImage(im, () => `i${++lastImageId}`);
     if (!image) return;
+    readJoin(im, image);
     images.push(image);
     // An id two notes share would make one note's ink the other's too.
     if (!image.sticky || noteIds.has(image.id)) return;
@@ -975,21 +1055,26 @@ function normalizePage(
   let lastTextBoxId = maxNumericId(textBoxesRaw, "t");
   textBoxesRaw.forEach((textBox) => {
     const normalized = normalizeTextBox(textBox, () => `t${++lastTextBoxId}`);
-    if (normalized) textBoxes.push(normalized);
+    if (!normalized) return;
+    // The text of a note that is not on the page is a box of its own.
+    if (normalized.onSticky !== undefined && !noteIds.has(normalized.onSticky)) {
+      delete normalized.onSticky;
+    }
+    textBoxes.push(readJoin(textBox, normalized));
   });
   const tables: TableElement[] = [];
   const tablesRaw = Array.isArray(page.tables) ? page.tables : [];
   let lastTableId = maxNumericId(tablesRaw, "g");
   tablesRaw.forEach((table) => {
     const normalized = normalizeTable(table, () => `g${++lastTableId}`);
-    if (normalized) tables.push(normalized);
+    if (normalized) tables.push(readJoin(table, normalized));
   });
   const graphs: GraphElement[] = [];
   const graphsRaw = Array.isArray(page.graphs) ? page.graphs : [];
   let lastGraphId = maxNumericId(graphsRaw, "f");
   graphsRaw.forEach((graph) => {
     const normalized = normalizeGraph(graph, () => `f${++lastGraphId}`);
-    if (normalized) graphs.push(normalized);
+    if (normalized) graphs.push(readJoin(graph, normalized));
   });
   const comments: PageComment[] = [];
   const commentsRaw = Array.isArray(page.comments) ? page.comments : [];
@@ -1015,6 +1100,7 @@ function normalizePage(
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
+    ...connectorsIn(page.connectors, strokes, seenConnectors),
     ...(tables.length > 0 ? { tables } : {}),
     ...(graphs.length > 0 ? { graphs } : {}),
     ...(comments.length > 0 ? { comments } : {}),
@@ -1029,6 +1115,16 @@ function linksOf(
 ): { links?: InkLink[] } {
   const links = normalizeLinks(raw, new Set(strokes.map((s) => s.id)), seen);
   return links.length > 0 ? { links } : {};
+}
+
+/** A page's connectors, spread into the page only when any joins two of its shapes. */
+function connectorsIn(
+  raw: unknown,
+  strokes: readonly Stroke[],
+  seen: Set<string>,
+): { connectors?: ShapeConnector[] } {
+  const connectors = readConnectors(raw, new Set(strokes.map((s) => s.id)), seen);
+  return connectors.length > 0 ? { connectors } : {};
 }
 
 /** A page's tasks, spread into the page only when any of them still holds ink there. */
@@ -1091,8 +1187,9 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
     const seenSections = new Set<string>();
     const seenLinks = new Set<string>();
     const seenTasks = new Set<string>();
+    const seenConnectors = new Set<string>();
     pages = raw.pages.map((p, i) =>
-      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks),
+      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks, seenConnectors),
     );
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
@@ -1123,6 +1220,7 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
+  if (meta.joined === true) doc.joined = true;
   if (meta.readOnly === true) doc.readOnly = true;
   const practice = normalizePractice(meta.practice);
   if (practice) doc.practice = practice;

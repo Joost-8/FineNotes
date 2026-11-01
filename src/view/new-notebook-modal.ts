@@ -212,8 +212,9 @@ export class NewNotebookModal extends Modal {
   // --- Sections ---------------------------------------------------------------
 
   /**
-   * Create on the left, the title in the middle; on the right the ∞ that
-   * makes it an endless board, and a round ✕ that closes.
+   * Create on the left, the title in the middle; on the right "New board"
+   * (the ∞), a symbol with its name, and a round ✕ that closes. Pages are
+   * joined in the notebook's own settings (the gear), not here.
    */
   private buildHeader(header: HTMLElement): void {
     const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
@@ -221,10 +222,11 @@ export class NewNotebookModal extends Modal {
     this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
     const end = header.createDiv({ cls: "goodobsidian-newnb-header-end" });
     const board = end.createEl("button", {
-      cls: "goodobsidian-newnb-board clickable-icon",
-      attr: { type: "button", "aria-label": "Endless board" },
+      cls: "goodobsidian-newnb-board goodobsidian-newnb-choice clickable-icon",
+      attr: { type: "button", "aria-label": "New board" },
     });
-    setIcon(board, "infinity");
+    setIcon(board.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "infinity");
+    board.createSpan({ text: "New board" });
     board.addEventListener("click", () => {
       this.choices.type = this.choices.type === "endless" ? "notebook" : "endless";
       this.syncKind();

@@ -9,7 +9,10 @@ import {
   BAR_ITEMS,
   BAR_ITEM_LABELS,
   DEFAULT_BAR,
+  barItemOfTool,
   defaultLayout,
+  effectsOfOffItems,
+  isItemOff,
   dropIndex,
   hiddenItems,
   menuItems,
@@ -58,7 +61,9 @@ describe("the default bar", () => {
       "sticker",
       "sticky",
       "ruler",
+      "tape",
       "record",
+      "fill",
     ]);
   });
 
@@ -112,7 +117,9 @@ describe("three places", () => {
       "sticker",
       "sticky",
       "ruler",
+      "tape",
       "record",
+      "fill",
     ]);
   });
 
@@ -187,5 +194,62 @@ describe("sameLayout", () => {
     expect(sameLayout(defaultLayout(), defaultLayout())).toBe(true);
     expect(sameLayout(defaultLayout(), placeItem(defaultLayout(), "record", "off"))).toBe(false);
     expect(sameLayout(defaultLayout(), placeItem(defaultLayout(), "record", "bar"))).toBe(false);
+  });
+});
+
+describe("an item shown nowhere has nothing left on", () => {
+  const nothing = {
+    tool: "pen",
+    onlyStylus: false,
+    rulerOut: false,
+    recording: false,
+    stickyArmed: false,
+  };
+  const everything = {
+    tool: "eraser",
+    onlyStylus: true,
+    rulerOut: true,
+    recording: true,
+    stickyArmed: true,
+  };
+  const none = { pen: false, onlyStylus: false, ruler: false, recording: false, sticky: false };
+
+  it("ends every effect whose item is off", () => {
+    const layout = {
+      bar: ["pen"],
+      off: ["eraser", "stylus", "ruler", "record", "sticky"],
+    } as never;
+    expect(effectsOfOffItems(layout, everything)).toEqual({
+      pen: true,
+      onlyStylus: true,
+      ruler: true,
+      recording: true,
+      sticky: true,
+    });
+  });
+
+  it("keeps what an item in the menu or on the bar turned on: its button still shows it", () => {
+    // Nothing off: the menu and the bar both still reach every item.
+    expect(effectsOfOffItems(defaultLayout(), everything)).toEqual(none);
+    expect(effectsOfOffItems({ bar: ["pen", "eraser"], off: [] }, everything)).toEqual(none);
+  });
+
+  it("ends nothing that is not on, and never takes the pen away", () => {
+    const layout = { bar: ["pen"], off: ["stylus", "ruler", "record", "sticky"] } as never;
+    expect(effectsOfOffItems(layout, nothing)).toEqual(none);
+    // The highlighter and the laser are the pen's, which is never off.
+    const allOff = { bar: ["pen"], off: BAR_ITEMS.filter((id) => id !== "pen") } as never;
+    expect(effectsOfOffItems(allOff, { ...nothing, tool: "highlighter" }).pen).toBe(false);
+    expect(effectsOfOffItems(allOff, { ...nothing, tool: "laser" }).pen).toBe(false);
+  });
+
+  it("knows each tool's item, and which items are off", () => {
+    expect(barItemOfTool("select")).toBe("select");
+    expect(barItemOfTool("zoom")).toBe("zoom");
+    expect(barItemOfTool("highlighter")).toBe("pen");
+    expect(barItemOfTool("nonsense")).toBeNull();
+    const layout = { bar: ["pen"], off: ["stylus"] } as never;
+    expect(isItemOff(layout, "stylus")).toBe(true);
+    expect(isItemOff(layout, "ruler")).toBe(false);
   });
 });

@@ -112,6 +112,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
   if (typeof r.landscape === "boolean") out.landscape = r.landscape;
+  // `joined`, remembered by 2.6, is ignored: pages are joined in a
+  // notebook's own settings now (the gear), not when it is made.
   return out;
 }
 

@@ -15,8 +15,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
 import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/freehand";
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
+import { layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
-import { type InkDocument, type Page, type Stroke, blankPage } from "../../src/model/document";
+import { type ShortcutTable, shortcutTable, withShortcut } from "../../src/model/shortcut-bindings";
+import {
+  type InkDocument,
+  type Page,
+  type Stroke,
+  blankPage,
+  strokeBounds,
+} from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
 import { StrokeIndex } from "../../src/view/stroke-index";
@@ -29,12 +37,29 @@ vi.mock("obsidian", () => ({
   setIcon: () => {},
 }));
 
-const { InkSurface } = await import("../../src/view/ink-surface");
+const { InkSurface, shouldSnapStroke } = await import("../../src/view/ink-surface");
 
 /** The number new stroke ids count on from. */
 const maxStrokeId = (doc: InkDocument): number => highestIdNumber(strokeIdsOf(doc), "s");
 
 type State = Record<string, unknown>;
+
+describe("freehand snapping modes", () => {
+  it("never snaps when disabled", () => {
+    expect(shouldSnapStroke("disabled", false)).toBe(false);
+    expect(shouldSnapStroke("disabled", true)).toBe(false);
+  });
+
+  it("snaps only after a hold in hold mode", () => {
+    expect(shouldSnapStroke("hold", false)).toBe(false);
+    expect(shouldSnapStroke("hold", true)).toBe(true);
+  });
+
+  it("snaps on release and after a hold in automatic mode", () => {
+    expect(shouldSnapStroke("auto", false)).toBe(true);
+    expect(shouldSnapStroke("auto", true)).toBe(true);
+  });
+});
 
 /** A surface with the class's methods and only the given state. */
 function surfaceWith(state: State): State {
@@ -505,6 +530,442 @@ describe("handleKeyDown", () => {
   });
 });
 
+// --- The user's shortcut table ----------------------------------------------------
+
+/** A key press on a surface that reads `table` instead of `keyOutcome`. */
+function tablePress(key: string, mods: Mods, table: ShortcutTable) {
+  const calls: string[] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]): void => {
+      calls.push(args.length > 0 ? `${name}(${args.map(String).join(",")})` : name);
+    };
+  const surface = surfaceWith({
+    toolState: { tool: "pen" },
+    callbacks: {
+      onChange: () => {},
+      onToolChange: record("onToolChange"),
+      shortcuts: () => table,
+      onShortcutAction: record("onShortcutAction"),
+    },
+    editingTextView: () => null,
+    clipboardKey: () => false,
+    liveImageSelection: () => null,
+    liveSelection: () => null,
+    undo: record("undo"),
+    redo: record("redo"),
+    deleteSelection: record("deleteSelection"),
+    nextPage: record("nextPage"),
+    previousPage: record("previousPage"),
+    zoomIn: record("zoomIn"),
+    zoomOut: record("zoomOut"),
+    resetView: record("resetView"),
+    paste: record("paste"),
+    copySelection: record("copySelection"),
+    hasSelection: () => true,
+    setTool: record("setTool"),
+    setHand: record("setHand"),
+  });
+  let prevented = false;
+  const event = {
+    key,
+    metaKey: mods.meta === true,
+    ctrlKey: mods.ctrl === true,
+    shiftKey: mods.shift === true,
+    altKey: mods.alt === true,
+    target: null,
+    preventDefault: () => {
+      prevented = true;
+    },
+  };
+  const taken = run<boolean>(surface, "handleKeyDown", event);
+  return { taken, prevented, calls, surface };
+}
+
+const noKeys = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+
+const keyOf = (value: string, ...mods: Array<"Mod" | "Alt" | "Shift">) => ({
+  type: "key" as const,
+  key: value,
+  mods,
+});
+
+describe("the user's shortcut table", () => {
+  it("runs a row's action from its recorded key", () => {
+    const table = shortcutTable(withShortcut({}, "edit.undo", keyOf("u"), "press"));
+    expect(tablePress("u", {}, table)).toMatchObject({
+      taken: true,
+      prevented: false,
+      calls: ["undo"],
+    });
+    // The key Undo no longer uses is taken away, not handed to the built-in one.
+    expect(tablePress("z", { meta: true }, table)).toMatchObject({
+      taken: true,
+      prevented: true,
+      calls: [],
+    });
+  });
+
+  it("switches a tool from a recorded key, as its letter did", () => {
+    const table = shortcutTable(withShortcut({}, "tool.eraser", keyOf("k"), "press"));
+    expect(tablePress("k", {}, table)).toMatchObject({
+      taken: true,
+      prevented: false,
+      calls: ["setTool(eraser)", "onToolChange(eraser)"],
+    });
+    expect(tablePress("e", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  /**
+   * A surface whose `setTool` really puts the tool in hand, so a test reads
+   * what a press would then draw with: its gesture and its ink.
+   */
+  function holding(table: ShortcutTable) {
+    const calls: string[] = [];
+    const toolState = { tool: "pen", color: "#112233", shapeColor: "#ff0000" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        shortcuts: () => table,
+      },
+      editingTextView: () => null,
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const key = (type: "keydown" | "keyup", value: string, mods: Mods = {}) => {
+      const event = {
+        key: value,
+        metaKey: mods.meta === true,
+        ctrlKey: mods.ctrl === true,
+        shiftKey: mods.shift === true,
+        altKey: mods.alt === true,
+        target: null,
+        preventDefault: () => {},
+      };
+      if (type === "keydown") run(surface, "handleKeyDown", event);
+      else run(surface, "handleKeyUp", event);
+    };
+    return { surface, toolState, calls, key };
+  }
+
+  it("holds the highlighter: its gesture and its ink while the key is down, the pen after", () => {
+    const { surface, toolState, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(toolState.tool).toBe("highlighter");
+    expect(run(surface, "gestureTool")).toBe("highlighter");
+    // The stroke a press now commits is highlighter ink, not the pen's.
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("highlighter");
+    key("keydown", "r"); // the key repeating changes nothing
+    key("keyup", "r");
+    expect(toolState.tool).toBe("pen");
+    expect(run<{ tool: string }>(surface, "currentStyle").tool).toBe("pen");
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("holds Shapes with the Shape tool's own colour", () => {
+    const { surface, key } = holding(
+      shortcutTable(withShortcut({}, "tool.shape", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(run(surface, "gestureTool")).toBe("shape");
+    expect(run(surface, "strokeColor")).toBe("#ff0000");
+  });
+
+  it("holds the eraser: a press erases, and the pen comes back on the key-up", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    expect(surface.heldShortcut).toEqual({
+      key: "r",
+      pointerId: null,
+      bit: 0,
+      mod: false,
+      tool: "eraser",
+      back: "pen",
+    });
+    expect(run(surface, "gestureTool")).toBe("eraser");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("waits for the pen to lift before switching either way", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.highlighter", keyOf("r"), "hold")),
+    );
+    surface.pressing = true;
+    key("keydown", "r");
+    // The stroke under way stays the pen's to the end.
+    expect(toolState.tool).toBe("pen");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("highlighter");
+    surface.pressing = true;
+    key("keyup", "r");
+    expect(toolState.tool).toBe("highlighter");
+    run(surface, "pressEnded");
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("lets go of a tool held with Cmd when Cmd comes up, as Apple sends no other key-up", () => {
+    const { surface, toolState, key } = holding(
+      shortcutTable(withShortcut({}, "tool.select", keyOf("j", "Mod"), "hold")),
+    );
+    key("keydown", "j", { meta: true });
+    expect(toolState.tool).toBe("select");
+    key("keyup", "Meta");
+    expect(surface.heldShortcut).toBeNull();
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("keeps the tool already in hand when its own key is held", () => {
+    const { surface, calls, key } = holding(
+      shortcutTable(withShortcut({}, "tool.pen", keyOf("r"), "hold")),
+    );
+    key("keydown", "r");
+    key("keyup", "r");
+    expect(surface.heldShortcut).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("lets go of a held tool when the window loses focus", () => {
+    const table = shortcutTable(withShortcut({}, "tool.pan", keyOf("k"), "hold"));
+    const pressed = tablePress("k", {}, table);
+    expect(pressed.calls).toEqual(["setHand(true)"]);
+    run(pressed.surface, "releaseHeldShortcuts");
+    expect(pressed.surface.heldShortcut).toBeNull();
+    expect(pressed.calls).toEqual(["setHand(true)", "setHand(false)"]);
+  });
+
+  it("does nothing at all for two rows that share an input", () => {
+    const table = shortcutTable(withShortcut({}, "edit.undo", keyOf("p"), "press"));
+    // P is the pen's; W is the pen's other key. Both are paused together.
+    expect(tablePress("p", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+    expect(tablePress("w", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  it("takes away the built-in keys of a row the user cleared", () => {
+    const table = shortcutTable(withShortcut({}, "tool.pen", null, "press"));
+    expect(tablePress("p", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+    expect(tablePress("w", {}, table)).toMatchObject({ taken: true, prevented: true, calls: [] });
+  });
+
+  it("lets a recorded context row act without the screen's Delete, Copy or Paste", () => {
+    const table = shortcutTable(withShortcut({}, "edit.copy", keyOf("k", "Mod"), "press"));
+    expect(tablePress("k", { meta: true }, table)).toMatchObject({
+      taken: true,
+      prevented: true,
+      calls: ["copySelection"],
+    });
+  });
+
+  it("leaves the pen's side button to its own setting, lending only what has a gesture", () => {
+    const barrel = { pointerType: "pen", button: 2, buttons: 2, ...noKeys };
+    const surface = surfaceWith({
+      practice: null,
+      cellEdit: null,
+      editingTextView: () => null,
+      heldShortcut: null,
+      callbacks: { shortcuts: () => shortcutTable(), barrelAction: () => "lasso" },
+    });
+    expect(run(surface, "pressOverrideOf", barrel)).toBe("select");
+    // Set to move the page, the press route pans it; the stroke path borrows nothing.
+    surface.callbacks = { shortcuts: () => shortcutTable(), barrelAction: () => "pan" };
+    expect(run(surface, "pressOverrideOf", barrel)).toBeNull();
+  });
+});
+
+describe("buttons in the user's shortcut table", () => {
+  const right = { type: "button" as const, button: 2, mods: [] };
+  const side = { ...right, pen: true };
+
+  /** A window that keeps its listeners, so a test can send the pointer's later events. */
+  function fakeWindow() {
+    const listeners = new Map<string, Set<(event: unknown) => void>>();
+    return {
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        const set = listeners.get(type) ?? new Set();
+        set.add(handler);
+        listeners.set(type, set);
+      },
+      removeEventListener: (type: string, handler: (event: unknown) => void) => {
+        listeners.get(type)?.delete(handler);
+      },
+      emit: (type: string, event: unknown) => {
+        for (const handler of [...(listeners.get(type) ?? [])]) handler(event);
+      },
+      get listening() {
+        return [...listeners.values()].reduce((sum, set) => sum + set.size, 0);
+      },
+    };
+  }
+
+  function buttons(table: ShortcutTable, barrel = "erase") {
+    const calls: string[] = [];
+    const win = fakeWindow();
+    const toolState = { tool: "pen", color: "#112233" };
+    const surface = surfaceWith({
+      toolState,
+      practice: null,
+      pressing: false,
+      pendingHeldTool: null,
+      heldShortcut: null,
+      pressTool: null,
+      cellEdit: null,
+      heldText: null,
+      stylusMenuUntil: 0,
+      buttonShortcutUntil: 0,
+      disposers: [],
+      surfaceEl: { ownerDocument: { defaultView: win } },
+      callbacks: {
+        onChange: () => {},
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        onStylusClick: () => calls.push("onStylusClick"),
+        stylusClick: () => "pen-menu",
+        shortcuts: () => table,
+        barrelAction: () => barrel,
+      },
+      editingTextView: () => null,
+      undo: () => calls.push("undo"),
+      setTool: (tool: string) => {
+        calls.push(`setTool(${tool})`);
+        toolState.tool = tool;
+      },
+      setHand: (on: boolean) => calls.push(`setHand(${on})`),
+    });
+    const press = (pointerType: string, button: number, held: number, pointerId = 1) => {
+      const event = {
+        pointerType,
+        button,
+        buttons: held,
+        pointerId,
+        ...noKeys,
+        prevented: false,
+        stopped: false,
+        preventDefault() {
+          this.prevented = true;
+        },
+        stopImmediatePropagation() {
+          this.stopped = true;
+        },
+      };
+      run(surface, "onButtonPress", event);
+      return event;
+    };
+    return { surface, toolState, calls, win, press };
+  }
+
+  it("runs a row from a right click, draws nothing and opens no menu", () => {
+    const { surface, calls, press } = buttons(
+      shortcutTable(withShortcut({}, "edit.undo", right, "press")),
+    );
+    const event = press("mouse", 2, 2);
+    expect(calls).toEqual(["undo"]);
+    expect(event.prevented).toBe(true);
+    expect(event.stopped).toBe(true);
+    // The page's own right click menu stays shut.
+    expect(surface.stylusMenuUntil).toBeGreaterThan(0);
+  });
+
+  it("leaves a press with no button bound, a left click or the pen's tip alone", () => {
+    const { calls, press } = buttons(shortcutTable(withShortcut({}, "edit.undo", right, "press")));
+    for (const event of [press("mouse", 0, 1), press("pen", 0, 1), press("touch", 0, 1)]) {
+      expect(event.prevented).toBe(false);
+      expect(event.stopped).toBe(false);
+    }
+    const middle = press("mouse", 1, 4);
+    expect(middle.stopped).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it("holds the highlighter on the side button: the touching pen writes it, the pen after", () => {
+    const { surface, toolState, calls, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.highlighter", side, "hold")),
+    );
+    // The pen touches down with its side button held (a driver reporting button 0).
+    const event = press("pen", 0, 3, 7);
+    expect(event.stopped).toBe(false);
+    expect(toolState.tool).toBe("highlighter");
+    // The side button's own setting (erase) lends nothing over it.
+    expect(run(surface, "pressOverrideOf", event)).toBeNull();
+    // Still held while the pen moves with the button down; another pointer is no matter.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 3 });
+    win.emit("pointerup", { type: "pointerup", pointerId: 9, buttons: 0 });
+    expect(toolState.tool).toBe("highlighter");
+    // Letting the button go gives the pen back, and nothing is left listening.
+    win.emit("pointermove", { type: "pointermove", pointerId: 7, buttons: 1 });
+    expect(toolState.tool).toBe("pen");
+    expect(surface.heldShortcut).toBeNull();
+    expect(win.listening).toBe(0);
+    expect(calls).toEqual([
+      "setTool(highlighter)",
+      "onToolChange(highlighter)",
+      "setTool(pen)",
+      "onToolChange(pen)",
+    ]);
+  });
+
+  it("lends a held tool on a right button until it comes up", () => {
+    const { toolState, win, press } = buttons(
+      shortcutTable(withShortcut({}, "tool.eraser", right, "hold")),
+    );
+    const event = press("mouse", 2, 2, 3);
+    expect(event.prevented).toBe(true);
+    expect(toolState.tool).toBe("eraser");
+    win.emit("pointerup", { type: "pointerup", pointerId: 3, buttons: 0 });
+    expect(toolState.tool).toBe("pen");
+  });
+
+  it("does nothing for a button two rows share", () => {
+    const table = shortcutTable(
+      withShortcut(withShortcut({}, "edit.undo", right, "press"), "tool.eraser", side, "press"),
+    );
+    const { calls, press } = buttons(table);
+    const event = press("pen", 2, 2);
+    expect(calls).toEqual([]);
+    expect(event.stopped).toBe(true);
+  });
+
+  it("runs a side button's click in the air instead of the pen menu, once", () => {
+    const bound = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo"]);
+    // Its press already ran it: the click that follows is no second run.
+    bound.press("pen", 2, 2);
+    run(bound.surface, "stylusClicked", 10, 20);
+    expect(bound.calls).toEqual(["undo", "undo"]);
+    // Nobody recorded it: the pen menu, as before.
+    const free = buttons(shortcutTable());
+    run(free.surface, "stylusClicked", 10, 20);
+    expect(free.calls).toEqual(["onStylusClick"]);
+  });
+
+  it("listens for the side button's click when it is bound, whatever the click setting says", () => {
+    const { surface } = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
+    surface.callbacks = { ...(surface.callbacks as object), stylusClick: () => "none" };
+    expect(run(surface, "stylusClickWanted")).toBe(true);
+    surface.callbacks = { ...(surface.callbacks as object), shortcuts: () => shortcutTable() };
+    expect(run(surface, "stylusClickWanted")).toBe(false);
+  });
+});
+
 // --- Diagnostics HUD -------------------------------------------------------------
 
 /** A down, three moves and an up, as one pen stroke reports them. */
@@ -574,7 +1035,7 @@ function hud(debug = true): Hud {
 describe("the HUD's pointer lines", () => {
   it("starts empty", () => {
     expect(hud().text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -582,7 +1043,7 @@ describe("the HUD's pointer lines", () => {
     const h = hud();
     for (const r of strokeRecords(100)) h.record(r);
     expect(h.text()).toBe(
-      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "dn m·3 up\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=1 up=1 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -600,7 +1061,7 @@ describe("the HUD's pointer lines", () => {
     h.record({ type: "move", pointerType: "touch", pressure: 0.1, coalesced: 4, timeStamp: 505 });
     h.record({ type: "cancel", pointerType: "touch", pressure: 0.1, timeStamp: 510 });
     expect(h.text()).toBe(
-      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\nGEOMETRY",
+      "dn m·3 up dn m·1 cx\ncur mv=1 pts=4 gap=5ms maxP=0.10\nΣ dn=2 up=1 cx=1 commit=2\nshape -\ntouch p=0.10 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -630,7 +1091,7 @@ describe("the HUD's pointer lines", () => {
     h.setDebug(true);
     expect(h.hidden()).toBe(false);
     expect(h.text()).toBe(
-      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=3 pts=6 gap=17ms maxP=0.80\nΣ dn=0 up=0 cx=0 commit=2\nshape -\npen p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 
@@ -641,7 +1102,7 @@ describe("the HUD's pointer lines", () => {
     for (const r of strokeRecords(0)) h.record(r);
     h.setDebug(true);
     expect(h.text()).toBe(
-      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\nGEOMETRY",
+      "\ncur mv=0 pts=0 gap=0ms maxP=0.00\nΣ dn=0 up=0 cx=0 commit=2\nshape -\n- p=0.00 page=2\ntilt - src=none\nGEOMETRY",
     );
   });
 });
@@ -682,9 +1143,15 @@ function ink(doc: InkDocument): Ink {
     strokeIds,
     eraseIds: new Set(),
     erasePieces: new Map(),
+    eraseGrey: false,
+    eraseGreyCuts: new Map(),
     eraseDirty: new Set(),
+    eraseCuts: new Map(),
+    eraseCutSeen: new Set(),
     eraseLast: null,
-    erasePreview: null,
+    erasePreview: new Map(),
+    eraseRuled: new Map(),
+    eraseMirrors: null,
     eraserCursorEl: { addClass: () => {} },
     activePage: null,
     renderer: null,
@@ -710,7 +1177,15 @@ function ink(doc: InkDocument): Ink {
     dab: (pageIndex, x, y, radius = 4, filter = "all") =>
       run<boolean>(surface, "eraseWholeAt", doc.pages[pageIndex], { x, y }, radius, filter),
     cut: (pageIndex, x, y, radius = 4) =>
-      run<boolean>(surface, "erasePartialAt", doc.pages[pageIndex], { x, y }, radius, "all"),
+      run<boolean>(
+        surface,
+        "erasePartialAt",
+        doc.pages[pageIndex],
+        { x, y },
+        radius,
+        "all",
+        pageIndex,
+      ),
     lift: (pageIndex) => {
       surface.activePage = boxOf(doc, pageIndex);
       run(surface, "eraseCommit");
@@ -834,12 +1309,15 @@ describe("ruled erase", () => {
     doc.pages[0].backdrop = { kind };
     const w = ink(doc);
     const flashes: string[] = [];
-    Object.assign(w.surface, { eraseRuled: null, flashReadout: (t: string) => flashes.push(t) });
-    const start = (x: number, y: number): void =>
-      run(w.surface, "startRuledErase", doc.pages[0], { x, y }, "all");
+    Object.assign(w.surface, { flashReadout: (t: string) => flashes.push(t) });
+    let ruled: unknown = null;
+    const start = (x: number, y: number): void => {
+      ruled = run(w.surface, "ruledFor", doc.pages[0], { x, y }, "all", true);
+    };
     const dab = (x: number, y: number): boolean =>
-      run<boolean>(w.surface, "eraseRuledAt", doc.pages[0], w.surface.eraseRuled, { x, y }, 4);
-    return { ...w, flashes, start, dab };
+      run<boolean>(w.surface, "eraseRuledAt", doc.pages[0], ruled, { x, y }, 4);
+    const pass = (): unknown => (w.surface.eraseRuled as Map<string, unknown>).get(doc.pages[0].id);
+    return { ...w, flashes, start, dab, pass };
   }
 
   it("takes the word with its comma, and leaves the next line, in one undo step", () => {
@@ -881,16 +1359,72 @@ describe("ruled erase", () => {
   it("on a page without lines, says so and leaves the pass to the standard eraser", () => {
     const w = ruledInk("blank");
     w.start(100, 112);
-    expect(w.surface.eraseRuled).toBeNull();
+    expect(w.pass()).toBeNull();
     expect(w.flashes).toEqual(["No lines on this page: erasing normally"]);
   });
 
   it("forgets the pass when the eraser lifts", () => {
     const w = ruledInk();
     w.start(100, 112);
-    expect(w.surface.eraseRuled).not.toBeNull();
+    expect(w.pass()).not.toBeNull();
     w.lift(0);
-    expect(w.surface.eraseRuled).toBeNull();
+    expect(w.pass()).toBeUndefined();
+  });
+
+  it("greyed, draws the cut stretch grey beside what survives, and commits only that", () => {
+    const highlight: Stroke = {
+      id: "hl",
+      color: "#ffd43b",
+      size: 20,
+      tool: "highlighter",
+      shape: "line",
+      pts: [90, 110, 0.5, 400, 110, 0.5],
+    };
+    const w = ruledInk("ruled-wide", [highlight]);
+    w.surface.eraseGrey = true;
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const cuts = w.surface.eraseGreyCuts as Map<string, Stroke[]>;
+    const grey = cuts.get("hl") ?? [];
+    // The grey stretch is what the cut takes, from the highlight's own end at
+    // 90 up to where the survivor's round end begins: 179 less half its width.
+    expect(grey.map((p) => [p.id, p.pts[0], p.pts[p.pts.length - 3]])).toEqual([
+      ["hl~erasing0", 90, 169],
+    ]);
+    const survivor = (w.pieces().get("hl") ?? [])[0];
+
+    // What the renderer is handed: the words and the stretch grey, nothing hidden.
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    const [, , hidden, , replaced, , , greyed] = calls[0] as [
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      Map<string, Stroke[]>,
+      unknown,
+      unknown,
+      Set<string>,
+    ];
+    expect(hidden).toBeUndefined();
+    expect(replaced.get("hl")?.map((p) => p.id)).toEqual(["hl~erasing0", survivor.id]);
+    expect([...greyed].sort()).toEqual(["comma", "dolor", "hl~erasing0"]);
+
+    w.lift(0);
+    expect(ids(w.doc.pages[0])).toEqual(["below", survivor.id]);
+    expect((w.surface.eraseGreyCuts as Map<string, Stroke[]>).size).toBe(0);
+  });
+
+  it("not greyed, hides the words and draws only what survives", () => {
+    const w = ruledInk();
+    w.start(100, 112);
+    for (const x of [100, 130, 165]) w.dab(x, 112);
+    const calls: unknown[][] = [];
+    w.surface.renderer = { renderDocument: (...args: unknown[]) => calls.push(args) };
+    run(w.surface, "renderDry");
+    expect([...(calls[0][2] as Set<string>)].sort()).toEqual(["comma", "dolor"]);
+    expect(calls[0][7]).toBeUndefined();
   });
 });
 
@@ -1157,7 +1691,7 @@ describe("Turn into › Text (FineNotes#42)", () => {
       doc: documentOf(blankPage("p0"), p),
       liveSelection: () => selection,
     });
-    expect(run(surface, "selectedInk")).toEqual({ index: 1, strokeIds: ["a"] });
+    expect(run(surface, "selectedInk")).toMatchObject({ index: 1, strokeIds: ["a"] });
     selection = { pageId: "p1", strokes: [], images: [], textBoxes: [] };
     expect(run(surface, "selectedInk")).toBeNull();
     selection = null;
@@ -1321,6 +1855,29 @@ describe("partial erase", () => {
     w.undo();
     expect(ids(w.doc.pages[0])).toEqual(["s1", "s2", "s3"]);
     expect(w.strokeAt(0, 60, 10)?.id).toBe("s1");
+  });
+
+  it("paints again round the cut, not the whole stroke, and the whole stroke once as it ends", () => {
+    const long = line("long", 10, 900, 10);
+    const w = ink(documentOf(page("p1", [long])));
+    const renderer = { invalidateArea: vi.fn(), invalidateRegion: vi.fn() };
+    w.surface.renderer = renderer;
+    w.surface.activePage = boxOf(w.doc, 0);
+    w.cut(0, 400, 10, 4);
+    w.cut(0, 404, 10, 4);
+    run(w.surface, "flushEraseDirty");
+    // The two dabs overlap: one area, the radius and 1.5 widths of a size-2
+    // stroke, and 6 px, round them both.
+    expect(renderer.invalidateArea).toHaveBeenCalledExactlyOnceWith(0, {
+      minX: 387,
+      minY: -3,
+      maxX: 417,
+      maxY: 23,
+    });
+    expect(renderer.invalidateRegion).not.toHaveBeenCalled();
+    // As the gesture ends, the stroke is painted from the document again, whole.
+    run(w.surface, "eraseReset");
+    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, strokeBounds(long));
   });
 });
 
@@ -1592,6 +2149,162 @@ describe("smoothing a pen whose positions arrive rounded (FineNotes#1)", () => {
 });
 
 // --- A Pencil whose contact flickered (2026-10-01) ---------------------------------
+
+// --- Writing over the join of joined pages (discussion #51) ------------------------
+
+describe("commitStroke with the pages joined", () => {
+  function joined() {
+    const doc = documentOf(page("p1", []), page("p2", []));
+    const w = ink(doc);
+    const layout = layoutPages(doc.pages, { joined: true });
+    Object.assign(w.surface, {
+      joined: true,
+      board: false,
+      pageLayout: layout,
+      mirroredStep: null,
+    });
+    // As the surface keeps it: mirrors out of the index while joined.
+    (w.surface.strokeIndex as StrokeIndex).skip = (s) => s.join !== undefined;
+    const commit = (stroke: Stroke): unknown =>
+      run(w.surface, "commitStroke", layout.boxes[0], doc.pages[0], stroke);
+    return { w, doc, layout, commit };
+  }
+
+  it("mirrors a stroke over the join on the next page, in its space, in the same undo step", () => {
+    const { w, doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    // Ids come from the surface's sequence, as a drawn stroke's do.
+    const id = (w.surface.strokeIds as IdSequence).next();
+    const stroke: Stroke = {
+      id,
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [100, height - 50, 0.5, 120, height + 40, 0.5],
+      samples: [1, 2, 3, 4],
+    };
+    commit(stroke);
+    const [own] = doc.pages[0].strokes;
+    const [mirror] = doc.pages[1].strokes;
+    expect(own.join).toBeUndefined();
+    expect(mirror.join).toBe(`p1/${id}`);
+    expect(mirror.id).toBe(`p1/${id}@p2`);
+    expect(mirror.pts).toEqual([100, -50, 0.5, 120, 40, 0.5]);
+    expect(mirror.samples).toBeUndefined();
+    // No tool acts on a mirror: the index leaves it out.
+    expect(w.strokeAt(1, 120, 40)).toBeNull();
+    expect(w.history.canUndo()).toBe(true);
+    w.undo();
+    expect(w.history.canUndo()).toBe(false);
+    expect(doc.pages[0].strokes).toEqual([]);
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("leaves a stroke inside its page alone, and so does a notebook with its pages apart", () => {
+    const { w, doc, commit } = joined();
+    commit(line("s1", 10, 110, 100));
+    expect(doc.pages[0].strokes[0].join).toBeUndefined();
+    expect(doc.pages[1].strokes).toEqual([]);
+    w.surface.joined = false;
+    commit({ ...line("s2", 10, 110, 100), pts: [100, 1400, 0.5, 100, 1500, 0.5] });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+
+  it("a stroke written on a sticky note stays on the note", () => {
+    const { doc, layout, commit } = joined();
+    const height = layout.boxes[0].height;
+    commit({
+      ...line("s1", 0, 0, 0),
+      pts: [100, height - 5, 0.5, 100, height + 5, 0.5],
+      onSticky: "n1",
+    });
+    expect(doc.pages[1].strokes).toEqual([]);
+  });
+});
+
+describe("the eraser and the lasso over a join", () => {
+  /** Two joined pages; a line from page 1 over the join, mirrored on page 2. */
+  function overJoin() {
+    const doc = documentOf(page("p1", []), page("p2", []));
+    const w = ink(doc);
+    const layout = layoutPages(doc.pages, { joined: true });
+    Object.assign(w.surface, {
+      joined: true,
+      board: false,
+      pageLayout: layout,
+      mirroredStep: null,
+      showEraserCursor: () => {},
+    });
+    (w.surface.strokeIndex as StrokeIndex).skip = (s) => s.join !== undefined;
+    const [a, b] = layout.boxes;
+    const id = (w.surface.strokeIds as IdSequence).next();
+    const owner: Stroke = {
+      id,
+      color: "#000000",
+      size: 2,
+      tool: "pen",
+      pts: [100, a.height - 60, 0.5, 100, a.height + 60, 0.5],
+    };
+    run(w.surface, "commitStroke", a, doc.pages[0], owner);
+    return { w, doc, a, b, id };
+  }
+
+  it("the whole-stroke eraser on the next page takes the owner, and the mirror goes with it", () => {
+    const { w, doc, b } = overJoin();
+    expect(doc.pages[1].strokes).toHaveLength(1);
+    w.surface.toolState = { tool: "eraser", eraserMode: "stroke" };
+    w.surface.activePage = b;
+    run(w.surface, "eraseAt", b, { x: 100, y: 30 });
+    run(w.surface, "eraseCommit");
+    expect(doc.pages[0].strokes).toEqual([]);
+    expect(doc.pages[1].strokes).toEqual([]);
+    w.undo();
+    expect(doc.pages[0].strokes).toHaveLength(1);
+    expect(doc.pages[1].strokes).toHaveLength(1);
+  });
+
+  it("the standard eraser on the next page cuts the owner, and the mirror follows", () => {
+    const { w, doc, b } = overJoin();
+    w.surface.toolState = { tool: "eraser", eraserMode: "standard" };
+    w.surface.activePage = b;
+    run(w.surface, "eraseAt", b, { x: 100, y: 30 });
+    run(w.surface, "eraseCommit");
+    // Two pieces on page 1, both still reaching over the join (the cut is
+    // below it), each mirrored on page 2; the erased stretch is on neither.
+    const pieces = doc.pages[0].strokes;
+    expect(pieces).toHaveLength(2);
+    expect(doc.pages[1].strokes.map((s) => s.join)).toEqual(pieces.map((p) => `p1/${p.id}`));
+  });
+
+  it("a lasso on the next page picks up the owner onto its page, taken back when unused", () => {
+    const { w, doc, b, id } = overJoin();
+    w.surface.toolState = { tool: "select" };
+    Object.assign(w.surface, {
+      select: (pageId: string, lists: { strokes: Stroke[] }) => {
+        w.surface.selection = { pageId, ...lists };
+      },
+      selection: null,
+      textBoxFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      tableFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      syncTextBoxes: () => {},
+      renderer: { invalidateAll: () => {}, invalidateRegion: () => {} },
+      clearSelection: () => run(w.surface, "dropPickUp"),
+      renderDry: () => true,
+    });
+    run(w.surface, "selectInside", b, [50, -100, 150, -100, 150, 100, 50, 100]);
+    const sel = w.surface.selection as { pageId: string; strokes: Stroke[] };
+    expect(sel.pageId).toBe("p2");
+    expect(sel.strokes.map((s) => s.id)).toEqual([id]);
+    expect(doc.pages[1].strokes.find((s) => s.id === id)?.pts).toEqual([
+      100, -60, 0.5, 100, 60, 0.5,
+    ]);
+    // Its mirror now lies on page 1, where the line starts.
+    expect(doc.pages[0].strokes.map((s) => s.join)).toEqual([`p2/${id}`]);
+    run(w.surface, "dropPickUp");
+    expect(doc.pages[0].strokes.map((s) => s.id)).toEqual([id]);
+    expect(w.history.latest?.label).toBe("Add stroke");
+  });
+});
 
 describe("resumeLifted", () => {
   /** A page with one stroke just committed, lifted at (40, 10) a moment ago. */
@@ -2061,7 +2774,7 @@ describe("ink pressure", () => {
 describe("size preview scales", () => {
   it("pen widths and the eraser both grow with the zoom: their sizes are the paper's", () => {
     const s = surfaceWith({ baseScale: 0.8, userZoom: 2.5 });
-    expect(run(s, "sizePreviewScales")).toEqual({ pen: 2, eraser: 2 });
+    expect(run(s, "sizePreviewScales")).toMatchObject({ pen: 2, eraser: 2 });
   });
 
   it("erases the same patch of paper at every zoom", () => {
@@ -2092,5 +2805,384 @@ describe("size preview scales", () => {
     s.baseScale = 1.2;
     run(s, "reportSizeScale");
     expect(told).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("the Zoom box auto-advance", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function advanceSurface(on: boolean, box = { x: 100, y: 200, w: 150, h: 80 }) {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const frame = vi.fn();
+    const sync = vi.fn();
+    const surface = surfaceWith({
+      zoomBox: { pageId: "p1", box, originX: 100 },
+      zoomPositionHistory: [],
+      pageLayout: {
+        boxes: [
+          { id: "p1", width: 800, height: 600 },
+          { id: "p2", width: 800, height: 600 },
+        ],
+      },
+      zoomStrokeMaxX: box.x + box.w * 0.67,
+      callbacks: {
+        zoomBoxAutoAdvance: () => on,
+        zoomBoxAutoAdvanceThreshold: () => 33,
+        zoomBoxLineStep: () => 0,
+      },
+      boxForPage: () => ({ width: 800, height: 600 }),
+      syncZoomTarget: sync,
+      ensureZoomTargetVisible: vi.fn(),
+      requestFrame: frame,
+    });
+    return { surface, sync, frame };
+  }
+
+  it("does nothing while the toggle is off", () => {
+    const { surface } = advanceSurface(false);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).toBeNull();
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("steps right after the pause when a stroke reached two thirds", () => {
+    const { surface, frame } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    expect(surface.zoomAdvanceTimer).not.toBeNull();
+    vi.advanceTimersByTime(399);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+    vi.advanceTimersByTime(1);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(198);
+    expect(frame).toHaveBeenCalled();
+  });
+
+  it("wraps to the next line when the box is already at the right margin", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "scheduleZoomAdvance");
+    vi.advanceTimersByTime(400);
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+  });
+
+  it("lets Back restore the exact position before a forward wrap", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 200, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    expect((surface.zoomBox as { box: { x: number; y: number } }).box).toMatchObject({
+      x: 100,
+      y: 280,
+    });
+    run(surface, "previousZoomBox");
+    expect(
+      (surface.zoomBox as { box: { x: number; y: number; w: number; h: number } }).box,
+    ).toEqual({
+      x: 650,
+      y: 200,
+      w: 150,
+      h: 80,
+    });
+  });
+
+  it("goes on to the next page from the last line, and Back returns to it", () => {
+    const { surface } = advanceSurface(true, { x: 650, y: 520, w: 150, h: 80 });
+    run(surface, "advanceZoomBox");
+    const zoomBox = surface.zoomBox as { pageId: string; box: { x: number; y: number } };
+    expect(zoomBox.pageId).toBe("p2");
+    expect(zoomBox.box).toMatchObject({ x: 100, y: 0 });
+    run(surface, "previousZoomBox");
+    expect(zoomBox.pageId).toBe("p1");
+    expect(zoomBox.box).toMatchObject({ x: 650, y: 520 });
+  });
+
+  it("cancels a pending step when another stroke starts", () => {
+    const { surface } = advanceSurface(true);
+    run(surface, "scheduleZoomAdvance");
+    run(surface, "cancelZoomAdvance");
+    vi.advanceTimersByTime(1000);
+    expect((surface.zoomBox as { box: { x: number } }).box.x).toBe(100);
+  });
+
+  it("asks the host to keep the toggle when the button changes it", () => {
+    const changed = vi.fn();
+    const surface = surfaceWith({
+      callbacks: { onZoomBoxAutoAdvance: changed, zoomBoxAutoAdvance: () => false },
+      zoomAutoAdvanceButton: null,
+    });
+    run(surface, "setZoomAutoAdvance", true);
+    expect(changed).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("the Zoom box target's presses", () => {
+  class FakeElement {
+    closest(_selector?: string): unknown {
+      return null;
+    }
+  }
+
+  function pressOn(
+    kind: "body" | "badge" | "handle",
+    pointerType: string,
+    tool: string,
+    selected = true,
+  ) {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "se" },
+      setPointerCapture: capture,
+    });
+    const badge = Object.assign(new FakeElement(), { dataset: { zoomMove: "true" } });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) =>
+        selector === "[data-zoom-handle]"
+          ? kind === "handle"
+            ? handle
+            : null
+          : selector === "[data-zoom-move]" && kind === "badge"
+            ? badge
+            : null,
+    });
+    const frameCapture = vi.fn();
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected },
+      toolState: { tool },
+      callbacks: { onlyStylusMode: () => true },
+      zoomTargetEl: { setPointerCapture: frameCapture },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType,
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    return { surface, event, capture, frameCapture };
+  }
+
+  it("moves a selected frame with a finger even while a writing tool is chosen", () => {
+    const { surface, event, frameCapture } = pressOn("body", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(frameCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from a corner with a finger in Stylus-only mode", () => {
+    const { surface, event, capture } = pressOn("handle", "touch", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes a selected frame from an edge with a finger in Stylus-only mode", () => {
+    vi.stubGlobal("HTMLElement", FakeElement);
+    const capture = vi.fn();
+    const handle = Object.assign(new FakeElement(), {
+      dataset: { zoomHandle: "e" },
+      setPointerCapture: capture,
+    });
+    const target = Object.assign(new FakeElement(), {
+      closest: (selector: string) => (selector === "[data-zoom-handle]" ? handle : null),
+    });
+    const surface = surfaceWith({
+      zoomTargetDrag: null,
+      zoomBox: { pageId: "p1", box: { x: 10, y: 20, w: 100, h: 80 }, selected: true },
+      callbacks: { onlyStylusMode: () => true },
+      zoomTargetEl: { setPointerCapture: vi.fn() },
+      boxForPage: () => ({}),
+      pagePoint: () => ({ x: 10, y: 20 }),
+    });
+    const event = {
+      target,
+      button: 0,
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as PointerEvent;
+    run(surface, "onZoomTargetPointerDown", event);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("e");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("moves the frame on the first press, with no tap to select it first", () => {
+    const { surface, event } = pressOn("body", "pen", "pen", false);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it("moves a selected body or badge with the pen, whatever the tool", () => {
+    expect(
+      (pressOn("badge", "pen", "highlighter").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
+    expect(
+      (pressOn("body", "pen", "pen").surface.zoomTargetDrag as { handle: string }).handle,
+    ).toBe("move");
+  });
+
+  it("resizes a selected frame from a corner handle before considering the tool", () => {
+    const { surface, capture } = pressOn("handle", "pen", "pen");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+    expect(capture).toHaveBeenCalledWith(7);
+  });
+
+  it("resizes from a handle on the first press", () => {
+    const { surface } = pressOn("handle", "pen", "pen", false);
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("se");
+  });
+
+  it("moves the selected frame body under the Magnifier with a mouse", () => {
+    const { surface } = pressOn("body", "mouse", "zoom");
+    expect((surface.zoomTargetDrag as { handle: string }).handle).toBe("move");
+  });
+});
+
+describe("writing in the Zoom box", () => {
+  const box = { x: 100, y: 200, w: 100, h: 50 };
+
+  /** A box shown 4x in a 400 x 200 canvas; the page fits at 0.8 CSS px per page px. */
+  function boxSurface(extra: State = {}): State {
+    return surfaceWith({
+      zoomBox: { pageId: "p1", box: { ...box }, originX: box.x },
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 200 }),
+      },
+      zoomCanvasRect: null,
+      baseScale: 0.8,
+      userZoom: 1,
+      strokeInBox: false,
+      toolState: { tool: "pen" },
+      callbacks: {},
+      boxForPage: () => ({ x: 40, y: 0, width: 800, height: 1000 }),
+      toPage: (b: { x: number; y: number }, at: { x: number; y: number }) => ({
+        x: at.x - b.x,
+        y: at.y - b.y,
+      }),
+      ...extra,
+    });
+  }
+
+  it("measures gesture lengths at the box's magnification while the pen writes there", () => {
+    const s = boxSurface();
+    // On the page, at fit zoom, a tuned length is itself.
+    expect(run(s, "atFitZoom", 8)).toBe(8);
+    s.strokeInBox = true;
+    // 4 CSS px per page px in the box is a page zoom of 4 / 0.8 = 5.
+    expect(run<number>(s, "atFitZoom", 8)).toBeCloseTo(1.6);
+    expect(s.gestureScale).toBeCloseTo(4);
+  });
+
+  it("maps a point in the box's canvas to its point on the page, in layout space", () => {
+    const s = boxSurface();
+    // The canvas's top-left (10, 20) is the box's top-left; the page sits at x 40.
+    expect(run(s, "zoomClientToLayout", 10, 20)).toEqual({ x: 140, y: 200 });
+    expect(run(s, "zoomClientToLayout", 210, 120)).toEqual({ x: 190, y: 225 });
+  });
+
+  it("draws with a pen in the box, and ignores its margins and the magnifier", () => {
+    const s = boxSurface({
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 }),
+      },
+    });
+    const pen = (x: number, y: number) =>
+      ({ pointerType: "pen", button: 0, buttons: 1, clientX: x, clientY: y }) as PointerEvent;
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("draw");
+    // A 2:1 box in a square canvas leaves a margin above and below the content.
+    expect(run(s, "zoomBoxRoute", pen(200, 20))).toBe("ignore");
+    s.toolState = { tool: "zoom" };
+    expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("ignore");
+  });
+
+  it("keeps a tap in the box a dot", () => {
+    const penDown = vi.fn();
+    const s = boxSurface({
+      pressOverrideOf: () => null,
+      markDrawing: vi.fn(),
+      penDown,
+    });
+    // In the box every point lies inside the target: still a dot, a full stop.
+    const inside = { x: 150, y: 220, pressure: 0, tiltX: 0, tiltY: 0, altitude: Number.NaN };
+    run(s, "penStart", inside, { pointerType: "pen", button: 0, buttons: 1 });
+    expect(penDown).toHaveBeenCalledWith(inside);
+  });
+
+  it("measures auto-advance against the box in page space, not layout space", () => {
+    const penEnd = vi.fn();
+    const scheduleZoomAdvance = vi.fn();
+    const s = boxSurface({
+      cancelZoomAdvance: vi.fn(),
+      cancelZoomSlide: vi.fn(),
+      penStart: vi.fn(),
+      penMove: vi.fn(),
+      penEnd,
+      scheduleZoomAdvance,
+    });
+    const at = (x: number) => ({ x, y: 220, pressure: 0.4, tiltX: 0, tiltY: 0, altitude: 0 });
+    // Layout x 40 + 120: page x 120, a fifth of the way into the box.
+    run(s, "zoomStrokeStart", at(160), {});
+    expect(s.strokeInBox).toBe(true);
+    run(s, "zoomStrokeMove", [at(170), at(165)]);
+    run(s, "zoomStrokeEnd", at(150));
+    expect(s.zoomStrokeMaxX).toBe(130);
+    expect(penEnd).toHaveBeenCalled();
+    expect(scheduleZoomAdvance).toHaveBeenCalled();
+    // The pen's gesture lengths go back to the page's once it lifts.
+    expect(s.strokeInBox).toBe(false);
+    expect(s.zoomStroke).toBe(false);
+  });
+
+  it("keeps the ink of a held pen that WebKit cancels, as on the page", () => {
+    const penCancel = vi.fn();
+    const s = boxSurface({ penCancel, scheduleZoomAdvance: vi.fn(), strokeInBox: true });
+    run(s, "zoomStrokeCancel");
+    expect(penCancel).toHaveBeenCalled();
+    expect(s.strokeInBox).toBe(false);
+  });
+});
+
+describe("the Zoom box's first-drag catcher", () => {
+  function catcherSurface(onlyStylus: boolean): { s: State; hidden: () => boolean } {
+    let hidden = true;
+    const s = surfaceWith({
+      toolState: { tool: "zoom", zoomBox: true },
+      zoomBox: null,
+      zoomMarqueePointer: null,
+      zoomCatcherEl: { toggleClass: (_c: string, on: boolean) => void (hidden = on) },
+      callbacks: { onlyStylusMode: () => onlyStylus },
+    });
+    return { s, hidden: () => hidden };
+  }
+
+  it("stays away without Stylus-only mode, so a finger still pans and pinches", () => {
+    const { s, hidden } = catcherSurface(false);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(true);
+  });
+
+  it("covers the page in Stylus-only mode, where a finger draws the target", () => {
+    const { s, hidden } = catcherSurface(true);
+    run(s, "syncZoomCatcher");
+    expect(hidden()).toBe(false);
   });
 });

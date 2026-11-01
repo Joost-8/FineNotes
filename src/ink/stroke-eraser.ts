@@ -13,6 +13,7 @@
  */
 
 import { type Stroke, POINT_STRIDE } from "../model/document";
+import { tiltAlong, widestTiltFactor } from "./tilt";
 
 /**
  * Pieces shorter than this (page px of polyline length) are dropped. A sliver
@@ -185,8 +186,8 @@ export function eraseCircleFromStroke(
   radius: number,
   nextId: () => string,
 ): Stroke[] | null {
-  const pieces = eraseCircleFromPoints(stroke.pts, stroke.size, cx, cy, radius);
-  return pieces === null ? null : pieces.map((pts) => pieceOf(stroke, pts, nextId));
+  const pieces = eraseCircleFromPoints(stroke.pts, inkWidth(stroke), cx, cy, radius);
+  return pieces === null ? null : piecesOf(stroke, pieces, nextId);
 }
 
 /** A rectangle the ruled eraser has taken: a stretch of one line's band. */
@@ -295,8 +296,39 @@ export function eraseRectsFromStroke(
   rects: readonly EraseRect[],
   nextId: () => string,
 ): Stroke[] | null {
-  const pieces = eraseRectsFromPoints(stroke.pts, stroke.size, rects);
-  return pieces === null ? null : pieces.map((pts) => pieceOf(stroke, pts, nextId));
+  const pieces = eraseRectsFromPoints(stroke.pts, inkWidth(stroke), rects);
+  return pieces === null ? null : piecesOf(stroke, pieces, nextId);
+}
+
+/**
+ * How wide a stroke's ink is, for the cut: its nib, or as wide as the
+ * Pencil's tilt made it anywhere along it (a shading stroke is cut where its
+ * edge is, at the price of a little more off its narrower stretches).
+ */
+function inkWidth(stroke: Stroke): number {
+  return stroke.shape === undefined ? stroke.size * widestTiltFactor(stroke.tilt) : stroke.size;
+}
+
+/**
+ * The surviving pieces of `stroke`, in order. A stroke that keeps the
+ * Pencil's tilt hands each piece the altitudes along it, so a shading stroke
+ * cut in two stays as wide as it was; a piece whose points cannot be placed
+ * on the stroke (never, as the eraser cuts) is drawn upright.
+ */
+function piecesOf(stroke: Stroke, pieces: number[][], nextId: () => string): Stroke[] {
+  const tilt = stroke.tilt;
+  const tilted =
+    tilt !== undefined && tilt.length * POINT_STRIDE === stroke.pts.length && !stroke.shape;
+  let segment = 0;
+  return pieces.map((pts) => {
+    const piece = pieceOf(stroke, pts, nextId);
+    const along = tilted ? tiltAlong(stroke.pts, tilt, pts, segment) : null;
+    if (along) {
+      piece.tilt = along.tilt;
+      segment = along.segment;
+    }
+    return piece;
+  });
 }
 
 /** A surviving piece of `stroke`, drawn as it was. */
@@ -316,6 +348,10 @@ function pieceOf(stroke: Stroke, pts: number[], nextId: () => string): Stroke {
   if (stroke.radius !== undefined) piece.radius = stroke.radius;
   // A piece of a note's ink stays on the note.
   if (stroke.onSticky !== undefined) piece.onSticky = stroke.onSticky;
+  // A piece of calligraphy keeps its flat nib. A shape is drawn at one width.
+  if (stroke.nib !== undefined && stroke.shape === undefined) piece.nib = stroke.nib;
+  // A piece of a chisel highlight keeps its flat tip.
+  if (stroke.tip !== undefined && stroke.shape === undefined) piece.tip = stroke.tip;
   return piece;
 }
 
@@ -329,7 +365,7 @@ function inside(r: EraseRect, x: number, y: number): boolean {
  * that only grazes a corner (zero length) counts as outside, as the circle's
  * graze does; a segment of zero length is inside wholly or not at all.
  */
-function insideSpans(
+export function insideSpans(
   rects: readonly EraseRect[],
   ax: number,
   ay: number,

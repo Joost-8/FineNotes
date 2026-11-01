@@ -8,6 +8,7 @@
 
 import { FALLBACK_PRESSURE, MIN_SAMPLE_DISTANCE } from "../constants";
 import { POINT_STRIDE } from "../model/document";
+import { TiltFilter, storedAltitude } from "./tilt";
 
 /** One pointer sample, in page px. */
 export interface InputSample {
@@ -17,6 +18,11 @@ export interface InputSample {
   pressure: number;
   /** When it was sampled, ms; needed only when the builder records samples. */
   t?: number;
+  /**
+   * The pen's altitude above the screen, degrees (`ink/tilt` altitudeOf); NaN
+   * or absent when the event gave none. Read only with `tilt` on.
+   */
+  altitude?: number;
 }
 
 /**
@@ -59,6 +65,11 @@ export interface StrokeBuilderOptions {
    * a practice file's training data. Off by default.
    */
   record?: boolean;
+  /**
+   * Keep the pen's altitude for every point ({@link StrokeBuilder.tilts}):
+   * the brush with "Pencil tilt" on. Off by default.
+   */
+  tilt?: boolean;
 }
 
 const DEFAULTS: StrokeBuilderOptions = {
@@ -209,13 +220,19 @@ export class StrokeBuilder {
   /** The points kept so far, flat. */
   private readonly flat: number[] = [];
   /**
-   * Densifying: the two samples kept before the newest, `[x, y, p]`, and the
-   * newest, which waits for the one after it to fix the curve's way into it.
+   * The altitude of each point in {@link flat}, degrees; NaN until the pen's
+   * first tilt reading, which fills them in (see {@link revision}).
+   */
+  private readonly altitudes: number[] = [];
+  /**
+   * Densifying: the two samples kept before the newest, `[x, y, p, altitude]`,
+   * and the newest, which waits for the one after it to fix the curve's way
+   * into it.
    */
   private before: number[] | null = null;
   private last: number[] | null = null;
   private waiting: number[] | null = null;
-  /** With `"centred"`: the samples kept, `[x, y, p]`, as the pen reported them. */
+  /** With `"centred"`: the samples kept, `[x, y, p, altitude]`, as the pen reported them. */
   private held: number[][] = [];
   /** Centred: the length of the stroke up to each of {@link held}, page px. */
   private along: number[] = [];
@@ -223,6 +240,8 @@ export class StrokeBuilder {
   private passed = 0;
   /** The pen's last real pressure reading; NaN until the first arrives. */
   private lastReading = Number.NaN;
+  /** With `tilt`: the altitude each sample stores. */
+  private tiltFilter = new TiltFilter();
   /** Counts the times points already kept were rewritten (see {@link revision}). */
   private rewrites = 0;
   /** Recording: x, y, pressure, t of every sample offered, as offered. */
@@ -284,11 +303,11 @@ export class StrokeBuilder {
    * because the curve into it depends on the next. Null when nothing waits.
    */
   get pending(): readonly number[] | null {
-    return this.waiting;
+    return this.waiting && this.waiting.slice(0, POINT_STRIDE);
   }
 
   /**
-   * Everything kept but not yet in {@link view}, in order, `[x, y, p]` each:
+   * Everything kept but not yet in {@link view}, in order, `[x, y, p, altitude]` each:
    * the sample `densify` waits on, then the samples `"centred"` smoothing
    * waits on. Draw straight lines through them meanwhile; empty when nothing
    * is provisional.
@@ -319,6 +338,25 @@ export class StrokeBuilder {
   /** The kept points, flat, without a copy: read them now, keep nothing. */
   get view(): readonly number[] {
     return this.flat;
+  }
+
+  /**
+   * The altitude of each point in {@link view}, degrees (NaN before the pen's
+   * first tilt reading), without a copy: read them now, keep nothing.
+   */
+  get tiltView(): readonly number[] {
+    return this.altitudes;
+  }
+
+  /**
+   * The altitude of every point of {@link points}, degrees, as a copy; null
+   * with `tilt` off or when the pen gave no tilt reading.
+   */
+  tilts(): number[] | null {
+    if (!this.options.tilt || Number.isNaN(this.tiltFilter.current)) return null;
+    const settled = this.copy();
+    settled.settle();
+    return settled.altitudes;
   }
 
   /**
@@ -353,7 +391,8 @@ export class StrokeBuilder {
     // Read the pressure first, even for a sample about to be dropped: the
     // pen's first real reading still fills in the points before it.
     const pressure = this.pressureFor(sample.pressure);
-    if (this.centred) return this.offerCentred(sample, pressure, final);
+    const altitude = this.altitudeFor(sample, final);
+    if (this.centred) return this.offerCentred(sample, pressure, altitude, final);
     const n = this.flat.length;
     if (n > 0 && !final) {
       const from = this.waiting ?? this.last;
@@ -362,27 +401,37 @@ export class StrokeBuilder {
       const min = this.options.minDistance;
       if (dx * dx + dy * dy < min * min) return false;
     }
-    this.take(sample.x, sample.y, pressure);
+    this.take(sample.x, sample.y, pressure, altitude);
     if (final) this.settleWaiting();
     return true;
   }
 
   /** Keep one point: straight into the points, or through `densify`'s curve. */
-  private take(x: number, y: number, pressure: number): void {
+  private take(x: number, y: number, pressure: number, altitude: number): void {
     if (!this.options.densify) {
       this.flat.push(x, y, pressure);
+      this.altitudes.push(altitude);
       return;
     }
-    const next = [x, y, pressure];
+    const next = [x, y, pressure, altitude];
     if (!this.last) {
       this.flat.push(x, y, pressure);
+      this.altitudes.push(altitude);
       this.last = next;
     } else if (!this.waiting) {
       this.waiting = next;
     } else {
       // The sample after it fixes the curve into the one waiting: fill that in.
       const minDistance = this.options.minDistance;
-      fillCurve(this.before ?? this.last, this.last, this.waiting, next, minDistance, this.flat);
+      fillCurve(
+        this.before ?? this.last,
+        this.last,
+        this.waiting,
+        next,
+        minDistance,
+        this.flat,
+        this.altitudes,
+      );
       this.before = this.last;
       this.last = this.waiting;
       this.waiting = next;
@@ -393,7 +442,16 @@ export class StrokeBuilder {
   private settleWaiting(): void {
     const tip = this.waiting;
     if (!tip || !this.last) return;
-    fillCurve(this.before ?? this.last, this.last, tip, tip, this.options.minDistance, this.flat);
+    const { minDistance } = this.options;
+    fillCurve(
+      this.before ?? this.last,
+      this.last,
+      tip,
+      tip,
+      minDistance,
+      this.flat,
+      this.altitudes,
+    );
     this.before = this.last;
     this.last = tip;
     this.waiting = null;
@@ -404,7 +462,12 @@ export class StrokeBuilder {
    * held), then pass on every held sample whose window is now complete. The
    * first sample passes at once, unsmoothed; the pen-up ends the stroke.
    */
-  private offerCentred(raw: InputSample, pressure: number, final: boolean): boolean {
+  private offerCentred(
+    raw: InputSample,
+    pressure: number,
+    altitude: number,
+    final: boolean,
+  ): boolean {
     const held = this.held;
     const prev = held[held.length - 1];
     if (prev && !final) {
@@ -415,7 +478,7 @@ export class StrokeBuilder {
     }
     const along = this.along;
     along.push(prev ? along[along.length - 1] + Math.hypot(raw.x - prev[0], raw.y - prev[1]) : 0);
-    held.push([raw.x, raw.y, pressure]);
+    held.push([raw.x, raw.y, pressure, altitude]);
     if (final) {
       this.settle();
       return true;
@@ -478,13 +541,14 @@ export class StrokeBuilder {
       y += weights[j] * s[1];
       sum += weights[j];
     }
-    this.take(x / sum, y / sum, this.held[i][2]);
+    this.take(x / sum, y / sum, this.held[i][2], this.held[i][3]);
   }
 
   /** A builder in the same state, for settling without touching this one. */
   private copy(): StrokeBuilder {
     const copy = new StrokeBuilder(this.options);
     for (const v of this.flat) copy.flat.push(v);
+    for (const v of this.altitudes) copy.altitudes.push(v);
     copy.before = this.before && [...this.before];
     copy.last = this.last && [...this.last];
     copy.waiting = this.waiting && [...this.waiting];
@@ -492,8 +556,34 @@ export class StrokeBuilder {
     copy.along = [...this.along];
     copy.passed = this.passed;
     copy.lastReading = this.lastReading;
+    copy.tiltFilter = this.tiltFilter.copy();
     copy.rewrites = this.rewrites;
     return copy;
+  }
+
+  /**
+   * The altitude to store for a sample: its reading through the
+   * {@link TiltFilter}, to the tenth a file keeps; the pen-up takes the one
+   * before it, as a lift is no reading. The pen's first reading also fills
+   * in every point before it. NaN with `tilt` off, or before any reading.
+   */
+  private altitudeFor(sample: InputSample, final: boolean): number {
+    if (!this.options.tilt) return Number.NaN;
+    const before = storedAltitude(this.tiltFilter.current);
+    if (final) return before;
+    const altitude = storedAltitude(this.tiltFilter.next(sample.altitude ?? Number.NaN, sample.t));
+    if (Number.isNaN(before) && !Number.isNaN(altitude) && this.hasSamples()) {
+      for (let i = 0; i < this.altitudes.length; i++) this.altitudes[i] = altitude;
+      for (const kept of [this.before, this.last, this.waiting]) if (kept) kept[3] = altitude;
+      for (const kept of this.held) kept[3] = altitude;
+      this.rewrites++;
+    }
+    return altitude;
+  }
+
+  /** Something has been kept, provisional samples included. */
+  private hasSamples(): boolean {
+    return this.flat.length > 0 || this.held.length > 0 || this.waiting !== null;
   }
 
   /**
@@ -524,6 +614,8 @@ export class StrokeBuilder {
  * Append the points of the centripetal Catmull-Rom curve from `b` to `c`
  * (`[x, y, p]` each), shaped by `a` before and `d` after, about `spacing`
  * apart and ending exactly on `c`; pressure runs straight from `b` to `c`.
+ * With `altitudes`, each point's altitude goes there, also straight from
+ * `b[3]` to `c[3]`.
  *
  * Where WebKit has no `getCoalescedEvents` (iPadOS before 18.2), a pen
  * arrives once a frame: at 60 Hz a quick letter is a few samples 5-15 px
@@ -540,6 +632,7 @@ export function fillCurve(
   d: readonly number[],
   spacing: number,
   out: number[],
+  altitudes?: number[],
 ): void {
   const span = Math.hypot(c[0] - b[0], c[1] - b[1]);
   const n = Math.min(MAX_FILL, Math.max(1, Math.ceil(span / Math.max(spacing, 1e-6))));
@@ -560,6 +653,8 @@ export function fillCurve(
       return ((t2 - t) / (t2 - t1)) * b1 + ((t - t1) / (t2 - t1)) * b2;
     };
     out.push(at(0), at(1), b[2] + ((c[2] - b[2]) * i) / n);
+    altitudes?.push(storedAltitude(b[3] + ((c[3] - b[3]) * i) / n));
   }
   out.push(c[0], c[1], c[2]);
+  altitudes?.push(c[3]);
 }

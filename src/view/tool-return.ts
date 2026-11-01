@@ -32,6 +32,8 @@ const SECONDARY_TOOLS: ReadonlySet<ActiveTool> = new Set([
   "text",
   "shape",
   "laser",
+  "tape",
+  "fill",
 ]);
 
 /**
@@ -70,7 +72,7 @@ export function toolAfterUse(
 ): ActiveTool {
   if (!enabled) return tool;
   const done =
-    (use === "gesture" && (tool === "eraser" || tool === "shape")) ||
+    (use === "gesture" && (tool === "eraser" || tool === "shape" || tool === "fill")) ||
     (use === "text" && tool === "text") ||
     (use === "selection" && tool === "select");
   return done ? drawingToolOf(back, back) : tool;
@@ -92,4 +94,54 @@ export function optionsAfterSwitch(
 ): boolean {
   if (!remembered) return false;
   return shown || secondTapReturns;
+}
+
+/**
+ * "Hide pen options while writing": never, until the pen is tapped again
+ * (as a second tap tucks them), or until the pen lifts and rests
+ * ({@link PEN_OPTIONS_RETURN_MS}), when they come back by themselves.
+ */
+export type PenOptionsOnWrite = "off" | "until-tap" | "until-lift";
+
+export const PEN_OPTIONS_ON_WRITE: readonly PenOptionsOnWrite[] = [
+  "off",
+  "until-tap",
+  "until-lift",
+];
+
+/** The choices as the settings tab and the pen menu name them. */
+export const PEN_OPTIONS_ON_WRITE_NAMES: Record<PenOptionsOnWrite, string> = {
+  off: "Never",
+  "until-tap": "Until you tap the pen",
+  "until-lift": "Until the pen lifts",
+};
+
+/**
+ * How long the pen rests after a lift before "until the pen lifts" brings
+ * the options back: longer than the gap between strokes, or between words,
+ * so the pill does not slide in and out while writing on.
+ */
+export const PEN_OPTIONS_RETURN_MS = 1000;
+
+/** The stored choice; `true` is "until tapped", the switch it was before. */
+export function penOptionsOnWriteOf(value: unknown): PenOptionsOnWrite {
+  if (value === true) return "until-tap";
+  return (PEN_OPTIONS_ON_WRITE as readonly unknown[]).includes(value)
+    ? (value as PenOptionsOnWrite)
+    : "off";
+}
+
+/**
+ * Whether a gesture's start on the page tucks the options pill away: only
+ * with "Hide pen options while writing" on (`mode`, as stored), only for
+ * the pen or highlighter, and never for a tool a stylus button or a key
+ * lent for this press (`lent`): that is not writing with the pen.
+ */
+export function tucksOnWrite(mode: unknown, tool: ActiveTool, lent: boolean): boolean {
+  return penOptionsOnWriteOf(mode) !== "off" && !lent && (tool === "pen" || tool === "highlighter");
+}
+
+/** Whether the options a stroke tucked away come back once the pen has rested. */
+export function returnsAfterLift(mode: unknown): boolean {
+  return penOptionsOnWriteOf(mode) === "until-lift";
 }

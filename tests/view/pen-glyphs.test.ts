@@ -8,6 +8,7 @@ import {
   PREVIEW_HIGHLIGHTER_OPACITY,
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  fitMarks,
   glyphThickness,
   inkNeedsRim,
   penIconParts,
@@ -78,6 +79,27 @@ describe("width glyphs", () => {
     expect(glyphThickness(0.01)).toBe(0.25);
     expect(glyphThickness(40)).toBe(SWOOSH_HEIGHT);
     expect(glyphThickness(Number.NaN)).toBe(1.5);
+  });
+
+  it("are true size while a control's largest fits, else shrink together", () => {
+    // The pill's eraser at fit zoom: every ring fits its 28 px box.
+    expect(fitMarks([9.6, 23, 27.5], 28)).toEqual({ sizes: [9.6, 23, 27.5], scaled: false });
+    // At 5x (measured 2026-10-29: 48 / 115 / 230 px, all drawn as 28 before).
+    const zoomed = fitMarks([48, 115, 230], 28);
+    expect(zoomed.scaled).toBe(true);
+    expect(Math.max(...zoomed.sizes)).toBeCloseTo(28);
+    expect(zoomed.sizes[1] / zoomed.sizes[0]).toBeCloseTo(115 / 48);
+    expect(zoomed.sizes[2] / zoomed.sizes[1]).toBeCloseTo(230 / 115);
+    // A bad size is passed through, not let to scale the rest.
+    expect(fitMarks([Number.NaN, 12], 24)).toEqual({ sizes: [Number.NaN, 12], scaled: false });
+    expect(fitMarks([], 24)).toEqual({ sizes: [], scaled: false });
+  });
+
+  it("draw a shrunk mark as solid ink, at its fitted size", () => {
+    const [, , largest] = fitMarks([30, 60, 120], 24).sizes;
+    expect(swoosh("ball", largest)).toMatchObject({ strokeWidth: 24, cap: "round" });
+    expect(swoosh("highlighter", largest)).toMatchObject({ strokeWidth: 24, cap: "butt" });
+    expect(swoosh("fountain", largest).strokeWidth).toBeUndefined();
   });
 
   it("draw the ballpoint even and the highlighter as a flat, see-through band", () => {

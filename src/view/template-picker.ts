@@ -42,6 +42,7 @@ import {
   designGeometry,
 } from "../model/paper-design";
 import { openPaperDesigner } from "./paper-designer";
+import { menuAnchor, menuPlace } from "./bar-dock-model";
 import {
   PAGE_SIZES,
   PAPER_COLORS,
@@ -77,10 +78,21 @@ export function paintTemplatePreview(
 
 // --- Anchored popovers ------------------------------------------------------
 
-/** Below `anchor`, right-aligned to it, kept inside the window. */
+/**
+ * Below `anchor`, right-aligned to it, kept inside the window; toward the
+ * page from a tool bar at another edge (`menuAnchor`).
+ */
 export function placePopover(el: HTMLElement, anchor: HTMLElement, maxWidth: number): void {
   const r = anchor.getBoundingClientRect();
   const width = Math.min(maxWidth, window.innerWidth - 16);
+  const { side, box } = menuAnchor(anchor);
+  if (side !== "down") {
+    const size = { width, height: el.offsetHeight };
+    const room = { width: window.innerWidth, height: window.innerHeight };
+    const at = menuPlace(side, box, size, room, "end", 6, 8);
+    el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
+    return;
+  }
   let left = r.right - width;
   if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
   left = Math.max(8, left);

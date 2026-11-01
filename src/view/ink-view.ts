@@ -4,7 +4,7 @@
  * turns its text into a notebook and back, and puts the pieces on screen:
  *
  *   .goodobsidian-view                the tab's content
- *     .goodobsidian-toolbar           tools and actions (toolbar.ts)
+ *     .goodobsidian-toolbar           tools and actions (toolbar.ts), at any edge (bar-dock-model.ts)
  *     .goodobsidian-body              a row:
  *       .goodobsidian-pagesidebar       page thumbnails, shown on request (page-sidebar.ts)
  *       .goodobsidian-surface           the pages themselves (ink-surface.ts)
@@ -22,6 +22,8 @@ import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
+import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
+import { isTape, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -36,6 +38,7 @@ import {
 } from "../constants";
 import {
   type AttachmentKind,
+  type Bounds,
   type InkDocument,
   type PageComment,
   type Page,
@@ -73,7 +76,7 @@ import {
 } from "../recognition/ai-chat";
 import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
 import { generatedImageName } from "../recognition/ai-image";
-import { nextElementId, textBoxFrame } from "../recognition/ai-placement";
+import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
   type AskToolOutcome,
   type GeneratedPicture,
@@ -100,6 +103,7 @@ import {
 } from "../model/paper-library";
 import { PdfImportModal, VaultPdfSuggestModal } from "./pdf-import-modal";
 import { WriteHold } from "./write-hold";
+import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
@@ -108,7 +112,8 @@ import {
   prepareImageBytes,
   saveImageAttachment,
 } from "./image-import";
-import { copyPictureToSystemClipboard } from "./picture-clipboard";
+import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
+import { ScreenshotModal } from "./screenshot-modal";
 import {
   ImageMenuPopover,
   type ImageMenuContext,
@@ -117,9 +122,21 @@ import {
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
 import { newImageElement, nextImageId, placeImageBox } from "../model/images";
-import { STICKY_SIDE, newStickyNote, stickyBoxAt } from "../model/sticky-notes";
+import {
+  STICKY_SIDE,
+  DEFAULT_STICKY_COLOR,
+  newStickyNote,
+  stickyBoxAt,
+} from "../model/sticky-notes";
 import { CustomizeToolbarModal } from "./customize-toolbar-modal";
-import type { ToolbarLayout } from "./toolbar-layout";
+import {
+  type BarItemId,
+  type ToolbarLayout,
+  barItemOfTool,
+  effectsOfOffItems,
+  isItemOff,
+  normalizeLayout,
+} from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
@@ -223,9 +240,11 @@ import {
   wordCore,
 } from "../recognition/hwr/lexicon";
 import {
+  editedPhrase,
   editedWords,
   matchCase,
   selectionWords,
+  wordToCorrect,
   wordsByLine,
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
@@ -240,10 +259,11 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { isBoard } from "../model/board";
+import { drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
+import { SetJoinedPages, joinedPagesOf } from "../model/joined-pages";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
 import { SetReadOnly, isReadOnly } from "../model/read-only";
 import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
@@ -270,6 +290,8 @@ import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-pac
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
+import { SHORTCUT_GROUPS } from "../model/shortcuts";
+import { boundShortcutGroups } from "../model/shortcut-bindings";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
@@ -277,7 +299,7 @@ import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { CoverPopover } from "./cover-picker";
-import { type PaperTheme, paperTheme } from "../canvas/backdrop";
+import { LIGHT_PAPER, type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
 import { rulerSettingsOf } from "../canvas/ruler-geometry";
 import { eraserFilterOf } from "../ink/stroke-eraser";
@@ -291,7 +313,9 @@ import {
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import type { PillDock } from "./pill-dock-model";
+import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
+import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
@@ -308,7 +332,17 @@ import { LoadGuard } from "./load-guard";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
-import { attachmentDefaults, shownPaperTheme } from "../settings-data";
+import {
+  attachmentDefaults,
+  greyWhileErasingOf,
+  penPreferencesOf,
+  snapCurveOf,
+  highlighterTipOf,
+  snapModeOf,
+  deskChoiceOf,
+  deskColorOf,
+  shownPaperTheme,
+} from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
@@ -354,27 +388,37 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     size: last?.size ?? s.defaultSize,
     penType: last?.type,
     pressureEnabled: s.pressureWidth && spec.pressure,
-    shapeSnapEnabled: s.drawAndHold,
+    snapMode: snapModeOf(s),
+    snapCurvatureThreshold: snapCurveOf(s.snapCurvatureThreshold),
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
     eraserFilter: eraserFilterOf(s.eraserFilter),
+    eraserGrey: greyWhileErasingOf(s.greyWhileErasing),
     lassoMode: lassoModeOf(s.lassoMode),
     lassoFilter: lassoFilterOf(s.lassoFilter),
     textStyle: sanitizeTextStyle(s.textStyle),
     textPinned: s.textToolPinned === true,
     textDragSize: s.textDragSize === true,
-    penAutoShape: s.penAutoShape === true,
     penGestures: penGesturesOf(s.penGestures),
     shapeColor: parseHexColor(s.shapeColor ?? "") ?? DEFAULT_SHAPE_COLOR,
     shapeStyle: readShapeToolStyle(s.shapeStyle),
+    fillGap: readFillGap(s.fillGap),
+    fillColor: parseHexColor(s.fillColor ?? "") ?? DEFAULT_FILL_COLOR,
+    tapeColor: tapeColorOf(s.tapeColor),
+    tapeHeight: tapeHeightOf(s.tapeHeight),
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
     penColors: inks[spec.id]?.colors ?? (Array.isArray(s.penColors) ? [...s.penColors] : undefined),
     penInks: inks,
+    penTypeOrder: penTypeOrderOf(
+      s.penTypeOrder,
+      PEN_TYPES.map((type) => type.id),
+    ),
     penStabilization: penStabilizationOf(s.penStabilization),
     rulerKind: rulerSettingsOf(s.ruler).kind,
     rulerSnap: rulerSettingsOf(s.ruler).snap,
+    zoomBox: s.magnifierZoomBox === true,
   };
 }
 
@@ -419,6 +463,17 @@ interface CheckedPage {
   words: ReadWord[];
   /** By stroke key: the list words a flagged word's ink fits best. */
   suggestions?: Map<string, LexiconSuggestion | null>;
+}
+
+/**
+ * The ink a lassoed action acts on: what was selected, and the rest of any
+ * word the lasso only touched (`selectionWords` reads such a word whole, so
+ * the ink that word is made of goes with it).
+ */
+function touchedInk(strokeIds: readonly string[], read: SelectionText | null): string[] {
+  const ids = new Set(strokeIds);
+  for (const word of read?.words ?? []) for (const id of word.strokeIds) ids.add(id);
+  return [...ids];
 }
 
 export class InkView extends TextFileView {
@@ -494,6 +549,8 @@ export class InkView extends TextFileView {
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
   private quietTimer = 0;
+  /** "Until the pen lifts": brings back the pen's options once the pen has rested. */
+  private optionsReturnTimer = 0;
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
@@ -838,6 +895,21 @@ export class InkView extends TextFileView {
     await this.saver.save();
   }
 
+  /**
+   * "Hide pen options while writing", until the pen lifts: once the pen
+   * has rested {@link PEN_OPTIONS_RETURN_MS}, the options a stroke tucked
+   * away come back; the next pen-down keeps them away.
+   */
+  private returnPenOptions(down: boolean): void {
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
+    if (down || !returnsAfterLift(this.settings.tuckPenOptionsOnWrite)) return;
+    this.optionsReturnTimer = window.setTimeout(() => {
+      this.optionsReturnTimer = 0;
+      this.toolbar?.showTuckedOptions();
+    }, PEN_OPTIONS_RETURN_MS);
+  }
+
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
   private penActivity(down: boolean): void {
     this.penIsDown = down;
@@ -867,6 +939,16 @@ export class InkView extends TextFileView {
     if (this.writeHold.savePending) void this.saveNow();
   }
 
+  /**
+   * A pen menu changed a setting held for every pen: the surface reads
+   * "Make shapes" and its curve bar from the tool state, the rest it asks
+   * for live.
+   */
+  syncPenPreferences(): void {
+    this.toolState.snapMode = snapModeOf(this.settings);
+    this.toolState.snapCurvatureThreshold = snapCurveOf(this.settings.snapCurvatureThreshold);
+  }
+
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
   showFullScreen(on: boolean): void {
     this.toolbar?.setFullScreen(on);
@@ -877,6 +959,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setPillDock(dock);
   }
 
+  /** The tool bar's place changed in settings (the plugin's, per device): this notebook's follows. */
+  showBarDock(dock: BarDock): void {
+    this.toolbar?.setBarDock(dock);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -884,6 +971,7 @@ export class InkView extends TextFileView {
    */
   setOnlyStylusMode(on: boolean): void {
     this.toolbar?.setOnlyStylusMode(on);
+    this.surface?.onlyStylusChanged();
   }
 
   override async onClose(): Promise<void> {
@@ -899,6 +987,8 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    window.clearTimeout(this.optionsReturnTimer);
+    this.optionsReturnTimer = 0;
     this.saver.stop();
     this.calcNotes.dispose();
     this.surface?.destroy();
@@ -987,6 +1077,45 @@ export class InkView extends TextFileView {
   /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
   setToolbarItems(layout: ToolbarLayout): void {
     this.toolbar?.setItems(layout.bar, layout.off);
+    this.endOffItemEffects(normalizeLayout(layout.bar, layout.off));
+  }
+
+  /** The tool bar's layout as the settings hold it. */
+  private toolbarLayout(): ToolbarLayout {
+    return normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+  }
+
+  /** Whether `item` is shown nowhere: its effect may not be turned on (`isItemOff`). */
+  private itemOff(item: BarItemId): boolean {
+    return isItemOff(this.toolbarLayout(), item);
+  }
+
+  /**
+   * An item shown nowhere leaves nothing on (Joost, 2026-10-30): its tool in
+   * hand gives way to the pen, the ruler goes away, a recording stops and is
+   * saved, a sticky note waiting to be placed is dropped (`effectsOfOffItems`).
+   * Stylus-only mode is the plugin's, ended there for every notebook.
+   */
+  private endOffItemEffects(layout = this.toolbarLayout()): void {
+    const surface = this.surface;
+    if (!surface) return;
+    const end = effectsOfOffItems(layout, {
+      tool: this.toolState.tool,
+      onlyStylus: false,
+      rulerOut: surface.rulerOut,
+      recording: this.audio?.isRecording === true,
+      stickyArmed: surface.stickyArmed,
+    });
+    if (end.pen) {
+      surface.setTool("pen");
+      this.toolbar?.setState(this.toolState);
+    }
+    if (end.ruler) {
+      surface.setRulerOut(false);
+      this.toolbar?.setRulerOut(false);
+    }
+    if (end.recording) this.audio?.toggleRecording();
+    if (end.sticky) this.armStickyNote(null);
   }
 
   /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
@@ -1047,6 +1176,7 @@ export class InkView extends TextFileView {
     const theme = this.shownPaper();
     if (surface.paperTheme === theme) return;
     surface.setPaperTheme(theme);
+    this.toolbar?.setNight(theme.night === true);
     this.updateSidebarRendering();
   }
 
@@ -2042,14 +2172,20 @@ export class InkView extends TextFileView {
     }).open();
   }
 
-  /** An answer as a text box near the top of what is in view on the current page. */
-  private insertAnswer(text: string): boolean {
+  /**
+   * An answer as a text box near the top of what is in view on the current
+   * page; `below` (a pasted transcript) puts it under what is drawn there.
+   */
+  private insertAnswer(text: string, below = false): boolean {
     const surface = this.surface;
     if (!surface || !text.trim() || this.isProtected()) return false;
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return false;
-    const frame = textBoxFrame(page.geometry, surface.visiblePageRect(index));
+    const view = surface.visiblePageRect(index);
+    const frame = below
+      ? textBoxBelow(page.geometry, view, drawnBounds(page)?.maxY ?? null)
+      : textBoxFrame(page.geometry, view);
     const box: TextBoxElement = {
       id: nextElementId(surface.document, "t"),
       x: frame.x,
@@ -2340,18 +2476,35 @@ export class InkView extends TextFileView {
     const key = strokeKey(strokeIds);
     const word = this.checkedWords.get(page.id)?.words.find((w) => strokeKey(w.strokeIds) === key);
     if (!word) return;
-    const ids = new Set(strokeIds);
-    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     const suggestion = this.checkedWords.get(page.id)?.suggestions?.get(key) ?? null;
-    const asked = { note: file.path, pageId: page.id, word, strokes, suggestion };
-    // Its underline turns red while the card is open.
-    surface.setActiveWordFlag(page.id, strokeIds);
+    this.openWordCard(page, word, suggestion, at, false);
+  }
+
+  /**
+   * The word card (word-check.ts) for `word` on `page`, at `at` (client
+   * px); `asked` when opened by hand ("Correct"). Its underline turns red
+   * while it is open, and an answer is saved and acted on the same way
+   * however the card was opened.
+   */
+  private openWordCard(
+    page: Page,
+    word: ReadWord,
+    suggestion: LexiconSuggestion | null,
+    at: { x: number; y: number },
+    asked: boolean,
+  ): void {
+    const file = this.file;
+    const surface = this.surface;
+    if (!file || !surface) return;
+    const ids = new Set(word.strokeIds);
+    const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
+    surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
-      asked,
+      { note: file.path, pageId: page.id, word, strokes, suggestion },
       at,
       () => {
         // Answered: underline the page's words again, without this one.
@@ -2365,7 +2518,159 @@ export class InkView extends TextFileView {
         );
       },
       closed,
+      asked,
     );
+  }
+
+  /**
+   * "Correct" on lassoed or held ink: the card an underlined word opens,
+   * for the word that ink is in, underlined or not (`wordToCorrect` picks
+   * one when it is in several). The page is read on this device first when
+   * its reading is not of its content now; meanwhile the picked ink is
+   * underlined, so the wait shows.
+   */
+  private async correctWord(index: number, strokeIds: string[]): Promise<void> {
+    const file = this.file;
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!file || !surface || !page) return;
+    this.wordPopover?.close();
+    surface.setActiveWordFlag(page.id, strokeIds);
+    const gone = () => this.surface !== surface || !surface.document.pages.includes(page);
+    const hash = pageContentHash(page);
+    let found: { entry: PageWords; word: ReadWord; suggestion: LexiconSuggestion | null } | null =
+      null;
+    try {
+      found = await this.readWordAt(page, hash, strokeIds);
+    } catch (error) {
+      if (!gone()) surface.setActiveWordFlag(null);
+      const missing = error instanceof Error && error.name === "ModelNotDownloadedError";
+      new Notice(
+        missing
+          ? `FineNotes: ${errorMessage(error)}`
+          : "FineNotes: could not read this handwriting.",
+        8000,
+      );
+      return;
+    }
+    // Written on, scrolled away or closed while it was read: the card would be about other ink.
+    if (gone() || pageContentHash(page) !== hash) {
+      if (!gone()) surface.setActiveWordFlag(null);
+      return;
+    }
+    // Several words lassoed: the whole sentence, in one field.
+    const words = found ? selectionWords(found.entry.words, found.entry.read, strokeIds) : null;
+    if (found && words && words.length > 1) {
+      surface.setActiveWordFlag(null);
+      this.correctWords(page, found.entry, words);
+      return;
+    }
+    const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
+    if (!found || !at) {
+      surface.setActiveWordFlag(null);
+      new Notice("FineNotes: no handwritten word read there.");
+      return;
+    }
+    this.openWordCard(page, found.word, found.suggestion, at, true);
+  }
+
+  /**
+   * "Correct" on a lassoed sentence: what the page's reading says of
+   * `words`, a line for each line, to correct in one field; each word
+   * changed is recorded as a misread of its ink (`recordEdits`).
+   */
+  private correctWords(page: Page, entry: PageWords, words: ReadWord[]): void {
+    const modal = new InkTextModal(
+      this.app,
+      (text) => {
+        if (this.file && this.surface?.document.pages.includes(page)) {
+          this.recordEdits(page, words, text, true);
+        }
+      },
+      true,
+    );
+    modal.open();
+    const text = wordsByLine(words);
+    modal.suggest(text);
+    void this.spellingFixes(page, entry, words).then((fixes) => {
+      if (fixes.length > 0) modal.suggest(text, fixes);
+    });
+  }
+
+  /**
+   * The read word for "Correct" and its list words: from the page's kept
+   * reading when it is of `hash`, else from reading it now (kept, so the
+   * worker can suggest). Null when the ink is in no read word.
+   */
+  private async readWordAt(
+    page: Page,
+    hash: string,
+    strokeIds: readonly string[],
+  ): Promise<{ entry: PageWords; word: ReadWord; suggestion: LexiconSuggestion | null } | null> {
+    const file = this.file;
+    if (!file) return null;
+    let entry = this.pageReadings.get(page.id);
+    let fresh = false;
+    for (;;) {
+      if (!entry || entry.hash !== hash) {
+        entry = this.keepReading(
+          page,
+          hash,
+          await this.plugin.handwriting.readPage(page.strokes, true),
+        );
+        fresh = true;
+      }
+      await this.plugin.wordCheck.load();
+      // Of several words, the one the word check underlines comes first.
+      const flagged = this.wordsChecked
+        ? await this.plugin.wordCheck.flags(file.path, page.id, entry.words)
+        : [];
+      const word = wordToCorrect(
+        entry.words,
+        strokeIds,
+        new Set(flagged.map((w) => strokeKey(w.strokeIds))),
+      );
+      if (!word) return null;
+      const suggestion = await this.listWordsFor(page, entry, word);
+      // The worker no longer keeps this reading: read the page again, once.
+      if (suggestion === undefined && !fresh) {
+        entry = undefined;
+        continue;
+      }
+      return { entry, word, suggestion: suggestion ?? null };
+    }
+  }
+
+  /**
+   * The list words `word`'s ink fits best (lexicon.ts): the underline's
+   * own when its page was checked at this reading, else asked of the
+   * worker. Null without a word list or a place in the reading; undefined
+   * when the worker no longer keeps the reading.
+   */
+  private async listWordsFor(
+    page: Page,
+    entry: PageWords,
+    word: ReadWord,
+  ): Promise<LexiconSuggestion | null | undefined> {
+    const key = strokeKey(word.strokeIds);
+    const checked = this.checkedWords.get(page.id);
+    const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
+    if (cached !== undefined) return cached;
+    const lexicon = this.plugin.wordCheck.lexicon();
+    if (!lexicon || !word.at) return null;
+    if (entry.id === undefined) return undefined;
+    const { line, start, end } = word.at;
+    try {
+      const results = await this.plugin.handwriting.suggest(
+        entry.id,
+        [{ line, text: entry.lines[line], start, end }],
+        lexicon,
+      );
+      return results === null ? undefined : (results[0] ?? null);
+    } catch {
+      // No list words: the card offers the other answers.
+      return null;
+    }
   }
 
   private async offerHandwrittenLinks(page: Page, reading: PageReading): Promise<void> {
@@ -2467,6 +2772,10 @@ export class InkView extends TextFileView {
           this.surface?.refreshPenCursor();
           this.rememberPen();
         },
+        onLaserColorChange: (color) => {
+          this.settings.laserDefaultColor = color;
+          void this.plugin.saveSettings();
+        },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => this.surface?.undo(),
@@ -2499,6 +2808,7 @@ export class InkView extends TextFileView {
         paintSizePaper: (canvas, width, height) =>
           this.surface?.paintPaperSample(canvas, width, height) ?? false,
         onEraserFilterChange: (filter) => this.plugin.saveEraserFilter(filter),
+        onEraserGreyChange: (on) => this.plugin.saveEraserGrey(on),
         onLassoChange: (mode, filter) => {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
@@ -2511,13 +2821,17 @@ export class InkView extends TextFileView {
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
-        onPenAutoShapeChange: (enabled) => this.plugin.savePenAutoShape(enabled),
         onPenGesturesChange: (gestures) => this.plugin.savePenGestures(gestures),
         onShapeColorChange: (color) => {
           this.surface?.refreshPenCursor();
           this.plugin.saveShapeColor(color);
         },
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
+        onFillGapChange: (gap) => this.plugin.saveFillGap(gap),
+        onFillColorChange: (color) => this.plugin.saveFillColor(color),
+        onTapeChange: (color, height) => this.plugin.saveTape(color, height),
+        tapesShown: () => this.surface?.tapesShown() ?? null,
+        onShowTapes: (shown) => this.surface?.showTapes(shown),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onPickFromPage: (done) => {
@@ -2525,8 +2839,11 @@ export class InkView extends TextFileView {
           else done(null);
         },
         onPenColors: (colors) => this.plugin.savePenColors(colors),
+        onPenTypeOrder: (order) => this.plugin.savePenTypeOrder(order),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
         onPenStabilization: (all) => this.plugin.savePenStabilization(all),
+        penPreferences: () => penPreferencesOf(this.settings),
+        onPenPreferences: (patch) => this.plugin.savePenPreferences(patch),
         onTextToolChange: (style, pinned, dragSize) =>
           this.plugin.saveTextTool(style, pinned, dragSize),
         onInsertImage: (anchor) => this.openImageMenu(anchor),
@@ -2552,14 +2869,27 @@ export class InkView extends TextFileView {
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
         onZoomFit: () => this.surface?.resetView(),
+        onZoomBox: (on) => {
+          this.surface?.setZoomBox(on);
+          if (this.settings.magnifierZoomBox !== on) {
+            this.settings.magnifierZoomBox = on;
+            void this.plugin.saveSettings();
+          }
+        },
+        onZoomBoxOpen: (open) => {
+          if (open) this.surface?.openPlacedZoomBox();
+          else this.surface?.closeZoomBox(true);
+        },
       },
       {
         defaultSize: this.settings.defaultSize,
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
+        barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         onlyStylusMode: this.settings.onlyStylusMode === true,
+        laserColor: () => this.settings.laserDefaultColor,
       },
     );
     this.showFullScreen(this.plugin.fullScreen);
@@ -2662,10 +2992,13 @@ export class InkView extends TextFileView {
         debug: this.showHud,
         palette,
         paper: this.shownPaper(),
+        laserColor: () => this.settings.laserDefaultColor,
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
+        onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
+        onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
@@ -2680,32 +3013,66 @@ export class InkView extends TextFileView {
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => this.matchPdfResolution(),
-        onPen: (down) => this.penActivity(down),
+        onZoomBoxChange: (open) => this.toolbar?.setZoomBoxOpen(open),
+        onPen: (down) => {
+          this.penActivity(down);
+          this.returnPenOptions(down);
+        },
+        onGestureStart: (tool, lent) => {
+          if (tucksOnWrite(this.settings.tuckPenOptionsOnWrite, tool, lent)) {
+            this.toolbar?.tuckOptions();
+          }
+        },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onPenShape: () => {
+          if (this.surface) this.plugin.offerShapeHint(this.surface);
+        },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        highlighterTip: () => highlighterTipOf(this.settings.highlighterTip),
+        pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
+        lassoAnyPart: () => this.settings.lassoTouches !== false,
         onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
+        zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
+        zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
+        onZoomBoxAutoAdvance: (on) => {
+          this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
         onShortcuts: () => this.toggleShortcuts(),
+        shortcuts: () => this.plugin.shortcuts.table,
+        onShortcutAction: (id) => this.runShortcutAction(id),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
           if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
         },
         barrelAction: () => this.settings.barrelButton,
+        // The Apple Pencil has no side button, and a Pencil tap on the tool
+        // bar could pass for its click (`stylus-click.ts`).
+        stylusClick: () => (Platform.isIosApp ? "none" : this.settings.stylusButtonClick),
+        onStylusClick: () => {
+          if (!this.isProtected()) this.toolbar?.togglePenMenu();
+        },
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
         },
         onSizeScale: () => this.toolbar?.refreshSizeMarks(),
+        onTapesToggled: () => this.toolbar?.refreshTape(),
         onPageChange: (index) => {
+          this.toolbar?.refreshTape();
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
           this.scheduleWordCheck();
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
+        onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
+        canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
@@ -2733,9 +3100,14 @@ export class InkView extends TextFileView {
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),
         onPasteImage: (file, at) => void this.pastePictureFile(file, at),
+        toolOff: (tool) => {
+          const item = barItemOfTool(tool);
+          return item !== null && this.itemOff(item);
+        },
       },
     );
     this.surface.setBackdropPainter(this.backdrops);
+    this.toolbar?.setNight(this.surface.paperTheme.night === true);
     this.surface.toastChrome = () => this.toolbar?.chromeSpans() ?? [];
     this.surface.setNotebookTitle(this.notebookTitle());
     this.setPenCursor(this.settings.penCursor);
@@ -2754,16 +3126,22 @@ export class InkView extends TextFileView {
       surface: () => this.surface,
       toolbar: () => this.toolbar,
       isLocked: () => this.guard.locked,
+      insertText: (text) => this.insertAnswer(text, true),
     });
     this.audio = audio;
     // The recordings live in the page sidebar's Audio tab, as in GoodNotes.
     audio.attachPanel(this.sidebar.audioEl);
     this.surface.setClock(() => audio.now());
+    // A tool remembered from before its button was turned off is not taken up.
+    this.endOffItemEffects();
     this.registerDomEvent(document, "visibilitychange", () => {
       const hidden = document.visibilityState === "hidden";
       // A page read while the app is away is not blamed if iPadOS ends it.
       this.plugin.readingGuard.setHidden(hidden);
       if (!hidden) return;
+      // A key held as the app goes away never sends its key-up.
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
       this.audio?.onHidden();
       // iPadOS may end the app from the background: keep the page now, and
       // a save the pen put off or one still in the background, made here
@@ -2859,13 +3237,23 @@ export class InkView extends TextFileView {
       (event) =>
         this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
     );
+    // The side button's click with the pen over the tool bar or a popover, not
+    // the page, and a pen pressed there. Heard on the way down, before the
+    // tool bar's own handlers.
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const)
+      this.registerDomEvent(this.contentEl, type, (e) => this.surface?.penInView(e), {
+        capture: true,
+      });
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
     // is the active view. The surface leaves text fields' pastes alone.
     // Space lets go of the hand wherever the key-up lands, and when the
     // window loses focus, which keeps the key-up from arriving at all.
     this.registerDomEvent(document, "keyup", (e) => this.surface?.handleKeyUp(e));
-    this.registerDomEvent(window, "blur", () => this.surface?.setHand(false));
+    this.registerDomEvent(window, "blur", () => {
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
+    });
     this.registerDomEvent(document, "paste", (e) => {
       if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
       this.surface?.handlePaste(e);
@@ -2947,6 +3335,43 @@ export class InkView extends TextFileView {
     }
   }
 
+  /**
+   * A lasso drawn round nothing asked for a screenshot (ink-surface.ts,
+   * showEmptyLasso): the patch of page `index` inside `bounds`, drawn as an
+   * export draws it (paper, PDF, ink), sharp at up to three times its size.
+   */
+  private async screenshotRegion(index: number, bounds: Bounds): Promise<void> {
+    const page = this.doc.pages[index];
+    if (!page) return;
+    const { width, height } = page.geometry;
+    const x0 = Math.max(0, bounds.minX);
+    const y0 = Math.max(0, bounds.minY);
+    const w = Math.min(width, bounds.maxX) - x0;
+    const h = Math.min(height, bounds.maxY) - y0;
+    if (!(w >= 1) || !(h >= 1)) return;
+    // The whole page is painted, so its side caps the scale as well as the patch's.
+    const dpr = Math.min(3, 2048 / Math.max(w, h), 4096 / Math.max(width, height));
+    const canvas = createEl("canvas");
+    const out = createEl("canvas");
+    try {
+      await paintPagePreview(canvas, page, this.previewSources(), width, dpr);
+      out.width = Math.max(1, Math.round(w * dpr));
+      out.height = Math.max(1, Math.round(h * dpr));
+      const kx = canvas.width / width;
+      const ky = canvas.height / height;
+      out
+        .getContext("2d")
+        ?.drawImage(canvas, x0 * kx, y0 * ky, w * kx, h * ky, 0, 0, out.width, out.height);
+      const png = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
+      if (png) this.showScreenshot(png, Math.round(w), Math.round(h));
+    } catch {
+      new Notice("Couldn't take the screenshot");
+    } finally {
+      canvas.width = canvas.height = 0;
+      out.width = out.height = 0;
+    }
+  }
+
   /** The template's first page as a PNG for galleries, drawn as an export draws it. */
   private async templatePreview(page: Page | undefined): Promise<Uint8Array | undefined> {
     if (!page) return undefined;
@@ -2980,6 +3405,8 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
+      setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
       update: this.plugin.updates.available,
       openUpdate: () => this.plugin.openUpdatePage(),
@@ -3342,7 +3769,15 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
-    const sources = this.previewSources();
+    const preview = this.previewSources();
+    // Plain paper or with the template, with the tapes or without, as the
+    // dialog's switches were last left.
+    const exported = (): PdfExportSources => ({
+      ...preview,
+      plainPaper: this.settings.exportPlainPaper === true,
+      withoutTapes: this.settings.exportWithoutTapes === true,
+    });
+    const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
@@ -3352,15 +3787,31 @@ export class InkView extends TextFileView {
       chosen,
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
-        if (page)
-          await paintPagePreview(canvas, page, sources, cssWidth, window.devicePixelRatio || 1);
+        if (page) {
+          const dpr = window.devicePixelRatio || 1;
+          await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
+        }
       },
+      plainPaper: this.settings.exportPlainPaper === true,
+      setPlainPaper: (plain) => {
+        this.settings.exportPlainPaper = plain;
+        void this.plugin.saveSettings();
+      },
+      withoutTapes: this.settings.exportWithoutTapes === true,
+      ...(taped
+        ? {
+            setWithoutTapes: (without: boolean) => {
+              this.settings.exportWithoutTapes = without;
+              void this.plugin.saveSettings();
+            },
+          }
+        : {}),
       fileNameFor: (pages) =>
         uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
       export: async (pages, onProgress, cancelled) => {
         const bytes = await exportPagesToPdf(
           pages.map((i) => doc.pages[i]),
-          sources,
+          exported(),
           { title: stripInkSuffix(note.basename), onProgress, cancelled },
         );
         // Named at save time, not when the dialog opened: another export may
@@ -3581,7 +4032,7 @@ export class InkView extends TextFileView {
         // By identity: the page may move or go while the list is open.
         if (this.isProtected() || this.surface !== surface) return;
         if (!surface.document.pages.includes(page)) return;
-        const commands = linkStrokes(surface.document, page, strokeIds, target);
+        const commands = linkStrokes(surface.document, page, touchedInk(strokeIds, read), target);
         if (commands.length === 0) return;
         const label = target === null ? "Remove link" : "Link";
         surface.applyCommand(new CompositeCommand(label, commands));
@@ -3614,7 +4065,7 @@ export class InkView extends TextFileView {
       if (this.isProtected() || this.surface !== surface) return;
       if (!surface.document.pages.includes(page)) return;
       if (read) this.recordEdits(page, read.words, text);
-      const commands = makeTask(surface.document, page, strokeIds, text);
+      const commands = makeTask(surface.document, page, touchedInk(strokeIds, read), text);
       if (commands.length === 0) return;
       surface.applyCommand(new CompositeCommand("Task", commands));
       this.requestSave();
@@ -3624,6 +4075,39 @@ export class InkView extends TextFileView {
       read = found;
       if (found.text) modal.suggest(found.text, found.fixes);
     });
+  }
+
+  /**
+   * The lasso's Screenshot: the picture in a small dialog, to copy, or to
+   * share through the system's share sheet (or save into the notebook's
+   * pictures folder where the platform cannot share a file).
+   */
+  private showScreenshot(png: Blob, width: number, height: number): void {
+    const note = this.file;
+    new ScreenshotModal(this.app, png, "Screenshot.png", {
+      copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
+      save: async (picture) => {
+        if (!note) return null;
+        try {
+          const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
+          const folder = this.attachmentFolder("images");
+          // "Biology.notebook" names the notebook "Biology".
+          const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
+          return (
+            await saveImageAttachment(
+              this.app,
+              { ...prepared, width, height },
+              name,
+              note.path,
+              folder,
+            )
+          ).path;
+        } catch {
+          return null;
+        }
+      },
+      tell: (text) => new Notice(text),
+    }).open();
   }
 
   /**
@@ -3640,7 +4124,7 @@ export class InkView extends TextFileView {
       // By identity: the page may move or go while the dialog is open.
       if (this.isProtected() || this.surface !== surface) return;
       if (read) this.recordEdits(page, read.words, text);
-      if (surface.turnInkIntoText(page, strokeIds, text)) this.requestSave();
+      if (surface.turnInkIntoText(page, touchedInk(strokeIds, read), text)) this.requestSave();
     });
     modal.open();
     void this.readSelection(page, strokeIds, true).then((found) => {
@@ -3658,6 +4142,55 @@ export class InkView extends TextFileView {
   turnSelectionIntoText(): void {
     const ink = this.surface?.selectedInk();
     if (ink) this.turnIntoText(ink.index, ink.strokeIds);
+  }
+
+  /**
+   * A shortcut whose action belongs to the view rather than the page: full
+   * screen, the ruler, the sticker and sticky-note pickers, recording, and
+   * stylus only mode. False when the action is not one of these.
+   */
+  private runShortcutAction(id: string): boolean {
+    // An item shown nowhere cannot be turned on from a key either: it would be
+    // on with no button to show it. Taken, so the key does nothing else.
+    const item = id.startsWith("bar.") ? (id.slice(4) as BarItemId) : null;
+    if (item && this.itemOff(item)) return true;
+    switch (id) {
+      case "view.fullscreen":
+        if (!this.plugin.fullScreenOffered) return false;
+        this.plugin.toggleFullScreen();
+        return true;
+      case "edit.turn-into-text":
+        this.turnSelectionIntoText();
+        return true;
+      case "bar.ruler": {
+        const surface = this.surface;
+        if (!surface) return false;
+        surface.setRulerOut(!surface.rulerOut);
+        this.toolbar?.setRulerOut(surface.rulerOut);
+        return true;
+      }
+      case "bar.sticker":
+        if (this.isProtected()) return false;
+        this.plugin.openStickerPicker(this.imageMenuContext());
+        return true;
+      case "bar.sticky":
+        this.armStickyNote(DEFAULT_STICKY_COLOR);
+        return true;
+      case "bar.image":
+        this.openImageMenu(this.containerEl);
+        return true;
+      case "bar.pdf":
+        this.openImageMenu(this.containerEl, true);
+        return true;
+      case "bar.record":
+        this.audio?.toggleRecording();
+        return true;
+      case "bar.stylus":
+        void this.plugin.setOnlyStylusMode(!this.settings.onlyStylusMode);
+        return true;
+      default:
+        return false;
+    }
   }
 
   /** The vault's notes for the link picker, most recently changed first. */
@@ -3843,10 +4376,20 @@ export class InkView extends TextFileView {
    * The field a lassoed selection filled was confirmed: each read word it
    * corrects (`editedWords`) is recorded as a misread of that word's ink.
    */
-  private recordEdits(page: Page, words: readonly ReadWord[], final: string): void {
+  private recordEdits(
+    page: Page,
+    words: readonly ReadWord[],
+    final: string,
+    correcting = false,
+  ): void {
     const file = this.file;
     if (!file || words.length === 0) return;
-    for (const { word, text } of editedWords(words, final)) {
+    const phrase = correcting ? editedPhrase(words, final) : null;
+    // Words joined or split: the whole selection is one labelled line.
+    const edits = phrase
+      ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]
+      : editedWords(words, final, correcting);
+    for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
       void this.plugin.wordCheck.record(
@@ -4247,7 +4790,14 @@ export class InkView extends TextFileView {
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         darkPages: surface.paperTheme.night === true,
+        darkPdf: this.settings.invertPdfPages !== false,
+        desk: {
+          choice: deskChoiceOf(this.settings.desk),
+          color:
+            deskColorOf({ desk: "custom", deskColor: this.settings.deskColor }) ?? LIGHT_PAPER.desk,
+        },
         folded: this.toolbar?.foldedItems() ?? [],
+        barDock: this.plugin.barDock,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -4268,8 +4818,18 @@ export class InkView extends TextFileView {
         remove: (at) => act("delete", at),
         toggleDarkPages: () =>
           void this.plugin.setPageAppearance(surface.paperTheme.night ? "light" : "dark"),
+        setDarkPdf: (dark) => {
+          this.plugin.settings.invertPdfPages = dark;
+          void this.plugin.applyPageAppearance();
+        },
+        setDesk: (choice, color) => {
+          this.plugin.settings.desk = choice;
+          if (color !== undefined) this.plugin.settings.deskColor = color;
+          void this.plugin.applyPageAppearance();
+        },
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
+        setBarDock: (dock) => this.plugin.setBarDock(dock),
       },
     );
   }
@@ -4304,7 +4864,11 @@ export class InkView extends TextFileView {
       open.close();
       return;
     }
-    const modal = new ShortcutsModal(this.app, Platform.isMacOS || Platform.isIosApp);
+    const modal = new ShortcutsModal(
+      this.app,
+      Platform.isMacOS || Platform.isIosApp,
+      boundShortcutGroups(this.plugin.shortcuts.table, SHORTCUT_GROUPS),
+    );
     modal.open();
     this.shortcuts = modal;
   }

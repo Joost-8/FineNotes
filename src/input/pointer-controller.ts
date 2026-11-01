@@ -24,12 +24,19 @@
  *   again quickly: the stem and then the bar of a "T". A pen-down that finds
  *   a stroke still open cancels that stroke before starting its own, and the
  *   surface keeps the cancelled stroke's ink.
+ *
+ * The pen's side button pressed with the pen in the air is held back until
+ * it is a click (`stylus-click.ts`) or the stroke it would have been: it
+ * touches down or travels, and only then starts, from where it was pressed.
  */
 
+import { altitudeOf } from "../ink/tilt";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
+import { freshSamples, type RawSample } from "./repeat-samples";
+import { StylusClicks } from "./stylus-click";
 
 export type { PinchInfo };
 
@@ -39,6 +46,8 @@ export interface PointerSample {
   pressure: number;
   tiltX: number;
   tiltY: number;
+  /** Degrees above the screen, from `altitudeAngle` or the tilts (`ink/tilt`); NaN for none. */
+  altitude: number;
   /** The event's time stamp, ms (the page's clock). */
   t?: number;
   /** "pen", "mouse" or "touch". */
@@ -64,6 +73,18 @@ export interface PointerDebugRecord {
   timeStamp: number;
   /** Its position is whole CSS px on both axes ({@link isWholePixel}). */
   wholePixel: boolean;
+  /** The pen's altitude, degrees above the screen; NaN for none (`ink/tilt`). */
+  altitude: number;
+  /** Its azimuth, degrees round the screen from +x; NaN for none. */
+  azimuth: number;
+  /** Where the altitude came from: `altitudeAngle`, `tiltX`/`tiltY`, or nowhere. */
+  tiltSource: "angle" | "tilt" | "none";
+  /**
+   * A move: how many different altitudes its coalesced samples carried. As
+   * many as `coalesced` means each sample has its own; 1, that they repeat
+   * the event's.
+   */
+  ownTilts: number;
 }
 
 /**
@@ -76,6 +97,10 @@ export interface PointerDebugRecord {
  */
 export function isWholePixel(position: { clientX: number; clientY: number }): boolean {
   return Number.isInteger(position.clientX) && Number.isInteger(position.clientY);
+}
+
+function rawOf(e: PointerEvent): RawSample {
+  return { x: e.clientX, y: e.clientY, pressure: e.pressure, t: e.timeStamp };
 }
 
 /**
@@ -106,8 +131,8 @@ export interface PointerControllerCallbacks {
   onPanEnd?(t: number): void;
   /** Every finger gesture is void (a pen landed). */
   onPanCancel?(): void;
-  /** A second finger landed: a pinch begins about the midpoint. */
-  onPinchStart?(centerX: number, centerY: number): void;
+  /** A second finger landed: a pinch begins about the midpoint, the fingers `spread` px apart. */
+  onPinchStart?(centerX: number, centerY: number, spread: number): void;
   onPinch?(info: PinchInfo): void;
   /** Fewer than two fingers remain. */
   onPinchEnd?(): void;
@@ -124,6 +149,8 @@ export interface PointerControllerCallbacks {
   onFingerCancel?(t: number): void;
   /** Each event of the drawing pointer as it arrived, for the debug HUD. */
   onDebug?(record: PointerDebugRecord): void;
+  /** The pen's side button was clicked in the air, here (client px; `stylus-click.ts`). */
+  onStylusClick?(clientX: number, clientY: number): void;
 }
 
 /**
@@ -137,6 +164,10 @@ export interface PointerControllerOptions {
   route?: (event: PointerEvent) => PressRoute;
   /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
+  /** A touch point on a control layered over the page may still be handled. */
+  touchTarget?: (event: PointerEvent) => boolean;
+  /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
+  stylusClicks?: () => boolean;
 }
 
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
@@ -151,9 +182,15 @@ export class PointerController {
   private rounded = false;
   /** See {@link lastPenAt}. */
   private penSeenAt: number | null = null;
+  /** The raw samples the open stroke's last move carried. */
+  private lastMove: RawSample[] = [];
   private readonly fingers: FingerGesture;
   /** Watches every finger, the third included, for undo and redo taps. */
   private readonly taps: MultiFingerTap;
+  /** Hears the pen's side button clicked in the air, however it is reported. */
+  private readonly clicks = new StylusClicks();
+  /** A press of the side button in the air, held back until it is a click or a stroke. */
+  private held: PointerEvent | null = null;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
   constructor(
@@ -168,7 +205,7 @@ export class PointerController {
       (report) => listener.onFingerTapReport?.(report),
     );
     this.handlers = {
-      pointerdown: (event) => this.pressed(event),
+      pointerdown: (event) => this.down(event),
       pointermove: (event) => this.moved(event),
       pointerup: (event) => this.released(event, false),
       pointercancel: (event) => this.released(event, true),
@@ -222,10 +259,84 @@ export class PointerController {
     return this.options.onlyStylus?.() === true;
   }
 
+  /** A touch point on a page control is allowed through Stylus-only mode. */
+  private touchTarget(event: PointerEvent): boolean {
+    return event.pointerType === "touch" && this.options.touchTarget?.(event) === true;
+  }
+
+  /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
+  private stylusClicks(): boolean {
+    return this.options.stylusClicks?.() === true;
+  }
+
+  /**
+   * A press. The pen's side button pressed in the air is held back: let go
+   * soon and near, it is a click; once it touches down or travels, it is the
+   * press it would have been (`stylus-click.ts`). Any other pen press ends a
+   * click the hovering moves were watching for.
+   */
+  private down(event: PointerEvent): void {
+    // A browser that sends the held press's touch-down as a press of its own: that one counts.
+    if (this.held?.pointerId === event.pointerId) this.held = null;
+    const pen = event.pointerType === "pen";
+    if (pen && this.stroke === null && this.held === null && this.stylusClicks()) {
+      if (this.clicks.down(event)) {
+        this.notePenSeen(event);
+        this.held = event;
+        event.preventDefault();
+        this.element.setPointerCapture(event.pointerId);
+        return;
+      }
+    } else if (pen) {
+      this.clicks.reset();
+    }
+    this.pressed(event);
+  }
+
+  /**
+   * A `contextmenu` from the pen: whether it is the side button's click,
+   * which a WebView may report this way alone. Never while the pen writes
+   * (Chromium sends one for a long press too).
+   */
+  stylusMenu(timeStamp: number): boolean {
+    if (!this.stylusClicks() || this.stroke !== null || this.held !== null) return false;
+    return this.clicks.menu(timeStamp);
+  }
+
+  /**
+   * A pen over the rest of the view, off this element: the tool bar, or the
+   * popover the click opened. The side button's click is heard in its
+   * hovering moves there too, so the click that closes the pen menu need not
+   * find the page (the pen is often over the menu by then); and a pen pressed
+   * there is down until it lifts, so its moves are no click.
+   */
+  penElsewhere(event: PointerEvent): void {
+    if (event.pointerType !== "pen" || this.held !== null) return;
+    if (event.type === "pointermove") this.hearHover(event);
+    else if (event.type === "pointerdown") this.clicks.landed();
+    else this.clicks.lifted(event.timeStamp);
+  }
+
+  /** A hovering pen's move: the side button's click, if it makes one (`stylus-click.ts`). */
+  private hearHover(event: PointerEvent): void {
+    if (event.pointerType !== "pen" || this.stroke !== null || !this.stylusClicks()) return;
+    if (this.clicks.hover(event)) this.listener.onStylusClick?.(event.clientX, event.clientY);
+  }
+
+  /**
+   * A `contextmenu` with the side button held in the air: Android's WebView
+   * sends one, as a mouse's right-click, for the pen touching down with the
+   * button held (`stylus-click.ts`). True when it was that.
+   */
+  stylusTouched(): boolean {
+    return this.stylusClicks() && this.clicks.touched();
+  }
+
   private pressed(event: PointerEvent): void {
     const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
-    const onlyStylus = this.onlyStylus();
+    if (event.pointerType === "pen") this.clicks.landed();
+    const onlyStylus = this.onlyStylus() && !this.touchTarget(event);
     // The right mouse button opens the page's menu (`contextmenu`); it never draws.
     if (event.pointerType === "mouse" && event.button === 2) {
       if (onlyStylus) event.preventDefault();
@@ -272,6 +383,7 @@ export class PointerController {
       this.listener.onCancel();
     }
     this.stroke = event.pointerId;
+    this.lastMove = [];
     this.element.setPointerCapture(event.pointerId);
     event.preventDefault();
     const pen = event.pointerType === "pen";
@@ -285,10 +397,15 @@ export class PointerController {
 
   private moved(event: PointerEvent): void {
     this.notePenSeen(event);
+    if (this.held?.pointerId === event.pointerId) {
+      this.heldMoved(event);
+      return;
+    }
     if (event.pointerId !== this.stroke) {
       // Stylus-only mode: a finger already down when the mode came on must
       // not carry on moving the page; its lift still releases it.
       if (this.onlyStylus() && event.pointerType !== "pen") return;
+      this.hearHover(event);
       if (event.pointerType === "touch") this.listener.onFingerContact?.(event.width, event.height);
       this.taps.move(event.pointerId, event.clientX, event.clientY);
       this.fingers.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
@@ -297,16 +414,51 @@ export class PointerController {
     event.preventDefault();
     const taken = event.getCoalescedEvents?.() ?? [];
     // Where the browser has no coalesced list, the event is the one sample.
-    const samples = taken.length > 0 ? taken.map((e) => this.sample(e)) : [this.sample(event)];
-    if (event.pointerType === "pen")
-      for (const e of taken.length > 0 ? taken : [event]) this.notePen(e);
-    this.debug("move", event, samples.length);
-    this.listener.onMove(samples);
+    const events = taken.length > 0 ? taken : [event];
+    const raw = events.map(rawOf);
+    // Samples the last move already handed over come again (`repeat-samples.ts`).
+    const fresh = new Set(freshSamples(raw, this.lastMove));
+    this.lastMove = raw;
+    const samples = events.filter((_, i) => fresh.has(raw[i])).map((e) => this.sample(e));
+    if (event.pointerType === "pen") for (const e of events) this.notePen(e);
+    this.debug("move", event, samples.length, taken);
+    if (samples.length > 0) this.listener.onMove(samples);
+  }
+
+  /** A move of the held-back press: wait on, become the press it was, or be the click. */
+  private heldMoved(event: PointerEvent): void {
+    const held = this.held;
+    if (!held) return;
+    const step = this.clicks.held(event);
+    if (step === "wait") {
+      event.preventDefault();
+      return;
+    }
+    this.held = null;
+    if (step === "stroke") {
+      // It touched down or moved off: the press it began as, then this move.
+      this.pressed(held);
+      this.moved(event);
+      return;
+    }
+    this.releaseCapture(event.pointerId);
+    if (step === "click") this.listener.onStylusClick?.(event.clientX, event.clientY);
   }
 
   private released(event: PointerEvent, cancelled: boolean): void {
     const id = event.pointerId;
     this.notePenSeen(event);
+    if (this.held?.pointerId === id) {
+      this.held = null;
+      this.releaseCapture(id);
+      if (!cancelled && this.clicks.heldUp(event)) {
+        this.listener.onStylusClick?.(event.clientX, event.clientY);
+      } else {
+        this.clicks.reset();
+      }
+      return;
+    }
+    if (event.pointerType === "pen") this.clicks.lifted(event.timeStamp);
     if (id !== this.stroke) {
       // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
       if (cancelled) this.taps.cancel(id, event.timeStamp);
@@ -338,6 +490,7 @@ export class PointerController {
       pressure,
       tiltX,
       tiltY,
+      altitude: altitudeOf(event),
       t: event.timeStamp,
       pointerType: event.pointerType,
     };
@@ -352,10 +505,18 @@ export class PointerController {
     if (!this.penIsPrecise && !isWholePixel(position)) this.penIsPrecise = true;
   }
 
-  private debug(type: PointerDebugType, event: PointerEvent, coalesced: number): void {
-    const { pointerType, pointerId, pressure, timeStamp } = event;
+  private debug(
+    type: PointerDebugType,
+    event: PointerEvent,
+    coalesced: number,
+    taken: readonly PointerEvent[] = [],
+  ): void {
+    if (!this.listener.onDebug) return;
+    const { pointerType, pointerId, pressure, timeStamp, altitudeAngle, azimuthAngle } = event;
     const wholePixel = isWholePixel(event);
-    this.listener.onDebug?.({
+    const angle = typeof altitudeAngle === "number" && Number.isFinite(altitudeAngle);
+    const tilt = Number.isFinite(event.tiltX) && Number.isFinite(event.tiltY);
+    this.listener.onDebug({
       type,
       pointerType,
       pointerId,
@@ -363,6 +524,13 @@ export class PointerController {
       coalesced,
       timeStamp,
       wholePixel,
+      altitude: altitudeOf(event),
+      azimuth:
+        typeof azimuthAngle === "number" && Number.isFinite(azimuthAngle)
+          ? (azimuthAngle * 180) / Math.PI
+          : Number.NaN,
+      tiltSource: angle ? "angle" : tilt ? "tilt" : "none",
+      ownTilts: new Set(taken.map((e) => altitudeOf(e))).size,
     });
   }
 
