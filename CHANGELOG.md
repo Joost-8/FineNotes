@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Scroll on past the last page to add one**, on a computer
+  ([#111](https://github.com/Joost-8/FineNotes/issues/111)). At the end of a
+  notebook, keep turning the mouse wheel or swiping the touchpad: the page
+  stretches, the same ring as a finger's pull fills, and when you stop a new
+  page is added. A scroll that only runs into the end, and Ctrl+wheel zoom,
+  add nothing. As with the finger's pull, a single page never grows.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.

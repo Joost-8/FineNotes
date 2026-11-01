@@ -515,6 +515,70 @@ export function pullAddProgress(overscroll: number, threshold = PULL_ADD_PAGE_PX
   return Math.min(1, overscroll / threshold);
 }
 
+/**
+ * Wheel px (a mouse notch is about 100) a wheel or touchpad must keep
+ * scrolling past the last page to add one: four notches, so a scroll that
+ * merely reaches the end never does (FineNotes#111).
+ */
+export const WHEEL_PULL_ADD_PX = 400;
+
+/** A wheel quiet this long has let go: a full pull adds its page, any pull starts over. */
+export const WHEEL_PULL_PAUSE_MS = 250;
+
+/** One wheel event counts at most this far, so a single big jump is never a pull. */
+export const WHEEL_PULL_STEP_MAX_PX = 100;
+
+/**
+ * A wheel or touchpad pull past the last page (`wheelPullStep`): how far it
+ * has pulled, when its last event came, and whether this burst of events may
+ * pull at all.
+ */
+export interface WheelPull {
+  total: number;
+  lastT: number;
+  armed: boolean;
+}
+
+export const WHEEL_PULL_REST: WheelPull = { total: 0, lastT: -Infinity, armed: false };
+
+/** One wheel event, for {@link wheelPullStep}. */
+export interface WheelPullEvent {
+  t: number;
+  /** Wheel px along the pages (positive towards the end) and across them. */
+  along: number;
+  across: number;
+  /** The view already sat at the last page's end before this event. */
+  atEnd: boolean;
+}
+
+/**
+ * Fold one wheel event into a pull past the last page, the wheel's version
+ * of the finger's pull (`pullAddAllowed`). Only a burst of events that began
+ * at the end counts: a flick or a touchpad's momentum that runs into the end
+ * started away from it, so it adds nothing however long it coasts on. Any
+ * event that scrolls back, leaves the end, or runs across the pages ends the
+ * pull for the rest of its burst; a pause starts a new burst.
+ */
+export function wheelPullStep(pull: WheelPull, e: WheelPullEvent): WheelPull {
+  const fresh = e.t - pull.lastT >= WHEEL_PULL_PAUSE_MS;
+  const armed = fresh ? e.atEnd : pull.armed;
+  if (e.along === 0 && e.across === 0) return { ...pull, armed, lastT: e.t };
+  const straight = Math.abs(e.along) >= PULL_ADD_STRAIGHTNESS * Math.abs(e.across);
+  if (!armed || !e.atEnd || e.along < 0 || !straight) {
+    return { total: 0, lastT: e.t, armed: false };
+  }
+  return {
+    total: pull.total + Math.min(e.along, WHEEL_PULL_STEP_MAX_PX),
+    lastT: e.t,
+    armed: true,
+  };
+}
+
+/** How far a wheel pull is to adding a page, 0..1; 1 means the pause adds it. */
+export function wheelPullProgress(pull: WheelPull): number {
+  return pull.armed ? pullAddProgress(pull.total, WHEEL_PULL_ADD_PX) : 0;
+}
+
 /** Layout-space y that puts page `index`'s top edge at the top of the viewport. */
 export function scrollTopForPage(layout: DocumentLayout, index: number): number {
   const box = layout.boxes[Math.max(0, Math.min(layout.boxes.length - 1, index))];
