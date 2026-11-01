@@ -20,6 +20,7 @@ import {
   deskColorOf,
   endpointWarning,
   greyWhileErasingOf,
+  laserDefaultColorOf,
   openSectionsOf,
   pagesAreDark,
   highlighterTipOf,
@@ -54,6 +55,7 @@ const FRESH_INSTALL = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
+  laserDefaultColor: "#ff3b30",
   defaultSize: 3,
   eraserMode: "standard",
   eraserSize: 24,
@@ -176,6 +178,7 @@ const USED_VAULT = {
   defaultTool: "highlighter",
   customColors: ["#ff8800", "#0ca"],
   defaultColor: "#2255aa",
+  laserDefaultColor: "#00aaff",
   defaultSize: 5,
   eraserMode: "stroke",
   eraserSize: 40,
@@ -389,6 +392,20 @@ describe("dark pages", () => {
     expect(pagesAreDark("dark", false)).toBe(true);
     expect(pagesAreDark("system", true)).toBe(true);
     expect(pagesAreDark("system", false)).toBe(false);
+  });
+
+  describe("laser pointer settings", () => {
+    it("normalizes the missing and invalid colours to the built-in red", () => {
+      expect(laserDefaultColorOf(undefined)).toBe("#ff3b30");
+      expect(laserDefaultColorOf("#abc")).toBe("#abc");
+      expect(laserDefaultColorOf("red")).toBe("#ff3b30");
+    });
+
+    it("keeps a configured colour through defaults merging", () => {
+      expect(loadAndSave({ laserDefaultColor: "#123456" })).toMatchObject({
+        laserDefaultColor: "#123456",
+      });
+    });
   });
 
   it("read anything they do not know as light", () => {
