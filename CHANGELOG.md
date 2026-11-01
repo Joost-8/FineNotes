@@ -22,7 +22,8 @@ extracted from the matching section of this file by `release.yml`.
   menu has More fonts: the computer's own fonts, or on the iPad the ones
   it has built in, each shown in itself. A device without the font shows
   the box in the font it was picked over, and the menu marks it; so does
-  FineNotes 2.6 and earlier.
+  FineNotes 2.6 and earlier. Text boxes imported from Goodnotes and
+  Notability keep the font they were written in, too.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.
