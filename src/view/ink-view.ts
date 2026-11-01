@@ -963,7 +963,17 @@ export class InkView extends TextFileView {
    * items now, so the choice of placing them does not change with the mode.
    */
   setOnlyStylusMode(on: boolean): void {
-    this.toolbar?.setOnlyStylusMode(on);
+    this.toolbar?.setOnlyStylusMode(on && this.plugin.stylusOnly);
+    this.surface?.onlyStylusChanged();
+  }
+
+  /**
+   * Fingers started or stopped drawing (`input/finger-draw.ts`): the ⋯
+   * button is lit while they do, and Stylus only rests meanwhile.
+   */
+  setFingerDrawing(on: boolean): void {
+    this.toolbar?.setFingerDrawing(on);
+    this.toolbar?.setOnlyStylusMode(this.plugin.stylusOnly);
     this.surface?.onlyStylusChanged();
   }
 
@@ -2852,7 +2862,8 @@ export class InkView extends TextFileView {
         barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
-        onlyStylusMode: this.settings.onlyStylusMode === true,
+        onlyStylusMode: this.plugin.stylusOnly,
+        fingerDrawing: this.plugin.fingerDrawing,
         laserColor: () => this.settings.laserDefaultColor,
       },
     );
@@ -3000,7 +3011,9 @@ export class InkView extends TextFileView {
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         lassoAnyPart: () => this.settings.lassoTouches !== false,
-        onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        onlyStylusMode: () => this.plugin.stylusOnly,
+        fingerDrawing: () => this.plugin.fingerDrawing,
+        onPenReturned: () => this.plugin.setFingerDrawing(false),
         zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
         zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
         zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
@@ -4128,7 +4141,7 @@ export class InkView extends TextFileView {
         this.audio?.toggleRecording();
         return true;
       case "bar.stylus":
-        void this.plugin.setOnlyStylusMode(!this.settings.onlyStylusMode);
+        void this.plugin.setOnlyStylusMode(!this.plugin.stylusOnly);
         return true;
       default:
         return false;
@@ -4740,6 +4753,7 @@ export class InkView extends TextFileView {
         },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
+        fingerDrawing: this.plugin.fingerDrawing,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -4772,6 +4786,9 @@ export class InkView extends TextFileView {
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),
+        // Where touch exists: on a desktop the mouse draws already.
+        setFingerDrawing:
+          navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
       },
     );
   }

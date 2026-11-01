@@ -726,7 +726,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.addCommand({
       id: "toggle-only-stylus-mode",
       name: "Turn Stylus-only mode on or off",
-      callback: () => void this.setOnlyStylusMode(!this.settings.onlyStylusMode),
+      callback: () => void this.setOnlyStylusMode(!this.stylusOnly),
     });
 
     this.addCommand({
@@ -1413,8 +1413,29 @@ export default class GoodObsidianPlugin extends Plugin {
     const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
+    // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.
+    if (on) this.setFingerDrawing(false);
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
+  }
+
+  /**
+   * Fingers draw while the Pencil is away (`input/finger-draw.ts`, the ⋯
+   * panel's "Draw with finger"). Not a setting: the first pen event ends it,
+   * and so does closing Obsidian. While it is on, Stylus-only mode rests.
+   */
+  fingerDrawing = false;
+
+  /** Whether only the pen acts on the page now: the setting, unless fingers draw. */
+  get stylusOnly(): boolean {
+    return this.settings.onlyStylusMode === true && !this.fingerDrawing;
+  }
+
+  /** Fingers start or stop drawing, in every open notebook at once. */
+  setFingerDrawing(on: boolean): void {
+    if (this.fingerDrawing === on) return;
+    this.fingerDrawing = on;
+    for (const view of this.openNotebooks()) view.setFingerDrawing(on);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

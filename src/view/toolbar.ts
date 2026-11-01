@@ -755,6 +755,8 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
+  /** Fingers draw (the Pencil is away), so ⋯, where that is switched, starts lit. */
+  fingerDrawing?: boolean;
   /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
   laserColor?: () => string;
 }
@@ -1268,6 +1270,7 @@ export class Toolbar {
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
     keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
+    if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
     this.settingsButton = this.foldButton(
       doc,
       FOLD_RANK.settings,
@@ -1635,6 +1638,17 @@ export class Toolbar {
     stylus.setAttribute("aria-pressed", String(on));
     stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
     this.syncAccessoriesMark();
+  }
+
+  /**
+   * Light ⋯ while fingers draw (`input/finger-draw.ts`), as the accessories
+   * button lights for a mode its menu lists: ⋯ is where it is switched off.
+   */
+  setFingerDrawing(on: boolean): void {
+    const more = this.moreButton;
+    if (!more) return;
+    more.toggleClass("is-on", on);
+    more.setAttribute("aria-label", on ? "More · drawing with a finger" : "More");
   }
 
   /** Light the accessories button while one of the items its menu lists is on. */
