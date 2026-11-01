@@ -168,6 +168,14 @@ describe("PdfTextCache", () => {
     expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
   });
 
+  it("answers a search at once on a page that failed a moment ago, without reading it again", async () => {
+    pdf.fail = true;
+    const c = cache();
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    expect(pdf.reads).toBe(1);
+  });
+
   it("reads nothing while the pen writes, and what was asked for once it lifts", async () => {
     const c = cache();
     c.setHeld(true);

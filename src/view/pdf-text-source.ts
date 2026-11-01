@@ -183,8 +183,9 @@ export class PdfTextCache {
       list.push(resolve);
       this.waiters.set(key, list);
       this.request(backdrop);
-      // Destroyed, or nothing to read: nobody would answer.
-      if (this.destroyed) this.wake(key);
+      // Destroyed, or nothing to read (it failed a moment ago and waits to
+      // be tried again): nobody would answer.
+      if (this.destroyed || (!this.inflight.has(key) && !this.deferred.has(key))) this.wake(key);
     });
     return this.peek(backdrop, geometry) ?? { chars: [], lines: [] };
   }
@@ -204,9 +205,11 @@ export class PdfTextCache {
       const text = await this.read(backdrop).catch(() => null);
       this.inflight.delete(key);
       if (this.destroyed) return;
-      // A read that threw is tried again later, not kept as a page without text.
+      // A read that threw is tried again later, not kept as a page without
+      // text; a search waiting on it gets no text this time.
       if (!text) {
         this.failed.set(key, Date.now());
+        this.wake(key);
         return;
       }
       this.failed.delete(key);
