@@ -20,7 +20,7 @@
  * It only reports the choice; the plugin writes the file.
  */
 
-import { type App, Modal, setIcon } from "obsidian";
+import { type App, Menu, Modal, type TFile, setIcon } from "obsidian";
 import { ICON_IMPORT_NOTEBOOK } from "../constants";
 import { onEnterKey } from "./enter-key";
 import { BOARD_RULINGS } from "../model/board";
@@ -34,6 +34,8 @@ import {
 import { COVER_COLORS, sizeGeometry } from "../model/templates";
 import { CoverPicker } from "./cover-picker";
 import { FolderSuggestModal } from "./folder-suggest";
+import { pickImageFile } from "./image-import";
+import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { type ScrollSnapshot, captureScroll, holdScroll, keyboardGone } from "./scroll-hold";
 import type { PaperEntry } from "../model/paper-library";
 import {
@@ -54,6 +56,9 @@ export interface NewNotebookRequest {
   template?: PaperEntry;
 }
 
+/** Where "Import PDF" took its PDF from: a file on the device, or one already in the vault. */
+export type NotebookPdfSource = { kind: "file"; file: File } | { kind: "vault"; file: TFile };
+
 export interface NewNotebookOptions {
   /** My templates, with the community gallery, when the host has them. */
   papers?: PaperLibraryHost;
@@ -71,6 +76,11 @@ export interface NewNotebookOptions {
    * into the dialog's folder. Left out, there is no link.
    */
   onImport?: (folder: string) => void;
+  /**
+   * "Import PDF", beside the paper: a notebook whose pages are a PDF's, with
+   * the dialog's title, folder and size. Left out, there is no button.
+   */
+  onImportPdf?: (request: NewNotebookRequest, source: NotebookPdfSource) => void;
 }
 
 /** Preview width of a cover or template card, CSS px. */
@@ -318,7 +328,8 @@ export class NewNotebookModal extends Modal {
 
   private buildPaper(body: HTMLElement): HTMLElement {
     const section = this.section(body, "Paper");
-    new PaperControls(section.createDiv({ cls: "goodobsidian-templates-controls" }), {
+    const controls = section.createDiv({ cls: "goodobsidian-templates-controls" });
+    new PaperControls(controls, {
       keepSize: false,
       sizeId: this.choices.size,
       color: this.choices.paper,
@@ -330,6 +341,7 @@ export class NewNotebookModal extends Modal {
         this.repaint();
       },
     });
+    this.buildImportPdf(controls);
     // My templates first: a whole template (a planner's every page) instead of one paper.
     const papers = this.options.papers;
     if (papers) {
@@ -363,6 +375,54 @@ export class NewNotebookModal extends Modal {
     });
     this.grid.el.addClass("is-inline");
     return section;
+  }
+
+  /**
+   * "Import PDF", at the end of the paper row and set apart from it: the
+   * PDF's pages instead of a paper. It asks where from (the device or the
+   * vault), as the notebook's own PDF button does.
+   */
+  private buildImportPdf(row: HTMLElement): void {
+    const onImportPdf = this.options.onImportPdf;
+    if (!onImportPdf) return;
+    row.createSpan({ cls: "goodobsidian-newnb-paper-sep" });
+    const button = row.createEl("button", {
+      cls: "goodobsidian-newnb-import-pdf clickable-icon",
+      attr: { type: "button" },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-newnb-import-icon" }), "file-up");
+    button.createSpan({ text: "Import PDF" });
+    const done = (source: NotebookPdfSource): void => {
+      if (this.created) return;
+      this.created = true;
+      const request = this.request();
+      this.close();
+      onImportPdf(request, source);
+    };
+    button.addEventListener("click", (event) => {
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle("From files")
+          .setIcon("file-text")
+          .onClick(() => {
+            void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
+              if (file) done({ kind: "file", file });
+            });
+          }),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("From vault")
+          .setIcon("folder-open")
+          .onClick(() => {
+            new VaultPdfSuggestModal(this.app, (file) => done({ kind: "vault", file })).open();
+          }),
+      );
+      const rect = button.getBoundingClientRect();
+      if (event.detail === 0) menu.showAtPosition({ x: rect.left, y: rect.bottom });
+      else menu.showAtMouseEvent(event);
+    });
   }
 
   /**
@@ -513,14 +573,18 @@ export class NewNotebookModal extends Modal {
   private create(): void {
     if (this.created) return;
     this.created = true;
-    const request: NewNotebookRequest = {
-      title: this.titleInput?.value ?? "",
-      choices: { ...this.choices },
-      folder: this.folder,
-    };
+    const request = this.request();
     // A board is drawn on one of its three papers, never a template's pages.
     if (this.template && this.choices.type !== "endless") request.template = this.template;
     this.close();
     this.options.onCreate(request);
+  }
+
+  private request(): NewNotebookRequest {
+    return {
+      title: this.titleInput?.value ?? "",
+      choices: { ...this.choices },
+      folder: this.folder,
+    };
   }
 }
