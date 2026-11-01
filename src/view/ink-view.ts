@@ -65,7 +65,12 @@ import {
 import { adoptTaskStates, notebookTasks, syncTaskIndex } from "../recognition/task-index";
 import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
-import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
+import {
+  type DeviceReading,
+  aiKeyFolded,
+  buildAiMenu,
+  textAvailability,
+} from "../recognition/ai-menu-model";
 import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
 import { CalcNotes } from "./calc-notes";
 import {
@@ -113,7 +118,8 @@ import {
   saveImageAttachment,
 } from "./image-import";
 import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
-import { ScreenshotModal } from "./screenshot-modal";
+import { type ScreenshotPicture, ScreenshotModal } from "./screenshot-modal";
+import { pageCrop } from "./screenshot-crop";
 import {
   ImageMenuPopover,
   type ImageMenuContext,
@@ -189,7 +195,7 @@ import {
   notebookImages,
   recordingTranscripts,
 } from "../model/notebook-files";
-import { pdfsBehind } from "../recognition/ask-attachments";
+import { attachmentFromBytes, pdfsBehind } from "../recognition/ask-attachments";
 import { chatsFolderFor } from "../recognition/ask-chat-file";
 import { type AskPagesResult, AskSession } from "../recognition/ask-session";
 import { GenerateImageModal } from "./generate-image-modal";
@@ -1712,7 +1718,8 @@ export class InkView extends TextFileView {
   /**
    * This notebook's conversation, kept while the notebook is open so closing
    * the dialog loses neither the chat nor the draft. Before anything is
-   * asked, it follows the page being read.
+   * asked or attached, it follows the page being read (or picks no page,
+   * when the setting says not to attach it).
    */
   private askConversation(): AskSession {
     const current = (this.surface?.currentPage ?? 0) + 1;
@@ -1737,12 +1744,18 @@ export class InkView extends TextFileView {
           readFile: (path) => readAttachment(this.app, path),
           now: () => new Date(),
         },
-        { page: current, totalPages: this.doc.pages.length, save: this.settings.askSaveChats },
+        {
+          page: current,
+          totalPages: this.doc.pages.length,
+          save: this.settings.askSaveChats,
+          attachPage: this.settings.askAttachPage,
+        },
       );
       this.askSession = session;
     } else {
       session.setTotalPages(this.doc.pages.length);
-      if (session.empty) session.newChat(current);
+      session.attachPage = this.settings.askAttachPage;
+      session.follow(current);
     }
     return session;
   }
@@ -2961,7 +2974,12 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
-        onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
+        onScreenshot: (png, width, height, at) =>
+          at
+            ? void this.screenshotSelection({ png, width, height }, at.pageIndex, at.bounds)
+            : this.showScreenshot({ png, width, height }),
+        onAskAboutSelection: (index, bounds) => void this.askAboutSelection(index, bounds),
+        canAskAi: () => textAvailability(this.plugin.aiSetup()).enabled,
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
@@ -3297,35 +3315,86 @@ export class InkView extends TextFileView {
 
   /**
    * A lasso drawn round nothing asked for a screenshot (ink-surface.ts,
-   * showEmptyLasso): the patch of page `index` inside `bounds`, drawn as an
-   * export draws it (paper, PDF, ink), sharp at up to three times its size.
+   * showEmptyLasso): the patch of page `index` inside `bounds`, as the page
+   * shows it.
    */
   private async screenshotRegion(index: number, bounds: Bounds): Promise<void> {
+    const shot = await this.pagePicture(index, bounds);
+    if (shot) this.showScreenshot(shot);
+    else new Notice("Couldn't take the screenshot");
+  }
+
+  /**
+   * The lasso's Screenshot (ink-surface.ts, showSelectionScreenshot): the
+   * patch of page `index` the selection covers, with the page behind it
+   * (paper, PDF, everything drawn there); the dialog's switch shows `inkOnly`,
+   * the selection on its own, instead (FineNotes discussion #107).
+   */
+  private async screenshotSelection(
+    inkOnly: ScreenshotPicture,
+    index: number,
+    bounds: Bounds,
+  ): Promise<void> {
+    const shot = await this.pagePicture(index, bounds);
+    this.showScreenshot(shot ?? inkOnly, shot ? inkOnly : undefined);
+  }
+
+  /**
+   * The lasso's Ask AI (FineNotes discussion #107): the selection as the
+   * page shows it, attached to the chat in place of its page, and the chat
+   * opened on it.
+   */
+  private async askAboutSelection(index: number, bounds: Bounds): Promise<void> {
+    if (this.isDamaged()) return;
+    const shot = await this.pagePicture(index, bounds);
+    const file = shot
+      ? attachmentFromBytes("Selection.png", new Uint8Array(await shot.png.arrayBuffer()))
+      : null;
+    if (!file) {
+      new Notice("Couldn't take a picture of the selection");
+      return;
+    }
+    const refusal = this.askConversation().attachInstead(file);
+    if (refusal) new Notice(refusal);
+    this.openAsk();
+  }
+
+  /**
+   * The patch of page `index` inside `bounds`, drawn as an export draws it
+   * (paper, PDF, ink), sharp at up to three times its size; null when none
+   * of it is on the page or it could not be drawn.
+   */
+  private async pagePicture(index: number, bounds: Bounds): Promise<ScreenshotPicture | null> {
     const page = this.doc.pages[index];
-    if (!page) return;
+    if (!page) return null;
     const { width, height } = page.geometry;
-    const x0 = Math.max(0, bounds.minX);
-    const y0 = Math.max(0, bounds.minY);
-    const w = Math.min(width, bounds.maxX) - x0;
-    const h = Math.min(height, bounds.maxY) - y0;
-    if (!(w >= 1) || !(h >= 1)) return;
-    // The whole page is painted, so its side caps the scale as well as the patch's.
-    const dpr = Math.min(3, 2048 / Math.max(w, h), 4096 / Math.max(width, height));
+    const crop = pageCrop(bounds, width, height);
+    if (!crop) return null;
     const canvas = createEl("canvas");
     const out = createEl("canvas");
     try {
-      await paintPagePreview(canvas, page, this.previewSources(), width, dpr);
-      out.width = Math.max(1, Math.round(w * dpr));
-      out.height = Math.max(1, Math.round(h * dpr));
+      await paintPagePreview(canvas, page, this.previewSources(), width, crop.scale);
+      out.width = Math.max(1, Math.round(crop.width * crop.scale));
+      out.height = Math.max(1, Math.round(crop.height * crop.scale));
       const kx = canvas.width / width;
       const ky = canvas.height / height;
       out
         .getContext("2d")
-        ?.drawImage(canvas, x0 * kx, y0 * ky, w * kx, h * ky, 0, 0, out.width, out.height);
+        ?.drawImage(
+          canvas,
+          crop.x * kx,
+          crop.y * ky,
+          crop.width * kx,
+          crop.height * ky,
+          0,
+          0,
+          out.width,
+          out.height,
+        );
       const png = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
-      if (png) this.showScreenshot(png, Math.round(w), Math.round(h));
+      return png ? { png, width: Math.round(crop.width), height: Math.round(crop.height) } : null;
     } catch {
-      new Notice("Couldn't take the screenshot");
+      return null;
     } finally {
       canvas.width = canvas.height = 0;
       out.width = out.height = 0;
@@ -4022,34 +4091,41 @@ export class InkView extends TextFileView {
   /**
    * The lasso's Screenshot: the picture in a small dialog, to copy, or to
    * share through the system's share sheet (or save into the notebook's
-   * pictures folder where the platform cannot share a file).
+   * pictures folder where the platform cannot share a file). With `inkOnly`,
+   * a switch in it leaves the page behind out.
    */
-  private showScreenshot(png: Blob, width: number, height: number): void {
+  private showScreenshot(shot: ScreenshotPicture, inkOnly?: ScreenshotPicture): void {
     const note = this.file;
-    new ScreenshotModal(this.app, png, "Screenshot.png", {
-      copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
-      save: async (picture) => {
-        if (!note) return null;
-        try {
-          const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
-          const folder = this.attachmentFolder("images");
-          // "Biology.notebook" names the notebook "Biology".
-          const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
-          return (
-            await saveImageAttachment(
-              this.app,
-              { ...prepared, width, height },
-              name,
-              note.path,
-              folder,
-            )
-          ).path;
-        } catch {
-          return null;
-        }
+    new ScreenshotModal(
+      this.app,
+      shot,
+      "Screenshot.png",
+      {
+        copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
+        save: async ({ png, width, height }) => {
+          if (!note) return null;
+          try {
+            const prepared = { bytes: await png.arrayBuffer(), mime: "image/png", ext: "png" };
+            const folder = this.attachmentFolder("images");
+            // "Biology.notebook" names the notebook "Biology".
+            const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
+            return (
+              await saveImageAttachment(
+                this.app,
+                { ...prepared, width, height },
+                name,
+                note.path,
+                folder,
+              )
+            ).path;
+          } catch {
+            return null;
+          }
+        },
+        tell: (text) => new Notice(text),
       },
-      tell: (text) => new Notice(text),
-    }).open();
+      inkOnly,
+    ).open();
   }
 
   /**

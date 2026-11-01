@@ -856,8 +856,24 @@ export interface InkSurfaceCallbacks {
   onRecentColors?: (colors: string[]) => void;
   /** "Save as sticker": the selection drawn as a transparent PNG, its size in page px. */
   onSaveSticker?: (png: ArrayBuffer, width: number, height: number) => void;
-  /** Screenshot: the selection drawn on its paper as a PNG; the host offers Copy and Share. */
-  onScreenshot?: (png: Blob, width: number, height: number) => void;
+  /**
+   * Screenshot: the selection drawn on its own paper as a PNG; the host
+   * offers Copy and Share. `at` is the patch of the page it covers, which the
+   * host shows with the page behind it (paper, PDF and everything drawn
+   * there), the PNG being its "selection only" choice.
+   */
+  onScreenshot?: (
+    png: Blob,
+    width: number,
+    height: number,
+    at?: { pageIndex: number; bounds: Bounds },
+  ) => void;
+  /**
+   * Ask AI about the selection: the patch of page `pageIndex` it covers,
+   * page space. Offered only while `canAskAi` says an AI service is set up.
+   */
+  onAskAboutSelection?: (pageIndex: number, bounds: Bounds) => void;
+  canAskAi?: () => boolean;
   /**
    * Screenshot of a patch of page `pageIndex` (page space): what a lasso
    * drawn round nothing offers, as Goodnotes does. The host draws the page
@@ -12175,6 +12191,20 @@ export class InkSurface {
         run: () => void this.showSelectionScreenshot(),
       },
     ];
+    // Ask AI about it, sent as Screenshot draws it (FineNotes discussion #107).
+    const ask = this.callbacks.onAskAboutSelection;
+    if (ask && this.callbacks.canAskAi?.()) {
+      actions.push({
+        id: "ask-ai",
+        icon: "messages-square",
+        label: "Ask AI",
+        group: "edit",
+        run: () => {
+          const at = this.selectionPatch(sel);
+          if (at) ask(at.pageIndex, at.bounds);
+        },
+      });
+    }
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
     if (graphs.length === 1 && selectedCount(sel) === 1) {
@@ -13005,6 +13035,7 @@ export class InkSurface {
     if (!sel || !page) return;
     const show = this.callbacks.onScreenshot;
     const shot = this.selectionPicture(sel, paperColorOf(page, this.paper));
+    const at = this.selectionPatch(sel);
     if (!show) {
       const png = shot.then((made) => {
         if (!made) throw new Error("Nothing to draw");
@@ -13015,7 +13046,27 @@ export class InkSurface {
       return;
     }
     const made = await shot;
-    if (made) show(made.blob, made.width, made.height);
+    if (made) show(made.blob, made.width, made.height, at ?? undefined);
+  }
+
+  /**
+   * The patch of the page a selection covers, page space: its bounds with
+   * the margin `selectionPicture` gives them, so both pictures frame it alike.
+   */
+  private selectionPatch(sel: GroupSelection): { pageIndex: number; bounds: Bounds } | null {
+    const bounds = this.groupBounds(sel);
+    const pageIndex = this.doc.pages.findIndex((page) => page.id === sel.pageId);
+    if (!bounds || pageIndex < 0) return null;
+    const pad = STICKER_PAD;
+    return {
+      pageIndex,
+      bounds: {
+        minX: bounds.minX - pad,
+        minY: bounds.minY - pad,
+        maxX: bounds.maxX + pad,
+        maxY: bounds.maxY + pad,
+      },
+    };
   }
 
   /**

@@ -203,6 +203,72 @@ describe("AskSession files", () => {
   });
 });
 
+describe("AskSession: the page it starts on, and the lasso's picture", () => {
+  const picture = { name: "Selection.png", mimeType: "image/png", base64: "SEL" };
+
+  it("starts on no page when the page is not attached (discussion #107)", () => {
+    const session = new AskSession(setup().deps, {
+      page: 3,
+      totalPages: 9,
+      save: false,
+      attachPage: false,
+    });
+    expect(session.selected).toEqual([]);
+    session.setSelection([5]);
+    session.newChat(4);
+    expect(session.selected).toEqual([]);
+    session.attachPage = true;
+    session.newChat(4);
+    expect(session.selected).toEqual([4]);
+    // Out of range: nothing.
+    expect(new AskSession(setup().deps, { page: 12, totalPages: 9, save: false }).selected).toEqual(
+      [],
+    );
+  });
+
+  it("follows the page being read until something is attached or asked", async () => {
+    const { deps } = setup();
+    const session = open(deps);
+    session.follow(5);
+    expect(session.selected).toEqual([5]);
+    session.attachPage = false;
+    session.follow(6);
+    expect(session.selected).toEqual([]);
+    session.attachPage = true;
+    session.attach(picture);
+    session.setSelection([2]);
+    session.follow(7);
+    expect(session.selected).toEqual([2]);
+    session.detach(picture);
+    await session.send("What is this?");
+    session.follow(7);
+    expect(session.selected).toEqual([2]);
+  });
+
+  it("sends the selection's picture in place of the page", async () => {
+    const { deps, asked } = setup();
+    const session = open(deps);
+    expect(session.attachInstead(picture)).toBeNull();
+    expect(session.selected).toEqual([]);
+    await session.send("What does this say?");
+    expect(deps.preparePages).not.toHaveBeenCalled();
+    expect(asked[0][0].files).toEqual([picture]);
+    expect(session.attachInstead({ ...picture })).toMatch(/already attached/);
+  });
+
+  it("keeps the pages a running chat already has, and drops the ones not yet sent", async () => {
+    const { deps, asked } = setup();
+    const session = open(deps);
+    await session.send("Page 3?");
+    session.setSelection([3, 6]);
+    expect(session.attachInstead(picture)).toBeNull();
+    expect(session.selected).toEqual([3]);
+    await session.send("And this?");
+    expect(asked[1][2].pages).toBeUndefined();
+    expect(asked[1][2].files).toEqual([picture]);
+  });
+});
+
 describe("AskSession tools", () => {
   it("shows what the tools are doing, and keeps what they did with the answer", async () => {
     const seen: string[] = [];

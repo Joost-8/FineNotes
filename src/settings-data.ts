@@ -173,6 +173,8 @@ export interface GoodObsidianSettings {
   askSaveChats: boolean;
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
+  /** A new Ask AI chat starts with the page being read attached; off, with nothing. */
+  askAttachPage: boolean;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -453,6 +455,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
+  askAttachPage: true,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,

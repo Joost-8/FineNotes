@@ -323,6 +323,10 @@ const DESC = {
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
+  askAttachPage:
+    "On, a new chat in Ask AI starts with the page you are on picked, so the first question " +
+    "is about it. Off, it starts with no page: pick pages in the chat, attach a file, or " +
+    "select something with the lasso and choose Ask AI.",
   openRouterSkipCompressed:
     "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
     "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
@@ -1810,8 +1814,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.more(
         "ai",
         vendor === "openrouter"
-          ? "OpenRouter providers; pictures: service, model and key"
-          : "Pictures: service, model and key",
+          ? "OpenRouter providers; Ask's page; pictures and their key"
+          : "Ask's page; pictures: service, model and key",
+      ),
+      this.info(
+        toggle("askAttachPage", "Ask AI starts on the open page", "", [
+          "attach page",
+          "current page",
+          "Ask AI",
+          "chat",
+        ]),
+        DESC.askAttachPage,
       ),
       {
         ...this.info(

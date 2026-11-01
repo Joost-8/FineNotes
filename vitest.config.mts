@@ -71,6 +71,7 @@ export default defineConfig({
         "src/canvas/bucket-fill.ts",
         "src/view/selection-bar-model.ts",
         "src/view/selection-kind.ts",
+        "src/view/screenshot-crop.ts",
         "src/view/enter-key.ts",
         "src/view/swatch-drag-model.ts",
         "src/view/pill-dock-model.ts",
