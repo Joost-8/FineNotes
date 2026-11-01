@@ -240,9 +240,14 @@ import {
 } from "../canvas/mirrors";
 import {
   MIN_TAPE_LENGTH,
+  TAPE_HANDLES,
+  type TapeHandle,
   isTape,
+  stretchTape,
+  tapeBounds,
   tapeClipPath,
   tapeColorOf,
+  tapeHandles,
   tapeHeightOf,
   tapePoints,
   toggleRevealed,
@@ -434,6 +439,7 @@ import {
   reorientPoint,
   reorientPoints,
   scalePoints,
+  StretchTape,
   translatePoints,
   textScaleRange,
 } from "../model/selection-commands";
@@ -1478,6 +1484,30 @@ interface PointDrag {
   /** The points and kind the shape has now, and where the dragged handle is. */
   draft: { pts: number[]; kind: ShapeKind; at: Pt } | null;
 }
+
+/**
+ * A lone cover tape stretched by one of its side handles, from pointerdown
+ * to lift: an end along the tape, a long edge across it. Drawn on the wet
+ * layer meanwhile; the lift commits one `StretchTape`.
+ */
+interface TapeStretch {
+  pointerId: number;
+  pageId: string;
+  stroke: Stroke;
+  handle: TapeHandle;
+  /** The handle less the pointer-down point: the edge follows the pen from where it was. */
+  grab: Pt;
+  clientX: number;
+  clientY: number;
+  /** The tape's bounds before the drag, page space. */
+  before: Bounds;
+  lifted: boolean;
+  /** The ends and height the tape has now. */
+  draft: { pts: number[]; size: number } | null;
+}
+
+/** A tape is never stretched thinner than this, page px at fit zoom. */
+const MIN_TAPE_HEIGHT = 6;
 
 /**
  * Two fingers turning a lasso selection or a selected picture
@@ -11800,7 +11830,7 @@ export class InkSurface {
       tables: [...tables],
       graphs: [...graphs],
     };
-    this.selectionCorners = isLoneShape(this.selection);
+    this.selectionCorners = isLoneShape(this.selection) || this.loneTape(this.selection) !== null;
     this.shapePointsOn = false;
     this.syncSelectionOverlay();
   }
@@ -11928,7 +11958,15 @@ export class InkSurface {
     const sel = this.liveSelection();
     const box = sel ? this.boxForPage(sel.pageId) : null;
     const drag = this.groupDrag?.lifted ? this.groupDrag : null;
-    const bounds = sel && box ? (drag ? this.draggedBounds(drag) : this.groupBounds(sel)) : null;
+    const stretched = this.tapeStretch?.draft;
+    const bounds =
+      sel && box
+        ? drag
+          ? this.draggedBounds(drag)
+          : stretched
+            ? tapeBounds(stretched.pts, stretched.size)
+            : this.groupBounds(sel)
+        : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
     if (box && bounds) {
@@ -11961,6 +11999,7 @@ export class InkSurface {
       }
     }
     this.syncShapePoints(drag ? null : sel, box);
+    this.syncTapeHandles(drag ? null : sel, box, bounds);
     this.syncLinkDots(drag ? null : sel, box);
     this.syncActionBar();
   }
@@ -11981,6 +12020,7 @@ export class InkSurface {
       this.groupDrag?.lifted === true ||
       this.imageDrag?.lifted === true ||
       this.pointDrag?.lifted === true ||
+      this.tapeStretch?.lifted === true ||
       this.linkDrag?.lifted === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
@@ -14128,7 +14168,15 @@ export class InkSurface {
     event.stopPropagation();
     event.preventDefault();
     const sel = this.liveSelection();
-    if (!sel || this.pointDrag || this.linkDrag || this.callbacks.isLocked?.()) return;
+    if (
+      !sel ||
+      this.pointDrag ||
+      this.tapeStretch ||
+      this.linkDrag ||
+      this.callbacks.isLocked?.()
+    ) {
+      return;
+    }
     // A palm landing on the frame while the Pencil is busy elsewhere is a palm.
     const finger = event.pointerType === "touch";
     if (finger && this.activePage !== null) return;
@@ -14152,6 +14200,7 @@ export class InkSurface {
     this.linkBar = null;
     const turn = this.knobGrabbed(bounds, from);
     if (!turn && this.grabShapePoint(event, sel, from)) return;
+    if (!turn && this.grabTapeHandle(event, sel, bounds, from)) return;
     this.groupDrag = {
       pointerId: event.pointerId,
       selection: sel,
@@ -14925,6 +14974,7 @@ export class InkSurface {
   private cancelGroupDrag(): void {
     this.endGroupDrag(false);
     this.endPointDrag(false);
+    this.endTapeStretch(false);
     this.endLinkDrag(false);
   }
 
@@ -15654,6 +15704,205 @@ export class InkSurface {
       this.strokeIndex.add(pageId, stroke);
       after = strokeBounds(stroke);
       // The lasso's loop no longer goes round the shape it was drawn round.
+      this.selectionOutline = null;
+    }
+    const box = this.boxForPage(pageId);
+    if (box) {
+      this.renderer?.invalidateRegion(box.index, unionBounds(drag.before, after) ?? drag.before);
+    }
+    this.renderDry();
+    this.syncSelectionOverlay();
+    if (done) this.changed([pageId]);
+  }
+
+  // --- A cover tape's side handles ----------------------------------------------
+
+  private tapeHandlesEl: Partial<Record<TapeHandle, HTMLElement>> = {};
+  private tapeStretch: TapeStretch | null = null;
+
+  /** The one cover tape a selection holds on its own; null otherwise. */
+  private loneTape(sel: GroupSelection | null): Stroke | null {
+    if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
+      return null;
+    }
+    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    return isTape(sel.strokes[0]) ? sel.strokes[0] : null;
+  }
+
+  /**
+   * Put a round handle on the middle of each end and long edge of the lone
+   * tape selected, as on a picture's sides, on the frame drawn round
+   * `bounds`; none for any other selection, or while the whole selection is
+   * dragged (`sel` null). They are the frame's children, so their presses
+   * reach the frame's handler.
+   */
+  private syncTapeHandles(sel: GroupSelection | null, box: PageBox | null, bounds: Bounds | null) {
+    const stretch = this.tapeStretch;
+    const tape = stretch?.stroke ?? this.loneTape(sel);
+    const geometry = stretch?.draft ?? (tape ? { pts: tape.pts, size: tape.size } : null);
+    const scale = this.unitScale;
+    const pad = this.framePad;
+    const at =
+      tape && box && bounds && geometry
+        ? tapeHandles(geometry.pts, geometry.size, pad / scale)
+        : null;
+    for (const handle of TAPE_HANDLES) {
+      let el = this.tapeHandlesEl[handle];
+      if (!at || !bounds) {
+        el?.addClass("is-hidden");
+        continue;
+      }
+      el ??= this.tapeHandlesEl[handle] = this.selectionFrameEl.createDiv({
+        cls: "goodobsidian-image-handle is-edge goodobsidian-tape-handle",
+      });
+      el.removeClass("is-hidden");
+      // Relative to the frame, which stands `pad` outside the bounds.
+      const p = at[handle];
+      el.setCssStyles({
+        left: `${(p.x - bounds.minX) * scale + pad}px`,
+        top: `${(p.y - bounds.minY) * scale + pad}px`,
+      });
+      el.dataset.tapeHandle = handle;
+      el.toggleClass("is-along", handle === "start" || handle === "end");
+    }
+  }
+
+  /**
+   * A press at page point `from` on the frame of a lone tape: start
+   * stretching it by the side handle it took, and say so. A corner square
+   * nearer the press keeps it, for the resize that keeps the shape.
+   */
+  private grabTapeHandle(
+    event: PointerEvent,
+    sel: GroupSelection,
+    bounds: Bounds,
+    from: Pt,
+  ): boolean {
+    const tape = this.loneTape(sel);
+    const before = tape ? tapeBounds(tape.pts, tape.size) : null;
+    if (!tape || !before) return false;
+    const scale = this.unitScale;
+    const pad = this.framePad / scale;
+    const at = tapeHandles(tape.pts, tape.size, pad);
+    if (!at) return false;
+    let best: TapeHandle | null = null;
+    let bestDistance = HANDLE_HIT_RADIUS_PX / scale;
+    for (const handle of TAPE_HANDLES) {
+      const d = Math.hypot(at[handle].x - from.x, at[handle].y - from.y);
+      if (d <= bestDistance) {
+        best = handle;
+        bestDistance = d;
+      }
+    }
+    if (!best) return false;
+    if (this.selectionCorners) {
+      const corners: Pt[] = [
+        { x: bounds.minX - pad, y: bounds.minY - pad },
+        { x: bounds.maxX + pad, y: bounds.minY - pad },
+        { x: bounds.maxX + pad, y: bounds.maxY + pad },
+        { x: bounds.minX - pad, y: bounds.maxY + pad },
+      ];
+      if (corners.some((c) => Math.hypot(c.x - from.x, c.y - from.y) < bestDistance)) return false;
+    }
+    this.tapeStretch = {
+      pointerId: event.pointerId,
+      pageId: sel.pageId,
+      stroke: tape,
+      handle: best,
+      grab: { x: at[best].x - from.x, y: at[best].y - from.y },
+      clientX: event.clientX,
+      clientY: event.clientY,
+      before,
+      lifted: false,
+      draft: null,
+    };
+    this.selectionFrameEl.addEventListener("pointermove", this.onTapeStretchMove);
+    this.selectionFrameEl.addEventListener("pointerup", this.onTapeStretchEnd);
+    this.selectionFrameEl.addEventListener("pointercancel", this.onTapeStretchEnd);
+    return true;
+  }
+
+  private readonly onTapeStretchMove = (event: PointerEvent): void => {
+    const drag = this.tapeStretch;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const moved = Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY);
+    if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
+    const box = this.boxForPage(drag.pageId);
+    if (!box) return;
+    const p = this.pagePoint(box, event.clientX, event.clientY);
+    // The handle stands the frame's pad outside the tape's edge: take it off again.
+    const pad = this.framePad / this.unitScale;
+    const handles = tapeHandles(drag.stroke.pts, drag.stroke.size, pad);
+    const edge = tapeHandles(drag.stroke.pts, drag.stroke.size);
+    if (!handles || !edge) return;
+    const off = {
+      x: edge[drag.handle].x - handles[drag.handle].x,
+      y: edge[drag.handle].y - handles[drag.handle].y,
+    };
+    const to = {
+      x: clamp(p.x + drag.grab.x + off.x, 0, box.width),
+      y: clamp(p.y + drag.grab.y + off.y, 0, box.height),
+    };
+    const next = stretchTape(
+      drag.stroke.pts,
+      drag.stroke.size,
+      drag.handle,
+      to,
+      this.atFitZoom(MIN_TAPE_LENGTH),
+      this.atFitZoom(MIN_TAPE_HEIGHT),
+    );
+    if (!next) return;
+    drag.draft = next;
+    if (!drag.lifted) {
+      // Out of the tiles once: each frame after this is one tape on the wet layer.
+      drag.lifted = true;
+      this.renderer?.setHiddenStrokes(new Set([drag.stroke.id]));
+      this.renderer?.invalidateRegion(box.index, drag.before);
+      this.renderDry();
+    }
+    this.renderer?.renderWetStrokes(box.index, [{ ...drag.stroke, ...next }]);
+    this.syncSelectionOverlay();
+  };
+
+  private readonly onTapeStretchEnd = (event: PointerEvent): void => {
+    const drag = this.tapeStretch;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.stopPropagation();
+    this.endTapeStretch(true);
+  };
+
+  /**
+   * Finish a tape's stretch: commit it as one `StretchTape` (`commit`) or
+   * drop it, then put the tape back into the tiles over where it was and is.
+   */
+  private endTapeStretch(commit: boolean): void {
+    const drag = this.tapeStretch;
+    if (!drag) return;
+    this.tapeStretch = null;
+    this.selectionFrameEl.removeEventListener("pointermove", this.onTapeStretchMove);
+    this.selectionFrameEl.removeEventListener("pointerup", this.onTapeStretchEnd);
+    this.selectionFrameEl.removeEventListener("pointercancel", this.onTapeStretchEnd);
+    if (this.selectionFrameEl.hasPointerCapture(drag.pointerId)) {
+      this.selectionFrameEl.releasePointerCapture(drag.pointerId);
+    }
+    if (!drag.lifted) {
+      this.syncSelectionOverlay();
+      return;
+    }
+    this.renderer?.setHiddenStrokes(NO_STROKES);
+    this.renderer?.clearWet();
+    const { pageId, stroke } = drag;
+    const draft = commit ? drag.draft : null;
+    const done = draft !== null && this.doc.pages.some((page) => page.id === pageId);
+    let after: Bounds | null = null;
+    if (done) {
+      this.history.push(this.doc, new StretchTape(pageId, stroke, draft.pts, draft.size));
+      this.strokeIndex.remove(stroke.id, pageId);
+      this.strokeIndex.add(pageId, stroke);
+      after = tapeBounds(stroke.pts, stroke.size);
+      // The lasso's loop no longer goes round the tape it was drawn round.
       this.selectionOutline = null;
     }
     const box = this.boxForPage(pageId);

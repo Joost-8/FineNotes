@@ -4419,6 +4419,36 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--text-accent-hover);
 }
 
+/* "Import PDF", at the end of the paper row and set apart from it by a
+   rule: a pill as tall as the orientation switch beside it. */
+.goodobsidian-newnb-paper-sep {
+  align-self: center;
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--background-modifier-border);
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import-pdf.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import-pdf.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
 /* A dialog's call-to-action that also carries `clickable-icon` (to escape
    the iPad's 20 px button padding) would take that class's faint icon
    colour, which on the accent fill is unreadable. */
@@ -7125,6 +7155,16 @@ textarea.goodobsidian-chat-input:focus-visible {
    shape shows them at once; anything else after the bar's corners button. */
 .goodobsidian-selection-frame.no-corners .goodobsidian-image-handle.is-corner {
   display: none;
+}
+
+/* A lone cover tape's side handles, placed on its own sides by the surface:
+   an end lengthens it, a long edge makes it taller. */
+.goodobsidian-image-handle.goodobsidian-tape-handle {
+  cursor: ns-resize;
+}
+
+.goodobsidian-image-handle.goodobsidian-tape-handle.is-along {
+  cursor: ew-resize;
 }
 
 /* A freehand lasso's selection is drawn by its own rounded loop, as in

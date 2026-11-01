@@ -21,6 +21,7 @@
 
 import { type Bounds, type Stroke, type TextBoxElement, POINT_STRIDE } from "../model/document";
 import type { ImageTransform } from "../model/commands";
+import { isTape, tapeBounds } from "../model/cover-tape";
 import {
   type ImageCorner,
   IMAGE_CORNERS,
@@ -546,7 +547,7 @@ export interface BoxFrame {
  * cover, text boxes by their frames. `null` when there is nothing.
  */
 export function selectionBounds(
-  strokes: readonly Pick<Stroke, "pts" | "size">[],
+  strokes: readonly Pick<Stroke, "pts" | "size" | "tool">[],
   images: readonly ImageTransform[],
   frames: readonly BoxFrame[],
 ): Bounds | null {
@@ -562,6 +563,12 @@ export function selectionBounds(
       : b;
   };
   for (const stroke of strokes) {
+    // A cover tape is its band, square at its ends.
+    const band = isTape(stroke) ? tapeBounds(stroke.pts, stroke.size) : null;
+    if (band) {
+      grow(band);
+      continue;
+    }
     const b = pointsBounds(stroke.pts);
     if (!b) continue;
     const pad = Math.max(0, stroke.size) / 2;
