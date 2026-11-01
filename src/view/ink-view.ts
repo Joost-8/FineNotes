@@ -2782,6 +2782,7 @@ export class InkView extends TextFileView {
           ? () => this.plugin.toggleFullScreen()
           : undefined,
         onTextStyle: (patch) => this.surface?.applyTextStyle(patch),
+        onTextFieldDone: (to) => this.surface?.textFieldDone(to),
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),

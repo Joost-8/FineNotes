@@ -14,6 +14,7 @@ import {
   cleanFamily,
   familyList,
   familyStack,
+  matchesFamily,
   measuresAsInstalled,
 } from "../../src/model/text-family";
 import {
@@ -114,6 +115,26 @@ describe("measuresAsInstalled", () => {
       ]),
     ).toBe(false);
     expect(measuresAsInstalled([])).toBe(false);
+  });
+});
+
+describe("matchesFamily", () => {
+  it("shows every name for an empty search", () => {
+    expect(matchesFamily("Gill Sans", "")).toBe(true);
+    expect(matchesFamily("Gill Sans", "   ")).toBe(true);
+  });
+
+  it("finds a name whose words start with the words typed, in any case", () => {
+    expect(matchesFamily("Gill Sans", "gill")).toBe(true);
+    expect(matchesFamily("Times New Roman", "new ro")).toBe(true);
+    expect(matchesFamily("Times New Roman", "ROMAN")).toBe(true);
+    expect(matchesFamily("Bodoni 72 Oldstyle", "72")).toBe(true);
+    expect(matchesFamily("Avenir Next Condensed", " next  cond ")).toBe(true);
+  });
+
+  it("does not find a name by the middle of a word, or by a word it lacks", () => {
+    expect(matchesFamily("Gill Sans", "ans")).toBe(false);
+    expect(matchesFamily("Times New Roman", "new serif")).toBe(false);
   });
 });
 

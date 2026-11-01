@@ -5063,11 +5063,37 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   text-align: left;
 }
 
-/* "More fonts": the device's own, each in its face, in the popover's own
-   scroll (discussion #107). A long name is cut, so the popover keeps near
-   its width. */
-.goodobsidian-text-popover .goodobsidian-text-option.is-more {
-  color: var(--text-accent);
+/* The font menu (discussion #107): one list, each name in its face, the
+   built-in six then the device's own. The heading stays at the top while
+   the popover scrolls, with the loupe that opens the search field. A long
+   name is cut, so the popover keeps near its width. */
+.goodobsidian-text-popover .goodobsidian-font-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  background: var(--gob-pop-bg);
+}
+
+.goodobsidian-text-popover .goodobsidian-font-head .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-search.clickable-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  font-size: var(--font-ui-medium);
 }
 
 .goodobsidian-text-popover .goodobsidian-font-list {
@@ -5082,8 +5108,18 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   line-height: 40px;
 }
 
-.goodobsidian-text-popover .goodobsidian-font-list.is-busy {
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option.is-family {
+  display: flex;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-busy {
   min-height: 40px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-none {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 /* A named family this device lacks: shown in the fallback, and marked. */

@@ -88,6 +88,18 @@ export function measuresAsInstalled(
   return pairs.some((p) => Math.abs(p.withFamily - p.generic) > 0.01);
 }
 
+/**
+ * Whether a font menu searched for `query` shows `name`: every word of the
+ * query starts a word of the name, ignoring case ("new ro" finds Times New
+ * Roman, "gill" Gill Sans). An empty query shows every name.
+ */
+export function matchesFamily(name: string, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const parts = name.toLowerCase().split(/[\s-]+/);
+  return words.every((word) => parts.some((part) => part.startsWith(word)));
+}
+
 /** Family names as a list shows them: cleaned, each once (ignoring case), in name order. */
 export function familyList(names: Iterable<string>): string[] {
   const seen = new Map<string, string>();

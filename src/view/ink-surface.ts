@@ -1742,6 +1742,16 @@ export class InkSurface {
    */
   private heldText: TextBoxView | null = null;
   /**
+   * The box being typed in when a field of the text pill took the focus
+   * (the font search), and what was selected in it: still the box the pill
+   * acts on, until `textFieldDone`.
+   */
+  private textFieldBox: {
+    view: TextBoxView;
+    start: number | null;
+    end: number | null;
+  } | null = null;
+  /**
    * The tool a finger tap on a box replaced with the lasso, to come back to
    * when the box is let go (`fingerHoldsTextBox`); kept while it is typed in
    * with the lasso, and dropped when it is let go.
@@ -5839,6 +5849,12 @@ export class InkSurface {
       if (onTextBox(event.relatedTarget)) {
         // Straight into another box: still editing, still the Text tool.
         this.removeIfEmpty(view);
+        return;
+      }
+      // Into a field of the text pill (the font search): the box stays the
+      // one being edited, and gets the focus back when the field is done.
+      if (keepsTextEditing(event.relatedTarget)) {
+        this.textFieldBox = { view, start: input.selectionStart, end: input.selectionEnd };
         return;
       }
       this.endTextEditing(view);
@@ -17615,8 +17631,37 @@ export class InkSurface {
    * another tool).
    */
   private textTargetView(): TextBoxView | null {
-    const view = this.editingTextView() ?? this.heldText;
+    const view = this.editingTextView() ?? this.heldText ?? this.textFieldBox?.view ?? null;
     return view && this.liveTextBox(view.pageId, view.id) ? view : null;
+  }
+
+  /**
+   * A field of the text pill that took the focus from a box is done with it
+   * (`keepsTextEditing`), and focus goes to `to`, if anywhere. Back to
+   * nowhere (a pick, Escape, the menu closing) the box takes it back, with
+   * the text it had selected, and is still being edited: an unpinned Text
+   * tool does not hand back. Into another field it ends editing, as a blur
+   * would have; into a box, that box takes over.
+   */
+  textFieldDone(to: Element | null): void {
+    const kept = this.textFieldBox;
+    if (!kept) return;
+    this.textFieldBox = null;
+    const { view, start, end } = kept;
+    if (to === view.input) return;
+    if (onTextBox(to)) {
+      this.removeIfEmpty(view);
+      return;
+    }
+    const editable =
+      to instanceof HTMLElement &&
+      (to.isContentEditable || to.tagName === "INPUT" || to.tagName === "TEXTAREA");
+    if (editable || !this.liveTextBox(view.pageId, view.id)) {
+      this.endTextEditing(view);
+      return;
+    }
+    view.input.focus({ preventScroll: true });
+    if (start !== null && end !== null) view.input.setSelectionRange(start, end);
   }
 
   /** Tell the host the style of the box the pill acts on, after something may have changed it. */
@@ -18000,6 +18045,14 @@ function now(): number {
 }
 
 /** Whether an event's target is a page text box, or inside one. */
+/**
+ * Whether focus went to a field that keeps the box being edited (the text
+ * pill's font search marks itself with `data-goodobsidian-keeps-text`).
+ */
+function keepsTextEditing(target: EventTarget | null): boolean {
+  return (target as Element | null)?.closest?.("[data-goodobsidian-keeps-text]") != null;
+}
+
 function onTextBox(target: EventTarget | null): boolean {
   return (target as Element | null)?.closest(".goodobsidian-page-textbox") != null;
 }
