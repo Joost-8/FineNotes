@@ -452,15 +452,24 @@ import { InkClipboard, pasteCopies, pastePlacement, sameSpotTaken } from "../mod
 import {
   type NoteFrame,
   MoveNoteInk,
+  SetNoteFolded,
   SetStickyColor,
   STICKY_COLORS,
   copyNoteInk,
+  copyNoteText,
+  foldedAway,
+  foldedNoteAt,
   inkOfNote,
+  isFolded,
   loneNote,
   noteAt,
   noteIdsOf,
+  noteOfText,
+  noteTextFrame,
   shownAt,
+  textOfNote,
   withNoteInk,
+  withNoteText,
 } from "../model/sticky-notes";
 import {
   AddTextBoxToPage,
@@ -544,7 +553,14 @@ import {
   pressOverride,
   stylusButtonDown,
 } from "../input/pen-modifiers";
-import { LASER_COLOR, LASER_GLOW_PX, LASER_WIDTH_PX, LaserTrail } from "../canvas/laser-trail";
+import {
+  LASER_COLOR,
+  LASER_GLOW_PX,
+  LASER_WIDTH_PX,
+  type LaserPoint,
+  LaserTrail,
+  laserPaths,
+} from "../canvas/laser-trail";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
 import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
@@ -563,6 +579,7 @@ import {
 } from "./toolbar";
 import type { HighlighterTip, SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
+import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcChip } from "./calc-chip";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
@@ -802,6 +819,8 @@ export interface InkSurfaceOptions {
   debug: boolean;
   /** Colours the selection's "Colour" row offers (the pen's palette); default {@link PALETTE}. */
   palette?: readonly string[];
+  /** The global laser settings, read live so an open note follows Settings changes. */
+  laserColor?: () => string;
 }
 
 /** What the surface tells its host, and asks it. Only `onChange` is required. */
@@ -1152,6 +1171,8 @@ const IOS_MIN_INPUT_FONT_PX = 16;
 
 /** A lasso press that moves less than this, in screen px, is a tap, not a lasso. */
 const TAP_SLOP_PX = 8;
+/** A press on a folded note that moves less than this, screen px, opens it on lift. */
+const FOLDED_TAP_SLOP_PX = 12;
 /** Lasso points closer than this to the previous one are dropped, screen px. */
 const LASSO_SPACING_PX = 3;
 /** Room between a lasso selection and its dashed frame, screen px. */
@@ -2245,6 +2266,13 @@ export class InkSurface {
   private backdropPainter: BackdropPainter | null = null;
   /** Where a waiting sticky note goes on the next tap (`armStickyNote`). */
   private stickyPlace: ((index: number, at: Pt) => void) | null = null;
+  /**
+   * The note text box (`pageId:id`) a Text-tool tap on its note is about
+   * to focus: shown by its textarea from before the focus lands.
+   */
+  private noteTextOpen: string | null = null;
+  /** The note text boxes (by id) their textareas show, and the tiles leave out. */
+  private noteTextOnDom: ReadonlySet<string> = new Set();
   /** The last finger tap that nothing took, waiting for a second (`zoomOnDoubleTap`). */
   private plainTap: PlainTap | null = null;
   /** The same finger, watched for a hold that opens the press menu (`finger-hold.ts`). */
@@ -2399,10 +2427,10 @@ export class InkSurface {
     host: HTMLElement,
     private doc: InkDocument,
     private readonly toolState: ToolbarState,
-    options: InkSurfaceOptions,
+    private readonly options: InkSurfaceOptions,
     private readonly callbacks: InkSurfaceCallbacks,
   ) {
-    this.paper = options.paper ?? LIGHT_PAPER;
+    this.paper = this.options.paper ?? LIGHT_PAPER;
     this.toolSeen = toolState.tool;
     this.drawingTool = drawingToolOf("pen", toolState.tool);
 
@@ -2574,7 +2602,7 @@ export class InkSurface {
       cls: "goodobsidian-canvas goodobsidian-canvas-laser",
     });
     this.surfaceEl.insertBefore(this.laserCanvas, this.scrollEl);
-    this.setDebug(options.debug);
+    this.setDebug(this.options.debug);
 
     // A lock badge on each locked picture, under the selection chrome. The
     // badges take no presses: a tap-and-hold on the picture reaches the page.
@@ -2671,7 +2699,7 @@ export class InkSurface {
 
     // The lasso selection's frame (a press inside it drags the selection),
     // then the action bar and its menu, above everything else on the page.
-    this.palette = options.palette ?? PALETTE;
+    this.palette = this.options.palette ?? PALETTE;
     this.selectionUiEl = this.paperEl.createDiv({ cls: "goodobsidian-selection-ui" });
     this.selectionFrameEl = this.selectionUiEl.createDiv({
       cls: "goodobsidian-selection-frame is-hidden",
@@ -2717,9 +2745,9 @@ export class InkSurface {
       backdropCanvas,
       dryCanvas,
       wetCanvas,
-      options.desynchronizedCanvas,
+      this.options.desynchronizedCanvas,
     );
-    renderer.highlighterAlpha = options.highlighterAlpha;
+    renderer.highlighterAlpha = this.options.highlighterAlpha;
     renderer.paper = this.paper;
     // A pan or scroll moves the dry layer rather than painting it again: on
     // a phone or tablet, whose compositor is always the GPU. Composited on
@@ -5404,6 +5432,8 @@ export class InkSurface {
     const marginX = this.cssW;
     const marginY = this.cssH;
     const measure: TextBoxView[] = [];
+    const onDom = this.noteTextShownByDom();
+    this.syncNoteTextTiles(onDom);
 
     for (const box of this.pageLayout.boxes) {
       const page = this.pageAt(box.index);
@@ -5424,11 +5454,19 @@ export class InkSurface {
         let view = this.textBoxInputs.get(key);
         if (!view) view = this.createTextBoxView(page.id, textBox, key);
         const { input, root } = view;
+        // A note's text is drawn with its note, but while its textarea shows it.
+        const drawnOnNote =
+          textBox.onSticky !== undefined &&
+          noteOfText(page, textBox) !== null &&
+          !onDom.has(textBox.id);
         // Never the box being typed in or held: hiding it would blur it.
-        const park = parked && !root.contains(document.activeElement) && this.heldText !== view;
+        const park =
+          (parked || drawnOnNote) &&
+          !root.contains(document.activeElement) &&
+          this.heldText !== view;
         root.toggleClass("is-parked", park);
         if (park) {
-          this.textBoxesProvisional = true;
+          if (parked) this.textBoxesProvisional = true;
           continue;
         }
         if (document.activeElement !== input && input.value !== textBox.text)
@@ -7133,6 +7171,7 @@ export class InkSurface {
     if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
     if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
+    if (this.pressOpensFoldedNote(event)) return "ignore";
     // The hand held by a shortcut moves the page wherever the pen lands.
     if (this.heldShortcut?.tool === "pan") {
       this.penPanning = true;
@@ -8721,11 +8760,11 @@ export class InkSurface {
     const scrollY = this.viewport.scrollY;
     const sx = (x: number): number => (x * scale + this.offsetX) * ratio;
     const sy = (y: number): number => (y - scrollY) * scale * ratio;
-    ctx.lineCap = "round";
+    ctx.lineCap = "butt";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = LASER_COLOR;
-    ctx.fillStyle = LASER_COLOR;
-    const segments = this.laserTrail.segments(t);
+    const color = this.options.laserColor?.() ?? LASER_COLOR;
+    ctx.strokeStyle = color;
+    const paths = laserPaths(this.laserTrail.segments(t));
     // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
     // which is slow on the iPad.
     for (const [lineWidth, strength] of [
@@ -8733,28 +8772,33 @@ export class InkSurface {
       [LASER_WIDTH_PX, 1],
     ] as const) {
       ctx.lineWidth = lineWidth * ratio;
-      for (const { a, b, alpha } of segments) {
+      for (const { alpha, runs } of paths) {
         ctx.globalAlpha = alpha * strength;
-        ctx.beginPath();
-        ctx.moveTo(sx(a.x), sy(a.y));
-        ctx.lineTo(sx(b.x), sy(b.y));
-        ctx.stroke();
-      }
-    }
-    const tip = this.laserTrail.tip();
-    if (tip) {
-      for (const [radius, strength] of [
-        [LASER_GLOW_PX / 2, 0.3],
-        [LASER_WIDTH_PX * 0.75, 1],
-      ] as const) {
-        ctx.globalAlpha = strength;
-        ctx.beginPath();
-        ctx.arc(sx(tip.x), sy(tip.y), radius * ratio, 0, Math.PI * 2);
-        ctx.fill();
+        this.strokeLaserRuns(ctx, runs, sx, sy);
       }
     }
     ctx.globalAlpha = 1;
     this.requestLaser();
+  }
+
+  /** One path for every run of a fade level, stroked once: lines meet without overlapping. */
+  private strokeLaserRuns(
+    ctx: CanvasRenderingContext2D,
+    runs: readonly LaserPoint[][],
+    sx: (x: number) => number,
+    sy: (y: number) => number,
+  ): void {
+    ctx.beginPath();
+    for (const run of runs) {
+      const first = run[0];
+      if (!first) continue;
+      ctx.moveTo(sx(first.x), sy(first.y));
+      for (let index = 1; index < run.length; index++) {
+        const point = run[index];
+        ctx.lineTo(sx(point.x), sy(point.y));
+      }
+    }
+    ctx.stroke();
   }
 
   /**
@@ -9468,6 +9512,8 @@ export class InkSurface {
     if (!this.dragSizesText() || Math.max(rect.w, rect.h) < this.atFitZoom(TEXT_TAP_SLOP)) {
       // A tap in a table types in the cell, rather than placing a box on it.
       if (this.editCellAt(box, drag.origin)) return;
+      // A tap on a sticky note types on the note.
+      if (this.editNoteTextAt(box, drag.origin)) return;
       // GoodNotes' default: the box starts where the pen went down, as small
       // as it can be, and grows with the text (the sync sets its width).
       const x = clamp(drag.origin.x, 0, Math.max(0, box.width - TEXT_MIN_W));
@@ -9485,8 +9531,11 @@ export class InkSurface {
     });
   }
 
-  /** Create and focus a persistent text box with the given page-local frame. */
-  private addTextBox(box: PageBox, frame: TextBoxFrame): void {
+  /**
+   * Create and focus a persistent text box with the given page-local frame:
+   * a box of its own, or the text of the sticky note `onSticky`.
+   */
+  private addTextBox(box: PageBox, frame: TextBoxFrame, onSticky?: string): void {
     const page = this.pageAt(box.index);
     if (!page) return;
     const textBox: TextBoxElement = {
@@ -9499,7 +9548,10 @@ export class InkSurface {
       text: "",
       // The Text tool's own style (colour, size, font…), not the pen's colour.
       ...textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE),
+      ...(onSticky !== undefined ? { onSticky } : {}),
     };
+    // Shown by its textarea from the start, or the focus below finds it hidden.
+    if (onSticky !== undefined) this.noteTextOpen = `${page.id}:${textBox.id}`;
     const add = new AddTextBoxToPage(page.id, textBox);
     this.history.push(this.doc, add);
     this.lastTextBoxAdd = { key: `${page.id}:${textBox.id}`, command: add, followers: [] };
@@ -9514,6 +9566,8 @@ export class InkSurface {
     // the pointerup, because iPadOS only raises the keyboard for a focus made
     // during a user gesture.
     if (view) this.focusTextBox(view.input);
+    // Focused now, the note's text shows while it is typed in, as any box.
+    this.noteTextOpen = null;
   }
 
   /**
@@ -10759,15 +10813,22 @@ export class InkSurface {
           stroke !== except &&
           near.has(stroke.id) &&
           lassoTakesStroke(stroke, filter) &&
-          strokeInLasso(stroke, poly, anyPart),
+          strokeInLasso(stroke, poly, anyPart) &&
+          !foldedAway(page, stroke),
       ),
-      // A locked picture is never picked up (until it is unlocked).
+      // A locked picture is never picked up (until it is unlocked), nor a
+      // folded note (until it is opened).
       images: filter.images
-        ? own(page.images).filter((image) => image.locked !== true && boxInLasso(image, poly))
+        ? own(page.images).filter(
+            (image) => image.locked !== true && !isFolded(image) && boxInLasso(image, poly),
+          )
         : [],
+      // A note's text comes with its note (`select`), never on its own.
       textBoxes: filter.textBoxes
-        ? own(page.textBoxes).filter((textBox) =>
-            boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
+        ? own(page.textBoxes).filter(
+            (textBox) =>
+              noteOfText(page, textBox) === null &&
+              boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
           )
         : [],
       tables: filter.tables
@@ -11415,7 +11476,10 @@ export class InkSurface {
   /** Select what a tap at page point `p` lands on, on `page`; whether anything was. */
   private tapSelectOn(page: Page, p: Pt, tolerance: number, filter: LassoFilter): boolean {
     if (filter.textBoxes) {
-      const shown = this.joined ? page.textBoxes.filter((t) => !isMirror(t)) : page.textBoxes;
+      // A note's text is picked up with its note, below.
+      const shown = page.textBoxes.filter(
+        (t) => !(this.joined && isMirror(t)) && noteOfText(page, t) === null,
+      );
       const frames = shown.map((textBox) => ({
         textBox,
         ...this.textBoxFrameOf(page.id, textBox),
@@ -11455,7 +11519,8 @@ export class InkSurface {
     // A locked picture is passed over, as if it were part of the paper; a
     // mirror is picked up as its owner, from its own page.
     const unlocked = page.images.filter(
-      (candidate) => candidate.locked !== true && !(this.joined && isMirror(candidate)),
+      (candidate) =>
+        candidate.locked !== true && !isFolded(candidate) && !(this.joined && isMirror(candidate)),
     );
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
     if (image) this.setImageSelection(page.id, image);
@@ -11660,6 +11725,7 @@ export class InkSurface {
     for (const id of candidates) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || (filter && !lassoTakesStroke(stroke, filter))) continue;
+      if (stroke.onSticky !== undefined && foldedAway(page, stroke)) continue;
       const hit =
         strokeHitByPoint(stroke, p.x, p.y, stroke.size / 2 + tolerance) ||
         strokeFillHit(stroke, p.x, p.y);
@@ -11716,17 +11782,19 @@ export class InkSurface {
       this.setImageSelection(pageId, images[0]);
       return;
     }
+    // So does its typed text.
+    const withText = page ? withNoteText(page, { textBoxes, images }) : textBoxes;
     // A box being typed in stops being edited before it can be moved.
     const editing = this.editingTextView();
     const live = editing ? this.liveTextBox(editing.pageId, editing.id) : undefined;
-    if (live && textBoxes.includes(live)) this.blurTextBox();
+    if (live && withText.includes(live)) this.blurTextBox();
     // So does a table being typed in.
     if (this.cellEdit && tables.includes(this.cellEdit.table)) this.endCellEdit(true);
     this.selection = {
       pageId,
       strokes: [...strokes],
       images: [...images],
-      textBoxes: [...textBoxes],
+      textBoxes: [...withText],
       tables: [...tables],
       graphs: [...graphs],
     };
@@ -12020,8 +12088,19 @@ export class InkSurface {
         pick: (color) => this.recolorSelectedNote(color),
       },
     };
+    // Goodnotes' Collapse: the note folds away to its icon; a tap opens it.
+    const fold: SelectionAction = {
+      id: "note-fold",
+      icon: "minimize-2",
+      label: "Fold note",
+      group: "style",
+      bar: true,
+      menu: "none",
+      run: () => this.foldSelectedNote(),
+    };
     return [
       colour,
+      fold,
       ...actions
         .filter((action) => !pictureOnly(action.id))
         .map((action) => (action.id === "lock" ? { ...action, label: "Lock note" } : action)),
@@ -15616,6 +15695,7 @@ export class InkSurface {
   private onFingerTap(clientX: number, clientY: number): void {
     if (this.lasso || this.imageDrag || this.groupDrag) return;
     if (this.stickyPlace && this.placeStickyAt(clientX, clientY)) return;
+    if (this.fingerOpensFoldedNote(clientX, clientY)) return;
     // A second tap close after one that did nothing zooms (`zoomOnDoubleTap`).
     const plain = { x: clientX, y: clientY, t: now() };
     const paired = pairsAsDoubleTap(this.plainTap, plain);
@@ -16172,7 +16252,7 @@ export class InkSurface {
   private fingerPicksPicture(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const image = topImageAt(
-      page.images.filter((candidate) => candidate.locked !== true),
+      page.images.filter((candidate) => candidate.locked !== true && !isFolded(candidate)),
       p,
       0,
     );
@@ -16217,11 +16297,12 @@ export class InkSurface {
     const sel = this.liveImageSelection();
     if (!sel || this.callbacks.isLocked?.()) return false;
     const ink = this.noteInk(sel);
+    const text = this.noteText(sel);
     this.applyCommand(
-      ink.length > 0
+      ink.length > 0 || text.length > 0
         ? new RemoveElements(
             sel.pageId,
-            { strokes: ink, images: [sel.image], textBoxes: [] },
+            { strokes: ink, images: [sel.image], textBoxes: text },
             "Delete",
           )
         : new RemoveImage(sel.pageId, sel.image.id),
@@ -16237,6 +16318,13 @@ export class InkSurface {
     return page ? inkOfNote(page, sel.image) : [];
   }
 
+  /** The typed text on the selected image when it is a sticky note; none for a picture. */
+  private noteText(sel: { pageId: string; image: ImageElement }): TextBoxElement[] {
+    if (!sel.image.sticky) return [];
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    return page ? textOfNote(page, sel.image) : [];
+  }
+
   /**
    * The selected image's frame changes from `before` to `after` by
    * `command`: one undo step that takes a sticky note's ink along, or the
@@ -16248,11 +16336,157 @@ export class InkSurface {
     before: NoteFrame,
     after: NoteFrame,
   ): Command {
-    if (this.noteInk(sel).length === 0) return command;
+    if (this.noteInk(sel).length === 0 && this.noteText(sel).length === 0) return command;
     return new CompositeCommand(command.label, [
       command,
       new MoveNoteInk(sel.pageId, sel.image, before, after),
     ]);
+  }
+
+  /** Fold the selected sticky note away to its icon, and let go of it. */
+  private foldSelectedNote(): void {
+    const sel = this.liveImageSelection();
+    if (!sel || !sel.image.sticky || this.callbacks.isLocked?.()) return;
+    this.deselectImage();
+    this.setNoteFolded(sel.pageId, sel.image, true);
+  }
+
+  /** Fold `note` away, or open it again: one undo step, and its tiles painted again. */
+  private setNoteFolded(pageId: string, note: ImageElement, folded: boolean): void {
+    this.history.push(this.doc, new SetNoteFolded(pageId, note, folded));
+    const box = this.boxForPage(pageId);
+    if (box) this.renderer?.invalidateRegion(box.index, imageBounds(transformOf(note)));
+    this.syncTextBoxes();
+    this.renderDry();
+    this.changed();
+  }
+
+  /** The folded note whose icon is under a client point, with its page, or `null`. */
+  private foldedNoteAtClient(
+    clientX: number,
+    clientY: number,
+  ): { pageId: string; note: ImageElement } | null {
+    // Every press asks; a notebook without a folded note answers at once.
+    if (this.doc?.pages.some((page) => page.images.some(isFolded)) !== true) return null;
+    const at = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page || this.callbacks.isLocked?.()) return null;
+    const p = this.toPage(box, at);
+    const note = foldedNoteAt(page, p.x, p.y);
+    return note ? { pageId: page.id, note } : null;
+  }
+
+  /**
+   * A pen or mouse pressed on a folded note: it draws nothing, and the note
+   * opens on the lift, if the lift is near (a control over the page acts on
+   * pointerup). Android's click after that lift is swallowed, or it would
+   * land on whatever the open note shows under the pen.
+   */
+  private pressOpensFoldedNote(event: PointerEvent): boolean {
+    if (event.button !== 0) return false;
+    const hit = this.foldedNoteAtClient(event.clientX, event.clientY);
+    if (!hit) return false;
+    const doc = this.surfaceEl.ownerDocument;
+    const { pointerId, clientX, clientY } = event;
+    const end = (up: PointerEvent): void => {
+      if (up.pointerId !== pointerId) return;
+      doc.removeEventListener("pointerup", end, true);
+      doc.removeEventListener("pointercancel", end, true);
+      if (up.type !== "pointerup") return;
+      if (Math.hypot(up.clientX - clientX, up.clientY - clientY) > FOLDED_TAP_SLOP_PX) return;
+      swallowGhostClick(doc, up);
+      this.setNoteFolded(hit.pageId, hit.note, false);
+    };
+    doc.addEventListener("pointerup", end, true);
+    doc.addEventListener("pointercancel", end, true);
+    return true;
+  }
+
+  /** A finger tapped (client px, at its lift): open the folded note there, if any. */
+  private fingerOpensFoldedNote(clientX: number, clientY: number): boolean {
+    const hit = this.foldedNoteAtClient(clientX, clientY);
+    if (!hit) return false;
+    const lift = { clientX, clientY, timeStamp: performance.now() } as PointerEvent;
+    swallowGhostClick(this.surfaceEl.ownerDocument, lift);
+    this.setNoteFolded(hit.pageId, hit.note, false);
+    return true;
+  }
+
+  /**
+   * A Text-tool tap on an open sticky note types on the note: in its text,
+   * or in a new box made for it, inset on the paper and as wide as it.
+   * Whether there was a note there.
+   */
+  private editNoteTextAt(box: PageBox, p: Pt): boolean {
+    const page = this.pageAt(box.index);
+    const note = page ? noteAt(page, p.x, p.y) : null;
+    if (!page || !note || note.locked === true || this.callbacks.isLocked?.()) return false;
+    const existing = textOfNote(page, note)[0];
+    if (!existing) {
+      this.addTextBox(box, noteTextFrame(note), note.id);
+      return true;
+    }
+    const key = `${page.id}:${existing.id}`;
+    this.noteTextOpen = key;
+    this.syncTextBoxes();
+    const view = this.textBoxInputs.get(key);
+    if (view) this.focusTextBox(view.input);
+    this.noteTextOpen = null;
+    return true;
+  }
+
+  /**
+   * The note text boxes (by id) their textareas show: being typed in, held
+   * by the lasso, or about to be focused. The rest are drawn with their
+   * notes, in the tiles and in a selection's drag alike.
+   */
+  private noteTextShownByDom(): Set<string> {
+    const shown = new Set<string>();
+    for (const page of this.doc?.pages ?? []) {
+      for (const textBox of page.textBoxes) {
+        if (textBox.onSticky === undefined) continue;
+        const note = noteOfText(page, textBox);
+        if (!note || isFolded(note)) continue;
+        const key = `${page.id}:${textBox.id}`;
+        const view = this.textBoxInputs.get(key);
+        const typing =
+          view !== undefined &&
+          (view.root.contains(document.activeElement) || this.heldText === view);
+        if (typing || this.noteTextOpen === key) shown.add(textBox.id);
+      }
+    }
+    return shown;
+  }
+
+  /**
+   * A box stopped being typed in or held: a note's text it was goes back to
+   * being drawn with its note (its textarea parked, its tiles painted again).
+   */
+  private settleNoteText(): void {
+    const shown = this.noteTextShownByDom();
+    const was: ReadonlySet<string> = this.noteTextOnDom ?? new Set();
+    if (shown.size === was.size && [...shown].every((id) => was.has(id))) return;
+    this.syncTextBoxes();
+  }
+
+  /** Paint again the notes whose text moved between their textarea and their tiles. */
+  private syncNoteTextTiles(shown: ReadonlySet<string>): void {
+    const was: ReadonlySet<string> = this.noteTextOnDom ?? new Set();
+    const changed = [...shown].filter((id) => !was.has(id));
+    for (const id of was) if (!shown.has(id)) changed.push(id);
+    if (changed.length === 0) return;
+    this.noteTextOnDom = shown;
+    this.renderer?.setHiddenText(shown);
+    const ids = new Set(changed);
+    this.doc.pages.forEach((page, index) => {
+      for (const textBox of page.textBoxes) {
+        if (!ids.has(textBox.id)) continue;
+        const note = noteOfText(page, textBox);
+        if (note) this.renderer?.invalidateRegion(index, imageBounds(transformOf(note)));
+      }
+    });
+    this.requestFrame();
   }
 
   /** Repaint the selected sticky note in `color`. */
@@ -16278,9 +16512,10 @@ export class InkSurface {
     if (!sel || !page || this.callbacks.isLocked?.()) return false;
     const copy = duplicateImage(this.doc, page.geometry, sel.image);
     const ink = copyNoteInk(page, sel.image, copy, () => this.strokeIds.next());
+    const text = copyNoteText(page, sel.image, copy, () => this.textBoxIds.next());
     this.applyCommand(
-      ink.length > 0
-        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: [] }, "Duplicate")
+      ink.length > 0 || text.length > 0
+        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: text }, "Duplicate")
         : new InsertImage(page.id, copy),
     );
     this.setImageSelection(page.id, copy);
@@ -17405,6 +17640,7 @@ export class InkSurface {
     // The pill goes back to the tool's own style, unless typing goes on elsewhere.
     if (!this.editingTextView()) this.callbacks.onTextEditing?.(null);
     this.reportTextAnchor();
+    this.settleNoteText();
     if (handBack) this.handBackFromText();
   }
 
@@ -17548,6 +17784,7 @@ export class InkSurface {
    * when focus went straight into another box.
    */
   private endTextEditing(view: TextBoxView): void {
+    this.settleNoteText();
     // A size slider let go of elsewhere: the box keeps its stored size.
     if (this.textSizePreview) this.previewTextSize(null);
     this.watchTypingKeyboard(false);

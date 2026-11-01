@@ -16,6 +16,16 @@ extracted from the matching section of this file by `release.yml`.
   stretches, the same ring as a finger's pull fills, and when you stop a new
   page is added. A scroll that only runs into the end, and Ctrl+wheel zoom,
   add nothing. As with the finger's pull, a single page never grows.
+- **Fold a sticky note away, and type on it**
+  ([#94](https://github.com/Joost-8/FineNotes/issues/94)). A selected
+  note's bar has Fold note: the note shrinks to a small note icon at its
+  corner, as Goodnotes collapses one, and the page under it shows again. A
+  tap on the icon, with the Pencil, a finger or the mouse, opens it where it
+  was. With the Text tool, a tap on a note types on the note itself: the
+  text stays on the paper, turns with it, and moves, copies and deletes
+  with it. FineNotes 2.6 and earlier show a folded note open, and its text
+  as a text box over it.
+- **Skip compressed providers.** With OpenRouter, a switch under AI → More keeps a model off providers that say they run a compressed (fp4) version, since those read handwriting less well. OpenRouter still picks among the rest as usual.
 - **A chisel tip for the highlighter.** Tap the highlighter in hand for its
   menu and pick the flat tip: a level highlight is then a band of one even
   height with square ends, as a real chisel marker draws it. Each highlight
@@ -83,6 +93,10 @@ extracted from the matching section of this file by `release.yml`.
   dialog no longer asks: join the pages of any notebook, new or old, from
   its gear under Pages, and set them apart there again. Set apart, each
   page keeps its own part of what ran over the join.
+- **Zoom box auto-advance is switched in the Zoom box only.** Its row in
+  Settings → Writing is gone; the double-arrow button on the Zoom box's bar
+  turns it on and off as before, and keeps the setting you had. The
+  threshold row's ⓘ says where the button is.
 
 ### Fixed
 

@@ -434,7 +434,6 @@ describe("the rows", () => {
       [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
       [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
-      [WRITING, "Zoom box auto-advance", "toggle:zoomBoxAutoAdvance"],
       [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
@@ -462,6 +461,7 @@ describe("the rows", () => {
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "More", "action"],
+      [AI, "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
       [AI, "Image model", "text:imageModel"],
@@ -509,6 +509,8 @@ describe("the rows", () => {
     expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
+    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
+    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {
@@ -647,7 +649,6 @@ describe("which rows show", () => {
       "Straighten highlighter strokes",
       "Lasso takes what it touches",
       "Zoom box line spacing",
-      "Zoom box auto-advance",
       "Zoom box auto-advance threshold",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
@@ -813,6 +814,20 @@ describe("which rows show", () => {
     expect(shown(named(all, "Endpoint URL"))).toBe(false);
     expect(shown(blockAfter(all, "Endpoint URL"))).toBe(false);
     expect(shown(blockAfter(all, "Endpoint URL", 1))).toBe(false);
+  });
+
+  it("offers skipping compressed providers only for OpenRouter, under the AI section's More", () => {
+    const toggle = "Skip compressed providers";
+    const aiMore = (vendor: Settings["llmVendor"]) => {
+      const all = rows(makeTab(makePlugin({ llmVendor: vendor })).tab);
+      return all.find((r) => r.heading === AI && r.def.name === "More")?.def.desc;
+    };
+    expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain(toggle);
+    expect(aiMore("openrouter")).toBe("OpenRouter providers; pictures: service, model and key");
+    for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
+      expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
+      expect(aiMore(vendor), vendor).toBe("Pictures: service, model and key");
+    }
   });
 
   it("offers the OpenRouter connect only for OpenRouter", () => {
@@ -1678,7 +1693,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(22);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(21);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {

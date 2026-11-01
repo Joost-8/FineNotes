@@ -20,6 +20,7 @@ import {
   deskColorOf,
   endpointWarning,
   greyWhileErasingOf,
+  laserDefaultColorOf,
   openSectionsOf,
   pagesAreDark,
   highlighterTipOf,
@@ -54,6 +55,7 @@ const FRESH_INSTALL = {
   defaultTool: "pen",
   customColors: [],
   defaultColor: "#1a1a1a",
+  laserDefaultColor: "#ff3b30",
   defaultSize: 3,
   eraserMode: "standard",
   eraserSize: 24,
@@ -83,6 +85,7 @@ const FRESH_INSTALL = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
   llmCustomApiKey: "",
@@ -176,6 +179,7 @@ const USED_VAULT = {
   defaultTool: "highlighter",
   customColors: ["#ff8800", "#0ca"],
   defaultColor: "#2255aa",
+  laserDefaultColor: "#00aaff",
   defaultSize: 5,
   eraserMode: "stroke",
   eraserSize: 40,
@@ -219,6 +223,7 @@ const USED_VAULT = {
   updateReminders: false,
   llmVendor: "custom",
   llmModel: "llava:13b",
+  openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
   llmCustomApiKey: "local-secret",
@@ -391,6 +396,20 @@ describe("dark pages", () => {
     expect(pagesAreDark("system", false)).toBe(false);
   });
 
+  describe("laser pointer settings", () => {
+    it("normalizes the missing and invalid colours to the built-in red", () => {
+      expect(laserDefaultColorOf(undefined)).toBe("#ff3b30");
+      expect(laserDefaultColorOf("#abc")).toBe("#abc");
+      expect(laserDefaultColorOf("red")).toBe("#ff3b30");
+    });
+
+    it("keeps a configured colour through defaults merging", () => {
+      expect(loadAndSave({ laserDefaultColor: "#123456" })).toMatchObject({
+        laserDefaultColor: "#123456",
+      });
+    });
+  });
+
   it("read anything they do not know as light", () => {
     for (const value of [undefined, null, "Dark", "auto", 1, true]) {
       expect(pagesAreDark(value, true)).toBe(false);
@@ -456,6 +475,13 @@ describe("grey out while erasing", () => {
     for (const value of [false, undefined, null, "true", 1, "yes", {}]) {
       expect(greyWhileErasingOf(value)).toBe(false);
     }
+  });
+});
+
+describe("skipping OpenRouter's compressed providers", () => {
+  it("is off for a fresh install and for a vault from before the setting", () => {
+    expect(DEFAULT_SETTINGS.openRouterSkipCompressed).toBe(false);
+    expect(loadAndSave({ llmVendor: "openrouter" }).openRouterSkipCompressed).toBe(false);
   });
 });
 
