@@ -140,9 +140,17 @@ describe("stabilizationReach", () => {
     expect(stabilizationReach(3)).toBe(STABILIZE_MAX_PX);
   });
 
-  it("spends most of its range on the low settings people use", () => {
+  it("spends most of its first half on the low settings people use", () => {
     // Goodnotes users report 5-10% for a ball pen, ~20% for cursive.
-    expect(stabilizationReach(0.2)).toBeGreaterThan(STABILIZE_MAX_PX / 2);
+    expect(stabilizationReach(0.2)).toBeGreaterThan(stabilizationReach(0.5) / 2);
+  });
+
+  it("reaches no further than it always did up to half, and twice as far at 100%", () => {
+    // The settings people had chosen write as they did before #107.
+    for (const s of [0.01, 0.05, 0.1, 0.2, 0.35, 0.5]) {
+      expect(stabilizationReach(s)).toBeCloseTo(1.5 + 8.5 * Math.sqrt(s), 12);
+    }
+    expect(stabilizationReach(0.5)).toBeLessThan(STABILIZE_MAX_PX / 2);
   });
 });
 
@@ -220,12 +228,30 @@ describe("StrokeBuilder stabilization", () => {
         along += Math.hypot(tail[i][0] - tail[i - 1][0], tail[i][1] - tail[i - 1][1]);
       }
       expect(along).toBeGreaterThanOrEqual(reach);
-      // One sample step past the reach, at most, plus the wobble's own detour.
-      expect(along).toBeLessThan(reach + 3);
+      // One sample step past the reach, at most, plus the wobble's own
+      // detour, which grows with the reach.
+      expect(along).toBeLessThan(reach * 1.1 + 3);
     }
     const dense = new StrokeBuilder({ minDistance: 0.01, stabilize: STABILIZE_MAX_PX });
     for (let i = 0; i < 400; i++) dense.add({ x: i * 0.05, y: 0, pressure: 0.4 });
     expect(dense.tail.length).toBe(MAX_CENTRED_HALF);
+  });
+
+  it("near the top, steadies the longer wobble of a Pencil, which 10 px could not (#107)", () => {
+    // A straight line with a 25 px wobble along it, sampled as a Pencil
+    // sends it (240 Hz at 150 px/s): how much of the wobble is left.
+    const left = (strength: number): number => {
+      const samples: Sample[] = [];
+      for (let x = 0; x <= 300; x += 150 / 240) {
+        samples.push({ x, y: 100 + 1.5 * Math.sin((2 * Math.PI * x) / 25), pressure: 0.4 });
+      }
+      const middle = triples(build(samples, strength)).filter(([x]) => x > 40 && x < 260);
+      const rms = Math.sqrt(middle.reduce((sum, [, y]) => sum + (y - 100) ** 2, 0) / middle.length);
+      return rms / (1.5 / Math.SQRT2);
+    };
+    expect(left(0.5)).toBeGreaterThan(0.8);
+    expect(left(0.9)).toBeLessThan(0.5);
+    expect(left(1)).toBeLessThan(0.1);
   });
 
   it("steadies a shaky hand already at 5%, and more as it rises", () => {
@@ -244,12 +270,14 @@ describe("StrokeBuilder stabilization", () => {
   });
 
   it("keeps a small loop's size at the low settings", () => {
-    // A 4 px loop is a small "e" at fit zoom.
+    // A 4 px loop is a small "e" at fit zoom. Above half, loops under ~6 px
+    // round off: the price of steadying a Pencil's longer wobble (#107).
     for (const [r, strength, most] of [
       [4, 0.25, 0.03],
       [6, 0.25, 0.01],
-      [6, 1, 0.05],
-      [10, 1, 0.01],
+      [6, 0.5, 0.03],
+      [10, 1, 0.07],
+      [20, 1, 0.01],
     ] as const) {
       const pts = triples(build(asSamples(resample(circle(r), 1.45)), strength));
       const middle = pts.slice(pts.length / 3, (pts.length * 2) / 3);
