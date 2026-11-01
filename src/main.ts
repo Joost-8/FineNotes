@@ -638,7 +638,7 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.turnSelectionIntoText(),
       (view) => view.hasInkSelected,
     );
-    this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
+    this.notebookCommand("export-pdf", "Export…", (view) => view.exportPdf());
     this.notebookCommand(
       "save-as-template",
       "Save notebook as template…",

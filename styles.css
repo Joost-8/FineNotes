@@ -9456,6 +9456,34 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   -webkit-user-select: text;
 }
 
+/* PDF / PNG / JPG, first in the actions; they wrap under it on a narrow
+   split view rather than squeeze. */
+.goodobsidian-export-modal .goodobsidian-ask-actions {
+  flex-wrap: wrap;
+}
+
+.goodobsidian-ask-actions .goodobsidian-export-format {
+  flex: 0 0 auto;
+  margin-right: auto;
+}
+
+/* Beside a switch, the last switch is the one pushed left. */
+.goodobsidian-ask-actions .goodobsidian-export-format:has(+ button) {
+  margin-right: 0;
+}
+
+.goodobsidian-ask-actions .goodobsidian-export-format button {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: calc(var(--gob-touch) - 6px);
+  padding: 0 12px;
+}
+
+/* Pages chosen beforehand: shown as they will export, nothing to tap. */
+.goodobsidian-export-grid.is-shown .goodobsidian-thumb-frame {
+  cursor: default;
+}
+
 /* The lasso's Screenshot: the picture it makes, then Copy and Share. */
 .goodobsidian-screenshot-preview {
   display: flex;

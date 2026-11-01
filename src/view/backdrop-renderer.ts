@@ -38,6 +38,7 @@ import {
   type PdfRasterRequest,
   type PdfShownArea,
   quantiseScale,
+  releasePdfEntry,
 } from "./pdf-backdrop";
 
 /**
@@ -64,6 +65,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   private level: number | null = null;
   /** Each PDF page's view centre at the last prepare, for the way the view moves. */
   private centres = new Map<string, { x: number; y: number }>();
+  /** The one PDF page {@link prepareExact} drew for an export. */
+  private exact: { path: string; page: number; entry: PdfEntry } | null = null;
 
   /**
    * @param pdf PDF raster cache, or `null` where there is no vault to read from
@@ -71,6 +74,29 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
    *            "missing source" page — never as nothing.
    */
   constructor(private readonly pdf: PdfBackdropCache | null) {}
+
+  /**
+   * Draw `backdrop` (a PDF page) from one raster at exactly `deviceScale`,
+   * made now and kept until {@link releaseExact}: an image export's page,
+   * sharper than the cache's whole-page rasters can be.
+   */
+  async prepareExact(
+    backdrop: PdfBackdrop,
+    geometry: PageGeometry,
+    deviceScale: number,
+  ): Promise<void> {
+    this.releaseExact();
+    if (!this.pdf) return;
+    if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
+    const entry = await this.pdf.renderExact(backdrop.path, backdrop.page, geometry, deviceScale);
+    this.exact = { path: backdrop.path, page: backdrop.page, entry };
+  }
+
+  /** Free the raster {@link prepareExact} made. */
+  releaseExact(): void {
+    if (this.exact) releasePdfEntry(this.exact.entry);
+    this.exact = null;
+  }
 
   /** Tell the renderer what resolution PDF pages should be rasterised at. */
   setDeviceScale(deviceScale: number): void {
@@ -231,7 +257,11 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         ? pageRasterScale(geometry, this.level)
         : quantiseScale(target?.deviceScale ?? this.scale);
     const area = { geometry };
-    const entry = this.pdf.peek(backdrop.path, backdrop.page, scale, area);
+    const exact = this.exact;
+    const entry =
+      exact && exact.path === backdrop.path && exact.page === backdrop.page
+        ? exact.entry
+        : this.pdf.peek(backdrop.path, backdrop.page, scale, area);
     if (entry) this.paintEntry(ctx, entry, geometry, paper, draws);
     else {
       // Not rasterised at this scale yet: the page at another scale if one is

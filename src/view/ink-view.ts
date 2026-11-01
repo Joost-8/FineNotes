@@ -280,8 +280,14 @@ import {
   transcriptSidecarPath,
 } from "../search/notebook-search";
 import { pageLinkLabel } from "./page-embed-model";
-import { type PdfExportSources, exportPagesToPdf, paintPagePreview } from "./pdf-export";
+import {
+  type PdfExportSources,
+  exportPagesToImages,
+  exportPagesToPdf,
+  paintPagePreview,
+} from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
+import { exportFormatOf, exportTarget, mimeTypeOf } from "../export/export-choice";
 import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -3686,14 +3692,16 @@ export class InkView extends TextFileView {
     }
   }
 
-  // --- Export as PDF -----------------------------------------------------------
+  // --- Export --------------------------------------------------------------------
 
   /**
    * The share button: export the notebook, the page being read, or chosen
-   * pages as a PDF, then open or share it. Saved in the note's "PDF exports"
-   * folder (the gear), created if it is missing, or else next to the note.
-   * Read-only on the note, but refused while it is protected: its pages may
-   * not be the pages on disk.
+   * pages as a PDF or as pictures (PNG, JPG), then open or share them.
+   * `chosen` (the overview's selection) exports those pages without asking
+   * for them again. Saved in the note's "PDF exports" folder (the gear),
+   * created if it is missing, or else next to the note; several pictures go
+   * into a new folder there. Read-only on the note, but refused while it is
+   * protected: its pages may not be the pages on disk.
    */
   exportPdf(chosen?: readonly number[]): void {
     // TODO(#46 phase 4): a board exports as one PDF page the size of its
@@ -3727,6 +3735,11 @@ export class InkView extends TextFileView {
       pageSize: (i) => doc.pages[i]?.geometry ?? { width: 0, height: 0 },
       folder: exports ?? null,
       chosen,
+      format: exportFormatOf(this.settings.exportFormat),
+      setFormat: (format) => {
+        this.settings.exportFormat = format;
+        void this.plugin.saveSettings();
+      },
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
         if (page) {
@@ -3748,31 +3761,61 @@ export class InkView extends TextFileView {
             },
           }
         : {}),
-      fileNameFor: (pages) =>
-        uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
-      export: async (pages, onProgress, cancelled) => {
-        const bytes = await exportPagesToPdf(
-          pages.map((i) => doc.pages[i]),
-          exported(),
-          { title: stripInkSuffix(note.basename), onProgress, cancelled },
-        );
-        // Named at save time, not when the dialog opened: another export may
-        // have taken the name since.
-        const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
-        const path = normalizePath(folder ? `${folder}/${name}` : name);
-        if (exports !== undefined && !this.app.vault.getFolderByPath(exports)) {
+      targetFor: (pages, format) => exportTarget(note.basename, pages, total, format, taken()),
+      export: async (pages, format, onProgress, cancelled) => {
+        const inFolder = (name: string, dir = folder): string =>
+          normalizePath(dir ? `${dir}/${name}` : name);
+        const ensureFolder = async (path: string | undefined): Promise<void> => {
+          if (path === undefined || this.app.vault.getFolderByPath(path)) return;
           try {
-            await this.app.vault.createFolder(exports);
+            await this.app.vault.createFolder(path);
           } catch {
             // Created meanwhile.
           }
+        };
+        const type = mimeTypeOf(format);
+        if (format === "pdf") {
+          const bytes = await exportPagesToPdf(
+            pages.map((i) => doc.pages[i]),
+            exported(),
+            { title: stripInkSuffix(note.basename), onProgress, cancelled },
+          );
+          // Named at save time, not when the dialog opened: another export may
+          // have taken the name since.
+          const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          const path = inFolder(name);
+          await ensureFolder(exports);
+          const buffer = bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer;
+          await this.app.vault.createBinary(path, buffer);
+          return { paths: [path], where: path, files: [new File([buffer], name, { type })] };
         }
-        const buffer = bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer;
-        await this.app.vault.createBinary(path, buffer);
-        return { path, name, bytes: buffer };
+        // Pictures: one file, or a new folder of them. Named at save time too.
+        const target = exportTarget(note.basename, pages, total, format, taken());
+        await ensureFolder(exports);
+        const dir = target.kind === "folder" ? inFolder(target.folder) : folder;
+        if (target.kind === "folder") await ensureFolder(dir);
+        const names = target.kind === "folder" ? target.names : [target.name];
+        const paths: string[] = [];
+        const files: File[] = [];
+        await exportPagesToImages(
+          pages.map((i) => doc.pages[i]),
+          exported(),
+          format,
+          {
+            onProgress,
+            cancelled,
+            save: async (i, picture) => {
+              const path = inFolder(names[i], dir);
+              await this.app.vault.createBinary(path, await picture.arrayBuffer());
+              paths.push(path);
+              files.push(new File([picture], names[i], { type }));
+            },
+          },
+        );
+        return { paths, where: target.kind === "folder" ? dir : paths[0], files };
       },
       open: (path) => {
         const file = this.app.vault.getFileByPath(path);
