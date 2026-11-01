@@ -33,15 +33,20 @@ function plainText(layout: TextLayout): { text: string; at: number[] } {
   return { text, at };
 }
 
+/** A letter or digit, or a hyphen or apostrophe inside a word. */
+function isWordChar(ch: string): boolean {
+  return /^[\p{L}\p{N}\p{M}'’-]+$/u.test(ch);
+}
+
 /** The page's printed text, for the search index; empty for a scan. */
 export function layoutPlainText(layout: TextLayout): string {
   return plainText(layout).text;
 }
 
 /**
- * Where every word of `query` appears in the page's printed text: one
- * rectangle per line each match covers, in page space, in reading order.
- * Matching folds case and accents, as the search does.
+ * Where every word of `query` appears in the page's printed text, widened
+ * to whole words: one rectangle per line each match covers, in page space,
+ * in reading order. Matching folds case and accents, as the search does.
  */
 export function pdfHitRects(query: string, layout: TextLayout): TextRect[] {
   const terms = queryTerms(query);
@@ -60,14 +65,20 @@ export function pdfHitRects(query: string, layout: TextLayout): TextRect[] {
     if (!best) break;
     from = best.end;
     // Folded → plain text → layout characters; line breaks are skipped.
-    const chars = [];
+    const chars: number[] = [];
     for (let i = best.start; i < best.end; i++) {
       const c = plain.at[folded.map[i]];
       if (c !== undefined && c >= 0) chars.push(c);
     }
     if (chars.length === 0) continue;
-    const start = Math.min(...chars);
-    const end = Math.max(...chars) + 1;
+    // The whole word lights, as the list already names it: "andro" lights
+    // "androgen". The word ends at a space, a line or punctuation.
+    const line = layout.lines.find((l) => l.start <= chars[0] && chars[0] < l.end);
+    let start = Math.min(...chars);
+    let end = Math.max(...chars) + 1;
+    while (line && start > line.start && isWordChar(layout.chars[start - 1].ch)) start--;
+    const last = layout.lines.find((l) => l.start < end && end <= l.end);
+    while (last && end < last.end && isWordChar(layout.chars[end].ch)) end++;
     rects.push(...rangeRects(layout, { start, end }));
   }
   return rects;

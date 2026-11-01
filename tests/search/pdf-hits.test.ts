@@ -37,7 +37,22 @@ describe("layoutPlainText", () => {
 });
 
 describe("pdfHitRects", () => {
-  it("lights only the matched letters, on their line", () => {
+  it("lights the whole word a part of it matched, and no more", () => {
+    const signs = layoutText([item("menstrual, androgen & skin-signs", 40, 100)], PAGE);
+    const word = (text: string): { x: number; w: number } => {
+      const at = layoutPlainText(signs).indexOf(text);
+      const { chars } = signs;
+      return { x: chars[at].x0, w: chars[at + text.length - 1].x1 - chars[at].x0 };
+    };
+    const [inner] = pdfHitRects("droge", signs);
+    expect(inner.x).toBeCloseTo(word("androgen").x);
+    expect(inner.w).toBeCloseTo(word("androgen").w);
+    // The comma after a word is not part of it; a hyphenated word is one.
+    expect(pdfHitRects("menst", signs)[0].w).toBeCloseTo(word("menstrual").w);
+    expect(pdfHitRects("sign", signs)[0].x).toBeCloseTo(word("skin-signs").x);
+  });
+
+  it("lights the matched word on its line", () => {
     const [rect, ...rest] = pdfHitRects("transform", slide);
     expect(rest).toEqual([]);
     const line = slide.lines[0];
