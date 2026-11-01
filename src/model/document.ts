@@ -29,7 +29,9 @@ export type InkTip = "chisel";
 /**
  * Geometry a stroke was snapped to or placed as. Absent on freehand strokes.
  * `polygon` is any other closed straight-edged shape (a quad or a pentagon,
- * say) that hold-to-snap straightened.
+ * say) that hold-to-snap straightened. `arc` is an open piece of a circle;
+ * `sector` a pie slice (centre, arc, back to the centre), which at a half
+ * turn is a semicircle closed by its diameter.
  */
 export type ShapeKind =
   | "line"
@@ -42,7 +44,12 @@ export type ShapeKind =
   | "roundrect"
   | "polygon"
   | "star"
-  | "cloud";
+  | "cloud"
+  | "heart"
+  | "arc"
+  | "sector"
+  | "segment"
+  | "angle";
 
 export const SHAPE_KINDS: readonly ShapeKind[] = [
   "line",
@@ -56,6 +63,11 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
   "polygon",
   "star",
   "cloud",
+  "heart",
+  "arc",
+  "sector",
+  "segment",
+  "angle",
 ];
 
 /** How a shape's outline is drawn when it is not solid. */

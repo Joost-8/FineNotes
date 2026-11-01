@@ -16,6 +16,21 @@ extracted from the matching section of this file by `release.yml`.
   stretches, the same ring as a finger's pull fills, and when you stop a new
   page is added. A scroll that only runs into the end, and Ctrl+wheel zoom,
   add nothing. As with the finger's pull, a single page never grows.
+- **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
+  on, and it snaps to a clean heart; the Shape tool has one too, after the
+  star.
+- **Arcs, semicircles and pie slices.** Hold at the end of a curve and it
+  snaps to a clean arc of a circle; a near half, quarter or three quarters
+  comes out exact, its ends level when nearly so. A curve closed by two
+  lines to its centre snaps to a slice, and a curve closed by a straight
+  line across (a D) to a semicircle. Only on a hold, so a C or a D written
+  with Auto shape on stays handwriting.
+  FineNotes 2.6 and earlier show these three as ordinary ink.
+- **Domes and right angles.** A curve closed by a straight line across,
+  flatter than a half circle, snaps to a clean dome, its base level when
+  nearly so. Two straight lines meeting at a right angle snap to an exact
+  one, its legs level and upright when nearly so; a checkmark or a written
+  L stays handwriting. FineNotes 2.6 and earlier show both as ordinary ink.
 - **Fold a sticky note away, and type on it**
   ([#94](https://github.com/Joost-8/FineNotes/issues/94)). A selected
   note's bar has Fold note: the note shrinks to a small note icon at its
