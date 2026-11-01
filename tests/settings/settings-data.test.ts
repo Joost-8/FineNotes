@@ -134,7 +134,7 @@ const FRESH_INSTALL = {
   speechLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
-  showNewNotebookInExplorer: false,
+  showNewNotebookInExplorer: true,
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
@@ -298,7 +298,7 @@ function loadAndSave(saved: unknown): Record<string, unknown> {
 describe("data.json", () => {
   it("enables the notebook context menu for older settings and preserves an opt-out", () => {
     expect(loadAndSave({}).showNewNotebookInContextMenu).toBe(true);
-    expect(loadAndSave({}).showNewNotebookInExplorer).toBe(false);
+    expect(loadAndSave({}).showNewNotebookInExplorer).toBe(true);
     expect(loadAndSave({ showNewNotebookInExplorer: false }).showNewNotebookInExplorer).toBe(false);
     expect(loadAndSave({ showNewNotebookInExplorer: true }).showNewNotebookInExplorer).toBe(true);
     expect(loadAndSave({ showNewNotebookInContextMenu: false }).showNewNotebookInContextMenu).toBe(
