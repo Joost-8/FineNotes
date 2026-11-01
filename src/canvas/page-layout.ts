@@ -517,10 +517,10 @@ export function pullAddProgress(overscroll: number, threshold = PULL_ADD_PAGE_PX
 
 /**
  * Wheel px (a mouse notch is about 100) a wheel or touchpad must keep
- * scrolling past the last page to add one: three notches, so a scroll that
+ * scrolling past the last page to add one: four notches, so a scroll that
  * merely reaches the end never does (FineNotes#111).
  */
-export const WHEEL_PULL_ADD_PX = 300;
+export const WHEEL_PULL_ADD_PX = 400;
 
 /** A wheel quiet this long has let go: a full pull adds its page, any pull starts over. */
 export const WHEEL_PULL_PAUSE_MS = 250;

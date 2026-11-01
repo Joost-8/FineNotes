@@ -20,7 +20,7 @@ const atEnd = (n: number, along: number, t0 = 0): WheelPullEvent[] =>
 
 describe("wheelPullStep (scroll past the last page to add one, FineNotes#111)", () => {
   it("lets a deliberate pull at the end fill the ring", () => {
-    const pull = run(atEnd(3, 100));
+    const pull = run(atEnd(4, 100));
     expect(pull.armed).toBe(true);
     expect(wheelPullProgress(pull)).toBe(1);
   });
@@ -50,7 +50,7 @@ describe("wheelPullStep (scroll past the last page to add one, FineNotes#111)", 
   it("starts over after a pause, and may pull then", () => {
     const glide = run([{ t: 0, along: 120, across: 0, atEnd: false }, ...atEnd(5, 60, 16)]);
     expect(wheelPullProgress(glide)).toBe(0);
-    const later = run(atEnd(3, 100, glide.lastT + WHEEL_PULL_PAUSE_MS), glide);
+    const later = run(atEnd(4, 100, glide.lastT + WHEEL_PULL_PAUSE_MS), glide);
     expect(wheelPullProgress(later)).toBe(1);
   });
 
