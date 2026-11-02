@@ -19,6 +19,10 @@
  *
  * (PDFs need pdf.js, so the dialog reads them with `import/pdf.ts` itself.)
  *
+ * A backup's folders come back on each notebook (`ImportResult.folder`), so
+ * the dialog can rebuild them. A wrapper folder that holds everything is
+ * left out, and a backup zip inside a backup is a folder of its own.
+ *
  * A backup can be gigabytes, so nothing is unpacked up front: the zip's
  * names are listed first, and each notebook's entries are inflated only when
  * that notebook is converted. With `onResult` a notebook is handed over (and
@@ -32,6 +36,7 @@ import { plural, type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
 import { isNoteful, readNoteful } from "./noteful";
+import { annotationStrokes, type PdfPageReading } from "./pdf";
 import {
   isRemarkableDocument,
   isRemarkableLines,
@@ -140,6 +145,12 @@ export interface ImportOptions {
    */
   rasterizePdf?: (bytes: Uint8Array) => Promise<Uint8Array>;
   /**
+   * Every page of a PDF with its ink and highlight annotations (pdf.js, in
+   * the plugin), for handwriting saved in a notebook's paper. Without it, or
+   * when it fails, that handwriting stays part of the paper.
+   */
+  readPdfInk?: (bytes: Uint8Array) => Promise<readonly PdfPageReading[]>;
+  /**
    * Called with each notebook as soon as it is converted; the next notebook
    * is read only after it settles. A rejection is reported as a failure of
    * that notebook.
@@ -167,7 +178,7 @@ export async function importNotebooks(
   options: ImportOptions = {},
 ): Promise<ImportBatch> {
   const batch: ImportBatch = { results: [], failures: [] };
-  await fromBytes(bytes, fileName, batch, 0, options);
+  await fromBytes(bytes, fileName, batch, 0, options, []);
   if (batch.results.length === 0 && batch.failures.length === 0 && !options.cancelled?.()) {
     batch.failures.push({
       name: fileName,
@@ -177,13 +188,17 @@ export async function importNotebooks(
   return batch;
 }
 
-/** One file's bytes: a single-file notebook, or a zip to look into. */
+/**
+ * One file's bytes: a single-file notebook, or a zip to look into. `folder`
+ * is where the file sits inside the picked zip, one name per folder.
+ */
 async function fromBytes(
   bytes: Uint8Array,
   fileName: string,
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   const single = SINGLE_FILES.find((format) => safely(() => format.is(bytes)));
   if (single) {
@@ -194,7 +209,7 @@ async function fromBytes(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await deliver(result, batch, options);
+    await deliver(result, folder, batch, options);
     return;
   }
   const names = entryNames(bytes);
@@ -202,7 +217,7 @@ async function fromBytes(
     batch.failures.push({ name: fileName, reason: NOT_A_NOTEBOOK });
     return;
   }
-  await collect(bytes, names, fileName, batch, depth, options);
+  await collect(bytes, names, fileName, batch, depth, options, folder);
 }
 
 /** A zip's entry names, without inflating anything; null when it is not a zip. */
@@ -233,6 +248,7 @@ async function collect(
   batch: ImportBatch,
   depth: number,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   // Whether this zip is itself one notebook: the readers decide from names alone.
   const index: Files = new Map(names.map((name) => [name, EMPTY]));
@@ -256,7 +272,7 @@ async function collect(
       batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
       return;
     }
-    await convert(files, fileName, batch, options);
+    await convert(files, fileName, batch, options, folder);
     return;
   }
   if (depth >= MAX_NESTING) return;
@@ -264,8 +280,13 @@ async function collect(
   // A backup: notebooks packed inside as files, or as unzipped package folders.
   // PDFs inside a backup need pdf.js; they are left for the dialog's own PDF path.
   const packed = names
-    .filter((name) => isImportFileName(name) && extensionOf(name) !== "pdf")
+    .filter((name) => isImportFileName(name) && extensionOf(name) !== "pdf" && !isMacResource(name))
     .sort();
+  const packages = packageFolders(names.filter((name) => !isMacResource(name)));
+  // A backup inside the picked one is a folder named after it.
+  const here = depth > 0 && baseName(fileName) ? [...folder, baseName(fileName)] : [...folder];
+  const wrapper = wrapperDepth([...packed, ...packages]);
+  const folderOf = (path: string): string[] => [...here, ...path.split("/").slice(wrapper, -1)];
   for (const name of packed) {
     if (options.cancelled?.()) return;
     let inner: Uint8Array | undefined;
@@ -276,17 +297,17 @@ async function collect(
       continue;
     }
     if (!inner || inner.length === 0) continue;
-    await fromBytes(inner, name, batch, depth + 1, options);
+    await fromBytes(inner, name, batch, depth + 1, options, folderOf(name));
   }
-  for (const folder of packageFolders(names)) {
+  for (const pkg of packages) {
     if (options.cancelled?.()) return;
-    const prefix = `${folder}/`;
+    const prefix = `${pkg}/`;
     let files: Files;
     try {
       const entries = readEntries(bytes, (n) => n.startsWith(prefix) && !n.endsWith("/"));
       files = new Map([...entries].map(([n, data]) => [n.slice(prefix.length), data]));
     } catch (e) {
-      batch.failures.push({ name: folder, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({ name: pkg, reason: `It could not be read (${errorText(e)}).` });
       continue;
     }
     if (
@@ -296,9 +317,31 @@ async function collect(
       isFreenotes(files) ||
       safely(() => isRemarkableDocument(files))
     ) {
-      await convert(files, folder, batch, options);
+      await convert(files, pkg, batch, options, folderOf(pkg));
     }
   }
+}
+
+/**
+ * How many leading folders every notebook in a backup shares, as a wrapper
+ * to leave out: `Library/Math/A.goodnotes` and `Library/B.goodnotes` share
+ * one. A notebook at the top of the zip means none.
+ */
+function wrapperDepth(paths: readonly string[]): number {
+  const dirs = paths.map((path) => path.split("/").slice(0, -1));
+  let depth = 0;
+  while (
+    dirs.length > 0 &&
+    dirs.every((dir) => dir.length > depth && dir[depth] === dirs[0][depth])
+  ) {
+    depth++;
+  }
+  return depth;
+}
+
+/** The resource forks a Mac adds to the zips it makes (`__MACOSX/…`, `._X.goodnotes`). */
+function isMacResource(name: string): boolean {
+  return name.startsWith("__MACOSX/") || (name.split("/").pop() ?? "").startsWith("._");
 }
 
 /** Convert one notebook's entries and hand the result over. */
@@ -307,6 +350,7 @@ async function convert(
   fileName: string,
   batch: ImportBatch,
   options: ImportOptions,
+  folder: readonly string[],
 ): Promise<void> {
   const title = baseName(fileName);
   let result: ImportResult;
@@ -338,15 +382,21 @@ async function convert(
     batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
     return;
   }
-  await deliver(result, batch, options);
+  await deliver(result, folder, batch, options);
 }
 
-/** Hand one converted notebook over: PDF pictures made images, then `onResult`. */
+/**
+ * Hand one converted notebook over: its folder set, the paper's handwriting
+ * made strokes, PDF pictures made images, then `onResult`.
+ */
 async function deliver(
   result: ImportResult,
+  folder: readonly string[],
   batch: ImportBatch,
   options: ImportOptions,
 ): Promise<void> {
+  if (folder.length > 0) result.folder = folder.join("/");
+  await inkFromPaper(result, options.readPdfInk);
   await picturesFromPdfs(result, options.rasterizePdf);
   if (options.onResult) {
     try {
@@ -383,6 +433,84 @@ function baseName(fileName: string): string {
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** "page 3" or "pages 1, 4". */
+function pagesText(pages: ReadonlySet<number>): string {
+  return pages.size === 1
+    ? `page ${[...pages][0]}`
+    : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
+}
+
+/**
+ * Handwriting saved in a page's paper PDF as ink or highlight annotations (a
+ * sheet written on in another app, or a notebook exported to PDF and brought
+ * back in) as strokes, as a PDF import brings it over. That paper is then
+ * drawn without its annotations, so the handwriting is not there twice.
+ *
+ * pdf.js draws a PDF's annotations all or none, so a PDF that also holds
+ * annotations a stroke cannot be (typed text, shapes, form fields) keeps all
+ * of them as part of its paper.
+ */
+async function inkFromPaper(
+  result: ImportResult,
+  read: ImportOptions["readPdfInk"],
+): Promise<void> {
+  if (!read) return;
+  const pdfs = new Map(
+    result.attachments.filter((a) => a.mime === "application/pdf").map((a) => [a.name, a]),
+  );
+  const papers = new Set(
+    result.doc.pages.flatMap((page) =>
+      page.backdrop.kind === "pdf" && pdfs.has(page.backdrop.path) ? [page.backdrop.path] : [],
+    ),
+  );
+  let strokeN = Math.max(
+    0,
+    ...result.doc.pages.flatMap((page) =>
+      page.strokes.map((stroke) => Number(/^s(\d+)$/.exec(stroke.id)?.[1] ?? 0)),
+    ),
+  );
+  const moved = new Set<number>();
+  const kept = new Set<number>();
+  for (const path of papers) {
+    let readings: readonly PdfPageReading[];
+    try {
+      readings = await read(pdfs.get(path)?.bytes ?? new Uint8Array());
+    } catch {
+      continue;
+    }
+    const keep = readings.some((reading) => (reading.others ?? 0) > 0);
+    result.doc.pages.forEach((page, index) => {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf" || backdrop.path !== path) return;
+      const reading = readings[backdrop.page];
+      if (keep) {
+        if (reading && reading.inks.length > 0) kept.add(index + 1);
+        return;
+      }
+      if (!readings.some((r) => r.inks.length > 0)) return;
+      backdrop.annotations = false;
+      if (!reading) return;
+      const strokes = annotationStrokes(reading, page.geometry.width, page.geometry.height);
+      if (strokes.length === 0) return;
+      // Under what was written in the notebook itself, as the paper was.
+      page.strokes.unshift(...strokes.map((stroke) => ({ id: `s${++strokeN}`, ...stroke })));
+      moved.add(index + 1);
+    });
+  }
+  if (moved.size > 0) {
+    result.warnings.push(
+      "Handwriting saved in the paper PDF as annotations came over as strokes " +
+        `(${pagesText(moved)}).`,
+    );
+  }
+  if (kept.size > 0) {
+    result.warnings.push(
+      "Handwriting saved in the paper PDF as annotations stays part of the paper, " +
+        `as the PDF also holds typed text, shapes or form fields (${pagesText(kept)}).`,
+    );
+  }
 }
 
 /**
@@ -456,10 +584,6 @@ async function picturesFromPdfs(
     result.doc.pages.map((page) => (page.backdrop.kind === "pdf" ? page.backdrop.path : "")),
   );
   result.attachments = result.attachments.filter((a) => !(pngs.get(a.name) && !papers.has(a.name)));
-  const pagesText = (pages: Set<number>): string =>
-    pages.size === 1
-      ? `page ${[...pages][0]}`
-      : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
   if (shown.size > 0) {
     result.warnings.push(
       `${plural(shownCount, "PDF placed as a picture", "PDFs placed as pictures")} came over ` +

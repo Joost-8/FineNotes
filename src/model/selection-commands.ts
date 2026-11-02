@@ -135,6 +135,39 @@ export class ReshapeStroke implements Command {
 }
 
 /**
+ * A cover tape stretched by one of its side handles: new ends and a new
+ * height, as one step. Undo puts back the very points array it replaced.
+ */
+export class StretchTape implements Command {
+  readonly label = "Resize tape";
+  private previous: { pts: number[]; size: number } | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly stroke: Stroke,
+    private readonly pts: number[],
+    private readonly size: number,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    if (!page?.strokes.includes(this.stroke)) return;
+    this.previous = { pts: this.stroke.pts, size: this.stroke.size };
+    this.stroke.pts = this.pts;
+    this.stroke.size = this.size;
+  }
+
+  invert(): void {
+    const previous = this.previous;
+    if (!previous) return;
+    this.stroke.pts = previous.pts;
+    this.stroke.size = previous.size;
+    this.previous = null;
+  }
+}
+
+/**
  * Move everything selected on one page by (dx, dy), in page space. A stroke
  * gets a new points array and keeps the old one for the undo; images and
  * text boxes keep their size, rotation and style.

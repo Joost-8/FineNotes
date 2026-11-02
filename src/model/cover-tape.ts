@@ -264,3 +264,137 @@ export function tapeColorOf(color: unknown): string {
     ? color.toLowerCase()
     : DEFAULT_TAPE_COLOR;
 }
+
+/** A tape's side handles: its two ends, and the middles of its long edges. */
+export type TapeHandle = "start" | "end" | "top" | "bottom";
+
+export const TAPE_HANDLES: readonly TapeHandle[] = ["start", "end", "top", "bottom"];
+
+/**
+ * A tape's ends, its unit direction from `a` to `b`, and the unit normal
+ * (`top` is on its minus side). A tape with both ends on one point is the
+ * level square `tapeCorners` draws, its ends on the square's sides.
+ */
+function tapeAxes(
+  pts: readonly number[],
+  size: number,
+): {
+  a: TapePt;
+  b: TapePt;
+  ux: number;
+  uy: number;
+  nx: number;
+  ny: number;
+} | null {
+  const ends = tapeEnds(pts);
+  if (!ends) return null;
+  const { a, b } = ends;
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  if (length < 1e-6) {
+    const half = size / 2;
+    return {
+      a: { x: a.x - half, y: a.y },
+      b: { x: a.x + half, y: a.y },
+      ux: 1,
+      uy: 0,
+      nx: 0,
+      ny: 1,
+    };
+  }
+  const ux = (b.x - a.x) / length;
+  const uy = (b.y - a.y) / length;
+  return { a, b, ux, uy, nx: -uy, ny: ux };
+}
+
+/** The bounds of a tape's band, page px: its four corners, no caps. Null when it has none. */
+export function tapeBounds(
+  pts: readonly number[],
+  size: number,
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const corners = tapeCorners(pts, size);
+  if (!corners) return null;
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  };
+}
+
+/**
+ * Where each of a tape's side handles sits, page px: on the middle of each
+ * end and of each long edge, `out` further out, so on a level tape they land
+ * on the middles of its selection frame's sides.
+ */
+export function tapeHandles(
+  pts: readonly number[],
+  size: number,
+  out = 0,
+): Record<TapeHandle, TapePt> | null {
+  const axes = tapeAxes(pts, size);
+  if (!axes || !(size > 0)) return null;
+  const { a, b, ux, uy, nx, ny } = axes;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const side = size / 2 + out;
+  return {
+    start: { x: a.x - ux * out, y: a.y - uy * out },
+    end: { x: b.x + ux * out, y: b.y + uy * out },
+    top: { x: mid.x - nx * side, y: mid.y - ny * side },
+    bottom: { x: mid.x + nx * side, y: mid.y + ny * side },
+  };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * A tape with one side handle dragged to `to`, page px: an end slides along
+ * the tape (the other end stays), a long edge moves across it (the other
+ * edge stays), so the tape gets longer or taller without the other changing
+ * and without turning. Never shorter than `minLength` nor thinner than
+ * `minSize`. Null when the tape has no points or no height.
+ */
+export function stretchTape(
+  pts: readonly number[],
+  size: number,
+  handle: TapeHandle,
+  to: TapePt,
+  minLength: number,
+  minSize: number,
+): { pts: number[]; size: number } | null {
+  const axes = tapeAxes(pts, size);
+  if (!axes || !(size > 0) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
+  let { a, b } = axes;
+  const { ux, uy, nx, ny } = axes;
+  let height = size;
+  if (handle === "end" || handle === "start") {
+    // Measured from the end that stays, along the tape.
+    const along =
+      handle === "end"
+        ? (to.x - a.x) * ux + (to.y - a.y) * uy
+        : (b.x - to.x) * ux + (b.y - to.y) * uy;
+    const next = Math.max(minLength, along);
+    if (handle === "end") b = { x: a.x + ux * next, y: a.y + uy * next };
+    else a = { x: b.x - ux * next, y: b.y - uy * next };
+  } else {
+    // Across the tape from its middle line: `top` lies on the minus side.
+    const across = (to.x - a.x) * nx + (to.y - a.y) * ny;
+    const fixed = handle === "top" ? size / 2 : -size / 2;
+    // Past the edge that stays, it stops at the floor rather than turning over.
+    height = Math.max(minSize, handle === "top" ? fixed - across : across - fixed);
+    // The edge that stays, and the middle line half the new height from it.
+    const shift = handle === "top" ? fixed - height / 2 : fixed + height / 2;
+    a = { x: a.x + nx * shift, y: a.y + ny * shift };
+    b = { x: b.x + nx * shift, y: b.y + ny * shift };
+  }
+  const usable = pts.length - (pts.length % STRIDE);
+  const pa = pts[2];
+  const pb = pts[usable - 1];
+  return {
+    pts: [round2(a.x), round2(a.y), pa, round2(b.x), round2(b.y), pb],
+    size: round2(height),
+  };
+}

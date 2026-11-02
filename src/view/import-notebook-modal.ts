@@ -16,6 +16,7 @@ import {
   setIcon,
   Setting,
   type TFile,
+  TFolder,
 } from "obsidian";
 import {
   IMPORT_EXTENSIONS,
@@ -26,6 +27,8 @@ import {
 } from "../import/import-notebook";
 import {
   describeImport,
+  foldersDownTo,
+  importFolder,
   importHeading,
   isImportFileName,
   progressText,
@@ -328,6 +331,7 @@ export class ImportNotebookModal extends Modal {
             one = await importNotebooks(bytes, picked.name, {
               measurePdf: (pdf) => measurePdfPages(ownBuffer(pdf)),
               rasterizePdf: (pdf) => rasterizePdfFirstPage(pdf),
+              readPdfInk: async (pdf) => (await readPdfPages(pdf)).pages,
               onResult: async (result) => {
                 written.push({ result, file: await this.save(result) });
               },
@@ -359,10 +363,14 @@ export class ImportNotebookModal extends Modal {
     this.showResults(batch, written);
   }
 
-  /** Write one converted notebook and its attachments; returns the notebook file. */
+  /**
+   * Write one converted notebook and its attachments; returns the notebook
+   * file. A notebook from a backup's folder goes in that folder, made under
+   * the chosen one.
+   */
   private async save(result: ImportResult): Promise<TFile> {
     const vault = this.app.vault;
-    const dir = normalizeFolder(this.folder);
+    const dir = await this.makeFolders(importFolder(this.folder, result));
     const parent = dir ? vault.getFolderByPath(dir) : vault.getRoot();
     const taken = new Set(parent?.children.map((child) => child.name) ?? []);
     const paths = notebookPaths(dir, result.title, "notebook", this.options.ownFolder, taken);
@@ -396,6 +404,26 @@ export class ImportNotebookModal extends Modal {
     );
     const content = buildInkFile(body, result.doc);
     return vault.create(notePath, content);
+  }
+
+  /**
+   * Make every folder down to `path` that is missing; returns the path as the
+   * vault spells it. A folder that differs only in case is the same folder on
+   * Windows, macOS and iOS, so it is used instead of made.
+   */
+  private async makeFolders(path: string): Promise<string> {
+    const vault = this.app.vault;
+    let made = "";
+    for (const wanted of foldersDownTo(normalizeFolder(path))) {
+      const name = wanted.slice(wanted.lastIndexOf("/") + 1);
+      const parent = made ? vault.getFolderByPath(made) : vault.getRoot();
+      const same = parent?.children.find(
+        (child) => child instanceof TFolder && child.name.toLowerCase() === name.toLowerCase(),
+      );
+      made = same ? same.path : joinVaultPath(made, name);
+      if (!vault.getFolderByPath(made)) await vault.createFolder(made);
+    }
+    return made;
   }
 
   // --- Step 3: what came over ----------------------------------------------------

@@ -81,6 +81,13 @@ describe("importNotebooks", () => {
     });
     const batch = await importNotebooks(backup, "Backup.zip");
     expect(batch.results.map((r) => r.title)).toEqual(["A", "B", "Maths", "Inner", "Unpacked"]);
+    expect(batch.results.map((r) => r.folder)).toEqual([
+      "Goodnotes",
+      "Goodnotes",
+      "Notability",
+      "nested",
+      undefined,
+    ]);
     expect(batch.failures).toEqual([
       { name: "broken.goodnotes", reason: "It is not a notebook FineNotes can import." },
     ]);
@@ -133,6 +140,75 @@ describe("importNotebooks", () => {
     let nested = goodnotes("Deep");
     for (let i = 0; i < 3; i++) nested = zipSync({ [`level${i}.zip`]: nested }, { level: 0 });
     expect((await importNotebooks(nested, "deep.zip")).results).toEqual([]);
+  });
+
+  it("keeps a backup's folders, packed files and unzipped packages alike", async () => {
+    const packages: Record<string, Uint8Array> = {};
+    for (const [name, data] of Object.entries(unzipSync(goodnotes("Geometry")))) {
+      packages[`Math/Geometry.goodnotes/${name}`] = data;
+    }
+    const backup = zip({
+      "Math/Algebra.goodnotes": goodnotes("Algebra"),
+      "Math/Exams/2025.goodnotes": goodnotes("2025"),
+      "Diary.goodnotes": goodnotes("Diary"),
+      ...packages,
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["Diary", undefined],
+      ["Algebra", "Math"],
+      ["2025", "Math/Exams"],
+      ["Geometry", "Math"],
+    ]);
+  });
+
+  it("leaves out a wrapper folder that holds everything", async () => {
+    const backup = zip({
+      "Goodnotes/University/Math/A.goodnotes": goodnotes("A"),
+      "Goodnotes/University/Physics/B.goodnotes": goodnotes("B"),
+    });
+    const batch = await importNotebooks(backup, "Goodnotes.zip");
+    expect(batch.results.map((r) => r.folder)).toEqual(["Math", "Physics"]);
+    // One notebook in one folder: the folder is the wrapper.
+    const one = await importNotebooks(zip({ "Math/A.goodnotes": goodnotes("A") }), "Math.zip");
+    expect(one.results.map((r) => [r.title, r.folder])).toEqual([["A", undefined]]);
+  });
+
+  it("makes a backup inside a backup a folder of its own, and a zipped notebook not", async () => {
+    const week = zipSync(
+      { "Week 1/A.goodnotes": goodnotes("A"), "Week 1/B.goodnotes": goodnotes("B") },
+      { level: 0 },
+    );
+    const backup = zip({
+      "Math/Week 1.zip": week,
+      "Math/Zipped.zip": goodnotes("Zipped"),
+      "Physics/C.goodnotes": goodnotes("C"),
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["A", "Math/Week 1"],
+      ["B", "Math/Week 1"],
+      ["Zipped", "Math"],
+      ["C", "Physics"],
+    ]);
+  });
+
+  it("skips the resource forks a Mac adds to a zip", async () => {
+    const fork = new Uint8Array([0, 5, 22, 7, 0, 2, 0, 0]);
+    const backup = zip({
+      "Library/Math/A.goodnotes": goodnotes("A"),
+      "Library/Physics/B.goodnotes": goodnotes("B"),
+      "__MACOSX/Library/Math/._A.goodnotes": fork,
+      "Library/Math/._A.goodnotes": fork,
+    });
+    const batch = await importNotebooks(backup, "Library.zip");
+    expect(batch.failures).toEqual([]);
+    expect(batch.results.map((r) => [r.title, r.folder])).toEqual([
+      ["A", "Math"],
+      ["B", "Physics"],
+    ]);
   });
 
   it("lists the extensions to pick", async () => {
@@ -376,5 +452,70 @@ describe("importNotebooks: PDFs placed as pictures", () => {
         "1 PDF placed as a picture could not be shown; a note on the page says where it was saved (page 1).",
       ]);
     }
+  });
+});
+
+describe("importNotebooks: handwriting saved in the paper", () => {
+  const sheet = (): Uint8Array =>
+    zip(
+      goodnotesFiles({
+        templates: [{ id: "T", size: [834.24, 1078.825], attachment: "A" }],
+        pages: [{ id: PAGE, template: "T", order: "a" }],
+        attachments: { A: PDF },
+      }),
+    );
+  const reading = (others?: number) => ({
+    width: 612,
+    height: 792,
+    inks: [{ kind: "ink" as const, color: [255, 0, 0], width: 2, paths: [[0, 0, 306, 792]] }],
+    ...(others ? { others } : {}),
+  });
+
+  it("brings ink annotations over as strokes, and draws the paper without them", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.resolve([reading()]),
+      })
+    ).results;
+    const page = result.doc.pages[0];
+    const { width, height } = page.geometry;
+    expect(page.backdrop).toMatchObject({ kind: "pdf", annotations: false });
+    expect(page.strokes).toEqual([
+      {
+        id: "s1",
+        color: "#ff0000",
+        size: Math.round(((2 * width) / 612) * 100) / 100,
+        tool: "pen",
+        pts: [0, 0, 0.5, Math.round((width / 2) * 100) / 100, height, 0.5],
+      },
+    ]);
+    expect(result.warnings).toEqual([
+      "Handwriting saved in the paper PDF as annotations came over as strokes (page 1).",
+    ]);
+  });
+
+  it("keeps it part of the paper beside annotations a stroke cannot be", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.resolve([reading(2)]),
+      })
+    ).results;
+    const page = result.doc.pages[0];
+    expect(page.strokes).toEqual([]);
+    expect(page.backdrop).not.toMatchObject({ annotations: false });
+    expect(result.warnings).toEqual([
+      "Handwriting saved in the paper PDF as annotations stays part of the paper, " +
+        "as the PDF also holds typed text, shapes or form fields (page 1).",
+    ]);
+  });
+
+  it("leaves the paper as it is when the PDF cannot be read", async () => {
+    const [result] = (
+      await importNotebooks(sheet(), "Bio.goodnotes", {
+        readPdfInk: () => Promise.reject(new Error("no pdf.js")),
+      })
+    ).results;
+    expect(result.doc.pages[0].strokes).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 });
